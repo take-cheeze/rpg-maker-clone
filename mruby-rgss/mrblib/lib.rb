@@ -132,11 +132,13 @@ module RGSS
     Graphics.update
     cleared = frame_mean
 
+    # rpg2k-lint:allow Dynamic/GlobalVariableReassignment -- probe resets this capture once per probe invocation
     $rgss_probe_mid = nil
     class << Graphics
       alias_method :_probe_update, :update
       def update
         _probe_update
+        # rpg2k-lint:allow Dynamic/GlobalVariableReassignment -- transition probe captures one frame through a temporary hook
         $rgss_probe_mid = RGSS.frame_mean if $rgss_probe_mid.nil?
       end
     end

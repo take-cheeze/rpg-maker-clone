@@ -265,11 +265,8 @@ end
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'retclass.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_retclass', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_retclass')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_retclass', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
@@ -299,7 +296,7 @@ Dir.mktmpdir do |dir|
 
   picture_irep = ireps.fetch(picture_method.irep)
   picture_send_idx = picture_irep.instructions.index { |insn| insn.op == 'SEND0' && insn.args.include?(':picture_only') }
-  picture_code = gen.compile_send(picture_irep.instructions[picture_send_idx].args, self_implicit: false,
+  picture_code = gen.compile_send(picture_irep.instructions[picture_send_idx], self_implicit: false,
                                   irep: picture_irep, idx: picture_send_idx, owner_def: picture_method)
   check.call('Hash<Klass> indexed value calls use guarded typed accessor dispatch',
              picture_code.include?('TYPED :picture_only -> Game::Picture') &&
@@ -323,7 +320,7 @@ Dir.mktmpdir do |dir|
   getidx0_idx = first_picture_irep.instructions.index { |insn| insn.op == 'GETIDX' }
   raise 'first_picture: expected GETIDX instruction' unless getidx0_idx
 
-  receiver_reg = first_picture_irep.instructions[getidx0_idx].args[/^R(\d+)/, 1]
+  receiver_reg = first_picture_irep.instructions[getidx0_idx].reg
   getidx0_insn = Insn.new(lineno: 1, addr: 0, op: 'GETIDX0', args: "R4 R#{receiver_reg}[0]", raw: '')
   getidx0_code = gen.compile_insn(getidx0_insn, first_picture_irep, first_picture_method, getidx0_idx)
   check.call('Hash<Klass> GETIDX0 falls back for an incorrect runtime receiver type',
@@ -333,7 +330,7 @@ Dir.mktmpdir do |dir|
   unknown_method = registry['unknown_picture_name'].find { |md| md.owner == 'Game::HashPictureOwner' }
   unknown_irep = ireps.fetch(unknown_method.irep)
   unknown_send_idx = unknown_irep.instructions.index { |insn| insn.op == 'SEND0' && insn.args.include?(':picture_only') }
-  unknown_code = gen.compile_send(unknown_irep.instructions[unknown_send_idx].args, self_implicit: false,
+  unknown_code = gen.compile_send(unknown_irep.instructions[unknown_send_idx], self_implicit: false,
                                   irep: unknown_irep, idx: unknown_send_idx, owner_def: unknown_method)
   check.call('untyped Hash indexed values retain ordinary dispatch',
              !unknown_code.include?('TYPED :picture_only -> Game::Picture#picture_only') &&
@@ -358,7 +355,7 @@ Dir.mktmpdir do |dir|
     raise "#{method_name}: no GETIDX instruction found" unless getidx_idx
 
     index_insn = if method_name == 'first'
-                   receiver = irep.instructions[getidx_idx].args[/^R(\d+)/, 1]
+                   receiver = irep.instructions[getidx_idx].reg
                    Insn.new(lineno: 1, addr: 0, op: 'GETIDX0', args: "R4 R#{receiver}[0]", raw: '')
                  else
                    irep.instructions[getidx_idx]
@@ -374,7 +371,7 @@ Dir.mktmpdir do |dir|
     idx = irep.instructions.index { |insn| insn.op == 'SEND0' && insn.args.include?(':name') }
     raise "#{method_name}: no #name send found" unless idx
 
-    code = gen.compile_send(irep.instructions[idx].args, self_implicit: false, irep: irep, idx: idx,
+    code = gen.compile_send(irep.instructions[idx], self_implicit: false, irep: irep, idx: idx,
                             owner_def: method)
     check.call("#{method_name}: annotated indexed result devirtualizes with guard/fallback",
                code.include?('TYPED :name -> Game::Actor#name') &&
@@ -558,6 +555,57 @@ Dir.mktmpdir do |dir|
   check.call('typed array argument devirtualizes a Struct element with guard/fallback',
              code.include?('ELEMENT :alive? -> Game::Battle::Combatant#alive?') &&
                code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
+
+  inherited_source = File.join(dir, 'inherited_retclass.rb')
+  File.write(inherited_source, <<~'RUBY')
+    class RetActor; def actor?; true; end; end
+    class RetBase
+      # bc2cpp: () -> RetActor
+      def produce; RetActor.new; end
+    end
+    class RetChild < RetBase; end
+    class RetOther
+      def produce; String.new; end
+    end
+    class RetHolder
+      def initialize; @child = RetChild.new; @items = [@child.produce]; end
+    end
+  RUBY
+  inherited_ireps, inherited_root = compile_ireps(inherited_source, 'bc2cpp_inherited_retclass', dir)
+  inherited_order = dfs_order(inherited_ireps, inherited_root)
+  inherited_registry, inherited_supers, _cc, inherited_includes, inherited_prepends, inherited_unknown,
+    _structs, inherited_decls, inherited_walked = build_registry(inherited_ireps, inherited_root)
+  inherited_owners = Set.new(inherited_registry.values.flatten.map(&:owner))
+  inherited_annotations = ClassAnnotations.extract(inherited_ireps, inherited_registry, inherited_owners)
+  inherited_element_annotations = ElementAnnotations.extract(inherited_ireps, inherited_registry, inherited_owners)
+  inherited_world = ClosedWorld.new(ireps: inherited_ireps, registry: inherited_registry,
+                                    class_decls: inherited_decls, walked: inherited_walked,
+                                    native_paths: [], ruby_paths: [])
+  inherited_ctx = { registry: inherited_registry, ireps: inherited_ireps, class_layout: {},
+                    known_owners: inherited_owners,
+                    element_annotations: inherited_element_annotations, class_annotations: inherited_annotations,
+                    closed_world: inherited_world, superclass_of: inherited_supers,
+                    included_modules: inherited_includes, prepended_modules: inherited_prepends,
+                    unknown_mixins: inherited_unknown }
+  inherited_base_method = inherited_registry.fetch('produce').find { |md| md.owner == 'RetBase' }
+  inherited_ctx[:owner] = inherited_base_method.owner
+  inherited_ctx[:ivar_classes] = {}
+  inherited_ctx[:mand] = 0
+  inherited_ctx[:arg_classes] = nil
+  check.call('inherited lookup computes the ancestor method return class',
+             class_scoped_return_class('RetChild', 'produce', inherited_ctx, 0), 'RetActor')
+  inherited_ctx_without_world = inherited_ctx.merge(closed_world: nil)
+  check.call('inherited return class stays unknown without closed-world proof',
+             class_scoped_return_class('RetChild', 'produce', inherited_ctx_without_world, 0).nil?, true)
+  inherited_ctx_with_mixin = inherited_ctx.merge(included_modules: { 'RetChild' => Set['RetMixin'] })
+  check.call('inherited return class refuses a mixed-in receiver',
+             class_scoped_return_class('RetChild', 'produce', inherited_ctx_with_mixin, 0).nil?, true)
+  inherited_with_direct_native = inherited_registry.transform_values(&:dup)
+  inherited_with_direct_native['produce'] << MethodDef.new(name: 'produce', owner: 'RetChild', irep: nil,
+                                                            visibility: :public)
+  inherited_ctx_with_native = inherited_ctx.merge(registry: inherited_with_direct_native)
+  check.call('a direct native definition prevents bypassing it for an ancestor return proof',
+             class_scoped_return_class('RetChild', 'produce', inherited_ctx_with_native, 0).nil?, true)
 end
 
 if failures.empty?

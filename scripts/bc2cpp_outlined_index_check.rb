@@ -87,10 +87,7 @@ RUBY
 Dir.mktmpdir do |dir|
   path = File.join(dir, 'codegen.rb')
   File.write(path, CODEGEN)
-  c_dump, disasm = run_mrbc(path, 'bc2cpp_outlined_index', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_outlined_index')
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, dfs_order(ireps, root_label), blocks, block_files, block_catches)
+  ireps, root_label = compile_ireps(path, 'bc2cpp_outlined_index', dir)
   registry, superclass_of, _containers, included, prepended, unknown_mixins = build_registry(ireps, root_label)
   CodeGen.struct_members = { 'Pair' => %w[left right] }
   gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new, nil, nil, nil,

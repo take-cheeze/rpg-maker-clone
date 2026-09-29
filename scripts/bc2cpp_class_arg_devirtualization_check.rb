@@ -35,11 +35,8 @@ end
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'class_arg.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_class_arg', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_class_arg')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_class_arg', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   owners = Set.new(registry.values.flatten.map(&:owner))
   class_annotations = ClassAnnotations.extract(ireps, registry, owners)
@@ -53,7 +50,7 @@ Dir.mktmpdir do |dir|
 
   check.call('annotated initializer argument becomes a class hint for @db',
              class_layout.dig('Game::Party', 'db') == 'Game::Database')
-  code = gen.compile_send(irep.instructions[idx].args, self_implicit: false, irep: irep, idx: idx,
+  code = gen.compile_send(irep.instructions[idx], self_implicit: false, irep: irep, idx: idx,
                           owner_def: method)
   check.call('call through @db uses a guarded TYPED target and dynamic fallback',
              code.include?('TYPED :edition -> Game::Database#edition') &&

@@ -2,9 +2,9 @@
 # encoding: UTF-8
 #
 # bc2cpp coverage report: regenerates tools/bc2cpp/bc2cpp.rb's whole-program
-# diagnostic (every owner across all three compiled gems -- mruby-rpg2k-
-# compiled/mruby-lcf-compiled/mruby-rgss-compiled -- combined, the same
-# closed-world registry each real gem build feeds it) and prints a small,
+# wio closed-world diagnostic (every owner across all three compiled gems --
+# mruby-rpg2k-compiled/mruby-lcf-compiled/mruby-rgss-compiled -- combined,
+# with the actual wio gem set and outside-source proof inputs) and prints a small,
 # stats-only summary: compiled-entry-point and
 # #error counts, a method-level coverage percentage (attempted vs. actually
 # compiled clean), and both the resolved AND the poisoned-to-unknown side of
@@ -39,6 +39,7 @@ require 'set'
 ROOT = File.expand_path('..', __dir__)
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/symbol_cache'
+require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
 
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
 MRBC = ENV['MRBC'] || 'mrbc'
@@ -65,8 +66,17 @@ env = {
   'ONLY_OWNERS' => all_owners.join(','),
   'NATIVE_SRCS' => Shellwords.join(native_srcs),
   'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_ruby_srcs),
+  # The whole-program dispatch count is meaningful only under the same closed
+  # world that the wio compiled gems use. `allow` skips the reviewed-site audit
+  # failure for this measurement run; it does not alter generated dispatch.
+  'BC2CPP_CLOSED_WORLD' => '1',
+  'BC2CPP_BUILD_NAME' => 'wio',
+  'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).map { |n, d| "#{n}=#{d}" }),
+  NomethodReviewed::ALLOW_ENV => 'allow',
 }
+env['BC2CPP_PROFILE_TIMINGS'] = '1' if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
 cmd = [RbConfig.ruby, BC2CPP, *srcs].shelljoin
+shipped_stderr = nil
 Dir.mktmpdir do |dir|
   env['OUT_DIR'] = dir
   @stdout, @stderr, status = Open3.capture3(env, cmd)
@@ -178,7 +188,7 @@ end
 
 report = +''
 report << "bc2cpp coverage report\n"
-report << "(scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled\n"
+report << "(scripts/bc2cpp_coverage_report.rb; wio closed world, whole-program, all three\n"
 report << " gems' owners combined -- see that script's own header)\n\n"
 
 report << "compiled entry points (real build output -- clean, zero #error): #{clean_names.size}\n"
@@ -313,9 +323,8 @@ report << "runtime definition fallbacks (SDEF/TDEF/SCLASS+EXEC): " \
           "#{sdef_fallback_count}/#{tdef_fallback_count}/#{sclass_fallback_count}\n"
 report << "\n"
 
-# DYNAMIC_DISPATCH_STATS_SUPPORT: every real dynamic-dispatch call site
-# left in the actual SHIPPED build (@shipped_stdout, SKIP_UNSUPPORTED=1
-# -- see its own capture comment above). The generator's SymbolCache rewrites
+# DYNAMIC_DISPATCH_STATS_SUPPORT: every real dynamic-dispatch call site left in
+# the actual SHIPPED build (@shipped_stdout, SKIP_UNSUPPORTED=1). SymbolCache rewrites
 # the ordinary mrb_funcall form to `bc2cpp_send(M, recv, index, ...)`; resolve
 # those indices through the generated symbol table instead of scanning only the
 # pre-cache spelling. `mrb_funcall_with_block` is counted separately because it
@@ -352,6 +361,8 @@ def cached_with_block_indices(code)
   indices
 end
 
+# These include fallback arms attached to direct-call guards; POLY_DIAG below
+# separately counts sites that had no complete direct set.
 dispatch_counts = Hash.new(0)
 symbol_names = @shipped_stdout[/static const char\* const bc2cpp_sym_names\[\d+\] = \{(.*?)\n\};/m, 1].to_s
                          .scan(/"((?:[^"\\\n]|\\.)*)"/).flatten.map { |literal| unescape_cpp_string(literal) }
@@ -365,15 +376,110 @@ shipped_poly = @shipped_stdout.scan(/^\s*\/\/ POLY :\S+ --/).size
 raise "bc2cpp coverage report: POLY markers exceed dispatch sites" if shipped_poly > total_dispatch
 hash_values_fast_paths = @shipped_stdout.scan(/^\s*\/\/ HASH_VALUES :values/).size
 
+# POLY_DIAGNOSTICS: generated markers are attached to every selected class
+# chain/table and every remaining POLY fallback. The exclusion counts are
+# definition-level and repeat across call sites; path counts are call-site
+# counts and are the useful denominator for unresolved dispatch.
+poly_paths = Hash.new(0)
+poly_receivers = Hash.new(0)
+dynamic_receivers = Hash.new(0)
+unresolved_origins = Hash.new(0)
+unresolved_origin_names = Hash.new { |hash, origin| hash[origin] = Hash.new(0) }
+poly_exclusions = Hash.new(0)
+new_dispatch_paths = Hash.new(0)
+new_dispatch_exclusions = Hash.new(0)
+poly_diag_sites = 0
+poly_dynamic_names = Hash.new(0)
+@shipped_stdout.each_line do |line|
+  match = line.match(/^\s*\/\/ POLY_DIAG path=(\S+) receiver=(\S+) name="((?:\\.|[^"\\])*)" arity=\d+ candidates=(\d+) excluded=(\S+)(?: origin=(\S+))?/)
+  next unless match
+
+  poly_diag_sites += 1
+  poly_paths[match[1]] += 1
+  poly_receivers[match[2]] += 1
+  if match[3] == 'new' && match[1].start_with?('dynamic_')
+    new_dispatch_paths[[match[1], match[2]]] += 1
+    unless match[5] == 'none'
+      match[5].split(',').each do |entry|
+        reason, count = entry.split('=', 2)
+        new_dispatch_exclusions[reason] += count.to_i
+      end
+    end
+  end
+  dynamic_receivers[[match[1], match[2]]] += 1 if match[1].start_with?('dynamic_')
+  if match[2] == 'receiver_class_unresolved'
+    origin = match[6] || 'not_recorded'
+    unresolved_origins[origin] += 1
+    method_name = match[3].gsub(/\\(.)/, '\\1')
+    unresolved_origin_names[origin][method_name] += 1
+  end
+  next if match[5] == 'none'
+
+  match[5].split(',').each do |entry|
+    reason, count = entry.split('=', 2)
+    poly_exclusions[reason] += count.to_i
+  end
+end
+@shipped_stdout.scan(/^\s*\/\/ POLY :(\S+) --/).each { |match| poly_dynamic_names[match.first] += 1 }
+poly_dynamic_sites = poly_paths.sum { |path, count| path.start_with?('dynamic_') ? count : 0 }
+direct_new_sites = @shipped_stdout.scan(/^\s*\/\/ MONO :new -> /).size
+
 report << "-- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --\n"
-report << "total cached bc2cpp_send/mrb_funcall_with_block call sites: #{total_dispatch}\n"
+report << "cached bc2cpp_send/mrb_funcall_with_block sites, including guarded fallbacks: #{total_dispatch}\n"
 report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
+report << "  direct :new constructor paths emitted (some retain guarded fallback): #{direct_new_sites}\n"
+report << "  generic POLY sites by diagnostics: #{poly_dynamic_sites}\n"
+report << "  POLY_DIAG sites categorized: #{poly_diag_sites}\n"
+report << "  dispatch path by call site:\n"
+poly_paths.sort.each { |path, count| report << format("    %5d  %s\n", count, path) }
+report << "  generic dynamic sites by path and receiver evidence:\n"
+dynamic_receivers.sort.each do |(path, receiver), count|
+  report << format("    %5d  %-38s %s\n", count, path, receiver)
+end
+report << "  unresolved :new sites by path and receiver evidence:\n"
+new_dispatch_paths.sort.each do |(path, receiver), count|
+  report << format("    %5d  %-38s %s\n", count, path, receiver)
+end
+report << "  excluded :new definitions across unresolved sites:\n"
+new_dispatch_exclusions.sort_by { |reason, count| [-count, reason] }.each do |reason, count|
+  report << format("    %5d  %s\n", count, reason)
+end
+report << "  unresolved receiver origins (nearest defining instruction):\n"
+unresolved_origins.sort_by { |origin, count| [-count, origin] }.each do |origin, count|
+  report << format("    %5d  %s\n", count, origin)
+end
+report << "  top dynamic method names within the largest unresolved origins:\n"
+unresolved_origins.sort_by { |origin, count| [-count, origin] }.first(8).each do |origin, _count|
+  names = unresolved_origin_names[origin].sort_by { |name, count| [-count, name] }.first(8)
+  report << "    #{origin}: #{names.map { |name, count| ":#{name} #{count}" }.join(', ')}\n"
+end
+report << "  receiver-class evidence at those sites:\n"
+poly_receivers.sort.each { |fact, count| report << format("    %5d  %s\n", count, fact) }
+report << "  excluded definitions across sites (counts repeat per call site):\n"
+poly_exclusions.sort_by { |reason, count| [-count, reason] }.each do |reason, count|
+  report << format("    %5d  %s\n", count, reason)
+end
 report << "  guarded native Hash#values call sites: #{hash_values_fast_paths}\n"
 report << "  everything else (not yet attempted or failed MONO/TYPED): #{[total_dispatch - shipped_poly, 0].max}\n"
-report << "distinct dynamically-dispatched method names: #{dispatch_counts.size}\n"
-report << "top 30 dynamically-dispatched method names:\n"
-dispatch_counts.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|
+report << "distinct unresolved generic-dispatch method names: #{poly_dynamic_names.size}\n"
+report << "top 30 unresolved generic-dispatch method names:\n"
+poly_dynamic_names.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|
   report << format("  %2d. %5d  :%s\n", i + 1, n, name)
+end
+report << "top 30 cached dispatch method names (generic sites and guarded fallbacks):\n"
+dispatch_counts.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|
+  generic = poly_dynamic_names[name]
+  report << format("  %2d. %5d total  %4d generic  %5d other  :%s\n",
+                   i + 1, n, generic, [n - generic, 0].max, name)
+end
+
+if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
+  report << "\n-- bc2cpp generation phase timings (two complete passes) --\n"
+  [['analysis pass', err], ['shipped pass', shipped_stderr]].each do |label, stderr|
+    report << "  #{label}:\n"
+    stderr.each_line.grep(/^BC2CPP_TIME /).each { |line| report << "    #{line.sub(/^BC2CPP_TIME /, '')}" }
+    stderr.each_line.grep(/^BC2CPP_DETAIL /).each { |line| report << "    #{line.sub(/^BC2CPP_DETAIL /, 'detail ')}" }
+  end
 end
 
 if REPORT_PATH

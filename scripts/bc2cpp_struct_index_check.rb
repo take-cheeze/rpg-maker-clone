@@ -73,11 +73,8 @@ RUBY
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'struct_index.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_struct_index', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_struct_index')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_struct_index', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry, _superclass_of, _cc, _im, _pm, _um, struct_member_lists = build_registry(ireps, root_label)
 
   check.call('a plain (no block) small member list is recognized in declared order',
@@ -129,11 +126,8 @@ Dir.mktmpdir do |dir|
   Dir.mktmpdir do |dir2|
     source2 = File.join(dir2, 'two_owners.rb')
     File.write(source2, two_owner_src)
-    c_dump2, disasm2 = run_mrbc(source2, 'bc2cpp_two_owners', dir2)
-    ireps2, root2 = parse_c_dump(c_dump2, 'bc2cpp_two_owners')
+    ireps2, root2 = compile_ireps(source2, 'bc2cpp_two_owners', dir2)
     order2 = dfs_order(ireps2, root2)
-    blocks2, bf2, bc2 = parse_disasm_blocks(disasm2)
-    merge!(ireps2, order2, blocks2, bf2, bc2)
     registry2, _s2, _c2, _i2, _p2, _u2, members2 = build_registry(ireps2, root2)
     CodeGen.struct_members = members2
     gen2 = CodeGen.new(ireps2, registry2, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
@@ -153,11 +147,8 @@ Dir.mktmpdir do |dir|
   Dir.mktmpdir do |dir3|
     source3 = File.join(dir3, 'capped.rb')
     File.write(source3, "class X\n  def probe(s)\n    s[:shared]\n  end\nend\n")
-    c_dump3, disasm3 = run_mrbc(source3, 'bc2cpp_capped', dir3)
-    ireps3, root3 = parse_c_dump(c_dump3, 'bc2cpp_capped')
+    ireps3, root3 = compile_ireps(source3, 'bc2cpp_capped', dir3)
     order3 = dfs_order(ireps3, root3)
-    blocks3, bf3, bc3 = parse_disasm_blocks(disasm3)
-    merge!(ireps3, order3, blocks3, bf3, bc3)
     registry3 = build_registry(ireps3, root3)[0]
     gen3 = CodeGen.new(ireps3, registry3, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
     probe_md = registry3.fetch('probe').find { |d| d.owner == 'X' }

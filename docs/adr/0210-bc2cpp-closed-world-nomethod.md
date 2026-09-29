@@ -95,10 +95,19 @@ In the same mode the guards' owner-class lookup uses `mrb_const_defined_at`,
 so a guard never matches a same-named class found through ancestry. Without
 the switch the output is byte-identical.
 
+`OWNERLESS_NATIVE_DISPATCH` applies the same closed-input boundary to native
+primitive sends that compile to class-independent C++ expressions. The
+expression proof establishes the operation's behavior; `ClosedWorld` separately
+rejects the fast path when there is a global refusal, an unregistered method
+definition, an outside Ruby definition, or any registered non-native Ruby
+owner for the name. Open-world builds keep their existing native-only gate.
+This is not a blanket proof for the synthetic `<native>` owner: the expression
+analyzer must still establish a receiver-class-independent body, and the
+primitive must still have the expected arity.
+
 ## Consequences
 
-wio, measured by generating all three gems both ways and compiling each
-`register.cxx` at `-Os` (x86-64 host g++, the build's own flags):
+At introduction, the wio measurement was:
 
 | gem | guard + fallback dropped | `bc2cpp_nomethod` | kept | `-Os` text before | after |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -134,7 +143,8 @@ RGSS::ErrorReport::Tee define `method_missing`, so only `self` receivers
 convert. When the LCF `method_missing` removal lands, the analysis picks that
 up with no code change. Tee's forwarding `method_missing` still blocks every
 non-self receiver after that; replacing it with explicit IO delegation is the
-follow-up that frees those sites.
+follow-up implemented by ADR 0229. The figures above are the pre-follow-up
+census.
 
 One premise carries over from the existing generator. An unguarded MONO
 direct call assumes its receiver is the owner's instance, just as it already
@@ -142,3 +152,49 @@ assumes a method and not `method_missing` answers it. LEXICAL_SELF relies on
 that assumption already; the `self` rule and CLOSED_WORLD_SELF rely on it too. `scripts/bc2cpp_closed_world_check.rb` covers the
 build check and the generated code. It also compiles fixtures against the real
 mruby core and checks the raised `NoMethodError` against the interpreter's.
+
+The same whole-program hierarchy now backs receiver-class inference for
+implicit `self` calls and singleton `self` calls. The local superclass map can
+omit subclasses whose superclass expression it cannot resolve; when
+`ClosedWorld` is active, `exact_class?` is the authority for these proofs.
+Without that scan, the existing local-map check remains in force.
+
+Call-site devirtualization can also resolve a globally polymorphic name through
+inheritance when the receiver is traced to one stable class constant. The
+generated call retains an exact runtime class guard for that traced class; the
+closed-world proof walks its complete superclass chain and chooses the first
+registered implementation only when no dynamic or outside definition can
+precede it and no include/prepend can alter lookup. Unknown ancestry, mixins,
+unstable constants, or uncertain definitions keep ordinary dispatch. This
+proves the target owner may be an ancestor without claiming the receiver itself
+has that ancestor's exact class.
+
+When that traced receiver is specifically the result of `Klass.new`, the exact
+class can be established without a runtime guard if the class constant is
+stable, ordinary `Class#new`/`Class#allocate` lookup is closed-world complete,
+and no class in the constructor chain overrides either method or changes its
+singleton lookup with a mixin. The same proof allows direct construction to
+omit the redundant class-identity guard. Rebound constants, unknown constructor
+installers, and unstable class paths retain guarded construction or dispatch.
+
+`ClosedWorld#single_assignment_constant?` exposes a narrower fact for ordinary
+value constants: exactly one bytecode binding site, outside sources do not name
+the constant, no dynamic constant mutation is found, and the write is not in a
+deferred method body or a class/module declaration. The outside-source name
+check is intentionally conservative because a native or foreign source that
+mentions the name could rebind it. The first consumer recognizes a direct
+`Klass.new` initializer and propagates that class to reads of the constant. The
+resulting call remains runtime-class-guarded: if a custom constructor returns an
+unexpected class, ordinary lookup remains available on the fallback path.
+
+The same inherited lookup proof is reused by return-class analysis and `&:name`
+loop inlining. Return-class analysis may consume an ancestor's bytecode return
+annotation only as an analysis hint; downstream dispatch still has its runtime
+guard. Symbol-call inlining adds an exact-class branch for a declared subclass
+that inherits one of the already-proven bytecode targets, while retaining
+`mrb_funcall` for every other class. Both consumers refuse unknown definitions,
+outside definitions, incomplete ancestry and mixins; direct native definitions
+stop ancestor return analysis rather than being skipped.
+Runtime `include`, `prepend` or `extend` outside a recognized class body also
+refuses these closed-world proofs, because it can alter lookup without appearing
+in the static ancestry tables.

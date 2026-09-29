@@ -21,6 +21,11 @@ RClass* native_color_class(void);
 RClass* native_tone_class(void);
 RClass* native_sprite_class(void);
 RClass* native_bitmap_class(void);
+RClass* native_table_class(void);
+RClass* native_window_class(void);
+RClass* native_viewport_class(void);
+RClass* native_plane_class(void);
+RClass* native_tilemap_class(void);
 
 mrb_value rect_new_direct(mrb_state* M,
                           RClass* klass,
@@ -42,5 +47,130 @@ mrb_value tone_new_direct(mrb_state* M,
                           mrb_float gray);
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport);
 mrb_value bitmap_new_direct(mrb_state* M, RClass* klass, mrb_int w, mrb_int h);
+mrb_value sprite_bitmap_set_direct(mrb_state* M,
+                                   mrb_value self,
+                                   mrb_value bitmap);
+mrb_value bitmap_fill_rect_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_value x,
+                                  mrb_value y,
+                                  mrb_value w,
+                                  mrb_value h,
+                                  mrb_value color);
+mrb_value bitmap_blt_direct(mrb_state* M,
+                            mrb_value self,
+                            mrb_value x,
+                            mrb_value y,
+                            mrb_value source,
+                            mrb_value source_rect,
+                            mrb_value opacity,
+                            mrb_bool opacity_given);
+mrb_value bitmap_stretch_blt_direct(mrb_state* M,
+                                    mrb_value self,
+                                    mrb_value destination_rect,
+                                    mrb_value source,
+                                    mrb_value source_rect,
+                                    mrb_value opacity,
+                                    mrb_bool opacity_given);
+mrb_value bitmap_draw_text_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_int argc,
+                                  const mrb_value* argv);
+mrb_value bitmap_copy_blt_direct(mrb_state* M,
+                                 mrb_value self,
+                                 mrb_value x,
+                                 mrb_value y,
+                                 mrb_value source,
+                                 mrb_value source_rect);
+mrb_value bitmap_text_size_direct(mrb_state* M, mrb_value self, mrb_value text);
+mrb_value bitmap_rect_direct(mrb_state* M, mrb_value self);
+mrb_value bitmap_clear_direct(mrb_state* M, mrb_value self);
+mrb_value viewport_rect_direct(mrb_state* M, mrb_value self);
+mrb_value bitmap_width_direct(mrb_state* M, mrb_value self);
+mrb_value bitmap_height_direct(mrb_state* M, mrb_value self);
+mrb_value rect_x_direct(mrb_state* M, mrb_value self);
+mrb_value rect_y_direct(mrb_state* M, mrb_value self);
+mrb_value rect_width_direct(mrb_state* M, mrb_value self);
+mrb_value rect_height_direct(mrb_state* M, mrb_value self);
+mrb_value color_red_direct(mrb_state* M, mrb_value self);
+mrb_value color_green_direct(mrb_state* M, mrb_value self);
+mrb_value color_blue_direct(mrb_state* M, mrb_value self);
+mrb_value color_alpha_direct(mrb_state* M, mrb_value self);
+mrb_value tone_red_direct(mrb_state* M, mrb_value self);
+mrb_value tone_green_direct(mrb_state* M, mrb_value self);
+mrb_value tone_blue_direct(mrb_state* M, mrb_value self);
+mrb_value tone_gray_direct(mrb_state* M, mrb_value self);
+mrb_value disposed_direct(mrb_state* M, mrb_value self);
+mrb_value visible_direct(mrb_state* M, mrb_value self);
+mrb_value sprite_update_direct(mrb_state* M, mrb_value self);
+mrb_value viewport_update_direct(mrb_state* M, mrb_value self);
+mrb_value window_update_direct(mrb_state* M, mrb_value self);
+mrb_value dispose_direct(mrb_state* M, mrb_value self);
+mrb_value tilemap_dispose_direct(mrb_state* M, mrb_value self);
+mrb_value window_openness_set_direct(mrb_state* M,
+                                     mrb_value self,
+                                     mrb_value openness);
+mrb_value window_tone_set_direct(mrb_state* M, mrb_value self, mrb_value tone);
+mrb_value sprite_opacity_set_direct(mrb_state* M,
+                                    mrb_value self,
+                                    mrb_value opacity);
+mrb_value sprite_tone_set_direct(mrb_state* M, mrb_value self, mrb_value tone);
+mrb_value viewport_tone_set_direct(mrb_state* M,
+                                   mrb_value self,
+                                   mrb_value tone);
+// Setters and getters shared by the mrb_define_method bindings and by bc2cpp's
+// exact-class-guarded calls (tools/bc2cpp/native_direct.rb): the binding
+// unpacks mrb_get_args and forwards here, so both paths run one body. The
+// generated call site checks argument types (mrb_integer_p for mrb_int) and
+// dispatches instead on a mismatch, so coercion and TypeError stay with the
+// binding. A disposed receiver raises RGSSError exactly as the binding does.
+mrb_value object_x_set_direct(mrb_state* M, mrb_value self, mrb_int x);
+mrb_value object_y_set_direct(mrb_state* M, mrb_value self, mrb_int y);
+mrb_value object_z_set_direct(mrb_state* M, mrb_value self, mrb_int z);
+mrb_value object_visible_set_direct(mrb_state* M, mrb_value self, mrb_bool v);
+mrb_value sprite_color_set_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_value color);
+mrb_value sprite_flash_direct(mrb_state* M,
+                              mrb_value self,
+                              mrb_value color,
+                              mrb_int duration);
+mrb_value viewport_color_set_direct(mrb_state* M,
+                                    mrb_value self,
+                                    mrb_value color);
+mrb_value viewport_flash_direct(mrb_state* M,
+                                mrb_value self,
+                                mrb_value color,
+                                mrb_int duration);
+mrb_value viewport_tone_direct(mrb_state* M, mrb_value self);
+mrb_value viewport_color_direct(mrb_state* M, mrb_value self);
+mrb_value rect_x_set_direct(mrb_state* M, mrb_value self, mrb_int x);
+mrb_value rect_y_set_direct(mrb_state* M, mrb_value self, mrb_int y);
+mrb_value rect_width_set_direct(mrb_state* M, mrb_value self, mrb_int w);
+mrb_value rect_height_set_direct(mrb_state* M, mrb_value self, mrb_int h);
+// Window, Tilemap and Plane: real bodies off wio, link-only stubs on wio.
+mrb_value window_tone_direct(mrb_state* M, mrb_value self);
+mrb_value window_contents_set_direct(mrb_state* M,
+                                     mrb_value self,
+                                     mrb_value bitmap);
+mrb_value window_width_set_direct(mrb_state* M, mrb_value self, mrb_int w);
+mrb_value window_height_set_direct(mrb_state* M, mrb_value self, mrb_int h);
+mrb_value window_windowskin_set_direct(mrb_state* M,
+                                       mrb_value self,
+                                       mrb_value skin);
+mrb_value window_cursor_rect_set_direct(mrb_state* M,
+                                        mrb_value self,
+                                        mrb_value rect);
+mrb_value window_active_set_direct(mrb_state* M, mrb_value self, mrb_bool v);
+mrb_value window_pause_set_direct(mrb_state* M, mrb_value self, mrb_bool v);
+mrb_value tilemap_z_set_direct(mrb_state* M, mrb_value self, mrb_int z);
+mrb_value tilemap_visible_set_direct(mrb_state* M, mrb_value self, mrb_bool v);
+mrb_value plane_color_set_direct(mrb_state* M, mrb_value self, mrb_value color);
+mrb_value table_new_direct(mrb_state* M,
+                           RClass* klass,
+                           mrb_int argc,
+                           mrb_int x,
+                           mrb_int y,
+                           mrb_int z);
 
 }  // namespace rgss

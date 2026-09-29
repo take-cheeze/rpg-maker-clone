@@ -36,11 +36,15 @@ class ClassArgTypesTest < Minitest::Test
   # exercises ClassArgTypes' OWN logic (skip POLY, skip native, conflict ->
   # nil) without compiling a closed world.
   MethodDefStub = Struct.new(:irep, :owner, :name, keyword_init: true)
-  IrepStub = Struct.new(:label, :instructions, keyword_init: true)
-  InsnStub = Struct.new(:op, :args, keyword_init: true)
+  # A real Insn, so typed operand accessors (#reg, ...) behave as in bc2cpp.
+  InsnStub = Class.new do
+    def self.new(op:, args:)
+      Insn.new(lineno: 0, addr: 0, op: op, args: args, raw: "#{op} #{args}")
+    end
+  end
 
   def irep(label, insns)
-    IrepStub.new(label: label, instructions: insns)
+    Irep.new(label: label, instructions: insns)
   end
 
   def send_insn(dest, name, argc)
@@ -49,7 +53,7 @@ class ClassArgTypesTest < Minitest::Test
 
   def test_poly_names_are_skipped
     # Two definitions => a POLY name; its call sites may target either.
-    target = irep('t', [InsnStub.new(op: 'ENTER', args: '1:0:0')])
+    target = irep('t', [InsnStub.new(op: 'ENTER', args: '1:0:0:0:0:0:0:0 (0x0)')])
     caller = irep('c', [send_insn(0, 'thing', 1)])
     registry = { 'thing' => [MethodDefStub.new(irep: 't', owner: 'K', name: 'thing'),
                              MethodDefStub.new(irep: 't2', owner: 'L', name: 'thing')] }
@@ -64,7 +68,7 @@ class ClassArgTypesTest < Minitest::Test
   end
 
   def test_zero_mandatory_arguments_are_skipped
-    target = irep('t', [InsnStub.new(op: 'ENTER', args: '0:0:0')])
+    target = irep('t', [InsnStub.new(op: 'ENTER', args: '0:0:0:0:0:0:0:0 (0x0)')])
     registry = { 'thing' => [MethodDefStub.new(irep: 't', owner: 'K', name: 'thing')] }
     assert_empty ClassArgTypes.analyze({ 't' => target }, registry, { 't' => 'K' })
   end
@@ -72,7 +76,7 @@ class ClassArgTypesTest < Minitest::Test
   def test_arity_mismatch_call_site_is_ignored
     # A call passing 2 args to a 1-arg definition is not this method's call
     # site; counting it would read an argument register that belongs elsewhere.
-    target = irep('t', [InsnStub.new(op: 'ENTER', args: '1:0:0')])
+    target = irep('t', [InsnStub.new(op: 'ENTER', args: '1:0:0:0:0:0:0:0 (0x0)')])
     caller = irep('c', [send_insn(0, 'thing', 2)])
     registry = { 'thing' => [MethodDefStub.new(irep: 't', owner: 'K', name: 'thing')] }
     owners = { 't' => 'K', 'c' => 'C' }
@@ -85,7 +89,7 @@ class ClassArgTypesTest < Minitest::Test
     # result). That is an ABSENT fact, and the table must say so rather than
     # inventing a class -- the same rule the :nil_literal case in
     # AnnotationContradictions turned on.
-    target = irep('t', [InsnStub.new(op: 'ENTER', args: '1:0:0')])
+    target = irep('t', [InsnStub.new(op: 'ENTER', args: '1:0:0:0:0:0:0:0 (0x0)')])
     caller = irep('c', [
                     send_insn(0, 'thing', 1),
                     InsnStub.new(op: 'SEND0', args: "R1\t:mystery")

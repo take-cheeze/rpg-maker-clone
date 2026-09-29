@@ -32,10 +32,10 @@ module RGSS
     # the report on its own.
     MAX_LINE_CHARS = 500
 
-    # Forwards every write to the real $stderr and records whole lines. Only the
-    # writing methods are spelled out; anything else a caller expects of an IO
-    # (flush, sync, fileno, tty?, ...) is delegated, so this stands in for
-    # $stderr without pretending to be a full IO.
+    # Forwards every write to the real $stderr and records whole lines. The
+    # only non-write operation this wrapper needs is `flush`; keeping that
+    # surface finite lets bc2cpp's closed-world analysis reject arbitrary
+    # method_missing forwarding instead of retaining a dispatch at every site.
     class Tee
       attr_reader :io
 
@@ -64,12 +64,8 @@ module RGSS
         self
       end
 
-      def method_missing(name, *args, &block)
-        @io.__send__(name, *args, &block)
-      end
-
-      def respond_to_missing?(name, include_private = false)
-        @io.respond_to?(name, include_private)
+      def flush
+        @io.flush
       end
     end
 
@@ -100,6 +96,7 @@ module RGSS
     def self.install
       return false if @installed
       @installed = true
+      # rpg2k-lint:allow Dynamic/GlobalVariableReassignment -- guarded singleton install wraps stderr only once
       $stderr = Tee.new($stderr)
       true
     end

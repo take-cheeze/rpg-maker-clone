@@ -63,7 +63,11 @@ fixture methods with the callee probed first and not probed first, and requires
 identical code with no `#error` and a `break` that still throws. The old code
 fails 8 of its assertions.
 
-### Game::State embedding stays as it was
+### Game::State embedding cap (superseded by ADR 0232)
+
+The limit below was lifted by ADR 0232 after ivar storage changed to GC-traced
+`mrb_value` slots. The original reasoning remains here as the context for that
+decision.
 
 With correct memos, `drop_unsafe_embeddings` would embed 18 more `Game::State`
 ivars (`map_id`, `x`, `y`, `direction`, the access flags, the battle counters,

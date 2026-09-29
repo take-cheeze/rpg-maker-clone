@@ -1,0 +1,1 @@
+- **bc2cpp** now replaces `RGSS::ErrorReport::Tee`'s dynamic `method_missing` forwarding with explicit `flush` delegation, allowing closed-world builds to remove fallback dispatch from receivers that the Tee can no longer answer dynamically.

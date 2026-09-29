@@ -239,6 +239,12 @@ function(rpg2k_add_mruby)
   set(mruby_gc_type_counts_patch
       "${ARG_REPO_ROOT}/patches/mruby-gc-type-live-counts.patch")
 
+  # RData payloads used by bc2cpp carry statically named Ruby ivars outside
+  # iv_tbl. This patch makes lookup, enumeration, copying and GC marking aware
+  # of the slots; dynamic ivars still use the ordinary table.
+  set(mruby_rdata_ivar_slots_patch
+      "${ARG_REPO_ROOT}/patches/mruby-rdata-ivar-slots.patch")
+
   # Vendored mruby-io's file.c unconditionally uses MAXPATHLEN (a `char
   # buf[MAXPATHLEN]` in path_getwd, backing Dir.getwd/File.expand_path) after
   # `#include <sys/param.h>` on every non-Windows target -- true on glibc and
@@ -254,6 +260,11 @@ function(rpg2k_add_mruby)
   # mruby/mruby this project controls).
   set(mruby_io_maxpathlen_patch
       "${ARG_REPO_ROOT}/patches/mruby-io-maxpathlen-fallback.patch")
+
+  # bc2cpp supplies explicit argv, so this patch adds a guarded helper that
+  # bypasses IO#puts' VM-frame argument extraction.
+  set(mruby_io_direct_puts_patch
+      "${ARG_REPO_ROOT}/patches/mruby-io-direct-puts.patch")
 
   # 3rd/mruby-stringio's StringIO has no native `getbyte` -- mruby's own
   # `IO`/`File` does (mruby-io's io_getbyte, a bare Integer with no allocation),
@@ -344,7 +355,9 @@ function(rpg2k_add_mruby)
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_parser_dump_back_nth_ref_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_nomem_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_gc_type_counts_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_rdata_ivar_slots_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_maxpathlen_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_direct_puts_patch}")
   rpg2k_mruby_patch("${mruby_stringio_prefix}"
                     "${mruby_stringio_getbyte_patch}")
   rpg2k_mruby_patch("${mruby_marshal_prefix}" "${mruby_marshal_onigmo_patch}")

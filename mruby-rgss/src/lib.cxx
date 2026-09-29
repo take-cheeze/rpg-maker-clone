@@ -21,6 +21,7 @@
 
 #include "default_font.hxx"
 #include "profiler.hxx"
+#include "rgss_construct.hxx"
 #include "shinonome.hxx"
 
 #include <algorithm>
@@ -681,6 +682,11 @@ RClass* g_native_color_class = nullptr;
 RClass* g_native_tone_class = nullptr;
 RClass* g_native_sprite_class = nullptr;
 RClass* g_native_bitmap_class = nullptr;
+RClass* g_native_table_class = nullptr;
+RClass* g_native_window_class = nullptr;
+RClass* g_native_viewport_class = nullptr;
+RClass* g_native_plane_class = nullptr;
+RClass* g_native_tilemap_class = nullptr;
 }  // namespace
 
 // The bc2cpp direct-construct entry points (rgss::rect/color/tone/sprite/
@@ -742,16 +748,24 @@ long table_index(const Table& t, mrb_int x, mrb_int y, mrb_int z) {
   return x + y * (long)t.xsize + z * (long)t.xsize * t.ysize;
 }
 
-mrb_value table_init(mrb_state* M, V self) {
-  mrb_int a, b = 1, c = 1;
-  mrb_get_args(M, "i|ii", &a, &b, &c);
-  mrb_int argc = mrb_get_argc(M);
-  Table& t = DataType<Table>::alloc_obj(M, self);
+void table_initialize_fields(Table& t,
+                             mrb_int argc,
+                             mrb_int a,
+                             mrb_int b,
+                             mrb_int c) {
   t.dim = argc;
   t.xsize = a;
   t.ysize = argc >= 2 ? b : 1;
   t.zsize = argc >= 3 ? c : 1;
   t.data.assign((size_t)t.xsize * t.ysize * t.zsize, 0);
+}
+
+mrb_value table_init(mrb_state* M, V self) {
+  mrb_int a, b = 1, c = 1;
+  mrb_get_args(M, "i|ii", &a, &b, &c);
+  mrb_int argc = mrb_get_argc(M);
+  Table& t = DataType<Table>::alloc_obj(M, self);
+  table_initialize_fields(t, argc, a, b, c);
   return self;
 }
 
@@ -1831,6 +1845,9 @@ mrb_value bmp_fill_rect(mrb_state* M, V self) {
     h = rc.height;
   } else {
     mrb_get_args(M, "iiiio", &x, &y, &w, &h, &col);
+    return rgss::bitmap_fill_rect_direct(
+        M, self, mrb_int_value(M, x), mrb_int_value(M, y), mrb_int_value(M, w),
+        mrb_int_value(M, h), col);
   }
   Color& c = DataType<Color>::get(M, col);
   for (mrb_int j = y; j < y + h; ++j)
@@ -2272,21 +2289,13 @@ static void blt_pixels(Bitmap& dst,
 
 mrb_value bmp_blt(mrb_state* M, V self) {
   mrb_int x, y;
-  void* src;
+  V src;
   V srect;
   mrb_int opacity = 255;
-  mrb_get_args(M, "iido|i", &x, &y, &src, &DataType<Bitmap>::data_type, &srect,
-               &opacity);
-  Bitmap& dst = bmp_self(M, self);
-  Bitmap& sb = bmp_require(M, src);
-  Rect& rc = DataType<Rect>::get(M, srect);
-  if (opacity < 0)
-    opacity = 0;
-  if (opacity > 255)
-    opacity = 255;
-  blt_pixels(dst, sb, x, y, rc, opacity);
-  dst.dirty = true;
-  return self;
+  mrb_get_args(M, "iioo|i", &x, &y, &src, &srect, &opacity);
+  return rgss::bitmap_blt_direct(
+      M, self, mrb_int_value(M, x), mrb_int_value(M, y), src, srect,
+      mrb_int_value(M, opacity), mrb_get_argc(M) == 5);
 }
 
 // Bitmap#blt_quads(x, y, src, quads) -- #blt for a batch of source rects in
@@ -2360,11 +2369,12 @@ mrb_value bmp_blt_quads(mrb_state* M, V self) {
 // frame, 336x256 pixels twice, and through #blt's per-pixel read/blend/write
 // that measured ~5ms per frame -- a third of the engine's entire 16.67ms
 // budget spent blending pixels onto transparency. Row-wise, it is a memcpy.
-mrb_value bmp_copy_blt(mrb_state* M, V self) {
-  mrb_int x, y;
-  void* src;
-  V srect;
-  mrb_get_args(M, "iido", &x, &y, &src, &DataType<Bitmap>::data_type, &srect);
+mrb_value bmp_copy_blt_body(mrb_state* M,
+                            V self,
+                            mrb_int x,
+                            mrb_int y,
+                            void* src,
+                            V srect) {
   Bitmap& dst = bmp_self(M, self);
   Bitmap& sb = bmp_require(M, src);
   Rect& rc = DataType<Rect>::get(M, srect);
@@ -2427,16 +2437,44 @@ mrb_value bmp_copy_blt(mrb_state* M, V self) {
   return self;
 }
 
+mrb_value bmp_copy_blt(mrb_state* M, V self) {
+  mrb_int x, y;
+  void* src;
+  V srect;
+  mrb_get_args(M, "iido", &x, &y, &src, &DataType<Bitmap>::data_type, &srect);
+  return bmp_copy_blt_body(M, self, x, y, src, srect);
+}
+
 // Copy src_rect from `src` into dest_rect of self, scaling with nearest
 // neighbour sampling. Mirrors RGSS's Bitmap#stretch_blt and is used to stretch
 // the small windowskin pieces (32x32 background, 16x8/8x16 border edges) over
 // an arbitrarily sized window.
+mrb_value bmp_stretch_blt_body(mrb_state* M,
+                               mrb_value self,
+                               mrb_value drect_v,
+                               void* src,
+                               mrb_value srect_v,
+                               mrb_value opacity_value,
+                               mrb_bool opacity_given);
+
 mrb_value bmp_stretch_blt(mrb_state* M, V self) {
   V drect_v, srect_v;
   void* src;
   mrb_int opacity = 255;
   mrb_get_args(M, "odo|i", &drect_v, &src, &DataType<Bitmap>::data_type,
                &srect_v, &opacity);
+  return bmp_stretch_blt_body(M, self, drect_v, src, srect_v,
+                              mrb_int_value(M, opacity), mrb_get_argc(M) == 4);
+}
+
+mrb_value bmp_stretch_blt_body(mrb_state* M,
+                               mrb_value self,
+                               mrb_value drect_v,
+                               void* src,
+                               mrb_value srect_v,
+                               mrb_value opacity_value,
+                               mrb_bool opacity_given) {
+  mrb_int opacity = opacity_given ? mrb_as_int(M, opacity_value) : 255;
   Bitmap& dst = bmp_self(M, self);
   Bitmap& sb = bmp_require(M, src);
   Rect& dr = DataType<Rect>::get(M, drect_v);
@@ -3284,6 +3322,15 @@ mrb_int shinonome_text_top(mrb_int y, mrb_int h) {
   return y + (h - static_cast<mrb_int>(shinonome::HEIGHT)) / 2;
 }
 
+mrb_value bmp_draw_text_body(mrb_state* M,
+                             mrb_value self,
+                             mrb_int x,
+                             mrb_int y,
+                             mrb_int w,
+                             mrb_int h,
+                             mrb_value text_obj,
+                             mrb_int align);
+
 // RGSS Bitmap#draw_text, in both the forms RGSS documents:
 //
 //   draw_text(x, y, width, height, str[, align])
@@ -3295,8 +3342,6 @@ mrb_int shinonome_text_top(mrb_int y, mrb_int h) {
 // "wrong number of arguments (given 2, expected 5..6)". Same argc branch as
 // #fill_rect, which RGSS overloads the same way.
 mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
-  auto& bmp = bmp_self(M, self);
-
   // Real RGSS3 accepts any object as the text argument, not just a String --
   // games routinely draw_text an Integer directly (HP/MP/gold: this game's
   // own stock Window_Gold#refresh -> #draw_currency_value among them),
@@ -3321,6 +3366,18 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   } else {
     mrb_get_args(M, "iiiio|i", &x, &y, &w, &h, &text_obj, &align);
   }
+  return bmp_draw_text_body(M, self, x, y, w, h, text_obj, align);
+}
+
+mrb_value bmp_draw_text_body(mrb_state* M,
+                             mrb_value self,
+                             mrb_int x,
+                             mrb_int y,
+                             mrb_int w,
+                             mrb_int h,
+                             mrb_value text_obj,
+                             mrb_int align) {
+  auto& bmp = bmp_self(M, self);
   if (!mrb_string_p(text_obj)) {
     text_obj = mrb_obj_as_string(M, text_obj);
   }
@@ -3478,10 +3535,10 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
   return self;
 }
 
-mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
-  mrb_int len;
-  const char* s;
-  mrb_get_args(M, "s", &s, &len);
+mrb_value bmp_text_size_body(mrb_state* M,
+                             mrb_value self,
+                             const char* s,
+                             mrb_int len) {
   const std::string_view sv(s, len);
 
   int w = 0;
@@ -3507,6 +3564,13 @@ mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
 
   return mrb_obj_new(
       M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
+}
+
+mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
+  mrb_int len;
+  const char* s;
+  mrb_get_args(M, "s", &s, &len);
+  return bmp_text_size_body(M, self, s, len);
 }
 
 // RGSS #disposed?: whether #dispose has already run. The data pointer is
@@ -4195,10 +4259,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
 mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
   mrb_value bmp;
   mrb_get_args(M, "o", &bmp);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bmp);
-  lv_obj_t* obj = obj_require(M, self);
-  spr_bind_display(M, self, obj);
-  return bmp;
+  return rgss::sprite_bitmap_set_direct(M, self, bmp);
 }
 
 // RGSS Sprite#opacity= (0..255). The Sprite's native handle is an lv_canvas,
@@ -4207,9 +4268,15 @@ mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
 // is clamped and mirrored into @opacity so the Ruby reader (defaulting to 255)
 // returns what was set. A fresh sprite needs no explicit call: LVGL's default
 // object opacity is fully opaque, matching RGSS's 255 default.
+mrb_value spr_set_opacity_body(mrb_state* M, mrb_value self, mrb_int opa);
+
 mrb_value spr_set_opacity(mrb_state* M, mrb_value self) {
   mrb_int opa;
   mrb_get_args(M, "i", &opa);
+  return spr_set_opacity_body(M, self, opa);
+}
+
+mrb_value spr_set_opacity_body(mrb_state* M, mrb_value self, mrb_int opa) {
   if (opa < 0)
     opa = 0;
   else if (opa > 255)
@@ -4297,9 +4364,15 @@ mrb_value spr_set_mirror(mrb_state* M, mrb_value self) {
 
 // RGSS Sprite#tone= (a Tone tint) and #color= (a Color overlay). Both are baked
 // into the sprite's pixels by spr_bind_display, so assigning one re-composites.
+mrb_value spr_set_tone_body(mrb_state* M, mrb_value self, mrb_value v);
+
 mrb_value spr_set_tone(mrb_state* M, mrb_value self) {
   mrb_value v;
   mrb_get_args(M, "o", &v);
+  return spr_set_tone_body(M, self, v);
+}
+
+mrb_value spr_set_tone_body(mrb_state* M, mrb_value self, mrb_value v) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), v);
   lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
@@ -4309,10 +4382,7 @@ mrb_value spr_set_tone(mrb_state* M, mrb_value self) {
 mrb_value spr_set_color(mrb_state* M, mrb_value self) {
   mrb_value v;
   mrb_get_args(M, "o", &v);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
-  lv_obj_t* obj = obj_require(M, self);
-  spr_bind_display(M, self, obj);
-  return v;
+  return rgss::sprite_color_set_direct(M, self, v);
 }
 
 // RGSS Sprite#src_rect= displays only a sub-rectangle of the bitmap.
@@ -4396,51 +4466,25 @@ mrb_value spr_flash(mrb_state* M, mrb_value self) {
   mrb_value color;
   mrb_int duration;
   mrb_get_args(M, "oi", &color, &duration);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
-             mrb_fixnum_value(duration));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
-             mrb_fixnum_value(duration));
-  lv_obj_t* obj = obj_require(M, self);
-  spr_bind_display(M, self, obj);
-  return mrb_nil_value();
+  return rgss::sprite_flash_direct(M, self, color, duration);
 }
 
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
-  lv_obj_t* obj = obj_require(M, self);
-  // Same-value skip: render code repositions sprites every frame (the player
-  // tracks the camera whether or not it moved) and LVGL's setter invalidates
-  // without comparing. The mirrored ivar is authoritative -- every write
-  // passes through here.
-  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@x"));
-  if (!mrb_fixnum_p(cur) || mrb_fixnum(cur) != x) {
-    lv_obj_set_x(obj, x);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@x"), mrb_fixnum_value(x));
-  }
-  return self;
+  return rgss::object_x_set_direct(M, self, x);
 }
 
 mrb_value obj_set_y(mrb_state* M, mrb_value self) {
   mrb_int y;
   mrb_get_args(M, "i", &y);
-  lv_obj_t* obj = obj_require(M, self);
-  // Same-value skip, see obj_set_x.
-  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@y"));
-  if (!mrb_fixnum_p(cur) || mrb_fixnum(cur) != y) {
-    lv_obj_set_y(obj, y);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@y"), mrb_fixnum_value(y));
-  }
-  return self;
+  return rgss::object_y_set_direct(M, self, y);
 }
 
 mrb_value obj_set_z(mrb_state* M, mrb_value self) {
   mrb_int z;
   mrb_get_args(M, "i", &z);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@z"), mrb_fixnum_value(z));
-  update_z(M);
-  return self;
+  return rgss::object_z_set_direct(M, self, z);
 }
 
 // Shared visible= for Sprite and Viewport: LVGL's HIDDEN flag also hides the
@@ -4448,20 +4492,7 @@ mrb_value obj_set_z(mrb_state* M, mrb_value self) {
 mrb_value obj_set_visible(mrb_state* M, mrb_value self) {
   mrb_bool v;
   mrb_get_args(M, "b", &v);
-  lv_obj_t* obj = obj_require(M, self);
-  // Same-value skip, see obj_set_x: visibility is re-asserted every frame by
-  // several draw paths (pictures, vehicles, the battle gate). An unset ivar
-  // (fresh sprite) must apply: LVGL objects start visible, and nil here means
-  // "never poked", not "hidden".
-  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@visible"));
-  if (mrb_nil_p(cur) || mrb_test(cur) != v) {
-    if (v)
-      lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    else
-      lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
-  }
-  return self;
+  return rgss::object_visible_set_direct(M, self, v);
 }
 
 mrb_value obj_visible(mrb_state* M, mrb_value self) {
@@ -4653,9 +4684,7 @@ mrb_value plane_set_tone(mrb_state* M, mrb_value self) {
 mrb_value plane_set_color(mrb_state* M, mrb_value self) {
   mrb_value v;
   mrb_get_args(M, "o", &v);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
-  plane_retile(M, self);
-  return v;
+  return rgss::plane_color_set_direct(M, self, v);
 }
 
 // Plane#zoom_x= / #zoom_y= scale the tiled pattern; plane_retile samples the
@@ -5843,23 +5872,7 @@ mrb_value tilemap_vx_table_leg_quads(mrb_state* M, mrb_value self) {
 mrb_value tilemap_set_visible(mrb_state* M, mrb_value self) {
   mrb_bool v;
   mrb_get_args(M, "b", &v);
-  lv_obj_t* obj = obj_require(M, self);
-  const mrb_value above =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
-  lv_obj_t* al = (mrb_test(above) && DATA_PTR(above))
-                     ? reinterpret_cast<lv_obj_t*>(DATA_PTR(above))
-                     : nullptr;
-  if (v) {
-    lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    if (al)
-      lv_obj_remove_flag(al, LV_OBJ_FLAG_HIDDEN);
-  } else {
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    if (al)
-      lv_obj_add_flag(al, LV_OBJ_FLAG_HIDDEN);
-  }
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
-  return self;
+  return rgss::tilemap_visible_set_direct(M, self, v);
 }
 
 // Sets the tilemap's own z and keeps the priority "above" layer pinned
@@ -5875,14 +5888,7 @@ mrb_value tilemap_set_visible(mrb_state* M, mrb_value self) {
 mrb_value tilemap_set_z(mrb_state* M, mrb_value self) {
   mrb_int z;
   mrb_get_args(M, "i", &z);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@z"), mrb_fixnum_value(z));
-  const mrb_value above =
-      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
-  if (mrb_test(above))
-    mrb_iv_set(M, above, mrb_intern_lit(M, "@z"),
-               mrb_fixnum_value(z + TILEMAP_ABOVE_Z));
-  update_z(M);
-  return self;
+  return rgss::tilemap_z_set_direct(M, self, z);
 }
 
 // Real RGSS treats `ox`/`oy` as a cheap, hardware-composited draw offset --
@@ -6386,25 +6392,19 @@ mrb_value window_init(mrb_state* M, mrb_value self) {
 mrb_value window_set_contents(mrb_state* M, mrb_value self) {
   mrb_value bmp;
   mrb_get_args(M, "o", &bmp);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents"), bmp);
-  window_refresh(M, self);
-  return bmp;
+  return rgss::window_contents_set_direct(M, self, bmp);
 }
 
 mrb_value window_set_width(mrb_state* M, mrb_value self) {
   mrb_int v;
   mrb_get_args(M, "i", &v);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@width"), mrb_fixnum_value(v));
-  window_refresh(M, self);
-  return self;
+  return rgss::window_width_set_direct(M, self, v);
 }
 
 mrb_value window_set_height(mrb_state* M, mrb_value self) {
   mrb_int v;
   mrb_get_args(M, "i", &v);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@height"), mrb_fixnum_value(v));
-  window_refresh(M, self);
-  return self;
+  return rgss::window_height_set_direct(M, self, v);
 }
 
 mrb_value window_set_ox(mrb_state* M, mrb_value self) {
@@ -6435,9 +6435,7 @@ mrb_value window_set_contents_opacity(mrb_state* M, mrb_value self) {
 mrb_value window_set_skin(mrb_state* M, mrb_value self) {
   mrb_value v;
   mrb_get_args(M, "o", &v);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@windowskin"), v);
-  window_refresh(M, self);
-  return v;
+  return rgss::window_windowskin_set_direct(M, self, v);
 }
 
 mrb_value window_set_opacity(mrb_state* M, mrb_value self) {
@@ -6459,25 +6457,19 @@ mrb_value window_set_back_opacity(mrb_state* M, mrb_value self) {
 mrb_value window_set_cursor_rect(mrb_state* M, mrb_value self) {
   mrb_value v;
   mrb_get_args(M, "o", &v);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@cursor_rect"), v);
-  window_refresh(M, self);
-  return v;
+  return rgss::window_cursor_rect_set_direct(M, self, v);
 }
 
 mrb_value window_set_active(mrb_state* M, mrb_value self) {
   mrb_bool v;
   mrb_get_args(M, "b", &v);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@active"), mrb_bool_value(v));
-  window_refresh(M, self);
-  return self;
+  return rgss::window_active_set_direct(M, self, v);
 }
 
 mrb_value window_set_pause(mrb_state* M, mrb_value self) {
   mrb_bool v;
   mrb_get_args(M, "b", &v);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@pause"), mrb_bool_value(v));
-  window_refresh(M, self);
-  return self;
+  return rgss::window_pause_set_direct(M, self, v);
 }
 
 mrb_value window_set_stretch(mrb_state* M, mrb_value self) {
@@ -6518,9 +6510,15 @@ double vp_tone_key(const Tone& t);
 // plain state because assigning it has to redraw -- the frame is drawn at a
 // fraction of its height (see window_refresh), which *is* the open/close
 // animation. `Window_Base#open` steps this by 48 a frame.
+mrb_value window_set_openness_body(mrb_state* M, mrb_value self, mrb_int v);
+
 mrb_value window_set_openness(mrb_state* M, mrb_value self) {
   mrb_int v;
   mrb_get_args(M, "i", &v);
+  return window_set_openness_body(M, self, v);
+}
+
+mrb_value window_set_openness_body(mrb_state* M, mrb_value self, mrb_int v) {
   v = std::min<mrb_int>(255, std::max<mrb_int>(0, v));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@openness"), mrb_fixnum_value(v));
   window_refresh(M, self);
@@ -6541,9 +6539,15 @@ mrb_value window_tone(mrb_state* M, mrb_value self) {
   return t;
 }
 
+mrb_value window_set_tone_body(mrb_state* M, mrb_value self, mrb_value t);
+
 mrb_value window_set_tone(mrb_state* M, mrb_value self) {
   mrb_value t;
   mrb_get_args(M, "o", &t);
+  return window_set_tone_body(M, self, t);
+}
+
+mrb_value window_set_tone_body(mrb_state* M, mrb_value self, mrb_value t) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
   window_refresh(M, self);
   return t;
@@ -6928,9 +6932,15 @@ mrb_value vp_tone(mrb_state* M, mrb_value self) {
   return t;
 }
 
+mrb_value vp_set_tone_body(mrb_state* M, mrb_value self, mrb_value t);
+
 mrb_value vp_set_tone(mrb_state* M, mrb_value self) {
   mrb_value t;
   mrb_get_args(M, "o", &t);
+  return vp_set_tone_body(M, self, t);
+}
+
+mrb_value vp_set_tone_body(mrb_state* M, mrb_value self, mrb_value t) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
   vp_sync_tone(M, self);
   return t;
@@ -6951,9 +6961,7 @@ mrb_value vp_color(mrb_state* M, mrb_value self) {
 mrb_value vp_set_color(mrb_state* M, mrb_value self) {
   mrb_value c;
   mrb_get_args(M, "o", &c);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), c);
-  vp_refresh_overlay(M, self);
-  return c;
+  return rgss::viewport_color_set_direct(M, self, c);
 }
 
 // Viewport#flash(color, duration): show `color` over the viewport, fading out
@@ -6963,13 +6971,7 @@ mrb_value vp_flash(mrb_state* M, mrb_value self) {
   mrb_value color;
   mrb_int duration;
   mrb_get_args(M, "oi", &color, &duration);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
-             mrb_fixnum_value(duration));
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
-             mrb_fixnum_value(mrb_nil_p(color) ? 0 : duration));
-  vp_refresh_overlay(M, self);
-  return mrb_nil_value();
+  return rgss::viewport_flash_direct(M, self, color, duration);
 }
 
 // One frame: advance a running flash and repaint the overlay from the current
@@ -7033,34 +7035,26 @@ void define_rect(mrb_state* M, RClass* m) {
       MRB_ARGS_NONE());
   mrb_define_method(
       M, rect, "x",
-      [](mrb_state* M, V self) {
-        return mrb_fixnum_value(DataType<Rect>::get(M, self).x);
-      },
+      [](mrb_state* M, V self) { return rgss::rect_x_direct(M, self); },
       MRB_ARGS_NONE());
   mrb_define_method(
       M, rect, "y",
-      [](mrb_state* M, V self) {
-        return mrb_fixnum_value(DataType<Rect>::get(M, self).y);
-      },
+      [](mrb_state* M, V self) { return rgss::rect_y_direct(M, self); },
       MRB_ARGS_NONE());
   mrb_define_method(
       M, rect, "width",
-      [](mrb_state* M, V self) {
-        return mrb_fixnum_value(DataType<Rect>::get(M, self).width);
-      },
+      [](mrb_state* M, V self) { return rgss::rect_width_direct(M, self); },
       MRB_ARGS_NONE());
   mrb_define_method(
       M, rect, "height",
-      [](mrb_state* M, V self) {
-        return mrb_fixnum_value(DataType<Rect>::get(M, self).height);
-      },
+      [](mrb_state* M, V self) { return rgss::rect_height_direct(M, self); },
       MRB_ARGS_NONE());
   mrb_define_method(
       M, rect, "x=",
       [](mrb_state* M, V self) {
         mrb_int x;
         mrb_get_args(M, "i", &x);
-        return mrb_fixnum_value(DataType<Rect>::get(M, self).x = x);
+        return rgss::rect_x_set_direct(M, self, x);
       },
       MRB_ARGS_REQ(1));
   mrb_define_method(
@@ -7068,7 +7062,7 @@ void define_rect(mrb_state* M, RClass* m) {
       [](mrb_state* M, V self) {
         mrb_int x;
         mrb_get_args(M, "i", &x);
-        return mrb_fixnum_value(DataType<Rect>::get(M, self).y = x);
+        return rgss::rect_y_set_direct(M, self, x);
       },
       MRB_ARGS_REQ(1));
   mrb_define_method(
@@ -7076,7 +7070,7 @@ void define_rect(mrb_state* M, RClass* m) {
       [](mrb_state* M, V self) {
         mrb_int x;
         mrb_get_args(M, "i", &x);
-        return mrb_fixnum_value(DataType<Rect>::get(M, self).width = x);
+        return rgss::rect_width_set_direct(M, self, x);
       },
       MRB_ARGS_REQ(1));
   mrb_define_method(
@@ -7084,7 +7078,7 @@ void define_rect(mrb_state* M, RClass* m) {
       [](mrb_state* M, V self) {
         mrb_int x;
         mrb_get_args(M, "i", &x);
-        return mrb_fixnum_value(DataType<Rect>::get(M, self).height = x);
+        return rgss::rect_height_set_direct(M, self, x);
       },
       MRB_ARGS_REQ(1));
   mrb_define_method(
@@ -7234,6 +7228,109 @@ RClass* native_sprite_class(void) {
 RClass* native_bitmap_class(void) {
   return g_native_bitmap_class;
 }
+RClass* native_table_class(void) {
+  return g_native_table_class;
+}
+RClass* native_window_class(void) {
+  return g_native_window_class;
+}
+RClass* native_viewport_class(void) {
+  return g_native_viewport_class;
+}
+RClass* native_plane_class(void) {
+  return g_native_plane_class;
+}
+RClass* native_tilemap_class(void) {
+  return g_native_tilemap_class;
+}
+
+mrb_value bitmap_width_direct(mrb_state* M, mrb_value self) {
+  return bmp_width(M, self);
+}
+
+mrb_value bitmap_rect_direct(mrb_state* M, mrb_value self) {
+  return bmp_rect(M, self);
+}
+
+mrb_value bitmap_clear_direct(mrb_state* M, mrb_value self) {
+  return bmp_clear(M, self);
+}
+
+mrb_value viewport_rect_direct(mrb_state* M, mrb_value self) {
+  return vp_rect(M, self);
+}
+
+mrb_value bitmap_height_direct(mrb_state* M, mrb_value self) {
+  return bmp_height(M, self);
+}
+
+mrb_value rect_x_direct(mrb_state* M, mrb_value self) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).x);
+}
+
+mrb_value rect_y_direct(mrb_state* M, mrb_value self) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).y);
+}
+
+mrb_value rect_width_direct(mrb_state* M, mrb_value self) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).width);
+}
+
+mrb_value rect_height_direct(mrb_state* M, mrb_value self) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).height);
+}
+
+mrb_value color_red_direct(mrb_state* M, mrb_value self) {
+  return component_get<Color, &Color::red>(M, self);
+}
+
+mrb_value color_green_direct(mrb_state* M, mrb_value self) {
+  return component_get<Color, &Color::green>(M, self);
+}
+
+mrb_value color_blue_direct(mrb_state* M, mrb_value self) {
+  return component_get<Color, &Color::blue>(M, self);
+}
+
+mrb_value color_alpha_direct(mrb_state* M, mrb_value self) {
+  return component_get<Color, &Color::alpha>(M, self);
+}
+
+mrb_value tone_red_direct(mrb_state* M, mrb_value self) {
+  return component_get<Tone, &Tone::red>(M, self);
+}
+
+mrb_value tone_green_direct(mrb_state* M, mrb_value self) {
+  return component_get<Tone, &Tone::green>(M, self);
+}
+
+mrb_value tone_blue_direct(mrb_state* M, mrb_value self) {
+  return component_get<Tone, &Tone::blue>(M, self);
+}
+
+mrb_value tone_gray_direct(mrb_state* M, mrb_value self) {
+  return component_get<Tone, &Tone::gray>(M, self);
+}
+
+mrb_value disposed_direct(mrb_state* M, mrb_value self) {
+  return obj_disposed(M, self);
+}
+
+mrb_value visible_direct(mrb_state* M, mrb_value self) {
+  return obj_visible(M, self);
+}
+
+mrb_value sprite_update_direct(mrb_state* M, mrb_value self) {
+  return spr_update(M, self);
+}
+
+mrb_value viewport_update_direct(mrb_state* M, mrb_value self) {
+  return vp_update(M, self);
+}
+
+mrb_value dispose_direct(mrb_state* M, mrb_value self) {
+  return obj_dispose(M, self);
+}
 
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
   mrb_value self = mrb_obj_value(mrb_obj_alloc(M, MRB_TT_DATA, klass));
@@ -7260,6 +7357,432 @@ mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
 // String-branch-only affair, never touched here.
 mrb_value bitmap_new_direct(mrb_state* M, RClass* klass, mrb_int w, mrb_int h) {
   return DataType<Bitmap>::make(M, klass, w, h, LV_COLOR_FORMAT_ARGB8888);
+}
+
+mrb_value sprite_bitmap_set_direct(mrb_state* M,
+                                   mrb_value self,
+                                   mrb_value bitmap) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bitmap);
+  lv_obj_t* obj = obj_require(M, self);
+  spr_bind_display(M, self, obj);
+  return bitmap;
+}
+
+mrb_value bitmap_fill_rect_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_value x_value,
+                                  mrb_value y_value,
+                                  mrb_value w_value,
+                                  mrb_value h_value,
+                                  mrb_value color) {
+  const mrb_int x = mrb_as_int(M, x_value);
+  const mrb_int y = mrb_as_int(M, y_value);
+  const mrb_int w = mrb_as_int(M, w_value);
+  const mrb_int h = mrb_as_int(M, h_value);
+  Bitmap& b = bmp_self(M, self);
+  Color& c = DataType<Color>::get(M, color);
+  for (mrb_int j = y; j < y + h; ++j)
+    for (mrb_int i = x; i < x + w; ++i)
+      bmp_put(b, i, j, c.red, c.green, c.blue, c.alpha);
+  b.dirty = true;
+  return self;
+}
+
+mrb_value bitmap_blt_direct(mrb_state* M,
+                            mrb_value self,
+                            mrb_value x_value,
+                            mrb_value y_value,
+                            mrb_value source,
+                            mrb_value source_rect,
+                            mrb_value opacity_value,
+                            mrb_bool opacity_given) {
+  const mrb_int x = mrb_as_int(M, x_value);
+  const mrb_int y = mrb_as_int(M, y_value);
+  void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
+  Bitmap& dst = bmp_self(M, self);
+  Bitmap& src = bmp_require(M, source_data);
+  Rect& rc = DataType<Rect>::get(M, source_rect);
+  mrb_int opacity = opacity_given ? mrb_as_int(M, opacity_value) : 255;
+  if (opacity < 0)
+    opacity = 0;
+  if (opacity > 255)
+    opacity = 255;
+  blt_pixels(dst, src, x, y, rc, opacity);
+  dst.dirty = true;
+  return self;
+}
+
+mrb_value bitmap_stretch_blt_direct(mrb_state* M,
+                                    mrb_value self,
+                                    mrb_value destination_rect,
+                                    mrb_value source,
+                                    mrb_value source_rect,
+                                    mrb_value opacity,
+                                    mrb_bool opacity_given) {
+  void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
+  return bmp_stretch_blt_body(M, self, destination_rect, source_data,
+                              source_rect, opacity, opacity_given);
+}
+
+mrb_value bitmap_draw_text_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_int argc,
+                                  const mrb_value* argv) {
+  mrb_int x, y, w, h, align = 0;
+  mrb_value text;
+  if (argc <= 3) {
+    Rect& rect = DataType<Rect>::get(M, argv[0]);
+    x = rect.x;
+    y = rect.y;
+    w = rect.width;
+    h = rect.height;
+    text = argv[1];
+    if (argc == 3)
+      align = mrb_as_int(M, argv[2]);
+  } else {
+    x = mrb_as_int(M, argv[0]);
+    y = mrb_as_int(M, argv[1]);
+    w = mrb_as_int(M, argv[2]);
+    h = mrb_as_int(M, argv[3]);
+    text = argv[4];
+    if (argc == 6)
+      align = mrb_as_int(M, argv[5]);
+  }
+  return bmp_draw_text_body(M, self, x, y, w, h, text, align);
+}
+
+mrb_value bitmap_copy_blt_direct(mrb_state* M,
+                                 mrb_value self,
+                                 mrb_value x,
+                                 mrb_value y,
+                                 mrb_value source,
+                                 mrb_value source_rect) {
+  mrb_int dx = mrb_as_int(M, x);
+  mrb_int dy = mrb_as_int(M, y);
+  void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
+  return bmp_copy_blt_body(M, self, dx, dy, source_data, source_rect);
+}
+
+mrb_value bitmap_text_size_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_value text) {
+  text = mrb_ensure_string_type(M, text);
+  return bmp_text_size_body(M, self, RSTRING_PTR(text), RSTRING_LEN(text));
+}
+
+mrb_value sprite_opacity_set_direct(mrb_state* M,
+                                    mrb_value self,
+                                    mrb_value opacity) {
+  return spr_set_opacity_body(M, self, mrb_as_int(M, opacity));
+}
+
+mrb_value sprite_tone_set_direct(mrb_state* M, mrb_value self, mrb_value tone) {
+  return spr_set_tone_body(M, self, tone);
+}
+
+mrb_value viewport_tone_set_direct(mrb_state* M,
+                                   mrb_value self,
+                                   mrb_value tone) {
+  return vp_set_tone_body(M, self, tone);
+}
+
+// Native setters/getters shared by the mrb_define_method bindings (which unpack
+// mrb_get_args and forward here) and by bc2cpp's exact-class-guarded calls, so
+// the two paths cannot drift. Arguments arrive already typed: the generated
+// call site checks mrb_integer_p before calling an mrb_int entry point and
+// otherwise dispatches, leaving the coercion and TypeError to the binding.
+// Raising on a disposed receiver (obj_require) is unchanged.
+mrb_value object_x_set_direct(mrb_state* M, mrb_value self, mrb_int x) {
+  lv_obj_t* obj = obj_require(M, self);
+  // Same-value skip: render code repositions sprites every frame (the player
+  // tracks the camera whether or not it moved) and LVGL's setter invalidates
+  // without comparing. The mirrored ivar is authoritative -- every write
+  // passes through here.
+  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@x"));
+  if (!mrb_fixnum_p(cur) || mrb_fixnum(cur) != x) {
+    lv_obj_set_x(obj, x);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@x"), mrb_fixnum_value(x));
+  }
+  return self;
+}
+
+mrb_value object_y_set_direct(mrb_state* M, mrb_value self, mrb_int y) {
+  lv_obj_t* obj = obj_require(M, self);
+  // Same-value skip, see object_x_set_direct.
+  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@y"));
+  if (!mrb_fixnum_p(cur) || mrb_fixnum(cur) != y) {
+    lv_obj_set_y(obj, y);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@y"), mrb_fixnum_value(y));
+  }
+  return self;
+}
+
+mrb_value object_z_set_direct(mrb_state* M, mrb_value self, mrb_int z) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@z"), mrb_fixnum_value(z));
+  update_z(M);
+  return self;
+}
+
+mrb_value object_visible_set_direct(mrb_state* M, mrb_value self, mrb_bool v) {
+  lv_obj_t* obj = obj_require(M, self);
+  // Same-value skip, see object_x_set_direct: visibility is re-asserted every
+  // frame by several draw paths (pictures, vehicles, the battle gate). An unset
+  // ivar (fresh sprite) must apply: LVGL objects start visible, and nil here
+  // means "never poked", not "hidden".
+  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@visible"));
+  if (mrb_nil_p(cur) || mrb_test(cur) != v) {
+    if (v)
+      lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    else
+      lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
+  }
+  return self;
+}
+
+mrb_value sprite_color_set_direct(mrb_state* M, mrb_value self, mrb_value v) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
+  lv_obj_t* obj = obj_require(M, self);
+  spr_bind_display(M, self, obj);
+  return v;
+}
+
+mrb_value sprite_flash_direct(mrb_state* M,
+                              mrb_value self,
+                              mrb_value color,
+                              mrb_int duration) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
+             mrb_fixnum_value(duration));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+             mrb_fixnum_value(duration));
+  lv_obj_t* obj = obj_require(M, self);
+  spr_bind_display(M, self, obj);
+  return mrb_nil_value();
+}
+
+mrb_value viewport_color_set_direct(mrb_state* M, mrb_value self, mrb_value c) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), c);
+  vp_refresh_overlay(M, self);
+  return c;
+}
+
+mrb_value viewport_flash_direct(mrb_state* M,
+                                mrb_value self,
+                                mrb_value color,
+                                mrb_int duration) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_color"), color);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_duration"),
+             mrb_fixnum_value(duration));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
+             mrb_fixnum_value(mrb_nil_p(color) ? 0 : duration));
+  vp_refresh_overlay(M, self);
+  return mrb_nil_value();
+}
+
+mrb_value viewport_tone_direct(mrb_state* M, mrb_value self) {
+  return vp_tone(M, self);
+}
+
+mrb_value viewport_color_direct(mrb_state* M, mrb_value self) {
+  return vp_color(M, self);
+}
+
+mrb_value rect_x_set_direct(mrb_state* M, mrb_value self, mrb_int x) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).x = x);
+}
+
+mrb_value rect_y_set_direct(mrb_state* M, mrb_value self, mrb_int y) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).y = y);
+}
+
+mrb_value rect_width_set_direct(mrb_state* M, mrb_value self, mrb_int w) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).width = w);
+}
+
+mrb_value rect_height_set_direct(mrb_state* M, mrb_value self, mrb_int h) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).height = h);
+}
+
+#if !defined(WIO_TERMINAL)
+// Window, Tilemap and Plane bodies exist only off wio (ADR 0220, 0132).
+mrb_value window_update_direct(mrb_state* M, mrb_value self) {
+  return window_update(M, self);
+}
+
+mrb_value tilemap_dispose_direct(mrb_state* M, mrb_value self) {
+  return tilemap_dispose(M, self);
+}
+
+mrb_value window_openness_set_direct(mrb_state* M,
+                                     mrb_value self,
+                                     mrb_value openness) {
+  return window_set_openness_body(M, self, mrb_as_int(M, openness));
+}
+
+mrb_value window_tone_set_direct(mrb_state* M, mrb_value self, mrb_value tone) {
+  return window_set_tone_body(M, self, tone);
+}
+
+mrb_value window_tone_direct(mrb_state* M, mrb_value self) {
+  return window_tone(M, self);
+}
+
+mrb_value window_contents_set_direct(mrb_state* M,
+                                     mrb_value self,
+                                     mrb_value bmp) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents"), bmp);
+  window_refresh(M, self);
+  return bmp;
+}
+
+mrb_value window_width_set_direct(mrb_state* M, mrb_value self, mrb_int v) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@width"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_height_set_direct(mrb_state* M, mrb_value self, mrb_int v) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@height"), mrb_fixnum_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_windowskin_set_direct(mrb_state* M,
+                                       mrb_value self,
+                                       mrb_value skin) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@windowskin"), skin);
+  window_refresh(M, self);
+  return skin;
+}
+
+mrb_value window_cursor_rect_set_direct(mrb_state* M,
+                                        mrb_value self,
+                                        mrb_value rect) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@cursor_rect"), rect);
+  window_refresh(M, self);
+  return rect;
+}
+
+mrb_value window_active_set_direct(mrb_state* M, mrb_value self, mrb_bool v) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@active"), mrb_bool_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value window_pause_set_direct(mrb_state* M, mrb_value self, mrb_bool v) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@pause"), mrb_bool_value(v));
+  window_refresh(M, self);
+  return self;
+}
+
+mrb_value tilemap_z_set_direct(mrb_state* M, mrb_value self, mrb_int z) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@z"), mrb_fixnum_value(z));
+  const mrb_value above =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  if (mrb_test(above))
+    mrb_iv_set(M, above, mrb_intern_lit(M, "@z"),
+               mrb_fixnum_value(z + TILEMAP_ABOVE_Z));
+  update_z(M);
+  return self;
+}
+
+mrb_value tilemap_visible_set_direct(mrb_state* M, mrb_value self, mrb_bool v) {
+  lv_obj_t* obj = obj_require(M, self);
+  const mrb_value above =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  lv_obj_t* al = (mrb_test(above) && DATA_PTR(above))
+                     ? reinterpret_cast<lv_obj_t*>(DATA_PTR(above))
+                     : nullptr;
+  if (v) {
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    if (al)
+      lv_obj_remove_flag(al, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    if (al)
+      lv_obj_add_flag(al, LV_OBJ_FLAG_HIDDEN);
+  }
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
+  return self;
+}
+
+mrb_value plane_color_set_direct(mrb_state* M, mrb_value self, mrb_value v) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
+  plane_retile(M, self);
+  return v;
+}
+#else   // defined(WIO_TERMINAL)
+// The classes are never instantiated on wio, so their exact-class guards are
+// never true; these only satisfy the link of generated call sites.
+static mrb_value compiled_out_direct(mrb_state* M, mrb_value self) {
+  mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(NotImplementedError)),
+             "%C is not compiled into the Wio Terminal build (ADR 0220)",
+             mrb_obj_class(M, self));
+  return self;
+}
+
+mrb_value window_update_direct(mrb_state* M, mrb_value self) {
+  return compiled_out_direct(M, self);
+}
+mrb_value tilemap_dispose_direct(mrb_state* M, mrb_value self) {
+  return compiled_out_direct(M, self);
+}
+mrb_value window_openness_set_direct(mrb_state* M, mrb_value self, mrb_value) {
+  return compiled_out_direct(M, self);
+}
+mrb_value window_tone_set_direct(mrb_state* M, mrb_value self, mrb_value) {
+  return compiled_out_direct(M, self);
+}
+mrb_value window_tone_direct(mrb_state* M, mrb_value self) {
+  return compiled_out_direct(M, self);
+}
+mrb_value window_contents_set_direct(mrb_state* M, mrb_value self, mrb_value) {
+  return compiled_out_direct(M, self);
+}
+mrb_value window_width_set_direct(mrb_state* M, mrb_value self, mrb_int) {
+  return compiled_out_direct(M, self);
+}
+mrb_value window_height_set_direct(mrb_state* M, mrb_value self, mrb_int) {
+  return compiled_out_direct(M, self);
+}
+mrb_value window_windowskin_set_direct(mrb_state* M,
+                                       mrb_value self,
+                                       mrb_value) {
+  return compiled_out_direct(M, self);
+}
+mrb_value window_cursor_rect_set_direct(mrb_state* M,
+                                        mrb_value self,
+                                        mrb_value) {
+  return compiled_out_direct(M, self);
+}
+mrb_value window_active_set_direct(mrb_state* M, mrb_value self, mrb_bool) {
+  return compiled_out_direct(M, self);
+}
+mrb_value window_pause_set_direct(mrb_state* M, mrb_value self, mrb_bool) {
+  return compiled_out_direct(M, self);
+}
+mrb_value tilemap_z_set_direct(mrb_state* M, mrb_value self, mrb_int) {
+  return compiled_out_direct(M, self);
+}
+mrb_value tilemap_visible_set_direct(mrb_state* M, mrb_value self, mrb_bool) {
+  return compiled_out_direct(M, self);
+}
+mrb_value plane_color_set_direct(mrb_state* M, mrb_value self, mrb_value) {
+  return compiled_out_direct(M, self);
+}
+#endif  // !defined(WIO_TERMINAL)
+
+mrb_value table_new_direct(mrb_state* M,
+                           RClass* klass,
+                           mrb_int argc,
+                           mrb_int x,
+                           mrb_int y,
+                           mrb_int z) {
+  auto table = DataType<Table>::make_owned(M, int32_t{1}, int32_t{0},
+                                           int32_t{1}, int32_t{1});
+  table_initialize_fields(*table, argc, x, y, z);
+  return DataType<Table>::make_direct(M, klass, std::move(table));
 }
 
 }  // namespace rgss
@@ -7449,6 +7972,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* vp = mrb_define_class_under(M, m, "Viewport", M->object_class);
   MRB_SET_INSTANCE_TT(vp, MRB_TT_DATA);
+  g_native_viewport_class = vp;
   mrb_define_method(M, vp, "initialize", vp_init, MRB_ARGS_OPT(4));
   mrb_define_method(M, vp, "rect", vp_rect, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "rect=", vp_set_rect, MRB_ARGS_REQ(1));
@@ -7498,6 +8022,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 #if !defined( \
     WIO_TERMINAL)  // Plane: never instantiated by wio's Ruby (docs/adr/0132)
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
+  g_native_plane_class = plane;
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
   mrb_define_method(M, plane, "initialize", plane_init, MRB_ARGS_OPT(1));
   mrb_define_method(M, plane, "bitmap=", plane_set_bmp, MRB_ARGS_REQ(1));
@@ -7524,6 +8049,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     "initialize", not_compiled_init, MRB_ARGS_ANY());
 #else
   RClass* tilemap = mrb_define_class_under(M, m, "Tilemap", M->object_class);
+  g_native_tilemap_class = tilemap;
   MRB_SET_INSTANCE_TT(tilemap, MRB_TT_DATA);
   mrb_define_method(M, tilemap, "initialize", tilemap_init, MRB_ARGS_OPT(1));
   mrb_define_method(M, tilemap, "tileset=", tilemap_set_tileset,
@@ -7555,6 +8081,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* window = mrb_define_class_under(M, m, "Window", M->object_class);
   MRB_SET_INSTANCE_TT(window, MRB_TT_DATA);
+  g_native_window_class = window;
   mrb_define_method(M, window, "initialize", window_init, MRB_ARGS_OPT(1));
   mrb_define_method(M, window, "contents=", window_set_contents,
                     MRB_ARGS_REQ(1));
@@ -7735,6 +8262,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* table = mrb_define_class_under(M, m, "Table", M->object_class);
   MRB_SET_INSTANCE_TT(table, MRB_TT_DATA);
+  g_native_table_class = table;
   mrb_define_method(M, table, "initialize", table_init,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
 #if !defined(WIO_TERMINAL)  // Table#dup/#clone: unused on wio (docs/adr/0132)
@@ -7812,4 +8340,9 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   g_native_tone_class = nullptr;
   g_native_sprite_class = nullptr;
   g_native_bitmap_class = nullptr;
+  g_native_table_class = nullptr;
+  g_native_window_class = nullptr;
+  g_native_viewport_class = nullptr;
+  g_native_plane_class = nullptr;
+  g_native_tilemap_class = nullptr;
 }

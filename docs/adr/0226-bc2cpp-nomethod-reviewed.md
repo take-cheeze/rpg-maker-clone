@@ -82,15 +82,15 @@ catching drift, not about saving size.
 
 ## Consequences
 
-Measured with a host mrbc built from the pinned mruby plus the
-`cmake/build-mruby.cmake` patches, running the wio codegen of each gem:
+At introduction, measured with a host mrbc built from the pinned mruby plus
+the `cmake/build-mruby.cmake` patches, running the wio codegen of each gem:
 
 | gem | sites (all methods) | keys | sites (hot-only, as a real wio build) |
 | --- | ---: | ---: | ---: |
-| mruby-lcf-compiled | 13 | 5 | 0 |
-| mruby-rpg2k-compiled | 39 | 33 | 0 |
-| mruby-rgss-compiled | 0 | 0 | 0 |
-| total | 52 | 38 | 0 |
+| mruby-lcf-compiled | 15 | 6 | 0 |
+| mruby-rpg2k-compiled | 3046 | 2198 | 426 |
+| mruby-rgss-compiled | 1 | 1 | 0 |
+| total | 3062 | 2205 | 426 |
 
 Today the hot-only list (`tools/bc2cpp/hot_methods.txt`) compiles none of
 these sites, so shipped psp/wio/maix firmware contains no `bc2cpp_nomethod`
@@ -100,9 +100,13 @@ and runs the staleness check too.
 
 ADR 0210 counted 17. ADR 0213 later removed `method_missing` from LCF, which
 lets `LCF::File`'s own `self` calls convert, and more methods compile now.
-The only `method_missing` class left in the closed world is
-`RGSS::ErrorReport::Tee`, so the proof only converts sites whose receiver is
-the compiled method's own `self`. All 52 sites are of that kind.
+`RGSS::ErrorReport::Tee` no longer defines `method_missing` or
+`respond_to_missing?`; it explicitly delegates only `flush` in addition to its
+write methods. Selective module-function body emission increases the current
+full Wio run to 3,070 sites across 2,213 unique keys (LCF 23/14, RGSS 1/1,
+RPG2K 3,046/2,198 sites/keys). The hot-only list still compiles 426 of these
+sites. The review set is regenerated with
+`MRBC=... ruby scripts/bc2cpp_nomethod_reviewed_update.rb --write`.
 
 Every site was reviewed. For each one, the guard chain was read to confirm
 that the enclosing class is in it, and the Ruby source was read to confirm
@@ -114,7 +118,8 @@ Ruby source was changed.
 
 | sites | receiver (`self` in) | called | definer |
 | --- | --- | --- | --- |
-| `LCF::File#initialize`/`#to_lcf` (13) | LCF::File and subclasses | `schema`, `header`, `terminate_root?` | `LCF::File` (abstract `raise`) and each of Database, MapTree, MapUnit, SaveData (lcf_file.rb) |
+| `LCF::File#initialize`/`#to_lcf` (14) | LCF::File and subclasses | `schema`, `header`, `terminate_root?` | `LCF::File` (abstract `raise`) and each of Database, MapTree, MapUnit, SaveData (lcf_file.rb) |
+| `LCF::File#initialize` (1) | a fresh `LCF::Sections` | `add` | `LCF::Sections#add` (lcf.rb); the receiver is allocated immediately before this call |
 | `RPG2k::Scene::{Title,GameOver,Map,SaveLoad}#…` (14) | a `Scene::Base` subclass | `parent` | `Scene::Base` `attr_reader :parent` |
 | `Scene::Base#state_display`, `Scene::Map#note_party_step` (2) | Scene::Base subclasses | `state_table` | `Scene::Base#state_table` |
 | `RPG2k::Scene::Battle#…` (23) | Scene::Battle, RPG2k3::Scene::Battle | `advance_actor`, `enter_command_phase`, `open_battle_options`, `battle_commands`, `gauge_battle_layout?`, `drive_battle_command`, `prev_commandable_actor_index`, `finish_round_animation` | Scene::Battle, with overrides in `RPG2k3::Scene::Battle` (battle.rb, battle_rpg2k3.rb) |
@@ -128,7 +133,7 @@ A new dead fallback now stops the psp/wio/maix build. The fix is one of:
 - after reading the site: add the key, by hand or with the update script.
 
 The CI check costs one wio codegen run per gem, about 80 s each on the dev
-container. The follow-up from ADR 0210 still applies: replacing
-`RGSS::ErrorReport::Tee#method_missing` with explicit delegation would let
-non-`self` receivers convert. Those receivers are where the proof could find
-real missing-method bugs, and each new site would come through this gate.
+container. The follow-up from ADR 0210 is implemented by ADR 0229: replacing
+`RGSS::ErrorReport::Tee#method_missing` with explicit delegation lets
+non-`self` receivers convert. The current reviewed set is regenerated with
+`MRBC=... ruby scripts/bc2cpp_nomethod_reviewed_update.rb --write`.

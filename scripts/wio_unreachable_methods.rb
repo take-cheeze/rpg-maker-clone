@@ -63,14 +63,6 @@ module WioUnreachable
   REVIEWED = {
     ['mruby-lcf/mrblib/lcf.rb', 'obj.respond_to?(name)'] =>
       'LCF.field? names: schema field Symbols (schema.rb literals, or the blob strings on wio)',
-    ['mruby-rgss/mrblib/error_report.rb', 'def method_missing(name, *args, &block)'] =>
-      'Tee forwards call-site names to its IO',
-    ['mruby-rgss/mrblib/error_report.rb', '@io.__send__(name, *args, &block)'] =>
-      'Tee forwards call-site names to its IO',
-    ['mruby-rgss/mrblib/error_report.rb', 'def respond_to_missing?(name, include_private = false)'] =>
-      'Tee answers for its IO',
-    ['mruby-rgss/mrblib/error_report.rb', '@io.respond_to?(name, include_private)'] =>
-      'Tee answers for its IO',
     ['mruby-rpg2k/mrblib/game.rb', 'b.respond_to?(mod_field)'] =>
       "Game::Battle/Party's stat-modifier reader's callers pass :atk_mod/:def_mod/:spi_mod/:agi_mod literals",
     ['mruby-rpg2k/mrblib/game.rb', 'b.send(mod_field)'] =>

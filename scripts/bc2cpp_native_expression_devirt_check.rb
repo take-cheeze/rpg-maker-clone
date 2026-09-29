@@ -110,6 +110,21 @@ check.call('Array#push derives only the one-argument C fast branch from mruby co
                'mrb_int argc = mrb_get_argc(mrb); if (argc == 2) { mrb_ary_push(mrb, self, mrb_get_argv(mrb)[0]); return self; }',
                'mrb', 'self'
              ).nil?)
+check.call('Array#concat derives only the one-array C wrapper from mruby core',
+           exact_class_expressions['concat']&.map do |entry|
+             [entry[:owner][:class_name], entry[:arity], entry[:expression]]
+           end == [['Array', 1, '(mrb_ary_concat(M, recv, mrb_ensure_array_type(M, BC2CPP_ARG0)), recv)']] &&
+             NativeExpressionDevirt.exact_array_concat_one_argument_expression(
+               'mrb_value *args; mrb_int len; mrb_get_args(mrb, "*!", &args, &len); ' \
+               'for (int i=0; i<len; i++) { mrb_ensure_array_type(mrb, args[i]); } ' \
+               'for (int i=0; i<len; i++) { mrb_ary_concat(mrb, self, args[i]); } return self;',
+               'mrb', 'self'
+             ) == '(mrb_ary_concat(M, recv, mrb_ensure_array_type(M, BC2CPP_ARG0)), recv)' &&
+             NativeExpressionDevirt.exact_array_concat_one_argument_expression(
+               'mrb_value *args; mrb_int len; mrb_get_args(mrb, "*!", &args, &len); ' \
+               'for (int i=0; i<len; i++) { mrb_ary_concat(mrb, self, args[i]); } return self;',
+               'mrb', 'self'
+             ).nil?)
 first_body = 'struct RArray *a = mrb_ary_ptr(self); mrb_int size; ' \
              'if (mrb_get_argc(mrb) == 0) { if (ARY_LEN(a) > 0) return ARY_PTR(a)[0]; return mrb_nil_value(); } ' \
              'mrb_get_args(mrb, "|i", &size); return mrb_nil_value();'
@@ -202,6 +217,25 @@ size_code = generator.compile_native_primitive_send('size', 1, 'r3', [])
 check.call('exact-class output uses generated C expressions and falls back for other receiver classes',
            size_code.include?('M->array_class') && size_code.include?('M->hash_class') &&
              size_code.include?('mrb_funcall(M, r3, "size", 0)'))
+empty_code = generator.compile_native_primitive_send('empty?', 1, 'r3', [])
+check.call('native exact-class arms share one cached-dispatch fallback',
+           %w[array hash string].all? { |klass| empty_code.include?("M->#{klass}_class") } &&
+             empty_code.scan('mrb_funcall(M, r3, "empty?", 0)').one?)
+to_s_registry = %w[to_s inspect].to_h do |name|
+  [name, [MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)]]
+end
+to_s_generator = CodeGen.new({}, to_s_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                             native_registered_expressions: exact_class_expressions)
+to_s_code = to_s_generator.compile_native_primitive_send('to_s', 1, 'r3', [])
+check.call('to_s type-tag arms share one cached-dispatch fallback',
+           %w[string array hash].all? { |klass| to_s_code.include?("M->#{klass}_class") } &&
+             to_s_code.include?('mrb_integer_to_str(M, r3, 10)') &&
+             to_s_code.scan('mrb_funcall(M, r3, "to_s", 0)').one?)
+to_i_code = generator.compile_native_primitive_send('to_i', 1, 'r3', [])
+check.call('to_i numeric and String guards share one fallback for unsupported values and Float edges',
+           to_i_code.include?('MRB_TT_INTEGER') && to_i_code.include?('FIXABLE_FLOAT(mrb_float(r3))') &&
+             to_i_code.include?('M->string_class') &&
+             to_i_code.scan('mrb_funcall(M, r3, "to_i", 0)').one?)
 length_code = generator.compile_native_primitive_send('length', 1, 'r3', [])
 check.call('Array/Hash length is generated from the same C expressions as size',
            length_code.include?('M->array_class') && length_code.include?('M->hash_class') &&
@@ -225,13 +259,13 @@ check.call('generated Hash#[] calls the public lookup helper behind an exact Has
              hash_aref_code.include?('mrb_funcall(M, r3, "[]", 1, r4)'))
 check.call('String#==, Symbol#== and Integer#== are generated from their C wrappers once BasicObject is a known owner',
            exact_class_expressions['==']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] }&.sort ==
-             [['Integer', 1, 'mrb_bool_value(mrb_obj_equal(M, recv, BC2CPP_ARG0))'],
+             [['Integer', 1, 'mrb_bool_value(mrb_equal(M, recv, BC2CPP_ARG0))'],
               ['String', 1, 'mrb_bool_value(mrb_str_equal(M, recv, (BC2CPP_ARG0)))'],
               ['Symbol', 1, 'mrb_bool_value(mrb_obj_equal(M, recv, (BC2CPP_ARG0)))']])
 eq_registry = { '==' => [MethodDef.new(name: '==', owner: '<native>', irep: nil, visibility: :public)] }
 eq_generator = CodeGen.new({}, eq_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
                            native_registered_expressions: exact_class_expressions)
-eq_code = eq_generator.compile_cmp('EQ', 'R3 (R4)')
+eq_code = eq_generator.compile_cmp(Insn.synthetic('EQ', 'R3 (R4)'))
 check.call('OP_EQ keeps identity and numeric arms and generates String/Symbol equality before dispatch',
            eq_code.index('mrb_obj_eq(M, r3, r4)') < eq_code.index('MRB_TT_INTEGER') &&
              eq_code.include?('mrb_type(r3) == MRB_TT_STRING && mrb_obj_ptr(r3)->c == M->string_class') &&
@@ -239,7 +273,7 @@ check.call('OP_EQ keeps identity and numeric arms and generates String/Symbol eq
              eq_code.include?('mrb_type(r3) == MRB_TT_SYMBOL) {') &&
              eq_code.include?('r3 = mrb_bool_value(mrb_obj_equal(M, r3, (r4)));') &&
              eq_code.scan('mrb_funcall(M, r3, "==", 1, r4)').size == 1)
-plain_eq_code = CodeGen.new({}, eq_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new).compile_cmp('EQ', 'R3 (R4)')
+plain_eq_code = CodeGen.new({}, eq_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new).compile_cmp(Insn.synthetic('EQ', 'R3 (R4)'))
 check.call('OP_EQ without a generated == registration is unchanged',
            !plain_eq_code.include?('mrb_str_equal') && plain_eq_code.include?('mrb_funcall(M, r3, "==", 1, r4)'))
 # A real compiled Ruby String#== (the resolver now compiles candidate targets, so
@@ -249,17 +283,14 @@ eq_override_method = nil
 Dir.mktmpdir do |eq_dir|
   eq_source = File.join(eq_dir, 'string_eq_override.rb')
   File.write(eq_source, "class String\n  def ==(other)\n    true\n  end\nend\n")
-  eq_dump, eq_disasm = run_mrbc(eq_source, 'bc2cpp_string_eq_override', eq_dir)
-  eq_ireps, eq_root = parse_c_dump(eq_dump, 'bc2cpp_string_eq_override')
+  eq_ireps, eq_root = compile_ireps(eq_source, 'bc2cpp_string_eq_override', eq_dir)
   eq_order = dfs_order(eq_ireps, eq_root)
-  eq_blocks, eq_block_files, eq_block_catches = parse_disasm_blocks(eq_disasm)
-  merge!(eq_ireps, eq_order, eq_blocks, eq_block_files, eq_block_catches)
   eq_override_ireps = eq_ireps
   eq_override_method = build_registry(eq_ireps, eq_root)[0].fetch('==').find { |md| md.owner == 'String' }
 end
 eq_override_registry = eq_registry.merge('==' => eq_registry['=='] + [eq_override_method])
 eq_override_code = CodeGen.new(eq_override_ireps, eq_override_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
-                               native_registered_expressions: exact_class_expressions).compile_cmp('EQ', 'R3 (R4)')
+                               native_registered_expressions: exact_class_expressions).compile_cmp(Insn.synthetic('EQ', 'R3 (R4)'))
 check.call('a Ruby String#== override rejects the generated OP_EQ paths',
            !eq_override_code.include?('mrb_str_equal') && !eq_override_code.include?('mrb_obj_equal('))
 array_at_generator = CodeGen.new({}, { 'at' => [MethodDef.new(name: 'at', owner: '<native>', irep: nil,
@@ -286,6 +317,17 @@ check.call('Array#push emits the exact one-argument helper call and keeps multi-
            array_push_code.include?('M->array_class') && array_push_code.include?('mrb_ary_push(M, r3, (r4))') &&
              array_push_code.include?('), r3);') && array_push_wrong_arity.include?('mrb_funcall(M, r3, "push", 2, r4, r5)') &&
              !array_push_wrong_arity.include?('mrb_ary_push(M, r3,'))
+array_concat_generator = CodeGen.new({}, { 'concat' => [MethodDef.new(name: 'concat', owner: '<native>', irep: nil,
+                                                                        visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                      native_registered_expressions: exact_class_expressions)
+array_concat_code = array_concat_generator.compile_native_primitive_send('concat', 1, 'r3', ['r4'])
+array_concat_wrong_arity = array_concat_generator.compile_native_primitive_send('concat', 1, 'r3', %w[r4 r5])
+check.call('Array#concat emits the exact one-argument conversion and keeps other arities on dispatch',
+           array_concat_code.include?('M->array_class') &&
+             array_concat_code.include?('mrb_ary_concat(M, r3, mrb_ensure_array_type(M, r4))') &&
+             array_concat_code.include?('mrb_funcall(M, r3, "concat", 1, r4)') &&
+             array_concat_wrong_arity.include?('mrb_funcall(M, r3, "concat", 2, r4, r5)') &&
+             !array_concat_wrong_arity.include?('mrb_ary_concat(M, r3,'))
 %w[first last].each do |name|
   element_generator = CodeGen.new({}, { name => [MethodDef.new(name: name, owner: '<native>', irep: nil,
                                                                visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
@@ -293,7 +335,7 @@ check.call('Array#push emits the exact one-argument helper call and keeps multi-
   element_code = element_generator.compile_native_primitive_send(name, 1, 'r3', [])
   element_count_code = element_generator.compile_native_primitive_send(name, 1, 'r3', ['r4'])
   check.call("Array##{name} emits the exact Array element path and keeps count-argument dispatch",
-             element_code.include?('case MRB_TT_ARRAY:') && element_code.include?('M->array_class') &&
+             element_code.include?('mrb_type(r3) == MRB_TT_ARRAY') && element_code.include?('M->array_class') &&
                element_code.include?('ARY_PTR(bc2cpp_ary_ptr)[') && element_code.include?("mrb_funcall(M, r3, \"#{name}\", 0)") &&
                element_code.scan('mrb_ary_ptr(r3)').length == 1 &&
                element_count_code.include?("mrb_funcall(M, r3, \"#{name}\", 1, r4)") &&
@@ -315,6 +357,68 @@ check.call('respond_to? answers native hits directly and keeps the missing-hook 
              respond_to_code.include?('mrb_funcall(M, r3, "respond_to?", 1, r4)') &&
              CodeGen::NATIVE_PRIMITIVE_SEND_ARITY['respond_to?'] == 1 &&
              respond_to_generator.native_only_mono?('respond_to?'))
+
+wrapper_registry = %w[clear rect height width x y red green blue alpha gray disposed? visible update].to_h do |name|
+  [name, [MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)]]
+end
+wrapper_generator = CodeGen.new({}, wrapper_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
+height_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :height n=0'), self_implicit: false)
+disposed_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :disposed? n=0'), self_implicit: false)
+visible_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :visible n=0'), self_implicit: false)
+clear_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :clear n=0'), self_implicit: false)
+rect_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :rect n=0'), self_implicit: false)
+update_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :update n=0'), self_implicit: false)
+rect_x_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :x n=0'), self_implicit: false)
+rect_width_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :width n=0'), self_implicit: false)
+color_red_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :red n=0'), self_implicit: false)
+tone_red_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :red n=0'), self_implicit: false)
+check.call('RGSS Bitmap#height uses its frame independent wrapper behind an exact class guard',
+           height_code.include?('rgss::native_bitmap_class()') &&
+             height_code.include?('rgss::bitmap_height_direct(M, r1)') &&
+             height_code.include?('mrb_funcall(M, r1, "height", 0)'))
+check.call('#disposed? uses frame independent wrappers only for registered RGSS data classes',
+           disposed_code.include?('native_bitmap_class()') && disposed_code.include?('native_sprite_class()') &&
+             disposed_code.include?('native_viewport_class()') && disposed_code.include?('native_plane_class()') &&
+             disposed_code.include?('native_tilemap_class()') && disposed_code.include?('native_window_class()') &&
+             disposed_code.include?('rgss::disposed_direct(M, r1)') &&
+             disposed_code.include?('mrb_funcall(M, r1, "disposed?", 0)'))
+check.call('#visible uses frame independent wrappers only for its native display classes',
+           visible_code.include?('native_sprite_class()') && visible_code.include?('native_viewport_class()') &&
+             visible_code.include?('native_plane_class()') &&
+             !visible_code.include?('native_bitmap_class()') &&
+             visible_code.include?('rgss::visible_direct(M, r1)') &&
+             visible_code.include?('mrb_funcall(M, r1, "visible", 0)'))
+check.call('Bitmap#clear and #rect plus Viewport#rect call their exact native wrappers',
+           clear_code.include?('native_bitmap_class()') &&
+             clear_code.include?('rgss::bitmap_clear_direct(M, r1)') &&
+             clear_code.include?('mrb_funcall(M, r1, "clear", 0)') &&
+             rect_code.include?('native_bitmap_class()') &&
+             rect_code.include?('rgss::bitmap_rect_direct(M, r1)') &&
+             rect_code.include?('native_viewport_class()') &&
+             rect_code.include?('rgss::viewport_rect_direct(M, r1)') &&
+             rect_code.include?('mrb_funcall(M, r1, "rect", 0)'))
+check.call('per-frame update calls use exact Sprite, Viewport, or Window wrappers',
+           update_code.include?('native_sprite_class()') &&
+             update_code.include?('rgss::sprite_update_direct(M, r1)') &&
+             update_code.include?('native_viewport_class()') &&
+             update_code.include?('rgss::viewport_update_direct(M, r1)') &&
+             update_code.include?('native_window_class()') &&
+             update_code.include?('rgss::window_update_direct(M, r1)') &&
+             !update_code.include?('native_tilemap_class()') &&
+             update_code.include?('mrb_funcall(M, r1, "update", 0)'))
+check.call('Rect scalar accessors and Bitmap#width use exact class wrapper bodies',
+           rect_x_code.include?('native_rect_class()') &&
+             rect_x_code.include?('rgss::rect_x_direct(M, r1)') &&
+             rect_x_code.include?('mrb_funcall(M, r1, "x", 0)') &&
+             rect_width_code.include?('native_bitmap_class()') &&
+             rect_width_code.include?('rgss::bitmap_width_direct(M, r1)') &&
+             rect_width_code.include?('native_rect_class()') &&
+             rect_width_code.include?('rgss::rect_width_direct(M, r1)'))
+check.call('Color and Tone component reads select their own exact-class wrappers',
+           color_red_code.include?('native_color_class()') &&
+             color_red_code.include?('rgss::color_red_direct(M, r1)') &&
+             tone_red_code.include?('native_tone_class()') &&
+             tone_red_code.include?('rgss::tone_red_direct(M, r1)'))
 # Two respond_to? sends that reuse one register with a goto across the first
 # must still compile: the temporary symbol is block-scoped, so it neither
 # redeclares nor sits between the jump and its label.
@@ -377,29 +481,32 @@ check.call('generated Hash#to_hash is exact-class guarded and preserves dynamic 
              hash_to_hash_code.include?('mrb_funcall(M, r3, "to_hash", 0)'))
 float_to_f_code = generator.compile_native_primitive_send('to_f', 1, 'r3', [])
 symbol_to_sym_code = generator.compile_native_primitive_send('to_sym', 1, 'r3', [])
-symbol_to_sym_case = symbol_to_sym_code.split('case MRB_TT_SYMBOL:').last.to_s.split('break;').first.to_s
 check.call('immediate Float and Symbol paths use type tags without object-pointer dereferences',
-           float_to_f_code.include?('case MRB_TT_FLOAT:') && symbol_to_sym_code.include?('case MRB_TT_SYMBOL:') &&
+           float_to_f_code.include?('mrb_type(r3) == MRB_TT_FLOAT') &&
+             symbol_to_sym_code.include?('mrb_type(r3) == MRB_TT_SYMBOL') &&
              float_to_f_code.include?('r1 = r3;') && symbol_to_sym_code.include?('r1 = r3;') &&
              float_to_f_code.include?('mrb_funcall(M, r3, "to_f", 0)') &&
              symbol_to_sym_code.include?('mrb_funcall(M, r3, "to_sym", 0)') &&
-             !float_to_f_code.include?('mrb_obj_ptr(r3)') && !symbol_to_sym_case.include?('mrb_obj_ptr(r3)'))
+             !float_to_f_code.include?('mrb_obj_ptr(r3)') &&
+             symbol_to_sym_code.include?('M->string_class') &&
+             !symbol_to_sym_code.split('mrb_type(r3) == MRB_TT_SYMBOL').last.to_s.split('else').first.to_s
+                                                                  .include?('mrb_obj_ptr(r3)'))
 finite_code = generator.compile_native_primitive_send('finite?', 1, 'r3', [])
 nan_code = generator.compile_native_primitive_send('nan?', 1, 'r3', [])
 check.call('Float predicates use their source expressions behind immediate type-tag guards',
-           finite_code.include?('case MRB_TT_FLOAT:') && finite_code.include?('isfinite(mrb_float(r3))') &&
-             nan_code.include?('case MRB_TT_FLOAT:') && nan_code.include?('isnan(mrb_float(r3))') &&
+           finite_code.include?('mrb_type(r3) == MRB_TT_FLOAT') && finite_code.include?('isfinite(mrb_float(r3))') &&
+             nan_code.include?('mrb_type(r3) == MRB_TT_FLOAT') && nan_code.include?('isnan(mrb_float(r3))') &&
              finite_code.include?('mrb_funcall(M, r3, "finite?", 0)') &&
              nan_code.include?('mrb_funcall(M, r3, "nan?", 0)'))
 abs_code = generator.compile_native_primitive_send('abs', 1, 'r3', [])
 check.call('Float#abs uses the recognized conditional C body and keeps dynamic fallback',
-           abs_code.include?('case MRB_TT_FLOAT:') && abs_code.include?('signbit((mrb_float(r3)))') &&
+           abs_code.include?('mrb_type(r3) == MRB_TT_FLOAT') && abs_code.include?('signbit((mrb_float(r3)))') &&
              abs_code.include?('mrb_float_value(M, -(mrb_float(r3)))') &&
              abs_code.include?('mrb_funcall(M, r3, "abs", 0)'))
 infinite_code = generator.compile_native_primitive_send('infinite?', 1, 'r3', [])
 exclude_end_code = generator.compile_native_primitive_send('exclude_end?', 1, 'r3', [])
 check.call('Float#infinite? and Range#exclude_end? use immediate/exact-class guards and keep dynamic fallback',
-           infinite_code.include?('case MRB_TT_FLOAT:') && infinite_code.include?('isinf((mrb_float(r3)))') &&
+           infinite_code.include?('mrb_type(r3) == MRB_TT_FLOAT') && infinite_code.include?('isinf((mrb_float(r3)))') &&
              infinite_code.include?('mrb_fixnum_value((mrb_float(r3)) < 0 ? -1 : 1)') &&
              infinite_code.include?('mrb_nil_value()') && !infinite_code.include?('mrb_obj_ptr(r3)') &&
              infinite_code.include?('mrb_funcall(M, r3, "infinite?", 0)') &&

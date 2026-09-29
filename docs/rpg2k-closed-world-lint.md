@@ -11,6 +11,7 @@ it might reach is visible to that analysis, so these constructs are linted:
 | `Dynamic/ConstReflection` | `const_get`/`const_set`/`remove_const`/`autoload`, `const_missing` |
 | `Dynamic/IvarReflection` | `instance_variable_get`/`set`/`defined?`, `remove_instance_variable` |
 | `Dynamic/MethodDefinition` | `define_method`, `alias`/`alias_method`, `undef`, `remove_method` |
+| `Dynamic/GlobalVariableReassignment` | A global variable written at multiple sites, or in a repeatable context (method, block or loop) |
 | `Dynamic/Eval` | `eval`, `instance_eval`/`class_eval`, `*_exec`, `binding`, `method(...)` |
 | `Dynamic/Extend` | `obj.extend` on anything but `self` |
 | `Dynamic/RescueModifier` | `expr rescue value` |
@@ -43,3 +44,9 @@ A computed `send`, `respond_to?`, `method` or `to_sym` in the wio build's
 mrblib therefore also has to be listed, with where its names come from, in
 `WioUnreachable::REVIEWED` (`scripts/wio_unreachable_methods.rb`), or the wio
 build and `scripts/wio_strip_scripts_check.rb` fail.
+
+The bc2cpp closed-world dispatch analysis also recognizes calls to
+`Exception#message` whose receiver traces to a rescued exception register. The
+generated operation follows mruby's `exc_to_s` message/default-string behavior;
+it declines the shortcut when a Ruby instance override or runtime definition can
+replace `message`.

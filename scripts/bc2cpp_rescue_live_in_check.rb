@@ -51,17 +51,23 @@ SRC = <<~'RUBY'
         nil
       end
     end
+
+    def exception_message
+      begin
+        raise 'caught'
+      rescue RuntimeError => e
+        copied = e
+        copied.message
+      end
+    end
   end
 RUBY
 
 Dir.mktmpdir do |dir|
   path = File.join(dir, 'rescue_live_in.rb')
   File.write(path, SRC)
-  c_dump, disasm = run_mrbc(path, 'bc2cpp_rescue_live_in', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_rescue_live_in')
+  ireps, root_label = compile_ireps(path, 'bc2cpp_rescue_live_in', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
   code = lambda do |name|
@@ -83,6 +89,19 @@ Dir.mktmpdir do |dir|
   plain = code.call('plain')
   check.call('a region right after ENTER keeps the lean self+arguments ctx',
              plain.include?('_rescue_try_Ctx') && !plain.include?('bc2cpp_saved_r'))
+
+  message_def = registry.fetch('exception_message').find { |d| d.owner == 'Driver' }
+  message_irep = ireps.fetch(message_def.irep)
+  message_idx = message_irep.instructions.index { |insn| insn.op.start_with?('SEND') && insn.args.include?(':message') }
+  check.call('the caught exception remains proven through RESCUE input and MOVE aliases',
+             !message_idx.nil? && gen.rescued_exception_receiver?(message_irep, message_idx,
+                                                                  message_irep.instructions[message_idx].reg))
+
+  registry['message'] = [MethodDef.new(name: 'message', owner: '<native>', irep: nil)]
+  message_gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
+  message_code = message_gen.compile_method(message_def.irep).fetch(:code)
+  check.call('a recognized rescued Exception#message uses the direct exc_to_s path',
+             message_code.include?('EXCEPTION_MESSAGE_DIRECT'))
 end
 
 if failures.empty?

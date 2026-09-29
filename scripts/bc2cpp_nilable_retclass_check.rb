@@ -104,11 +104,8 @@ end
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'nilable_retclass.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_nilable_retclass', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_nilable_retclass')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_nilable_retclass', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry, superclass_of = build_registry(ireps, root_label)
   probe = CodeGen.new(ireps, registry, {}, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new, Set.new,
                       analysis_only: true)

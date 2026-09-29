@@ -34,11 +34,8 @@ RUBY
 def build_codegen(source_text, symbol, dir)
   source = File.join(dir, "#{symbol}.rb")
   File.write(source, source_text)
-  c_dump, disasm = run_mrbc(source, symbol, dir)
-  ireps, root_label = parse_c_dump(c_dump, symbol)
+  ireps, root_label = compile_ireps(source, symbol, dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   %w[push <<].each do |name|
     registry[name] << MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)
@@ -58,7 +55,7 @@ def send_code(gen, ireps, registry, method_name, send_name)
   idx = irep.instructions.index { |insn| insn.op.start_with?('SEND') && insn.args.include?(":#{send_name}") }
   raise "Game::Caller##{method_name}: :#{send_name} send missing" unless idx
 
-  gen.compile_send(irep.instructions[idx].args, self_implicit: false, irep: irep, idx: idx, owner_def: method)
+  gen.compile_send(irep.instructions[idx], self_implicit: false, irep: irep, idx: idx, owner_def: method)
 end
 
 failures = []

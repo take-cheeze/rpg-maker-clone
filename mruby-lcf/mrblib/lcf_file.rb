@@ -17,7 +17,7 @@ module LCF
       # / #save_to. Multi-section (Array-schema) files are not yet buildable.
       if io.nil?
         raise 'section-based file construction not implemented' if schema.is_a? Array
-        @root = LCF.const_get(schema[:type]).new('', schema)
+        @root = build_root('', schema)
         return
       end
       @io = io
@@ -34,12 +34,20 @@ module LCF
         end
         @root = sections
       else
-        @root = LCF.const_get(schema[:type]).new io, schema
+        @root = build_root(io, schema)
       end
     end
 
     def header; raise end
     def schema; raise end
+
+    def build_root(io, root_schema)
+      case root_schema[:type]
+      when :Array1D then Array1D.new(io, root_schema)
+      when :Array2D then Array2D.new(io, root_schema)
+      else raise NameError, "uninitialized constant LCF::#{root_schema[:type]}"
+      end
+    end
 
     # Forward straight to the root record/section (Array1D/Sections' own
     # #[]/#[]= accept both a chunk id and a Symbol field/section name). These

@@ -27,6 +27,11 @@ SRC = <<~'RUBY'
   module Cmd
     SHOW_MESSAGE = 10110
     END_LOOP     = 12410
+    OFFSET       = 20
+    ARITHMETIC   = END_LOOP + OFFSET
+    ARITHMETIC_CHAIN = ARITHMETIC - 10
+    FIXNUM_EDGE  = 1073741823
+    ARITHMETIC_OVERFLOW = FIXNUM_EDGE + 1
   end
   ALIASED = Cmd::SHOW_MESSAGE
   DISAGREEING = 1
@@ -61,11 +66,8 @@ RUBY
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'intconst.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_intconst', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_intconst')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_intconst', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
 
   native = File.join(dir, 'native.cxx')
   File.write(native, 'void f(mrb_state* M) { mrb_define_class(M, "NativeDefined", M->object_class); }')
@@ -73,13 +75,19 @@ Dir.mktmpdir do |dir|
   File.write(clean_foreign, "class Foreign; end\n")
 
   admitted = IntegerConstants.analyze(ireps, [native], [clean_foreign])
-  check.call('SHOW_MESSAGE/END_LOOP/ALIASED are proven Fixnum-kind (setup)',
-             admitted.include?('SHOW_MESSAGE') && admitted.include?('END_LOOP') && admitted.include?('ALIASED'))
+  check.call('literal, aliased, and in-range arithmetic constants are proven Fixnum-kind',
+             %w[SHOW_MESSAGE END_LOOP ALIASED ARITHMETIC ARITHMETIC_CHAIN].all? { |n| admitted.include?(n) })
+  check.call('arithmetic beyond the cross-target Fixnum range is refused',
+             !admitted.include?('ARITHMETIC_OVERFLOW'))
 
   values = IntegerConstants.analyze_values(ireps, admitted)
   check.call('a plain literal resolves to its own value', values['SHOW_MESSAGE'] == 10110)
   check.call('a second literal in the same module resolves independently', values['END_LOOP'] == 12410)
   check.call('an alias to an admitted literal resolves through it', values['ALIASED'] == 10110)
+  check.call('ADD/SUBI constant expressions resolve through aliases',
+             values['ARITHMETIC'] == 12430 && values['ARITHMETIC_CHAIN'] == 12420)
+  check.call('an arithmetic result outside the cross-target Fixnum range is not inlined',
+             !values.key?('ARITHMETIC_OVERFLOW'))
   check.call('two definitions disagreeing on the value resolve to nothing',
              !values.key?('DISAGREEING') && admitted.include?('DISAGREEING'))
   check.call('a name with no literal-rooted definition (pure alias cycle) resolves to nothing',
@@ -132,15 +140,8 @@ end
 # 32-bit mrb_int safety: LOADI32 is the only LOADI* form wide enough to exceed
 # the Fixnum range this whole toolchain (Wio/Emscripten/PSP's 32-bit mrb_int)
 # requires; every other LOADI* form is already bounded to +-2^15.
-class FakeInsn
-  attr_reader :op, :args
-  def initialize(op, args)
-    @op = op
-    @args = args
-  end
-end
-in_range = IntegerConstants.loadi_value(FakeInsn.new('LOADI32', 'R1 1073741823'))
-out_of_range = IntegerConstants.loadi_value(FakeInsn.new('LOADI32', 'R1 1073741824'))
+in_range = IntegerConstants.loadi_value(Insn.synthetic('LOADI32', 'R1 1073741823'))
+out_of_range = IntegerConstants.loadi_value(Insn.synthetic('LOADI32', 'R1 1073741824'))
 check.call('a LOADI32 value at the Fixnum boundary is accepted', in_range == 1_073_741_823)
 check.call('a LOADI32 value one past the Fixnum boundary is refused', out_of_range.nil?)
 

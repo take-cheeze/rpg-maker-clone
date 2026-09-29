@@ -1,6 +1,5 @@
 # rpg2k_closed_world_lint.rb baseline: count<TAB>cop<TAB>file<TAB>snippet.
 # Regenerate with --regenerate-baseline; entries may only disappear.
-2	Dynamic/ConstReflection	mruby-lcf/mrblib/lcf_file.rb	LCF.const_get(schema[:type])
 1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	archive.instance_variable_set(:@entries, entries)
 1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	vx.instance_variable_get(:@_tm_above_obj)
 1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	xp.instance_variable_get(:@_tm_above_obj)
@@ -9,8 +8,6 @@
 1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :_probe_update, :update
 1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :_rgss1_initialize, :initialize
 1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :update, :_probe_update
-1	Dynamic/MethodMissing	mruby-rgss/mrblib/error_report.rb	def method_missing(name, *args, &block)
-1	Dynamic/MethodMissing	mruby-rgss/mrblib/error_report.rb	def respond_to_missing?(name, include_private = false)
 1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	@map.unit[:events] rescue nil
 1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m[:balance] rescue nil
 1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m[:fade_in] rescue nil
@@ -25,7 +22,6 @@
 1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_name] rescue ''
 1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_sx] rescue 0
 1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_sy] rescue 0
-1	Dynamic/Send	mruby-rgss/mrblib/error_report.rb	@io.__send__(name, *args, &block)
 1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	b.send(mod_field)
 1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	b.send(name)
 1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send("#{field}=", 0)

@@ -46,11 +46,8 @@ RUBY
 ireps, registry = Dir.mktmpdir do |dir|
   path = File.join(dir, 'pages.rb')
   File.write(path, SOURCE)
-  c_dump, disasm = run_mrbc(path, 'bc2cpp_pages', dir)
-  parsed, root_label = parse_c_dump(c_dump, 'bc2cpp_pages')
+  parsed, root_label = compile_ireps(path, 'bc2cpp_pages', dir)
   order = dfs_order(parsed, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(parsed, order, blocks, block_files, block_catches)
   [parsed, build_registry(parsed, root_label)[0]]
 end
 new_gen = -> { CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new) }
@@ -81,12 +78,14 @@ check.call('METHOD_COMPILE_STATE matches the constructor\'s initial values',
 NOT_PER_METHOD = %w[
   @clean_cache @probing
   @builtin_class_send_safe @entry_arg_body_owner @entry_arg_call_index @eqq_literal_devirt_safe
-  @fixnum_proof_ctx @fixnum_proof_preds @keyword_never_defined_universe @known_owner_set @subclassed_set
+  @fixnum_proof_ctx @keyword_never_defined_universe @known_owner_set @subclassed_set
   @own_upvar_written_regs @symbol_installed_names
   @const_lookup_helper_used @const_site_cache @direct_construct_used @index_helper_code @native_construct_used
   @owner_class_cache @synthesize_accessor_for @poly_tables @poly_tables_emitted
   @array_return_names @class_return_names @entry_arg_fixnum @fixnum_return_names @fiber_unsafe_methods
   @ivar_layout @only_owners @other_owners
+  @constant_object_probe @direct_alloc_used @poly_diagnostic_reason_cache @rescued_exception_message_safe
+  @sanitized @strict_ancestors @subtree_ivar_names
 ].freeze
 # CodeGen is reopened across several tools/bc2cpp files (scripts/bc2cpp_split.rb).
 written = Set.new

@@ -75,11 +75,8 @@ end
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'unique_class_names.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_unique_class_names', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_unique_class_names')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_unique_class_names', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry, _superclass_of, _containers, included_modules = build_registry(ireps, root_label)
 
   native = File.join(dir, 'native.cxx')
@@ -91,10 +88,7 @@ Dir.mktmpdir do |dir|
   hook_source = "class Module\n  def const_missing(name); Object; end\nend\n"
   hook = File.join(dir, 'hook.rb')
   File.write(hook, "module Lib\n  class Thing; end\nend\n#{hook_source}")
-  hook_dump, hook_disasm = run_mrbc(hook, 'bc2cpp_unique_hook', dir)
-  hook_ireps, hook_root = parse_c_dump(hook_dump, 'bc2cpp_unique_hook')
-  hook_blocks, hook_files, hook_catches = parse_disasm_blocks(hook_disasm)
-  merge!(hook_ireps, dfs_order(hook_ireps, hook_root), hook_blocks, hook_files, hook_catches)
+  hook_ireps, hook_root = compile_ireps(hook, 'bc2cpp_unique_hook', dir)
   missing = File.join(dir, 'missing.rb')
   File.write(missing, hook_source)
 
@@ -118,6 +112,11 @@ Dir.mktmpdir do |dir|
   UniqueClassNames.object_mixins = Array(included_modules['Object'])
   check.call('a module included into Object is reachable from any owner',
              UniqueClassNames.resolve('Thing', 'App'), 'Lib::Thing')
+  UniqueClassNames.object_mixins = ['RGSS']
+  check.call('native constructors recognize normalized Object-included RGSS', object_includes_rgss?, true)
+  UniqueClassNames.object_mixins = ['Object::RGSS']
+  check.call('native constructors recognize qualified Object-included RGSS', object_includes_rgss?, true)
+  UniqueClassNames.object_mixins = Array(included_modules['Object'])
   check.call('a module neither enclosing nor included is not reachable', UniqueClassNames.resolve('Secret', 'App'), nil)
   check.call('an enclosing module is reachable lexically', UniqueClassNames.resolve('Secret', 'Hidden::User'),
              'Hidden::Secret')
@@ -132,7 +131,7 @@ Dir.mktmpdir do |dir|
   init = registry['initialize'].find { |d| d.owner == 'App' }
   irep = ireps.fetch(init.irep)
   setiv = irep.instructions.index { |i| i.op == 'SETIV' && i.args.include?('@thing') }
-  reg = irep.instructions[setiv].args[/R(\d+)/, 1]
+  reg = irep.instructions[setiv].regs.first
   check.call('construct-target callers still get the written name',
              trace_new_target(irep, setiv, reg, nil, 0, nil, owner: 'App', canonical: false), 'Thing')
 

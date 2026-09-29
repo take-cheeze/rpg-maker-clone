@@ -1018,15 +1018,82 @@
   present in mruby headers. The Hash `__delete` path preserves the core
   wrapper's call-info side effect while calling mruby's public deletion
   helper. A one-argument Array `push` send follows the exact fast branch in
-  mruby's wrapper; other arities keep the wrapper's existing path. See
+  mruby's wrapper; a one-argument `concat` send uses its public Array
+  conversion and concatenation helpers. Other arities keep ordinary dispatch.
+  Closed-world typed calls can also resolve public methods inherited through
+  proven included or prepended modules, with an exact receiver-class guard and
+  dispatch fallback. Class construction lookup also follows the innermost
+  matching class constant in Ruby lexical scope, then a proven top-level
+  binding. See
   [`docs/adr/0177-bc2cpp-native-expression-devirtualization.md`](docs/adr/0177-bc2cpp-native-expression-devirtualization.md),
   [`docs/adr/0178-bc2cpp-generated-argument-expressions.md`](docs/adr/0178-bc2cpp-generated-argument-expressions.md),
   [`docs/adr/0179-bc2cpp-generated-hash-delete.md`](docs/adr/0179-bc2cpp-generated-hash-delete.md),
-  [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md)
-  and [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md).
+  [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md),
+  [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md),
+  and [`docs/adr/0203-bc2cpp-unique-class-names.md`](docs/adr/0203-bc2cpp-unique-class-names.md).
+  bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
+  RITE binary into schema-typed operands, and control flow and register
+  definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
+  per-pass text scraping, including a reaching-definitions query
+  (`BytecodeIR.reaching_definitions`) that answers through joins and loops.
+  See
+  [`docs/adr/0236-bc2cpp-bytecode-ir.md`](docs/adr/0236-bc2cpp-bytecode-ir.md),
+  [`docs/adr/0249-bc2cpp-binary-loader.md`](docs/adr/0249-bc2cpp-binary-loader.md)
+  and [`docs/adr/0250-bc2cpp-typed-operands-and-shared-ir-queries.md`](docs/adr/0250-bc2cpp-typed-operands-and-shared-ir-queries.md).
+  RGSS `Sprite#bitmap=` and the five-argument `Bitmap#fill_rect` form also use
+  frame-independent native entry points when the receiver's exact native class
+  is proven, including inlined calls with a receiver proof; other shapes keep
+  normal Ruby dispatch. Exact-class guards also cover Bitmap `width`/`height`,
+  Bitmap `clear`/`rect`, Viewport `rect`, data objects' `disposed?`, display
+  objects' `visible` queries, and Sprite/Viewport/Window per-frame `update`
+  calls without requiring a static receiver type. Rect coordinate/dimension
+  reads and Color/Tone component getters use their native bodies behind exact
+  class checks too. See
+  [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
+  The frame-independent wrapper rules and supported methods are recorded in
+  [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
+  The remaining RGSS setters (`x=`/`y=`/`z=`/`visible=`/`color=`, Window
+  `contents=`/`windowskin=`/`cursor_rect=`/`active=`/`pause=`, `flash`, Rect
+  writers ...) are shared entry points too: each binding forwards to the same
+  `rgss::*_direct` function the generated exact-class arms call, and in a
+  closed world those arms let the chain's by-name fallback become a proven
+  NoMethodError. See
+  [`docs/adr/0253-bc2cpp-native-direct-entry-points.md`](docs/adr/0253-bc2cpp-native-direct-entry-points.md).
+  Constructor analysis follows source indexes through inlined calls and can
+  directly build RGSS `Table` values when the native class and standard
+  constructor chain are proven. Qualified class paths such as
+  `Namespace::Record.new` retain their root when resolved from nested lexical
+  scopes, allowing compiled initializers to use direct construction too.
+  `Array.new`, `Hash.new` and `Range.new` use guarded `mrb_obj_new` while
+  preserving their normal initializer dispatch. See
+  [`docs/adr/0237-bc2cpp-inlined-constant-construction.md`](docs/adr/0237-bc2cpp-inlined-constant-construction.md)
+  and [`docs/adr/0247-bc2cpp-qualified-construction.md`](docs/adr/0247-bc2cpp-qualified-construction.md).
+  Constructor proofs ignore unresolved instance mixins while still checking
+  singleton mixins that can replace class-object `new` or `allocate`; see
+  [`docs/adr/0248-bc2cpp-constructor-instance-mixins.md`](docs/adr/0248-bc2cpp-constructor-instance-mixins.md).
+  A call to `Exception#message` on a recognized rescued exception reads the
+  same stored message and applies the same default conversion as mruby's
+  `exc_to_s`; calls with unproven receivers or Ruby overrides keep dispatch.
+  Explicit `IO#puts` calls use mruby-io's argv-based model only when runtime
+  lookup still resolves to its original C body; other receivers and overrides
+  retain normal dispatch. Division lowering has dedicated checks for integer
+  floor division, mixed numeric operands, literal-Float receivers and fallback
+  behavior.
+  Bare `new` in a closed-world class method uses the class object's singleton
+  owner as receiver proof, with the same constructor lookup checks.
+  Runtime-selected LCF root types and battle scene classes now use explicit
+  class branches for their closed-world class sets.
+  Zero-argument `to_i` calls use guarded native Integer, Float and String
+  conversions, with ordinary dispatch for other receiver types. See
+  [`docs/adr/0240-bc2cpp-to-i-type-dispatch.md`](docs/adr/0240-bc2cpp-to-i-type-dispatch.md).
+  Compiled `module_function` bodies also resolve their bare self-calls against
+  the same module's emitted singleton copies.
   The generator is `tools/bc2cpp/bc2cpp.rb`, which loads its part files in
   order; `ruby scripts/bc2cpp_split.rb --verify REF` proves that layout is a
-  mechanical split of REF's single-file `bc2cpp.rb`.
+  mechanical split of REF's single-file `bc2cpp.rb`. Statically named ivars
+  on RData-backed classes use GC-traced `mrb_value` slots, while dynamic names
+  retain the normal ivar table; see
+  [`docs/adr/0232-bc2cpp-rdata-instance-variable-slots.md`](docs/adr/0232-bc2cpp-rdata-instance-variable-slots.md).
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
@@ -1401,8 +1468,11 @@ part that explains it). Nothing else is collected.
   `--error_dump_probe` raises a real exception and checks the resulting report
   still carries the exception, the backtrace, the captured log and the run
   context (the `error_dump` ctest), and `scripts/error_report_check.rb` checks
-  the capture on CRuby. See
-  [`docs/adr/0027-copyable-error-report.md`](docs/adr/0027-copyable-error-report.md).
+  the capture on CRuby. The wrapper exposes the runtime's write methods plus
+  an explicit `flush`; bc2cpp can therefore remove its closed-world
+  `method_missing` fallbacks. See
+  [`docs/adr/0027-copyable-error-report.md`](docs/adr/0027-copyable-error-report.md)
+  and [`docs/adr/0229-bc2cpp-tee-explicit-delegation.md`](docs/adr/0229-bc2cpp-tee-explicit-delegation.md).
 
 ### Text and fonts
 

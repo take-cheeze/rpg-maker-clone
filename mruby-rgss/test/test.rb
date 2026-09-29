@@ -2396,6 +2396,8 @@ class WarnOnceSink
     @lines << text
     text.to_s.size
   end
+
+  def flush; end
 end
 
 assert "RGSS.warn_once reports each message only once" do
@@ -2448,6 +2450,7 @@ assert "RGSS::ErrorReport::Tee forwards every write and records it" do
   tee = RGSS::ErrorReport::Tee.new(sink)
   tee.puts "[RPG2k] through the tee"
   tee.write "[RPG2k] written\n"
+  tee.flush
   assert_equal ["[RPG2k] through the tee", "[RPG2k] written\n"], sink.lines
   assert_equal "[RPG2k] through the tee\n[RPG2k] written\n",
                RGSS::ErrorReport.log_tail

@@ -122,6 +122,7 @@ else
         if (M->exc) { mrb_print_error(M); return 2; }
         bc2cpp_set_instance_tts(M);
         RClass* owner = mrb_class_get(M, "HashValueInlineOwner");
+        mrb_define_method(M, owner, "initialize", HashValueInlineOwner_initialize, MRB_ARGS_NONE());
         mrb_define_method(M, owner, "sum", HashValueInlineOwner_sum, MRB_ARGS_NONE());
         mrb_define_method(M, owner, "first_value", HashValueInlineOwner_first_value, MRB_ARGS_NONE());
         mrb_define_method(M, owner, "value_type", HashValueInlineOwner_value_type, MRB_ARGS_REQ(1));

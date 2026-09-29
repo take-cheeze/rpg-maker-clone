@@ -323,6 +323,64 @@ Ir is the stable figure: SDL's software blit under xvfb swings from run to
 run. Also confirm that bc2cpp's `== hot-only: listed but not compiled ==`
 section is empty.
 
+## bc2cpp generation-time profiling
+
+`BC2CPP_PROFILE_TIMINGS=1` makes bc2cpp print phase and analysis timings to
+stderr. The whole-program report runs both the analysis and shipped-output
+passes, so it reports each pass separately:
+
+```sh
+BC2CPP_PROFILE_TIMINGS=1 MRBC=build/mruby/host/mrbc/bin/mrbc \
+  ruby scripts/bc2cpp_coverage_report.rb
+```
+
+The `BC2CPP_TIME` rows show broad pipeline phases; `BC2CPP_DETAIL` rows split
+the expensive whole-program analyses. Timings are opt-in and do not affect
+generated C++. Both `ArgTypes` and `ClassArgTypes` use the same call-site index,
+so each MONO method visits only its own callers rather than rescanning every
+instruction in the program. On the three-gem coverage workload, this reduced
+one bc2cpp pass from about 91 seconds to about 16 seconds while keeping the
+coverage totals unchanged.
+
+To find hotspots inside a phase, sample bc2cpp itself with `stackprof` (`gem
+install stackprof`; `StackProf.start(mode: :cpu, interval: 2000)` from a
+`RUBYOPT=-r` preload that dumps `StackProf.results` at exit, and
+`stackprof --sort-total dump`). Compare CPU time (`/usr/bin/time` user), not
+wall time, and interleave before/after runs: the machine is shared. The
+whole-program run compiles each method about three times (a `compiles_clean?`
+probe in the analysis CodeGen, another in the final CodeGen, then the real
+compile), which is by design, so the cost is per-instruction compile work plus
+the garbage it makes (about a quarter of the time is GC). Regexps that start
+with `(\w+)` have no literal prefix for Onigmo, so guard scans over native
+sources with `include?`, and index non-ASCII text through an ASCII view rather
+than by character.
+
+The same report counts cached send references separately from generic `POLY`
+sites: cached references include fallback arms attached to direct-call guards,
+so they are not a count of unresolved dispatch. Its method-name ranking uses
+only generic `POLY` markers. It also cross-tabulates those sites by dispatch
+path and receiver-class evidence, which helps separate unresolved tracing from
+missing or unsafe targets. For unresolved receivers it records the nearest
+defining opcode behind the receiver register (following `MOVE` aliases), so
+large groups such as constant lookups, method results, indexed values and ivar
+reads can be prioritized for a later proof without changing dispatch behavior.
+For the largest origin groups it also lists the most frequent dispatched names,
+which helps distinguish a repeated class-method opportunity from unrelated
+receiver-tracing gaps.
+For `/`, generated sends also test for an exact Float receiver and use Float's
+native division body on that branch; non-Float receivers and Complex operands
+retain ordinary Ruby dispatch. This lets the report distinguish a generic
+receiver site from a guarded fast path without removing its fallback.
+Closed-world constant-object calls can also trace across branches when every
+forward edge either reaches the constant assignment or skips the call; a
+branch-selected receiver keeps ordinary dispatch.
+
+This report runs under the wio closed-world proof with the same gem map used by
+the compiled gems. It allows the `NOMETHOD_REVIEWED` audit to report findings
+without aborting the measurement; that environment flag does not change
+generated code. The dispatch totals therefore describe closed-world output,
+rather than a non-closed-world all-owner analysis.
+
 ## Audio: what is already off the main thread
 
 Short version: **the audio *processing* is already on another thread, and it
