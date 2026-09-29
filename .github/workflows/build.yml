@@ -996,6 +996,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_return_join_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_nested_compile_state_check.rb
               ruby scripts/bc2cpp_insn_operands_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_operand_schema_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_closed_world_check.rb
 
     env:

@@ -365,16 +365,16 @@ wrapper_registry = %w[clear rect height width x y red green blue alpha gray disp
   [name, [MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)]]
 end
 wrapper_generator = CodeGen.new({}, wrapper_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
-height_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 = SEND R2 :height n=0'), self_implicit: false)
-disposed_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 = SEND R2 :disposed? n=0'), self_implicit: false)
-visible_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 = SEND R2 :visible n=0'), self_implicit: false)
-clear_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 = SEND R2 :clear n=0'), self_implicit: false)
-rect_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 = SEND R2 :rect n=0'), self_implicit: false)
-update_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 = SEND R2 :update n=0'), self_implicit: false)
-rect_x_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 = SEND R2 :x n=0'), self_implicit: false)
-rect_width_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 = SEND R2 :width n=0'), self_implicit: false)
-color_red_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 = SEND R2 :red n=0'), self_implicit: false)
-tone_red_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 = SEND R2 :red n=0'), self_implicit: false)
+height_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :height n=0'), self_implicit: false)
+disposed_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :disposed? n=0'), self_implicit: false)
+visible_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :visible n=0'), self_implicit: false)
+clear_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :clear n=0'), self_implicit: false)
+rect_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :rect n=0'), self_implicit: false)
+update_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :update n=0'), self_implicit: false)
+rect_x_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :x n=0'), self_implicit: false)
+rect_width_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :width n=0'), self_implicit: false)
+color_red_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :red n=0'), self_implicit: false)
+tone_red_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :red n=0'), self_implicit: false)
 check.call('RGSS Bitmap#height uses its frame independent wrapper behind an exact class guard',
            height_code.include?('rgss::native_bitmap_class()') &&
              height_code.include?('rgss::bitmap_height_direct(M, r1)') &&
