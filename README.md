@@ -1059,6 +1059,11 @@
   closed world those arms let the chain's by-name fallback become a proven
   NoMethodError. See
   [`docs/adr/0253-bc2cpp-native-direct-entry-points.md`](docs/adr/0253-bc2cpp-native-direct-entry-points.md).
+  mruby's own natives get the same treatment where the body needs no caller
+  frame: `Array#join`/`#shift`/`#compact`/`#index`, `String#bytes` and
+  `Integer#inspect` are called directly behind exact-class guards, each row
+  re-audited against the mruby sources on every compile. See
+  [`docs/adr/0257-bc2cpp-native-core-direct-arms.md`](docs/adr/0257-bc2cpp-native-core-direct-arms.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
