@@ -240,6 +240,9 @@ CONSTANT_OBJECT_WORLD = <<~'RUBY'
   module CwReplacementObject
     def self.value; 22; end
   end
+  module CwBranchReplacementObject
+    def self.value; 23; end
+  end
   class CwValueTypeA
     def value_type_probe; 31; end
   end
@@ -252,6 +255,18 @@ CONSTANT_OBJECT_WORLD = <<~'RUBY'
   CwValueTypeConstant = CwValueTypeA.new
   class CwStableCaller
     def stable; CwStableObject.value; end
+    def after_branch(flag)
+      if flag
+        marker = 1
+      else
+        marker = 2
+      end
+      CwStableObject.value + marker
+    end
+    def branch_selected(flag)
+      receiver = flag ? CwStableObject : CwBranchReplacementObject
+      receiver.value
+    end
     def qualified; CwNamespace::StableObject.value; end
     def module_function; CwModuleFunction.value(4); end
     def module_function_state; CwModuleFunction.state; end
@@ -338,6 +353,8 @@ nested_shadow_call = body_of.call(constant_object_code, 'CwOuter__CwInner__Calle
 module_function_call = body_of.call(constant_object_code, 'CwStableCaller_module_function')
 module_function_state_call = body_of.call(constant_object_code, 'CwStableCaller_module_function_state')
 value_constant_type_call = body_of.call(constant_object_code, 'CwStableCaller_value_constant_type')
+after_branch_call = body_of.call(constant_object_code, 'CwStableCaller_after_branch')
+branch_selected_call = body_of.call(constant_object_code, 'CwStableCaller_branch_selected')
 rebound_object_call = body_of.call(constant_object_code, 'CwReboundCaller_rebound')
 qualified_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create')
 qualified_array_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create_array')
@@ -348,6 +365,12 @@ check.call('a stable class/module constant dispatches directly to its unique sin
            constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              constant_object_call.include?('CwStableObject_singleton_value_impl(') &&
              !constant_object_call.include?('bc2cpp_send('))
+check.call('a branch before a fresh stable constant lookup preserves direct dispatch',
+           after_branch_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
+             after_branch_call.include?('CwStableObject_singleton_value_impl('))
+check.call('a branch-selected receiver keeps runtime dispatch',
+           !branch_selected_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
+             branch_selected_call.include?('bc2cpp_send('))
 check.call('a qualified class constant resolves directly through its initializer',
            qualified_construct_call.include?('MONO :new -> CwQualifiedConstruct::Stable') &&
              qualified_construct_call.include?('CwQualifiedConstruct__Stable_initialize_impl(') &&

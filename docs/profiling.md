@@ -357,6 +357,9 @@ For `/`, generated sends also test for an exact Float receiver and use Float's
 native division body on that branch; non-Float receivers and Complex operands
 retain ordinary Ruby dispatch. This lets the report distinguish a generic
 receiver site from a guarded fast path without removing its fallback.
+Closed-world constant-object calls can also trace across branches when every
+forward edge either reaches the constant assignment or skips the call; a
+branch-selected receiver keeps ordinary dispatch.
 
 This report runs under the wio closed-world proof with the same gem map used by
 the compiled gems. It allows the `NOMETHOD_REVIEWED` audit to report findings
