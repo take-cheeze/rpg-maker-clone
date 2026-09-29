@@ -3,9 +3,16 @@ putting those names in the object's ordinary iv_tbl. The descriptors keep
 mruby's ivar APIs and GC aware of those slots; unknown/dynamic names continue
 to use the ordinary table.
 
+A slot is an mrb_value unless its descriptor names another kind: bc2cpp's
+typed slots keep a raw mrb_int/mrb_sym/mrb_bool/int-or-nil, which the ivar
+APIs box on read and type-check on write, and the GC does not mark. Without
+that, instance_variable_get/set, instance_variables, inspect and Marshal
+could not see a typed ivar, and would read or write a table the generated
+code never consults.
+
 --- a/include/mruby/data.h
 +++ b/include/mruby/data.h
-@@ -25,8 +25,26 @@
+@@ -25,8 +25,49 @@
  
    /** data type release function pointer */
    void (*dfree)(mrb_state *mrb, void*);
@@ -23,10 +30,33 @@ to use the ordinary table.
 +  size_t ivar_hash_mask;
  } mrb_data_type;
  
-+/** A GC-visible Ruby instance variable stored in an RData payload. */
++/**
++ * How an RData payload stores one ivar. VALUE is an mrb_value the GC marks;
++ * the others are raw C values that bc2cpp's generated code reads unboxed
++ * (mrb_int, mrb_sym, mrb_bool, and INT_OR_NIL's struct mrb_data_int_or_nil).
++ * The generated code proves every store has that type, so a typed slot is
++ * always assigned and never holds a heap reference.
++ */
++enum mrb_data_ivar_kind {
++  MRB_DATA_IVAR_VALUE = 0,
++  MRB_DATA_IVAR_INT,
++  MRB_DATA_IVAR_SYMBOL,
++  MRB_DATA_IVAR_BOOL,
++  MRB_DATA_IVAR_INT_OR_NIL
++};
++
++/** Layout of an MRB_DATA_IVAR_INT_OR_NIL slot. */
++struct mrb_data_int_or_nil {
++  mrb_bool present;
++  mrb_int value;
++};
++
++/** A Ruby instance variable stored in an RData payload. */
 +struct mrb_data_ivar {
 +  const char *name;
 +  size_t offset;
++  /** enum mrb_data_ivar_kind; zero (a two-field initializer) is VALUE. */
++  int kind;
 +};
 +
  struct RData {
@@ -34,7 +64,7 @@ to use the ordinary table.
    struct iv_tbl *iv;
 --- a/src/gc.c
 +++ b/src/gc.c
-@@ -728,6 +728,16 @@
+@@ -728,6 +728,18 @@
  
    case MRB_TT_OBJECT:
    case MRB_TT_CDATA:
@@ -43,6 +73,8 @@ to use the ordinary table.
 +      /* data is NULL until mrb_data_init runs, and stays NULL if #initialize raised first. */
 +      if (data->type && data->type->ivars && data->data) {
 +        for (size_t i = 0; i < data->type->ivar_count; ++i) {
++          /* A typed slot is a raw C value, never a reference. */
++          if (data->type->ivars[i].kind != MRB_DATA_IVAR_VALUE) continue;
 +          mrb_value *slot = (mrb_value*)((char*)data->data + data->type->ivars[i].offset);
 +          mrb_gc_mark_value(mrb, *slot);
 +        }
@@ -64,12 +96,13 @@ to use the ordinary table.
  #include <mruby/proc.h>
  #include <mruby/string.h>
  #include <mruby/variable.h>
-@@ -597,6 +599,42 @@
+@@ -597,6 +599,95 @@
    }
  }
  
-+static mrb_value*
-+rdata_ivar_slot(mrb_state *mrb, struct RObject *obj, mrb_sym sym)
++/* The descriptor entry for `sym` and the address of its slot, or NULL. */
++static const struct mrb_data_ivar*
++rdata_ivar_find(mrb_state *mrb, struct RObject *obj, mrb_sym sym, char **slot)
 +{
 +  if (obj->tt != MRB_TT_CDATA) return NULL;
 +  struct RData *data = (struct RData*)obj;
@@ -91,45 +124,101 @@ to use the ordinary table.
 +      if (idx == 0xFFFF) return NULL;
 +      const struct mrb_data_ivar *ivar = &type->ivars[idx];
 +      if (strncmp(ivar->name, name, (size_t)len) == 0 && ivar->name[len] == '\0') {
-+        return (mrb_value*)((char*)data->data + ivar->offset);
++        *slot = (char*)data->data + ivar->offset;
++        return ivar;
 +      }
 +    }
 +  }
 +  for (size_t i = 0; i < type->ivar_count; ++i) {
 +    const struct mrb_data_ivar *ivar = &type->ivars[i];
 +    if (strncmp(ivar->name, name, (size_t)len) == 0 && ivar->name[len] == '\0') {
-+      return (mrb_value*)((char*)data->data + ivar->offset);
++      *slot = (char*)data->data + ivar->offset;
++      return ivar;
 +    }
 +  }
 +  return NULL;
 +}
 +
++/* The slot's value; mrb_undef_value() for a VALUE slot never assigned. */
++static mrb_value
++rdata_ivar_load(const struct mrb_data_ivar *ivar, char *slot)
++{
++  switch (ivar->kind) {
++  case MRB_DATA_IVAR_INT: return mrb_fixnum_value(*(mrb_int*)slot);
++  case MRB_DATA_IVAR_SYMBOL: return mrb_symbol_value(*(mrb_sym*)slot);
++  case MRB_DATA_IVAR_BOOL: return mrb_bool_value(*(mrb_bool*)slot);
++  case MRB_DATA_IVAR_INT_OR_NIL: {
++    struct mrb_data_int_or_nil *f = (struct mrb_data_int_or_nil*)slot;
++    return f->present ? mrb_fixnum_value(f->value) : mrb_nil_value();
++  }
++  default: return *(mrb_value*)slot;
++  }
++}
++
++/* Store `v`. The generated code assumes a typed slot only ever holds its
++   type, so another value is refused instead of being truncated into it. */
++static void
++rdata_ivar_store(mrb_state *mrb, struct RObject *obj, const struct mrb_data_ivar *ivar, char *slot, mrb_value v)
++{
++  const char *want = NULL;
++  switch (ivar->kind) {
++  case MRB_DATA_IVAR_INT:
++    if (mrb_integer_p(v)) { *(mrb_int*)slot = mrb_integer(v); return; }
++    want = "Integer";
++    break;
++  case MRB_DATA_IVAR_SYMBOL:
++    if (mrb_symbol_p(v)) { *(mrb_sym*)slot = mrb_symbol(v); return; }
++    want = "Symbol";
++    break;
++  case MRB_DATA_IVAR_BOOL:
++    if (mrb_true_p(v) || mrb_false_p(v)) { *(mrb_bool*)slot = mrb_true_p(v); return; }
++    want = "boolean";
++    break;
++  case MRB_DATA_IVAR_INT_OR_NIL: {
++    struct mrb_data_int_or_nil *f = (struct mrb_data_int_or_nil*)slot;
++    if (mrb_nil_p(v)) { f->present = FALSE; f->value = 0; return; }
++    if (mrb_integer_p(v)) { f->present = TRUE; f->value = mrb_integer(v); return; }
++    want = "Integer or nil";
++    break;
++  }
++  default:
++    *(mrb_value*)slot = v;
++    mrb_field_write_barrier_value(mrb, (struct RBasic*)obj, v);
++    return;
++  }
++  mrb_raisef(mrb, E_TYPE_ERROR, "%s: expected %s", ivar->name, want);
++}
++
  static iv_tbl*
  class_iv_ptr(struct RClass *c)
  {
-@@ -618,6 +656,8 @@
+@@ -618,6 +709,12 @@
  MRB_API mrb_value
  mrb_obj_iv_get(mrb_state *mrb, struct RObject *obj, mrb_sym sym)
  {
-+  mrb_value *slot = rdata_ivar_slot(mrb, obj, sym);
-+  if (slot) return mrb_undef_p(*slot) ? mrb_nil_value() : *slot;
++  char *slot;
++  const struct mrb_data_ivar *ivar = rdata_ivar_find(mrb, obj, sym, &slot);
++  if (ivar) {
++    mrb_value v = rdata_ivar_load(ivar, slot);
++    return mrb_undef_p(v) ? mrb_nil_value() : v;
++  }
    if (MRB_OBJ_SHAPED_P(obj)) {
      return shaped_iv_get(obj, sym);
    }
-@@ -689,6 +729,12 @@
+@@ -689,6 +786,12 @@
  void
  mrb_obj_iv_set_force(mrb_state *mrb, struct RObject *obj, mrb_sym sym, mrb_value v)
  {
-+  mrb_value *slot = rdata_ivar_slot(mrb, obj, sym);
-+  if (slot) {
-+    *slot = v;
-+    mrb_field_write_barrier_value(mrb, (struct RBasic*)obj, v);
++  char *slot;
++  const struct mrb_data_ivar *ivar = rdata_ivar_find(mrb, obj, sym, &slot);
++  if (ivar) {
++    rdata_ivar_store(mrb, obj, ivar, slot, v);
 +    return;
 +  }
    if (namespace_p(obj->tt)) {
      assign_class_name(mrb, obj, sym, v);
    }
-@@ -742,6 +788,19 @@
+@@ -742,6 +845,19 @@
  mrb_iv_foreach(mrb_state *mrb, mrb_value obj, mrb_iv_foreach_func *func, void *p)
  {
    if (!obj_iv_p(obj)) return;
@@ -138,7 +227,7 @@ to use the ordinary table.
 +    if (data->type && data->type->ivars && data->data) {
 +      for (size_t i = 0; i < data->type->ivar_count; ++i) {
 +        const struct mrb_data_ivar *ivar = &data->type->ivars[i];
-+        mrb_value val = *(mrb_value*)((char*)data->data + ivar->offset);
++        mrb_value val = rdata_ivar_load(ivar, (char*)data->data + ivar->offset);
 +        if (!mrb_undef_p(val)) {
 +          mrb_sym sym = mrb_intern_cstr(mrb, ivar->name);
 +          if (func(mrb, sym, val, p) != 0) return;
@@ -149,16 +238,17 @@ to use the ordinary table.
    if (MRB_OBJ_SHAPED_P(mrb_obj_ptr(obj))) {
      shaped_iv_foreach(mrb, mrb_obj_ptr(obj), func, p);
      return;
-@@ -791,6 +850,8 @@
+@@ -791,6 +907,9 @@
  MRB_API mrb_bool
  mrb_obj_iv_defined(mrb_state *mrb, struct RObject *obj, mrb_sym sym)
  {
-+  mrb_value *slot = rdata_ivar_slot(mrb, obj, sym);
-+  if (slot) return !mrb_undef_p(*slot);
++  char *slot;
++  const struct mrb_data_ivar *ivar = rdata_ivar_find(mrb, obj, sym, &slot);
++  if (ivar) return !mrb_undef_p(rdata_ivar_load(ivar, slot));
    if (MRB_OBJ_SHAPED_P(obj)) {
      return shaped_iv_defined(obj, sym);
    }
-@@ -887,6 +948,19 @@
+@@ -887,6 +1006,19 @@
    struct RObject *d = mrb_obj_ptr(dest);
    struct RObject *s = mrb_obj_ptr(src);
  
@@ -178,7 +268,7 @@ to use the ordinary table.
    /* free dest's existing IVs */
    if (MRB_OBJ_SHAPED_P(d)) {
      shaped_iv_free(mrb, d);
-@@ -937,6 +1011,26 @@
+@@ -937,6 +1069,28 @@
        d->iv = iv_copy(mrb, s->iv);
      }
    }
@@ -188,13 +278,15 @@ to use the ordinary table.
 +    if (source->type && source->type->ivars && source->data) {
 +      for (size_t i = 0; i < source->type->ivar_count; ++i) {
 +        const struct mrb_data_ivar *ivar = &source->type->ivars[i];
++        /* A typed slot was copied with the payload above. */
++        if (ivar->kind != MRB_DATA_IVAR_VALUE) continue;
 +        mrb_value value = *(mrb_value*)((char*)source->data + ivar->offset);
 +        if (mrb_undef_p(value)) continue;
 +        mrb_sym sym = mrb_intern_cstr(mrb, ivar->name);
-+        mrb_value *slot = rdata_ivar_slot(mrb, d, sym);
-+        if (slot) {
-+          *slot = value;
-+          mrb_field_write_barrier_value(mrb, (struct RBasic*)d, value);
++        char *slot;
++        const struct mrb_data_ivar *target = rdata_ivar_find(mrb, d, sym, &slot);
++        if (target) {
++          rdata_ivar_store(mrb, d, target, slot, value);
 +        }
 +        else {
 +          mrb_obj_iv_set_force(mrb, d, sym, value);
@@ -205,21 +297,26 @@ to use the ordinary table.
  }
  
  /*
-@@ -959,6 +1053,13 @@
+@@ -959,6 +1113,18 @@
      struct RObject *o = mrb_obj_ptr(obj);
      mrb_check_frozen(mrb, o);
  
-+    mrb_value *slot = rdata_ivar_slot(mrb, o, sym);
-+    if (slot) {
-+      mrb_value val = *slot;
-+      *slot = mrb_undef_value();
++    char *slot;
++    const struct mrb_data_ivar *ivar = rdata_ivar_find(mrb, o, sym, &slot);
++    if (ivar) {
++      /* A typed slot has no unset state: the generated code reads it unboxed. */
++      if (ivar->kind != MRB_DATA_IVAR_VALUE) {
++        mrb_raisef(mrb, E_TYPE_ERROR, "%s: cannot remove a typed instance variable", ivar->name);
++      }
++      mrb_value val = *(mrb_value*)slot;
++      *(mrb_value*)slot = mrb_undef_value();
 +      return val;
 +    }
 +
      if (MRB_OBJ_SHAPED_P(o)) {
        mrb_shaped_iv *siv = (mrb_shaped_iv*)o->iv;
        if (siv) {
-@@ -1019,13 +1120,7 @@
+@@ -1019,13 +1185,7 @@
    mrb_value ary = mrb_ary_new(mrb);
  
    if (obj_iv_p(self)) {
