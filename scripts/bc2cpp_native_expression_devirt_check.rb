@@ -217,6 +217,20 @@ size_code = generator.compile_native_primitive_send('size', 1, 'r3', [])
 check.call('exact-class output uses generated C expressions and falls back for other receiver classes',
            size_code.include?('M->array_class') && size_code.include?('M->hash_class') &&
              size_code.include?('mrb_funcall(M, r3, "size", 0)'))
+empty_code = generator.compile_native_primitive_send('empty?', 1, 'r3', [])
+check.call('native exact-class arms share one cached-dispatch fallback',
+           %w[array hash string].all? { |klass| empty_code.include?("M->#{klass}_class") } &&
+             empty_code.scan('mrb_funcall(M, r3, "empty?", 0)').one?)
+to_s_registry = %w[to_s inspect].to_h do |name|
+  [name, [MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)]]
+end
+to_s_generator = CodeGen.new({}, to_s_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                             native_registered_expressions: exact_class_expressions)
+to_s_code = to_s_generator.compile_native_primitive_send('to_s', 1, 'r3', [])
+check.call('to_s type-tag arms share one cached-dispatch fallback',
+           %w[string array hash].all? { |klass| to_s_code.include?("M->#{klass}_class") } &&
+             to_s_code.include?('mrb_integer_to_str(M, r3, 10)') &&
+             to_s_code.scan('mrb_funcall(M, r3, "to_s", 0)').one?)
 length_code = generator.compile_native_primitive_send('length', 1, 'r3', [])
 check.call('Array/Hash length is generated from the same C expressions as size',
            length_code.include?('M->array_class') && length_code.include?('M->hash_class') &&
@@ -319,7 +333,7 @@ check.call('Array#concat emits the exact one-argument conversion and keeps other
   element_code = element_generator.compile_native_primitive_send(name, 1, 'r3', [])
   element_count_code = element_generator.compile_native_primitive_send(name, 1, 'r3', ['r4'])
   check.call("Array##{name} emits the exact Array element path and keeps count-argument dispatch",
-             element_code.include?('case MRB_TT_ARRAY:') && element_code.include?('M->array_class') &&
+             element_code.include?('mrb_type(r3) == MRB_TT_ARRAY') && element_code.include?('M->array_class') &&
                element_code.include?('ARY_PTR(bc2cpp_ary_ptr)[') && element_code.include?("mrb_funcall(M, r3, \"#{name}\", 0)") &&
                element_code.scan('mrb_ary_ptr(r3)').length == 1 &&
                element_count_code.include?("mrb_funcall(M, r3, \"#{name}\", 1, r4)") &&
@@ -465,29 +479,32 @@ check.call('generated Hash#to_hash is exact-class guarded and preserves dynamic 
              hash_to_hash_code.include?('mrb_funcall(M, r3, "to_hash", 0)'))
 float_to_f_code = generator.compile_native_primitive_send('to_f', 1, 'r3', [])
 symbol_to_sym_code = generator.compile_native_primitive_send('to_sym', 1, 'r3', [])
-symbol_to_sym_case = symbol_to_sym_code.split('case MRB_TT_SYMBOL:').last.to_s.split('break;').first.to_s
 check.call('immediate Float and Symbol paths use type tags without object-pointer dereferences',
-           float_to_f_code.include?('case MRB_TT_FLOAT:') && symbol_to_sym_code.include?('case MRB_TT_SYMBOL:') &&
+           float_to_f_code.include?('mrb_type(r3) == MRB_TT_FLOAT') &&
+             symbol_to_sym_code.include?('mrb_type(r3) == MRB_TT_SYMBOL') &&
              float_to_f_code.include?('r1 = r3;') && symbol_to_sym_code.include?('r1 = r3;') &&
              float_to_f_code.include?('mrb_funcall(M, r3, "to_f", 0)') &&
              symbol_to_sym_code.include?('mrb_funcall(M, r3, "to_sym", 0)') &&
-             !float_to_f_code.include?('mrb_obj_ptr(r3)') && !symbol_to_sym_case.include?('mrb_obj_ptr(r3)'))
+             !float_to_f_code.include?('mrb_obj_ptr(r3)') &&
+             symbol_to_sym_code.include?('M->string_class') &&
+             !symbol_to_sym_code.split('mrb_type(r3) == MRB_TT_SYMBOL').last.to_s.split('else').first.to_s
+                                                                  .include?('mrb_obj_ptr(r3)'))
 finite_code = generator.compile_native_primitive_send('finite?', 1, 'r3', [])
 nan_code = generator.compile_native_primitive_send('nan?', 1, 'r3', [])
 check.call('Float predicates use their source expressions behind immediate type-tag guards',
-           finite_code.include?('case MRB_TT_FLOAT:') && finite_code.include?('isfinite(mrb_float(r3))') &&
-             nan_code.include?('case MRB_TT_FLOAT:') && nan_code.include?('isnan(mrb_float(r3))') &&
+           finite_code.include?('mrb_type(r3) == MRB_TT_FLOAT') && finite_code.include?('isfinite(mrb_float(r3))') &&
+             nan_code.include?('mrb_type(r3) == MRB_TT_FLOAT') && nan_code.include?('isnan(mrb_float(r3))') &&
              finite_code.include?('mrb_funcall(M, r3, "finite?", 0)') &&
              nan_code.include?('mrb_funcall(M, r3, "nan?", 0)'))
 abs_code = generator.compile_native_primitive_send('abs', 1, 'r3', [])
 check.call('Float#abs uses the recognized conditional C body and keeps dynamic fallback',
-           abs_code.include?('case MRB_TT_FLOAT:') && abs_code.include?('signbit((mrb_float(r3)))') &&
+           abs_code.include?('mrb_type(r3) == MRB_TT_FLOAT') && abs_code.include?('signbit((mrb_float(r3)))') &&
              abs_code.include?('mrb_float_value(M, -(mrb_float(r3)))') &&
              abs_code.include?('mrb_funcall(M, r3, "abs", 0)'))
 infinite_code = generator.compile_native_primitive_send('infinite?', 1, 'r3', [])
 exclude_end_code = generator.compile_native_primitive_send('exclude_end?', 1, 'r3', [])
 check.call('Float#infinite? and Range#exclude_end? use immediate/exact-class guards and keep dynamic fallback',
-           infinite_code.include?('case MRB_TT_FLOAT:') && infinite_code.include?('isinf((mrb_float(r3)))') &&
+           infinite_code.include?('mrb_type(r3) == MRB_TT_FLOAT') && infinite_code.include?('isinf((mrb_float(r3)))') &&
              infinite_code.include?('mrb_fixnum_value((mrb_float(r3)) < 0 ? -1 : 1)') &&
              infinite_code.include?('mrb_nil_value()') && !infinite_code.include?('mrb_obj_ptr(r3)') &&
              infinite_code.include?('mrb_funcall(M, r3, "infinite?", 0)') &&

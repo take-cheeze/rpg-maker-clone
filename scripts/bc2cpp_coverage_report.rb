@@ -468,7 +468,9 @@ poly_dynamic_names.sort_by { |name, n| [-n, name] }.first(30).each_with_index do
 end
 report << "top 30 cached dispatch method names (generic sites and guarded fallbacks):\n"
 dispatch_counts.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|
-  report << format("  %2d. %5d  :%s\n", i + 1, n, name)
+  generic = poly_dynamic_names[name]
+  report << format("  %2d. %5d total  %4d generic  %5d other  :%s\n",
+                   i + 1, n, generic, [n - generic, 0].max, name)
 end
 
 if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
