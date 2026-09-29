@@ -335,14 +335,23 @@ check.call('the innermost lexical class/module constant wins over same-named out
              !nested_shadow_call.include?('bc2cpp_send('))
 saved_construct_names = ConstructClassNames.table
 ConstructClassNames.table = {
+  'StableObject' => true,
   'CwOuter::StableObject' => true,
   'CwOuter::CwInner::StableObject' => true,
 }
 nested_construct_name = CodeGen.allocate.send(:lexically_resolve_construct_target,
                                                 'StableObject', 'CwOuter::CwInner::Caller')
+top_level_construct_name = CodeGen.allocate.send(:lexically_resolve_construct_target,
+                                                  'StableObject', 'CwOther::Caller')
+unknown_construct_name = CodeGen.allocate.send(:lexically_resolve_construct_target,
+                                               'MissingObject', 'Unrelated')
 ConstructClassNames.table = saved_construct_names
 check.call('construct resolution selects the first binding in Ruby lexical nesting',
            nested_construct_name == 'CwOuter::CwInner::StableObject')
+check.call('construct resolution falls back to a proven top-level constant',
+           top_level_construct_name == 'StableObject')
+check.call('construct resolution leaves an unproven top-level constant unresolved',
+           unknown_construct_name.nil?)
 check.call('a single-assignment instance constant supplies a guarded class and falls back for a custom constructor result',
            value_constant_type_call.include?('TYPED :value_type_probe -> CwValueTypeA') &&
              value_constant_type_call.include?('CwValueTypeA_value_type_probe_impl('))

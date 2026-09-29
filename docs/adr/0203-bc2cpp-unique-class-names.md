@@ -61,8 +61,9 @@ The three construct-target callers pass `canonical: false`, because
 `NATIVE_CONSTRUCT_TARGETS` and `DIRECT_CONSTRUCT_TARGETS` are keyed by the
 written name. When several declared classes share a name at nested lexical
 levels, construct resolution selects the first defined binding from the
-innermost scope outward, matching Ruby's GETCONST lookup. The class-identity
-and constructor gates still decide whether the call can be devirtualized.
+innermost scope outward, then checks a proven top-level binding, matching
+Ruby's GETCONST lookup. The class-identity and constructor gates still decide
+whether the call can be devirtualized.
 
 ## Consequences
 

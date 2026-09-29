@@ -1023,7 +1023,8 @@
   Closed-world typed calls can also resolve public methods inherited through
   proven included or prepended modules, with an exact receiver-class guard and
   dispatch fallback. Class construction lookup also follows the innermost
-  matching class constant in Ruby lexical scope. See
+  matching class constant in Ruby lexical scope, then a proven top-level
+  binding. See
   [`docs/adr/0177-bc2cpp-native-expression-devirtualization.md`](docs/adr/0177-bc2cpp-native-expression-devirtualization.md),
   [`docs/adr/0178-bc2cpp-generated-argument-expressions.md`](docs/adr/0178-bc2cpp-generated-argument-expressions.md),
   [`docs/adr/0179-bc2cpp-generated-hash-delete.md`](docs/adr/0179-bc2cpp-generated-hash-delete.md),
