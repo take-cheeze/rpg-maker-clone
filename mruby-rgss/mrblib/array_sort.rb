@@ -49,12 +49,13 @@ end
 module RGSS
   # The sign of a comparator's answer, or nil when it has none — nil is what
   # mruby's sort treats as a failed comparison, so an unusable answer still
-  # raises exactly what it raised before.
+  # raises what it raised before. Only a value with no `<` (nil) is caught: a
+  # comparison that itself fails (a String) surfaces its own error.
   def self._comparison_sign(value)
     return -1 if value < 0
     return 1 if value > 0
     0
-  rescue StandardError
+  rescue NoMethodError
     nil
   end
 end

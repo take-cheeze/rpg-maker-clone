@@ -1578,7 +1578,7 @@ module RGSS
       # NO_RENDER_WAIT.
       def render_fps
         RENDER_FPS
-      rescue StandardError
+      rescue NameError
         60
       end
 

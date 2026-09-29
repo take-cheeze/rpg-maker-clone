@@ -992,6 +992,7 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_poly_table_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_integer_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_const_lookup_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_impossible_as_error_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_poly_accessor_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_owner_class_cache_check.rb
               ruby scripts/bc2cpp_mrbgem_deps_check.rb
@@ -1161,6 +1162,12 @@ jobs:
             run: |
               ruby scripts/rpg2k_closed_world_lint_check.rb
               ruby scripts/rpg2k_closed_world_lint.rb
+
+          # ADR 0262: a should-not-happen path raises or reports instead of
+          # falling back silently (bc2cpp source readers, constant-proof
+          # invariants, every broad mrblib rescue).
+          - name: Impossible-as-error check
+            run: ruby scripts/impossible_as_error_check.rb
 
           # The wio-only mrblib rewrites only run in a wio build, which CI
           # doesn't do; a source edit must not silently break them.

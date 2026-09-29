@@ -1711,7 +1711,8 @@ module Game
 
     def self.ole_now
       Time.now.to_i / 86400.0 + OLE_EPOCH_OFFSET
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] no usable clock (#{e.class}: #{e.message}), stamping the save 2000-01-01"
       NO_CLOCK_TIMESTAMP
     end
 

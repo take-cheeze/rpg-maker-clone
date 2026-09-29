@@ -676,7 +676,7 @@ class RPG2k
   # See the TEST_PLAY comment on #initialize above.
   def native_test_play?
     TEST_PLAY
-  rescue StandardError
+  rescue NameError
     false
   end
   private :native_test_play?
@@ -723,7 +723,7 @@ class RPG2k
 
   def default_title
     File.basename GAME_DIR
-  rescue StandardError
+  rescue NameError
     'RPG Maker 2000'
   end
   private :default_title
@@ -907,7 +907,7 @@ class RPG2k
   # never define it) raises NameError, rescued to nil.
   def headless_battle_troop
     RPG2K_BATTLE_TROOP.zero? ? nil : RPG2K_BATTLE_TROOP
-  rescue StandardError
+  rescue NameError
     nil
   end
 
@@ -935,7 +935,7 @@ class RPG2k
   def battle_play_requested?
     (begin
       RPG2K_BATTLE_PLAY
-    rescue StandardError
+    rescue NameError
       false
     end) == true
   end
@@ -1063,7 +1063,7 @@ class RPG2k
   # to nil.
   def preview_map_id
     RPG2K_PREVIEW_MAP.zero? ? nil : RPG2K_PREVIEW_MAP
-  rescue StandardError
+  rescue NameError
     nil
   end
 
@@ -1074,13 +1074,13 @@ class RPG2k
   # rescued to false.
   def map_editor?
     RPG2K_MAP_EDITOR
-  rescue StandardError
+  rescue NameError
     false
   end
 
   def chipset_editor?
     RPG2K_CHIPSET_EDITOR
-  rescue StandardError
+  rescue NameError
     false
   end
 
@@ -1089,7 +1089,7 @@ class RPG2k
   # ids start at 1). Guarded the same way as #preview_map_id.
   def preview_animation_id
     RPG2K_PREVIEW_ANIMATION.zero? ? nil : RPG2K_PREVIEW_ANIMATION
-  rescue StandardError
+  rescue NameError
     nil
   end
 
