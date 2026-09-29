@@ -466,6 +466,10 @@ report << "top 30 unresolved generic-dispatch method names:\n"
 poly_dynamic_names.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|
   report << format("  %2d. %5d  :%s\n", i + 1, n, name)
 end
+report << "top 30 cached dispatch method names (generic sites and guarded fallbacks):\n"
+dispatch_counts.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|
+  report << format("  %2d. %5d  :%s\n", i + 1, n, name)
+end
 
 if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
   report << "\n-- bc2cpp generation phase timings (two complete passes) --\n"
