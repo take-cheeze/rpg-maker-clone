@@ -194,6 +194,10 @@ RUBY
 CONSTANT_OBJECT_WORLD = <<~'RUBY'
   module CwStableObject
     def self.value; 11; end
+    def self.echo(x); x; end
+  end
+  module CwEchoOther
+    def self.echo(x); x; end
   end
   module CwNamespace
     module StableObject
@@ -270,6 +274,7 @@ CONSTANT_OBJECT_WORLD = <<~'RUBY'
       receiver = flag ? CwStableObject : CwBranchReplacementObject
       receiver.value
     end
+    def block_argument(list); CwStableObject.echo(list.map { |item| item }); end
     def qualified; CwNamespace::StableObject.value; end
     def module_function; CwModuleFunction.value(4); end
     def module_function_state; CwModuleFunction.state; end
@@ -358,6 +363,7 @@ inlined_block_call = body_of.call(constant_object_code, 'CwBlockCaller_times_val
 module_function_state_call = body_of.call(constant_object_code, 'CwStableCaller_module_function_state')
 value_constant_type_call = body_of.call(constant_object_code, 'CwStableCaller_value_constant_type')
 after_branch_call = body_of.call(constant_object_code, 'CwStableCaller_after_branch')
+block_argument_call = body_of.call(constant_object_code, 'CwStableCaller_block_argument')
 branch_selected_call = body_of.call(constant_object_code, 'CwStableCaller_branch_selected')
 rebound_object_call = body_of.call(constant_object_code, 'CwReboundCaller_rebound')
 qualified_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create')
@@ -375,6 +381,9 @@ check.call('a stable class/module constant dispatches directly to its unique sin
 check.call('a branch before a fresh stable constant lookup preserves direct dispatch',
            after_branch_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              after_branch_call.include?('CwStableObject_singleton_value_impl('))
+check.call('a block in the argument list does not hide the dominating constant load (reaching definitions)',
+           block_argument_call.include?('CLOSED_WORLD_CONSTANT_OBJECT :echo') &&
+             block_argument_call.include?('CwStableObject_singleton_echo_impl('))
 check.call('a branch-selected receiver keeps runtime dispatch',
            !branch_selected_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              branch_selected_call.include?('bc2cpp_send('))

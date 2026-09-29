@@ -6,6 +6,7 @@
 # (instruction, register) query of mrbc-compiled sources against an
 # independent FORWARD fixpoint. With DATAFLOW_REAL=1 the cross-check also runs
 # over the closed-world gems' mrblib (slow).
+require 'open3'
 require 'set'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/irep'
@@ -232,6 +233,62 @@ if ENV['MRBC']
   check.call('the sample answers joins and loops', stats[:multi].positive? && stats[:answered] > stats[:refused] / 4)
 else
   warn 'bc2cpp_bytecode_ir_dataflow_check: MRBC unset, skipping the compiled cross-check'
+end
+
+# ---------------------------------------------------------------------------
+# Generated-code regressions: the receiver-class trace (trace_new_target) asks
+# every reaching definition when its backward walk finds nothing.
+# ---------------------------------------------------------------------------
+TRACE_SOURCE = <<~'RUBY'
+  class RdFoo
+    def bar; 1; end
+  end
+  class RdOther
+    def bar; 2; end
+  end
+  class RdCaller
+    # The textually last write of x is on an arm that returns, so it never
+    # reaches x.bar: the only reaching definition is RdFoo.new.
+    def early_return(c, y)
+      x = RdFoo.new
+      if c
+        x = y.helper
+        return x
+      end
+      x.bar
+    end
+
+    # An opaque definition does reach the join: the class stays unproven.
+    def opaque_arm(c, y)
+      x = c ? RdFoo.new : y.helper
+      x.bar
+    end
+  end
+RUBY
+
+def generate_cpp(source, name)
+  Dir.mktmpdir do |dir|
+    path = File.join(dir, "#{name}.rb")
+    File.write(path, source)
+    env = { 'MRBC' => ENV.fetch('MRBC'), 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1' }
+    out, err, status = Open3.capture3(env, RbConfig.ruby, File.expand_path('../tools/bc2cpp/bc2cpp.rb', __dir__), path)
+    abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
+    out
+  end
+end
+
+def cpp_body(code, fn)
+  code[/^mrb_value #{fn}_impl\(mrb_state\* M.*?(?=^(?:static )?mrb_value \w+\(mrb_state\* M|\z)/m].to_s
+end
+
+if ENV['MRBC']
+  code = generate_cpp(TRACE_SOURCE, 'bc2cpp_reaching_trace')
+  early = cpp_body(code, 'RdCaller_early_return')
+  opaque_arm = cpp_body(code, 'RdCaller_opaque_arm')
+  check.call('a write that never reaches the use does not hide the reaching class',
+             early.include?('TYPED :bar -> RdFoo#bar') && !early.include?('POLY_SMALL_N :bar'))
+  check.call('a reaching opaque definition keeps the class unproven',
+             opaque_arm.include?('POLY_SMALL_N :bar') && !opaque_arm.include?('TYPED :bar'))
 end
 
 abort("bc2cpp_bytecode_ir_dataflow_check FAILED: #{failures.join(', ')}") unless failures.empty?

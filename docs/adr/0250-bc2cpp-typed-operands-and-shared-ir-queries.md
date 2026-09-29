@@ -99,3 +99,35 @@ Making them equal needs the handler ranges and declared targets themselves,
 which is what `handler_target_addrs` / `handler_protected_addrs` already are
 (IR queries over `catch_handlers`), so an edge-based rewrite would add rules
 without removing a hand-written computation.
+
+## Addendum: reaching definitions
+
+`tools/bc2cpp/bytecode_ir_dataflow.rb` adds `Program#reaching_definitions(index,
+reg)` (and `BytecodeIR.reaching_definitions(irep, ...)`, which also accounts for
+nested blocks): the SET of writes that can supply a register at an
+instruction, through joins and loops, with `MOVE` sources followed. Any state
+it cannot account for returns nil rather than a partial set: an op outside the
+audited write list (the Fixnum proof's `FIXNUM_PROOF_STEP_OVER_OPS`, kept equal
+by `scripts/bc2cpp_bytecode_ir_dataflow_check.rb`), a register a callee frame
+above a call may overwrite, a register a nested block writes with `SETUPVAR`
+(`Irep#tree` gives the walk the children), any handler target or protected
+instruction (RESCUE_SUPPORT compiles that range apart), an unreachable join, or
+more than 400 states. Definitions in dead code that jump into a join may
+appear (a superset only costs a proof).
+
+Consumers accept a resolution only when every reaching definition proves the
+same fact, and only after their existing backward walk found nothing:
+`constant_object_owner` (via `IrepScans#agreed_constant_name`) and
+`trace_new_target` (per-definition walk, entry values through class
+annotations, a recursion guard for loop-carried values). RETURN-site proofs keep
+their own walk (`return_value_sources`).
+
+The check compares every (instruction, register) query of mrbc-compiled
+sources against an independent forward fixpoint (2.3 million queries over the
+closed-world gems with `DATAFLOW_REAL=1`, zero disagreements).
+
+Measured on the shipped closed-world build the fallbacks resolve no site the
+walks missed: the walks already ignore joins (they take the textually last
+writer) and the remaining unresolved receivers have no class fact on any path.
+The value is the query itself and the regression shapes (a write on a
+returning arm; a block in the argument list of a constant-receiver call).
