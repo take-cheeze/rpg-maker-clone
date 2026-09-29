@@ -23,7 +23,8 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   # initialises a gem that depends on a maker directly right after that maker,
   # so the compiled core is registered only for an RPG2000/2003 run. The other
   # makers run game scripts whose blocks yield Fibers through core iterators
-  # (docs/adr/0023); their core stays bytecode until that has been validated.
+  # (docs/adr/0023). The Fiber guard of ADR 0269 makes the compiled iterators hand
+  # those calls to the bytecode, but no maker but RPG2000/2003 has been run with it.
   # The compiled bodies themselves are always linked, so compiled engine code
   # can still call them directly.
   %w[mruby-lcf mruby-rgss mruby-rpg2k].each { |gem_name| add_dependency gem_name }

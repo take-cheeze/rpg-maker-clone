@@ -135,12 +135,30 @@ diag = File.join(comp_dir, 'host/mrbgems/bc2cpp-core-test/core_test.diag')
 entries = File.exist?(diag) ? File.read(diag)[/== core-source compiled entry points \((\d+)\)/, 1].to_i : 0
 check.call("the harness compiled core methods (#{entries})", entries.positive?)
 
-# A registered method is a C function, so it has no Ruby source location.
-probe = "p [Numeric.instance_method(:positive?).source_location.nil?, Comparable.instance_method(:between?).source_location.nil?]"
+# A registered method is a C function, so it has no Ruby source location. The block-taking
+# ones (Array#each, Integer#times, Enumerable#sort_by, Hash#each) are registered behind the
+# Fiber guard of ADR 0269.
+probe = 'p [Numeric.instance_method(:positive?).source_location.nil?, Comparable.instance_method(:between?).source_location.nil?, ' \
+        'Array.instance_method(:each).source_location.nil?, Integer.instance_method(:times).source_location.nil?, ' \
+        'Enumerable.instance_method(:sort_by).source_location.nil?, Hash.instance_method(:each).source_location.nil?]'
 comp_probe = IO.popen([File.join(comp_dir, 'host/bin/mruby'), '-e', probe], &:read).strip
 base_probe = IO.popen([File.join(base_dir, 'host/bin/mruby'), '-e', probe], &:read).strip
 check.call("compiled build runs the compiled bodies (#{comp_probe}) and the baseline the bytecode (#{base_probe})",
-           comp_probe == '[true, true]' && base_probe == '[false, false]')
+           comp_probe == "[#{(['true'] * 6).join(', ')}]" && base_probe == "[#{(['false'] * 6).join(', ')}]")
+
+# Fibers, Enumerator#next, break/return/raise through the compiled block methods: the same output,
+# compiled and interpreted (the compiled entry hands the call to the bytecode while a Fiber runs).
+blocks_probe = File.join(ROOT, 'scripts/bc2cpp_core_blocks_probe.rb')
+blocks_out = [base_dir, comp_dir].map do |dir|
+  IO.popen([File.join(dir, 'host/bin/mruby'), blocks_probe], err: %i[child out], &:read)
+end
+check.call("block/Fiber probe: #{blocks_out[0].lines.size} lines, interpreted and compiled identical",
+           blocks_out[0].lines.last == "END\n" && blocks_out[0] == blocks_out[1])
+unless blocks_out[0] == blocks_out[1]
+  blocks_out[0].lines.zip(blocks_out[1].lines).reject { |a, b| a == b }.first(10).each do |a, b|
+    puts "    interpreted: #{a}    compiled:    #{b}"
+  end
+end
 
 if failures.empty?
   puts 'bc2cpp core mrbtest: PASS'
