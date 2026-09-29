@@ -1045,8 +1045,11 @@
   [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
-  constructor chain are proven. See
-  [`docs/adr/0237-bc2cpp-inlined-constant-construction.md`](docs/adr/0237-bc2cpp-inlined-constant-construction.md).
+  constructor chain are proven. Qualified class paths such as
+  `Namespace::Record.new` retain their root when resolved from nested lexical
+  scopes, allowing compiled initializers to use direct construction too. See
+  [`docs/adr/0237-bc2cpp-inlined-constant-construction.md`](docs/adr/0237-bc2cpp-inlined-constant-construction.md)
+  and [`docs/adr/0247-bc2cpp-qualified-construction.md`](docs/adr/0247-bc2cpp-qualified-construction.md).
   A call to `Exception#message` on a recognized rescued exception reads the
   same stored message and applies the same default conversion as mruby's
   `exc_to_s`; calls with unproven receivers or Ruby overrides keep dispatch.

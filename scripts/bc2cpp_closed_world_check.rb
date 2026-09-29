@@ -213,6 +213,14 @@ CONSTANT_OBJECT_WORLD = <<~'RUBY'
       end
     end
   end
+  module CwQualifiedConstruct
+    class Stable
+      def initialize; @value = 5; end
+    end
+    class Caller
+      def create; CwQualifiedConstruct::Stable.new; end
+    end
+  end
   module CwModuleFunction
     def value(x); x + 3; end
     module_function :value
@@ -321,10 +329,15 @@ module_function_call = body_of.call(constant_object_code, 'CwStableCaller_module
 module_function_state_call = body_of.call(constant_object_code, 'CwStableCaller_module_function_state')
 value_constant_type_call = body_of.call(constant_object_code, 'CwStableCaller_value_constant_type')
 rebound_object_call = body_of.call(constant_object_code, 'CwReboundCaller_rebound')
+qualified_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create')
 check.call('a stable class/module constant dispatches directly to its unique singleton method',
            constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              constant_object_call.include?('CwStableObject_singleton_value_impl(') &&
              !constant_object_call.include?('bc2cpp_send('))
+check.call('a qualified class constant resolves directly through its initializer',
+           qualified_construct_call.include?('MONO :new -> CwQualifiedConstruct::Stable') &&
+             qualified_construct_call.include?('CwQualifiedConstruct__Stable_initialize_impl(') &&
+             !qualified_construct_call.include?('mrb_funcall(M, r') )
 check.call("a qualified constant object's VM register retains its exact class/module type",
            qualified_constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              qualified_constant_object_call.include?('CwNamespace__StableObject_singleton_value_impl(') &&

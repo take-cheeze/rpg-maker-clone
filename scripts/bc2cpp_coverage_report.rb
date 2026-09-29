@@ -378,6 +378,8 @@ dynamic_receivers = Hash.new(0)
 unresolved_origins = Hash.new(0)
 unresolved_origin_names = Hash.new { |hash, origin| hash[origin] = Hash.new(0) }
 poly_exclusions = Hash.new(0)
+new_dispatch_paths = Hash.new(0)
+new_dispatch_exclusions = Hash.new(0)
 poly_diag_sites = 0
 poly_dynamic_names = Hash.new(0)
 @shipped_stdout.each_line do |line|
@@ -387,6 +389,15 @@ poly_dynamic_names = Hash.new(0)
   poly_diag_sites += 1
   poly_paths[match[1]] += 1
   poly_receivers[match[2]] += 1
+  if match[3] == 'new' && match[1].start_with?('dynamic_')
+    new_dispatch_paths[[match[1], match[2]]] += 1
+    unless match[5] == 'none'
+      match[5].split(',').each do |entry|
+        reason, count = entry.split('=', 2)
+        new_dispatch_exclusions[reason] += count.to_i
+      end
+    end
+  end
   dynamic_receivers[[match[1], match[2]]] += 1 if match[1].start_with?('dynamic_')
   if match[2] == 'receiver_class_unresolved'
     origin = match[6] || 'not_recorded'
@@ -414,6 +425,14 @@ poly_paths.sort.each { |path, count| report << format("    %5d  %s\n", count, pa
 report << "  generic dynamic sites by path and receiver evidence:\n"
 dynamic_receivers.sort.each do |(path, receiver), count|
   report << format("    %5d  %-38s %s\n", count, path, receiver)
+end
+report << "  unresolved :new sites by path and receiver evidence:\n"
+new_dispatch_paths.sort.each do |(path, receiver), count|
+  report << format("    %5d  %-38s %s\n", count, path, receiver)
+end
+report << "  excluded :new definitions across unresolved sites:\n"
+new_dispatch_exclusions.sort_by { |reason, count| [-count, reason] }.each do |reason, count|
+  report << format("    %5d  %s\n", count, reason)
 end
 report << "  unresolved receiver origins (nearest defining instruction):\n"
 unresolved_origins.sort_by { |origin, count| [-count, origin] }.each do |origin, count|
