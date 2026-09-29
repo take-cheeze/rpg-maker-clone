@@ -353,6 +353,10 @@ reads can be prioritized for a later proof without changing dispatch behavior.
 For the largest origin groups it also lists the most frequent dispatched names,
 which helps distinguish a repeated class-method opportunity from unrelated
 receiver-tracing gaps.
+For `/`, generated sends also test for an exact Float receiver and use Float's
+native division body on that branch; non-Float receivers and Complex operands
+retain ordinary Ruby dispatch. This lets the report distinguish a generic
+receiver site from a guarded fast path without removing its fallback.
 
 This report runs under the wio closed-world proof with the same gem map used by
 the compiled gems. It allows the `NOMETHOD_REVIEWED` audit to report findings

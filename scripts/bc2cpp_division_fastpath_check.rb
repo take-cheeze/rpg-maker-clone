@@ -49,9 +49,12 @@ Dir.mktmpdir do |dir|
   check.call('Integer/Integer uses mruby floor division (including its zero and overflow errors)',
              code.include?('mrb_div_int_value(M, mrb_integer('))
   check.call('all mixed Integer/Float operand orders are lowered',
-             code.include?('MRB_TT_INTEGER && mrb_type(') && code.scan('mrb_div_float(').size == 3)
+             code.include?('MRB_TT_INTEGER && mrb_type(') && code.scan('mrb_div_float(').size >= 3)
   check.call('Float results are boxed and unsupported values keep `/` dispatch',
              code.include?('mrb_float_value(M, mrb_div_float(') && code.include?("\"/\", 1"))
+  check.call('unknown receivers use an exact Float guard before the Float division body',
+             code.include?('mrb_type(') && code.include?('MRB_TT_FLOAT') &&
+               code.include?('mrb_div_float(') && code.include?("\"/\", 1"))
 
   float_method = registry.fetch('float_literal_divide').find { |md| md.owner == 'Game::DivisionOps' }
   float_irep = ireps.fetch(float_method.irep)
@@ -59,8 +62,9 @@ Dir.mktmpdir do |dir|
   raise 'float_literal_divide: no DIV instruction' unless float_div
 
   send_code = gen.compile_insn(float_div, float_irep, float_method, float_irep.instructions.index(float_div))
-  check.call('Float literal receiver emits the direct Float division path',
-             send_code.include?('FLOAT_DIV_RECEIVER') && send_code.include?('mrb_div_float('))
+  check.call('Float literal receiver emits the guarded Float division path',
+             send_code.include?('FLOAT_DIV_RECEIVER') && send_code.include?('MRB_TT_FLOAT') &&
+               send_code.include?('mrb_div_float('))
   check.call('Complex operands retain the real Ruby dispatch fallback',
              send_code.include?('MRB_USE_COMPLEX') && send_code.include?("\"/\", 1"))
 end
