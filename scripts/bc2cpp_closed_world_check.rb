@@ -220,6 +220,8 @@ CONSTANT_OBJECT_WORLD = <<~'RUBY'
     class Caller
       def create; CwQualifiedConstruct::Stable.new; end
       def create_array; Array.new(3); end
+      def create_hash; Hash.new(7); end
+      def create_range; Range.new(1, 3, true); end
     end
   end
   module CwModuleFunction
@@ -332,6 +334,8 @@ value_constant_type_call = body_of.call(constant_object_code, 'CwStableCaller_va
 rebound_object_call = body_of.call(constant_object_code, 'CwReboundCaller_rebound')
 qualified_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create')
 qualified_array_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create_array')
+qualified_hash_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create_hash')
+qualified_range_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create_range')
 check.call('a stable class/module constant dispatches directly to its unique singleton method',
            constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              constant_object_call.include?('CwStableObject_singleton_value_impl(') &&
@@ -345,6 +349,11 @@ check.call('Array.new uses guarded direct object construction when Class#new is 
              qualified_array_construct_call.include?('mrb_obj_new(M, mrb_class_ptr(r') &&
              qualified_array_construct_call.include?('mrb_class_ptr(r') &&
              qualified_array_construct_call.include?('bc2cpp_send(M, r'))
+check.call('Hash.new and Range.new use their stable mruby class pointers',
+           qualified_hash_construct_call.include?('MONO :new -> Hash, generic direct object construction') &&
+             qualified_hash_construct_call.include?('M->hash_class') &&
+             qualified_range_construct_call.include?('MONO :new -> Range, generic direct object construction') &&
+             qualified_range_construct_call.include?('M->range_class'))
 check.call("a qualified constant object's VM register retains its exact class/module type",
            qualified_constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              qualified_constant_object_call.include?('CwNamespace__StableObject_singleton_value_impl(') &&
@@ -642,12 +651,15 @@ check.call('single-assignment constant receiver dispatch preserves the runtime r
            value_constant_output&.include?('value constant values [32, 32]'))
 
 array_construct_probe = <<~CPP
-  load(M, "$values = CwQualifiedConstruct::Caller.new.create_array.size");
-  std::printf("array size %s\\n", str(M, mrb_gv_get(M, mrb_intern_lit(M, "$values"))));
+  load(M, "$values = [CwQualifiedConstruct::Caller.new.create_array.size, " \
+          "CwQualifiedConstruct::Caller.new.create_hash[:missing], " \
+          "CwQualifiedConstruct::Caller.new.create_range.end, " \
+          "CwQualifiedConstruct::Caller.new.create_range.exclude_end?]");
+  std::printf("constructor values %s\\n", str(M, mrb_gv_get(M, mrb_intern_lit(M, "$values"))));
 CPP
 array_construct_output = run.call(constant_object_code, CONSTANT_OBJECT_WORLD, '', array_construct_probe)
-check.call('guarded direct Array.new preserves mruby Array initialization',
-           array_construct_output&.include?('array size 3'))
+check.call('guarded direct Array/Hash/Range construction preserves mruby initialization',
+           array_construct_output&.include?('constructor values [3, 7, 3, true]'))
 
   ghost_ruby = <<~RUBY
     $values = [CwCaller.new.talk(CwGhost.new), CwKid.new.chat, CwBase.new.chat, CwCaller.new.talk(CwRobot.new)]
