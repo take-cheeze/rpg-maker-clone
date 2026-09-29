@@ -391,8 +391,9 @@ check.call('a class constant rebound in the closed world keeps guarded dynamic d
 singleton_code, = generate.call(SINGLETON_WORLD, 'cw_singleton', true)
 singleton_self = body_of.call(singleton_code, 'CwBase_run')
 singleton_other = body_of.call(singleton_code, 'CwBase_outside')
-check.call('a self call in an instance method ignores a .singleton definer: the else raises',
-           singleton_self.match?(/bc2cpp_nomethod\(M, self, \d+\);/) && !singleton_self.include?('kept: singleton_definer'))
+check.call('a self call in an instance method ignores a .singleton definer: class hierarchy analysis resolves it',
+           singleton_self.include?('CLOSED_WORLD_SELF :cw_hello') && !singleton_self.include?('bc2cpp_send(') &&
+             !singleton_self.include?('kept: singleton_definer'))
 check.call('a non-self receiver may be the module object, so the singleton definer keeps the dispatch',
            singleton_other.include?('kept: singleton_definer') && !singleton_other.include?('bc2cpp_nomethod('))
 respond_outside = bc2cpp_closed_world_outside_srcs('wio', wio_gems, root)
@@ -502,11 +503,17 @@ check.call('a module_function body that observes instance state keeps dynamic di
 check.call('a lexically rebound class/module constant declines direct singleton dispatch',
            !rebound_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              rebound_object_call.include?('bc2cpp_send('))
-check.call('a self receiver in a class with no method_missing still converts',
-           body_of.call(ghost_code, 'CwBase_chat').match?(/bc2cpp_nomethod\(M, self, \d+\);/))
+# CHA_SELF (ADR 0254): the descendants of CwBase are all known, so the call has no
+# by-name arm at all: an exact-class arm for the one override, then CwBase's own.
+chat_body = body_of.call(ghost_code, 'CwBase_chat')
+check.call('a self receiver in a class with no method_missing descendant needs no dispatch and no bc2cpp_nomethod',
+           chat_body.include?('CLOSED_WORLD_SELF :cw_speak -> CwBase#cw_speak') &&
+             chat_body.include?('only CwKid (CwKid) override') && !chat_body.include?('bc2cpp_send(') &&
+             !chat_body.include?('bc2cpp_nomethod('))
 
 # CLOSED_WORLD_SELF: a self call into an embedding owner nothing subclasses
-# needs no guard at all; a subclass keeps the guard (and the dispatch).
+# needs no guard at all; a subclass that cannot resolve the name elsewhere
+# (CHA_SELF) does not need one either, and one that could (alias_method) keeps it.
 native_bang = MethodDef.new(name: '!', owner: '<native>', irep: nil, visibility: :public)
 native_only_world = ClosedWorld.new(ireps: {}, registry: { '!' => [native_bang] }, class_decls: {}, walked: Set.new,
                                     native_paths: [], ruby_paths: [])
@@ -666,7 +673,9 @@ COUNTER = <<~'RUBY'
   end
 RUBY
 native, ruby = bc2cpp_closed_world_outside_srcs('wio', wio_gems, root)
-[['no subclass', COUNTER, true], ['a subclass', "#{COUNTER}class CwCounterKid < CwCounter; end\n", false]].each do |what, src, dropped|
+[['no subclass', COUNTER, true], ['a plain subclass', "#{COUNTER}class CwCounterKid < CwCounter; end\n", true],
+ ['a subclass aliasing the name', "#{COUNTER}class CwCounterKid < CwCounter\n  def other; 1; end\n  " \
+                                  "alias_method :bump, :other\nend\n", false]].each do |what, src, dropped|
   Dir.mktmpdir do |dir|
     path = File.join(dir, 'counter.rb')
     File.write(path, src)
@@ -681,9 +690,8 @@ native, ruby = bc2cpp_closed_world_outside_srcs('wio', wio_gems, root)
     ok = if dropped
            code.include?('CLOSED_WORLD_SELF :bump') && !code.include?('mrb_obj_class')
          else
-           # The subclass inherits `bump`: it gets its own dispatching branch and any other class raises.
-           code.include?('MONO_EMBED_GUARD :bump') && code.include?('mrb_obj_class') && code.include?('bc2cpp_nomethod') &&
-             code.include?('mrb_funcall(') && !code.include?('kept: unlisted_class')
+           # An aliased `bump` may resolve elsewhere on the subclass: the guard and the dispatch stay.
+           code.include?('MONO_EMBED_GUARD :bump') && code.include?('mrb_obj_class') && code.include?('mrb_funcall(')
          end
     check.call("a self call into an embedding owner with #{what} #{dropped ? 'drops' : 'keeps'} the guard", ok)
   end

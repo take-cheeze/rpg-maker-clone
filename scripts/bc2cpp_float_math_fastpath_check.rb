@@ -66,7 +66,7 @@ Dir.mktmpdir do |dir|
     check.call("#{opcode} handles Float/Float with Float/Float unboxing",
                code.include?("mrb_float_p(r#{dest_reg}) && mrb_float_p(r#{source_reg})") &&
                  code.include?("mrb_float(r#{dest_reg}) #{arithmetic} mrb_float(r#{source_reg})"))
-    helper = #{helper}.fetch(operator)
+    helper = { '+' => 'mrb_num_add', '-' => 'mrb_num_sub', '*' => 'mrb_num_mul' }.fetch(operator)
     check.call("#{opcode} fallback runs the Integer helper for bigint receivers, then keeps the dynamic send",
                code.include?("bc2cpp_integer_recv_p(r#{dest_reg}) && bc2cpp_integer_operand_p(r#{source_reg})") &&
                  code.include?("#{helper}(M, r#{dest_reg}, r#{source_reg})") &&
