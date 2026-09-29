@@ -24,5 +24,14 @@ irep = Irep.new(label: 't', instructions: [commented, insn(11, 'LOADI_1', 'R5'),
 edges = BytecodeIR::Program.new(irep).instruction_at(0).successors
 check.call('BytecodeIR keeps commented edge', edges.sort == [1, 2])
 
+check.call('branch_target of JMPUW', insn(0, 'JMPUW', '021').branch_target == 21)
+check.call('branch_target of conditional', commented.branch_target == 16)
+check.call('branch_target of non-branch', insn(0, 'MOVE', "R1\tR2").branch_target.nil?)
+edge_irep = Irep.new(label: 't2', instructions: [insn(0, 'JMPNOT', "R1\t9"), insn(4, 'JMP', '9'), insn(9, 'RETURN', 'R1')])
+check.call('jump_edges_before lists edges', BytecodeIR::Program.new(edge_irep).jump_edges_before(2, %w[JMP JMPNOT]) == [[0, 2], [1, 2]])
+check.call('jump_edges_before stops at limit', BytecodeIR::Program.new(edge_irep).jump_edges_before(1, %w[JMP JMPNOT]) == [[0, 2]])
+bad_irep = Irep.new(label: 't3', instructions: [insn(0, 'JMP', '77'), insn(4, 'RETURN', 'R1')])
+check.call('jump_edges_before nil on unresolved target', BytecodeIR::Program.new(bad_irep).jump_edges_before(2, %w[JMP]).nil?)
+
 abort("bc2cpp_insn_operands_check FAILED: #{failures.join(', ')}") unless failures.empty?
 puts 'bc2cpp_insn_operands_check OK'
