@@ -1020,7 +1020,9 @@
   helper. A one-argument Array `push` send follows the exact fast branch in
   mruby's wrapper; a one-argument `concat` send uses its public Array
   conversion and concatenation helpers. Other arities keep ordinary dispatch.
-  See
+  Closed-world typed calls can also resolve public methods inherited through
+  proven included or prepended modules, with an exact receiver-class guard and
+  dispatch fallback. See
   [`docs/adr/0177-bc2cpp-native-expression-devirtualization.md`](docs/adr/0177-bc2cpp-native-expression-devirtualization.md),
   [`docs/adr/0178-bc2cpp-generated-argument-expressions.md`](docs/adr/0178-bc2cpp-generated-argument-expressions.md),
   [`docs/adr/0179-bc2cpp-generated-hash-delete.md`](docs/adr/0179-bc2cpp-generated-hash-delete.md),

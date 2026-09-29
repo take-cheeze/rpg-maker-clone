@@ -16,6 +16,9 @@
 # module would intercept, and that the scan recognizes every include/prepend
 # shape (self-implicit, transitive, prepend, and an unresolvable explicit
 # receiver flagged as unknown).
+# It also checks typed method lookup through included/prepended modules, lexical
+# constant resolution, and the Ruby precedence order before emitting a guarded
+# direct call for a fresh instance.
 #
 # It also drives ZSUPER_GENERAL_SUPPORT (CodeGen#zsuper_forward_plan +
 # compile_zsuper_forward, docs/adr/0159): the general bare-`super`-forwards-own-
@@ -35,14 +38,52 @@ SRC = <<~'RUBY'
   module Mfoo
     def foo; :modfoo; end
   end
+  def object_mixin_method; :object_method; end
   module Mbar
     def bar; :mbar; end
+  end
+  module MfooLatest
+    def foo; :latest; end
   end
   module Mtrans_b
     def foo; :via_b; end
   end
   module Mtrans_a
     include Mtrans_b
+  end
+  class Included
+    include Mfoo
+  end
+  class IncludedOverride
+    include Mfoo
+    def foo; :class_foo; end
+  end
+  class IncludesOrder
+    include Mfoo
+    include MfooLatest
+  end
+  class IncludesTransitive
+    include Mtrans_a
+  end
+  class IncludesObject
+    include Mbar
+  end
+  class IncludedCaller
+    def call; Included.new.foo; end
+  end
+  module Game
+    module Mlocal
+      def local; :local; end
+    end
+    class IncludesLocal
+      include Mlocal
+    end
+    class IncludesQualified
+      include Game::Mlocal
+    end
+    class IncludesAbsolute
+      include ::Game::Mlocal
+    end
   end
   class Base
     def foo; :base; end
@@ -116,8 +157,8 @@ Dir.mktmpdir do |dir|
   order = dfs_order(ireps, root_label)
   blocks, block_files, block_catches = parse_disasm_blocks(disasm_text)
   merge!(ireps, order, blocks, block_files, block_catches)
-  registry, superclass_of, _container_constants, included_modules, prepended_modules, unknown_mixins =
-    build_registry(ireps, root_label)
+  registry, superclass_of, _container_constants, included_modules, prepended_modules, unknown_mixins,
+    _struct_members, class_decls, walked = build_registry(ireps, root_label)
 
   # -- build_registry's own whole-world mixin scan (presence/shape only) --
   check.call('Intervening records an include', included_modules['Intervening'].is_a?(Array), true)
@@ -130,11 +171,48 @@ Dir.mktmpdir do |dir|
   check.call('UnknownMixin (explicit-receiver include) is flagged unknown',
              unknown_mixins.include?('UnknownMixin'), true)
   check.call('Intervening is NOT flagged unknown', unknown_mixins.include?('Intervening'), false)
+  check.call('unqualified include resolves through lexical nesting to Game::Mlocal',
+             included_modules['Game::IncludesLocal'], ['Game::Mlocal'])
+  check.call('qualified include retains its explicit module path',
+             included_modules['Game::IncludesQualified'], ['Game::Mlocal'])
+  check.call('absolute include retains its root module path',
+             included_modules['Game::IncludesAbsolute'], ['Game::Mlocal'])
 
   # -- CodeGen's own re-derived super-soundness guard (conservative: any plain
   #    include -> decline; prepend-only / no-include -> reach; unknown -> decline) --
   gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new, nil, nil, nil,
                     included_modules, prepended_modules, unknown_mixins, analysis_only: true)
+  lookup_world = Object.new
+  lookup_world.define_singleton_method(:inherited_lookup_safe?) { |_name, _owner| true }
+  lookup_world.define_singleton_method(:stable_constant_identity?) { |_owner| true }
+  lookup_gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new, nil, nil, nil,
+                           included_modules, prepended_modules, unknown_mixins, closed_world: lookup_world)
+  included_target = lookup_gen.send(:closed_world_lookup_target, 'foo', 'Included', Set.new)
+  typed_included_target = lookup_gen.send(:closed_world_inherited_target, 'foo', 'Included')
+  override_target = lookup_gen.send(:closed_world_lookup_target, 'foo', 'IncludedOverride', Set.new)
+  include_order_target = lookup_gen.send(:closed_world_lookup_target, 'foo', 'IncludesOrder', Set.new)
+  prepend_target = lookup_gen.send(:closed_world_lookup_target, 'foo', 'Prepended', Set.new)
+  transitive_target = lookup_gen.send(:closed_world_lookup_target, 'foo', 'IncludesTransitive', Set.new)
+  object_target = lookup_gen.send(:closed_world_lookup_target, 'object_mixin_method', 'IncludesObject', Set.new)
+  check.call('included module method resolves to its implementation',
+             [included_target[0]&.owner, included_target[0]&.name, included_target[1]], ['Mfoo', 'foo', true])
+  check.call('typed receiver can select the included module method under its exact class guard',
+             [typed_included_target&.owner, typed_included_target&.name], ['Mfoo', 'foo'])
+  check.call('class method wins over an included module method',
+             [override_target[0]&.owner, override_target[0]&.name, override_target[1]],
+             ['IncludedOverride', 'foo', true])
+  check.call('most recently included module wins method lookup',
+             [include_order_target[0]&.owner, include_order_target[0]&.name, include_order_target[1]],
+             ['MfooLatest', 'foo', true])
+  check.call('prepended module wins over the class method',
+             [prepend_target[0]&.owner, prepend_target[0]&.name, prepend_target[1]],
+             ['Mfoo', 'foo', true])
+  check.call('nested module include resolves transitively',
+             [transitive_target[0]&.owner, transitive_target[0]&.name, transitive_target[1]],
+             ['Mtrans_b', 'foo', true])
+  check.call('default superclass lookup continues through Object after included modules',
+             [object_target[0]&.owner, object_target[0]&.name, object_target[1]],
+             ['Object', 'object_mixin_method', true])
   reaches = lambda do |owner|
     def_ = registry['foo'].find { |d| d.owner == owner }
     raise "no foo def for #{owner}" unless def_
@@ -169,6 +247,43 @@ Dir.mktmpdir do |dir|
   target = registry['initialize'].find { |d| d.owner == 'ZBase' }
   check.call('compile_zsuper_forward forwards self + r1, r2 into the superclass _impl',
              !!gen.compile_zsuper_forward(target, 4, 2)[/=\s*\w+_impl\(M, self, r1, r2\);/], true)
+end
+
+Dir.mktmpdir do |dir|
+  source = File.join(dir, 'included_dispatch.rb')
+  File.write(source, <<~'RUBY')
+    module IncludedDispatchModule
+      def value; 7; end
+    end
+    class IncludedDispatchClass
+      include IncludedDispatchModule
+    end
+    class OtherDispatchClass
+      def value; 9; end
+    end
+    class IncludedDispatchCaller
+      def call; IncludedDispatchClass.new.value; end
+    end
+  RUBY
+  c_dump, disasm = run_mrbc(source, 'bc2cpp_included_dispatch_check', dir)
+  dispatch_ireps, dispatch_root = parse_c_dump(c_dump, 'bc2cpp_included_dispatch_check')
+  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
+  merge!(dispatch_ireps, dfs_order(dispatch_ireps, dispatch_root), blocks, block_files, block_catches)
+  dispatch_registry, dispatch_supers, _classes, dispatch_included, dispatch_prepended, dispatch_unknown,
+    _structs, dispatch_decls, dispatch_walked = build_registry(dispatch_ireps, dispatch_root)
+  UniqueClassNames.table = UniqueClassNames.analyze(dispatch_ireps, dispatch_root, [], [])
+  ConstructClassNames.table = ConstructClassNames.analyze(dispatch_ireps, dispatch_root, UniqueClassNames.table.values)
+  dispatch_world = ClosedWorld.new(ireps: dispatch_ireps, registry: dispatch_registry,
+                                  class_decls: dispatch_decls, walked: dispatch_walked,
+                                  native_paths: [], ruby_paths: [])
+  dispatch_gen = CodeGen.new(dispatch_ireps, dispatch_registry, {}, {}, {}, {}, dispatch_supers, {}, {}, {}, {}, Set.new,
+                             nil, nil, nil, dispatch_included, dispatch_prepended, dispatch_unknown,
+                             closed_world: dispatch_world)
+  caller_def = dispatch_registry.fetch('call').find { |definition| definition.owner == 'IncludedDispatchCaller' }
+  caller_code = dispatch_gen.compile_method(caller_def.irep).fetch(:code)
+  check.call('fresh exact-class receiver emits a guarded direct call to the included module method',
+             caller_code.include?('CLOSED_WORLD_TYPED_INHERITED :value -> IncludedDispatchModule#value') &&
+               caller_code.include?('IncludedDispatchModule_value_impl') && caller_code.include?('mrb_funcall(M,'), true)
 end
 
 if failures.empty?
