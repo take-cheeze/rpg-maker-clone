@@ -341,9 +341,12 @@ so each MONO method visits only its own callers rather than rescanning every
 instruction in the program. On the three-gem coverage workload, this reduced
 one bc2cpp pass from about 91 seconds to about 16 seconds while keeping the
 coverage totals unchanged.
-The same report cross-tabulates generic dynamic sites by dispatch path and
-receiver-class evidence, which helps separate unresolved tracing from missing
-or unsafe targets. For unresolved receivers it also records the nearest
+The same report counts cached send references separately from generic `POLY`
+sites: cached references include fallback arms attached to direct-call guards,
+so they are not a count of unresolved dispatch. Its method-name ranking uses
+only generic `POLY` markers. It also cross-tabulates those sites by dispatch
+path and receiver-class evidence, which helps separate unresolved tracing from
+missing or unsafe targets. For unresolved receivers it records the nearest
 defining opcode behind the receiver register (following `MOVE` aliases), so
 large groups such as constant lookups, method results, indexed values and ivar
 reads can be prioritized for a later proof without changing dispatch behavior.

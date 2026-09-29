@@ -405,7 +405,7 @@ end
 poly_dynamic_sites = poly_paths.sum { |path, count| path.start_with?('dynamic_') ? count : 0 }
 
 report << "-- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --\n"
-report << "total cached bc2cpp_send/mrb_funcall_with_block call sites: #{total_dispatch}\n"
+report << "cached bc2cpp_send/mrb_funcall_with_block sites, including guarded fallbacks: #{total_dispatch}\n"
 report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
 report << "  generic POLY sites by diagnostics: #{poly_dynamic_sites}\n"
 report << "  POLY_DIAG sites categorized: #{poly_diag_sites}\n"
@@ -432,9 +432,9 @@ poly_exclusions.sort_by { |reason, count| [-count, reason] }.each do |reason, co
 end
 report << "  guarded native Hash#values call sites: #{hash_values_fast_paths}\n"
 report << "  everything else (not yet attempted or failed MONO/TYPED): #{[total_dispatch - shipped_poly, 0].max}\n"
-report << "distinct dynamically-dispatched method names: #{dispatch_counts.size}\n"
-report << "top 30 dynamically-dispatched method names:\n"
-dispatch_counts.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|
+report << "distinct unresolved generic-dispatch method names: #{poly_dynamic_names.size}\n"
+report << "top 30 unresolved generic-dispatch method names:\n"
+poly_dynamic_names.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|
   report << format("  %2d. %5d  :%s\n", i + 1, n, name)
 end
 
