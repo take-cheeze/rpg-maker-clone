@@ -1052,6 +1052,9 @@
   preserving their normal initializer dispatch. See
   [`docs/adr/0237-bc2cpp-inlined-constant-construction.md`](docs/adr/0237-bc2cpp-inlined-constant-construction.md)
   and [`docs/adr/0247-bc2cpp-qualified-construction.md`](docs/adr/0247-bc2cpp-qualified-construction.md).
+  Constructor proofs ignore unresolved instance mixins while still checking
+  singleton mixins that can replace class-object `new` or `allocate`; see
+  [`docs/adr/0248-bc2cpp-constructor-instance-mixins.md`](docs/adr/0248-bc2cpp-constructor-instance-mixins.md).
   A call to `Exception#message` on a recognized rescued exception reads the
   same stored message and applies the same default conversion as mruby's
   `exc_to_s`; calls with unproven receivers or Ruby overrides keep dispatch.

@@ -224,6 +224,13 @@ CONSTANT_OBJECT_WORLD = <<~'RUBY'
       def create_range; Range.new(1, 3, true); end
     end
   end
+  class CwInstanceMixinConstruct
+    include Enumerable
+    def initialize; @value = 9; end
+  end
+  class CwInstanceMixinCaller
+    def create; CwInstanceMixinConstruct.new; end
+  end
   module CwModuleFunction
     def value(x); x + 3; end
     module_function :value
@@ -336,6 +343,7 @@ qualified_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstr
 qualified_array_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create_array')
 qualified_hash_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create_hash')
 qualified_range_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create_range')
+instance_mixin_construct_call = body_of.call(constant_object_code, 'CwInstanceMixinCaller_create')
 check.call('a stable class/module constant dispatches directly to its unique singleton method',
            constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              constant_object_call.include?('CwStableObject_singleton_value_impl(') &&
@@ -354,6 +362,10 @@ check.call('Hash.new and Range.new use their stable mruby class pointers',
              qualified_hash_construct_call.include?('M->hash_class') &&
              qualified_range_construct_call.include?('MONO :new -> Range, generic direct object construction') &&
              qualified_range_construct_call.include?('M->range_class'))
+check.call('an unresolved instance mixin does not block a proven class-object constructor',
+           instance_mixin_construct_call.include?('MONO :new -> CwInstanceMixinConstruct') &&
+             instance_mixin_construct_call.include?('CwInstanceMixinConstruct_initialize_impl(') &&
+             !instance_mixin_construct_call.include?('bc2cpp_send(M, r'))
 check.call("a qualified constant object's VM register retains its exact class/module type",
            qualified_constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              qualified_constant_object_call.include?('CwNamespace__StableObject_singleton_value_impl(') &&
