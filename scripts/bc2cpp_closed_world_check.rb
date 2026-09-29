@@ -129,6 +129,16 @@ WORLD = <<~'RUBY'
   end
 RUBY
 
+RESPOND_WORLD = <<~'RUBY'
+  class CwRespondee
+    def cw_known; 1; end
+  end
+  class CwResponder
+    def probe(x); x.respond_to?(:cw_known); end
+  end
+RUBY
+RESPOND_HOOK_WORLD = "#{RESPOND_WORLD}class CwRespondHook\n  def respond_to_missing?(name, include_all = false); true; end\nend\n"
+
 # A method_missing class: only a `self` receiver can be proven not to be one.
 GHOST_WORLD = <<~'RUBY'
   class CwGhost
@@ -282,12 +292,18 @@ CONSTANT_OBJECT_WORLD = <<~'RUBY'
 RUBY
 
 mrbc = ENV['MRBC'] || 'mrbc'
-generate = lambda do |source, name, closed, only_owners = nil|
+generate = lambda do |source, name, closed, only_owners = nil, outside_srcs = nil|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1' }
     env['ONLY_OWNERS'] = only_owners.join(',') if only_owners
+    # The real build's native and outside-Ruby sources: what makes core names like
+    # respond_to? known natives.
+    if outside_srcs
+      env['NATIVE_SRCS'] = Shellwords.join(outside_srcs[0])
+      env['FOREIGN_RUBY_SRCS'] = Shellwords.join(outside_srcs[1])
+    end
     if closed
       env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
                  'BC2CPP_BUILD_GEMS' => Shellwords.join(wio_gems.map { |n, d| "#{n}=#{d}" }),
@@ -351,6 +367,18 @@ check.call('a fresh instance of a stable class constant drops the exact-class gu
 check.call('a class constant rebound in the closed world keeps guarded dynamic dispatch',
            !rebound_call.include?('CLOSED_WORLD_EXACT_CLASS') && rebound_call.include?('mrb_obj_class(M,') &&
              rebound_call.include?('mrb_funcall'))
+
+respond_outside = bc2cpp_closed_world_outside_srcs('wio', wio_gems, root)
+respond_code, = generate.call(RESPOND_WORLD, 'cw_respond', true, nil, respond_outside)
+respond_hook_code, = generate.call(RESPOND_HOOK_WORLD, 'cw_respond_hook', true, nil, respond_outside)
+respond_probe = body_of.call(respond_code, 'CwResponder_probe')
+respond_hook_probe = body_of.call(respond_hook_code, 'CwResponder_probe')
+check.call('respond_to? with no respond_to_missing? anywhere: hits answer directly and a miss is false, no send',
+           respond_probe.include?('mrb_respond_to(') && respond_probe.include?('mrb_false_value()') &&
+             !respond_probe.include?('bc2cpp_send('))
+check.call('a respond_to_missing? override keeps the send on a miss',
+           respond_hook_probe.include?('mrb_respond_to(') && respond_hook_probe.include?('bc2cpp_send(') &&
+             !respond_hook_probe.include?('mrb_false_value()'))
 
 constant_object_call = body_of.call(constant_object_code, 'CwStableCaller_stable')
 qualified_constant_object_call = body_of.call(constant_object_code, 'CwStableCaller_qualified')
