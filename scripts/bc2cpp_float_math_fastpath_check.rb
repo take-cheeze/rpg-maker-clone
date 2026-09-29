@@ -32,6 +32,11 @@ Dir.mktmpdir do |dir|
   ireps, root_label = compile_ireps(source, 'bc2cpp_float_math', dir)
   order = dfs_order(ireps, root_label)
   registry = build_registry(ireps, root_label)[0]
+  # Core Integer#+/-/* are native definitions with no Ruby override: the state in
+  # which FIXNUM_ARITHMETIC is admitted (builtin_class_send_safe?).
+  %w[+ - *].each do |op|
+    registry[op] << MethodDef.new(name: op, owner: '<native>', irep: nil, visibility: :public)
+  end
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
   class_annotations = ClassAnnotations.extract(ireps, registry, owners)
@@ -61,6 +66,12 @@ Dir.mktmpdir do |dir|
     check.call("#{opcode} handles Float/Float with Float/Float unboxing",
                code.include?("mrb_float_p(r#{dest_reg}) && mrb_float_p(r#{source_reg})") &&
                  code.include?("mrb_float(r#{dest_reg}) #{arithmetic} mrb_float(r#{source_reg})"))
+    helper = #{helper}.fetch(operator)
+    check.call("#{opcode} fallback runs the Integer helper for bigint receivers, then keeps the dynamic send",
+               code.include?("bc2cpp_integer_recv_p(r#{dest_reg}) && bc2cpp_integer_operand_p(r#{source_reg})") &&
+                 code.include?("#{helper}(M, r#{dest_reg}, r#{source_reg})") &&
+                 code.index("#{helper}(M, r#{dest_reg}, r#{source_reg})") < code.rindex('mrb_funcall(M,') &&
+                 !code.include?("mrb_fixnum_p(r#{dest_reg}) && mrb_fixnum_p(r#{source_reg})) {\n    r#{dest_reg} = #{helper}"))
     check.call("#{opcode} boxes Float results and preserves dynamic fallback",
                code.include?('mrb_float_value(M,') && code.include?('mrb_funcall(M,') &&
                  code.include?("\"#{operator}\", 1"))
