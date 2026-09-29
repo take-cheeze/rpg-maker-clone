@@ -14,8 +14,8 @@ disasm = if ARGV[0]
            File.read(ARGV[0], encoding: 'UTF-8')
          else
            Dir.mktmpdir do |dir|
-             _c, text = run_mrbc(closed_world_mrblib_srcs(ROOT), 'schema_check', dir)
-             text
+             run_mrbc_text(closed_world_mrblib_srcs(ROOT), File.join(dir, 'schema_check_disasm.txt'),
+                           File.join(dir, 'schema_check.mrb'))
            end
          end
 
