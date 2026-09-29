@@ -98,7 +98,7 @@ Dir.mktmpdir do |dir|
   message_idx = message_irep.instructions.index { |insn| insn.op.start_with?('SEND') && insn.args.include?(':message') }
   check.call('the caught exception remains proven through RESCUE input and MOVE aliases',
              !message_idx.nil? && gen.rescued_exception_receiver?(message_irep, message_idx,
-                                                                  message_irep.instructions[message_idx].args[/^R(\d+)/, 1]))
+                                                                  message_irep.instructions[message_idx].reg))
 
   registry['message'] = [MethodDef.new(name: 'message', owner: '<native>', irep: nil)]
   message_gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)

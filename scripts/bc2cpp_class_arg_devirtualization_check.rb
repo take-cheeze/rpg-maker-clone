@@ -53,7 +53,7 @@ Dir.mktmpdir do |dir|
 
   check.call('annotated initializer argument becomes a class hint for @db',
              class_layout.dig('Game::Party', 'db') == 'Game::Database')
-  code = gen.compile_send(irep.instructions[idx].args, self_implicit: false, irep: irep, idx: idx,
+  code = gen.compile_send(irep.instructions[idx], self_implicit: false, irep: irep, idx: idx,
                           owner_def: method)
   check.call('call through @db uses a guarded TYPED target and dynamic fallback',
              code.include?('TYPED :edition -> Game::Database#edition') &&

@@ -58,7 +58,7 @@ def send_code(gen, ireps, registry, method_name, send_name)
   idx = irep.instructions.index { |insn| insn.op.start_with?('SEND') && insn.args.include?(":#{send_name}") }
   raise "Game::Caller##{method_name}: :#{send_name} send missing" unless idx
 
-  gen.compile_send(irep.instructions[idx].args, self_implicit: false, irep: irep, idx: idx, owner_def: method)
+  gen.compile_send(irep.instructions[idx], self_implicit: false, irep: irep, idx: idx, owner_def: method)
 end
 
 failures = []

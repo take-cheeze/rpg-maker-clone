@@ -1,4 +1,4 @@
-- bc2cpp decodes symbol, ivar, argument-count, block/pool index, jump address,
-  constant-name and `ENTER` operands through typed `Insn` accessors, and
-  `compile_send`/`compile_cmp` take an `Insn` instead of the raw operand text.
-  The generated C++ is byte-identical.
+- bc2cpp reads every instruction operand through typed `Insn` accessors
+  (`reg`, `sym`, `argc`, `n_spec`/`nk_spec`, `block_index`, `const_name`, ...); no
+  compiler pass scrapes the raw disassembly text any more. The generated C++ is
+  byte-identical.

@@ -137,7 +137,7 @@ Dir.mktmpdir do |dir|
   init = registry['initialize'].find { |d| d.owner == 'App' }
   irep = ireps.fetch(init.irep)
   setiv = irep.instructions.index { |i| i.op == 'SETIV' && i.args.include?('@thing') }
-  reg = irep.instructions[setiv].args[/R(\d+)/, 1]
+  reg = irep.instructions[setiv].reg
   check.call('construct-target callers still get the written name',
              trace_new_target(irep, setiv, reg, nil, 0, nil, owner: 'App', canonical: false), 'Thing')
 

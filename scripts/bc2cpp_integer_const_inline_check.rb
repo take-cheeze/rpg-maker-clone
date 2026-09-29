@@ -143,15 +143,8 @@ end
 # 32-bit mrb_int safety: LOADI32 is the only LOADI* form wide enough to exceed
 # the Fixnum range this whole toolchain (Wio/Emscripten/PSP's 32-bit mrb_int)
 # requires; every other LOADI* form is already bounded to +-2^15.
-class FakeInsn
-  attr_reader :op, :args
-  def initialize(op, args)
-    @op = op
-    @args = args
-  end
-end
-in_range = IntegerConstants.loadi_value(FakeInsn.new('LOADI32', 'R1 1073741823'))
-out_of_range = IntegerConstants.loadi_value(FakeInsn.new('LOADI32', 'R1 1073741824'))
+in_range = IntegerConstants.loadi_value(Insn.synthetic('LOADI32', 'R1 1073741823'))
+out_of_range = IntegerConstants.loadi_value(Insn.synthetic('LOADI32', 'R1 1073741824'))
 check.call('a LOADI32 value at the Fixnum boundary is accepted', in_range == 1_073_741_823)
 check.call('a LOADI32 value one past the Fixnum boundary is refused', out_of_range.nil?)
 
