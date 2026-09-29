@@ -20,6 +20,7 @@ require 'shellwords'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed'
+require_relative '../tools/bc2cpp/bc2cpp'
 
 root = File.expand_path('..', __dir__)
 failures = []
@@ -332,6 +333,16 @@ check.call('the innermost lexical class/module constant wins over same-named out
            nested_shadow_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              nested_shadow_call.include?('CwOuter__CwInner__StableObject_singleton_value_impl(') &&
              !nested_shadow_call.include?('bc2cpp_send('))
+saved_construct_names = ConstructClassNames.table
+ConstructClassNames.table = {
+  'CwOuter::StableObject' => true,
+  'CwOuter::CwInner::StableObject' => true,
+}
+nested_construct_name = CodeGen.allocate.send(:lexically_resolve_construct_target,
+                                                'StableObject', 'CwOuter::CwInner::Caller')
+ConstructClassNames.table = saved_construct_names
+check.call('construct resolution selects the first binding in Ruby lexical nesting',
+           nested_construct_name == 'CwOuter::CwInner::StableObject')
 check.call('a single-assignment instance constant supplies a guarded class and falls back for a custom constructor result',
            value_constant_type_call.include?('TYPED :value_type_probe -> CwValueTypeA') &&
              value_constant_type_call.include?('CwValueTypeA_value_type_probe_impl('))
@@ -355,8 +366,6 @@ check.call('a self receiver in a class with no method_missing still converts',
 
 # CLOSED_WORLD_SELF: a self call into an embedding owner nothing subclasses
 # needs no guard at all; a subclass keeps the guard (and the dispatch).
-require_relative '../tools/bc2cpp/bc2cpp'
-
 native_bang = MethodDef.new(name: '!', owner: '<native>', irep: nil, visibility: :public)
 native_only_world = ClosedWorld.new(ireps: {}, registry: { '!' => [native_bang] }, class_decls: {}, walked: Set.new,
                                     native_paths: [], ruby_paths: [])

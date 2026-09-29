@@ -118,6 +118,11 @@ Dir.mktmpdir do |dir|
   UniqueClassNames.object_mixins = Array(included_modules['Object'])
   check.call('a module included into Object is reachable from any owner',
              UniqueClassNames.resolve('Thing', 'App'), 'Lib::Thing')
+  UniqueClassNames.object_mixins = ['RGSS']
+  check.call('native constructors recognize normalized Object-included RGSS', object_includes_rgss?, true)
+  UniqueClassNames.object_mixins = ['Object::RGSS']
+  check.call('native constructors recognize qualified Object-included RGSS', object_includes_rgss?, true)
+  UniqueClassNames.object_mixins = Array(included_modules['Object'])
   check.call('a module neither enclosing nor included is not reachable', UniqueClassNames.resolve('Secret', 'App'), nil)
   check.call('an enclosing module is reachable lexically', UniqueClassNames.resolve('Secret', 'Hidden::User'),
              'Hidden::Secret')

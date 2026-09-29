@@ -1022,12 +1022,14 @@
   conversion and concatenation helpers. Other arities keep ordinary dispatch.
   Closed-world typed calls can also resolve public methods inherited through
   proven included or prepended modules, with an exact receiver-class guard and
-  dispatch fallback. See
+  dispatch fallback. Class construction lookup also follows the innermost
+  matching class constant in Ruby lexical scope. See
   [`docs/adr/0177-bc2cpp-native-expression-devirtualization.md`](docs/adr/0177-bc2cpp-native-expression-devirtualization.md),
   [`docs/adr/0178-bc2cpp-generated-argument-expressions.md`](docs/adr/0178-bc2cpp-generated-argument-expressions.md),
   [`docs/adr/0179-bc2cpp-generated-hash-delete.md`](docs/adr/0179-bc2cpp-generated-hash-delete.md),
-  [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md)
-  and [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md).
+  [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md),
+  [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md),
+  and [`docs/adr/0203-bc2cpp-unique-class-names.md`](docs/adr/0203-bc2cpp-unique-class-names.md).
   RGSS `Sprite#bitmap=` and the five-argument `Bitmap#fill_rect` form also use
   frame-independent native entry points when the receiver's exact native class
   is proven, including inlined calls with a receiver proof; other shapes keep
