@@ -40,6 +40,26 @@ leaky = Irep.new(label: 't2', instructions: [
 breaches = BytecodeIR::Program.new(leaky).region_boundary_breaches(4...12, 12)
 check.call('inner branch leaving and outer branch entering', edge_pairs.call(breaches) == [[0, 8], [4, 20], [16, 8]])
 
+# Ensure-region layout: range [4, 20) with target 20; jumps at 4 (out to 30),
+# 8 (in-range), 12 (onto target), 16 (onto target); 0 enters from outside at 8
+# and 24 (in the body [21, 28)) jumps out of it; 28 is an outside jump onto 20.
+crossing = program.call([
+  insn(0, 'JMP', '8'), insn(4, 'JMPIF', "R1\t30"), insn(8, 'JMP', '12'), insn(12, 'JMPNOT', "R1\t20"),
+  insn(16, 'JMP', '20'), insn(20, 'EXCEPT', 'R2'), insn(24, 'JMP', '30'), insn(28, 'JMP', '20'),
+  insn(30, 'RETURN', 'R1')
+])
+check.call('region_crossings lists in-out and out-in edges',
+           edge_pairs.call(crossing.region_crossings(4...20)) == [[0, 8], [4, 30], [12, 20], [16, 20]])
+check.call('region_crossings except_from ignores other sources',
+           edge_pairs.call(crossing.region_crossings(4...20, except_from: 21...29)) == [[0, 8], [4, 30], [12, 20], [16, 20]])
+check.call('region_crossings except_from drops a listed source',
+           edge_pairs.call(crossing.region_crossings(4...20, except_from: 0...5)) == [[12, 20], [16, 20]])
+check.call('branches_onto lists every source', edge_pairs.call(crossing.branches_onto(20)) == [[12, 20], [16, 20], [28, 20]])
+check.call('branches_onto except_from', edge_pairs.call(crossing.branches_onto(20, except_from: 24...29)) == [[12, 20], [16, 20]])
+check.call('branches_escaping', edge_pairs.call(crossing.branches_escaping(0...17, 4..12)) == [[4, 30], [12, 20], [16, 20]])
+check.call('branches_escaping counts JMPUW', edge_pairs.call(rescue_program.branches_escaping(16..16, 0..10)) == [[16, 20]])
+check.call('handlers? is false without handlers', !crossing.handlers?)
+
 unresolved = Irep.new(label: 't3', instructions: [insn(0, 'JMP', '77'), insn(4, 'RETURN', 'R1')])
 check.call('branch_edges survive unresolved targets', edge_pairs.call(BytecodeIR::Program.new(unresolved).branch_edges) == [[0, 77]])
 
@@ -57,6 +77,8 @@ p = program.call(call)
 pairs = p.adjacent_pairs('BLOCK', %w[SENDB SSENDB]).to_a
 check.call('adjacent pair is BLOCK + SENDB', pairs.map { |a, b, i| [a.op, b.op, i] } == [['BLOCK', 'SENDB', 3]])
 check.call('SSENDB after a SENDB is not paired', p.adjacent_pairs('BLOCK', %w[SSENDB]).to_a.empty?)
+check.call('run_of_op stops at the first other op', program.call([insn(0, 'MOVE', "R1\tR2"), insn(3, 'MOVE', "R1\tR2"), insn(6, 'RETURN', 'R1')]).run_of_op(0, 'MOVE').map(&:addr) == [0, 3])
+check.call('run_of_op is empty on another op or past the end', p.run_of_op(0, 'SENDB').empty? && p.run_of_op(99, 'MOVE').empty?)
 check.call('op? finds present op', p.op?('SENDB', 'BREAK'))
 check.call('op? rejects absent ops', !p.op?('BREAK', 'RETURN_BLK'))
 check.call('instructions_with_op keeps program order',
