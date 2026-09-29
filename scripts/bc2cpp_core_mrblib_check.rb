@@ -9,8 +9,10 @@
 #     and no entry is stale;
 #   - every core-source method the four compiled gems emit is emitted by exactly one gem
 #     (no duplicate `_impl`), and only by mruby-core-compiled;
-#   - none of them touches a block or the Fiber class (a `Fiber.yield` inside a block
-#     cannot cross a compiled frame), and none comes from mruby-enumerator;
+#   - none of them names the Fiber class, builds a lambda or comes from mruby-enumerator;
+#     each one that touches a block has the Fiber guard in its entry (a `Fiber.yield`
+#     inside a block cannot cross a compiled frame, ADR 0269), saves its bytecode before it
+#     is registered, is a hidden definition and is never called directly;
 #   - mruby-rpgxp/rpgvx/wolf/mvjs, which load after mruby-core-compiled in desktop builds
 #     and are not part of its world, define none of the compiled (owner, name) pairs;
 #   - a hot-only build (its world holds no core Ruby) emits no core method;
@@ -100,14 +102,44 @@ rgss = runs.find { |name, _, _| name == 'mruby-rgss-compiled' }
 check.call('Array#include? (mruby-rgss) is emitted by mruby-rgss-compiled, not the core gem',
            rgss[1].include?('Array_include$3f_impl(mrb_state* M') && !core_keys.include?('Array#include?'))
 
-# No compiled core body may sit on the C stack while a block runs.
+# A compiled core body that touches a block sits on the C stack while the block runs, so its entry
+# hands the call to the bytecode whenever a Fiber runs (CORE_BLOCK_GUARD, ADR 0269). Nothing that
+# names the Fiber class, builds a lambda or comes from mruby-enumerator is compiled at all.
 compiled_defs = core_defs(registry, ireps).select { |d| core_keys.include?("#{d.owner}##{d.name}") }
 unsafe = compiled_defs.select do |d|
   irep = ireps.fetch(d.irep)
-  CoreDefs.touches_block?(irep, ireps) || CoreDefs.references_fiber?(irep, ireps) || CoreDefs.fiber_gem?(irep.file)
+  CoreDefs.references_fiber?(irep, ireps) || CoreDefs.builds_lambda?(irep, ireps) || CoreDefs.fiber_gem?(irep.file)
 end
-check.call("no compiled core method touches a block, the Fiber class or mruby-enumerator (#{unsafe.map { |d| "#{d.owner}##{d.name}" }.first(3).join(', ')})",
+check.call("no compiled core method names Fiber, builds a lambda or comes from mruby-enumerator (#{unsafe.map { |d| "#{d.owner}##{d.name}" }.first(3).join(', ')})",
            unsafe.empty?)
+core_run = runs.find { |name, _, _| name == 'mruby-core-compiled' }
+# A later definition replaces an earlier one (shadowed), so count by name.
+block_defs = compiled_defs.select { |d| CoreDefs.touches_block?(ireps.fetch(d.irep), ireps) }.uniq { |d| "#{d.owner}##{d.name}" }
+guard_entries = core_run[1].scan(/^static mrb_value (\S+)\(mrb_state\* M, mrb_value self\) \{\n  if \(mrb_unlikely\(M->c != M->root_c/).flatten
+check.call("compiled core methods that touch a block (#{block_defs.size}) all have the guard in their entry (#{guard_entries.size})",
+           block_defs.size.positive? && block_defs.size == guard_entries.size)
+saved = core_run[1].scan(/if \(bc2cpp_core_save_interpreted\(M, \w+, (?:true|false), "[^"]+", (\d+)\)\)/).flatten
+check.call('every guarded entry saves its bytecode before it is registered, under its own index',
+           saved.size == guard_entries.size && saved.uniq.size == saved.size)
+# The forward declaration, the definition and the entry's own call are the only mentions of an `_impl`.
+direct = guard_entries.select { |entry| core_run[1].scan(/(?<![\w$])#{Regexp.escape(entry)}_impl\(/).size > 3 }
+check.call("no direct call reaches a guarded _impl (#{direct.first(3).join(', ')})", direct.empty?)
+# A guarded method is never a registry definition: one would switch the name-keyed proofs off (ADR 0264
+# finding 1) and is never a call target anyway.
+check.call('guarded methods are hidden definitions',
+           block_defs.all? { |d| core_run[2].include?("  HIDDEN #{d.owner}##{d.name}\n") })
+# `proc.call(x)` from a C frame runs OP_CALL over that frame, which crashes for a compiled block
+# (a cfunc proc): a core body yields to a plain Proc instead (CORE_PROC_CALL), and dispatches
+# `call` only in the else arm.
+sym_names = core_run[1][/bc2cpp_sym_names\[\d+\] = \{\n(.*?)\n\};/m, 1].to_s.lines.map { |l| l.strip.chomp(',') }
+call_index = sym_names.index('"call"')
+core_lines = core_run[1].lines
+call_sends = core_lines.each_index.select do |i|
+  call_index && core_lines[i].match?(/bc2cpp_send\(M, [^,]+, #{call_index},|bc2cpp_sym\(M, #{call_index}\)/)
+end
+unguarded = call_sends.reject { |i| core_lines[[i - 4, 0].max..i].join.include?('} else {') }
+check.call("every `call` dispatch of a core body sits in the else arm of the Proc check (#{call_sends.size} sites, #{unguarded.size} unguarded)",
+           unguarded.empty?)
 
 # Open-world gems load after the compiled core and are not in its world: they must not redefine a compiled
 # method, and (a compiled core name with no native definition is a static call target) must not define the
@@ -271,6 +303,99 @@ CASES = <<~'RUBY'
 
     out << ['`', -> { `echo` }]
     out << ['!~', -> { ['abc' !~ 'b', 1 !~ 1, nil !~ nil] }]
+    out.concat(block_cases)
+    out
+  end
+
+  # The block-taking core methods, compiled behind the Fiber guard (ADR 0269). This world has no
+  # Fiber, so the compiled body is what runs: results, break/next/return/raise and argument
+  # errors must match the bytecode. The Fiber side is scripts/bc2cpp_core_blocks_probe.rb.
+  class BlockProbe
+    def ret_each(a); a.each { |x| return x * 100 if x > 3 }; :none; end
+    def ret_map(a); a.map { |x| return x if x > 3; x }; end
+    def ret_times; 10.times { |i| return i if i > 2 }; end
+    def ret_upto; 1.upto(9) { |i| return i if i > 3 }; end
+    def ret_inject(a); a.inject(0) { |s, x| return s if x > 3; s + x }; end
+    def ret_hash(h); h.each { |k, v| return k if v > 1 }; end
+    def ret_sort_by(a); a.sort_by { |x| return :sb }; end
+  end
+
+  class Bag
+    include Enumerable
+    def initialize(*a); @a = a; end
+    def each; @a.each { |x| yield x }; self; end
+  end
+
+  class Multi
+    include Enumerable
+    def each; yield 1, 2; yield 3; yield [4, 5]; yield; end
+  end
+
+  BP = BlockProbe.new
+
+  def block_cases
+    out = []
+    a = [3, 1, 4, 1, 5, 9, 2, 6]
+    h = { a: 1, b: 2, c: 3 }
+    r = (1..6)
+    collections = { 'array' => a, 'hash' => h, 'range' => r, 'bag' => Bag.new(5, 3, 8, 1), 'multi' => Multi.new,
+                    'empty' => [], 'str' => %w[b a c] }
+    collections.each do |kind, c|
+      %i[map collect select reject find_all partition group_by flat_map sort_by min_by max_by minmax_by
+         each_with_index each_slice each_cons each_with_object find detect find_index count sum inject
+         any? all? none? one? take_while drop_while filter_map tally uniq sort min max minmax first
+         each_entry reverse_each to_h zip include? entries].each do |m|
+        out << ["#{kind}.#{m} blk", -> { c.send(m) { |x, y| x } }]
+        out << ["#{kind}.#{m} splat", -> { c.send(m) { |*x| x.size } }]
+        out << ["#{kind}.#{m} none", -> { c.send(m) }]
+        out << ["#{kind}.#{m} 1", -> { c.send(m, 1) { |x| x } }]
+        out << ["#{kind}.#{m} 2", -> { c.send(m, 2) { |x| x } }]
+        out << ["#{kind}.#{m} break", -> { c.send(m) { |*x| break :broke } }]
+        out << ["#{kind}.#{m} raise", -> { c.send(m) { |*x| raise 'in block' } }]
+      end
+    end
+    [a, r, h].each_with_index do |c, i|
+      out << ["each #{i}", -> { n = []; c.each { |*x| n << x }; n }]
+      out << ["each ret #{i}", -> { c.each { |*x| x }.equal?(c) }]
+      out << ["each break #{i}", -> { c.each { |*x| break x } }]
+      out << ["each next #{i}", -> { n = []; c.each { |*x| next if x.size > 5; n << x }; n }]
+      out << ["each args #{i}", -> { c.each(1) {} }]
+    end
+    out << ['each_index', -> { n = []; a.each_index { |i| n << i }; [n, a.each_index { |i| break i if i == 2 }] }]
+    out << ['collect!', -> { b = a.dup; b.collect! { |x| x * 2 }; b }]
+    out << ['select!/reject!/keep_if/delete_if', -> { [a.dup.select! { |x| x > 3 }, a.dup.reject! { |x| x > 3 }, a.dup.keep_if { |x| x > 3 }, a.dup.delete_if { |x| x > 3 }, a.dup.select! { true }, a.dup.reject! { false }] }]
+    out << ['uniq', -> { b = a.dup; [b.uniq!, b, [1, 2].uniq!, a.uniq { |x| x % 3 }] }]
+    out << ['bsearch', -> { [[1, 3, 5, 7].bsearch { |x| x >= 4 }, [1, 3, 5, 7].bsearch_index { |x| x >= 4 }, [1, 3].bsearch { |x| x >= 9 }] }]
+    out << ['sort blk', -> { [a.sort { |x, y| y <=> x }, a.sort, [1, 'a'].sort] }]
+    out << ['sort_by!', -> { b = a.dup; b.sort_by! { |x| -x }; b }]
+    out << ['fetch/fill/transpose/product', -> { [a.fetch(1), a.fetch(99) { |i| i }, [1, 2, 3].fill { |i| i * i }, [[1, 2], [3, 4]].transpose, [1, 2].product([3, 4])] }]
+    out << ['fetch err', -> { a.fetch(99) }]
+    out << ['permutation/combination', -> { n = []; [1, 2, 3].permutation(2) { |x| n << x }; [1, 2, 3].combination(2) { |x| n << x }; n }]
+    out << ['hash', -> { [h.select { |k, v| v > 1 }, h.reject { |k, v| v > 1 }, h.merge({ a: 5 }) { |k, x, y| x + y }, h.transform_values { |v| v * 2 }, h.transform_keys { |k| k.to_s }, h.fetch(:z) { |k| k }, h.invert, h.fetch_values(:a, :b), h.count { |k, v| v > 1 }, h.map { |k, v| [k, v] }] }]
+    out << ['hash bang', -> { g = h.dup; [g.select! { |k, v| v > 1 }, g, g.reject! { |k, v| v > 5 }, g.keep_if { true }, g.delete_if { |k, v| v > 2 }, g.merge!({ z: 1 }), g.transform_values! { |v| v * 3 }, g.transform_keys! { |k| k.to_s }] }]
+    out << ['hash each_key/each_value', -> { n = []; h.each_key { |k| n << k }; h.each_value { |v| n << v }; n }]
+    out << ['range', -> { n = []; r.each { |i| n << i }; ('a'..'d').each { |c| n << c }; (1..3).step(2) { |i| n << i }; n }]
+    out << ['range endless', -> { n = []; (1..).each { |i| n << i; break if i > 2 }; n }]
+    out << ['range float', -> { (1.0..2.0).each {} }]
+    out << ['range min/max', -> { [r.min, r.max, (1..0).min, (1...1).max, r.min { |x, y| y <=> x }, r.to_a, r.first(2), r.sum, r.sum { |x| x * 2 }] }]
+    out << ['times/upto/downto/step', -> { n = []; 3.times { |i| n << i }; 1.upto(3) { |i| n << i }; 3.downto(1) { |i| n << i }; 1.step(10, 4) { |i| n << i }; 10.step(1, -4) { |i| n << i }; 1.0.step(2.0, 0.5) { |i| n << i }; n }]
+    out << ['times break/neg', -> { [10.times { |i| break i if i == 3 }, -1.times { raise 'no' }, 5.times {}] }]
+    out << ['upto bad', -> { 1.upto('a') {} }]
+    out << ['step zero', -> { 1.step(10, 0) { break } }]
+    out << ['loop', -> { i = 0; [loop { i += 1; break i if i > 3 }, loop { raise StopIteration }] }]
+    out << ['str', -> { n = []; 'abc'.each_char { |c| n << c }; "a\nb".each_line { |l| n << l }; 'ab'.each_byte { |b| n << b }; 'a'.upto('c') { |c| n << c }; n }]
+    out << ['str sub/gsub', -> { s = +'hello'; [s.gsub('l') { |m| m.upcase }, s.sub('l') { |m| m.upcase }, s.gsub!('l') { 'L' }, s, 'hello'.sub!('z') { 'y' }] }]
+    out << ['str chars', -> { ['abc'.chars, 'abc'.bytes, "a\nb".lines, 'ab'.codepoints] }]
+    out << ['return through', -> { [BP.ret_each(a), BP.ret_each([1]), BP.ret_map(a), BP.ret_times, BP.ret_upto, BP.ret_inject(a), BP.ret_hash(h), BP.ret_sort_by(a)] }]
+    out << ['nested break', -> { a.each { |x| [1, 2].each { |y| break }; break :outer } }]
+    out << ['ensure on break', -> { log = []; a.each { |x| begin; break; ensure; log << :e; end }; log }]
+    out << ['ensure on raise', -> { log = []; begin; a.each { |x| begin; raise 'r'; ensure; log << :e; end }; rescue => e; log << e.message; end; log }]
+    out << ['each mutation', -> { b = [1, 2, 3]; n = []; b.each { |x| n << x; b << 9 if b.size < 5 }; n }]
+    out << ['frozen', -> { [[1].freeze.map { |x| x }, ([1].freeze.select! { |x| x } rescue $!.class), ([1].freeze.collect! { |x| x } rescue $!.class), ([1, 1].freeze.uniq! rescue $!.class)] }]
+    out << ['proc args', -> { pr = proc { |x, y| [x, y] }; [[[1, 2]].map(&pr), h.map(&pr), a.each_slice(3).to_a.size] }]
+    out << ['lambda arity', -> { [[[1, 2]].map(&->(x) { x }), ([[1, 2]].each(&->(x, y) { x }) rescue $!.class)] }]
+    out << ['nil block', -> { a.each(&nil).equal?(a) }]
+    out << ['alloc loop', -> { n = 0; 3000.times { |i| n += [i, i.to_s].map { |x| x.to_s }.size }; n }]
     out
   end
 
