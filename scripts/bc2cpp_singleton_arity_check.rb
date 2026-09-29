@@ -179,8 +179,9 @@ check.call('an attr_accessor of `class << self` is a bare ivar access on the con
            level.include?('singleton attr accessor') && level.include?('mrb_iv_set(') && level.include?('mrb_iv_get(') &&
              !level.include?('bc2cpp_send('))
 check.call('a private singleton method keeps dispatch (NoMethodError)', body_of.call(code, 'SaCaller_kept_hidden').include?('bc2cpp_send('))
-check.call('a rest parameter keeps dispatch',
-           body_of.call(code, 'SaCaller_kept_rest').include?('bc2cpp_send(') &&
+check.call('a rest parameter raises no static argument error (dispatched, or a direct call that builds the rest Array, ADR 0265)',
+           (body_of.call(code, 'SaCaller_kept_rest').include?('bc2cpp_send(') ||
+             body_of.call(code, 'SaCaller_kept_rest').include?('mrb_ary_new_from_values(')) &&
              !body_of.call(code, 'SaCaller_kept_rest').include?('STATIC_ARGC_ERROR'))
 
 puts '-- self in a module singleton method'
