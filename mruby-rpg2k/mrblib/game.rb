@@ -5972,32 +5972,36 @@ module Game
     # accessor every
     # context (a basic Attack, a Skill, in battle or, for HP/SP only, out of
     # it) reads through.
-    def modified_stat(base, b, mod_field)
-      mod = b.respond_to?(mod_field) ? (b.send(mod_field) || 0) : 0
-      Game.clamp(base + mod, 1, Battle::MAX_STAT_BATTLE_VALUE)
+    def modified_stat(base, mod)
+      Game.clamp(base + (mod || 0), 1, Battle::MAX_STAT_BATTLE_VALUE)
     end
 
     def effective_atk(b)
-      adjust_stat(modified_stat(b.atk, b, :atk_mod), stat_mode(b, :affect_attack))
+      mod = b.respond_to?(:atk_mod) ? b.atk_mod : 0
+      adjust_stat(modified_stat(b.atk, mod), stat_mode(b, :affect_attack))
     end
 
     def effective_int(b)
-      adjust_stat(modified_stat(b.int, b, :spi_mod), stat_mode(b, :affect_spirit))
+      mod = b.respond_to?(:spi_mod) ? b.spi_mod : 0
+      adjust_stat(modified_stat(b.int, mod), stat_mode(b, :affect_spirit))
     end
 
     def effective_def(b)
       base = (b.respond_to?(:def) ? b.def : 0) || 0
-      adjust_stat(modified_stat(base, b, :def_mod), stat_mode(b, :affect_defense))
+      mod = b.respond_to?(:def_mod) ? b.def_mod : 0
+      adjust_stat(modified_stat(base, mod), stat_mode(b, :affect_defense))
     end
 
     def effective_spi(b)
       base = (b.respond_to?(:spi) ? b.spi : 0) || 0
-      adjust_stat(modified_stat(base, b, :spi_mod), stat_mode(b, :affect_spirit))
+      mod = b.respond_to?(:spi_mod) ? b.spi_mod : 0
+      adjust_stat(modified_stat(base, mod), stat_mode(b, :affect_spirit))
     end
 
     def effective_agi(b)
       base = (b.respond_to?(:agi) ? b.agi : 0) || 0
-      adjust_stat(modified_stat(base, b, :agi_mod), stat_mode(b, :affect_agility))
+      mod = b.respond_to?(:agi_mod) ? b.agi_mod : 0
+      adjust_stat(modified_stat(base, mod), stat_mode(b, :affect_agility))
     end
 
     # The base HP/SP amount a recovery skill restores, per RPG2000's formula

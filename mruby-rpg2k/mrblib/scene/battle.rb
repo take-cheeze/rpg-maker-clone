@@ -4589,8 +4589,8 @@ class RPG2k
       end
 
       # The 用語 field naming each ATK/DEF/SPI(mind)/AGI stat itself (as
-      # opposed to `Game::Battle::STAT_MOD_FIELD`, which names the Combatant
-      # accessor that holds the modifier) -- what #battle_state_lines passes
+      # opposed to `Game::Battle#stat_mod_of`, which reads the Combatant
+      # modifier) -- what #battle_state_lines passes
       # `BattleText.parameter_change` as `points`.
       STAT_CHANGE_TERM = { atk: :attack, def: :defense, spi: :mind, agi: :agility }.freeze
 

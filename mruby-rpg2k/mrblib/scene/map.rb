@@ -1473,13 +1473,13 @@ class RPG2k
         ov = @state.parallax
         return ov if ov
         u = @map.unit
-        return nil unless (u[:parallax_flag] rescue false)
-        { name: (u[:parallax_name] rescue '').to_s,
-          loop_x: (u[:parallax_loop_x] rescue false),
-          loop_y: (u[:parallax_loop_y] rescue false),
-          auto_x: (u[:parallax_autoloop_x] rescue false),
-          auto_y: (u[:parallax_autoloop_y] rescue false),
-          sx: (u[:parallax_sx] rescue 0), sy: (u[:parallax_sy] rescue 0) }
+        return nil unless row_field(u, :parallax_flag, false)
+        { name: row_field(u, :parallax_name, '').to_s,
+          loop_x: row_field(u, :parallax_loop_x, false),
+          loop_y: row_field(u, :parallax_loop_y, false),
+          auto_x: row_field(u, :parallax_autoloop_x, false),
+          auto_y: row_field(u, :parallax_autoloop_y, false),
+          sx: row_field(u, :parallax_sx, 0), sy: row_field(u, :parallax_sy, 0) }
       end
 
       # The CharSet bitmap for an event graphic `name`, cached (including a
@@ -1818,7 +1818,7 @@ class RPG2k
       def build_resolver
         common = {}
         @common.each { |c| common[c.id] = c }
-        map_events = (@map.unit[:events] rescue nil)
+        map_events = row_field(@map.unit, :events, nil)
         EventResolver.new(common, map_events)
       rescue StandardError
         EventResolver.new({}, nil)
@@ -3513,22 +3513,30 @@ class RPG2k
       # A parsed BGM chunk exposes file / fade_in / volume / pitch / balance;
       # read them defensively so a bare fixture that omits a field still
       # works.
-      def music_name(m); m[:file] rescue nil; end
-      def music_volume(m); (m[:volume] rescue nil) || 100; end
-      def music_tempo(m); (m[:pitch] rescue nil) || 100; end
+      # A field of an LCF record or a Hash fixture; `default` when the row is
+      # nil or its schema does not declare the field (ADR 0213).
+      def row_field(row, name, default)
+        return default if row.nil?
+        return row.fetch(name, default) if row.is_a?(Hash)
+        LCF.field?(row, name) ? row[name] : default
+      end
+
+      def music_name(m); row_field(m, :file, nil); end
+      def music_volume(m); row_field(m, :volume, nil) || 100; end
+      def music_tempo(m); row_field(m, :pitch, nil) || 100; end
       # `fade_in` (cycle #203): liblcf's `BGM` struct field 2
       # (mruby-lcf/mrblib/schema.rb), present on every System Music slot this
       # scene reads (battle_music, inn_music, boat/ship/airship_music) --
       # previously never read here at all, so a database-configured fade-in
       # on any of those slots was silently dropped rather than reaching
       # #play_bgm.
-      def music_fadein(m); (m[:fade_in] rescue nil) || 0; end
+      def music_fadein(m); row_field(m, :fade_in, nil) || 0; end
       # `balance` (cycle #219): the same `BGM`-struct's field 5 (schema.rb),
       # present on the exact same slots as `fade_in` above -- previously
       # never read here either, so a database-configured pan on any of those
       # slots was silently dropped rather than reaching #play_bgm's own
       # `RGSS::Audio.bgm_pan` call (see that method's own doc comment).
-      def music_balance(m); (m[:balance] rescue nil) || 50; end
+      def music_balance(m); row_field(m, :balance, nil) || 50; end
 
       # Keep the ridden vehicle on the party's tile / facing.
       def follow_vehicle

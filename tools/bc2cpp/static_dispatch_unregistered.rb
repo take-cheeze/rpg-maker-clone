@@ -43,7 +43,6 @@ STATIC_DISPATCH_UNREGISTERED = Set[
   "Game::Battle.singleton#atk_states_of",
   "Game::Battle.singleton#attr_ranks_of",
   "Game::Battle.singleton#crit_chance_of",
-  "Game::Battle.singleton#flag_of",
   "Game::Battle.singleton#prevents_crit_of",
   "Game::Battle.singleton#strike_count_of",
   "Game::BattlePage.singleton#hp_within?",

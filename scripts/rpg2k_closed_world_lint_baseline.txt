@@ -8,25 +8,3 @@
 1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :_probe_update, :update
 1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :_rgss1_initialize, :initialize
 1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :update, :_probe_update
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	@map.unit[:events] rescue nil
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m[:balance] rescue nil
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m[:fade_in] rescue nil
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m[:file] rescue nil
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m[:pitch] rescue nil
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m[:volume] rescue nil
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_autoloop_x] rescue false
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_autoloop_y] rescue false
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_flag] rescue false
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_loop_x] rescue false
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_loop_y] rescue false
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_name] rescue ''
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_sx] rescue 0
-1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u[:parallax_sy] rescue 0
-1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	b.send(mod_field)
-1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	b.send(name)
-1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send("#{field}=", 0)
-1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send("#{field}=", new_mod)
-1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send(field)
-1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send(key)
-1	Dynamic/Send	mruby-rpg2k/mrblib/scene/equip_menu.rb	@state.party.send(effective_method, a)
-1	Dynamic/Send	mruby-rpg2k/mrblib/scene/equip_menu.rb	a.send(accessor)

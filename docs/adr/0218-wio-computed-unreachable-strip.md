@@ -93,14 +93,14 @@ The analysis flags each world site that dispatches a non-literal name:
 
 Each flagged site must be listed in `WioUnreachable::REVIEWED`, with the
 literals its names come from; otherwise the analysis, and so the wio build,
-fails. The closed-world lint keeps new sites rare. Today there are ten:
+fails. The closed-world lint keeps new sites rare. Today there are three:
 
 - LCF's `field?`;
 - the error-report `Tee` forwarding call-site names to its IO;
-- `modified_stat` and the equip menu's `STAT_DEFS`;
 - the schema blob's `to_sym`.
 
-A further six are in `game/battle.rb`, which is desktop-only.
+`game/battle.rb`, `game.rb`'s stat readers and the equip menu once used a computed
+`send`; they now spell each stat with a literal `case`/call (see ADR 0212).
 
 What stays outside the analysis:
 

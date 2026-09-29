@@ -21,6 +21,8 @@ ruby scripts/rpg2k_closed_world_lint.rb                       # check
 ruby scripts/rpg2k_closed_world_lint.rb --regenerate-baseline # after fixing offences
 ```
 
+Every computed `send` in the three gems is gone; the rest of the baseline is
+`alias_method`, `instance_variable_*` and one file's `rescue` modifiers.
 Existing offences are listed in `scripts/rpg2k_closed_world_lint_baseline.txt`.
 The baseline only shrinks: fixing an offence requires regenerating it, and
 regenerating refuses new entries unless given `--accept-new`. Prefer explicit
