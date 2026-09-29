@@ -323,8 +323,10 @@ check.call('a complete chain (every definer, no subclass, no method_missing) end
              !talk.include?('bc2cpp_send('))
 check.call('its arguments are passed on (NoMethodError#args)',
            body_of.call(closed_code, 'CwCaller_fetch').match?(/bc2cpp_nomethod\(M, r\d+, \d+, 2, r\d+, r\d+\);/))
-check.call('a chain missing an inheriting subclass keeps the dispatch',
-           body_of.call(closed_code, 'CwCaller_bark').match?(%r{bc2cpp_send\([^;]*\); /\* CLOSED_WORLD kept: unlisted_class \*/}))
+bark = body_of.call(closed_code, 'CwCaller_bark')
+check.call('a definer class the chain cannot list (CwPuppy, a mixin in the way) gets its own dispatching branch; the else raises',
+           bark.include?('bc2cpp_send(') && bark.match?(/\} else \{\n\s+r\d+ = bc2cpp_nomethod\(M, r\d+, \d+\);/) &&
+             !bark.include?('kept: unlisted_class'))
 check.call('an inheriting subclass the chain lists (INHERITED_GUARD) completes it: bc2cpp_nomethod',
            body_of.call(inherit_code, 'CwCaller_howl').then do |howl|
              howl.include?('INHERITED_GUARD :cw_howl -- also CwWolfPup < CwWolf') &&
@@ -335,8 +337,8 @@ check.call('a name mruby core defines keeps the dispatch',
 check.call('the guard names exactly the registry class (no lookup through ancestry)',
            closed_code.include?('if (!mrb_const_defined_at(M, v, s)) return nullptr;'))
 check.call('the summary counts what was converted and why the rest was kept',
-           closed_err.include?('== closed world fallbacks: 0 guards dropped, 2 bc2cpp_nomethod, 2 kept dispatching ==') &&
-             closed_err.include?('KEPT unlisted_class: 1') && closed_err.include?('KEPT core_or_native: 1'))
+           closed_err.include?('== closed world fallbacks: 0 guards dropped, 3 bc2cpp_nomethod, 1 kept dispatching ==') &&
+             !closed_err.include?('KEPT unlisted_class') && closed_err.include?('KEPT core_or_native: 1'))
 check.call('a receiver that may be a method_missing instance keeps the dispatch',
            ghost_err.include?('method_missing classes: CwGhost') &&
              body_of.call(ghost_code, 'CwCaller_talk').include?('CLOSED_WORLD kept: method_missing_receiver'))
@@ -539,7 +541,9 @@ native, ruby = bc2cpp_closed_world_outside_srcs('wio', wio_gems, root)
     ok = if dropped
            code.include?('CLOSED_WORLD_SELF :bump') && !code.include?('mrb_obj_class')
          else
-           code.include?('MONO_EMBED_GUARD :bump') && code.include?('CLOSED_WORLD kept: unlisted_class')
+           # The subclass inherits `bump`: it gets its own dispatching branch and any other class raises.
+           code.include?('MONO_EMBED_GUARD :bump') && code.include?('mrb_obj_class') && code.include?('bc2cpp_nomethod') &&
+             code.include?('mrb_funcall(') && !code.include?('kept: unlisted_class')
          end
     check.call("a self call into an embedding owner with #{what} #{dropped ? 'drops' : 'keeps'} the guard", ok)
   end
