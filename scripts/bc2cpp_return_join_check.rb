@@ -111,11 +111,8 @@ RUBY
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'return_join.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_return_join', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_return_join')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_return_join', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   # An empty foreign-method set (not nil) enables both return proofs.
   gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new, Set.new)

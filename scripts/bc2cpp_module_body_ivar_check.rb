@@ -45,10 +45,7 @@ end
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'module_body_ivar.rb')
   File.write(source, SOURCE)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_module_body_ivar', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_module_body_ivar')
-  blocks, files, catches = parse_disasm_blocks(disasm)
-  merge!(ireps, dfs_order(ireps, root_label), blocks, files, catches)
+  ireps, root_label = compile_ireps(source, 'bc2cpp_module_body_ivar', dir)
   registry, _superclass_of, _containers, _included, _prepended, _unknown, _structs, _classes, _walked,
     module_body_ivar_labels = build_registry(ireps, root_label)
   layout = ClassLayout.known(ClassLayout.analyze(ireps, registry, {}, {}, nil,

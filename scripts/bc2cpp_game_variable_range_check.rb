@@ -38,11 +38,8 @@ end
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'game_variable_range.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_game_variable_range', dir)
-  ireps, root = parse_c_dump(c_dump, 'bc2cpp_game_variable_range')
+  ireps, root = compile_ireps(source, 'bc2cpp_game_variable_range', dir)
   order = dfs_order(ireps, root)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root)[0]
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)

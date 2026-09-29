@@ -35,11 +35,8 @@ def fixture(source, name, natives: [])
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
-    c_dump, disasm = run_mrbc(path, "bc2cpp_#{name}", dir)
-    ireps, root_label = parse_c_dump(c_dump, "bc2cpp_#{name}")
+    ireps, root_label = compile_ireps(path, "bc2cpp_#{name}", dir)
     order = dfs_order(ireps, root_label)
-    blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-    merge!(ireps, order, blocks, block_files, block_catches)
     registry, _superclass_of, _containers, included, prepended, unknown_mixins = build_registry(ireps, root_label)
     natives.each do |op|
       registry[op] = [MethodDef.new(name: op, owner: '<native>', irep: nil, visibility: :public)] + Array(registry[op])

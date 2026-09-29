@@ -521,10 +521,7 @@ native, ruby = bc2cpp_closed_world_outside_srcs('wio', wio_gems, root)
   Dir.mktmpdir do |dir|
     path = File.join(dir, 'counter.rb')
     File.write(path, src)
-    c_dump, disasm = run_mrbc(path, 'bc2cpp_cw_counter', dir)
-    ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_cw_counter')
-    blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-    merge!(ireps, dfs_order(ireps, root_label), blocks, block_files, block_catches)
+    ireps, root_label = compile_ireps(path, 'bc2cpp_cw_counter', dir)
     registry, superclass_of, _c, included, prepended, unknown, _s, class_decls, walked = build_registry(ireps, root_label)
     world = ClosedWorld.new(ireps: ireps, registry: registry, class_decls: class_decls, walked: walked,
                             native_paths: native, ruby_paths: ruby)
@@ -556,10 +553,7 @@ Dir.mktmpdir do |dir|
       def value; 2; end
     end
   RUBY
-  c_dump, disasm = run_mrbc(path, 'bc2cpp_cw_inherited', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_cw_inherited')
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, dfs_order(ireps, root_label), blocks, block_files, block_catches)
+  ireps, root_label = compile_ireps(path, 'bc2cpp_cw_inherited', dir)
   registry, superclass_of, _c, included, prepended, unknown, _s, class_decls, walked = build_registry(ireps, root_label)
   world = ClosedWorld.new(ireps: ireps, registry: registry, class_decls: class_decls, walked: walked,
                           native_paths: native, ruby_paths: ruby)

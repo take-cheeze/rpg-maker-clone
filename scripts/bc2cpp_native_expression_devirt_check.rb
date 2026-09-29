@@ -283,11 +283,8 @@ eq_override_method = nil
 Dir.mktmpdir do |eq_dir|
   eq_source = File.join(eq_dir, 'string_eq_override.rb')
   File.write(eq_source, "class String\n  def ==(other)\n    true\n  end\nend\n")
-  eq_dump, eq_disasm = run_mrbc(eq_source, 'bc2cpp_string_eq_override', eq_dir)
-  eq_ireps, eq_root = parse_c_dump(eq_dump, 'bc2cpp_string_eq_override')
+  eq_ireps, eq_root = compile_ireps(eq_source, 'bc2cpp_string_eq_override', eq_dir)
   eq_order = dfs_order(eq_ireps, eq_root)
-  eq_blocks, eq_block_files, eq_block_catches = parse_disasm_blocks(eq_disasm)
-  merge!(eq_ireps, eq_order, eq_blocks, eq_block_files, eq_block_catches)
   eq_override_ireps = eq_ireps
   eq_override_method = build_registry(eq_ireps, eq_root)[0].fetch('==').find { |md| md.owner == 'String' }
 end

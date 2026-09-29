@@ -1,11 +1,14 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# The RITE-binary loader (RiteBinary + InsnDecoder) must yield exactly the
-# Insn stream the `mrbc -v` text loader parses: addr, op, typed operands,
-# args, raw, lineno, file and catch handlers of every irep, for the real
-# closed-world gems and for a synthetic source covering EXT widening, catch
-# tables, pool literals and odd symbol names. Usage:
+# The RITE-binary loader (RiteBinary + InsnDecoder + load_ireps) must agree
+# with two independent readings of the same sources: the `mrbc -v` text (each
+# irep's header counts, file, catch handlers and every instruction: addr, op,
+# typed operands, args, raw, line) and the `mrbc -B -S` C dump (labels, reps
+# tree, nlocals/nregs, pool entries, exact symbol and local names). Both
+# references are parsed here only; the compiler itself reads the binary.
+# Checked for the real closed-world gems and a synthetic source covering EXT
+# widening, catch tables, pool literals and odd symbol names. Usage:
 # MRBC=path/to/mrbc ruby scripts/bc2cpp_binary_loader_check.rb
 require 'tmpdir'
 require_relative '../tools/bc2cpp/irep'
@@ -56,25 +59,137 @@ def synthetic_source
   RUBY
 end
 
-def compare(label, dir, srcs)
-  # The text loader stays available as the reference (BC2CPP_TEXT_LOADER=1).
-  _c, text = run_mrbc_text_reference(srcs, dir, label)
-  _c2, image = run_mrbc(srcs, "#{label}_bin", dir)
-  abort 'bc2cpp binary loader check: run_mrbc returned text; unset BC2CPP_TEXT_LOADER' unless image.is_a?(RiteImage)
+TextIrep = Struct.new(:nregs, :nlocals, :pools, :syms, :reps, :file, :catches, :insns)
 
-  want_blocks, want_files, want_catches = parse_disasm_blocks(text)
-  got_blocks, got_files, got_catches = parse_disasm_blocks(image)
-  failures = []
-  failures << "irep count #{got_blocks.length} != #{want_blocks.length}" unless got_blocks.length == want_blocks.length
-  got_blocks.zip(want_blocks, got_files, want_files, got_catches, want_catches).each_with_index do |row, index|
-    got, want, got_file, want_file, got_catch, want_catch = row
-    failures << "irep #{index}: file #{got_file.inspect} != #{want_file.inspect}" unless got_file == want_file
-    failures << "irep #{index}: catch handlers differ" unless got_catch == want_catch
-    unless got.length == want.length
-      failures << "irep #{index}: #{got.length} insns != #{want.length}"
+# One-shot parse of `mrbc -v`: the disassembly blocks in DFS pre-order.
+def parse_text_reference(srcs, dir, label)
+  text = IO.popen([MRBC, '-v', '-o', File.join(dir, "#{label}_text.mrb"), *srcs], external_encoding: 'UTF-8', &:read)
+  raise 'mrbc -v failed' unless $?.success?
+
+  blocks = []
+  text.each_line do |line|
+    if line =~ /^irep 0x\h+ nregs=(\d+) nlocals=(\d+) pools=(\d+) syms=(\d+) reps=(\d+)/
+      blocks << TextIrep.new(*Regexp.last_match.captures.map(&:to_i), nil, [], [])
+    elsif blocks.empty?
+      next
+    elsif line =~ /^file: (.+)$/
+      blocks.last.file = Regexp.last_match(1)
+    elsif line =~ /^catch type: (\w+)\s+begin: (\d+)\s+end: (\d+)\s+target: (\d+)/
+      type, b, e, t = Regexp.last_match.captures
+      blocks.last.catches << CatchHandler.new(type: type.to_sym, begin_addr: b.to_i, end_addr: e.to_i, target: t.to_i)
+    elsif line =~ /^\s*(\d+)\s+(\d+)\s+([A-Z][A-Z0-9_]*)\s*(.*)$/
+      lineno, addr, op, rest = Regexp.last_match.captures
+      blocks.last.insns << Insn.new(lineno: lineno.to_i, addr: addr.to_i, op: op, args: rest.strip, raw: line.rstrip)
+    end
+  end
+  blocks
+end
+
+# src/cdump.c operator_table: MRB_OPSYM(name) -> symbol text.
+OPSYM_NAMES = {
+  'not' => '!', 'mod' => '%', 'and' => '&', 'mul' => '*', 'add' => '+', 'sub' => '-', 'div' => '/', 'lt' => '<',
+  'gt' => '>', 'xor' => '^', 'tick' => '`', 'or' => '|', 'neg' => '~', 'neq' => '!=', 'nmatch' => '!~',
+  'andand' => '&&', 'pow' => '**', 'plus' => '+@', 'minus' => '-@', 'lshift' => '<<', 'le' => '<=', 'eq' => '==',
+  'match' => '=~', 'ge' => '>=', 'rshift' => '>>', 'aref' => '[]', 'oror' => '||', 'cmp' => '<=>', 'eqq' => '===',
+  'aset' => '[]='
+}.freeze
+
+def c_symbol_name(kind, word)
+  case kind
+  when 'SYM' then word
+  when 'SYM_Q' then "#{word}?"
+  when 'SYM_B' then "#{word}!"
+  when 'SYM_E' then "#{word}="
+  when 'IVSYM' then "@#{word}"
+  when 'CVSYM' then "@@#{word}"
+  when 'OPSYM' then OPSYM_NAMES.fetch(word)
+  else raise "unknown symbol form MRB_#{kind}"
+  end
+end
+
+# The C source of an mrb_str_dump'ed string (`\n`, `\xNN`, `\"`, ...).
+def unescape_c_dump(text)
+  simple = { 'n' => "\n", 't' => "\t", 'r' => "\r", 'e' => "\e", 'a' => "\a", 'b' => "\b", 'f' => "\f", 'v' => "\v" }
+  text.b.gsub(/\\(x\h\h|.)/m) do
+    esc = Regexp.last_match(1)
+    esc.length == 3 ? [esc[1, 2]].pack('H2') : simple.fetch(esc, esc)
+  end.force_encoding(Encoding::UTF_8)
+end
+
+CReference = Struct.new(:nlocals, :nregs, :reps, :pool, :syms, :lv)
+
+# label => CReference, read off the `mrbc -B -S` C source. A `0` entry of a
+# symbol array is either a null symbol or one interned at load time; the
+# `<var>[i] = mrb_intern_lit(...)` lines tell them apart.
+def parse_c_reference(c_src, symbol)
+  sym = Regexp.escape(symbol)
+  init = {}
+  c_src.scan(/^  (#{sym}_(?:syms|lv)_\d+)\[(\d+)\] = mrb_intern_lit\(mrb, "((?:[^"\\]|\\.)*)"\);$/) do |var, idx, str|
+    init[[var, idx.to_i]] = unescape_c_dump(str)
+  end
+  decode = lambda do |var, body|
+    out = []
+    body.scan(/MRB_(\w+?)\((\w+)\)|0/) do
+      kind = Regexp.last_match(1)
+      out << (kind ? c_symbol_name(kind, Regexp.last_match(2)) : init[[var, out.length]])
+    end
+    out
+  end
+  pools = {}
+  c_src.scan(/static const mrb_irep_pool #{sym}_pool_(\d+)\[\d+\] = \{(.*?)\n\};/m) do |label, body|
+    pools[label] = body.scan(/\{IREP_TT_(\w+)(?:\|[^,]+)?,\s*\{(.*?)\}\},/m).map do |tag, val|
+      if %w[SSTR STR].include?(tag)
+        [:str, val[/"((?:[^"\\]|\\.)*)"/, 1].to_s.gsub(/\\x(\h\h)/) { [Regexp.last_match(1)].pack('H2') }.b]
+      else
+        [tag.downcase.to_sym, val.strip]
+      end
+    end
+  end
+  syms = {}
+  lvs = {}
+  c_src.scan(/mrb_DEFINE_SYMS_VAR\((#{sym}_(syms|lv)_(\d+)), \d+, \((.*?)\), (?:const)?\);/m) do |var, key, label, body|
+    (key == 'syms' ? syms : lvs)[label] = decode.call(var, body)
+  end
+  reps = {}
+  c_src.scan(/static const mrb_irep \*(?:const )?#{sym}_reps_(\d+)\[\d+\] = \{(.*?)\n\};/m) do |label, body|
+    reps[label] = body.scan(/&#{sym}_irep_(\d+)/).flatten
+  end
+  refs = {}
+  c_src.scan(/static const mrb_irep #{sym}_irep_(\d+) = \{\s*\n\s*(\d+),(\d+),/) do |label, nlocals, nregs|
+    refs[label] = CReference.new(nlocals.to_i, nregs.to_i, reps[label] || [], pools[label] || [], syms[label] || [],
+                                 lvs[label] || [])
+  end
+  refs
+end
+
+def compare_metadata(label, ireps, root, refs, failures)
+  failures << "#{label}: labels differ from the C dump's" unless ireps.keys.sort == refs.keys.sort
+  failures << "#{label}: root #{root} is not irep_0" unless root == '0'
+  ireps.each do |l, irep|
+    ref = refs[l] or next
+    got = [irep.nlocals, irep.nregs, irep.reps, irep.syms, irep.lv.first(ref.lv.length)]
+    want = [ref.nlocals, ref.nregs, ref.reps, ref.syms, ref.lv]
+    failures << "#{label} irep #{l}: nlocals/nregs/reps/syms/lv #{got.inspect} != #{want.inspect}" unless got == want
+    pool = irep.pool.map { |e| e.is_a?(String) ? [:str, e.b] : [e[:type], e[:raw]] }
+    failures << "#{label} irep #{l}: pool #{pool.inspect} != #{ref.pool.inspect}" unless pool == ref.pool
+  end
+end
+
+def compare_instructions(order, ireps, text, failures)
+  order.zip(text).each_with_index do |(l, want), index|
+    break if want.nil? || failures.length > 20
+
+    irep = ireps.fetch(l)
+    got_header = [irep.nregs, irep.nlocals, irep.pool.length, irep.syms.length, irep.reps.length]
+    want_header = [want.nregs, want.nlocals, want.pools, want.syms, want.reps]
+    failures << "irep #{index}: header #{got_header} != #{want_header}" unless got_header == want_header
+    failures << "irep #{index}: file #{irep.file.inspect} != #{want.file.inspect}" unless irep.file == want.file
+    failures << "irep #{index}: catch handlers differ" unless irep.catch_handlers == want.catches
+    unless irep.instructions.length == want.insns.length
+      failures << "irep #{index}: #{irep.instructions.length} insns != #{want.insns.length}"
       next
     end
-    got.zip(want).each do |g, w|
+    irep.instructions.zip(want.insns).each do |g, w|
       fields = { addr: [g.addr, w.addr], op: [g.op, w.op], lineno: [g.lineno, w.lineno], args: [g.args, w.args],
                  raw: [g.raw, w.raw], typed: [g.typed, w.typed] }
       fields.each do |field, (gv, wv)|
@@ -82,18 +197,23 @@ def compare(label, dir, srcs)
       end
       break if failures.length > 20
     end
-    break if failures.length > 20
   end
-  total = want_blocks.sum(&:length)
-  abort "bc2cpp binary loader check: FAIL #{label}\n  #{failures.first(20).join("\n  ")}" unless failures.empty?
-  [want_blocks.length, total]
 end
 
-def run_mrbc_text_reference(srcs, dir, label)
-  c_dump = File.join(dir, "#{label}_text.c")
-  system(MRBC, '-B', "#{label}_text", '-S', '-o', c_dump, *srcs, exception: true)
-  [File.read(c_dump, encoding: 'UTF-8'),
-   run_mrbc_text(srcs, File.join(dir, "#{label}_disasm.txt"), File.join(dir, "#{label}_text.mrb"))]
+def compare(label, dir, srcs)
+  text = parse_text_reference(srcs, dir, label)
+  c_dump = File.join(dir, "#{label}_ref.c")
+  system(MRBC, '-B', "#{label}_ref", '-S', '-o', c_dump, *srcs, exception: true)
+  refs = parse_c_reference(File.read(c_dump, encoding: 'UTF-8'), "#{label}_ref")
+  ireps, root = compile_ireps(srcs, "#{label}_bin", dir)
+  order = dfs_order(ireps, root)
+
+  failures = []
+  compare_metadata(label, ireps, root, refs, failures)
+  failures << "irep count #{order.length} != #{text.length}" unless order.length == text.length
+  compare_instructions(order, ireps, text, failures)
+  abort "bc2cpp binary loader check: FAIL #{label}\n  #{failures.first(20).join("\n  ")}" unless failures.empty?
+  [text.length, text.sum { |t| t.insns.length }]
 end
 
 # InsnDecoder::FORMATS must match mruby/ops.h opcode-for-opcode.

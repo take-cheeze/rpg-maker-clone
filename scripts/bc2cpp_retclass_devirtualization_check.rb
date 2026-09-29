@@ -265,11 +265,8 @@ end
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'retclass.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_retclass', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_retclass')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_retclass', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
@@ -574,11 +571,8 @@ Dir.mktmpdir do |dir|
       def initialize; @child = RetChild.new; @items = [@child.produce]; end
     end
   RUBY
-  inherited_c, inherited_disasm = run_mrbc(inherited_source, 'bc2cpp_inherited_retclass', dir)
-  inherited_ireps, inherited_root = parse_c_dump(inherited_c, 'bc2cpp_inherited_retclass')
+  inherited_ireps, inherited_root = compile_ireps(inherited_source, 'bc2cpp_inherited_retclass', dir)
   inherited_order = dfs_order(inherited_ireps, inherited_root)
-  inherited_blocks, inherited_block_files, inherited_block_catches = parse_disasm_blocks(inherited_disasm)
-  merge!(inherited_ireps, inherited_order, inherited_blocks, inherited_block_files, inherited_block_catches)
   inherited_registry, inherited_supers, _cc, inherited_includes, inherited_prepends, inherited_unknown,
     _structs, inherited_decls, inherited_walked = build_registry(inherited_ireps, inherited_root)
   inherited_owners = Set.new(inherited_registry.values.flatten.map(&:owner))

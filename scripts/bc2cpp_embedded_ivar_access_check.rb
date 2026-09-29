@@ -110,10 +110,7 @@ RUBY
 Dir.mktmpdir do |dir|
   path = File.join(dir, 'layout.rb')
   File.write(path, LAYOUT_FIXTURE)
-  c_dump, disasm = run_mrbc(path, 'bc2cpp_layout', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_layout')
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, dfs_order(ireps, root_label), blocks, block_files, block_catches)
+  ireps, root_label = compile_ireps(path, 'bc2cpp_layout', dir)
   registry, superclass_of = build_registry(ireps, root_label)
   ivar_layout = IvarLayout.all(ireps, registry)
   gen = CodeGen.new(ireps, registry, ivar_layout, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new)
@@ -143,10 +140,7 @@ Dir.mktmpdir do |dir|
       def initialize; end
     end
   RUBY
-  unsafe_dump, unsafe_disasm = run_mrbc(unsafe_path, 'bc2cpp_unsafe_layout', dir)
-  unsafe_ireps, unsafe_root = parse_c_dump(unsafe_dump, 'bc2cpp_unsafe_layout')
-  unsafe_blocks, unsafe_files, unsafe_catches = parse_disasm_blocks(unsafe_disasm)
-  merge!(unsafe_ireps, dfs_order(unsafe_ireps, unsafe_root), unsafe_blocks, unsafe_files, unsafe_catches)
+  unsafe_ireps, unsafe_root = compile_ireps(unsafe_path, 'bc2cpp_unsafe_layout', dir)
   unsafe_registry, unsafe_superclasses = build_registry(unsafe_ireps, unsafe_root)
   rejected = begin
     CodeGen.new(unsafe_ireps, unsafe_registry, IvarLayout.all(unsafe_ireps, unsafe_registry), {}, {}, {},

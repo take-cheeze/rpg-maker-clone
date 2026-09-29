@@ -25,11 +25,8 @@ end
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'puts.rb')
   File.write(source, source_text)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_puts_model', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_puts_model')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_puts_model', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
