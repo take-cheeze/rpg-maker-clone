@@ -360,9 +360,10 @@ check.call('a complete chain (every definer, no subclass, no method_missing) end
 check.call('its arguments are passed on (NoMethodError#args)',
            body_of.call(closed_code, 'CwCaller_fetch').match?(/bc2cpp_nomethod\(M, r\d+, \d+, 2, r\d+, r\d+\);/))
 bark = body_of.call(closed_code, 'CwCaller_bark')
-check.call('a definer class the chain cannot list (CwPuppy, a mixin in the way) gets its own dispatching branch; the else raises',
-           bark.include?('bc2cpp_send(') && bark.match?(/\} else \{\n\s+r\d+ = bc2cpp_nomethod\(M, r\d+, \d+\);/) &&
-             !bark.include?('kept: unlisted_class'))
+check.call('a definer class the chain cannot list (CwPuppy, a mixin in the way) gets its own exact-class branch (ADR 0259: a direct call of the inherited definition); the else raises',
+           bark.include?('UNLISTED_CLASS_CALL :cw_bark -> CwDog#cw_bark (receiver exactly CwPuppy)') &&
+             bark.match?(/\} else \{\n\s+r\d+ = bc2cpp_nomethod\(M, r\d+, \d+\);/) &&
+             !bark.include?('bc2cpp_send(') && !bark.include?('kept: unlisted_class'))
 check.call('an inheriting subclass the chain lists (INHERITED_GUARD) completes it: bc2cpp_nomethod',
            body_of.call(inherit_code, 'CwCaller_howl').then do |howl|
              howl.include?('INHERITED_GUARD :cw_howl -- also CwWolfPup < CwWolf') &&
