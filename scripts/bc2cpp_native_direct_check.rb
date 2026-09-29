@@ -35,7 +35,7 @@ end
 
 lib_path = File.join(root, 'mruby-rgss/src/lib.cxx')
 lib = File.read(lib_path)
-header = File.read(File.join(root, 'include/rgss_construct.hxx'))
+header = File.read(File.join(root, 'include/rgss_construct.hxx')) + File.read(File.join(root, 'include/rgss_native_direct.hxx'))
 rgss_srcs = Dir[File.join(root, 'mruby-rgss/src/*.cxx')]
 
 declared = header.scan(/mrb_value\s+(\w+)\(([^)]*)\)\s*;/m).to_h { |fn, params| [fn, params.split(',').size] }
@@ -49,9 +49,12 @@ NativeDirect::ENTRIES.each do |name, owners|
     # never lifted); the registration itself is still there.
     registered = rgss_srcs.flat_map { |src| NativeDirect.file_registrations(src)[name]&.fetch(:owners) || [] }
     check.call("#{owner}##{name}: #{owner} registers #{name} natively", registered.include?(owner))
+    # A hand-written entry is what its binding calls; a split one (ADR 0263) is
+    # what the generated forwarder in lib.cxx calls the binding's body from.
     next if entry.kinds.empty?
 
-    check.call("#{fn} is what the #{name} binding calls", lib.include?("rgss::#{fn}(M, self"))
+    check.call("#{fn} is what the #{name} binding calls or forwards to the binding's body",
+               lib.include?("rgss::#{fn}(M, self") || lib.match?(/^mrb_value #{fn}\(mrb_state\* M,[^{}]*\{\s*return \w+_native_body\(M, self/m))
   end
 end
 
