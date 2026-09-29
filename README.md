@@ -1034,7 +1034,9 @@
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
-  per-pass text scraping. See
+  per-pass text scraping, including a reaching-definitions query
+  (`BytecodeIR.reaching_definitions`) that answers through joins and loops.
+  See
   [`docs/adr/0236-bc2cpp-bytecode-ir.md`](docs/adr/0236-bc2cpp-bytecode-ir.md),
   [`docs/adr/0249-bc2cpp-binary-loader.md`](docs/adr/0249-bc2cpp-binary-loader.md)
   and [`docs/adr/0250-bc2cpp-typed-operands-and-shared-ir-queries.md`](docs/adr/0250-bc2cpp-typed-operands-and-shared-ir-queries.md).
