@@ -237,6 +237,9 @@ CONSTANT_OBJECT_WORLD = <<~'RUBY'
     def state; @state; end
     module_function :state
   end
+  class CwBlockCaller
+    def times_value; 3.times { |i| CwModuleFunction.value(i) }; end
+  end
   module CwReplacementObject
     def self.value; 22; end
   end
@@ -351,6 +354,7 @@ constant_object_call = body_of.call(constant_object_code, 'CwStableCaller_stable
 qualified_constant_object_call = body_of.call(constant_object_code, 'CwStableCaller_qualified')
 nested_shadow_call = body_of.call(constant_object_code, 'CwOuter__CwInner__Caller_nested_shadow')
 module_function_call = body_of.call(constant_object_code, 'CwStableCaller_module_function')
+inlined_block_call = body_of.call(constant_object_code, 'CwBlockCaller_times_value')
 module_function_state_call = body_of.call(constant_object_code, 'CwStableCaller_module_function_state')
 value_constant_type_call = body_of.call(constant_object_code, 'CwStableCaller_value_constant_type')
 after_branch_call = body_of.call(constant_object_code, 'CwStableCaller_after_branch')
@@ -361,6 +365,9 @@ qualified_array_construct_call = body_of.call(constant_object_code, 'CwQualified
 qualified_hash_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create_hash')
 qualified_range_construct_call = body_of.call(constant_object_code, 'CwQualifiedConstruct__Caller_create_range')
 instance_mixin_construct_call = body_of.call(constant_object_code, 'CwInstanceMixinCaller_create')
+check.call('a constant receiver inside an inlined block body is resolved too (trace_idx, shifted registers)',
+           inlined_block_call.include?('CLOSED_WORLD_CONSTANT_OBJECT :value') &&
+             inlined_block_call.include?('CwModuleFunction_value_impl(') && !inlined_block_call.include?('bc2cpp_send('))
 check.call('a stable class/module constant dispatches directly to its unique singleton method',
            constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              constant_object_call.include?('CwStableObject_singleton_value_impl(') &&
