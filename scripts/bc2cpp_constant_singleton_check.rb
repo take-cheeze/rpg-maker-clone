@@ -171,8 +171,10 @@ if ENV['MRBC']
       sites.each do |site, name|
         fn = site.gsub('::', '__').tr('.', '_') # the emitted function name
         body = body_of.call(code, fn)
-        check.call("#{what} keeps `#{name}` in #{fn} dispatching",
-                   !body.empty? && !body.include?("NATIVE_EXACT_DIRECT :#{name}") && body.include?('bc2cpp_send('))
+        # It dispatches or, for a Ruby definition the closed world sees, calls that definition; never the native.
+        check.call("#{what} keeps `#{name}` in #{fn} off the native entry point",
+                   !body.empty? && !body.include?("NATIVE_EXACT_DIRECT :#{name}") &&
+                     (body.include?('bc2cpp_send(') || body.include?("CLOSED_WORLD_CONSTANT_OBJECT :#{name}")))
       end
     end
   end
