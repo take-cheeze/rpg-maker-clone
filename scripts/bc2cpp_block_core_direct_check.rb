@@ -68,6 +68,12 @@ FIXTURE = <<~'RUBY'
     def ivar_block(a); @acc = []; a.each { |x| @acc << x }; @acc; end
     def user_each(o); r = []; o.each { |x| r << x }; r; end
     def mutate(a); r = []; a.each { |x| r << x; a << x + 10 if a.size < 5 }; r; end
+    def each_count(a); n = 0; a.each { n += 1 }; n; end
+    def each_rest(a); r = []; a.each { |*xs| r << xs }; r; end
+    def pair_each(o); r = []; o.each { |a, b| r << [a, b] }; r; end
+    def single_each(o); r = []; o.each { |a| r << a }; r; end
+    def hash_pairs(h); r = []; h.each { |pair| r << pair }; r; end
+    def strict_copy(a); l = lambda(&proc { |x| x }); a.map { |x| l.call(x) }; end
   end
 RUBY
 
@@ -79,6 +85,10 @@ DRIVER = <<~'RUBY'
   singleton = [7, 8]
   def singleton.each; yield :single; end
   frozen = [1, 2, 3].freeze
+  pairs = Object.new
+  def pairs.each; yield [1, 2]; yield 3; yield [4, 5, 6]; yield; end
+  spread = Object.new
+  def spread.each; yield 1, 2; yield 3, 4, 5; yield 6; end
   big = (1..3000).to_a
   hash = { a: 1, b: 2, c: 3 }
   cases = {
@@ -104,7 +114,13 @@ DRIVER = <<~'RUBY'
     any_all: [[1, 2, 3], [0, 1], []],
     ivar_block: [[1, 2, 3]],
     user_each: [user, [1, 2], singleton, BdArr.new([3, 4])],
-    mutate: [[1, 2]]
+    mutate: [[1, 2]],
+    each_count: [[1, 2, 3], []],
+    each_rest: [[1, 2], []],
+    pair_each: [pairs, spread, { a: 1 }],
+    single_each: [pairs, spread, [1, 2]],
+    hash_pairs: [hash],
+    strict_copy: [[1, 2, 3]]
   }
   cases.each do |name, inputs|
     inputs.each_with_index do |input, i|

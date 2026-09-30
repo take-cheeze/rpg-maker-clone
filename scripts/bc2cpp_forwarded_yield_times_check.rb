@@ -73,7 +73,7 @@ Dir.mktmpdir do |dir|
 
   run = body_of(out, 'ForwardYieldOwner_run')
   check.call('the times body is inlined', run.include?('Lbc2cpp_times_iter_'))
-  check.call('the forwarded block is passed to the body', run.include?('mrb_yield_argv(M, r8,'))
+  check.call('the forwarded block is passed to the body', run.include?('bc2cpp_yield_argv(M, r8,'))
   check.call('the existing no-block error is preserved', run.include?('unexpected yield'))
 
   core = [ENV['BC2CPP_MRUBY_CORE'], *Dir[File.join(ROOT, 'build*/mruby/host/mrbc')]].compact.find do |candidate|
