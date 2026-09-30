@@ -499,19 +499,34 @@ class CodeGen
   # Emitted only when some compiled code calls it (checked on the output).
   def emit_ary_entry_helper(compiled)
     # OUTLINED_INDEX_OPS' GETIDX/GETIDX0 helpers call it too.
-    return '' unless compiled.any? { |m| m[:code].include?('bc2cpp_ary_entry(') } ||
-                     emit_index_helpers(compiled).include?('bc2cpp_ary_entry(')
+    helpers = emit_index_helpers(compiled)
+    out = +''
+    if compiled.any? { |m| m[:code].include?('bc2cpp_ary_entry(') } || helpers.include?('bc2cpp_ary_entry(')
+      out << <<~CPP
+        static inline mrb_value bc2cpp_ary_entry(mrb_state*, mrb_value ary, mrb_int n) {
+          struct RArray* a = mrb_ary_ptr(ary);
+          mrb_int len = ARY_LEN(a);
+          if (n < 0) n += len;
+          if (n < 0 || len <= n) return mrb_nil_value();
+          return ARY_PTR(a)[n];
+        }
 
-    <<~CPP
-      static inline mrb_value bc2cpp_ary_entry(mrb_state*, mrb_value ary, mrb_int n) {
-        struct RArray* a = mrb_ary_ptr(ary);
-        mrb_int len = ARY_LEN(a);
-        if (n < 0) n += len;
-        if (n < 0 || len <= n) return mrb_nil_value();
-        return ARY_PTR(a)[n];
-      }
+      CPP
+    end
+    if compiled.any? { |m| m[:code].include?('bc2cpp_ary_entry_nn(') } || helpers.include?('bc2cpp_ary_entry_nn(')
+      # INTEGER_RANGE_PROOF (ADR 0286): the index is proven non-negative, so the wrap-around of a
+      # negative index has nothing to do. One unsigned compare also keeps a negative index (were
+      # a proof ever wrong) a nil, never an out-of-bounds read.
+      out << <<~CPP
+        static inline mrb_value bc2cpp_ary_entry_nn(mrb_state*, mrb_value ary, mrb_int n) {
+          struct RArray* a = mrb_ary_ptr(ary);
+          if ((mrb_uint)n >= (mrb_uint)ARY_LEN(a)) return mrb_nil_value();
+          return ARY_PTR(a)[n];
+        }
 
-    CPP
+      CPP
+    end
+    out
   end
 
   # bc2cpp_integer_recv_p / bc2cpp_integer_operand_p (FIXNUM_ARITHMETIC), emitted
@@ -538,6 +553,21 @@ class CodeGen
   # dynamic send. Emitted only when the output uses them.
   def emit_numeric_proof_helpers(compiled)
     out = +''
+    if compiled.any? { |m| m[:code].include?('RANGE_PROOF') }
+      # INTEGER_RANGE_PROOF (ADR 0286). An unguarded arm relies on the fixnum range of every
+      # target holding the 31-bit range word boxing gives a 32-bit mrb_int; a wider interval
+      # is guarded by bc2cpp_range_fits, and one derived from the Array length cap also by
+      # the pointer width that makes ARY_MAX_SIZE (src/array.c) at most 2**30 - 1.
+      out << <<~CPP
+        static_assert(MRB_FIXNUM_MIN <= -0x40000000LL && MRB_FIXNUM_MAX >= 0x3fffffffLL,
+                      "RANGE_PROOF: the narrowest shipped fixnum range is 31 bits");
+        static constexpr bool bc2cpp_range_fits(long long lo, long long hi, bool array_len_cap) {
+          return lo >= (long long)MRB_FIXNUM_MIN && hi <= (long long)MRB_FIXNUM_MAX &&
+                 (!array_len_cap || (SIZE_MAX / sizeof(mrb_value)) <= 0x3fffffffu);
+        }
+
+      CPP
+    end
     if compiled.any? { |m| m[:code].include?('bc2cpp_num_cmp(') }
       # Integer#</<=/>/>= and Float#... are all num_lt & co. over cmpnum
       # (src/numeric.c); mrb_cmp is cmpnum for Integer/Float/bigint receivers.

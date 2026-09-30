@@ -16,6 +16,7 @@ require_relative 'bytecode_ir'
 #   HSH   exactly ::Hash
 #   STR   exactly ::String
 #   NIL   nil
+#   CLS_ARRAY  the constant ::Array itself (INTEGER_RANGE_PROOF: `Array.new` is an Array)
 #   OTHER anything else, including false and an unassigned local's other uses
 # 0 is "no value yet" (unreached). Join is bitwise OR, so the answer cannot
 # depend on visiting order. A register is numeric when its set is a non-empty
@@ -37,6 +38,7 @@ module NumericFlow
   STR = 16
   NIL = 32
   OTHER = 64
+  CLS_ARRAY = 128
   NUM = INT | FLT
   CONTAINERS = ARR | HSH | STR
   FALSY = NIL | OTHER
@@ -94,6 +96,7 @@ module NumericFlow
   #   ivar_fact_mask(irep, name)           what any callee may leave in a slot
   #   send_mask(irep, index, insn, state)  class set of a SEND-family result
   #   upvar_mask(irep, insn)               class set of a GETUPVAR (a captured local)
+#   element_mask(irep, index, insn, state)  class set of a GETIDX / GETIDX0 result
   #   pool_mask(irep, insn)                class set of a LOADL
   #   op_native?(symbol)                   `+ - * /` are the core Integer/Float bodies
   #   nil_raises?(symbol)                  nil answers `symbol` only by raising
@@ -243,7 +246,14 @@ module NumericFlow
 
   def transfer(index, insn, state, ctx)
     op = insn.op
-    return state if NO_WRITE_OPS.include?(op)
+    if NO_WRITE_OPS.include?(op)
+      # SETIDX writes no register but may call a user #[]=.
+      return state unless op == 'SETIDX' && silent_call?(insn, state, ctx)
+
+      out = state.dup
+      refresh_slots(out, state, insn, ctx)
+      return out
+    end
 
     oracle = ctx[:oracle]
     irep = ctx[:irep]
@@ -276,8 +286,9 @@ module NumericFlow
     end
 
     if CALL_OPS.include?(op)
-      # SENDB/SSENDB are excluded: a `break` in the caller's block becomes the result.
-      mask = %w[SEND SEND0 SSEND SSEND0].include?(op) ? oracle.send_mask(irep, index, insn, state) : OTHER
+      # SSENDB is excluded, and the oracle answers for SENDB only where the literal block has
+      # no `break` (which would become the call's value).
+      mask = %w[SEND SEND0 SSEND SSEND0 SENDB].include?(op) ? oracle.send_mask(irep, index, insn, state) : OTHER
       ((a + 1)...nregs).each { |r| out[r] = OTHER }
       # A callee may store anything its whole-program fact allows, so no register
       # still mirrors a slot.
@@ -310,6 +321,8 @@ module NumericFlow
       slot = ctx[:slot_of][insn.ivar]
       set.call(a, slot ? state[slot] : OTHER)
       out[pb + a] = slot - nregs + 1 if slot && !ctx[:opaque].include?(a.to_s)
+    when 'GETIDX', 'GETIDX0'
+      set.call(a, oracle.element_mask(irep, index, insn, state))
     when 'ARRAY', 'ARRAY2'
       set.call(a, ARR)
     when 'HASH'
@@ -340,6 +353,40 @@ module NumericFlow
     else
       set.call(a, OTHER)
     end
+    refresh_slots(out, state, insn, ctx) if silent_call?(insn, state, ctx)
     out
+  end
+
+  # Ops that dispatch to Ruby the flow does not follow although they are not calls:
+  # an operator on a non-number, an index on anything but an exact Array with an Integer
+  # index, a string interpolation, a hash or range built from arbitrary objects, a
+  # constant lookup (const_missing). Such Ruby may run with the same `self` and store into
+  # a slot, so after one every slot may hold anything its whole-program fact allows.
+  SILENT_CALL_OPS = Set['ADD', 'SUB', 'MUL', 'DIV', 'EQ', 'LT', 'LE', 'GT', 'GE', 'GETIDX', 'GETIDX0', 'SETIDX',
+                        'STRCAT', 'HASH', 'HASHADD', 'HASHCAT', 'ARYCAT', 'ARYSPLAT', 'AREF', 'RANGE_INC',
+                        'RANGE_EXC', 'GETCONST', 'GETMCNST'].freeze
+
+  def silent_call?(insn, state, ctx)
+    return false unless SILENT_CALL_OPS.include?(insn.op)
+    return false if ctx[:slots].empty?
+
+    a = insn.reg.to_i
+    at = ->(r) { r < ctx[:nregs] ? state[r] : nil }
+    plain = ->(m) { m.is_a?(Integer) && m.positive? && (m & ~NUM).zero? }
+    case insn.op
+    when 'ADD', 'SUB', 'MUL', 'DIV', 'EQ', 'LT', 'LE', 'GT', 'GE'
+      !(plain.call(at.call(a)) && plain.call(at.call(insn.paren_reg.to_i)))
+    when 'GETIDX', 'SETIDX' then !(at.call(a) == ARR && at.call(a + 1) == INT)
+    when 'GETIDX0' then at.call(insn.regs[1].to_i) != ARR
+    when 'STRCAT' then at.call(a + 1) != STR
+    else true
+    end
+  end
+
+  # Every slot may now hold what any callee could have stored (the call path's rule).
+  def refresh_slots(out, _state, _insn, ctx)
+    nregs = ctx[:nregs]
+    ctx[:facts].each_with_index { |fact, k| out[nregs + k] |= fact }
+    nregs.times { |r| out[ctx[:prov_base] + r] = 0 }
   end
 end

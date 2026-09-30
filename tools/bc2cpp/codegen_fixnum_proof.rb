@@ -167,9 +167,12 @@ class CodeGen
     true
   end
 
-  # SETUPVAR destinations (operand B) anywhere in the child subtree. The level is
-  # ignored: over-collecting only costs a proof.
-  def subtree_upvar_written_regs(irep, acc = Set.new, seen = Set.new)
+  # SETUPVAR destinations (operand B) in the child subtree that write THIS irep's registers:
+  # a SETUPVAR at nesting depth d below +irep+ reaches its frame when level + 1 == d (the
+  # same walk numeric_upvar_mask climbs). A write to a deeper ancestor's frame is not a
+  # write to +irep+'s registers, so it no longer makes the same-numbered register opaque
+  # (a class body with a hundred methods used to lose every low register to it).
+  def subtree_upvar_written_regs(irep, acc = Set.new, seen = Set.new, depth = 1)
     (irep.reps || []).each do |label|
       next if seen.include?(label)
 
@@ -180,9 +183,10 @@ class CodeGen
       child.instructions.each do |insn|
         next unless insn.op == 'SETUPVAR'
 
-        acc << insn.upvar_ref.first.to_s
+        index, level = insn.upvar_ref
+        acc << index.to_s if index && level + 1 == depth
       end
-      subtree_upvar_written_regs(child, acc, seen)
+      subtree_upvar_written_regs(child, acc, seen, depth + 1)
     end
     acc
   end

@@ -143,9 +143,10 @@ class CodeGen
   # NUMERIC_RETURN_PROOF, the rest are core bodies whose result class is fixed by
   # the receiver's proven class and gated by builtin_class_send_safe? (no Ruby
   # override, no prepend).
-  def numeric_send_mask(_irep, _index, insn, state)
+  def numeric_send_mask(irep, index, insn, state)
     name = insn.sym
     return NumericFlow::OTHER unless name
+    return numeric_block_send_mask(irep, index, insn, state) if insn.op == 'SENDB'
 
     tracked = @numeric_return && @numeric_return[name]
     return tracked if tracked
@@ -156,6 +157,12 @@ class CodeGen
     recv = state[insn.reg.to_i]
     return NumericFlow::OTHER unless recv
 
+    if recv == NumericFlow::ARR && ArrayCells::ELEMENT_READERS.include?(name)
+      element = numeric_element_send_mask(irep, index, insn, state)
+      return element if element
+    end
+    array = numeric_array_send_mask(insn, state, recv, name)
+    return array if array
     # SEND0 carries no operand count; a keyword or splat form has no plain count.
     argc = insn.op.end_with?('0') ? 0 : (insn.plain_fixed_argc? ? insn.argc : nil)
     mask = 0
@@ -166,10 +173,68 @@ class CodeGen
     mask
   end
 
+  # Sends whose result is an Array when the receiver is exactly one: `dup`, `sort`, `reverse`,
+  # `take`, ... (ArrayCells::FRESH) and `Array.new(...)`.
+  def numeric_array_send_mask(insn, state, recv, name)
+    argc = insn.op.end_with?('0') ? 0 : (insn.plain_fixed_argc? ? insn.argc : nil)
+    return nil unless argc
+
+    if recv == NumericFlow::CLS_ARRAY
+      return name == 'new' && argc <= 2 && cell_array_new_safe? ? NumericFlow::ARR : nil
+    end
+    return nil unless recv == NumericFlow::ARR
+
+    entry = ArrayCells::FRESH[name]
+    return nil unless entry && entry[0].include?(argc) && cell_array_method_safe?(name)
+
+    if %w[+ - &].include?(name) then state[insn.reg.to_i + 1] == NumericFlow::ARR ? NumericFlow::ARR : nil
+    else NumericFlow::ARR
+    end
+  end
+
+  # A block-carrying send whose result is an Array (`ary.map { }`, `Array.new(n) { }`) when the
+  # literal block has no `break` (a `break` value becomes the call's result).
+  def numeric_block_send_mask(irep, index, insn, state)
+    name = insn.sym
+    recv = state[insn.reg.to_i]
+    return NumericFlow::OTHER unless recv && insn.plain_fixed_argc? && numeric_block_break_free?(irep, index, insn)
+
+    if recv == NumericFlow::CLS_ARRAY
+      return name == 'new' && insn.argc <= 1 && cell_array_new_safe? ? NumericFlow::ARR : NumericFlow::OTHER
+    end
+    entry = recv == NumericFlow::ARR ? ArrayCells::ITERATORS[name] : nil
+    return NumericFlow::OTHER unless entry && entry[0].include?(insn.argc) && cell_array_method_safe?(name)
+
+    entry[1] == :value ? NumericFlow::OTHER : NumericFlow::ARR
+  end
+
+  def numeric_block_break_free?(irep, index, insn)
+    label = ArrayCells.block_label(irep, index, insn)
+    block = label && @ireps[label]
+    return false unless block
+
+    @numeric_break_free ||= {}
+    return @numeric_break_free[label] if @numeric_break_free.key?(label)
+
+    stack = [label]
+    free = true
+    until stack.empty?
+      cur = @ireps[stack.pop]
+      next unless cur
+
+      free &&= cur.instructions.none? { |i| i.op == 'BREAK' }
+      stack.concat(Array(cur.reps))
+    end
+    @numeric_break_free[label] = free
+  end
+
   def numeric_send_on_class(bit, name, argc, insn, state)
     other = NumericFlow::OTHER
     owners = bit.anybits?(NumericFlow::NUM) ? NUMERIC_OP_OWNERS : [NUMERIC_SEND_OWNERS.fetch(bit)]
-    return other unless builtin_class_send_safe?(name, owners)
+    # Ruby-defined core methods (Integer#succ, Comparable#clamp) are safe under the same
+    # condition as the core iterators (numeric_core_method_safe?).
+    return other unless builtin_class_send_safe?(name, owners) ||
+                        (bit.anybits?(NumericFlow::NUM) && numeric_core_method_safe?(name, NUMERIC_INT_ANCESTORS + %w[Float]))
 
     if bit.anybits?(NumericFlow::CONTAINERS)
       counted = name == 'count' ? bit != NumericFlow::STR : %w[size length].include?(name)
@@ -179,9 +244,14 @@ class CodeGen
   end
 
   # +bit+ is INT or FLT.
+  # Integer-only methods (INTEGER_RANGE_PROOF): a Float receiver or operand raises, so a
+  # completed call is an Integer whatever the receiver's class set says.
+  NUMERIC_INT_BINARY_SENDS = %w[& | ^ << >> div].freeze
+  NUMERIC_INT_UNARY_SENDS = %w[~ succ next pred].freeze
+
   def numeric_send_on_number(bit, name, argc, insn, state)
     if argc == 0
-      return NumericFlow::INT if NUMERIC_TO_INT_SENDS.include?(name)
+      return NumericFlow::INT if NUMERIC_TO_INT_SENDS.include?(name) || NUMERIC_INT_UNARY_SENDS.include?(name)
       return NumericFlow::FLT if name == 'to_f'
       return bit if %w[abs -@].include?(name)
     elsif argc == 1 && %w[% fdiv].include?(name)
@@ -189,6 +259,14 @@ class CodeGen
       return NumericFlow::OTHER unless arg
 
       return name == 'fdiv' ? NumericFlow::FLT : NumericFlow.arith(bit, arg, numeric_nil_raises?(name))
+    elsif argc == 1 && NUMERIC_INT_BINARY_SENDS.include?(name)
+      # Only an Integer operand: what a Float or other operand does is the operator's business.
+      return state[insn.reg.to_i + 1] == NumericFlow::INT ? NumericFlow::INT : NumericFlow::OTHER
+    elsif argc == 2 && name == 'clamp'
+      operands = [state[insn.reg.to_i + 1], state[insn.reg.to_i + 2]]
+      return NumericFlow::OTHER unless bit == NumericFlow::INT && operands.all? { |m| m == NumericFlow::INT }
+
+      return NumericFlow::INT
     end
     NumericFlow::OTHER
   end

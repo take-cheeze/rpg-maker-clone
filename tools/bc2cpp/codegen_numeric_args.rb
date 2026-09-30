@@ -15,6 +15,9 @@ class CodeGen
   end
 
   def numeric_entry_mask(irep, reg)
+    block_param = numeric_block_param_mask(irep, reg)
+    return block_param if block_param
+
     owner = numeric_owner_of(irep)
     return NumericFlow::OTHER unless owner
 

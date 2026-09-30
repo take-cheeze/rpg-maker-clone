@@ -60,6 +60,8 @@ class CodeGen
     return group.mask if group
 
     name = insn.const_name
+    return NumericFlow::CLS_ARRAY if name == 'Array' && cell_array_class_const?
+
     name && @integer_constants.include?(name) ? NumericFlow::INT : NumericFlow::OTHER
   end
 

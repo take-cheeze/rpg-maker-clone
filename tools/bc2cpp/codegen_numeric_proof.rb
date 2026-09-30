@@ -61,6 +61,10 @@ class CodeGen
       @cg.numeric_upvar_mask(irep, insn)
     end
 
+    def element_mask(irep, index, insn, state)
+      @cg.numeric_element_mask(irep, index, insn, state)
+    end
+
     def pool_mask(irep, insn)
       entry = insn.pool_index && irep.pool[insn.pool_index.to_i]
       return NumericFlow::OTHER unless entry.is_a?(Hash)
@@ -125,8 +129,10 @@ class CodeGen
     setup_numeric_ivar_groups
     setup_numeric_returns
     setup_numeric_consts
+    setup_numeric_block_params
     loop do
       changed = grow_entry_arg_numeric
+      changed |= grow_numeric_block_params
       changed |= grow_numeric_ivar_groups
       changed |= grow_numeric_returns
       changed |= grow_numeric_consts
@@ -246,6 +252,12 @@ class CodeGen
     (@numeric_return || {}).each { |name, mask| lines << "  NUMRET #{name} (#{numeric_mask_name(mask)})" }
     (@numeric_const_groups || {}).each_value do |g|
       lines << "  NUMCONST #{g.name} (#{numeric_mask_name(g.mask)})" unless g.failed
+    end
+    (@numeric_block_params || {}).each do |(label, reg), mask|
+      next if @numeric_block_failed.include?(label)
+
+      d = @owner_of[label]
+      lines << "  NUMBLOCK #{d ? "#{d.owner}##{d.name}" : "<irep #{label}>"} block#{label} arg#{reg} (#{numeric_mask_name(mask)})"
     end
     lines.sort
   end

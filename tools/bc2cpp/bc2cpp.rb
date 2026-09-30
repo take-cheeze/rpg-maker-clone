@@ -65,6 +65,9 @@ require_relative 'codegen_numeric_args'
 require_relative 'codegen_numeric_ivars'
 require_relative 'codegen_numeric_returns'
 require_relative 'codegen_numeric_consts'
+require_relative 'codegen_numeric_blocks'
+require_relative 'codegen_range_proof'
+require_relative 'codegen_range_cells'
 require_relative 'codegen_return_analysis'
 require_relative 'codegen_loop_inline'
 require_relative 'codegen_block_fallback'
@@ -829,6 +832,16 @@ if $PROGRAM_NAME == __FILE__
   warn '== numeric operand facts (NUMERIC_OPERAND_PROOF) =='
   gen.numeric_facts_report.each { |l| warn l }
   warn ''
+  # INTEGER_RANGE_PROOF (ADR 0286): the interval facts behind the overflow-free
+  # arithmetic, fixnum compare and non-negative index arms.
+  warn '== integer range facts (INTEGER_RANGE_PROOF) =='
+  gen.range_facts_report.each { |l| warn l }
+  warn ''
+  if ENV['BC2CPP_RANGE_COVERAGE']
+    warn '== integer range coverage (INTEGER_RANGE_PROOF) =='
+    gen.range_coverage_lines.each { |l| warn l }
+    warn ''
+  end
   # ONLY_OWNERS narrows emitted code (e.g. "LCF::File,LCF::Database"), not the
   # registry: srcs must still be the whole program (see compile_all).
   only_owners = ENV['ONLY_OWNERS']&.split(',')

@@ -179,7 +179,7 @@ class CodeGen
                       else
                         ''
                       end
-        <<~CPP
+        generic = <<~CPP
           #{guarded_arm}  if (mrb_integer_p(r#{d})) {
             #{numeric_arith_operands?('+', d, nil, irep, idx, owner_def, reg_offset) ? numeric_fixnum_tier('+', d, lit) : "r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) + #{lit});"}
           } else {
@@ -187,6 +187,7 @@ class CodeGen
           }
           #{guarded ? '  }' : ''}
         CPP
+        range_arith_emit('+', d, nil, lit, irep, idx, owner_def, reg_offset, generic)
       end
     when 'ADD'
       d = insn.reg
@@ -204,7 +205,7 @@ class CodeGen
                       else
                         ''
                       end
-        <<~CPP
+        generic = <<~CPP
           #{guarded_arm}  if (mrb_fixnum_p(r#{d}) && mrb_fixnum_p(r#{s})) {
             #{numeric_arith_operands?('+', d, s, irep, idx, owner_def, reg_offset) ? numeric_fixnum_tier('+', d, "r#{s}") : "r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) + mrb_fixnum(r#{s}));"}
           #ifndef MRB_NO_FLOAT
@@ -220,6 +221,7 @@ class CodeGen
           }
           #{guarded ? '  }' : ''}
         CPP
+        range_arith_emit('+', d, s, nil, irep, idx, owner_def, reg_offset, generic)
       end
     when 'SUBI'
       d = insn.reg
@@ -237,7 +239,7 @@ class CodeGen
                       else
                         ''
                       end
-        <<~CPP
+        generic = <<~CPP
           #{guarded_arm}  if (mrb_integer_p(r#{d})) {
             #{numeric_arith_operands?('-', d, nil, irep, idx, owner_def, reg_offset) ? numeric_fixnum_tier('-', d, lit) : "r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) - #{lit});"}
           } else {
@@ -245,6 +247,7 @@ class CodeGen
           }
           #{guarded ? '  }' : ''}
         CPP
+        range_arith_emit('-', d, nil, lit, irep, idx, owner_def, reg_offset, generic)
       end
     when 'SUB'
       d = insn.reg
@@ -262,7 +265,7 @@ class CodeGen
                       else
                         ''
                       end
-        <<~CPP
+        generic = <<~CPP
           #{guarded_arm}  if (mrb_fixnum_p(r#{d}) && mrb_fixnum_p(r#{s})) {
             #{numeric_arith_operands?('-', d, s, irep, idx, owner_def, reg_offset) ? numeric_fixnum_tier('-', d, "r#{s}") : "r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) - mrb_fixnum(r#{s}));"}
           #ifndef MRB_NO_FLOAT
@@ -278,6 +281,7 @@ class CodeGen
           }
           #{guarded ? '  }' : ''}
         CPP
+        range_arith_emit('-', d, s, nil, irep, idx, owner_def, reg_offset, generic)
       end
     when 'MUL'
       # Same shape as ADD/SUB: vm.c OP_ADD/OP_SUB/OP_MUL all expand OP_MATH, so MUL
@@ -297,7 +301,7 @@ class CodeGen
                       else
                         ''
                       end
-        <<~CPP
+        generic = <<~CPP
           #{guarded_arm}  if (mrb_fixnum_p(r#{d}) && mrb_fixnum_p(r#{s})) {
             #{numeric_arith_operands?('*', d, s, irep, idx, owner_def, reg_offset) ? numeric_fixnum_tier('*', d, "r#{s}") : "r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) * mrb_fixnum(r#{s}));"}
           #ifndef MRB_NO_FLOAT
@@ -313,6 +317,7 @@ class CodeGen
           }
           #{guarded ? '  }' : ''}
         CPP
+        range_arith_emit('*', d, s, nil, irep, idx, owner_def, reg_offset, generic)
       end
     when 'DIV'
       # DIV_FASTPATH_SUPPORT: Integer#/ floors (not C's truncation). int_div
@@ -336,7 +341,7 @@ class CodeGen
                       else
                         ''
                       end
-        <<~CPP
+        generic = <<~CPP
           #{guarded_arm}  if (mrb_type(r#{d}) == MRB_TT_INTEGER && mrb_type(r#{s}) == MRB_TT_INTEGER) {
             r#{d} = mrb_div_int_value(M, mrb_integer(r#{d}), mrb_integer(r#{s}));
           #ifndef MRB_NO_FLOAT
@@ -352,6 +357,7 @@ class CodeGen
           }
           #{guarded ? '  }' : ''}
         CPP
+        range_div_emit(d, s, irep, idx, owner_def, reg_offset, generic)
       end
     when 'EQ', 'LT', 'LE', 'GT', 'GE'
       compile_cmp(insn, irep, idx, owner_def, reg_offset)
@@ -619,12 +625,13 @@ class CodeGen
       # index-type check; an Array still needs mrb_integer_p (bc2cpp_ary_entry only
       # takes a fixnum).
       d, s = insn.regs.first(2)
+      nn = range_nonneg_index(irep, idx, s, owner_def, reg_offset)
       index_class = static_indexable_class(irep, idx, unshift_proof_reg(d, reg_offset), owner_def)
       case index_class
       when 'Array'
         <<~CPP
-          if (mrb_array_p(r#{d}) && mrb_obj_ptr(r#{d})->c == M->array_class && mrb_integer_p(r#{s})) {
-            r#{d} = bc2cpp_ary_entry(M, r#{d}, mrb_integer(r#{s}));
+          #{nn ? "// RANGE_PROOF []: index proven non-negative\n" : ''}if (mrb_array_p(r#{d}) && mrb_obj_ptr(r#{d})->c == M->array_class && mrb_integer_p(r#{s})) {
+            r#{d} = #{range_entry_call(nn, "r#{d}", "mrb_integer(r#{s})")};
           } else {
             r#{d} = mrb_funcall(M, r#{d}, "[]", 1, r#{s});
           }
@@ -640,7 +647,7 @@ class CodeGen
       else
         # STRUCT_INDEX_CACHE (see compile_struct_literal_index_read); a miss is "".
         struct_read = compile_struct_literal_index_read(irep, idx, s, d)
-        fallback = outlined_getidx_code(d, s, struct_read)
+        fallback = outlined_getidx_code(d, s, struct_read, nn)
         unless fallback
           # INDEX_CHAIN: send the untyped `x[i]` fallback through the exact-class chain
           # (compile_poly_small_n), so program-defined `#[]` (Game::Variables,
@@ -761,13 +768,14 @@ class CodeGen
       if proven_fixnum_operand?(irep, idx, unshift_proof_reg(d, reg_offset), owner_def)
         "#{FIXNUM_PROOF_NOTE}  r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) + #{lit});\n"
       else
-        <<~CPP
+        generic = <<~CPP
           if (mrb_integer_p(r#{d})) {
             #{numeric_arith_operands?('+', d, nil, irep, idx, owner_def, reg_offset) ? numeric_fixnum_tier('+', d, lit) : "r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) + #{lit});"}
           } else {
             #{compile_operator_fallback('+', d, nil, "mrb_fixnum_value(#{lit})", irep, idx, owner_def, reg_offset)}
           }
         CPP
+        range_arith_emit('+', d, nil, lit, irep, idx, owner_def, reg_offset, generic)
       end
     when 'SUBILV'
       # OP_SUBILV: ADDILV's sibling (same shape, same extraction), e.g. `new_level -=
@@ -777,13 +785,14 @@ class CodeGen
       if proven_fixnum_operand?(irep, idx, unshift_proof_reg(d, reg_offset), owner_def)
         "#{FIXNUM_PROOF_NOTE}  r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) - #{lit});\n"
       else
-        <<~CPP
+        generic = <<~CPP
           if (mrb_integer_p(r#{d})) {
             #{numeric_arith_operands?('-', d, nil, irep, idx, owner_def, reg_offset) ? numeric_fixnum_tier('-', d, lit) : "r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) - #{lit});"}
           } else {
             #{compile_operator_fallback('-', d, nil, "mrb_fixnum_value(#{lit})", irep, idx, owner_def, reg_offset)}
           }
         CPP
+        range_arith_emit('-', d, nil, lit, irep, idx, owner_def, reg_offset, generic)
       end
     when 'RANGE_INC'
       # "RANGE_INC Ra": R[a] = mrb_range_new(mrb, regs[a], regs[a+1], FALSE) (vm.c);
@@ -988,21 +997,22 @@ class CodeGen
       }
     CPP
 
-    if op == 'EQ'
-      <<~CPP
-        if (mrb_obj_eq(M, r#{d}, r#{s})) {
-          r#{d} = mrb_true_value();
-        } else if (mrb_symbol_p(r#{d})) {
-          // OP_EQ: a symbol receiver that is not identical is unequal, no send.
-          r#{d} = mrb_false_value();
-        } else {
-          // Numeric tag pair handling mirrors the pinned mruby OP_CMP.
-          #{numeric_dispatch}
-        }
-      CPP
-    else
-      "  // Numeric tag pair handling mirrors the pinned mruby OP_CMP.\n#{numeric_dispatch}"
-    end
+    generic = if op == 'EQ'
+                <<~CPP
+                  if (mrb_obj_eq(M, r#{d}, r#{s})) {
+                    r#{d} = mrb_true_value();
+                  } else if (mrb_symbol_p(r#{d})) {
+                    // OP_EQ: a symbol receiver that is not identical is unequal, no send.
+                    r#{d} = mrb_false_value();
+                  } else {
+                    // Numeric tag pair handling mirrors the pinned mruby OP_CMP.
+                    #{numeric_dispatch}
+                  }
+                CPP
+              else
+                "  // Numeric tag pair handling mirrors the pinned mruby OP_CMP.\n#{numeric_dispatch}"
+              end
+    range_cmp_emit(sym, d, s, irep, idx, owner_def, reg_offset, generic)
   end
 
   # EQ on non-numeric operands used to mrb_funcall whenever identity missed

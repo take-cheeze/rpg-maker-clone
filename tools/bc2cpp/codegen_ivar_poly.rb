@@ -690,7 +690,9 @@ class CodeGen
   INDEX_HELPERS = {
     'getidx' => 'mrb_value recv, mrb_value key',
     'getidx0' => 'mrb_value recv',
-    'setidx' => 'mrb_value recv, mrb_value idx, mrb_value val'
+    'setidx' => 'mrb_value recv, mrb_value idx, mrb_value val',
+    # INTEGER_RANGE_PROOF (ADR 0286): getidx for an index proven non-negative.
+    'getidx_nn' => 'mrb_value recv, mrb_value key'
   }.freeze
 
   # `dst = bc2cpp_<kind>(M, args...);`, building the helper on first use.
@@ -702,13 +704,25 @@ class CodeGen
   # GETIDX's generic tail, after any STRUCT_INDEX_CACHE branches. nil under
   # RUNTIME_DEF_DEVIRT_GUARD for `[]`: that chain must skip POLY_SMALL_N and
   # the shared helper does not, so the caller keeps the inline form.
-  def outlined_getidx_code(d, s, struct_read)
+  def outlined_getidx_code(d, s, struct_read, nn = nil)
     return nil if devirt_blocked_name?('[]')
 
-    call = outlined_index_call('getidx', "r#{d}", "r#{d}", "r#{s}")
+    call = outlined_getidx_call(d, s, nn)
     return call if struct_read.nil? || struct_read.empty?
 
     "#{struct_read.delete_prefix('else ')}else {\n  #{call}}\n"
+  end
+
+  # `r<d> = bc2cpp_getidx(M, r<d>, r<s>);`, or its non-negative-index sibling when the index
+  # is proven >= 0 (INTEGER_RANGE_PROOF): +nn+ is :always or the C++ condition holding it.
+  def outlined_getidx_call(d, s, nn)
+    plain = outlined_index_call('getidx', "r#{d}", "r#{d}", "r#{s}")
+    return plain unless nn
+
+    fast = outlined_index_call('getidx_nn', "r#{d}", "r#{d}", "r#{s}")
+    return "// RANGE_PROOF []: index proven non-negative\n#{fast}" if nn == :always
+
+    "// RANGE_PROOF []: index proven non-negative\nif (#{nn}) {\n  #{fast}} else {\n  #{plain}}\n"
   end
 
   # Built once per run under with_fresh_method_state, so the enclosing method's
@@ -736,6 +750,14 @@ class CodeGen
                  return mrb_str_aref(M, recv, key, mrb_undef_value());
                }
                mrb_value r0 = mrb_nil_value();
+             CPP
+           when 'getidx_nn'
+             index_helper_code('getidx')
+             <<~CPP
+               if (mrb_array_p(recv) && mrb_obj_ptr(recv)->c == M->array_class && mrb_integer_p(key)) {
+                 return bc2cpp_ary_entry_nn(M, recv, mrb_integer(key));
+               }
+               return bc2cpp_getidx(M, recv, key);
              CPP
            when 'getidx0'
              <<~CPP
@@ -770,9 +792,12 @@ class CodeGen
   # dropped (a probe, or an unsupported method) is not emitted.
   def index_helpers_used(codes)
     texts = codes.map { |c| c.is_a?(Hash) ? c[:code] : c }
-    INDEX_HELPERS.keys.select do |kind|
+    used = INDEX_HELPERS.keys.select do |kind|
       @index_helper_code&.key?(kind) && texts.any? { |t| t.include?("bc2cpp_#{kind}(M,") }
     end
+    # getidx_nn falls back to getidx, which must be defined before it.
+    used |= ['getidx'] if used.include?('getidx_nn')
+    INDEX_HELPERS.keys.select { |kind| used.include?(kind) }
   end
 
   # File-scope definitions of the helpers `codes` call; '' when none.

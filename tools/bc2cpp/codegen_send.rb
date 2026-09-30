@@ -426,6 +426,7 @@ class CodeGen
                          "    mrb_value bc2cpp_new_args[] = { #{argv.join(', ')} };\n" +
                            "    r#{d} = mrb_obj_new(M, mrb_class_ptr(#{recv}), #{n}, bc2cpp_new_args);\n"
                        end
+        construction = range_array_new_emit(d, argv, irep, trace_idx, trace_reg_offset, owner_def, construction) if known == 'Array'
         note = "  // MONO :new -> #{known}, generic direct object construction via mrb_obj_new; " +
                "standard Class#new/allocate lookup is proven and #initialize remains ordinary runtime dispatch.\n"
         class_expr = builtin_class_expr || owner_class_ptr_expr(known)

@@ -254,6 +254,7 @@ class CodeGen
     # compile probes that ran with weaker facts.
     reset_numeric_flow!
     compute_numeric_facts
+    compute_range_facts
   end
 
   def const_lookup_helper_used?
