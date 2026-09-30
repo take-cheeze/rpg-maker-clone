@@ -32,6 +32,11 @@ check.call('jump_edges_before lists edges', BytecodeIR::Program.new(edge_irep).j
 check.call('jump_edges_before stops at limit', BytecodeIR::Program.new(edge_irep).jump_edges_before(1, %w[JMP JMPNOT]) == [[0, 2]])
 bad_irep = Irep.new(label: 't3', instructions: [insn(0, 'JMP', '77'), insn(4, 'RETURN', 'R1')])
 check.call('jump_edges_before nil on unresolved target', BytecodeIR::Program.new(bad_irep).jump_edges_before(2, %w[JMP]).nil?)
+uw_irep = Irep.new(label: 't3b', instructions: [insn(0, 'JMPUW', '9'), insn(4, 'LOADNIL', 'R1 (nil)'), insn(9, 'RETURN', 'R1')])
+check.call('jump_edges_before lists a JMPUW edge when asked (jump_target is nil for it)',
+           BytecodeIR::Program.new(uw_irep).jump_edges_before(3, %w[JMP JMPUW]) == [[0, 2]])
+check.call('jump_edges_before ignores a JMPUW that is not asked for',
+           BytecodeIR::Program.new(uw_irep).jump_edges_before(3, %w[JMP]) == [])
 
 pred_irep = Irep.new(label: 't4', instructions: [
   insn(0, 'JMPIF', "R1\t12"), insn(4, 'RAISEIF', 'R1'), insn(6, 'JMPUW', '14'),
