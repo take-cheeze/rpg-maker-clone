@@ -1113,7 +1113,10 @@
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
   `Integer#step`, `#upto` and `#downto` loops over literal or proven-Integer bounds are inlined
-  like `#times`. A method that a `Fiber.new { root; :done }` block calls and that reaches
+  like `#times`; a bound that is an Integer but may be a bignum (`n.upto(n + 2)`) is inlined
+  behind one Fixnum test per loop, with the original call as the else branch
+  ([`docs/adr/0287-bc2cpp-step-loop-fixnum-guard.md`](docs/adr/0287-bc2cpp-step-loop-fixnum-guard.md)).
+  A method that a `Fiber.new { root; :done }` block calls and that reaches
   `Fiber.yield` (through `while` loops, those inlined loops and tiny yielding helpers expanded at
   their call sites) is compiled as a resumable step function over a GC-marked heap frame, driven
   by a few lines of bytecode so `Fiber.yield` never has a compiled frame beneath it; a root that
