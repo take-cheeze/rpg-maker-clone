@@ -1132,6 +1132,13 @@
   and inlines `Numeric#positive?`/`#negative?` and `Enumerable#min`/`#max` on
   exact Arrays and numbers, verified against the build's own core sources; see
   [`docs/adr/0261-bc2cpp-join-dominance-core-mixins-typed-reflection.md`](docs/adr/0261-bc2cpp-join-dominance-core-mixins-typed-reflection.md).
+  A class-set dataflow (`tools/bc2cpp/numeric_flow.rb`) then proves operands of
+  `+ - * / < <= > >=` to be Integer and/or Float from ivars, pooled call
+  arguments, return values, constants and captured locals, and those guarded
+  arms call mruby's own overflow-aware numeric helpers instead of a dynamic
+  send (bigints included); see
+  [`docs/adr/0276-bc2cpp-numeric-operand-proof.md`](docs/adr/0276-bc2cpp-numeric-operand-proof.md)
+  and `scripts/bc2cpp_numeric_operand_check.rb`.
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
