@@ -275,7 +275,7 @@ Dir.mktmpdir do |dir|
                              closed_world: dispatch_world)
   caller_def = dispatch_registry.fetch('call').find { |definition| definition.owner == 'IncludedDispatchCaller' }
   caller_code = dispatch_gen.compile_method(caller_def.irep).fetch(:code)
-  # The receiver is a fresh `Klass.new` (ADR 0287: EXACT_TYPED), so the guard of the inherited TYPED call
+  # The receiver is a fresh `Klass.new` (ADR 0289: EXACT_TYPED), so the guard of the inherited TYPED call
   # can only be true and goes with its mrb_funcall fallback.
   check.call('fresh exact-class receiver emits a guard-free direct call to the included module method',
              caller_code.include?('EXACT_TYPED :value -> IncludedDispatchModule#value') &&

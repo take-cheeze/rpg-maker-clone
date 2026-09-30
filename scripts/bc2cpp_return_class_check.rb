@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# RETURN_CLASS_TABLE and EXACT_TYPED (docs/adr/0287): a receiver that holds a fresh instance of
+# RETURN_CLASS_TABLE and EXACT_TYPED (docs/adr/0289): a receiver that holds a fresh instance of
 # one closed-world class on every path -- through a local, an ivar slot, or the result of a call
 # whose name only ever returns such instances -- calls its target directly, with no class guard and
 # no dynamic-send fallback. Everything else keeps the guarded TYPED arm.

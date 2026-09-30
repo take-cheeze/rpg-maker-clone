@@ -299,7 +299,7 @@ numeric_kinds = { 'NUMARG' => 'entry arguments', 'NUMIVAR' => 'instance variable
                   'NUMRET' => 'method names returning', 'NUMCONST' => 'constants' }
 report << "numeric operand facts (NUMERIC_OPERAND_PROOF): " \
           "#{numeric_kinds.map { |tag, what| "#{numeric_lines.count { |l| l.start_with?("#{tag} ") }} #{what}" }.join(', ')}\n"
-# RETURN_CLASS_TABLE (ADR 0287): names every call of which returns one exact class.
+# RETURN_CLASS_TABLE (ADR 0289): names every call of which returns one exact class.
 report << "return-class table (RETURN_CLASS_TABLE): #{count(err, 'return class table (RETURN_CLASS_TABLE)')} names with one exact class\n"
 # ADR 0279: typed (mrb_int, mrb_sym, mrb_bool) ivar slots given back to boxed slots because a writer
 # the compiler cannot type (attr_writer, computed setter, reflection) can reach them.
@@ -507,7 +507,7 @@ report << "  guarded arithmetic/compare arms with a dynamic-send else: #{guarded
           "(" + guarded_tags.map { |t| "#{t} #{guarded_kept[t]}" }.join(', ') + ")\n"
 report << "  arms whose send NUMERIC_OPERAND_PROOF removed (operands proven Integer/Float): #{numeric_proven_sites}\n"
 report << "  direct :new constructor paths emitted (some retain guarded fallback): #{direct_new_sites}\n"
-# ADR 0287: a TYPED call behind a class guard with a dynamic-send fallback, against the same call when
+# ADR 0289: a TYPED call behind a class guard with a dynamic-send fallback, against the same call when
 # the receiver is proven exactly that class.
 typed_guarded_sites = @shipped_stdout.scan(%r{^\s*// TYPED :}).size
 typed_exact_sites = @shipped_stdout.scan(%r{^\s*// EXACT_TYPED :}).size

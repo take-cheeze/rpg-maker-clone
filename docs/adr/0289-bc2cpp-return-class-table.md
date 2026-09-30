@@ -1,4 +1,4 @@
-# 0287. bc2cpp: a return-class table and an exact-class flow drop the guard of TYPED calls
+# 0289. bc2cpp: a return-class table and an exact-class flow drop the guard of TYPED calls
 
 Date: 2026-09-30
 

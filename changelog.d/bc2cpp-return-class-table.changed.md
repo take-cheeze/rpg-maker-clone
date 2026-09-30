@@ -6,4 +6,4 @@
   receivers the fresh-`new` proof already covered) and lets the exact-receiver arms of ADR 0280 drop
   their class test. `NumericFlow` also models catch handlers, Range literals and block `return`s, so a
   method with `rescue` has numeric facts. Wio: cached dispatch sites 10,597 to 10,383, `TYPED` arms 492
-  to 246. Covered by `scripts/bc2cpp_return_class_check.rb`. See docs/adr/0287.
+  to 246. Covered by `scripts/bc2cpp_return_class_check.rb`. See docs/adr/0289.
