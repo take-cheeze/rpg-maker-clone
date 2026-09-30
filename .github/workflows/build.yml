@@ -1049,6 +1049,10 @@ jobs:
               # full-core libmruby (BC2CPP_MRUBY_FULL) and skip without one.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_join_dominance_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mixins_check.rb
+              # ADR 0276: arithmetic/compare arms lose their dynamic-send else only for operands
+              # a whole-program numeric proof covers; the runtime section compares against the
+              # interpreter, including Integer overflow.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_operand_check.rb
               # Compiled mruby core mrblib (docs/adr/0264): static invariants, then every compiled body
               # against the interpreter's answer on edge cases.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mrblib_check.rb
@@ -1348,11 +1352,12 @@ jobs:
           # The host-only sections (hand-built bytecode, a synthetic core tree,
           # the patch text); the fixture sections need mrbc and the patched
           # mruby, so they run in the `bc2cpp-checks` job (ADR 0261).
-          - name: bc2cpp join dominance, core mixins and typed reflection checks
+          - name: bc2cpp join dominance, core mixins, typed reflection and numeric operand checks
             run: |
               ruby scripts/bc2cpp_join_dominance_check.rb
               ruby scripts/bc2cpp_core_mixins_check.rb
               ruby scripts/bc2cpp_typed_reflection_check.rb
+              ruby scripts/bc2cpp_numeric_operand_check.rb
 
           - name: RPG2k game-logic checks
             run: |
