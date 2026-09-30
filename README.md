@@ -1052,6 +1052,11 @@
   [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
   The frame-independent wrapper rules and supported methods are recorded in
   [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
+  In a closed world a send to a receiver of proven class that nothing answers
+  (`PROVEN_MISS_REVIEWED`) is a build error, and `BC2CPP_NOMETHOD_VERIFY=1` builds
+  make a dead `bc2cpp_nomethod` site abort for smoke runs; see
+  [`docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md`](docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md)
+  and [`docs/bc2cpp-nomethod-verify.md`](docs/bc2cpp-nomethod-verify.md).
   The remaining RGSS setters (`x=`/`y=`/`z=`/`visible=`/`color=`, Window
   `contents=`/`windowskin=`/`cursor_rect=`/`active=`/`pause=`, `flash`, Rect
   writers ...) are shared entry points too: each binding forwards to the same
@@ -1064,6 +1069,11 @@
   `Integer#inspect` are called directly behind exact-class guards, each row
   re-audited against the mruby sources on every compile. See
   [`docs/adr/0257-bc2cpp-native-core-direct-arms.md`](docs/adr/0257-bc2cpp-native-core-direct-arms.md).
+  Three more families of sends whose receiver is fixed by construction are replaced
+  outright, again from audited rows: implicit-self `raise` (one or two arguments) and
+  `__id__`, `blk.call(...)` on a compiled core method's own `&blk` (a Proc arm, and a
+  NoMethodError for nil), and `Array` natives such as `__svalue` on a `*rest` parameter. See
+  [`docs/adr/0274-bc2cpp-direct-kernel-and-parameter-natives.md`](docs/adr/0274-bc2cpp-direct-kernel-and-parameter-natives.md).
   Those entry points are no longer written by hand: clang tooling
   (`scripts/native_binding_split.rb report|write|check`) classifies every RGSS
   native binding, splits the frame-independent ones into a body plus an
@@ -1147,6 +1157,13 @@
   and inlines `Numeric#positive?`/`#negative?` and `Enumerable#min`/`#max` on
   exact Arrays and numbers, verified against the build's own core sources; see
   [`docs/adr/0261-bc2cpp-join-dominance-core-mixins-typed-reflection.md`](docs/adr/0261-bc2cpp-join-dominance-core-mixins-typed-reflection.md).
+  A class-set dataflow (`tools/bc2cpp/numeric_flow.rb`) then proves operands of
+  `+ - * / < <= > >=` to be Integer and/or Float from ivars, pooled call
+  arguments, return values, constants and captured locals, and those guarded
+  arms call mruby's own overflow-aware numeric helpers instead of a dynamic
+  send (bigints included); see
+  [`docs/adr/0276-bc2cpp-numeric-operand-proof.md`](docs/adr/0276-bc2cpp-numeric-operand-proof.md)
+  and `scripts/bc2cpp_numeric_operand_check.rb`.
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
