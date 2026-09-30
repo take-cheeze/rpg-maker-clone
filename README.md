@@ -1096,6 +1096,13 @@
   by a few lines of bytecode so `Fiber.yield` never has a compiled frame beneath it; a root that
   does not qualify stays interpreted and bc2cpp logs why. See
   [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md).
+  In a closed world a whole-program, by-name analysis (`tools/bc2cpp/yield_reach.rb`) proves which
+  blocks, and which core iterator bodies, cannot reach a `Fiber.yield`: such a block carries a flag in
+  its env, the guarded core iterators stay compiled under a Fiber while they run it, and its
+  BLOCK_CORE_DIRECT arms drop the root-context test; the build prints how many methods, blocks and arm sites
+  it proved. Every method a `Fiber.new` body can reach through any call (explicit receivers, other classes,
+  blocks) that may yield beneath it stays interpreted. See
+  [`docs/adr/0283-bc2cpp-yield-free-blocks.md`](docs/adr/0283-bc2cpp-yield-free-blocks.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as

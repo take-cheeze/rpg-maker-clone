@@ -67,3 +67,8 @@ does; every other value takes `mrb_yield_argv`.
 - Not done: the fixed cost per call. A callee taking a callback instead of a proc would remove
   it, but needs the callee to be proven not to let its block escape; that analysis does not
   exist yet.
+
+## Update (ADR 0283)
+
+The env now ends with two slots: the entry (second to last) and the YIELD_FREE flag (last), which says
+the block provably cannot reach a `Fiber.yield` (`bc2cpp_block_yield_free`).

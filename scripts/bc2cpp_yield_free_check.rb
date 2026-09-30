@@ -250,6 +250,8 @@ check.call('entries keep their Enumerable each_is_builtin test',
 end
 check.call('YfHelper#step (Fiber.yield) and #relay (through an explicit-receiver call from a Fiber) are not compiled',
            !compiled.call('YfHelper', 'step') && !compiled.call('YfHelper', 'relay'))
+check.call('the emulator shape is refused end to end: the loop a Fiber body calls on another object, and its yielding callee',
+           !compiled.call('YfCpu', 'emu_run') && !compiled.call('YfPpu', 'emu_wait'))
 check.call('the generator builder is not compiled: its block would sit below a yielder call',
            !compiled.call('YfRunner', 'gen'))
 check.call('methods that cannot yield stay compiled',

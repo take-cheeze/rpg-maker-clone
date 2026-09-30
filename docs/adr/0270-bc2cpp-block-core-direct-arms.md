@@ -106,3 +106,9 @@ holds a method's `*rest` at entry as `Array`; `xs.each { }` on it is the inlined
 - Residual risk: an engine block that stores a value only in a captured local of the enclosing
   compiled frame is unrooted while the callee runs (pre-existing; the same slot is unrooted on
   the dynamic path).
+
+## Update (ADR 0283)
+
+An arm whose literal block is proved yield-free, calling a body that cannot suspend a Fiber on its own,
+omits `M->c == M->root_c`; the other arms keep it. The build prints how many arms did (`== yield-free
+proof (YIELD_REACH) ==`).
