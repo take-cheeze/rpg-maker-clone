@@ -972,6 +972,7 @@ jobs:
               ./scripts/bc2cpp_coverage_check.bash build-bc2cpp/mruby
               ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
               MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_foreign_def_forms_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_funcall_argc_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_hash_each_value_check.rb
