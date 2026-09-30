@@ -940,6 +940,8 @@ jobs:
           - shard: hot-only
             checks: |
               MRBC="$mrbc" ruby scripts/bc2cpp_nomethod_reviewed_check.rb
+              # PROVEN_MISS_REVIEWED (docs/adr/0275): a send to a proven class nothing answers.
+              MRBC="$mrbc" ruby scripts/bc2cpp_proven_miss_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_hot_only_check.rb
           - shard: registrations
             checks: |
