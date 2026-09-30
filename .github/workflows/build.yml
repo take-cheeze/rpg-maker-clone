@@ -1036,6 +1036,7 @@ jobs:
               ruby scripts/native_binding_split_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_arg_shapes_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_block_semantics_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_constant_singleton_check.rb
               # ADR 0261: join dominance for the backward walks, core mixins and the
               # core methods they let bc2cpp inline. Their runtime sections need a
               # full-core libmruby (BC2CPP_MRUBY_FULL) and skip without one.
