@@ -1038,6 +1038,9 @@ jobs:
               # Compiled mruby core mrblib (docs/adr/0264): static invariants, then every compiled body
               # against the interpreter's answer on edge cases.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mrblib_check.rb
+              # Sends replaced by audited direct code (docs/adr/0274): audit, withdrawal reasons and the
+              # compiled run; its core half needs a full-core libmruby (BC2CPP_MRUBY_FULL) and skips without one.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_direct_natives_check.rb
 
     env:
       RPGMAKER_BC2CPP: "1"
