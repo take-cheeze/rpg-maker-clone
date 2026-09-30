@@ -1109,6 +1109,11 @@
   world where no object can gain a singleton class) the class test goes, and for the
   frame-independent native arms the dynamic send with it; block arms keep their else for Fibers. See
   [`docs/adr/0280-bc2cpp-exact-receiver-arms.md`](docs/adr/0280-bc2cpp-exact-receiver-arms.md).
+  A return-class table (`x = foo(...); x.bar`, including recursion, `rescue` paths and block
+  `return`s) and a flow over ivar slots extend that proof, and a class-guarded `TYPED` call whose
+  receiver is proven exactly its guard class becomes a guard-free direct call; see
+  [`docs/adr/0287-bc2cpp-return-class-table.md`](docs/adr/0287-bc2cpp-return-class-table.md) and
+  `scripts/bc2cpp_return_class_check.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
