@@ -133,3 +133,11 @@ the facts and the arms that lost their send.
 - `scripts/bc2cpp_numeric_operand_check.rb` pins the dataflow on hand-built bytecode, the
   generated code of a closed-world fixture (positive and negative cases), and, with a mruby
   build, compiled-vs-interpreter answers including Integer overflow.
+
+## Addendum: `alias` poisons both names
+
+`entry_arg_call_index` poisoned only the new name of `alias new old`, so a call through `new`
+reached `old`'s body unseen and a parameter could be proven Integer while `new("str")` passes a
+String. The ALIAS instruction now also poisons the old name (`alias_method`, `define_method` and
+`undef_method` take symbol arguments, which already poison every name they mention).
+`scripts/bc2cpp_entry_arg_alias_check.rb` pins the alias, `alias_method` and no-alias control cases.
