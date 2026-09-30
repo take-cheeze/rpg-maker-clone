@@ -1057,6 +1057,8 @@ jobs:
               # a whole-program numeric proof covers; the runtime section compares against the
               # interpreter, including Integer overflow.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_operand_check.rb
+              # `alias new old` poisons old's entry arguments too (a call through new is an unseen site).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_entry_arg_alias_check.rb
               # Compiled mruby core mrblib (docs/adr/0264): static invariants, then every compiled body
               # against the interpreter's answer on edge cases.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mrblib_check.rb
