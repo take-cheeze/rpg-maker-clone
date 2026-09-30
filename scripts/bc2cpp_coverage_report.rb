@@ -457,11 +457,19 @@ end
 @shipped_stdout.scan(/^\s*\/\/ POLY :(\S+) --/).each { |match| poly_dynamic_names[match.first] += 1 }
 poly_dynamic_sites = poly_paths.sum { |path, count| path.start_with?('dynamic_') ? count : 0 }
 direct_new_sites = @shipped_stdout.scan(/^\s*\/\/ MONO :new -> /).size
+# Literal-block sends: BLOCK_CORE_DIRECT (ADR 0270) keeps the POLY marker of its dynamic else, so
+# those sites stay in the POLY counts below although the common receivers no longer dispatch.
+block_direct_sites = @shipped_stdout.scan(/^\s*\/\/ BLOCK_FALLBACK :.*direct call with the block/).size
+block_dynamic_sites = @shipped_stdout.scan(/^\s*\/\/ BLOCK_FALLBACK :.*dynamic dispatch/).size
+block_core_arm_sites = @shipped_stdout.scan(/^\s*\/\/ BLOCK_CORE_DIRECT :/).size
 
 report << "-- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --\n"
 report << "cached bc2cpp_send/mrb_funcall_with_block sites, including guarded fallbacks: #{total_dispatch}\n"
 report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
 report << "  direct :new constructor paths emitted (some retain guarded fallback): #{direct_new_sites}\n"
+report << "  literal-block sends: #{block_direct_sites} direct call with the block " \
+          "(#{block_core_arm_sites} through exact-class core arms that keep the dynamic send as their else), " \
+          "#{block_dynamic_sites} dynamic dispatch only\n"
 report << "  generic POLY sites by diagnostics: #{poly_dynamic_sites}\n"
 report << "    in engine methods: #{poly_dynamic_sites - core_dispatch_diag_dynamic}\n"
 report << "    in compiled mruby-core mrblib methods: #{core_dispatch_diag_dynamic}\n"
