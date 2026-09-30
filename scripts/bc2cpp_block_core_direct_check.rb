@@ -73,6 +73,8 @@ FIXTURE = <<~'RUBY'
     def pair_each(o); r = []; o.each { |a, b| r << [a, b] }; r; end
     def single_each(o); r = []; o.each { |a| r << a }; r; end
     def hash_pairs(h); r = []; h.each { |pair| r << pair }; r; end
+    def find_sum(a); [a.find { |x| x > 1 }, a.sum { |x| x * 2 }, a.inject(0) { |m, x| m + x }]; end
+    def rest_each(*xs); r = []; xs.each { |x| r << x * 2 }; r; end
     def strict_copy(a); l = lambda(&proc { |x| x }); a.map { |x| l.call(x) }; end
   end
 RUBY
@@ -120,8 +122,10 @@ DRIVER = <<~'RUBY'
     pair_each: [pairs, spread, { a: 1 }],
     single_each: [pairs, spread, [1, 2]],
     hash_pairs: [hash],
+    find_sum: [[1, 2, 3], [], 1..4],
     strict_copy: [[1, 2, 3]]
   }
+  puts "rest_each: #{fx.rest_each(1, 2, 3).inspect} #{fx.rest_each.inspect}"
   cases.each do |name, inputs|
     inputs.each_with_index do |input, i|
       out = begin
@@ -194,6 +198,11 @@ check.call('select on a Hash is Hash#select, on an Array or Range Enumerable#fin
 check.call('a send to a user receiver keeps only dynamic dispatch in its else', arm.call('user_each').include?('BLOCK_CORE_DIRECT'))
 check.call('break, next and return keep their catch around the arms',
            arm.call('each_break').include?('catch (bc2cpp_block_break&') && arm.call('each_return').include?('BLOCK_CORE_DIRECT'))
+
+check.call('a rest parameter is an Array, so its each is the inlined loop, not an arm',
+           !arm.call('rest_each').include?('BLOCK_CORE_DIRECT') && !arm.call('rest_each').include?('mrb_funcall_with_block'))
+check.call('an optional-block core method (find) gets arms',
+           arm.call('find_sum').include?('BLOCK_CORE_DIRECT :find'))
 
 open_code = generate.call(FIXTURE, 'bd_open', closed: false)
 check.call('without the closed world no arm is emitted', !open_code.include?('BLOCK_CORE_DIRECT'))
