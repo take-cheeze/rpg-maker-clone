@@ -1119,6 +1119,14 @@
   by a few lines of bytecode so `Fiber.yield` never has a compiled frame beneath it; a root that
   does not qualify stays interpreted and bc2cpp logs why. See
   [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md).
+  A record-like Hash held in an ivar (`Scene::Battle#@ui`: Symbol-literal keys, read and written
+  only as `h[:key]`) gives each key a whole-program class: a key that only ever holds fresh
+  instances of one class makes `@ui[:battle].step_action` an unguarded exact-class call, and a
+  non-nil Array key feeds the inlined Array loops. Any other use of the Hash (passing it on, `merge!`,
+  `dup`, `send`, `Marshal`, a computed key) refuses the ivar. The LCF schema table is available as a
+  read-class oracle (`tools/bc2cpp/lcf_schema_oracle.rb`) but is not wired to any pass, because no
+  receiver is proven to be an LCF row. See
+  [`docs/adr/0285-bc2cpp-record-hash-typing.md`](docs/adr/0285-bc2cpp-record-hash-typing.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as

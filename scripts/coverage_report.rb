@@ -88,6 +88,8 @@ CHECKS = [
   { name: 'bc2cpp-join-dominance', command: %w[scripts/bc2cpp_join_dominance_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp_core_mixins_check.rb] },
   { name: 'bc2cpp-typed-reflection', command: %w[scripts/bc2cpp_typed_reflection_check.rb] },
+  # Reads every schema field through the real LCF reader (ADR 0285).
+  { name: 'bc2cpp-lcf-schema-oracle', command: %w[scripts/bc2cpp_lcf_schema_oracle_check.rb] },
   # ADR 0276: NumericFlow on hand-built bytecode; the fixture sections skip here.
   { name: 'bc2cpp-numeric-operand', command: %w[scripts/bc2cpp_numeric_operand_check.rb] }
 ].freeze
