@@ -58,8 +58,9 @@ function** instead of being refused:
       end
       f
 
-  so `Fiber.yield` runs in bytecode with no compiled frame beneath it, and the yielded and the
-  resumed values round trip. When the entry is reached through a C frame (`mrb_funcall`,
+  (spelled with `::`: the first entry loads it from inside a running method, where a bare
+  `module` nests under that method's class) so `Fiber.yield` runs in bytecode with no compiled
+  frame beneath it, and the yielded and the resumed values round trip. When the entry is reached through a C frame (`mrb_funcall`,
   `send` from compiled code, an iterator implemented in C) the bytecode could not have yielded
   either: the entry steps in C++ and hands a yield to the real `Fiber.yield`, which raises the
   same `FiberError` as the interpreted method.

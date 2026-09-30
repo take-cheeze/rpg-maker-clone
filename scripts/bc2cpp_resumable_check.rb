@@ -253,6 +253,17 @@ class RcTwoArgs
   end
 end
 
+module RcSpace
+  class Inner
+    def initialize; @f = Fiber.new { run; :done }; end
+    def go(v = nil); @f.resume(v); end
+    def run
+      Fiber.yield :in_namespace
+      :end
+    end
+  end
+end
+
 class RcPlain
   def helper(x); x + 1; end
   def call_it; helper(1); end
@@ -296,6 +307,7 @@ drive :raise, RcRaise.new, Array.new(4)
 drive :rescue, RcRescue.new, Array.new(5)
 drive :block, RcBlock.new, Array.new(5)
 drive :nested_step, RcNestedStep.new, Array.new(10)
+drive :namespaced, RcSpace::Inner.new, Array.new(4)
 drive :twoargs, RcTwoArgs.new, Array.new(4)
 # called outside a fiber and from a C frame
 begin
@@ -321,7 +333,7 @@ end
 puts "end"
 RUBY
 
-COMPILED = %w[RcWhile RcStep RcHelper RcLocals RcGc RcGcInc RcNested RcReturn RcBreak RcValues RcNoYield RcRaise].freeze
+COMPILED = %w[RcWhile RcStep RcHelper RcLocals RcGc RcGcInc RcNested RcReturn RcBreak RcValues RcNoYield RcRaise RcSpace::Inner].freeze
 REFUSED = {
   'RcRescue' => 'has a rescue or ensure handler',
   'RcBlock' => 'Fiber.yield inside a block or loop that is not inlined into the step function',
@@ -330,8 +342,10 @@ REFUSED = {
 }.freeze
 OWNERS = (COMPILED + REFUSED.keys + %w[RcPlain RcRoot]).freeze
 
+def cpp_name(owner) = owner.gsub('::', '__')
+
 def body_of(code, fn)
-  code[/^static mrb_value #{fn}_step\(mrb_state\* M.*?(?=^mrb_value #{fn}_impl)/m].to_s
+  code[/^static mrb_value #{cpp_name(fn)}_step\(mrb_state\* M.*?(?=^mrb_value #{cpp_name(fn)}_impl)/m].to_s
 end
 
 unless Bc2cppFixtureRuntime.mrbc && system(Bc2cppFixtureRuntime.mrbc, '--version', out: File::NULL, err: File::NULL)
@@ -367,7 +381,7 @@ Dir.mktmpdir do |dir|
   check.call('the entry hands a VM-called invocation to the driver and steps from C otherwise',
              code.include?('bc2cpp_resumable_exec_ok(M)') && code.include?('bc2cpp_resumable_yield_from_c'))
   check.call('no compiled method calls a resumable one directly (only its own entry wrapper does)',
-             COMPILED.all? { |owner| code.scan("#{owner}_run_impl(M, ").size == 1 })
+             COMPILED.all? { |owner| code.scan("#{cpp_name(owner)}_run_impl(M, ").size == 1 })
 end
 
 full = Bc2cppFixtureRuntime.full_or_build
@@ -379,7 +393,10 @@ else
     body = <<~CPP
       static int scenario(mrb_state* M) {
         std::fflush(stdout);
-        // The second run collects incrementally all the time, so frames are marked while suspended.
+        // Without the frame class and driver from bc2cpp_set_instance_tts, the first entry defines them
+        // from inside a running method (in a class scope), where a bare `module` would nest.
+        if (getenv("BC2CPP_LAZY_INIT")) mrb_const_remove(M, mrb_obj_value(M->object_class), mrb_intern_lit(M, "Bc2cppResumable"));
+        // The stress run collects incrementally all the time, so frames are marked while suspended.
         const char* prelude = getenv("BC2CPP_GC_STRESS")
           ? "GC.interval_ratio = 100; GC.step_ratio = 200; GC.generational_mode = false\\n" : "";
         std::string src = std::string(prelude) + R"BCD(#{DRIVER})BCD";
@@ -390,11 +407,11 @@ else
     CPP
     body = "#include <string>\n#include <cstdlib>\n#{body}"
     built, results = Bc2cppFixtureRuntime.run(dir, err, OWNERS, body, build: full, full: true,
-                                              envs: [{}, { 'BC2CPP_GC_STRESS' => '1' }])
+                                              envs: [{}, { 'BC2CPP_GC_STRESS' => '1' }, { 'BC2CPP_LAZY_INIT' => '1' }])
     check.call('the fixture builds', built)
     if built
       results.each_with_index do |(output, ok), i|
-        label = i.zero? ? 'default GC' : 'incremental GC stress'
+        label = ['default GC', 'incremental GC stress', 'lazy driver load'][i]
         check.call("#{label}: the process exits cleanly", ok)
         sections = Bc2cppFixtureRuntime.sections(output)
         interpreted = sections['interpreted']

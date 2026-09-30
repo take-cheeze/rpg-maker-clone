@@ -114,7 +114,10 @@ module Bc2cppFixtureRuntime
       next unless owners.include?(owner)
 
       holder = owner.delete_suffix('.singleton')
-      klass = "mrb_class_ptr(mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, #{holder.dump})))"
+      scope = holder.split('::').inject('mrb_obj_value(M->object_class)') do |outer, part|
+        "mrb_const_get(M, #{outer}, mrb_intern_cstr(M, #{part.dump}))"
+      end
+      klass = "mrb_class_ptr(#{scope})"
       fn = if owner.end_with?('.singleton') then 'mrb_define_class_method'
            elsif extra.include?('[private') then 'mrb_define_private_method'
            else 'mrb_define_method'
