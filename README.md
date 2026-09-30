@@ -1069,6 +1069,14 @@
   native binding, splits the frame-independent ones into a body plus an
   `mrb_get_args` wrapper, and generates the compiler's table; see
   [`docs/adr/0263-native-binding-split-tooling.md`](docs/adr/0263-native-binding-split-tooling.md).
+  Where the receiver is proven rather than guessed -- a stable class or module
+  constant (`RGSS.mouse_x`, `Bitmap._decoder_ran?`), or `self` of an exact class
+  or of a class or module object's own method (the `Audio._bgm_*` primitives,
+  `Bitmap#_init_size`) -- those entry points are called with no receiver guard
+  and no dispatch fallback, and a constant load that follows a `break` inside a
+  `begin`/`rescue` loop no longer hides its constant from that proof. The audio
+  and tts bindings are split too. See
+  [`docs/adr/0281-bc2cpp-constant-singleton-and-native-exact-direct.md`](docs/adr/0281-bc2cpp-constant-singleton-and-native-exact-direct.md).
   mruby's own Ruby (core mrblib, the core gems' mrblib, mruby-stringio and
   mruby-onig-regexp) is compiled too, by `mruby-core-compiled`: every method that
   neither names the Fiber class, builds a lambda, nor comes from mruby-enumerator is
