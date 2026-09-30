@@ -133,3 +133,15 @@ the facts and the arms that lost their send.
 - `scripts/bc2cpp_numeric_operand_check.rb` pins the dataflow on hand-built bytecode, the
   generated code of a closed-world fixture (positive and negative cases), and, with a mruby
   build, compiled-vs-interpreter answers including Integer overflow.
+
+## Addendum: ops that run unseen Ruby
+
+The slot facts assumed only calls can store into an ivar. Other ops dispatch to Ruby with the
+same `self` without being calls: `SETIDX`/`GETIDX` on anything but an exact Array with an
+Integer index (a user `#[]=`), `STRCAT` (`#to_s`), an operator on a non-number, `ARYCAT`/
+`HASHCAT`/`ARYSPLAT` (`to_a`/`to_hash`), ranges and constant lookup (`const_missing`).
+`NumericFlow.silent_call?` names them and judges from the operand classes before the op; after
+one, `refresh_slots` resets every slot to its class set joined with the whole-program fact and
+drops register-to-slot provenance, exactly as the call path does. An op whose operands are
+proven numbers, or an exact Array indexed by an Integer, runs no Ruby and keeps its facts.
+Captured locals are not affected: a block's writes already make the local unknown.
