@@ -974,6 +974,8 @@ jobs:
               ./scripts/bc2cpp_coverage_check.bash build-bc2cpp/mruby
               ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
               MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
+              # -DBC2CPP_NOMETHOD_VERIFY aborts at a dead bc2cpp_nomethod site (docs/adr/0275).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_nomethod_verify_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_funcall_argc_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_hash_each_value_check.rb

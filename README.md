@@ -1052,6 +1052,11 @@
   [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
   The frame-independent wrapper rules and supported methods are recorded in
   [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
+  In a closed world a send to a receiver of proven class that nothing answers
+  (`PROVEN_MISS_REVIEWED`) is a build error, and `BC2CPP_NOMETHOD_VERIFY=1` builds
+  make a dead `bc2cpp_nomethod` site abort for smoke runs; see
+  [`docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md`](docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md)
+  and [`docs/bc2cpp-nomethod-verify.md`](docs/bc2cpp-nomethod-verify.md).
   The remaining RGSS setters (`x=`/`y=`/`z=`/`visible=`/`color=`, Window
   `contents=`/`windowskin=`/`cursor_rect=`/`active=`/`pause=`, `flash`, Rect
   writers ...) are shared entry points too: each binding forwards to the same
