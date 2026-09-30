@@ -102,6 +102,28 @@ check.call('Helper#step is refused: it is reachable from a Fiber and yields (exp
            unsafe.include?(%w[Helper step]))
 check.call('Helper#quiet is not refused: it cannot yield', !unsafe.include?(%w[Helper quiet]))
 
+# Outside a closed world nothing is proved yield-free, but the refusal under a Fiber stays best effort:
+# it follows every call edge by name (explicit receivers included) and does not treat unknown code
+# as yielding, so a program with computed sends and eval keeps its compiled methods.
+open_world = analyse(<<~RUBY, sound: false)
+  class Helper
+    def step; Fiber.yield 1; end
+    def relay; step; end
+    def quiet; 1; end
+  end
+  class Runner
+    def initialize; @h = Helper.new; end
+    def start; Fiber.new { @h.relay; @h.quiet }; end
+    def dyn(n); send(n); instance_eval("1"); end
+    def other; @h.quiet; end
+  end
+RUBY
+open_unsafe = open_world.fiber_unsafe(open_world.method_labels).map { |l| open_world.nodes[l] }.to_set { |n| [n.klass, n.name] }
+check.call('an open world still refuses what a Fiber reaches across classes and may yield',
+           open_unsafe.include?(%w[Helper relay]) && open_unsafe.include?(%w[Helper step]))
+check.call('and does not refuse what cannot yield, computed sends or eval included',
+           !open_unsafe.include?(%w[Helper quiet]) && !open_unsafe.include?(%w[Runner dyn]) && !open_unsafe.include?(%w[Runner other]))
+
 # -- blocks handed to a method that runs them ------------------------------------------------------
 
 iter = analyse(<<~RUBY)

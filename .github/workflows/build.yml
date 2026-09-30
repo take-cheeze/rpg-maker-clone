@@ -951,7 +951,11 @@ jobs:
             checks: |
               # Literal-block arms into the compiled core (docs/adr/0270): a closed-world fixture compiled
               # with the core, against the interpreter; two more mruby builds.
-              MRBC="$mrbc" ruby scripts/bc2cpp_block_core_direct_check.rb
+              BC2CPP_BLOCK_DIRECT_DIR="$RUNNER_TEMP/bc2cpp-block-direct" MRBC="$mrbc" ruby scripts/bc2cpp_block_core_direct_check.rb
+              # Yield-free proof (docs/adr/0283): blocks and core iterator bodies that cannot suspend a
+              # Fiber stay compiled under one, and every method a Fiber reaches that may yield is refused;
+              # compiled against the interpreter on the interpreted mruby build of the check above.
+              BC2CPP_YIELD_FREE_MRUBY="$RUNNER_TEMP/bc2cpp-block-direct/interpreted/host" MRBC="$mrbc" ruby scripts/bc2cpp_yield_free_check.rb
               # Inlined Integer#step/upto/downto loops (docs/adr/0273) against the interpreter; builds
               # a full-core mruby once into BC2CPP_FULL_BUILD_DIR.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
@@ -975,6 +979,7 @@ jobs:
               MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
           - shard: fast
             checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp_yield_reach_check.rb
               ./scripts/bc2cpp_coverage_check.bash build-bc2cpp/mruby
               ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
               MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
