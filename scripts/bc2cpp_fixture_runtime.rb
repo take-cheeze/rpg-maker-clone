@@ -49,10 +49,11 @@ module Bc2cppFixtureRuntime
     system('g++', '--version', out: File::NULL, err: File::NULL)
   end
 
-  FULL_CORE_CONFIG = <<~'RUBY'
+  FULL_CORE_CONFIG = <<~RUBY
     MRuby::Build.new('host') do |conf|
       toolchain :gcc
       conf.gembox 'full-core'
+      conf.gem '#{ROOT}/3rd/mruby-stringio'
       conf.cxx.flags << '-std=gnu++17'
       enable_cxx_exception
       enable_debug
@@ -116,11 +117,14 @@ module Bc2cppFixtureRuntime
     [code, err]
   end
 
-  # `mrb_define_method` lines registering every compiled entry point of `owners`.
-  def registrations(err, owners)
+  # `mrb_define_method` lines registering every compiled entry point of `owners`. With
+  # `exact_arity` an entry registers MRB_ARGS_REQ(arity) as the build's own registration does for
+  # a method with required parameters only, so the VM's argument-count check runs; otherwise
+  # MRB_ARGS_ANY() (the entry's own mrb_get_args is then the only check).
+  def registrations(err, owners, exact_arity: false)
     entries = err.split('== compiled entry points ==', 2)[1].to_s.split("\n== ", 2)[0]
-                 .scan(%r{^\s+(\w+) / \w+\s+\(([^#]+)#([^,]+), arity \d+\)(.*)$})
-    entries.filter_map do |entry, owner, name, extra|
+                 .scan(%r{^\s+(\w+) / \w+\s+\(([^#]+)#([^,]+), arity (\d+)\)(.*)$})
+    entries.filter_map do |entry, owner, name, arity, extra|
       next unless owners.include?(owner)
 
       holder = owner.delete_suffix('.singleton')
@@ -132,7 +136,7 @@ module Bc2cppFixtureRuntime
            elsif extra.include?('[private') then 'mrb_define_private_method'
            else 'mrb_define_method'
            end
-      "  #{fn}(M, #{klass}, #{name.dump}, #{entry}, MRB_ARGS_ANY());"
+      "  #{fn}(M, #{klass}, #{name.dump}, #{entry}, #{exact_arity ? "MRB_ARGS_REQ(#{arity})" : 'MRB_ARGS_ANY()'});"
     end
   end
 
@@ -142,8 +146,8 @@ module Bc2cppFixtureRuntime
   # environment Hashes) the binary runs once per entry, each in its own process
   # so one crashing scenario cannot hide the others, and `output` is the Array
   # of their outputs paired with the exit status: [[output, success], ...].
-  def run(dir, err, owners, body, build:, full: false, vms: [false, true], envs: nil)
-    regs = registrations(err, owners).join("\n")
+  def run(dir, err, owners, body, build:, full: false, vms: [false, true], envs: nil, exact_arity: false)
+    regs = registrations(err, owners, exact_arity: exact_arity).join("\n")
     File.write(File.join(dir, 'main.cpp'), <<~CPP)
       #include <mruby.h>
       static int dispatches = 0;

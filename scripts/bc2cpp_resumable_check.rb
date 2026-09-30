@@ -337,7 +337,7 @@ COMPILED = %w[RcWhile RcStep RcHelper RcLocals RcGc RcGcInc RcNested RcReturn Rc
 REFUSED = {
   'RcRescue' => 'has a rescue or ensure handler',
   'RcBlock' => 'Fiber.yield inside a block or loop that is not inlined into the step function',
-  'RcNestedStep' => 'a block call that is neither an inlined step/upto/downto loop nor a plain block function',
+  'RcNestedStep' => 'Fiber.yield inside a block or loop that is not inlined into the step function',
   'RcTwoArgs' => 'calls Fiber.yield with 2 arguments'
 }.freeze
 OWNERS = (COMPILED + REFUSED.keys + %w[RcPlain RcRoot]).freeze

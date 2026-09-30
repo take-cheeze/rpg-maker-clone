@@ -967,9 +967,14 @@ jobs:
               # Inlined Integer#step/upto/downto loops (docs/adr/0273) against the interpreter; builds
               # a full-core mruby once into BC2CPP_FULL_BUILD_DIR.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
+              # ADR 0288: class-body define_method(:name) { } as an ordinary definition.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_define_method_sites_check.rb
               # Resumable Fiber roots (docs/adr/0273): step functions over a heap frame against the
               # interpreter, with an incremental-GC-stress pass; reuses the build above.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_resumable_check.rb
+              # Shared explicit-receiver puts (docs/adr/0284) against the interpreter: a redirected
+              # $stdout/$stderr, eval, an IO#puts override; reuses the build above.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_io_puts_model_check.rb
               # ADR 0279: the fixnum-overflow boundary matrix against the interpreter, on the full-core build above.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb
               # mruby's own suites (rake test) on a full-core host build, interpreted and with the
@@ -1010,7 +1015,6 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_float_math_fastpath_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_division_fastpath_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_game_variable_range_check.rb
-              MRBC="$mrbc" ruby scripts/bc2cpp_io_puts_model_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_array_push_fastpath_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_expression_devirt_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_runtime_wiring_check.rb
