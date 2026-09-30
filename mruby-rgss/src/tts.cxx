@@ -31,12 +31,18 @@ mrb_value tts_available(mrb_state* M, mrb_value self) {
   return mrb_bool_value(ok);
 }
 
-mrb_value tts_speak(mrb_state* M, mrb_value self) {
-  const char* text;
-  mrb_get_args(M, "z", &text);
+mrb_value tts_speak_native_body(mrb_state* M,
+                                mrb_value self,
+                                const char* text) {
   if (g_backend.speak)
     g_backend.speak(text);
   return mrb_nil_value();
+}
+
+mrb_value tts_speak(mrb_state* M, mrb_value self) {
+  const char* text;
+  mrb_get_args(M, "z", &text);
+  return tts_speak_native_body(M, self, text);
 }
 
 mrb_value tts_stop(mrb_state* M, mrb_value self) {
@@ -54,6 +60,32 @@ extern "C" void rgss_tts_install_backend(const RgssTtsBackend* backend) {
   else
     g_backend = RgssTtsBackend{};
 }
+
+// BEGIN native-binding-split (ADR 0263, generated)
+namespace rgss {
+
+[[maybe_unused]] static mrb_value native_split_compiled_out(mrb_state* M,
+                                                            mrb_value self) {
+  mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(NotImplementedError)),
+             "%C is not compiled into this build (ADR 0263)",
+             mrb_obj_class(M, self));
+  return self;
+}
+
+mrb_value tts_available_direct(mrb_state* M, mrb_value self) {
+  return tts_available(M, self);
+}
+
+mrb_value tts_speak_direct(mrb_state* M, mrb_value self, const char* text) {
+  return tts_speak_native_body(M, self, text);
+}
+
+mrb_value tts_stop_direct(mrb_state* M, mrb_value self) {
+  return tts_stop(M, self);
+}
+
+}  // namespace rgss
+// END native-binding-split
 
 // Define the native RGSS::Tts module methods. Called from the gem init in
 // lib.cxx.
