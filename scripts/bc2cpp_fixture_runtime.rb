@@ -10,6 +10,7 @@
 #                      fixtures that need Enumerable, Integer#positive?, ...
 # Both must be built from the patched 3rd/mruby the tree carries.
 # BC2CPP_KEEP_DIR=path keeps the last fixture directory (generated code, binary).
+require 'etc'
 require 'fileutils'
 require 'open3'
 require 'shellwords'
@@ -44,6 +45,41 @@ module Bc2cppFixtureRuntime
 
   def compiler?
     system('g++', '--version', out: File::NULL, err: File::NULL)
+  end
+
+  FULL_CORE_CONFIG = <<~'RUBY'
+    MRuby::Build.new('host') do |conf|
+      toolchain :gcc
+      conf.gembox 'full-core'
+      conf.cxx.flags << '-std=gnu++17'
+      enable_cxx_exception
+      enable_debug
+      [conf.cc, conf.cxx].each { |t| t.flags = t.flags.flatten.delete_if { |v| v == '-O0' } << '-O1' }
+    end
+  RUBY
+
+  # A full-core libmruby build dir (lib/libmruby.a and include/), for fixtures that need Fiber,
+  # Integer#step and the rest of mrblib: BC2CPP_MRUBY_FULL, else one built here with rake
+  # (minutes; BC2CPP_FULL_BUILD_DIR keeps it for the next check). nil without rake, g++ or
+  # 3rd/mruby, so the caller can skip the behavioural half.
+  def full_or_build
+    return full if full
+    return nil unless system('rake', '--version', out: File::NULL, err: File::NULL) && compiler? &&
+                      File.exist?(File.join(ROOT, '3rd/mruby/Rakefile'))
+
+    work = ENV['BC2CPP_FULL_BUILD_DIR'] || (@full_build_dir ||= Dir.mktmpdir('bc2cpp_full'))
+    host = File.join(work, 'host')
+    return host if File.exist?(File.join(host, 'lib/libmruby.a'))
+
+    FileUtils.mkdir_p(File.join(work, 'repos/host'))
+    FileUtils.ln_sf(File.join(ROOT, '3rd/mgem-list'), File.join(work, 'repos/host/mgem-list'))
+    File.write(File.join(work, 'config.rb'), FULL_CORE_CONFIG)
+    env = { 'MRUBY_CONFIG' => File.join(work, 'config.rb'), 'MRUBY_BUILD_DIR' => work }
+    out, status = Open3.capture2e(env, 'rake', "-j#{[Etc.nprocessors, 16].min}", 'all', chdir: File.join(ROOT, '3rd/mruby'))
+    File.write(File.join(work, 'build.log'), out)
+    raise "full-core mruby build failed:\n#{out.lines.last(30).join}" unless status.success?
+
+    host
   end
 
   # Runs bc2cpp.rb over `source`. `closed` is the wio closed world with the

@@ -952,6 +952,9 @@ jobs:
               # Literal-block arms into the compiled core (docs/adr/0270): a closed-world fixture compiled
               # with the core, against the interpreter; two more mruby builds.
               MRBC="$mrbc" ruby scripts/bc2cpp_block_core_direct_check.rb
+              # Inlined Integer#step/upto/downto loops (docs/adr/0273) against the interpreter; builds
+              # a full-core mruby once into BC2CPP_FULL_BUILD_DIR.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
               # mruby's own suites (rake test) on a full-core host build, interpreted and with the
               # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
               ruby scripts/bc2cpp_core_mrbtest.rb

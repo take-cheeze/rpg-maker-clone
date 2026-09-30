@@ -1089,6 +1089,9 @@
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
+  `Integer#step`, `#upto` and `#downto` loops over literal or proven-Integer bounds are inlined
+  like `#times`; see
+  [`docs/adr/0273-bc2cpp-step-loops.md`](docs/adr/0273-bc2cpp-step-loops.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
