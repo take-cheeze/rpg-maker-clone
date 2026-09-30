@@ -209,7 +209,9 @@ if ENV['MRBC']
     'module CmPre; def min; 1; end; end; class Array; prepend CmPre; end' =>
       { min: false, max: false, pos: true, neg: true },
     'class Integer; alias_method :positive?, :zero?; end' => { min: true, max: true, pos: false, neg: true },
-    'class Integer; define_method(:negative?) { true }; end' => { min: false, max: false, pos: false, neg: false },
+    # A literal class-body define_method is a definition like `def` (ADR 0288): it shadows only its own name.
+    'class Integer; define_method(:negative?) { true }; end' => { min: true, max: true, pos: true, neg: false },
+    'class Integer; define_method("negat" + "ive?") { true }; end' => { min: false, max: false, pos: false, neg: false },
     'class Float; def >(o); false; end; end' => { min: true, max: true, pos: false, neg: true }
   }.each do |extra, want|
     code, = world.call(extra)
