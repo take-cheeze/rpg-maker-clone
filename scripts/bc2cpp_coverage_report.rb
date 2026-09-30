@@ -256,6 +256,12 @@ report << "magic-comment return annotations (ANNOTATED): #{count(err, 'magic-com
 report << "magic-comment class-argument annotations (CLASS_ANNOTATED): #{count(err, 'magic-comment class annotations (# bc2cpp: (ClassName, ...))', placeholder: '(none found)')}\n"
 report << "magic-comment element annotations (ELEM_ANNOTATED): #{count(err, 'magic-comment element annotations (# bc2cpp: ... -> Array<Klass> / -> Klass)', placeholder: '(none found)')}\n"
 report << "annotation candidates (opaque argument, unresolved): #{count(err, 'annotation candidates (opaque incoming argument, unresolved)', placeholder: '(none)')}\n"
+# RECORD_HASH_PROOF: ivar names that are record-like Hashes, and the sends that now dispatch on a
+# class a record key proves (a direct call instead of a guarded one).
+record_lines = section_lines(err, 'record hash slots (RECORD_HASH_PROOF)')
+report << "record-like Hash slots proven (RECORD_HASH_PROOF): #{record_lines.count { |l| l.start_with?('RECORD_HASH ') }} " \
+          "accepted, #{record_lines.count { |l| l.start_with?('RECORD_HASH_REFUSED') }} refused\n"
+report << "  exact-class direct calls through a record key: #{@shipped_stdout.scan('record key holds only fresh').size}\n"
 # INTEGER_CONSTANT_PROOF: bare constant names every definition in the whole
 # program agrees is an integer literal -- FIXNUM_OPERAND_PROOF's own fifth
 # proof source. Reported here for the same reason every other proven fact

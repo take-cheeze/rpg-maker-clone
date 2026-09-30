@@ -89,7 +89,7 @@ NOT_PER_METHOD = %w[
   @ivar_layout @only_owners @other_owners
   @closed_world @core_program_world
   @constant_object_probe @direct_alloc_used @poly_diagnostic_reason_cache @rescued_exception_message_safe
-  @sanitized @strict_ancestors @subtree_ivar_names @rescue_covered_labels
+  @sanitized @strict_ancestors @subtree_ivar_names @rescue_covered_labels @record_key_exact_class
   @foreign_written_ivar_facts
   @cg @entry_arg_numeric @entry_cand @numeric_allocate_free @numeric_assured @numeric_block_parents
   @numeric_const_groups @numeric_dynamic_names @numeric_family_find @numeric_irep_owner @numeric_irep_slots

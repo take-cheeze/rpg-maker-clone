@@ -1055,6 +1055,9 @@ jobs:
               # full-core libmruby (BC2CPP_MRUBY_FULL) and skip without one.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_join_dominance_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mixins_check.rb
+              # ADR 0285: record-like Hash slots (analysis fixtures, generated code, and a
+              # run against real mruby that needs BC2CPP_MRUBY_FULL and skips without one).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_record_hash_check.rb
               # ADR 0276: arithmetic/compare arms lose their dynamic-send else only for operands
               # a whole-program numeric proof covers; the runtime section compares against the
               # interpreter, including Integer overflow.
@@ -1372,6 +1375,10 @@ jobs:
               ruby scripts/bc2cpp_core_mixins_check.rb
               ruby scripts/bc2cpp_typed_reflection_check.rb
               ruby scripts/bc2cpp_numeric_operand_check.rb
+
+          # ADR 0285: the LCF schema oracle against the real reader (host-only, no mrbc).
+          - name: bc2cpp LCF schema oracle check
+            run: ruby scripts/bc2cpp_lcf_schema_oracle_check.rb
 
           - name: RPG2k game-logic checks
             run: |
