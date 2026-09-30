@@ -1052,6 +1052,11 @@
   [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
   The frame-independent wrapper rules and supported methods are recorded in
   [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
+  In a closed world a send to a receiver of proven class that nothing answers
+  (`PROVEN_MISS_REVIEWED`) is a build error, and `BC2CPP_NOMETHOD_VERIFY=1` builds
+  make a dead `bc2cpp_nomethod` site abort for smoke runs; see
+  [`docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md`](docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md)
+  and [`docs/bc2cpp-nomethod-verify.md`](docs/bc2cpp-nomethod-verify.md).
   The remaining RGSS setters (`x=`/`y=`/`z=`/`visible=`/`color=`, Window
   `contents=`/`windowskin=`/`cursor_rect=`/`active=`/`pause=`, `flash`, Rect
   writers ...) are shared entry points too: each binding forwards to the same
@@ -1064,6 +1069,11 @@
   `Integer#inspect` are called directly behind exact-class guards, each row
   re-audited against the mruby sources on every compile. See
   [`docs/adr/0257-bc2cpp-native-core-direct-arms.md`](docs/adr/0257-bc2cpp-native-core-direct-arms.md).
+  Three more families of sends whose receiver is fixed by construction are replaced
+  outright, again from audited rows: implicit-self `raise` (one or two arguments) and
+  `__id__`, `blk.call(...)` on a compiled core method's own `&blk` (a Proc arm, and a
+  NoMethodError for nil), and `Array` natives such as `__svalue` on a `*rest` parameter. See
+  [`docs/adr/0274-bc2cpp-direct-kernel-and-parameter-natives.md`](docs/adr/0274-bc2cpp-direct-kernel-and-parameter-natives.md).
   Those entry points are no longer written by hand: clang tooling
   (`scripts/native_binding_split.rb report|write|check`) classifies every RGSS
   native binding, splits the frame-independent ones into a body plus an
@@ -1089,6 +1099,13 @@
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
+  `Integer#step`, `#upto` and `#downto` loops over literal or proven-Integer bounds are inlined
+  like `#times`. A method that a `Fiber.new { root; :done }` block calls and that reaches
+  `Fiber.yield` (through `while` loops, those inlined loops and tiny yielding helpers expanded at
+  their call sites) is compiled as a resumable step function over a GC-marked heap frame, driven
+  by a few lines of bytecode so `Fiber.yield` never has a compiled frame beneath it; a root that
+  does not qualify stays interpreted and bc2cpp logs why. See
+  [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
