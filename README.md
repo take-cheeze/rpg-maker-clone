@@ -1052,6 +1052,11 @@
   [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
   The frame-independent wrapper rules and supported methods are recorded in
   [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
+  In a closed world a send to a receiver of proven class that nothing answers
+  (`PROVEN_MISS_REVIEWED`) is a build error, and `BC2CPP_NOMETHOD_VERIFY=1` builds
+  make a dead `bc2cpp_nomethod` site abort for smoke runs; see
+  [`docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md`](docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md)
+  and [`docs/bc2cpp-nomethod-verify.md`](docs/bc2cpp-nomethod-verify.md).
   The remaining RGSS setters (`x=`/`y=`/`z=`/`visible=`/`color=`, Window
   `contents=`/`windowskin=`/`cursor_rect=`/`active=`/`pause=`, `flash`, Rect
   writers ...) are shared entry points too: each binding forwards to the same
@@ -1064,11 +1069,24 @@
   `Integer#inspect` are called directly behind exact-class guards, each row
   re-audited against the mruby sources on every compile. See
   [`docs/adr/0257-bc2cpp-native-core-direct-arms.md`](docs/adr/0257-bc2cpp-native-core-direct-arms.md).
+  Three more families of sends whose receiver is fixed by construction are replaced
+  outright, again from audited rows: implicit-self `raise` (one or two arguments) and
+  `__id__`, `blk.call(...)` on a compiled core method's own `&blk` (a Proc arm, and a
+  NoMethodError for nil), and `Array` natives such as `__svalue` on a `*rest` parameter. See
+  [`docs/adr/0274-bc2cpp-direct-kernel-and-parameter-natives.md`](docs/adr/0274-bc2cpp-direct-kernel-and-parameter-natives.md).
   Those entry points are no longer written by hand: clang tooling
   (`scripts/native_binding_split.rb report|write|check`) classifies every RGSS
   native binding, splits the frame-independent ones into a body plus an
   `mrb_get_args` wrapper, and generates the compiler's table; see
   [`docs/adr/0263-native-binding-split-tooling.md`](docs/adr/0263-native-binding-split-tooling.md).
+  Where the receiver is proven rather than guessed -- a stable class or module
+  constant (`RGSS.mouse_x`, `Bitmap._decoder_ran?`), or `self` of an exact class
+  or of a class or module object's own method (the `Audio._bgm_*` primitives,
+  `Bitmap#_init_size`) -- those entry points are called with no receiver guard
+  and no dispatch fallback, and a constant load that follows a `break` inside a
+  `begin`/`rescue` loop no longer hides its constant from that proof. The audio
+  and tts bindings are split too. See
+  [`docs/adr/0281-bc2cpp-constant-singleton-and-native-exact-direct.md`](docs/adr/0281-bc2cpp-constant-singleton-and-native-exact-direct.md).
   mruby's own Ruby (core mrblib, the core gems' mrblib, mruby-stringio and
   mruby-onig-regexp) is compiled too, by `mruby-core-compiled`: every method that
   neither names the Fiber class, builds a lambda, nor comes from mruby-enumerator is
@@ -1086,6 +1104,11 @@
   `h.select { ... }`, `xs.map { ... }`) tries exact-class Array, Hash and Range arms first and
   calls the compiled body directly at the root context, keeping the ordinary send as its else; see
   [`docs/adr/0270-bc2cpp-block-core-direct-arms.md`](docs/adr/0270-bc2cpp-block-core-direct-arms.md).
+  When the receiver of such an arm (or of a verified core native or RGSS native entry point) is
+  provably exact without a run-time check (a literal, a `*rest` array or a fresh `Klass.new`, in a
+  world where no object can gain a singleton class) the class test goes, and for the
+  frame-independent native arms the dynamic send with it; block arms keep their else for Fibers. See
+  [`docs/adr/0280-bc2cpp-exact-receiver-arms.md`](docs/adr/0280-bc2cpp-exact-receiver-arms.md).
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
@@ -1101,6 +1124,21 @@
   otherwise, so a redirected `$stdout`/`$stderr` or an `IO#puts` override behaves as in the
   interpreter; the reasons the guard cannot be dropped are in
   [`docs/adr/0284-bc2cpp-shared-io-puts.md`](docs/adr/0284-bc2cpp-shared-io-puts.md).
+  In a closed world a whole-program, by-name analysis (`tools/bc2cpp/yield_reach.rb`) proves which
+  blocks, and which core iterator bodies, cannot reach a `Fiber.yield`: such a block carries a flag in
+  its env, the guarded core iterators stay compiled under a Fiber while they run it, and its
+  BLOCK_CORE_DIRECT arms drop the root-context test; the build prints how many methods, blocks and arm sites
+  it proved. Every method a `Fiber.new` body can reach through any call (explicit receivers, other classes,
+  blocks) that may yield beneath it stays interpreted. See
+  [`docs/adr/0283-bc2cpp-yield-free-blocks.md`](docs/adr/0283-bc2cpp-yield-free-blocks.md).
+  A record-like Hash held in an ivar (`Scene::Battle#@ui`: Symbol-literal keys, read and written
+  only as `h[:key]`) gives each key a whole-program class: a key that only ever holds fresh
+  instances of one class makes `@ui[:battle].step_action` an unguarded exact-class call, and a
+  non-nil Array key feeds the inlined Array loops. Any other use of the Hash (passing it on, `merge!`,
+  `dup`, `send`, `Marshal`, a computed key) refuses the ivar. The LCF schema table is available as a
+  read-class oracle (`tools/bc2cpp/lcf_schema_oracle.rb`) but is not wired to any pass, because no
+  receiver is proven to be an LCF row. See
+  [`docs/adr/0285-bc2cpp-record-hash-typing.md`](docs/adr/0285-bc2cpp-record-hash-typing.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
@@ -1144,6 +1182,18 @@
   and inlines `Numeric#positive?`/`#negative?` and `Enumerable#min`/`#max` on
   exact Arrays and numbers, verified against the build's own core sources; see
   [`docs/adr/0261-bc2cpp-join-dominance-core-mixins-typed-reflection.md`](docs/adr/0261-bc2cpp-join-dominance-core-mixins-typed-reflection.md).
+  A class-set dataflow (`tools/bc2cpp/numeric_flow.rb`) then proves operands of
+  `+ - * / < <= > >=` to be Integer and/or Float from ivars, pooled call
+  arguments, return values, constants and captured locals, and those guarded
+  arms call mruby's own overflow-aware numeric helpers instead of a dynamic
+  send (bigints included); see
+  [`docs/adr/0276-bc2cpp-numeric-operand-proof.md`](docs/adr/0276-bc2cpp-numeric-operand-proof.md)
+  and `scripts/bc2cpp_numeric_operand_check.rb`.
+  The Fixnum tier of those arms is overflow-exact (a result past the Fixnum range is a
+  bignum, as in the interpreter, on the 64-bit and the 32-bit `mrb_int` targets), and the
+  call-site proofs refuse method names a computed-name `send` could reach and ivars a
+  foreign write could store a non-typed value into; see
+  [`docs/adr/0279-bc2cpp-overflow-exact-fixnum-tier.md`](docs/adr/0279-bc2cpp-overflow-exact-fixnum-tier.md).
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in

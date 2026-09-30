@@ -122,3 +122,9 @@ later mruby-io definition (core raises NotImplementedError); it is refused.
   output; `scripts/bc2cpp_core_mrblib_check.rb` checks the guard statically (every
   block-touching entry guarded, saved under its own index, never called directly,
   hidden, every `call` dispatch guarded) and runs 5,929 differential cases.
+
+## Update (ADR 0283)
+
+A guarded body whose own calls provably cannot suspend a Fiber checks the run-time block instead of the
+context alone: `(M->c != M->root_c && !bc2cpp_block_yield_free(bc2cpp_entry_block(M)))`. Every other
+guard, an interpreted block and the `each_is_builtin` test are unchanged.

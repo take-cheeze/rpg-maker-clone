@@ -79,7 +79,6 @@ env = {
 }
 env['BC2CPP_PROFILE_TIMINGS'] = '1' if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
 cmd = [RbConfig.ruby, BC2CPP, *srcs].shelljoin
-shipped_stderr = nil
 Dir.mktmpdir do |dir|
   env['OUT_DIR'] = dir
   @stdout, @stderr, status = Open3.capture3(env, cmd)
@@ -107,7 +106,7 @@ end
 # any OUT_DIR files) for a semantic diff of two compiler revisions.
 if (keep = ENV['BC2CPP_COVERAGE_KEEP_DIR'])
   File.write(File.join(keep, 'shipped.cxx'), @shipped_stdout)
-  File.write(File.join(keep, 'shipped.stderr'), shipped_stderr)
+  File.write(File.join(keep, 'shipped.stderr'), @shipped_stderr)
 end
 
 # ---------------------------------------------------------------------------
@@ -257,6 +256,12 @@ report << "magic-comment return annotations (ANNOTATED): #{count(err, 'magic-com
 report << "magic-comment class-argument annotations (CLASS_ANNOTATED): #{count(err, 'magic-comment class annotations (# bc2cpp: (ClassName, ...))', placeholder: '(none found)')}\n"
 report << "magic-comment element annotations (ELEM_ANNOTATED): #{count(err, 'magic-comment element annotations (# bc2cpp: ... -> Array<Klass> / -> Klass)', placeholder: '(none found)')}\n"
 report << "annotation candidates (opaque argument, unresolved): #{count(err, 'annotation candidates (opaque incoming argument, unresolved)', placeholder: '(none)')}\n"
+# RECORD_HASH_PROOF: ivar names that are record-like Hashes, and the sends that now dispatch on a
+# class a record key proves (a direct call instead of a guarded one).
+record_lines = section_lines(err, 'record hash slots (RECORD_HASH_PROOF)')
+report << "record-like Hash slots proven (RECORD_HASH_PROOF): #{record_lines.count { |l| l.start_with?('RECORD_HASH ') }} " \
+          "accepted, #{record_lines.count { |l| l.start_with?('RECORD_HASH_REFUSED') }} refused\n"
+report << "  exact-class direct calls through a record key: #{@shipped_stdout.scan('record key holds only fresh').size}\n"
 # INTEGER_CONSTANT_PROOF: bare constant names every definition in the whole
 # program agrees is an integer literal -- FIXNUM_OPERAND_PROOF's own fifth
 # proof source. Reported here for the same reason every other proven fact
@@ -285,6 +290,21 @@ report << "methods proven Fixnum-returning (FIXNUM_RETURN_PROOF): #{count(err, '
 # RETURN, or a second definition of its bare name anywhere (including in
 # mruby's own mrblib) removes the name and with it every loop it unblocked.
 report << "methods proven Array-returning (ARRAY_RETURN_PROOF): #{count(err, 'methods proven Array-returning (ARRAY_RETURN_PROOF)', placeholder: '(none)')}\n"
+# NUMERIC_OPERAND_PROOF (ADR 0276): whole-program class-set facts, by kind. Like
+# the counts above they move silently with the Ruby sources: one write of a
+# String to an ivar drops the ivar, and every arithmetic site it fed regains its
+# dynamic-send else.
+numeric_lines = section_lines(err, 'numeric operand facts (NUMERIC_OPERAND_PROOF)')
+numeric_kinds = { 'NUMARG' => 'entry arguments', 'NUMIVAR' => 'instance variables',
+                  'NUMRET' => 'method names returning', 'NUMCONST' => 'constants' }
+report << "numeric operand facts (NUMERIC_OPERAND_PROOF): " \
+          "#{numeric_kinds.map { |tag, what| "#{numeric_lines.count { |l| l.start_with?("#{tag} ") }} #{what}" }.join(', ')}\n"
+# ADR 0279: typed (mrb_int, mrb_sym, mrb_bool) ivar slots given back to boxed slots because a writer
+# the compiler cannot type (attr_writer, computed setter, reflection) can reach them.
+boxed_lines = section_lines(err, 'typed slots demoted to boxed slots (foreign writers, ADR 0279)')
+boxed_lines = [] if boxed_lines == ['(none)']
+report << "typed ivar slots boxed for foreign writers (ADR 0279): #{boxed_lines.size}" \
+          "#{boxed_lines.map { |l| l[/\(([^:)]*)/, 1] }.tally.sort.map { |why, n| " #{why} #{n}" }.join(',').then { |t| t.empty? ? '' : " (#{t.strip})" }}\n"
 report << "\n"
 
 report << "-- #error markers by reason (whole program) --\n"
@@ -466,6 +486,24 @@ block_core_arm_sites = @shipped_stdout.scan(/^\s*\/\/ BLOCK_CORE_DIRECT :/).size
 report << "-- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --\n"
 report << "cached bc2cpp_send/mrb_funcall_with_block sites, including guarded fallbacks: #{total_dispatch}\n"
 report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
+# Guarded arithmetic/compare arms: each carries a tag comment, and one that keeps
+# its dynamic-send else has a send in the lines after it (NUMERIC_OPERAND_PROOF,
+# ADR 0276, removes it where both operands are proven Integer/Float).
+guarded_tags = %w[FIXNUM_ARITHMETIC FIXNUM_COMPARE FLOAT_DIV_RECEIVER]
+shipped_lines = @shipped_stdout.lines
+guarded_sites = Hash.new(0)
+guarded_kept = Hash.new(0)
+shipped_lines.each_with_index do |line, i|
+  tag = guarded_tags.find { |t| line.include?("// #{t} ") }
+  next unless tag
+
+  guarded_sites[tag] += 1
+  guarded_kept[tag] += 1 if shipped_lines[(i + 1)..(i + 10)].any? { |l| l.include?('bc2cpp_send(') || l.include?('mrb_funcall') }
+end
+numeric_proven_sites = @shipped_stdout.scan(%r{^\s*// NUMERIC_OPERAND_PROOF :}).size
+report << "  guarded arithmetic/compare arms with a dynamic-send else: #{guarded_kept.values.sum} " \
+          "(" + guarded_tags.map { |t| "#{t} #{guarded_kept[t]}" }.join(', ') + ")\n"
+report << "  arms whose send NUMERIC_OPERAND_PROOF removed (operands proven Integer/Float): #{numeric_proven_sites}\n"
 report << "  direct :new constructor paths emitted (some retain guarded fallback): #{direct_new_sites}\n"
 report << "  literal-block sends: #{block_direct_sites} direct call with the block " \
           "(#{block_core_arm_sites} through exact-class core arms that keep the dynamic send as their else), " \
@@ -519,7 +557,7 @@ end
 
 if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
   report << "\n-- bc2cpp generation phase timings (two complete passes) --\n"
-  [['analysis pass', err], ['shipped pass', shipped_stderr]].each do |label, stderr|
+  [['analysis pass', err], ['shipped pass', @shipped_stderr]].each do |label, stderr|
     report << "  #{label}:\n"
     stderr.each_line.grep(/^BC2CPP_TIME /).each { |line| report << "    #{line.sub(/^BC2CPP_TIME /, '')}" }
     stderr.each_line.grep(/^BC2CPP_DETAIL /).each { |line| report << "    #{line.sub(/^BC2CPP_DETAIL /, 'detail ')}" }

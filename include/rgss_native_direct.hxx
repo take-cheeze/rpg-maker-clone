@@ -6,6 +6,15 @@
 
 namespace rgss {
 
+mrb_value audio_update_direct(mrb_state* M, mrb_value self);
+mrb_value bgm_fade_direct(mrb_state* M, mrb_value self, mrb_int ms);
+mrb_value bgm_pan_direct(mrb_state* M, mrb_value self, mrb_int pan);
+mrb_value bgm_pos_direct(mrb_state* M, mrb_value self);
+mrb_value bgm_stop_direct(mrb_state* M, mrb_value self);
+mrb_value bgm_volume_direct(mrb_state* M, mrb_value self, mrb_int volume);
+mrb_value bgs_fade_direct(mrb_state* M, mrb_value self, mrb_int ms);
+mrb_value bgs_pos_direct(mrb_state* M, mrb_value self);
+mrb_value bgs_stop_direct(mrb_state* M, mrb_value self);
 mrb_value bmp_begin_load_direct(mrb_state* M, mrb_value self);
 mrb_value bmp_blur_direct(mrb_state* M, mrb_value self);
 mrb_value bmp_decoder_ran_direct(mrb_state* M, mrb_value self);
@@ -25,6 +34,7 @@ mrb_value bmp_transition_alpha_direct(mrb_state* M,
                                       mrb_value map_v,
                                       mrb_float prog,
                                       mrb_float vague);
+mrb_value can_play_mem_direct(mrb_state* M, mrb_value self);
 mrb_value color_dump_direct(mrb_state* M, mrb_value self);
 mrb_value color_eq_direct(mrb_state* M, mrb_value self, mrb_value o);
 mrb_value color_load_direct(mrb_state* M,
@@ -38,6 +48,9 @@ mrb_value input_push_direct(mrb_state* M,
                             mrb_value self,
                             mrb_int key,
                             mrb_bool press);
+mrb_value me_fade_direct(mrb_state* M, mrb_value self, mrb_int ms);
+mrb_value me_stop_direct(mrb_state* M, mrb_value self);
+mrb_value midi_available_direct(mrb_state* M, mrb_value self);
 mrb_value mouse_pressed_m_direct(mrb_state* M, mrb_value self);
 mrb_value mouse_x_m_direct(mrb_state* M, mrb_value self);
 mrb_value mouse_y_m_direct(mrb_state* M, mrb_value self);
@@ -55,6 +68,7 @@ mrb_value rect_s_load_direct(mrb_state* M,
                              const char* p,
                              mrb_int len);
 mrb_value rect_to_s_direct(mrb_state* M, mrb_value self);
+mrb_value se_stop_direct(mrb_state* M, mrb_value self);
 mrb_value spr_set_angle_direct(mrb_state* M, mrb_value self, mrb_float deg);
 mrb_value spr_set_blend_type_direct(mrb_state* M, mrb_value self, mrb_int t);
 mrb_value spr_set_bush_depth_direct(mrb_state* M, mrb_value self, mrb_int d);
@@ -95,6 +109,9 @@ mrb_value tone_load_direct(mrb_state* M,
                            const char* p,
                            mrb_int len);
 mrb_value tone_to_s_direct(mrb_state* M, mrb_value self);
+mrb_value tts_available_direct(mrb_state* M, mrb_value self);
+mrb_value tts_speak_direct(mrb_state* M, mrb_value self, const char* text);
+mrb_value tts_stop_direct(mrb_state* M, mrb_value self);
 mrb_value vp_ox_direct(mrb_state* M, mrb_value self);
 mrb_value vp_oy_direct(mrb_state* M, mrb_value self);
 mrb_value vp_set_ox_direct(mrb_state* M, mrb_value self, mrb_int v);

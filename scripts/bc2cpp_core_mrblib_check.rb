@@ -103,7 +103,8 @@ check.call('Array#include? (mruby-rgss) is emitted by mruby-rgss-compiled, not t
            rgss[1].include?('Array_include$3f_impl(mrb_state* M') && !core_keys.include?('Array#include?'))
 
 # A compiled core body that touches a block sits on the C stack while the block runs, so its entry
-# hands the call to the bytecode whenever a Fiber runs (CORE_BLOCK_GUARD, ADR 0269). Nothing that
+# hands the call to the bytecode whenever a Fiber runs (CORE_BLOCK_GUARD, ADR 0269; a body that cannot
+# suspend a Fiber stays compiled while its block is proved yield-free, ADR 0283). Nothing that
 # names the Fiber class, builds a lambda or comes from mruby-enumerator is compiled at all.
 compiled_defs = core_defs(registry, ireps).select { |d| core_keys.include?("#{d.owner}##{d.name}") }
 unsafe = compiled_defs.select do |d|
@@ -115,7 +116,7 @@ check.call("no compiled core method names Fiber, builds a lambda or comes from m
 core_run = runs.find { |name, _, _| name == 'mruby-core-compiled' }
 # A later definition replaces an earlier one (shadowed), so count by name.
 block_defs = compiled_defs.select { |d| CoreDefs.touches_block?(ireps.fetch(d.irep), ireps) }.uniq { |d| "#{d.owner}##{d.name}" }
-guard_entries = core_run[1].scan(/^static mrb_value (\S+)\(mrb_state\* M, mrb_value self\) \{\n  if \(mrb_unlikely\(M->c != M->root_c/).flatten
+guard_entries = core_run[1].scan(/^static mrb_value (\S+)\(mrb_state\* M, mrb_value self\) \{\n  if \(mrb_unlikely\(\(?M->c != M->root_c/).flatten
 check.call("compiled core methods that touch a block (#{block_defs.size}) all have the guard in their entry (#{guard_entries.size})",
            block_defs.size.positive? && block_defs.size == guard_entries.size)
 saved = core_run[1].scan(/if \(bc2cpp_core_save_interpreted\(M, \w+, (?:true|false), "[^"]+", (\d+)\)\)/).flatten

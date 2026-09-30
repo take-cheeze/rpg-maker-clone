@@ -128,7 +128,7 @@ def install_block(source, block)
   range = NBS.block_range(source)
   return NBS.apply_edits(bytes, [NBS::Edit.new(range[0], range[1] + 1, block)]) if range
 
-  anchor = bytes.index(/^extern "C" void mrb_mruby_rgss_gem_init\(/) or abort 'no gem init function to anchor the block'
+  anchor = bytes.index(/^(?:extern "C" )?void (?:mrb_mruby_rgss_gem_init|rgss_\w+_define)\(/) or abort 'no gem init or define function to anchor the block'
   at = NBS.comment_block_start(bytes, anchor)
   NBS.apply_edits(bytes, [NBS::Edit.new(at, at, "#{block}\n")])
 end

@@ -9,6 +9,8 @@
 #   BC2CPP_MRUBY_FULL  the same with lib/libmruby.a and the full-core gems, for
 #                      fixtures that need Enumerable, Integer#positive?, ...
 # Both must be built from the patched 3rd/mruby the tree carries.
+# BC2CPP_CXXFLAGS adds compiler flags, e.g. -DMRB_INT32 for a build whose mrb_int is 32 bits
+# wide (the Emscripten/Wio/PSP width); run with that build's own MRBC.
 # BC2CPP_KEEP_DIR=path keeps the last fixture directory (generated code, binary).
 require 'etc'
 require 'fileutils'
@@ -86,9 +88,17 @@ module Bc2cppFixtureRuntime
   # Runs bc2cpp.rb over `source`. `closed` is the wio closed world with the
   # real core sources (what the model checks need); `only_owners` limits what
   # is compiled. Returns [code, stderr, dir-relative bytecode path].
-  def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil)
-    src = File.join(dir, 'fixture.rb')
+  # `path` places the fixture below `dir`: a path under 3rd/mruby/mrblib/ makes bc2cpp treat
+  # it as mruby's own Ruby (CoreDefs.core_source?), so a check can exercise the core-only proofs.
+  # `extra` is more sources ([path, text] pairs) compiled after the fixture, e.g. engine Ruby
+  # next to a core fixture.
+  def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil, path: 'fixture.rb', extra: [])
+    src = File.join(dir, path)
+    FileUtils.mkdir_p(File.dirname(src))
     File.write(src, source)
+    extra_srcs = extra.map do |extra_path, text|
+      File.join(dir, extra_path).tap { |file| FileUtils.mkdir_p(File.dirname(file)) && File.write(file, text) }
+    end
     env = { 'MRBC' => mrbc, 'SKIP_UNSUPPORTED' => '1', 'OUT_SYMBOL' => 'fixture', 'OUT_DIR' => dir,
             'BC2CPP_SELF_REGISTERING' => '1', 'BC2CPP_HOT_METHODS' => hot_methods }
     env['ONLY_OWNERS'] = only_owners.join(',') if only_owners
@@ -100,7 +110,7 @@ module Bc2cppFixtureRuntime
                  'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).map { |n, d| "#{n}=#{d}" }),
                  NomethodReviewed::ALLOW_ENV => 'allow')
     end
-    code, err, status = Open3.capture3(env, RbConfig.ruby, BC2CPP, src)
+    code, err, status = Open3.capture3(env, RbConfig.ruby, BC2CPP, src, *extra_srcs)
     raise "bc2cpp.rb failed:\n#{(err[-3000..] || err)}" unless status.success?
 
     File.write(File.join(dir, 'fixture_gen.cpp'), code)
@@ -207,6 +217,7 @@ module Bc2cppFixtureRuntime
     binary = File.join(dir, 'fixture')
     flags = %w[-std=c++17 -fexceptions -DMRB_USE_CXX_EXCEPTION -w]
     flags << '-DMRB_NO_GEMS' unless full
+    flags.concat(Shellwords.split(ENV.fetch('BC2CPP_CXXFLAGS', '')))
     built = system('g++', *flags, "-I#{dir}", "-I#{build}/include", "-I#{ROOT}/3rd/mruby/include",
                    "-I#{ROOT}/mruby-rgss/src", File.join(dir, 'main.cpp'), lib, '-lm', '-o', binary)
     return [false, ''] unless built
