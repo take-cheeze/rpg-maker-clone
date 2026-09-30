@@ -1089,6 +1089,13 @@
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
+  `Integer#step`, `#upto` and `#downto` loops over literal or proven-Integer bounds are inlined
+  like `#times`. A method that a `Fiber.new { root; :done }` block calls and that reaches
+  `Fiber.yield` (through `while` loops, those inlined loops and tiny yielding helpers expanded at
+  their call sites) is compiled as a resumable step function over a GC-marked heap frame, driven
+  by a few lines of bytecode so `Fiber.yield` never has a compiled frame beneath it; a root that
+  does not qualify stays interpreted and bc2cpp logs why. See
+  [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
