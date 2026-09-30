@@ -214,6 +214,18 @@ else
   check.call('the body of the iterator is yield-free given a yield-free block', world.body_yield_free?(method_label(world, 'EnFx', 'each')))
   check.call('the method that builds a generator is refused when the generator block is reachable from a Fiber',
              world.fiber_unsafe([method_label(world, 'EnFx', 'gen')]).include?(method_label(world, 'EnFx', 'gen')))
+
+  # Anything that lets a yielder go elsewhere unseals the machinery: `<<` is then any object's.
+  leaky = analyse(<<~RUBY, extra_srcs: core)
+    class Leaky
+      def yielder; Enumerator::Yielder; end
+      def push(a, r); a.each { |x| r << x }; end
+    end
+  RUBY
+  check.call('a reference to Enumerator::Yielder outside mruby-enumerator unseals the model',
+             leaky.stats[:sealed].is_a?(Array) && leaky.stats[:sealed].include?(:yielder_named_outside))
+  check.call('and a block that adds into an Array is then no longer proved yield-free',
+             blocks_in(leaky, method_label(leaky, 'Leaky', 'push')).none? { |b| leaky.yield_free?(b) })
 end
 
 if failures.empty?

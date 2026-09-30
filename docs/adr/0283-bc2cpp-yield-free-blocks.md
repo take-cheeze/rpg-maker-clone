@@ -43,6 +43,10 @@ Seeds (`nb` true): `Fiber.yield` and `Fiber#transfer` (a `yield` on a receiver t
 counts when the Fiber class flows anywhere else than `Fiber.new`/`.yield`/`.current`), an `eval` of a string
 (closed worlds only), and the yielder of an Enumerator driven by `next` (below).
 
+`Fiber#resume` is not a seed: a yield of the fiber it resumes returns to the resumer, whose frames lie below that
+fiber's entry, and the fiber it resumes cannot hold a compiled frame (a method it reaches that may yield is
+refused, below).
+
 Edges: every call by name over all receivers (`super`, `alias`, operators and the implicit calls of bytecode
 ops, `Klass.new { }` to that class's `initialize`), literal blocks and class bodies, and, in a closed world,
 the unknown code of the program:
