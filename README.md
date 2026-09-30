@@ -1064,6 +1064,11 @@
   `Integer#inspect` are called directly behind exact-class guards, each row
   re-audited against the mruby sources on every compile. See
   [`docs/adr/0257-bc2cpp-native-core-direct-arms.md`](docs/adr/0257-bc2cpp-native-core-direct-arms.md).
+  Three more families of sends whose receiver is fixed by construction are replaced
+  outright, again from audited rows: implicit-self `raise` (one or two arguments) and
+  `__id__`, `blk.call(...)` on a compiled core method's own `&blk` (a Proc arm, and a
+  NoMethodError for nil), and `Array` natives such as `__svalue` on a `*rest` parameter. See
+  [`docs/adr/0274-bc2cpp-direct-kernel-and-parameter-natives.md`](docs/adr/0274-bc2cpp-direct-kernel-and-parameter-natives.md).
   Those entry points are no longer written by hand: clang tooling
   (`scripts/native_binding_split.rb report|write|check`) classifies every RGSS
   native binding, splits the frame-independent ones into a body plus an
