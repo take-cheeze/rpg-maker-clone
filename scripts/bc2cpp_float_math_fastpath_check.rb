@@ -54,9 +54,12 @@ Dir.mktmpdir do |dir|
     source_reg = insn.args[/\(R(\d+)\)/, 1]
     code = gen.compile_insn(insn, irep, method, idx)
     arithmetic = operator
-    check.call("#{opcode} retains the existing fixnum pair guard",
+    overflow = { '+' => 'mrb_int_add_overflow', '-' => 'mrb_int_sub_overflow', '*' => 'mrb_int_mul_overflow' }.fetch(operator)
+    check.call("#{opcode} retains the fixnum pair guard, computed overflow-exact (ADR 0279)",
                code.include?("mrb_fixnum_p(r#{dest_reg}) && mrb_fixnum_p(r#{source_reg})") &&
-                 code.include?("mrb_fixnum(r#{dest_reg}) #{arithmetic} mrb_fixnum(r#{source_reg})"))
+                 code.include?("#{overflow}(mrb_fixnum(r#{dest_reg}), mrb_fixnum(r#{source_reg}), &bc2cpp_z)") &&
+                 code.include?('!FIXABLE(bc2cpp_z)') &&
+                 !code.include?("mrb_fixnum_value(mrb_fixnum(r#{dest_reg}) #{arithmetic} mrb_fixnum(r#{source_reg}))"))
     check.call("#{opcode} handles Float/Integer with Float/Integer unboxing",
                code.include?("mrb_float_p(r#{dest_reg}) && mrb_integer_p(r#{source_reg})") &&
                  code.include?("mrb_float(r#{dest_reg}) #{arithmetic} mrb_integer(r#{source_reg})"))

@@ -30,13 +30,13 @@ FIXTURE = <<~'RUBY'
     end
 
     def bump
-      @count = @count + 1
+      @count = 1
     end
 
     # Fiber.new with a block is refused by bc2cpp, so this stays interpreted.
     def spin
       f = Fiber.new do
-        @ticks = @ticks + 1
+        @ticks = 1
         Fiber.yield
       end
       f.resume
@@ -81,7 +81,7 @@ REFLECT_FIXTURE = <<~'RUBY'
     end
 
     def bump
-      @count = @count + 1
+      @count = 1
     end
 
     # Reflection reaches @count through the runtime ivar API, not the payload.
@@ -105,7 +105,7 @@ REFLECT_FIXTURE = <<~'RUBY'
     end
 
     def hit
-      @hits = @hits + 1
+      @hits = 1
     end
   end
 RUBY

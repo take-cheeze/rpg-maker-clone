@@ -127,8 +127,12 @@ one_nil = [insn(0, 'JMPNOT', "R1\t9"), insn(4, 'LOADI_1', "R3\t(1)"), insn(6, 'J
 check.call('a Fixnum arm and a nil arm is Integer-or-nil', type_of.call(one_nil, 4, '3') == IvarLayout::FIXNUM_NIL)
 counter = [insn(0, 'LOADI_0', "R3\t(0)"), insn(2, 'JMPNOT', "R1\t12"), insn(6, 'ADDI', "R3\t1"), insn(9, 'JMP', '2'),
            insn(12, 'SETIV', "@y\tR3")]
-check.call('a loop-carried counter stays Fixnum (the cycle takes the type the other definition gives it)',
-           type_of.call(counter, 4, '3') == :fixnum)
+check.call('a loop-carried counter is not Fixnum: `+= 1` can leave the Fixnum range (ADR 0279)',
+           type_of.call(counter, 4, '3') == IvarLayout::UNKNOWN)
+switch = [insn(0, 'LOADI_0', "R3\t(0)"), insn(2, 'JMPNOT', "R1\t12"), insn(6, 'LOADI_7', "R3\t(7)"), insn(8, 'JMP', '2'),
+          insn(12, 'SETIV', "@y\tR3")]
+check.call('a loop-carried literal keeps the join: the cycle takes the type the other definition gives it',
+           type_of.call(switch, 4, '3') == :fixnum)
 opaque = [insn(0, 'LOADI_0', "R3\t(0)"), insn(2, 'JMPNOT', "R1\t10"), insn(6, 'SEND0', "R3\t:next"), insn(8, 'JMP', '2'),
           insn(10, 'SETIV', "@y\tR3")]
 check.call('a loop that also writes an opaque call result is not Fixnum', type_of.call(opaque, 4, '3') == IvarLayout::UNKNOWN)
@@ -210,21 +214,21 @@ if ENV['MRBC']
     code, = runtime.generate(<<~RUBY, dir)
       class JdHolder
         def initialize(h)
-          @a = 1
-          @b = h[:b] || 0
-          @c = h[:c] ? 1 : nil
+          @jd_a = 1
+          @jd_b = h[:b] || 0
+          @jd_c = h[:c] ? 1 : nil
         end
 
-        def set_late; @late = 5; end
-        def late; @late; end
+        def set_late; @jd_late = 5; end
+        def late; @jd_late; end
       end
     RUBY
     fields = code[/struct JdHolder_ivars \{\n(.*?)\n\};/m, 1].to_s
-    check.call('a straight-line Fixnum ivar stays typed', fields.include?('mrb_int ivar_a;'))
-    check.call('`@b = h[:b] || 0` is not typed (h[:b] may be any class)', fields.include?('mrb_value ivar_b;'))
-    check.call('a Fixnum-or-nil join is the nilable type', fields.include?('Bc2cppFixnumOrNil ivar_c;'))
+    check.call('a straight-line Fixnum ivar stays typed', fields.include?('mrb_int ivar_jd_a;'))
+    check.call('`@jd_b = h[:b] || 0` is not typed (h[:b] may be any class)', fields.include?('mrb_value ivar_jd_b;'))
+    check.call('a Fixnum-or-nil join is the nilable type', fields.include?('Bc2cppFixnumOrNil ivar_jd_c;'))
     check.call('an ivar assigned outside #initialize is not typed (an unset read is nil, not 0)',
-               fields.include?('mrb_value ivar_late;'))
+               fields.include?('mrb_value ivar_jd_late;'))
   end
 
   full = runtime.full

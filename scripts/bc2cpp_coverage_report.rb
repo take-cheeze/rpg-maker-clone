@@ -79,7 +79,6 @@ env = {
 }
 env['BC2CPP_PROFILE_TIMINGS'] = '1' if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
 cmd = [RbConfig.ruby, BC2CPP, *srcs].shelljoin
-shipped_stderr = nil
 Dir.mktmpdir do |dir|
   env['OUT_DIR'] = dir
   @stdout, @stderr, status = Open3.capture3(env, cmd)
@@ -107,7 +106,7 @@ end
 # any OUT_DIR files) for a semantic diff of two compiler revisions.
 if (keep = ENV['BC2CPP_COVERAGE_KEEP_DIR'])
   File.write(File.join(keep, 'shipped.cxx'), @shipped_stdout)
-  File.write(File.join(keep, 'shipped.stderr'), shipped_stderr)
+  File.write(File.join(keep, 'shipped.stderr'), @shipped_stderr)
 end
 
 # ---------------------------------------------------------------------------
@@ -300,6 +299,12 @@ numeric_kinds = { 'NUMARG' => 'entry arguments', 'NUMIVAR' => 'instance variable
                   'NUMRET' => 'method names returning', 'NUMCONST' => 'constants' }
 report << "numeric operand facts (NUMERIC_OPERAND_PROOF): " \
           "#{numeric_kinds.map { |tag, what| "#{numeric_lines.count { |l| l.start_with?("#{tag} ") }} #{what}" }.join(', ')}\n"
+# ADR 0279: typed (mrb_int, mrb_sym, mrb_bool) ivar slots given back to boxed slots because a writer
+# the compiler cannot type (attr_writer, computed setter, reflection) can reach them.
+boxed_lines = section_lines(err, 'typed slots demoted to boxed slots (foreign writers, ADR 0279)')
+boxed_lines = [] if boxed_lines == ['(none)']
+report << "typed ivar slots boxed for foreign writers (ADR 0279): #{boxed_lines.size}" \
+          "#{boxed_lines.map { |l| l[/\(([^:)]*)/, 1] }.tally.sort.map { |why, n| " #{why} #{n}" }.join(',').then { |t| t.empty? ? '' : " (#{t.strip})" }}\n"
 report << "\n"
 
 report << "-- #error markers by reason (whole program) --\n"
@@ -552,7 +557,7 @@ end
 
 if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
   report << "\n-- bc2cpp generation phase timings (two complete passes) --\n"
-  [['analysis pass', err], ['shipped pass', shipped_stderr]].each do |label, stderr|
+  [['analysis pass', err], ['shipped pass', @shipped_stderr]].each do |label, stderr|
     report << "  #{label}:\n"
     stderr.each_line.grep(/^BC2CPP_TIME /).each { |line| report << "    #{line.sub(/^BC2CPP_TIME /, '')}" }
     stderr.each_line.grep(/^BC2CPP_DETAIL /).each { |line| report << "    #{line.sub(/^BC2CPP_DETAIL /, 'detail ')}" }

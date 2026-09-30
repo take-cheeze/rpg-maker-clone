@@ -1184,6 +1184,11 @@
   send (bigints included); see
   [`docs/adr/0276-bc2cpp-numeric-operand-proof.md`](docs/adr/0276-bc2cpp-numeric-operand-proof.md)
   and `scripts/bc2cpp_numeric_operand_check.rb`.
+  The Fixnum tier of those arms is overflow-exact (a result past the Fixnum range is a
+  bignum, as in the interpreter, on the 64-bit and the 32-bit `mrb_int` targets), and the
+  call-site proofs refuse method names a computed-name `send` could reach and ivars a
+  foreign write could store a non-typed value into; see
+  [`docs/adr/0279-bc2cpp-overflow-exact-fixnum-tier.md`](docs/adr/0279-bc2cpp-overflow-exact-fixnum-tier.md).
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in

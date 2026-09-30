@@ -58,7 +58,7 @@ if ENV['MRBC']
         @name = "n"
       end
 
-      def bump; @count = @count + 1; end
+      def bump; @count = 1; end
       def retag; @tag = :b; end
       def toggle; @on = false; end
       def arm; @opt = 5; end
@@ -211,7 +211,7 @@ if ENV['MRBC']
         typed = sections.fetch('compiled', []).select { |l| l.start_with?('typed:') || l.start_with?('boxed:') }
         check.call('a typed slot refuses another class and cannot be removed',
                    typed == ['typed: count = String => raised TypeError', 'typed: opt = String => raised TypeError',
-                             'typed: on = 1 => raised TypeError', 'typed: count unchanged => 41',
+                             'typed: on = 1 => raised TypeError', 'typed: count unchanged => 1',
                              'typed: remove count => raised TypeError', 'boxed: name = Integer => stored'])
         check.call('the compiled code sees the instance_variables the interpreter sees',
                    compiled.include?('instance_variables => @count @name @on @opt @tag '))

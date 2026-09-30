@@ -82,7 +82,11 @@ RUBY
 
 INLINED = %w[step_sum step_value step_neg step_empty step_empty_neg step_one step_noparam step_break step_break_none
              step_next step_param_write step_upvar step_ivar step_nested_block step_nested_step step_big step_return
-             step_raise upto_sum upto_empty upto_value upto_dynamic downto_list downto_empty downto_dynamic].freeze
+             step_raise upto_sum upto_empty upto_value downto_list downto_empty].freeze
+# upto_dynamic / downto_dynamic take a limit computed by arithmetic (`n + 2`). Since ADR 0279 an
+# arithmetic result is no longer a proven Fixnum (it can overflow into a bignum), so the loop keeps
+# its call; the driver above still compares their results with the interpreter.
+KEPT_ARITHMETIC_LIMIT = %w[upto_dynamic downto_dynamic].freeze
 KEPT = %w[float_recv float_limit float_step float_upto unknown_limit unknown_step zero_step no_block range_step].freeze
 
 def body_of(code, fn)
@@ -99,6 +103,9 @@ Dir.mktmpdir do |dir|
   INLINED.each do |fn|
     body = body_of(code, fn)
     check.call("#{fn}: the loop is inlined", body.include?('bc2cpp_step_i_') && !body.include?('#error'))
+  end
+  KEPT_ARITHMETIC_LIMIT.each do |fn|
+    check.call("#{fn}: an arithmetic limit is not a proven Fixnum, so the call is kept", !body_of(code, fn).include?('bc2cpp_step_i_'))
   end
   KEPT.each do |fn|
     check.call("#{fn}: the call is kept", !body_of(code, fn).include?('bc2cpp_step_i_'))

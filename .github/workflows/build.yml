@@ -967,6 +967,8 @@ jobs:
               # Resumable Fiber roots (docs/adr/0273): step functions over a heap frame against the
               # interpreter, with an incremental-GC-stress pass; reuses the build above.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_resumable_check.rb
+              # ADR 0279: the fixnum-overflow boundary matrix against the interpreter, on the full-core build above.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb
               # mruby's own suites (rake test) on a full-core host build, interpreted and with the
               # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
               ruby scripts/bc2cpp_core_mrbtest.rb
@@ -1065,6 +1067,12 @@ jobs:
               # a whole-program numeric proof covers; the runtime section compares against the
               # interpreter, including Integer overflow.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_operand_check.rb
+              # ADR 0279: overflow-exact Fixnum tier (also against a 32-bit mrb_int build when
+              # BC2CPP_MRUBY_FULL32/BC2CPP_MRBC32 name one), proofs that see computed-name sends,
+              # and typed ivar slots only where every writer is typed.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb # generated code only here
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_proof_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_foreign_ivar_write_check.rb
               # `alias new old` poisons old's entry arguments too (a call through new is an unseen site).
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_entry_arg_alias_check.rb
               # Compiled mruby core mrblib (docs/adr/0264): static invariants, then every compiled body
