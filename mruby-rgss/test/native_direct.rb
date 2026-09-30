@@ -103,3 +103,20 @@ assert 'Bitmap#_init_size sets up the same bitmap through the binding and the di
   assert_equal by_binding.width, by_direct.width
   assert_equal by_binding.height, by_direct.height
 end
+
+# ADR 0281: the audio and tts primitives. No backend is installed in the test build, so both
+# paths are the graceful no-op and must still answer alike.
+assert 'Audio primitives without a backend: binding and direct entry point agree' do
+  audio = RGSS::Audio
+  assert_equal audio._bgm_volume(50), probe.call('bgm_volume_direct', audio, 50)
+  assert_equal audio._bgm_pan(-20), probe.call('bgm_pan_direct', audio, -20)
+  assert_equal audio._bgm_fade(100), probe.call('bgm_fade_direct', audio, 100)
+  assert_equal audio._bgs_fade(100), probe.call('bgs_fade_direct', audio, 100)
+  assert_equal audio._me_fade(100), probe.call('me_fade_direct', audio, 100)
+  assert_equal audio._bgm_stop, probe.call('bgm_stop_direct', audio)
+  assert_equal audio._bgm_pos, probe.call('bgm_pos_direct', audio)
+  assert_equal audio._bgs_pos, probe.call('bgs_pos_direct', audio)
+  assert_equal audio._midi_available, probe.call('midi_available_direct', audio)
+  assert_equal audio._can_play_mem?, probe.call('can_play_mem_direct', audio)
+  assert_equal RGSS::Tts.available?, probe.call('tts_available_direct', RGSS::Tts)
+end

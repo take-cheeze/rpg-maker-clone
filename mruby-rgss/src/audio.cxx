@@ -70,20 +70,28 @@ mrb_value bgm_play(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
+mrb_value bgm_volume_native_body(mrb_state* M, mrb_value self, mrb_int volume) {
+  if (g_backend.bgm_volume)
+    g_backend.bgm_volume((int)volume);
+  return mrb_nil_value();
+}
+
 mrb_value bgm_volume(mrb_state* M, mrb_value self) {
   mrb_int volume;
   mrb_get_args(M, "i", &volume);
-  if (g_backend.bgm_volume)
-    g_backend.bgm_volume((int)volume);
+  return bgm_volume_native_body(M, self, volume);
+}
+
+mrb_value bgm_pan_native_body(mrb_state* M, mrb_value self, mrb_int pan) {
+  if (g_backend.bgm_pan)
+    g_backend.bgm_pan((int)pan);
   return mrb_nil_value();
 }
 
 mrb_value bgm_pan(mrb_state* M, mrb_value self) {
   mrb_int pan;
   mrb_get_args(M, "i", &pan);
-  if (g_backend.bgm_pan)
-    g_backend.bgm_pan((int)pan);
-  return mrb_nil_value();
+  return bgm_pan_native_body(M, self, pan);
 }
 
 mrb_value bgm_stop(mrb_state* M, mrb_value self) {
@@ -92,12 +100,16 @@ mrb_value bgm_stop(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
-mrb_value bgm_fade(mrb_state* M, mrb_value self) {
-  mrb_int ms;
-  mrb_get_args(M, "i", &ms);
+mrb_value bgm_fade_native_body(mrb_state* M, mrb_value self, mrb_int ms) {
   if (g_backend.bgm_fade)
     g_backend.bgm_fade((int)ms);
   return mrb_nil_value();
+}
+
+mrb_value bgm_fade(mrb_state* M, mrb_value self) {
+  mrb_int ms;
+  mrb_get_args(M, "i", &ms);
+  return bgm_fade_native_body(M, self, ms);
 }
 
 mrb_value bgm_pos(mrb_state* M, mrb_value self) {
@@ -120,12 +132,16 @@ mrb_value bgs_stop(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
-mrb_value bgs_fade(mrb_state* M, mrb_value self) {
-  mrb_int ms;
-  mrb_get_args(M, "i", &ms);
+mrb_value bgs_fade_native_body(mrb_state* M, mrb_value self, mrb_int ms) {
   if (g_backend.bgs_fade)
     g_backend.bgs_fade((int)ms);
   return mrb_nil_value();
+}
+
+mrb_value bgs_fade(mrb_state* M, mrb_value self) {
+  mrb_int ms;
+  mrb_get_args(M, "i", &ms);
+  return bgs_fade_native_body(M, self, ms);
 }
 
 mrb_value bgs_pos(mrb_state* M, mrb_value self) {
@@ -154,12 +170,16 @@ mrb_value me_stop(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
-mrb_value me_fade(mrb_state* M, mrb_value self) {
-  mrb_int ms;
-  mrb_get_args(M, "i", &ms);
+mrb_value me_fade_native_body(mrb_state* M, mrb_value self, mrb_int ms) {
   if (g_backend.me_fade)
     g_backend.me_fade((int)ms);
   return mrb_nil_value();
+}
+
+mrb_value me_fade(mrb_state* M, mrb_value self) {
+  mrb_int ms;
+  mrb_get_args(M, "i", &ms);
+  return me_fade_native_body(M, self, ms);
 }
 
 mrb_value se_play(mrb_state* M, mrb_value self) {
@@ -275,6 +295,76 @@ extern "C" void rgss_audio_frame(void) {
   if (g_backend.update)
     g_backend.update();
 }
+
+// BEGIN native-binding-split (ADR 0263, generated)
+namespace rgss {
+
+[[maybe_unused]] static mrb_value native_split_compiled_out(mrb_state* M,
+                                                            mrb_value self) {
+  mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(NotImplementedError)),
+             "%C is not compiled into this build (ADR 0263)",
+             mrb_obj_class(M, self));
+  return self;
+}
+
+mrb_value audio_update_direct(mrb_state* M, mrb_value self) {
+  return audio_update(M, self);
+}
+
+mrb_value bgm_fade_direct(mrb_state* M, mrb_value self, mrb_int ms) {
+  return bgm_fade_native_body(M, self, ms);
+}
+
+mrb_value bgm_pan_direct(mrb_state* M, mrb_value self, mrb_int pan) {
+  return bgm_pan_native_body(M, self, pan);
+}
+
+mrb_value bgm_pos_direct(mrb_state* M, mrb_value self) {
+  return bgm_pos(M, self);
+}
+
+mrb_value bgm_stop_direct(mrb_state* M, mrb_value self) {
+  return bgm_stop(M, self);
+}
+
+mrb_value bgm_volume_direct(mrb_state* M, mrb_value self, mrb_int volume) {
+  return bgm_volume_native_body(M, self, volume);
+}
+
+mrb_value bgs_fade_direct(mrb_state* M, mrb_value self, mrb_int ms) {
+  return bgs_fade_native_body(M, self, ms);
+}
+
+mrb_value bgs_pos_direct(mrb_state* M, mrb_value self) {
+  return bgs_pos(M, self);
+}
+
+mrb_value bgs_stop_direct(mrb_state* M, mrb_value self) {
+  return bgs_stop(M, self);
+}
+
+mrb_value can_play_mem_direct(mrb_state* M, mrb_value self) {
+  return can_play_mem(M, self);
+}
+
+mrb_value me_fade_direct(mrb_state* M, mrb_value self, mrb_int ms) {
+  return me_fade_native_body(M, self, ms);
+}
+
+mrb_value me_stop_direct(mrb_state* M, mrb_value self) {
+  return me_stop(M, self);
+}
+
+mrb_value midi_available_direct(mrb_state* M, mrb_value self) {
+  return midi_available(M, self);
+}
+
+mrb_value se_stop_direct(mrb_state* M, mrb_value self) {
+  return se_stop(M, self);
+}
+
+}  // namespace rgss
+// END native-binding-split
 
 // Define the native RGSS::Audio module methods. Called from the gem init in
 // lib.cxx. The public, path-resolving API in lib.rb reopens this module and

@@ -954,6 +954,9 @@ jobs:
               # Literal-block arms into the compiled core (docs/adr/0270): a closed-world fixture compiled
               # with the core, against the interpreter; two more mruby builds.
               MRBC="$mrbc" ruby scripts/bc2cpp_block_core_direct_check.rb
+              # Unguarded exact-receiver proofs for those arms and the native ones (docs/adr/0280): generated
+              # code, then a compiled fixture against the interpreter (Fibers, break/next/return, raise).
+              MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_check.rb
               # Inlined Integer#step/upto/downto loops (docs/adr/0273) against the interpreter; builds
               # a full-core mruby once into BC2CPP_FULL_BUILD_DIR.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
@@ -1041,6 +1044,7 @@ jobs:
               ruby scripts/native_binding_split_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_arg_shapes_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_block_semantics_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_constant_singleton_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_rescue_errinfo_check.rb
               # Proc#call of &blk-captured procs and block_given?/iterator? against the interpreter.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_proc_call_block_given_check.rb
@@ -1053,6 +1057,8 @@ jobs:
               # a whole-program numeric proof covers; the runtime section compares against the
               # interpreter, including Integer overflow.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_operand_check.rb
+              # `alias new old` poisons old's entry arguments too (a call through new is an unseen site).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_entry_arg_alias_check.rb
               # Compiled mruby core mrblib (docs/adr/0264): static invariants, then every compiled body
               # against the interpreter's answer on edge cases.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mrblib_check.rb

@@ -8,7 +8,7 @@
 #     copy) and the generated forwarder block and header;
 #   - the tree itself: what scripts/native_binding_split.rb `write` leaves
 #     behind must still hold -- every entry point the compiler's table names is
-#     declared, defined in lib.cxx and forwards to a function that is a binding
+#     declared, defined in the RGSS sources and forwards to a function that is a binding
 #     or the body of one; no `*_native_body` function reads the caller's frame;
 #     the generated table, header and block agree.
 #
@@ -177,14 +177,19 @@ check.call('two registrations of one name that disagree get no entry', entries.e
 # -- the tree ---------------------------------------------------------------------
 
 puts 'tree'
-lib_path = File.join(root, 'mruby-rgss/src/lib.cxx')
-lib = File.read(lib_path)
+# Every RGSS source with a generated block (lib.cxx, and the audio and tts sources since ADR 0281).
+rgss_sources = Dir[File.join(root, 'mruby-rgss/src/*.cxx')].sort.to_h { |path| [File.basename(path), File.read(path)] }
+lib = rgss_sources.values.join("\n")
 gen_header = File.read(File.join(root, NBS::HEADER_PATH))
 old_header = File.read(File.join(root, 'include/rgss_construct.hxx'))
 check.call('rgss_construct.hxx includes the generated header', old_header.include?('#include "rgss_native_direct.hxx"'))
-check.call('lib.cxx has exactly one generated block',
-           lib.scan(NBS::BLOCK_BEGIN).size == 1 && lib.scan(NBS::BLOCK_END).size == 1 && lib.index(NBS::BLOCK_BEGIN) < lib.index(NBS::BLOCK_END))
-tree_block = lib[/#{Regexp.escape(NBS::BLOCK_BEGIN)}.*#{Regexp.escape(NBS::BLOCK_END)}/m].to_s
+with_block = rgss_sources.select { |_name, text| text.include?(NBS::BLOCK_BEGIN) }
+check.call('lib.cxx and each source that has a generated block have exactly one',
+           with_block.key?('lib.cxx') && with_block.all? do |_name, text|
+             text.scan(NBS::BLOCK_BEGIN).size == 1 && text.scan(NBS::BLOCK_END).size == 1 && text.index(NBS::BLOCK_BEGIN) < text.index(NBS::BLOCK_END)
+           end)
+check.call('the audio and tts bindings have theirs (ADR 0281)', with_block.key?('audio.cxx') && with_block.key?('tts.cxx'))
+tree_block = with_block.values.map { |text| text[/#{Regexp.escape(NBS::BLOCK_BEGIN)}.*#{Regexp.escape(NBS::BLOCK_END)}/m].to_s }.join("\n")
 
 declared = gen_header.scan(/mrb_value\s+(\w+)\(([^)]*)\)\s*;/m).to_h { |fn, params| [fn, params.split(',').map(&:strip)] }
 defined = {}
@@ -223,7 +228,7 @@ end
 
 FRAME = /\bmrb_(?:get_args|get_argc|get_argv|get_arg1|block_given_p|get_mid|yield\w*|proc_cfunc_env_get|call_super|notimplement|argnum_error)\b|->ci\b|->c->/
 callees = real.values.flatten.map { |d| d[:callee] }.uniq
-check.call('every forwarder calls a function lib.cxx defines exactly once',
+check.call('every forwarder calls a function the RGSS sources define exactly once',
            callees.all? { |c| lib.scan(/^(?:static )?mrb_value #{Regexp.escape(c)}\(/).size == 1 })
 bodies = callees.select { |c| c.end_with?('_native_body') }
 check.call('there are split bodies', bodies.size >= 40)
@@ -248,7 +253,7 @@ table.each do |name, owners|
   owners.each do |owner, (function, kinds)|
     arity = 2 + kinds.sum { |k| k == :str ? 2 : 1 }
     check.call("#{owner}##{name}: #{function} is declared with #{arity} parameters", all_declared[function]&.size == arity)
-    check.call("#{owner}##{name}: #{function} is defined in lib.cxx", lib.match?(/^mrb_value #{Regexp.escape(function)}\(mrb_state\* M/))
+    check.call("#{owner}##{name}: #{function} is defined in the RGSS sources", lib.match?(/^mrb_value #{Regexp.escape(function)}\(mrb_state\* M/))
   end
 end
 check.call('the table is sorted by name (as the generator writes it)', table.keys == table.keys.sort)

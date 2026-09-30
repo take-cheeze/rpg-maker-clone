@@ -145,3 +145,11 @@ one, `refresh_slots` resets every slot to its class set joined with the whole-pr
 drops register-to-slot provenance, exactly as the call path does. An op whose operands are
 proven numbers, or an exact Array indexed by an Integer, runs no Ruby and keeps its facts.
 Captured locals are not affected: a block's writes already make the local unknown.
+
+## Addendum: `alias` poisons both names
+
+`entry_arg_call_index` poisoned only the new name of `alias new old`, so a call through `new`
+reached `old`'s body unseen and a parameter could be proven Integer while `new("str")` passes a
+String. The ALIAS instruction now also poisons the old name (`alias_method`, `define_method` and
+`undef_method` take symbol arguments, which already poison every name they mention).
+`scripts/bc2cpp_entry_arg_alias_check.rb` pins the alias, `alias_method` and no-alias control cases.
