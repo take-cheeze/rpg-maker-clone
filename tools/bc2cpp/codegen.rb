@@ -254,6 +254,8 @@ class CodeGen
     # compile probes that ran with weaker facts.
     reset_numeric_flow!
     compute_numeric_facts
+    # ENTRY_ARG_CLASS_POOL reads the class sets above and the final layouts.
+    compute_entry_arg_classes
   end
 
   def const_lookup_helper_used?

@@ -1139,6 +1139,8 @@
   send (bigints included); see
   [`docs/adr/0276-bc2cpp-numeric-operand-proof.md`](docs/adr/0276-bc2cpp-numeric-operand-proof.md)
   and `scripts/bc2cpp_numeric_operand_check.rb`.
+  A method parameter takes the class every call site passes (ADR 0282,
+  `scripts/bc2cpp_arg_class_pool_check.rb`), for receiver dispatch.
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in

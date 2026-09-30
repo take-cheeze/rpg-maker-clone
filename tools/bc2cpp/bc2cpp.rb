@@ -62,6 +62,7 @@ require_relative 'codegen_loop_regions'
 require_relative 'codegen_fixnum_proof'
 require_relative 'codegen_numeric_proof'
 require_relative 'codegen_numeric_args'
+require_relative 'codegen_arg_class_pool'
 require_relative 'codegen_numeric_ivars'
 require_relative 'codegen_numeric_returns'
 require_relative 'codegen_numeric_consts'
@@ -828,6 +829,10 @@ if $PROGRAM_NAME == __FILE__
   # dynamic-send-free arithmetic/compare arms.
   warn '== numeric operand facts (NUMERIC_OPERAND_PROOF) =='
   gen.numeric_facts_report.each { |l| warn l }
+  warn ''
+  # ENTRY_ARG_CLASS_POOL (ADR 0282): the receiver classes pooled over every call site.
+  warn '== entry argument class facts (ENTRY_ARG_CLASS_POOL) =='
+  gen.entry_arg_class_report.each { |l| warn l }
   warn ''
   # ONLY_OWNERS narrows emitted code (e.g. "LCF::File,LCF::Database"), not the
   # registry: srcs must still be the whole program (see compile_all).

@@ -469,12 +469,12 @@ end
 # reaching the read (BytecodeIR.reaching_definitions) and accepted only when
 # each one traces to the same class. Never applied with `dominated:`: RETURN
 # proofs run their own reaching-definition walk (return_value_sources).
-def trace_new_target(irep, idx, reg, *rest, dominated: nil, guarded: false, **opts)
+def trace_new_target(irep, idx, reg, *rest, dominated: nil, guarded: false, entry_classes: nil, **opts)
   return trace_new_target_walk(irep, idx, reg, *rest, dominated: dominated, **opts) if dominated && !dominated.is_a?(JoinDominance)
 
   # A guarded consumer re-checks the class at run time; a join costs it a compare.
   if guarded || JoinDominance.guarded?
-    return JoinDominance.guarded do
+    return JoinDominance.guarded(entry_classes) do
       klass = trace_new_target_walk(irep, idx, reg, *rest, dominated: nil, **opts)
       klass || trace_new_target_reaching(irep, idx, reg, rest, opts)
     end
@@ -491,18 +491,33 @@ end
 # accepts only a unanimous answer over the reaching definitions.
 class JoinDominance
   @guarded_depth = 0
+  @entry_classes = nil
 
   class << self
     # Runs the block for a consumer that guards the fact at run time.
-    def guarded
+    # `entry_classes` ([irep label, argument register] => class, or [class,
+    # nilable]) is CodeGen#compute_entry_arg_classes' pooled hint (ADR 0282); it
+    # is scoped to the block and read only while a guarded consumer is asking.
+    def guarded(entry_classes = nil)
+      previous = @entry_classes
+      @entry_classes = entry_classes if entry_classes
       @guarded_depth += 1
       yield
     ensure
       @guarded_depth -= 1
+      @entry_classes = previous
     end
 
     def guarded?
       @guarded_depth.positive?
+    end
+
+    # The class every call site passes as argument `pos` of the method whose
+    # body is `label`, for a guarded consumer only; nil otherwise.
+    def entry_class(label, pos)
+      return nil unless guarded? && @entry_classes
+
+      Array(@entry_classes[[label, pos]]).first
     end
   end
 
@@ -536,7 +551,8 @@ def trace_new_target_reaching(irep, idx, reg, rest, opts)
       if definition.entry?
         # Register N is argument N for N <= mand; only an annotation names its class.
         pos = definition.reg.to_i
-        (arg_classes[pos - 1] if arg_classes && pos.between?(1, mand.to_i)) || rest_entry_class(irep, pos)
+        (arg_classes[pos - 1] if arg_classes && pos.between?(1, mand.to_i)) || rest_entry_class(irep, pos) ||
+          JoinDominance.entry_class(irep.label, pos)
       else
         trace_new_target_walk(irep, definition.index + 1, definition.reg, *rest, dominated: nil, **opts)
       end
@@ -567,13 +583,15 @@ def trace_new_target_walk(irep, idx, reg, ivar_classes = nil, mand = 0, arg_clas
   # READ_ONLY_OPCODE_SKIP only reads its register.
   skip_ops = ['RESCUE', *(READ_ONLY_OPCODE_SKIP - %w[JMPIF JMPNOT])]
   # Never written: an incoming argument (register N is argument N for N <=
-  # mand). Only a class annotation can name its class; pooling call sites is
-  # unsound for POLY names.
+  # mand). An annotation names its class; so does the pooled call-site class
+  # (ADR 0282), which only a guarded consumer sees (JoinDominance.entry_class)
+  # and which exists only for names every call site of which is visible.
   at_entry = lambda do |entry_reg|
     next nil if dominated && !dominated.call(-1, use, entry_reg)
 
     pos = entry_reg.to_i
-    (arg_classes[pos - 1] if arg_classes && pos.between?(1, mand)) || rest_entry_class(irep, pos)
+    (arg_classes[pos - 1] if arg_classes && pos.between?(1, mand)) || rest_entry_class(irep, pos) ||
+      JoinDominance.entry_class(irep.label, pos)
   end
   irep.walk_writers(idx - 1, reg, skip_ops: skip_ops, barrier: rescue_write, exhausted: at_entry) do |insn, i, cur|
     if dominated && !READ_ONLY_OPCODE_SKIP.include?(insn.op)

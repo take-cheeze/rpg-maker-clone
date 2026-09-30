@@ -1271,6 +1271,7 @@ class CodeGen
     via_element = false
     inherited_typed = false
     exact_class_dispatch = false
+    exact_pooled = false
     typed_guard_class = nil
     ivar_accessor_target = nil
     known_class = nil
@@ -1289,10 +1290,15 @@ class CodeGen
                                       element_annotations: @element_annotations,
                                       known_owners: @known_owners,
                                       capture_hints: @block_hash_capture_hints,
-                                      method_return_class: ->(method_name) { class_return_for_dispatch(method_name) }, guarded: true)
+                                      method_return_class: ->(method_name) { class_return_for_dispatch(method_name) }, guarded: true,
+                                      entry_classes: entry_arg_class_hints)
       exact_class = known_class && exact_new_receiver_class(irep, proof_idx, proof_reg,
                                                             owner: owner_def&.owner,
                                                             expected_class: known_class)
+      # ENTRY_ARG_CLASS_POOL (ADR 0282): a parameter every call site fills with exactly this class.
+      if known_class && exact_class.nil? && (exact_class = exact_pooled_entry_class(irep, proof_idx, proof_reg, owner_def, known_class))
+        exact_pooled = true
+      end
       if exact_class
         exact_target = closed_world_exact_target(name, exact_class)
         if exact_target&.irep && pure_mandatory_or_optional_arity?(@ireps.fetch(exact_target.irep)) &&
@@ -1370,8 +1376,13 @@ class CodeGen
       call_argv, native_note = direct_call_args(target, argv, impl)
       if typed
         if exact_class_dispatch
+          origin = if exact_pooled
+                     "pooled entry argument: every call site passes exactly #{typed_guard_class}"
+                   else
+                     "fresh #{typed_guard_class}.new; stable class constant and standard constructor"
+                   end
           note = "  // CLOSED_WORLD_EXACT_CLASS :#{name} -> #{target.owner}##{target.name} " \
-                 "(fresh #{typed_guard_class}.new; stable class constant and standard constructor), " \
+                 "(#{origin}), " \
                  "closed-world lookup, direct C++ call with no guard or mrb_funcall fallback#{native_note}\n"
           return "#{note}  r#{d} = #{impl}(M, #{([recv] + call_argv).join(', ')});\n"
         end
