@@ -89,7 +89,7 @@ NOT_PER_METHOD = %w[
   @ivar_layout @only_owners @other_owners
   @closed_world @core_program_world
   @constant_object_probe @direct_alloc_used @poly_diagnostic_reason_cache @rescued_exception_message_safe
-  @sanitized @strict_ancestors @subtree_ivar_names
+  @sanitized @strict_ancestors @subtree_ivar_names @rescue_covered_labels
 ].freeze
 # CodeGen is reopened across several tools/bc2cpp files (scripts/bc2cpp_split.rb).
 written = Set.new
