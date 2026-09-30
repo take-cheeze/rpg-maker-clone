@@ -94,6 +94,12 @@ that builds the fiber (`PPU#run`, which stays interpreted because it builds a Pr
 
 - `main_loop`-shaped code runs as native code between yields. The price is that its registers
   and loop counters are memory (a heap array) instead of C++ locals.
+- Optcarrot (`tools/optcarrot_probe/compiled_run.rb`, checksum 59662 on every runtime): 326
+  compiled methods (was 290). 180 frames in the probe's own `-O0`/`MRB_DEBUG` configuration on a
+  lightly loaded machine: interpreter 80.8 s, bc2cpp 93.5 s before, 63.3 s with only the
+  callees compiled, 45.7 s with the resumable `main_loop`. Built with `-O3`, 60 frames:
+  interpreter 15.5 s, bc2cpp 21.7 s, 17.2 s, 15.9 s. `tools/optcarrot_probe/README.md` has the
+  table and the caveats.
 - Each resume costs the fiber switch plus one `Proc#call` into the step function and one
   `Frame#value`; the compiled body between two yields does not depend on the interpreter.
 - The frame is created by the first step and freed by the GC after the last one (the finished
