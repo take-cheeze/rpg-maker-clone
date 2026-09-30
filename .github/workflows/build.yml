@@ -1041,6 +1041,7 @@ jobs:
               ruby scripts/native_binding_split_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_arg_shapes_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_block_semantics_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_constant_singleton_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_rescue_errinfo_check.rb
               # Proc#call of &blk-captured procs and block_given?/iterator? against the interpreter.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_proc_call_block_given_check.rb
