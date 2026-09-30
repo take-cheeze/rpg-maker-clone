@@ -146,3 +146,17 @@ the method stays interpreted.
   - `bc2cpp_frame_serial` and the frame chains are per translation unit and
     ignore Fibers: a compiled frame between a fiber's entry and its yield was
     already unsupported (FIBER_REACHABILITY_UNSAFE_SUPPORT).
+
+## Addendum: `iterator?` and inlined block bodies
+
+`iterator?` is `block_given?`'s alias (one cfunc in `kernel.c`), so it is
+modelled the same way; before, it dispatched from the compiled frame and always
+answered false. `block_given?` inside a block body inlined into its method
+(`n.times { ... block_given? ... }`) emitted the destination register shifted
+twice, an undeclared `r<N>` that failed the C++ build; the instruction is
+already shifted. `scripts/bc2cpp_proc_call_block_given_check.rb` (109
+scenarios: `&blk` procs called as `.call`/`.()`/`[]`/`yield`, `lambda(&blk)`,
+procs kept in ivars, arrays and hashes, escaping procs, break/next/return
+through a called proc, `block_given?`/`iterator?`/`defined?(yield)` at every
+block depth) pins these and the `Proc#call` shapes that PR #1935 listed as
+crashing; none of those crash.
