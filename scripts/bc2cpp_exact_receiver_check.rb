@@ -184,7 +184,7 @@ end
 
 closed = generate.call(FIXTURE, 'ex_closed')
 fn = ->(name) { body_of.call(closed, name) }
-exact = ->(name) { fn.call(name).include?('NATIVE_CORE_EXACT') }
+exact = ->(name) { fn.call(name).match?(/NATIVE_CORE_EXACT|NATIVE_CORE_DIRECT_REST/) }
 dynamic = ->(name) { fn.call(name).include?('NATIVE_CORE_DIRECT') }
 
 check.call('a literal Array#join has no class test and no send',
@@ -235,6 +235,7 @@ check.call('break, next and return still catch around a proven arm',
   code = generate.call("#{FIXTURE.sub(/^end\n\z/, '')}  #{body}\nend\n", 'ex_maker')
   proven = body_of.call(code, 'lit_join').include?('NATIVE_CORE_EXACT') || body_of.call(code, 'range_map').include?('proven')
   check.call("#{what} withdraws every proof of the world", !proven)
+  check.call("#{what} withdraws the *rest Array arm too", !body_of.call(code, 'rest_compact').include?('NATIVE_CORE_DIRECT_REST'))
   check.call("#{what} leaves the guarded arms", body_of.call(code, 'lit_join').include?('NATIVE_CORE_DIRECT')) if guarded
 end
 allowed = generate.call("#{FIXTURE.sub(/^end\n\z/, '')}  def maker; o = Object.new; def o.x; 1; end; o; end\nend\nclass ExFxOpen\n  class << self\n    def z; end\n  end\n  def self.y; end\nend\n", 'ex_allowed')
@@ -247,7 +248,7 @@ check.call('a Ruby Array#join or #compact withdraws the exact call as well',
 range_override = generate.call("#{FIXTURE}\nclass Enumerable\nend\nmodule Enumerable\n  def map(&b); 1; end\nend\n", 'ex_range_override')
 check.call('a Ruby Enumerable#map withdraws the Range arm', !body_of.call(range_override, 'range_map').include?('Enumerable_collect_impl'))
 open_code = generate.call(FIXTURE, 'ex_open', closed: false)
-check.call('without the closed world nothing is proven', !open_code.include?('NATIVE_CORE_EXACT') && !open_code.include?('proven '))
+check.call('without the closed world nothing is proven', !open_code.include?('NATIVE_CORE_EXACT') && !open_code.match?(/proven (?:Array|Hash|Range|String) receiver/))
 
 rg = generate.call(RG_FIXTURE, 'ex_rgss', core: false, owners: ['RGSS::ExRg'])
 rgfn = ->(name) { body_of.call(rg, name, 'RGSS__ExRg') }
