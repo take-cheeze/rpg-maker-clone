@@ -119,3 +119,13 @@ real value for it, unlike the other two.
   interpreted -- correctly, not silently -- until a future round
   specifically extends `recognize_rescue_regions`' own shape check for
   that exact new case, re-verified the same way this one was.
+
+## Addendum: `$!` (RESCUE_ERRINFO)
+
+The glue's EXCEPT stand-in also does what vm.c's `OP_EXCEPT` does to
+`mrb->errinfo`: it publishes the caught exception (`bc2cpp_set_errinfo`), so a
+bare `raise` and `$!` see it. A function with a catch handler owns a
+`Bc2cppErrinfoScope` that clears `$!` when it returns, standing in for cipop
+when a direct `_impl` call pushed no callinfo; an `ensure` guard publishes the
+in-flight exception the same way. `scripts/bc2cpp_rescue_errinfo_check.rb`
+compares 47 scenarios with the interpreter.
