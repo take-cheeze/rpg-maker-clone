@@ -178,6 +178,21 @@ called_slot = [insn(0, 'LOADNIL', "R3\t(nil)"), insn(2, 'SETIV', "@a\tR3"), insn
                insn(10, 'RETURN', 'R4')]
 states = flow.call(called_slot, slot_oracle)
 check.call('a call may store anything the ivar\'s whole-program fact allows', states[4][4] == (NIL_ | INT))
+idx_oracle = StubOracle.new.tap do |o|
+  o.slots = ['a']
+  o.entry_slot = { 'a' => INT }
+  o.fact = { 'a' => NIL_ }
+end
+idx_slot = lambda do |op, operand|
+  [insn(0, 'LOADI_1', "R3\t(1)"), insn(2, 'SETIV', "@a\tR3"), insn(5, 'LOADNIL', "R2\t(nil)"),
+   insn(7, operand ? 'ARRAY' : 'LOADNIL', operand ? "R4\t0" : "R4\t(nil)"), insn(10, 'LOADI_1', "R5\t(1)"),
+   insn(12, op, "R4\t(R5)\t(R5)"), insn(14, 'GETIV', "R6\t@a"), insn(17, 'RETURN', 'R6')]
+end
+states = flow.call(idx_slot.call('SETIDX', false), idx_oracle)
+check.call('SETIDX on a receiver that is not an exact Array may run a user #[]=: the slot is reset to its fact',
+           states[7][6] == (INT | NIL_))
+states = flow.call(idx_slot.call('SETIDX', true), idx_oracle)
+check.call('SETIDX on an exact Array with an Integer index runs no Ruby: the slot keeps its class', states[7][6] == INT)
 
 if ENV['MRBC']
   require_relative 'bc2cpp_fixture_runtime'
@@ -468,6 +483,44 @@ if ENV['MRBC']
       end
     end
 
+    class NqHidden
+      def initialize
+        @nq_h = 1
+      end
+
+      def []=(_i, _v)
+        @nq_h = "s"
+      end
+
+      def to_s
+        @nq_h = "s"
+        "t"
+      end
+
+      def +(_other)
+        @nq_h = "s"
+        self
+      end
+
+      def nq_setidx
+        @nq_h = 1
+        self[0] = 2
+        @nq_h + 1
+      end
+
+      def nq_interp
+        @nq_h = 1
+        @nq_s = "x\#{self}"
+        @nq_h + 1
+      end
+
+      def nq_operator
+        @nq_h = 1
+        self + 1
+        @nq_h + 1
+      end
+    end
+
     class NqDrv
       def nq_go
         b = NqBox.new
@@ -560,6 +613,10 @@ if ENV['MRBC']
   check.call('NEG: an argument one call site passes a String keeps its send', kept.call('NqBox#nq_mixed_arg'))
   check.call('NEG: `o.size + 1` where a Ruby class also defines #size keeps its send',
              kept.call('NqSizeShadow#nq_use'))
+  %w[nq_setidx nq_interp nq_operator].each do |m|
+    check.call("NEG: an ivar slot read after an op that runs unseen Ruby (#{m}) keeps its send",
+               kept.call("NqHidden##{m}"))
+  end
   facts = err.lines.grep(/NUM(ARG|IVAR|RET|CONST) /).join
   check.call('the diagnostic lists the proven ivar classes', facts.include?('NUMIVAR NqBox#@nq_f (FLT)') &&
                                                           facts.include?('NUMIVAR NqBox#@nq_list (ARR)'))
@@ -576,7 +633,7 @@ if ENV['MRBC']
   else
     puts '-- fixture on real mruby, interpreted and compiled'
     Dir.mktmpdir do |dir|
-      owners = %w[NqBox NqWriter NqBase NqSub NqLatePar NqSizeShadow NqDrv NqConfig NqOther]
+      owners = %w[NqBox NqWriter NqBase NqSub NqLatePar NqSizeShadow NqHidden NqDrv NqConfig NqOther]
       _code, err = runtime.generate(fixture, dir, closed: true, only_owners: owners)
       body = <<~CPP
         static mrb_value nq_new(mrb_state* M, const char* klass) {
@@ -662,6 +719,10 @@ if ENV['MRBC']
           call(M, "late parent lp_use", late, "nq_lp_use");
           mrb_value shadow = nq_new(M, "NqSizeShadow");
           call(M, "size shadow", shadow, "nq_use", 1, &shadow);
+          mrb_value hid = nq_new(M, "NqHidden");
+          call(M, "hidden setidx", hid, "nq_setidx");
+          call(M, "hidden interp", hid, "nq_interp");
+          call(M, "hidden operator", hid, "nq_operator");
           mrb_value drv = nq_new(M, "NqDrv");
           call(M, "driver", drv, "nq_go");
           return 0;
