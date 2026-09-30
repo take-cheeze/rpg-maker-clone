@@ -89,11 +89,12 @@ module Bc2cppFixtureRuntime
 
   # Builds and runs a program: `body` is C++ run once per VM (it sees `M`, and
   # `compiled` says whether the compiled methods are registered). The fixture's
-  # bytecode is loaded first. Returns [built, output]. With `envs` (an Array of
+  # bytecode is loaded first. `bigint` compiles with -DMRB_USE_BIGINT, for a `full` library
+  # built with mruby-bigint. Returns [built, output]. With `envs` (an Array of
   # environment Hashes) the binary runs once per entry, each in its own process
   # so one crashing scenario cannot hide the others, and `output` is the Array
   # of their outputs paired with the exit status: [[output, success], ...].
-  def run(dir, err, owners, body, build:, full: false, vms: [false, true], envs: nil)
+  def run(dir, err, owners, body, build:, full: false, vms: [false, true], envs: nil, bigint: false)
     regs = registrations(err, owners).join("\n")
     File.write(File.join(dir, 'main.cpp'), <<~CPP)
       #include <mruby.h>
@@ -167,6 +168,8 @@ module Bc2cppFixtureRuntime
     binary = File.join(dir, 'fixture')
     flags = %w[-std=c++17 -fexceptions -DMRB_USE_CXX_EXCEPTION -w]
     flags << '-DMRB_NO_GEMS' unless full
+    # The generated code must see the bigint-aware macros the library it links was built with.
+    flags << '-DMRB_USE_BIGINT' if bigint
     built = system('g++', *flags, "-I#{dir}", "-I#{build}/include", "-I#{ROOT}/3rd/mruby/include",
                    "-I#{ROOT}/mruby-rgss/src", File.join(dir, 'main.cpp'), lib, '-lm', '-o', binary)
     return [false, ''] unless built

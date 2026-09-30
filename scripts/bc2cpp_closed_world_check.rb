@@ -448,9 +448,12 @@ check.call('a qualified class constant resolves directly through its initializer
              !qualified_construct_call.include?('mrb_funcall(M, r') )
 check.call('Array.new uses guarded direct object construction when Class#new is proven standard',
            qualified_array_construct_call.include?('MONO :new -> Array, generic direct object construction') &&
-             qualified_array_construct_call.include?('mrb_obj_new(M, mrb_class_ptr(r') &&
-             qualified_array_construct_call.include?('mrb_class_ptr(r') &&
-             qualified_array_construct_call.include?('bc2cpp_send(M, r'))
+             qualified_array_construct_call.include?('bc2cpp_send(M, r') &&
+             # A size the range proof knows is a non-negative fixnum is allocated at its final size
+             # instead (INTEGER_RANGE_PROOF, ADR 0286).
+             (qualified_array_construct_call.include?('RANGE_PROOF Array.new') ||
+               (qualified_array_construct_call.include?('mrb_obj_new(M, mrb_class_ptr(r') &&
+                 qualified_array_construct_call.include?('mrb_class_ptr(r'))))
 check.call('Hash.new and Range.new use their stable mruby class pointers',
            qualified_hash_construct_call.include?('MONO :new -> Hash, generic direct object construction') &&
              qualified_hash_construct_call.include?('M->hash_class') &&

@@ -182,6 +182,7 @@ Dir.mktmpdir do |dir|
   lookup_world = Object.new
   lookup_world.define_singleton_method(:inherited_lookup_safe?) { |_name, _owner| true }
   lookup_world.define_singleton_method(:stable_constant_identity?) { |_owner| true }
+  lookup_world.define_singleton_method(:global_refusal) { nil }
   lookup_gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new, nil, nil, nil,
                            included_modules, prepended_modules, unknown_mixins, closed_world: lookup_world)
   included_target = lookup_gen.send(:closed_world_lookup_target, 'foo', 'Included', Set.new)

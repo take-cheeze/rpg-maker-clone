@@ -78,6 +78,8 @@ env = {
   NomethodReviewed::ALLOW_ENV => 'allow',
 }
 env['BC2CPP_PROFILE_TIMINGS'] = '1' if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
+# INTEGER_RANGE_PROOF (ADR 0286): the site-coverage table is printed by the first pass only.
+env['BC2CPP_RANGE_COVERAGE'] = '1'
 cmd = [RbConfig.ruby, BC2CPP, *srcs].shelljoin
 shipped_stderr = nil
 Dir.mktmpdir do |dir|
@@ -99,7 +101,8 @@ end
 # real "what does the shipped build actually contain" run is the only
 # way to get a true whole-program dynamic-dispatch count.
 Dir.mktmpdir do |dir|
-  shipped_env = env.merge('OUT_SYMBOL' => 'coverage_report_shipped', 'SKIP_UNSUPPORTED' => '1', 'OUT_DIR' => dir)
+  shipped_env = env.merge('OUT_SYMBOL' => 'coverage_report_shipped', 'SKIP_UNSUPPORTED' => '1', 'OUT_DIR' => dir,
+                          'BC2CPP_RANGE_COVERAGE' => nil)
   @shipped_stdout, @shipped_stderr, shipped_status = Open3.capture3(shipped_env, cmd)
   raise "bc2cpp.rb (SKIP_UNSUPPORTED=1) failed (exit #{shipped_status.exitstatus}):\n#{@shipped_stderr[-4000..]}" unless shipped_status.success?
 end
@@ -294,6 +297,20 @@ numeric_kinds = { 'NUMARG' => 'entry arguments', 'NUMIVAR' => 'instance variable
                   'NUMRET' => 'method names returning', 'NUMCONST' => 'constants' }
 report << "numeric operand facts (NUMERIC_OPERAND_PROOF): " \
           "#{numeric_kinds.map { |tag, what| "#{numeric_lines.count { |l| l.start_with?("#{tag} ") }} #{what}" }.join(', ')}\n"
+# INTEGER_RANGE_PROOF (ADR 0286): the interval facts on top of them, and the site-coverage
+# table (arithmetic / compare / index sites whose operands the class proof and the range
+# proof both cover).
+range_lines = section_lines(err, 'integer range facts (INTEGER_RANGE_PROOF)')
+range_kinds = { 'RANGEARG' => 'entry arguments', 'RANGEIVAR' => 'instance variables', 'RANGERET' => 'method names returning',
+                'RANGECONST' => 'constants', 'RANGEBLOCK' => 'loop counters and element parameters',
+                'RANGECELL' => 'array cells' }
+report << "integer range facts (INTEGER_RANGE_PROOF): " \
+          "#{range_kinds.map { |tag, what| "#{range_lines.count { |l| l.start_with?("#{tag} ") }} #{what}" }.join(', ')}\n"
+if err.include?('== integer range coverage (INTEGER_RANGE_PROOF) ==')
+  section_lines(err, 'integer range coverage (INTEGER_RANGE_PROOF)').grep(/\ARANGECOV /).each do |line|
+    report << "  #{line.sub('RANGECOV ', 'site coverage: ')}\n"
+  end
+end
 report << "\n"
 
 report << "-- #error markers by reason (whole program) --\n"
@@ -493,6 +510,14 @@ numeric_proven_sites = @shipped_stdout.scan(%r{^\s*// NUMERIC_OPERAND_PROOF :}).
 report << "  guarded arithmetic/compare arms with a dynamic-send else: #{guarded_kept.values.sum} " \
           "(" + guarded_tags.map { |t| "#{t} #{guarded_kept[t]}" }.join(', ') + ")\n"
 report << "  arms whose send NUMERIC_OPERAND_PROOF removed (operands proven Integer/Float): #{numeric_proven_sites}\n"
+# INTEGER_RANGE_PROOF (ADR 0286): arms whose overflow tier or negative-index wrap a range proof removed.
+range_arith = @shipped_stdout.scan(%r{^\s*// RANGE_PROOF [-+*/]:}).size
+range_cmp = @shipped_stdout.scan(%r{^\s*// RANGE_PROOF (?:<=|>=|==|<|>):}).size
+range_index = @shipped_stdout.scan(%r{^\s*// RANGE_PROOF \[\]:}).size
+overflow_calls = @shipped_stdout.scan(/\bmrb_int_(?:add|sub|mul)_overflow\(/).size
+report << "  arms an INTEGER_RANGE_PROOF interval simplified: #{range_arith} arithmetic (no overflow tier), " \
+          "#{range_cmp} compare (native fixnum), #{range_index} array index (no negative wrap); " \
+          "mrb_int_*_overflow calls left: #{overflow_calls}; shipped C++ bytes: #{@shipped_stdout.bytesize}\n"
 report << "  direct :new constructor paths emitted (some retain guarded fallback): #{direct_new_sites}\n"
 report << "  literal-block sends: #{block_direct_sites} direct call with the block " \
           "(#{block_core_arm_sites} through exact-class core arms that keep the dynamic send as their else), " \

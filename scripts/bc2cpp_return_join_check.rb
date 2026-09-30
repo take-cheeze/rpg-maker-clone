@@ -126,8 +126,8 @@ Dir.mktmpdir do |dir|
   nested = registry['nested_block_ary'].first
   nested_irep = ireps.fetch(nested.irep)
   ret_reg = nested_irep.instructions.reverse.find { |insn| insn.op == 'RETURN' }.args[/\AR(\d+)/, 1]
-  check.call('nested_block_ary really collides with a grandchild SETUPVAR register',
-             gen.send(:subtree_upvar_written_regs, nested_irep).include?(ret_reg))
+  check.call("a grandchild SETUPVAR of the child block's register is not counted as a write of this method's",
+             !gen.send(:subtree_upvar_written_regs, nested_irep).include?(ret_reg))
   check.call('a grandchild SETUPVAR of its own block does not block the proof', arrays.include?('nested_block_ary'))
 
   %w[maybe_foo opt_foo arg_then_write either_foo loop_body_foo closure_write_foo grandchild_write_foo

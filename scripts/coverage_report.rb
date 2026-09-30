@@ -89,7 +89,9 @@ CHECKS = [
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp_core_mixins_check.rb] },
   { name: 'bc2cpp-typed-reflection', command: %w[scripts/bc2cpp_typed_reflection_check.rb] },
   # ADR 0276: NumericFlow on hand-built bytecode; the fixture sections skip here.
-  { name: 'bc2cpp-numeric-operand', command: %w[scripts/bc2cpp_numeric_operand_check.rb] }
+  { name: 'bc2cpp-numeric-operand', command: %w[scripts/bc2cpp_numeric_operand_check.rb] },
+  # ADR 0286: IntRange and RangeFlow on hand-built bytecode; the fixture sections skip here.
+  { name: 'bc2cpp-int-range', command: %w[scripts/bc2cpp_int_range_check.rb] }
 ].freeze
 
 # `needs:` predicates. A downloaded RPG2000/2003 game is the only prerequisite

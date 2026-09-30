@@ -70,6 +70,7 @@ class StubOracle
   def ivar_fact_mask(_irep, name) = @fact.fetch(name, NumericFlow::OTHER)
   def send_mask(_irep, _index, insn, _state) = @sends.fetch(insn.sym, NumericFlow::OTHER)
   def pool_mask(_irep, insn) = insn.pool_index.to_i.zero? ? NumericFlow::FLT : NumericFlow::INT
+  def element_mask(_irep, _index, _insn, _state) = NumericFlow::OTHER
   def op_native?(_sym) = @native
   def nil_raises?(_sym) = @nil_raises
 end
@@ -504,7 +505,8 @@ if ENV['MRBC']
   proven = lambda do |method|
     chunk = with_blocks.call(code, method)
     !chunk.empty? && !chunk.match?(retained_tag) &&
-      (chunk.include?('NUMERIC_OPERAND_PROOF') || chunk.include?('operands proven Fixnum'))
+      (chunk.include?('NUMERIC_OPERAND_PROOF') || chunk.include?('operands proven Fixnum') ||
+        chunk.include?('RANGE_PROOF')) # the interval proof (ADR 0286) supersedes the class note
   end
   kept = lambda do |method|
     chunk = with_blocks.call(code, method)

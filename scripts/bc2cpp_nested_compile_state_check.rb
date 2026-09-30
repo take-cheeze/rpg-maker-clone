@@ -93,6 +93,11 @@ NOT_PER_METHOD = %w[
   @numeric_const_groups @numeric_dynamic_names @numeric_family_find @numeric_irep_owner @numeric_irep_slots
   @numeric_ivar_disabled @numeric_ivar_groups @numeric_nil_raises @numeric_op_native @numeric_oracle
   @numeric_return @numeric_return_send_ireps @numeric_states @numeric_wild_families @numeric_writes
+  @cell_array_const @cell_array_new_safe @cell_array_safe @cell_captured @cell_const_disabled
+  @cell_discarded_names @cell_initialize_discarded @cell_ivar_disabled
+  @cell_ivar_reader_names @cells @env @numeric_block_failed @numeric_block_params @numeric_block_sites
+  @numeric_break_free @numeric_core_method_safe @range_arg @range_block @range_bumps @range_const @range_core_safe
+  @range_ivar @range_oracle @range_proof_ready @range_return @range_states @range_writes @st @where
 ].freeze
 # CodeGen is reopened across several tools/bc2cpp files (scripts/bc2cpp_split.rb).
 written = Set.new
