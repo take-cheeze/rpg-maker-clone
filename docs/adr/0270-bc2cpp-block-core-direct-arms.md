@@ -71,13 +71,25 @@ send subclasses and receivers with a singleton class to the dynamic else.
 `Integer#times` and the other loops of ADR 0147-0156 are already inlined and do not reach the
 arms.
 
+**Where the arms are emitted.** Also in the compiled core bodies themselves (80 of the sites):
+`compile_method` hides `@closed_world` from a core body's static-binding proofs, but the
+outside-definer and installer facts are about the whole program, so it keeps the world in
+`@core_program_world` for `block_core_world`. The block-taking core methods with an optional
+argument or block (`find`, `sum`, `any?`, `all?`) count as modelled shapes
+(`optional_block_callee?`), and a block nested in a block keeps its owning definition
+(`emit_block_fallback_glue(..., owner_def:)`) so its sends see the same facts.
+
+**Rest parameters are Arrays.** `dispatch_targets.rb#rest_entry_class` types the register that
+holds a method's `*rest` at entry as `Array`; `xs.each { }` on it is the inlined loop of ADR
+0147 or a direct call, not an arm.
+
 ## Consequences
 
-- Wio closed-world report at this commit: of 453 literal-block sends, 259 are direct calls with
-  the block (the 30 of ADR 0265 and 229 new through arms), 194 dynamic only (was 423). The arms are `each` 112, `each_with_index` 38, `map` 34, `select` 13,
+- Wio closed-world report at this commit: of 448 literal-block sends, 376 are direct calls with
+  the block (30 of ADR 0265 and 346 through arms), 72 dynamic only (was 423). The arms are `each` 112, `each_with_index` 38, `map` 34, `select` 13,
   `reject` 6, `each_index` 5, `sort_by` 4, `each_with_object` 4, `downto`/`times` 5, and a few more.
 - The arm sites keep their POLY marker (the dynamic else is real), so the report's POLY counts
-  grow by 229 although fewer calls dispatch: those sites were not in the diagnostics before. The
+  grow by 346 although fewer calls dispatch: those sites were not in the diagnostics before. The
   report now prints the literal-block split next to them.
 - What an arm saves: name lookup, the `mrb_funcall_with_block` frame, the entry wrapper's
   `mrb_get_args`, and the guard's cost is one comparison. Measured alone it is not visible in a
