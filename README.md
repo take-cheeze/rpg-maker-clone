@@ -1139,6 +1139,19 @@
   send (bigints included); see
   [`docs/adr/0276-bc2cpp-numeric-operand-proof.md`](docs/adr/0276-bc2cpp-numeric-operand-proof.md)
   and `scripts/bc2cpp_numeric_operand_check.rb`.
+  An interval dataflow on top of it (`tools/bc2cpp/int_range.rb`, `range_flow.rb`)
+  proves the Integer range of operands from literals, masks (`x & 0xff`), `%`,
+  shifts, guarded loop counters (`times`, `upto`, `step`, `each_index`, `(a..b).each`,
+  `while i < n`) and the elements of Arrays whose every writer is visible (literal
+  tables, ivar Arrays, `Array.new`, `push`/`<<`/`[]=`, `dup`, `map`), with escape
+  rules for anything handed to unknown code (native mutators, `send`, `Marshal`,
+  subclasses, captured locals, `attr_reader`s). `+ - *` and comparisons whose
+  operands and result fit lose the overflow tier and the Float and bigint arms
+  (unconditionally when they fit the 31-bit fixnum range every target shares,
+  behind a `MRB_FIXNUM_MIN/MAX` check otherwise), and `a[i]` with a proven
+  non-negative `i` skips the negative-index wrap; see
+  [`docs/adr/0286-bc2cpp-integer-range-proof.md`](docs/adr/0286-bc2cpp-integer-range-proof.md)
+  and `scripts/bc2cpp_int_range_check.rb`.
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
