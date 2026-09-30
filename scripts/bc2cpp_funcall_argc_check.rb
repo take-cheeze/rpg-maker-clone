@@ -50,9 +50,9 @@ Dir.mktmpdir do |dir|
 
   wide = code.call('wide')
   counts = wide.scan(/mrb_funcall(?:_id)?\(M, \w+, (?:"[^"]*"|bc2cpp_sym\(M, \d+\)), (\d+)/).flatten.map(&:to_i)
-  check.call('the 20-element splat compiles to a real call at all', wide.include?('mrb_funcall'))
+  check.call('the 20-element splat compiles to a real call at all', wide.include?('mrb_funcall') || wide.include?('bc2cpp_funcall_argv'))
   check.call('no variadic mrb_funcall/mrb_funcall_id carries more than 16 arguments', counts.all? { |n| n <= 16 })
-  check.call('the wide call goes through mrb_funcall_argv with all 20', wide.match?(/mrb_funcall_argv\(M, \w+, [^;]*, 20, /))
+  check.call('the wide call goes through mrb_funcall_argv with all 20', wide.match?(/(?:mrb|bc2cpp)_funcall_argv\(M, \w+, [^;]*, 20, /))
 
   narrow = code.call('narrow')
   check.call('a narrow splat keeps the plain variadic mrb_funcall', narrow.match?(/mrb_funcall\(M, \w+, "new", 2, /))

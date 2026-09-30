@@ -2235,7 +2235,8 @@ module Game
       it = @db[:item][item_id]
       return false unless it && it[:type] == ITEM_WEAPON
       LCF.field?(it, :two_handed) ? ((it[:two_handed] || 0) != 0) : false
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] two-handed lookup for item #{item_id} failed, treating it as one-handed: #{e.class}: #{e.message}"
       false
     end
 
@@ -4933,7 +4934,8 @@ module Game
     def equip_by_class?
       rpg2003? && LCF.field?(@db, :system) && LCF.field?(@db[:system], :equipment_setting) &&
         @db[:system][:equipment_setting] == 1
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] equipment setting unreadable, equipping by actor: #{e.class}: #{e.message}"
       false
     end
 
@@ -6860,7 +6862,8 @@ module Game
                              x.parameter_c == y.parameter_c
       end
       true
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] move route comparison failed, treating the routes as different: #{e.class}: #{e.message}"
       false
     end
 
@@ -9407,7 +9410,8 @@ module Game
     def self.row(id, table)
       return nil if id.nil? || id <= 0 || table.nil?
       table[id]
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] database row #{id.inspect} unreadable, treating it as absent: #{e.class}: #{e.message}"
       nil
     end
 

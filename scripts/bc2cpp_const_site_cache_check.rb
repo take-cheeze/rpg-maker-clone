@@ -113,7 +113,7 @@ Dir.mktmpdir do |dir|
       #define mrb_intern_lit(M, s) mrb_intern_cstr(M, s)
       static RClass* mrb_exc_get_id(mrb_state*, mrb_sym) { return nullptr; }
       static void mrb_raise(mrb_state*, RClass*, const char*) {}
-      static mrb_value mrb_funcall_argv(mrb_state*, mrb_value r, mrb_sym, mrb_int, const mrb_value*) { return r; }
+      static mrb_value bc2cpp_funcall_argv(mrb_state*, mrb_value r, mrb_sym, mrb_int, const mrb_value*) { return r; }
       static mrb_value mrb_const_get(mrb_state*, mrb_value, mrb_sym s) {
         ++lookups;
         if (missing) throw 1;

@@ -413,6 +413,19 @@
             '';
           });
 
+          # libclang and its Python bindings, for scripts/native_binding_facts.py
+          # (ADR 0263): `nix develop .#clang -c ruby scripts/native_binding_split.rb check`.
+          # Kept out of the default shell so nothing else pays for the LLVM
+          # closure. The script also needs 3rd/ and a built mruby include
+          # directory (RGSS_MRUBY_BUILD_DIR, default build/mruby/host).
+          clang = pkgs.mkShell {
+            packages = [
+              pkgs.ruby
+              (pkgs.python3.withPackages (ps: [ ps.libclang ]))
+            ];
+            LIBCLANG_FILE = "${pkgs.llvmPackages.libclang.lib}/lib/libclang.so";
+          };
+
           # PSP development: everything `psp-cmake`/`cmake --build` needs to
           # configure and build app/psp's EBOOT, plus this flake's patched
           # PPSSPP headless build for running it (the same binary CI's

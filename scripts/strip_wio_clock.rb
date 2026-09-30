@@ -32,7 +32,9 @@ module WioClock
        '"#{GAME_DIR}/bugreport_frame#{"%08d" % Graphics.frame_count}.md"']
     ],
     'mrblib/game/lsd_io.rb' => [
-      ["      Time.now.to_i / 86400.0 + OLE_EPOCH_OFFSET\n    rescue StandardError\n      NO_CLOCK_TIMESTAMP\n",
+      ["      Time.now.to_i / 86400.0 + OLE_EPOCH_OFFSET\n    rescue StandardError => e\n" \
+       "      $stderr.puts \"[RPG2k] no usable clock (\#{e.class}: \#{e.message}), stamping the save 2000-01-01\"\n" \
+       "      NO_CLOCK_TIMESTAMP\n",
        "      NO_CLOCK_TIMESTAMP\n"]
     ]
   }.freeze

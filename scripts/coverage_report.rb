@@ -73,10 +73,21 @@ CHECKS = [
   { name: 'nano7-map-export',   command: %w[scripts/export_nano7_map_check.rb],
     needs: :rpg2k_game },
   { name: 'error-report',       command: %w[scripts/error_report_check.rb] },
+  { name: 'impossible-as-error', command: %w[scripts/impossible_as_error_check.rb] },
+  # bc2cpp's hand-built-irep half only (no mrbc under the reporter): it reaches
+  # no mrblib line, listed so the CHECKS list keeps mirroring `ruby-checks`.
+  { name: 'bc2cpp-fallback-bodies', command: %w[scripts/bc2cpp_fallback_bodies_check.rb] },
+  # No CRuby-side lines of mrblib, but every scripts/*_check.rb rides here.
+  { name: 'native-binding-split', command: %w[scripts/native_binding_split_check.rb] },
   # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under CRuby
   # through the RGSS compatibility layer (scripts/rgss_cruby_compat.rb), so the
   # RGSS mrblib lines its 87 assertions reach count here instead of reading 0%.
-  { name: 'rgss-cruby-test',    command: %w[scripts/rgss_cruby_test_check.rb] }
+  { name: 'rgss-cruby-test',    command: %w[scripts/rgss_cruby_test_check.rb] },
+  # The host-only sections of the bc2cpp soundness checks (ADR 0261); the fixture
+  # sections need mrbc and skip here.
+  { name: 'bc2cpp-join-dominance', command: %w[scripts/bc2cpp_join_dominance_check.rb] },
+  { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp_core_mixins_check.rb] },
+  { name: 'bc2cpp-typed-reflection', command: %w[scripts/bc2cpp_typed_reflection_check.rb] }
 ].freeze
 
 # `needs:` predicates. A downloaded RPG2000/2003 game is the only prerequisite

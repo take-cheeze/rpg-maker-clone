@@ -619,7 +619,8 @@ class RPG2k
         return nil unless pages
         page = pages[page_index]
         page && page[:event_commands]
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Call Event: map event #{id} page #{page_index} unreadable: #{e.class}: #{e.message}"
         nil
       end
     end

@@ -949,6 +949,9 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
           - shard: core-mrbtest
             checks: |
+              # Literal-block arms into the compiled core (docs/adr/0270): a closed-world fixture compiled
+              # with the core, against the interpreter; two more mruby builds.
+              MRBC="$mrbc" ruby scripts/bc2cpp_block_core_direct_check.rb
               # mruby's own suites (rake test) on a full-core host build, interpreted and with the
               # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
               ruby scripts/bc2cpp_core_mrbtest.rb
@@ -958,6 +961,9 @@ jobs:
               # under GC pressure; catches a misplaced patch hunk as well as a
               # raw typed field reaching the descriptor consumers.
               MRBC="$mrbc" ruby scripts/bc2cpp_rdata_slot_native_check.rb
+              # The same descriptor through the C ivar API: typed slots are
+              # visible to reflection, dup and Marshal, and refuse another class.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_typed_reflection_check.rb
           - shard: optcarrot-benchmark
             checks: |
               MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
@@ -997,6 +1003,7 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_poly_table_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_integer_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_const_lookup_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_impossible_as_error_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_poly_accessor_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_owner_class_cache_check.rb
               ruby scripts/bc2cpp_mrbgem_deps_check.rb
@@ -1012,10 +1019,22 @@ jobs:
               ruby scripts/bc2cpp_bytecode_ir_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_bytecode_ir_dataflow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_rescue_shadow_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_fallback_bodies_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_operand_schema_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_binary_loader_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_closed_world_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_direct_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_receiver_typing_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_native_core_direct_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_singleton_arity_check.rb
+              ruby scripts/native_binding_split_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_arg_shapes_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_block_semantics_check.rb
+              # ADR 0261: join dominance for the backward walks, core mixins and the
+              # core methods they let bc2cpp inline. Their runtime sections need a
+              # full-core libmruby (BC2CPP_MRUBY_FULL) and skip without one.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_join_dominance_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mixins_check.rb
               # Compiled mruby core mrblib (docs/adr/0264): static invariants, then every compiled body
               # against the interpreter's answer on edge cases.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mrblib_check.rb
@@ -1170,6 +1189,12 @@ jobs:
               ruby scripts/rpg2k_closed_world_lint_check.rb
               ruby scripts/rpg2k_closed_world_lint.rb
 
+          # ADR 0262: a should-not-happen path raises or reports instead of
+          # falling back silently (bc2cpp source readers, constant-proof
+          # invariants, every broad mrblib rescue).
+          - name: Impossible-as-error check
+            run: ruby scripts/impossible_as_error_check.rb
+
           # The wio-only mrblib rewrites only run in a wio build, which CI
           # doesn't do; a source edit must not silently break them.
           - name: wio strip scripts still apply
@@ -1286,6 +1311,12 @@ jobs:
           - name: mruby patch context check
             run: ruby scripts/mruby_patch_context_check.rb
 
+          # The hand-built-irep half of the bc2cpp fallback-bodies check (JMPUW
+          # in rescue/ensure regions, bigint pool entries, ...). The compiled
+          # half needs a host mrbc and runs in the `bc2cpp-checks` fast shard.
+          - name: bc2cpp fallback bodies check (unit half)
+            run: ruby scripts/bc2cpp_fallback_bodies_check.rb
+
           # Unit check for the Wio bc2cpp flash-overflow report's map/ld parsing
           # (scripts/wio_overflow_report.rb, ADR 0152) against a hand-built map
           # with known numbers -- the real `wio-bc2cpp` job exercises it too,
@@ -1296,6 +1327,15 @@ jobs:
 
           - name: wio dropped-gems check
             run: ruby scripts/wio_dropped_gems_check.rb
+
+          # The host-only sections (hand-built bytecode, a synthetic core tree,
+          # the patch text); the fixture sections need mrbc and the patched
+          # mruby, so they run in the `bc2cpp-checks` job (ADR 0261).
+          - name: bc2cpp join dominance, core mixins and typed reflection checks
+            run: |
+              ruby scripts/bc2cpp_join_dominance_check.rb
+              ruby scripts/bc2cpp_core_mixins_check.rb
+              ruby scripts/bc2cpp_typed_reflection_check.rb
 
           - name: RPG2k game-logic checks
             run: |

@@ -1059,6 +1059,16 @@
   closed world those arms let the chain's by-name fallback become a proven
   NoMethodError. See
   [`docs/adr/0253-bc2cpp-native-direct-entry-points.md`](docs/adr/0253-bc2cpp-native-direct-entry-points.md).
+  mruby's own natives get the same treatment where the body needs no caller
+  frame: `Array#join`/`#shift`/`#compact`/`#index`, `String#bytes` and
+  `Integer#inspect` are called directly behind exact-class guards, each row
+  re-audited against the mruby sources on every compile. See
+  [`docs/adr/0257-bc2cpp-native-core-direct-arms.md`](docs/adr/0257-bc2cpp-native-core-direct-arms.md).
+  Those entry points are no longer written by hand: clang tooling
+  (`scripts/native_binding_split.rb report|write|check`) classifies every RGSS
+  native binding, splits the frame-independent ones into a body plus an
+  `mrb_get_args` wrapper, and generates the compiler's table; see
+  [`docs/adr/0263-native-binding-split-tooling.md`](docs/adr/0263-native-binding-split-tooling.md).
   mruby's own Ruby (core mrblib, the core gems' mrblib, mruby-stringio and
   mruby-onig-regexp) is compiled too, by `mruby-core-compiled`: every method that
   neither names the Fiber class, builds a lambda, nor comes from mruby-enumerator is
@@ -1072,6 +1082,13 @@
   [`docs/adr/0264-bc2cpp-compiled-core-mrblib.md`](docs/adr/0264-bc2cpp-compiled-core-mrblib.md)
   and
   [`docs/adr/0269-bc2cpp-core-block-methods-fiber-guard.md`](docs/adr/0269-bc2cpp-core-block-methods-fiber-guard.md).
+  A literal-block send from compiled engine code to one of them (`list.each { ... }`,
+  `h.select { ... }`, `xs.map { ... }`) tries exact-class Array, Hash and Range arms first and
+  calls the compiled body directly at the root context, keeping the ordinary send as its else; see
+  [`docs/adr/0270-bc2cpp-block-core-direct-arms.md`](docs/adr/0270-bc2cpp-block-core-direct-arms.md).
+  A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
+  call it without pushing a VM frame; see
+  [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
@@ -1107,6 +1124,14 @@
   on RData-backed classes use GC-traced `mrb_value` slots, while dynamic names
   retain the normal ivar table; see
   [`docs/adr/0232-bc2cpp-rdata-instance-variable-slots.md`](docs/adr/0232-bc2cpp-rdata-instance-variable-slots.md).
+  Typed slots (Integer, Symbol, boolean, Integer-or-nil) are listed in the same
+  descriptor with a kind, so `instance_variable_get/set`, `inspect`, `Marshal`
+  and `dup` see them, and a backward register walk only feeds an unguarded
+  optimization when the write it finds dominates the read (a join such as
+  `x = h[k] || []` no longer counts). bc2cpp also knows `include Enumerable`
+  and inlines `Numeric#positive?`/`#negative?` and `Enumerable#min`/`#max` on
+  exact Arrays and numbers, verified against the build's own core sources; see
+  [`docs/adr/0261-bc2cpp-join-dominance-core-mixins-typed-reflection.md`](docs/adr/0261-bc2cpp-join-dominance-core-mixins-typed-reflection.md).
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in

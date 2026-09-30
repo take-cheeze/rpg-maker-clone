@@ -3835,7 +3835,8 @@ module Game
     def do_store_terrain_id(cmd)
       x, y = query_position(cmd)
       variables[cmd.param(3)] = @map_info ? (@map_info.terrain_id(x, y) || 0) : 0
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] Store Terrain ID failed, storing 0: #{e.class}: #{e.message}"
       variables[cmd.param(3)] = 0
     end
 
@@ -3844,7 +3845,8 @@ module Game
     def do_store_event_id(cmd)
       x, y = query_position(cmd)
       variables[cmd.param(3)] = @map_info ? (@map_info.event_id_at(x, y) || 0) : 0
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] Store Event ID failed, storing 0: #{e.class}: #{e.message}"
       variables[cmd.param(3)] = 0
     end
 

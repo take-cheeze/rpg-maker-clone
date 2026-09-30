@@ -262,13 +262,13 @@ class RPG2k
 
       def new_game_flag?
         RPG2K_NEW_GAME
-      rescue StandardError
+      rescue NameError
         false
       end
 
       def auto_continue?
         RPG2K_CONTINUE
-      rescue StandardError
+      rescue NameError
         false
       end
 
@@ -279,7 +279,7 @@ class RPG2k
       # raising.
       def preview_map_id
         parent.preview_map_id
-      rescue StandardError
+      rescue NameError
         nil
       end
 
@@ -289,7 +289,7 @@ class RPG2k
       # #preview_map_id just above.
       def battle_troop
         parent.headless_battle_troop
-      rescue StandardError
+      rescue NameError
         nil
       end
 
@@ -299,19 +299,19 @@ class RPG2k
       # same way as #preview_map_id/#battle_troop just above.
       def map_editor_flag?
         parent.map_editor?
-      rescue StandardError
+      rescue NameError
         false
       end
 
       def chipset_editor_flag?
         parent.chipset_editor?
-      rescue StandardError
+      rescue NameError
         false
       end
 
       def preview_animation_id
         parent.preview_animation_id
-      rescue StandardError
+      rescue NameError
         nil
       end
 
@@ -321,7 +321,7 @@ class RPG2k
       # title_selector) answers false rather than raising.
       def hide_title?
         parent.hide_title?
-      rescue StandardError
+      rescue NameError
         false
       end
 
@@ -331,7 +331,7 @@ class RPG2k
       # title_selector) answers false rather than raising.
       def continue_available?
         parent.any_save_exists?
-      rescue StandardError
+      rescue NameError
         false
       end
 

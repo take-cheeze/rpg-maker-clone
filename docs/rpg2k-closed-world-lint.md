@@ -50,3 +50,12 @@ The bc2cpp closed-world dispatch analysis also recognizes calls to
 generated operation follows mruby's `exc_to_s` message/default-string behavior;
 it declines the shortcut when a Ruby instance override or runtime definition can
 replace `message`.
+
+## Rescues in the compiled Ruby (ADR 0262)
+
+`scripts/impossible_as_error_check.rb` (CI `ruby-checks`) requires every broad
+`rescue` (`StandardError`, `Exception` or bare) in those gems to report to
+`$stderr` or `RGSS.warn_once`, and rejects `rescue` modifiers. Catch the
+narrowest class instead where one expresses the recovery (`NameError` for a
+launcher constant a host harness never defines). bc2cpp does not compile a
+`rescue` naming several classes, so use one class per clause.

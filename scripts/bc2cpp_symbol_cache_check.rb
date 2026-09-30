@@ -72,7 +72,7 @@ if system('g++', '--version', out: File::NULL, err: File::NULL)
       static mrb_sym sent_sym = 0;
       static mrb_int sent_argc = -1;
       static long sent_sum = 0;
-      static mrb_value mrb_funcall_argv(mrb_state*, mrb_value recv, mrb_sym mid, mrb_int argc, const mrb_value* argv) {
+      static mrb_value bc2cpp_funcall_argv(mrb_state*, mrb_value recv, mrb_sym mid, mrb_int argc, const mrb_value* argv) {
         sent_sym = mid; sent_argc = argc; sent_sum = recv.v;
         for (mrb_int k = 0; k < argc; k++) sent_sum += argv[k].v;
         return mrb_value{ 7 };
@@ -108,7 +108,7 @@ if system('g++', '--version', out: File::NULL, err: File::NULL)
       check.call('a name is interned once per VM however often it is read', r[0] && r[1] && r[4])
       check.call('a second VM re-interns and never sees the first VM\'s ids', r[2])
       check.call('bc2cpp_reset_symbol_cache forces a fresh intern', r[3])
-      check.call('bc2cpp_send forwards receiver, cached symbol and every argument to mrb_funcall_argv', r[5])
+      check.call('bc2cpp_send forwards receiver, cached symbol and every argument to bc2cpp_funcall_argv', r[5])
       check.call('bc2cpp_send raises past 16 arguments, like mrb_funcall_id', r[6])
     end
   end

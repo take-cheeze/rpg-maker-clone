@@ -449,7 +449,7 @@ class RPG2k
         scaled = base * fps / 60
         floor = base / CONSTRAINED_SCALE_FLOOR_DIVISOR
         scaled > floor ? scaled : floor
-      rescue StandardError
+      rescue NameError
         base
       end
 
@@ -1473,13 +1473,13 @@ class RPG2k
         ov = @state.parallax
         return ov if ov
         u = @map.unit
-        return nil unless (u[:parallax_flag] rescue false)
-        { name: (u[:parallax_name] rescue '').to_s,
-          loop_x: (u[:parallax_loop_x] rescue false),
-          loop_y: (u[:parallax_loop_y] rescue false),
-          auto_x: (u[:parallax_autoloop_x] rescue false),
-          auto_y: (u[:parallax_autoloop_y] rescue false),
-          sx: (u[:parallax_sx] rescue 0), sy: (u[:parallax_sy] rescue 0) }
+        return nil unless record_value(u, :parallax_flag, false)
+        { name: record_value(u, :parallax_name, '').to_s,
+          loop_x: record_value(u, :parallax_loop_x, false),
+          loop_y: record_value(u, :parallax_loop_y, false),
+          auto_x: record_value(u, :parallax_autoloop_x, false),
+          auto_y: record_value(u, :parallax_autoloop_y, false),
+          sx: record_value(u, :parallax_sx, 0), sy: record_value(u, :parallax_sy, 0) }
       end
 
       # The CharSet bitmap for an event graphic `name`, cached (including a
@@ -1818,9 +1818,10 @@ class RPG2k
       def build_resolver
         common = {}
         @common.each { |c| common[c.id] = c }
-        map_events = (@map.unit[:events] rescue nil)
+        map_events = record_value(@map.unit, :events, nil)
         EventResolver.new(common, map_events)
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Call Event resolver unavailable, calls resolve nothing: #{e.class}: #{e.message}"
         EventResolver.new({}, nil)
       end
 
@@ -2226,7 +2227,8 @@ class RPG2k
             @parallels.push(prior) unless live_map_ids[id]
           end
         end
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] parallel process rebuild failed, none kept: #{e.class}: #{e.message}"
         @parallels = []
       end
 
@@ -2407,7 +2409,8 @@ class RPG2k
         drive_parallel_wait(p, it) if it.waiting? && it.wait_kind == :animation
         apply_interpreter_requests(it, p[:event])
         record_parallel_progress(p)
-      rescue StandardError
+      rescue StandardError => e
+        RGSS.warn_once("parallel process update failed: #{e.class}: #{e.message}")
         nil
       end
 
@@ -3513,22 +3516,30 @@ class RPG2k
       # A parsed BGM chunk exposes file / fade_in / volume / pitch / balance;
       # read them defensively so a bare fixture that omits a field still
       # works.
-      def music_name(m); m[:file] rescue nil; end
-      def music_volume(m); (m[:volume] rescue nil) || 100; end
-      def music_tempo(m); (m[:pitch] rescue nil) || 100; end
+      def music_name(m); record_value(m, :file, nil); end
+      def music_volume(m); record_value(m, :volume, 100); end
+      def music_tempo(m); record_value(m, :pitch, 100); end
       # `fade_in` (cycle #203): liblcf's `BGM` struct field 2
       # (mruby-lcf/mrblib/schema.rb), present on every System Music slot this
       # scene reads (battle_music, inn_music, boat/ship/airship_music) --
       # previously never read here at all, so a database-configured fade-in
       # on any of those slots was silently dropped rather than reaching
       # #play_bgm.
-      def music_fadein(m); (m[:fade_in] rescue nil) || 0; end
+      def music_fadein(m); record_value(m, :fade_in, 0); end
       # `balance` (cycle #219): the same `BGM`-struct's field 5 (schema.rb),
       # present on the exact same slots as `fade_in` above -- previously
       # never read here either, so a database-configured pan on any of those
       # slots was silently dropped rather than reaching #play_bgm's own
       # `RGSS::Audio.bgm_pan` call (see that method's own doc comment).
-      def music_balance(m); (m[:balance] rescue nil) || 50; end
+      def music_balance(m); record_value(m, :balance, 50); end
+
+      # `rec[name]`, or `default` for a field the record does not declare or one
+      # holding nil (a bare Hash fixture answers by key).
+      def record_value(rec, name, default)
+        return default unless rec.is_a?(Hash) || LCF.field?(rec, name)
+        value = rec[name]
+        value.nil? ? default : value
+      end
 
       # Keep the ridden vehicle on the party's tile / facing.
       def follow_vehicle
@@ -7171,7 +7182,8 @@ class RPG2k
       def map_properties
         return nil unless respond_to?(:map_tree) && map_tree
         LCF.field?(map_tree, :map_properties) ? map_tree[:map_properties] : nil
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] map properties unreadable: #{e.class}: #{e.message}"
         nil
       end
 
@@ -8450,7 +8462,8 @@ class RPG2k
                        'database, nothing drawn'
         end
         row
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] battle animation ##{id} unreadable: #{e.class}: #{e.message}"
         nil
       end
 
@@ -8905,7 +8918,8 @@ class RPG2k
           return if w <= 0 || h <= 0
           @animation_bmp.stretch_blt Rect.new(dx, dy, w, h), src_bmp, src_rect, opacity
         end
-      rescue StandardError
+      rescue StandardError => e
+        RGSS.warn_once("animation cell draw failed: #{e.class}: #{e.message}")
         nil
       end
 

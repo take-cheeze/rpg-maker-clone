@@ -267,7 +267,8 @@ class RPG2k
         return nil unless path && File.exist?(path)
         title = LCF::SaveData.new(File.open(path, "rb"))[100]
         title && title[:timestamp]
-      rescue StandardError
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] save slot #{slot} timestamp unreadable: #{e.class}: #{e.message}"
         nil
       end
 

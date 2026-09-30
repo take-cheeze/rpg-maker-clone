@@ -65,13 +65,22 @@ UNDER_CAP = <<~RUBY
   end
 RUBY
 
-def generate(source, dir, native: false)
+# The exact-class RGSS wrapper arms (dispose, zero-argument natives) end in the
+# chain or table for the Ruby definers, not in a plain dispatch.
+WRAPPED = <<~RUBY
+  #{(0..CAP).map { |i| "class W#{i}\n  def dispose; #{i}; end\nend\n" }.join}
+  class WProbe
+    def go(x); x.dispose; end
+  end
+RUBY
+
+def generate(source, dir, native: false, rgss: false)
   src = File.join(dir, 'fixture.rb')
   File.write(src, source)
   gen = File.join(dir, 'fixture_gen.cpp')
   env = { 'MRBC' => MRBC, 'SKIP_UNSUPPORTED' => '1', 'OUT_SYMBOL' => 'fixture', 'OUT_DIR' => dir,
           'BC2CPP_SELF_REGISTERING' => '1', 'BC2CPP_HOT_METHODS' => nil }
-  env['NATIVE_SRCS'] = Shellwords.join(core_native_srcs("#{ROOT}/3rd/mruby")) if native
+  env['NATIVE_SRCS'] = Shellwords.join(core_native_srcs("#{ROOT}/3rd/mruby") + (rgss ? Dir["#{ROOT}/mruby-rgss/src/*.cxx"] : [])) if native
   _out, err, status = Open3.capture3(env, "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
                                           "#{src.shellescape} > #{gen.shellescape}")
   abort "bc2cpp.rb failed:\n#{err[-2000..] || err}" unless status.success?
@@ -118,6 +127,15 @@ Dir.mktmpdir do |dir|
   check.call('a world with no name past the cap emits nothing of the tier',
              !code.include?('bc2cpp_poly') && !code.include?('POLY_TABLE') &&
                err.include?('== poly table dispatch: none sites ==') && !code.include?('bc2cpp_poly_memo'))
+end
+
+puts '-- RGSS wrapper sites past the chain cap'
+Dir.mktmpdir do |dir|
+  code, = generate(WRAPPED, dir, native: true, rgss: true)
+  go = body_of(code, 'WProbe_go')
+  check.call('the RGSS #dispose arms are kept', go.include?('// RGSS #dispose'))
+  check.call("#{CAP + 1} Ruby definers behind them dispatch through a table, not a plain send",
+             go.include?('POLY_TABLE :dispose') && go.include?('bc2cpp_poly_lookup('))
 end
 
 # [Probe method, argument C expression, expected string, dynamic dispatches]
