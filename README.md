@@ -1086,6 +1086,11 @@
   `h.select { ... }`, `xs.map { ... }`) tries exact-class Array, Hash and Range arms first and
   calls the compiled body directly at the root context, keeping the ordinary send as its else; see
   [`docs/adr/0270-bc2cpp-block-core-direct-arms.md`](docs/adr/0270-bc2cpp-block-core-direct-arms.md).
+  When the receiver of such an arm (or of a verified core native or RGSS native entry point) is
+  provably exact without a run-time check (a literal, a `*rest` array or a fresh `Klass.new`, in a
+  world where no object can gain a singleton class) the class test goes, and for the
+  frame-independent native arms the dynamic send with it; block arms keep their else for Fibers. See
+  [`docs/adr/0280-bc2cpp-exact-receiver-arms.md`](docs/adr/0280-bc2cpp-exact-receiver-arms.md).
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
