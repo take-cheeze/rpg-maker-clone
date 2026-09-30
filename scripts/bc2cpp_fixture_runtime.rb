@@ -47,10 +47,11 @@ module Bc2cppFixtureRuntime
     system('g++', '--version', out: File::NULL, err: File::NULL)
   end
 
-  FULL_CORE_CONFIG = <<~'RUBY'
+  FULL_CORE_CONFIG = <<~RUBY
     MRuby::Build.new('host') do |conf|
       toolchain :gcc
       conf.gembox 'full-core'
+      conf.gem '#{ROOT}/3rd/mruby-stringio'
       conf.cxx.flags << '-std=gnu++17'
       enable_cxx_exception
       enable_debug

@@ -1096,6 +1096,11 @@
   by a few lines of bytecode so `Fiber.yield` never has a compiled frame beneath it; a root that
   does not qualify stays interpreted and bc2cpp logs why. See
   [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md).
+  Every explicit-receiver `puts` (`$stderr.puts`, `io.puts`) is one call to a shared helper that
+  runs mruby-io's `IO#puts` body while the receiver still resolves to it and dispatches by name
+  otherwise, so a redirected `$stdout`/`$stderr` or an `IO#puts` override behaves as in the
+  interpreter; the reasons the guard cannot be dropped are in
+  [`docs/adr/0284-bc2cpp-shared-io-puts.md`](docs/adr/0284-bc2cpp-shared-io-puts.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
