@@ -9,6 +9,8 @@
 #   BC2CPP_MRUBY_FULL  the same with lib/libmruby.a and the full-core gems, for
 #                      fixtures that need Enumerable, Integer#positive?, ...
 # Both must be built from the patched 3rd/mruby the tree carries.
+# BC2CPP_CXXFLAGS adds compiler flags, e.g. -DMRB_INT32 for a build whose mrb_int is 32 bits
+# wide (the Emscripten/Wio/PSP width); run with that build's own MRBC.
 # BC2CPP_KEEP_DIR=path keeps the last fixture directory (generated code, binary).
 require 'fileutils'
 require 'open3'
@@ -167,6 +169,7 @@ module Bc2cppFixtureRuntime
     binary = File.join(dir, 'fixture')
     flags = %w[-std=c++17 -fexceptions -DMRB_USE_CXX_EXCEPTION -w]
     flags << '-DMRB_NO_GEMS' unless full
+    flags.concat(Shellwords.split(ENV.fetch('BC2CPP_CXXFLAGS', '')))
     built = system('g++', *flags, "-I#{dir}", "-I#{build}/include", "-I#{ROOT}/3rd/mruby/include",
                    "-I#{ROOT}/mruby-rgss/src", File.join(dir, 'main.cpp'), lib, '-lm', '-o', binary)
     return [false, ''] unless built
