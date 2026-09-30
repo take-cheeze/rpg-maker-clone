@@ -33,8 +33,8 @@ end
 
 # -- tables ---------------------------------------------------------------------
 
-lib_path = File.join(root, 'mruby-rgss/src/lib.cxx')
-lib = File.read(lib_path)
+# The entry points and bindings live in lib.cxx and, since ADR 0281, the audio and tts sources.
+lib = Dir[File.join(root, 'mruby-rgss/src/*.cxx')].sort.map { |path| File.read(path) }.join("\n")
 header = File.read(File.join(root, 'include/rgss_construct.hxx')) + File.read(File.join(root, 'include/rgss_native_direct.hxx'))
 rgss_srcs = Dir[File.join(root, 'mruby-rgss/src/*.cxx')]
 
@@ -86,6 +86,49 @@ Dir.mktmpdir do |dir|
     }
   CXX
   check.call('a class variable the file never defines is not proven', NativeDirect.registered_owners('width', [file]).nil?)
+end
+
+# ADR 0281: a module handed to a define function in another file (lib.cxx's gem init calls
+# rgss_audio_define) is attributed only while every call site passes the same, resolved module.
+Dir.mktmpdir do |dir|
+  File.write(File.join(dir, 'audio.cxx'), <<~CXX)
+    void audio_define(mrb_state* M, RClass* rgss) {
+      RClass* audio = mrb_define_module_under(M, rgss, "Audio");
+      mrb_define_module_function(M, audio, "_stop", stop, MRB_ARGS_NONE());
+    }
+  CXX
+  File.write(File.join(dir, 'lib.cxx'), <<~CXX)
+    void init(mrb_state* M) {
+      RClass* m = mrb_define_module(M, "RGSS");
+      audio_define(M, m);
+    }
+  CXX
+  audio = File.join(dir, 'audio.cxx')
+  check.call('a module passed to a define function in another file is attributed',
+             NativeDirect.registered_owners('_stop', [audio]) == Set['RGSS::Audio.singleton'])
+  Dir.mktmpdir do |other|
+    File.write(File.join(other, 'audio.cxx'), File.read(audio))
+    File.write(File.join(other, 'lib.cxx'), <<~CXX)
+      void init(mrb_state* M, RClass* unknown) {
+        RClass* m = mrb_define_module(M, "RGSS");
+        RClass* n = mrb_define_module(M, "Other");
+        audio_define(M, m);
+        audio_define(M, n);
+      }
+    CXX
+    check.call('two call sites passing different modules leave the registration unproven',
+               NativeDirect.registered_owners('_stop', [File.join(other, 'audio.cxx')]).nil?)
+  end
+  Dir.mktmpdir do |other|
+    File.write(File.join(other, 'audio.cxx'), File.read(audio))
+    File.write(File.join(other, 'lib.cxx'), <<~CXX)
+      void init(mrb_state* M, RClass* unknown) {
+        audio_define(M, unknown);
+      }
+    CXX
+    check.call('a call site passing an unresolved class variable leaves the registration unproven',
+               NativeDirect.registered_owners('_stop', [File.join(other, 'audio.cxx')]).nil?)
+  end
 end
 
 # ClosedWorld: which files may clear a class's Ruby definers, and who may subclass.
