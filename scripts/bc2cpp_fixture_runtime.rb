@@ -12,6 +12,7 @@
 # BC2CPP_CXXFLAGS adds compiler flags, e.g. -DMRB_INT32 for a build whose mrb_int is 32 bits
 # wide (the Emscripten/Wio/PSP width); run with that build's own MRBC.
 # BC2CPP_KEEP_DIR=path keeps the last fixture directory (generated code, binary).
+require 'etc'
 require 'fileutils'
 require 'open3'
 require 'shellwords'
@@ -48,12 +49,55 @@ module Bc2cppFixtureRuntime
     system('g++', '--version', out: File::NULL, err: File::NULL)
   end
 
+  FULL_CORE_CONFIG = <<~'RUBY'
+    MRuby::Build.new('host') do |conf|
+      toolchain :gcc
+      conf.gembox 'full-core'
+      conf.cxx.flags << '-std=gnu++17'
+      enable_cxx_exception
+      enable_debug
+      [conf.cc, conf.cxx].each { |t| t.flags = t.flags.flatten.delete_if { |v| v == '-O0' } << '-O1' }
+    end
+  RUBY
+
+  # A full-core libmruby build dir (lib/libmruby.a and include/), for fixtures that need Fiber,
+  # Integer#step and the rest of mrblib: BC2CPP_MRUBY_FULL, else one built here with rake
+  # (minutes; BC2CPP_FULL_BUILD_DIR keeps it for the next check). nil without rake, g++ or
+  # 3rd/mruby, so the caller can skip the behavioural half.
+  def full_or_build
+    return full if full
+    return nil unless system('rake', '--version', out: File::NULL, err: File::NULL) && compiler? &&
+                      File.exist?(File.join(ROOT, '3rd/mruby/Rakefile'))
+
+    work = ENV['BC2CPP_FULL_BUILD_DIR'] || (@full_build_dir ||= Dir.mktmpdir('bc2cpp_full'))
+    host = File.join(work, 'host')
+    return host if File.exist?(File.join(host, 'lib/libmruby.a'))
+
+    FileUtils.mkdir_p(File.join(work, 'repos/host'))
+    FileUtils.ln_sf(File.join(ROOT, '3rd/mgem-list'), File.join(work, 'repos/host/mgem-list'))
+    File.write(File.join(work, 'config.rb'), FULL_CORE_CONFIG)
+    env = { 'MRUBY_CONFIG' => File.join(work, 'config.rb'), 'MRUBY_BUILD_DIR' => work }
+    out, status = Open3.capture2e(env, 'rake', "-j#{[Etc.nprocessors, 16].min}", 'all', chdir: File.join(ROOT, '3rd/mruby'))
+    File.write(File.join(work, 'build.log'), out)
+    raise "full-core mruby build failed:\n#{out.lines.last(30).join}" unless status.success?
+
+    host
+  end
+
   # Runs bc2cpp.rb over `source`. `closed` is the wio closed world with the
   # real core sources (what the model checks need); `only_owners` limits what
   # is compiled. Returns [code, stderr, dir-relative bytecode path].
-  def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil)
-    src = File.join(dir, 'fixture.rb')
+  # `path` places the fixture below `dir`: a path under 3rd/mruby/mrblib/ makes bc2cpp treat
+  # it as mruby's own Ruby (CoreDefs.core_source?), so a check can exercise the core-only proofs.
+  # `extra` is more sources ([path, text] pairs) compiled after the fixture, e.g. engine Ruby
+  # next to a core fixture.
+  def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil, path: 'fixture.rb', extra: [])
+    src = File.join(dir, path)
+    FileUtils.mkdir_p(File.dirname(src))
     File.write(src, source)
+    extra_srcs = extra.map do |extra_path, text|
+      File.join(dir, extra_path).tap { |file| FileUtils.mkdir_p(File.dirname(file)) && File.write(file, text) }
+    end
     env = { 'MRBC' => mrbc, 'SKIP_UNSUPPORTED' => '1', 'OUT_SYMBOL' => 'fixture', 'OUT_DIR' => dir,
             'BC2CPP_SELF_REGISTERING' => '1', 'BC2CPP_HOT_METHODS' => hot_methods }
     env['ONLY_OWNERS'] = only_owners.join(',') if only_owners
@@ -65,7 +109,7 @@ module Bc2cppFixtureRuntime
                  'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).map { |n, d| "#{n}=#{d}" }),
                  NomethodReviewed::ALLOW_ENV => 'allow')
     end
-    code, err, status = Open3.capture3(env, RbConfig.ruby, BC2CPP, src)
+    code, err, status = Open3.capture3(env, RbConfig.ruby, BC2CPP, src, *extra_srcs)
     raise "bc2cpp.rb failed:\n#{(err[-3000..] || err)}" unless status.success?
 
     File.write(File.join(dir, 'fixture_gen.cpp'), code)
@@ -80,7 +124,10 @@ module Bc2cppFixtureRuntime
       next unless owners.include?(owner)
 
       holder = owner.delete_suffix('.singleton')
-      klass = "mrb_class_ptr(mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, #{holder.dump})))"
+      scope = holder.split('::').inject('mrb_obj_value(M->object_class)') do |outer, part|
+        "mrb_const_get(M, #{outer}, mrb_intern_cstr(M, #{part.dump}))"
+      end
+      klass = "mrb_class_ptr(#{scope})"
       fn = if owner.end_with?('.singleton') then 'mrb_define_class_method'
            elsif extra.include?('[private') then 'mrb_define_private_method'
            else 'mrb_define_method'

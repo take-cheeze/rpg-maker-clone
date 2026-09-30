@@ -306,6 +306,9 @@ end
 def rpg_maker_gems(conf, include_mvjs: true)
   # uni-algo is C++-only, so only the C++ compiler needs these.
   conf.cxx.defines += UNI_ALGO_TRIM_DEFINES
+  # Opt-in (docs/bc2cpp-nomethod-verify.md, ADR 0275): a dead bc2cpp_nomethod site aborts
+  # without dispatching. Off unless BC2CPP_NOMETHOD_VERIFY=1, so no shipped build changes.
+  conf.cxx.defines << 'BC2CPP_NOMETHOD_VERIFY' if ENV['BC2CPP_NOMETHOD_VERIFY'] == '1'
 
   # A cross build's bootstrap host build exists only to produce `mrbc`, and the
   # AOT-compiled gems below are target-only. Compiling ~1,500 generated methods
