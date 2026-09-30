@@ -87,7 +87,9 @@ CHECKS = [
   # sections need mrbc and skip here.
   { name: 'bc2cpp-join-dominance', command: %w[scripts/bc2cpp_join_dominance_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp_core_mixins_check.rb] },
-  { name: 'bc2cpp-typed-reflection', command: %w[scripts/bc2cpp_typed_reflection_check.rb] }
+  { name: 'bc2cpp-typed-reflection', command: %w[scripts/bc2cpp_typed_reflection_check.rb] },
+  # Reads every schema field through the real LCF reader (ADR 0285).
+  { name: 'bc2cpp-lcf-schema-oracle', command: %w[scripts/bc2cpp_lcf_schema_oracle_check.rb] }
 ].freeze
 
 # `needs:` predicates. A downloaded RPG2000/2003 game is the only prerequisite

@@ -1041,6 +1041,9 @@ jobs:
               # full-core libmruby (BC2CPP_MRUBY_FULL) and skip without one.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_join_dominance_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mixins_check.rb
+              # ADR 0285: record-like Hash slots (analysis fixtures, generated code, and a
+              # run against real mruby that needs BC2CPP_MRUBY_FULL and skips without one).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_record_hash_check.rb
               # Compiled mruby core mrblib (docs/adr/0264): static invariants, then every compiled body
               # against the interpreter's answer on edge cases.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mrblib_check.rb
@@ -1342,6 +1345,10 @@ jobs:
               ruby scripts/bc2cpp_join_dominance_check.rb
               ruby scripts/bc2cpp_core_mixins_check.rb
               ruby scripts/bc2cpp_typed_reflection_check.rb
+
+          # ADR 0285: the LCF schema oracle against the real reader (host-only, no mrbc).
+          - name: bc2cpp LCF schema oracle check
+            run: ruby scripts/bc2cpp_lcf_schema_oracle_check.rb
 
           - name: RPG2k game-logic checks
             run: |

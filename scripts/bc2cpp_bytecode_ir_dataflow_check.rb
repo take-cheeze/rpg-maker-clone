@@ -84,6 +84,20 @@ check.call('the join after the range refuses through the protected instruction',
 check.call('the same code without a handler still refuses at the dead handler body',
            program.call(guarded_list).reaching_definitions(4, '1').nil?)
 
+# through_handlers (RECORD_HASH_PROOF, docs/adr/0285) crosses handler edges instead of refusing at them.
+check.call('through_handlers answers a use in the handler body from before the raise',
+           defs_of.call(guarded, 3, '1', through_handlers: true) == [0])
+check.call('through_handlers answers a use in the protected range', defs_of.call(guarded, 1, '1', through_handlers: true) == [0])
+check.call('through_handlers answers the join after the range', defs_of.call(guarded, 4, '1', through_handlers: true) == [0])
+# An instruction that writes the register and can raise contributes both the old and the new value.
+raising_write = program.call([
+  insn(0, 'LOADI_1', 'R1 (1)'), insn(2, 'SEND0', "R1\t:f"), insn(4, 'JMP', '10'),
+  insn(8, 'NOP', ''), insn(10, 'RETURN', 'R1')
+], [CatchHandler.new(type: :rescue, begin_addr: 2, end_addr: 4, target: 8)])
+check.call('a raising write reaches the handler as both the old and the completed value',
+           defs_of.call(raising_write, 3, '1', through_handlers: true) == [0, 1])
+check.call('without the option the same query still refuses', raising_write.reaching_definitions(3, '1').nil?)
+
 # Nested blocks: SETUPVAR writes of the level that reaches the parent.
 parent = Irep.new(label: 'p', nlocals: 3, reps: ['c'], instructions: [insn(0, 'RETURN', 'R1')])
 child = Irep.new(label: 'c', nlocals: 2, reps: ['g'], instructions: [insn(0, 'SETUPVAR', "R1\t2\t0")])
