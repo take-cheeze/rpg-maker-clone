@@ -212,15 +212,17 @@ end
 
 # [label, build dir, mrbc, extra flags]
 builds = []
-full = runtime.full
-core = runtime.core
-builds << ['mrb_int 64', full || core, ENV['MRBC'], ''] if (full || core) && runtime.compiler?
+# The boundary matrix needs bignums and Integer#-@ in the interpreter, which a gem-less core lacks
+# (it raises where compiled code has its own Fixnum arms), so the run is against a full-core mruby:
+# BC2CPP_MRUBY_FULL, or one built into BC2CPP_FULL_BUILD_DIR (the core-mrbtest shard shares it).
+full = runtime.full || (ENV['BC2CPP_FULL_BUILD_DIR'] ? runtime.full_or_build : nil)
+builds << ['mrb_int 64', full, ENV['MRBC'], ''] if full && runtime.compiler?
 if ENV['BC2CPP_MRUBY_FULL32'] && ENV['BC2CPP_MRBC32'] && runtime.compiler?
   builds << ['mrb_int 32 (MRB_INT32)', ENV['BC2CPP_MRUBY_FULL32'], ENV['BC2CPP_MRBC32'], '-DMRB_32BIT -DMRB_INT32']
 end
 
 if builds.empty?
-  puts '-- SKIP run: set BC2CPP_MRUBY_CORE or BC2CPP_MRUBY_FULL (libmruby*.a and include/) and have g++'
+  puts '-- SKIP run: set BC2CPP_MRUBY_FULL (libmruby.a with the full-core gems) or BC2CPP_FULL_BUILD_DIR, and have g++'
 end
 
 builds.each do |label, build, mrbc, flags|

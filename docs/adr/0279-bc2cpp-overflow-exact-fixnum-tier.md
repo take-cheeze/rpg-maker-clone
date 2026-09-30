@@ -101,5 +101,9 @@ compiled without them keep the layout the analysis declared, as before.
   class with typed slots stays outside the closed world, as in ADR 0276; a computed name built
   from data the program never spells (a `define_method(name)` fed from a file) is outside the name
   universe, as in ADR 0276; the compiler still devirtualizes a single-definition method past a
-  runtime `define_method`; the Integer#step/upto/downto inline of ADR 0273 keeps `long long`
-  counters and needs the same FIXABLE boxing when it lands.
+  runtime `define_method`.
+- Consequence for ADR 0273: the Integer#step/upto/downto inline needs both bounds proven Fixnum, so
+  every counter value lies between two Fixnums and needs no FIXABLE boxing. A bound computed by
+  arithmetic (`n.upto(n + 2)`) is no longer a proven Fixnum, so that loop keeps its call until a
+  range proof or a run-time fixnum guard covers it (`scripts/bc2cpp_step_inline_check.rb` pins
+  `upto_dynamic` / `downto_dynamic` as kept).
