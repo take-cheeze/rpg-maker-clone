@@ -80,8 +80,8 @@ arms.
   grow by 229 although fewer calls dispatch: those sites were not in the diagnostics before. The
   report now prints the literal-block split next to them.
 - What an arm saves: name lookup, the `mrb_funcall_with_block` frame, the entry wrapper's
-  `mrb_get_args`, and the guard's cost is one comparison. It does not save the block's RProc or
-  the `mrb_yield` frame per iteration; a callee taking a callback instead of a proc would.
+  `mrb_get_args`, and the guard's cost is one comparison. Measured alone it is not visible in a
+  loop; the per-yield cost is what ADR 0271 removes.
 - Nothing changes when the build compiles no core (hot-only builds, or a fixture without core
   sources): the arms need the compiled definitions to exist.
 - Observable differences are those of every direct call: no callinfo frame for the callee (a
