@@ -949,6 +949,9 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
           - shard: core-mrbtest
             checks: |
+              # Literal-block arms into the compiled core (docs/adr/0270): a closed-world fixture compiled
+              # with the core, against the interpreter; two more mruby builds.
+              MRBC="$mrbc" ruby scripts/bc2cpp_block_core_direct_check.rb
               # mruby's own suites (rake test) on a full-core host build, interpreted and with the
               # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
               ruby scripts/bc2cpp_core_mrbtest.rb

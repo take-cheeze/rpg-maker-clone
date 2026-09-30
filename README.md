@@ -1082,6 +1082,13 @@
   [`docs/adr/0264-bc2cpp-compiled-core-mrblib.md`](docs/adr/0264-bc2cpp-compiled-core-mrblib.md)
   and
   [`docs/adr/0269-bc2cpp-core-block-methods-fiber-guard.md`](docs/adr/0269-bc2cpp-core-block-methods-fiber-guard.md).
+  A literal-block send from compiled engine code to one of them (`list.each { ... }`,
+  `h.select { ... }`, `xs.map { ... }`) tries exact-class Array, Hash and Range arms first and
+  calls the compiled body directly at the root context, keeping the ordinary send as its else; see
+  [`docs/adr/0270-bc2cpp-block-core-direct-arms.md`](docs/adr/0270-bc2cpp-block-core-direct-arms.md).
+  A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
+  call it without pushing a VM frame; see
+  [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
