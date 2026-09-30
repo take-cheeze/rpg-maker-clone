@@ -1042,6 +1042,8 @@ jobs:
               # ADR 0279: the Fixnum tier is overflow-exact; also against a 32-bit mrb_int build when
               # BC2CPP_MRUBY_FULL32/BC2CPP_MRBC32 name one.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb
+              # ADR 0279: the call-site proofs refuse names a computed-name send could reach.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_proof_check.rb
               # Compiled mruby core mrblib (docs/adr/0264): static invariants, then every compiled body
               # against the interpreter's answer on edge cases.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mrblib_check.rb
