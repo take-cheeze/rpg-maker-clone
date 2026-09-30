@@ -150,3 +150,15 @@ removed guard (`mrb_obj_class`, which skips singleton classes) did not protect a
 override either. The handler edge model over-approximates (every instruction of a range may raise),
 which only costs proofs. Nothing ran a 32-bit `mrb_int` build: no mask or constant here reaches an
 `mrb_int`.
+
+## Addendum: one `direct_callable?` predicate
+
+Five sites of `compile_send` (module-function self, lexical self, exact target, TYPED candidate,
+inherited target) each spelled "has a bytecode body, the direct convention carries its signature, it
+compiles without an `#error`, and the argument count fits". They are now `direct_callable?(definition, n)`,
+in that order, because `compiles_clean?` compiles the callee and must not run for a signature a direct call
+cannot express. It is a pure refactor: the shipped output and the diagnostic of the wio game build and of
+optcarrot are byte-identical before and after (`cmp` of the generated C++ and of stderr). The MONO gate,
+the diagnostic reason codes of `poly_arity_fits?`/`cha_self_reason`, the constant-object and keyword
+paths keep their own wording: they differ in order, in the `compiles_clean?` step or in the reason they
+report, so folding them in would not have been identical.
