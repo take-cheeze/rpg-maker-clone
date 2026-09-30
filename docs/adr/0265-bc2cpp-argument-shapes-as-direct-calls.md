@@ -103,8 +103,8 @@ Soundness conditions, each enforced in one place:
   `MONO_EMBED_GUARD`), exact-class and self resolutions remain. (`x.sort` with an
   unknown receiver would otherwise call `Array#sort`'s body on a Hash.)
 - **A block-taking callee must not read its frame.** `block_transparent_callee?`
-  refuses one whose body (at any block depth) calls `iterator?` or `binding`
-  (`block_given?` is modelled since ADR 0266), or contains `SUPER`/`ARGARY` (which forward the block): with no
+  refuses one whose body (at any block depth) calls `binding`
+  (`block_given?` and its alias `iterator?` are modelled since ADR 0266), or contains `SUPER`/`ARGARY` (which forward the block): with no
   frame of its own, those would see the caller's. None exist in the sources.
 - **Chain arms have no block slot**, so `poly_candidates` drops a block-taking
   definition (its class then dispatches, as for any other excluded definition).
