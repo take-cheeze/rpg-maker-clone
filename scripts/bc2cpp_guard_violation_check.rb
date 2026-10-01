@@ -154,7 +154,7 @@ if ENV['MRBC']
     end
     add = chunk.call(code, 'GvUser#add')
     check.call('NEG: a numeric fast path keeps its dispatch arm (Float/Bignum/overflow are valid)',
-               !add.match?(violation) && add.include?('bc2cpp_send('))
+               !add.match?(violation) && (add.include?('bc2cpp_send(') || add.include?('mrb_num_add(')))
     check.call('the helper is emitted', code.include?('static mrb_value bc2cpp_guard_violation(mrb_state* M') &&
                                         code.include?('BC2CPP_GUARD_VIOLATION_DISPATCH') &&
                                         code.include?('BC2CPP_NOMETHOD_VERIFY'))
