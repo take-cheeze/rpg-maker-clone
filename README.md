@@ -1069,6 +1069,9 @@
   `Integer#inspect` are called directly behind exact-class guards, each row
   re-audited against the mruby sources on every compile. See
   [`docs/adr/0257-bc2cpp-native-core-direct-arms.md`](docs/adr/0257-bc2cpp-native-core-direct-arms.md).
+  `String#size`/`#length` join them (an exact-String arm after the generated Array/Hash
+  ones; the arm is the send itself under `MRB_UTF8_STRING`); see
+  [`docs/adr/0291-bc2cpp-string-size-arm.md`](docs/adr/0291-bc2cpp-string-size-arm.md).
   Three more families of sends whose receiver is fixed by construction are replaced
   outright, again from audited rows: implicit-self `raise` (one or two arguments) and
   `__id__`, `blk.call(...)` on a compiled core method's own `&blk` (a Proc arm, and a
