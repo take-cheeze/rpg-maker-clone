@@ -1128,6 +1128,13 @@
   them off; see
   [`docs/adr/0296-bc2cpp-class-pools.md`](docs/adr/0296-bc2cpp-class-pools.md),
   `scripts/bc2cpp_class_pools_check.rb` and `scripts/bc2cpp_guard_hint_report.rb`.
+  `BC2CPP_SITE_PROFILE=DIR` builds count how often each remaining by-name `bc2cpp_send` and
+  `mrb_funcall*` site runs, and `scripts/bc2cpp_dynamic_site_census.rb --rank` ranks the sites by
+  executed hits with the reason each was kept dynamic; off by default and byte-identical when unset
+  (see
+  [`docs/adr/0298-bc2cpp-executed-site-profile.md`](docs/adr/0298-bc2cpp-executed-site-profile.md),
+  [`docs/bc2cpp-dynamic-site-census.md`](docs/bc2cpp-dynamic-site-census.md) and
+  `scripts/bc2cpp_site_profile_check.rb`).
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
