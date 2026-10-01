@@ -961,6 +961,9 @@ jobs:
               # Unguarded exact-receiver proofs for those arms and the native ones (docs/adr/0280): generated
               # code, then a compiled fixture against the interpreter (Fibers, break/next/return, raise).
               MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_check.rb
+              # Return-class table and the guard-free TYPED call (docs/adr/0289): generated code with every
+              # way of losing the proof, then a compiled fixture against the interpreter.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_return_class_check.rb
               # Inlined Integer#step/upto/downto loops (docs/adr/0273) against the interpreter; builds
               # a full-core mruby once into BC2CPP_FULL_BUILD_DIR.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
