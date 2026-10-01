@@ -85,6 +85,7 @@ NOT_PER_METHOD = %w[
   @own_upvar_written_regs @symbol_installed_names
   @const_lookup_helper_used @const_site_cache @direct_construct_used @index_helper_code @native_construct_used
   @owner_class_cache @synthesize_accessor_for @poly_tables @poly_tables_emitted
+  @rc_new_class @rc_oracle @rc_return @rc_send_ireps @rc_states @numeric_class_bits
   @array_return_names @class_return_names @entry_arg_fixnum @fixnum_return_names @fiber_unsafe_methods
   @fiber_roots @fiber_yield_names @resumable_plans @resumable_warned
   @yf_blocks @yf_arm_sites

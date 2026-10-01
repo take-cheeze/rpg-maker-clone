@@ -70,14 +70,13 @@ Dir.mktmpdir do |dir|
                code.include?("mrb_float_p(r#{dest_reg}) && mrb_float_p(r#{source_reg})") &&
                  code.include?("mrb_float(r#{dest_reg}) #{arithmetic} mrb_float(r#{source_reg})"))
     helper = { '+' => 'mrb_num_add', '-' => 'mrb_num_sub', '*' => 'mrb_num_mul' }.fetch(operator)
-    check.call("#{opcode} fallback runs the Integer helper for bigint receivers, then keeps the dynamic send",
-               code.include?("bc2cpp_integer_recv_p(r#{dest_reg}) && bc2cpp_integer_operand_p(r#{source_reg})") &&
-                 code.include?("#{helper}(M, r#{dest_reg}, r#{source_reg})") &&
-                 code.index("#{helper}(M, r#{dest_reg}, r#{source_reg})") < code.rindex('mrb_funcall(M,') &&
+    slow = "bc2cpp_slow_#{{ '+' => 'add', '-' => 'sub', '*' => 'mul' }.fetch(operator)}_f(M, r#{dest_reg}, r#{source_reg})"
+    check.call("#{opcode} fallback is the NUMERIC_SLOW_PATH helper (bigint and Float receivers, then the by-name call), after the inline tiers",
+               code.include?(slow) && code.index(slow) > code.rindex('mrb_float_value(M,') &&
+                 !code.include?('mrb_funcall(M,') && !code.include?("#{helper}(M, r#{dest_reg}, r#{source_reg});\n  }") &&
                  !code.include?("mrb_fixnum_p(r#{dest_reg}) && mrb_fixnum_p(r#{source_reg})) {\n    r#{dest_reg} = #{helper}"))
-    check.call("#{opcode} boxes Float results and preserves dynamic fallback",
-               code.include?('mrb_float_value(M,') && code.include?('mrb_funcall(M,') &&
-                 code.include?("\"#{operator}\", 1"))
+    check.call("#{opcode} boxes Float results inline and leaves the rest to the helper",
+               code.include?('mrb_float_value(M,') && !code.include?('mrb_funcall(M,'))
   end
 end
 

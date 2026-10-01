@@ -85,6 +85,21 @@ Dir.mktmpdir do |dir|
   check.call('an unattributable registration of the name drops the row',
              NativeCoreDirect.audit([array_c, other])[index].to_s.include?('unattributed'))
 
+  string_c = File.join(fake, 'src/string.c')
+  string_original = File.read(File.join(mruby_dir, 'src/string.c'))
+  size = NativeCoreDirect::ENTRIES.find { |e| e.owner == 'String' && e.name == 'size' }
+  File.write(string_c, string_original)
+  check.call('a copy of string.c verifies String#size', NativeCoreDirect.audit([string_c])[size].nil?)
+  File.write(string_c, string_original.sub("#else\n#define RSTRING_CHAR_LEN(s) RSTRING_LEN(s)",
+                                           "#else\n#define RSTRING_CHAR_LEN(s) utf8_strlen(s)"))
+  check.call('a changed non-UTF-8 RSTRING_CHAR_LEN drops String#size',
+             NativeCoreDirect.audit([string_c])[size].to_s.include?('no longer contains'))
+  File.write(string_c, string_original.sub('mrb_int len = RSTRING_CHAR_LEN(self);', 'mrb_int len = RSTRING_CHAR_LEN(self) + 1;'))
+  check.call('a changed mrb_str_size body drops String#size', NativeCoreDirect.audit([string_c])[size].to_s.include?('no longer matches'))
+  File.write(string_c, string_original.sub('MRB_MT_ENTRY(mrb_str_size,            MRB_SYM(size),            MRB_ARGS_NONE())',
+                                           'MRB_MT_ENTRY(mrb_str_size,            MRB_SYM(size),            MRB_ARGS_OPT(1))'))
+  check.call('a changed String#size aspec drops the row', NativeCoreDirect.audit([string_c])[size].to_s.include?('registered as'))
+
   FileUtils.rm_f(File.join(fake, 'include'))
   check.call('without the mruby headers no row is trusted',
              NativeCoreDirect.audit([array_c])[join].to_s.include?('include'))
@@ -191,12 +206,19 @@ WORLD = <<~'RUBY'
     def bytes0(s); s.bytes; end
     def inspect0(n); n.inspect; end
     def inspect_arg(n); n.inspect(2); end
+    def size0(v); v.size; end
+    def length0(v); v.length; end
+    def size_lit; 'abc'.size; end
+    def size_ary_lit; [1, 2].size; end
+    def size_arg(v); v.size(1); end
   end
 RUBY
 OVERRIDE = "#{WORLD}\nclass Array\n  def join(sep = nil); 'x'; end\n  def shift(n = nil); 1; end\nend\n"
 PREPEND = "#{WORLD}\nmodule CdShadow\n  def compact; []; end\nend\nclass Array\n  prepend CdShadow\nend\n"
 INSTALLER = "#{WORLD}\nclass CdCaller\n  def install(name); Array.send(:define_method, name) { 1 }; end\nend\n"
 INTEGER_OVERRIDE = "#{WORLD}\nclass Integer\n  def inspect; 'i'; end\nend\n"
+STRING_OVERRIDE = "#{WORLD}\nclass String\n  def size; 1; end\nend\n"
+STRING_PREPEND = "#{WORLD}\nmodule CdStrShadow\n  def length; 1; end\nend\nclass String\n  prepend CdStrShadow\nend\n"
 
 open_code = generate.call(WORLD, 'cd_open', false)
 closed_code = generate.call(WORLD, 'cd_closed', true)
@@ -204,6 +226,8 @@ override_code = generate.call(OVERRIDE, 'cd_override', true)
 prepend_code = generate.call(PREPEND, 'cd_prepend', true)
 installer_code = generate.call(INSTALLER, 'cd_installer', true)
 integer_code = generate.call(INTEGER_OVERRIDE, 'cd_integer', true)
+string_override_code = generate.call(STRING_OVERRIDE, 'cd_string_override', true)
+string_prepend_code = generate.call(STRING_PREPEND, 'cd_string_prepend', true)
 
 check.call('without the closed world no arm is emitted', !open_code.include?('NATIVE_CORE_DIRECT'))
 
@@ -250,6 +274,28 @@ check.call('a Ruby Integer#inspect withdraws the Integer arm',
            !arm.call(integer_code, 'inspect0').include?('NATIVE_CORE_DIRECT') &&
              arm.call(integer_code, 'join0').include?('NATIVE_CORE_DIRECT'))
 
+size0 = arm.call(closed_code, 'size0')
+check.call('String#size and #length get an exact-String arm after the generated Array/Hash arms, the send as its else',
+           size0.match?(/mrb_hash_size.*?NATIVE_CORE_DIRECT :size.*?if \(mrb_string_p\(r\d+\) && mrb_obj_ptr\(r\d+\)->c == M->string_class\) \{\n\s+r\d+ = bc2cpp_str_size\(M, r\d+\);\n\s+\} else \{\n\s+r\d+ = bc2cpp_send\(/m) &&
+             arm.call(closed_code, 'length0').include?('bc2cpp_str_length(M, r'))
+check.call('size with an argument has no String arm', !arm.call(closed_code, 'size_arg').include?('bc2cpp_str_size('))
+check.call('the String size helpers are defined once each and branch on MRB_UTF8_STRING',
+           %w[bc2cpp_str_size bc2cpp_str_length].all? do |helper|
+             text = closed_code[/^static inline mrb_value #{helper}\(.*?^\}\n/m].to_s
+             closed_code.scan(/^static inline mrb_value #{helper}\(/).size == 1 &&
+               text.include?('#ifdef MRB_UTF8_STRING') && text.include?('RSTRING_LEN(str)')
+           end)
+check.call('a Ruby String#size withdraws the size arm only; length keeps its own',
+           !arm.call(string_override_code, 'size0').include?('bc2cpp_str_size(') &&
+             arm.call(string_override_code, 'length0').include?('bc2cpp_str_length('))
+check.call('a prepend on String withdraws both String arms and leaves Array alone',
+           !arm.call(string_prepend_code, 'size0').include?('bc2cpp_str_size(') &&
+             !arm.call(string_prepend_code, 'length0').include?('bc2cpp_str_length(') &&
+             arm.call(string_prepend_code, 'join0').include?('NATIVE_CORE_DIRECT'))
+check.call('a dynamic installer and an open world withdraw the String arms',
+           !arm.call(installer_code, 'size0').include?('bc2cpp_str_size(') && !open_code.include?('bc2cpp_str_size('))
+check.call('a Ruby Integer#inspect leaves the String size arm alone', arm.call(integer_code, 'size0').include?('bc2cpp_str_size('))
+
 # -- the bucket -------------------------------------------------------------------
 
 NATIVE_BUCKET = <<~'RUBY'
@@ -294,6 +340,14 @@ else
     'bytes0' => { name: 'bytes',
                   recv: ['S("")', 'S("abc")', 'SN(M, "\xe3\x81\x82\xc3\xbf", 5)', 'SN(M, "\xff\x00a", 3)', 'SS(M, "xy")'],
                   args: [nil] },
+    'size0' => { name: 'size',
+                 recv: ['S("")', 'S("abc")', 'SN(M, "\xe3\x81\x82\xc3\xbf", 5)', 'SN(M, "\xff\x00a", 3)', 'SS(M, "xy")',
+                        'FRZ(M, S("frozen"))', 'BIGS(M, 300)', 'SING(M, "abc")', 'NIL', 'A(M, {I(1), I(2)})', 'I(7)'],
+                 args: [nil] },
+    'length0' => { name: 'length',
+                   recv: ['S("")', 'S("abc")', 'SN(M, "\xe3\x81\x82\xc3\xbf", 5)', 'SS(M, "xy")', 'FRZ(M, S("frozen"))',
+                          'BIGS(M, 300)', 'SING(M, "abc")', 'NIL', 'A(M, {})'],
+                   args: [nil] },
     'inspect0' => { name: 'inspect',
                     recv: ['I(0)', 'I(-5)', 'I(123456789)', 'I(MRB_INT_MAX)', 'I(MRB_INT_MIN)', 'F(1.5)', 'NIL', 'S("s")', 'Y("a")'],
                     args: [nil] }
@@ -345,6 +399,14 @@ else
         mrb_str_cat_cstr(M, str, s);
         return str;
       }
+      static mrb_value sing_size(mrb_state* M, mrb_value) { return mrb_int_value(M, 99); }
+      static mrb_value SING(mrb_state* M, const char* s) {
+        mrb_value str = mrb_str_new_cstr(M, s);
+        mrb_define_singleton_method(M, mrb_obj_ptr(str), "size", sing_size, MRB_ARGS_NONE());
+        mrb_define_singleton_method(M, mrb_obj_ptr(str), "length", sing_size, MRB_ARGS_NONE());
+        return str;
+      }
+      static mrb_value BIGS(mrb_state* M, int n) { return mrb_str_new(M, std::string((size_t)n, 'a').data(), n); }
       static mrb_value REC(mrb_state* M) { mrb_value a = A(M, {I(1)}); mrb_ary_push(M, a, a); return a; }
       static mrb_value FRZ(mrb_state* M, mrb_value v) { mrb_obj_freeze(M, v); return v; }
       static mrb_value OBJ(mrb_state* M) { return mrb_obj_new(M, M->object_class, 0, NULL); }
@@ -420,6 +482,12 @@ else
     built = system('g++', '-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
                    "-I#{core}/include", "-I#{root}/3rd/mruby/include", source, "#{core}/lib/libmruby_core.a", '-o', binary)
     check.call('the emitted arms compile against real mruby headers', built)
+    utf8 = File.join(dir, 'utf8.cpp')
+    File.write(utf8, "#include <mruby.h>\n#include <mruby/string.h>\n" +
+                     NativeCoreDirect::HELPERS.values_at('bc2cpp_str_size', 'bc2cpp_str_length').join("\n"))
+    check.call('the String size helpers also compile with MRB_UTF8_STRING defined (their send branch)',
+               system('g++', '-std=c++17', '-fsyntax-only', '-Werror', '-DMRB_UTF8_STRING', "-I#{core}/include",
+                      "-I#{root}/3rd/mruby/include", utf8))
     if built
       output = IO.popen(binary, err: %i[child out], &:read)
       puts output.lines.first(40).map { |l| "  #{l}" }.join
