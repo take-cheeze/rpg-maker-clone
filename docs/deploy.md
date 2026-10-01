@@ -19,6 +19,9 @@ on static hosts (like GitHub Pages) that cannot set them. Neither deployment
 bakes a game in, so the page opens on its runtime loader — drop in a local
 `.zip`, a `.zip` URL, or a `owner/repo` GitHub project to play.
 
+The workflow also triggers on `merge_group`; those runs never deploy or
+preview. See [ci.md](ci.md) for the merge-queue setup.
+
 ## Changelog sub-page
 
 Both `deploy-pages` and `preview-cloudflare` additionally check out
