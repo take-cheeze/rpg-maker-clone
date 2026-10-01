@@ -112,9 +112,11 @@ v &= 0xffff_ffff
 v >= 0x8000_0000 ? v - 0x1_0000_0000 : v
 ```
 
-Nothing in CI runs a 32-bit-`mrb_int` build, so these bugs pass every check and
-only show up in the deployed page. When you touch a codec, reason about the
-32-bit case by hand.
+CI runs a 32-bit-`mrb_int` and a no-bigint libmruby only for the width-sensitive
+bc2cpp checks (`bc2cpp-width`, ADR 0300, `docs/ci.md`); a codec or any other
+Ruby is not run on one, so these bugs still pass the rest of CI and only show
+up in the deployed page. When you touch a codec, reason about the 32-bit case
+by hand.
 
 A second, easier-to-miss trap in the same area: **spell a >32-bit constant as
 a literal, not a computed shift/OR expression**, even when every operand of
