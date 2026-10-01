@@ -309,11 +309,12 @@ report << "numeric operand facts (NUMERIC_OPERAND_PROOF): " \
           "#{numeric_kinds.map { |tag, what| "#{numeric_lines.count { |l| l.start_with?("#{tag} ") }} #{what}" }.join(', ')}\n"
 # RETURN_CLASS_TABLE (ADR 0294): names every call of which returns one exact class.
 report << "return-class table (RETURN_CLASS_TABLE): #{count(err, 'return class table (RETURN_CLASS_TABLE)')} names with one exact class\n"
-# CLASS_POOLS (ADR 0296): ivar and argument class sets carried across methods.
+# CLASS_POOLS (ADR 0296, ADR 0301): ivar, argument and constant class sets carried across methods.
 pool_lines = section_lines(err, 'class pools (CLASS_POOLS)')
 pool_lines = [] if pool_lines == ['(none)']
 report << "class pools (CLASS_POOLS): #{pool_lines.count { |l| l.start_with?('CLASSIVAR ') }} ivar pools, " \
-          "#{pool_lines.count { |l| l.start_with?('CLASSARG ') }} argument pools\n"
+          "#{pool_lines.count { |l| l.start_with?('CLASSARG ') }} argument pools, " \
+          "#{pool_lines.count { |l| l.start_with?('CLASSCONST ') }} constant pools\n"
 # ADR 0279: typed (mrb_int, mrb_sym, mrb_bool) ivar slots given back to boxed slots because a writer
 # the compiler cannot type (attr_writer, computed setter, reflection) can reach them.
 boxed_lines = section_lines(err, 'typed slots demoted to boxed slots (foreign writers, ADR 0279)')

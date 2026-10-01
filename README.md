@@ -1128,6 +1128,12 @@
   them off; see
   [`docs/adr/0296-bc2cpp-class-pools.md`](docs/adr/0296-bc2cpp-class-pools.md),
   `scripts/bc2cpp_class_pools_check.rb` and `scripts/bc2cpp_guard_hint_report.rb`.
+  The same exact-receiver proof now reaches every arm wrapper of a send (the registered-expression chains
+  of `size`/`empty?`/`first`, the tail of a POLY chain, the `core_or_native` fallbacks), and constants
+  join the pools (`LIST = [...].freeze` is exactly an Array wherever it is read, unless a `const_missing`
+  or a Ruby `freeze` on instances exists): 176 fewer by-name-reachable sites on the wio build; see
+  [`docs/adr/0301-bc2cpp-exact-receiver-consumers-and-constant-pools.md`](docs/adr/0301-bc2cpp-exact-receiver-consumers-and-constant-pools.md)
+  and `scripts/bc2cpp_exact_receiver_flow_check.rb`.
   `BC2CPP_SITE_PROFILE=DIR` builds count how often each remaining by-name `bc2cpp_send` and
   `mrb_funcall*` site runs, and `scripts/bc2cpp_dynamic_site_census.rb --rank` ranks the sites by
   executed hits with the reason each was kept dynamic; off by default and byte-identical when unset
