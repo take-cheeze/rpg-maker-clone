@@ -980,6 +980,9 @@ jobs:
               # classes, native-registered names) against the interpreter on the full-core and core-only
               # builds; UCC_MUTANTS=1 also removes one proof at a time from a copy of the generator.
               UCC_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_unlisted_class_call_check.rb
+              # ADR 0303: a computed-name send over a provably finite Symbol set becomes direct arms; negative
+              # worlds, the interpreter on full-core and core-only builds, and one proof removed at a time.
+              CSEND_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
               # ADR 0288: class-body define_method(:name) { } as an ordinary definition.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_define_method_sites_check.rb
               # Resumable Fiber roots (docs/adr/0273): step functions over a heap frame against the
@@ -1197,6 +1200,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_lcf_row_flow_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
           - variant: nobigint
             checks: |
