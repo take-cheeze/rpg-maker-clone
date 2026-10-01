@@ -1031,6 +1031,10 @@
   [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md),
   [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md),
   and [`docs/adr/0203-bc2cpp-unique-class-names.md`](docs/adr/0203-bc2cpp-unique-class-names.md).
+  On closed-world (psp, wio, maix) builds the else arm of a guard on a stable class
+  constant (`Klass.new`, `is_a?(Klass)`, `Klass === x`) logs a `[RPG2k]` guard violation
+  and raises instead of dispatching; see
+  [`docs/adr/0290-bc2cpp-guard-violation.md`](docs/adr/0290-bc2cpp-guard-violation.md).
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
@@ -1069,6 +1073,9 @@
   `Integer#inspect` are called directly behind exact-class guards, each row
   re-audited against the mruby sources on every compile. See
   [`docs/adr/0257-bc2cpp-native-core-direct-arms.md`](docs/adr/0257-bc2cpp-native-core-direct-arms.md).
+  `String#size`/`#length` join them (an exact-String arm after the generated Array/Hash
+  ones; the arm is the send itself under `MRB_UTF8_STRING`); see
+  [`docs/adr/0291-bc2cpp-string-size-arm.md`](docs/adr/0291-bc2cpp-string-size-arm.md).
   Three more families of sends whose receiver is fixed by construction are replaced
   outright, again from audited rows: implicit-self `raise` (one or two arguments) and
   `__id__`, `blk.call(...)` on a compiled core method's own `&blk` (a Proc arm, and a
@@ -1209,6 +1216,12 @@
   call-site proofs refuse method names a computed-name `send` could reach and ivars a
   foreign write could store a non-typed value into; see
   [`docs/adr/0279-bc2cpp-overflow-exact-fixnum-tier.md`](docs/adr/0279-bc2cpp-overflow-exact-fixnum-tier.md).
+  The else of the guarded numeric arms (`+ - * / % & | ^ << >> < <= > >= -@`) is one typed
+  helper per operator that calls mruby's own bigint/numeric C function for a bigint, heap
+  Integer or Float operand and dispatches by name only for the classes it does not own,
+  where each site used to carry its own send; see
+  [`docs/adr/0292-bc2cpp-numeric-slow-path-helpers.md`](docs/adr/0292-bc2cpp-numeric-slow-path-helpers.md)
+  and `scripts/bc2cpp_numeric_slow_check.rb`.
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in

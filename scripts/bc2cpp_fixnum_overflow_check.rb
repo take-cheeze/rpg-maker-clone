@@ -195,6 +195,10 @@ if ENV['MRBC']
                  c.match?(/mrb_int_(?:add|sub|mul)_overflow/) && c.include?('!FIXABLE(bc2cpp_z)') &&
                    c.match?(/mrb_num_(?:add|sub|mul)\(M/))
     end
+    %w[add sub mul neg lsh rsh mod].each do |name|
+      check.call("OvfOpen##{name}: the arm's else is a NUMERIC_SLOW_PATH helper call, no by-name call of its own (ADR 0292)",
+                 chunk.call("OvfOpen##{name}").match?(/bc2cpp_slow_\w+\(M, /) && !chunk.call("OvfOpen##{name}").include?('bc2cpp_send('))
+    end
     fact = chunk.call('OvfProven#fact')
     check.call('the proven recursion multiplies through the overflow tier',
                fact.include?('mrb_int_mul_overflow') && fact.include?('mrb_num_mul(M'))
@@ -216,9 +220,11 @@ builds = []
 # (it raises where compiled code has its own Fixnum arms), so the run is against a full-core mruby:
 # BC2CPP_MRUBY_FULL, or one built into BC2CPP_FULL_BUILD_DIR (the core-mrbtest shard shares it).
 full = runtime.full || (ENV['BC2CPP_FULL_BUILD_DIR'] ? runtime.full_or_build : nil)
-builds << ['mrb_int 64', full, ENV['MRBC'], ''] if full && runtime.compiler?
+# -DMRB_USE_BIGINT: the libmruby builds have mruby-bigint, and the generated code's bigint arms
+# (NUMERIC_SLOW_PATH, ADR 0292) are compiled in only with it.
+builds << ['mrb_int 64', full, ENV['MRBC'], '-DMRB_USE_BIGINT'] if full && runtime.compiler?
 if ENV['BC2CPP_MRUBY_FULL32'] && ENV['BC2CPP_MRBC32'] && runtime.compiler?
-  builds << ['mrb_int 32 (MRB_INT32)', ENV['BC2CPP_MRUBY_FULL32'], ENV['BC2CPP_MRBC32'], '-DMRB_32BIT -DMRB_INT32']
+  builds << ['mrb_int 32 (MRB_INT32)', ENV['BC2CPP_MRUBY_FULL32'], ENV['BC2CPP_MRBC32'], '-DMRB_32BIT -DMRB_INT32 -DMRB_USE_BIGINT']
 end
 
 if builds.empty?

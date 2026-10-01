@@ -499,7 +499,7 @@ report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped
 # Guarded arithmetic/compare arms: each carries a tag comment, and one that keeps
 # its dynamic-send else has a send in the lines after it (NUMERIC_OPERAND_PROOF,
 # ADR 0276, removes it where both operands are proven Integer/Float).
-guarded_tags = %w[FIXNUM_ARITHMETIC FIXNUM_COMPARE FLOAT_DIV_RECEIVER]
+guarded_tags = %w[FIXNUM_ARITHMETIC FIXNUM_COMPARE FLOAT_DIV_RECEIVER INTEGER_LSHIFT FIXNUM_SHIFT FIXNUM_BINARY INTEGER_UNARY]
 shipped_lines = @shipped_stdout.lines
 guarded_sites = Hash.new(0)
 guarded_kept = Hash.new(0)
@@ -508,11 +508,21 @@ shipped_lines.each_with_index do |line, i|
   next unless tag
 
   guarded_sites[tag] += 1
-  guarded_kept[tag] += 1 if shipped_lines[(i + 1)..(i + 10)].any? { |l| l.include?('bc2cpp_send(') || l.include?('mrb_funcall') }
+  # An arm keeps its own by-name call unless its else is a helper call, read up to the next arm's tag.
+  arm = shipped_lines[(i + 1)..(i + 40)].take_while { |l| !l.match?(%r{^\s*// [A-Z_]+ :}) }
+  guarded_kept[tag] += 1 unless arm.any? { |l| l.include?('bc2cpp_slow_') }
 end
 numeric_proven_sites = @shipped_stdout.scan(%r{^\s*// NUMERIC_OPERAND_PROOF :}).size
-report << "  guarded arithmetic/compare arms with a dynamic-send else: #{guarded_kept.values.sum} " \
+# NUMERIC_SLOW_PATH (ADR 0292): an arm's else is a typed helper call; the by-name call lives in the helper.
+slow_calls = Hash.new(0)
+@shipped_stdout.scan(/= bc2cpp_slow_([a-z]+)(?:_f)?\(M,/) { |(key)| slow_calls[key] += 1 }
+slow_helper_sends = 0
+@shipped_stdout.scan(/^static mrb_value bc2cpp_slow_\w+\(mrb_state\* M.*?^\}\n/m) { |body| slow_helper_sends += body.scan('bc2cpp_send(').size }
+report << "  guarded numeric arms with a dynamic-send else of their own: #{guarded_kept.values.sum} " \
           "(" + guarded_tags.map { |t| "#{t} #{guarded_kept[t]}" }.join(', ') + ")\n"
+report << "  guarded numeric arms whose else is a NUMERIC_SLOW_PATH helper call: #{slow_calls.values.sum} " \
+          "(" + slow_calls.sort.map { |k, n| "#{k} #{n}" }.join(', ') + ")\n"
+report << "    by-name calls held by those helpers (one per operand class they do not own): #{slow_helper_sends}\n"
 report << "  arms whose send NUMERIC_OPERAND_PROOF removed (operands proven Integer/Float): #{numeric_proven_sites}\n"
 report << "  direct :new constructor paths emitted (some retain guarded fallback): #{direct_new_sites}\n"
 # ADR 0294: a TYPED call behind a class guard with a dynamic-send fallback, against the same call when

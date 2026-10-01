@@ -977,6 +977,9 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_io_puts_model_check.rb
               # ADR 0279: the fixnum-overflow boundary matrix against the interpreter, on the full-core build above.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb
+              # ADR 0292: the numeric slow-path helpers against the interpreter over a
+              # Fixnum/bigint/Float/nil/String/user-class operand matrix; same build.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
               # mruby's own suites (rake test) on a full-core host build, interpreted and with the
               # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
               ruby scripts/bc2cpp_core_mrbtest.rb
@@ -1001,6 +1004,8 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_foreign_def_forms_check.rb
               # -DBC2CPP_NOMETHOD_VERIFY aborts at a dead bc2cpp_nomethod site (docs/adr/0275).
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_nomethod_verify_check.rb
+              # A guard on a stable class constant fails with a logged error, not a dispatch (docs/adr/0290).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_guard_violation_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_funcall_argc_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_hash_each_value_check.rb
