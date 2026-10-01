@@ -44,8 +44,9 @@ end
 sym_names = ->(code) { code[/bc2cpp_sym_names\[\d+\] = \{(.*?)\};/m, 1].to_s.scan(/"((?:[^"\\]|\\.)*)"/).flatten }
 # By-name bc2cpp_send sites of `name` inside one body.
 sends_of = lambda do |code, body, name|
-  index = sym_names.call(code).index(name)
-  index ? body.scan(/bc2cpp_send\(M, [^,]+, #{index},/).size : 0
+  # A checked send (ADR 0299) has a slot of its own, so count every slot spelling the name.
+  indices = sym_names.call(code).each_index.select { |i| sym_names.call(code)[i] == name }
+  indices.sum { |index| body.scan(/bc2cpp_send\(M, [^,]+, #{index},/).size }
 end
 arm = ->(body, kind, klass) { body.match?(/UNLISTED_CLASS_#{kind} [^\n]*\(receiver exactly #{Regexp.escape(klass)}[,)]/) }
 
