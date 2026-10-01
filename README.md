@@ -1031,6 +1031,10 @@
   [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md),
   [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md),
   and [`docs/adr/0203-bc2cpp-unique-class-names.md`](docs/adr/0203-bc2cpp-unique-class-names.md).
+  On closed-world (psp, wio, maix) builds the else arm of a guard on a stable class
+  constant (`Klass.new`, `is_a?(Klass)`, `Klass === x`) logs a `[RPG2k]` guard violation
+  and raises instead of dispatching; see
+  [`docs/adr/0290-bc2cpp-guard-violation.md`](docs/adr/0290-bc2cpp-guard-violation.md).
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
