@@ -262,6 +262,14 @@ record_lines = section_lines(err, 'record hash slots (RECORD_HASH_PROOF)')
 report << "record-like Hash slots proven (RECORD_HASH_PROOF): #{record_lines.count { |l| l.start_with?('RECORD_HASH ') }} " \
           "accepted, #{record_lines.count { |l| l.start_with?('RECORD_HASH_REFUSED') }} refused\n"
 report << "  exact-class direct calls through a record key: #{@shipped_stdout.scan('record key holds only fresh').size}\n"
+# LCF_ROW_FLOW (ADR 0294): whether the LCF object-kind proof is on, the receivers it proved an exact class
+# (a direct call, no guard), and the untyped GETIDX sites still behind the generic class gate.
+lcf_state = err[/== LCF row flow \(LCF_ROW_FLOW\) ==\n  (.*)/, 1].to_s
+lcf_calls = @shipped_stdout.scan(%r{^\s*// LCF_ROW_FLOW :(\S+) -> (\S+)}).map(&:last).tally
+report << "LCF row flow (LCF_ROW_FLOW): #{lcf_state.empty? ? 'not reported' : lcf_state}\n"
+report << "  exact-class direct calls: #{lcf_calls.values.sum}" \
+          "#{lcf_calls.empty? ? '' : " (#{lcf_calls.sort_by { |k, v| [-v, k] }.map { |k, v| "#{k} #{v}" }.join(', ')})"}\n"
+report << "  untyped GETIDX/GETIDX0 sites behind the generic class gate: #{@shipped_stdout.scan(/\bbc2cpp_getidx0?\(M,/).size}\n"
 # INTEGER_CONSTANT_PROOF: bare constant names every definition in the whole
 # program agrees is an integer literal -- FIXNUM_OPERAND_PROOF's own fifth
 # proof source. Reported here for the same reason every other proven fact
@@ -299,7 +307,7 @@ numeric_kinds = { 'NUMARG' => 'entry arguments', 'NUMIVAR' => 'instance variable
                   'NUMRET' => 'method names returning', 'NUMCONST' => 'constants' }
 report << "numeric operand facts (NUMERIC_OPERAND_PROOF): " \
           "#{numeric_kinds.map { |tag, what| "#{numeric_lines.count { |l| l.start_with?("#{tag} ") }} #{what}" }.join(', ')}\n"
-# RETURN_CLASS_TABLE (ADR 0289): names every call of which returns one exact class.
+# RETURN_CLASS_TABLE (ADR 0294): names every call of which returns one exact class.
 report << "return-class table (RETURN_CLASS_TABLE): #{count(err, 'return class table (RETURN_CLASS_TABLE)')} names with one exact class\n"
 # ADR 0279: typed (mrb_int, mrb_sym, mrb_bool) ivar slots given back to boxed slots because a writer
 # the compiler cannot type (attr_writer, computed setter, reflection) can reach them.
@@ -517,7 +525,7 @@ report << "  guarded numeric arms whose else is a NUMERIC_SLOW_PATH helper call:
 report << "    by-name calls held by those helpers (one per operand class they do not own): #{slow_helper_sends}\n"
 report << "  arms whose send NUMERIC_OPERAND_PROOF removed (operands proven Integer/Float): #{numeric_proven_sites}\n"
 report << "  direct :new constructor paths emitted (some retain guarded fallback): #{direct_new_sites}\n"
-# ADR 0289: a TYPED call behind a class guard with a dynamic-send fallback, against the same call when
+# ADR 0294: a TYPED call behind a class guard with a dynamic-send fallback, against the same call when
 # the receiver is proven exactly that class.
 typed_guarded_sites = @shipped_stdout.scan(%r{^\s*// TYPED :}).size
 typed_exact_sites = @shipped_stdout.scan(%r{^\s*// EXACT_TYPED :}).size
