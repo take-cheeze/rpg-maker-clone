@@ -1174,6 +1174,14 @@
   `NoMethodError` of the final `else`, and a name the RGSS natives also register is judged on the class's own
   chain; protected defs and names under `private :x` keep the send. See
   [`docs/adr/0297-bc2cpp-unlisted-class-arms.md`](docs/adr/0297-bc2cpp-unlisted-class-arms.md).
+  The RGSS getters carry audited result facts (`Bitmap#width`/`height` and `Rect#x`/`y`/`width`/`height` are
+  small Integers, `Color`/`Tone` components Floats, `Bitmap#rect`/`text_size` an exact `RGSS::Rect`) that
+  the numeric and Fixnum proofs read for a receiver proven exactly its class, so `x += c.text_size(s).width`
+  loses its slow path; a zero-argument native wrapper on such a receiver is a direct call without the class-guard
+  chain; and a send whose receiver is proven to hold only instances (and `nil`) ignores a `def self.x` definer
+  of the same name. See
+  [`docs/adr/0302-bc2cpp-native-result-facts.md`](docs/adr/0302-bc2cpp-native-result-facts.md) and
+  `scripts/bc2cpp_native_result_facts_check.rb`.
   A record-like Hash held in an ivar (`Scene::Battle#@ui`: Symbol-literal keys, read and written
   only as `h[:key]`) gives each key a whole-program class: a key that only ever holds fresh
   instances of one class makes `@ui[:battle].step_action` an unguarded exact-class call, and a
