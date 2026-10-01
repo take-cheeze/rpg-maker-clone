@@ -113,7 +113,7 @@ fixture(SHIFT, 'lshift', natives: ['<<']) do |gen, registry|
   shift_code = gen.compile_method(method.irep).fetch(:code)
   shift_helpers = gen.emit_numeric_slow_helpers([shift_code])
 end
-# NUMERIC_SLOW_PATH (docs/adr/0290): overflow and every non-immediate case leave the arm for bc2cpp_slow_lshift,
+# NUMERIC_SLOW_PATH (docs/adr/0292): overflow and every non-immediate case leave the arm for bc2cpp_slow_lshift,
 # which holds the by-name call.
 check.call('Integer << emits the mrb_num_shift arm with the helper call for overflow',
            shift_code.include?('INTEGER_LSHIFT :<<') && shift_code.include?('mrb_num_shift(M, bc2cpp_shl_v, bc2cpp_shl_w, &bc2cpp_shl_out)') &&

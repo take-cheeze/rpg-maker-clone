@@ -974,7 +974,7 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_io_puts_model_check.rb
               # ADR 0279: the fixnum-overflow boundary matrix against the interpreter, on the full-core build above.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb
-              # ADR 0290: the numeric slow-path helpers against the interpreter over a
+              # ADR 0292: the numeric slow-path helpers against the interpreter over a
               # Fixnum/bigint/Float/nil/String/user-class operand matrix; same build.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
               # mruby's own suites (rake test) on a full-core host build, interpreted and with the

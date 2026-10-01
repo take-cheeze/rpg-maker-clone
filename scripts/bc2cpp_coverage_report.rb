@@ -503,7 +503,7 @@ shipped_lines.each_with_index do |line, i|
   guarded_kept[tag] += 1 unless arm.any? { |l| l.include?('bc2cpp_slow_') }
 end
 numeric_proven_sites = @shipped_stdout.scan(%r{^\s*// NUMERIC_OPERAND_PROOF :}).size
-# NUMERIC_SLOW_PATH (ADR 0290): an arm's else is a typed helper call; the by-name call lives in the helper.
+# NUMERIC_SLOW_PATH (ADR 0292): an arm's else is a typed helper call; the by-name call lives in the helper.
 slow_calls = Hash.new(0)
 @shipped_stdout.scan(/= bc2cpp_slow_([a-z]+)(?:_f)?\(M,/) { |(key)| slow_calls[key] += 1 }
 slow_helper_sends = 0

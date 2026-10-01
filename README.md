@@ -1204,7 +1204,7 @@
   helper per operator that calls mruby's own bigint/numeric C function for a bigint, heap
   Integer or Float operand and dispatches by name only for the classes it does not own,
   where each site used to carry its own send; see
-  [`docs/adr/0290-bc2cpp-numeric-slow-path-helpers.md`](docs/adr/0290-bc2cpp-numeric-slow-path-helpers.md)
+  [`docs/adr/0292-bc2cpp-numeric-slow-path-helpers.md`](docs/adr/0292-bc2cpp-numeric-slow-path-helpers.md)
   and `scripts/bc2cpp_numeric_slow_check.rb`.
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend

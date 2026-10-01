@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# ADR 0290: the else arm of a guarded numeric arm (FIXNUM_ARITHMETIC, FIXNUM_COMPARE, FLOAT_DIV_RECEIVER,
+# ADR 0292: the else arm of a guarded numeric arm (FIXNUM_ARITHMETIC, FIXNUM_COMPARE, FLOAT_DIV_RECEIVER,
 # INTEGER_LSHIFT, FIXNUM_SHIFT, FIXNUM_BINARY, INTEGER_UNARY) is a typed helper (bc2cpp_slow_<op>) that runs
 # mruby's own numeric/bigint C entry point, and dispatches by name only for an operand class it does not own.
 #

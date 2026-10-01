@@ -10,4 +10,4 @@
   its GC arena temporaries. Covered by the new
   `scripts/bc2cpp_numeric_slow_check.rb` (compiled vs interpreted over a
   Fixnum/bigint/Float/nil/String/user-class matrix on 64-bit, 32-bit-`mrb_int`
-  and no-bigint builds); see docs/adr/0290.
+  and no-bigint builds); see docs/adr/0292.

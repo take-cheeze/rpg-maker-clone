@@ -83,7 +83,7 @@ Dir.mktmpdir do |dir|
                push_code.include?('mrb_funcall(M,'))
 
   append_code = send_code(gen, ireps, registry, 'append', '<<')
-  # The Integer arm that shares this site sends everything else to the NUMERIC_SLOW_PATH helper (ADR 0290),
+  # The Integer arm that shares this site sends everything else to the NUMERIC_SLOW_PATH helper (ADR 0292),
   # which holds the by-name call.
   check.call('one-argument << retains its guarded direct Array path and dynamic fallback',
              append_code.include?('ARRAY_PUSH :<<') && append_code.include?('M->array_class') &&

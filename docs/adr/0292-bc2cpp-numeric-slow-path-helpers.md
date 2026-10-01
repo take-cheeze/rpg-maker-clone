@@ -1,4 +1,4 @@
-# 0290. bc2cpp: the else of a guarded numeric arm is a typed helper, not a by-name send
+# 0292. bc2cpp: the else of a guarded numeric arm is a typed helper, not a by-name send
 
 Date: 2026-10-01
 
