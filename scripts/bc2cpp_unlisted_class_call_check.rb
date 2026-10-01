@@ -214,11 +214,64 @@ STATE_OBJECTS = 21
 MIX_OBJECTS = 5
 LVL_OBJECTS = 5
 
+# The scenario below sets @state from C++; the closed world must scan it as a native source,
+# or the class pools (ADR 0296) prove UcDriver#@state is always UcState.
+SCENARIO = <<~'CPP'
+  static void call_msg(mrb_state* M, const char* label, mrb_value obj, const char* meth, int argc, const mrb_value* argv) {
+    dispatches = 0;
+    mrb_value r = (mrb_funcall_argv)(M, obj, mrb_intern_cstr(M, meth), argc, argv);
+    int made = dispatches;
+    if (M->exc) {
+      mrb_value e = mrb_obj_value(M->exc);
+      M->exc = nullptr;
+      mrb_value msg = (mrb_funcall)(M, e, "message", 0);
+      std::printf("%s => raised %s: %.*s\n", label, mrb_obj_classname(M, e), (int)RSTRING_LEN(msg), RSTRING_PTR(msg));
+    } else {
+      show(M, label, r);
+    }
+    if (compiled) std::printf("  dispatches=%d\n", made);
+  }
+  static mrb_value make(mrb_state* M, const char* fn, int i) {
+    mrb_value a = mrb_fixnum_value(i);
+    mrb_value r = (mrb_funcall_argv)(M, mrb_obj_value(mrb_class_get(M, "UcRun")), mrb_intern_cstr(M, fn), 1, &a);
+    mrb_gc_protect(M, r);
+    return r;
+  }
+  static int scenario(mrb_state* M) {
+    mrb_value driver = mrb_obj_new(M, mrb_class_get(M, "UcDriver"), 0, nullptr);
+    mrb_gc_protect(M, driver);
+    mrb_value w = mrb_symbol_value(mrb_intern_lit(M, "w"));
+    char label[64];
+    for (int i = 0; i < STATE_OBJECTS; ++i) {
+      // The kept by-name send is mrb_funcall, which ignores `protected` (it answers where the VM raises).
+      if (i == PROTECTED_OBJECT) continue;
+      mrb_value o = make(M, "state_obj", i);
+      mrb_iv_set(M, driver, mrb_intern_lit(M, "@state"), o);
+      std::snprintf(label, sizeof label, "s%d.read", i);  call_msg(M, label, driver, "read", 0, nullptr);
+      std::snprintf(label, sizeof label, "s%d.write", i); call_msg(M, label, driver, "write", 1, &w);
+      std::snprintf(label, sizeof label, "s%d.read2", i); call_msg(M, label, driver, "read", 0, nullptr);
+      std::snprintf(label, sizeof label, "s%d.sec", i);   call_msg(M, label, driver, "sec", 0, nullptr);
+      std::snprintf(label, sizeof label, "s%d.bid", i);   call_msg(M, label, driver, "bid", 0, nullptr);
+    }
+    for (int i = 0; i < MIX_OBJECTS; ++i) {
+      mrb_value o = make(M, "mix_obj", i);
+      std::snprintf(label, sizeof label, "m%d.run", i); call_msg(M, label, o, "run", 0, nullptr);
+      std::snprintf(label, sizeof label, "m%d.dot", i); call_msg(M, label, o, "dot", 0, nullptr);
+    }
+    for (int i = 0; i < LVL_OBJECTS; ++i) {
+      mrb_value o = make(M, "lvl_obj", i);
+      std::snprintf(label, sizeof label, "l%d.lvl", i); call_msg(M, label, driver, "call_lvl", 1, &o);
+    }
+    return 0;
+  }
+CPP
+HARNESS = [['scenario.cpp', SCENARIO]].freeze
+
 # -- 1. generated code ---------------------------------------------------------------------------
 
 puts '-- generated code, positive closed world'
 Dir.mktmpdir do |dir|
-  code, = runtime.generate(WORLD, dir, only_owners: OWNERS)
+  code, = runtime.generate(WORLD, dir, only_owners: OWNERS, native: HARNESS)
   read = body_of.call(code, 'UcDriver_read')
   write = body_of.call(code, 'UcDriver_write')
   sec = body_of.call(code, 'UcDriver_sec')
@@ -296,7 +349,7 @@ NEGATIVES = {
 puts '-- generated code, negative worlds keep the dispatch'
 NEGATIVES.each do |what, (extra, method, kind, klass)|
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(WORLD + extra, dir, only_owners: OWNERS)
+    code, = runtime.generate(WORLD + extra, dir, only_owners: OWNERS, native: HARNESS)
     body = body_of.call(code, method)
     check.call("#{what}: #{method} has no #{kind} arm for #{klass}", !body.empty? && !arm.call(body, kind, klass))
   end
@@ -310,7 +363,7 @@ CONTROLS = {
 }.freeze
 CONTROLS.each do |what, (extra, method, kind, klass)|
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(WORLD + extra, dir, only_owners: OWNERS)
+    code, = runtime.generate(WORLD + extra, dir, only_owners: OWNERS, native: HARNESS)
     check.call("#{what}: #{method} keeps its #{kind} arm for #{klass}", arm.call(body_of.call(code, method), kind, klass))
   end
 end
@@ -369,55 +422,6 @@ end
 
 # -- 2. fixtures on real mruby -----------------------------------------------------------------
 
-SCENARIO = <<~'CPP'
-  static void call_msg(mrb_state* M, const char* label, mrb_value obj, const char* meth, int argc, const mrb_value* argv) {
-    dispatches = 0;
-    mrb_value r = (mrb_funcall_argv)(M, obj, mrb_intern_cstr(M, meth), argc, argv);
-    int made = dispatches;
-    if (M->exc) {
-      mrb_value e = mrb_obj_value(M->exc);
-      M->exc = nullptr;
-      mrb_value msg = (mrb_funcall)(M, e, "message", 0);
-      std::printf("%s => raised %s: %.*s\n", label, mrb_obj_classname(M, e), (int)RSTRING_LEN(msg), RSTRING_PTR(msg));
-    } else {
-      show(M, label, r);
-    }
-    if (compiled) std::printf("  dispatches=%d\n", made);
-  }
-  static mrb_value make(mrb_state* M, const char* fn, int i) {
-    mrb_value a = mrb_fixnum_value(i);
-    mrb_value r = (mrb_funcall_argv)(M, mrb_obj_value(mrb_class_get(M, "UcRun")), mrb_intern_cstr(M, fn), 1, &a);
-    mrb_gc_protect(M, r);
-    return r;
-  }
-  static int scenario(mrb_state* M) {
-    mrb_value driver = mrb_obj_new(M, mrb_class_get(M, "UcDriver"), 0, nullptr);
-    mrb_gc_protect(M, driver);
-    mrb_value w = mrb_symbol_value(mrb_intern_lit(M, "w"));
-    char label[64];
-    for (int i = 0; i < STATE_OBJECTS; ++i) {
-      // The kept by-name send is mrb_funcall, which ignores `protected` (it answers where the VM raises).
-      if (i == PROTECTED_OBJECT) continue;
-      mrb_value o = make(M, "state_obj", i);
-      mrb_iv_set(M, driver, mrb_intern_lit(M, "@state"), o);
-      std::snprintf(label, sizeof label, "s%d.read", i);  call_msg(M, label, driver, "read", 0, nullptr);
-      std::snprintf(label, sizeof label, "s%d.write", i); call_msg(M, label, driver, "write", 1, &w);
-      std::snprintf(label, sizeof label, "s%d.read2", i); call_msg(M, label, driver, "read", 0, nullptr);
-      std::snprintf(label, sizeof label, "s%d.sec", i);   call_msg(M, label, driver, "sec", 0, nullptr);
-      std::snprintf(label, sizeof label, "s%d.bid", i);   call_msg(M, label, driver, "bid", 0, nullptr);
-    }
-    for (int i = 0; i < MIX_OBJECTS; ++i) {
-      mrb_value o = make(M, "mix_obj", i);
-      std::snprintf(label, sizeof label, "m%d.run", i); call_msg(M, label, o, "run", 0, nullptr);
-      std::snprintf(label, sizeof label, "m%d.dot", i); call_msg(M, label, o, "dot", 0, nullptr);
-    }
-    for (int i = 0; i < LVL_OBJECTS; ++i) {
-      mrb_value o = make(M, "lvl_obj", i);
-      std::snprintf(label, sizeof label, "l%d.lvl", i); call_msg(M, label, driver, "call_lvl", 1, &o);
-    }
-    return 0;
-  }
-CPP
 
 # label prefix => the compiled run must make exactly this many dynamic dispatches
 NO_DISPATCH = %w[s1.read s1.write s2.read s2.write s3.read s4.read s4.write s5.write s6.read s7.read s9.sec s10.sec
@@ -438,7 +442,7 @@ values = lambda do |sections, name|
 end
 run_world = lambda do |source, build, full_flag|
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(source, dir, closed: true, only_owners: OWNERS)
+    _code, err = runtime.generate(source, dir, closed: true, only_owners: OWNERS, native: HARNESS)
     scenario = "static const int STATE_OBJECTS = #{STATE_OBJECTS}, PROTECTED_OBJECT = 11, MIX_OBJECTS = #{MIX_OBJECTS}, LVL_OBJECTS = #{LVL_OBJECTS};\n#{SCENARIO}"
     built, output = runtime.run(dir, err, OWNERS, scenario, build: build, full: full_flag, exact_arity: true)
     puts output unless built
