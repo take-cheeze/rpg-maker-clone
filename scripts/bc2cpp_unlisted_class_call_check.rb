@@ -500,8 +500,9 @@ builds.first(1).each do |label, build, full_flag, mrbc, flags|
   begin
     BEHAVIOUR_NEGATIVES.each do |what, extra|
       sections = run_world.call(WORLD + extra, build, full_flag)
-      # A withdrawn arm is the by-name send, whose mrb_funcall ignores `private` and an attr_reader's
-      # argument count where the VM raises: the arms are what make those two answers match.
+      # These four answers stay out of the comparison: the by-name send is checked by ADR 0299
+      # (scripts/bc2cpp_checked_send_check.rb pins that), but this driver's @state holds several
+      # classes behind a single traced one, so a devirtualized arm can still answer here.
       comparable = ->(name) { values.call(sections, name).reject { |l| l.start_with?('s9.sec', 's10.sec', 'l2.lvl', 'l3.lvl') } }
       same = !sections.nil? && comparable.call('interpreted').size.positive? && comparable.call('interpreted') == comparable.call('compiled')
       check.call("#{what} (#{label}): compiled answers what the interpreter answers", same)

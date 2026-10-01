@@ -75,7 +75,8 @@ subclass override (the guard is `mrb_obj_class ==` the exact class, so the subcl
 - The kept dispatch is `mrb_funcall`, which neither checks visibility nor an attr_reader's argument
   count: with an arm withdrawn, `obj.secret` on a private def answers where the interpreter raises
   `NoMethodError`, and `reader(1)` returns the value where it raises `ArgumentError`. The converted
-  arms now match the interpreter; the withdrawn ones keep the old answer (not changed here).
+  arms now match the interpreter; the withdrawn ones keep the old answer (not changed here;
+  superseded by ADR 0299, which checks the by-name call).
 - POLY and the other listed arms still call a private candidate through an explicit receiver
   (`@state.party` with `Interpreter#party` listed); only unlisted arms raise.
 - `scripts/bc2cpp_unlisted_class_call_check.rb` pins the generated code, 29 negative worlds and 3

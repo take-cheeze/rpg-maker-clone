@@ -74,13 +74,13 @@ Dir.mktmpdir do |dir|
   check.call('one-argument push uses guarded direct mrb_ary_push and returns the receiver',
              push_code.include?('ARRAY_PUSH :push') && push_code.include?('mrb_array_p(r') &&
                push_code.include?('M->array_class') && push_code.include?('mrb_ary_push(M,') &&
-               push_code.match?(/r\d+ = r\d+;/) && push_code.include?('mrb_funcall(M,') &&
+               push_code.match?(/r\d+ = r\d+;/) && push_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/) &&
                push_code.include?('"push", 1'))
   check.call('subclass and unrelated-owner overrides are present for fallback coverage',
              registry.fetch('push').any? { |md| md.owner == 'Game::FancyArray' } &&
                registry.fetch('push').any? { |md| md.owner == 'Game::OtherOwner' } &&
                push_code.include?('mrb_array_p(r') && push_code.include?('M->array_class') &&
-               push_code.include?('mrb_funcall(M,'))
+               push_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/))
 
   append_code = send_code(gen, ireps, registry, 'append', '<<')
   # The Integer arm that shares this site sends everything else to the NUMERIC_SLOW_PATH helper (ADR 0292),
@@ -92,14 +92,14 @@ Dir.mktmpdir do |dir|
   many_code = send_code(gen, ireps, registry, 'push_many', 'push')
   check.call('multi-argument push remains dynamic and does not use mrb_ary_push fast path',
              !many_code.include?('ARRAY_PUSH :push') && !many_code.include?('mrb_ary_push(M,') &&
-               many_code.include?('mrb_funcall(M,') && many_code.include?('"push", 2'))
+               many_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/) && many_code.include?('"push", 2'))
 
   override_gen, override_ireps, override_registry = build_codegen(ARRAY_OVERRIDE_SRC,
                                                                    'bc2cpp_array_push_override', dir)
   override_push = send_code(override_gen, override_ireps, override_registry, 'push_one', 'push')
   check.call('bytecode overrides on base Array disable the push fast path',
              !override_push.include?('ARRAY_PUSH :push') && !override_push.include?('mrb_ary_push(M,') &&
-               override_push.include?('mrb_funcall(M,') && override_push.include?('"push", 1'))
+               override_push.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/) && override_push.include?('"push", 1'))
   override_append = send_code(override_gen, override_ireps, override_registry, 'append', '<<')
   check.call('bytecode overrides on base Array disable the << fast path',
              !override_append.include?('ARRAY_PUSH :<<') && !override_append.include?('mrb_ary_push(M,') &&

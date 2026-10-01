@@ -253,8 +253,9 @@ if ENV['MRBC'] && build && runtime.compiler?
     _code, err = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS)
     full = File.exist?("#{build}/lib/libmruby.a")
     outputs = lambda do |flags = ''|
+      # Append to the caller's flags: a 32-bit build passes -DMRB_INT32 here and must keep it.
       saved = ENV.fetch('BC2CPP_CXXFLAGS', nil)
-      ENV['BC2CPP_CXXFLAGS'] = flags
+      ENV['BC2CPP_CXXFLAGS'] = [saved, flags].compact.reject(&:empty?).join(' ')
       begin
         runtime.run(dir, err, OWNERS, body, build: build, full: full,
                                             envs: [{ 'GV_SCENARIO' => 'ok' }, { 'GV_SCENARIO' => 'violate' }])

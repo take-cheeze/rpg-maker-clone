@@ -300,20 +300,20 @@ Dir.mktmpdir do |dir|
                                   irep: picture_irep, idx: picture_send_idx, owner_def: picture_method)
   check.call('Hash<Klass> indexed value calls use guarded typed accessor dispatch',
              picture_code.include?('TYPED :picture_only -> Game::Picture') &&
-               picture_code.include?('mrb_obj_class(M, r') && picture_code.include?('mrb_funcall(M,'), true)
+               picture_code.include?('mrb_obj_class(M, r') && picture_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   sorted_method = registry['sorted_picture_names'].find { |md| md.owner == 'Game::HashPictureOwner' }
   sorted_code = gen.compile_method(sorted_method.irep).fetch(:code)
   check.call('captured Hash<Klass> values devirtualize inside an inlined each block',
              sorted_code.include?('TYPED :picture_only -> Game::Picture') &&
-               sorted_code.include?('mrb_obj_class(M, r') && sorted_code.include?('mrb_funcall(M,'), true)
+               sorted_code.include?('mrb_obj_class(M, r') && sorted_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   picture_getidx_idx = picture_irep.instructions.index { |insn| insn.op == 'GETIDX' }
   picture_index_code = gen.compile_insn(picture_irep.instructions[picture_getidx_idx], picture_irep,
                                         picture_method, picture_getidx_idx)
   check.call('Hash<Klass> GETIDX falls back for an incorrect runtime receiver type',
              picture_index_code.include?('mrb_hash_p(r') && picture_index_code.include?('mrb_hash_get(M,') &&
-               picture_index_code.include?('mrb_funcall(M,') && !picture_index_code.include?('expected Hash receiver'), true)
+               picture_index_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/) && !picture_index_code.include?('expected Hash receiver'), true)
 
   first_picture_method = registry['first_picture'].find { |md| md.owner == 'Game::HashPictureOwner' }
   first_picture_irep = ireps.fetch(first_picture_method.irep)
@@ -325,7 +325,7 @@ Dir.mktmpdir do |dir|
   getidx0_code = gen.compile_insn(getidx0_insn, first_picture_irep, first_picture_method, getidx0_idx)
   check.call('Hash<Klass> GETIDX0 falls back for an incorrect runtime receiver type',
              getidx0_code.include?('mrb_hash_p(r') && getidx0_code.include?('mrb_hash_get(M,') &&
-               getidx0_code.include?('mrb_funcall(M,') && !getidx0_code.include?('expected Hash receiver'), true)
+               getidx0_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/) && !getidx0_code.include?('expected Hash receiver'), true)
 
   unknown_method = registry['unknown_picture_name'].find { |md| md.owner == 'Game::HashPictureOwner' }
   unknown_irep = ireps.fetch(unknown_method.irep)
@@ -334,19 +334,19 @@ Dir.mktmpdir do |dir|
                                   irep: unknown_irep, idx: unknown_send_idx, owner_def: unknown_method)
   check.call('untyped Hash indexed values retain ordinary dispatch',
              !unknown_code.include?('TYPED :picture_only -> Game::Picture#picture_only') &&
-               unknown_code.include?('mrb_funcall(M,'), true)
+               unknown_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   filtered_call = registry['filtered_picture_call'].find { |md| md.owner == 'Game::FilterMapOwner' }
   filtered_code = gen.compile_method(filtered_call.irep).fetch(:code)
   check.call('filter_map preserves filtered element class through a subsequent each block',
              filtered_code.include?('ELEMENT :picture_only -> Game::Picture') &&
-               filtered_code.include?('mrb_obj_class(M, r') && filtered_code.include?('mrb_funcall(M,'), true)
+               filtered_code.include?('mrb_obj_class(M, r') && filtered_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   heterogeneous = registry['heterogeneous_filter_map_call'].find { |md| md.owner == 'Game::FilterMapOwner' }
   heterogeneous_code = gen.compile_method(heterogeneous.irep).fetch(:code)
   check.call('heterogeneous filter_map results retain dynamic dispatch',
              !heterogeneous_code.include?('TYPED :picture_only -> Game::Picture') &&
-               heterogeneous_code.include?('mrb_funcall(M,'), true)
+               heterogeneous_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   %w[fetch first].each do |method_name|
     method = registry[method_name].find { |md| md.owner == 'Game::Party' }
@@ -375,7 +375,7 @@ Dir.mktmpdir do |dir|
                             owner_def: method)
     check.call("#{method_name}: annotated indexed result devirtualizes with guard/fallback",
                code.include?('TYPED :name -> Game::Actor#name') &&
-                 code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
+                 code.include?('mrb_obj_class(M, r') && code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
   end
   %w[target_names_each target_names_any].each do |method_name|
     method = registry[method_name].find { |md| md.owner == 'Game::Party' }
@@ -383,7 +383,7 @@ Dir.mktmpdir do |dir|
     code = gen.compile_method(method.irep).fetch(:code)
     check.call("#{method_name}: typed array return devirtualizes block element with guard/fallback",
                code.include?('ELEMENT :name -> Game::Actor#name') &&
-                 code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
+                 code.include?('mrb_obj_class(M, r') && code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
   end
 
   fallback = registry['target_names_fallback'].find { |md| md.owner == 'Game::Party' }
@@ -391,7 +391,7 @@ Dir.mktmpdir do |dir|
   check.call('fallback Array#each devirtualizes typed elements with guard/fallback',
              fallback_code.include?('BLOCK_FALLBACK :each') &&
                fallback_code.include?('ELEMENT :name -> Game::Actor#name') &&
-               fallback_code.include?('mrb_obj_class(M, r') && fallback_code.include?('mrb_funcall(M,'), true)
+               fallback_code.include?('mrb_obj_class(M, r') && fallback_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   untyped = registry['untyped_names_fallback'].find { |md| md.owner == 'Game::Party' }
   untyped_code = gen.compile_method(untyped.irep).fetch(:code)
@@ -405,7 +405,7 @@ Dir.mktmpdir do |dir|
              indexed_fallback_code.include?('BLOCK_FALLBACK :each_with_index') &&
                indexed_fallback_code.include?('ELEMENT :name -> Game::Actor#name') &&
                indexed_fallback_code.include?('mrb_obj_class(M, r') &&
-               indexed_fallback_code.include?('mrb_funcall(M,'), true)
+               indexed_fallback_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   untyped_indexed_fallback = registry['untyped_names_each_with_index_fallback'].find do |md|
     md.owner == 'Game::Party'
@@ -421,7 +421,7 @@ Dir.mktmpdir do |dir|
              each_with_object_code.include?('BLOCK_FALLBACK :each_with_object') &&
                each_with_object_code.include?('ELEMENT :name -> Game::Actor#name') &&
                each_with_object_code.include?('mrb_obj_class(M, r') &&
-               each_with_object_code.include?('mrb_funcall(M,'), true)
+               each_with_object_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   drops = registry['drops'].find { |md| md.owner == 'Game::Troop' }
   drops_code = gen.compile_method(drops.irep).fetch(:code)
@@ -429,7 +429,7 @@ Dir.mktmpdir do |dir|
              drops_code.include?('BLOCK_FALLBACK :each_with_object') &&
                drops_code.include?('ELEMENT :drop_id -> Game::Enemy#drop_id') &&
                drops_code.include?('ELEMENT :drop_prob -> Game::Enemy#drop_prob') &&
-               drops_code.include?('mrb_obj_class(M, r') && drops_code.include?('mrb_funcall(M,'), true)
+               drops_code.include?('mrb_obj_class(M, r') && drops_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   untyped_each_with_object = registry['untyped_each_with_object_fallback'].find { |md| md.owner == 'Game::Party' }
   untyped_each_with_object_code = gen.compile_method(untyped_each_with_object.irep).fetch(:code)
@@ -454,13 +454,13 @@ Dir.mktmpdir do |dir|
   fresh_empty_code = empty_gen.compile_method(fresh_empty.irep).fetch(:code)
   check.call('typed Ruby empty? target takes priority over built-in container intrinsic',
              fresh_empty_code.include?('TYPED :empty? -> Game::EmptyRoute#empty?') &&
-               fresh_empty_code.include?('mrb_obj_class(M, r') && fresh_empty_code.include?('mrb_funcall(M,'), true)
+               fresh_empty_code.include?('mrb_obj_class(M, r') && fresh_empty_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   unknown_empty = empty_registry['unknown_empty?'].find { |md| md.owner == 'Game::EmptyRouteCaller' }
   unknown_empty_code = empty_gen.compile_method(unknown_empty.irep).fetch(:code)
   check.call('unknown empty? receiver retains built-in container intrinsic and fallback',
              unknown_empty_code.include?('empty? -- generated from native registrations and C method bodies') &&
-               unknown_empty_code.include?('mrb_funcall(M,'), true)
+               unknown_empty_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   values_registry = registry.transform_values(&:dup)
   (values_registry['values'] ||= []) << MethodDef.new(name: 'values', owner: '<native>', irep: nil,
@@ -471,7 +471,7 @@ Dir.mktmpdir do |dir|
   values_code = values_gen.compile_method(values_method.irep).fetch(:code)
   check.call('Hash#values uses guarded native implementation with Ruby fallback',
              values_code.include?('mrb_hash_values(M,') && values_code.include?('mrb_hash_p(r') &&
-               values_code.include?('M->hash_class') && values_code.include?('mrb_funcall(M,'), true)
+               values_code.include?('M->hash_class') && values_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   key_registry = registry.transform_values(&:dup)
   (key_registry['key?'] ||= []) << MethodDef.new(name: 'key?', owner: '<native>', irep: nil,
@@ -481,7 +481,7 @@ Dir.mktmpdir do |dir|
   key_code = key_gen.compile_method(key_method.irep).fetch(:code)
   check.call('Hash#key? uses guarded native implementation with Ruby fallback',
              key_code.include?('mrb_hash_key_p(M,') && key_code.include?('mrb_hash_p(r') &&
-               key_code.include?('M->hash_class') && key_code.include?('mrb_funcall(M,'), true)
+               key_code.include?('M->hash_class') && key_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   compare_methods = {
     'equal?' => '==', 'less?' => '<', 'less_equal?' => '<=', 'greater?' => '>',
@@ -493,7 +493,7 @@ Dir.mktmpdir do |dir|
     check.call("OP_CMP #{operator} mirrors Integer/Float tags and keeps dynamic fallback",
                code.include?('MRB_TT_INTEGER') && code.include?('MRB_TT_FLOAT') &&
                  code.include?('mrb_integer(r') && code.include?('mrb_float(r') &&
-                 code.include?('mrb_funcall(M,'), true)
+                 code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
     if operator == '=='
       check.call('OP_EQ preserves identity before numeric comparison',
                  code.index('mrb_obj_eq(M,') < code.index('MRB_TT_INTEGER'), true)
@@ -527,7 +527,7 @@ Dir.mktmpdir do |dir|
   end
   overridden_key_code = overridden_key_gen.compile_method(overridden_key_method.irep).fetch(:code)
   check.call('Hash#key? keeps dynamic lookup when Hash defines a Ruby override',
-             !overridden_key_code.include?('mrb_hash_key_p(M,') && overridden_key_code.include?('mrb_funcall(M,'),
+             !overridden_key_code.include?('mrb_hash_key_p(M,') && overridden_key_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/),
              true)
 
   hash_values = registry['sprite_names_fallback'].find { |md| md.owner == 'Game::HashValueOwner' }
@@ -536,7 +536,7 @@ Dir.mktmpdir do |dir|
              hash_values_code.include?('BLOCK_FALLBACK :each_value') &&
                hash_values_code.include?('ELEMENT :name -> Game::Actor#name') &&
                hash_values_code.include?('mrb_obj_class(M, r') &&
-               hash_values_code.include?('mrb_funcall(M,'), true)
+               hash_values_code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   unknown_hash_values = registry['unknown_names_fallback'].find { |md| md.owner == 'Game::HashValueOwner' }
   unknown_hash_values_code = gen.compile_method(unknown_hash_values.irep).fetch(:code)
@@ -548,13 +548,13 @@ Dir.mktmpdir do |dir|
   code = gen.compile_method(method.irep).fetch(:code)
   check.call('annotated cached lookup devirtualizes subsequent Actor dispatch',
              code.include?('TYPED :name -> Game::Actor#name') &&
-               code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
+               code.include?('mrb_obj_class(M, r') && code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   method = registry['combatant_alive'].find { |md| md.owner == 'Game::Party' }
   code = gen.compile_method(method.irep).fetch(:code)
   check.call('typed array argument devirtualizes a Struct element with guard/fallback',
              code.include?('ELEMENT :alive? -> Game::Battle::Combatant#alive?') &&
-               code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
+               code.include?('mrb_obj_class(M, r') && code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/), true)
 
   inherited_source = File.join(dir, 'inherited_retclass.rb')
   File.write(inherited_source, <<~'RUBY')
