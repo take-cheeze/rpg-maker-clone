@@ -243,8 +243,12 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['ERF_GENERATED_ONL
                    !values.call('interpreted').empty? && values.call('interpreted') == values.call('compiled'))
         compiled = values.call('compiled')
         if extra.include?('def freeze; :mine')
+          # Folded into its receiver, `.val` would answer 0; the overriding freeze hands back a Symbol, which the
+          # interpreter and the compiled call both reject (the exception class is the build's, not the point).
+          line = compiled.find { |l| l.start_with?('box_freeze_val =>') }
+          puts "  box_freeze_val compiled: #{line.inspect}" unless line.to_s.start_with?('box_freeze_val => raised')
           check.call("#{label}: the overriding freeze is called, not folded into its receiver",
-                     compiled.any? { |l| l.start_with?('box_freeze_val => raised NoMethodError') })
+                     line.to_s.start_with?('box_freeze_val => raised'))
         end
         next unless extra.empty?
 
