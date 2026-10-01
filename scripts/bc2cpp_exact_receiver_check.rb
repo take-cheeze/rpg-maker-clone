@@ -210,8 +210,15 @@ check.call('a parameter keeps the guarded arm with its send',
 check.call('a reassignment of the register withdraws the proof', dynamic.call('reassigned') && !exact.call('reassigned'))
 check.call('a branch join withdraws the proof', dynamic.call('branch') && !exact.call('branch'))
 check.call('a write from a captured block withdraws the proof', !exact.call('upvar_write'))
+# A register that is nil on one path (ADR 0296) takes one nil test, then the exact call: never an
+# unconditional one.
+nil_tested = ->(name) { fn.call(name).include?('NILABLE_RECEIVER') }
 check.call('a loop-carried, conditional, rescued, ensured or or-assigned register is not proven',
-           %w[loop_reassign cond_assign while_assign rescue_join ensure_join case_join or_assign block_each].none? { |name| exact.call(name) })
+           %w[loop_reassign cond_assign while_assign rescue_join ensure_join case_join or_assign block_each].none? do |name|
+             exact.call(name) && !nil_tested.call(name)
+           end)
+check.call('a register that is the literal or nil on two paths takes a nil test and then the exact call',
+           %w[cond_assign while_assign].all? { |name| exact.call(name) && nil_tested.call(name) })
 check.call('a multiple assignment that stores the literal directly is proven', exact.call('masgn'))
 
 check.call('a literal Range gets one arm with no class test, and the else stays for Fibers',

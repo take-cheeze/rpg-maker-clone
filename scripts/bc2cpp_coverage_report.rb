@@ -309,6 +309,11 @@ report << "numeric operand facts (NUMERIC_OPERAND_PROOF): " \
           "#{numeric_kinds.map { |tag, what| "#{numeric_lines.count { |l| l.start_with?("#{tag} ") }} #{what}" }.join(', ')}\n"
 # RETURN_CLASS_TABLE (ADR 0294): names every call of which returns one exact class.
 report << "return-class table (RETURN_CLASS_TABLE): #{count(err, 'return class table (RETURN_CLASS_TABLE)')} names with one exact class\n"
+# CLASS_POOLS (ADR 0296): ivar and argument class sets carried across methods.
+pool_lines = section_lines(err, 'class pools (CLASS_POOLS)')
+pool_lines = [] if pool_lines == ['(none)']
+report << "class pools (CLASS_POOLS): #{pool_lines.count { |l| l.start_with?('CLASSIVAR ') }} ivar pools, " \
+          "#{pool_lines.count { |l| l.start_with?('CLASSARG ') }} argument pools\n"
 # ADR 0279: typed (mrb_int, mrb_sym, mrb_bool) ivar slots given back to boxed slots because a writer
 # the compiler cannot type (attr_writer, computed setter, reflection) can reach them.
 boxed_lines = section_lines(err, 'typed slots demoted to boxed slots (foreign writers, ADR 0279)')
@@ -531,6 +536,12 @@ typed_guarded_sites = @shipped_stdout.scan(%r{^\s*// TYPED :}).size
 typed_exact_sites = @shipped_stdout.scan(%r{^\s*// EXACT_TYPED :}).size
 report << "  TYPED calls: #{typed_guarded_sites} behind a class guard with a send fallback, " \
           "#{typed_exact_sites} guard-free (EXACT_TYPED)\n"
+# ADR 0296: a receiver proven nil-or-one-class takes one nil test; its non-nil path is the exact call.
+nilable_sites = @shipped_stdout.scan(%r{^\s*// NILABLE_RECEIVER :}).size
+nil_arms = @shipped_stdout.scan(/\bbc2cpp_nil_receiver\(M,/).size
+index_exact = @shipped_stdout.scan(%r{^\s*// INDEX_EXACT }).size
+report << "  NILABLE_RECEIVER sites: #{nilable_sites} (#{nil_arms} with a bc2cpp_nil_receiver arm instead of a send), " \
+          "INDEX_EXACT arms: #{index_exact}\n"
 report << "  literal-block sends: #{block_direct_sites} direct call with the block " \
           "(#{block_core_arm_sites} through exact-class core arms that keep the dynamic send as their else), " \
           "#{block_dynamic_sites} dynamic dispatch only\n"

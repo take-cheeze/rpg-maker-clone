@@ -22,7 +22,8 @@ require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
 
 module Bc2cppFixtureRuntime
   ROOT = File.expand_path('..', __dir__)
-  BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
+  # BC2CPP_TOOL names another bc2cpp.rb (a mutant copy, scripts/bc2cpp_class_pools_mutation_check.rb).
+  BC2CPP = ENV.fetch('BC2CPP_TOOL') { File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb') }
 
   module_function
 
@@ -92,7 +93,8 @@ module Bc2cppFixtureRuntime
   # it as mruby's own Ruby (CoreDefs.core_source?), so a check can exercise the core-only proofs.
   # `extra` is more sources ([path, text] pairs) compiled after the fixture, e.g. engine Ruby
   # next to a core fixture.
-  def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil, path: 'fixture.rb', extra: [])
+  def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil, path: 'fixture.rb', extra: [],
+               native: [], foreign: [])
     src = File.join(dir, path)
     FileUtils.mkdir_p(File.dirname(src))
     File.write(src, source)
@@ -103,9 +105,14 @@ module Bc2cppFixtureRuntime
             'BC2CPP_SELF_REGISTERING' => '1', 'BC2CPP_HOT_METHODS' => hot_methods }
     env['ONLY_OWNERS'] = only_owners.join(',') if only_owners
     if closed
-      native = core_native_srcs("#{ROOT}/3rd/mruby") + Dir["#{ROOT}/mruby-rgss/src/*.cxx"] + external_gem_native_srcs(ROOT)
-      env.merge!('NATIVE_SRCS' => Shellwords.join(native),
-                 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)),
+      # `native`/`foreign` are [name, text] pairs of outside sources the closed world must scan.
+      write_outside = lambda do |pairs|
+        pairs.map { |name, text| File.join(dir, name).tap { |file| File.write(file, text) } }
+      end
+      natives = core_native_srcs("#{ROOT}/3rd/mruby") + Dir["#{ROOT}/mruby-rgss/src/*.cxx"] +
+                external_gem_native_srcs(ROOT) + write_outside.call(native)
+      env.merge!('NATIVE_SRCS' => Shellwords.join(natives),
+                 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT) + write_outside.call(foreign)),
                  'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
                  'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).map { |n, d| "#{n}=#{d}" }),
                  NomethodReviewed::ALLOW_ENV => 'allow')
