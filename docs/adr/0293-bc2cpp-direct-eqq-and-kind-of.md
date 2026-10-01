@@ -66,3 +66,11 @@ An open world keeps every send.
   these builds and were left alone. A `BasicObject` receiver of an `is_a?` whose class argument is a
   class still gets the native answer instead of NoMethodError when the world has a `BasicObject`
   subclass (pre-existing for every native primitive; only the raise arm is gated here).
+
+## Interaction with ADR 0290 (guard violation)
+
+One path per site: a stable class/module constant receiver of `===` keeps the class/module tag test, and
+its else arm is the `CLASS_EQQ` guard violation when ADR 0290's proof holds (a rebound constant still
+fails loudly instead of reaching `mrb_class_ptr`), else the by-name send. For `is_a?`/`kind_of?` a stable
+constant argument keeps `CLASS_ARGUMENT`; any other argument raises the TypeError in place. The unproven
+`case/when` default arm, formerly the `CLASS_EQQ` site for constant receivers, is the shared helper.

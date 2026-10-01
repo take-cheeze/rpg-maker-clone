@@ -135,6 +135,10 @@ if ENV['MRBC']
   Dir.mktmpdir do |dir|
     code, err = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS)
     violation = /\bbc2cpp_guard_violation\(M,/
+    # ADR 0293: an unproven `is_a?` argument raises its TypeError in place and an unproven `===`
+    # receiver calls the shared bc2cpp_eqq helper; neither is a violation site.
+    NO_PROOF_FALLBACK = /bc2cpp_send\(|"%v is not class\/module"|\bbc2cpp_eqq\(M,/
+    DISPATCH = /\bbc2cpp_send\(M,|"%v is not class\/module"/
     %w[make_range kind kind_of eqq kind_ns eqq_ns].each do |m|
       text = chunk.call(code, "GvUser##{m}")
       check.call("GvUser##{m}: the proven guard's else arm is bc2cpp_guard_violation, with its marker and site",
@@ -150,16 +154,16 @@ if ENV['MRBC']
     %w[kind_dyn eqq_dyn kind_cond].each do |m|
       text = chunk.call(code, "GvUser##{m}")
       check.call("NEG: GvUser##{m} has no constant proof, so it keeps its dispatch and emits no violation",
-                 !text.match?(violation) && text.include?('bc2cpp_send('))
+                 !text.match?(violation) && text.match?(NO_PROOF_FALLBACK))
     end
     add = chunk.call(code, 'GvUser#add')
     check.call('NEG: a numeric fast path keeps its dispatch arm (Float/Bignum/overflow are valid)',
-               !add.match?(violation) && add.include?('bc2cpp_send('))
+               !add.match?(violation) && (add.include?('bc2cpp_send(') || add.include?('mrb_num_add(')))
     check.call('the helper is emitted', code.include?('static mrb_value bc2cpp_guard_violation(mrb_state* M') &&
                                         code.include?('BC2CPP_GUARD_VIOLATION_DISPATCH') &&
                                         code.include?('BC2CPP_NOMETHOD_VERIFY'))
     violations = count.call(code, violation)
-    sends = count.call(code, /\bbc2cpp_send\(M,/)
+    sends = count.call(code, DISPATCH)
 
     Dir.mktmpdir do |off_dir|
       off_code, off_err = ENV.fetch('BC2CPP_GUARD_VIOLATION', nil).then do |saved|
@@ -172,7 +176,7 @@ if ENV['MRBC']
                  !off_code.match?(violation) && !off_code.include?('bc2cpp_guard_violation_raise') &&
                    !off_err.include?('GUARD_VIOLATION_SITE'))
       check.call('the kill switch restores exactly one dispatch per converted site',
-                 violations.positive? && count.call(off_code, /\bbc2cpp_send\(M,/) == sends + violations)
+                 violations.positive? && count.call(off_code, DISPATCH) == sends + violations)
     end
 
     Dir.mktmpdir do |open_dir|
