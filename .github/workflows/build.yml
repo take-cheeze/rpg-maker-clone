@@ -1080,6 +1080,9 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_binary_loader_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_closed_world_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_direct_check.rb
+              # ADR 0302: RGSS native result facts (audited against the native sources), the native
+              # class constant proof, and the instance-receiver proof of a `.singleton` definer.
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_result_facts_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_receiver_typing_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_native_core_direct_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_singleton_arity_check.rb
@@ -1506,6 +1509,7 @@ jobs:
               ruby scripts/bc2cpp_core_mixins_check.rb
               ruby scripts/bc2cpp_typed_reflection_check.rb
               ruby scripts/bc2cpp_numeric_operand_check.rb
+              ruby scripts/bc2cpp_native_result_facts_check.rb
 
           # ADR 0285: the LCF schema oracle against the real reader (host-only, no mrbc).
           - name: bc2cpp LCF schema oracle check
