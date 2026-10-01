@@ -1067,6 +1067,9 @@ jobs:
               # ADR 0285: record-like Hash slots (analysis fixtures, generated code, and a
               # run against real mruby that needs BC2CPP_MRUBY_FULL and skips without one).
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_record_hash_check.rb
+              # ADR 0289: LCF row flow (real mruby-lcf compiled under the closed world; the run
+              # against real mruby needs BC2CPP_MRUBY_FULL and skips without one).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_lcf_row_flow_check.rb
               # ADR 0276: arithmetic/compare arms lose their dynamic-send else only for operands
               # a whole-program numeric proof covers; the runtime section compares against the
               # interpreter, including Integer overflow.
@@ -1388,6 +1391,11 @@ jobs:
           # ADR 0285: the LCF schema oracle against the real reader (host-only, no mrbc).
           - name: bc2cpp LCF schema oracle check
             run: ruby scripts/bc2cpp_lcf_schema_oracle_check.rb
+
+          # ADR 0289: the LCF row model against the real reader (host-only; the compiled
+          # fixtures run in the `bc2cpp-checks` job).
+          - name: bc2cpp LCF row flow check (host)
+            run: ruby scripts/bc2cpp_lcf_row_flow_check.rb
 
           - name: RPG2k game-logic checks
             run: |

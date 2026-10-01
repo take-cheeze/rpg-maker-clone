@@ -1141,10 +1141,14 @@
   only as `h[:key]`) gives each key a whole-program class: a key that only ever holds fresh
   instances of one class makes `@ui[:battle].step_action` an unguarded exact-class call, and a
   non-nil Array key feeds the inlined Array loops. Any other use of the Hash (passing it on, `merge!`,
-  `dup`, `send`, `Marshal`, a computed key) refuses the ivar. The LCF schema table is available as a
-  read-class oracle (`tools/bc2cpp/lcf_schema_oracle.rb`) but is not wired to any pass, because no
-  receiver is proven to be an LCF row. See
+  `dup`, `send`, `Marshal`, a computed key) refuses the ivar. See
   [`docs/adr/0285-bc2cpp-record-hash-typing.md`](docs/adr/0285-bc2cpp-record-hash-typing.md).
+  The LCF schema table (`tools/bc2cpp/lcf_schema_oracle.rb`) now drives a whole-program class flow
+  (`LCF_ROW_FLOW`): a value proven to be a `LCF::Database`, a table or a row makes `db[:x][i][:y]` exact-class,
+  guard-free direct calls, and a field read gets its schema class. `LCF::Array2D#[]=` keeps only nil, bytes
+  or a row over the table's own schema so that a table read is always such a row. The build prints whether
+  the proof is on (`== LCF row flow ==`). See
+  [`docs/adr/0289-bc2cpp-lcf-row-flow.md`](docs/adr/0289-bc2cpp-lcf-row-flow.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
