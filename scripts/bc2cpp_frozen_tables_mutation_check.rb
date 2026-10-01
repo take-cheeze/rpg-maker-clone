@@ -22,7 +22,7 @@ MUTANTS = [
    'return NumericFlow::NIL unless index.between?(-n, n - 1)', 'return shape.slots.last || NumericFlow::NIL unless index.between?(-n, n - 1)',
    /oob_plain/],
   ['a missing Hash key reads no value (the nil default is forgotten)', 'frozen_tables.rb',
-   'pos ? shape.slots[pos] : NumericFlow::NIL', 'pos ? shape.slots[pos] : 0', /hash_absent_plain/],
+   'pos ? shape.slots[pos] : NumericFlow::NIL', 'pos ? shape.slots[pos] : shape.joined', /hash_absent_plain/],
   ['a non-Integer index is trusted (a Range reads an Array)', 'frozen_tables.rb',
    'return NumericFlow::OTHER unless key_int', 'return shape.joined unless key_int', /may be a Range/],
   ['a redefined Array#[] is ignored', 'codegen_frozen_tables.rb',
