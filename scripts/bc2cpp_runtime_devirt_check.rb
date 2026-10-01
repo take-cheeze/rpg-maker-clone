@@ -107,13 +107,19 @@ SHIFT = <<~'RUBY'
 RUBY
 
 shift_code = nil
+shift_helpers = nil
 fixture(SHIFT, 'lshift', natives: ['<<']) do |gen, registry|
   method = registry.fetch('shl').find { |d| d.owner == 'Bits' }
   shift_code = gen.compile_method(method.irep).fetch(:code)
+  shift_helpers = gen.emit_numeric_slow_helpers([shift_code])
 end
-check.call('Integer << emits the mrb_num_shift arm with the fallback for overflow',
+# NUMERIC_SLOW_PATH (docs/adr/0290): overflow and every non-immediate case leave the arm for bc2cpp_slow_lshift,
+# which holds the by-name call.
+check.call('Integer << emits the mrb_num_shift arm with the helper call for overflow',
            shift_code.include?('INTEGER_LSHIFT :<<') && shift_code.include?('mrb_num_shift(M, bc2cpp_shl_v, bc2cpp_shl_w, &bc2cpp_shl_out)') &&
-             shift_code.scan('mrb_funcall(M, r').size >= 2 && shift_code.include?('mrb_integer(r') && shift_code.include?('!= MRB_INT_MIN'))
+             shift_code.scan('bc2cpp_slow_lshift(M, r').size >= 2 && !shift_code.include?('mrb_funcall(M, r') &&
+             shift_code.include?('mrb_integer(r') && shift_code.include?('!= MRB_INT_MIN') &&
+             shift_helpers.include?('mrb_funcall(M, a, "<<", 1, b)'))
 
 candidates = [ENV['BC2CPP_MRUBY_CORE']].compact + Dir[File.join(root, 'build*/mruby/host/mrbc')]
 core = candidates.find { |dir| File.exist?(File.join(dir, 'lib/libmruby_core.a')) && File.directory?(File.join(dir, 'include')) }
@@ -136,6 +142,7 @@ else
       static int fallbacks = 0;
       // Count every trip to the ordinary dispatch the emitted snippet makes.
       #define mrb_funcall(M, s, name, argc, ...) (++fallbacks, (mrb_funcall)(M, s, name, argc, __VA_ARGS__))
+      #{shift_helpers}
       static mrb_value emitted(mrb_state* M, mrb_value in_recv, mrb_value in_arg) {
         mrb_value #{recv} = in_recv, #{arg} = in_arg;
         #{recv == "r#{dest}" ? '' : "mrb_value r#{dest} = mrb_nil_value();"}
@@ -189,16 +196,20 @@ RUBY
 UNARY_METHODS = { 'neg' => '-@', 'zero' => 'zero?', 'rnd' => 'round' }.freeze
 
 unary_code = {}
+unary_helpers = nil
+UNARY_HELPER = { '-@' => 'neg', 'zero?' => 'zero', 'round' => 'round' }.freeze
 fixture(UNARY, 'int_unary', natives: UNARY_METHODS.values) do |gen, registry|
   UNARY_METHODS.each do |meth, op|
     unary_code[op] = gen.compile_method(registry.fetch(meth).find { |d| d.owner == 'Num' }.irep).fetch(:code)
   end
+  unary_helpers = gen.emit_numeric_slow_helpers(unary_code.values)
 end
 UNARY_METHODS.each_value do |op|
   code = unary_code.fetch(op)
-  check.call("Integer #{op} is computed inline with the funcall kept for other receivers",
+  check.call("Integer #{op} is computed inline with the NUMERIC_SLOW_PATH helper (which holds the funcall) for other receivers",
              code.include?("INTEGER_UNARY :#{op}") && code.match?(/if \(mrb_integer_p\(r\d+\)/) &&
-               code.match?(/mrb_funcall\(M, r\d+, "#{Regexp.escape(op)}", 0\)/))
+               code.match?(/bc2cpp_slow_#{UNARY_HELPER.fetch(op)}(?:_f)?\(M, r\d+\)/) && !code.include?('mrb_funcall(M') &&
+               unary_helpers.match?(/mrb_funcall\(M, a, "#{Regexp.escape(op)}", 0\)/))
 end
 check.call('-MRB_INT_MIN (a bigint) keeps the dispatch', unary_code.fetch('-@').include?('!= MRB_INT_MIN'))
 
@@ -246,6 +257,7 @@ unless core.nil? || !system('g++', '--version', out: File::NULL, err: File::NULL
         return (mrb_funcall)(M, self, "round", 0);
       }
       #define mrb_funcall(M, s, name, argc) (++fallbacks, reference(M, s, name))
+      #{unary_helpers}
       #{functions.join}
       static mrb_value (*const emitted[])(mrb_state*, mrb_value) = { #{snippets.each_index.map { |i| "emitted_#{i}" }.join(', ')} };
       static const char* const names[] = { #{snippets.map { |op, *| "\"#{op}\"" }.join(', ')} };

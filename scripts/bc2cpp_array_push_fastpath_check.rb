@@ -83,10 +83,11 @@ Dir.mktmpdir do |dir|
                push_code.include?('mrb_funcall(M,'))
 
   append_code = send_code(gen, ireps, registry, 'append', '<<')
+  # The Integer arm that shares this site sends everything else to the NUMERIC_SLOW_PATH helper (ADR 0290),
+  # which holds the by-name call.
   check.call('one-argument << retains its guarded direct Array path and dynamic fallback',
              append_code.include?('ARRAY_PUSH :<<') && append_code.include?('M->array_class') &&
-               append_code.include?('mrb_ary_push(M,') && append_code.include?('mrb_funcall(M,') &&
-               append_code.include?('"<<", 1'))
+               append_code.include?('mrb_ary_push(M,') && append_code.include?('bc2cpp_slow_lshift(M, '))
 
   many_code = send_code(gen, ireps, registry, 'push_many', 'push')
   check.call('multi-argument push remains dynamic and does not use mrb_ary_push fast path',
@@ -102,7 +103,7 @@ Dir.mktmpdir do |dir|
   override_append = send_code(override_gen, override_ireps, override_registry, 'append', '<<')
   check.call('bytecode overrides on base Array disable the << fast path',
              !override_append.include?('ARRAY_PUSH :<<') && !override_append.include?('mrb_ary_push(M,') &&
-               override_append.include?('mrb_funcall(M,') && override_append.include?('"<<", 1'))
+               override_append.include?('bc2cpp_slow_lshift(M, '))
 end
 
 if failures.empty?
