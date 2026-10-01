@@ -12,9 +12,11 @@
 #    maker, dup, a mixed-class parameter, a block parameter, a Hash that looks like a row) keeps its
 #    guard or fallback.
 # 3. With BC2CPP_MRUBY_FULL and g++: the fixtures run on real mruby, interpreted and compiled, and
-#    must answer alike, nil holes, absent chunks and foreign rows included.
+#    must answer alike, nil holes, absent chunks and foreign rows included. The run repeats on a
+#    32-bit-`mrb_int` build (BC2CPP_MRUBY_FULL32, BC2CPP_MRBC32; scripts/bc2cpp_width_build.rb int32).
 #
-# Usage: MRBC=path/to/mrbc [BC2CPP_MRUBY_CORE=dir BC2CPP_MRUBY_FULL=dir] ruby scripts/bc2cpp_lcf_row_flow_check.rb
+# Usage: MRBC=path/to/mrbc [BC2CPP_MRUBY_CORE=dir BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_FULL32=dir
+#         BC2CPP_MRBC32=mrbc32] ruby scripts/bc2cpp_lcf_row_flow_check.rb
 
 require 'set'
 require 'stringio'
@@ -403,60 +405,77 @@ refusal.call("module LCF\n  class Array2D\n    def []=(i, v); @data[i] = v; end\
 
 # ---------------------------------------------------------------------------
 puts '-- fixtures on real mruby, interpreted and compiled'
-full = runtime.full
-if full.nil? || !runtime.compiler?
+# [label, build dir, mrbc, extra flags]
+builds = []
+builds << ['mrb_int 64', runtime.full, ENV['MRBC'], ''] if runtime.full
+if ENV['BC2CPP_MRUBY_FULL32'] && ENV['BC2CPP_MRBC32']
+  builds << ['mrb_int 32 (MRB_INT32)', ENV['BC2CPP_MRUBY_FULL32'], ENV['BC2CPP_MRBC32'],
+             '-DMRB_32BIT -DMRB_INT32 -no-pie -DMRB_USE_BIGINT']
+end
+if builds.empty? || !runtime.compiler?
   puts '  SKIP run: set BC2CPP_MRUBY_FULL (libmruby.a with the full-core gems, from the patched 3rd/mruby) and have g++'
 else
-  Dir.mktmpdir do |dir|
-    owners = %w[LrHost] + LCF_OWNERS
-    _code, err = compile.call(HOST, %w[LrHost], dir)
-    calls = %w[name_of level_plus narrowed_name helper_name status_of].flat_map do |meth|
-      [1, 2, 3, 99].map { |i| "        one(M, \"#{meth}(#{i})\", host, \"#{meth}\", #{i});" }
-    end
-    body = <<~CPP
-      static void one(mrb_state* M, const char* label, mrb_value host, const char* meth, int n) {
-        mrb_value arg = mrb_fixnum_value(n);
-        call(M, label, host, meth, 1, &arg);
-      }
-      static int scenario(mrb_state* M) {
-        mrb_value host = mrb_obj_new(M, mrb_class_get(M, "LrHost"), 0, nullptr);
-      #{calls.join("\n")}
-        call(M, "hole", host, "hole");
-        call(M, "hole_name", host, "hole_name");
-        call(M, "absent", host, "absent");
-        call(M, "absent_title", host, "absent_title");
-        call(M, "has_rows?", host, "has_rows?");
-        call(M, "shared_a", host, "shared_a");
-        call(M, "shared_b", host, "shared_b");
-        call(M, "via_send", host, "via_send");
-        call(M, "dup_name", host, "dup_name");
-        call(M, "each_names", host, "each_names");
-        mrb_value t = mrb_true_value(), f = mrb_false_value();
-        call(M, "mixed_name(true)", host, "mixed_name", 1, &t);
-        call(M, "mixed_name(false)", host, "mixed_name", 1, &f);
-        call(M, "put_foreign", host, "put_foreign");
-        mrb_value two = mrb_fixnum_value(2), one_ = mrb_fixnum_value(1);
-        call(M, "name_of(2) after put_foreign", host, "name_of", 1, &two);
-        call(M, "put_other", host, "put_other");
-        call(M, "put_nil", host, "put_nil");
-        call(M, "name_of(1) after put_nil", host, "name_of", 1, &one_);
-        return 0;
-      }
-    CPP
-    built, output = runtime.run(dir, err, owners, body, build: full, full: true)
-    check.call('the fixture compiles and runs against real mruby', built)
-    puts output unless built
-    if built
-      sections = runtime.sections(output)
-      values = ->(section) { sections.fetch(section, []).reject { |l| l.start_with?('  ') } }
-      check.call('every call answers what the interpreter answers, nil holes, absent chunks and foreign rows included',
-                 !values.call('interpreted').empty? && values.call('interpreted') == values.call('compiled'))
-      puts output if ENV['BC2CPP_CHECK_VERBOSE'] || values.call('interpreted') != values.call('compiled')
-      check.call('the reads return the stored values',
-                 values.call('compiled').include?('name_of(1) => "Hero"') && values.call('compiled').include?('level_plus(1) => 8'))
-      check.call('a hole and an absent chunk raise NoMethodError on the next index',
-                 values.call('compiled').any? { |l| l.start_with?('hole_name => raised NoMethodError') } &&
-                 values.call('compiled').any? { |l| l.start_with?('absent_title => raised NoMethodError') })
+  builds.each do |label, full, mrbc, flags|
+    puts "  -- #{label}"
+    saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
+    ENV['MRBC'] = mrbc
+    ENV['BC2CPP_CXXFLAGS'] = flags
+    begin
+      Dir.mktmpdir do |dir|
+        owners = %w[LrHost] + LCF_OWNERS
+        _code, err = compile.call(HOST, %w[LrHost], dir)
+        calls = %w[name_of level_plus narrowed_name helper_name status_of].flat_map do |meth|
+          [1, 2, 3, 99].map { |i| "        one(M, \"#{meth}(#{i})\", host, \"#{meth}\", #{i});" }
+        end
+        body = <<~CPP
+          static void one(mrb_state* M, const char* label, mrb_value host, const char* meth, int n) {
+            mrb_value arg = mrb_fixnum_value(n);
+            call(M, label, host, meth, 1, &arg);
+          }
+          static int scenario(mrb_state* M) {
+            mrb_value host = mrb_obj_new(M, mrb_class_get(M, "LrHost"), 0, nullptr);
+          #{calls.join("\n")}
+            call(M, "hole", host, "hole");
+            call(M, "hole_name", host, "hole_name");
+            call(M, "absent", host, "absent");
+            call(M, "absent_title", host, "absent_title");
+            call(M, "has_rows?", host, "has_rows?");
+            call(M, "shared_a", host, "shared_a");
+            call(M, "shared_b", host, "shared_b");
+            call(M, "via_send", host, "via_send");
+            call(M, "dup_name", host, "dup_name");
+            call(M, "each_names", host, "each_names");
+            mrb_value t = mrb_true_value(), f = mrb_false_value();
+            call(M, "mixed_name(true)", host, "mixed_name", 1, &t);
+            call(M, "mixed_name(false)", host, "mixed_name", 1, &f);
+            call(M, "put_foreign", host, "put_foreign");
+            mrb_value two = mrb_fixnum_value(2), one_ = mrb_fixnum_value(1);
+            call(M, "name_of(2) after put_foreign", host, "name_of", 1, &two);
+            call(M, "put_other", host, "put_other");
+            call(M, "put_nil", host, "put_nil");
+            call(M, "name_of(1) after put_nil", host, "name_of", 1, &one_);
+            return 0;
+          }
+        CPP
+        built, output = runtime.run(dir, err, owners, body, build: full, full: true)
+        check.call('the fixture compiles and runs against real mruby', built)
+        puts output unless built
+        if built
+          sections = runtime.sections(output)
+          values = ->(section) { sections.fetch(section, []).reject { |l| l.start_with?('  ') } }
+          check.call('every call answers what the interpreter answers, nil holes, absent chunks and foreign rows included',
+                     !values.call('interpreted').empty? && values.call('interpreted') == values.call('compiled'))
+          puts output if ENV['BC2CPP_CHECK_VERBOSE'] || values.call('interpreted') != values.call('compiled')
+          check.call('the reads return the stored values',
+                     values.call('compiled').include?('name_of(1) => "Hero"') && values.call('compiled').include?('level_plus(1) => 8'))
+          check.call('a hole and an absent chunk raise NoMethodError on the next index',
+                     values.call('compiled').any? { |l| l.start_with?('hole_name => raised NoMethodError') } &&
+                     values.call('compiled').any? { |l| l.start_with?('absent_title => raised NoMethodError') })
+        end
+      end
+    ensure
+      saved[0] ? ENV['MRBC'] = saved[0] : ENV.delete('MRBC')
+      saved[1] ? ENV['BC2CPP_CXXFLAGS'] = saved[1] : ENV.delete('BC2CPP_CXXFLAGS')
     end
   end
 end

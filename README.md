@@ -1134,6 +1134,13 @@
   or a Ruby `freeze` on instances exists): 176 fewer by-name-reachable sites on the wio build; see
   [`docs/adr/0301-bc2cpp-exact-receiver-consumers-and-constant-pools.md`](docs/adr/0301-bc2cpp-exact-receiver-consumers-and-constant-pools.md)
   and `scripts/bc2cpp_exact_receiver_flow_check.rb`.
+  `BC2CPP_SITE_PROFILE=DIR` builds count how often each remaining by-name `bc2cpp_send` and
+  `mrb_funcall*` site runs, and `scripts/bc2cpp_dynamic_site_census.rb --rank` ranks the sites by
+  executed hits with the reason each was kept dynamic; off by default and byte-identical when unset
+  (see
+  [`docs/adr/0298-bc2cpp-executed-site-profile.md`](docs/adr/0298-bc2cpp-executed-site-profile.md),
+  [`docs/bc2cpp-dynamic-site-census.md`](docs/bc2cpp-dynamic-site-census.md) and
+  `scripts/bc2cpp_site_profile_check.rb`).
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
@@ -1470,6 +1477,10 @@
   **Cloudflare Pages** preview URL back on it. See
   [`docs/deploy.md`](docs/deploy.md) for the one-time repo setup (Pages source +
   Cloudflare secrets).
+- CI also runs the width-sensitive bc2cpp checks on a 32-bit-`mrb_int` and a
+  no-bigint mruby (the Emscripten/Wio/PSP widths) and listens for merge-queue
+  runs; [`docs/ci.md`](docs/ci.md) lists the repository settings the owner has
+  to enable for the queue.
 
 ### Android
 
