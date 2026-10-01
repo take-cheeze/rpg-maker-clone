@@ -125,7 +125,7 @@ fixture(INHERITED, 'inherited') do |code_of|
   check.call("Base#label's branch also accepts exactly #{INHERITED_LABEL_OWNERS}",
              label.include?("INHERITED_GUARD :label -- also #{INHERITED_LABEL_OWNERS}\n"))
   check.call('the receiver class is read once and the funcall fallback is kept',
-             label.scan('mrb_obj_class(M, ').size == 1 && label.match?(/\} else \{\n\s+r\d+ = mrb_funcall\(M, r\d+, "label", 0\);/))
+             label.scan('mrb_obj_class(M, ').size == 1 && label.match?(/\} else \{\n\s+r\d+ = (?:mrb_funcall|bc2cpp_funcall_explicit)\(M, r\d+, "label", 0\);/))
   check.call('an inherited accessor joins the same branch, and any mixin on the way declines',
              code_of.call('Probe', 'run_db').include?("INHERITED_GUARD :db -- also Leaf < Base, Mid < Base, Override < Base\n"))
 end

@@ -1024,6 +1024,9 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_nomethod_verify_check.rb
               # A guard on a stable class constant fails with a logged error, not a dispatch (docs/adr/0290).
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_guard_violation_check.rb
+              # ADR 0299: by-name sends check visibility and attr_reader arity; embedded stores check frozen.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_checked_send_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_embedded_frozen_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_funcall_argc_check.rb
               # SITE_PROFILE (docs/adr/0298): executed-count counters are off by default and rank what ran.
               MRBC="$mrbc" ruby scripts/bc2cpp_site_profile_check.rb

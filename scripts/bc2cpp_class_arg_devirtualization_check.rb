@@ -54,7 +54,7 @@ Dir.mktmpdir do |dir|
                           owner_def: method)
   check.call('call through @db uses a guarded TYPED target and dynamic fallback',
              code.include?('TYPED :edition -> Game::Database#edition') &&
-               code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'))
+               code.include?('mrb_obj_class(M, r') && code.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M,/))
 end
 
 if failures.empty?

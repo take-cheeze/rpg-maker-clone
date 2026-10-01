@@ -55,7 +55,7 @@ Dir.mktmpdir do |dir|
   check.call('the wide call goes through mrb_funcall_argv with all 20', wide.match?(/(?:mrb|bc2cpp)_funcall_argv\(M, \w+, [^;]*, 20, /))
 
   narrow = code.call('narrow')
-  check.call('a narrow splat keeps the plain variadic mrb_funcall', narrow.match?(/mrb_funcall\(M, \w+, "new", 2, /))
+  check.call('a narrow splat keeps the plain variadic mrb_funcall', narrow.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M, \w+, "new", 2, /))
 end
 
 if failures.empty?

@@ -70,7 +70,7 @@ Dir.mktmpdir do |dir|
                reader.scan('mrb_obj_class(M, r').size == 3)
   check.call('compiled owner keeps its direct _impl call', reader.match?(/Game__Compiled_+label_+impl\(M,/))
   check.call('every other class falls back to dynamic dispatch',
-             reader.rstrip.end_with?('}') && reader.include?('mrb_funcall(M, r') && reader.include?('"label", 0'))
+             reader.rstrip.end_with?('}') && reader.match?(/(?:mrb_funcall|bc2cpp_funcall_explicit)\(M, r/) && reader.include?('"label", 0'))
 
   writer = emit.call('write', 'SEND')
   check.call('writer stores the ivar and yields the assigned value',
