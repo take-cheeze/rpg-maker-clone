@@ -123,7 +123,7 @@ RUBY
 OWNERS = %w[RcBox RcSub RcOther RcFx RcMM RcPre RcDrv].freeze
 EXACT = %w[e_local e_call e_chain e_forward e_recursive e_rescue e_block_return e_ivar e_sub e_sub_inherited e_moved
            e_typed e_typed_ivar].freeze
-GUARDED = %w[g_mixed g_nil g_param g_ivar_read g_after_call g_yield g_reassigned g_branch g_captured g_ensure g_typed].freeze
+GUARDED = %w[g_mixed g_param g_ivar_read g_after_call g_yield g_reassigned g_branch g_captured g_ensure g_typed].freeze
 # The sends that go through the table (the others in EXACT are the fresh `.new` of the same proof).
 TABLE_ONLY = %w[e_call e_chain e_forward e_recursive e_rescue e_block_return e_sub e_sub_inherited e_moved e_typed].freeze
 
@@ -149,6 +149,10 @@ Dir.mktmpdir do |dir|
   GUARDED.each do |fn|
     check.call("NEG #{fn}: keeps its guard or its dispatch", guarded.call(code, fn))
   end
+  # nil-or-one-class (ADR 0296): one nil test, and the non-nil path is the exact call.
+  check.call('g_nil: a nil-or-one-class result takes a nil test and a guard-free call',
+             body_of.call(code, 'g_nil').include?('NILABLE_RECEIVER :tag') && exact.call(code, 'g_nil') &&
+               !body_of.call(code, 'g_nil').include?('runtime-class-checked direct C++ call'))
   check.call('the exact sends call the owner\'s body directly',
              body_of.call(code, 'e_call').scan(/EXACT_CLASS :bump -> RcBox#bump/).size == 2 &&
                body_of.call(code, 'e_sub').include?('EXACT_CLASS :tag -> RcSub#tag') &&

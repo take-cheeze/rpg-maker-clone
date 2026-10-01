@@ -1121,6 +1121,13 @@
   receiver is proven exactly its guard class becomes a guard-free direct call; see
   [`docs/adr/0289-bc2cpp-return-class-table.md`](docs/adr/0289-bc2cpp-return-class-table.md) and
   `scripts/bc2cpp_return_class_check.rb`.
+  Class pools carry the same exact classes across methods: an ivar every writer of the closed world
+  gives one class, and an argument every visible call site passes one class to. A receiver proven
+  nil-or-one-class (`@ui = nil` then `@ui = {}`) takes one `nil?` test and the exact path, and
+  `x[i]`/`x[i] = v` on an exact Array or Hash drops its class test. `BC2CPP_CLASS_POOLS=0` turns
+  them off; see
+  [`docs/adr/0296-bc2cpp-class-pools.md`](docs/adr/0296-bc2cpp-class-pools.md),
+  `scripts/bc2cpp_class_pools_check.rb` and `scripts/bc2cpp_guard_hint_report.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
