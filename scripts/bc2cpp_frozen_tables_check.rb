@@ -133,7 +133,9 @@ FIXTURE = <<~RUBY
     def list_name; EcTables::LIST[0] + 1; end
     def dup_idx; EcTables::IDX.dup[0] + 1; end
     def concat_frozen; ([1, 2] + [3]).freeze[0] + 1; end
-    def late_freeze; a = [1, 2]; EcUse.poison(a); a.freeze; a[0] + 1; end
+    def late_freeze; a = [1, 2]; EcUse.poison(a); b = a.freeze; b[0] + 1; end
+    def oob_plain; EcTables::IDX[5] + 1; end
+    def hash_absent_plain; EcTables::DIRS[3] + 1; end
     def splat_freeze(l); [*l, 1].freeze[0] + 1; end
     def sub_pick(t); t[0] + 1; end
     def p_read; @p[0] + 1; end
@@ -202,6 +204,8 @@ ARG_SITE = { 'arg_read' => 'an argument every call site passes the table' }.free
 RETURN_SITE = { 'via_return' => 'a method that returns the table' }.freeze
 NEGATIVE = {
   'var_idx' => 'an index not shown to be an Integer (it may be a Range, whose result is an Array)',
+  'oob_plain' => 'a literal index past the end is nil',
+  'hash_absent_plain' => 'a literal key the Hash does not hold is nil',
   'mutable_idx' => 'a literal that is not frozen',
   'shared_name' => 'a constant name another scope binds to a table of other slots',
   'list_name' => 'a constant name another scope binds to a mutable Array',
@@ -358,7 +362,7 @@ end
 # ---------------------------------------------------------------------------
 READS = %w[lit_idx neg_idx oob_default var_calc var_calc_oob ends pick counts hash_lit hash_sym hash_absent float_slot big_sum nested empty_first
            local_alias ivar_read via_arg via_return mutable_idx shared_name list_name dup_idx concat_frozen late_freeze
-           p_read].freeze
+           p_read oob_plain hash_absent_plain].freeze
 INDEXED = [['var_idx', 0], ['var_idx', 2], ['var_idx', 3], ['var_idx', -1], ['var_idx', -4], ['hash_var', 8], ['hash_var', 3],
            ['hash_var', 99]].freeze
 MUTATIONS = %w[m_push m_set m_alias m_pop m_shift m_unshift m_insert m_concat m_replace m_fill m_map m_sort m_reverse
