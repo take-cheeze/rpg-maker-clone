@@ -334,7 +334,7 @@ if ENV['MRBC']
 
     Dir.mktmpdir do |off_dir|
       off_code, off_err = generate.call(FIXTURE, off_dir, env: { 'BC2CPP_FROZEN_TABLES' => '0' })
-      check.call('the kill switch (BC2CPP_FROZEN_TABLES=0): no shape and no table read proven by the numeric flow',,
+      check.call('the kill switch (BC2CPP_FROZEN_TABLES=0): no shape and no table read proven by the numeric flow',
                  !off_err.include?('FROZENTABLE') && off_err.include?('off: disabled by BC2CPP_FROZEN_TABLES=0') &&
                    POSITIVE.keys.reject { |fn| %w[via_arg].include?(fn) }.none? do |fn|
                      numeric_proof.call(off_code, fn)
