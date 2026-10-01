@@ -22,7 +22,7 @@ families:
 | family | sites | else already an error (`bc2cpp_nomethod`) | else kept (dispatch) | guard-free |
 | --- | ---: | ---: | ---: | ---: |
 | `EXACT_TYPED` / `CLOSED_WORLD_EXACT_CLASS` | 282 | | | 282 |
-| `TYPED` | 245 | 162 | 69 | 15 |
+| `TYPED` | 246 | 162 | 69 | 15 |
 | `IVAR_ACCESSOR` | 1,109 | 855 | 41 | 213 |
 | `MONO_EMBED_GUARD` | 1,207 | 1,204 | 3 | |
 | `POLY_SMALL_N` | 3,014 | 2,268 | 746 (374 by a core/native/singleton/opaque definer, 372 by name) | |
@@ -35,7 +35,7 @@ class-chain arms (core/native/singleton/dynamic_install/opaque definers may answ
 (a compare and a call per site) and, behind ADR 0289's exact-class flow, the receivers it could not carry
 across a method boundary: `NumericFlow::OPAQUE` kept class bits out of every pooled ivar and argument. The
 unresolved receivers were mostly `@ivar` reads (`get_ivar`: 42 of 69 kept `TYPED`, 30 of 41 kept
-`IVAR_ACCESSOR`, 150 of 380 kept `POLY_SMALL_N`) and incoming arguments.
+`IVAR_ACCESSOR`, 87 of 374 kept `POLY_SMALL_N` chains) and incoming arguments.
 
 ## Decision
 
@@ -91,13 +91,13 @@ off; `=strict` also withdraws the pools whenever any Ruby in the build can reach
   whole-program alias analysis. The family is 7 `ELEMENT` + 117 `IVAR_ACCESSOR/ELEMENT` sites; 0 converted.
 - **(4) complete subclass set of a frozen hierarchy.** For `self` this is CHA_SELF (ADR 0254), already done. For
   any other receiver the proof "the candidate set equals the hierarchy" is useless without "the receiver is in the
-  hierarchy", which is the receiver class-set proof above: after this change 91% of the kept `POLY_SMALL_N` sites
-  have a receiver set that still contains an unmodelled class (`OTHER`: a call result outside the return table, an
+  hierarchy", which is the receiver class-set proof above: after this change 331 of the 371 kept `POLY_SMALL_N` sites
+  (89%) have a receiver set that still contains an unmodelled class (`OTHER`: a call result outside the return table, an
   argument with an unvisible caller, a captured local). The `singleton_definer` reason (160 sites) is about
   the *name* (`Graphics.update` next to `window.update`), which only a "receiver is not a class object" fact
   removes; that fact comes from the same set.
 - **Multi-class sets** (`POLY_SMALL_N` over an ivar holding {A, B, nil}) would turn the chain's else into a
-  violation trap. 2 sites in the wio build have such a set; not implemented.
+  violation trap. 4 kept sites in the wio build have a fully known multi-class set; not implemented.
 
 ## Withdrawal conditions
 
@@ -121,27 +121,40 @@ off; `=strict` also withdraws the pools whenever any Ruby in the build can reach
 
 ## Consequences
 
-Measured on the wio closed world, three gems, shipped codegen (`scripts/bc2cpp_coverage_report.rb`;
-`BC2CPP_CLASS_POOLS=0` is the "before", same master):
+Measured on the wio closed world, three gems, shipped codegen (`scripts/bc2cpp_coverage_report.rb` and
+`scripts/bc2cpp_dynamic_site_census.rb`; `BC2CPP_CLASS_POOLS=0` is the "before", same master `f70fef67`):
 
 | | before | after |
 | --- | ---: | ---: |
-| `bc2cpp_send` call sites in generated methods (census) | 5,081 | 4,202 |
-| cached send sites (coverage report) | 5,553 | 4,674 |
+| `bc2cpp_send` call sites in generated methods (census) | 5,027 | 4,236 |
+| cached send sites (coverage report) | 5,499 | 4,708 |
 | `TYPED` behind a class guard with a send fallback | 246 | 101 |
 | `EXACT_TYPED` guard-free calls | 246 | 387 |
-| `IVAR_ACCESSOR` guard-free | 213 | 316 |
-| `NILABLE_RECEIVER` sites (nil arm is `bc2cpp_nil_receiver`: 805) | 0 | see report |
+| `IVAR_ACCESSOR` guard-free / kept dispatch / error else | 213 / 41 / 855 | 316 / 25 / 776 |
+| `NILABLE_RECEIVER` sites (each with a `bc2cpp_nil_receiver` arm, not a send) | 0 | 805 |
+| `INDEX_EXACT` arms | 121 | 831 |
 | class pools | 0 | 171 ivar, 58 argument |
-| `core_tag_chain_else` with an ivar receiver (census) | 830 | 277 |
-| `rgss_native_exact_class_else` (census) | 628 | 518 |
+| `core_tag_chain_else`, receiver an ivar (census) | 829 | 277 |
+| `rgss_native_exact_class_else` (census) | 587 | 567 |
+| `NOMETHOD_REVIEWED` keys | 3,118 | 2,930 (188 fallbacks became unreachable; none added) |
 
-Per family (sites, provable, converted): `TYPED` 245 -> 144 guarded (101 kept, 43 error arms) and 142 more
-guard-free; `IVAR_ACCESSOR` kept 41 -> 25, guard-free +103; `MONO_EMBED_GUARD` unchanged (its guards were already
-error arms and its receivers are not ivar reads); `POLY_SMALL_N`/`POLY_TABLE` kept 816 -> 811 (none of the
-remaining ones has a fully known receiver set, see (4)); element classes 0 -> 0. The optcarrot probe
-(open world) is byte-identical: its coverage report `cmp`s equal with the pools on and off, since every proof
-needs the closed world.
+Per family (sites, provable, converted), wio build:
+
+| family | sites | provable | converted |
+| --- | ---: | ---: | ---: |
+| (1) ivar class proofs (every family, receiver an `@ivar`) | 1,685 sites, 202 of them with a kept dispatch | 171 of 884 ivars pooled: 126 exact, 45 nil-or-one-class | kept dispatch 202 -> 158; guard-free `TYPED`/`IVAR_ACCESSOR` +141; 805 sites nil-tested |
+| (2) entry-argument pools | 1,448 candidate arguments, 1,884 sites with an incoming-argument receiver | 58 pools | counted in the rows above and below; no separate count |
+| (3) element classes | 124 | 0 | 0 (obstacle above) |
+| (4) frozen-hierarchy POLY sets | 371 kept `POLY_SMALL_N` + 70 `POLY_TABLE` | 4 with a fully known multi-class set; 331 of 371 have an unmodelled class in the receiver set | 0 |
+
+ADR 0295 measured argument-class pooling alone (on `closed_world_exact_target` receivers) at about zero sites and did not
+adopt it; the 58 argument pools here are consistent with that (they are a small part of the change), and the
+gain comes from the ivar pools and the nil-or-one-class consumers it did not have. The sites removed are the
+census's `core_tag_chain_else:receiver_is_ivar` family (`docs/bc2cpp-dynamic-site-census.md`).
+
+The `MONO_EMBED_GUARD` family (1,207 sites) is unchanged: 1,204 are already error arms, and its receivers are not
+ivar reads. The optcarrot probe (open world) is byte-identical: its coverage report is equal with the pools on and
+off, since every proof needs the closed world.
 
 Residual risk, stated plainly:
 
@@ -163,9 +176,9 @@ Residual risk, stated plainly:
 
 ## Tests
 
-`scripts/bc2cpp_class_pools_check.rb` (generated code: positives, 11 negative worlds, kill switch, strict
+`scripts/bc2cpp_class_pools_check.rb` (generated code: positives, a negative world per withdrawal condition, kill switch, strict
 Marshal, open world; behaviour on real mruby, interpreted against compiled including nil receivers, in a
 full-core, core-only and 32-bit `mrb_int` build, and the documented outside-writer failure),
-`scripts/bc2cpp_class_pools_mutation_check.rb` (six mutants of the soundness conditions, each must be caught),
+`scripts/bc2cpp_class_pools_mutation_check.rb` (seven mutants of the soundness conditions, each must be caught),
 `scripts/bc2cpp_guard_hint_report.rb` (the per-family census above) and the updated
 `scripts/bc2cpp_return_class_check.rb`, `scripts/bc2cpp_nomethod_reviewed_check.rb`.
