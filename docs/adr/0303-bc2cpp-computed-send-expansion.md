@@ -73,8 +73,10 @@ Measured with `BC2CPP_COMPUTED_SEND=0` against the default, same tree:
   `send(*array)` arm. Replacing the parameter sends by an arm chain over "every arity-2 method of `CPU`" would
   need the by-name send kept as the fallback, which is a guard hint (ADR 0210) rather than a proof, so it was not
   built.
-- **The RPG engine (wio closed world):** see the table below; its computed sends (`target.send("#{field}=", v)`,
-  `b.send(name)`) build their names from strings and are outside the proof.
+- **The RPG engine (wio closed world, shipped pass, `scripts/bc2cpp_dynamic_site_census.rb`, master 27edff71):** no
+  change. The generated C++ is byte-identical with the switch off and on (3,186 `bc2cpp_send` sites either way, 0
+  `COMPUTED_SEND` arms). Its 8 computed sends (`target.send("#{field}=", v)`, `b.send(name)`) build their names from
+  strings or arguments and are outside the proof.
 - Expanded sites are exercised on synthetic programs only (`scripts/bc2cpp_computed_send_check.rb`).
 
 A pre-existing divergence this work found and left alone: a by-name `public_send` from compiled code skips the
