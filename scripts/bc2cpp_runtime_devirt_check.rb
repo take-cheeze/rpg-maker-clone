@@ -64,7 +64,7 @@ fixture(ACCESSOR, 'lone_accessor') do |gen, registry|
   check.call('a lone attr_reader is an exact-class chain, not a bare funcall',
              code.include?('POLY_SMALL_N :code -> Command') &&
                code.match?(/if \(bc2cpp_owner_class_\d+\(M\) == mrb_obj_class\(M, r\d+\)\) \{\n\s+r\d+ = mrb_iv_get\(M, r\d+, mrb_intern_cstr\(M, "@code"\)\);/))
-  check.call('any other receiver class still reaches the funcall fallback', code.match?(/\} else \{\n\s+r\d+ = mrb_funcall\(M, r\d+, "code", 0\);/))
+  check.call('any other receiver class still reaches the funcall fallback', code.match?(/\} else \{\n\s+r\d+ = (?:mrb_funcall|bc2cpp_funcall_explicit)\(M, r\d+, "code", 0\);/))
 
   # An embedded ivar's accessor is the synthesized struct reader.
   gen.instance_variable_get(:@ivar_layout)['Command'] = { 'code' => :fixnum, 'label' => :fixnum }

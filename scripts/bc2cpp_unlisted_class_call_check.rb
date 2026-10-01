@@ -44,8 +44,9 @@ end
 sym_names = ->(code) { code[/bc2cpp_sym_names\[\d+\] = \{(.*?)\};/m, 1].to_s.scan(/"((?:[^"\\]|\\.)*)"/).flatten }
 # By-name bc2cpp_send sites of `name` inside one body.
 sends_of = lambda do |code, body, name|
-  index = sym_names.call(code).index(name)
-  index ? body.scan(/bc2cpp_send\(M, [^,]+, #{index},/).size : 0
+  # A checked send (ADR 0299) has a slot of its own, so count every slot spelling the name.
+  indices = sym_names.call(code).each_index.select { |i| sym_names.call(code)[i] == name }
+  indices.sum { |index| body.scan(/bc2cpp_send\(M, [^,]+, #{index},/).size }
 end
 arm = ->(body, kind, klass) { body.match?(/UNLISTED_CLASS_#{kind} [^\n]*\(receiver exactly #{Regexp.escape(klass)}[,)]/) }
 
@@ -504,8 +505,9 @@ builds.first(1).each do |label, build, full_flag, mrbc, flags|
   begin
     BEHAVIOUR_NEGATIVES.each do |what, extra|
       sections = run_world.call(WORLD + extra, build, full_flag)
-      # A withdrawn arm is the by-name send, whose mrb_funcall ignores `private` and an attr_reader's
-      # argument count where the VM raises: the arms are what make those two answers match.
+      # These four answers stay out of the comparison: the by-name send is checked by ADR 0299
+      # (scripts/bc2cpp_checked_send_check.rb pins that), but this driver's @state holds several
+      # classes behind a single traced one, so a devirtualized arm can still answer here.
       comparable = ->(name) { values.call(sections, name).reject { |l| l.start_with?('s9.sec', 's10.sec', 'l2.lvl', 'l3.lvl') } }
       same = !sections.nil? && comparable.call('interpreted').size.positive? && comparable.call('interpreted') == comparable.call('compiled')
       check.call("#{what} (#{label}): compiled answers what the interpreter answers", same)
