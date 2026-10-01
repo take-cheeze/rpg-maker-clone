@@ -431,8 +431,9 @@ builds.each do |label, build, mrbc, flags, full|
       check.call('a computed index reads a slot, or nil when it is out of range',
                  compiled.include?('var_idx(0) => 11') && compiled.include?('var_idx(3) => 1') && compiled.include?('var_idx(-4) => 1') &&
                    compiled.include?('hash_var(99) => 10'))
-      check.call('every attempt to change a frozen table raises FrozenError',
-                 compiled.grep(/\Am_\w+ => raised FrozenError\z/).size == MUTATIONS.size)
+      check.call('every attempt to change a frozen table raises (FrozenError where the build has the method)',
+                 compiled.grep(/\Am_\w+ => raised /).size == MUTATIONS.size &&
+                   (!full || compiled.grep(/\Am_\w+ => raised FrozenError\z/).size == MUTATIONS.size))
       check.call('the tables read the same after every attempt',
                  %w[lit_idx neg_idx ends counts hash_lit hash_sym].all? do |fn|
                    compiled.find { |l| l.start_with?("#{fn} =>") }&.sub("#{fn} =>", '') ==
@@ -443,7 +444,8 @@ builds.each do |label, build, mrbc, flags, full|
       check.call('an Array subclass argument reaches its own []',
                  compiled.include?('sub_table => 11') && compiled.any? { |l| l.start_with?('sub_sub => raised') })
       check.call('an ivar written through instance_variable_set is read as written',
-                 compiled.include?('p_read => 11') && compiled.any? { |l| l.start_with?('p_read after poke => raised') })
+                 compiled.include?('p_read => 11') && (compiled.any? { |l| l.start_with?('p_read after poke => raised') } ||
+                   (compiled.any? { |l| l.start_with?('poke => raised NoMethodError') } && compiled.include?('p_read after poke => 11'))))
       # The indented lines of a compiled run count the by-name calls a method made.
       counts = output.lines.each_cons(2).filter_map do |line, following|
         following.strip.split('=').last.to_i if line.start_with?('lit_idx =>') && following.start_with?('  dispatches=')
