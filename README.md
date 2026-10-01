@@ -1137,6 +1137,11 @@
   A class-body `define_method(:name) { |a| ... }` with a `def`-like block is registered as an ordinary
   definition, so calls to it are devirtualized; any other way of installing a method by name keeps poisoning
   that name. See [`docs/adr/0288-bc2cpp-define-method-sites.md`](docs/adr/0288-bc2cpp-define-method-sites.md).
+  In a closed world `===` and `is_a?`/`kind_of?` are direct C calls: a receiver the bytecode proves (a
+  class constant, an Integer constant or literal, a String/nil/true/false literal) skips dispatch, every
+  other `case/when` site calls one shared tag-switch helper, and a non-class `is_a?` argument raises its
+  TypeError in place; an alias, undef, Ruby definition or computed installer of the name keeps the send. See
+  [`docs/adr/0293-bc2cpp-direct-eqq-and-kind-of.md`](docs/adr/0293-bc2cpp-direct-eqq-and-kind-of.md).
   A record-like Hash held in an ivar (`Scene::Battle#@ui`: Symbol-literal keys, read and written
   only as `h[:key]`) gives each key a whole-program class: a key that only ever holds fresh
   instances of one class makes `@ui[:battle].step_action` an unguarded exact-class call, and a

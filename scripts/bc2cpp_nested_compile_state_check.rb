@@ -79,7 +79,8 @@ check.call('METHOD_COMPILE_STATE matches the constructor\'s initial values',
 # @core_program_world holds it for the arms of ADR 0270 and is cleared by the same `ensure`.
 NOT_PER_METHOD = %w[
   @clean_cache @probing
-  @builtin_class_send_safe @entry_arg_body_owner @entry_arg_call_index @eqq_literal_devirt_safe
+  @builtin_class_send_safe @entry_arg_body_owner @entry_arg_call_index @eqq_direct_safe @eqq_helper_code
+  @eqq_literal_devirt_safe
   @fixnum_proof_ctx @keyword_never_defined_universe @known_owner_set @subclassed_set
   @own_upvar_written_regs @symbol_installed_names
   @const_lookup_helper_used @const_site_cache @direct_construct_used @index_helper_code @native_construct_used
