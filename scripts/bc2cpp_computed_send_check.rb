@@ -43,7 +43,7 @@ def world(send_name, extra: '')
       MODES = %i[imm zpg abs].freeze
       OPS = { 0 => :inc, 1 => :dec }.freeze
       UNFROZEN = %i[imm zpg]
-      DUPED = %i[imm zpg].dup.freeze.dup
+      DUPED = %i[imm zpg].dup
       MIXED = [:imm, 'zpg'].freeze
       BAD = %i[imm one_arg].freeze
       WIDE = [#{(0...30).map { |i| ":w#{i}" }.join(', ')}].freeze
@@ -261,6 +261,83 @@ check.call('BC2CPP_GUARD_VIOLATION=0 also keeps the by-name send', count.call(of
 check.call('the by-name sends rise by exactly the converted sites',
            sends_of.call(off, off, '__send__') - sends_of.call(on, on, '__send__') == converted.size)
 check.call('the violation arm names its family', on.include?('(COMPUTED_SEND)"') && on.include?('/* CLOSED_WORLD guard-violation: __send__ */'))
+
+puts '== name proofs (SymbolTables / names_at on compiled bytecode)'
+$LOAD_PATH.unshift(File.expand_path('../tools/bc2cpp', __dir__))
+require 'irep'
+require 'bytecode_ir'
+require 'computed_send_names'
+
+ireps_of = lambda do |source, dir|
+  path = File.join(dir, 'unit.rb')
+  File.write(path, source)
+  compile_ireps([path], 'unit', dir).first
+end
+tables_of = lambda do |source, native: [], foreign: []|
+  Dir.mktmpdir do |dir|
+    paths = ->(pairs) { pairs.map { |name, text| File.join(dir, name).tap { |file| File.write(file, text) } } }
+    ComputedSendNames::SymbolTables.analyze(ireps_of.call(source, dir), paths.call(native), paths.call(foreign))
+  end
+end
+names = ->(tables, name) { tables[name]&.to_a&.sort }
+
+t = tables_of.call("A = %i[x y].freeze\nB = [:p, :q].freeze\nC = { 0 => :m, 1 => :n }.freeze\nD = { 'k' => :v }.freeze\n")
+check.call('a frozen Symbol Array (%i and :sym forms) and Hash values are tables; keys are never read',
+           names.call(t, 'A') == %w[x y] && names.call(t, 'B') == %w[p q] && names.call(t, 'C') == %w[m n] && names.call(t, 'D') == %w[v])
+t = tables_of.call("E = %i[x y]\nF = %i[x].dup\nG = [:x, 1].freeze\nH = [:x, 'y'].freeze\nI = [].freeze\nJ = {}.freeze\nK = [:x, :y].map(&:to_s).freeze\n")
+check.call('NEG: an unfrozen, duplicated, mixed, empty or computed table is not one', %w[E F G H I J K].all? { |n| t[n].nil? })
+t = tables_of.call("A = %i[x].freeze\nclass P; A = %i[y z].freeze; end\nB = %i[x].freeze\nclass P; B = %i[y]; end\n")
+check.call('two definitions of a bare name give the union; one of another shape poisons it',
+           names.call(t, 'A') == %w[x y z] && t['B'].nil?)
+check.call('NEG: const_set / remove_const / autoload anywhere refuses every table',
+           %w[Object.const_set(:Z,1) Object.send(:remove_const,:Z) autoload(:Z,"z")].all? do |call|
+             tables_of.call("A = %i[x].freeze\n#{call}\n").empty?
+           end)
+check.call('NEG: a CLASS or MODULE of the name, a foreign `NAME =` and a native definition poison it',
+           tables_of.call("A = %i[x].freeze\nclass A; end\n")['A'].nil? &&
+             tables_of.call("A = %i[x].freeze\n", foreign: [['f.rb', "A = 1\n"]])['A'].nil? &&
+             tables_of.call("A = %i[x].freeze\n", native: [['n.c', "void f() { mrb_define_const(M, c, \"A\", v); }\n"]])['A'].nil? &&
+             tables_of.call("A = %i[x].freeze\nmodule A; end\n")['A'].nil?)
+check.call('NEG: without the native and foreign source lists nothing is proven (unscanned outside world)',
+           ComputedSendNames::SymbolTables.analyze({}, nil, []).empty? && ComputedSendNames::SymbolTables.analyze({}, [], nil).empty?)
+
+Dir.mktmpdir do |dir|
+  ireps = ireps_of.call(<<~RUBY, dir)
+    T = %i[a b].freeze
+    class U
+      def lit(k)
+        send(k ? :x : :y)
+      end
+      def table(i)
+        send(T[i])
+      end
+      def param(n)
+        send(n)
+      end
+      def mixed(k)
+        send(k ? :x : T[0])
+      end
+      def reassigned(k)
+        n = :x
+        n = k
+        send(n)
+      end
+      def sym_or_str(k)
+        send(k ? :x : 'y')
+      end
+    end
+  RUBY
+  tables = ComputedSendNames::SymbolTables.analyze(ireps, [], [])
+  sends = ireps.values.flat_map do |irep|
+    irep.instructions.each_with_index.filter_map { |insn, idx| [irep, idx, insn] if insn.op == 'SSEND' && insn.sym == 'send' }
+  end
+  results = sends.map { |irep, idx, insn| ComputedSendNames.names_at(irep, idx, insn.reg.to_i + 1, tables) }
+  by_shape = results.map { |r| r && [r.names.sort, r.nilable, r.source] }
+  p by_shape if ENV["CSEND_VERBOSE"]
+  check.call('names_at: a ?: over literals, a table index (nilable), a mixed join; refused: a parameter, a reassigned register, a String',
+             by_shape.compact.sort_by(&:to_s) == [[%w[a b], true, 'table'], [%w[a b x], true, 'literal+table'], [%w[x y], false, 'literal']].sort_by(&:to_s) &&
+               by_shape.count(nil) == 3)
+end
 
 # -- 2. behaviour ------------------------------------------------------------------------------
 
