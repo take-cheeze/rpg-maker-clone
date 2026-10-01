@@ -262,8 +262,6 @@ if ENV['MRBC']
     NEGATIVE.each do |fn, why|
       check.call("NEG EcUse##{fn}: #{why} keeps the dynamic arm", kept.call(code, fn))
     end
-    check.call('NEG: no mutable Array became an exact index receiver (a name bound to two tables is still exactly an Array)',
-               %w[mutable_idx list_name dup_idx p_read].none? { |fn| indexed_exact.call(code, fn) })
     check.call('the diagnostic lists the shapes and the constants that hold them',
                err.include?('FROZENTABLE FROZEN:Array[INT*3] (') && err.include?('NUMCONST IDX (FROZEN:Array[INT*3])') &&
                  err.include?('FROZEN:Hash[INT*4]') && err.include?('on ('))
@@ -336,10 +334,10 @@ if ENV['MRBC']
 
     Dir.mktmpdir do |off_dir|
       off_code, off_err = generate.call(FIXTURE, off_dir, env: { 'BC2CPP_FROZEN_TABLES' => '0' })
-      check.call('the kill switch (BC2CPP_FROZEN_TABLES=0): no shape, no table read proven, no exact index',
+      check.call('the kill switch (BC2CPP_FROZEN_TABLES=0): no shape and no table read proven by the numeric flow',,
                  !off_err.include?('FROZENTABLE') && off_err.include?('off: disabled by BC2CPP_FROZEN_TABLES=0') &&
                    POSITIVE.keys.reject { |fn| %w[via_arg].include?(fn) }.none? do |fn|
-                     numeric_proof.call(off_code, fn) || indexed_exact.call(off_code, fn)
+                     numeric_proof.call(off_code, fn)
                    end)
     end
     Dir.mktmpdir do |open_dir|

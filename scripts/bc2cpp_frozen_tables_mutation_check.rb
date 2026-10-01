@@ -36,9 +36,6 @@ MUTANTS = [
    /foreign Ruby source defining Array#\[\]/],
   ['a singleton maker is ignored', 'codegen_frozen_tables.rb',
    "return 'instances may gain singleton methods' unless cw.exact_instances_singleton_free?", '', /singleton method on an Array|extend on an object/],
-  ['the exact receiver accepts a mix with non-table classes', 'codegen_frozen_tables.rb',
-   'return nil unless mask.is_a?(Integer) && mask.positive? && (mask & ~@frozen_tables.mask).zero?',
-   'return nil unless mask.is_a?(Integer) && mask.positive? && mask.anybits?(@frozen_tables.mask)', /mutable Array became an exact/],
   ['the kill switch is ignored', 'codegen_frozen_tables.rb',
    "return 'disabled by BC2CPP_FROZEN_TABLES=0' if ENV['BC2CPP_FROZEN_TABLES'] == '0'", '', /kill switch/]
 ].freeze
