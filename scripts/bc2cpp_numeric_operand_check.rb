@@ -743,7 +743,7 @@ if ENV['MRBC']
           call(M, "run", box, "nq_run");
           call(M, "rescued", box, "nq_rescued");
           call(M, "rescued_str", box, "nq_rescued_str");
-          call(M, "block_ret_use", box, "nq_block_ret_use");
+          #{full ? 'call(M, "block_ret_use", box, "nq_block_ret_use");' : '// block_ret_use needs Array#each, which the core-only mruby lacks: its interpreter raises where the compiled loop runs.'}
 
           mrb_value ar = mrb_ary_new(M);
           call(M, "argsize", box, "nq_argsize", 1, &ar);
