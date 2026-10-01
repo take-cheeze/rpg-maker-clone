@@ -238,6 +238,41 @@ inter-procedural receiver typing or are genuinely polymorphic.
 round reaches block bodies. The `mrb_funcall*` sites in bodies are 28, mostly
 literal-sized splat forwarding (`sprintf`, `puts`, `read`, `write`, `new`).
 
+## Follow-up: the exact receiver reaches every arm wrapper (ADR 0301)
+
+Measured at master `c7ff3846` (ADR 0296 class pools and ADR 0297 unlisted-class arms merged), the same
+method, before and after ADR 0301. The estimates above were written before those two landed; the table
+is the measured effect of one more change on top of them.
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 3,294 | 3,138 | -156 |
+| `bc2cpp_send` calls held in helpers | 24 | 24 | 0 |
+| calls into `bc2cpp_slow_*` | 3,542 | 3,542 | 0 |
+| calls into `bc2cpp_eqq` | 110 | 110 | 0 |
+| calls into `bc2cpp_getidx` / `getidx0` / `setidx` | 2,417 | 2,397 | -20 |
+| `mrb_funcall_with_block` + body `mrb_funcall*` | 476 | 476 | 0 |
+| **Sites that can reach by-name dispatch** | **9,839** | **9,663** | **-176 (-1.8%)** |
+| `bc2cpp_nomethod` sites (errors) | 4,435 | 4,399 | -36 |
+
+No helper gained a caller, so all 176 are removals. By name: `size` 46, `empty?` 30, `[]` 13 (net),
+`z=` 13, `last` 11, `x=` 7, `first` 6, `y=` 5, `keys` 4, `length` 4, the rest 17. Of the category table above,
+"core tag chain else" is 1,368 to 1,205 (receiver not an ivar 1,091 to 971, receiver an ivar 277 to 234),
+`rgss_native_exact_class_else` 567 to 517, and `core_or_native` 281 to 278; the other rows are unchanged
+except `numeric_tag_guard` (82 to 111) and `no_guard_nearby` (162 to 166), which gained the sends that sit
+next to a newly inlined `INDEX_EXACT` fast path.
+
+What the remaining population looks like, from a per-site hook that printed the receiver's class set and
+producer (the exact-class flow of ADR 0289/0296) at the registered-expression chains (832 sites, the
+`size`/`empty?`/`first` family): 90 had a proof already (now consumed); of the other 742, the register
+came from a call result 245, an ivar 160, an incoming argument 128, a `GETIDX` element 62, a constant 44,
+a captured local 27, a literal joined with another value 21. For `[a, b].max` / `.min` (62 sites) the
+receiver is exact and the elements are not: 1 site has all-Integer elements. For `core_or_native` (157 sites
+with a flow context) 13 had an exact receiver, the others an ivar 52, an argument 41, a call result 31, an
+element 14. So the estimate above for item 1 ("copy-propagated receiver classes", 300-450 sites) overstated
+what was left to propagate: copies, return values and arguments were already followed, and the unknown
+roots are what is left.
+
 ## Follow-up: RGSS native result facts (ADR 0302)
 
 Items 4 (RGSS arguments and receivers) and 6 (`singleton_definer`) above were attacked with audited result
