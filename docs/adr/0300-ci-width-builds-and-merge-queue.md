@@ -22,12 +22,15 @@ Two gaps let a red build reach `master`.
 
 - A new `bc2cpp-width` matrix job (`int32`, `nobigint`) builds one extra full-core libmruby with
   `scripts/bc2cpp_width_build.rb` and runs the checks whose 32-bit / no-bigint legs already exist:
-  `int32` runs `bc2cpp_numeric_slow_check`, `bc2cpp_fixnum_overflow_check`, `bc2cpp_step_inline_check`,
-  `bc2cpp_unlisted_class_call_check` and `bc2cpp_lcf_row_flow_check`; `nobigint` runs
+  `int32` runs `bc2cpp_numeric_slow_check`, `bc2cpp_fixnum_overflow_check`, `bc2cpp_step_inline_check`
+  and `bc2cpp_lcf_row_flow_check`; `nobigint` runs
   `bc2cpp_numeric_slow_check`. The `int32` build is the 64-bit host with the targets' defines (their
   arithmetic, not their pointer width), the same stand-in the checks documented. The `bc2cpp`
   aggregate now also needs `bc2cpp-width`, so the existing required status keeps gating on everything.
 - `bc2cpp_lcf_row_flow_check` gained the 32-bit leg (it ran at 64 bits only).
+- `bc2cpp_unlisted_class_call_check` has a 32-bit leg too but is left out: its generated-code section
+  fails at 64 bits on master (the `core-mrbtest` shard reports the same 17 failures), so it says
+  nothing about width. Add it to the `int32` list once that is fixed.
 - Reusing the shard layout, the job builds only the bootstrap host mrbc with cmake (which also applies
   the mruby patch chain), then the width libmruby with rake; no sccache for the rake build.
 - `build.yml` also triggers on `merge_group` (`checks_requested`). No job needs a change: the

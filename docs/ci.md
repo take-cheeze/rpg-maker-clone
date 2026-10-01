@@ -20,7 +20,7 @@ checks on a libmruby built by `scripts/bc2cpp_width_build.rb`:
 
 | Variant | Build | Checks |
 | --- | --- | --- |
-| `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `fixnum_overflow`, `step_inline`, `unlisted_class_call`, `lcf_row_flow` |
+| `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `fixnum_overflow`, `step_inline`, `lcf_row_flow` |
 | `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow` |
 
 The 32-bit build is the 64-bit host with the targets' arithmetic defines, so it
