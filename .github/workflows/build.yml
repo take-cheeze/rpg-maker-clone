@@ -967,6 +967,8 @@ jobs:
               # Inlined Integer#step/upto/downto loops (docs/adr/0273) against the interpreter; builds
               # a full-core mruby once into BC2CPP_FULL_BUILD_DIR.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
+              # ADR 0293: direct === / is_a? / kind_of? against the interpreter, on the full-core build above.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_direct_check.rb
               # ADR 0288: class-body define_method(:name) { } as an ordinary definition.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_define_method_sites_check.rb
               # Resumable Fiber roots (docs/adr/0273): step functions over a heap frame against the

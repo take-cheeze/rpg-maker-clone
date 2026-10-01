@@ -31,7 +31,8 @@ def build(source, name)
     end
     gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
     method = registry.fetch('route').find { |d| d.owner == 'Router' }
-    yield gen.compile_method(method.irep).fetch(:code)
+    code = gen.compile_method(method.irep).fetch(:code)
+    yield code, gen.emit_eqq_helper([code])
   end
 end
 
@@ -49,26 +50,25 @@ SRC = <<~'RUBY'
   end
 RUBY
 
+# The tag switch is the shared bc2cpp_eqq helper (ADR 0293); a site is one call to it.
 fast = nil
-build(SRC, 'eqq_default') { |code| fast = code }
+site = nil
+build(SRC, 'eqq_default') { |code, helper| site = code; fast = helper }
+check.call('a generic `when` site is one call of the shared helper', site.scan(/= bc2cpp_eqq\(M, r\d+, r\d+\);/).size == 2)
 check.call('the default build emits the Integer-vs-Integer fast path',
-           fast.match?(/case MRB_TT_INTEGER:\n\s+if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = mrb_bool_value\(mrb_integer\(r\d+\) == mrb_integer\(r\d+\)\);/))
-check.call('a non-Integer argument still goes through mrb_equal', fast.match?(/case MRB_TT_INTEGER:.*?mrb_equal\(M, r\d+, r\d+\)/m))
+           fast.match?(/case MRB_TT_INTEGER:\n\s+if \(mrb_integer_p\(arg\)\) return mrb_bool_value\(mrb_integer\(recv\) == mrb_integer\(arg\)\);/))
+check.call('a non-Integer argument still goes through mrb_equal', fast.match?(/case MRB_TT_INTEGER:.*?mrb_equal\(M, recv, arg\)/m))
 check.call('the other receiver types keep their mrb_equal arm', fast.match?(/case MRB_TT_FLOAT:\n\s+case MRB_TT_STRING:/))
 
 overridden = nil
-build(SRC + "\nclass Integer\n  def ==(other)\n    true\n  end\nend\n", 'eqq_override') { |code| overridden = code }
-check.call('a Ruby-defined Integer#== disables the fast path',
-           !overridden.include?('mrb_integer(r') || !overridden.match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = mrb_bool_value\(mrb_integer/))
+build(SRC + "\nclass Integer\n  def ==(other)\n    true\n  end\nend\n", 'eqq_override') { |_code, helper| overridden = helper }
+check.call('a Ruby-defined Integer#== disables the fast path', !overridden.include?('mrb_integer(recv) == mrb_integer(arg)'))
 
 candidates = [ENV['BC2CPP_MRUBY_CORE']].compact + Dir[File.join(root, 'build*/mruby/host/mrbc')]
 core = candidates.find { |dir| File.exist?(File.join(dir, 'lib/libmruby_core.a')) && File.directory?(File.join(dir, 'include')) }
 if core.nil? || !system('g++', '--version', out: File::NULL, err: File::NULL)
   puts '  SKIP behavioural comparison: no libmruby_core.a with include/ found (set BC2CPP_MRUBY_CORE)'
 else
-  snippet = fast[/  switch \(mrb_type\(r\d+\)\) \{.*?  default:.*?\n  \}\n/m]
-  recv, arg = snippet.scan(/mrb_type\((r\d+)\)/).first.first, snippet[/mrb_integer_p\((r\d+)\)/, 1]
-  dest = snippet[/r(\d+) = mrb_bool_value\(mrb_obj_is_kind_of/, 1]
   Dir.mktmpdir do |dir|
     source = File.join(dir, 'eqq.cpp')
     File.write(source, <<~CPP)
@@ -79,11 +79,9 @@ else
       #include <cstdio>
       #include <climits>
       extern "C" void mrb_init_mrblib(mrb_state*) {}
+      #{fast}
       static mrb_value emitted(mrb_state* M, mrb_value in_recv, mrb_value in_arg) {
-        mrb_value #{recv} = in_recv, #{arg} = in_arg;
-        #{recv == "r#{dest}" ? '' : "mrb_value r#{dest} = mrb_nil_value();"}
-        #{snippet}
-        return r#{dest};
+        return bc2cpp_eqq(M, in_recv, in_arg);
       }
       int main() {
         mrb_state* M = mrb_open_core();
