@@ -89,8 +89,8 @@ Fixnum tier's inline `mrb_num_*` on overflow (ADR 0279) is unchanged.
   found that Integer#+ with an `MRB_INT_MIN` operand is wrong in the 32-bit bigint core
   (`mrb_bint_add_n` negates the operand): the arm used to call it, the OP_MATH form used now
   does not.
-- Not covered: CI does not run a 32-bit-`mrb_int` or a no-bigint libmruby, as for ADR 0279 and
-  0287, so those halves are local checks (`BC2CPP_MRUBY_FULL32`, `BC2CPP_MRBC32`,
+- Not covered (superseded by ADR 0300, whose `bc2cpp-width` job runs these halves in CI): CI did not
+  run a 32-bit-`mrb_int` or a no-bigint libmruby, as for ADR 0279 and 0287, so those halves were local checks (`BC2CPP_MRUBY_FULL32`, `BC2CPP_MRBC32`,
   `BC2CPP_MRUBY_NOBIGINT`); the 32-bit build is the 64-bit host with the targets' defines, so
   it has their arithmetic but not their pointer width. Sites whose operands NumericFlow proves
   (ADR 0276) never had an else and are unchanged; the families NumericFlow does not model

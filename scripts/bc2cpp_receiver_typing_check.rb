@@ -61,7 +61,7 @@ def fixture(source, name, embed: nil)
 end
 
 # A generated dynamic dispatch, not a marker comment that names mrb_funcall.
-DISPATCH = /\bmrb_funcall\w*\(|\bbc2cpp_send\(/
+DISPATCH = /\bmrb_funcall\w*\(|\bbc2cpp_funcall_(?:explicit|noarg)\(|\bbc2cpp_send\(/
 
 RUNTIME = <<~'RUBY'
   module RtUtil

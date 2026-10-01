@@ -258,10 +258,100 @@ The estimate of 100-168 for item 6 was too high: only receivers the exact-class 
 `Bitmap`/`Rect`, `nil`-or-`RPG2k::Window`) qualify, and 130 sites still have an unnamed receiver. The `width`
 count stays high because `Game::Map#width` and the `Window` readers are data-driven.
 
+## Ranking by executed count
+
+The counts above weigh a start-up site like a frame-loop site. `SITE_PROFILE`
+(ADR 0298) counts executions instead. It is opt-in and changes no generated code
+unless `BC2CPP_SITE_PROFILE` is set.
+
+```sh
+# 1. Generate with counters; the site table lands in SITES/<OUT_SYMBOL>.sites.tsv.
+#    The mrbgem.rake builds forward the environment, so a game build needs only the export
+#    (delete the gem's generated *_gen.cpp so rake regenerates it).
+export BC2CPP_SITE_PROFILE=/tmp/sites
+# 2. Run the workload with BC2CPP_SITE_PROFILE_OUT=HITS; each process writes
+#    HITS/<symbol>.<pid>.hits at exit. The optcarrot benchmark builds and runs itself:
+MRBC=<host mrbc> BC2CPP_SITE_PROFILE=/tmp/sites BC2CPP_SITE_PROFILE_OUT=/tmp/hits \
+  ruby tools/optcarrot_probe/compiled_run.rb 180
+# 3. Rank (several --workload NAME=DIR pairs give a column each).
+ruby scripts/bc2cpp_dynamic_site_census.rb --rank /tmp/sites --workload optcarrot=/tmp/hits \
+  --top 30 [--tsv ranked.tsv]
+```
+
+* **Sites.** Every `bc2cpp_send(M, ...` and `mrb_funcall{,_id,_argv,_with_block}(M, ...`
+  call is rewritten to `(bc2cpp_site_hit_<symbol>(ID), fn)(M, ...)`. The by-name
+  dispatcher `bc2cpp_funcall_argv`, which every send ends in, is not counted, or each
+  send would count twice. `mrb_yield_argv` is a block call and is not counted.
+* **Keys.** A site is identified by `<symbol>` (the gem), the id, and the generated line
+  and enclosing function in the *uninstrumented* output (the counters add lines only in
+  a header, and a check proves peeling them gives the plain text back byte for byte).
+  The reason category is the census's own (`tools/bc2cpp/site_census.rb`), so the static
+  and executed tables agree on it.
+* **Stale builds.** Each hit file carries a digest of its site table, and the ranker
+  refuses a mismatch. The optcarrot runner removes its gem's objects first, because a kept
+  mruby build directory does not rebuild the gem when only its temp-dir sources change.
+* **What a hit is.** One call that reaches the site. For the else arm of a guard chain
+  that is a guard miss, not an execution of the method. A site inside a shared helper
+  counts every caller together; the table cannot say which caller sent the receiver.
+* **Not measured.** Timings of an instrumented binary mean nothing, the counters are not
+  atomic, and only the workloads actually run appear.
+
+### First measurement: optcarrot, 180 frames
+
+Run on the master tree plus this change, `Lan_Master.nes`, checksum 59662 (equal to
+CRuby's). The optcarrot build is not the wio closed world: it is optcarrot's own
+closed world (326 compiled methods, 1,083 instrumented sites), so these numbers say
+where the *probe's* leftover dispatch runs, not where the game's does. 7,818,761
+by-name dispatches in 180 frames; 180 of 1,083 sites ran at all; the top 4 sites
+are 84.9% of the hits.
+
+| # | Hits | Share | Site (generated function) | Why it stayed dynamic | Lever that would remove it |
+| ---: | ---: | ---: | --- | --- | --- |
+| 1 | 2,667,211 | 34.1% | `[]` in helper `bc2cpp_getidx` | the helper's by-name tail, reached when the receiver is not an exact Array/Hash/String with a fitting key | Probably `Integer#[]` (optcarrot's bit-read shim), not confirmed per caller. An Integer-receiver arm in the helper, or an Integer fact at the callers (NUMERIC_OPERAND_PROOF) |
+| 2 | 1,773,013 | 22.7% | `@conf.loglevel`, `CPU#run` | `dynamic_no_registered_definition`: `Config#loglevel` comes from `attr_reader id` inside an `each_value` loop, so the registry sees no definer | Enumerate the names a constant-driven `attr_reader`/`define_method` loop installs (ADR 0288 handles literal names only), plus an exact `Config` class for `@conf`; then `ivar_accessor_call_code` |
+| 3 | 1,339,857 | 17.1% | `@bg_pixels.rotate!` , `PPU#load_tiles` | one definer (`Array#rotate!`, core mrblib), receiver class unresolved | Class pool for `@bg_pixels` (`[0] * 16`: needs the class of an `Array#*` result, ADR 0289/0296), then a direct call to the compiled core body (ADR 0264) |
+| 4-5 | 856,086 each | 10.9% each | `send(mode, ...)` / `send(instr)`, `CPU#r_op` | `send` with a computed name | A new proof: the names come from the constant `DISPATCH` table, so expand the send into a switch of direct calls. ADR 0279 only makes the proofs see such a send |
+| 6-7 | 129,833; 51,185 | 1.7%; 0.7% | `@bits.even?`, `APU::Noise#sample` | one definer, `@bits` class unresolved | Integer ivar typing (numeric ivars, ADR 0279) for `@bits` |
+| 8-10 | 22,471 each | 0.3% each | `send` ×3, `CPU#w_op` | computed-name `send` | as 4-5 |
+| 11 | 17,465 | 0.2% | `@store[addr][addr, value]`, `CPU#store` | no guard: the receiver is an element of `@store`, an Array of `Method`/`Proc` objects | An exact `Method`/`Proc` arm for `[]`, or an element-class fact for `@store` (array element layout) |
+| 12-14 | 6,392 each | 0.1% each | `send` ×3, `CPU#rw_op` | computed-name `send` | as 4-5 |
+| 15 | 6,230 | 0.1% | `~` , `CPU#_sbc` | one definer, receiver class unresolved | Integer proof for the operand |
+| 16 | 5,272 | 0.1% | `run`, `PPU#sync` | `chain/runtime_class` | Inherent: the receiver class is chosen at run time |
+| 17-18 | 3,087; 3,072 | <0.1% | `*`, `round` in `bc2cpp_slow_mul_f` / `bc2cpp_slow_round` | the numeric slow-path helpers' by-name tail | None worth taking: Float and non-numeric operands |
+| 19-22 | 3,072 each | <0.1% | `polar`, `conjugate`, `real`, `sort` in `Palette.nestopia_palette` blocks | no bytecode definer (Complex/native), start-up palette build | Cold: runs once per palette entry |
+| 23 | 2,477 | <0.1% | `each` with a block, `PPU#poke_2007` | `BLOCK_FALLBACK` | `BLOCK_CORE_DIRECT` / yield-free block proof (ADR 0283) |
+| 24-30 | 1,498 down to 672 | <0.1% | `bc2cpp_getidx0` `[]`, `uniq!`, `polar`, `map`, `bc2cpp_slow_add_f` `+`, `include?`, `polar` | helpers and start-up palette code | Cold, or as 1 and 17 |
+
+The lever column is an analysis of the generated C++ and the optcarrot source, not a
+measurement: nothing was built to confirm that a proof removes a site. Rows 1 and 3-15
+are the sites worth a proof; the sites after row 15 together run 35,206 times, 0.45% of the hits.
+`--rank` prints the same ranking, with a category-level lever per row, from any hit set.
+
+The ranker also groups the hits by reason category (a start-up palette site and a
+frame-loop site share one): `shared_helper` 34.2%, `poly_diag` single definer with
+implicit self (all `send`) 23.0%, `poly_diag` no definer with unresolved receiver
+(`loglevel`, palette) 22.8%, `poly_diag` single definer with unresolved receiver
+(`rotate!`, `even?`) 19.5%, everything else 0.5%. By contrast, the core-tag-chain and
+owner-chain categories, the largest in the static tables above (511 instrumented sites
+here), ran 676 times in total: this workload does not exercise the shapes that make up most
+of the static count.
+
+### Not run
+
+* **The game smoke.** It needs the SDL engine and an RPG2000/2003 project
+  (`data/Nepheshel206beta`, `data/mtf-meido-action`, fetched by `scripts/download-*.bash`)
+  and runs in CI (`rpg2k_boot_check.bash`). Neither the SDL build nor the games were
+  available where this was written, so there is no game ranking, and the wio closed-world
+  sites above have no executed counts. The hook is the same `BC2CPP_SITE_PROFILE` export
+  before the build, then `BC2CPP_SITE_PROFILE_OUT` while the smoke runs; the three compiled
+  gems write one hit file each.
+* **Per-caller counts for helper sites**, and any other workload (the MV and wio smokes).
+
 ## Caveats
 
-* This counts source sites, not executions. A site in a cold scene weighs the
-  same as one in the frame loop; no profile is applied.
+* The static tables above count source sites, not executions. A site in a cold scene
+  weighs the same as one in the frame loop; the section "Ranking by executed count" is
+  the measurement that applies a profile.
 * The marker is the nearest preceding family comment within 25 lines and can be
   a neighbour's; the exclusive categories use position and guard shape first so
   they do not depend on it.
