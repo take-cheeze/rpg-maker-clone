@@ -1049,6 +1049,8 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_native_class_const_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_struct_index_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_outlined_index_check.rb
+              # ADR 0305: the GETIDX helper's Integer arm against the interpreter, with mutants.
+              GIA_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_runtime_devirt_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_inherited_self_devirt_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_poly_table_check.rb
@@ -1199,11 +1201,13 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_lcf_row_flow_check.rb
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
           - variant: nobigint
             checks: |
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
+              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
 
     env:
       RPGMAKER_BC2CPP: "1"
