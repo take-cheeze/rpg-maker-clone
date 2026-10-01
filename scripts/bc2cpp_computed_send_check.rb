@@ -46,6 +46,7 @@ def world(send_name, extra: '')
       DUPED = %i[imm zpg].dup
       MIXED = [:imm, 'zpg'].freeze
       BAD = %i[imm one_arg].freeze
+      OPNAME = [:imm, :+].freeze
       WIDE = [#{(0...30).map { |i| ":w#{i}" }.join(', ')}].freeze
       PRIVS = %i[hidden].freeze
       attr_reader :a
@@ -58,6 +59,7 @@ def world(send_name, extra: '')
       def zpg(_r, _w); @a += 2; :zpg; end
       def abs(_r, _w); @a += 3; :abs; end
       def one_arg(_x); :one; end
+      def +(_r, _w); :plus; end
       def inc; @a += 10; :inc; end
       def dec; @a -= 10; :dec; end
       #{(0...30).map { |i| "def w#{i}(_r, _w); @a += #{i}; :w#{i}; end" }.join("\n  ")}
@@ -101,6 +103,10 @@ def world(send_name, extra: '')
 
       def by_bad(i)
         %SEND%(BAD[i], true, false)
+      end
+
+      def by_opname(i)
+        %SEND%(OPNAME[i], true, false)
       end
 
       def by_wide(i)
@@ -166,7 +172,7 @@ end
 puts '== generated code'
 SITES = %w[by_index by_hash by_case by_ternary].freeze
 # fresh: an explicit receiver whose arms would keep a guard fallback (ADR 0303).
-NOT_EXPANDED = %w[by_param by_unfrozen by_duped by_mixed by_bad by_wide fresh].freeze
+NOT_EXPANDED = %w[by_param by_unfrozen by_duped by_mixed by_bad by_wide by_opname fresh].freeze
 # The original computed call is still there: a by-name send, or the direct call of a user-defined `send`.
 original_call = ->(code, body, name) { sends_of.call(code, body, name) == 1 || body.include?("_#{name}_impl(M") }
 
