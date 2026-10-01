@@ -178,6 +178,11 @@ original_call = ->(code, body, name) { sends_of.call(code, body, name) == 1 || b
 
 [%w[send closed], %w[__send__ closed], %w[__send__ open]].each do |send_name, kind|
   closed = kind == 'closed'
+  if send_name == 'send'
+    code = generate.call(world('send') + PUBLIC_SEND)
+    check.call("NEG: send and public_send (mruby-metaprog) are never expanded: a harness or build without the gem answers NoMethodError", !code.include?('// COMPUTED_SEND :'))
+    next
+  end
   label = "#{send_name}, #{kind} world"
   code = generate.call(world(send_name) + (send_name == 'send' ? PUBLIC_SEND : ''), closed: closed)
   # An open world proves no arm direct (every guard chain keeps its by-name else), so nothing expands.
@@ -207,11 +212,6 @@ original_call = ->(code, body, name) { sends_of.call(code, body, name) == 1 || b
     body = body_of.call(code, "CsCpu_#{fn}")
     check.call("NEG: #{label}: #{fn} keeps its one computed #{send_name}", !expanded.call(body) && sends_of.call(code, body, send_name) == 1)
   end
-  next unless send_name == 'send'
-
-  check.call("#{label}: public_send over public names is expanded",
-             expanded.call(body_of.call(code, 'CsCpu_pub')) && arms_of.call(body_of.call(code, 'CsCpu_pub')) == 2)
-  check.call("NEG: #{label}: public_send of a private name keeps its computed send", !expanded.call(body_of.call(code, 'CsCpu_pub_hidden')))
 end
 
 puts '== negative worlds: the site must stay one computed send'
@@ -415,10 +415,10 @@ NO_DISPATCH_DROP = %w[by_hash(2) by_hash(3) by_hash(7) by_hash(-1) by_case(-1)].
 
 builds = []
 full = runtime.full || (ENV['BC2CPP_FULL_BUILD_DIR'] ? runtime.full_or_build : nil)
-builds << ['mrb_int 64, full-core', full, true, ENV['MRBC'], '', 'send'] if full && runtime.compiler?
+builds << ['mrb_int 64, full-core', full, true, ENV['MRBC'], '', '__send__'] if full && runtime.compiler?
 builds << ['mrb_int 64, core only', runtime.core, false, ENV['MRBC'], '', '__send__'] if runtime.core && runtime.compiler?
 if ENV['BC2CPP_MRUBY_FULL32'] && ENV['BC2CPP_MRBC32'] && runtime.compiler?
-  builds << ['mrb_int 32, full-core', ENV['BC2CPP_MRUBY_FULL32'], true, ENV['BC2CPP_MRBC32'], '-DMRB_32BIT -DMRB_INT32 -no-pie', 'send']
+  builds << ['mrb_int 32, full-core', ENV['BC2CPP_MRUBY_FULL32'], true, ENV['BC2CPP_MRBC32'], '-DMRB_32BIT -DMRB_INT32 -no-pie', '__send__']
 end
 builds.clear if ENV['CSEND_GENERATED_ONLY']
 puts '== behaviour: SKIP, set BC2CPP_MRUBY_FULL / BC2CPP_FULL_BUILD_DIR / BC2CPP_MRUBY_CORE and have g++' if builds.empty?
@@ -516,10 +516,7 @@ MUTANTS = {
     'a table definition of another shape is accepted' => ['found.empty? || found.any?(&:nil?)', 'found.empty?']
   },
   'tools/bc2cpp/codegen_computed_send.rb' => {
-    'send is trusted to be Kernel#send' => ['    return false if devirt_blocked_name?(name)
-
-    defs = @registry.fetch(name, [])', '    return true'],
-    'public_send ignores visibility' => ['!defs.empty? && defs.all? { |definition| definition.visibility == :public } &&', 'true ||'],
+    '__send__ is trusted to be the core one' => ["@registry.fetch(name, []).all? { |definition| definition.owner == '<native>' }", 'true'],
     'an arm may keep a by-name dispatch' => ['live.include?(\'_impl(M\') && !live.match?(DYNAMIC_ARM)', 'true'],
     'Array#[] and freeze are trusted' => ['(TABLE_READERS + TABLE_FREEZERS).all? do |owner, name|', '(TABLE_READERS + TABLE_FREEZERS).all? do |owner, name|
       next true'],

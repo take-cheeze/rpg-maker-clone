@@ -21,7 +21,7 @@ resolves per name (ADR 0259, 0297, 0299).
 ## Decision
 
 `ComputedSend` (`tools/bc2cpp/codegen_computed_send.rb`, wrapping `compile_send` like `CheckedSend`) replaces a
-`send` / `__send__` / `public_send` SEND or SSEND with a chain of per-name arms, from the name set that
+`__send__` SEND or SSEND with a chain of per-name arms, from the name set that
 `ComputedSendNames` (`tools/bc2cpp/computed_send_names.rb`) proves.
 
 **Name set.** The reaching definitions of the name register (`BytecodeIR.reaching_definitions`, so joins and
@@ -48,12 +48,13 @@ can yield is `nil` (an index or key outside it), which `send` rejects with `Type
 refusal; any class has `method_missing`; a singleton class can be made on a non-class object (`def obj.m`,
 `class << obj`, `define_singleton_method`, `extend`; `exact_instances_singleton_free?`); an installer
 (`alias`, `define_method`, `undef`) has a computed name, or any name of the set is installed or blocked by
-`RUNTIME_DEF_DEVIRT_GUARD`; `send` itself has a Ruby definition or is not registered by the build (`send` and
-`public_send` live in `mruby-metaprog`; `__send__` is core); a table is read while `Array#[]`, `Hash#[]` or
+`RUNTIME_DEF_DEVIRT_GUARD`; `__send__` itself has a Ruby definition; a table is read while `Array#[]`, `Hash#[]` or
 `freeze` can be replaced (`core_native_arm_safe?`); a name has a second definition (a subclass override, a
-reopening), which makes its arm a guard chain with a by-name else; or an arm's arity is wrong. `public_send`
-additionally needs every name public, defined in the registry and `visibility_stable?`, since a direct arm
-does not check visibility. `send` and `__send__` ignore visibility, as the arm does.
+reopening), which makes its arm a guard chain with a by-name else; or an arm's arity is wrong.
+`send` and `public_send` are never expanded: they come from `mruby-metaprog`, and the closed world scans the
+native sources of more gems than a harness (or a build) may link, so a direct arm could answer where the
+interpreter raises NoMethodError. A first version expanded `send`; `scripts/bc2cpp_numeric_operand_check.rb` on a
+core-only libmruby caught the divergence (`send(:nq_send_target, "s")`). `__send__` ignores visibility, as the arm does.
 
 Kill switches: `BC2CPP_COMPUTED_SEND=0` (the before side of a measurement) and `BC2CPP_GUARD_VIOLATION=0` keep
 every computed send as one by-name call.
@@ -85,7 +86,7 @@ never reaches the `pub` test. The expansion never relies on it (it refuses a non
 does not run `public_send` of a private name.
 
 `scripts/bc2cpp_computed_send_check.rb` (CI `bc2cpp-checks`, `core-mrbtest` shard, and the `int32` width job)
-pins the generated code (table, hash, `case`, `?:`, private target, `public_send`), 21 negative worlds in which
+pins the generated code (table, hash, `case`, `?:`, private target), 21 negative worlds in which
 the send must stay one computed send (subclass override, `define_method` with literal and computed names,
 `alias_method`, singleton on an instance, `class << obj`, `define_singleton_method`, `method_missing`, redefined
 `send`, unfrozen/duplicated/mixed tables, a table name that is also a class, `const_set`, `remove_const`,
