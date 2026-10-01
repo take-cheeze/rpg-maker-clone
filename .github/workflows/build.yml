@@ -969,6 +969,10 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
               # ADR 0293: direct === / is_a? / kind_of? against the interpreter, on the full-core build above.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_direct_check.rb
+              # ADR 0297: exact-class arms of unlisted definers (attr accessors, private defs, no-target
+              # classes, native-registered names) against the interpreter on the full-core and core-only
+              # builds; UCC_MUTANTS=1 also removes one proof at a time from a copy of the generator.
+              UCC_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_unlisted_class_call_check.rb
               # ADR 0288: class-body define_method(:name) { } as an ordinary definition.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_define_method_sites_check.rb
               # Resumable Fiber roots (docs/adr/0273): step functions over a heap frame against the

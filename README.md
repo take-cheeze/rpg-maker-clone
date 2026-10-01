@@ -1154,6 +1154,12 @@
   other `case/when` site calls one shared tag-switch helper, and a non-class `is_a?` argument raises its
   TypeError in place; an alias, undef, Ruby definition or computed installer of the name keeps the send. See
   [`docs/adr/0293-bc2cpp-direct-eqq-and-kind-of.md`](docs/adr/0293-bc2cpp-direct-eqq-and-kind-of.md).
+  The exact-class arm for a definer class a guard chain cannot list resolves its own lookup: an
+  `attr_reader`/`attr_writer` is a direct ivar access, a private def reached by an implicit receiver a direct
+  call and by an explicit one the `NoMethodError` the VM raises, a class whose chain defines nothing the
+  `NoMethodError` of the final `else`, and a name the RGSS natives also register is judged on the class's own
+  chain; protected defs and names under `private :x` keep the send. See
+  [`docs/adr/0297-bc2cpp-unlisted-class-arms.md`](docs/adr/0297-bc2cpp-unlisted-class-arms.md).
   A record-like Hash held in an ivar (`Scene::Battle#@ui`: Symbol-literal keys, read and written
   only as `h[:key]`) gives each key a whole-program class: a key that only ever holds fresh
   instances of one class makes `@ui[:battle].step_action` an unguarded exact-class call, and a
