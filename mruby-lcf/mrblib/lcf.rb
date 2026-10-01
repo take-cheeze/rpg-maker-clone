@@ -788,7 +788,15 @@ module LCF
 
     # Store an entry (an Array1D, or its already-serialised bytes) at id +idx+,
     # so an authored table can be assembled and written back out via #to_lcf.
+    # LCF_ROW_FLOW (ADR 0294): an entry of any other kind is re-read through this
+    # table's schema, so every stored entry is nil, bytes or an Array1D over its
+    # own elements and `self[i]` has a schema the compiler can rely on.
     def []= idx, entry
+      unless entry.nil? || entry.is_a?(String) || (entry.is_a?(Array1D) && same_schema?(entry.schema))
+        raise ArgumentError, 'an Array2D entry is nil, bytes or an Array1D' unless entry.is_a?(Array1D)
+
+        entry = Array1D.new(entry.to_lcf, @schema)
+      end
       @data[idx] = entry
       entry
     end
@@ -823,6 +831,12 @@ module LCF
     end
 
     private
+
+    def same_schema? other
+      return @schema.equal?(other) if @schema.nil? || other.nil?
+
+      @schema.equal?(other) || LCF.elements_of(@schema).equal?(LCF.elements_of(other))
+    end
 
     # Scan (without decoding) one row's chunk stream and return its raw bytes,
     # from the first chunk id through the id-0 terminator inclusive --
