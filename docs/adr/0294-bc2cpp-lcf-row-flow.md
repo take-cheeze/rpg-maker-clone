@@ -1,4 +1,4 @@
-# 0289. bc2cpp: LCF_ROW_FLOW gives `db[...]`, table and row reads an exact class
+# 0294. bc2cpp: LCF_ROW_FLOW gives `db[...]`, table and row reads an exact class
 
 Date: 2026-09-30
 

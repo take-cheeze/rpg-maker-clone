@@ -146,9 +146,25 @@ end)
 
 check.call('a register a nested block writes is never numeric',
            flow.call(straight, StubOracle.new, Set['2'])[4][2] == OTHER)
-check.call('an irep with a catch handler has no facts',
+check.call('an irep whose handler target is not an instruction has no facts',
            flow.call(straight, StubOracle.new, Set.new, handlers: [CatchHandler.new(type: :rescue, begin_addr: 0,
-                                                                                    end_addr: 4, target: 6)]).nil?)
+                                                                                    end_addr: 4, target: 99)]).nil?)
+rescued = [insn(0, 'LOADI_1', "R2\t(1)"), insn(2, 'LOADI_2', "R4\t(2)"), insn(4, 'SEND0', "R3\t:f"),
+           insn(6, 'LOADNIL', "R2\t(nil)"), insn(8, 'JMP', '14'), insn(10, 'RETURN', 'R2'), insn(14, 'RETURN', 'R2')]
+rescue_states = flow.call(rescued, StubOracle.new, Set.new,
+                          handlers: [CatchHandler.new(type: :rescue, begin_addr: 4, end_addr: 8, target: 10)])
+check.call('a handler starts from the state at any raise in its range: the value before or after the write',
+           rescue_states && rescue_states[5][2] == (INT | NIL_))
+check.call('a raising call clobbers the registers from its own up in the handler',
+           rescue_states && rescue_states[5][4].anybits?(OTHER))
+check.call('the normal path past the range is unaffected by the handler', rescue_states && rescue_states[6][2] == NIL_)
+check.call('a handler target nothing can raise into stays unreached',
+           flow.call(rescued, StubOracle.new, Set.new,
+                     handlers: [CatchHandler.new(type: :rescue, begin_addr: 100, end_addr: 104, target: 10)])[5].nil?)
+check.call('EXCEPT and RESCUE are modelled: the match flag is unknown, the exception register too',
+           flow.call([insn(0, 'EXCEPT', 'R2'), insn(2, 'RESCUE', "R2\tR3"), insn(5, 'RETURN', 'R3')])[2][3] == OTHER)
+check.call('a Range literal is exactly a Range', flow.call([insn(0, 'LOADI_1', "R2\t(1)"), insn(2, 'LOADI_2', "R3\t(2)"),
+                                                            insn(4, 'RANGE_INC', 'R2'), insn(6, 'RETURN', 'R2')])[3][2] == NF::RNG)
 check.call('an opcode outside the audited write list has no facts',
            flow.call([insn(0, 'APOST', "R2\t1\t0"), insn(4, 'RETURN', 'R2')]).nil?)
 
@@ -263,6 +279,35 @@ if ENV['MRBC']
 
       def nq_fact(n)
         n < 2 ? 1 : n * nq_fact(n - 1)
+      end
+
+      def nq_rescued
+        x = @nq_a + 1
+        begin
+          x = x * 2 + (@nq_a + 3)
+        rescue ArgumentError
+          x = 0
+        end
+        x + 1
+      end
+
+      def nq_rescued_str
+        x = @nq_a + 1
+        begin
+          x = "s"
+        rescue ArgumentError
+          x = 0
+        end
+        x + 1
+      end
+
+      def nq_block_ret
+        [1].each { |_v| return 5 }
+        3
+      end
+
+      def nq_block_ret_use
+        nq_block_ret + 1
       end
 
       def nq_edge
@@ -593,6 +638,9 @@ if ENV['MRBC']
   check.call('constants defined from constants, `*`, `+` and `/` prove as Integer/Float',
              proven.call('NqBox#nq_const_use') && proven.call('NqBox#nq_ratio_use'))
   check.call('NEG: a constant name another scope binds to a String keeps its send', kept.call('NqBox#nq_mix_const'))
+  check.call('a method with a rescue clause has facts: both paths leave an Integer', proven.call('NqBox#nq_rescued'))
+  check.call('NEG: a rescued region that may leave a String keeps its send', kept.call('NqBox#nq_rescued_str'))
+  check.call('a `return` inside a block joins the method result: Integer either way', proven.call('NqBox#nq_block_ret_use'))
   check.call('NEG: `r = maybe_nil; r + 1` keeps its send', kept.call('NqBox#nq_find_unchecked'))
   check.call('a nil test on the result narrows it: `r ? r + 1 : 0` proves', proven.call('NqBox#nq_find_checked'))
   check.call('NEG: an argument also reachable by `send(:name, ...)` keeps its send', kept.call('NqBox#nq_send_target'))
@@ -693,6 +741,9 @@ if ENV['MRBC']
           call(M, "mixed_arg int", box, "nq_mixed_arg", 1, &two);
           call(M, "mixed_arg str", box, "nq_mixed_arg", 1, &str);
           call(M, "run", box, "nq_run");
+          call(M, "rescued", box, "nq_rescued");
+          call(M, "rescued_str", box, "nq_rescued_str");
+          #{full ? 'call(M, "block_ret_use", box, "nq_block_ret_use");' : '// block_ret_use needs Array#each, which the core-only mruby lacks: its interpreter raises where the compiled loop runs.'}
 
           mrb_value ar = mrb_ary_new(M);
           call(M, "argsize", box, "nq_argsize", 1, &ar);

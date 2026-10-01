@@ -788,7 +788,7 @@ module LCF
 
     # Store an entry (an Array1D, or its already-serialised bytes) at id +idx+,
     # so an authored table can be assembled and written back out via #to_lcf.
-    # LCF_ROW_FLOW (ADR 0286): an entry of any other kind is re-read through this
+    # LCF_ROW_FLOW (ADR 0294): an entry of any other kind is re-read through this
     # table's schema, so every stored entry is nil, bytes or an Array1D over its
     # own elements and `self[i]` has a schema the compiler can rely on.
     def []= idx, entry

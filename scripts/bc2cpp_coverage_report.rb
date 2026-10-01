@@ -262,7 +262,7 @@ record_lines = section_lines(err, 'record hash slots (RECORD_HASH_PROOF)')
 report << "record-like Hash slots proven (RECORD_HASH_PROOF): #{record_lines.count { |l| l.start_with?('RECORD_HASH ') }} " \
           "accepted, #{record_lines.count { |l| l.start_with?('RECORD_HASH_REFUSED') }} refused\n"
 report << "  exact-class direct calls through a record key: #{@shipped_stdout.scan('record key holds only fresh').size}\n"
-# LCF_ROW_FLOW (ADR 0289): whether the LCF object-kind proof is on, the receivers it proved an exact class
+# LCF_ROW_FLOW (ADR 0294): whether the LCF object-kind proof is on, the receivers it proved an exact class
 # (a direct call, no guard), and the untyped GETIDX sites still behind the generic class gate.
 lcf_state = err[/== LCF row flow \(LCF_ROW_FLOW\) ==\n  (.*)/, 1].to_s
 lcf_calls = @shipped_stdout.scan(%r{^\s*// LCF_ROW_FLOW :(\S+) -> (\S+)}).map(&:last).tally
@@ -307,6 +307,8 @@ numeric_kinds = { 'NUMARG' => 'entry arguments', 'NUMIVAR' => 'instance variable
                   'NUMRET' => 'method names returning', 'NUMCONST' => 'constants' }
 report << "numeric operand facts (NUMERIC_OPERAND_PROOF): " \
           "#{numeric_kinds.map { |tag, what| "#{numeric_lines.count { |l| l.start_with?("#{tag} ") }} #{what}" }.join(', ')}\n"
+# RETURN_CLASS_TABLE (ADR 0294): names every call of which returns one exact class.
+report << "return-class table (RETURN_CLASS_TABLE): #{count(err, 'return class table (RETURN_CLASS_TABLE)')} names with one exact class\n"
 # ADR 0279: typed (mrb_int, mrb_sym, mrb_bool) ivar slots given back to boxed slots because a writer
 # the compiler cannot type (attr_writer, computed setter, reflection) can reach them.
 boxed_lines = section_lines(err, 'typed slots demoted to boxed slots (foreign writers, ADR 0279)')
@@ -513,6 +515,12 @@ report << "  guarded arithmetic/compare arms with a dynamic-send else: #{guarded
           "(" + guarded_tags.map { |t| "#{t} #{guarded_kept[t]}" }.join(', ') + ")\n"
 report << "  arms whose send NUMERIC_OPERAND_PROOF removed (operands proven Integer/Float): #{numeric_proven_sites}\n"
 report << "  direct :new constructor paths emitted (some retain guarded fallback): #{direct_new_sites}\n"
+# ADR 0294: a TYPED call behind a class guard with a dynamic-send fallback, against the same call when
+# the receiver is proven exactly that class.
+typed_guarded_sites = @shipped_stdout.scan(%r{^\s*// TYPED :}).size
+typed_exact_sites = @shipped_stdout.scan(%r{^\s*// EXACT_TYPED :}).size
+report << "  TYPED calls: #{typed_guarded_sites} behind a class guard with a send fallback, " \
+          "#{typed_exact_sites} guard-free (EXACT_TYPED)\n"
 report << "  literal-block sends: #{block_direct_sites} direct call with the block " \
           "(#{block_core_arm_sites} through exact-class core arms that keep the dynamic send as their else), " \
           "#{block_dynamic_sites} dynamic dispatch only\n"
