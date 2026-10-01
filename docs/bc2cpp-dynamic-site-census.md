@@ -238,6 +238,26 @@ inter-procedural receiver typing or are genuinely polymorphic.
 round reaches block bodies. The `mrb_funcall*` sites in bodies are 28, mostly
 literal-sized splat forwarding (`sprintf`, `puts`, `read`, `write`, `new`).
 
+## Follow-up: RGSS native result facts (ADR 0302)
+
+Items 4 (RGSS arguments and receivers) and 6 (`singleton_definer`) above were attacked with audited result
+facts for the RGSS getters (`Bitmap#width`/`height`/`rect`/`text_size`, `Rect#x`/`y`/`width`/`height`,
+`Color`/`Tone` components), the exact-receiver call of a zero-argument native wrapper, and an
+instance-receiver proof that lets a `.singleton` definer be ignored. Same method as above, master
+`c7ff3846` as the base (`bc2cpp_send` 3,224 here because the base was re-measured on that commit):
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 3,224 | 3,186 | -38 |
+| `bc2cpp_slow_*` calls in bodies | 3,542 | 3,523 | -19 |
+| `NUMERIC_OPERAND_PROOF` arms | 361 | 373 | +12 |
+| `NATIVE_EXACT_DIRECT` calls | 80 | 114 | +34 |
+| `CLOSED_WORLD kept: singleton_definer` | 167 | 130 | -37 |
+
+The estimate of 100-168 for item 6 was too high: only receivers the exact-class flow can name (exact
+`Bitmap`/`Rect`, `nil`-or-`RPG2k::Window`) qualify, and 130 sites still have an unnamed receiver. The `width`
+count stays high because `Game::Map#width` and the `Window` readers are data-driven.
+
 ## Ranking by executed count
 
 The counts above weigh a start-up site like a frame-loop site. `SITE_PROFILE`
