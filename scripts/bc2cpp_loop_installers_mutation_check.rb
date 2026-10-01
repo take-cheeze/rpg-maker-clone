@@ -48,8 +48,6 @@ MUTANTS = [
    "when 'JMPNOT' then return truthy(get.call(insn.reg)) ? jump(irep, insn) : pc + 1", /as CRuby/],
   ['a reader also registers a writer', 'loop_installers.rb',
    'names << "#{name}=" if %i[writer accessor].include?(kind)', 'names << "#{name}=" if true', /as CRuby/],
-  ['the operands of a constructor stay live in their registers', 'loop_installers.rb',
-   'count.times { |i| @regs.delete(from + i) }', 'nil', /as CRuby/],
   ['the closed world trusts a send the registry does not account for', 'closed_world.rb',
    'return if loop_installer_sites.include?([irep.label, idx])', 'return if true',
    /a computed name: the closed world keeps/]

@@ -327,6 +327,14 @@ measurement: nothing was built to confirm that a proof removes a site. Rows 1 an
 are the sites worth a proof; the sites after row 15 together run 35,206 times, 0.45% of the hits.
 `--rank` prints the same ranking, with a category-level lever per row, from any hit set.
 
+### After ADR 0304 (loop-installed accessors)
+
+Same workload and tree plus `LoopInstallers`: 6,025,773 by-name dispatches (-1,792,988, -22.9%), 158 of 1,085 sites
+ran. Row 2 (`@conf.loglevel`) is gone from the table (1,773,013 to 0; the rest of the category, mostly `Config`
+readers used at start-up, 1,784,121 to 188). `@conf.loglevel` is now a runtime-class chain with a direct ivar read
+(`POLY_SMALL_N`), not an exact-class arm: `@conf` is assigned from a constructor argument, which the class pools do
+not follow (ADR 0295). The ranking is now `[]` in `bc2cpp_getidx` 44.3%, `rotate!` 22.2%, the `send` sites 29.9%.
+
 The ranker also groups the hits by reason category (a start-up palette site and a
 frame-loop site share one): `shared_helper` 34.2%, `poly_diag` single definer with
 implicit self (all `send`) 23.0%, `poly_diag` no definer with unresolved receiver
