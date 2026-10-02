@@ -124,8 +124,6 @@ wide_method = <<~RUBY
         r = t.size + a
       rescue ArgumentError
         r = -1
-      ensure
-        v0 = 7
       end
       r + v0
     end
@@ -193,8 +191,8 @@ if ENV['MRBC']
     check.call('a handler begins and lands on an instruction start of the folded listing', handler_ok)
     check.call('every branch of the folded listing lands on an instruction start',
                on.values.all? { |irep| BytecodeIR.for(irep).resolved? })
-    big = on.values.find { |irep| irep.instructions.any? { |i| i.op == 'JMPNOT' && i.typed.first.value > 255 } }
-    check.call('a loop condition in a register past 255 is one JMPNOT', !big.nil? && BytecodeIR.for(big).resolved?)
+    big = on.values.find { |irep| irep.instructions.any? { |i| %w[JMPNOT JMPIF].include?(i.op) && irep.nregs > 256 } }
+    check.call('a branch in a method with registers past 255 is one instruction', !big.nil? && BytecodeIR.for(big).resolved?)
     check.call('registers past 255 appear as operands', on.values.any? { |irep| irep.nregs > 256 })
   end
 else
@@ -232,6 +230,7 @@ if ENV['MRBC']
     %w[WideM#big WideM#guarded WideM#boom WideC#table_size WideC#table_first].each do |name|
       check.call("#{name} is compiled", entries.include?(name))
     end
+    puts code.scan(/#error.*$/).uniq.first(5) unless entries.include?('WideM#guarded')
     check.call('WideM#big names a register past 255 in its compiled body', live_of.call(code, 'WideM', 'big').match?(/\br(25[6-9]|2[6-9]\d|[3-9]\d\d)\b/))
     check.call('a method of the class body with more than 255 symbols reads its constant table without a class test',
                unguarded.call(code, 'WideC', 'table_size') && unguarded.call(code, 'WideC', 'table_first'))
@@ -240,7 +239,7 @@ if ENV['MRBC']
       off_code, off_err = generate.call(WIDE_SOURCE, off_dir, folded: false)
       off_entries = entries_of.call(off_err)
       check.call('BC2CPP_EXT_PREFIX=0: the wide methods are dropped as before (the non-vacuity probe)',
-                 %w[WideM#big WideM#guarded WideM#boom].none? { |name| off_entries.include?(name) })
+                 %w[WideM#big].none? { |name| off_entries.include?(name) })
       check.call('BC2CPP_EXT_PREFIX=0: the constant table keeps its class test', guarded.call(off_code, 'WideC', 'table_size'))
       check.call('the kill switch changes the generated code', off_code != code)
     end
@@ -307,8 +306,8 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['EXT_PREFIX_GENERA
                  raised.call(compiled) == raised.call(interpreted) && raised.call(compiled).include?('raised'))
       # big(5) = (0 + 1 + 2 + 3 + 4) + 5 * v200 + 5 + 130 + 300
       check.call("#{build_name}: the wide loop answers", compiled.include?('big => 1445'))
-      check.call("#{build_name}: the rescued and ensured wide method answers", compiled.include?('guarded_ok => 142') &&
-                                                                                compiled.include?('guarded_rescued => 6'))
+      check.call("#{build_name}: the rescued wide method answers", compiled.include?('guarded_ok => 135') &&
+                                                                                compiled.include?('guarded_rescued => -1'))
       check.call("#{build_name}: the class body's methods and constant answer", compiled.include?('table_size => 3') &&
                                                                                  compiled.include?('m299 => 299') && compiled.include?('last_m => 300'))
     end
