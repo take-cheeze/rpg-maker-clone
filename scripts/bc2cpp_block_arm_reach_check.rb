@@ -74,6 +74,7 @@ FIXTURE = <<~'RUBY'
     def lit_each; s = 0; [1, 2, 3].each { |x| s += x }; s; end
     def unknown_each(a); s = 0; a.each { |x| s += x }; s; end
     def fiber_map; (1..3).map { |i| Fiber.yield i; i }; end
+    def down(n); r = []; n.downto(1) { |i| r << i }; r; end
   end
 RUBY
 
@@ -88,6 +89,8 @@ DRIVER = <<~'RUBY'
   def single_rows.each; yield [9, 9]; end
   frozen = [[1, 2], [3, 4]].freeze
   big = (1..600).map { |i| [i, i + 1] }
+  downer = Object.new
+  def downer.downto(n); yield :user_downto; end
   hash = { a: 1, b: 2 }
   rows = [[1, 2], [3, 4], [5, 6]]
   cases = {
@@ -109,7 +112,8 @@ DRIVER = <<~'RUBY'
     range_map: [0, 1, 5],
     range_break: [nil],
     lit_each: [nil],
-    unknown_each: [[1, 2, 3], [], 1..4, frozen.flatten, user, single, BrArr.new([4, 5])]
+    unknown_each: [[1, 2, 3], [], 1..4, frozen.flatten, user, single, BrArr.new([4, 5])],
+    down: [3, 0, downer, 2.5]
   }
   run = lambda do |label|
     cases.each do |name, inputs|
@@ -249,6 +253,8 @@ if run_generated
              nb.call('range_break').match?(/-- proven Range receiver at the root context.*\n\s+if \(M->c == M->root_c\) \{\n\s+r\d+ = Enumerable_collect_impl.*\} else \{\n\s+r\d+ = mrb_funcall_with_block\(/m))
   check.call('an unproven receiver keeps its class tests and the else even for a yield-free block',
              nb.call('unknown_each').match?(/if \(mrb_array_p\(r\d+\) && mrb_obj_ptr\(r\d+\)->c == M->array_class\) \{.*else \{\n\s+r\d+ = mrb_funcall_with_block\(/m))
+  check.call('a single arm whose receiver is not proven keeps its class test and the else, yield-free block or not',
+             nb.call('down').match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = \w*downto_impl\(M, .*\} else \{\n[^\n]*mrb_funcall_with_block\(/m))
   check.call('the kill switch keeps the dynamic else after a proven yield-free arm',
              ob.call('range_map').match?(/proven Range.*\n\s+if \(true\) \{\n\s+r\d+ = Enumerable_collect_impl.*\} else \{\n\s+r\d+ = mrb_funcall_with_block\(/m))
 
@@ -473,8 +479,8 @@ MUTANTS = {
     ['codegen_arg_shapes.rb', "count <= direct_impls[name]", "direct_impls[name].positive?"],
   'the tally ignores the kill switch' =>
     ['codegen_arg_shapes.rb', "ENV['BC2CPP_BLOCK_ARM_REACH'] != '0'", "true"],
-  'nested sends are attempted without an owner definition' =>
-    ['codegen_block_fallback.rb', "elsif owner_def && block_arm_reach?", "elsif block_arm_reach?"]
+  'the nested glue is built without the owning definition' =>
+    ['codegen_loop_inline.rb', "inline_offset: offset, owner_def: d)", "inline_offset: offset)"]
 }.freeze
 
 if ENV['BR_MUTANTS'] == '1' && MODE != 'run' && tool?(MRBC_PATH)
