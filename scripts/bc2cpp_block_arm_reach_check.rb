@@ -112,7 +112,7 @@ DRIVER = <<~'RUBY'
     range_map: [0, 1, 5],
     range_break: [nil],
     lit_each: [nil],
-    unknown_each: [[1, 2, 3], [], 1..4, frozen.flatten, user, single, BrArr.new([4, 5])],
+    unknown_each: [[1, 2, 3], [], 1..4, [1, 2, 3, 4], user, single, BrArr.new([4, 5])],
     down: [3, 0, downer, 2.5]
   }
   run = lambda do |label|
@@ -376,11 +376,11 @@ if MODE != 'generated'
       CPP
     end
 
-    # name => [gems, extra defines]. The core-only build is mruby's own mrblib with no gem: Enumerable,
-    # Fiber and the *-ext methods are absent, so the driver tolerates a NoMethodError in both builds.
+    # name => [gems, extra defines]. The core-only build is mruby's own mrblib with only mruby-io (for puts) on top: Fiber,
+    # each_with_object and the other *-ext methods are absent, so the driver tolerates a NoMethodError in both builds.
     VARIANTS = {
       'full-core' => ["conf.gembox 'full-core'\n  conf.gem \"\#{ENV.fetch('BC2CPP_ROOT')}/3rd/mruby-stringio\"", ''],
-      'core-only' => ["conf.gem core: 'mruby-bin-mruby'\n  conf.gem core: 'mruby-bin-mrbc'", ''],
+      'core-only' => ["conf.gem core: 'mruby-bin-mruby'\n  conf.gem core: 'mruby-bin-mrbc'\n  conf.gem core: 'mruby-io'", ''],
       'int32' => ["conf.gembox 'full-core'\n  conf.gem \"\#{ENV.fetch('BC2CPP_ROOT')}/3rd/mruby-stringio\"",
                   "[conf.cc, conf.cxx].each { |t| t.defines << 'MRB_32BIT' << 'MRB_INT32' }"]
     }.freeze
@@ -419,6 +419,8 @@ if MODE != 'generated'
       env = { 'BC2CPP_ROOT' => ROOT, 'MRUBY_CONFIG' => File.join(work, "config_#{variant}.rb"), 'MRUBY_BUILD_DIR' => build,
               'BC2CPP_HARNESS_GEM' => gem_dir, 'BC2CPP_REACH_COMPILED' => compiled ? '1' : '0',
               'BC2CPP_REACH_FIXTURE' => File.join(work, 'fixture.rb') }
+      # ADR 0271 keeps a block's entry as an address in a 32-bit mrb_int slot; this 64-bit host truncates it.
+      env['BC2CPP_BLOCK_DIRECT_ENTRY'] = '0' if variant == 'int32'
       out, status = Open3.capture2e(env, 'rake', "-j#{[Etc.nprocessors, 16].min}", 'all', chdir: MRUBY)
       File.write(File.join(work, "#{name}.log"), out)
       bin = File.join(build, 'host/bin/mruby')
