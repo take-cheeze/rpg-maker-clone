@@ -26,6 +26,7 @@ require 'tmpdir'
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/hot_methods'
 require_relative '../tools/bc2cpp/wio_registered_methods'
+require_relative 'bc2cpp_cxx'
 
 root = File.expand_path('..', __dir__)
 failures = []
@@ -331,7 +332,7 @@ else
       }
     CPP
     binary = File.join(dir, 'harness')
-    built = system('g++', '-std=c++17', '-w', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
+    built = Bc2cppCxx.system('-std=c++17', '-w', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
                    "-I#{dir}", "-I#{core}/include", "-I#{root}/3rd/mruby/include", harness,
                    "#{core}/lib/libmruby_core.a", '-o', binary)
     check.call('the hot-only code and a hand-written registration of every method compile against real mruby', built)

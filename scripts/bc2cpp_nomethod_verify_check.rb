@@ -21,6 +21,7 @@ require 'shellwords'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative 'bc2cpp_cxx'
 
 root = File.expand_path('..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
@@ -103,7 +104,7 @@ else
     CPP
     build = lambda do |name, *flags|
       binary = File.join(dir, name)
-      ok = system('g++', '-std=gnu++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS', *flags,
+      ok = Bc2cppCxx.system('-std=gnu++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS', *flags,
                   "-I#{core}/include", "-I#{root}/3rd/mruby/include", source, "#{core}/lib/libmruby_core.a", '-o', binary)
       ok ? binary : nil
     end

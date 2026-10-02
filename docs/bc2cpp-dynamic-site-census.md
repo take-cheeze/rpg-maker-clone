@@ -293,6 +293,43 @@ The estimate of 100-168 for item 6 was too high: only receivers the exact-class 
 `Bitmap`/`Rect`, `nil`-or-`RPG2k::Window`) qualify, and 130 sites still have an unnamed receiver. The `width`
 count stays high because `Game::Map#width` and the `Window` readers are data-driven.
 
+## Follow-up: where the container receivers come from (ADR 0308)
+
+The two `core_tag_chain_else` categories counted for the rpg2k gem only (functions named `RPG2k*` or `Game*`; every gem
+together is 971 and 234) at master `e1c671e4`: `receiver_other` 714 and `receiver_is_ivar` 204. A temporary hook at
+`compile_insn` printed the exact-class flow's mask for each receiver register and its reaching definitions. The
+producer of the receiver, 913 sites with a flow context:
+
+| producer | sites |
+| --- | ---: |
+| `@ivar` read | 214 |
+| call result (`SEND0` 130, `SSEND0` 63, `SENDB` 31, `SSEND` 23, `SEND` 12, `AREF` 10) | 269 |
+| `GETIDX` element of another container | 124 (+28 joined with a literal) |
+| incoming argument | 90 |
+| reaching definitions refused | 67 |
+| captured local (`GETUPVAR`) | 41 |
+| constant | 34 |
+| rest | 74 |
+
+Why the 215 ivar-rooted sites have no usable class pool (first store that drops the pool, all stores at the final
+fixpoint): a constructor or setter argument 47 (`Scene::Base#initialize @parent = parent` alone is 26), the result of
+`compact`/`map`/`select`/`uniq`/`dup`/`Array.new` on an unknown receiver 63 (+29 reading it through `Party#actors`), a user
+method result 14, an element of another container 12, several of those 24, a numeric ivar 8, an `attr_writer` or a
+Symbol/String spelling of the name 26, and 19 sites whose pool is exact but whose consumer (`ARRAY_PUSH`) has no exact arm.
+There is no single missing rule; the argument-shaped rows cannot be pooled because any `x.new(...)` with a non-constant
+receiver may construct any class. Optimistic experiments (unsound, not shipped) measured the ceiling of two obvious
+rules: core container result classes on exact receivers move the categories by 4 of 1,205 sites, `Array.new`/`Hash.new`
+results by 12 with 34 relocations into `INDEX_EXACT` Array else arms.
+
+What did move, and by how much (sites that can reach by-name dispatch for the rpg2k gem, the sum of `bc2cpp_send` and the
+`getidx`/`setidx`/`slow_*`/`eqq` callers): ADR 0308's captured-local class flow, 7,625 to 7,558 (-67), of which 41 are hash
+index arms with no else, 9 are Array index arms that relocated their by-name `[]` into an inline else (already netted
+out), and 11 are slow-path numeric helpers. The two named categories moved by 7 (`receiver_other` 714 to 707) and 0.
+
+Reproducing the numbers: a worktree checkout has empty `3rd/*` submodule directories, so `3rd/mruby` is empty, the native
+scan sees no mruby core and the closed world refuses most proofs. `bc2cpp_send` is then about 8,000 instead of 3,030 and
+every category above is wrong; check the first line of the census before trusting a run.
+
 ## Ranking by executed count
 
 The counts above weigh a start-up site like a frame-loop site. `SITE_PROFILE`
@@ -395,6 +432,23 @@ of the static count.
   gems write one hit file each.
 * **Per-caller counts for helper sites**, and any other workload (the MV and wio smokes).
 
+## Element reads of mutable containers (ADR 0312)
+
+`BC2CPP_ELEMENT_REPORT=<tsv>` (`tools/bc2cpp/element_site_report.rb`) writes one row per instruction that can
+still reach a by-name call, with the origin of its receiver, and one row per write into a container ivar with the
+class set of the value; `scripts/bc2cpp_element_site_report.rb <tsv>` aggregates it:
+
+```sh
+BC2CPP_ELEMENT_REPORT=/tmp/elements.tsv MRBC=<host mrbc> ruby scripts/bc2cpp_coverage_report.rb > /dev/null
+ruby scripts/bc2cpp_element_site_report.rb /tmp/elements.tsv
+```
+
+On the wio closed world (engine owners): 15,349 sites can reach by-name dispatch, 1,151 read an element, 380 of those
+an element of an ivar container, and only 28 of those 380 sit on an ivar whose every creation and write has a known
+class set (ceiling, before any alias check). The element class of a mutable container is therefore limited by the
+class of the values stored, which are mostly method results and parameters, not by aliasing; ADR 0312 records why
+nothing was built. The report changes no generated code.
+
 ## Caveats
 
 * The static tables above count source sites, not executions. A site in a cold scene
@@ -413,3 +467,9 @@ of the static count.
 * The baseline is a saved `shipped.cxx` from before the round, not a rebuild
   of the old commit; its 9,733 `bc2cpp_send` lines match the figure quoted for
   it.
+
+## Element classes of frozen tables (ADR 0306)
+
+`BC2CPP_FROZEN_TABLES=0` is the "before". On the merged tree it moved 6 numeric operator sites
+(see the ADR for the per-helper counts) and nothing else: element classes of mutable
+Arrays/Hashes in ivars and locals, the bulk of the unknown receiver roots, are not covered.

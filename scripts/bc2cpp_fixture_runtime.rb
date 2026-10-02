@@ -19,6 +19,7 @@ require 'shellwords'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative 'bc2cpp_cxx'
 
 module Bc2cppFixtureRuntime
   ROOT = File.expand_path('..', __dir__)
@@ -78,7 +79,7 @@ module Bc2cppFixtureRuntime
     FileUtils.mkdir_p(File.join(work, 'repos/host'))
     FileUtils.ln_sf(File.join(ROOT, '3rd/mgem-list'), File.join(work, 'repos/host/mgem-list'))
     File.write(File.join(work, 'config.rb'), FULL_CORE_CONFIG)
-    env = { 'MRUBY_CONFIG' => File.join(work, 'config.rb'), 'MRUBY_BUILD_DIR' => work }
+    env = { 'MRUBY_CONFIG' => File.join(work, 'config.rb'), 'MRUBY_BUILD_DIR' => work }.merge(Bc2cppCxx.rake_env)
     out, status = Open3.capture2e(env, 'rake', "-j#{[Etc.nprocessors, 16].min}", 'all', chdir: File.join(ROOT, '3rd/mruby'))
     File.write(File.join(work, 'build.log'), out)
     raise "full-core mruby build failed:\n#{out.lines.last(30).join}" unless status.success?
@@ -92,9 +93,10 @@ module Bc2cppFixtureRuntime
   # `path` places the fixture below `dir`: a path under 3rd/mruby/mrblib/ makes bc2cpp treat
   # it as mruby's own Ruby (CoreDefs.core_source?), so a check can exercise the core-only proofs.
   # `extra` is more sources ([path, text] pairs) compiled after the fixture, e.g. engine Ruby
-  # next to a core fixture.
+  # next to a core fixture. `build_gems` ([name, dir] pairs) adds gems to the closed-world build, whose
+  # src/ and mrblib/ then count as outside native and Ruby sources.
   def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil, path: 'fixture.rb', extra: [],
-               native: [], foreign: [])
+               native: [], foreign: [], build_gems: [])
     src = File.join(dir, path)
     FileUtils.mkdir_p(File.dirname(src))
     File.write(src, source)
@@ -114,7 +116,7 @@ module Bc2cppFixtureRuntime
       env.merge!('NATIVE_SRCS' => Shellwords.join(natives),
                  'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT) + write_outside.call(foreign)),
                  'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).map { |n, d| "#{n}=#{d}" }),
+                 'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).merge(build_gems.to_h).map { |n, d| "#{n}=#{d}" }),
                  NomethodReviewed::ALLOW_ENV => 'allow')
     end
     code, err, status = Open3.capture3(env, RbConfig.ruby, BC2CPP, src, *extra_srcs)
@@ -228,7 +230,7 @@ module Bc2cppFixtureRuntime
     flags = %w[-std=c++17 -fexceptions -DMRB_USE_CXX_EXCEPTION -w]
     flags << '-DMRB_NO_GEMS' unless full
     flags.concat(Shellwords.split(ENV.fetch('BC2CPP_CXXFLAGS', '')))
-    built = system('g++', *flags, "-I#{dir}", "-I#{build}/include", "-I#{ROOT}/3rd/mruby/include",
+    built = Bc2cppCxx.system(*flags, "-I#{dir}", "-I#{build}/include", "-I#{ROOT}/3rd/mruby/include",
                    "-I#{ROOT}/mruby-rgss/src", File.join(dir, 'main.cpp'), lib, '-lm', '-o', binary)
     return [false, ''] unless built
 

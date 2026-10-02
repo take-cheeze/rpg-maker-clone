@@ -15,6 +15,7 @@
 # Usage: MRBC=path/to/mrbc [BC2CPP_MRUBY_FULL=dir] ruby scripts/bc2cpp_constant_singleton_check.rb
 
 require 'tmpdir'
+require_relative 'bc2cpp_cxx'
 
 failures = []
 check = lambda do |what, condition|
@@ -161,7 +162,7 @@ if ENV['MRBC']
     include_dirs = ["-I#{dir}", "-I#{runtime.core}/include", "-I#{runtime::ROOT}/3rd/mruby/include", "-I#{runtime::ROOT}/include"]
     if runtime.core && runtime.compiler?
       check.call('the generated calls compile against include/rgss_native_direct.hxx',
-                 system('g++', '-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-w', '-fsyntax-only', *include_dirs,
+                 Bc2cppCxx.system('-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-w', '-fsyntax-only', *include_dirs,
                         File.join(dir, 'fixture_gen.cpp')))
     end
   end
