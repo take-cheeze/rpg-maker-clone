@@ -118,6 +118,34 @@ existing `libmruby.a` as current and never checks the inputs (patches, the mruby
 submodule, the gembox config, the compiler), so a key that missed one would hand a
 stale library to every check. sccache keys on the real compile inputs instead.
 
+### Mutation harnesses
+
+A mutation check is only worth its green line if a dead mutant died for the reason it names.
+`scripts/bc2cpp_mutation_support.rb` is the one place the harnesses (`bc2cpp_*_mutation_check.rb` and the
+`*_MUTANTS=1` sections of `computed_send`, `unlisted_class_call`, `block_arm_reach`, `core_exact_direct`,
+`getidx_integer_arm`) get their rules:
+
+- **Layout.** A mutant is a copy of `tools/bc2cpp` in a tree that links every other repository entry
+  (`.mutants/`, git-ignored). bc2cpp.rb finds the engine's sources from its own location (`../..`), so a copy under
+  `/tmp` reads an empty closed world and every mutant "dies" because no proof can be made.
+- **Control.** The unmutated tool runs first, through the same tree, and must pass. It must also print at least five
+  `ok` lines, not have skipped its run half, show the same closed world as the real tool (the world probe compares
+  the `== closed world` counts) and, when a mutant needs the run half, show that the compiled VM dispatched into
+  compiled code (below). The control runs in the pool beside the mutants, so it adds one run, not a serial step.
+- **Verdicts.** `KILLED_BY_ASSERTION` (a `FAIL` line matching the mutant's label) is the only kill.
+  `KILLED_BY_CRASH` (timeout, no `FAIL` line, or the label fired next to a fixture build or binary failure the
+  control does not have) and `KILLED_ELSEWHERE` (another assertion) are reported and fail the harness unless the
+  mutant declares `crash_ok`. A surviving mutant fails the harness. The child never inherits a `*_MUTANTS`,
+  `*_GENERATED_ONLY` or `*_TOOL` variable of the caller.
+- **Runtime probe.** `Bc2cppFixtureRuntime.run` registers each compiled entry through a counting thunk, and the
+  gem-built drivers do the same through `PROBE_PROLOGUE`; a compiled leg that finishes without dispatching into any
+  registered entry raises `VacuousCompiledLeg` (its interpreted and compiled sections would be the same bytecode).
+  `BC2CPP_PROBE_LOG=file` also lists fixture classes the owner list leaves out (`unlisted-classes`).
+- `BC2CPP_MUTATION_VERBOSE=1` lists every `FAIL` line of every mutant, for writing the label of a new one.
+
+`ruby scripts/bc2cpp_mutation_harness_check.rb` (shard `hot-only`, about 40 s) runs deliberately broken harnesses:
+an empty world must fail its control, a mutant that only breaks the C++ build is a crash, not a kill.
+
 ### Mutant pool
 
 The mutation checks run one subprocess per mutant, each independent. Through

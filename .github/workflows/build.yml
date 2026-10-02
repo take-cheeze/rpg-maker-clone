@@ -950,6 +950,9 @@ jobs:
               # PROVEN_MISS_REVIEWED (docs/adr/0275): a send to a proven class nothing answers.
               MRBC="$mrbc" ruby scripts/bc2cpp_proven_miss_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_hot_only_check.rb
+              # The mutation harness support (docs/ci.md, "Mutation harnesses"): deliberately broken harnesses must
+              # be refused or reported as crash kills.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_mutation_harness_check.rb
           - shard: registrations
             checks: |
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_embedded_ivar_access_check.rb
