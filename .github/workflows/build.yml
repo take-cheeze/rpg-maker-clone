@@ -1014,6 +1014,13 @@ jobs:
               # ADR 0306: element classes of frozen literal tables; generated code, the interpreter on three builds, mutants.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_check.rb
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_mutation_check.rb
+          - shard: call-results
+            # ADR 0309: attr_reader result classes and flow-proven Array arms; its own shard (about 15 min with the mutants).
+            checks: |
+              # Generated code with every way of losing a proof, then a compiled fixture against the interpreter on the
+              # full-core and core-only builds (the 32-bit leg runs in bc2cpp-width); six mutants of the conditions.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_call_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_call_results_mutation_check.rb
           - shard: core-mutants
             # bc2cpp_unlisted_class_call_check with UCC_MUTANTS=1: seven mutant rebuilds (~23 min).
             checks: |
@@ -1234,6 +1241,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_lcf_row_flow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_call_results_check.rb
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
           - variant: nobigint
             checks: |
