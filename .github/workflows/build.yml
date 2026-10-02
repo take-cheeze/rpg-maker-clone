@@ -1047,6 +1047,14 @@ jobs:
             # generator mutants and an unmutated control.
             checks: |
               CX_MUTANTS=1 MRBC="$mrbc" ruby scripts/bc2cpp_core_exact_direct_check.rb
+          - shard: escape-analysis
+            # ADR 0316: the shared escape analysis and BLOCK_FALLBACK_PROVEN. Unit cases on hand-built bytecode and
+            # mrbc fixtures, generated code with the withdrawal worlds and the kill switch, a compiled fixture against
+            # the interpreter on full-core, core-only and 32-bit mrb_int builds (six mruby builds), then eighteen
+            # generator mutants and an unmutated control (est. 12 min).
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp_escape_analysis_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_escape_analysis_mutation_check.rb
           - shard: captured-locals
             # ADR 0308: generated code with the withdrawal worlds, the full-core and core-only runs, then eight
             # mutants through the shared pool (est. 15 min).

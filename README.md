@@ -1044,6 +1044,11 @@
   `uniq`, `fetch`, ...) calls the compiled core body directly when that body cannot suspend a Fiber, with no
   by-name send left; `BC2CPP_CORE_EXTEND=0` returns the earlier output; see
   [`docs/adr/0314-bc2cpp-core-exact-direct.md`](docs/adr/0314-bc2cpp-core-exact-direct.md).
+  A shared escape analysis (`tools/bc2cpp/escape_analysis.rb`) answers whether the value a creation site makes
+  leaves its frame, with callee summaries over a closed world; its first consumer lets a literal block that captures
+  locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything
+  that reaches it. `BC2CPP_ESCAPE_ANALYSIS=0` restores the earlier output; see
+  [`docs/adr/0316-bc2cpp-shared-escape-analysis.md`](docs/adr/0316-bc2cpp-shared-escape-analysis.md).
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of

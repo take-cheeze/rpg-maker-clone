@@ -592,3 +592,21 @@ Ruby initialize, 298 on a native or core class, 7 rooted in a singleton or `self
 computed `new` sites" were constants inside `rescue`-covered methods that `agreed_constant_name` refuses. The
 `Bitmap.new(w, h)` Integer-tag sites do not come from constructor arguments: their `w`/`h` are failed numeric constants
 (`LINE_H`, `SCREEN_W`, `TILE`, `FACE_SIZE`), `Rect`/`Bitmap` native results, `Array#max` and `Window#width`.
+
+## Follow-up: where a value goes (ADR 0316)
+
+The census above counts by-name sends; this one counts creation sites (`LAMBDA`, `BLOCK`, `ARRAY`, `HASH`, `STRING`,
+`new`) and asks whether the value leaves the frame that made it, with the shared escape analysis
+(`BC2CPP_ESCAPE_REPORT=<tsv>`, `scripts/bc2cpp_escape_report.rb tsv shipped.cxx`). Wio closed world, master
+`56b14771`, shipped pass:
+
+| Measure | Value |
+| --- | ---: |
+| creation sites in methods that ship | 4,114 |
+| `LAMBDA` sites / confined today / confined by the analysis / newly confined | 3 / 1 / 1 / 0 |
+| BLOCK_FALLBACK regions / proven confined (callee set closed over receiver classes) | 466 / 109 |
+| `each` sends the analysis cannot prove (5 of the 11 `each` definitions keep their block) | 168 of 206 |
+| Arrays / Hashes / objects used only locally (stack candidates, count only) | 46 / 44 / 3 |
+| constructors whose `self` does not leave | 51 of 82 |
+| methods that newly compile with BLOCK_FALLBACK_PROVEN | 1 (`Array#combination`) |
+| `shipped.cxx` with `BC2CPP_ESCAPE_ANALYSIS=0` against master | byte-identical |
