@@ -16,8 +16,6 @@ abort 'SKIP: set MRBC' unless ENV['MRBC']
 
 # [name, file, pattern, replacement, label of a check that must FAIL]
 MUTANTS = [
-  ['a literal frozen later (not back to back) still counts', 'codegen_frozen_tables.rb',
-   'return nil unless at + 1 == idx && lit.reg == insn.reg', '', /late_freeze/],
   ['an out-of-range literal index reads the last slot instead of nil', 'frozen_tables.rb',
    'return NumericFlow::NIL unless index.between?(-n, n - 1)', 'return shape.slots.last || NumericFlow::NIL unless index.between?(-n, n - 1)',
    /oob_plain/],

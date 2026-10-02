@@ -133,7 +133,7 @@ FIXTURE = <<~RUBY
     def list_name; EcTables::LIST[0] + 1; end
     def dup_idx; EcTables::IDX.dup[0] + 1; end
     def concat_frozen; ([1, 2] + [3]).freeze[0] + 1; end
-    def late_freeze; a = [1, 2]; a[0] = "s"; b = a.freeze; b[0] + 1; end
+    def late_freeze; a = [1, 2]; c = a; c[0] = "s"; b = a.freeze; b[0] + 1; end
     def oob_plain; EcTables::IDX[5] + 1; end
     def hash_absent_plain; EcTables::DIRS[3] + 1; end
     def splat_freeze(l); [*l, 1].freeze[0] + 1; end

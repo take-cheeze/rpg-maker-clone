@@ -72,3 +72,9 @@ only 49 shapes exist, and most table reads end in `INT|NIL` (a computed index ca
 sites qualify. Tests: `scripts/bc2cpp_frozen_tables_check.rb` (model, generated code with 17 hostile worlds, compiled
 against interpreted on full-core, core-only and 32-bit `mrb_int` builds) and `scripts/bc2cpp_frozen_tables_mutation_check.rb`
 (13 mutants).
+
+Mutation check notes: the adjacency of literal and `freeze`, and the computed-installer refusal, are second lines of
+defence behind reaching definitions (which already refuse a literal an op or call can touch between) and the closed
+world's global refusal; mutating either alone is not observable, so they have no mutant. Exactness of the receiver
+is also proven by the constant pools of ADR 0301 for constants, so the check does not attribute INDEX_EXACT to this
+slice; `frozen_table_exact_class` adds it only where the numeric flow carries a kind (arguments, ivars, returns).
