@@ -1040,6 +1040,10 @@
   when the receiver class is proven and the block cannot reach a Fiber yield; see
   [`docs/adr/0270-bc2cpp-block-core-direct-arms.md`](docs/adr/0270-bc2cpp-block-core-direct-arms.md) and
   [`docs/adr/0310-bc2cpp-block-arm-reach.md`](docs/adr/0310-bc2cpp-block-arm-reach.md).
+  A send with no block to a receiver proven an exact `Array` or `Hash` (the else of the inline `[a, b].max`,
+  `uniq`, `fetch`, ...) calls the compiled core body directly when that body cannot suspend a Fiber, with no
+  by-name send left; `BC2CPP_CORE_EXTEND=0` returns the earlier output; see
+  [`docs/adr/0314-bc2cpp-core-exact-direct.md`](docs/adr/0314-bc2cpp-core-exact-direct.md).
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
@@ -1144,6 +1148,11 @@
   `BC2CPP_CAPTURED_LOCAL_CLASS=0` turns it off (see
   [`docs/adr/0308-bc2cpp-captured-local-classes.md`](docs/adr/0308-bc2cpp-captured-local-classes.md) and
   `scripts/bc2cpp_captured_local_class_check.rb`).
+  The arguments of an `initialize` are joined over every `Klass.new`, `super(...)`, implicit-self `new` and
+  `self.class.new` of the closed world (`BC2CPP_CONSTRUCTOR_POOLS=0` turns it off; 25 fewer index-helper callers on
+  the wio build, see
+  [`docs/adr/0313-bc2cpp-constructor-pools.md`](docs/adr/0313-bc2cpp-constructor-pools.md) and
+  `scripts/bc2cpp_constructor_pools_check.rb`).
   `BC2CPP_SITE_PROFILE=DIR` builds count how often each remaining by-name `bc2cpp_send` and
   `mrb_funcall*` site runs, and `scripts/bc2cpp_dynamic_site_census.rb --rank` ranks the sites by
   executed hits with the reason each was kept dynamic; off by default and byte-identical when unset
@@ -1156,6 +1165,14 @@
   of a by-name lookup; `BC2CPP_COMPUTED_SEND=0` turns it off (see
   [`docs/adr/0303-bc2cpp-computed-send-expansion.md`](docs/adr/0303-bc2cpp-computed-send-expansion.md) and
   `scripts/bc2cpp_computed_send_check.rb`).
+  An `attr_reader` returns the class set of the ivar slot it reads (the class pools), so `holder.thing.tag`
+  is an exact call when every definition of `thing` is modelled, and an Array the flow proves exact takes
+  `push`/`<<` and the TYPED call of a core class's body with no class test; `BC2CPP_RETURN_ACCESSORS=0` and
+  `BC2CPP_EXACT_CORE_ARMS=0` turn them off (63 fewer rpg2k by-name sites, all removals). With
+  `BC2CPP_SEND_ROOT_REPORT=FILE` a build also tags every by-name line, and
+  `scripts/bc2cpp_send_root_report.rb` ranks which producer left each receiver unproven. See
+  [`docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md`](docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md)
+  and `scripts/bc2cpp_call_results_check.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).

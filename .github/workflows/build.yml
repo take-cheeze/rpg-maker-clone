@@ -1016,6 +1016,13 @@ jobs:
               # ADR 0306: element classes of frozen literal tables; generated code, the interpreter on three builds, mutants.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_check.rb
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_mutation_check.rb
+          - shard: call-results
+            # ADR 0309: attr_reader result classes and flow-proven Array arms; its own shard (about 15 min with the mutants).
+            checks: |
+              # Generated code with every way of losing a proof, then a compiled fixture against the interpreter on the
+              # full-core and core-only builds (the 32-bit leg runs in bc2cpp-width); six mutants of the conditions.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_call_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_call_results_mutation_check.rb
           - shard: native-wrappers
             # ADR 0307: generated code, then a compiled fixture against the interpreter on the full-core and
             # core-only builds (the stand-in rgss:: bodies need no SDL); eight mutants run concurrently, about a minute and a half.
@@ -1034,12 +1041,24 @@ jobs:
             # plus eight generator mutants.
             checks: |
               BR_MUTANTS=1 MRBC="$mrbc" ruby scripts/bc2cpp_block_arm_reach_check.rb
+          - shard: core-exact-direct
+            # ADR 0314: generated code with the withdrawal worlds, four mruby builds (full-core, core-only and
+            # 32-bit mrb_int, plus a world whose comparator yields; each also run interpreted), then nine
+            # generator mutants and an unmutated control.
+            checks: |
+              CX_MUTANTS=1 MRBC="$mrbc" ruby scripts/bc2cpp_core_exact_direct_check.rb
           - shard: captured-locals
             # ADR 0308: generated code with the withdrawal worlds, the full-core and core-only runs, then eight
             # mutants through the shared pool (est. 15 min).
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_captured_local_class_check.rb
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_captured_local_class_mutation_check.rb
+          - shard: constructor-pools
+            # ADR 0313: generated code with the withdrawal worlds, the full-core and core-only runs, then thirteen
+            # mutants and an unmutated control through the shared pool.
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_mutation_check.rb
           - shard: rdata-slots
             checks: |
               # Links bc2cpp output against the patch-chain mruby and runs it
@@ -1256,7 +1275,10 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_lcf_row_flow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_call_results_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
+              # ADR 0313: the 32-bit run of the constructor-pool fixture (the 64-bit runs are in `constructor-pools`).
+              MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_check.rb
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
           - variant: nobigint
             checks: |
