@@ -3,7 +3,7 @@
 
 # Mutation test for CAPTURED_LOCAL_CLASS (docs/adr/0308). Each mutant is a copy of tools/bc2cpp with one soundness
 # condition broken; scripts/bc2cpp_captured_local_class_check.rb, run against the mutant through BC2CPP_TOOL, must FAIL
-# on the check that guards that condition. A mutant that passes means the condition has no negative case.
+# on the check that guards that condition. A mutant that passes means the condition has no negative case. An unmutated control runs first, in the same tree, and a mutant that only crashes is not a kill (Bc2cppMutationSupport).
 #
 # One guard has no killing world and so no mutant: the explicit nested-write test (the flow already reads such a
 # register as OTHER, so it stays as defence in depth, as numeric_upvar_mask keeps it).

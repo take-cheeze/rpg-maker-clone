@@ -4,7 +4,7 @@
 # Mutation test for EXACT_NATIVE_WRAPPER (docs/adr/0307). Each mutant is a copy of tools/bc2cpp with one
 # condition broken; scripts/bc2cpp_exact_native_wrappers_check.rb, run against the mutant through
 # BC2CPP_TOOL, must FAIL on the check that guards that condition. A mutant that passes means the condition
-# has no negative case.
+# has no negative case. An unmutated control runs first, in the same tree, and a mutant that only crashes is not a kill (Bc2cppMutationSupport).
 #
 # Usage: MRBC=path/to/mrbc [BC2CPP_MRUBY_FULL=dir] ruby scripts/bc2cpp_exact_native_wrappers_mutation_check.rb
 
