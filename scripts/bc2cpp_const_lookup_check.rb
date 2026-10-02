@@ -15,6 +15,7 @@
 
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
+require_relative 'bc2cpp_cxx'
 
 root = File.expand_path('..', __dir__)
 failures = []
@@ -121,7 +122,7 @@ else
       }
     CPP
     binary = File.join(dir, 'const_probe')
-    built = system('g++', '-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
+    built = Bc2cppCxx.system('-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
                    "-I#{core}/include", "-I#{root}/3rd/mruby/include", source, "#{core}/lib/libmruby_core.a", '-o', binary)
     check.call('the emitted probe compiles against real mruby headers', built)
     if built

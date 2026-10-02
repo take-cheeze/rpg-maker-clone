@@ -25,6 +25,7 @@ require 'open3'
 require 'shellwords'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
+require_relative 'bc2cpp_cxx'
 
 # Derived through the real CodeGen#cpp_name: `[]` mangles to `_$5b$5d`, and a
 # hand-written `$5b` inside a regex literal interpolates rather than matching.
@@ -316,7 +317,7 @@ Dir.mktmpdir do |dir|
     }
   CPP
   binary = File.join(dir, 'fixture')
-  built = system('g++', '-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS', '-w',
+  built = Bc2cppCxx.system('-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS', '-w',
                  "-I#{dir}", "-I#{core}/include", "-I#{ROOT}/3rd/mruby/include", "-I#{ROOT}/mruby-rgss/src",
                  File.join(dir, 'main.cpp'), "#{core}/lib/libmruby_core.a", '-lm', '-o', binary)
   check.call('the fixture compiles against real mruby', built)

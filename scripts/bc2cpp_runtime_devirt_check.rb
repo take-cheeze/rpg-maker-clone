@@ -17,6 +17,7 @@
 
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
+require_relative 'bc2cpp_cxx'
 
 # The generated symbol for `Vars#[]`, derived through the real CodeGen#cpp_name
 # rather than spelled out. `[]` mangles to `_$5b$5d`, and writing that by hand
@@ -174,7 +175,7 @@ else
       }
     CPP
     binary = File.join(dir, 'shl')
-    built = system('g++', '-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
+    built = Bc2cppCxx.system('-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
                    "-I#{core}/include", "-I#{root}/3rd/mruby/include", source, "#{core}/lib/libmruby_core.a", '-o', binary)
     check.call('the emitted shift compiles against real mruby headers', built)
     if built
@@ -289,7 +290,7 @@ unless core.nil? || !system('g++', '--version', out: File::NULL, err: File::NULL
       }
     CPP
     binary = File.join(dir, 'unary')
-    built = system('g++', '-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
+    built = Bc2cppCxx.system('-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
                    "-I#{core}/include", "-I#{root}/3rd/mruby/include", source, "#{core}/lib/libmruby_core.a", '-o', binary)
     check.call('the emitted unary sends compile against real mruby headers', built)
     if built
