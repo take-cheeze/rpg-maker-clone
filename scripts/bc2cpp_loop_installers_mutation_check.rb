@@ -9,8 +9,9 @@
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp_loop_installers_mutation_check.rb
 
 require 'fileutils'
-require 'open3'
+require 'rbconfig'
 require 'tmpdir'
+require_relative 'bc2cpp_mutant_pool'
 
 ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
@@ -53,27 +54,35 @@ MUTANTS = [
    /a computed name: the closed world keeps/]
 ].freeze
 
-failures = []
-MUTANTS.each do |name, file, pattern, replacement, expected|
+# nil when the mutation site is gone, else the run of the check against the mutant.
+mutate = lambda do |(_name, file, pattern, replacement, expected)|
   Dir.mktmpdir do |dir|
     FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
     path = File.join(dir, 'bc2cpp', file)
     text = File.read(path)
-    unless text.include?(pattern)
-      puts "  FAIL #{name}: the mutation site is gone from #{file}"
-      failures << name
-      next
-    end
+    next nil unless text.include?(pattern)
+
     File.write(path, text.sub(pattern) { replacement })
     env = { 'LP_REGISTRY_ONLY' => '1', 'BC2CPP_TOOLS_DIR' => File.join(dir, 'bc2cpp'), 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb') }
-    out, status = Open3.capture2e(env, RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_loop_installers_check.rb'))
-    failed_lines = out.lines.grep(/^\s+FAIL /)
-    killed = !status.success? && failed_lines.any? { |l| l.match?(expected) }
-    puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
-    unless killed
-      puts failed_lines.first(5).join, out.lines.last(3).join
-      failures << name
-    end
+    # Stops at the first FAIL line the mutant is expected to cause (Bc2cppMutantPool.run).
+    Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_loop_installers_check.rb')],
+                         stop_on: /^\s+FAIL .*(?:#{expected.source})/)
+  end
+end
+
+failures = []
+Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name, file, _pattern, _replacement, expected), run|
+  if run.nil?
+    puts "  FAIL #{name}: the mutation site is gone from #{file}"
+    failures << name
+    next
+  end
+  failed_lines = run.out.lines.grep(/^\s+FAIL /)
+  killed = !run.success && failed_lines.any? { |l| l.match?(expected) }
+  puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
+  unless killed
+    puts failed_lines.first(5).join, run.out.lines.last(3).join
+    failures << name
   end
 end
 

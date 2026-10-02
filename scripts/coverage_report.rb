@@ -77,6 +77,8 @@ CHECKS = [
   # bc2cpp's hand-built-irep half only (no mrbc under the reporter): it reaches
   # no mrblib line, listed so the CHECKS list keeps mirroring `ruby-checks`.
   { name: 'bc2cpp-fallback-bodies', command: %w[scripts/bc2cpp_fallback_bodies_check.rb] },
+  # CI helpers (compiler launcher, mutant pool, timing wrapper): no mrblib lines, listed to mirror `ruby-checks`.
+  { name: 'ci-helpers', command: %w[scripts/ci_helpers_check.rb] },
   # No CRuby-side lines of mrblib, but every scripts/*_check.rb rides here.
   { name: 'native-binding-split', command: %w[scripts/native_binding_split_check.rb] },
   # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under CRuby

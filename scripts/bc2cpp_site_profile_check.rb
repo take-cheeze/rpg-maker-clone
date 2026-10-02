@@ -17,6 +17,7 @@ require 'rbconfig'
 require 'stringio'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/site_rank'
+require_relative 'bc2cpp_cxx'
 
 root = File.expand_path('..', __dir__)
 failures = []
@@ -68,7 +69,7 @@ Dir.mktmpdir do |dir|
   source = File.join(dir, 'mini.cpp')
   File.write(source, text)
   binary = File.join(dir, 'mini')
-  _out, err, status = Open3.capture3('g++', '-std=gnu++17', source, '-o', binary)
+  _out, err, status = Bc2cppCxx.capture3('-std=gnu++17', source, '-o', binary)
   if !status.success?
     check.call("the instrumented miniature compiles\n#{err}", false)
   else
