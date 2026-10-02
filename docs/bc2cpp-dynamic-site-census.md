@@ -524,3 +524,15 @@ nothing was built. The report changes no generated code.
 `BC2CPP_FROZEN_TABLES=0` is the "before". On the merged tree it moved 6 numeric operator sites
 (see the ADR for the per-helper counts) and nothing else: element classes of mutable
 Arrays/Hashes in ivars and locals, the bulk of the unknown receiver roots, are not covered.
+
+## Numeric operand roots and tuple returns (ADR 0311)
+
+The `bc2cpp_slow_*` rows of the tables above are guarded numeric operators whose operands NumericFlow could not prove.
+`BC2CPP_NUMERIC_ROOTS=<file> MRBC=... ruby scripts/bc2cpp_coverage_report.rb` writes one `ROOT` line per such operator
+of the shipped pass (owner, operator, class set per operand, the leaves it is computed from), through
+`tools/bc2cpp/codegen_numeric_roots.rb`; the generated code is byte-identical with it on. On the branch point
+`247a34e4` the engine owners (`RPG2k*`, `Game*`) had 2,384 sites with an unproven `+ - * / < <= > >=` operand. No root
+family is worth more than 13% even when forced to Integer (`GETIDX` results -321, `size`/`length`/`count` -140,
+`hp`/`width`/`x`-style getters -109, `AREF` -91, captured locals -38, native-spelled ivars -30). The sound slice built
+is `AREF` of a fixed-arity Array return: master `2b317417` 3,040 engine helper calls to 2,999 (-41, removals), all in
+four methods because the other tuples' inputs are parameters, native-spelled ivars or Array elements.

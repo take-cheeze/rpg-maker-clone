@@ -304,7 +304,7 @@ report << "methods proven Array-returning (ARRAY_RETURN_PROOF): #{count(err, 'me
 # dynamic-send else.
 numeric_lines = section_lines(err, 'numeric operand facts (NUMERIC_OPERAND_PROOF)')
 numeric_kinds = { 'NUMARG' => 'entry arguments', 'NUMIVAR' => 'instance variables',
-                  'NUMRET' => 'method names returning', 'NUMCONST' => 'constants' }
+                  'NUMRET' => 'method names returning', 'NUMCONST' => 'constants', 'NUMTUPLE' => 'tuple-returning names' }
 report << "numeric operand facts (NUMERIC_OPERAND_PROOF): " \
           "#{numeric_kinds.map { |tag, what| "#{numeric_lines.count { |l| l.start_with?("#{tag} ") }} #{what}" }.join(', ')}\n"
 # RETURN_CLASS_TABLE (ADR 0294): names every call of which returns one exact class.
