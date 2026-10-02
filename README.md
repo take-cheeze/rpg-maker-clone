@@ -1144,6 +1144,11 @@
   `BC2CPP_CAPTURED_LOCAL_CLASS=0` turns it off (see
   [`docs/adr/0308-bc2cpp-captured-local-classes.md`](docs/adr/0308-bc2cpp-captured-local-classes.md) and
   `scripts/bc2cpp_captured_local_class_check.rb`).
+  The arguments of an `initialize` are joined over every `Klass.new`, `super(...)`, implicit-self `new` and
+  `self.class.new` of the closed world (`BC2CPP_CONSTRUCTOR_POOLS=0` turns it off; 25 fewer index-helper callers on
+  the wio build, see
+  [`docs/adr/0313-bc2cpp-constructor-pools.md`](docs/adr/0313-bc2cpp-constructor-pools.md) and
+  `scripts/bc2cpp_constructor_pools_check.rb`).
   `BC2CPP_SITE_PROFILE=DIR` builds count how often each remaining by-name `bc2cpp_send` and
   `mrb_funcall*` site runs, and `scripts/bc2cpp_dynamic_site_census.rb --rank` ranks the sites by
   executed hits with the reason each was kept dynamic; off by default and byte-identical when unset
