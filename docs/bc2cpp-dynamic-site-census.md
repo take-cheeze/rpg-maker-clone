@@ -516,6 +516,29 @@ class set (ceiling, before any alias check). The element class of a mutable cont
 class of the values stored, which are mostly method results and parameters, not by aliasing; ADR 0312 records why
 nothing was built. The report changes no generated code.
 
+## Kept else arms and interface tables (ADR 0315)
+
+`BC2CPP_ITAB_REPORT=<tsv>` (`tools/bc2cpp/interface_table_report.rb`) writes one row per explicit-receiver send that has
+a guard chain (family, the else arm of the final code, every `ClosedWorld#refusal` gate the name fails, the proven
+receiver classes or the flow mask that fell short, the receiver's origin, the chain's classes, what each cell of a proven
+set would be, the name's native registrations) and `<tsv>.names` (one row per method name);
+`scripts/bc2cpp_interface_table_report.rb <tsv> [owner-regexp]` aggregates them:
+
+```sh
+BC2CPP_ITAB_REPORT=/tmp/itab.tsv MRBC=<host mrbc> ruby scripts/bc2cpp_coverage_report.rb > /dev/null
+ruby scripts/bc2cpp_interface_table_report.rb /tmp/itab.tsv '\A(RPG2k|Game)'
+```
+
+On the wio closed world (master `43031b24`): 5,730 sends have a chain, 4,377 end in `bc2cpp_nomethod`, 783 have no
+dispatch left, and **570 still dispatch by name**. 507 of those (89%) have a receiver class set the exact-class flow
+does not prove, so no per-class table can exist; of the 63 with a proven set, at most 42 (`@window.update`,
+`@interpreter.update`, one `start`) could lose the dispatch, and only with three new proofs together (a definer inside
+`class << <class>` is a class-object definer, per-class native/outside-Ruby resolution, a cell check against the
+set rather than the name's whole definer set). ADR 0315 records why nothing was built, the annotation inventory
+(and why an RBS-style form does not fit), and the per-name method-set sizes (94% of the polymorphic names have four or
+fewer Ruby implementers). ADR 0296's "372 kept by name" rows are sites with no dispatch left in the final code. The
+report changes no generated code (`shipped.cxx` is byte-identical with it on).
+
 ## Follow-up: which producer leaves a receiver unproven (ADR 0309)
 
 The `register_copy` and `direct_call_result` origins above are a text heuristic. To see the producing
