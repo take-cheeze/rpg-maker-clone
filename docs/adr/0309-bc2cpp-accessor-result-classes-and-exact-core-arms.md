@@ -30,26 +30,26 @@ class set the exact-class flow proves for the receiver. It also writes a `/*SR:<
 every by-name line of the C++ so `scripts/bc2cpp_send_root_report.rb` can join a *shipped* site (the
 census's `--tsv`) to its row. Without the tag join the first version of the report counted 7,254 rpg2k
 "sites" against the census's 2,182: it counted every compile of a guarded arm whose comment names a
-`mrb_funcall` fallback, and arms that are later replaced. With it, 1,968 of the
-2,161 shipped rpg2k sites are attributed; the rest come from emitters that do not go through
+`mrb_funcall` fallback, and arms that are later replaced. With it, 1,994 of the
+2,196 shipped rpg2k sites are attributed; the rest come from emitters that do not go through
 `compile_send` (inlined loop bodies).
 
-Measured on the wio closed world at master `64ce2bd3` (3rd/* submodules present; with them empty the census
-reports about 8,000 sends and the nomethod list differs):
+Measured on the wio closed world at master `2b317417` with both features below off (3rd/* submodules present;
+with them empty the census reports about 8,000 sends and the nomethod list differs):
 
 | producer of the receiver | sites |
 | --- | ---: |
-| a call result | 494 |
-| an ivar | 487 |
-| an incoming argument | 304 |
+| a call result | 504 |
+| an ivar | 503 |
+| an incoming argument | 303 |
 | a `GETIDX` element | 203 |
-| a constant (`Bitmap.new`, `Sprite.new` and the like) | 162 |
-| an Array literal | 100 |
-| a captured local | 93 |
-| not attributed (loop bodies) | 193 |
-| the rest | 125 |
+| a constant (`Bitmap.new`, `Sprite.new` and the like) | 166 |
+| an Array literal | 107 |
+| a captured local | 81 |
+| not attributed (loop bodies) | 202 |
+| the rest | 127 |
 
-The producers of the 494 call results:
+The producers of the 504 call results:
 
 | root | sites |
 | --- | ---: |
@@ -60,7 +60,7 @@ The producers of the 494 call results:
 | tracked, the consumer is the limit | 30 |
 | the rest | about 115 |
 
-Why the ivars have no class pool (487 ivar-rooted sites): 189 are pooled (the receiver class is known and the
+Why the ivars have no class pool (503 ivar-rooted sites): 205 are pooled (the receiver class is known and the
 consumer goes by name for another reason, mostly RGSS wrappers), 225 are dropped because a store is
 unmodelled, 57 are structurally refused (a native or foreign source spells the name, or reflection), 8 by an
 `attr_writer`, 8 are open. Of the 225 dropped, the first blocker is a **constructor argument** (`@state = state`
@@ -68,7 +68,7 @@ in `initialize`, 99 sites; `Scene::Map#@state` alone is 21) or a core-method res
 unknown class (`select`, `uniq`, `dup`, `map`, `clamp`, about 60), and then booleans (the flow has no bit
 for `true`/`false`).
 
-The ranking is flat. No single cause explains more than about 5% of the 2,161 sites, and the largest
+The ranking is flat. No single cause explains more than about 5% of the 2,196 sites, and the largest
 (constructor arguments, which ADR 0295/0296 leave out because `initialize` is excluded from argument
 pools) is a new proof of its own (every `new` site, `super`, and `self.new` in a class method must be
 visible), not a return-class rule. It is the most valuable remaining lever and is not built here.
@@ -126,32 +126,35 @@ Both need `builtin_class_send_safe?` or the registry candidate they already need
 
 ## Consequences
 
-Measured as above, wio closed world, kill switches against defaults on the same tree (the switches off
-give a C++ byte-identical to master's; 3rd/* submodules present):
+Measured as above, wio closed world, master `2b317417` (ADR 0306 and 0308 merged), kill switches against
+defaults on the same tree (the switches off give a C++ byte-identical to master's; 3rd/* submodules present):
 
 | | before | after | change |
 | --- | ---: | ---: | ---: |
-| `bc2cpp_send` sites, all gems | 3,030 | 2,986 | -44 |
-| `bc2cpp_send` sites, rpg2k (`RPG2k*`, `Game*`) | 2,205 | 2,164 | -41 |
-| rpg2k sites in the census | 2,202 | 2,161 | -41 |
-| calls into `bc2cpp_getidx`/`getidx0`/`setidx`, rpg2k | 2,259 | 2,215 | -44 |
-| calls into `bc2cpp_slow_*`, rpg2k | 3,051 | 2,993 | -58 |
-| `bc2cpp_nomethod` sites, rpg2k | 4,289 | 4,242 | -47 |
-| **sites that can reach by-name dispatch, rpg2k** | **7,947** | **7,804** | **-143 (-1.8%)** |
-| the same, all gems | 9,502 | 9,348 | -154 |
+| `bc2cpp_send` sites, all gems | 3,024 | 2,954 | -70 |
+| `bc2cpp_send` sites, rpg2k (`RPG2k*`, `Game*`) | 2,199 | 2,136 | -63 |
+| rpg2k sites in the census | 2,196 | 2,133 | -63 |
+| calls into `bc2cpp_getidx`/`getidx0`/`setidx`, rpg2k | 2,209 | 2,163 | -46 |
+| calls into `bc2cpp_slow_*`, rpg2k | 3,040 | 2,894 | -146 |
+| `bc2cpp_nomethod` sites, rpg2k | 4,288 | 4,240 | -48 |
+| **sites that can reach by-name dispatch, rpg2k** | **7,880** | **7,625** | **-255 (-3.2%)** |
+| the same, all gems | 9,434 | 9,162 | -272 |
 
-By feature: ACCESSOR_RETURN_CLASS alone is 12 sends, 44 index-helper calls and 47 nomethod sites (reach -56);
-EXACT_CORE_ARMS alone is 29 sends and 58 `slow_lshift` calls (reach -87). **All of it is removal**: no
-helper gained a caller. Across all gems `bc2cpp_slow_lshift` callers went 282 to 216, `bc2cpp_getidx` 2,114
-to 2,080 and `bc2cpp_setidx` 251 to 241 (receivers that became `INDEX_EXACT`), the census's `ARRAY_PUSH`
-sites 96 to 75 and `TYPED` sites 48 to 35. In the rpg2k census categories `core_tag_chain_else` went 915
-to 889 (711 to 699 and 204 to 190), `core_or_native` 255 to 239 and `singleton_definer` 112 to 111;
-`receiver_class_unresolved` rose by 2 as sites changed category. 35 `NOMETHOD_REVIEWED` keys went with
-their fallbacks (regenerated with `scripts/bc2cpp_nomethod_reviewed_update.rb`, removals only, none added).
+By feature: ACCESSOR_RETURN_CLASS alone is 14 sends, 46 index-helper calls and 48 nomethod sites (reach
+-60); EXACT_CORE_ARMS alone is 49 sends and 146 `slow_lshift` calls (reach -195). Most of the second is
+ADR 0308's captured-local classes reaching `ARRAY_PUSH`: a block's `acc << x` on an Array captured from the
+method now has the proof, which is the follow-up that ADR measured and left out. **All of it is removal**:
+no helper gained a caller. Across all gems `bc2cpp_slow_lshift` callers went 282 to 126, `bc2cpp_getidx`
+2,095 to 2,059 and `bc2cpp_setidx` 219 to 209 (receivers that became `INDEX_EXACT`), the census's
+`ARRAY_PUSH` sites 96 to 51 and `TYPED` sites 48 to 35. In the rpg2k census categories
+`core_tag_chain_else` went 908 to 860 (704 to 670 and 204 to 190), `core_or_native` 255 to 239 and
+`singleton_definer` 101 to 100; `receiver_class_unresolved` rose by 2 as sites changed category. 36
+`NOMETHOD_REVIEWED` keys went with their fallbacks (regenerated with
+`scripts/bc2cpp_nomethod_reviewed_update.rb`, removals only, none added).
 
 That is small, and it should not be oversold. Of the categories the request names, `core_or_native` moved by
 16, `singleton_definer` by 1 and `other:no_guard_nearby` by 0; the 330 sites it counted under a call-result
-origin are mostly the other roots of the tables above, and the accessor rule removed 12 sends.
+origin are mostly the other roots of the tables above, and the accessor rule removed 14 sends.
 
 ### What was measured and not built
 
@@ -166,7 +169,7 @@ origin are mostly the other roots of the tables above, and the accessor rule rem
 - **`attr_writer` pools**: 8 ivar sites. Not worth a change to the group structure.
 - **Core method results on unknown receivers** (`map`, `select`, `uniq`, `dup`): the receiver is unproven at
   most of those sites, and a name spelled by foreign Ruby cannot be joined by name. A receiver-sensitive
-  result would need the receiver, which the flow proves at about 60 of the 494 call-result sites, most of
+  result would need the receiver, which the flow proves at about 60 of the 504 call-result sites, most of
   them names already tracked.
 - **`[a, b].max`/`min` (77 rpg2k sites)**: the receiver is an exact Array, but the inline arm's by-name else
   is for non-fixnum elements, and one of 77 sites has all-fixnum elements proven.

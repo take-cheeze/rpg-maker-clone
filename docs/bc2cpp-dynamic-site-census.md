@@ -460,16 +460,16 @@ MRBC=<host mrbc> BC2CPP_SEND_ROOT_REPORT=/tmp/keep/rows.tsv BC2CPP_COVERAGE_KEEP
 ruby scripts/bc2cpp_send_root_report.rb /tmp/keep [FUNCTION_PREFIX_REGEX]
 ```
 
-The report is for ranking (the tag changes the generated text). Measured on `master` `64ce2bd3`, the
-2,161 shipped rpg2k sites have these receiver producers: a call result 494, an ivar 487, an incoming
-argument 304, a `GETIDX` element 203, a constant 162, an Array literal 100, a captured local 93, 193 not
-attributed. Of the 487 ivar receivers 225 have no class pool, and the first blocker of 99 of those is a
-constructor argument (`initialize` is excluded from argument pools, ADR 0295); 189 have one and still go
+The report is for ranking (the tag changes the generated text). Measured on `master` `2b317417`, the
+2,196 shipped rpg2k sites have these receiver producers: a call result 504, an ivar 503, an incoming
+argument 303, a `GETIDX` element 203, a constant 166, an Array literal 107, a captured local 81, 202 not
+attributed. Of the 503 ivar receivers 225 have no class pool, and the first blocker of 99 of those is a
+constructor argument (`initialize` is excluded from argument pools, ADR 0295); 205 have one and still go
 by name for the consumer's own reasons. The call results are mostly project getters over an unpooled slot
 (about 150), names a foreign Ruby or native source spells (about 110) and `Bitmap.new`/`Sprite.new`
 (69). ADR 0309 takes the readers (`attr_reader` returns its slot's class set) and the exact-Array arms
-(`ARRAY_PUSH`, the TYPED call of a core body): 41 fewer rpg2k sites and 143 fewer that can reach by-name
-dispatch (7,947 to 7,804), all removals. No remaining cause is above about 5% of the sites.
+(`ARRAY_PUSH`, the TYPED call of a core body): 63 fewer rpg2k sites and 255 fewer that can reach by-name
+dispatch (7,880 to 7,625), all removals. No remaining cause is above about 5% of the sites.
 
 ## Caveats
 

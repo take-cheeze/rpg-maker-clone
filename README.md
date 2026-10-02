@@ -1154,7 +1154,7 @@
   An `attr_reader` returns the class set of the ivar slot it reads (the class pools), so `holder.thing.tag`
   is an exact call when every definition of `thing` is modelled, and an Array the flow proves exact takes
   `push`/`<<` and the TYPED call of a core class's body with no class test; `BC2CPP_RETURN_ACCESSORS=0` and
-  `BC2CPP_EXACT_CORE_ARMS=0` turn them off (41 fewer rpg2k by-name sites, all removals). With
+  `BC2CPP_EXACT_CORE_ARMS=0` turn them off (63 fewer rpg2k by-name sites, all removals). With
   `BC2CPP_SEND_ROOT_REPORT=FILE` a build also tags every by-name line, and
   `scripts/bc2cpp_send_root_report.rb` ranks which producer left each receiver unproven. See
   [`docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md`](docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md)
