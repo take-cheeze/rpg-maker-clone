@@ -140,7 +140,7 @@ live_of = ->(code, owner, fn) { body_of.call(code, owner, fn).lines.reject { |l|
 exact = lambda do |code, owner, fn|
   body = body_of.call(code, owner, fn)
   live = live_of.call(code, owner, fn)
-  body.include?('EXACT_NATIVE_WRAPPER') && !live.include?('bc2cpp_send(') && !live.include?('mrb_funcall') &&
+  body.match?(/EXACT_NATIVE_WRAPPER|NATIVE_EXACT_DIRECT/) && !live.include?('bc2cpp_send(') && !live.include?('mrb_funcall') &&
     !live.include?('mrb_obj_class(M, r')
 end
 guarded = lambda do |code, owner, fn|
@@ -149,7 +149,7 @@ guarded = lambda do |code, owner, fn|
 end
 nilable = lambda do |code, owner, fn|
   body = body_of.call(code, owner, fn)
-  body.include?('NILABLE_RECEIVER') && body.include?('EXACT_NATIVE_WRAPPER') && !live_of.call(code, owner, fn).include?('bc2cpp_send(')
+  body.include?('NILABLE_RECEIVER') && body.match?(/EXACT_NATIVE_WRAPPER|NATIVE_EXACT_DIRECT/) && !live_of.call(code, owner, fn).include?('bc2cpp_send(')
 end
 # The wrapper call, registers and layout stripped: what the guarded arm and the unguarded arm must agree on.
 wrapper_call = lambda do |code, owner, fn|
