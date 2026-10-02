@@ -293,6 +293,29 @@ The estimate of 100-168 for item 6 was too high: only receivers the exact-class 
 `Bitmap`/`Rect`, `nil`-or-`RPG2k::Window`) qualify, and 130 sites still have an unnamed receiver. The `width`
 count stays high because `Game::Map#width` and the `Window` readers are data-driven.
 
+## Follow-up: block arms reach nested and re-counted sends (ADR 0310)
+
+The block and funcall sites above were attacked at the engine's literal-block sends. The census does not
+split `mrb_funcall_with_block` by owner, so the numbers below are the generated functions whose names start
+with `Game_`/`RPG2k` (the engine, 356 literal-block sends) and everything else. Master `247a34e4` as the
+base, the same tree with `BC2CPP_BLOCK_ARM_REACH=0` as the control (byte-identical to master):
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| engine literal-block sends, direct call with the block | 277 | 307 | +30 |
+| engine literal-block sends, dynamic dispatch only | 68 | 38 | -30 |
+| engine `&expr` block sends (`EXPLICIT_BLOCK_ARG`) | 11 | 11 | 0 |
+| all owners, direct / dynamic only | 370 / 77 | 401 / 46 | +31 / -31 |
+| `mrb_funcall_with_block` sites, engine | 328 | 287 | -41 |
+| `mrb_funcall_with_block` sites, everything else | 120 | 120 | 0 |
+| `bc2cpp_send`, `mrb_funcall*`, `bc2cpp_slow_*` callers | unchanged | unchanged | 0 |
+
+All 41 funcall sites are removals (dead else of a proven, yield-free arm); the other 20 converted sends are
+relocations: they keep a by-name else for receivers that are not exactly an Array, Hash or Range. Why the
+remaining 38 engine sends stay dynamic only: `Array.new(n) { }` 10, `RGSS::Profiler.section` 9, `loop` 6,
+`File.open` 4, `reduce` 4, `index` 3, `each_line`/`each_char` 2, and nested sends the proof still refuses 0
+(all 25 were taken). The `&expr` ones are `reject(&:sym)` 6, `select(&:sym)` 4 and `each(&blk)` 1.
+
 ## Follow-up: where the container receivers come from (ADR 0308)
 
 The two `core_tag_chain_else` categories counted for the rpg2k gem only (functions named `RPG2k*` or `Game*`; every gem
