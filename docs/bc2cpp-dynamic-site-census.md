@@ -430,3 +430,9 @@ nothing was built. The report changes no generated code.
 * The baseline is a saved `shipped.cxx` from before the round, not a rebuild
   of the old commit; its 9,733 `bc2cpp_send` lines match the figure quoted for
   it.
+
+## Element classes of frozen tables (ADR 0306)
+
+`BC2CPP_FROZEN_TABLES=0` is the "before". On the merged tree it moved 6 numeric operator sites
+(see the ADR for the per-helper counts) and nothing else: element classes of mutable
+Arrays/Hashes in ivars and locals, the bulk of the unknown receiver roots, are not covered.
