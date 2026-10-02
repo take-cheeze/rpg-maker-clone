@@ -12,6 +12,30 @@ The status check `bc2cpp` is the aggregate of `bc2cpp-build`, every
 `bc2cpp` rather than the individual shards, so adding a shard needs no settings
 change.
 
+### Check shards
+
+`bc2cpp-checks` is a matrix; each shard is its own job with a 45 minute
+timeout, and the aggregate gates on the matrix as a whole
+(`needs: bc2cpp-checks`), so renaming or adding a shard touches neither the
+aggregate nor branch protection. Every check is listed in exactly one shard.
+Keep each shard under about 25 minutes so one more check does not reach the
+timeout; raise the timeout only as a last resort.
+
+The compiled-versus-interpreted fixtures that need a full-core mruby are split
+three ways, because each step takes minutes and one shard had reached the
+timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
+
+| Shard | Checks | Approx. |
+| --- | --- | --- |
+| `core-mrbtest` | block/yield-free/exact-receiver/return-class, `step_inline`, `eqq_direct`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, `numeric_slow`, mruby's own suites | 20 min |
+| `core-flow` | `exact_receiver_flow` and its mutation check | 13 min |
+| `core-tables` | `frozen_tables` and its mutation check (ADR 0306) | ~15 min (estimate) |
+| `core-mutants` | `unlisted_class_call` with `UCC_MUTANTS=1` (seven mutant rebuilds) | 23 min |
+
+Shards no longer share `BC2CPP_FULL_BUILD_DIR`, so each one that needs the
+full-core build makes its own (about two minutes). The times are estimates from
+the per-check log timestamps of that run, not measurements of the split.
+
 ### Width builds (ADR 0300)
 
 The Emscripten, Wio and PSP targets use a 32-bit `mrb_int`; Wio and PSP also
