@@ -610,3 +610,20 @@ The census above counts by-name sends; this one counts creation sites (`LAMBDA`,
 | constructors whose `self` does not leave | 51 of 82 |
 | methods that newly compile with BLOCK_FALLBACK_PROVEN | 1 (`Array#combination`) |
 | `shipped.cxx` with `BC2CPP_ESCAPE_ANALYSIS=0` against master | byte-identical |
+
+## Follow-up: provable errors and post-call facts (ADR 0317)
+
+`BC2CPP_PROVABLE_ERROR_REPORT=<tsv>` and `BC2CPP_REFINE_REPORT=<tsv>` (run with `BC2CPP_CALL_FACTS=0` to measure the
+potential), aggregated by `scripts/bc2cpp_refine_report.rb tsv [--list-bugs]`. Wio closed world, master `147fe7e6`:
+
+| Measure | Value |
+| --- | ---: |
+| provable errors in the three engine gems (nomethod, nil receiver, arity, operator, zero divide, undefined name) | 0 |
+| explicit by-name sites / lines in the engine gems | 2,154 / 2,225 |
+| kept-else sites / receiver unproven | 438 / 378 |
+| by-name sites bounded to user classes by the forward interface / dead else | 105 / 100 (64 kept else) |
+| realized `bc2cpp_send` / kept else arms / `bc2cpp_nomethod` | 2,666 -> 2,603 / 462 -> 399 / 4,318 -> 4,380 |
+| backward interface (unsound) upper bound, kept-else removals | 114 |
+| NOMETHOD_REVIEWED keys: monomorphic / polymorphic / narrowed / native arms / untraced / candidate bug | 1,774 / 567 / 289 / 58 / 252 / 1 |
+| POLY_SMALL_N chains with two classes on one definition | 50 of 1,525 (177 of 8,906 compares) |
+| `shipped.cxx` with `BC2CPP_CALL_FACTS=0` against master | byte-identical |

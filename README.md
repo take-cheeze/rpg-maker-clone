@@ -1178,6 +1178,14 @@
   `scripts/bc2cpp_send_root_report.rb` ranks which producer left each receiver unproven. See
   [`docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md`](docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md)
   and `scripts/bc2cpp_call_results_check.rb`.
+  After `x.m` returned normally, `x` is an instance of a class that answers `m`: a later `x.n` on the same value
+  (a copy of the register, a local, no rewrite and no handler edge between) is judged against those declared
+  classes, which drops 63 by-name else arms of the wio build; `BC2CPP_CALL_FACTS=0` turns it off. Provable errors
+  (no class answers, nil receiver, wrong argument count) were measured at 0 engine hits and are not a build error;
+  `BC2CPP_REFINE_REPORT=FILE` and `BC2CPP_PROVABLE_ERROR_REPORT=FILE` write the reports that
+  `scripts/bc2cpp_refine_report.rb` aggregates. See
+  [`docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md`](docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md)
+  and `scripts/bc2cpp_call_facts_check.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
