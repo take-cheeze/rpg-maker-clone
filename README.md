@@ -1035,6 +1035,11 @@
   constant (`Klass.new`, `is_a?(Klass)`, `Klass === x`) logs a `[RPG2k]` guard violation
   and raises instead of dispatching; see
   [`docs/adr/0290-bc2cpp-guard-violation.md`](docs/adr/0290-bc2cpp-guard-violation.md).
+  A literal-block send (`rows.each { }`) to an exact `Array`, `Hash`, `Range` or `Integer` calls the compiled
+  core iterator directly, also when the block sits inside an inlined loop body, and drops its by-name fallback
+  when the receiver class is proven and the block cannot reach a Fiber yield; see
+  [`docs/adr/0270-bc2cpp-block-core-direct-arms.md`](docs/adr/0270-bc2cpp-block-core-direct-arms.md) and
+  [`docs/adr/0310-bc2cpp-block-arm-reach.md`](docs/adr/0310-bc2cpp-block-arm-reach.md).
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of

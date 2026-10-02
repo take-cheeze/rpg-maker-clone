@@ -30,6 +30,7 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 | `core-mrbtest` | block/yield-free/exact-receiver/return-class, `step_inline`, `eqq_direct`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, `numeric_slow`, mruby's own suites | 20 min |
 | `core-flow` | `exact_receiver_flow` and its mutation check | 13 min |
 | `core-mutants` | `unlisted_class_call` with `UCC_MUTANTS=1` (seven mutant rebuilds) | 23 min |
+| `block-arm-reach` | `block_arm_reach` with `BR_MUTANTS=1` (ADR 0310: six mruby builds, eight generator mutants) | see below |
 
 Shards no longer share `BC2CPP_FULL_BUILD_DIR`, so each one that needs the
 full-core build makes its own (about two minutes). The times are estimates from

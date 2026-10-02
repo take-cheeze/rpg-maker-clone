@@ -1015,6 +1015,11 @@ jobs:
               # classes, native-registered names) against the interpreter on the full-core and core-only
               # builds; UCC_MUTANTS=1 also removes one proof at a time from a copy of the generator.
               UCC_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_unlisted_class_call_check.rb
+          - shard: block-arm-reach
+            # ADR 0310: six mruby builds (full-core, core-only, 32-bit mrb_int; interpreted and compiled)
+            # plus eight generator mutants.
+            checks: |
+              BR_MUTANTS=1 MRBC="$mrbc" ruby scripts/bc2cpp_block_arm_reach_check.rb
           - shard: rdata-slots
             checks: |
               # Links bc2cpp output against the patch-chain mruby and runs it

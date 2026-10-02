@@ -489,7 +489,8 @@ if ENV['BR_MUTANTS'] == '1' && MODE != 'run' && tool?(MRBC_PATH)
         next
       end
       File.write(path, text.sub(from) { to })
-      out, status = Open3.capture2e({ 'BR_TOOL_DIR' => File.join(dir, 'bc2cpp'), 'BR_MODE' => 'generated', 'MRBC' => MRBC_PATH },
+      out, status = Open3.capture2e({ 'BR_TOOL_DIR' => File.join(dir, 'bc2cpp'), 'BR_MODE' => 'generated', 'BR_MUTANTS' => '0',
+                                      'MRBC' => MRBC_PATH },
                                     RbConfig.ruby, __FILE__)
       caught = !status.success? && out.include?('FAIL')
       check.call("mutant killed: #{name}", caught)
