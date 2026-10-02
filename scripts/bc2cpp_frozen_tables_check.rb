@@ -394,7 +394,7 @@ end
 
 builds = [] # [label, build dir, mrbc, flags, full?]
 if ENV['MRBC'] && runtime.compiler? && !ENV['FT_GENERATED_ONLY']
-  full = runtime.full
+  full = runtime.full || (ENV['BC2CPP_FULL_BUILD_DIR'] ? runtime.full_or_build : nil)
   builds << ['mrb_int 64, full-core', full, ENV['MRBC'], '', true] if full
   core = runtime.core
   builds << ['mrb_int 64, core only', core, ENV['MRBC'], '', false] if core
