@@ -29,6 +29,7 @@ require 'tmpdir'
 
 ROOT = File.expand_path('..', __dir__)
 TOOL_DIR = ENV['CX_TOOL_DIR'] || File.join(ROOT, 'tools/bc2cpp')
+require_relative 'bc2cpp_fixture_runtime'
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
@@ -414,7 +415,7 @@ if MODE != 'generated'
         #include <mruby.h>
         #include <mruby/class.h>
         #include <mruby/compile.h>
-        #include "cx_gen.cpp"
+        #{Bc2cppFixtureRuntime::PROBE_PROLOGUE}#include "cx_gen.cpp"
 
         static const char* const kFixture = R"CXFX(#{fixture})CXFX";
 
@@ -427,7 +428,7 @@ if MODE != 'generated'
         #include "cx_register.inc"
         }
 
-        extern "C" void mrb_bc2cpp_cx_test_gem_final(mrb_state*) {}
+        extern "C" void mrb_bc2cpp_cx_test_gem_final(mrb_state*) { bc2cpp_probe_report(); }
       CPP
     end
 
@@ -481,7 +482,7 @@ if MODE != 'generated'
       File.write(File.join(work, "#{name}.log"), out)
       bin = File.join(build, 'host/bin/mruby')
       runs = [{}, { 'BC2CPP_CX_INTERPRET' => '1' }].map do |run_env|
-        status.success? && File.exist?(bin) ? Open3.capture2e(run_env, bin, File.join(work, "driver_#{tag}.rb")).first : nil
+        status.success? && File.exist?(bin) ? Bc2cppFixtureRuntime.probed_capture(bin, File.join(work, "driver_#{tag}.rb"), env: run_env, compiled: run_env.empty?).first : nil
       end
       gen = File.join(build, 'host/mrbgems/bc2cpp-cx-test/cx_gen.cpp')
       code = File.exist?(gen) ? File.read(gen) : ''
@@ -534,9 +535,10 @@ end
 # -- mutants ---------------------------------------------------------------------------------
 #
 # Each mutant is a copy of tools/bc2cpp with one soundness condition of ADR 0314 removed. The copy lives
-# next to the original (tools/bc2cpp-mutant-*): bc2cpp.rb finds the repository from its own location, and a
-# copy under /tmp has an empty closed world, so every mutant would die for that reason. The generated-code
-# half of this script must fail against each, and pass against an unmutated copy (the control).
+# in a tree with the repository layout (Bc2cppMutationSupport): bc2cpp.rb finds the repository from its own location,
+# and a copy under /tmp has an empty closed world, so every mutant would die for that reason. The generated-code
+# half of this script must fail against each on the check of its condition (the fourth element), and pass against an
+# unmutated copy (the control).
 
 MUTANTS = {
   'a guarded body is called whether or not it can suspend a Fiber' =>
@@ -563,36 +565,16 @@ MUTANTS = {
 }.freeze
 
 if ENV['CX_MUTANTS'] == '1' && MODE != 'run' && tool?(MRBC_PATH)
-  run_copy = lambda do |dir_label, file, from, to|
-    dir = File.join(ROOT, 'tools', "bc2cpp-mutant-#{Process.pid}-#{dir_label}")
-    begin
-      FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
-      if file
-        path = File.join(dir, file)
-        text = File.read(path)
-        return [nil, "the mutated text is not in #{file}"] unless text.include?(from)
-
-        File.write(path, text.sub(from) { to })
-      end
-      Open3.capture2e({ 'CX_TOOL_DIR' => dir, 'CX_MODE' => 'generated', 'CX_MUTANTS' => '0', 'MRBC' => MRBC_PATH }, RbConfig.ruby, __FILE__)
-    ensure
-      FileUtils.rm_rf(dir)
-    end
-  end
   puts 'mutants'
-  control, control_status = run_copy.call('control', nil, nil, nil)
-  check.call('control: an unmutated copy of the generator passes the generated-code checks', control_status&.success? && control.to_s.include?('PASS'))
-  puts control.to_s.lines.grep(/FAIL|rror/).first(6).join unless control_status&.success?
-  MUTANTS.each_with_index do |(name, (file, from, to)), i|
-    out, status = run_copy.call("m#{i}", file, from, to)
-    unless status.respond_to?(:success?)
-      check.call("mutant #{name}: #{status}", false)
-      next
+  require_relative 'bc2cpp_mutation_support'
+  failures.concat(Bc2cppMutationSupport.run_harness(
+    MUTANTS.map do |name, (file, from, to, expected)|
+      Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, from, to]], expected: expected)
     end
-    caught = !status.success? && out.include?('FAIL')
-    check.call("mutant killed: #{name}", caught)
-    puts out.lines.grep(/FAIL|rror/).first(4).join unless caught
-  end
+  ) do |tree, mutant, _run_half|
+    Bc2cppMutationSupport.run_check({ 'CX_TOOL_DIR' => tree.tool, 'CX_MODE' => 'generated', 'MRBC' => MRBC_PATH },
+                                    [RbConfig.ruby, __FILE__], stop_on: mutant&.stop_on)
+  end)
 end
 
 if failures.empty?

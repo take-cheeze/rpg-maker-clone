@@ -24,6 +24,7 @@ require 'rbconfig'
 require 'shellwords'
 require 'tmpdir'
 require_relative 'bc2cpp_cxx'
+require_relative 'bc2cpp_fixture_runtime'
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
@@ -331,7 +332,7 @@ register_cxx = lambda do |compiled|
     #include <mruby.h>
     #include <mruby/class.h>
     #include <mruby/compile.h>
-    #{compiled ? '#include "ex_gen.cpp"' : ''}
+    #{compiled ? "#{Bc2cppFixtureRuntime::PROBE_PROLOGUE}#include \"ex_gen.cpp\"" : ''}
 
     static const char* const kFixture = R"EXFX(#{FIXTURE})EXFX";
 
@@ -342,7 +343,7 @@ register_cxx = lambda do |compiled|
     #{compiled ? '  bc2cpp_register_owner_methods(M);' : ''}
     }
 
-    extern "C" void mrb_bc2cpp_exact_test_gem_final(mrb_state*) {}
+    extern "C" void mrb_bc2cpp_exact_test_gem_final(mrb_state*) { #{compiled ? 'bc2cpp_probe_report();' : ''} }
   CPP
 end
 
@@ -381,7 +382,7 @@ build_and_run = lambda do |name, compiled|
   bin = File.join(build, 'host/bin/mruby')
   return [nil, out] unless status.success? && File.exist?(bin)
 
-  [Open3.capture2e(bin, File.join(work, 'driver.rb')).first, out]
+  [Bc2cppFixtureRuntime.probed_capture(bin, File.join(work, 'driver.rb'), compiled: compiled).first, out]
 end
 
 puts 'exact receiver: interpreted baseline'

@@ -262,39 +262,25 @@ builds.each do |label, build, mrbc, flags, width, full|
 end
 
 # Each mutant is a copy of tools/bc2cpp with one condition of the arm broken; this script, run against it through
-# BC2CPP_TOOL, must fail. A survivor means the condition has no negative case.
+# BC2CPP_TOOL, must fail on the check of that condition (the last element). A survivor means the condition has no
+# negative case. The control, the unmutated tool in the same tree, must pass and run the compiled half.
 MUTANTS = [
   ['the exact-class guard is dropped (every receiver takes the arm)', 'codegen_ivar_poly.rb',
-   '"#{owner_class_ptr_expr(owner)} == #{recv_class}"', '"1"'],
+   '"#{owner_class_ptr_expr(owner)} == #{recv_class}"', '"1"', /DISCOVER/],
   ['the arm tests the wrong class (Integer receivers keep the by-name tail)', 'codegen_ivar_poly.rb',
-   '"#{owner_class_ptr_expr(owner)} == #{recv_class}"', '"M->float_class == #{recv_class}"']
+   '"#{owner_class_ptr_expr(owner)} == #{recv_class}"', '"M->float_class == #{recv_class}"', /DISCOVER/]
 ].freeze
 
 if ENV['GIA_MUTANTS'] && ENV['BC2CPP_TOOL'].nil? && !builds.empty?
   puts '-- mutants'
-  require_relative 'bc2cpp_mutant_pool'
-  # nil when the mutation site is gone, else the run of this check against the mutant.
-  mutate = lambda do |(_name, file, pattern, replacement)|
-    Dir.mktmpdir do |dir|
-      FileUtils.cp_r(File.join(runtime::ROOT, 'tools/bc2cpp'), dir)
-      path = File.join(dir, 'bc2cpp', file)
-      text = File.read(path)
-      next nil unless text.include?(pattern)
-
-      File.write(path, text.sub(pattern) { replacement })
-      # Stops at the first FAIL line: the mutant is killed (Bc2cppMutantPool.run).
-      Bc2cppMutantPool.run({ 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb'), 'GIA_MUTANTS' => nil },
-                           [RbConfig.ruby, __FILE__], stop_on: /^\s+FAIL /)
+  require_relative 'bc2cpp_mutation_support'
+  failures.concat(Bc2cppMutationSupport.run_harness(
+    MUTANTS.map do |name, file, pattern, replacement, expected|
+      Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, pattern, replacement]], expected: expected, needs_run: true)
     end
-  end
-  Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name), run|
-    if run.nil?
-      check.call("mutation site exists for: #{name}", false)
-      next
-    end
-    check.call("mutant killed: #{name}", !run.success && run.out.match?(/^\s+FAIL /))
-    run.out.lines.grep(/^\s+FAIL /).first(3).each { |l| puts "       #{l.strip}" }
-  end
+  ) do |tree, mutant, _run_half|
+    Bc2cppMutationSupport.run_check({ 'BC2CPP_TOOL' => File.join(tree.tool, 'bc2cpp.rb') }, [RbConfig.ruby, __FILE__], stop_on: mutant&.stop_on)
+  end)
 end
 
 if failures.empty?

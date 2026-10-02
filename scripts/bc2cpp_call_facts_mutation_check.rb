@@ -3,8 +3,10 @@
 
 # Mutation test for CALL_FACTS (docs/adr/0317). Each mutant is a copy of tools/bc2cpp with one soundness condition
 # broken; scripts/bc2cpp_call_facts_check.rb, run against the mutant through BC2CPP_TOOL, must FAIL on the check
-# that guards that condition. A mutant that passes means the condition has no negative case. An unmutated copy runs
-# first and must pass: it proves the harness runs the same check the mutants run.
+# that guards that condition. A mutant that passes means the condition has no negative case. An unmutated control
+# runs first and must pass: it proves the harness runs the same check the mutants run, in the closed world the real
+# tool reads, and (when a mutant needs the run half) that the compiled VM ran compiled code. A mutant that only
+# crashes is not a kill (Bc2cppMutationSupport).
 #
 # The mutant tree lives inside the repository (.mutants/, removed on exit): bc2cpp.rb finds the engine's gems
 # relative to itself (../..), so a copy elsewhere would read a different layout.
@@ -16,10 +18,8 @@
 #
 # Usage: MRBC=path/to/mrbc [BC2CPP_MRUBY_FULL=dir] ruby scripts/bc2cpp_call_facts_mutation_check.rb
 
-require 'fileutils'
 require 'rbconfig'
-require 'tmpdir'
-require_relative 'bc2cpp_mutant_pool'
+require_relative 'bc2cpp_mutation_support'
 
 ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
@@ -61,60 +61,15 @@ MUTANTS = [
    /NEG an alias of the fact name|NEG a name defined from a computed list/, false]
 ].freeze
 
-mutate = lambda do |(_name, file, pattern, replacement, _expected, needs_run)|
-  FileUtils.mkdir_p(File.join(ROOT, '.mutants'))
-  dir = Dir.mktmpdir('m', File.join(ROOT, '.mutants'))
-  begin
-    # Every other entry of the repository root is linked, so the copy keeps the layout bc2cpp.rb expects.
-    Dir.children(ROOT).reject { |entry| %w[.git tools .mutants].include?(entry) }.each do |entry|
-      FileUtils.ln_s(File.join(ROOT, entry), File.join(dir, entry))
-    end
-    FileUtils.mkdir_p(File.join(dir, 'tools'))
-    Dir.children(File.join(ROOT, 'tools')).reject { |entry| entry == 'bc2cpp' }.each do |entry|
-      FileUtils.ln_s(File.join(ROOT, 'tools', entry), File.join(dir, 'tools', entry))
-    end
-    FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), File.join(dir, 'tools'))
-    if pattern
-      path = File.join(dir, 'tools', 'bc2cpp', file)
-      text = File.read(path)
-      next nil unless text.include?(pattern)
-
-      File.write(path, text.sub(pattern) { replacement })
-    end
-    env = { 'BC2CPP_TOOL' => File.join(dir, 'tools', 'bc2cpp', 'bc2cpp.rb') }
-    env['CF_GENERATED_ONLY'] = '1' unless needs_run
-    Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_call_facts_check.rb')])
-  ensure
-    FileUtils.rm_rf(dir)
-    Dir.rmdir(File.join(ROOT, '.mutants')) if Dir.empty?(File.join(ROOT, '.mutants'))
+failures = Bc2cppMutationSupport.run_harness(
+  MUTANTS.map do |name, file, pattern, replacement, expected, needs_run|
+    Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, pattern, replacement]], expected: expected, needs_run: needs_run)
   end
-end
-
-failures = []
-# The control run needs the run half only if some mutant does.
-control = [['unmutated control', nil, nil, nil, nil, MUTANTS.any? { |m| m.last }]]
-Bc2cppMutantPool.each_ordered(control, work: mutate) do |(name, *), run|
-  passed = run.success
-  puts "  #{passed ? 'ok  ' : 'FAIL'} #{name} passes the check"
-  unless passed
-    puts run.out.lines.grep(/^\s+FAIL /).first(5).join
-    failures << name
-  end
-end
-
-Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name, file, _pattern, _replacement, expected), run|
-  if run.nil?
-    puts "  FAIL #{name}: the mutation site is gone from #{file}"
-    failures << name
-    next
-  end
-  failed_lines = run.out.lines.grep(/^\s+FAIL /)
-  killed = !run.success && failed_lines.any? { |l| l.match?(expected) }
-  puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
-  unless killed
-    puts failed_lines.first(5).join
-    failures << name
-  end
+) do |tree, mutant, run_half|
+  env = { 'BC2CPP_TOOL' => File.join(tree.tool, 'bc2cpp.rb') }
+  env['CF_GENERATED_ONLY'] = '1' unless run_half
+  Bc2cppMutationSupport.run_check(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_call_facts_check.rb')],
+                                  stop_on: mutant&.stop_on)
 end
 
 if failures.empty?

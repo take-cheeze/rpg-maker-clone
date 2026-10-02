@@ -39,6 +39,7 @@ require File.join(TOOL_DIR, 'compiled_gems')
 require File.join(TOOL_DIR, 'nomethod_reviewed')
 require File.join(TOOL_DIR, 'nomethod_reviewed_probe')
 require_relative 'bc2cpp_escape_fixture'
+require_relative 'bc2cpp_fixture_runtime'
 
 failures = []
 check = lambda do |what, condition|
@@ -450,7 +451,7 @@ if run_behaviour
         #include <mruby.h>
         #include <mruby/class.h>
         #include <mruby/compile.h>
-        #{compiled_build ? '#include "ea_gen.cpp"' : ''}
+        #{compiled_build ? "#{Bc2cppFixtureRuntime::PROBE_PROLOGUE}#include \"ea_gen.cpp\"" : ''}
 
         static const char* const kFixture = R"EAFX(#{EscapeFixture::PROGRAM})EAFX";
 
@@ -461,7 +462,7 @@ if run_behaviour
         #{compiled_build ? '  bc2cpp_register_owner_methods(M);' : ''}
         }
 
-        extern "C" void mrb_bc2cpp_escape_test_gem_final(mrb_state*) {}
+        extern "C" void mrb_bc2cpp_escape_test_gem_final(mrb_state*) { #{compiled_build ? 'bc2cpp_probe_report();' : ''} }
       CPP
     end
 
@@ -512,7 +513,7 @@ if run_behaviour
       out, status = Open3.capture2e(env, 'rake', "-j#{[Etc.nprocessors, 16].min}", 'all', chdir: MRUBY)
       File.write(File.join(work, "#{name}.log"), out)
       bin = File.join(build, 'host/bin/mruby')
-      result = status.success? && File.exist?(bin) ? Open3.capture2e(bin, File.join(work, 'driver.rb')).first : nil
+      result = status.success? && File.exist?(bin) ? Bc2cppFixtureRuntime.probed_capture(bin, File.join(work, 'driver.rb'), compiled: compiled_build).first : nil
       gen = File.join(build, 'host/mrbgems/bc2cpp-escape-test/ea_gen.cpp')
       code = File.exist?(gen) ? File.read(gen) : ''
       FileUtils.rm_rf(build) unless ENV['EA_DIR']

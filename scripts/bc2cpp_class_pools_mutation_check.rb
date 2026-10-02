@@ -4,13 +4,14 @@
 # Mutation test for CLASS_POOLS / NILABLE_RECEIVER (docs/adr/0296). Each mutant is a copy of
 # tools/bc2cpp with one soundness condition broken; scripts/bc2cpp_class_pools_check.rb, run against
 # the mutant through BC2CPP_TOOL, must FAIL on the check that guards that condition. A mutant that
-# passes means the condition has no negative case.
+# passes means the condition has no negative case. An unmutated control runs first, in the same repository-layout
+# tree, and must pass; a mutant that only crashes is not a kill (Bc2cppMutationSupport).
 #
 # Usage: MRBC=path/to/mrbc [BC2CPP_MRUBY_FULL=dir] ruby scripts/bc2cpp_class_pools_mutation_check.rb
 
-require 'fileutils'
-require 'open3'
-require 'tmpdir'
+require 'rbconfig'
+require_relative 'bc2cpp_fixture_runtime'
+require_relative 'bc2cpp_mutation_support'
 
 ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
@@ -38,34 +39,22 @@ MUTANTS = [
    /nil receiver raises|every method answers what the interpreter answers|nil local/, true]
 ].freeze
 
-failures = []
-MUTANTS.each do |name, file, pattern, replacement, expected, needs_run|
-  Dir.mktmpdir do |dir|
-    FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
-    path = File.join(dir, 'bc2cpp', file)
-    text = File.read(path)
-    unless text.include?(pattern)
-      puts "  FAIL #{name}: the mutation site is gone from #{file}"
-      failures << name
-      next
-    end
-    File.write(path, text.sub(pattern) { replacement })
-    env = { 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb') }
-    env['PL_GENERATED_ONLY'] = '1' unless needs_run
-    out, status = Open3.capture2e(env, RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_class_pools_check.rb'))
-    failed_lines = out.lines.grep(/^\s+FAIL /)
-    killed = !status.success? && failed_lines.any? { |l| l.match?(expected) }
-    puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
-    unless killed
-      puts failed_lines.first(5).join
-      failures << name
-    end
+# Concurrent mutants must not race to build the shared BC2CPP_FULL_BUILD_DIR: build it once first.
+Bc2cppFixtureRuntime.full_or_build if ENV['BC2CPP_FULL_BUILD_DIR'] && MUTANTS.any?(&:last)
+
+failures = Bc2cppMutationSupport.run_harness(
+  MUTANTS.map do |name, file, pattern, replacement, expected, needs_run|
+    Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, pattern, replacement]], expected: expected, needs_run: needs_run)
   end
+) do |tree, mutant, run_half|
+  env = { 'BC2CPP_TOOL' => File.join(tree.tool, 'bc2cpp.rb') }
+  env['PL_GENERATED_ONLY'] = '1' unless run_half
+  Bc2cppMutationSupport.run_check(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_class_pools_check.rb')], stop_on: mutant&.stop_on)
 end
 
 if failures.empty?
   puts 'bc2cpp class pools mutation check: PASS'
 else
-  warn "bc2cpp class pools mutation check: #{failures.size} surviving mutant(s)"
+  warn "bc2cpp class pools mutation check: #{failures.size} failure(s)"
   exit 1
 end

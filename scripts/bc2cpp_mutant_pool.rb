@@ -10,7 +10,7 @@ require 'etc'
 require 'open3'
 
 module Bc2cppMutantPool
-  Result = Struct.new(:out, :success, :stopped)
+  Result = Struct.new(:out, :success, :stopped, :timed_out)
 
   module_function
 
@@ -24,13 +24,20 @@ module Bc2cppMutantPool
   # Runs `argv` and returns a Result. With `stop_on`, the child is terminated at the first output
   # line matching it and `success` is false: a check prints a FAIL line only together with a
   # nonzero exit (every check here ends in `exit 1` when it recorded one), so a mutant it already
-  # reports as caught need not run to the end.
-  def run(env, argv, stop_on: nil)
+  # reports as caught need not run to the end. With `timeout` (seconds) a child still running after that
+  # long is terminated and `timed_out` is set, so a hang is told apart from a failed assertion.
+  def run(env, argv, stop_on: nil, timeout: nil)
     out = +''
     stopped = false
+    timed_out = false
     status = nil
     Open3.popen2e(env, *argv, pgroup: true) do |stdin, merged, waiter|
       stdin.close
+      watchdog = timeout && Thread.new do
+        sleep timeout
+        timed_out = true
+        terminate(waiter.pid)
+      end
       merged.each_line do |line|
         out << line
         next unless stop_on&.match?(line)
@@ -40,8 +47,9 @@ module Bc2cppMutantPool
         break
       end
       status = waiter.value
+      watchdog&.kill
     end
-    Result.new(out, !stopped && status.success?, stopped)
+    Result.new(out, !stopped && !timed_out && status.success?, stopped, timed_out)
   end
 
   # TERM to the child's whole process group (the check and the compilers it started).

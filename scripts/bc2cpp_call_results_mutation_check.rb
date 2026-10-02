@@ -4,13 +4,13 @@
 # Mutation test for ACCESSOR_RETURN_CLASS and EXACT_CORE_ARMS (docs/adr/0309). Each mutant is a copy of
 # tools/bc2cpp with one soundness condition broken; scripts/bc2cpp_call_results_check.rb, run against the
 # mutant through BC2CPP_TOOL (generated-code half only), must FAIL on the check that guards that
-# condition. A mutant that passes means the condition has no negative case.
+# condition. A mutant that passes means the condition has no negative case. An unmutated control runs first, in the
+# same repository-layout tree, and must pass; a mutant that only crashes is not a kill (Bc2cppMutationSupport).
 #
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp_call_results_mutation_check.rb
 
-require 'fileutils'
-require 'open3'
-require 'tmpdir'
+require 'rbconfig'
+require_relative 'bc2cpp_mutation_support'
 
 ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
@@ -35,35 +35,20 @@ MUTANTS = [
    "exact_push = exact_array_push_code(", /a Ruby Array#<</]
 ].freeze
 
-failures = []
 # CR_MUTANT=text runs the mutants whose name contains it (while developing a new one).
 mutants = ENV['CR_MUTANT'] ? MUTANTS.select { |m| m.first.include?(ENV['CR_MUTANT']) } : MUTANTS
-mutants.each do |name, file, pattern, replacement, expected|
-  Dir.mktmpdir do |dir|
-    FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
-    path = File.join(dir, 'bc2cpp', file)
-    text = File.read(path)
-    unless text.include?(pattern)
-      puts "  FAIL #{name}: the mutation site is gone from #{file}"
-      failures << name
-      next
-    end
-    File.write(path, text.sub(pattern) { replacement })
-    env = { 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb'), 'CR_GENERATED_ONLY' => '1' }
-    out, status = Open3.capture2e(env, RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_call_results_check.rb'))
-    failed_lines = out.lines.grep(/^\s+FAIL /)
-    killed = !status.success? && failed_lines.any? { |l| l.match?(expected) }
-    puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
-    unless killed
-      puts failed_lines.first(5).join
-      failures << name
-    end
+failures = Bc2cppMutationSupport.run_harness(
+  mutants.map do |name, file, pattern, replacement, expected|
+    Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, pattern, replacement]], expected: expected)
   end
+) do |tree, mutant, _run_half|
+  env = { 'BC2CPP_TOOL' => File.join(tree.tool, 'bc2cpp.rb'), 'CR_GENERATED_ONLY' => '1' }
+  Bc2cppMutationSupport.run_check(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_call_results_check.rb')], stop_on: mutant&.stop_on)
 end
 
 if failures.empty?
   puts 'bc2cpp call results mutation check: PASS'
 else
-  warn "bc2cpp call results mutation check: #{failures.size} surviving mutant(s)"
+  warn "bc2cpp call results mutation check: #{failures.size} failure(s)"
   exit 1
 end

@@ -3,13 +3,14 @@
 
 # Mutation test for FROZEN_TABLES (docs/adr/0306). Each mutant is a copy of tools/bc2cpp with one
 # soundness condition broken; scripts/bc2cpp_frozen_tables_check.rb, run against the mutant through
-# BC2CPP_TOOL (generated-code half only), must FAIL on the check that guards the condition.
+# BC2CPP_TOOL (generated-code half only), must FAIL on the check that guards the condition. An unmutated control runs
+# first, in the same repository-layout tree, and must pass; a mutant that only crashes is not a kill
+# (Bc2cppMutationSupport).
 #
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp_frozen_tables_mutation_check.rb
 
-require 'fileutils'
-require 'open3'
-require 'tmpdir'
+require 'rbconfig'
+require_relative 'bc2cpp_mutation_support'
 
 ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
@@ -40,38 +41,19 @@ MUTANTS = [
    "return 'disabled by BC2CPP_FROZEN_TABLES=0' if ENV['BC2CPP_FROZEN_TABLES'] == '0'", '', /kill switch/]
 ].freeze
 
-failures = []
-MUTANTS.each do |name, file, pattern, replacement, expected, also|
-  # Inside the repo so the copy's own ../.. is the repo root: the closed world reads the build's sources from there.
-  Dir.mktmpdir('.ftmut', ROOT) do |dir|
-    FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
+failures = Bc2cppMutationSupport.run_harness(
+  MUTANTS.map do |name, file, pattern, replacement, expected, also|
     # `also`: more [file, pattern, replacement] edits of the same mutant (a condition two gates enforce).
-    edits = [[file, pattern, replacement]] + Array(also)
-    gone = edits.reject do |edit_file, edit_pattern, edit_replacement|
-      path = File.join(dir, 'bc2cpp', edit_file)
-      text = File.read(path)
-      text.include?(edit_pattern) && File.write(path, text.sub(edit_pattern) { edit_replacement })
-    end
-    unless gone.empty?
-      puts "  FAIL #{name}: the mutation site is gone from #{gone.map(&:first).join(', ')}"
-      failures << name
-      next
-    end
-    env = { 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb'), 'FT_GENERATED_ONLY' => '1' }
-    out, status = Open3.capture2e(env, RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_frozen_tables_check.rb'))
-    failed = out.lines.grep(/^\s+FAIL /)
-    killed = !status.success? && failed.any? { |l| l.match?(expected) }
-    puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
-    unless killed
-      puts failed.first(5).join
-      failures << name
-    end
+    Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, pattern, replacement]] + Array(also), expected: expected)
   end
+) do |tree, mutant, _run_half|
+  env = { 'BC2CPP_TOOL' => File.join(tree.tool, 'bc2cpp.rb'), 'FT_GENERATED_ONLY' => '1' }
+  Bc2cppMutationSupport.run_check(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_frozen_tables_check.rb')], stop_on: mutant&.stop_on)
 end
 
 if failures.empty?
   puts 'bc2cpp frozen tables mutation check: PASS'
 else
-  warn "bc2cpp frozen tables mutation check: #{failures.size} surviving mutant(s)"
+  warn "bc2cpp frozen tables mutation check: #{failures.size} failure(s)"
   exit 1
 end

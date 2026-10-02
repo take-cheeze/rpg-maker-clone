@@ -502,7 +502,7 @@ end
 # -- 3. mutants --------------------------------------------------------------------------------
 
 # Each mutant removes one proof from a copy of the generator; the generated-code checks above
-# (CSEND_GENERATED_ONLY=1 skips the runs) must then fail.
+# (CSEND_GENERATED_ONLY=1 skips the runs) must then fail, on the check of that proof (the third element).
 MUTANTS = {
   'tools/bc2cpp/computed_send_names.rb' => {
     'a table need not be frozen' => ["call.sym == 'freeze'", 'true'],
@@ -530,37 +530,18 @@ MUTANTS = {
 }.freeze
 if ENV['CSEND_MUTANTS'] && ENV['CSEND_GENERATED_ONLY'].nil?
   puts '== mutants: one proof removed, a generated-code check must fail'
-  require_relative 'bc2cpp_mutant_pool'
-  root = File.expand_path('..', __dir__)
-  # nil when the mutation does not apply, else the run of the check against the mutant.
-  mutate = lambda do |(file, _what, from, to)|
-    Dir.mktmpdir do |tmp|
-      Dir.children(root).each do |entry|
-        next if %w[.git tools scripts build].include?(entry)
-
-        FileUtils.ln_s(File.join(root, entry), File.join(tmp, entry))
-      end
-      FileUtils.cp_r(File.join(root, 'tools'), tmp)
-      FileUtils.cp_r(File.join(root, 'scripts'), tmp)
-      path = File.join(tmp, file)
-      text = File.read(path)
-      mutated = text.sub(from, to)
-      next nil if mutated == text
-
-      File.write(path, mutated)
-      # Stops at the first FAIL line: the mutant is caught (Bc2cppMutantPool.run).
-      Bc2cppMutantPool.run({ 'CSEND_GENERATED_ONLY' => '1', 'CSEND_MUTANTS' => nil },
-                           [RbConfig.ruby, File.join(tmp, 'scripts/bc2cpp_computed_send_check.rb')], stop_on: /^\s+FAIL /)
+  require_relative 'bc2cpp_mutation_support'
+  # Run from a copy of scripts/ and tools/ in the repository layout, with an unmutated control (Bc2cppMutationSupport).
+  mutants = MUTANTS.flat_map do |file, list|
+    list.map do |what, (from, to, expected)|
+      Bc2cppMutationSupport::Mutant.new(name: "mutant (#{what})", edits: [[file.delete_prefix('tools/bc2cpp/'), from, to]],
+                                        expected: expected, scripts: true)
     end
   end
-  jobs = MUTANTS.flat_map { |file, mutants| mutants.map { |what, (from, to)| [file, what, from, to] } }
-  Bc2cppMutantPool.each_ordered(jobs, work: mutate) do |(_file, what), run|
-    if run.nil?
-      check.call("mutant (#{what}) applies", false)
-    else
-      check.call("mutant (#{what}) is caught", !run.success)
-    end
-  end
+  failures.concat(Bc2cppMutationSupport.run_harness(mutants) do |tree, mutant, _run_half|
+    Bc2cppMutationSupport.run_check({ 'CSEND_GENERATED_ONLY' => '1' },
+                                    [RbConfig.ruby, File.join(tree.dir, 'scripts/bc2cpp_computed_send_check.rb')], stop_on: mutant&.stop_on)
+  end)
 end
 
 puts(failures.empty? ? 'bc2cpp_computed_send_check OK' : "FAILED: #{failures.size}")

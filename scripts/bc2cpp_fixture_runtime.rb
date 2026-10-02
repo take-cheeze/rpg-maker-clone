@@ -12,6 +12,10 @@
 # BC2CPP_CXXFLAGS adds compiler flags, e.g. -DMRB_INT32 for a build whose mrb_int is 32 bits
 # wide (the Emscripten/Wio/PSP width); run with that build's own MRBC.
 # BC2CPP_KEEP_DIR=path keeps the last fixture directory (generated code, binary).
+# BC2CPP_PROBE_LOG=file appends one evidence line per generation and run (what the fixture declares but
+# does not compile, how often a compiled entry ran, a failed build or binary): the channel the mutation
+# harnesses read to tell a kill by the intended assertion from a kill by a crash
+# (scripts/bc2cpp_mutation_support.rb).
 require 'etc'
 require 'fileutils'
 require 'open3'
@@ -26,7 +30,16 @@ module Bc2cppFixtureRuntime
   # BC2CPP_TOOL names another bc2cpp.rb (a mutant copy, scripts/bc2cpp_class_pools_mutation_check.rb).
   BC2CPP = ENV.fetch('BC2CPP_TOOL') { File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb') }
 
+  # The compiled leg ran no registered entry (nothing was registered, or the scenario never reached
+  # one): the interpreted and compiled sections would be the same bytecode run twice.
+  class VacuousCompiledLeg < StandardError; end
+
   module_function
+
+  def probe(line)
+    log = ENV.fetch('BC2CPP_PROBE_LOG', nil)
+    File.open(log, 'a') { |file| file.puts(line) } if log && !log.empty?
+  end
 
   def mrbc
     ENV['MRBC'] || 'mrbc'
@@ -100,6 +113,7 @@ module Bc2cppFixtureRuntime
     src = File.join(dir, path)
     FileUtils.mkdir_p(File.dirname(src))
     File.write(src, source)
+    note_unlisted_classes(source, only_owners)
     extra_srcs = extra.map do |extra_path, text|
       File.join(dir, extra_path).tap { |file| FileUtils.mkdir_p(File.dirname(file)) && File.write(file, text) }
     end
@@ -126,16 +140,31 @@ module Bc2cppFixtureRuntime
     [code, err]
   end
 
+  # A class the fixture declares that `only_owners` leaves out stays bytecode in both legs.
+  def note_unlisted_classes(source, only_owners)
+    return unless only_owners
+
+    declared = source.scan(/^\s*(?:class|module)\s+([A-Z]\w*(?:::\w+)*)/).flatten.uniq
+    unlisted = declared.reject { |name| only_owners.any? { |owner| owner.delete_suffix('.singleton') == name } }
+    probe("unlisted-classes #{unlisted.join(' ')}") unless unlisted.empty?
+  end
+
+  ENTRY_LINE = %r{^\s+(\w+) / \w+\s+\(([^#]+)#([^,]+), arity (\d+)\)(.*)$}
+
+  # [entry, owner, name, arity, extra] of every compiled entry point of `owners`.
+  def compiled_entries(err, owners)
+    err.split('== compiled entry points ==', 2)[1].to_s.split("\n== ", 2)[0]
+       .scan(ENTRY_LINE).select { |_entry, owner, *| owners.include?(owner) }
+  end
+
   # `mrb_define_method` lines registering every compiled entry point of `owners`. With
   # `exact_arity` an entry registers MRB_ARGS_REQ(arity) as the build's own registration does for
   # a method with required parameters only, so the VM's argument-count check runs; otherwise
-  # MRB_ARGS_ANY() (the entry's own mrb_get_args is then the only check).
-  def registrations(err, owners, exact_arity: false)
-    entries = err.split('== compiled entry points ==', 2)[1].to_s.split("\n== ", 2)[0]
-                 .scan(%r{^\s+(\w+) / \w+\s+\(([^#]+)#([^,]+), arity (\d+)\)(.*)$})
-    entries.filter_map do |entry, owner, name, arity, extra|
-      next unless owners.include?(owner)
-
+  # MRB_ARGS_ANY() (the entry's own mrb_get_args is then the only check). With `probe` each entry
+  # goes through its counting trampoline (see `run`).
+  def registrations(err, owners, exact_arity: false, probe: false)
+    compiled_entries(err, owners).each_with_index.map do |(entry, owner, name, arity, extra), index|
+      entry = "bc2cpp_probe_#{index}" if probe
       holder = owner.delete_suffix('.singleton')
       scope = holder.split('::').inject('mrb_obj_value(M->object_class)') do |outer, part|
         "mrb_const_get(M, #{outer}, mrb_intern_cstr(M, #{part.dump}))"
@@ -156,7 +185,18 @@ module Bc2cppFixtureRuntime
   # so one crashing scenario cannot hide the others, and `output` is the Array
   # of their outputs paired with the exit status: [[output, success], ...].
   def run(dir, err, owners, body, build:, full: false, vms: [false, true], envs: nil, exact_arity: false)
-    regs = registrations(err, owners, exact_arity: exact_arity).join("\n")
+    entries = compiled_entries(err, owners)
+    # An interpreted-only run registers nothing; a compiled one with nothing to register is two interpreted runs.
+    if vms.include?(true) && entries.empty?
+      raise VacuousCompiledLeg, "no compiled entry point of #{owners.join(', ')} to register (the fixture's own classes " \
+                                'must be in the owner list and compiled)'
+    end
+
+    regs = registrations(err, owners, exact_arity: exact_arity, probe: true).join("\n")
+    probe_defs = entries.each_index.map do |i|
+      "static mrb_value bc2cpp_probe_#{i}(mrb_state* M, mrb_value self) { ++bc2cpp_probe_hits[#{i}]; " \
+        "return #{entries[i].first}(M, self); }"
+    end.join("\n")
     File.write(File.join(dir, 'main.cpp'), <<~CPP)
       #include <mruby.h>
       static int dispatches = 0;
@@ -177,6 +217,18 @@ module Bc2cppFixtureRuntime
       #include <iterator>
       #include <vector>
       #{full ? '' : 'extern "C" void mrb_init_mrblib(mrb_state*) {}'}
+      #include <cstdlib>
+      // Runtime probe: counts the VM dispatches that reach a registered compiled entry, so a compiled leg
+      // that only ever ran bytecode is detected (BC2CPP_PROBE_FILE, read by Bc2cppFixtureRuntime.run).
+      static unsigned long bc2cpp_probe_hits[#{entries.size + 1}];
+      #{probe_defs}
+      static void bc2cpp_probe_report() {
+        const char* path = std::getenv("BC2CPP_PROBE_FILE");
+        if (!path) return;
+        unsigned long total = 0;
+        for (unsigned long h : bc2cpp_probe_hits) total += h;
+        if (std::FILE* f = std::fopen(path, "a")) { std::fprintf(f, "hits %lu\\n", total); std::fclose(f); }
+      }
       static void show(mrb_state* M, const char* label, mrb_value v) {
         mrb_value s = mrb_inspect(M, v);
         std::printf("%s => %.*s\\n", label, (int)RSTRING_LEN(s), RSTRING_PTR(s));
@@ -210,6 +262,7 @@ module Bc2cppFixtureRuntime
       #{regs}
         }
         int rc = scenario(M);
+        if (with_compiled) bc2cpp_probe_report();
         mrb_close(M);
         if (with_compiled) bc2cpp_reset_owner_classes();
         return rc;
@@ -232,19 +285,68 @@ module Bc2cppFixtureRuntime
     flags.concat(Shellwords.split(ENV.fetch('BC2CPP_CXXFLAGS', '')))
     built = Bc2cppCxx.system(*flags, "-I#{dir}", "-I#{build}/include", "-I#{ROOT}/3rd/mruby/include",
                    "-I#{ROOT}/mruby-rgss/src", "-I#{ROOT}/include", File.join(dir, 'main.cpp'), lib, '-lm', '-o', binary)
-    return [false, ''] unless built
+    unless built
+      probe('build-failed')
+      return [false, '']
+    end
 
     FileUtils.cp_r(dir, ENV['BC2CPP_KEEP_DIR'], remove_destination: true) if ENV['BC2CPP_KEEP_DIR']
     mrb = File.join(dir, 'fixture.mrb')
-    if envs
-      results = envs.map do |env|
-        out = IO.popen(env, [binary, mrb], err: %i[child out], &:read)
-        [out, $?.success?]
-      end
-      return [true, results]
+    launch = lambda do |env, index|
+      hits = File.join(dir, "probe_hits.#{index}")
+      out = IO.popen(env.to_h.merge('BC2CPP_PROBE_FILE' => hits), [binary, mrb], err: %i[child out], &:read)
+      ok = $?.success?
+      check_probe(hits, vms, ok, env)
+      [out, ok]
     end
-    output = IO.popen([binary, mrb], err: %i[child out], &:read)
-    [$?.success?, output]
+    return [true, envs.each_with_index.map { |env, index| launch.call(env, index) }] if envs
+
+    out, ok = launch.call({}, 0)
+    [ok, out]
+  end
+
+  # The probe file holds one "hits N" line per compiled VM that finished its scenario.
+  def check_probe(file, vms, ok, env)
+    probe("binary-failed #{env.to_a.sort.inspect}") unless ok
+    return unless vms.include?(true)
+
+    hits = File.exist?(file) ? File.read(file)[/^hits (\d+)/, 1].to_i : nil
+    probe("compiled-hits #{hits.inspect} #{env.to_a.sort.inspect}")
+    return unless ok && hits.to_i.zero?
+
+    raise VacuousCompiledLeg, 'the compiled VM finished its scenario without dispatching to any registered compiled entry'
+  end
+
+  # For a driver that registers compiled entries itself (a generated or hand-written register.cxx): put this before the
+  # generated code and call bc2cpp_probe_report() once the scenario is over. Every mrb_define_*method of the generated
+  # registration then goes through a counting thunk, as in `run`, so `probed_capture` can tell a compiled leg that ran
+  # compiled code from one that only ran bytecode.
+  PROBE_PROLOGUE = <<~'CPP'
+    #include <mruby.h>
+    #include <cstdio>
+    #include <cstdlib>
+    static unsigned long bc2cpp_probe_hits = 0;
+    template <mrb_value (*F)(mrb_state*, mrb_value)>
+    static mrb_value bc2cpp_probe_thunk(mrb_state* M, mrb_value self) { ++bc2cpp_probe_hits; return F(M, self); }
+    #define mrb_define_method(M, c, n, f, a) (mrb_define_method)(M, c, n, bc2cpp_probe_thunk<f>, a)
+    #define mrb_define_private_method(M, c, n, f, a) (mrb_define_private_method)(M, c, n, bc2cpp_probe_thunk<f>, a)
+    #define mrb_define_class_method(M, c, n, f, a) (mrb_define_class_method)(M, c, n, bc2cpp_probe_thunk<f>, a)
+    static void bc2cpp_probe_report() {
+      const char* path = std::getenv("BC2CPP_PROBE_FILE");
+      if (!path) return;
+      if (std::FILE* f = std::fopen(path, "a")) { std::fprintf(f, "hits %lu\n", bc2cpp_probe_hits); std::fclose(f); }
+    }
+  CPP
+
+  # Open3.capture2e for a driver built with PROBE_PROLOGUE: [output, status]. With `compiled` the run must have reported
+  # at least one dispatch into a registered compiled entry (VacuousCompiledLeg otherwise).
+  def probed_capture(*argv, compiled:, env: {})
+    Dir.mktmpdir('probe') do |dir|
+      file = File.join(dir, 'hits')
+      out, status = Open3.capture2e(env.merge('BC2CPP_PROBE_FILE' => file), *argv)
+      check_probe(file, [compiled], status.success?, env.merge('driver' => argv.last)) if compiled
+      [out, status]
+    end
   end
 
   # The lines of `output` between "== compiled"/"== interpreted" headers.

@@ -5,14 +5,13 @@
 # inside the repository so its own ../.. is the repository root (the closed world reads the build's
 # sources from there; a copy elsewhere sees an empty world and every mutant would die for the wrong reason),
 # with one soundness condition removed. scripts/bc2cpp_escape_analysis_check.rb (EA_MODE=static) run against
-# the mutant must FAIL on the check that guards the condition. An unmutated control run must pass.
+# the mutant must FAIL on the check that guards the condition. An unmutated control run must pass, and a mutant that
+# only crashes is not a kill (Bc2cppMutationSupport).
 #
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp_escape_analysis_mutation_check.rb
 
-require 'fileutils'
 require 'rbconfig'
-require 'tmpdir'
-require_relative 'bc2cpp_mutant_pool'
+require_relative 'bc2cpp_mutation_support'
 
 ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
@@ -69,52 +68,11 @@ MUTANTS = [
    /without the closed world the proof is not offered/]
 ].freeze
 
-run_check = lambda do |tool_dir|
-  env = { 'EA_TOOL_DIR' => tool_dir, 'EA_MODE' => 'static', 'MRBC' => ENV.fetch('MRBC') }
-  [env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_escape_analysis_check.rb')]]
-end
-
-mutate = lambda do |(_name, edits, expected)|
-  # Inside the repo, so the copy's own ../.. is the repo root.
-  Dir.mktmpdir('.eamut', ROOT) do |dir|
-    FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
-    missing = edits.reject do |file, pattern, replacement|
-      path = File.join(dir, 'bc2cpp', file)
-      text = File.read(path)
-      text.include?(pattern) && File.write(path, text.sub(pattern) { replacement })
-    end
-    next :gone unless missing.empty?
-
-    env, argv = run_check.call(File.join(dir, 'bc2cpp'))
-    Bc2cppMutantPool.run(env, argv, stop_on: /^\s+FAIL .*(?:#{expected.source})/)
-  end
-end
-
-failures = []
-control = Dir.mktmpdir('.eamut', ROOT) do |dir|
-  FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
-  env, argv = run_check.call(File.join(dir, 'bc2cpp'))
-  Bc2cppMutantPool.run(env, argv)
-end
-puts "  #{control.success ? 'ok  ' : 'FAIL'} control: the unmutated copy passes"
-unless control.success
-  puts control.out.lines.grep(/FAIL|rror/).first(8).join
-  failures << 'control'
-end
-
-Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name, edits, expected), run|
-  if run == :gone
-    puts "  FAIL #{name}: a mutation site is gone from #{edits.map(&:first).uniq.join(', ')}"
-    failures << name
-    next
-  end
-  failed_lines = run.out.lines.grep(/^\s+FAIL /)
-  killed = !run.success && failed_lines.any? { |l| l.match?(expected) }
-  puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
-  unless killed
-    puts failed_lines.first(5).join
-    failures << name
-  end
+failures = Bc2cppMutationSupport.run_harness(
+  MUTANTS.map { |name, edits, expected| Bc2cppMutationSupport::Mutant.new(name: name, edits: edits, expected: expected) }
+) do |tree, mutant, _run_half|
+  env = { 'EA_TOOL_DIR' => tree.tool, 'EA_MODE' => 'static', 'MRBC' => ENV.fetch('MRBC') }
+  Bc2cppMutationSupport.run_check(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_escape_analysis_check.rb')], stop_on: mutant&.stop_on)
 end
 
 if failures.empty?

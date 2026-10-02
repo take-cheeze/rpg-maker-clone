@@ -4,14 +4,14 @@
 # Mutation test for LOOP_INSTALLERS (docs/adr/0304). Each mutant is a copy of tools/bc2cpp with one
 # soundness condition of tools/bc2cpp/loop_installers.rb (or of its closed-world hook) broken;
 # scripts/bc2cpp_loop_installers_check.rb, run against the mutant, must FAIL on the negative world
-# that guards that condition. A mutant that passes means the condition has no negative case.
+# that guards that condition. A mutant that passes means the condition has no negative case. An unmutated control runs
+# first, in the same repository-layout tree, and must pass; a mutant that only crashes is not a kill
+# (Bc2cppMutationSupport).
 #
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp_loop_installers_mutation_check.rb
 
-require 'fileutils'
 require 'rbconfig'
-require 'tmpdir'
-require_relative 'bc2cpp_mutant_pool'
+require_relative 'bc2cpp_mutation_support'
 
 ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
@@ -54,41 +54,18 @@ MUTANTS = [
    /a computed name: the closed world keeps/]
 ].freeze
 
-# nil when the mutation site is gone, else the run of the check against the mutant.
-mutate = lambda do |(_name, file, pattern, replacement, expected)|
-  Dir.mktmpdir do |dir|
-    FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
-    path = File.join(dir, 'bc2cpp', file)
-    text = File.read(path)
-    next nil unless text.include?(pattern)
-
-    File.write(path, text.sub(pattern) { replacement })
-    env = { 'LP_REGISTRY_ONLY' => '1', 'BC2CPP_TOOLS_DIR' => File.join(dir, 'bc2cpp'), 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb') }
-    # Stops at the first FAIL line the mutant is expected to cause (Bc2cppMutantPool.run).
-    Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_loop_installers_check.rb')],
-                         stop_on: /^\s+FAIL .*(?:#{expected.source})/)
+failures = Bc2cppMutationSupport.run_harness(
+  MUTANTS.map do |name, file, pattern, replacement, expected|
+    Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, pattern, replacement]], expected: expected)
   end
-end
-
-failures = []
-Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name, file, _pattern, _replacement, expected), run|
-  if run.nil?
-    puts "  FAIL #{name}: the mutation site is gone from #{file}"
-    failures << name
-    next
-  end
-  failed_lines = run.out.lines.grep(/^\s+FAIL /)
-  killed = !run.success && failed_lines.any? { |l| l.match?(expected) }
-  puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
-  unless killed
-    puts failed_lines.first(5).join, run.out.lines.last(3).join
-    failures << name
-  end
+) do |tree, mutant, _run_half|
+  env = { 'LP_REGISTRY_ONLY' => '1', 'BC2CPP_TOOLS_DIR' => tree.tool, 'BC2CPP_TOOL' => File.join(tree.tool, 'bc2cpp.rb') }
+  Bc2cppMutationSupport.run_check(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_loop_installers_check.rb')], stop_on: mutant&.stop_on)
 end
 
 if failures.empty?
   puts 'bc2cpp loop installers mutation check: PASS'
 else
-  warn "bc2cpp loop installers mutation check: #{failures.size} surviving mutant(s)"
+  warn "bc2cpp loop installers mutation check: #{failures.size} failure(s)"
   exit 1
 end

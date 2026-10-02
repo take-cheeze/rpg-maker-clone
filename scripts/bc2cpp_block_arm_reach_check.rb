@@ -26,6 +26,7 @@ require 'tmpdir'
 
 ROOT = File.expand_path('..', __dir__)
 TOOL_DIR = ENV['BR_TOOL_DIR'] || File.join(ROOT, 'tools/bc2cpp')
+require_relative 'bc2cpp_fixture_runtime'
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
@@ -361,7 +362,7 @@ if MODE != 'generated'
         #include <mruby.h>
         #include <mruby/class.h>
         #include <mruby/compile.h>
-        #{compiled ? '#include "br_gen.cpp"' : ''}
+        #{compiled ? "#{Bc2cppFixtureRuntime::PROBE_PROLOGUE}#include \"br_gen.cpp\"" : ''}
 
         static const char* const kFixture = R"BRFX(#{FIXTURE})BRFX";
 
@@ -372,7 +373,7 @@ if MODE != 'generated'
         #{compiled ? '  bc2cpp_register_owner_methods(M);' : ''}
         }
 
-        extern "C" void mrb_bc2cpp_reach_test_gem_final(mrb_state*) {}
+        extern "C" void mrb_bc2cpp_reach_test_gem_final(mrb_state*) { #{compiled ? 'bc2cpp_probe_report();' : ''} }
       CPP
     end
 
@@ -424,7 +425,7 @@ if MODE != 'generated'
       out, status = Open3.capture2e(env, 'rake', "-j#{[Etc.nprocessors, 16].min}", 'all', chdir: MRUBY)
       File.write(File.join(work, "#{name}.log"), out)
       bin = File.join(build, 'host/bin/mruby')
-      result = status.success? && File.exist?(bin) ? Open3.capture2e(bin, File.join(work, 'driver.rb')).first : nil
+      result = status.success? && File.exist?(bin) ? Bc2cppFixtureRuntime.probed_capture(bin, File.join(work, 'driver.rb'), compiled: compiled).first : nil
       gen = File.join(build, 'host/mrbgems/bc2cpp-reach-test/br_gen.cpp')
       arms = File.exist?(gen) ? File.read(gen) : ''
       FileUtils.rm_rf(build) unless ENV['BC2CPP_REACH_DIR']
@@ -487,24 +488,17 @@ MUTANTS = {
 
 if ENV['BR_MUTANTS'] == '1' && MODE != 'run' && tool?(MRBC_PATH)
   puts 'mutants'
-  MUTANTS.each do |name, (file, from, to)|
-    Dir.mktmpdir('bc2cpp_reach_mutant') do |dir|
-      FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
-      path = File.join(dir, 'bc2cpp', file)
-      text = File.read(path)
-      unless text.include?(from)
-        check.call("mutant #{name}: the mutated text is still in #{file}", false)
-        next
-      end
-      File.write(path, text.sub(from) { to })
-      out, status = Open3.capture2e({ 'BR_TOOL_DIR' => File.join(dir, 'bc2cpp'), 'BR_MODE' => 'generated', 'BR_MUTANTS' => '0',
-                                      'MRBC' => MRBC_PATH },
-                                    RbConfig.ruby, __FILE__)
-      caught = !status.success? && out.include?('FAIL')
-      check.call("mutant killed: #{name}", caught)
-      puts out.lines.grep(/FAIL|rror/).first(4).join unless caught
+  require_relative 'bc2cpp_mutation_support'
+  # Each mutant lives in a tree with the repository layout (a copy under /tmp reads an empty closed world), after an
+  # unmutated control; the first element after the edit is the label of the assertion that must fail.
+  failures.concat(Bc2cppMutationSupport.run_harness(
+    MUTANTS.map do |name, (file, from, to, expected)|
+      Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, from, to]], expected: expected)
     end
-  end
+  ) do |tree, mutant, _run_half|
+    Bc2cppMutationSupport.run_check({ 'BR_TOOL_DIR' => tree.tool, 'BR_MODE' => 'generated', 'MRBC' => MRBC_PATH },
+                                    [RbConfig.ruby, __FILE__], stop_on: mutant&.stop_on)
+  end)
 end
 
 if failures.empty?
