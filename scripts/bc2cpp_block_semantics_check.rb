@@ -356,8 +356,10 @@ RUBY
 
 # Scenarios the fixture expects to keep interpreted: lambda / Proc.new blocks that
 # capture locals (their pointers would outlive the frame), and an ensure clause that
-# yields.
-EXPECTED_INTERPRETED = %w[t_lambda_upvar t_proc_upvar t_proc_in_proc t_proc_yield_in_proc t_yield_in_ensure].freeze
+# yields. t_yield_in_ensure hands its block to a callee that only yields, which the by-name
+# list does not name: BLOCK_FALLBACK_PROVEN (ADR 0316) compiles it unless BC2CPP_ESCAPE_ANALYSIS=0.
+EXPECTED_INTERPRETED = (%w[t_lambda_upvar t_proc_upvar t_proc_in_proc t_proc_yield_in_proc] +
+                        (ENV['BC2CPP_ESCAPE_ANALYSIS'] == '0' ? %w[t_yield_in_ensure] : [])).freeze
 
 # Procs built from a BLOCK_FALLBACK block are cfunc-backed, and mruby answers -1
 # for the arity of every one (proc.c `TODO cfunc aspec not implemented yet`).
