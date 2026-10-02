@@ -957,6 +957,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_typed_slot_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
           - shard: core-mrbtest
+            # Interpreter-vs-compiled fixtures and mruby's own suites (~20 min).
             checks: |
               # Literal-block arms into the compiled core (docs/adr/0270): a closed-world fixture compiled
               # with the core, against the interpreter; two more mruby builds.
@@ -971,24 +972,17 @@ jobs:
               # Return-class table and the guard-free TYPED call (docs/adr/0289): generated code with every
               # way of losing the proof, then a compiled fixture against the interpreter.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_return_class_check.rb
-              # ADR 0301: the exact receiver reaching every arm wrapper, and constant class pools; generated
-              # code, then a compiled fixture against the interpreter on the full-core and core-only builds,
-              # then five mutants of the soundness conditions.
-              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_flow_check.rb
-              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_flow_mutation_check.rb
-              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_check.rb
-              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_mutation_check.rb
               # Inlined Integer#step/upto/downto loops (docs/adr/0273) against the interpreter; builds
               # a full-core mruby once into BC2CPP_FULL_BUILD_DIR.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
               # ADR 0293: direct === / is_a? / kind_of? against the interpreter, on the full-core build above.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_direct_check.rb
-              # ADR 0297: exact-class arms of unlisted definers (attr accessors, private defs, no-target
-              # classes, native-registered names) against the interpreter on the full-core and core-only
-              # builds; UCC_MUTANTS=1 also removes one proof at a time from a copy of the generator.
-              UCC_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_unlisted_class_call_check.rb
               # ADR 0288: class-body define_method(:name) { } as an ordinary definition.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_define_method_sites_check.rb
+              # ADR 0304: attr_* installed by a constant-driven loop, against CRuby and the interpreter;
+              # the mutation check breaks one soundness condition at a time.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_loop_installers_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_loop_installers_mutation_check.rb
               # Resumable Fiber roots (docs/adr/0273): step functions over a heap frame against the
               # interpreter, with an incremental-GC-stress pass; reuses the build above.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_resumable_check.rb
@@ -1003,6 +997,27 @@ jobs:
               # mruby's own suites (rake test) on a full-core host build, interpreted and with the
               # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
               ruby scripts/bc2cpp_core_mrbtest.rb
+          - shard: core-flow
+            # ADR 0301 exact-receiver flow and its five mutants (~13 min).
+            checks: |
+              # ADR 0301: the exact receiver reaching every arm wrapper, and constant class pools; generated
+              # code, then a compiled fixture against the interpreter on the full-core and core-only builds,
+              # then five mutants of the soundness conditions.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_flow_check.rb
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_flow_mutation_check.rb
+              # ADR 0306: element classes of frozen literal tables; generated code, the interpreter on three builds, mutants.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_check.rb
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_mutation_check.rb
+              # ADR 0303: a computed-name send over a provably finite Symbol set becomes direct arms; negative
+              # worlds, the interpreter on full-core and core-only builds, and one proof removed at a time.
+              CSEND_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
+          - shard: core-mutants
+            # bc2cpp_unlisted_class_call_check with UCC_MUTANTS=1: seven mutant rebuilds (~23 min).
+            checks: |
+              # ADR 0297: exact-class arms of unlisted definers (attr accessors, private defs, no-target
+              # classes, native-registered names) against the interpreter on the full-core and core-only
+              # builds; UCC_MUTANTS=1 also removes one proof at a time from a copy of the generator.
+              UCC_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_unlisted_class_call_check.rb
           - shard: rdata-slots
             checks: |
               # Links bc2cpp output against the patch-chain mruby and runs it
@@ -1056,6 +1071,8 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_native_class_const_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_struct_index_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_outlined_index_check.rb
+              # ADR 0305: the GETIDX helper's Integer arm against the interpreter, with mutants.
+              GIA_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_runtime_devirt_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_inherited_self_devirt_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_poly_table_check.rb
@@ -1206,11 +1223,14 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_lcf_row_flow_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
           - variant: nobigint
             checks: |
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
+              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
 
     env:
       RPGMAKER_BC2CPP: "1"

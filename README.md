@@ -1141,6 +1141,11 @@
   [`docs/adr/0298-bc2cpp-executed-site-profile.md`](docs/adr/0298-bc2cpp-executed-site-profile.md),
   [`docs/bc2cpp-dynamic-site-census.md`](docs/bc2cpp-dynamic-site-census.md) and
   `scripts/bc2cpp_site_profile_check.rb`).
+  A computed-name `__send__` whose name is provably one of a finite Symbol set (a frozen constant table,
+  a `case` or `?:` over Symbol literals) becomes direct per-name arms with a logged violation arm instead
+  of a by-name lookup; `BC2CPP_COMPUTED_SEND=0` turns it off (see
+  [`docs/adr/0303-bc2cpp-computed-send-expansion.md`](docs/adr/0303-bc2cpp-computed-send-expansion.md) and
+  `scripts/bc2cpp_computed_send_check.rb`).
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
