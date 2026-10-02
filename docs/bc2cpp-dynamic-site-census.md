@@ -381,6 +381,22 @@ sites that can reach by-name dispatch is -98. The remaining 305 are the 120 cons
 for the arguments, not built), the 174 unprovable receivers and 12 sites the flow proves but a Fixnum argument
 probably keeps.
 
+## Follow-up: exact receivers reach the compiled core (ADR 0314)
+
+Measured on the wio closed world at `43031b24`, shipped pass. A send with no block whose receiver is an exact
+`Array`/`Hash` (ADR 0280) now calls the compiled core body when the body cannot suspend a Fiber.
+
+| | Before | After |
+| --- | ---: | ---: |
+| cached dynamic sites | 3,240 | 3,159 |
+| `bc2cpp_send` sites | 2,815 | 2,734 |
+| engine `bc2cpp_send` sites | 2,377 | 2,296 |
+| `CORE_EXACT_DIRECT` sites | 0 | 81 (`max` 46, `min` 31, `uniq` 3, `fetch` 1) |
+
+All 81 are removals. What is left of the `core_or_native` kept-else category (278 engine sites) is a receiver
+proof problem: 14 of its sites have an exact receiver. `BC2CPP_CORE_EXTEND=0` restores the earlier output
+byte for byte. The ADR also holds the table of all 220 core-source methods and the Fiber-guard measurements.
+
 ## Ranking by executed count
 
 The counts above weigh a start-up site like a frame-loop site. `SITE_PROFILE`

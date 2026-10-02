@@ -1040,6 +1040,10 @@
   when the receiver class is proven and the block cannot reach a Fiber yield; see
   [`docs/adr/0270-bc2cpp-block-core-direct-arms.md`](docs/adr/0270-bc2cpp-block-core-direct-arms.md) and
   [`docs/adr/0310-bc2cpp-block-arm-reach.md`](docs/adr/0310-bc2cpp-block-arm-reach.md).
+  A send with no block to a receiver proven an exact `Array` or `Hash` (the else of the inline `[a, b].max`,
+  `uniq`, `fetch`, ...) calls the compiled core body directly when that body cannot suspend a Fiber, with no
+  by-name send left; `BC2CPP_CORE_EXTEND=0` returns the earlier output; see
+  [`docs/adr/0314-bc2cpp-core-exact-direct.md`](docs/adr/0314-bc2cpp-core-exact-direct.md).
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
