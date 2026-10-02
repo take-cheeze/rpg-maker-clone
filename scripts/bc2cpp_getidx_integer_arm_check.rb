@@ -272,21 +272,28 @@ MUTANTS = [
 
 if ENV['GIA_MUTANTS'] && ENV['BC2CPP_TOOL'].nil? && !builds.empty?
   puts '-- mutants'
-  MUTANTS.each do |name, file, pattern, replacement|
+  require_relative 'bc2cpp_mutant_pool'
+  # nil when the mutation site is gone, else the run of this check against the mutant.
+  mutate = lambda do |(_name, file, pattern, replacement)|
     Dir.mktmpdir do |dir|
       FileUtils.cp_r(File.join(runtime::ROOT, 'tools/bc2cpp'), dir)
       path = File.join(dir, 'bc2cpp', file)
       text = File.read(path)
-      unless text.include?(pattern)
-        check.call("mutation site exists for: #{name}", false)
-        next
-      end
+      next nil unless text.include?(pattern)
+
       File.write(path, text.sub(pattern) { replacement })
-      out, status = Open3.capture2e({ 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb'), 'GIA_MUTANTS' => nil },
-                                    RbConfig.ruby, __FILE__)
-      check.call("mutant killed: #{name}", !status.success? && out.match?(/^\s+FAIL /))
-      out.lines.grep(/^\s+FAIL /).first(3).each { |l| puts "       #{l.strip}" }
+      # Stops at the first FAIL line: the mutant is killed (Bc2cppMutantPool.run).
+      Bc2cppMutantPool.run({ 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb'), 'GIA_MUTANTS' => nil },
+                           [RbConfig.ruby, __FILE__], stop_on: /^\s+FAIL /)
     end
+  end
+  Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name), run|
+    if run.nil?
+      check.call("mutation site exists for: #{name}", false)
+      next
+    end
+    check.call("mutant killed: #{name}", !run.success && run.out.match?(/^\s+FAIL /))
+    run.out.lines.grep(/^\s+FAIL /).first(3).each { |l| puts "       #{l.strip}" }
   end
 end
 

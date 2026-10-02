@@ -21,6 +21,7 @@ require_relative '../tools/bc2cpp/nomethod_reviewed'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
 require_relative '../tools/bc2cpp/native_core_direct'
 require_relative '../tools/bc2cpp/foreign_definers'
+require_relative 'bc2cpp_cxx'
 
 root = File.expand_path('..', __dir__)
 failures = []
@@ -479,14 +480,14 @@ else
     source = File.join(dir, 'core_direct.cpp')
     File.write(source, harness)
     binary = File.join(dir, 'core_direct')
-    built = system('g++', '-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
+    built = Bc2cppCxx.system('-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
                    "-I#{core}/include", "-I#{root}/3rd/mruby/include", source, "#{core}/lib/libmruby_core.a", '-o', binary)
     check.call('the emitted arms compile against real mruby headers', built)
     utf8 = File.join(dir, 'utf8.cpp')
     File.write(utf8, "#include <mruby.h>\n#include <mruby/string.h>\n" +
                      NativeCoreDirect::HELPERS.values_at('bc2cpp_str_size', 'bc2cpp_str_length').join("\n"))
     check.call('the String size helpers also compile with MRB_UTF8_STRING defined (their send branch)',
-               system('g++', '-std=c++17', '-fsyntax-only', '-Werror', '-DMRB_UTF8_STRING', "-I#{core}/include",
+               Bc2cppCxx.system('-std=c++17', '-fsyntax-only', '-Werror', '-DMRB_UTF8_STRING', "-I#{core}/include",
                       "-I#{root}/3rd/mruby/include", utf8))
     if built
       output = IO.popen(binary, err: %i[child out], &:read)
