@@ -11,6 +11,7 @@
 
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
+require_relative 'bc2cpp_cxx'
 
 failures = []
 check = lambda do |what, condition|
@@ -161,7 +162,7 @@ Dir.mktmpdir do |dir|
       }
     CPP
     binary = File.join(dir, 'const_harness')
-    built = system('g++', '-std=c++17', '-Wall', '-Werror', '-Wno-unused-function', '-Wno-unused-variable', harness, '-o', binary)
+    built = Bc2cppCxx.system('-std=c++17', '-Wall', '-Werror', '-Wno-unused-function', '-Wno-unused-variable', harness, '-o', binary)
     check.call('the emitted const helpers compile', built)
     if built
       cached, per_vm, uncached_value, sym_keeps_const, const_reset_keeps_sym, reset, failure =

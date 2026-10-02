@@ -20,6 +20,7 @@ require 'open3'
 require 'rbconfig'
 require 'shellwords'
 require 'tmpdir'
+require_relative 'bc2cpp_cxx'
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
@@ -322,7 +323,7 @@ build_and_run = lambda do |name, compiled|
   FileUtils.ln_sf(File.join(ROOT, '3rd/mgem-list'), File.join(build, 'repos/host/mgem-list'))
   env = { 'BC2CPP_ROOT' => ROOT, 'MRUBY_CONFIG' => File.join(work, 'config.rb'), 'MRUBY_BUILD_DIR' => build,
           'BC2CPP_HARNESS_GEM' => gem_dir, 'BC2CPP_BLOCK_COMPILED' => compiled ? '1' : '0',
-          'BC2CPP_BLOCK_FIXTURE' => File.join(work, 'fixture.rb') }
+          'BC2CPP_BLOCK_FIXTURE' => File.join(work, 'fixture.rb') }.merge(Bc2cppCxx.rake_env)
   out, status = Open3.capture2e(env, 'rake', "-j#{[Etc.nprocessors, 16].min}", 'all', chdir: MRUBY)
   File.write(File.join(work, "#{name}.log"), out)
   bin = File.join(build, 'host/bin/mruby')
