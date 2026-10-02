@@ -20,7 +20,7 @@
 #    no dynamic dispatch. The run repeats on a 32-bit mrb_int build (BC2CPP_MRUBY_FULL32 + BC2CPP_MRBC32)
 #    and a build without mruby-bigint (BC2CPP_MRUBY_NOBIGINT).
 #
-# Usage: [MRBC=path/to/mrbc BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_CORE=dir BC2CPP_MRUBY_FULL32=dir
+# Usage: [MRBC=path/to/mrbc BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_CORE=dir BC2CPP_FULL_BUILD_DIR=dir BC2CPP_MRUBY_FULL32=dir
 #         BC2CPP_MRBC32=mrbc32 BC2CPP_MRUBY_NOBIGINT=dir] ruby scripts/bc2cpp_tuple_return_check.rb
 
 require 'set'
@@ -436,7 +436,8 @@ if ENV['MRBC']
     CPP
     # [label, build dir, mrbc, extra flags, full (mruby-core gems)?]
     builds = []
-    full = runtime.full
+    # BC2CPP_MRUBY_FULL, or a full-core mruby built into BC2CPP_FULL_BUILD_DIR (the core-mrbtest shard shares it).
+    full = runtime.full || (ENV['BC2CPP_FULL_BUILD_DIR'] ? runtime.full_or_build : nil)
     core = runtime.core
     builds << ['mrb_int 64, full-core', full, ENV['MRBC'], '', true] if full
     builds << ['mrb_int 64, core only', core, ENV['MRBC'], '', false] if core

@@ -99,7 +99,9 @@ CHECKS = [
   { name: 'bc2cpp-numeric-operand', command: %w[scripts/bc2cpp_numeric_operand_check.rb] },
   # ADR 0302: the RGSS native result facts against the native sources, and the ClosedWorld questions;
   # the generated-code section skips here.
-  { name: 'bc2cpp-native-result-facts', command: %w[scripts/bc2cpp_native_result_facts_check.rb] }
+  { name: 'bc2cpp-native-result-facts', command: %w[scripts/bc2cpp_native_result_facts_check.rb] },
+  # ADR 0311: the AREF transfer and the tuple shape on hand-built bytecode; the fixture sections skip here.
+  { name: 'bc2cpp-tuple-return', command: %w[scripts/bc2cpp_tuple_return_check.rb] }
 ].freeze
 
 # `needs:` predicates. A downloaded RPG2000/2003 game is the only prerequisite
