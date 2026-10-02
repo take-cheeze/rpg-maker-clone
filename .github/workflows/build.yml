@@ -1008,6 +1008,12 @@ jobs:
               # ADR 0303: a computed-name send over a provably finite Symbol set becomes direct arms; negative
               # worlds, the interpreter on full-core and core-only builds, and one proof removed at a time.
               CSEND_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
+          - shard: native-wrappers
+            # ADR 0307: generated code, then a compiled fixture against the interpreter on the full-core and
+            # core-only builds (the stand-in rgss:: bodies need no SDL); eight mutants cost about seven minutes.
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_native_wrappers_check.rb
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_native_wrappers_mutation_check.rb
           - shard: core-mutants
             # bc2cpp_unlisted_class_call_check with UCC_MUTANTS=1: seven mutant rebuilds (~23 min).
             checks: |

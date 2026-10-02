@@ -283,8 +283,19 @@ end
 
 # -- 2. behaviour ----------------------------------------------------------------------
 
-build = runtime.full || runtime.core || runtime.full_or_build
-if ENV['MRBC'] && build && runtime.compiler? && !ENV['EW_GENERATED_ONLY']
+# [label, build dir, host mrbc, extra compiler flags]: the full-core build, the core-only one when named
+# too, and a 32-bit `mrb_int` one (BC2CPP_MRUBY_FULL32 + BC2CPP_MRBC32, scripts/bc2cpp_width_build.rb int32).
+builds = []
+if ENV['MRBC'] && runtime.compiler?
+  flags = ENV.fetch('BC2CPP_CXXFLAGS', '')
+  primary = runtime.full || runtime.core || runtime.full_or_build
+  builds << [runtime.full ? 'full-core' : 'core-only', primary, ENV.fetch('MRBC'), flags] if primary
+  builds << ['core-only', runtime.core, ENV.fetch('MRBC'), flags] if runtime.full && runtime.core
+  if ENV['BC2CPP_MRUBY_FULL32'] && ENV['BC2CPP_MRBC32']
+    builds << ['mrb_int 32, full-core', ENV['BC2CPP_MRUBY_FULL32'], ENV['BC2CPP_MRBC32'], '-DMRB_32BIT -DMRB_INT32 -no-pie']
+  end
+end
+if !builds.empty? && !ENV['EW_GENERATED_ONLY']
   puts '== fixture on real mruby, interpreted and compiled'
   # A stand-in for mruby-rgss's wrapper bodies: they record the receiver class, the method and the
   # arguments it was called with, so the compiled direct call and the interpreted dispatch to the
@@ -446,41 +457,49 @@ if ENV['MRBC'] && build && runtime.compiler? && !ENV['EW_GENERATED_ONLY']
       return 0;
     }
   CPP
-  Dir.mktmpdir do |dir|
-    _code, err = generate.call(CLASSES + HOST, dir)
-    full = File.exist?("#{build}/lib/libmruby.a")
-    built, output = runtime.run(dir, err, OWNERS, body, build: build, full: full)
-    check.call('the fixture compiles and runs against real mruby', built)
-    if built
-      sections = runtime.sections(output)
-      interpreted = sections.fetch('interpreted', []).reject { |l| l.start_with?('  dispatches') }
-      compiled = sections.fetch('compiled', []).reject { |l| l.start_with?('  dispatches') }
-      puts output if interpreted != compiled || ENV['BC2CPP_CHECK_VERBOSE']
-      check.call("every method answers, logs and raises what the interpreter does (#{interpreted.size} lines)",
-                 !interpreted.empty? && interpreted == compiled)
-      check.call('the wrapper bodies saw the arguments (blt opacity default, draw_text array, tone on three classes)',
-                 compiled.include?('  log RGSS::Bitmap#blt(1,2,<RGSS::Bitmap>,3);') &&
-                   compiled.include?('  log RGSS::Bitmap#blt(1,2,<RGSS::Bitmap>,3,99);') &&
-                   compiled.include?('  log RGSS::Bitmap#draw_text(1,2,3,4,"hi");') &&
-                   compiled.include?('  log RGSS::Sprite#tone=(1);') && compiled.include?('  log RGSS::Window#tone=(2);') &&
-                   compiled.include?('  log RGSS::Viewport#tone=(3);'))
-      check.call('a nil receiver raises where the interpreter does, a set-up one answers',
-                 compiled.include?('maybe_clear before setup => raised NoMethodError') &&
-                   compiled.include?('maybe_clear => :clear'))
-      check.call('the two-class ivar reached both classes (a wrong exact proof would log Sprite twice)',
-                 compiled.include?('  log RGSS::Sprite#tone=(1);') && compiled.include?('  log RGSS::Viewport#tone=(1);'))
-      check.call('a Sprite where a Bitmap was passed raises through dispatch',
-                 compiled.include?('arg_clear on a Sprite => raised NoMethodError'))
-      check.call('the parameter and the attr_writer writes are seen',
-                 compiled.count('read_param => :clear') == 1 && compiled.count('read_written => :clear') == 1)
+  builds.each do |label, build, mrbc, flags|
+    puts "-- #{label}"
+    saved = { 'MRBC' => ENV.fetch('MRBC'), 'BC2CPP_CXXFLAGS' => ENV.fetch('BC2CPP_CXXFLAGS', nil) }
+    ENV['MRBC'] = mrbc
+    ENV['BC2CPP_CXXFLAGS'] = flags
+    Dir.mktmpdir do |dir|
+      _code, err = generate.call(CLASSES + HOST, dir)
+      full = File.exist?("#{build}/lib/libmruby.a")
+      built, output = runtime.run(dir, err, OWNERS, body, build: build, full: full)
+      check.call("#{label}: the fixture compiles and runs against real mruby", built)
+      if built
+        sections = runtime.sections(output)
+        interpreted = sections.fetch('interpreted', []).reject { |l| l.start_with?('  dispatches') }
+        compiled = sections.fetch('compiled', []).reject { |l| l.start_with?('  dispatches') }
+        puts output if interpreted != compiled || ENV['BC2CPP_CHECK_VERBOSE']
+        check.call("every method answers, logs and raises what the interpreter does (#{interpreted.size} lines)",
+                   !interpreted.empty? && interpreted == compiled)
+        check.call('the wrapper bodies saw the arguments (blt opacity default, draw_text array, tone on three classes)',
+                   compiled.include?('  log RGSS::Bitmap#blt(1,2,<RGSS::Bitmap>,3);') &&
+                     compiled.include?('  log RGSS::Bitmap#blt(1,2,<RGSS::Bitmap>,3,99);') &&
+                     compiled.include?('  log RGSS::Bitmap#draw_text(1,2,3,4,"hi");') &&
+                     compiled.include?('  log RGSS::Sprite#tone=(1);') && compiled.include?('  log RGSS::Window#tone=(2);') &&
+                     compiled.include?('  log RGSS::Viewport#tone=(3);'))
+        check.call('a nil receiver raises where the interpreter does, a set-up one answers',
+                   compiled.include?('maybe_clear before setup => raised NoMethodError') &&
+                     compiled.include?('maybe_clear => :clear'))
+        check.call('the two-class ivar reached both classes (a wrong exact proof would log Sprite twice)',
+                   compiled.include?('  log RGSS::Sprite#tone=(1);') && compiled.include?('  log RGSS::Viewport#tone=(1);'))
+        check.call('a Sprite where a Bitmap was passed raises through dispatch',
+                   compiled.include?('arg_clear on a Sprite => raised NoMethodError'))
+        check.call('the parameter and the attr_writer writes are seen',
+                   compiled.count('read_param => :clear') == 1 && compiled.count('read_written => :clear') == 1)
 
-      compiled_lines = sections.fetch('compiled', [])
-      zero = EXACT.all? do |fn|
-        at = compiled_lines.index { |l| l.start_with?("#{fn} => ") }
-        at && compiled_lines[at + 1] == '  dispatches=0'
+        compiled_lines = sections.fetch('compiled', [])
+        zero = EXACT.all? do |fn|
+          at = compiled_lines.index { |l| l.start_with?("#{fn} => ") }
+          at && compiled_lines[at + 1] == '  dispatches=0'
+        end
+        check.call('every exact method made zero dynamic dispatches', zero)
       end
-      check.call('every exact method made zero dynamic dispatches', zero)
     end
+  ensure
+    saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
 else
   puts '-- SKIP run: set MRBC, BC2CPP_MRUBY_FULL (or have rake, g++ and 3rd/mruby) and have g++'
