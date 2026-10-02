@@ -28,7 +28,8 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 | Shard | Checks | Approx. |
 | --- | --- | --- |
 | `core-mrbtest` | block/yield-free/exact-receiver/return-class, `step_inline`, `eqq_direct`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, `numeric_slow`, mruby's own suites | 20 min |
-| `core-flow` | `exact_receiver_flow` and its mutation check | 13 min |
+| `core-flow` | `exact_receiver_flow` and its mutation check, `computed_send` with `CSEND_MUTANTS=1` | see the timing table |
+| `core-tables` | `frozen_tables` and its mutation check (ADR 0306) | see the timing table |
 | `native-wrappers` | `exact_native_wrappers` (ADR 0307) and its eight mutants | 5 min |
 | `core-mutants` | `unlisted_class_call` with `UCC_MUTANTS=1` (seven mutant rebuilds) | 23 min |
 
