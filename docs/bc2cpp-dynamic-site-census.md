@@ -516,6 +516,28 @@ class set (ceiling, before any alias check). The element class of a mutable cont
 class of the values stored, which are mostly method results and parameters, not by aliasing; ADR 0312 records why
 nothing was built. The report changes no generated code.
 
+## Follow-up: which producer leaves a receiver unproven (ADR 0309)
+
+The `register_copy` and `direct_call_result` origins above are a text heuristic. To see the producing
+method, build with a tag on every by-name line and join the shipped sites to it:
+
+```sh
+MRBC=<host mrbc> BC2CPP_SEND_ROOT_REPORT=/tmp/keep/rows.tsv BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep \
+  ruby scripts/bc2cpp_coverage_report.rb > /dev/null
+ruby scripts/bc2cpp_send_root_report.rb /tmp/keep [FUNCTION_PREFIX_REGEX]
+```
+
+The report is for ranking (the tag changes the generated text). Measured on `master` `2b317417`, the
+2,196 shipped rpg2k sites have these receiver producers: a call result 504, an ivar 503, an incoming
+argument 303, a `GETIDX` element 203, a constant 166, an Array literal 107, a captured local 81, 202 not
+attributed. Of the 503 ivar receivers 225 have no class pool, and the first blocker of 99 of those is a
+constructor argument (`initialize` is excluded from argument pools, ADR 0295); 205 have one and still go
+by name for the consumer's own reasons. The call results are mostly project getters over an unpooled slot
+(about 150), names a foreign Ruby or native source spells (about 110) and `Bitmap.new`/`Sprite.new`
+(69). ADR 0309 takes the readers (`attr_reader` returns its slot's class set) and the exact-Array arms
+(`ARRAY_PUSH`, the TYPED call of a core body): 63 fewer rpg2k sites and 256 fewer that can reach by-name
+dispatch (7,605 to 7,349), all removals. No remaining cause is above about 5% of the sites.
+
 ## Caveats
 
 * The static tables above count source sites, not executions. A site in a cold scene

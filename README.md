@@ -1165,6 +1165,14 @@
   of a by-name lookup; `BC2CPP_COMPUTED_SEND=0` turns it off (see
   [`docs/adr/0303-bc2cpp-computed-send-expansion.md`](docs/adr/0303-bc2cpp-computed-send-expansion.md) and
   `scripts/bc2cpp_computed_send_check.rb`).
+  An `attr_reader` returns the class set of the ivar slot it reads (the class pools), so `holder.thing.tag`
+  is an exact call when every definition of `thing` is modelled, and an Array the flow proves exact takes
+  `push`/`<<` and the TYPED call of a core class's body with no class test; `BC2CPP_RETURN_ACCESSORS=0` and
+  `BC2CPP_EXACT_CORE_ARMS=0` turn them off (63 fewer rpg2k by-name sites, all removals). With
+  `BC2CPP_SEND_ROOT_REPORT=FILE` a build also tags every by-name line, and
+  `scripts/bc2cpp_send_root_report.rb` ranks which producer left each receiver unproven. See
+  [`docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md`](docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md)
+  and `scripts/bc2cpp_call_results_check.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).

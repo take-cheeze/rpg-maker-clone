@@ -1016,6 +1016,13 @@ jobs:
               # ADR 0306: element classes of frozen literal tables; generated code, the interpreter on three builds, mutants.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_check.rb
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_mutation_check.rb
+          - shard: call-results
+            # ADR 0309: attr_reader result classes and flow-proven Array arms; its own shard (about 15 min with the mutants).
+            checks: |
+              # Generated code with every way of losing a proof, then a compiled fixture against the interpreter on the
+              # full-core and core-only builds (the 32-bit leg runs in bc2cpp-width); six mutants of the conditions.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_call_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_call_results_mutation_check.rb
           - shard: native-wrappers
             # ADR 0307: generated code, then a compiled fixture against the interpreter on the full-core and
             # core-only builds (the stand-in rgss:: bodies need no SDL); eight mutants run concurrently, about a minute and a half.
@@ -1268,6 +1275,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_lcf_row_flow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_call_results_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
               # ADR 0313: the 32-bit run of the constructor-pool fixture (the 64-bit runs are in `constructor-pools`).
               MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_check.rb
