@@ -1,4 +1,4 @@
-# 0313. bc2cpp: Go-style interface tables for polymorphic receivers, measured and not built
+# 0315. bc2cpp: Go-style interface tables for polymorphic receivers, measured and not built
 
 Date: 2026-10-02
 

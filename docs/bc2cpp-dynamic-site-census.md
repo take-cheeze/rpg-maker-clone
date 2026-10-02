@@ -516,7 +516,7 @@ class set (ceiling, before any alias check). The element class of a mutable cont
 class of the values stored, which are mostly method results and parameters, not by aliasing; ADR 0312 records why
 nothing was built. The report changes no generated code.
 
-## Kept else arms and interface tables (ADR 0313)
+## Kept else arms and interface tables (ADR 0315)
 
 `BC2CPP_ITAB_REPORT=<tsv>` (`tools/bc2cpp/interface_table_report.rb`) writes one row per explicit-receiver send that has
 a guard chain (family, the else arm of the final code, every `ClosedWorld#refusal` gate the name fails, the proven
@@ -534,7 +534,7 @@ dispatch left, and **570 still dispatch by name**. 507 of those (89%) have a rec
 does not prove, so no per-class table can exist; of the 63 with a proven set, at most 42 (`@window.update`,
 `@interpreter.update`, one `start`) could lose the dispatch, and only with three new proofs together (a definer inside
 `class << <class>` is a class-object definer, per-class native/outside-Ruby resolution, a cell check against the
-set rather than the name's whole definer set). ADR 0313 records why nothing was built, the annotation inventory
+set rather than the name's whole definer set). ADR 0315 records why nothing was built, the annotation inventory
 (and why an RBS-style form does not fit), and the per-name method-set sizes (94% of the polymorphic names have four or
 fewer Ruby implementers). ADR 0296's "372 kept by name" rows are sites with no dispatch left in the final code. The
 report changes no generated code (`shipped.cxx` is byte-identical with it on).
