@@ -37,6 +37,8 @@ CLASSES = <<~RUBY
     class Viewport; def initialize(*); end; end
   end
   class ExSub < RGSS::Bitmap; end
+  # A Ruby definer of `width` next to the natives makes it a POLY chain, whose proven-dead tail is a nomethod.
+  class ExThing; def width; 3; end; end
 RUBY
 
 HOST = <<~RUBY
@@ -84,6 +86,12 @@ HOST = <<~RUBY
     def setup; @maybe = RGSS::Bitmap.new(3, 3); end
     def maybe_clear; @maybe.clear; end
     def maybe_fill; @maybe.fill_rect(1, 1, 1, 1, 1); end
+    # `width` has an arm for Bitmap and one for Rect, so the plain code already has no dispatch left to shed:
+    # only the exact mark of the unguarded call makes the nil test worth it (codegen_nilable_receiver.rb).
+    def maybe_width; @maybe.width; end
+    def width_it; @bmp.width; end
+    # NEG: an arity the wrapper does not take keeps the send (the interpreter's own answer).
+    def bad_arity; @bmp.fill_rect(1, 2); end
 
     # -- NEG: the same calls on receivers the flow cannot prove (guard and dispatch kept)
     def arg_clear(b); b.clear; end
@@ -115,9 +123,9 @@ HOST = <<~RUBY
   end
 RUBY
 
-OWNERS = %w[ExHost].freeze
+OWNERS = %w[ExHost ExThing].freeze
 EXACT = %w[clear_it fill_it blt4 blt5 stretch3 stretch4 copy_it text5 text2 text_sz set_bmp set_op tone_spr tone_win tone_vp
-           open_win upd_spr disp_spr local_fill].freeze
+           open_win upd_spr disp_spr width_it local_fill].freeze
 # exact method => its guarded twin on an argument receiver
 TWIN = { 'clear_it' => 'arg_clear', 'fill_it' => 'arg_fill', 'blt4' => 'arg_blt4', 'blt5' => 'arg_blt5',
          'stretch3' => 'arg_stretch3', 'stretch4' => 'arg_stretch4', 'copy_it' => 'arg_copy', 'text5' => 'arg_text5',
@@ -188,7 +196,19 @@ if ENV['MRBC']
       'open_win' => 'window_openness_set_direct' }.each do |fn, function|
       check.call("ExHost##{fn}: calls rgss::#{function}", live_of.call(code, 'ExHost', fn).include?("rgss::#{function}(M, r"))
     end
-    %w[maybe_clear maybe_fill].each do |fn|
+    check.call('ExHost#width_it: a zero-argument wrapper of an exact receiver is unguarded', exact.call(code, 'ExHost', 'width_it'))
+    check.call('ExHost#bad_arity: a call of another arity than the wrapper takes keeps the guard and send',
+               guarded.call(code, 'ExHost', 'bad_arity'))
+    # NILABLE_RECEIVER weighs the nil test by dispatches shed, or by an exact mark when the plain code has
+    # none left (a proven-dead nomethod tail: the wio world's `width`/`height`); the world here cannot make
+    # that tail dead, so the mark is checked on its own.
+    tool = File.expand_path(ENV.fetch('BC2CPP_TOOL', 'tools/bc2cpp/bc2cpp.rb'), File.expand_path('..', __dir__))
+    nilable_source = File.read(File.join(File.dirname(tool), 'codegen_nilable_receiver.rb'))
+    exact_mark = nilable_source[/EXACT_MARK = (%r\{.*?\}\S*)/, 1]
+    note = code[/^\s*\/\/ EXACT_NATIVE_WRAPPER :\S+ .*$/]
+    check.call("NILABLE_RECEIVER's exact marks name the unguarded wrapper call (the nil test is kept when it is all that is left)",
+               exact_mark && note && eval(exact_mark).match?(note)) # rubocop:disable Security/Eval
+    %w[maybe_clear maybe_fill maybe_width].each do |fn|
       check.call("ExHost##{fn}: nil-or-Bitmap takes one nil test, then the unguarded body", nilable.call(code, 'ExHost', fn))
     end
     check.call('the nil arm is the NIL_RECEIVER helper, not a send',
@@ -295,6 +315,9 @@ if ENV['MRBC'] && build && runtime.compiler? && !ENV['EW_GENERATED_ONLY']
     mrb_value bitmap_new_direct(mrb_state* M, RClass* klass, mrb_int, mrb_int) { return mrb_obj_new(M, klass, 0, nullptr); }
     mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value) { return mrb_obj_new(M, klass, 0, nullptr); }
     mrb_value bitmap_clear_direct(mrb_state* M, mrb_value self) { return ew_record(M, self, "clear", 0, nullptr); }
+    RClass* native_rect_class(void) { return ew_class("Bitmap"); }
+    mrb_value bitmap_width_direct(mrb_state* M, mrb_value self) { return ew_record(M, self, "width", 0, nullptr); }
+    mrb_value rect_width_direct(mrb_state* M, mrb_value self) { return ew_record(M, self, "width", 0, nullptr); }
     mrb_value bitmap_fill_rect_direct(mrb_state* M, mrb_value self, mrb_value x, mrb_value y, mrb_value w, mrb_value h,
                                       mrb_value c) {
       mrb_value a[] = { x, y, w, h, c };
@@ -365,7 +388,7 @@ if ENV['MRBC'] && build && runtime.compiler? && !ENV['EW_GENERATED_ONLY']
     }
     static int scenario(mrb_state* M) {
       ew_M = M;
-      ew_define(M, "Bitmap", { "clear", "fill_rect", "blt", "stretch_blt", "copy_blt", "draw_text", "text_size" });
+      ew_define(M, "Bitmap", { "width", "clear", "fill_rect", "blt", "stretch_blt", "copy_blt", "draw_text", "text_size" });
       ew_define(M, "Sprite", { "bitmap=", "opacity=", "tone=", "update", "dispose" });
       ew_define(M, "Window", { "tone=", "openness=" });
       ew_define(M, "Viewport", { "tone=" });
@@ -374,14 +397,17 @@ if ENV['MRBC'] && build && runtime.compiler? && !ENV['EW_GENERATED_ONLY']
       auto fresh = [&](const char* k) { return mrb_obj_new(M, ew_class(k), 0, nullptr); };
       mrb_value bmp = fresh("Bitmap"), src = fresh("Bitmap"), spr = fresh("Sprite"), win = fresh("Window"), vp = fresh("Viewport");
       static const char* exact[] = { "clear_it", "fill_it", "blt4", "blt5", "stretch3", "stretch4", "copy_it", "text5", "text2",
-                                     "text_sz", "set_bmp", "set_op", "tone_spr", "tone_win", "tone_vp", "open_win",
+                                     "text_sz", "width_it", "set_bmp", "set_op", "tone_spr", "tone_win", "tone_vp", "open_win",
                                      "upd_spr", "disp_spr", "local_fill" };
       for (const char* fn : exact) ew_call(M, fn, host, fn);
       ew_call(M, "maybe_clear before setup", host, "maybe_clear");
       ew_call(M, "maybe_fill before setup", host, "maybe_fill");
+      ew_call(M, "maybe_width before setup", host, "maybe_width");
+      ew_call(M, "bad_arity", host, "bad_arity");
       ew_call(M, "setup", host, "setup");
       ew_call(M, "maybe_clear", host, "maybe_clear");
       ew_call(M, "maybe_fill", host, "maybe_fill");
+      ew_call(M, "maybe_width", host, "maybe_width");
       mrb_value one[1], two[2];
       one[0] = bmp; ew_call(M, "arg_clear", host, "arg_clear", 1, one);
       ew_call(M, "arg_fill", host, "arg_fill", 1, one);
