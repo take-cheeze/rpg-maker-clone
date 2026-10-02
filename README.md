@@ -1139,6 +1139,11 @@
   or a Ruby `freeze` on instances exists): 176 fewer by-name-reachable sites on the wio build; see
   [`docs/adr/0301-bc2cpp-exact-receiver-consumers-and-constant-pools.md`](docs/adr/0301-bc2cpp-exact-receiver-consumers-and-constant-pools.md)
   and `scripts/bc2cpp_exact_receiver_flow_check.rb`.
+  A local a block only reads or mutates (`h = {}; 3.times { |i| h[i] = h.size }`) keeps the exact class
+  its method gave it inside the block, so the block's `h[i] = v` and `h.size` need no class test;
+  `BC2CPP_CAPTURED_LOCAL_CLASS=0` turns it off (see
+  [`docs/adr/0308-bc2cpp-captured-local-classes.md`](docs/adr/0308-bc2cpp-captured-local-classes.md) and
+  `scripts/bc2cpp_captured_local_class_check.rb`).
   `BC2CPP_SITE_PROFILE=DIR` builds count how often each remaining by-name `bc2cpp_send` and
   `mrb_funcall*` site runs, and `scripts/bc2cpp_dynamic_site_census.rb --rank` ranks the sites by
   executed hits with the reason each was kept dynamic; off by default and byte-identical when unset
