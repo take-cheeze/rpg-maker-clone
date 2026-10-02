@@ -10,6 +10,7 @@
 
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
+require_relative 'bc2cpp_cxx'
 
 SRC = <<~'RUBY'
   module Game
@@ -107,7 +108,7 @@ Dir.mktmpdir do |dir|
       }
     CPP
     binary = File.join(dir, 'cache_harness')
-    built = system('g++', '-std=c++17', '-Wall', '-Werror', harness, '-o', binary)
+    built = Bc2cppCxx.system('-std=c++17', '-Wall', '-Werror', harness, '-o', binary)
     check.call('the emitted cache compiles cleanly', built)
     if built
       results = IO.popen(binary, &:read).split.map { |value| value == '1' }

@@ -7,6 +7,7 @@ require 'shellwords'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
 require_relative '../tools/bc2cpp/compiled_gems'
+require_relative 'bc2cpp_cxx'
 
 ROOT = File.expand_path('..', __dir__)
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
@@ -139,7 +140,7 @@ else
       }
     CPP
     binary = File.join(dir, 'hash_each_value')
-    built = system('g++', '-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS', '-w',
+    built = Bc2cppCxx.system('-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS', '-w',
                    "-I#{dir}", "-I#{core}/include", "-I#{ROOT}/3rd/mruby/include", File.join(dir, 'main.cpp'),
                    "#{core}/lib/libmruby_core.a", '-lm', '-o', binary)
     check.call('the inline fixture compiles against real mruby', built)

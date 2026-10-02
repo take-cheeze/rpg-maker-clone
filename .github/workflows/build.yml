@@ -1008,6 +1008,12 @@ jobs:
               # ADR 0303: a computed-name send over a provably finite Symbol set becomes direct arms; negative
               # worlds, the interpreter on full-core and core-only builds, and one proof removed at a time.
               CSEND_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
+          - shard: core-tables
+            # bc2cpp_frozen_tables_check plus its mutation check (ADR 0306), split from core-flow to keep each shard short.
+            checks: |
+              # ADR 0306: element classes of frozen literal tables; generated code, the interpreter on three builds, mutants.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_check.rb
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_frozen_tables_mutation_check.rb
           - shard: core-mutants
             # bc2cpp_unlisted_class_call_check with UCC_MUTANTS=1: seven mutant rebuilds (~23 min).
             checks: |
@@ -1192,7 +1198,12 @@ jobs:
           core="$PWD/build-bc2cpp/mruby/host/mrbc"
           test -f "$core/lib/libmruby_core.a" && test -d "$core/include" ||
             { echo "no libmruby_core.a with include/ under $core" >&2; exit 1; }
+          # Same commands, same shell, same order; scripts/ci_timed_checks.rb only brackets each with
+          # a stopwatch and prints the "seconds  command" table at exit, pass or fail (docs/ci.md).
+          ruby scripts/ci_timed_checks.rb > "$RUNNER_TEMP/checks.sh" <<'CHECKS'
           ${{ matrix.checks }}
+          CHECKS
+          . "$RUNNER_TEMP/checks.sh"
 
   # Width-sensitive bc2cpp checks (ADR 0300). The emitted arithmetic differs by
   # `mrb_int` width, and the Emscripten/Wio/PSP targets are 32-bit while every
@@ -1282,7 +1293,10 @@ jobs:
           # The checks print SKIP and exit 0 without their libmruby; the width run is the point here.
           test -f "$RUNNER_TEMP/bc2cpp-width/host/lib/libmruby.a" ||
             { echo "no ${{ matrix.variant }} libmruby.a" >&2; exit 1; }
+          ruby scripts/ci_timed_checks.rb > "$RUNNER_TEMP/checks.sh" <<'CHECKS'
           ${{ matrix.checks }}
+          CHECKS
+          . "$RUNNER_TEMP/checks.sh"
 
   # The single status the old one-job `bc2cpp` reported: success only when the
   # build and every check shard succeeded, so a required check on `bc2cpp`
@@ -1385,6 +1399,11 @@ jobs:
           # invariants, every broad mrblib rescue).
           - name: Impossible-as-error check
             run: ruby scripts/impossible_as_error_check.rb
+
+          # The helpers every bc2cpp shard runs through (docs/ci.md): the
+          # compiler launcher, the mutant pool and the timing table.
+          - name: CI helpers
+            run: ruby scripts/ci_helpers_check.rb
 
           # The wio-only mrblib rewrites only run in a wio build, which CI
           # doesn't do; a source edit must not silently break them.

@@ -14,6 +14,7 @@
 
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
+require_relative 'bc2cpp_cxx'
 
 failures = []
 check = lambda do |what, condition|
@@ -80,7 +81,7 @@ Dir.mktmpdir do |dir|
     }
   CPP
   binary = File.join(dir, 'tt_harness')
-  built = system('g++', '-std=c++17', '-Wall', '-Werror', harness, '-o', binary)
+  built = Bc2cppCxx.system('-std=c++17', '-Wall', '-Werror', harness, '-o', binary)
   check.call('the emitted setup compiles cleanly', built)
   if built
     first, late, again = IO.popen(binary, &:read).split.map { |v| v == '1' }
