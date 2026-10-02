@@ -231,7 +231,7 @@ module Bc2cppFixtureRuntime
     flags << '-DMRB_NO_GEMS' unless full
     flags.concat(Shellwords.split(ENV.fetch('BC2CPP_CXXFLAGS', '')))
     built = Bc2cppCxx.system(*flags, "-I#{dir}", "-I#{build}/include", "-I#{ROOT}/3rd/mruby/include",
-                   "-I#{ROOT}/mruby-rgss/src", File.join(dir, 'main.cpp'), lib, '-lm', '-o', binary)
+                   "-I#{ROOT}/mruby-rgss/src", "-I#{ROOT}/include", File.join(dir, 'main.cpp'), lib, '-lm', '-o', binary)
     return [false, ''] unless built
 
     FileUtils.cp_r(dir, ENV['BC2CPP_KEEP_DIR'], remove_destination: true) if ENV['BC2CPP_KEEP_DIR']

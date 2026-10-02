@@ -353,6 +353,34 @@ Reproducing the numbers: a worktree checkout has empty `3rd/*` submodule directo
 scan sees no mruby core and the closed world refuses most proofs. `bc2cpp_send` is then about 8,000 instead of 3,030 and
 every category above is wrong; check the first line of the census before trusting a run.
 
+## Follow-up: exact RGSS native receivers (ADR 0307)
+
+The `rgss_native_exact_class_else` category (463 of the 2,205 `RPG2k_*`/`Game_*` sites at master `359b9abd`)
+grouped by why the receiver class was unproven, from a temporary hook that printed the exact-class flow's class
+set, the producer of the receiver register and the ivar pool state at each site:
+
+| Root cause | Sites |
+| --- | ---: |
+| `Bitmap.new(w, h)`: the constructor arm tests both Integer tags and dispatches for the String form | 120 |
+| the flow already proves one class (74) or nil plus one class (90); the older guarded arms ignored it | 164 |
+| call result 41, ivar pool dropped or structural 49, captured local 33, argument 21, `GETIDX` element 21, nil-written register 9 | 174 |
+| `Hash#clear`, no diagnostic row | 5 |
+
+EXACT_NATIVE_WRAPPER (ADR 0307) takes the 164. Same method, kill switch against default:
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 3,030 | 2,851 | -179 |
+| of them in `RPG2k_*`/`Game_*` | 2,205 | 2,047 | -158 |
+| `rgss_native_exact_class_else`, rpg2k only / all gems | 463 / 516 | 305 / 337 | -158 / -179 |
+| `bc2cpp_nil_receiver` calls (cold nil arm of a new NILABLE_RECEIVER site) | 787 | 868 | +81 |
+| `bc2cpp_nomethod` sites | 4,409 | 4,365 | -44 |
+
+98 of the 179 are plain removals; 81 moved the by-name path into the nil arm of `bc2cpp_nil_receiver`, so the net on
+sites that can reach by-name dispatch is -98. The remaining 305 are the 120 constructor sites (an Integer proof
+for the arguments, not built), the 174 unprovable receivers and 12 sites the flow proves but a Fixnum argument
+probably keeps.
+
 ## Ranking by executed count
 
 The counts above weigh a start-up site like a frame-loop site. `SITE_PROFILE`
