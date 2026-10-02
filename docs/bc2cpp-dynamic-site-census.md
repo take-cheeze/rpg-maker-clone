@@ -381,6 +381,22 @@ sites that can reach by-name dispatch is -98. The remaining 305 are the 120 cons
 for the arguments, not built), the 174 unprovable receivers and 12 sites the flow proves but a Fixnum argument
 probably keeps.
 
+## Follow-up: exact receivers reach the compiled core (ADR 0314)
+
+Measured on the wio closed world at `43031b24`, shipped pass. A send with no block whose receiver is an exact
+`Array`/`Hash` (ADR 0280) now calls the compiled core body when the body cannot suspend a Fiber.
+
+| | Before | After |
+| --- | ---: | ---: |
+| cached dynamic sites | 3,240 | 3,159 |
+| `bc2cpp_send` sites | 2,815 | 2,734 |
+| engine `bc2cpp_send` sites | 2,377 | 2,296 |
+| `CORE_EXACT_DIRECT` sites | 0 | 81 (`max` 46, `min` 31, `uniq` 3, `fetch` 1) |
+
+All 81 are removals. What is left of the `core_or_native` kept-else category (278 engine sites) is a receiver
+proof problem: 14 of its sites have an exact receiver. `BC2CPP_CORE_EXTEND=0` restores the earlier output
+byte for byte. The ADR also holds the table of all 220 core-source methods and the Fiber-guard measurements.
+
 ## Ranking by executed count
 
 The counts above weigh a start-up site like a frame-loop site. `SITE_PROFILE`
@@ -559,3 +575,21 @@ family is worth more than 13% even when forced to Integer (`GETIDX` results -321
 `hp`/`width`/`x`-style getters -109, `AREF` -91, captured locals -38, native-spelled ivars -30). The sound slice built
 is `AREF` of a fixed-arity Array return: master `2b317417` 3,040 engine helper calls to 2,999 (-41, removals), all in
 four methods because the other tuples' inputs are parameters, native-spelled ivars or Array elements.
+
+## Follow-up: constructor argument pools (ADR 0313)
+
+Measured at master `43031b24`, kill switch against default, same tree, `3rd/*` populated:
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 2,815 | 2,814 | -1 |
+| of them in `RPG2k_*`/`Game_*` | 2,009 | 2,007 | -2 |
+| generated callers of `bc2cpp_getidx` | 2,095 | 2,070 | -25 |
+| `bc2cpp_slow_*` lines, `bc2cpp_eqq` calls, `bc2cpp_nil_receiver` calls | 3,498 / 110 / 877 | same | 0 |
+| `bc2cpp_nomethod` sites | 4,360 | 4,368 | +8 |
+
+Removal, not relocation. The 675 `new` sends of the build are all visible (69 with no arguments, 301 on a class with a
+Ruby initialize, 298 on a native or core class, 7 rooted in a singleton or `self.class`, none unresolved); the "58
+computed `new` sites" were constants inside `rescue`-covered methods that `agreed_constant_name` refuses. The
+`Bitmap.new(w, h)` Integer-tag sites do not come from constructor arguments: their `w`/`h` are failed numeric constants
+(`LINE_H`, `SCREEN_W`, `TILE`, `FACE_SIZE`), `Rect`/`Bitmap` native results, `Array#max` and `Window#width`.
