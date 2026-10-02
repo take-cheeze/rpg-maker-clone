@@ -257,8 +257,13 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['CAL_GENERATED_ONL
         compiled = values.call('compiled')
         next unless extra.empty?
 
-        check.call("#{label}: a nil receiver raises NoMethodError, as the interpreter does",
-                   compiled.include?('plain_nil_false => raised NoMethodError') && compiled.include?('plain_nil_true => 2'))
+        # A core-only mruby (no mrblib) reports a different exception class on both sides, so there the check is the
+        # interpreter's own answer, and that it raised; full-core pins NoMethodError.
+        nil_line = ->(lines) { lines.find { |l| l.start_with?('plain_nil_false =>') }.to_s }
+        expected_nil = build_name == 'core-only' ? nil_line.call(values.call('interpreted')) : 'plain_nil_false => raised NoMethodError'
+        nil_ok = nil_line.call(compiled) == expected_nil && expected_nil.include?('raised') && compiled.include?('plain_nil_true => 2')
+        puts "    expected #{expected_nil.inspect}, actual #{nil_line.call(compiled).inspect}" unless nil_ok
+        check.call("#{label}: a nil receiver raises, as the interpreter does", nil_ok)
         check.call("#{label}: a frozen Array still raises on push", compiled.include?('plain_frozen => raised FrozenError'))
         next if build_name == 'core-only'
 
