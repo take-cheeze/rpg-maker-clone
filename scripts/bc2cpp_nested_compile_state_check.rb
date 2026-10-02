@@ -102,6 +102,7 @@ NOT_PER_METHOD = %w[
   @class_arg_pools @class_const_pools @class_ivar_pools @class_pools_on @kernel_freeze_only @nil_ancestor_modules @nil_unanswerable
   @numeric_return @numeric_return_send_ireps @numeric_states @numeric_wild_families @numeric_writes
   @native_result_kinds @native_result_name_kinds @native_results_ready
+  @captured_local_class_enabled @rc_writes
 ].freeze
 # CodeGen is reopened across several tools/bc2cpp files (scripts/bc2cpp_split.rb).
 written = Set.new
