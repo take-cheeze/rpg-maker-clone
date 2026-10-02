@@ -277,14 +277,18 @@ if ENV['MRBC']
                                             proven: %w[lit_idx hash_lit] },
       'Array#size redefined in Ruby' => { extra: "class Array\n  def size; \"s\"; end\nend\n", kept: %w[counts],
                                            proven: %w[lit_idx ends] },
-      'Array#freeze redefined in Ruby' => { extra: "class Array\n  def freeze; self; end\nend\n", kept: %w[lit_idx ends counts],
-                                             proven: %w[hash_lit] },
-      'Hash#freeze redefined in Ruby' => { extra: "class Hash\n  def freeze; self; end\nend\n", kept: %w[hash_lit],
-                                            proven: %w[lit_idx] },
+      'Array#freeze redefined in Ruby (any Ruby freeze withdraws every table)' =>
+        { extra: "class Array\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends counts] },
+      'Hash#freeze redefined in Ruby' =>
+        { extra: "class Hash\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends counts] },
       'Kernel#freeze redefined in Ruby' => { extra: "module Kernel\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends] },
       'Object#freeze redefined in Ruby' => { extra: "class Object\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends] },
       'a module prepended to Array (declines every Array name, Hash is untouched)' =>
         { extra: "module EcFirst\n  def first; \"s\"; end\nend\nclass Array\n  prepend EcFirst\nend\n", kept: %w[ends lit_idx], proven: %w[hash_lit] },
+      'a user freeze on instances (freeze is not only Kernel#freeze)' =>
+        { extra: "class EcFoo\n  def freeze; 1; end\nend\n", kept: %w[lit_idx hash_lit ends] },
+      'a const_missing (a failed constant lookup can answer)' =>
+        { extra: "class EcUse\n  def self.const_missing(n); 1; end\nend\n", kept: %w[lit_idx hash_lit ends] },
       'alias_method :[] on Array' => { extra: "class Array\n  alias_method :[], :first\nend\n", kept: %w[lit_idx hash_lit var_calc] },
       'define_method(:first) on Array' => { extra: "class Array\n  define_method(:first) { 1 }\nend\n", kept: %w[ends] },
       'a method installer with a computed name' => { extra: "class EcUse\n  def inst(n); self.class.send(:define_method, n) { 1 }; end\nend\n",
@@ -339,6 +343,11 @@ if ENV['MRBC']
                    POSITIVE.keys.reject { |fn| %w[via_arg].include?(fn) }.none? do |fn|
                      numeric_proof.call(off_code, fn)
                    end)
+    end
+    Dir.mktmpdir do |pools_dir|
+      pools_code, = generate.call(FIXTURE, pools_dir, env: { 'BC2CPP_CLASS_POOLS' => '0' })
+      check.call('BC2CPP_CLASS_POOLS=0 withdraws the table proofs as well (they share the exact-class gates)',
+                 %w[lit_idx hash_lit ends].none? { |fn| numeric_proof.call(pools_code, fn) })
     end
     Dir.mktmpdir do |open_dir|
       open_code, open_err = generate.call(FIXTURE, open_dir, closed: false)
