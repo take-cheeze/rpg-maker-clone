@@ -519,8 +519,8 @@ constructor argument (`initialize` is excluded from argument pools, ADR 0295); 2
 by name for the consumer's own reasons. The call results are mostly project getters over an unpooled slot
 (about 150), names a foreign Ruby or native source spells (about 110) and `Bitmap.new`/`Sprite.new`
 (69). ADR 0309 takes the readers (`attr_reader` returns its slot's class set) and the exact-Array arms
-(`ARRAY_PUSH`, the TYPED call of a core body): 63 fewer rpg2k sites and 255 fewer that can reach by-name
-dispatch (7,880 to 7,625), all removals. No remaining cause is above about 5% of the sites.
+(`ARRAY_PUSH`, the TYPED call of a core body): 63 fewer rpg2k sites and 256 fewer that can reach by-name
+dispatch (7,605 to 7,349), all removals. No remaining cause is above about 5% of the sites.
 
 ## Caveats
 

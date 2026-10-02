@@ -126,22 +126,22 @@ Both need `builtin_class_send_safe?` or the registry candidate they already need
 
 ## Consequences
 
-Measured as above, wio closed world, master `2b317417` (ADR 0306 and 0308 merged), kill switches against
+Measured as above, wio closed world, master `93c4de03` (ADR 0306-0308 and 0310 merged), kill switches against
 defaults on the same tree (the switches off give a C++ byte-identical to master's; 3rd/* submodules present):
 
 | | before | after | change |
 | --- | ---: | ---: | ---: |
-| `bc2cpp_send` sites, all gems | 3,024 | 2,954 | -70 |
-| `bc2cpp_send` sites, rpg2k (`RPG2k*`, `Game*`) | 2,199 | 2,136 | -63 |
-| rpg2k sites in the census | 2,196 | 2,133 | -63 |
+| `bc2cpp_send` sites, all gems | 2,815 | 2,745 | -70 |
+| `bc2cpp_send` sites, rpg2k (`RPG2k*`, `Game*`) | 2,012 | 1,949 | -63 |
+| rpg2k sites in the census | 2,009 | 1,946 | -63 |
 | calls into `bc2cpp_getidx`/`getidx0`/`setidx`, rpg2k | 2,209 | 2,163 | -46 |
-| calls into `bc2cpp_slow_*`, rpg2k | 3,040 | 2,894 | -146 |
-| `bc2cpp_nomethod` sites, rpg2k | 4,288 | 4,240 | -48 |
-| **sites that can reach by-name dispatch, rpg2k** | **7,880** | **7,625** | **-255 (-3.2%)** |
-| the same, all gems | 9,434 | 9,162 | -272 |
+| calls into `bc2cpp_slow_*`, rpg2k | 2,999 | 2,853 | -146 |
+| `bc2cpp_nomethod` sites, rpg2k | 4,257 | 4,209 | -48 |
+| **sites that can reach by-name dispatch, rpg2k** | **7,605** | **7,349** | **-256 (-3.4%)** |
+| the same, all gems | 9,137 | 8,864 | -273 |
 
 By feature: ACCESSOR_RETURN_CLASS alone is 14 sends, 46 index-helper calls and 48 nomethod sites (reach
--60); EXACT_CORE_ARMS alone is 49 sends and 146 `slow_lshift` calls (reach -195). Most of the second is
+-61); EXACT_CORE_ARMS alone is 49 sends and 146 `slow_lshift` calls (reach -195). Most of the second is
 ADR 0308's captured-local classes reaching `ARRAY_PUSH`: a block's `acc << x` on an Array captured from the
 method now has the proof, which is the follow-up that ADR measured and left out. **All of it is removal**:
 no helper gained a caller. Across all gems `bc2cpp_slow_lshift` callers went 282 to 126, `bc2cpp_getidx`
