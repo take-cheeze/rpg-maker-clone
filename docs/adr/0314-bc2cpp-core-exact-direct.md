@@ -1,4 +1,4 @@
-# 0313. Exact-receiver sends reach the compiled core directly, and what the core coverage really is
+# 0314. Exact-receiver sends reach the compiled core directly, and what the core coverage really is
 
 Date: 2026-10-02
 

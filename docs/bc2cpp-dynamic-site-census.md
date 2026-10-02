@@ -381,7 +381,7 @@ sites that can reach by-name dispatch is -98. The remaining 305 are the 120 cons
 for the arguments, not built), the 174 unprovable receivers and 12 sites the flow proves but a Fixnum argument
 probably keeps.
 
-## Follow-up: exact receivers reach the compiled core (ADR 0313)
+## Follow-up: exact receivers reach the compiled core (ADR 0314)
 
 Measured on the wio closed world at `43031b24`, shipped pass. A send with no block whose receiver is an exact
 `Array`/`Hash` (ADR 0280) now calls the compiled core body when the body cannot suspend a Fiber.

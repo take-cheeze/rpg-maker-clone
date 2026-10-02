@@ -1035,7 +1035,7 @@ jobs:
             checks: |
               BR_MUTANTS=1 MRBC="$mrbc" ruby scripts/bc2cpp_block_arm_reach_check.rb
           - shard: core-exact-direct
-            # ADR 0313: generated code with the withdrawal worlds, four mruby builds (full-core, core-only and
+            # ADR 0314: generated code with the withdrawal worlds, four mruby builds (full-core, core-only and
             # 32-bit mrb_int, plus a world whose comparator yields; each also run interpreted), then nine
             # generator mutants and an unmutated control.
             checks: |

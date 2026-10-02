@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 #
-# Check CORE_EXACT_DIRECT (docs/adr/0313): a send with no block on a receiver proven an exact Array/Hash
+# Check CORE_EXACT_DIRECT (docs/adr/0314): a send with no block on a receiver proven an exact Array/Hash
 # (ADR 0280) is a direct call of the compiled mruby core body, with no dispatch left; the else arm of
 # the inline Array#min/#max (ADR 0261) is such a send.
 #
@@ -533,7 +533,7 @@ end
 
 # -- mutants ---------------------------------------------------------------------------------
 #
-# Each mutant is a copy of tools/bc2cpp with one soundness condition of ADR 0313 removed. The copy lives
+# Each mutant is a copy of tools/bc2cpp with one soundness condition of ADR 0314 removed. The copy lives
 # next to the original (tools/bc2cpp-mutant-*): bc2cpp.rb finds the repository from its own location, and a
 # copy under /tmp has an empty closed world, so every mutant would die for that reason. The generated-code
 # half of this script must fail against each, and pass against an unmutated copy (the control).
