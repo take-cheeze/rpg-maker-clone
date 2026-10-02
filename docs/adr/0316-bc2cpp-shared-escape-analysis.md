@@ -100,8 +100,92 @@ Wio closed world, master `43031b24`, `scripts/bc2cpp_coverage_report.rb` shipped
 `scripts/bc2cpp_escape_report.rb`. "Sites" are creation instructions in every irep of the closed world (5,839 +
 601 `new` sends); the second pass restricts them to methods that ship.
 
-@@MEASUREMENTS@@
+**Per creation kind** (every irep of the closed world / methods that ship, "confined" = non-escaping by the
+analysis, which needs a proof for every callee):
+
+| Kind | Sites (all / shipped) | Confined (all / shipped) | Why the rest escape (top reasons, all) |
+| --- | ---: | ---: | --- |
+| `LAMBDA` | 31 / 3 | 1 / 1 | `stored_hash` 24 (the LCF schema DSL), `captured_by_escaping_closure` 3, `returned` 3 |
+| `BLOCK` | 812 / 768 | 234 / 229 | `send_block` 578: a callee set that includes a definition that keeps the block |
+| `ARRAY` | 1,621 / 903 | 47 / 46 | `stored_array` 631, `returned` 300, `send_receiver` 277 |
+| `HASH` | 1,400 / 367 | 44 / 44 | `stored_hash` 962, `returned` 107, `stored_ivar` 89 |
+| `STRING` | 1,975 / 1,508 | 790 / 772 | `send_argument` 604 (the rest are interpolation pieces that only reach `STRCAT`) |
+| `Const.new` | 601 / 565 | 3 / 3 | `send_argument` 300, `stored_ivar` 121 |
+| `initialize` (self) | 82 | 51 | 31 hand `self` to a callee that keeps it or return it |
+
+**Lambdas.** 28 engine and 3 core `LAMBDA` ops, no `lambda {}`/`proc {}` forms. One is confined today
+(`Menu#draw_status_row`, three `.call`s, three `CONFINED_LAMBDA_CALL`s in the output); two more compile with no
+upvars. The analysis re-proves the one and finds **zero** newly confined lambdas and zero newly direct `.call`
+sites: 24 are values stored into the LCF schema Hashes, `Symbol#to_proc`/`Hash#to_proc`/`Schema.lazy` return theirs,
+and `Enumerable#inject`'s lambda is read by the closure it passes to `each`, whose callee set includes
+`Enumerator#each`. Generalising CONFINED_LAMBDA_CALL to "a local passed to a non-capturing callee" is supported by
+the module and by the fixtures (`c_lambda_arg`, `c_lambda_block_arg`) and was **not built**: nothing in this program has
+that shape.
+
+**Blocks.** 466 BLOCK_FALLBACK regions ship. The by-name allowlist admits all of them (the only ones declined by
+name are in `Array#permutation`, `Array#combination`, `Enumerable#cycle` and `File.foreach`). The analysis proves
+109 of the 466: the callees with one definition or a closed hierarchy (`times` 10, `page_field` 15, `section` 11,
+`cached_bitmap` 8, `loop` 7, `each_index` 9, `index` 3, `reject!` 2 ...) and 38 of 206 `each` sends. The other
+~357 are polymorphic by name: `each` has 11 definitions, 5 of which keep their block (`Struct#each` and
+`Enumerator#each` through `__send__`, `Enumerator::Generator#each`, `Game::Actors#each`, `Game::Party#each`), and
+only 70 of the 466 receivers have a class the class flow names (50 of them confined). **So the proof cannot replace
+the allowlist**: doing it would remove compiled code today. It is a second way in, not a replacement.
+
+**Dropping the ADR 0269 assumption by proof.** Of 126 core blocks, 4 shipped ones are proven confined; the core
+iterators the assumption covers are `Enumerable` methods whose `each` is `self`'s, which the analysis cannot place
+(`Enumerator` includes `Enumerable`). The run-time `bc2cpp_core_each_is_builtin` test stays.
+**Compiling methods that build lambdas**: the three (`Enumerable#inject`, `Symbol#to_proc`, `Hash#to_proc`) escape
+for the reasons above and stay bytecode. **Fiber-guard removal**: ADR 0314 (branch `bc2cpp-core-ruby-extend`) measures
+the guard at about 7 by-name sends; the module would supply "does not escape", not "cannot reach Fiber.yield", and
+YieldReach already supplies the latter. **Container element classes (ADR 0312)**: the ceiling there is ivar
+containers, and every ivar-held container is a `stored_ivar` escape by definition; the module adds nothing until it
+learns the writers of an ivar (ADR 0285's scan is the place). **Constructor pools**: the "self has not escaped"
+rule of ADR 0261/0301 asks whether another method can *read the slot before it is assigned*, which a callee summary
+("does not keep self") does not answer; the reusable part is the `[:self]` summary for `SSEND`s that the rule
+currently treats as exposure (51 of 82 constructors keep `self`; how many of the 31 others are only exposure by a
+plain `SSEND` is the number to measure with a "reads ivar X" summary). **Stack allocation**: 47 Arrays, 44 Hashes and
+3 objects are used only locally (the 772 strings are interpolation pieces); a GC-visible stack object is not
+something mruby has, so this is a count only.
+
+**Built: BLOCK_FALLBACK_PROVEN.** Cutoff: at least 30 newly direct sites, or a clear unlock such as compiling a
+refused core method. The numbers clear only the second, and only just: in the shipped wio output `Array#combination`
+(`block.call` inside a recursive helper, previously `#error unhandled opcode BLOCK`) is the single method that
+newly compiles, 380 lines of `shipped.cxx`. `Array#permutation` stays bytecode (its optional parameter keeps
+`needs_blk` from being offered). `BC2CPP_ESCAPE_ANALYSIS=0` against master `56b14771`: `shipped.cxx` byte-identical.
+`BC2CPP_ESCAPE_REPORT` on or off: byte-identical. Every other bc2cpp check that runs here gives the same result with
+and without the switch (`closed_world`, `computed_send`, `unlisted_class_call`, `frozen_tables` fail identically on a
+clean master in this environment); `bc2cpp_block_semantics_check` expected `t_yield_in_ensure` to stay interpreted
+by name and now expects it compiled (its differential run against the interpreter passes).
 
 ## Consequences
 
-@@CONSEQUENCES@@
+**Removal versus relocation.** Nothing was removed. The private proofs stay as they are: the allowlist is stronger
+than the analysis here, `lambda_confined_call_sites` is re-proved by it for the one site, and the three register
+scans are not yet rebased. The migration plan, in order of payoff: (1) `RecordHash` ALIAS_SCAN and
+`YieldReach#scan_keeps` onto `Analyzer#flow` (same question, different result type; each has a check to prove the
+swap byte-identical); (2) `lambda_confined_call_sites` onto `creation(...).uses` plus
+`BytecodeIR.reaching_definitions` for the must-alias of a direct call, which also admits the generalised shape;
+(3) the allowlist shrinks to the names the analysis cannot prove only when receiver classes get sharper (the
+`each` sends need `Struct`, `Enumerator`, `Generator`, `Actors` and `Party` excluded by the class flow).
+
+**Next levers**, in order: a sharper receiver class for the 357 polymorphic block sends (ADR 0296 class pools:
+ivar and argument pools, not this module), which turns the proof into the way the allowlist is audited; a "reads
+ivar X" callee summary for the constructor-pool rule; the ivar writers for ADR 0312's containers.
+
+**Soundness caveats, stated once.** (a) Computed-name sends are the closed world's own residual: `send(name, ...)`
+with a name that is not a literal is not read as an installer, here as in `ClosedWorld`. (b) The class tables are a
+claim about mruby 4.0's builtin classes, verified against a real mruby by the check. (c) The class flow's
+exactness is `exact_instances_singleton_free?`. (d) Hostile `Marshal.load` data and native code that mutates frames
+are outside the model, as for every proof here. (e) A native method is trusted only through a table that names the
+source files; adding a native `each` (or a fifth block taker) fails the check until it is audited.
+
+**Tests.** `scripts/bc2cpp_escape_analysis_check.rb`: hand-built bytecode for each escape route and the handler
+and loop shapes; 19 confined and 41 escaping fixtures through mrbc; callee summaries; class sharpening; world facts;
+the native manifest; generated code with 12 proven methods, 5 unproven, 12 withdrawal worlds (subclass override,
+prepend, alias, define_method direct and through `send`, `method_missing`, an outside Ruby gem, a native, binding,
+ObjectSpace, a computed define_method, open world) and the kill switch; then the compiled fixture against the
+interpreter on full-core, core-only and 32-bit `mrb_int` builds (`BC2CPP_BLOCK_DIRECT_ENTRY=0` on the last: ADR 0271
+keeps a block's entry as an address in a 32-bit slot, which this 64-bit host truncates), including GC stress,
+`break`/`return`/`next`/`raise` through the callee, a stashed block called after its frame returned, lambda arity
+strictness and a Fiber, and the compiled `Array#combination`. `scripts/bc2cpp_escape_analysis_mutation_check.rb`: an
+unmutated control and 18 mutants inside the repository, all killed. CI shard `escape-analysis`.
