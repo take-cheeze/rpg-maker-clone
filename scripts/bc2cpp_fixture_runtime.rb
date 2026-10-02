@@ -92,9 +92,10 @@ module Bc2cppFixtureRuntime
   # `path` places the fixture below `dir`: a path under 3rd/mruby/mrblib/ makes bc2cpp treat
   # it as mruby's own Ruby (CoreDefs.core_source?), so a check can exercise the core-only proofs.
   # `extra` is more sources ([path, text] pairs) compiled after the fixture, e.g. engine Ruby
-  # next to a core fixture.
+  # next to a core fixture. `build_gems` ([name, dir] pairs) adds gems to the closed-world build, whose
+  # src/ and mrblib/ then count as outside native and Ruby sources.
   def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil, path: 'fixture.rb', extra: [],
-               native: [], foreign: [])
+               native: [], foreign: [], build_gems: [])
     src = File.join(dir, path)
     FileUtils.mkdir_p(File.dirname(src))
     File.write(src, source)
@@ -114,7 +115,7 @@ module Bc2cppFixtureRuntime
       env.merge!('NATIVE_SRCS' => Shellwords.join(natives),
                  'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT) + write_outside.call(foreign)),
                  'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).map { |n, d| "#{n}=#{d}" }),
+                 'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).merge(build_gems.to_h).map { |n, d| "#{n}=#{d}" }),
                  NomethodReviewed::ALLOW_ENV => 'allow')
     end
     code, err, status = Open3.capture3(env, RbConfig.ruby, BC2CPP, src, *extra_srcs)
