@@ -86,3 +86,8 @@ is 6 sites that can no longer reach by-name dispatch (removal, no helper gains a
 Before ADR 0301 landed, the exact-receiver half also removed 20 `bc2cpp_getidx` callers and 13 `bc2cpp_send` sites;
 the constant pools of ADR 0301 now give those exactly, so they are not credited here. Table kinds reach 49 shapes and
 about 120 reads, but most reads are `INT|NIL` (a computed index can be out of range) or feed calls, not arithmetic.
+
+Two conditions are enforced twice since the ADR 0301 gates were added (`kernel_freeze_only?` for a Ruby `freeze`;
+`class_pools_enabled?` for singleton makers), so their mutants remove both enforcers. The mutation check copies
+tools/bc2cpp inside the repository: the closed world reads the build's sources relative to the tool's own location,
+and a copy under /tmp saw an empty world, which made every positive fail and hid whether a mutant was really killed.

@@ -26,30 +26,37 @@ MUTANTS = [
   ['a redefined Array#[] is ignored', 'codegen_frozen_tables.rb',
    "return :no_core_native unless builtin_class_send_safe?(name, [klass])", '', /module prepended/],
   ['a Ruby definition on the receiver chain is ignored', 'codegen_frozen_tables.rb',
-   'return :ruby_definition if', 'return nil if false &&', /Kernel#freeze redefined|Object#freeze redefined|Array#freeze redefined/],
+   'return :ruby_definition if', 'return nil if false &&', /Kernel#freeze redefined|Object#freeze redefined/,
+   [['codegen_frozen_tables.rb', "return 'freeze is not only Kernel#freeze' unless kernel_freeze_only?", '']]],
   ['an outside native registration is ignored', 'codegen_frozen_tables.rb',
    ':native_on_ancestor if named.any? { |owner| owners.include?(owner) }', 'nil', /native source registering/],
   ['a foreign Ruby definition is ignored', 'codegen_frozen_tables.rb',
    'return :foreign_ruby if owners.any? { |owner| ForeignDefiners.defines?(frozen_table_foreign_paths, owner, name) }', '',
    /foreign Ruby source defining Array#\[\]/],
   ['a singleton maker is ignored', 'codegen_frozen_tables.rb',
-   "return 'instances may gain singleton methods' unless cw.exact_instances_singleton_free?", '', /singleton method on an Array|extend on an object/],
+   "return 'instances may gain singleton methods' unless cw.exact_instances_singleton_free?", '', /singleton method on an Array|extend on an object/,
+   [['codegen_class_pools.rb', 'return false unless @closed_world&.exact_instances_singleton_free? && @foreign_method_names', 'return false unless @foreign_method_names']]],
   ['the kill switch is ignored', 'codegen_frozen_tables.rb',
    "return 'disabled by BC2CPP_FROZEN_TABLES=0' if ENV['BC2CPP_FROZEN_TABLES'] == '0'", '', /kill switch/]
 ].freeze
 
 failures = []
-MUTANTS.each do |name, file, pattern, replacement, expected|
-  Dir.mktmpdir do |dir|
+MUTANTS.each do |name, file, pattern, replacement, expected, also|
+  # Inside the repo so the copy's own ../.. is the repo root: the closed world reads the build's sources from there.
+  Dir.mktmpdir('.ftmut', ROOT) do |dir|
     FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
-    path = File.join(dir, 'bc2cpp', file)
-    text = File.read(path)
-    unless text.include?(pattern)
-      puts "  FAIL #{name}: the mutation site is gone from #{file}"
+    # `also`: more [file, pattern, replacement] edits of the same mutant (a condition two gates enforce).
+    edits = [[file, pattern, replacement]] + Array(also)
+    gone = edits.reject do |edit_file, edit_pattern, edit_replacement|
+      path = File.join(dir, 'bc2cpp', edit_file)
+      text = File.read(path)
+      text.include?(edit_pattern) && File.write(path, text.sub(edit_pattern) { edit_replacement })
+    end
+    unless gone.empty?
+      puts "  FAIL #{name}: the mutation site is gone from #{gone.map(&:first).join(', ')}"
       failures << name
       next
     end
-    File.write(path, text.sub(pattern) { replacement })
     env = { 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb'), 'FT_GENERATED_ONLY' => '1' }
     out, status = Open3.capture2e(env, RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_frozen_tables_check.rb'))
     failed = out.lines.grep(/^\s+FAIL /)
