@@ -545,30 +545,36 @@ MUTANTS = {
 }.freeze
 if ENV['UCC_MUTANTS'] && ENV['UCC_GENERATED_ONLY'].nil?
   puts '-- mutants: one proof removed, a generated-code check must fail'
+  require_relative 'bc2cpp_mutant_pool'
   root = File.expand_path('..', __dir__)
-  MUTANTS.each do |file, mutants|
-    mutants.each do |what, (from, to)|
-      Dir.mktmpdir do |tmp|
-        # A copy of the tree's code with the 3rd/ and gem directories linked.
-        Dir.children(root).each do |entry|
-          next if %w[.git tools scripts build].include?(entry)
+  # nil when the mutation does not apply, else the run of the check against the mutant.
+  mutate = lambda do |(file, _what, from, to)|
+    Dir.mktmpdir do |tmp|
+      # A copy of the tree's code with the 3rd/ and gem directories linked.
+      Dir.children(root).each do |entry|
+        next if %w[.git tools scripts build].include?(entry)
 
-          FileUtils.ln_s(File.join(root, entry), File.join(tmp, entry))
-        end
-        FileUtils.cp_r(File.join(root, 'tools'), tmp)
-        FileUtils.cp_r(File.join(root, 'scripts'), tmp)
-        path = File.join(tmp, file)
-        text = File.read(path)
-        mutated = text.sub(from, to)
-        if mutated == text
-          check.call("mutant (#{what}) applies", false)
-          next
-        end
-        File.write(path, mutated)
-        out = IO.popen({ 'UCC_GENERATED_ONLY' => '1', 'UCC_MUTANTS' => nil }, [RbConfig.ruby, File.join(tmp, 'scripts/bc2cpp_unlisted_class_call_check.rb')],
-                       err: %i[child out], &:read)
-        check.call("mutant (#{what}) is caught", !$?.success? && out.include?('FAIL'))
+        FileUtils.ln_s(File.join(root, entry), File.join(tmp, entry))
       end
+      FileUtils.cp_r(File.join(root, 'tools'), tmp)
+      FileUtils.cp_r(File.join(root, 'scripts'), tmp)
+      path = File.join(tmp, file)
+      text = File.read(path)
+      mutated = text.sub(from, to)
+      next nil if mutated == text
+
+      File.write(path, mutated)
+      # Stops at the first FAIL line: the mutant is caught (Bc2cppMutantPool.run).
+      Bc2cppMutantPool.run({ 'UCC_GENERATED_ONLY' => '1', 'UCC_MUTANTS' => nil },
+                           [RbConfig.ruby, File.join(tmp, 'scripts/bc2cpp_unlisted_class_call_check.rb')], stop_on: /^\s+FAIL /)
+    end
+  end
+  jobs = MUTANTS.flat_map { |file, mutants| mutants.map { |what, (from, to)| [file, what, from, to] } }
+  Bc2cppMutantPool.each_ordered(jobs, work: mutate) do |(_file, what), run|
+    if run.nil?
+      check.call("mutant (#{what}) applies", false)
+    else
+      check.call("mutant (#{what}) is caught", !run.success && run.out.include?('FAIL'))
     end
   end
 end

@@ -8,6 +8,7 @@
 
 require 'tmpdir'
 require_relative '../tools/bc2cpp/symbol_cache'
+require_relative 'bc2cpp_cxx'
 
 failures = []
 check = lambda do |what, condition|
@@ -101,7 +102,7 @@ if system('g++', '--version', out: File::NULL, err: File::NULL)
       }
     CPP
     binary = File.join(dir, 'sym_harness')
-    built = system('g++', '-std=c++17', '-Wall', '-Werror', source, '-o', binary)
+    built = Bc2cppCxx.system('-std=c++17', '-Wall', '-Werror', source, '-o', binary)
     check.call('the emitted cache compiles cleanly', built)
     if built
       r = IO.popen(binary, &:read).split.map { |v| v == '1' }
