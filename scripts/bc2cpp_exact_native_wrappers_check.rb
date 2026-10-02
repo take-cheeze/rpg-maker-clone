@@ -480,13 +480,23 @@ if !builds.empty? && !ENV['EW_GENERATED_ONLY']
                      compiled.include?('  log RGSS::Bitmap#draw_text(1,2,3,4,"hi");') &&
                      compiled.include?('  log RGSS::Sprite#tone=(1);') && compiled.include?('  log RGSS::Window#tone=(2);') &&
                      compiled.include?('  log RGSS::Viewport#tone=(3);'))
-        check.call('a nil receiver raises where the interpreter does, a set-up one answers',
-                   compiled.include?('maybe_clear before setup => raised NoMethodError') &&
-                     compiled.include?('maybe_clear => :clear'))
+        # A core-only mruby (no mrblib) reports another exception class on both sides, so there the pin is the
+        # interpreter's own line, and that it raised; full-core pins NoMethodError.
+        core_only = label.start_with?('core-only')
+        raised_line = lambda do |label_text, pinned|
+          actual = compiled.find { |l| l.start_with?("#{label_text} =>") }.to_s
+          expected = core_only ? interpreted.find { |l| l.start_with?("#{label_text} =>") }.to_s : pinned
+          ok = actual == expected && expected.include?('raised')
+          puts "    expected #{expected.inspect}, actual #{actual.inspect}" unless ok
+          ok
+        end
+        nil_ok = raised_line.call('maybe_clear before setup', 'maybe_clear before setup => raised NoMethodError')
+        check.call("#{label}: a nil receiver raises where the interpreter does, a set-up one answers",
+                   nil_ok && compiled.include?('maybe_clear => :clear'))
         check.call('the two-class ivar reached both classes (a wrong exact proof would log Sprite twice)',
                    compiled.include?('  log RGSS::Sprite#tone=(1);') && compiled.include?('  log RGSS::Viewport#tone=(1);'))
-        check.call('a Sprite where a Bitmap was passed raises through dispatch',
-                   compiled.include?('arg_clear on a Sprite => raised NoMethodError'))
+        sprite_ok = raised_line.call('arg_clear on a Sprite', 'arg_clear on a Sprite => raised NoMethodError')
+        check.call("#{label}: a Sprite where a Bitmap was passed raises through dispatch", sprite_ok)
         check.call('the parameter and the attr_writer writes are seen',
                    compiled.count('read_param => :clear') == 1 && compiled.count('read_written => :clear') == 1)
 
