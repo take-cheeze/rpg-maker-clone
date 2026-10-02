@@ -129,10 +129,10 @@ WORLDS = {
     end
     class CrFx
       def acc_set; h = CrHolder.new; h.thing = CrOther.new; h.thing.tag; end
-      def stash_held; h = CrHolder.new; h.thing = CrOther.new; @held = h.thing; end
+      def stash_held; h = CrHolder.new; h.thing = CrOther.new; @held = h.thing; nil; end
       def held_tag; @held.tag; end
-      def stash_boxed; @held2 = CrBox.new; end
-      def stash_held2; h = CrHolder.new; h.thing = CrOther.new; @held2 = h.thing; end
+      def stash_boxed; @held2 = CrBox.new; nil; end
+      def stash_held2; h = CrHolder.new; h.thing = CrOther.new; @held2 = h.thing; nil; end
       def held2_tag; @held2.tag; end
     end
   RUBY
@@ -425,7 +425,10 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['CR_GENERATED_ONLY
 
           sections = runtime.sections(output)
           values = ->(name) { sections.fetch(name, []).reject { |l| l.start_with?('  ') } }
-          puts output if ENV['BC2CPP_CHECK_VERBOSE'] || values.call('interpreted') != values.call('compiled')
+          puts output if ENV['BC2CPP_CHECK_VERBOSE']
+          values.call('interpreted').zip(values.call('compiled')).reject { |a, b| a == b }.first(8).each do |a, b|
+            puts "    interpreted: #{a}\n    compiled:    #{b}"
+          end
           check.call("#{label}: every method answers what the interpreter answers (#{values.call('interpreted').size} lines), values and exceptions alike",
                      !values.call('interpreted').empty? && values.call('interpreted') == values.call('compiled'))
           compiled = values.call('compiled')
