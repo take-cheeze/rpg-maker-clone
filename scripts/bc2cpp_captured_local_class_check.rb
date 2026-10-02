@@ -42,6 +42,9 @@ HOLDER = <<~RUBY
     # An unused reassignment of the same class keeps the set exact.
     def cap_same_class; h = {}; h = { z: 1 } if h.empty?; 2.times { |i| h[i] = h.size }; h; end
     # nil first, an Array later: nil or exactly Array, so the nil arm raises NoMethodError on its own.
+    # Block-free methods: the only ones a core-only mruby (no mrblib, so no Integer#times or Array#each) can run.
+    def plain_nil(flag); acc = nil; acc = [1, 2] if flag; acc.size; end
+    def plain_frozen; acc = [].freeze; acc.push(1); end
     def cap_nil(flag); acc = nil; acc = [1, 2] if flag; r = nil; 1.times { r = acc.size }; r; end
 
     # -- negatives: no single class
@@ -198,27 +201,39 @@ builds['full-core'] = runtime.full_or_build if builds.empty?
 builds.compact!
 if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['CAL_GENERATED_ONLY']
   puts '== fixture on real mruby, interpreted and compiled'
-  zero_arg = %w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each cap_same_class cap_lambda_exact cap_lambda_late cap_late cap_block_write cap_sibling_write cap_frozen cap_subclass]
+  all_zero_arg = %w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each cap_same_class cap_lambda_exact cap_lambda_late cap_late cap_block_write cap_sibling_write cap_frozen cap_subclass]
   # A block outlined inside another block and a confined lambda run through a thunk that stores a function pointer in an
   # mrb_int sized slot: that cannot work when a 64-bit host is built with MRB_INT32, so the 32-bit run leaves those out.
   narrow = ENV['BC2CPP_CXXFLAGS'].to_s.include?('MRB_INT32')
-  zero_arg -= %w[cap_nested cap_lambda_exact cap_lambda_late] if narrow
-  calls = zero_arg.map { |m| "  call(M, \"#{m}\", holder, \"#{m}\");" }.join("\n")
-  driver_blocks = narrow ? '' : '  call(M, "driver_blocks", drv, "go_blocks", 1, &holder);'
-  body = <<~CPP
-    static int scenario(mrb_state* M) {
-      mrb_value holder = mrb_obj_new(M, mrb_class_get(M, "CaHolder"), 0, nullptr);
-      mrb_value drv = mrb_obj_new(M, mrb_class_get(M, "CaDrv"), 0, nullptr);
-    #{calls}
-      mrb_value yes = mrb_true_value();
-      mrb_value no = mrb_false_value();
-      call(M, "cap_nil_true", holder, "cap_nil", 1, &yes);
-      call(M, "cap_nil_false", holder, "cap_nil", 1, &no);
-      call(M, "driver", drv, "go", 1, &holder);
-    #{driver_blocks}
-      return 0;
-    }
-  CPP
+  all_zero_arg -= %w[cap_nested cap_lambda_exact cap_lambda_late] if narrow
+  scenario_for = lambda do |with_blocks|
+    zero_arg = with_blocks ? all_zero_arg : []
+    calls = zero_arg.map { |m| "  call(M, \"#{m}\", holder, \"#{m}\");" }.join("\n")
+    block_calls = if with_blocks
+                    <<~CALLS
+                      call(M, "cap_nil_true", holder, "cap_nil", 1, &yes);
+                      call(M, "cap_nil_false", holder, "cap_nil", 1, &no);
+                      call(M, "driver", drv, "go", 1, &holder);
+                      #{narrow ? '' : 'call(M, "driver_blocks", drv, "go_blocks", 1, &holder);'}
+                    CALLS
+                  else
+                    ''
+                  end
+    <<~CPP
+      static int scenario(mrb_state* M) {
+        mrb_value holder = mrb_obj_new(M, mrb_class_get(M, "CaHolder"), 0, nullptr);
+        mrb_value drv = mrb_obj_new(M, mrb_class_get(M, "CaDrv"), 0, nullptr);
+        mrb_value yes = mrb_true_value();
+        mrb_value no = mrb_false_value();
+      #{calls}
+        call(M, "plain_nil_true", holder, "plain_nil", 1, &yes);
+        call(M, "plain_nil_false", holder, "plain_nil", 1, &no);
+        call(M, "plain_frozen", holder, "plain_frozen");
+      #{block_calls}
+        return 0;
+      }
+    CPP
+  end
   worlds = {
     'plain world' => '',
     'a binding in the world' => "class CaBind\n  def peek; binding; end\nend\n"
@@ -229,7 +244,7 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['CAL_GENERATED_ONL
       label = "#{build_name}, #{world}"
       Dir.mktmpdir do |dir|
         _code, err = generate.call(HOLDER + extra, dir)
-        built, output = runtime.run(dir, err, OWNERS, body, build: build, full: full)
+        built, output = runtime.run(dir, err, OWNERS, scenario_for.call(build_name != 'core-only'), build: build, full: full)
         check.call("#{label}: the fixture compiles and runs against real mruby", built)
         puts output unless built
         next unless built
@@ -242,13 +257,18 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['CAL_GENERATED_ONL
         compiled = values.call('compiled')
         next unless extra.empty?
 
+        check.call("#{label}: a nil receiver raises NoMethodError, as the interpreter does",
+                   compiled.include?('plain_nil_false => raised NoMethodError') && compiled.include?('plain_nil_true => 2'))
+        check.call("#{label}: a frozen Array still raises on push", compiled.include?('plain_frozen => raised FrozenError'))
+        next if build_name == 'core-only'
+
         check.call("#{label}: the captured hash grows by its own size", compiled.include?('cap_hash => {0 => 0, 1 => 1, 2 => 2}'))
         check.call("#{label}: an owner that reassigns between two closures sees the new class in the second", compiled.include?('cap_late => {0 => 1, 1 => 2}'))
         check.call("#{label}: a block-side reassignment is seen by the next iteration", compiled.include?('cap_block_write => {0 => 1, 1 => 2}'))
         check.call("#{label}: a confined lambda called after the local changed class sees the new class", compiled.include?('cap_lambda_late => [1, 4]')) unless narrow
-        check.call("#{label}: the frozen Array still raises on push", compiled.include?('cap_frozen => raised FrozenError'))
-        check.call("#{label}: nil receiver raises NoMethodError, as the interpreter does", compiled.include?('cap_nil_false => raised NoMethodError') &&
-                                                                                                compiled.include?('cap_nil_true => 2'))
+        check.call("#{label}: the frozen Array still raises on push in a block", compiled.include?('cap_frozen => raised FrozenError'))
+        check.call("#{label}: a captured nil receiver raises NoMethodError", compiled.include?('cap_nil_false => raised NoMethodError') &&
+                                                                              compiled.include?('cap_nil_true => 2'))
         lines = sections.fetch('compiled', [])
         (%w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each cap_same_class cap_lambda_exact] - (narrow ? %w[cap_nested cap_lambda_exact] : [])).each do |m|
           at = lines.index { |l| l.start_with?("#{m} =>") }
