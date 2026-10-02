@@ -222,8 +222,11 @@ check.call('a register that is the literal or nil on two paths takes a nil test 
            %w[cond_assign while_assign].all? { |name| exact.call(name) && nil_tested.call(name) })
 check.call('a multiple assignment that stores the literal directly is proven', exact.call('masgn'))
 
-check.call('a literal Range gets one arm with no class test, and the else stays for Fibers',
-           fn.call('range_map').match?(/BLOCK_CORE_DIRECT :map -- proven Range .*\n\s+if \((?:M->c == M->root_c|true)\) \{\n\s+r\d+ = Enumerable_collect_impl\(.*\} else \{\n\s+r\d+ = mrb_funcall_with_block\(/m))
+check.call('a literal Range with a block that may break gets one arm with no class test, and the else stays for Fibers',
+           fn.call('range_break').match?(/BLOCK_CORE_DIRECT :map -- proven Range .*\n\s+if \(M->c == M->root_c\) \{\n\s+r\d+ = Enumerable_collect_impl\(.*\} else \{\n\s+r\d+ = mrb_funcall_with_block\(/m))
+check.call('a literal Range with a yield-free block is the direct call alone: nothing for the else to answer (ADR 0310)',
+           fn.call('range_map').match?(/BLOCK_CORE_DIRECT :map -- proven Range receiver, yield-free block.*\n\s+r\d+ = Enumerable_collect_impl\(/m) &&
+             !fn.call('range_map').include?('mrb_funcall_with_block'))
 check.call('a literal Hash and an Array literal get their own arm only',
            fn.call('hash_sel').match?(/proven Hash .*Hash_select_impl\(/m) && !fn.call('hash_sel').include?('Enumerable_find_all_impl') &&
              fn.call('ary_ewo').match?(/proven Array .*Enumerable_each_with_object_impl\(|proven Array .*Array_each_with_object_impl\(/m))
