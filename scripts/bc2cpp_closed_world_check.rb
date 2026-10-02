@@ -21,6 +21,7 @@ require 'tmpdir'
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed'
 require_relative '../tools/bc2cpp/bc2cpp'
+require_relative 'bc2cpp_cxx'
 
 root = File.expand_path('..', __dir__)
 failures = []
@@ -760,7 +761,7 @@ else
         }
       CPP
       binary = File.join(dir, 'harness')
-      built = system('g++', '-std=c++17', '-w', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
+      built = Bc2cppCxx.system('-std=c++17', '-w', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
                      "-I#{dir}", "-I#{core}/include", "-I#{root}/3rd/mruby/include", harness,
                      "#{core}/lib/libmruby_core.a", '-o', binary)
       built ? IO.popen(binary, err: %i[child out], &:read) : nil

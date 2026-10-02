@@ -19,6 +19,7 @@ require 'shellwords'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative 'bc2cpp_cxx'
 
 module Bc2cppFixtureRuntime
   ROOT = File.expand_path('..', __dir__)
@@ -78,7 +79,7 @@ module Bc2cppFixtureRuntime
     FileUtils.mkdir_p(File.join(work, 'repos/host'))
     FileUtils.ln_sf(File.join(ROOT, '3rd/mgem-list'), File.join(work, 'repos/host/mgem-list'))
     File.write(File.join(work, 'config.rb'), FULL_CORE_CONFIG)
-    env = { 'MRUBY_CONFIG' => File.join(work, 'config.rb'), 'MRUBY_BUILD_DIR' => work }
+    env = { 'MRUBY_CONFIG' => File.join(work, 'config.rb'), 'MRUBY_BUILD_DIR' => work }.merge(Bc2cppCxx.rake_env)
     out, status = Open3.capture2e(env, 'rake', "-j#{[Etc.nprocessors, 16].min}", 'all', chdir: File.join(ROOT, '3rd/mruby'))
     File.write(File.join(work, 'build.log'), out)
     raise "full-core mruby build failed:\n#{out.lines.last(30).join}" unless status.success?
@@ -229,7 +230,7 @@ module Bc2cppFixtureRuntime
     flags = %w[-std=c++17 -fexceptions -DMRB_USE_CXX_EXCEPTION -w]
     flags << '-DMRB_NO_GEMS' unless full
     flags.concat(Shellwords.split(ENV.fetch('BC2CPP_CXXFLAGS', '')))
-    built = system('g++', *flags, "-I#{dir}", "-I#{build}/include", "-I#{ROOT}/3rd/mruby/include",
+    built = Bc2cppCxx.system(*flags, "-I#{dir}", "-I#{build}/include", "-I#{ROOT}/3rd/mruby/include",
                    "-I#{ROOT}/mruby-rgss/src", File.join(dir, 'main.cpp'), lib, '-lm', '-o', binary)
     return [false, ''] unless built
 

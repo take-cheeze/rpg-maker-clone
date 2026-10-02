@@ -20,6 +20,7 @@ require 'open3'
 require 'rbconfig'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
+require_relative 'bc2cpp_cxx'
 
 ROOT = File.expand_path('..', __dir__)
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
@@ -222,7 +223,7 @@ Dir.mktmpdir do |dir|
       }
     CPP
     binary = File.join(dir, 'profiler_section')
-    built = system('g++', '-std=c++17', '-Os', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS', '-w',
+    built = Bc2cppCxx.system('-std=c++17', '-Os', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS', '-w',
                    "-I#{dir}", "-I#{inc_dir}", "-I#{ROOT}/3rd/mruby/include",
                    File.join(dir, 'main.cpp'), "#{core_root}/lib/libmruby_core.a", '-lm', '-o', binary)
     check.call('the profiler-section fixture compiles against real mruby', built)
