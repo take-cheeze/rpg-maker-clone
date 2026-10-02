@@ -293,6 +293,43 @@ The estimate of 100-168 for item 6 was too high: only receivers the exact-class 
 `Bitmap`/`Rect`, `nil`-or-`RPG2k::Window`) qualify, and 130 sites still have an unnamed receiver. The `width`
 count stays high because `Game::Map#width` and the `Window` readers are data-driven.
 
+## Follow-up: where the container receivers come from (ADR 0308)
+
+The two `core_tag_chain_else` categories counted for the rpg2k gem only (functions named `RPG2k*` or `Game*`; every gem
+together is 971 and 234) at master `e1c671e4`: `receiver_other` 714 and `receiver_is_ivar` 204. A temporary hook at
+`compile_insn` printed the exact-class flow's mask for each receiver register and its reaching definitions. The
+producer of the receiver, 913 sites with a flow context:
+
+| producer | sites |
+| --- | ---: |
+| `@ivar` read | 214 |
+| call result (`SEND0` 130, `SSEND0` 63, `SENDB` 31, `SSEND` 23, `SEND` 12, `AREF` 10) | 269 |
+| `GETIDX` element of another container | 124 (+28 joined with a literal) |
+| incoming argument | 90 |
+| reaching definitions refused | 67 |
+| captured local (`GETUPVAR`) | 41 |
+| constant | 34 |
+| rest | 74 |
+
+Why the 215 ivar-rooted sites have no usable class pool (first store that drops the pool, all stores at the final
+fixpoint): a constructor or setter argument 47 (`Scene::Base#initialize @parent = parent` alone is 26), the result of
+`compact`/`map`/`select`/`uniq`/`dup`/`Array.new` on an unknown receiver 63 (+29 reading it through `Party#actors`), a user
+method result 14, an element of another container 12, several of those 24, a numeric ivar 8, an `attr_writer` or a
+Symbol/String spelling of the name 26, and 19 sites whose pool is exact but whose consumer (`ARRAY_PUSH`) has no exact arm.
+There is no single missing rule; the argument-shaped rows cannot be pooled because any `x.new(...)` with a non-constant
+receiver may construct any class. Optimistic experiments (unsound, not shipped) measured the ceiling of two obvious
+rules: core container result classes on exact receivers move the categories by 4 of 1,205 sites, `Array.new`/`Hash.new`
+results by 12 with 34 relocations into `INDEX_EXACT` Array else arms.
+
+What did move, and by how much (sites that can reach by-name dispatch for the rpg2k gem, the sum of `bc2cpp_send` and the
+`getidx`/`setidx`/`slow_*`/`eqq` callers): ADR 0308's captured-local class flow, 7,625 to 7,558 (-67), of which 41 are hash
+index arms with no else, 9 are Array index arms that relocated their by-name `[]` into an inline else (already netted
+out), and 11 are slow-path numeric helpers. The two named categories moved by 7 (`receiver_other` 714 to 707) and 0.
+
+Reproducing the numbers: a worktree checkout has empty `3rd/*` submodule directories, so `3rd/mruby` is empty, the native
+scan sees no mruby core and the closed world refuses most proofs. `bc2cpp_send` is then about 8,000 instead of 3,030 and
+every category above is wrong; check the first line of the census before trusting a run.
+
 ## Ranking by executed count
 
 The counts above weigh a start-up site like a frame-loop site. `SITE_PROFILE`
