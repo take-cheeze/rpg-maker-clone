@@ -46,6 +46,7 @@ end
 # -- 1. host decoder --------------------------------------------------------------------
 
 puts '== decoder on hand-built iseqs'
+begin
 FakeRite = Struct.new(:iseq, :syms, :lv, :pool, :nlocals, :debug_files)
 opcode = ->(name) { InsnDecoder::FORMATS.index { |n, _| n == name } }
 u16 = ->(n) { [(n >> 8) & 0xff, n & 0xff] }
@@ -94,6 +95,9 @@ rescue RuntimeError => e
 end
 check.call('a prefix that ends the iseq is an error', raises.call(/ends the iseq/, 'LOADNIL', 1, 'EXT1'))
 check.call('a prefix after a prefix is an error', raises.call(/follows another prefix/, 'EXT1', 'EXT2', 'MOVE', 1, 1, 1))
+rescue StandardError => e
+  check.call("hand-built decoding raised #{e.class}: #{e.message.lines.first&.strip}", false)
+end
 
 # -- 2. mrbc-compiled sources -----------------------------------------------------------
 
