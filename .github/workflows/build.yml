@@ -994,6 +994,8 @@ jobs:
               # ADR 0292: the numeric slow-path helpers against the interpreter over a
               # Fixnum/bigint/Float/nil/String/user-class operand matrix; same build.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
+              # ADR 0311: destructured fixed-arity Array returns; the full-core run (the core-only run is in `fast`).
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
               # mruby's own suites (rake test) on a full-core host build, interpreted and with the
               # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
               ruby scripts/bc2cpp_core_mrbtest.rb
@@ -1091,6 +1093,9 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_native_expression_devirt_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_runtime_wiring_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_owner_registration_check.rb
+              # ADR 0311: destructured fixed-arity Array returns, core-only run, then one broken soundness condition at a time.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_mutation_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_mono_embed_guard_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_symbol_cache_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_const_site_cache_check.rb
@@ -1259,11 +1264,13 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_lcf_row_flow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_call_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
           - variant: nobigint
             checks: |
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
+              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
 
     env:
       RPGMAKER_BC2CPP: "1"
@@ -1573,6 +1580,7 @@ jobs:
               ruby scripts/bc2cpp_typed_reflection_check.rb
               ruby scripts/bc2cpp_numeric_operand_check.rb
               ruby scripts/bc2cpp_native_result_facts_check.rb
+              ruby scripts/bc2cpp_tuple_return_check.rb
 
           # ADR 0285: the LCF schema oracle against the real reader (host-only, no mrbc).
           - name: bc2cpp LCF schema oracle check

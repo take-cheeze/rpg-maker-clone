@@ -103,6 +103,7 @@ NOT_PER_METHOD = %w[
   @numeric_return @numeric_return_send_ireps @numeric_states @numeric_wild_families @numeric_writes
   @native_result_kinds @native_result_name_kinds @native_results_ready
   @captured_local_class_enabled @rc_writes
+  @tuple_returns @tuple_sites @tuple_consumers @numeric_root_depth @numeric_root_lines
 ].freeze
 # CodeGen is reopened across several tools/bc2cpp files (scripts/bc2cpp_split.rb).
 written = Set.new

@@ -27,7 +27,7 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 
 | Shard | Checks | Approx. |
 | --- | --- | --- |
-| `core-mrbtest` | block/yield-free/exact-receiver/return-class, `step_inline`, `eqq_direct`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, `numeric_slow`, mruby's own suites | 20 min |
+| `core-mrbtest` | block/yield-free/exact-receiver/return-class, `step_inline`, `eqq_direct`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, `numeric_slow`, `tuple_return` (ADR 0311, +30 s), mruby's own suites | 20 min |
 | `core-flow` | `exact_receiver_flow` and its mutation check, `computed_send` with `CSEND_MUTANTS=1` | see the timing table |
 | `core-tables` | `frozen_tables` and its mutation check (ADR 0306) | see the timing table |
 | `call-results` | `call_results` and its mutation check (ADR 0309; its 32-bit leg runs in `bc2cpp-width (int32)`) | see the timing table |
@@ -154,6 +154,8 @@ checks on a libmruby built by `scripts/bc2cpp_width_build.rb`:
 | --- | --- | --- |
 | `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `call_results` |
 | `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow` |
+| `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `tuple_return` |
+| `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow`, `getidx_integer_arm`, `tuple_return` |
 
 The 32-bit build is the 64-bit host with the targets' arithmetic defines, so it
 does not exercise 32-bit pointers. To run a variant locally, after the mruby
