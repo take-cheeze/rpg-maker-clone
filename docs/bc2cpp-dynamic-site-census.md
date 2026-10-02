@@ -370,6 +370,11 @@ readers used at start-up, 1,784,121 to 188). `@conf.loglevel` is now a runtime-c
 (`POLY_SMALL_N`), not an exact-class arm: `@conf` is assigned from a constructor argument, which the class pools do
 not follow (ADR 0295). The ranking is now `[]` in `bc2cpp_getidx` 44.3%, `rotate!` 22.2%, the `send` sites 29.9%.
 
+Row 1 resolved (ADR 0305): a receiver histogram at the tail showed 2,552,721 Integer (the probe's
+`Integer#[]` shim; mruby core has none), 105,005 `IdentityHashShim` and 9,485 `Method`. Feeding the shim to
+bc2cpp gives the helper an exact-class Integer arm; re-measured total 5,266,040 hits (-32.6%), helper tail
+114,490, same 1,083 sites, checksum 59662.
+
 The ranker also groups the hits by reason category (a start-up palette site and a
 frame-loop site share one): `shared_helper` 34.2%, `poly_diag` single definer with
 implicit self (all `send`) 23.0%, `poly_diag` no definer with unresolved receiver
