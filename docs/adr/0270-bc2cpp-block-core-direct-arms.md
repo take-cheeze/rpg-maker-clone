@@ -112,3 +112,9 @@ holds a method's `*rest` at entry as `Array`; `xs.each { }` on it is the inlined
 An arm whose literal block is proved yield-free, calling a body that cannot suspend a Fiber on its own,
 omits `M->c == M->root_c`; the other arms keep it. The build prints how many arms did (`== yield-free
 proof (YIELD_REACH) ==`).
+
+## Update (ADR 0310)
+
+The arms also reach a literal-block send nested in an inlined loop body, a send whose arm chain was built
+twice is no longer dropped, and a proven arm with no test at all (class proven, yield-free block) is the call
+alone: its dynamic else cannot run and is not emitted.
