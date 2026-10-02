@@ -1005,6 +1005,9 @@ jobs:
               # then five mutants of the soundness conditions.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_flow_check.rb
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_flow_mutation_check.rb
+              # ADR 0303: a computed-name send over a provably finite Symbol set becomes direct arms; negative
+              # worlds, the interpreter on full-core and core-only builds, and one proof removed at a time.
+              CSEND_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
           - shard: core-mutants
             # bc2cpp_unlisted_class_call_check with UCC_MUTANTS=1: seven mutant rebuilds (~23 min).
             checks: |
@@ -1219,6 +1222,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_lcf_row_flow_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_computed_send_check.rb
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
           - variant: nobigint
             checks: |
