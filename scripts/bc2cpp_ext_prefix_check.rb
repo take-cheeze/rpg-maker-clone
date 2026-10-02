@@ -11,8 +11,8 @@
 # 3. Generated code (needs MRBC): a method whose registers pass 255 is compiled instead of dropped, the constant
 #    pool of a class body with more than 255 symbols is read, and BC2CPP_EXT_PREFIX=0 gives the earlier output.
 # 4. Behaviour on real mruby: compiled answers equal interpreted ones, values and exceptions, for the wide methods.
-#    Run it on a full-core and a core-only mruby, and with BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32"
-#    BC2CPP_BLOCK_DIRECT_ENTRY=0 on a 32-bit mrb_int build with its own MRBC.
+#    Run it on a full-core and a core-only mruby, and, with BC2CPP_MRUBY_FULL32 and BC2CPP_MRBC32 naming a 32-bit
+#    mrb_int build and its mrbc, on that build too.
 #
 # Usage: [MRBC=path/to/mrbc BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_CORE=dir] ruby scripts/bc2cpp_ext_prefix_check.rb
 # BC2CPP_TOOL names another bc2cpp.rb (scripts/bc2cpp_ext_prefix_mutation_check.rb); the host half then loads that copy.
@@ -254,9 +254,16 @@ end
 
 # -- 4. behaviour -----------------------------------------------------------------------
 
-builds = { 'full-core' => runtime.full || (ENV['BC2CPP_FULL_BUILD_DIR'] ? runtime.full_or_build : nil), 'core-only' => runtime.core }.compact
-builds['full-core'] = runtime.full_or_build if builds.empty?
-builds.compact!
+# [label, build dir, mrbc, compiler flags]; the 32-bit leg needs its own mrbc, and -no-pie because the fallback glue
+# keeps a block function's address in an mrb_int (ADR 0271).
+builds = []
+full = runtime.full || (ENV['BC2CPP_FULL_BUILD_DIR'] ? runtime.full_or_build : nil)
+builds << ['full-core', full, ENV.fetch('MRBC', nil), ''] if full
+builds << ['core-only', runtime.core, ENV.fetch('MRBC', nil), ''] if runtime.core
+if ENV['BC2CPP_MRUBY_FULL32'] && ENV['BC2CPP_MRBC32']
+  builds << ['mrb_int 32 (full-core)', ENV['BC2CPP_MRUBY_FULL32'], ENV['BC2CPP_MRBC32'], '-DMRB_32BIT -DMRB_INT32 -no-pie']
+end
+builds << ['full-core', runtime.full_or_build, ENV.fetch('MRBC', nil), ''] if builds.empty? && runtime.compiler? && runtime.full_or_build
 if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['EXT_PREFIX_GENERATED_ONLY']
   puts '== fixture on real mruby, interpreted and compiled'
   scenario = <<~CPP
@@ -286,9 +293,14 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['EXT_PREFIX_GENERA
       return 0;
     }
   CPP
-  builds.each do |build_name, build|
-    full = File.exist?("#{build}/lib/libmruby.a")
-    Dir.mktmpdir do |dir|
+builds.each do |build_name, build, mrbc, flags|
+  full = File.exist?("#{build}/lib/libmruby.a") && build_name != 'core-only'
+  saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS', 'BC2CPP_BLOCK_DIRECT_ENTRY')
+  ENV['MRBC'] = mrbc
+  ENV['BC2CPP_BLOCK_DIRECT_ENTRY'] = '0' if flags.include?('MRB_INT32')
+  ENV['BC2CPP_CXXFLAGS'] = flags
+  begin
+  Dir.mktmpdir do |dir|
       _code, err = generate.call(WIDE_SOURCE, dir)
       built, output = runtime.run(dir, err, WIDE_OWNERS, scenario, build: build, full: full)
       check.call("#{build_name}: the fixture compiles and runs against real mruby", built)
@@ -314,6 +326,9 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['EXT_PREFIX_GENERA
                                                                                 compiled.include?('guarded_rescued => -1'))
       check.call("#{build_name}: the class body's methods and constant answer", compiled.include?('table_size => 3') &&
                                                                                  compiled.include?('m299 => 299') && compiled.include?('last_m => 300'))
+    end
+    ensure
+      %w[MRBC BC2CPP_CXXFLAGS BC2CPP_BLOCK_DIRECT_ENTRY].zip(saved).each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
     end
   end
 else
