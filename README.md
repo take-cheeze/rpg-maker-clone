@@ -1044,6 +1044,11 @@
   `uniq`, `fetch`, ...) calls the compiled core body directly when that body cannot suspend a Fiber, with no
   by-name send left; `BC2CPP_CORE_EXTEND=0` returns the earlier output; see
   [`docs/adr/0314-bc2cpp-core-exact-direct.md`](docs/adr/0314-bc2cpp-core-exact-direct.md).
+  A shared escape analysis (`tools/bc2cpp/escape_analysis.rb`) answers whether the value a creation site makes
+  leaves its frame, with callee summaries over a closed world; its first consumer lets a literal block that captures
+  locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything
+  that reaches it. `BC2CPP_ESCAPE_ANALYSIS=0` restores the earlier output; see
+  [`docs/adr/0316-bc2cpp-shared-escape-analysis.md`](docs/adr/0316-bc2cpp-shared-escape-analysis.md).
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
@@ -1165,6 +1170,14 @@
   of a by-name lookup; `BC2CPP_COMPUTED_SEND=0` turns it off (see
   [`docs/adr/0303-bc2cpp-computed-send-expansion.md`](docs/adr/0303-bc2cpp-computed-send-expansion.md) and
   `scripts/bc2cpp_computed_send_check.rb`).
+  An `attr_reader` returns the class set of the ivar slot it reads (the class pools), so `holder.thing.tag`
+  is an exact call when every definition of `thing` is modelled, and an Array the flow proves exact takes
+  `push`/`<<` and the TYPED call of a core class's body with no class test; `BC2CPP_RETURN_ACCESSORS=0` and
+  `BC2CPP_EXACT_CORE_ARMS=0` turn them off (63 fewer rpg2k by-name sites, all removals). With
+  `BC2CPP_SEND_ROOT_REPORT=FILE` a build also tags every by-name line, and
+  `scripts/bc2cpp_send_root_report.rb` ranks which producer left each receiver unproven. See
+  [`docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md`](docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md)
+  and `scripts/bc2cpp_call_results_check.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
