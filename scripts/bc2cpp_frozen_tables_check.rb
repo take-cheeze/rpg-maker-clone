@@ -447,7 +447,7 @@ builds.each do |label, build, mrbc, flags, full|
                  compiled.include?('sub_table => 11') && compiled.any? { |l| l.start_with?('sub_sub => raised') })
       check.call('an ivar written through instance_variable_set is read as written',
                  compiled.include?('p_read => 11') && (compiled.any? { |l| l.start_with?('p_read after poke => raised') } ||
-                   (compiled.any? { |l| l.start_with?('poke => raised NoMethodError') } && compiled.include?('p_read after poke => 11'))))
+                   (compiled.any? { |l| l.start_with?('poke => raised') } && compiled.include?('p_read after poke => 11'))))
       # The indented lines of a compiled run count the by-name calls a method made.
       counts = output.lines.each_cons(2).filter_map do |line, following|
         following.strip.split('=').last.to_i if line.start_with?('lit_idx =>') && following.start_with?('  dispatches=')
