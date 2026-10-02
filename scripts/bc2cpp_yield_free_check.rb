@@ -24,6 +24,7 @@ require 'shellwords'
 require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
 require_relative '../tools/bc2cpp/nomethod_reviewed'
+require_relative 'bc2cpp_cxx'
 
 ROOT = File.expand_path('..', __dir__)
 MRBC_PATH = Bc2cppFixtureRuntime.mrbc
@@ -289,7 +290,7 @@ build_mruby = lambda do
   FileUtils.mkdir_p(File.join(dir, 'repos/host'))
   FileUtils.ln_sf(File.join(ROOT, '3rd/mgem-list'), File.join(dir, 'repos/host/mgem-list'))
   File.write(File.join(dir, 'config.rb'), MRUBY_CONFIG_RB)
-  built_env = { 'MRUBY_CONFIG' => File.join(dir, 'config.rb'), 'MRUBY_BUILD_DIR' => dir, 'BC2CPP_ROOT' => ROOT }
+  built_env = { 'MRUBY_CONFIG' => File.join(dir, 'config.rb'), 'MRUBY_BUILD_DIR' => dir, 'BC2CPP_ROOT' => ROOT }.merge(Bc2cppCxx.rake_env)
   log, st = Open3.capture2e(built_env, 'rake', "-j#{[Etc.nprocessors, 16].min}", 'all', chdir: File.join(ROOT, '3rd/mruby'))
   File.write(File.join(dir, 'build.log'), log)
   st.success? ? host : nil
@@ -337,7 +338,7 @@ File.write(File.join(work, 'main.cpp'), <<~CPP)
 CPP
 binary = File.join(work, 'yf_main')
 flags = %w[-std=c++17 -fexceptions -DMRB_USE_CXX_EXCEPTION -w -O1]
-built = system('g++', *flags, "-I#{work}", "-I#{full}/include", "-I#{ROOT}/3rd/mruby/include", "-I#{ROOT}/mruby-rgss/src",
+built = Bc2cppCxx.system(*flags, "-I#{work}", "-I#{full}/include", "-I#{ROOT}/3rd/mruby/include", "-I#{ROOT}/mruby-rgss/src",
                File.join(work, 'main.cpp'), "#{full}/lib/libmruby.a", '-lm', '-o', binary)
 check.call('the fixture compiled together with the compiled core links against a full-core mruby', built)
 if built

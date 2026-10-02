@@ -22,6 +22,7 @@ require 'rbconfig'
 require 'set'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
+require_relative 'bc2cpp_cxx'
 
 ROOT = File.expand_path('..', __dir__)
 failures = []
@@ -417,7 +418,7 @@ if system(mrbc, '--version', out: File::NULL, err: File::NULL) || system(mrbc, '
       bigint = `nm -g #{core}/lib/libmruby_core.a 2>/dev/null`.include?('mrb_bint_new_str')
       binary = File.join(dir, 'fb')
       flags = bigint ? ['-DMRB_USE_BIGINT'] : []
-      built = system('g++', '-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS', '-w', *flags,
+      built = Bc2cppCxx.system('-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS', '-w', *flags,
                      "-I#{dir}", "-I#{core}/include", "-I#{ROOT}/3rd/mruby/include", File.join(dir, 'main.cpp'),
                      "#{core}/lib/libmruby_core.a", '-lm', '-o', binary)
       check.call('the fixture compiles against real mruby', built)

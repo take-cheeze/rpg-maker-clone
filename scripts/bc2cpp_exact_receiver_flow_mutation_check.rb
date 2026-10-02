@@ -9,9 +9,10 @@
 # Usage: MRBC=path/to/mrbc [BC2CPP_MRUBY_FULL=dir] ruby scripts/bc2cpp_exact_receiver_flow_mutation_check.rb
 
 require 'fileutils'
-require 'open3'
 require 'rbconfig'
 require 'tmpdir'
+require_relative 'bc2cpp_fixture_runtime'
+require_relative 'bc2cpp_mutant_pool'
 
 ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
@@ -33,8 +34,11 @@ MUTANTS = [
    'poly = with_exact_core_site(exact_site) do', 'poly = with_exact_core_site(nil) do', /ErHolder#lit_join|ErHolder#const_join/, false]
 ].freeze
 
-failures = []
-MUTANTS.each do |name, file, pattern, replacement, expected, needs_run|
+# Concurrent mutants must not race to build the shared BC2CPP_FULL_BUILD_DIR: build it once first.
+Bc2cppFixtureRuntime.full_or_build if ENV['BC2CPP_FULL_BUILD_DIR'] && MUTANTS.any?(&:last)
+
+# nil when the mutation site is gone, else the run of the check against the mutant.
+mutate = lambda do |(_name, file, pattern, replacement, expected, needs_run)|
   Dir.mktmpdir do |dir|
     # bc2cpp.rb finds the engine's gems relative to itself (../..), so the copy keeps the repository layout.
     Dir.children(ROOT).reject { |entry| %w[.git tools].include?(entry) }.each do |entry|
@@ -47,22 +51,30 @@ MUTANTS.each do |name, file, pattern, replacement, expected, needs_run|
     FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), File.join(dir, 'tools'))
     path = File.join(dir, 'tools', 'bc2cpp', file)
     text = File.read(path)
-    unless text.include?(pattern)
-      puts "  FAIL #{name}: the mutation site is gone from #{file}"
-      failures << name
-      next
-    end
+    next nil unless text.include?(pattern)
+
     File.write(path, text.sub(pattern) { replacement })
     env = { 'BC2CPP_TOOL' => File.join(dir, 'tools', 'bc2cpp', 'bc2cpp.rb') }
     env['ERF_GENERATED_ONLY'] = '1' unless needs_run
-    out, status = Open3.capture2e(env, RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_exact_receiver_flow_check.rb'))
-    failed_lines = out.lines.grep(/^\s+FAIL /)
-    killed = !status.success? && failed_lines.any? { |l| l.match?(expected) }
-    puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
-    unless killed
-      puts failed_lines.first(5).join
-      failures << name
-    end
+    # Stops at the first FAIL line the mutant is expected to cause (Bc2cppMutantPool.run).
+    Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_exact_receiver_flow_check.rb')],
+                         stop_on: /^\s+FAIL .*(?:#{expected.source})/)
+  end
+end
+
+failures = []
+Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name, file, _pattern, _replacement, expected), run|
+  if run.nil?
+    puts "  FAIL #{name}: the mutation site is gone from #{file}"
+    failures << name
+    next
+  end
+  failed_lines = run.out.lines.grep(/^\s+FAIL /)
+  killed = !run.success && failed_lines.any? { |l| l.match?(expected) }
+  puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
+  unless killed
+    puts failed_lines.first(5).join
+    failures << name
   end
 end
 

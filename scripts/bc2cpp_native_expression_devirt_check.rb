@@ -6,6 +6,7 @@
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
 require_relative '../tools/bc2cpp/compiled_gems'
+require_relative 'bc2cpp_cxx'
 
 root = File.expand_path('..', __dir__)
 core_sources = Dir[File.join(root, 'mruby-rgss/src/*.cxx')] +
@@ -443,7 +444,7 @@ if system('g++', '--version', out: File::NULL, err: File::NULL)
         return r4;
       }
     CPP
-    compiled = system('g++', '-fsyntax-only', source)
+    compiled = Bc2cppCxx.system('-fsyntax-only', source)
     check.call('respond_to? temporaries are block-scoped so repeated sends and gotos compile', compiled)
   end
 end
