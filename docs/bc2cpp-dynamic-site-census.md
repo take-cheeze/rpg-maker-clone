@@ -432,6 +432,23 @@ of the static count.
   gems write one hit file each.
 * **Per-caller counts for helper sites**, and any other workload (the MV and wio smokes).
 
+## Element reads of mutable containers (ADR 0312)
+
+`BC2CPP_ELEMENT_REPORT=<tsv>` (`tools/bc2cpp/element_site_report.rb`) writes one row per instruction that can
+still reach a by-name call, with the origin of its receiver, and one row per write into a container ivar with the
+class set of the value; `scripts/bc2cpp_element_site_report.rb <tsv>` aggregates it:
+
+```sh
+BC2CPP_ELEMENT_REPORT=/tmp/elements.tsv MRBC=<host mrbc> ruby scripts/bc2cpp_coverage_report.rb > /dev/null
+ruby scripts/bc2cpp_element_site_report.rb /tmp/elements.tsv
+```
+
+On the wio closed world (engine owners): 15,349 sites can reach by-name dispatch, 1,151 read an element, 380 of those
+an element of an ivar container, and only 28 of those 380 sit on an ivar whose every creation and write has a known
+class set (ceiling, before any alias check). The element class of a mutable container is therefore limited by the
+class of the values stored, which are mostly method results and parameters, not by aliasing; ADR 0312 records why
+nothing was built. The report changes no generated code.
+
 ## Caveats
 
 * The static tables above count source sites, not executions. A site in a cold scene
@@ -450,3 +467,9 @@ of the static count.
 * The baseline is a saved `shipped.cxx` from before the round, not a rebuild
   of the old commit; its 9,733 `bc2cpp_send` lines match the figure quoted for
   it.
+
+## Element classes of frozen tables (ADR 0306)
+
+`BC2CPP_FROZEN_TABLES=0` is the "before". On the merged tree it moved 6 numeric operator sites
+(see the ADR for the per-helper counts) and nothing else: element classes of mutable
+Arrays/Hashes in ivars and locals, the bulk of the unknown receiver roots, are not covered.
