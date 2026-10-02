@@ -25,10 +25,11 @@
 
 require 'set'
 require 'tmpdir'
-require_relative '../tools/bc2cpp/irep'
-require_relative '../tools/bc2cpp/bytecode_ir'
-require_relative '../tools/bc2cpp/numeric_flow'
 require_relative 'bc2cpp_fixture_runtime'
+
+# The mutation check points BC2CPP_TOOL at a mutant copy; the host half loads the same copy.
+TOOLS = ENV['BC2CPP_TOOL'] ? File.dirname(ENV['BC2CPP_TOOL']) : File.expand_path('../tools/bc2cpp', __dir__)
+%w[irep bytecode_ir numeric_flow codegen codegen_tuple_returns].each { |file| require File.join(TOOLS, file) }
 
 failures = []
 check = lambda do |what, condition|
@@ -77,6 +78,31 @@ answering.aref = INT | FLT
 check.call('an Integer-or-Float position stays both classes', NumericFlow.states(irep, answering, Set.new)[2][3] == (INT | FLT))
 answering.aref = OTHER
 check.call('an unproven position is unknown', NumericFlow.states(irep, answering, Set.new)[2][3] == OTHER)
+
+puts '-- tuple shape of one definition (host)'
+shape_of = lambda do |list|
+  cg = CodeGen.allocate
+  cg.instance_variable_set(:@ireps, {})
+  cg.tuple_shape(Irep.new(label: "tq#{list.hash}", nregs: 8, instructions: list, catch_handlers: [], reps: [], pool: []))
+end
+check.call('ARRAY straight into RETURN is a tuple',
+           shape_of.call([insn(0, 'ARRAY', "R3\t2"), insn(3, 'RETURN', 'R3')]) == [[0, 2]])
+check.call('two arms, each an ARRAY then a jump to the RETURN, are a tuple',
+           shape_of.call([insn(0, 'JMPNOT', "R1\t11"), insn(4, 'ARRAY', "R3\t2"), insn(7, 'JMP', '14'),
+                          insn(11, 'ARRAY', "R3\t2"), insn(14, 'RETURN', 'R3')]) == [[1, 2], [3, 2]])
+check.call('arms of different length are not',
+           shape_of.call([insn(0, 'JMPNOT', "R1\t11"), insn(4, 'ARRAY', "R3\t2"), insn(7, 'JMP', '14'),
+                          insn(11, 'ARRAY', "R3\t3"), insn(14, 'RETURN', 'R3')]).nil?)
+check.call('an instruction that reads the Array before it leaves is not (SETIV)',
+           shape_of.call([insn(0, 'ARRAY', "R3\t2"), insn(3, 'SETIV', "@x\tR3"), insn(6, 'RETURN', 'R3')]).nil?)
+check.call('nor is a call between the ARRAY and the RETURN',
+           shape_of.call([insn(0, 'ARRAY', "R3\t2"), insn(3, 'SEND0', "R4\t:f"), insn(5, 'RETURN', 'R3')]).nil?)
+check.call('a returned parameter is not', shape_of.call([insn(0, 'RETURN', 'R1')]).nil?)
+check.call('a copy of the Array is not',
+           shape_of.call([insn(0, 'ARRAY', "R4\t2"), insn(3, 'MOVE', "R3\tR4"), insn(6, 'RETURN', 'R3')]).nil?)
+check.call('a path that returns nil is not',
+           shape_of.call([insn(0, 'JMPNOT', "R1\t9"), insn(4, 'ARRAY', "R3\t2"), insn(7, 'RETURN', 'R3'),
+                          insn(9, 'RETNIL', '')]).nil?)
 
 if ENV['MRBC']
   runtime = Bc2cppFixtureRuntime
@@ -226,6 +252,15 @@ if ENV['MRBC']
         q + r
       end
 
+      def partition(a)
+        [a, a]
+      end
+
+      def tq_foreign_use
+        x, y = partition(@tq_n)
+        x + y
+      end
+
       def tq_mutate_use
         t = tq_pair(@tq_n)
         t[0] = "s"
@@ -351,6 +386,8 @@ if ENV['MRBC']
   check.call('NEG: a `return` from a block keeps the send', kept.call('TqBox#tq_blockret_use'))
   check.call('NEG: a method with a rescue clause keeps the send', kept.call('TqBox#tq_rescue_use'))
   check.call('NEG: a name a native also defines (Integer#divmod) keeps the send', kept.call('TqBox#tq_native_use'))
+  check.call('NEG: a name the core Ruby library also defines (Enumerable#partition) keeps the send',
+             kept.call('TqBox#tq_foreign_use'))
   check.call('NEG: a copy changed before the destructure keeps the send', kept.call('TqBox#tq_mutate_use'))
   check.call('NEG: a branch join in front of the destructure keeps the send', kept.call('TqBox#tq_join_use'))
   facts = err.lines.grep(/NUMTUPLE /).join
@@ -381,7 +418,7 @@ if ENV['MRBC']
     owners = %w[TqBox TqOther TqDrv]
     methods = %w[tq_pair_use tq_cond_use tq_flt_use tq_mixed_first tq_mixed_second tq_nil_use tq_beyond tq_big_use
                  tq_arity_use tq_str_use tq_nonlit_use tq_escape_use tq_blockret_use tq_rescue_use tq_native_use
-                 tq_mutate_use]
+                 tq_foreign_use tq_mutate_use]
     body = <<~CPP
       static int scenario(mrb_state* M) {
         mrb_value box = mrb_obj_new(M, mrb_class_get(M, "TqBox"), 0, nullptr);
