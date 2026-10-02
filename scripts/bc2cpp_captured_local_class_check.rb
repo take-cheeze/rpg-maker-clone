@@ -37,6 +37,8 @@ HOLDER = <<~RUBY
     def cap_nested; acc = {}; 2.times { |i| 2.times { |j| acc[i * 2 + j] = acc.size } }; acc; end
     def cap_each; seen = {}; [1, 2, 2, 3].each { |x| seen[x] = seen.size }; seen; end
     def cap_two_blocks; h = {}; 2.times { |i| h[i] = h.size }; 2.times { |i| h[i + 5] = h.size }; h; end
+    # A frame-confined lambda reads the frame's register through a pointer, like a block.
+    def cap_lambda_exact; acc = {}; line = ->(n) { acc[n] = acc.size }; line.call(0); line.call(1); acc; end
     # An unused reassignment of the same class keeps the set exact.
     def cap_same_class; h = {}; h = { z: 1 } if h.empty?; 2.times { |i| h[i] = h.size }; h; end
     # nil first, an Array later: nil or exactly Array, so the nil arm raises NoMethodError on its own.
@@ -58,6 +60,8 @@ HOLDER = <<~RUBY
       out
     end
     def cap_block_write; acc = [1]; out = {}; 2.times { |i| out[i] = acc.size; acc = { a: 1, b: 2 } }; out; end
+    # The lambda is created while acc is a Hash and called after it became an Array.
+    def cap_lambda_late; acc = { a: 1 }; line = ->(n) { acc.size + n }; a = line.call(0); acc = [1, 2, 3]; b = line.call(1); [a, b]; end
     def cap_sibling_write; acc = [1]; out = {}; 2.times { |i| out[i] = acc.size }; 1.times { acc = { a: 1, b: 2 } }; out; end
     def cap_block_param(rows); out = {}; rows.each { |row| 2.times { |i| out[i] = row.size } }; out; end
     def cap_unknown_call(src); acc = src.first; out = {}; 2.times { |i| out[i] = acc.size }; out; end
@@ -80,8 +84,8 @@ HOLDER = <<~RUBY
 RUBY
 
 OWNERS = %w[CaHolder CaSub CaDrv].freeze
-POSITIVES = %w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each cap_same_class].freeze
-NEGATIVES = %w[cap_arg cap_mixed cap_late cap_block_write cap_sibling_write cap_block_param cap_unknown_call cap_subclass].freeze
+POSITIVES = %w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each cap_same_class cap_lambda_exact].freeze
+NEGATIVES = %w[cap_arg cap_mixed cap_late cap_lambda_late cap_block_write cap_sibling_write cap_block_param cap_unknown_call cap_subclass].freeze
 
 # The method's own body plus the functions its blocks were outlined into.
 bodies_of = lambda do |code, owner, fn|
@@ -169,7 +173,7 @@ if ENV['MRBC']
     Dir.mktmpdir do |off_dir|
       off_code, = generate.call(HOLDER, off_dir, env: { 'BC2CPP_CAPTURED_LOCAL_CLASS' => '0' })
       check.call('the kill switch (BC2CPP_CAPTURED_LOCAL_CLASS=0): the old guards on every captured read',
-                 %w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each].all? { |fn| guarded.call(off_code, 'CaHolder', fn) })
+                 %w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each cap_lambda_exact].all? { |fn| guarded.call(off_code, 'CaHolder', fn) })
     end
 
     Dir.mktmpdir do |pool_dir|
@@ -194,11 +198,11 @@ builds['full-core'] = runtime.full_or_build if builds.empty?
 builds.compact!
 if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['CAL_GENERATED_ONLY']
   puts '== fixture on real mruby, interpreted and compiled'
-  zero_arg = %w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each cap_same_class cap_late cap_block_write cap_sibling_write cap_frozen cap_subclass]
-  # A block outlined inside another block runs through bc2cpp_block_thunk, which stores a function pointer in an mrb_int
-  # sized slot: that cannot work when a 64-bit host is built with MRB_INT32, so the 32-bit run leaves those methods out.
+  zero_arg = %w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each cap_same_class cap_lambda_exact cap_lambda_late cap_late cap_block_write cap_sibling_write cap_frozen cap_subclass]
+  # A block outlined inside another block and a confined lambda run through a thunk that stores a function pointer in an
+  # mrb_int sized slot: that cannot work when a 64-bit host is built with MRB_INT32, so the 32-bit run leaves those out.
   narrow = ENV['BC2CPP_CXXFLAGS'].to_s.include?('MRB_INT32')
-  zero_arg -= %w[cap_nested] if narrow
+  zero_arg -= %w[cap_nested cap_lambda_exact cap_lambda_late] if narrow
   calls = zero_arg.map { |m| "  call(M, \"#{m}\", holder, \"#{m}\");" }.join("\n")
   driver_blocks = narrow ? '' : '  call(M, "driver_blocks", drv, "go_blocks", 1, &holder);'
   body = <<~CPP
@@ -241,11 +245,12 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['CAL_GENERATED_ONL
         check.call("#{label}: the captured hash grows by its own size", compiled.include?('cap_hash => {0 => 0, 1 => 1, 2 => 2}'))
         check.call("#{label}: an owner that reassigns between two closures sees the new class in the second", compiled.include?('cap_late => {0 => 1, 1 => 2}'))
         check.call("#{label}: a block-side reassignment is seen by the next iteration", compiled.include?('cap_block_write => {0 => 1, 1 => 2}'))
+        check.call("#{label}: a confined lambda called after the local changed class sees the new class", compiled.include?('cap_lambda_late => [1, 4]')) unless narrow
         check.call("#{label}: the frozen Array still raises on push", compiled.include?('cap_frozen => raised FrozenError'))
         check.call("#{label}: nil receiver raises NoMethodError, as the interpreter does", compiled.include?('cap_nil_false => raised NoMethodError') &&
                                                                                                 compiled.include?('cap_nil_true => 2'))
         lines = sections.fetch('compiled', [])
-        (%w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each cap_same_class] - (narrow ? %w[cap_nested] : [])).each do |m|
+        (%w[cap_hash cap_array cap_string cap_nested cap_two_blocks cap_each cap_same_class cap_lambda_exact] - (narrow ? %w[cap_nested cap_lambda_exact] : [])).each do |m|
           at = lines.index { |l| l.start_with?("#{m} =>") }
           n = at && lines[at + 1].to_s[/dispatches=(\d+)/, 1]&.to_i
           check.call("#{label}: #{m}: the compiled call makes no dynamic dispatch", n == 0)
