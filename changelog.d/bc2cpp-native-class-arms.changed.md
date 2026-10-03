@@ -4,7 +4,7 @@
   name for instances; a name that natives or outside Ruby also spell is
   resolved per class (the first definer on the class's lookup path is a Ruby
   definition); and a flow-proven exact Hash calls the compiled `Hash#delete`
-  instead of a guard chain over user classes. 50 by-name sends of the wio
+  instead of a guard chain over user classes. 33 by-name sends of the wio
   engine gems are removed (`update` on `RPG2k::Window`/`Game::Interpreter`,
   `delete` on a Hash); `BC2CPP_NATIVE_CLASS_ARMS=0` turns it off.
   `BC2CPP_NATIVE_ARMS_REPORT=FILE` and `scripts/bc2cpp_native_arms_report.rb`

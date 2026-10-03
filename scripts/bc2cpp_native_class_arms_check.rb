@@ -42,15 +42,23 @@ CLASSES = <<~RUBY
     def name; :box; end
     def delete(v); [:box, v]; end
     def bump; self; end
+    def to_a; [7]; end
   end
 
   class NaCrate
     def count; 6; end
     def name; :crate; end
     def delete(v); [:crate, v]; end
+    def bump; self; end
+    def to_a; [9]; end
   end
 
   class NaGhost
+  end
+
+  # nil answers `to_a` here, so a nil receiver must reach the real method, not a NoMethodError.
+  class NilClass
+    def to_a; [:nil]; end
   end
 
   class NaBase
@@ -75,6 +83,8 @@ FIXTURE = <<~RUBY
       @mixed = NaBox.new
       @arr = [1, 2]
       @mh = { a: 2 }
+      @nl = nil
+      @nl2 = nil
     end
 
     def flip
@@ -82,7 +92,15 @@ FIXTURE = <<~RUBY
       @pair = NaCrate.new
       @mixed = [3]
       @mh = NaBox.new
+      @nl = NaCrate.new
+      @nl2 = NaCrate.new
       :flipped
+    end
+
+    def rebox
+      @nl = NaBox.new
+      @nl2 = NaBox.new
+      :reboxed
     end
 
     # -- positives
@@ -90,6 +108,8 @@ FIXTURE = <<~RUBY
     def pos_count; @pair.count; end
     def pos_fact(x); x.bump; x.name; end
     def pos_two; @pair.name; end
+    # nil may reach these: NilClass answers neither `name` nor `rebox`, so the proof stands
+    def pos_nilable_name; @nl2.name; end
     def pos_delete_hash; @h.delete(:a); end
 
     # -- negatives
@@ -98,26 +118,30 @@ FIXTURE = <<~RUBY
     def neg_array_delete; @arr.delete(1); end
     def neg_hash_unproven(h); h.delete(:a); end
     def neg_mixed_hash; @mh.delete(:a); end
+    # nil answers to_a (NilClass#to_a above), so a nil the flow cannot exclude keeps the by-name else
+    def neg_nilable_to_s; @nl.to_a; end
   end
 RUBY
 
 OWNERS = %w[NaBox NaCrate NaGhost NaBase NaTool NaFx NaBaseKid NaRebindable].freeze
 # method => the name whose else the site keeps or loses
-SITE_NAME = { 'pos_update' => 'name', 'pos_count' => 'count', 'pos_fact' => 'name', 'pos_two' => 'name',
+SITE_NAME = { 'pos_update' => 'name', 'pos_count' => 'count', 'pos_fact' => 'name', 'pos_two' => 'name', 'pos_nilable_name' => 'name', 'neg_nilable_to_s' => 'to_a',
               'neg_unproven' => 'name', 'neg_core_native' => 'count' }.freeze
-POSITIVE = %w[pos_update pos_count pos_fact pos_two].freeze
+POSITIVE = %w[pos_update pos_count pos_fact pos_two pos_nilable_name].freeze
 # Worlds that also generate with mruby's own mrblib compiled (Hash#delete has a compiled body only then).
 CORE_WORLDS = ['an instance with a singleton method', 'a constant that is not a class is reopened as a singleton',
                'Hash#delete is reopened in the project'].freeze
-NEGATIVE = %w[neg_unproven neg_core_native].freeze
+NEGATIVE = %w[neg_unproven neg_core_native neg_nilable_to_s].freeze
 CORE_DIRECT = 'pos_delete_hash'
 CORE_NEGATIVE = %w[neg_array_delete neg_hash_unproven neg_mixed_hash].freeze
 
-# World => extra Ruby / outside sources, whether the positives keep their else (`kept: true`) or still lose it
+# World => extra Ruby / outside sources (generated_only: an alias or define_method over an existing definition is
+# not seen by the chain arms of master either, so the interpreter and the compiled code differ with the switch off), whether the positives keep their else (`kept: true`) or still lose it
 # (`still_dead:` lists the positives that survive a withdrawal), and what the Hash#delete site does.
 WORLDS = {
   'an instance with a singleton method' => {
-    ruby: "class NaFx\n  def single; o = NaBox.new; def o.name; :single; end; o; end\nend\n", kept: true, core_kept: true
+    ruby: "class NaFx\n  def single; o = NaBox.new; def o.name; :single; end; o; end\nend\n", kept: true, core_kept: true,
+    generated_only: true
   },
   'a singleton class opened on an object' => {
     ruby: "class NaFx\n  def open(o); class << o; def name; :opened; end; end; o; end\nend\n", kept: true, core_kept: true
@@ -126,13 +150,13 @@ WORLDS = {
     ruby: "NaRebindable = Object.new\nclass << NaRebindable\n  def name; :r; end\nend\n", kept: true, core_kept: true
   },
   'an instance-level alias of the name' => {
-    ruby: "class NaCrate\n  alias_method :name, :count\nend\n", kept: true, still_dead: %w[], core_kept: false
+    ruby: "class NaCrate\n  alias_method :name, :count\nend\n", kept: true, still_dead: %w[], core_kept: false, generated_only: true
   },
   'an instance-level alias keyword' => {
-    ruby: "class NaCrate\n  alias name count\nend\n", kept: true, still_dead: %w[pos_count], core_kept: false
+    ruby: "class NaCrate\n  alias name count\nend\n", kept: true, still_dead: %w[pos_count], core_kept: false, generated_only: true
   },
   'a computed definition of the name' => {
-    ruby: "class NaCrate\n  [:name].each { |n| define_method(n) { :computed } }\nend\n", kept: true, core_kept: false
+    ruby: "class NaCrate\n  [:name].each { |n| define_method(n) { :computed } }\nend\n", kept: true, core_kept: false, generated_only: true
   },
   'a def nested in a block of the class-object body' => {
     ruby: "class << NaTool\n  [1].each { def name; :nested; end }\nend\n", kept: true, still_dead: %w[pos_count], core_kept: false
@@ -287,10 +311,10 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['NA_GENERATED_ONLY
     'single' => '(mrb_funcall(M, fx, "single", 0))'
   }
   base_calls = []
-  %w[pos_update pos_count pos_two neg_core_native neg_array_delete neg_mixed_hash pos_delete_hash].each { |m| base_calls << [m, m, []] }
+  %w[pos_update pos_count pos_two pos_nilable_name neg_nilable_to_s neg_core_native neg_array_delete neg_mixed_hash pos_delete_hash].each { |m| base_calls << [m, m, []] }
   %w[pos_fact neg_unproven].each { |m| %w[w c g arr].each { |v| base_calls << ["#{m}(#{v})", m, [v]] } }
   %w[hash w arr].each { |v| base_calls << ["neg_hash_unproven(#{v})", 'neg_hash_unproven', [v]] }
-  after_flip = %w[pos_update pos_two pos_count neg_core_native neg_mixed_hash].map { |m| ["flipped:#{m}", m, []] }
+  after_flip = %w[pos_nilable_name neg_nilable_to_s pos_update pos_two pos_count neg_core_native neg_mixed_hash].map { |m| ["flipped:#{m}", m, []] }
   world_calls = {
     'an instance with a singleton method' => [%w[pos_fact neg_unproven].map { |m| ["#{m}(single)", m, ['single']] }],
     'an instance-level alias of the name' => [[]],
@@ -332,6 +356,8 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['NA_GENERATED_ONLY
     ENV['BC2CPP_CXXFLAGS'] = "#{flags} -I#{File.expand_path('../include', __dir__)}"
     begin
       worlds.each do |world, (extra, extra_calls, core)|
+        next if ENV['NA_WORLD'] && !world.include?(ENV['NA_WORLD'])
+
         label = "#{build_name}, #{world}"
         # Array#each is mrblib: a core-only VM cannot load a class body that iterates, nor run the compiled core.
         next if !full_core && (world == 'a computed definition of the name' || core)
@@ -357,7 +383,10 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['NA_GENERATED_ONLY
           expected = ['pos_update => :box', 'pos_count => 5', 'flipped:pos_count => 6', 'pos_fact(w) => :box', 'pos_fact(c) => :crate', 'pos_fact(g) => raised',
                       'neg_unproven(c) => :crate', 'neg_unproven(arr) => raised', 'pos_delete_hash => 1', 'neg_array_delete => 1',
                       'neg_mixed_hash => 2', 'neg_hash_unproven(hash) => nil', 'neg_hash_unproven(w) => [:box, :a]',
-                      'flipped:pos_two => :crate', 'flipped:pos_update => :crate', 'flipped:neg_core_native => 1', 'flipped:neg_mixed_hash => [:box, :a]']
+                      'flipped:pos_two => :crate', 'pos_nilable_name => raised', 'neg_nilable_to_s => [:nil]', 'flipped:pos_nilable_name => :crate',
+                      'flipped:neg_nilable_to_s => [9]', 'flipped:pos_update => :crate', 'flipped:neg_core_native => 1', 'flipped:neg_mixed_hash => [:box, :a]']
+          # A core-only VM has no Hash#delete, Enumerable#count or Array#each: the interpreter's line is the reference there.
+          expected = expected.reject { |want| want.match?(/delete_hash|mixed_hash|hash_unproven\(hash|neg_core_native/) } unless full_core
           missing = expected.reject { |want| compiled.any? { |line| line.start_with?(want) } }
           puts "  missing compiled answers: #{missing.inspect}" unless missing.empty?
           check.call("#{label}: the answers are the ones Ruby gives", missing.empty?)

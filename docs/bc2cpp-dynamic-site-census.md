@@ -660,18 +660,18 @@ today. Wio closed world, master `7818f0f5`, engine gems:
 
 | Measure | Value |
 | --- | ---: |
-| by-name sites (explicit receiver) / chain with a kept else / bare send | 2,254 / 595 / 6,569 rows over all passes, see ADR |
-| dispatching sites with a bounded set (proven / call facts) | 270 (163 / 107); rpg2k 211 |
-| ... kept else / bare send | 92 / 178 |
-| ... receiver set unproven | 6,900 |
-| bounded sites a native cell with no frame-independent entry (or an `:int` entry) gates | 155 |
-| `bc2cpp_send` / `bc2cpp_nomethod`, switch off -> on | 2,513 -> 2,463 / 4,380 -> 4,441 |
-| by-name sites removed (`update` 42, `Hash#delete` 8) / new by-name sites | 50 / 0 |
+| by-name sites / whose else still dispatches (kept marker 372, bare send 1,553) | 2,009 / 1,925 |
+| dispatching sites with a bounded set (proven 163, call facts 107) / unproven | 270 / 1,655 |
+| bounded sites: kept else / bare send | 92 / 178 |
+| bounded sites a cell blocks (native with no entry, guarded `:int` entry, Ruby body not direct-callable) | 186 |
+| `bc2cpp_send` / `bc2cpp_nomethod`, switch off -> on | 2,513 -> 2,480 / 4,380 -> 4,423 |
+| by-name sites removed (`update` 25, `Hash#delete` 8) / new by-name sites | 33 / 0 |
 | `shipped.cxx` with `BC2CPP_NATIVE_CLASS_ARMS=0` against master | byte-identical |
 
 Sites with an unproven receiver set cannot be fixed by these proofs. The three proofs of ADR 0315 (class-object
 definers, per-class native/outside resolution, a cell check against `S`) remove nothing alone; together they remove the
-42 `update` sites of the `class << Graphics` probe, and FLOW_CORE_DIRECT the 8 `Hash#delete` sites of a flow-proven Hash.
+25 `update` sites of the `class << Graphics` probe whose receiver nil provably does not answer, and FLOW_CORE_DIRECT the 8
+`Hash#delete` sites of a flow-proven Hash.
 
 ## Follow-up: numeric constants and native `:int` arguments (ADR 0318)
 
