@@ -782,6 +782,26 @@ direct entry for `break`/`return` blocks 3 / 0 / 5; `Hash#delete` 6 / 2 / 0 (a f
 CORE_EXACT_DIRECT does not read) and `Array#delete` 2 / 0 / 0 (no compiled body); sum 29, below the cutoff of 30, so
 nothing was built.
 
+## Proven-error arms: are they reachable? (ADR 0330, master 49f39416, nothing built)
+
+`BC2CPP_DEAD_ARM_REPORT=<tsv>` writes one row per `bc2cpp_nomethod` / `bc2cpp_nil_receiver` arm (plus `partial_miss`,
+`const_unresolved`, `arity_*` rows) and `scripts/bc2cpp_dead_arm_report.rb <tsv> [--lcov lcov.info] [--list]` aggregates it.
+The shipped C++ is byte-identical with the report on. Arms of the engine gems and core, by exclusive class:
+
+| Class | Arms |
+| --- | ---: |
+| (a) the else of a send with live arms | 2,739 |
+| (b) the only arm of its send | **0** |
+| (c) nil path, live, unguarded | 822 |
+| (d) the method body is not callable by name | 86 |
+| (e) guarded: probed 1,166, rescue 417, hint 76, selfset 29 | 1,688 |
+
+The 822 (c) arms are 647 ivar reads (81 scene-lifecycle clusters: set in `start`/`build_*`, reset in `dispose`/`close_*`;
+`Battle#@ui` alone is 379), 152 database chunk or element reads, 19 parameters and 4 others. Read by hand, none is a latent
+bug; 88 `partial_miss` rows are one pooling imprecision (`Menu#@message` Hash against `Map#@message`). Provable errors
+(sole arms, no class answers, `arity_all`, operators, nil exactly) are 0, so making them compile errors removes nothing;
+the 14 `const_unresolved` rows are desktop-only constants behind `rescue NameError`.
+
 ## Follow-up: Hash#delete flow-core coverage (ADR 0327)
 
 The eight `Hash#delete` sends above (six RPG2k, two LCF) are removed by
