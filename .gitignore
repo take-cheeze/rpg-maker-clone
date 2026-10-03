@@ -105,3 +105,4 @@
 # repository (a copy elsewhere scans an empty closed world); removed when the run ends.
 /.nc_mutant*/
 /.ni_mutant*/
+/.ic_mutant*/
