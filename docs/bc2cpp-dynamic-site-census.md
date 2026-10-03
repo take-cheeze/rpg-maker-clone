@@ -672,6 +672,19 @@ results, 8 user readers, 4 `Bitmap#width`/`height`, 4 parameters. `flowfail` of 
 model a class body, not that the constant is not an Integer; `LINE_H`, `SCREEN_W`, `TILE` and `FACE_SIZE` were Fixnum
 constants all along. `shipped.cxx` with the switch off is byte-identical to a clean master build.
 
+## Follow-up: interval operands for the Fixnum proof's consumers (ADR 0326)
+
+`BC2CPP_NUMERIC_INTERVALS=0` is byte-identical to master. Wio closed world, master `7818f0f5`, `3rd/*` populated, default
+against master:
+
+| Measure | master | default | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites | 2,538 | 2,496 | -42 (Array `[]`/`[]=` else) |
+| `bc2cpp_slow_*` callers (`add_f` 720, `sub_f` 479, `mul_f` 451 -> 719 / 473 / 441) | 3,343 | 3,326 | -17 |
+| `mrb_fixnum_p(` / `mrb_integer_p(` tests | 3,597 / 3,822 | 3,444 / 3,510 | -153 / -312 |
+| arms proven (`operands proven Fixnum`) / proven Array index sites | 388 / 0 | 556 / 42 | +168 / +42 |
+| `bc2cpp_getidx`, `bc2cpp_setidx`, `bc2cpp_nomethod` | 2,066 / 210 / 4,386 | same | 0 |
+
 ## Follow-up: EXT prefixes folded into their instruction (ADR 0320)
 
 Wio closed world, master `cd86085f`, same tree with `BC2CPP_EXT_PREFIX=0` (byte-identical to master) against the default.
