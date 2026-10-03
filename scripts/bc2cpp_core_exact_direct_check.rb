@@ -308,6 +308,10 @@ if run_generated
              nb.call('hto').include?('Enumerable_entries_impl(M,') && dispatches.call(nb.call('hto')).zero?)
   check.call('a direct site is not left marked as a real dynamic dispatch',
              !nb.call('uq').include?('// POLY :uniq') && !nb.call('uq').include?('POLY_DIAG'))
+  # FLOW_CORE_DIRECT (ADR 0323) takes exact core sites before the poly path; the kill switch brings that path back.
+  arms_off_uq = body_of.call(generate.call(FIXTURE, 'cx_arms_off', extra_env: { 'BC2CPP_NATIVE_CLASS_ARMS' => '0' }), 'uq')
+  check.call('with the class arms off, a direct site reached through the poly path is not marked as a dynamic dispatch',
+             arms_off_uq.include?('CORE_EXACT_DIRECT :uniq') && !arms_off_uq.include?('// POLY :uniq') && !arms_off_uq.include?('POLY_DIAG'))
 
   check.call('pooled Hash delete and fetch call the compiled core without dispatch',
              nb.call('pooled_delete').include?('Hash_delete_impl(M,') &&
@@ -583,7 +587,7 @@ MUTANTS = {
   'a callee that takes no block parameter is refused' =>
     ['codegen_block_core_direct.rb', "unless blockless || takes_block_param?(irep)", 'unless takes_block_param?(irep)'],
   'a flow-proven core receiver is not resolved ahead of the poly chain' =>
-    ['codegen_send.rb', 'return "  #{core_call}" if core_call', 'nil'],
+    ['codegen_send.rb', 'return flow_core if flow_core', 'nil'],
   'a prepend on the receiver class is not looked at' =>
     ['codegen_block_core_direct.rb', 'return false if Array(@prepended_modules[owner]).any? || @unknown_mixins.include?(owner)',
      'return false if @unknown_mixins.include?(owner)'],

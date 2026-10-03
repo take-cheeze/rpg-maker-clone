@@ -652,6 +652,28 @@ potential), aggregated by `scripts/bc2cpp_refine_report.rb tsv [--list-bugs]`. W
 | POLY_SMALL_N chains with two classes on one definition | 50 of 1,525 (177 of 8,906 compares) |
 | `shipped.cxx` with `BC2CPP_CALL_FACTS=0` against master | byte-identical |
 
+## Follow-up: per-class resolution for proven receiver sets (ADR 0323)
+
+`BC2CPP_NATIVE_ARMS_REPORT=<tsv>` (`tools/bc2cpp/native_arms_report.rb`, aggregated by
+`scripts/bc2cpp_native_arms_report.rb tsv [owner-regexp]`) writes one row per by-name site with its receiver set `S` (proven by
+the exact-class flow or bounded by call facts, whatever the members), each member's cell kind and the gates that fail
+today. Wio closed world, master `7818f0f5`, engine gems:
+
+| Measure | Value |
+| --- | ---: |
+| by-name sites / whose else still dispatches (kept marker 372, bare send 1,553) | 2,009 / 1,925 |
+| dispatching sites with a bounded set (proven 163, call facts 107) / unproven | 270 / 1,655 |
+| bounded sites: kept else / bare send | 92 / 178 |
+| bounded sites a cell blocks (native with no entry, guarded `:int` entry, Ruby body not direct-callable) | 186 |
+| `bc2cpp_send` / `bc2cpp_nomethod`, switch off -> on | 2,513 -> 2,463 / 4,380 -> 4,441 |
+| by-name sites removed (`update` 42, `Hash#delete` 8) / new by-name sites | 50 / 0 |
+| `shipped.cxx` with `BC2CPP_NATIVE_CLASS_ARMS=0` against master | byte-identical |
+
+Sites with an unproven receiver set cannot be fixed by these proofs. The three proofs of ADR 0315 (class-object
+definers, per-class native/outside resolution, a cell check against `S`) remove nothing alone; together they remove the
+42 `update` sites of the `class << Graphics` probe, and FLOW_CORE_DIRECT the 8
+`Hash#delete` sites of a flow-proven Hash.
+
 ## Follow-up: numeric constants and native `:int` arguments (ADR 0318)
 
 `BC2CPP_NATIVE_INT_ARGS=<tsv>` writes one `NINT` line per `:int` argument of a native entry point (`Bitmap.new`, exact
@@ -760,15 +782,9 @@ direct entry for `break`/`return` blocks 3 / 0 / 5; `Hash#delete` 6 / 2 / 0 (a f
 CORE_EXACT_DIRECT does not read) and `Array#delete` 2 / 0 / 0 (no compiled body); sum 29, below the cutoff of 30, so
 nothing was built.
 
-## Follow-up: flow-proven core calls before polymorphic chains (ADR 0327)
+## Follow-up: Hash#delete flow-core coverage (ADR 0327)
 
-A same-input comparison on `fdf8a884` removes eight body `bc2cpp_send` sites
-(2,542 to 2,534), all `Hash#delete`: six in RPG2k and two in LCF. The existing
-exact-class proof was available, but user-class polymorphic emission returned
-before CORE_EXACT_DIRECT could consume it. Resolve the compiled core target
-first; no receiver proof is widened. CORE_EXACT_DIRECT sites rise from 81 to
-89. Helpers, block funcalls and NoMethodError sites are unchanged.
-
-These counts use the local mruby checkout and are a paired comparison, not a
-replacement for the earlier baseline's absolute counts. See
-[ADR 0327](adr/0327-bc2cpp-flow-core-dispatch.md).
+The eight `Hash#delete` sends above (six RPG2k, two LCF) are removed by
+FLOW_CORE_DIRECT (ADR 0323). ADR 0327 adds no generator change; it adds pooled
+Hash `delete`/`fetch` fixtures and a mutant on the early return to the
+core-exact check. See [ADR 0327](adr/0327-bc2cpp-flow-core-hash-delete-checks.md).

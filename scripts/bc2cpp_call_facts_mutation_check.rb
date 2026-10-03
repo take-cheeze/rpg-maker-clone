@@ -57,7 +57,7 @@ MUTANTS = [
    "ENV['BC2CPP_CALL_FACTS'] != '0' && ", '',
    /kill switch \(BC2CPP_CALL_FACTS=0\)/, false],
   ['a name an alias or a computed definition installs is still bounded', 'call_facts.rb',
-   "@w.installed.nil? || @w.installed.include?(name) || ", '',
+   "installed.nil? || installed.include?(name) || ", '',
    /NEG an alias of the fact name|NEG a name defined from a computed list/, false]
 ].freeze
 

@@ -1044,9 +1044,8 @@
   `uniq`, `fetch`, ...) calls the compiled core body directly when that body cannot suspend a Fiber, with no
   by-name send left; `BC2CPP_CORE_EXTEND=0` returns the earlier output; see
   [`docs/adr/0314-bc2cpp-core-exact-direct.md`](docs/adr/0314-bc2cpp-core-exact-direct.md).
-  Flow-proven core calls also resolve before user-class polymorphic chains, so pooled Hash `delete`
-  calls reach the compiled core body without a by-name fallback; see
-  [`docs/adr/0327-bc2cpp-flow-core-dispatch.md`](docs/adr/0327-bc2cpp-flow-core-dispatch.md).
+  The pooled `Hash#delete` flow-core path (ADR 0323) is covered by the core-exact check; see
+  [`docs/adr/0327-bc2cpp-flow-core-hash-delete-checks.md`](docs/adr/0327-bc2cpp-flow-core-hash-delete-checks.md).
   `BC2CPP_INTERFACE_TABLES=1` enables shared, automatically generated dispatch tables for five or more
   eligible exact classes, with adapters for Ruby methods, accessors and audited native entries. Short chains
   retain their existing form; table misses retain the checked fallback. See
@@ -1205,6 +1204,14 @@
   `BC2CPP_NATIVE_INT_ARGS=FILE` write why a constant or an argument is unproven. See
   [`docs/adr/0318-bc2cpp-numeric-constant-ranges-and-native-int-arguments.md`](docs/adr/0318-bc2cpp-numeric-constant-ranges-and-native-int-arguments.md)
   and `scripts/bc2cpp_numeric_constants_check.rb`.
+  A proven receiver set is judged per class (ADR 0323): a `def`/`alias_method` directly in `class << <constant>`
+  lands on that object, so it is no unknown definer or installed name for instances; a name natives or outside Ruby
+  also spell is resolved per class along its lookup path; and a flow-proven exact `Hash` calls the compiled
+  `Hash#delete` instead of a chain over user classes. 50 fewer by-name sends in the wio engine gems (`update` on
+  `RPG2k::Window`/`Game::Interpreter`, `delete`); `BC2CPP_NATIVE_CLASS_ARMS=0` turns it off and
+  `BC2CPP_NATIVE_ARMS_REPORT=FILE` (`scripts/bc2cpp_native_arms_report.rb`) measures the levers. See
+  [`docs/adr/0323-bc2cpp-native-class-arms.md`](docs/adr/0323-bc2cpp-native-class-arms.md) and
+  `scripts/bc2cpp_native_class_arms_check.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
