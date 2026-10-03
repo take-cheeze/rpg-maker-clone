@@ -1202,6 +1202,13 @@
   send is a sole arm, 822 nil paths are live and unguarded (scene-lifecycle ivars and database chunks, none a bug when read),
   and making the provable errors compile errors would remove nothing. See
   [`docs/adr/0330-bc2cpp-dead-arm-measurement.md`](docs/adr/0330-bc2cpp-dead-arm-measurement.md).
+  `BC2CPP_RECEIVER_PROOF_REPORT=FILE` writes one row per engine send whose unproven receiver keeps a by-name line (where
+  the receiver comes from, and what the line becomes when the receiver is forced to a class set, by a forked recompile
+  that leaves the output byte-identical) for `scripts/bc2cpp_receiver_proof_report.rb`; 1,783 sends are unproven, the best
+  sound slice measured (an audited native result class plus dropping the placeholder of a native no linked source defines)
+  removes 22 by-name sends against the cutoff of 30, so none was built. Floor probes include every answering class,
+  including sets larger than 40 classes. See
+  [`docs/adr/0331-bc2cpp-receiver-class-proofs-measured-not-built.md`](docs/adr/0331-bc2cpp-receiver-class-proofs-measured-not-built.md).
   An audited Window call graph scopes native `@contents` and `@cursor_rect` poisoning to the RGSS::Window family,
   allowing unrelated scene classes to prove their own slots. It removes 41 cached by-name engine sends in the Wio
   census (39 gain nil-receiver helper calls). Source changes or new outside callers withdraw the audit;
