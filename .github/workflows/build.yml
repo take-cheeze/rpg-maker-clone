@@ -1079,9 +1079,12 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_dead_arm_report_check.rb
               # ADR 0331: BC2CPP_RECEIVER_PROOF_REPORT changes no output and its rows describe a receiver-source fixture.
               MRBC="$mrbc" ruby scripts/bc2cpp_receiver_proof_report_check.rb
-              # ADR 0332: audited native ivar families, withdrawal worlds, runtime parity and seven mutants.
+              # ADR 0332: audited native ivar families, withdrawal worlds, runtime parity and eight mutants.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_native_ivar_scopes_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_ivar_scopes_mutation_check.rb
+              # ADR 0333: native result classes, absent placeholders, runtime parity and eight mutants.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_native_class_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_class_results_mutation_check.rb
           - shard: numeric-constants
             # ADR 0318: generated code with the withdrawal worlds, the full-core and core-only runs, then fifteen
             # mutants and an unmutated control through the shared pool.
@@ -1341,6 +1344,7 @@ jobs:
               # ADR 0317: the 32-bit run of the call-facts fixture (the 64-bit runs are in `call-facts`).
               MRBC="$mrbc" ruby scripts/bc2cpp_call_facts_check.rb
               NIS_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_native_ivar_scopes_check.rb
+              NCR_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_native_class_results_check.rb
               # ADR 0318: the 32-bit run of the numeric-constant fixture (the 64-bit runs are in `numeric-constants`).
               MRBC="$mrbc" ruby scripts/bc2cpp_numeric_constants_check.rb
               # ADR 0326: the 32-bit run of the interval-operand fixture (the 64-bit runs are in `numeric-intervals`).
