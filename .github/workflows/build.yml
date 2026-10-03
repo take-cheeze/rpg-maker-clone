@@ -1087,7 +1087,7 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_ext_prefix_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_ext_prefix_mutation_check.rb
           - shard: native-class-arms
-            # ADR 0323: generated code with the withdrawal worlds, the full-core and core-only runs, then twelve
+            # ADR 0323: generated code with the withdrawal worlds, the full-core and core-only runs, then thirteen
             # mutants and an unmutated control through the shared pool (the 32-bit run is in `bc2cpp-width (int32)`).
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_native_class_arms_check.rb
