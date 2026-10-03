@@ -49,8 +49,12 @@ on this machine against about 230 s without the report).
 
 ## Results
 
+Every table below was measured on master `eed615c7`. A re-run on `4bdd9492` (ADR 0323, 0327, 0329 and 0330 merged;
+`shipped.cxx` again byte-identical with the report on) gives 1,917 sends, 137 proven, 1,780 unproven, own removes 199 (195
+with nil), floor 235 (219 with nil): the same shape, within 5% on every row.
+
 1,970 engine sends hold a by-name line (2,030 lines). 187 already have a proven receiver set and still dispatch (the
-consumer has no arm for the class: the subject of ADR 0323, PR #1998 and ADR 0325's 172 sends, not this one). **1,783
+consumer has no arm for the class: the subject of ADR 0323, ADR 0327 and ADR 0325's 172 sends, not this one). **1,783
 have an unproven receiver (1,841 lines).**
 
 | Source | Sites | Own set | Own removes (nil-free / nil allowed) | Floor removes (nil-free / nil allowed) | Risk tier | Floor (nil allowed) per risk |
