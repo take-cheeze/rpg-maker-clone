@@ -1223,6 +1223,10 @@
   and String subclass freedom. This removes another 20 cached sends (2,865 to 2,845);
   `BC2CPP_NATIVE_STRING_RESULTS=0` disables it. Regexp nil results remain possible. See
   [`docs/adr/0334-bc2cpp-native-string-results.md`](docs/adr/0334-bc2cpp-native-string-results.md).
+  Audited native `dup` preserves the receiver class; exact Array `compact` and `join` return
+  Array and String. This removes one more cached send (2,845 to 2,844), without copying element
+  or immutability metadata. `BC2CPP_NATIVE_COLLECTION_RESULTS=0` disables these facts. See
+  [`docs/adr/0335-bc2cpp-native-collection-results.md`](docs/adr/0335-bc2cpp-native-collection-results.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
   neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio
