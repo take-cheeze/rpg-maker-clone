@@ -27,6 +27,8 @@ MUTANTS = [
    'globally_spelled = outside_ivar_names(outside)', 'globally_spelled = Set.new', /outside presym write|foreign Ruby keeps/],
   ['the kill switch is ignored', AUDIT,
    "if ENV['BC2CPP_NATIVE_IVAR_SCOPES'] == '0'", 'if false', /kill switch withdraws/],
+  ['Sprite viewport family is omitted', AUDIT,
+   'RGSS::Sprite RGSS::Plane RGSS::Tilemap RGSS::Window', 'RGSS::Plane RGSS::Tilemap RGSS::Window', /native viewport family remains unknown: RGSS::Sprite/],
   ['native Window families are unpoisoned', POOLS,
    'group.failed = native_family || poisoned.include?(group.name)', 'group.failed = poisoned.include?(group.name)', /Window remains unknown|Window subclass remains unknown/],
   ['reflection no longer poisons the pooled name', POOLS,

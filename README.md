@@ -1209,8 +1209,9 @@
   removes 22 by-name sends against the cutoff of 30, so none was built. Floor probes include every answering class,
   including sets larger than 40 classes. See
   [`docs/adr/0331-bc2cpp-receiver-class-proofs-measured-not-built.md`](docs/adr/0331-bc2cpp-receiver-class-proofs-measured-not-built.md).
-  An audited Window call graph scopes native `@contents` and `@cursor_rect` poisoning to the RGSS::Window family,
-  allowing unrelated scene classes to prove their own slots. It removes 41 cached by-name engine sends in the Wio
+  An audited native call graph scopes `@contents` and `@cursor_rect` poisoning to RGSS::Window, and `@viewport`
+  poisoning to RGSS::Sprite/Plane/Tilemap/Window, allowing unrelated Ruby classes to prove their own slots.
+  It removes 43 cached by-name engine sends in the Wio
   census (39 gain nil-receiver helper calls). Source changes or new outside callers withdraw the audit;
   `BC2CPP_NATIVE_IVAR_SCOPES=0` disables it. See
   [`docs/adr/0332-bc2cpp-native-window-ivar-families.md`](docs/adr/0332-bc2cpp-native-window-ivar-families.md).
