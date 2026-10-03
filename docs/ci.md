@@ -151,10 +151,20 @@ Used by `bc2cpp_unlisted_class_call_check` (`UCC_MUTANTS`),
 `bc2cpp_computed_send_check` (`CSEND_MUTANTS`),
 `bc2cpp_exact_receiver_flow_mutation_check`,
 `bc2cpp_loop_installers_mutation_check`, `bc2cpp_getidx_integer_arm_check`
-(`GIA_MUTANTS`), and the `bc2cpp_frozen_tables_mutation_check`,
+(`GIA_MUTANTS`), `bc2cpp_block_arm_reach_check` (`BR_MUTANTS`),
+`bc2cpp_core_exact_direct_check` (`CX_MUTANTS`), and the
+`bc2cpp_frozen_tables_mutation_check`,
 `bc2cpp_call_results_mutation_check`, `bc2cpp_class_pools_mutation_check`,
 `bc2cpp_tuple_return_mutation_check` (always, no flag needed).
 `ci_helpers_check.rb` covers the pool itself.
+
+Two of these keep their `MUTANTS` as a Hash and pass `MUTANTS.to_a`, because the
+pool indexes its items and needs a sequence; declaration order is preserved, so
+the log reads as before. `core_exact_direct` runs its unmutated control first and
+alone, ahead of the pool: it is what says the copy-and-run path itself still
+works, so running it beside a mutant would attribute a broken path to that
+mutant. Its mutant directories carry an index, because two mutants may edit the
+same generator file and would otherwise share — and delete — one copy.
 
 ### Width builds (ADR 0300)
 

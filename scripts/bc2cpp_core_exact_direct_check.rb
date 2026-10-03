@@ -32,6 +32,7 @@ TOOL_DIR = ENV['CX_TOOL_DIR'] || File.join(ROOT, 'tools/bc2cpp')
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative 'bc2cpp_mutant_pool'
 
 MRUBY = File.join(ROOT, '3rd/mruby')
 MRBC_PATH = ENV['MRBC'] || 'mrbc'
@@ -604,28 +605,45 @@ if ENV['CX_MUTANTS'] == '1' && MODE != 'run' && tool?(MRBC_PATH)
       if file
         path = File.join(dir, file)
         text = File.read(path)
-        return [nil, "the mutated text is not in #{file}"] unless text.include?(from)
+        return [:site_gone, "the mutated text is not in #{file}"] unless text.include?(from)
 
         File.write(path, text.sub(from) { to })
       end
-      Open3.capture2e({ 'CX_TOOL_DIR' => dir, 'CX_MODE' => 'generated', 'CX_MUTANTS' => '0', 'MRBC' => MRBC_PATH }, RbConfig.ruby, __FILE__)
+      Bc2cppMutantPool.run({ 'CX_TOOL_DIR' => dir, 'CX_MODE' => 'generated', 'CX_MUTANTS' => '0', 'MRBC' => MRBC_PATH },
+                           [RbConfig.ruby, __FILE__])
     ensure
       FileUtils.rm_rf(dir)
     end
   end
   puts 'mutants'
-  control, control_status = run_copy.call('control', nil, nil, nil)
-  check.call('control: an unmutated copy of the generator passes the generated-code checks', control_status&.success? && control.to_s.include?('PASS'))
-  puts control.to_s.lines.grep(/FAIL|rror/).first(6).join unless control_status&.success?
-  MUTANTS.each_with_index do |(name, (file, from, to)), i|
-    out, status = run_copy.call("m#{i}", file, from, to)
-    unless status.respond_to?(:success?)
-      check.call("mutant #{name}: #{status}", false)
+  # The control runs first and alone: it is what says the copy-and-run path itself still works, so
+  # running it beside a mutant would attribute a broken path to that mutant.
+  control = run_copy.call('control', nil, nil, nil)
+  check.call('control: an unmutated copy of the generator passes the generated-code checks',
+             control.respond_to?(:out) && control.success && control.out.to_s.include?('PASS'))
+  puts control.out.to_s.lines.grep(/FAIL|rror/).first(6).join unless control.respond_to?(:out) && control.success
+
+  # Each mutant is a copy of the generator with one soundness condition broken, run as its own
+  # subprocess, so the pool runs several at a time (BC2CPP_JOBS; docs/ci.md, "Mutant pool"). This
+  # was the slowest single command in the bc2cpp check matrix as a serial loop.
+  # MUTANTS is a Hash; the pool indexes its items, so hand it the pairs in declaration order.
+  # Unique dir per mutant: the pool runs them concurrently and two mutants may edit the same
+  # file, so a label derived from the file alone would have them share (and delete) one dir.
+  mutant_seq = Mutex.new
+  seen = 0
+  mutate = lambda do |(_name, (file, from, to))|
+    index = mutant_seq.synchronize { seen += 1 }
+    run_copy.call("m#{index}-#{file}", file, from, to)
+  end
+
+  Bc2cppMutantPool.each_ordered(MUTANTS.to_a, work: mutate) do |(name, _spec), run|
+    if run.is_a?(Array) && run.first == :site_gone
+      check.call("mutant #{name}: #{run.last}", false)
       next
     end
-    caught = !status.success? && out.include?('FAIL')
+    caught = !run.success && run.out.include?('FAIL')
     check.call("mutant killed: #{name}", caught)
-    puts out.lines.grep(/FAIL|rror/).first(4).join unless caught
+    puts run.out.lines.grep(/FAIL|rror/).first(4).join unless caught
   end
 end
 
