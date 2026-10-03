@@ -67,6 +67,7 @@ def parse_text_reference(srcs, dir, label)
   raise 'mrbc -v failed' unless $?.success?
 
   blocks = []
+  ext_addr = nil
   text.each_line do |line|
     if line =~ /^irep 0x\h+ nregs=(\d+) nlocals=(\d+) pools=(\d+) syms=(\d+) reps=(\d+)/
       blocks << TextIrep.new(*Regexp.last_match.captures.map(&:to_i), nil, [], [])
@@ -79,7 +80,18 @@ def parse_text_reference(srcs, dir, label)
       blocks.last.catches << CatchHandler.new(type: type.to_sym, begin_addr: b.to_i, end_addr: e.to_i, target: t.to_i)
     elsif line =~ /^\s*(\d+)\s+(\d+)\s+([A-Z][A-Z0-9_]*)\s*(.*)$/
       lineno, addr, op, rest = Regexp.last_match.captures
-      blocks.last.insns << Insn.new(lineno: lineno.to_i, addr: addr.to_i, op: op, args: rest.strip, raw: line.rstrip)
+      if InsnDecoder::EXT_WIDTH.key?(op) && InsnDecoder.fold_ext_prefix?
+        ext_addr = addr
+        next
+      end
+      raw = line.rstrip
+      # The decoder folds a prefix into the instruction it widens, which then starts at the prefix byte.
+      if ext_addr
+        addr = ext_addr
+        raw = raw.sub(/\A(\s*\d+\s+)\d+/) { "#{Regexp.last_match(1)}#{format('%03d', ext_addr.to_i)}" }
+        ext_addr = nil
+      end
+      blocks.last.insns << Insn.new(lineno: lineno.to_i, addr: addr.to_i, op: op, args: rest.strip, raw: raw)
     end
   end
   blocks
