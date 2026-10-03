@@ -1079,9 +1079,10 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_dead_arm_report_check.rb
               # ADR 0331: BC2CPP_RECEIVER_PROOF_REPORT changes no output and its rows describe a receiver-source fixture.
               MRBC="$mrbc" ruby scripts/bc2cpp_receiver_proof_report_check.rb
-              # ADR 0332: audited native ivar families, withdrawal worlds, runtime parity and eight mutants.
+              # ADRs 0332/0337: audited native ivar families, bitmap setters, parity and eleven mutants.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_native_ivar_scopes_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_ivar_scopes_mutation_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_setter_report_check.rb
               # ADR 0333: native result classes, absent placeholders, runtime parity and eight mutants.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_native_class_results_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_class_results_mutation_check.rb
