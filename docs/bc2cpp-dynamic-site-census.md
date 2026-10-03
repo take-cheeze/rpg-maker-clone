@@ -536,7 +536,8 @@ does not prove, so no per-class table can exist; of the 63 with a proven set, at
 `class << <class>` is a class-object definer, per-class native/outside-Ruby resolution, a cell check against the
 set rather than the name's whole definer set). ADR 0315 records why nothing was built, the annotation inventory
 (and why an RBS-style form does not fit), and the per-name method-set sizes (94% of the polymorphic names have four or
-fewer Ruby implementers). ADR 0296's "372 kept by name" rows are sites with no dispatch left in the final code. The
+fewer Ruby implementers). ADR 0328 later builds the tables anyway, opt-in and for source size and lookup shape rather
+than else-arm removal. ADR 0296's "372 kept by name" rows are sites with no dispatch left in the final code. The
 report changes no generated code (`shipped.cxx` is byte-identical with it on).
 
 ## Follow-up: which producer leaves a receiver unproven (ADR 0309)

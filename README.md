@@ -1047,6 +1047,10 @@
   Flow-proven core calls also resolve before user-class polymorphic chains, so pooled Hash `delete`
   calls reach the compiled core body without a by-name fallback; see
   [`docs/adr/0327-bc2cpp-flow-core-dispatch.md`](docs/adr/0327-bc2cpp-flow-core-dispatch.md).
+  `BC2CPP_INTERFACE_TABLES=1` enables shared, automatically generated dispatch tables for five or more
+  eligible exact classes, with adapters for Ruby methods, accessors and audited native entries. Short chains
+  retain their existing form; table misses retain the checked fallback. See
+  [generated interface tables](docs/bc2cpp-interface-tables.md) for usage and measurements.
   A shared escape analysis (`tools/bc2cpp/escape_analysis.rb`) answers whether the value a creation site makes
   leaves its frame, with callee summaries over a closed world; its first consumer lets a literal block that captures
   locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything
