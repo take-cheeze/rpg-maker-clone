@@ -652,6 +652,28 @@ potential), aggregated by `scripts/bc2cpp_refine_report.rb tsv [--list-bugs]`. W
 | POLY_SMALL_N chains with two classes on one definition | 50 of 1,525 (177 of 8,906 compares) |
 | `shipped.cxx` with `BC2CPP_CALL_FACTS=0` against master | byte-identical |
 
+## Follow-up: per-class resolution for proven receiver sets (ADR 0323)
+
+`BC2CPP_NATIVE_ARMS_REPORT=<tsv>` (`tools/bc2cpp/native_arms_report.rb`, aggregated by
+`scripts/bc2cpp_native_arms_report.rb tsv [owner-regexp]`) writes one row per by-name site with its receiver set `S` (proven by
+the exact-class flow or bounded by call facts, whatever the members), each member's cell kind and the gates that fail
+today. Wio closed world, master `7818f0f5`, engine gems:
+
+| Measure | Value |
+| --- | ---: |
+| by-name sites / whose else still dispatches (kept marker 372, bare send 1,553) | 2,009 / 1,925 |
+| dispatching sites with a bounded set (proven 163, call facts 107) / unproven | 270 / 1,655 |
+| bounded sites: kept else / bare send | 92 / 178 |
+| bounded sites a cell blocks (native with no entry, guarded `:int` entry, Ruby body not direct-callable) | 186 |
+| `bc2cpp_send` / `bc2cpp_nomethod`, switch off -> on | 2,513 -> 2,463 / 4,380 -> 4,441 |
+| by-name sites removed (`update` 42, `Hash#delete` 8) / new by-name sites | 50 / 0 |
+| `shipped.cxx` with `BC2CPP_NATIVE_CLASS_ARMS=0` against master | byte-identical |
+
+Sites with an unproven receiver set cannot be fixed by these proofs. The three proofs of ADR 0315 (class-object
+definers, per-class native/outside resolution, a cell check against `S`) remove nothing alone; together they remove the
+42 `update` sites of the `class << Graphics` probe, and FLOW_CORE_DIRECT the 8
+`Hash#delete` sites of a flow-proven Hash.
+
 ## Follow-up: numeric constants and native `:int` arguments (ADR 0318)
 
 `BC2CPP_NATIVE_INT_ARGS=<tsv>` writes one `NINT` line per `:int` argument of a native entry point (`Bitmap.new`, exact

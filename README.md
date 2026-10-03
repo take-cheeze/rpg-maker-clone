@@ -1202,6 +1202,14 @@
   `BC2CPP_NATIVE_INT_ARGS=FILE` write why a constant or an argument is unproven. See
   [`docs/adr/0318-bc2cpp-numeric-constant-ranges-and-native-int-arguments.md`](docs/adr/0318-bc2cpp-numeric-constant-ranges-and-native-int-arguments.md)
   and `scripts/bc2cpp_numeric_constants_check.rb`.
+  A proven receiver set is judged per class (ADR 0323): a `def`/`alias_method` directly in `class << <constant>`
+  lands on that object, so it is no unknown definer or installed name for instances; a name natives or outside Ruby
+  also spell is resolved per class along its lookup path; and a flow-proven exact `Hash` calls the compiled
+  `Hash#delete` instead of a chain over user classes. 50 fewer by-name sends in the wio engine gems (`update` on
+  `RPG2k::Window`/`Game::Interpreter`, `delete`); `BC2CPP_NATIVE_CLASS_ARMS=0` turns it off and
+  `BC2CPP_NATIVE_ARMS_REPORT=FILE` (`scripts/bc2cpp_native_arms_report.rb`) measures the levers. See
+  [`docs/adr/0323-bc2cpp-native-class-arms.md`](docs/adr/0323-bc2cpp-native-class-arms.md) and
+  `scripts/bc2cpp_native_class_arms_check.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).

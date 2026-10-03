@@ -290,6 +290,10 @@ if run_generated
              nb.call('hto').include?('Enumerable_entries_impl(M,') && dispatches.call(nb.call('hto')).zero?)
   check.call('a direct site is not left marked as a real dynamic dispatch',
              !nb.call('uq').include?('// POLY :uniq') && !nb.call('uq').include?('POLY_DIAG'))
+  # FLOW_CORE_DIRECT (ADR 0323) takes exact core sites before the poly path; the kill switch brings that path back.
+  arms_off_uq = body_of.call(generate.call(FIXTURE, 'cx_arms_off', extra_env: { 'BC2CPP_NATIVE_CLASS_ARMS' => '0' }), 'uq')
+  check.call('with the class arms off, a direct site reached through the poly path is not marked as a dynamic dispatch',
+             arms_off_uq.include?('CORE_EXACT_DIRECT :uniq') && !arms_off_uq.include?('// POLY :uniq') && !arms_off_uq.include?('POLY_DIAG'))
 
   puts ' 2. receivers that are not proven keep the by-name send'
   check.call('a.max on an unknown receiver keeps the inline arm and its by-name else',
