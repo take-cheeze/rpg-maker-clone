@@ -96,16 +96,20 @@ module Bc2cppFixtureRuntime
   # next to a core fixture. `build_gems` ([name, dir] pairs) adds gems to the closed-world build, whose
   # src/ and mrblib/ then count as outside native and Ruby sources.
   # `core` compiles mruby's own mrblib (BC2CPP_CORE_OWNERS) in front of the fixture, as a build does.
+  # `skip_unsupported: false` drops SKIP_UNSUPPORTED, so a method the compiler
+  # refuses keeps its `#error` in the output instead of being dropped whole --
+  # what a check that asserts on a refusal needs.
   def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil, path: 'fixture.rb', extra: [],
-               native: [], foreign: [], build_gems: [], core: false)
+               native: [], foreign: [], build_gems: [], core: false, skip_unsupported: true)
     src = File.join(dir, path)
     FileUtils.mkdir_p(File.dirname(src))
     File.write(src, source)
     extra_srcs = extra.map do |extra_path, text|
       File.join(dir, extra_path).tap { |file| FileUtils.mkdir_p(File.dirname(file)) && File.write(file, text) }
     end
-    env = { 'MRBC' => mrbc, 'SKIP_UNSUPPORTED' => '1', 'OUT_SYMBOL' => 'fixture', 'OUT_DIR' => dir,
+    env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => 'fixture', 'OUT_DIR' => dir,
             'BC2CPP_SELF_REGISTERING' => '1', 'BC2CPP_HOT_METHODS' => hot_methods }
+    env['SKIP_UNSUPPORTED'] = '1' if skip_unsupported
     only_owners = BC2CPP_CORE_OWNERS + only_owners if core && only_owners
     env['ONLY_OWNERS'] = only_owners.join(',') if only_owners
     if closed
