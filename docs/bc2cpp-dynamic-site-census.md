@@ -832,3 +832,17 @@ through an ivar accessor, 136 through a native result, and per-class resolution 
 (`h.keys` and `Graphics.snap_to_bitmap` as audited native result classes, and a `<native>` placeholder of a name no linked
 source defines dropped from the return join) removed 22 by-name sends against the cutoff of 30, so nothing was built; the
 lever left is a call-graph audit of the RGSS natives' `self` discipline for `@contents` (about 70 floor-freed sites).
+
+## Follow-up: native RGSS ivar families (ADR 0332)
+
+The native Window call graph accesses `@contents` and `@cursor_rect` only on its Window receiver's `self`.
+Pinned native sources and a scan for outside helper callers let the compiler keep those names poisoned for the
+RGSS::Window family while pooling unrelated scene slots. The `@viewport` writer audit similarly scopes poisoning
+to RGSS::Sprite/Plane/Tilemap/Window, freeing RPG2k::Window's own Ruby-managed viewport. Unknown native setter values
+remain unknown.
+
+On master `4bdd9492`, switch off against on on one tree, the Wio shipped census goes from 2,924 to 2,881 cached
+by-name sites. All 43 removals belong to engine methods; 39 nil-receiver helper calls and one no-method helper call
+are added, while four obsolete no-method helpers in RPG2k::Window disappear (net -3). Class ivar pools grow from 185 to 187 and argument pools from 115 to 117. With
+`BC2CPP_NATIVE_IVAR_SCOPES=0`, the shipped C++ is byte-identical to master. Source changes, new outside callers or
+other outside spellings withdraw the scope proof. See [ADR 0332](adr/0332-bc2cpp-native-window-ivar-families.md).

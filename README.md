@@ -1209,6 +1209,12 @@
   removes 22 by-name sends against the cutoff of 30, so none was built. Floor probes include every answering class,
   including sets larger than 40 classes. See
   [`docs/adr/0331-bc2cpp-receiver-class-proofs-measured-not-built.md`](docs/adr/0331-bc2cpp-receiver-class-proofs-measured-not-built.md).
+  An audited native call graph scopes `@contents` and `@cursor_rect` poisoning to RGSS::Window, and `@viewport`
+  poisoning to RGSS::Sprite/Plane/Tilemap/Window, allowing unrelated Ruby classes to prove their own slots.
+  It removes 43 cached by-name engine sends in the Wio
+  census (39 gain nil-receiver helper calls). Source changes or new outside callers withdraw the audit;
+  `BC2CPP_NATIVE_IVAR_SCOPES=0` disables it. See
+  [`docs/adr/0332-bc2cpp-native-window-ivar-families.md`](docs/adr/0332-bc2cpp-native-window-ivar-families.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
   neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio
