@@ -1194,6 +1194,8 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_super_ancestry_check.rb
               # ADR 0330: a block body forwarding its frame's block.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_optional_block_frame_check.rb
+              # ADR 0332: the `super` no-caller-block proof, derived not listed.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_super_direct_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_integer_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_const_lookup_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_impossible_as_error_check.rb
