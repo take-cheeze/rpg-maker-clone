@@ -13,7 +13,7 @@ the by-name `new` send, and found their `w`/`h` are not constructor arguments bu
 `SCREEN_W`, `TILE`, `FACE_SIZE`: `flowfail`), native `.width` results, `Array#max` and `Window#width`. This ADR measures
 that claim again leaf by leaf, and builds the part of it that is provable.
 
-### Measurement (wio closed world, master `cd86085f`, `3rd/*` populated, read-only probe `BC2CPP_NATIVE_INT_ARGS=<file>`)
+### Measurement (wio closed world, master `b1ab8310`, `3rd/*` populated, read-only probe `BC2CPP_NATIVE_INT_ARGS=<file>`)
 
 Every native-direct call site whose `:int` argument keeps `mrb_integer_p` and a by-name else is probed with the Fixnum
 proof (`proven_fixnum_operand?`); a failing argument is classified by the register's writer and the leaves behind it
@@ -105,10 +105,10 @@ Same tree, kill switch against default (`scripts/bc2cpp_coverage_report.rb`, shi
 
 | | before | after | |
 | --- | ---: | ---: | --- |
-| `bc2cpp_send` call sites | 2,628 | 2,559 | -69 |
-| of them in `RPG2k_*`/`Game_*` | 1,800 | 1,735 | -65 |
+| `bc2cpp_send` call sites | 2,607 | 2,538 | -69 |
+| of them in `RPG2k_*`/`Game_*` | 1,779 | 1,714 | -65 |
 | `Bitmap.new` sites with no tag test and no else | 0 | 65 | +65 |
-| `bc2cpp_getidx`, `bc2cpp_slow_*`, `bc2cpp_eqq`, `bc2cpp_nil_receiver`, `bc2cpp_nomethod` | 2,038 / 3,359 / 111 / 892 / 4,386 | same | 0 |
+| `bc2cpp_getidx`, `bc2cpp_slow_*`, `bc2cpp_eqq`, `bc2cpp_nil_receiver`, `bc2cpp_nomethod` | 2,033 / 3,355 / 111 / 892 / 4,386 | same | 0 |
 | `NOMETHOD_REVIEWED` keys | 2,917 | 2,917 | 0 |
 | constants with a proven Fixnum interval | n/a (693 Fixnum constants) | 725 | |
 

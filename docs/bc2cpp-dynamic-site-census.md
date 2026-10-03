@@ -656,14 +656,14 @@ potential), aggregated by `scripts/bc2cpp_refine_report.rb tsv [--list-bugs]`. W
 `BC2CPP_NATIVE_INT_ARGS=<tsv>` writes one `NINT` line per `:int` argument of a native entry point (`Bitmap.new`, exact
 `Sprite#x=`-style calls) the Fixnum proof does not cover: the site, the writer of the register and the leaves behind it;
 `BC2CPP_NUMERIC_CONSTANTS_REPORT=<tsv>` writes each constant name with a definition and no interval, and why.
-Wio closed world, master `cd86085f`, `3rd/*` populated, kill switch `BC2CPP_NUMERIC_CONSTANTS=0` against default:
+Wio closed world, master `b1ab8310`, `3rd/*` populated, kill switch `BC2CPP_NUMERIC_CONSTANTS=0` against default:
 
 | Measure | Before | After | Delta |
 | --- | ---: | ---: | ---: |
-| `bc2cpp_send` call sites | 2,628 | 2,559 | -69 |
-| of them in `RPG2k_*`/`Game_*` | 1,800 | 1,735 | -65 |
+| `bc2cpp_send` call sites | 2,607 | 2,538 | -69 |
+| of them in `RPG2k_*`/`Game_*` | 1,779 | 1,714 | -65 |
 | `Bitmap.new` sites without a tag test and else (of 115) | 0 | 65 | +65 |
-| `bc2cpp_getidx`, `bc2cpp_slow_*`, `bc2cpp_eqq`, `bc2cpp_nil_receiver`, `bc2cpp_nomethod` | 2,038 / 3,359 / 111 / 892 / 4,386 | same | 0 |
+| `bc2cpp_getidx`, `bc2cpp_slow_*`, `bc2cpp_eqq`, `bc2cpp_nil_receiver`, `bc2cpp_nomethod` | 2,033 / 3,355 / 111 / 892 / 4,386 | same | 0 |
 | constants with a proven Fixnum interval | 693 Fixnum constants | 725 | |
 
 Removal, not relocation. The 115 `Bitmap.new` sites never asked the Fixnum proof (29 are removed by asking it); 36
