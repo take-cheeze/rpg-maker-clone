@@ -150,8 +150,11 @@ runner; that is an estimate until a CI run reports the timing table.
 Used by `bc2cpp_unlisted_class_call_check` (`UCC_MUTANTS`),
 `bc2cpp_computed_send_check` (`CSEND_MUTANTS`),
 `bc2cpp_exact_receiver_flow_mutation_check`,
-`bc2cpp_loop_installers_mutation_check` and `bc2cpp_getidx_integer_arm_check`
-(`GIA_MUTANTS`).
+`bc2cpp_loop_installers_mutation_check`, `bc2cpp_getidx_integer_arm_check`
+(`GIA_MUTANTS`), and the `bc2cpp_frozen_tables_mutation_check`,
+`bc2cpp_call_results_mutation_check`, `bc2cpp_class_pools_mutation_check`,
+`bc2cpp_tuple_return_mutation_check` (always, no flag needed).
+`ci_helpers_check.rb` covers the pool itself.
 
 ### Width builds (ADR 0300)
 
