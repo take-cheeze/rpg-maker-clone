@@ -87,6 +87,11 @@ puts format('%6d  (c) literal blocks without a direct entry (break/return/receiv
 c_removable = no_entry.select { |r| r['shape'] == 'proven_guarded' && r['free_if_entry'] == '1' && r['arms'].include?('+') }
 puts format('%6d      of those, proven class + yield-free + relaxable body: the else could go', c_removable.size)
 puts
-if list
+if list == 'facts'
+  # Sites whose facts name a bounded set the build would not accept (core, native or mixed members).
+  dyn.reject { |r| %w[- unbounded].include?(r['fact_kind']) }.each do |r|
+    puts [r['name'], r['shape'], r['facts'], r['fact_kind'], r['fact_set'][0, 100], r['where'].sub(%r{.*/(mruby-)}, '\1')].join("\t")
+  end
+elsif list
   sel.select { |r| r['shape'] == list }.each { |r| puts [r['name'], r['argc'], r['existing'], r['fact_kind'], r['arms'], r['where']].join("\t") }
 end
