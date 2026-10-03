@@ -1186,6 +1186,13 @@
   `scripts/bc2cpp_refine_report.rb` aggregates. See
   [`docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md`](docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md)
   and `scripts/bc2cpp_call_facts_check.rb`.
+  A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
+  interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
+  neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio
+  build, all removals); `BC2CPP_NUMERIC_CONSTANTS=0` turns it off and `BC2CPP_NUMERIC_CONSTANTS_REPORT=FILE` /
+  `BC2CPP_NATIVE_INT_ARGS=FILE` write why a constant or an argument is unproven. See
+  [`docs/adr/0318-bc2cpp-numeric-constant-ranges-and-native-int-arguments.md`](docs/adr/0318-bc2cpp-numeric-constant-ranges-and-native-int-arguments.md)
+  and `scripts/bc2cpp_numeric_constants_check.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
