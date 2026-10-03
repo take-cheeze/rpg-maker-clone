@@ -19,6 +19,7 @@ require_relative '../tools/bc2cpp/bc2cpp'
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
 require_relative 'bc2cpp_cxx'
+require_relative 'bc2cpp_fixture_runtime'
 
 ROOT = File.expand_path('..', __dir__)
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
@@ -419,8 +420,7 @@ Dir.mktmpdir do |dir|
       "    #{fn}(M, #{klass}, #{name.dump}, #{entry}, MRB_ARGS_ANY());"
     end
     File.write(File.join(dir, 'main.cpp'), <<~CPP)
-      #include <mruby.h>
-      #include "arg_shapes_gen.cpp"
+      #{Bc2cppFixtureRuntime::PROBE_PROLOGUE}#include "arg_shapes_gen.cpp"
       #include <mruby/irep.h>
       #include <mruby/string.h>
       #include <cstdio>
@@ -444,6 +444,7 @@ Dir.mktmpdir do |dir|
         if (M->exc) { mrb_print_error(M); return 3; }
         std::fwrite(RSTRING_PTR(text), 1, RSTRING_LEN(text), stdout);
         std::fputc('\\n', stdout);
+        bc2cpp_probe_report();
         mrb_close(M);
         return 0;
       }
@@ -456,7 +457,7 @@ Dir.mktmpdir do |dir|
     FileUtils.cp_r(dir, ENV['ARG_SHAPES_KEEP']) if ENV['ARG_SHAPES_KEEP']
     if built
       interpreted = IO.popen([binary, File.join(dir, 'arg_shapes.mrb'), 'interpreted'], err: %i[child out], &:read)
-      compiled = IO.popen([binary, File.join(dir, 'arg_shapes.mrb'), 'compiled'], err: %i[child out], &:read)
+      compiled = Bc2cppFixtureRuntime.probed_capture(binary, File.join(dir, 'arg_shapes.mrb'), 'compiled', compiled: true).first
       puts interpreted if interpreted.lines.size < 10
       check.call('the interpreted run produced a transcript', interpreted.lines.size > 60)
       lines = interpreted.lines.zip(compiled.lines)
