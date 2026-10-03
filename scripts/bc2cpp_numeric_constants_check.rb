@@ -52,6 +52,10 @@ HOLDER = <<~RUBY
     BIG = 3_000_000_000
     FLT = 2.5
     LATE = 5 if [].size > 0
+    DIVR = 3
+    # A jump lands on the SETCONST: the register is `false` on one path, the literal on the other.
+    ANDC = [].size > 0 && 1
+    QQ = 1_000_000_000 / DIVR
 
     # -- positives
     def lit; RGSS::Bitmap.new(W, H); 1; end
@@ -72,6 +76,17 @@ HOLDER = <<~RUBY
     def join(c); x = c ? W - 1 : H - 1; RGSS::Bitmap.new(x, 1); 1; end
     def late; RGSS::Bitmap.new(LATE, 1); 1; end
     def wide; RGSS::Bitmap.new(W * W * W * W, 1); 1; end
+    # The divisor's hull [-2, 3] holds 0: no quotient interval.
+    def qq; RGSS::Bitmap.new(QQ, 1); 1; end
+    def andc; RGSS::Bitmap.new(ANDC, 1); 1; end
+  end
+  class NcDiv; DIVR = -2; end
+
+  # `Scene::Map::TILE = Game::TILE` reads a value of its own name.
+  module NcG; TILE2 = 16; end
+  class NcMap
+    TILE2 = NcG::TILE2
+    def tile2; RGSS::Bitmap.new(TILE2 * 2, TILE2); 1; end
   end
 
   # The same bare name in two classes: the hull of both values is what a read can see.
@@ -86,9 +101,9 @@ RUBY
 
 OWNERS = HOLDER.scan(/^\s*class (Nc\w+)/).flatten.freeze
 
-POSITIVES = [%w[NcCons late], %w[NcCons lit], %w[NcCons arith], %w[NcCons divs], %w[NcCons neg], %w[NcCons local], %w[NcCons shared],
+POSITIVES = [%w[NcMap tile2], %w[NcCons late], %w[NcCons lit], %w[NcCons arith], %w[NcCons divs], %w[NcCons neg], %w[NcCons local], %w[NcCons shared],
              %w[NcCons scale], %w[NcCons cols], %w[NcUse2 shadow_ok]].freeze
-NEGATIVES = [%w[NcCons param], %w[NcCons big], %w[NcCons flt], %w[NcCons join], %w[NcCons wide],
+NEGATIVES = [%w[NcCons param], %w[NcCons big], %w[NcCons flt], %w[NcCons join], %w[NcCons wide], %w[NcCons qq], %w[NcCons andc],
              %w[NcUse shadow_bad]].freeze
 
 body_of = lambda do |code, owner, fn|
@@ -140,8 +155,9 @@ if ENV['MRBC']
     check.call('the diagnostic lists the intervals (literal, ADD, MUL, DIV, hull of two definitions)',
                ranges['W'] == [320, 320] && ranges['HEAD'] == [24, 24] && ranges['COLS'] == [21, 21] && ranges['NEG'] == [-5, -5] &&
                ranges['SCALE'] == [238, 238] && ranges['SHARED'] == [8, 8000] && ranges['T'] == [10, 20])
-    check.call('a constant above 32 bits, a Float and a never-evaluated name have no interval',
-               !ranges.key?('BIG') && !ranges.key?('FLT') && !ranges.key?('S'))
+    check.call('a constant above 32 bits, a Float, a quotient by an interval holding 0 and a never-evaluated name have no interval',
+               !ranges.key?('BIG') && !ranges.key?('FLT') && !ranges.key?('S') && !ranges.key?('QQ') && !ranges.key?('ANDC') && ranges['DIVR'] == [-2, 3])
+    check.call('a constant that reads its own bare name keeps the interval of its other definitions', ranges['TILE2'] == [16, 16])
 
     # [what, extra source, options, probes that must keep the test, probes that must stay proven]
     all = POSITIVES.reject { |owner, _| owner == 'NcUse2' }
@@ -156,6 +172,14 @@ if ENV['MRBC']
        [%w[NcCons lit], %w[NcCons divs], %w[NcCons scale]], [%w[NcCons arith], %w[NcCons neg], %w[NcCons shared]]],
       ['a foreign Ruby source defining the constant', '', { foreign: [['nc_foreign.rb', "B = 1.5\n"]] },
        [%w[NcCons arith]], [%w[NcCons lit], %w[NcCons shared], %w[NcCons neg]]],
+      # The closed world reads the build gems' sources; the constant analysis reads the outside source lists.
+      ['a build gem whose Ruby calls const_set', '', { gem: ['nc_ruby_gem', { 'mrblib/nc.rb' => "def nc_cs(k); k.const_set(:W, 'x'); end\n" }] }, all, []],
+      ['a build gem whose native code sets a computed constant name', '',
+       { gem: ['nc_native_gem', { 'src/nc.cxx' => "static void nc_cs(mrb_state* M, RClass* c, const char* n) { mrb_const_set(M, mrb_obj_value(c), mrb_intern_cstr(M, n), mrb_float_value(M, 1.5)); }\n" }] },
+       all, []],
+      ['a build gem whose native code sets W', '',
+       { gem: ['nc_named_gem', { 'src/nc.cxx' => "static void nc_cs(mrb_state* M, RClass* c) { mrb_const_set(M, mrb_obj_value(c), mrb_intern_cstr(M, \"W\"), mrb_float_value(M, 1.5)); }\n" }] },
+       [%w[NcCons lit], %w[NcCons arith], %w[NcCons divs], %w[NcCons local], %w[NcCons cols]], [%w[NcCons neg], %w[NcCons shared]]],
       ['a const_missing', "class NcCons\n  def self.const_missing(n); 1.5; end\nend\n", {}, all, []],
       ['a module named like the constant', "module B; end\n", {}, [%w[NcCons arith]], [%w[NcCons lit], %w[NcCons neg]]],
       ['a redefined Integer#*', "class Integer\n  def *(o); 7; end\nend\n", {},
@@ -164,6 +188,18 @@ if ENV['MRBC']
     variants.each do |what, extra, options, guarded, stay|
       d = File.join(dir, what.gsub(/\W+/, '_'))
       Dir.mkdir(d)
+      gem = options[:gem]
+      options = options.except(:gem)
+      if gem
+        gem_path = File.join(d, gem[0])
+        gem[1].each { |rel, text| FileUtils.mkdir_p(File.dirname(File.join(gem_path, rel))) && File.write(File.join(gem_path, rel), text) }
+        options[:build_gems] = [[gem[0], gem_path]]
+        # What the closed world scans (the gem) is also an outside source of the constant analysis.
+        gem[1].each do |rel, text|
+          key = rel.end_with?('.rb') ? :foreign : :native
+          options[key] = (options[key] || []) + [["#{gem[0]}_#{File.basename(rel)}", text]]
+        end
+      end
       vcode, = generate.call(HOLDER + extra, d, **options)
       guarded.each { |owner, fn| check.call("NEG #{what}: #{owner}##{fn} keeps its tag test", unproven.call(vcode, owner, fn)) }
       stay.each { |owner, fn| check.call("#{what}: #{owner}##{fn} stays proven", proven.call(vcode, owner, fn)) }
@@ -241,7 +277,7 @@ else
       nc_M = M;
       mrb_define_method(M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap"), "initialize", nc_init, MRB_ARGS_ANY());
       mrb_value cons = mrb_obj_new(M, mrb_class_get(M, "NcCons"), 0, nullptr);
-      static const char* plain[] = { "lit", "arith", "divs", "neg", "local", "shared", "scale", "cols", "big", "flt", "late", "wide" };
+      static const char* plain[] = { "lit", "arith", "divs", "neg", "local", "shared", "scale", "cols", "big", "flt", "late", "wide", "qq", "andc" };
       for (const char* fn : plain) nc_call(M, fn, cons, fn);
       mrb_value x = mrb_fixnum_value(7);
       nc_call(M, "partial int", cons, "partial", 1, &x);
@@ -254,6 +290,7 @@ else
       nc_call(M, "join false", cons, "join", 1, &fl);
       nc_call(M, "shadow_ok", mrb_obj_new(M, mrb_class_get(M, "NcUse2"), 0, nullptr), "shadow_ok");
       nc_call(M, "shadow_bad", mrb_obj_new(M, mrb_class_get(M, "NcUse"), 0, nullptr), "shadow_bad");
+      nc_call(M, "tile2", mrb_obj_new(M, mrb_class_get(M, "NcMap"), 0, nullptr), "tile2");
       static const char* consts[] = { "W", "H", "B", "LINE", "HEAD", "COLS", "ROWS", "NEG", "ZERO", "ONE", "SCALE", "SHARED" };
       for (const char* name : consts) {
         mrb_value v = mrb_const_get(M, mrb_obj_value(mrb_class_get(M, "NcCons")), mrb_intern_cstr(M, name));
@@ -292,7 +329,8 @@ else
         check.call("#{label}: the arguments reach the constructor", compiled.include?('lit => 1 log=Bitmap#initialize(320,240);') &&
                    compiled.include?('arith => 1 log=Bitmap#initialize(312,72);') && compiled.include?('divs => 1 log=Bitmap#initialize(336,29);') &&
                    compiled.include?('neg => 1 log=Bitmap#initialize(5,1);') && compiled.include?('local => 1 log=Bitmap#initialize(318,636);') &&
-                   compiled.include?('shadow_ok => 1 log=Bitmap#initialize(11,1);'))
+                   compiled.include?('shadow_ok => 1 log=Bitmap#initialize(11,1);') &&
+                   compiled.include?('tile2 => 1 log=Bitmap#initialize(32,16);') && compiled.include?('qq => 1 log=Bitmap#initialize(333333333,1);'))
         check.call("#{label}: a Float reaches the constructor through the kept test", compiled.include?('param float => 1 log=Bitmap#initialize(<Float>,1);') &&
                    compiled.include?('partial float => 1 log=Bitmap#initialize(320,<Float>);') && compiled.include?('flt => 1 log=Bitmap#initialize(<Float>,1);'))
         # A name that is not assigned yet raises; a core-only mruby has no mrblib, so there the check is that both sides raised.
@@ -305,7 +343,7 @@ else
         check.call("#{label}: every proven constant's value lies in its interval",
                    const_lines.size == 12 && const_lines.all? { |name, v| ranges[name] && v >= ranges[name][0] && v <= ranges[name][1] })
         lines = sections.fetch('compiled', [])
-        %w[lit arith divs neg local shared scale cols shadow_ok].each do |m|
+        %w[lit arith divs neg local shared scale cols shadow_ok tile2].each do |m|
           at = lines.index { |l| l.start_with?("#{m} =>") }
           n = at && lines[at + 1].to_s[/dispatches=(\d+)/, 1]&.to_i
           check.call("#{label}: #{m}: the compiled call makes no dynamic dispatch", n == 0)
