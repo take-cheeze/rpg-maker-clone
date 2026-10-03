@@ -79,6 +79,8 @@ HOLDER = <<~RUBY
     # The divisor's hull [-2, 3] holds 0: no quotient interval.
     def qq; RGSS::Bitmap.new(QQ, 1); 1; end
     def andc; RGSS::Bitmap.new(ANDC, 1); 1; end
+    # The use sits in a protected range, which is compiled apart from the code that wrote `w`.
+    def guarded; w = W - 1; begin; RGSS::Bitmap.new(w, 1); rescue NameError; 0; end; 1; end
   end
   class NcDiv; DIVR = -2; end
 
@@ -103,11 +105,11 @@ OWNERS = HOLDER.scan(/^\s*class (Nc\w+)/).flatten.freeze
 
 POSITIVES = [%w[NcMap tile2], %w[NcCons late], %w[NcCons lit], %w[NcCons arith], %w[NcCons divs], %w[NcCons neg], %w[NcCons local], %w[NcCons shared],
              %w[NcCons scale], %w[NcCons cols], %w[NcUse2 shadow_ok]].freeze
-NEGATIVES = [%w[NcCons param], %w[NcCons big], %w[NcCons flt], %w[NcCons join], %w[NcCons wide], %w[NcCons qq], %w[NcCons andc],
+NEGATIVES = [%w[NcCons param], %w[NcCons big], %w[NcCons flt], %w[NcCons join], %w[NcCons wide], %w[NcCons qq], %w[NcCons andc], %w[NcCons guarded],
              %w[NcUse shadow_bad]].freeze
 
 body_of = lambda do |code, owner, fn|
-  code.scan(/^(?:static )?mrb_value #{owner}_#{fn}(?:_\w*?)?_impl\(mrb_state\* M.*?(?=^(?:static )?mrb_value \w+\(mrb_state\* M|\z)/m).join
+  code.scan(/^(?:static )?mrb_value #{owner}_#{fn}(?:_\w*?)?_impl\w*\(mrb_state\* M.*?(?=^(?:static )?mrb_value \w+\(mrb_state\* M|\z)/m).join
 end
 live_of = lambda do |code, owner, fn|
   body_of.call(code, owner, fn).lines.reject { |l| l.lstrip.start_with?('//') }.join
@@ -277,7 +279,7 @@ else
       nc_M = M;
       mrb_define_method(M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap"), "initialize", nc_init, MRB_ARGS_ANY());
       mrb_value cons = mrb_obj_new(M, mrb_class_get(M, "NcCons"), 0, nullptr);
-      static const char* plain[] = { "lit", "arith", "divs", "neg", "local", "shared", "scale", "cols", "big", "flt", "late", "wide", "qq", "andc" };
+      static const char* plain[] = { "lit", "arith", "divs", "neg", "local", "shared", "scale", "cols", "big", "flt", "late", "wide", "qq", "andc", "guarded" };
       for (const char* fn : plain) nc_call(M, fn, cons, fn);
       mrb_value x = mrb_fixnum_value(7);
       nc_call(M, "partial int", cons, "partial", 1, &x);

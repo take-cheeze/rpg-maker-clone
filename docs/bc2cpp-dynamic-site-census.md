@@ -650,3 +650,24 @@ potential), aggregated by `scripts/bc2cpp_refine_report.rb tsv [--list-bugs]`. W
 | NOMETHOD_REVIEWED keys: monomorphic / polymorphic / narrowed / native arms / untraced / candidate bug | 1,774 / 567 / 289 / 58 / 252 / 1 |
 | POLY_SMALL_N chains with two classes on one definition | 50 of 1,525 (177 of 8,906 compares) |
 | `shipped.cxx` with `BC2CPP_CALL_FACTS=0` against master | byte-identical |
+
+## Follow-up: numeric constants and native `:int` arguments (ADR 0318)
+
+`BC2CPP_NATIVE_INT_ARGS=<tsv>` writes one `NINT` line per `:int` argument of a native entry point (`Bitmap.new`, exact
+`Sprite#x=`-style calls) the Fixnum proof does not cover: the site, the writer of the register and the leaves behind it;
+`BC2CPP_NUMERIC_CONSTANTS_REPORT=<tsv>` writes each constant name with a definition and no interval, and why.
+Wio closed world, master `cd86085f`, `3rd/*` populated, kill switch `BC2CPP_NUMERIC_CONSTANTS=0` against default:
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites | 2,628 | 2,559 | -69 |
+| of them in `RPG2k_*`/`Game_*` | 1,800 | 1,735 | -65 |
+| `Bitmap.new` sites without a tag test and else (of 115) | 0 | 65 | +65 |
+| `bc2cpp_getidx`, `bc2cpp_slow_*`, `bc2cpp_eqq`, `bc2cpp_nil_receiver`, `bc2cpp_nomethod` | 2,038 / 3,359 / 111 / 892 / 4,386 | same | 0 |
+| constants with a proven Fixnum interval | 693 Fixnum constants | 725 | |
+
+Removal, not relocation. The 115 `Bitmap.new` sites never asked the Fixnum proof (29 are removed by asking it); 36
+more by an interval for `+ - * /` of constants. Of the 50 left, 17 are the String file-load form, 11 `Array#size`/`max`
+results, 8 user readers, 4 `Bitmap#width`/`height`, 4 parameters. `flowfail` of a constant means `NumericFlow` does not
+model a class body, not that the constant is not an Integer; `LINE_H`, `SCREEN_W`, `TILE` and `FACE_SIZE` were Fixnum
+constants all along. `shipped.cxx` with the switch off is byte-identical to a clean master build.
