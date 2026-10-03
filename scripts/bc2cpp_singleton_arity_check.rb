@@ -30,6 +30,7 @@ require 'shellwords'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/nomethod_reviewed'
 require_relative 'bc2cpp_cxx'
+require_relative 'bc2cpp_fixture_runtime'
 
 root = File.expand_path('..', __dir__)
 failures = []
@@ -256,7 +257,7 @@ else
   Dir.mktmpdir do |dir|
     File.write(File.join(dir, 'gen.cpp'), code)
     File.write(File.join(dir, 'harness.cpp'), <<~CPP)
-      #include "gen.cpp"
+      #{Bc2cppFixtureRuntime::PROBE_PROLOGUE}#include "gen.cpp"
       #include <mruby/compile.h>
       #include <cstdio>
       #include <cstdlib>
@@ -276,6 +277,7 @@ else
         std::printf("interpreted %s\\n", str(M, mrb_gv_get(M, mrb_intern_lit(M, "$interp"))));
         std::printf("compiled    %s\\n", str(M, mrb_gv_get(M, mrb_intern_lit(M, "$comp"))));
         std::printf("same %s\\n", str(M, mrb_gv_get(M, mrb_intern_lit(M, "$same"))));
+        bc2cpp_probe_report();
         mrb_close(M);
         return 0;
       }
@@ -284,7 +286,7 @@ else
     built = Bc2cppCxx.system('-std=c++17', '-w', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
                    "-I#{dir}", "-I#{core}/include", "-I#{root}/3rd/mruby/include", File.join(dir, 'harness.cpp'),
                    "#{core}/lib/libmruby_core.a", '-o', binary)
-    output = built ? IO.popen(binary, err: %i[child out], &:read) : nil
+    output = built ? Bc2cppFixtureRuntime.probed_capture(binary, compiled: true).first : nil
     check.call('the generated code compiles and runs against the real mruby core', !output.nil?)
     if output
       puts output.lines.map { |l| "  #{l}" }.join

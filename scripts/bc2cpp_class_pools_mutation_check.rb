@@ -39,12 +39,17 @@ MUTANTS = [
    /nil receiver raises|every method answers what the interpreter answers|nil local/, true]
 ].freeze
 
+# These two take a nil receiver into a body that reads an embedded ivar: the miscompiled code segfaults where the
+# interpreter raises NoMethodError, so a crash of the fixture binary is how the mutant shows (an accepted crash kill).
+CRASH_OK = ['a nil is assumed away everywhere, not only on the tested arm', 'the nil arm is dropped'].freeze
+
 # Concurrent mutants must not race to build the shared BC2CPP_FULL_BUILD_DIR: build it once first.
 Bc2cppFixtureRuntime.full_or_build if ENV['BC2CPP_FULL_BUILD_DIR'] && MUTANTS.any?(&:last)
 
 failures = Bc2cppMutationSupport.run_harness(
   MUTANTS.map do |name, file, pattern, replacement, expected, needs_run|
-    Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, pattern, replacement]], expected: expected, needs_run: needs_run)
+    Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, pattern, replacement]], expected: expected, needs_run: needs_run,
+                                      crash_ok: CRASH_OK.include?(name))
   end
 ) do |tree, mutant, run_half|
   env = { 'BC2CPP_TOOL' => File.join(tree.tool, 'bc2cpp.rb') }

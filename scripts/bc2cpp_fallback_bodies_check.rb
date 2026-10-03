@@ -23,6 +23,7 @@ require 'set'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
 require_relative 'bc2cpp_cxx'
+require_relative 'bc2cpp_fixture_runtime'
 
 ROOT = File.expand_path('..', __dir__)
 failures = []
@@ -395,7 +396,7 @@ if system(mrbc, '--version', out: File::NULL, err: File::NULL) || system(mrbc, '
         #include <iterator>
         #include <vector>
         extern "C" void mrb_init_mrblib(mrb_state*) {}
-        #include "fb_gen.cpp"
+        #{Bc2cppFixtureRuntime::PROBE_PROLOGUE}#include "fb_gen.cpp"
 
         int main(int argc, char** argv) {
           mrb_state* M = mrb_open_core();
@@ -410,6 +411,7 @@ if system(mrbc, '--version', out: File::NULL, err: File::NULL) || system(mrbc, '
             mrb_load_irep_buf(M, bin.data(), bin.size());
             if (M->exc) { mrb_print_error(M); return 2; }
           }
+          bc2cpp_probe_report();
           mrb_close(M);
           return 0;
         }
@@ -423,10 +425,10 @@ if system(mrbc, '--version', out: File::NULL, err: File::NULL) || system(mrbc, '
                      "#{core}/lib/libmruby_core.a", '-lm', '-o', binary)
       check.call('the fixture compiles against real mruby', built)
       if built
-        output = IO.popen([binary, *mrbs], err: %i[child out], &:read)
+        output, status = Bc2cppFixtureRuntime.probed_capture(binary, *mrbs, compiled: true)
         puts output.lines.map { |l| "    #{l}" }.join
         check.call("compiled bodies match the interpreter (#{bigint ? 'bigint core' : 'no-bigint core: RangeError arm'})",
-                   $?.success?)
+                   status.success?)
       end
     end
   end
