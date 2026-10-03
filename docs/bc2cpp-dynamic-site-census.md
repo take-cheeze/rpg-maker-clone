@@ -874,3 +874,12 @@ ivar/argument pools to 189/136; nil-receiver helpers grow from 918 to 921. Revie
 `BC2CPP_NATIVE_STRING_RESULTS=0` reproduces master byte for byte. The three follow-ups now remove 79 cached sites
 from the original 2,924. Native setter inputs and collection element classes still need independent proofs.
 See [ADR 0334](adr/0334-bc2cpp-native-string-results.md).
+
+## Follow-up: native copy and collection results (ADR 0335)
+
+Pinned native `dup` preserves known receiver class bits. Exact Array `compact` and
+`join` results require pinned allocation helpers and override-safe core lookup.
+The Wio census drops from 2,845 to 2,844 cached sends; all four receiver-proof
+follow-ups remove 80 sites from 2,924. Element classes remain unknown. The collection
+kill switch reproduces ADR 0334 shipped C++ byte for byte.
+See [ADR 0335](adr/0335-bc2cpp-native-collection-results.md).
