@@ -266,9 +266,10 @@ end
 # negative case. The control, the unmutated tool in the same tree, must pass and run the compiled half.
 MUTANTS = [
   ['the exact-class guard is dropped (every receiver takes the arm)', 'codegen_ivar_poly.rb',
-   '"#{owner_class_ptr_expr(owner)} == #{recv_class}"', '"1"', /DISCOVER/],
+   '"#{owner_class_ptr_expr(owner)} == #{recv_class}"', '"1"', /the by-name tail stays for every other receiver/],
   ['the arm tests the wrong class (Integer receivers keep the by-name tail)', 'codegen_ivar_poly.rb',
-   '"#{owner_class_ptr_expr(owner)} == #{recv_class}"', '"M->float_class == #{recv_class}"', /DISCOVER/]
+   '"#{owner_class_ptr_expr(owner)} == #{recv_class}"', '"M->float_class == #{recv_class}"',
+   /an Integer receiver with an Integer key makes no by-name call/]
 ].freeze
 
 if ENV['GIA_MUTANTS'] && ENV['BC2CPP_TOOL'].nil? && !builds.empty?

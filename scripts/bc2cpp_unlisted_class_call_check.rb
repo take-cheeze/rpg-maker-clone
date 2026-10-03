@@ -543,14 +543,24 @@ MUTANTS = {
     'a dynamic visibility change is ignored' => ['!@global_refusal && !@dynamic_visibility && !@visibility_names.include?(name)', '!@global_refusal']
   }
 }.freeze
+# The FAIL line each mutant must cause.
+MUTANT_LABELS = {
+  'a private def called with an explicit receiver is called' => /a private def called with an explicit receiver raises the NoMethodError OP_SEND raises/,
+  'a private def called implicitly is refused' => /a private def reached by implicit self sends is a direct call/,
+  'a protected def is called' => /a protected one keeps the dispatch/,
+  'a missing definition is called as an attr' => /a class whose chain holds no definition .* raises the nomethod error/,
+  'the accessor argument count is not checked' => /an attr_reader called with an argument raises the ArgumentError/,
+  'any native registration is accepted' => /unsafe on the native class itself or a subclass of it/,
+  'a dynamic visibility change is ignored' => /a dynamic private: UcDriver_read has no ACCESSOR arm|a dynamic public: UcDriver_sec has no PRIVATE arm/
+}.freeze
 if ENV['UCC_MUTANTS'] && ENV['UCC_GENERATED_ONLY'].nil?
   puts '-- mutants: one proof removed, a generated-code check must fail'
   require_relative 'bc2cpp_mutation_support'
   # Run from a copy of scripts/ and tools/ in the repository layout, with an unmutated control (Bc2cppMutationSupport).
   mutants = MUTANTS.flat_map do |file, list|
-    list.map do |what, (from, to, expected)|
+    list.map do |what, (from, to)|
       Bc2cppMutationSupport::Mutant.new(name: "mutant (#{what})", edits: [[file.delete_prefix('tools/bc2cpp/'), from, to]],
-                                        expected: expected)
+                                        expected: MUTANT_LABELS.fetch(what))
     end
   end
   failures.concat(Bc2cppMutationSupport.run_harness(mutants, scripts: true) do |tree, mutant, _run_half|
