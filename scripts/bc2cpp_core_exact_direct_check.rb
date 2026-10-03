@@ -564,12 +564,25 @@ MUTANTS = {
      'target = core_exact_target(site[:klass], spec[:chain], name, 0)']
 }.freeze
 
+# The assertion that guards each mutant's condition: the FAIL line it must cause.
+MUTANT_LABELS = {
+  'a guarded body is called whether or not it can suspend a Fiber' => /makes the Enumerable#max body suspendable: ymin/,
+  'an Enumerable body is called whatever Array#each is' => /a Ruby Array#each withdraws the Enumerable bodies/,
+  'the kill switch is ignored' => /BC2CPP_CORE_EXTEND=0 emits no CORE_EXACT_DIRECT anywhere|with the kill switch the site is a by-name send again/,
+  'an unproven receiver is taken for an exact Array' => /on an unknown receiver keeps|on an unknown receiver are not direct/,
+  'the else of the inline min/max is called for any receiver' => /a\.max on an unknown receiver keeps the inline arm and its by-name else/,
+  'a callee that takes no block parameter is refused' => /to_a on a literal Hash is Enumerable#entries/,
+  'the dispatch diagnostic stays on a direct site' => /a direct site is not left marked as a real dynamic dispatch/,
+  'a prepend on the receiver class is not looked at' => /a prepend on Array withdraws every direct call on an Array/,
+  'the target is looked up for the wrong number of arguments' => /fetch on a literal Hash is the compiled Hash#fetch body/
+}.freeze
+
 if ENV['CX_MUTANTS'] == '1' && MODE != 'run' && tool?(MRBC_PATH)
   puts 'mutants'
   require_relative 'bc2cpp_mutation_support'
   failures.concat(Bc2cppMutationSupport.run_harness(
-    MUTANTS.map do |name, (file, from, to, expected)|
-      Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, from, to]], expected: expected)
+    MUTANTS.map do |name, (file, from, to)|
+      Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, from, to]], expected: MUTANT_LABELS.fetch(name))
     end
   ) do |tree, mutant, _run_half|
     Bc2cppMutationSupport.run_check({ 'CX_TOOL_DIR' => tree.tool, 'CX_MODE' => 'generated', 'MRBC' => MRBC_PATH },

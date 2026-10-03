@@ -486,14 +486,26 @@ MUTANTS = {
     ['codegen_loop_inline.rb', "inline_offset: offset, owner_def: d)", "inline_offset: offset)"]
 }.freeze
 
+# The assertion that guards each mutant's condition: the FAIL line it must cause.
+MUTANT_LABELS = {
+  'drop the else of a guarded proven arm' => /a block that may break keeps the root-context test and the dynamic else/,
+  'drop the else of an unproven arm' => /a single arm whose receiver is not proven keeps its class test and the else/,
+  'nested send keeps the unshifted destination register' => /a literal receiver nested in the loop is proven/,
+  'nested send passes the unshifted index and no trace' => /a literal receiver nested in the loop is proven/,
+  'by-name tally accepts any live name' => /a live call of a name no direct_call_args call recorded is refused/,
+  'by-name tally ignores how often a name is live' => /a name live more often than it was recorded is refused/,
+  'the tally ignores the kill switch' => /the kill switch gives the dynamic send alone|the kill switch returns to the exact count/,
+  'the nested glue is built without the owning definition' => /the nested send has the exact-class arms and keeps the dynamic send as its else/
+}.freeze
+
 if ENV['BR_MUTANTS'] == '1' && MODE != 'run' && tool?(MRBC_PATH)
   puts 'mutants'
   require_relative 'bc2cpp_mutation_support'
   # Each mutant lives in a tree with the repository layout (a copy under /tmp reads an empty closed world), after an
-  # unmutated control; the first element after the edit is the label of the assertion that must fail.
+  # unmutated control; each must fail the assertion named in MUTANT_LABELS.
   failures.concat(Bc2cppMutationSupport.run_harness(
-    MUTANTS.map do |name, (file, from, to, expected)|
-      Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, from, to]], expected: expected)
+    MUTANTS.map do |name, (file, from, to)|
+      Bc2cppMutationSupport::Mutant.new(name: name, edits: [[file, from, to]], expected: MUTANT_LABELS.fetch(name))
     end
   ) do |tree, mutant, _run_half|
     Bc2cppMutationSupport.run_check({ 'BR_TOOL_DIR' => tree.tool, 'BR_MODE' => 'generated', 'MRBC' => MRBC_PATH },
