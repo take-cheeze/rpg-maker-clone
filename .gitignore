@@ -104,3 +104,4 @@
 # Mutant copies of tools/bc2cpp that scripts/bc2cpp_numeric_constants_mutation_check.rb builds inside the
 # repository (a copy elsewhere scans an empty closed world); removed when the run ends.
 /.nc_mutant*/
+/.ic_mutant*/

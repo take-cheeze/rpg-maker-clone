@@ -672,6 +672,21 @@ results, 8 user readers, 4 `Bitmap#width`/`height`, 4 parameters. `flowfail` of 
 model a class body, not that the constant is not an Integer; `LINE_H`, `SCREEN_W`, `TILE` and `FACE_SIZE` were Fixnum
 constants all along. `shipped.cxx` with the switch off is byte-identical to a clean master build.
 
+## Follow-up: INTEGER_CONSTANT_PROOF soundness (ADR 0324)
+
+Two latent holes in the older proof are closed: a native `mrb_define_const`/`mrb_const_set` of a bare name now
+withdraws it (the old scan matched no name), and a `SETCONST` that a jump lands on (`X = c || 1`) is no longer an
+Integer definition. Wio closed world, master `7818f0f5`, `3rd/*` populated, master against the fix:
+
+| Measure | master | fix |
+| --- | ---: | ---: |
+| `bc2cpp_send` / `bc2cpp_slow_*` / `bc2cpp_getidx` / `mrb_fixnum_p(` / `bc2cpp_nomethod` | 2,538 / 3,343 / 2,066 / 3,597 / 4,386 | same |
+| Integer constants / with an exact value | 693 / 470 | 691 / 468 (`MAX`, `MIN`) |
+| `shipped.cxx` digit-masked diff | | 28 lines: three symbols, two inlined reads of `Game::Variables::MAX`/`MIN` |
+
+`MAX`/`MIN` collide with the native `Float::MAX`/`MIN` (`mruby-numeric-ext`); the two engine reads
+(`game.rb:1521-1522`) resolve to the Integers, so behaviour did not differ.
+
 ## Follow-up: EXT prefixes folded into their instruction (ADR 0320)
 
 Wio closed world, master `cd86085f`, same tree with `BC2CPP_EXT_PREFIX=0` (byte-identical to master) against the default.

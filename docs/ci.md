@@ -41,6 +41,7 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 | `numeric-constants` | `numeric_constants` (generated code with fifteen withdrawal worlds, full-core and core-only runs) and its mutation check, 15 mutants plus a control (ADR 0318; the mutation check ran 12 min locally with three jobs); the 32-bit run is in `bc2cpp-width (int32)` | est. 20 min |
 | `call-facts` | `call_facts` (generated code with ten withdrawal worlds, full-core and core-only runs) and its mutation check, 10 mutants plus a control (ADR 0317), and `block_send_report` (ADR 0325, generated code only, 15 s); the 32-bit run is in `bc2cpp-width (int32)` | est. 15 min |
 | `ext-prefix` | `ext_prefix` (decoder cases, folded listing, generated code with the kill switch, full-core and core-only runs) and its mutation check, 8 mutants plus a control (ADR 0320); the 32-bit run is in `bc2cpp-width (int32)` | est. 12 min |
+| `integer-constants` | `integer_constants` (unit cases for the native-definition scan and the jump onto a SETCONST, generated code, full-core and core-only runs) and its mutation check, 8 mutants plus a control (ADR 0324); the 32-bit run is in `bc2cpp-width (int32)` | est. 8 min |
 
 Shards no longer share `BC2CPP_FULL_BUILD_DIR`, so each one that needs the
 full-core build makes its own (about two minutes). The times are estimates from
