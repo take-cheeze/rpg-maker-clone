@@ -1,0 +1,147 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative 'bc2cpp_fixture_runtime'
+
+SOURCE = <<~RUBY
+  class KrOther
+    def size; 91; end
+  end
+  class KrRunner
+    def mapped; [1, 2].map { |x| x + 1 }.size; end
+    def collected; [1, 2].collect { |x| x }.size; end
+    def selected; [1, 2].select { |x| x == 1 }.size; end
+    def found; [1, 2].find_all { |x| x == 1 }.size; end
+    def rejected; [1, 2].reject { |x| x == 1 }.size; end
+    def hash_map; {a: 1, b: 2}.map { |k, v| v }.size; end
+    def range_map; (1..3).map { |x| x }.size; end
+    def next_value; [1, 2].map { |x| next KrOther.new }.size; end
+    def breaking; [1, 2].map { |x| break KrOther.new }.size; end
+    def nested_break; [1, 2].map { |x| [1].each { break KrOther.new }; x }.size; end
+    def nonlocal_return; [1, 2].map { |x| return KrOther.new }.size; end
+    def forwarded(&block); [1, 2].map(&block).size; end
+    def no_block; [1, 2].map.size; end
+    def merged_block(flag, &block)
+      chosen = flag ? proc { |x| x } : block
+      [1, 2].map(&chosen).size
+    end
+    def keyword; [1, 2].map(extra: 1) { |x| x }.size; end
+    def splat(args); [1, 2].map(*args) { |x| x }.size; end
+    def entries; [1, 2].entries.size; end
+    def deconstructed; [1, 2].deconstruct.size; end
+    def hash_identity; {a: 1, b: 2}.to_h.size; end
+    def tallied; [1, 1, 2].tally.size; end
+    def partitioned; [1, 2].partition { |x| x == 1 }.size; end
+    def nil_receiver(flag)
+      ary = flag ? nil : [1, 2]
+      ary.map { |x| x }.size
+    end
+    def stored; @items = [1, 2].map { |x| x }; end
+    def read; @items.size; end
+    def dedup; [1, 1, 2].uniq.size; end
+    def dedup_block; [1, 1, 2].uniq { |x| x }.size; end
+  end
+RUBY
+OWNERS = (BC2CPP_CORE_OWNERS + %w[KrOther KrRunner]).freeze
+failures = []
+check = lambda do |name, ok|
+  puts "  #{ok ? 'ok  ' : 'FAIL'} #{name}"
+  failures << name unless ok
+end
+body_of = ->(code, name) { code[/^mrb_value KrRunner_#{name}_impl\(mrb_state\* M.*?(?=^(?:static )?mrb_value \w+\(mrb_state\* M|\z)/m].to_s }
+exact_size = ->(code, name) { body_of.call(code, name).include?('CLOSED_WORLD_NATIVE_EXACT :size -> Array') }
+runtime = Bc2cppFixtureRuntime
+root = File.expand_path('..', __dir__)
+core_sources = core_compiled_mrblib_srcs(root, BC2CPP_CANONICAL_CORE_GEMS - BC2CPP_EXTERNAL_MRBLIB_GEMS)
+core_inputs = core_sources.map { |path| [path.delete_prefix(root + '/'), File.read(path)] }
+worlds = [
+  ['core bodies', SOURCE, {}, true],
+  ['kill switch', SOURCE, { 'BC2CPP_CORE_RUBY_RESULTS' => '0' }, false],
+  ['Array map override', SOURCE + "class Array; def map(&block); KrOther.new; end; end\n", {}, false],
+  ['Enumerable alias override', SOURCE + "module Enumerable; def map(&block); KrOther.new; end; end\n", {}, false],
+  ['Array prepend', SOURCE + "module KrMixin; def map(&block); KrOther.new; end; end; Array.prepend KrMixin\n", {}, false],
+  ['Array include', SOURCE + "module KrMixin; def map(&block); KrOther.new; end; end; Array.include KrMixin\n", {}, false],
+  ['alias replacement', SOURCE + "module Enumerable; def other_map(&block); KrOther.new; end; alias map other_map; end\n", {}, false],
+  ['dynamic installer', SOURCE + "module Enumerable; define_method(:map) { |&block| KrOther.new }; end\n", {}, false],
+  ['changed core return', SOURCE, {}, false, 'def collect(&block); KrOther.new; end'],
+  ['core nonlocal return', SOURCE, {}, false, 'def collect(&block); ary = []; self.each { |x| return KrOther.new }; ary; end'],
+  ['core captured write', SOURCE, {}, false, 'def collect(&block); ary = []; self.each { |x| ary = KrOther.new }; ary; end'],
+  ['core block return', SOURCE, {}, false, 'def collect(&block); block; end'],
+  ['interpreted core override', SOURCE, {}, false, nil, "class Array; def map(&block); ignored = -> { 1 }; KrOther.new; end; end"],
+  ['conditional core override', SOURCE, {}, false, nil, "class Array; if Object.new; def map(&block); KrOther.new; end; end; end"],
+  ['core accessor override', SOURCE, {}, false, nil, "class Array; attr_reader :map; end"],
+  ['unmodelled core alias', SOURCE, {}, false, nil, "class Array; alias map size; end"],
+  ['conditional core alias', SOURCE, {}, false, nil, "class Array; def different(&block); []; end; if Object.new; alias map different; end; end"],
+  ['alias of interpreted core', SOURCE, {}, false, nil, "class Array; def different(&block); ignored = -> { 1 }; KrOther.new; end; alias map different; end"],
+  ['core alias_method override', SOURCE, {}, false, nil, "class Array; alias_method :map, :size; end"],
+  ['core remove_method override', SOURCE, {}, false, nil, "module Enumerable; remove_method :map; end"],
+  ['core helper installer', SOURCE, {}, true, nil, "class Array; alias_method :__uniq, :size; end"],
+  ['interpreted core helper', SOURCE, {}, true, nil, "class Array; def __uniq; ignored = -> { 1 }; KrOther.new; end; end"],
+  ['core computed installer', SOURCE, {}, false, nil, "class Array; alias_method ('m' + 'ap'), :size; end"],
+  ['open world', SOURCE, {}, false]
+]
+worlds.select! { |name, _| name == ENV['KRR_CASE'] } if ENV['KRR_CASE']
+abort "unknown KRR_CASE: #{ENV['KRR_CASE']}" if worlds.empty?
+if ENV['MRBC']
+  worlds.each do |name, source, env, proven, core_collect, core_override|
+    Dir.mktmpdir do |dir|
+      saved = env.to_h { |key, _| [key, ENV[key]] }
+      begin
+        env.each { |key, value| ENV[key] = value }
+        inputs = core_inputs.map do |path, text|
+          replacement = core_collect && path.end_with?('/mrblib/enum.rb') ? text.sub(/def collect\(&block\).*?\n  end/m, core_collect) : text
+          [path, replacement]
+        end
+        inputs << ['3rd/mruby/mrbgems/mruby-array-ext/mrblib/zz_override.rb', core_override] if core_override
+        code, err = runtime.generate(source, dir, extra: inputs, only_owners: OWNERS, closed: name != 'open world')
+        check.call("#{name}: mapped result", exact_size.call(code, 'mapped') == proven)
+        check.call("#{name}: helper result stays unproved", !exact_size.call(code, 'dedup')) if %w[core\ helper\ installer interpreted\ core\ helper].include?(name)
+        next unless name == 'core bodies' || name == 'kill switch'
+
+        %w[collected selected found rejected hash_map range_map next_value partitioned nil_receiver].each do |method|
+          check.call("#{name}: #{method} result", exact_size.call(code, method) == proven)
+        end
+        %w[hash_identity tallied].each do |method|
+          check.call("#{name}: #{method} result", body_of.call(code, method).include?('CLOSED_WORLD_NATIVE_EXACT :size -> Hash') == proven)
+        end
+        %w[breaking nested_break forwarded no_block merged_block keyword splat entries deconstructed].each do |method|
+          check.call("#{name}: #{method} stays unproved", !exact_size.call(code, method))
+        end
+        check.call("#{name}: stored result pool", exact_size.call(code, 'read') == proven)
+        next if ENV['KRR_GENERATED_ONLY'] == '1'
+        build = runtime.full_or_build
+        unless build
+          puts '-- SKIP runtime parity: no full-core mruby build'
+          next
+        end
+
+        harness = <<~CPP
+          static int scenario(mrb_state* M) {
+            mrb_value runner = mrb_obj_new(M, mrb_class_get(M, "KrRunner"), 0, nullptr);
+            for (const char* name : {"mapped", "collected", "selected", "found", "rejected", "hash_map", "range_map", "next_value", "breaking", "nested_break", "nonlocal_return", "no_block", "dedup", "dedup_block", "hash_identity", "tallied", "partitioned"}) {
+              call(M, name, runner, name);
+            }
+            call(M, "stored", runner, "stored");
+            call(M, "read", runner, "read");
+            for (mrb_value flag : {mrb_true_value(), mrb_false_value()}) {
+              call(M, "nil_receiver", runner, "nil_receiver", 1, &flag);
+            }
+            return 0;
+          }
+        CPP
+        built, output = runtime.run(dir, err, %w[KrOther KrRunner], harness, build: build, full: true)
+        sections = runtime.sections(output).transform_values { |lines| lines.reject { |line| line.start_with?('  dispatches=') } }
+        # Object inspect embeds VM-specific addresses.
+        ok = built && sections['compiled'].map { |line| line.gsub(/0x[0-9a-f]+/, 'ADDR') } == sections['interpreted'].map { |line| line.gsub(/0x[0-9a-f]+/, 'ADDR') } && output.include?('breaking => 91')
+        check.call("#{name}: compiled/interpreted parity", ok)
+        warn output unless ok
+      ensure
+        saved.each { |key, value| ENV[key] = value }
+      end
+    end
+  end
+else
+  puts '-- SKIP generated code: set MRBC'
+end
+abort "FAILED: #{failures.join(', ')}" unless failures.empty?
+puts 'bc2cpp core Ruby results check: PASS'

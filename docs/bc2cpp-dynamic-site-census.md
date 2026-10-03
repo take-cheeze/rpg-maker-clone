@@ -911,3 +911,15 @@ fields. The current shipped Wio output remains byte-identical to the parent,
 with 2,844 cached sends and the same pools/helper counts. The report itself also
 changes no C++. See [native setter inputs](bc2cpp-native-setter-inputs.md) and
 [ADR 0337](adr/0337-bc2cpp-native-setter-input-audit.md).
+
+### Core Ruby collection returns (ADR 0338)
+
+Actual core bytecode can now prove collection results for known receiver and
+block contexts. Literal caller blocks with no descendant break retain results of
+map/select/reject/partition; zero-argument bodies such as Hash#to_h and tally are
+also analyzed. The same-tree switch comparison on a84d3b60 reduces cached sends
+2,858 to 2,853 (all by-name lines 2,919 to 2,914), adds one ivar pool and six exact
+index arms, and preserves nil error paths through six more nil-helper sites.
+Master's newly emitted block bodies explain the different starting count from
+ADR 0337. Overrides, forwarded blocks, captured writes and nonlocal callee exits
+retain refusal. See [core Ruby returns](bc2cpp-core-ruby-returns.md).

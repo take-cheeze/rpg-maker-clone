@@ -1,0 +1,60 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'fileutils'
+require 'rbconfig'
+require 'tmpdir'
+require_relative 'bc2cpp_mutant_pool'
+
+ROOT = File.expand_path('..', __dir__)
+abort 'SKIP: set MRBC' unless ENV['MRBC']
+AUDIT = 'codegen_core_ruby_results.rb'
+MUTANTS = [
+  ['control', nil, nil, nil, nil],
+  ['kill switch ignored', "return nil if ENV['BC2CPP_CORE_RUBY_RESULTS'] == '0'", 'return nil if false', 'kill switch', /mapped result/],
+  ['caller break ignored', 'caller ? %w[BREAK] : %w[BREAK RETURN_BLK]', 'caller ? [] : %w[BREAK RETURN_BLK]', 'core bodies', /breaking stays unproved/],
+  ['callee nonlocal return ignored', 'caller ? %w[BREAK] : %w[BREAK RETURN_BLK]', 'caller ? %w[BREAK] : %w[BREAK]', 'core nonlocal return', /mapped result/],
+  ['captured writes ignored', 'fixnum_proof_ctx(body)[:upvars]', 'Set.new', 'core captured write', /mapped result/],
+  ['project lookup ignored', 'return nil if registry.any? { |definition| chain.include?(definition.owner) && !definition.core }', 'return nil if false', 'Array map override', /mapped result/],
+  ['actual return ignored', 'mask if mask.positive? && (mask & ~NumericFlow::CONTAINERS).zero?', 'NumericFlow::ARR', 'changed core return', /mapped result/],
+  ['core alias index omitted', 'Array(block_core_index[[owner, name]])', '[]', 'core bodies', /mapped result/],
+  ['interpreted core override ignored', 'return nil if self.class.core_result_opaque_defs&.include?([owner, name])', 'return nil if false', 'interpreted core override', /mapped result/],
+  ['unmodelled core alias ignored', 'out << [site[:owner], site[:new]] unless mapped && !conditional', 'out << [site[:owner], site[:new]] if false', 'unmodelled core alias', /mapped result/],
+  ['core installer ignored', 'return nil unless core_installed && !core_installed.include?(name)', 'return nil if false', 'core alias_method override', /mapped result/]
+].freeze
+
+mutate = lambda do |(_name, pattern, replacement, test_case, expected)|
+  Dir.mktmpdir do |dir|
+    Dir.children(ROOT).reject { |entry| %w[.git tools .commandcode].include?(entry) }.each do |entry|
+      FileUtils.ln_s(File.join(ROOT, entry), File.join(dir, entry))
+    end
+    FileUtils.mkdir_p(File.join(dir, 'tools'))
+    Dir.children(File.join(ROOT, 'tools')).reject { |entry| entry == 'bc2cpp' }.each do |entry|
+      FileUtils.ln_s(File.join(ROOT, 'tools', entry), File.join(dir, 'tools', entry))
+    end
+    FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), File.join(dir, 'tools'))
+    if pattern
+      path = File.join(dir, 'tools/bc2cpp', AUDIT)
+      text = File.read(path)
+      next nil unless text.include?(pattern)
+
+      File.write(path, text.sub(pattern) { replacement })
+    end
+    env = { 'BC2CPP_TOOL' => File.join(dir, 'tools/bc2cpp/bc2cpp.rb'), 'KRR_GENERATED_ONLY' => '1', 'KRR_CASE' => test_case }
+    Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_core_ruby_results_check.rb')])
+  end
+end
+failures = []
+Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name, pattern, _replacement, _test_case, expected), run|
+  ok = if run.nil? then false
+       elsif pattern.nil? then run.success
+       else !run.success && run.out.lines.any? { |line| line.match?(/^\s+FAIL /) && line.match?(expected) }
+       end
+  puts "  #{ok ? 'ok  ' : 'FAIL'} #{name}"
+  unless ok
+    failures << name
+    warn(run ? run.out.lines.last(12).join : 'mutation site missing')
+  end
+end
+abort "FAILED: #{failures.join(', ')}" unless failures.empty?
+puts 'bc2cpp core Ruby results mutation check: PASS'
