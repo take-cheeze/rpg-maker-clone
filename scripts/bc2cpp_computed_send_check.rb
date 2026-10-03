@@ -528,17 +528,40 @@ MUTANTS = {
     'an unresolved installer does not withdraw' => ['&& !symbol_installed_names.nil?', '']
   }
 }.freeze
+# The FAIL line each mutant must cause, and whether the generator raising on the missing gate is how it shows
+# (the two crash entries lose a nil test, so the generator raises NoMethodError and never emits wrong code).
+MUTANT_LABELS = {
+  'a table need not be frozen' => [/by_duped keeps its one computed __send__|an unfrozen, duplicated, mixed, empty or computed table is not one/],
+  'a foreign definition of the table name is ignored' => [/a foreign Ruby source also defines the table name/],
+  'a native definition of the table name is ignored' => [/a native source also defines the table name/],
+  'a CLASS of the table name is ignored' => [/the table name is also a class/],
+  'const_set is ignored' => [%r{const_set / remove_const / autoload anywhere refuses every table}],
+  'the name set has no size limit' => [/by_wide keeps its one computed __send__/],
+  'a name that is not a plain method name is accepted' => [/by_opname keeps its one computed __send__/],
+  'a String element passes for a Symbol' => [/by_mixed keeps its one computed __send__/],
+  'a table definition of another shape is accepted' => [/an unfrozen, duplicated, mixed, empty or computed table is not one/, true],
+  '__send__ is trusted to be the core one' => [/send itself is redefined: by_case keeps its computed send/],
+  'an arm may keep a by-name dispatch' => [/fresh keeps its one computed __send__|a subclass overrides one of the names/],
+  'Array#[] and freeze are trusted' => [/Hash#\[\] is redefined|Array#\[\] is redefined|Kernel#freeze is redefined/],
+  'a method_missing class does not withdraw' => [/a method_missing class: by_case keeps its computed send/],
+  'a nil from a table is not rejected' => [/a table site rejects nil as Kernel#__send__ does/],
+  'the kill switch is ignored' => [/BC2CPP_COMPUTED_SEND=0 expands nothing/],
+  'a singleton on an instance does not withdraw' => [/a singleton method on an instance: by_case keeps its computed send|a singleton class opened on an instance/],
+  'an installed name does not withdraw' => [/alias_method gives one of the names another body/],
+  'an unresolved installer does not withdraw' => [/alias_method gives one of the names another body/, true]
+}.freeze
 if ENV['CSEND_MUTANTS'] && ENV['CSEND_GENERATED_ONLY'].nil?
   puts '== mutants: one proof removed, a generated-code check must fail'
   require_relative 'bc2cpp_mutation_support'
   # Run from a copy of scripts/ and tools/ in the repository layout, with an unmutated control (Bc2cppMutationSupport).
   mutants = MUTANTS.flat_map do |file, list|
-    list.map do |what, (from, to, expected)|
+    list.map do |what, (from, to)|
+      expected, crash_ok = MUTANT_LABELS.fetch(what)
       Bc2cppMutationSupport::Mutant.new(name: "mutant (#{what})", edits: [[file.delete_prefix('tools/bc2cpp/'), from, to]],
-                                        expected: expected, scripts: true)
+                                        expected: expected, crash_ok: crash_ok)
     end
   end
-  failures.concat(Bc2cppMutationSupport.run_harness(mutants) do |tree, mutant, _run_half|
+  failures.concat(Bc2cppMutationSupport.run_harness(mutants, scripts: true) do |tree, mutant, _run_half|
     Bc2cppMutationSupport.run_check({ 'CSEND_GENERATED_ONLY' => '1' },
                                     [RbConfig.ruby, File.join(tree.dir, 'scripts/bc2cpp_computed_send_check.rb')], stop_on: mutant&.stop_on)
   end)

@@ -37,8 +37,8 @@ module Bc2cppMutationSupport
   # `edits`: [[file, pattern, replacement], ...] relative to tools/bc2cpp. `expected`: a Regexp the FAIL line of the
   # assertion that guards the condition matches. `needs_run`: only the check's compiled-versus-interpreted half can
   # kill it. `crash_ok`: a crash of the fixture is how this mutant legitimately shows (the wrong code reads the wrong
-  # object), declared per mutant. `scripts`: the check loads the tool by relative path, so scripts/ is copied too.
-  Mutant = Struct.new(:name, :edits, :expected, :needs_run, :crash_ok, :scripts, keyword_init: true) do
+  # object), declared per mutant.
+  Mutant = Struct.new(:name, :edits, :expected, :needs_run, :crash_ok, keyword_init: true) do
     # The pool stops a mutant at the FAIL line that already proves it caught.
     def stop_on
       expected && /^\s+FAIL .*(?:#{expected.source})/
@@ -272,15 +272,16 @@ module Bc2cppMutationSupport
   # Runs the unmutated control and every mutant through the pool and reports each in input order; returns the names
   # that failed. The block gets (tree, mutant, run_half) (mutant is nil for the control) and returns a Run from
   # `run_check`; `run_half` says whether to run the compiled-versus-interpreted half, which the control does when
-  # any mutant needs it and then must prove ran (see `control_problems`).
-  def run_harness(mutants, min_ok: 5, &run_in)
+  # any mutant needs it and then must prove ran (see `control_problems`). `scripts`: the check loads the tool by
+  # relative path, so every tree (the control's too) also carries a copy of scripts/ (see `with_tree`).
+  def run_harness(mutants, scripts: false, min_ok: 5, &run_in)
     run_half = mutants.any?(&:needs_run)
     expected_world
     failures = []
     baseline = []
     kinds = Hash.new(0)
     seconds = []
-    Bc2cppMutantPool.each_ordered([nil] + mutants, work: ->(mutant) { run_one(mutant, run_half, &run_in) }) do |mutant, result|
+    Bc2cppMutantPool.each_ordered([nil] + mutants, work: ->(mutant) { run_one(mutant, run_half, scripts, &run_in) }) do |mutant, result|
       if result.nil?
         puts "  FAIL #{mutant.name}: a mutation site is gone from #{mutant.edits.map(&:first).uniq.join(', ')}"
         failures << mutant.name
@@ -306,9 +307,9 @@ module Bc2cppMutationSupport
   end
 
   # [run, world problems, seconds] of the control (nil) or one mutant; nil when a mutation site is gone.
-  def run_one(mutant, run_half, &run_in)
+  def run_one(mutant, run_half, scripts, &run_in)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    result = with_tree(mutant ? mutant.edits : [], scripts: mutant ? mutant.scripts : false) do |tree|
+    result = with_tree(mutant ? mutant.edits : [], scripts: scripts) do |tree|
       [run_in.call(tree, mutant, mutant ? mutant.needs_run : run_half), mutant ? [] : world_problems(tree)]
     end
     result && [*result, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started]

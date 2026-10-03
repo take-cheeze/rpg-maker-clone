@@ -550,10 +550,10 @@ if ENV['UCC_MUTANTS'] && ENV['UCC_GENERATED_ONLY'].nil?
   mutants = MUTANTS.flat_map do |file, list|
     list.map do |what, (from, to, expected)|
       Bc2cppMutationSupport::Mutant.new(name: "mutant (#{what})", edits: [[file.delete_prefix('tools/bc2cpp/'), from, to]],
-                                        expected: expected, scripts: true)
+                                        expected: expected)
     end
   end
-  failures.concat(Bc2cppMutationSupport.run_harness(mutants) do |tree, mutant, _run_half|
+  failures.concat(Bc2cppMutationSupport.run_harness(mutants, scripts: true) do |tree, mutant, _run_half|
     Bc2cppMutationSupport.run_check({ 'UCC_GENERATED_ONLY' => '1' },
                                     [RbConfig.ruby, File.join(tree.dir, 'scripts/bc2cpp_unlisted_class_call_check.rb')], stop_on: mutant&.stop_on)
   end)
