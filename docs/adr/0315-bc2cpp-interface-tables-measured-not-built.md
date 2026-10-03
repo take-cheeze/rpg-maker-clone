@@ -4,7 +4,10 @@ Date: 2026-10-02
 
 ## Status
 
-Accepted (a decision not to build; revisit if a trigger below fires)
+Accepted (a decision not to build; revisit if a trigger below fires).
+Superseded by [ADR 0328](0328-bc2cpp-generated-interface-tables.md), which builds
+the tables opt-in for source size and lookup shape. The census below stays the
+measured baseline; the removal goal it declined remains ADR 0323's work.
 
 ## Context
 
