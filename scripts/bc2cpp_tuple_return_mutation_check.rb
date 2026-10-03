@@ -6,11 +6,15 @@
 # mutant through BC2CPP_TOOL, must FAIL on the check that guards that condition. A mutant that passes means
 # the condition has no negative case.
 #
+# The mutants run through Bc2cppMutantPool, so BC2CPP_JOBS (default: the core count, at most 4) of
+# them go at a time and a mutant stops at the FAIL line it is expected to cause (docs/ci.md,
+# "Mutant pool").
+#
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp_tuple_return_mutation_check.rb
 
 require 'fileutils'
-require 'open3'
 require 'tmpdir'
+require_relative 'bc2cpp_mutant_pool'
 
 ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
@@ -48,26 +52,35 @@ MUTANTS = [
 ].freeze
 
 failures = []
-MUTANTS.each do |name, file, pattern, replacement, expected|
+# nil when the mutation site is gone, else the run of the check against the mutant.
+mutate = lambda do |(_name, file, pattern, replacement, expected)|
   Dir.mktmpdir do |dir|
     FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
     path = File.join(dir, 'bc2cpp', file)
     text = File.read(path)
-    unless text.include?(pattern)
-      puts "  FAIL #{name}: the mutation site is gone from #{file}"
-      failures << name
-      next
-    end
+    next :site_gone unless text.include?(pattern)
+
     File.write(path, text.sub(pattern) { replacement })
     env = { 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb'), 'TQ_GENERATED_ONLY' => '1' }
-    out, status = Open3.capture2e(env, RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_tuple_return_check.rb'))
-    failed_lines = out.lines.grep(/^\s+FAIL /)
-    killed = !status.success? && failed_lines.any? { |l| l.match?(expected) }
-    puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
-    unless killed
-      puts failed_lines.first(5).join
-      failures << name
-    end
+    # A mutant stops at the FAIL line it is expected to cause (Bc2cppMutantPool.run).
+    Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_tuple_return_check.rb')],
+                         stop_on: /^\s+FAIL .*(?:#{expected.source})/)
+  end
+end
+
+Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name, file, _pattern, _replacement, expected), run|
+  if run == :site_gone
+    puts "  FAIL #{name}: the mutation site is gone from #{file}"
+    failures << name
+    next
+  end
+  failed_lines = run.out.lines.grep(/^\s+FAIL /)
+  killed = !run.success && failed_lines.any? { |l| l.match?(expected) }
+  puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
+  unless killed
+    puts failed_lines.first(5).join
+    puts run.out.lines.last(8).join if failed_lines.empty?
+    failures << name
   end
 end
 

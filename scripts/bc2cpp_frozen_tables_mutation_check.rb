@@ -5,11 +5,16 @@
 # soundness condition broken; scripts/bc2cpp_frozen_tables_check.rb, run against the mutant through
 # BC2CPP_TOOL (generated-code half only), must FAIL on the check that guards the condition.
 #
+# The mutants run through Bc2cppMutantPool, so BC2CPP_JOBS (default: the core count, at most 4) of
+# them go at a time and a mutant stops at the FAIL line it is expected to cause. Each generated-code
+# half generates one world per soundness condition, so a mutant that is already caught needs no more
+# of them (docs/ci.md, "Mutant pool").
+#
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp_frozen_tables_mutation_check.rb
 
 require 'fileutils'
-require 'open3'
 require 'tmpdir'
+require_relative 'bc2cpp_mutant_pool'
 
 ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
@@ -41,7 +46,9 @@ MUTANTS = [
 ].freeze
 
 failures = []
-MUTANTS.each do |name, file, pattern, replacement, expected, also|
+# A :site_gone marker (naming the files that lost the pattern) when the mutation site is gone, else
+# the run of the check against the mutant.
+mutate = lambda do |(_name, file, pattern, replacement, expected, also)|
   # Inside the repo so the copy's own ../.. is the repo root: the closed world reads the build's sources from there.
   Dir.mktmpdir('.ftmut', ROOT) do |dir|
     FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
@@ -52,20 +59,28 @@ MUTANTS.each do |name, file, pattern, replacement, expected, also|
       text = File.read(path)
       text.include?(edit_pattern) && File.write(path, text.sub(edit_pattern) { edit_replacement })
     end
-    unless gone.empty?
-      puts "  FAIL #{name}: the mutation site is gone from #{gone.map(&:first).join(', ')}"
-      failures << name
-      next
-    end
+    next [:site_gone, gone.map(&:first)] unless gone.empty?
+
     env = { 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb'), 'FT_GENERATED_ONLY' => '1' }
-    out, status = Open3.capture2e(env, RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_frozen_tables_check.rb'))
-    failed = out.lines.grep(/^\s+FAIL /)
-    killed = !status.success? && failed.any? { |l| l.match?(expected) }
-    puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
-    unless killed
-      puts failed.first(5).join
-      failures << name
-    end
+    # A mutant stops at the FAIL line it is expected to cause (Bc2cppMutantPool.run).
+    Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_frozen_tables_check.rb')],
+                         stop_on: /^\s+FAIL .*(?:#{expected.source})/)
+  end
+end
+
+Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name, _file, _pattern, _replacement, expected, _also), run|
+  if run.is_a?(Array) && run.first == :site_gone
+    puts "  FAIL #{name}: the mutation site is gone from #{run.last.join(', ')}"
+    failures << name
+    next
+  end
+  failed_lines = run.out.lines.grep(/^\s+FAIL /)
+  killed = !run.success && failed_lines.any? { |l| l.match?(expected) }
+  puts "  #{killed ? 'ok  ' : 'FAIL'} mutant killed: #{name}"
+  unless killed
+    puts failed_lines.first(5).join
+    puts run.out.lines.last(8).join if failed_lines.empty?
+    failures << name
   end
 end
 
