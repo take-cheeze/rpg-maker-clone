@@ -244,12 +244,101 @@ generate = lambda do |source, dir, closed: true, env: {}, **options|
 end
 
 # ---------------------------------------------------------------------------
-if ENV['MRBC']
-  puts '-- generated code (closed world)'
+# Every world this check generates, by name. FT_WORLDS=slug[,slug...] runs only those, so the
+# mutation check can name the one or two worlds that can kill a given mutant instead of
+# generating all of them (a bc2cpp run is ~2s and most of it is the same fixed startup).
+# A name the check does not know is a hard error: a typo that selected nothing would let a
+# mutant "pass" for the wrong reason.
+def world_slug(what)
+  what.gsub(/\W+/, '_')
+end
+
+BASE = 'base'.freeze
+SWITCH = {
+  'switch' => 'the kill switch (BC2CPP_FROZEN_TABLES=0)',
+  'class_pools_switch' => 'BC2CPP_CLASS_POOLS=0 withdraws the table proofs as well',
+  'open_world' => 'the open world proves nothing',
+  'no_frozen_literal' => 'a world with no frozen literal'
+}.freeze
+
+VARIANTS = {
+  'Array#[] redefined in Ruby' => { extra: "class Array\n  def [](i); \"s\"; end\nend\n", kept: %w[lit_idx neg_idx var_calc local_alias],
+                                   proven: %w[ends hash_lit] },
+  'Hash#[] redefined in Ruby' => { extra: "class Hash\n  def [](k); \"s\"; end\nend\n", kept: %w[hash_lit hash_sym hash_var],
+                                  proven: %w[lit_idx ends] },
+  'Array#first redefined in Ruby' => { extra: "class Array\n  def first; \"s\"; end\nend\n", kept: %w[ends empty_first],
+                                      proven: %w[lit_idx hash_lit] },
+  'Array#size redefined in Ruby' => { extra: "class Array\n  def size; \"s\"; end\nend\n", kept: %w[counts],
+                                     proven: %w[lit_idx ends] },
+  'Array#freeze redefined in Ruby (any Ruby freeze withdraws every table)' =>
+    { extra: "class Array\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends counts] },
+  'Hash#freeze redefined in Ruby' =>
+    { extra: "class Hash\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends counts] },
+  'Kernel#freeze redefined in Ruby' =>
+    { extra: "module Kernel\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends] },
+  'Object#freeze redefined in Ruby' =>
+    { extra: "class Object\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends] },
+  'a module prepended to Array (declines every Array name, Hash is untouched)' =>
+    { extra: "module EcFirst\n  def first; \"s\"; end\nend\nclass Array\n  prepend EcFirst\nend\n", kept: %w[ends lit_idx], proven: %w[hash_lit] },
+  'a user freeze on instances (freeze is not only Kernel#freeze)' =>
+    { extra: "class EcFoo\n  def freeze; 1; end\nend\n", kept: %w[lit_idx hash_lit ends] },
+  'a const_missing (a failed constant lookup can answer)' =>
+    { extra: "class EcUse\n  def self.const_missing(n); 1; end\nend\n", kept: %w[lit_idx hash_lit ends] },
+  'alias_method :[] on Array' => { extra: "class Array\n  alias_method :[], :first\nend\n", kept: %w[lit_idx hash_lit var_calc] },
+  'define_method(:first) on Array' => { extra: "class Array\n  define_method(:first) { 1 }\nend\n", kept: %w[ends] },
+  'a method installer with a computed name' => { extra: "class EcUse\n  def inst(n); self.class.send(:define_method, n) { 1 }; end\nend\n",
+                                                 kept: %w[lit_idx hash_lit ends] },
+  'a singleton method on an Array (an instance can differ)' =>
+    { extra: "class EcUse\n  def maker; a = [1]; def a.[](i); \"s\"; end; a; end\nend\n", kept: %w[lit_idx hash_lit ends counts] },
+  'extend on an object' => { extra: "module EcExt; end\nclass EcUse\n  def ext(o); o.extend(EcExt); end\nend\n",
+                             kept: %w[lit_idx hash_lit ends] },
+  'a native source registering [] on Array' =>
+    { native: [['ec_native.cxx', "void ec_init(mrb_state* mrb) { mrb_define_method(mrb, mrb->array_class, \"[]\", ec_aref, MRB_ARGS_REQ(1)); }\n"]],
+      kept: %w[lit_idx var_calc], proven: %w[ends hash_lit] },
+  'a native source registering first on Array' =>
+    { native: [['ec_native.cxx', "void ec_init(mrb_state* mrb) { mrb_define_method(mrb, mrb->array_class, \"first\", ec_first, MRB_ARGS_NONE()); }\n"]],
+      kept: %w[ends], proven: %w[lit_idx] },
+  'a native source registering freeze through a class variable' =>
+    { native: [['ec_native.cxx', "void ec_init(mrb_state* mrb) { RClass* a = mrb->array_class; mrb_define_method(mrb, a, \"freeze\", ec_freeze, MRB_ARGS_NONE()); }\n"]],
+      kept: %w[lit_idx ends] },
+  'a foreign Ruby source defining Array#[]' =>
+    { foreign: [['ec_foreign.rb', "class Array\n  def [](i); \"s\"; end\nend\n"]], kept: %w[lit_idx var_calc], proven: %w[ends] }
+}.freeze
+
+CONTROLS = {
+  'Marshal and send in the world' => "class EcUse\n  def roundtrip(o); Marshal.load(Marshal.dump(o)); end\n  def go(n); send(n); end\nend\n",
+  'instance_variable_set on another ivar' => "class EcUse\n  def poke2(v); instance_variable_set(:@other, v); end\nend\n",
+  'another class defining [] and first' => "class EcThing\n  def [](i); \"s\"; end\n  def first; \"s\"; end\nend\n",
+  'a method_missing' => "class EcUse\n  def method_missing(n, *a); 1; end\nend\n",
+  'an Array subclass overriding []' => "class EcSub2 < Array\n  def [](i); \"s\"; end\nend\n"
+}.freeze
+
+ALL_WORLDS = ([BASE] + VARIANTS.keys.map { |what| world_slug(what) } +
+               CONTROLS.keys.map { |what| "control_#{world_slug(what)}" } + SWITCH.keys).freeze
+
+selected_worlds = (ENV['FT_WORLDS'].to_s.split(',').map(&:strip) - [''])
+unless selected_worlds.empty?
+  unknown = selected_worlds - ALL_WORLDS
+  unless unknown.empty?
+    warn "FT_WORLDS names no world here: #{unknown.join(', ')} (known: #{ALL_WORLDS.join(', ')})"
+    exit 1
+  end
+end
+# Unset means every world, which is what a plain run of this check does.
+run_world = selected_worlds.empty? ? ->(_slug) { true } : ->(slug) { selected_worlds.include?(slug) }
+# One file so a world a mutant cannot be killed by is never generated: the whole point is that
+# the mutation check names a subset.
+ALL_WORLDS.each { |slug| puts "  world #{slug}" if ENV['FT_WORLDS_LIST'] == '1' && run_world.call(slug) }
+
+if ENV['MRBC'] && (run_world.call(BASE) || VARIANTS.any? { |w, _| run_world.call(world_slug(w)) } ||
+                    CONTROLS.any? { |w, _| run_world.call("control_#{world_slug(w)}") } ||
+                    SWITCH.keys.any? { |w| run_world.call(w) })
+  puts "-- generated code (closed world#{selected_worlds.empty? ? '' : ": #{selected_worlds.join(', ')}"})"
   Dir.mktmpdir do |dir|
-    code, err = generate.call(FIXTURE, dir)
-    POSITIVE.merge(ARG_SITE).merge(RETURN_SITE).each do |fn, why|
-      next if fn == 'via_arg'
+    if run_world.call(BASE)
+      code, err = generate.call(FIXTURE, dir)
+      POSITIVE.merge(ARG_SITE).merge(RETURN_SITE).each do |fn, why|
+        next if fn == 'via_arg'
 
       check.call("EcUse##{fn}: #{why} loses the dynamic arm of its arithmetic", proven.call(code, fn))
     end
@@ -267,50 +356,13 @@ if ENV['MRBC']
                  err.include?('FROZEN:Hash[INT*4]') && err.include?('on ('))
     check.call('a name bound to two tables of different slots is not listed as one shape',
                !err.include?('NUMCONST SHARED (FROZEN:Array[INT*2])'))
+    end
 
-    variants = {
-      'Array#[] redefined in Ruby' => { extra: "class Array\n  def [](i); \"s\"; end\nend\n", kept: %w[lit_idx neg_idx var_calc local_alias],
-                                         proven: %w[ends hash_lit] },
-      'Hash#[] redefined in Ruby' => { extra: "class Hash\n  def [](k); \"s\"; end\nend\n", kept: %w[hash_lit hash_sym hash_var],
-                                        proven: %w[lit_idx ends] },
-      'Array#first redefined in Ruby' => { extra: "class Array\n  def first; \"s\"; end\nend\n", kept: %w[ends empty_first],
-                                            proven: %w[lit_idx hash_lit] },
-      'Array#size redefined in Ruby' => { extra: "class Array\n  def size; \"s\"; end\nend\n", kept: %w[counts],
-                                           proven: %w[lit_idx ends] },
-      'Array#freeze redefined in Ruby (any Ruby freeze withdraws every table)' =>
-        { extra: "class Array\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends counts] },
-      'Hash#freeze redefined in Ruby' =>
-        { extra: "class Hash\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends counts] },
-      'Kernel#freeze redefined in Ruby' => { extra: "module Kernel\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends] },
-      'Object#freeze redefined in Ruby' => { extra: "class Object\n  def freeze; self; end\nend\n", kept: %w[lit_idx hash_lit ends] },
-      'a module prepended to Array (declines every Array name, Hash is untouched)' =>
-        { extra: "module EcFirst\n  def first; \"s\"; end\nend\nclass Array\n  prepend EcFirst\nend\n", kept: %w[ends lit_idx], proven: %w[hash_lit] },
-      'a user freeze on instances (freeze is not only Kernel#freeze)' =>
-        { extra: "class EcFoo\n  def freeze; 1; end\nend\n", kept: %w[lit_idx hash_lit ends] },
-      'a const_missing (a failed constant lookup can answer)' =>
-        { extra: "class EcUse\n  def self.const_missing(n); 1; end\nend\n", kept: %w[lit_idx hash_lit ends] },
-      'alias_method :[] on Array' => { extra: "class Array\n  alias_method :[], :first\nend\n", kept: %w[lit_idx hash_lit var_calc] },
-      'define_method(:first) on Array' => { extra: "class Array\n  define_method(:first) { 1 }\nend\n", kept: %w[ends] },
-      'a method installer with a computed name' => { extra: "class EcUse\n  def inst(n); self.class.send(:define_method, n) { 1 }; end\nend\n",
-                                                       kept: %w[lit_idx hash_lit ends] },
-      'a singleton method on an Array (an instance can differ)' =>
-        { extra: "class EcUse\n  def maker; a = [1]; def a.[](i); \"s\"; end; a; end\nend\n", kept: %w[lit_idx hash_lit ends counts] },
-      'extend on an object' => { extra: "module EcExt; end\nclass EcUse\n  def ext(o); o.extend(EcExt); end\nend\n",
-                                 kept: %w[lit_idx hash_lit ends] },
-      'a native source registering [] on Array' =>
-        { native: [['ec_native.cxx', "void ec_init(mrb_state* mrb) { mrb_define_method(mrb, mrb->array_class, \"[]\", ec_aref, MRB_ARGS_REQ(1)); }\n"]],
-          kept: %w[lit_idx var_calc], proven: %w[ends hash_lit] },
-      'a native source registering first on Array' =>
-        { native: [['ec_native.cxx', "void ec_init(mrb_state* mrb) { mrb_define_method(mrb, mrb->array_class, \"first\", ec_first, MRB_ARGS_NONE()); }\n"]],
-          kept: %w[ends], proven: %w[lit_idx] },
-      'a native source registering freeze through a class variable' =>
-        { native: [['ec_native.cxx', "void ec_init(mrb_state* mrb) { RClass* a = mrb->array_class; mrb_define_method(mrb, a, \"freeze\", ec_freeze, MRB_ARGS_NONE()); }\n"]],
-          kept: %w[lit_idx ends] },
-      'a foreign Ruby source defining Array#[]' =>
-        { foreign: [['ec_foreign.rb', "class Array\n  def [](i); \"s\"; end\nend\n"]], kept: %w[lit_idx var_calc], proven: %w[ends] }
-    }
-    variants.each do |what, spec|
-      d = File.join(dir, what.gsub(/\W+/, '_'))
+    VARIANTS.each do |what, spec|
+      slug = world_slug(what)
+      next unless run_world.call(slug)
+
+      d = File.join(dir, slug)
       Dir.mkdir(d)
       vcode, = generate.call(FIXTURE + spec.fetch(:extra, ''), d, **spec.slice(:native, :foreign))
       wrong = spec.fetch(:kept).reject { |fn| kept.call(vcode, fn) } + spec.fetch(:proven, []).reject { |fn| proven.call(vcode, fn) }
@@ -320,15 +372,11 @@ if ENV['MRBC']
                  "#{spec[:proven] ? "; #{spec[:proven].join(', ')} still prove" : ''}", ok)
     end
 
-    controls = {
-      'Marshal and send in the world' => "class EcUse\n  def roundtrip(o); Marshal.load(Marshal.dump(o)); end\n  def go(n); send(n); end\nend\n",
-      'instance_variable_set on another ivar' => "class EcUse\n  def poke2(v); instance_variable_set(:@other, v); end\nend\n",
-      'another class defining [] and first' => "class EcThing\n  def [](i); \"s\"; end\n  def first; \"s\"; end\nend\n",
-      'a method_missing' => "class EcUse\n  def method_missing(n, *a); 1; end\nend\n",
-      'an Array subclass overriding []' => "class EcSub2 < Array\n  def [](i); \"s\"; end\nend\n"
-    }
-    controls.each do |what, extra|
-      d = File.join(dir, what.gsub(/\W+/, '_'))
+    CONTROLS.each do |what, extra|
+      slug = "control_#{world_slug(what)}"
+      next unless run_world.call(slug)
+
+      d = File.join(dir, slug)
       Dir.mkdir(d)
       ccode, = generate.call(FIXTURE + extra, d)
       wrong = %w[lit_idx hash_lit ends counts].reject { |fn| proven.call(ccode, fn) }
@@ -336,29 +384,37 @@ if ENV['MRBC']
       check.call("CONTROL #{what}: the table reads keep their proof", wrong.empty? && indexed_exact.call(ccode, 'lit_idx'))
     end
 
-    Dir.mktmpdir do |off_dir|
-      off_code, off_err = generate.call(FIXTURE, off_dir, env: { 'BC2CPP_FROZEN_TABLES' => '0' })
-      check.call('the kill switch (BC2CPP_FROZEN_TABLES=0): no shape and no table read proven by the numeric flow',
-                 !off_err.include?('FROZENTABLE') && off_err.include?('off: disabled by BC2CPP_FROZEN_TABLES=0') &&
-                   POSITIVE.keys.reject { |fn| %w[via_arg].include?(fn) }.none? do |fn|
-                     numeric_proof.call(off_code, fn)
-                   end)
+    if run_world.call('switch')
+      Dir.mktmpdir do |off_dir|
+        off_code, off_err = generate.call(FIXTURE, off_dir, env: { 'BC2CPP_FROZEN_TABLES' => '0' })
+        check.call('the kill switch (BC2CPP_FROZEN_TABLES=0): no shape and no table read proven by the numeric flow',
+                   !off_err.include?('FROZENTABLE') && off_err.include?('off: disabled by BC2CPP_FROZEN_TABLES=0') &&
+                     POSITIVE.keys.reject { |fn| %w[via_arg].include?(fn) }.none? do |fn|
+                       numeric_proof.call(off_code, fn)
+                     end)
+      end
     end
-    Dir.mktmpdir do |pools_dir|
-      pools_code, = generate.call(FIXTURE, pools_dir, env: { 'BC2CPP_CLASS_POOLS' => '0' })
-      check.call('BC2CPP_CLASS_POOLS=0 withdraws the table proofs as well (they share the exact-class gates)',
-                 %w[lit_idx hash_lit ends].none? { |fn| numeric_proof.call(pools_code, fn) })
+    if run_world.call('class_pools_switch')
+      Dir.mktmpdir do |pools_dir|
+        pools_code, = generate.call(FIXTURE, pools_dir, env: { 'BC2CPP_CLASS_POOLS' => '0' })
+        check.call('BC2CPP_CLASS_POOLS=0 withdraws the table proofs as well (they share the exact-class gates)',
+                   %w[lit_idx hash_lit ends].none? { |fn| numeric_proof.call(pools_code, fn) })
+      end
     end
-    Dir.mktmpdir do |open_dir|
-      open_code, open_err = generate.call(FIXTURE, open_dir, closed: false)
-      check.call('the open world proves nothing', !open_err.include?('FROZENTABLE') && !indexed_exact.call(open_code, 'lit_idx'))
+    if run_world.call('open_world')
+      Dir.mktmpdir do |open_dir|
+        open_code, open_err = generate.call(FIXTURE, open_dir, closed: false)
+        check.call('the open world proves nothing', !open_err.include?('FROZENTABLE') && !indexed_exact.call(open_code, 'lit_idx'))
+      end
     end
-    Dir.mktmpdir do |plain_dir|
-      plain = FIXTURE.gsub('.freeze', '')
-      on_code, = generate.call(plain, plain_dir)
-      Dir.mktmpdir do |plain_off|
-        off_code, = generate.call(plain, plain_off, env: { 'BC2CPP_FROZEN_TABLES' => '0' })
-        check.call('a world with no frozen literal generates the same code with the proof on and off', on_code == off_code)
+    if run_world.call('no_frozen_literal')
+      Dir.mktmpdir do |plain_dir|
+        plain = FIXTURE.gsub('.freeze', '')
+        on_code, = generate.call(plain, plain_dir)
+        Dir.mktmpdir do |plain_off|
+          off_code, = generate.call(plain, plain_off, env: { 'BC2CPP_FROZEN_TABLES' => '0' })
+          check.call('a world with no frozen literal generates the same code with the proof on and off', on_code == off_code)
+        end
       end
     end
   end
