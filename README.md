@@ -1219,6 +1219,18 @@
   returns. Proven absent native placeholders no longer spoil return tables. This removes another 16 cached sends
   (2,881 to 2,865); `BC2CPP_NATIVE_CLASS_RESULTS=0` and `BC2CPP_ABSENT_NATIVE_RETURNS=0` disable the two proofs.
   See [`docs/adr/0333-bc2cpp-native-class-results.md`](docs/adr/0333-bc2cpp-native-class-results.md).
+  Native `to_s` results also join Ruby returns after auditing linked implementations, the core Struct alias
+  and String subclass freedom. This removes another 20 cached sends (2,865 to 2,845);
+  `BC2CPP_NATIVE_STRING_RESULTS=0` disables it. Regexp nil results remain possible. See
+  [`docs/adr/0334-bc2cpp-native-string-results.md`](docs/adr/0334-bc2cpp-native-string-results.md).
+  Audited native `dup` preserves the receiver class; exact Array `compact` and `join` return
+  Array and String. This removes one more cached send (2,845 to 2,844), without copying element
+  or immutability metadata. `BC2CPP_NATIVE_COLLECTION_RESULTS=0` disables these facts. See
+  [`docs/adr/0335-bc2cpp-native-collection-results.md`](docs/adr/0335-bc2cpp-native-collection-results.md).
+  Native `compact`, `flatten`, `__uniq` and `join` contracts also join compiled Ruby returns
+  when every linked implementation and helper is audited. `File.join` requires String subclass freedom;
+  uncompiled Hash transformations remain unknown. `BC2CPP_NATIVE_ARRAY_TRANSFORMS=0` withdraws these
+  name-wide facts. The current shipped Wio output remains unchanged. See [`docs/adr/0336-bc2cpp-native-array-transforms.md`](docs/adr/0336-bc2cpp-native-array-transforms.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
   neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio

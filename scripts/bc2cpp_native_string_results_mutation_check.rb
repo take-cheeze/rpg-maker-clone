@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# ADR 0333: each source, lookup or visibility mutant must fail its withdrawal
+# ADR 0334: each source, lookup or visibility mutant must fail its withdrawal
 # case. The unmutated copy is a control; all cases use generated code only.
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp_native_class_results_mutation_check.rb
 
@@ -14,26 +14,30 @@ ROOT = File.expand_path('..', __dir__)
 abort 'SKIP: set MRBC' unless ENV['MRBC']
 
 AUDIT = 'native_class_results.rb'
-RETURNS = 'codegen_numeric_returns.rb'
 MUTANTS = [
   ['control (unmutated)', AUDIT, nil, nil, nil],
   ['the digest is ignored', AUDIT,
    'source && Array(FILES.fetch(relative)).include?(Digest::SHA256.hexdigest(source))', 'source', /changed source/],
-  ['unmodelled native files are trusted', AUDIT,
-   'return nil unless relative', "return { '<audited-native>' => kind } unless relative", /unmodelled native registration/],
-  ['the native fact kill switch is ignored', AUDIT,
-   "if ENV['BC2CPP_NATIVE_CLASS_RESULTS'] == '0'", 'if false', /native fact kill switch/],
-  ['snapshot nil returns are erased', AUDIT,
-   "['RGSS::Bitmap', :nil]", "'RGSS::Bitmap'", /snapshot retains every nil return/],
-  ['the Method delegate is not audited', AUDIT,
-   "return nil unless paths.any? { |path| path.end_with?('/mruby-proc-ext/src/proc.c') }", 'return nil if false', /Method parameters requires its Proc delegate/],
-  ['the absent-native kill switch is ignored', RETURNS,
-   "if ENV['BC2CPP_ABSENT_NATIVE_RETURNS'] == '0'", 'if false', /absent definition kill switch: parameters/],
-  ['exact core lookup ignores overrides', 'codegen_native_results.rb',
-   "return core_kind if pinned && entry && native_core_entry_safe?(entry)", "return core_kind if pinned && entry", /reopened String bytes/],
-  ['linked native definitions are removed', RETURNS,
-   'return definitions unless @native_name_sources && @foreign_method_names && @closed_world&.name_fully_visible?(name)',
-   'nil', /native return is retained in mixed Ruby\/native join/]
+  ['unmodelled native sources are trusted', AUDIT,
+   'return nil unless relative', "return { '<audited-native>' => kind } unless relative", /unmodelled native source/],
+  ['String subclasses are treated as exact String', AUDIT,
+   "|| !string_subclass_free", '', /String subclasses withdraw/],
+  ['the string kill switch is ignored', AUDIT,
+   "ENV['BC2CPP_NATIVE_STRING_RESULTS'] == '0'", 'false', /string result kill switch/],
+  ['regexp nil is erased', AUDIT,
+   "kind = ['String', :nil]", "kind = 'String'", /regexp nil retained/],
+  ['the bigint delegate is not audited', AUDIT,
+   "source && Digest::SHA256.hexdigest(source) == FILES.fetch('3rd/mruby/mrbgems/mruby-bigint/core/bigint.c')", 'true', /bigint delegate audited/],
+  ['arbitrary aliases are trusted', 'codegen_native_results.rb',
+   "NativeClassResults.source_matches?(irep.file, NativeClassResults::STRUCT_ALIAS_PATH, NativeClassResults::STRUCT_ALIAS_SHA)", 'true', /arbitrary alias/],
+  ['Struct inspect replacement is trusted', 'codegen_native_results.rb',
+   "return false if (@registry['inspect'] || []).any? { |definition| definition.owner == 'Struct' }", 'nil', /Struct inspect replacement/],
+  ['outside Ruby definitions are trusted', 'closed_world.rb',
+   "outside_ruby_paths_defining(name).all? { |path| audited_ruby_paths.include?(path) }", 'true', /linked foreign to_s/],
+  ['opaque native inspect registrations are trusted', 'codegen_native_results.rb',
+   "return false if opaque.fetch('inspect', []).any? { |owner| owner.nil? || owner == 'Struct' }", 'nil', /linked native inspect/],
+  ['duplicate native inspect registrations are trusted', 'codegen_native_results.rb',
+   "entries.one? && entries.first[:function] == 'mrb_struct_to_s'", "entries.any? { |entry| entry[:function] == 'mrb_struct_to_s' }", /linked ROM inspect/]
 ].freeze
 
 # nil when the mutation site is gone, else the run of the check against the mutant.
@@ -55,11 +59,11 @@ mutate = lambda do |(_name, file, pattern, replacement, expected)|
 
       File.write(path, text.sub(pattern) { replacement })
     end
-    env = { 'BC2CPP_TOOL' => File.join(dir, 'tools', 'bc2cpp', 'bc2cpp.rb'), 'NCR_GENERATED_ONLY' => '1',
-            'NCR_AUDIT_TOOL' => File.join(dir, 'tools', 'bc2cpp', AUDIT) }
+    env = { 'BC2CPP_TOOL' => File.join(dir, 'tools', 'bc2cpp', 'bc2cpp.rb'), 'NSR_GENERATED_ONLY' => '1',
+            'NSR_AUDIT_TOOL' => File.join(dir, 'tools', 'bc2cpp', AUDIT) }
     # A mutant stops at the first FAIL line it is expected to cause (Bc2cppMutantPool.run); the control runs to the end.
     stop = pattern ? /^\s+FAIL .*(?:#{expected.source})/ : nil
-    Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_native_class_results_check.rb')], stop_on: stop)
+    Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_native_string_results_check.rb')], stop_on: stop)
   end
 end
 
@@ -89,8 +93,8 @@ Bc2cppMutantPool.each_ordered(MUTANTS, work: mutate) do |(name, file, pattern, _
 end
 
 if failures.empty?
-  puts 'bc2cpp native class results mutation check: PASS'
+  puts 'bc2cpp native string results mutation check: PASS'
 else
-  warn "bc2cpp native class results mutation check: #{failures.size} surviving mutant(s)"
+  warn "bc2cpp native string results mutation check: #{failures.size} surviving mutant(s)"
   exit 1
 end
