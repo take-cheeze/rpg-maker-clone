@@ -42,7 +42,7 @@ CLASSES = <<~RUBY
     def name; :box; end
     def delete(v); [:box, v]; end
     def bump; self; end
-    def to_a; [7]; end
+    def nil?; false; end
   end
 
   class NaCrate
@@ -50,15 +50,10 @@ CLASSES = <<~RUBY
     def name; :crate; end
     def delete(v); [:crate, v]; end
     def bump; self; end
-    def to_a; [9]; end
+    def nil?; false; end
   end
 
   class NaGhost
-  end
-
-  # nil answers `to_a` here, so a nil receiver must reach the real method, not a NoMethodError.
-  class NilClass
-    def to_a; [:nil]; end
   end
 
   class NaBase
@@ -71,6 +66,12 @@ CLASSES = <<~RUBY
   class << NaTool
     alias_method :_na_update, :name
     def name; _na_update; end
+  end
+
+  # The same on a core module no Ruby declares (Kernel exists in a core-only VM too): the registry has no owner
+  # for this def (an unknown definer), as for `class << Graphics` in mruby-rgss.
+  class << Kernel
+    def name; :kernel; end
   end
 RUBY
 
@@ -118,14 +119,14 @@ FIXTURE = <<~RUBY
     def neg_array_delete; @arr.delete(1); end
     def neg_hash_unproven(h); h.delete(:a); end
     def neg_mixed_hash; @mh.delete(:a); end
-    # nil answers to_a (NilClass#to_a above), so a nil the flow cannot exclude keeps the by-name else
-    def neg_nilable_to_s; @nl.to_a; end
+    # nil answers nil? (a native of NilClass), so a nil the flow cannot exclude keeps the by-name else
+    def neg_nilable_to_s; @nl.nil?; end
   end
 RUBY
 
 OWNERS = %w[NaBox NaCrate NaGhost NaBase NaTool NaFx NaBaseKid NaRebindable].freeze
 # method => the name whose else the site keeps or loses
-SITE_NAME = { 'pos_update' => 'name', 'pos_count' => 'count', 'pos_fact' => 'name', 'pos_two' => 'name', 'pos_nilable_name' => 'name', 'neg_nilable_to_s' => 'to_a',
+SITE_NAME = { 'pos_update' => 'name', 'pos_count' => 'count', 'pos_fact' => 'name', 'pos_two' => 'name', 'pos_nilable_name' => 'name', 'neg_nilable_to_s' => 'nil?',
               'neg_unproven' => 'name', 'neg_core_native' => 'count' }.freeze
 POSITIVE = %w[pos_update pos_count pos_fact pos_two pos_nilable_name].freeze
 # Worlds that also generate with mruby's own mrblib compiled (Hash#delete has a compiled body only then).
@@ -208,7 +209,7 @@ body_all = lambda do |code, fn|
 end
 # How the chain of the site's name in `fn` ends: a proven-dead nomethod (:dead), a kept by-name send (:kept).
 name_else = lambda do |code, fn|
-  checked = SITE_NAME.fetch(fn)
+  checked = Regexp.escape(SITE_NAME.fetch(fn))
   kind = body_all.call(code, fn)[%r{POLY_SMALL_N :#{checked} .*?(?:(CLOSED_WORLD kept: \w+)|(CLOSED_WORLD nomethod: recv\.#{checked}))}m, 0]
   kind.nil? ? nil : (kind.include?('CLOSED_WORLD kept:') ? :kept : :dead)
 end
@@ -298,7 +299,10 @@ builds << ['core-only', runtime.core, ENV.fetch('MRBC', nil), '', false] if runt
 if ENV['BC2CPP_MRUBY_FULL32'] && ENV['BC2CPP_MRBC32']
   builds << ['mrb_int 32 (full-core)', ENV['BC2CPP_MRUBY_FULL32'], ENV['BC2CPP_MRBC32'], '-DMRB_32BIT -DMRB_INT32 -no-pie', true]
 end
-builds << ['full-core', runtime.full_or_build, ENV.fetch('MRBC', nil), '', true] if builds.empty? && runtime.compiler? && runtime.full_or_build
+if builds.empty? && !ENV['NA_GENERATED_ONLY'] && runtime.compiler?
+  built = runtime.full_or_build
+  builds << ['full-core', built, ENV.fetch('MRBC', nil), '', true] if built
+end
 
 if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['NA_GENERATED_ONLY']
   puts '== fixture on real mruby, interpreted and compiled'
@@ -383,8 +387,8 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['NA_GENERATED_ONLY
           expected = ['pos_update => :box', 'pos_count => 5', 'flipped:pos_count => 6', 'pos_fact(w) => :box', 'pos_fact(c) => :crate', 'pos_fact(g) => raised',
                       'neg_unproven(c) => :crate', 'neg_unproven(arr) => raised', 'pos_delete_hash => 1', 'neg_array_delete => 1',
                       'neg_mixed_hash => 2', 'neg_hash_unproven(hash) => nil', 'neg_hash_unproven(w) => [:box, :a]',
-                      'flipped:pos_two => :crate', 'pos_nilable_name => raised', 'neg_nilable_to_s => [:nil]', 'flipped:pos_nilable_name => :crate',
-                      'flipped:neg_nilable_to_s => [9]', 'flipped:pos_update => :crate', 'flipped:neg_core_native => 1', 'flipped:neg_mixed_hash => [:box, :a]']
+                      'flipped:pos_two => :crate', 'pos_nilable_name => raised', 'neg_nilable_to_s => true', 'flipped:pos_nilable_name => :crate',
+                      'flipped:neg_nilable_to_s => false', 'flipped:pos_update => :crate', 'flipped:neg_core_native => 1', 'flipped:neg_mixed_hash => [:box, :a]']
           # A core-only VM has no Hash#delete, Enumerable#count or Array#each: the interpreter's line is the reference there.
           expected = expected.reject { |want| want.match?(/delete_hash|mixed_hash|hash_unproven\(hash|neg_core_native/) } unless full_core
           missing = expected.reject { |want| compiled.any? { |line| line.start_with?(want) } }
