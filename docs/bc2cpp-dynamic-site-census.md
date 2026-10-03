@@ -781,3 +781,10 @@ Lever ceilings in the engine gems (rpg2k / lcf / rgss): SENDB facts 0; `Array.ne
 direct entry for `break`/`return` blocks 3 / 0 / 5; `Hash#delete` 6 / 2 / 0 (a flow-proven receiver that
 CORE_EXACT_DIRECT does not read) and `Array#delete` 2 / 0 / 0 (no compiled body); sum 29, below the cutoff of 30, so
 nothing was built.
+
+## Follow-up: Hash#delete flow-core coverage (ADR 0327)
+
+The eight `Hash#delete` sends above (six RPG2k, two LCF) are removed by
+FLOW_CORE_DIRECT (ADR 0323). ADR 0327 adds no generator change; it adds pooled
+Hash `delete`/`fetch` fixtures and a mutant on the early return to the
+core-exact check. See [ADR 0327](adr/0327-bc2cpp-flow-core-hash-delete-checks.md).

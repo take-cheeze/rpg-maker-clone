@@ -1044,6 +1044,8 @@
   `uniq`, `fetch`, ...) calls the compiled core body directly when that body cannot suspend a Fiber, with no
   by-name send left; `BC2CPP_CORE_EXTEND=0` returns the earlier output; see
   [`docs/adr/0314-bc2cpp-core-exact-direct.md`](docs/adr/0314-bc2cpp-core-exact-direct.md).
+  The pooled `Hash#delete` flow-core path (ADR 0323) is covered by the core-exact check; see
+  [`docs/adr/0327-bc2cpp-flow-core-hash-delete-checks.md`](docs/adr/0327-bc2cpp-flow-core-hash-delete-checks.md).
   `BC2CPP_INTERFACE_TABLES=1` enables shared, automatically generated dispatch tables for five or more
   eligible exact classes, with adapters for Ruby methods, accessors and audited native entries. Short chains
   retain their existing form; table misses retain the checked fallback. See
