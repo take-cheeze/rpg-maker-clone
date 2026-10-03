@@ -43,6 +43,7 @@ CLASSES = <<~RUBY
     def delete(v); [:box, v]; end
     def bump; self; end
     def nil?; false; end
+    def na_zork; :zork_box; end
   end
 
   class NaCrate
@@ -51,6 +52,7 @@ CLASSES = <<~RUBY
     def delete(v); [:crate, v]; end
     def bump; self; end
     def nil?; false; end
+    def na_zork; :zork_crate; end
   end
 
   class NaGhost
@@ -67,12 +69,6 @@ CLASSES = <<~RUBY
     alias_method :_na_update, :name
     def name; _na_update; end
   end
-
-  # The same on a core module no Ruby declares (Kernel exists in a core-only VM too): the registry has no owner
-  # for this def (an unknown definer), as for `class << Graphics` in mruby-rgss.
-  class << Kernel
-    def name; :kernel; end
-  end
 RUBY
 
 FIXTURE = <<~RUBY
@@ -86,6 +82,7 @@ FIXTURE = <<~RUBY
       @mh = { a: 2 }
       @nl = nil
       @nl2 = nil
+      @nl3 = nil
     end
 
     def flip
@@ -95,13 +92,23 @@ FIXTURE = <<~RUBY
       @mh = NaBox.new
       @nl = NaCrate.new
       @nl2 = NaCrate.new
+      @nl3 = NaCrate.new
       :flipped
     end
 
     def rebox
       @nl = NaBox.new
       @nl2 = NaBox.new
+      @nl3 = NaBox.new
       :reboxed
+    end
+
+    # Never called: a class-object def inside a method body is no registry definition (an unknown definer), the
+    # shape of the `class << Graphics` probe in mruby-rgss.
+    def probe_unknown_definer
+      class << NaNativeLike
+        def name; :native_like; end
+      end
     end
 
     # -- positives
@@ -111,6 +118,8 @@ FIXTURE = <<~RUBY
     def pos_two; @pair.name; end
     # nil may reach these: NilClass answers neither `name` nor `rebox`, so the proof stands
     def pos_nilable_name; @nl2.name; end
+    # nil may reach this one too: a world in which a native gives NilClass `na_zork` must keep its else
+    def pos_nilable_zork; @nl3.na_zork; end
     def pos_delete_hash; @h.delete(:a); end
 
     # -- negatives
@@ -126,7 +135,7 @@ RUBY
 
 OWNERS = %w[NaBox NaCrate NaGhost NaBase NaTool NaFx NaBaseKid NaRebindable].freeze
 # method => the name whose else the site keeps or loses
-SITE_NAME = { 'pos_update' => 'name', 'pos_count' => 'count', 'pos_fact' => 'name', 'pos_two' => 'name', 'pos_nilable_name' => 'name', 'neg_nilable_to_s' => 'nil?',
+SITE_NAME = { 'pos_update' => 'name', 'pos_count' => 'count', 'pos_fact' => 'name', 'pos_two' => 'name', 'pos_nilable_name' => 'name', 'neg_nilable_to_s' => 'nil?', 'pos_nilable_zork' => 'na_zork',
               'neg_unproven' => 'name', 'neg_core_native' => 'count' }.freeze
 POSITIVE = %w[pos_update pos_count pos_fact pos_two pos_nilable_name].freeze
 # Worlds that also generate with mruby's own mrblib compiled (Hash#delete has a compiled body only then).
@@ -238,6 +247,16 @@ if ENV['MRBC']
       check.call("#{fn}: the proven receiver set gives x.#{SITE_NAME[fn]} no by-name else", dead_else.call(code, fn))
     end
     NEGATIVE.each { |fn| check.call("NEG #{fn}: the else stays", kept_else.call(code, fn)) }
+    check.call('pos_nilable_zork: nothing answers na_zork on nil, so the else is dead', dead_else.call(code, 'pos_nilable_zork'))
+    Dir.mktmpdir do |nd|
+      # A native that gives NilClass the name: a nil the flow cannot exclude may reach the else, which must dispatch.
+      nsrc = "void na_init(mrb_state *mrb) {\n  struct RClass *n = mrb_define_class(mrb, \"NilClass\", mrb->object_class);\n" \
+             "  mrb_define_method(mrb, n, \"na_zork\", f, MRB_ARGS_NONE());\n}\n"
+      gem = [['na_nil_gem', gem_dir.call(nd, 'na_nil_gem', 'src/na_nil.cxx' => nsrc)]]
+      ncode, = generate.call(CLASSES + FIXTURE, nd, build_gems: gem, native: [['na_nil.cxx', nsrc]])
+      check.call('NEG a native source defines na_zork on NilClass: the else of a possibly nil receiver stays',
+                 kept_else.call(ncode, 'pos_nilable_zork'))
+    end
     Dir.mktmpdir do |cd|
       ccode, = generate.call(CLASSES + FIXTURE, cd, core: true)
       check.call("#{CORE_DIRECT}: a flow-proven Hash calls the compiled Hash#delete body, no chain", core_direct.call(ccode, CORE_DIRECT))

@@ -54,7 +54,7 @@ MUTANTS = [
     reason = argv.size', /pos_update: the proven receiver set/],
   ['a nil the flow cannot exclude does not keep the gates of a name nil answers', 'codegen_call_facts.rb',
    '(!mask.is_a?(Integer) || mask.anybits?(NumericFlow::NIL)) && !nil_unanswerable_for_instances?(name)', 'false',
-   /NEG neg_nilable_to_s: the else stays/],
+   /NEG a native source defines na_zork on NilClass/],
   ['the flow-proven core call is never made', 'codegen_core_exact_direct.rb',
    'core_exact_direct_line(d, recv, name, argv, dynamic_dispatch_line(d, recv, name, argv))
   end

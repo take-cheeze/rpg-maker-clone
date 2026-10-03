@@ -59,15 +59,14 @@ against on on the same tree, is the number that counts:
 | Lever | Sites removed |
 | --- | ---: |
 | class-object definers alone, per-class resolution alone, scoped set alone | 0 each (measured with the model; only the three together move `update`) |
-| `update` on a proven `RPG2k::Window` (22) and, by call facts, `Game::Interpreter` (3) | 25 |
+| `update` on a proven `RPG2k::Window` (23) and `Game::Interpreter` (16 proven, 3 by call facts) | 42 |
 | `Hash#delete` on a flow-proven Hash (FLOW_CORE_DIRECT) | 8 |
-| **total** (cutoff: 30) | **33** |
+| **total** (cutoff: 30) | **50** |
 
 Sites with an unproven receiver set cannot be fixed by these levers: 1,655 of 1,925 dispatching sites. The 339 upper
 bound of the baseline counted combinations of gates, not cells: the `width` and `height` sites (128) have a class
 object in their set or an unproven receiver, and the 130 CALL_FACTS-bounded sites with core/native members are bare
-sends over 12-18 classes whose native cells have no entry. A further 16 `update` sites on a flow-proven
-`Game::Interpreter` stay by name on purpose (see Soundness, nil).
+sends over 12-18 classes whose native cells have no entry.
 
 ## Decision
 
@@ -113,9 +112,9 @@ A hint is not a proof (ADR 0210, 0290). Every lift needs a proven `S` and a proo
 * **nil.** The exact set leaves nil out (`receiver_instances`), but a nil the flow cannot exclude reaches the else arm
   too and must raise what dispatch raises. A name NilClass may answer (an installed name, a registry or outside
   definer, a native or unreadable native owner: `nil_unanswerable_refusal`) keeps the whole-name gates for such a
-  site; the instance variant leaves out installs only a class object sees. This is why 16 `update` sites on a
-  nilable `Game::Interpreter` stay: an RGSS native with an unreadable owner may answer `update` on nil. The fixture
-  reopens NilClass with `to_a` so a wrong proof would turn `nil.to_a` into a NoMethodError;
+  site; the instance variant leaves out the installs and unknown definers only a class object sees (nil is an
+  instance of a non-Module class), so the `class << Graphics` probe does not make `update` answerable on nil. The
+  fixture gives NilClass a native `na_zork` in one world: a possibly nil receiver must keep its else there;
 * the withdrawal worlds of `scripts/bc2cpp_native_class_arms_check.rb`: a singleton on an instance, `class << obj`, a
   constant that is not a class, an instance-level alias (`alias_method` and the `alias` keyword), a computed
   definition, a nested def, an install on another class from the body, a method_missing class in the set, an outside
@@ -132,20 +131,19 @@ of the check therefore runs those worlds as generated code only.
 
 ## Consequences
 
-* 33 by-name sends removed in the engine gems of the wio build (25 `update`, 8 `Hash#delete`), measured switch off
-  against on: `bc2cpp_send` 2,513 -> 2,480, `mrb_funcall*`, helper-held and block sends unchanged, and no by-name
-  site appears anywhere else, so this is removal, not relocation. `bc2cpp_nomethod` sites 4,380 -> 4,423: the 25 `update` sites plus 18 sites that had no by-name else before (17
-  `index` on a `ShopState` and 1 `to_h`): their receiver is `K|nil`, NILABLE_RECEIVER used to test nil first and call the
+* 50 by-name sends removed in the engine gems of the wio build (42 `update`, 8 `Hash#delete`), measured switch off
+  against on: `bc2cpp_send` 2,513 -> 2,463, `mrb_funcall*`, helper-held and block sends unchanged, and no by-name
+  site appears anywhere else, so this is removal, not relocation. `bc2cpp_nomethod` sites 4,380 -> 4,441: the 42 `update` sites plus 19 sites that had no by-name else before (17
+  `index` on a `ShopState`, 1 `to_h` and 1 more `update`): their receiver is `K|nil`, NILABLE_RECEIVER used to test nil first and call the
   exact accessor, and the scoped set now ends the chain in the dead arm instead, so those sites trade a nil test for
   a class compare (same behaviour: nil reaches the arm, which raises the NoMethodError dispatch raises).
-  `NOMETHOD_REVIEWED` gains 18 keys (`update` on the scenes' windows, `index` on a `ShopState`, `to_h` on
+  `NOMETHOD_REVIEWED` gains 21 keys (`update` on the scenes' windows, `index` on a `ShopState`, `to_h` on
   `Game::Switches`/`Game::Variables`), each a receiver the flow proves is exactly the listed classes (plus nil, which
   the instance proof above covers).
 * The `class << Graphics` probe in `mruby-rgss/mrblib/lib.rb` no longer makes `update` a dynamic install for every
   instance receiver.
 * Next levers, in order: audited `Array#size`/`length`, `Hash#size`/`length`/`empty?` entries together with a chain
-  emitter for bare sends with a bounded set (about 40 sites, needs every class of the set to have a cell); a proof
-  that `NilClass` has no native `update` (16 sites); SENDB receiver facts (277 block sends); the class-object member
+  emitter for bare sends with a bounded set (about 40 sites, needs every class of the set to have a cell); SENDB receiver facts (277 block sends); the class-object member
   of a set (`width`/`height`/`action`, 23 sites: a class object has no class id, so a by-name arm stays).
 * Not run locally: the 32-bit `mrb_int` leg (no 32-bit build in this environment; it runs in `bc2cpp-width (int32)`),
   the firmware smokes, the optcarrot open-world comparison. The check ran against a full-core build made by
