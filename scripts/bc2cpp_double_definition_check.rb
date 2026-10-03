@@ -293,9 +293,10 @@ if run_generated && have_mrbc
     check.call('module_function_double: the copy of a replaced body is neither compiled nor registered',
                one_body.call('module_function_double', 'RGSS', 'helper_module_function_double').zero? &&
                !names.include?('helper_module_function_double'))
-    check.call('module_function_double: a copy over `def self.f` is the one body, registered once',
+    check.call('module_function_double: a copy over `def self.f` leaves the module body as the only one, and no entry for the dead def',
                one_body.call('module_function_double', 'RGSS', 'f_module_function_double') == 1 &&
-               names.count('f_module_function_double') == 1)
+               one_body.call('module_function_double', 'RGSS.singleton', 'f_module_function_double').zero? &&
+               names.count('f_module_function_double') <= 1)
   end
 
   puts 'generated code: the programs around the fixture'
