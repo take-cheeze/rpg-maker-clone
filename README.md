@@ -1231,6 +1231,12 @@
   when every linked implementation and helper is audited. `File.join` requires String subclass freedom;
   uncompiled Hash transformations remain unknown. `BC2CPP_NATIVE_ARRAY_TRANSFORMS=0` withdraws these
   name-wide facts. The current shipped Wio output remains unchanged. See [`docs/adr/0336-bc2cpp-native-array-transforms.md`](docs/adr/0336-bc2cpp-native-array-transforms.md).
+  Native `bitmap=` writes are scoped to Sprite/Plane families, allowing unrelated Ruby `@bitmap`
+  fields to prove their own stores. Native setter values remain unconstrained.
+  `BC2CPP_NATIVE_SETTER_REPORT=path` reports named `contents=`/`bitmap=` input classes and blockers;
+  it never enables native-family pooling. Current Wio output remains unchanged. See
+  [`docs/bc2cpp-native-setter-inputs.md`](docs/bc2cpp-native-setter-inputs.md) and
+  [`ADR 0337`](docs/adr/0337-bc2cpp-native-setter-input-audit.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
   neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio

@@ -897,3 +897,17 @@ byte-identical with the new switch on or off: 2,844 cached sends and the same po
 and helper counts. The reduction from ADRs 0332–0335 remains 80 sites. This extends
 supported contracts without claiming additional census or speed savings.
 See [ADR 0336](adr/0336-bc2cpp-native-array-transforms.md).
+
+## Follow-up: native setter inputs (ADR 0337)
+
+The setter report finds 62 named contents= candidates with Bitmap input facts
+(six unresolved receivers), and 31 bitmap= candidates: 23 Bitmap, one Bitmap-or-nil,
+and seven unknown inputs. The seven inputs are Graphics.transition, Ruby Window's
+contents= forwarding parameter and five battle sprite producers. Computed names
+remain present; these named candidates do not prove native caller completeness.
+
+An audited bitmap writer scope isolates Sprite/Plane stores from unrelated Ruby
+fields. The current shipped Wio output remains byte-identical to the parent,
+with 2,844 cached sends and the same pools/helper counts. The report itself also
+changes no C++. See [native setter inputs](bc2cpp-native-setter-inputs.md) and
+[ADR 0337](adr/0337-bc2cpp-native-setter-input-audit.md).

@@ -46,14 +46,27 @@ Dir.mktmpdir do |dir|
     File.write(extra, "auto callback = &#{name};")
     check.call("outside viewport receiver entry withdraws: #{name}", analyze.call(paths + [extra]).empty?)
   end
+  %w[spr_set_bmp sprite_bitmap_set_direct plane_set_bmp plane_set_bmp_native_body plane_set_bmp_direct].each do |name|
+    File.write(extra, "auto callback = &rgss::#{name};")
+    check.call("outside bitmap setter reference withdraws: #{name}", analyze.call(paths + [extra]).empty?)
+  end
+  File.write(extra, 'mrb_iv_set(M, other, MRB_IVSYM(bitmap), value);')
+  check.call('outside bitmap spelling poisons only bitmap', analyze.call(paths + [extra]).keys == expected.keys - ['bitmap'])
+  saved_bitmap = ENV['BC2CPP_NATIVE_BITMAP_IVAR_SCOPE']
+  begin
+    ENV['BC2CPP_NATIVE_BITMAP_IVAR_SCOPE'] = '0'
+    check.call('bitmap kill switch withdraws only bitmap', analyze.call.keys == expected.keys - ['bitmap'])
+  ensure
+    ENV['BC2CPP_NATIVE_BITMAP_IVAR_SCOPE'] = saved_bitmap
+  end
   File.write(extra, '#define caller(name) spr_ ## name')
   check.call('outside token-pasted Sprite caller withdraws', analyze.call(paths + [extra]).empty?)
   File.write(extra, 'mrb_iv_set(M, other, MRB_IVSYM(viewport), value);')
-  check.call('outside viewport spelling poisons only viewport', analyze.call(paths + [extra]).keys == %w[contents cursor_rect])
+  check.call('outside viewport spelling poisons only viewport', analyze.call(paths + [extra]).keys == expected.keys - ['viewport'])
   File.write(extra, 'mrb_iv_set(M, other, MRB_IVSYM(contents), value);')
-  check.call('outside presym write keeps contents globally poisoned', analyze.call(paths + [extra]).keys == %w[cursor_rect viewport])
+  check.call('outside presym write keeps contents globally poisoned', analyze.call(paths + [extra]).keys == expected.keys - ['contents'])
   File.write(extra, '@cursor_rect = other')
-  check.call('foreign Ruby keeps cursor_rect globally poisoned', analyze.call(paths, [extra]).keys == %w[contents viewport])
+  check.call('foreign Ruby keeps cursor_rect globally poisoned', analyze.call(paths, [extra]).keys == expected.keys - ['cursor_rect'])
   check.call('missing outside source withdraws', analyze.call(paths + [File.join(dir, 'missing.cxx')]).empty?)
   unreadable = false
   begin
@@ -79,36 +92,42 @@ SOURCE = <<~RUBY
     def ni_tag; 9; end
   end
   class NiScene
-    def initialize; @contents = NiBox.new; @cursor_rect = NiBox.new; @viewport = NiBox.new; end
+    def initialize; @contents = NiBox.new; @cursor_rect = NiBox.new; @viewport = NiBox.new; @bitmap = NiBox.new; end
     def read_contents; @contents.ni_tag; end
     def read_cursor; @cursor_rect.ni_tag; end
     def read_viewport; @viewport.ni_tag; end
+    def read_bitmap; @bitmap.ni_tag; end
     def clear; @contents = nil; end
   end
   module RGSS
     class Window
-      def initialize; @contents = NiBox.new; @cursor_rect = NiBox.new; @viewport = NiBox.new; end
+      def initialize; @contents = NiBox.new; @cursor_rect = NiBox.new; @viewport = NiBox.new; @bitmap = NiBox.new; end
       def read_contents; @contents.ni_tag; end
       def read_cursor; @cursor_rect.ni_tag; end
     def read_viewport; @viewport.ni_tag; end
+    def read_bitmap; @bitmap.ni_tag; end
     end
   end
   module RGSS
     class Sprite
-      def initialize; @viewport = NiBox.new; end
+      def initialize; @viewport = NiBox.new; @bitmap = NiBox.new; end
       def read_viewport; @viewport.ni_tag; end
+    def read_bitmap; @bitmap.ni_tag; end
     end
     class Plane
-      def initialize; @viewport = NiBox.new; end
+      def initialize; @viewport = NiBox.new; @bitmap = NiBox.new; end
       def read_viewport; @viewport.ni_tag; end
+    def read_bitmap; @bitmap.ni_tag; end
     end
     class Tilemap
-      def initialize; @viewport = NiBox.new; end
+      def initialize; @viewport = NiBox.new; @bitmap = NiBox.new; end
       def read_viewport; @viewport.ni_tag; end
+    def read_bitmap; @bitmap.ni_tag; end
     end
   end
   class NiSpriteChild < RGSS::Sprite
     def read_child; @viewport.ni_tag; end
+    def read_bitmap_child; @bitmap.ni_tag; end
   end
   class NiWindowChild < RGSS::Window
     def read_child; @contents.ni_tag; end
@@ -132,6 +151,12 @@ if ENV['MRBC']
       check.call("unrelated scene pool: #{name}", direct.call(code, 'NiScene', name))
       check.call("Window remains unknown: #{name}", !direct.call(code, 'RGSS::Window', name) && !body_of.call(code, 'RGSS::Window', name).empty?)
     end
+    check.call('unrelated bitmap pool', direct.call(code, 'NiScene', 'read_bitmap'))
+    check.call('Window bitmap is independent', direct.call(code, 'RGSS::Window', 'read_bitmap'))
+    %w[RGSS::Sprite RGSS::Plane].each do |owner|
+      check.call("native bitmap family remains unknown: #{owner}", !direct.call(code, owner, 'read_bitmap') && !body_of.call(code, owner, 'read_bitmap').empty?)
+    end
+    check.call('Sprite subclass bitmap remains unknown', !direct.call(code, 'NiSpriteChild', 'read_bitmap_child') && !body_of.call(code, 'NiSpriteChild', 'read_bitmap_child').empty?)
     check.call('Window subclass remains unknown',
                !direct.call(code, 'NiWindowChild', 'read_child') && !body_of.call(code, 'NiWindowChild', 'read_child').empty?)
     %w[RGSS::Sprite RGSS::Plane RGSS::Tilemap].each do |owner|
@@ -173,6 +198,25 @@ if ENV['MRBC']
                    !body_of.call(other_code, 'NiScene', 'read_viewport').empty?)
       end
     end
+    [
+      ['bitmap native spelling', SOURCE, { native: [['outside.cxx', 'const char* slot = "@bitmap";']] }, {}],
+      ['bitmap foreign Ruby', SOURCE, { foreign: [['outside.rb', '@bitmap = 1']] }, {}],
+      ['bitmap reflection', SOURCE + "class NiScene; def poke(v); instance_variable_set(:@bitmap, v); end; end\n", {}, {}],
+      ['bitmap attr writer', SOURCE + "class NiScene; attr_writer :bitmap; end\n", {}, {}],
+      ['bitmap shared Sprite mixin', SOURCE + "module NiShared; def value; @bitmap; end; end\nclass NiScene; include NiShared; end\nclass RGSS::Sprite; include NiShared; end\n", {}, {}],
+      ['bitmap kill switch', SOURCE, {}, { 'BC2CPP_NATIVE_BITMAP_IVAR_SCOPE' => '0' }]
+    ].each do |name, source, options, env|
+      Dir.mktmpdir do |world|
+        saved = env.to_h { |key,| [key, ENV[key]] }
+        begin
+          env.each { |key, value| ENV[key] = value }
+          other_code, = runtime.generate(source, world, only_owners: OWNERS, **options)
+          check.call("withdrawal: #{name}", !direct.call(other_code, 'NiScene', 'read_bitmap') && !body_of.call(other_code, 'NiScene', 'read_bitmap').empty?)
+        ensure
+          saved.each { |key, value| ENV[key] = value }
+        end
+      end
+    end
     builds = []
     if ENV['NIS_GENERATED_ONLY'] != '1'
       full = runtime.full || (ENV['BC2CPP_FULL_BUILD_DIR'] && runtime.full_or_build)
@@ -181,11 +225,17 @@ if ENV['MRBC']
     end
     if !builds.empty? && runtime.compiler?
       body = <<~'CPP'
+        static mrb_value native_bitmap_set(mrb_state* M, mrb_value self) {
+          mrb_value value = mrb_get_arg1(M);
+          mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), value);
+          return value;
+        }
         static int scenario(mrb_state* M) {
           mrb_value scene = mrb_obj_new(M, mrb_class_get(M, "NiScene"), 0, nullptr);
           call(M, "contents", scene, "read_contents");
           call(M, "cursor", scene, "read_cursor");
           call(M, "viewport", scene, "read_viewport");
+          call(M, "bitmap", scene, "read_bitmap");
           call(M, "clear", scene, "clear");
           call(M, "nil contents", scene, "read_contents");
           mrb_value win = mrb_obj_new(M, mrb_class_get(M, "NiWindowChild"), 0, nullptr);
@@ -205,6 +255,16 @@ if ENV['MRBC']
           mrb_value sprite = mrb_obj_new(M, mrb_class_get(M, "NiSpriteChild"), 0, nullptr);
           mrb_iv_set(M, sprite, mrb_intern_lit(M, "@viewport"), other);
           call(M, "native Sprite subclass", sprite, "read_child");
+          const char* bitmap_owners[] = {"Sprite", "Plane"};
+          for (const char* owner : bitmap_owners) {
+            RClass* klass = mrb_class_get_under(M, mrb_module_get(M, "RGSS"), owner);
+            mrb_define_method(M, klass, "bitmap=", native_bitmap_set, MRB_ARGS_REQ(1));
+            mrb_value receiver = mrb_obj_new(M, klass, 0, nullptr);
+            mrb_funcall(M, receiver, "bitmap=", 1, other);
+            call(M, owner, receiver, "read_bitmap");
+          }
+          mrb_funcall(M, sprite, "bitmap=", 1, other);
+          call(M, "native Sprite bitmap subclass", sprite, "read_bitmap_child");
           return 0;
         }
       CPP
@@ -214,6 +274,7 @@ if ENV['MRBC']
         # Core-only omits the mrblib that installs NoMethodError's class.
         error = full ? 'NoMethodError' : 'Exception'
         matches = built && sections['compiled'] == sections['interpreted'] &&
+                  output.include?('bitmap => 7') && output.include?('native Sprite bitmap subclass => 9') &&
                   output.include?('native subclass => 9') && output.include?('native Sprite subclass => 9') &&
                   %w[Window Sprite Plane Tilemap].all? { |owner| output.include?("#{owner} => 9") } && output.include?("nil contents => raised #{error}")
         check.call("#{label}: compiled matches interpreted, including nil and native Window writes", matches)
