@@ -147,7 +147,7 @@ without block direct entry (ADR 0271; the fixture has no block).
 `scripts/bc2cpp_numeric_constants_check.rb`: generated code for nine positives (literal, `+ - * /` of constants, a
 local copy, a hull of two definitions, a self-aliased constant, a name not yet assigned) and eight negatives (a
 parameter, a constant above 32 bits, a Float, an arithmetic join, an overflowing product, a divisor interval holding 0,
-`X = c && 1`, a use in a rescue range), seventeen withdrawal worlds (a reopened String constant, a reassignment out of
+`X = c && 1`, a use in a rescue range), fifteen withdrawal worlds (a reopened String constant, a reassignment out of
 range, const_set, remove_const, a native or foreign definition, a build gem calling const_set with a computed name, a
 const_missing, a module named like the constant, a redefined `Integer#*`, the open world, the kill switch); the fixture
 on real mruby, interpreted and compiled, against a stand-in for `rgss::bitmap_new_direct` that records the constructor
