@@ -1227,6 +1227,10 @@
   Array and String. This removes one more cached send (2,845 to 2,844), without copying element
   or immutability metadata. `BC2CPP_NATIVE_COLLECTION_RESULTS=0` disables these facts. See
   [`docs/adr/0335-bc2cpp-native-collection-results.md`](docs/adr/0335-bc2cpp-native-collection-results.md).
+  Native `compact`, `flatten`, `__uniq` and `join` contracts also join compiled Ruby returns
+  when every linked implementation and helper is audited. `File.join` requires String subclass freedom;
+  uncompiled Hash transformations remain unknown. `BC2CPP_NATIVE_ARRAY_TRANSFORMS=0` withdraws these
+  name-wide facts. The current shipped Wio output remains unchanged. See [`docs/adr/0336-bc2cpp-native-array-transforms.md`](docs/adr/0336-bc2cpp-native-array-transforms.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
   neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio

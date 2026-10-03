@@ -883,3 +883,17 @@ The Wio census drops from 2,845 to 2,844 cached sends; all four receiver-proof
 follow-ups remove 80 sites from 2,924. Element classes remain unknown. The collection
 kill switch reproduces ADR 0334 shipped C++ byte for byte.
 See [ADR 0335](adr/0335-bc2cpp-native-collection-results.md).
+
+## Follow-up: name-wide native collection transformations (ADR 0336)
+
+Native compact, flatten and __uniq can contribute Array results, and audited
+Array/File join implementations contribute String results when File.join cannot
+preserve a String subclass. The linked-source audit can admit these facts through
+the broader foreign-name filter; compiled Ruby returns still join them, and aliases
+and uncompiled linked Ruby definitions remain refused.
+
+The targeted unknown-input fixtures gain proofs, but the full shipped Wio C++ is
+byte-identical with the new switch on or off: 2,844 cached sends and the same pools
+and helper counts. The reduction from ADRs 0332–0335 remains 80 sites. This extends
+supported contracts without claiming additional census or speed savings.
+See [ADR 0336](adr/0336-bc2cpp-native-array-transforms.md).
