@@ -815,7 +815,7 @@ The native Window call graph accesses `@contents` and `@cursor_rect` only on its
 Pinned native sources and a scan for outside helper callers let the compiler keep those names poisoned for the
 RGSS::Window family while pooling unrelated scene slots. Unknown native setter values remain unknown.
 
-On master `4bdd9492`, switch off against on on one tree, the Wio shipped census goes from 2,925 to 2,884 cached
+On master `4bdd9492`, switch off against on on one tree, the Wio shipped census goes from 2,924 to 2,883 cached
 by-name sites. All 41 removals belong to engine methods; 39 nil-receiver helper calls and one no-method helper call
 are added. Class ivar pools grow from 185 to 186 and argument pools from 115 to 117. With
 `BC2CPP_NATIVE_IVAR_SCOPES=0`, the shipped C++ is byte-identical to master. Source changes, new outside callers or

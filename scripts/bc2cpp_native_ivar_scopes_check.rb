@@ -40,6 +40,8 @@ Dir.mktmpdir do |dir|
   check.call('outside helper caller withdraws', analyze.call(paths + [extra]).empty?)
   File.write(extra, 'auto callback = &rgss::window_contents_set_direct;')
   check.call('outside function pointer withdraws', analyze.call(paths + [extra]).empty?)
+  File.write(extra, "#define caller(name) window_ ## name\ncaller(refresh)(M, other);")
+  check.call('outside token-pasted helper caller withdraws', analyze.call(paths + [extra]).empty?)
   File.write(extra, 'mrb_iv_set(M, other, MRB_IVSYM(contents), value);')
   check.call('outside presym write keeps contents globally poisoned', analyze.call(paths + [extra]).keys == ['cursor_rect'])
   File.write(extra, '@cursor_rect = other')

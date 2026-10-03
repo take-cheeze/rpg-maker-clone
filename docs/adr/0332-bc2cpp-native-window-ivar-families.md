@@ -61,7 +61,8 @@ reassignment, conditional branches and macro definitions without introducing a p
 The compiler requires all three files in its scanned outside/native inputs. It also scans the union of `NATIVE_SRCS`,
 `FOREIGN_RUBY_SRCS` and the actual closed-world build's outside sources, including host sources and public headers.
 Any reference to an audited Window function outside the pinned files withdraws the whole audit, including address
-taking and a newly introduced helper caller. Any outside `@contents`/`MRB_IVSYM(contents)` spelling restores global
+taking and a newly introduced helper caller. The entire `window_` prefix is refused, including token-pasted calls;
+the unrelated `window_title_` interface is excluded. Any outside `@contents`/`MRB_IVSYM(contents)` spelling restores global
 poison for that name; `cursor_rect` behaves the same way. Symlink aliases are canonicalized before checking coverage.
 An unreadable source raises through SourceText; a missing source logs and withdraws. The compiler logs the scopes or
 the refusal reason. `BC2CPP_NATIVE_IVAR_SCOPES=0` restores the previous global poisoning.
@@ -72,7 +73,7 @@ Full Wio closed-world coverage, based on master `4bdd9492`, with the scope switc
 
 | Measure | Off | On | Change |
 | --- | ---: | ---: | ---: |
-| Cached by-name send / with-block sites, whole program | 2,925 | 2,884 | -41 |
+| Cached by-name send / with-block sites, whole program | 2,924 | 2,883 | -41 |
 | NILABLE_RECEIVER sites | 879 | 918 | +39 |
 | Class ivar pools | 185 | 186 | +1 |
 | Class argument pools | 115 | 117 | +2 |
