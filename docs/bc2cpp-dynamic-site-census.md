@@ -662,3 +662,25 @@ Three ireps carry a prefix (class bodies of `LCF::Schema`, `RPG2k::Interpreter`,
 | `bc2cpp_send` in generated bodies / with guarded fallbacks | 2,603 / 3,028 | 2,582 / 3,006 |
 | `INDEX_EXACT` arms / `NUMERIC_OPERAND_PROOF` arms removed | 977 / 423 | 1,000 / 427 |
 | `bc2cpp_nomethod` sites / ivar pools / frozen table shapes | 4,380 / 187 / 49 | 4,380 / 187 / 49 |
+
+## Baseline after ADRs 0307-0317 (master cd86085f, 2026-10-02)
+
+One tree, one set of numbers: the eleven PRs of ADRs 0307-0317 each measured their delta on a different master, so
+their deltas overlap. Full tables (totals per scope, marginal contribution of every kill switch, receiver origins,
+why-kept ranking, next levers, CI shard timing, tool problems) are in `docs/bc2cpp-baseline-2026-10-02.md`. Wio closed
+world, `3rd/*` populated, default switches:
+
+| Measure | all gems | rpg2k + Game |
+| --- | ---: | ---: |
+| `bc2cpp_send` / `mrb_funcall*` / `mrb_funcall_with_block` | 2,603 / 28 / 401 | 1,800 / 0 / 277 |
+| `bc2cpp_nomethod` / `bc2cpp_nil_receiver` | 4,380 / 890 | 4,274 / 837 |
+| `slow_*` / `getidx` / `setidx` callers | 3,314 / 2,069 / 209 | 2,852 / 1,955 / 184 |
+| kept-else sites (engine gems, refine report) | 375 | |
+| by-name sites with a guard chain still dispatching (rpg2k) | | 453 (419 kept else, 34 send) |
+
+By-name `bc2cpp_send` sites each landed feature removes on this tree (switch off minus master, all gems):
+`EXACT_NATIVE_WRAPPERS` 209, `CORE_EXTEND` 81, `CALL_FACTS` 63, `CAPTURED_LOCAL_CLASS` 62, `EXACT_CORE_ARMS` 56,
+`RETURN_ACCESSORS` 13, `CONSTRUCTOR_POOLS` 1; `BLOCK_ARM_REACH` removes 48 `mrb_funcall_with_block` sites (and
+`BLOCK_CORE_DIRECT=0` gives the identical counts, so the 48 depend on it); `ESCAPE_ANALYSIS` and `TUPLE_RETURNS` do not
+change the by-name count (`TUPLE_RETURNS` removes 41 `slow_*` callers). The `core-tables` CI shard is 29.7 minutes on
+this master, not 24.5.
