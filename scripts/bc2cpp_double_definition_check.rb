@@ -161,6 +161,18 @@ if run_unit && have_mrbc
   check.call('a module_function copy of a replaced body becomes a marker', copy.size == 1 && copy.first.kind.nil? && copy.first.copy_irep.nil?)
   check.call('definitions on different owners are left alone', registry['x'].map(&:owner) == %w[Other Other2])
 
+  registry, before, report, = settled.call(<<~'RUBY')
+    class Dl
+      NAMES = [:a, :b].freeze
+      NAMES.each { |n| attr_reader n }
+      def a; 1; end
+      def b; 1; end
+    end
+  RUBY
+  check.call('a loop-installed accessor has no known position: the name is withdrawn',
+             defs_of.call(before, 'Dl', 'a').size == 2 && defs_of.call(registry, 'Dl', 'a').map(&:irep) == [nil] &&
+             report.withdrawn.sort == %w[Dl#a Dl#b])
+
   puts 'unit: C++ spellings'
   suffixes = DoubleDefinitions.symbol_suffixes(
     [MethodDef.new(name: 'singleton_make', owner: 'W', irep: 'i1'), MethodDef.new(name: 'make', owner: 'W.singleton', irep: 'i2'),
