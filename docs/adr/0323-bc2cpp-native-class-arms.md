@@ -58,7 +58,7 @@ against on on the same tree, is the number that counts:
 
 | Lever | Sites removed |
 | --- | ---: |
-| class-object definers alone, per-class resolution alone, scoped set alone | 0 each (measured with the model; only the three together move `update`) |
+| class-object definers, per-class resolution, scoped set (one switch; the report's model gives 0 for each alone and for pairs, so the three are measured together) | see the next two rows |
 | `update` on a proven `RPG2k::Window` (23) and `Game::Interpreter` (16 proven, 3 by call facts) | 42 |
 | `Hash#delete` on a flow-proven Hash (FLOW_CORE_DIRECT) | 8 |
 | **total** (cutoff: 30) | **50** |
