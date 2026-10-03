@@ -758,3 +758,16 @@ Lever ceilings in the engine gems (rpg2k / lcf / rgss): SENDB facts 0; `Array.ne
 direct entry for `break`/`return` blocks 3 / 0 / 5; `Hash#delete` 6 / 2 / 0 (a flow-proven receiver that
 CORE_EXACT_DIRECT does not read) and `Array#delete` 2 / 0 / 0 (no compiled body); sum 29, below the cutoff of 30, so
 nothing was built.
+
+## Follow-up: flow-proven core calls before polymorphic chains (ADR 0327)
+
+A same-input comparison on `fdf8a884` removes eight body `bc2cpp_send` sites
+(2,542 to 2,534), all `Hash#delete`: six in RPG2k and two in LCF. The existing
+exact-class proof was available, but user-class polymorphic emission returned
+before CORE_EXACT_DIRECT could consume it. Resolve the compiled core target
+first; no receiver proof is widened. CORE_EXACT_DIRECT sites rise from 81 to
+89. Helpers, block funcalls and NoMethodError sites are unchanged.
+
+These counts use the local mruby checkout and are a paired comparison, not a
+replacement for the earlier baseline's absolute counts. See
+[ADR 0327](adr/0327-bc2cpp-flow-core-dispatch.md).

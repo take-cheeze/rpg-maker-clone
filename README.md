@@ -1044,6 +1044,9 @@
   `uniq`, `fetch`, ...) calls the compiled core body directly when that body cannot suspend a Fiber, with no
   by-name send left; `BC2CPP_CORE_EXTEND=0` returns the earlier output; see
   [`docs/adr/0314-bc2cpp-core-exact-direct.md`](docs/adr/0314-bc2cpp-core-exact-direct.md).
+  Flow-proven core calls also resolve before user-class polymorphic chains, so pooled Hash `delete`
+  calls reach the compiled core body without a by-name fallback; see
+  [`docs/adr/0327-bc2cpp-flow-core-dispatch.md`](docs/adr/0327-bc2cpp-flow-core-dispatch.md).
   A shared escape analysis (`tools/bc2cpp/escape_analysis.rb`) answers whether the value a creation site makes
   leaves its frame, with callee summaries over a closed world; its first consumer lets a literal block that captures
   locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything
