@@ -125,9 +125,11 @@ A mutation check is only worth its green line if a dead mutant died for the reas
 `*_MUTANTS=1` sections of `computed_send`, `unlisted_class_call`, `block_arm_reach`, `core_exact_direct`,
 `getidx_integer_arm`) get their rules:
 
-- **Layout.** A mutant is a copy of `tools/bc2cpp` in a tree that links every other repository entry
-  (`.mutants/`, git-ignored). bc2cpp.rb finds the engine's sources from its own location (`../..`), so a copy under
-  `/tmp` reads an empty closed world and every mutant "dies" because no proof can be made.
+- **Layout.** A mutant is a copy of `tools/bc2cpp` in `.mutant*/` directly under the repository (ignored by the VCS), so
+  bc2cpp.rb's own `../..` is the repository and the closed world reads the very paths the check hands the real tool.
+  A copy under `/tmp` reads an empty closed world and every mutant "dies" because no proof can be made. A check that
+  loads the tool by relative path (`computed_send`, `unlisted_class_call`) gets a copy of `scripts/` and `tools/bc2cpp`
+  in a tree that links every other repository entry (`.mutants/`).
 - **Control.** The unmutated tool runs first, through the same tree, and must pass. It must also print at least five
   `ok` lines, not have skipped its run half, show the same closed world as the real tool (the world probe compares
   the `== closed world` counts) and, when a mutant needs the run half, show that the compiled VM dispatched into

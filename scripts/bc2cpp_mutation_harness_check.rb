@@ -86,7 +86,9 @@ ensure
 end)
 
 puts '-- the tree'
-check.call('a tree is the repository layout', Support.with_tree([]) { |tree| File.expand_path('../..', tree.tool) == tree.dir })
+check.call('a tool tree has the repository as its ../..', Support.with_tree([]) { |tree| File.expand_path('../..', tree.tool) == Support::ROOT })
+check.call('a scripts tree is a copy of the repository layout',
+           Support.with_tree([], scripts: true) { |tree| File.exist?(File.join(tree.dir, 'scripts/bc2cpp_mutation_support.rb')) })
 check.call('a mutation site that is gone yields no tree',
            Support.with_tree([['bc2cpp.rb', 'no such text anywhere', 'x']]) { :ran }.nil?)
 check.call('a tree outside the layout is refused', begin

@@ -76,30 +76,36 @@ module Bc2cppMutationSupport
 
   # -- the mutant tree --------------------------------------------------------------------------
 
-  # A copy of tools/bc2cpp with `edits` ([file, pattern, replacement], file relative to tools/bc2cpp) applied, in a
-  # tree that has the repository's layout: every other entry of the repository is linked, so the copy's own ../..
-  # holds the engine's sources. With `scripts`, scripts/ is copied too (a check that loads the tool by relative path
-  # then loads the copy). Yields a Tree; returns nil, yielding nothing, when a mutation site is gone.
+  # A copy of tools/bc2cpp with `edits` ([file, pattern, replacement], file relative to tools/bc2cpp) applied, placed
+  # so that its own ../.. is the repository itself (.mutant<id>/bc2cpp): the closed world then reads the very paths
+  # the check hands the real tool. With `scripts`, the check loads the tool by relative path, so a tree is built that
+  # has the repository's layout instead (every other entry linked, scripts/ and tools/bc2cpp copied).
+  # Yields a Tree; returns nil, yielding nothing, when a mutation site is gone.
   def with_tree(edits, scripts: false)
-    FileUtils.mkdir_p(MUTANT_ROOT)
-    dir = Dir.mktmpdir('m', MUTANT_ROOT)
+    # Directly under the repository: the tool's ../.. is then the repository. A scripts tree is a whole copy of it.
+    dir = scripts ? Dir.mktmpdir('m', FileUtils.mkdir_p(MUTANT_ROOT).first) : Dir.mktmpdir('.mutant', ROOT)
     begin
-      skip = %w[.git .mutants tools] + (scripts ? ['scripts'] : [])
-      (Dir.children(ROOT) - skip).each { |entry| FileUtils.ln_s(File.join(ROOT, entry), File.join(dir, entry)) }
-      FileUtils.cp_r(File.join(ROOT, 'scripts'), dir) if scripts
-      FileUtils.mkdir_p(File.join(dir, 'tools'))
-      (Dir.children(File.join(ROOT, 'tools')) - ['bc2cpp']).each do |entry|
-        FileUtils.ln_s(File.join(ROOT, 'tools', entry), File.join(dir, 'tools', entry))
-      end
-      FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), File.join(dir, 'tools'))
-      tree = Tree.new(dir, File.join(dir, 'tools', 'bc2cpp'))
+      tree = scripts ? layout_tree(dir) : Tree.new(dir, File.join(dir, 'bc2cpp'))
+      FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), File.dirname(tree.tool)) unless scripts
+      FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), File.join(dir, 'tools')) if scripts
       return nil unless apply(edits, tree.tool)
 
-      layout!(tree)
+      layout!(tree, scripts)
       yield tree
     ensure
       FileUtils.rm_rf(dir)
     end
+  end
+
+  # `dir` as a copy of the repository layout: everything linked but scripts/ (copied) and tools/bc2cpp (copied after).
+  def layout_tree(dir)
+    (Dir.children(ROOT) - %w[.git .mutants tools scripts]).each { |entry| FileUtils.ln_s(File.join(ROOT, entry), File.join(dir, entry)) }
+    FileUtils.cp_r(File.join(ROOT, 'scripts'), dir)
+    FileUtils.mkdir_p(File.join(dir, 'tools'))
+    (Dir.children(File.join(ROOT, 'tools')) - ['bc2cpp']).each do |entry|
+      FileUtils.ln_s(File.join(ROOT, 'tools', entry), File.join(dir, 'tools', entry))
+    end
+    Tree.new(dir, File.join(dir, 'tools', 'bc2cpp'))
   end
 
   # False when a pattern is not in its file (the tree is then discarded, so a partly applied mutant never runs).
@@ -111,11 +117,12 @@ module Bc2cppMutationSupport
     end
   end
 
-  # The tool must find the repository from its own location, and the tree must hold everything the real one does.
-  def layout!(tree)
+  # The tool must find the repository from its own location: ../.. is the repository itself (or, for a `scripts` tree,
+  # a copy that holds every entry of it).
+  def layout!(tree, scripts = false)
     world = File.expand_path('../..', tree.tool)
     missing = Dir.children(ROOT) - Dir.children(world) - %w[.git .mutants]
-    return if world == tree.dir && missing.empty? && Dir.exist?(File.join(world, '3rd/mruby/src'))
+    return if (scripts ? world == tree.dir && missing.empty? : world == ROOT) && Dir.exist?(File.join(world, '3rd/mruby/src'))
 
     raise LayoutError, "mutant tree #{world} is not the repository layout (missing: #{missing.join(', ')})"
   end
