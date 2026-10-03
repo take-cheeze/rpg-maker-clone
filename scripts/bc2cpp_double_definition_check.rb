@@ -64,6 +64,262 @@ run_unit = %w[all static unit].include?(MODE)
 run_generated = %w[all static generated].include?(MODE)
 run_behaviour = %w[all run].include?(MODE)
 
+# -- 1. unit -------------------------------------------------------------------------------------
+
+BUILD_GEMS = NomethodReviewedProbe.wio_gems(ROOT)
+NATIVE_SRCS = core_native_srcs(MRUBY) + external_gem_native_srcs(ROOT)
+
+# [stdout, stderr] of bc2cpp for +source+, compiled with the closed world of the wio build.
+generate = lambda do |source, owners, extra_env: {}|
+  Dir.mktmpdir('dd_gen', ROOT) do |dir|
+    path = File.join(dir, 'dd.rb')
+    File.write(path, source)
+    env = { 'MRBC' => MRBC_PATH, 'OUT_SYMBOL' => 'dd', 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
+            'NATIVE_SRCS' => Shellwords.join(NATIVE_SRCS), 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)),
+            'ONLY_OWNERS' => owners.join(','), 'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+            'BC2CPP_BUILD_GEMS' => Shellwords.join(BUILD_GEMS.map { |n, d| "#{n}=#{d}" }),
+            NomethodReviewed::ALLOW_ENV => 'allow' }
+    out, err, status = Open3.capture3(env.merge(extra_env), RbConfig.ruby, File.join(TOOL_DIR, 'bc2cpp.rb'), path)
+    abort "bc2cpp.rb failed:\n#{err[-3000..] || err}" unless status.success?
+    [out, err]
+  end
+end
+
+if run_unit && have_mrbc
+  puts 'unit: the registry after DoubleDefinitions.settle'
+  settled = lambda do |source|
+    Dir.mktmpdir('dd_unit', ROOT) do |dir|
+      path = File.join(dir, 'unit.rb')
+      File.write(path, source)
+      ireps, root = compile_ireps([path], 'unit', dir)
+      registry = build_registry(ireps, root)[0]
+      before = registry.transform_values(&:dup)
+      report = DoubleDefinitions.settle(registry)
+      [registry, before, report, ireps]
+    end
+  end
+  defs_of = ->(registry, owner, name) { registry.fetch(name, []).select { |d| d.owner == owner } }
+
+  registry, before, report, = settled.call(<<~'RUBY')
+    class Dd
+      def a; 1; end
+      def a; 2; end
+      attr_reader :b
+      def b; 1; end
+      def c; 1; end
+      attr_reader :c
+      def d; 1; end
+      alias d a
+      def e; 1; end
+      alias_method :e, :a
+      def f; 1; end
+      undef f
+      def g; 1; end
+      private :g
+      def g; 2; end
+      def h; 1; end
+      def h; 2; end if $x
+      def self.s; 1; end
+      class << self
+        def s; 2; end
+      end
+      def only; 1; end
+    end
+  RUBY
+  check.call('a def twice keeps one definition', defs_of.call(registry, 'Dd', 'a').size == 1 && defs_of.call(before, 'Dd', 'a').size == 2)
+  check.call('the kept def is the last one', defs_of.call(registry, 'Dd', 'a').first.irep == defs_of.call(before, 'Dd', 'a').last.irep)
+  check.call('attr_reader then def keeps the def', defs_of.call(registry, 'Dd', 'b').map(&:kind) == [nil] && defs_of.call(registry, 'Dd', 'b').first.irep)
+  check.call('def then attr_reader keeps the accessor', defs_of.call(registry, 'Dd', 'c').map(&:kind) == [:ivar_accessor])
+  %w[d e f].each do |name|
+    left = defs_of.call(registry, 'Dd', name)
+    check.call("a later alias/alias_method/undef of #{name} leaves one body-less marker", left.size == 1 && left.first.irep.nil? && left.first.kind.nil?)
+  end
+  check.call('a def redefined after `private :g` is the public last one',
+             defs_of.call(registry, 'Dd', 'g').map(&:visibility) == [:public] && defs_of.call(before, 'Dd', 'g').first.visibility == :private)
+  check.call('a conditional last def withdraws the group to a marker',
+             defs_of.call(registry, 'Dd', 'h').map(&:irep) == [nil] && report.withdrawn.include?('Dd#h'))
+  check.call('def self.s then class << self def s keeps the last on the singleton owner',
+             defs_of.call(registry, 'Dd.singleton', 's').size == 1 && defs_of.call(before, 'Dd.singleton', 's').size == 2)
+  check.call('a name defined once is untouched', defs_of.call(registry, 'Dd', 'only') == defs_of.call(before, 'Dd', 'only'))
+  check.call('no (owner, name) is left with two definitions',
+             registry.each_value.none? { |defs| defs.group_by(&:owner).values.any? { |g| g.size > 1 } })
+
+  registry, before, = settled.call(<<~'RUBY')
+    module Mf
+      def helper; 1; end
+      module_function :helper
+      def helper; 2; end
+    end
+    class Other
+      def x; 1; end
+    end
+    class Other2 < Other
+      def x; 2; end
+    end
+  RUBY
+  copy = defs_of.call(registry, 'Mf.singleton', 'helper')
+  check.call('a module_function copy of a replaced body becomes a marker', copy.size == 1 && copy.first.kind.nil? && copy.first.copy_irep.nil?)
+  check.call('definitions on different owners are left alone', registry['x'].map(&:owner) == %w[Other Other2])
+
+  puts 'unit: C++ spellings'
+  suffixes = DoubleDefinitions.symbol_suffixes(
+    [MethodDef.new(name: 'singleton_make', owner: 'W', irep: 'i1'), MethodDef.new(name: 'make', owner: 'W.singleton', irep: 'i2'),
+     MethodDef.new(name: 'bar_baz', owner: 'Foo', irep: 'i3'), MethodDef.new(name: 'baz', owner: 'Foo_bar', irep: 'i4'),
+     MethodDef.new(name: 'plain', owner: 'W', irep: 'i5')],
+    ->(owner, name) { owner.gsub(/[:.]/, '_') + "_#{name}" }
+  )
+  check.call('the second of two clashing pairs is suffixed, the rest are not',
+             suffixes == { ['W.singleton', 'make'] => '$2', ['Foo_bar', 'baz'] => '$2' })
+end
+
+# -- 2. generated code ---------------------------------------------------------------------------
+
+impls = ->(code) { code.scan(/^mrb_value (\S+)_impl\(mrb_state\* M/).flatten }
+registrations = lambda do |code|
+  code.scan(/^  mrb_define_(?:class_|private_)?method\(M, (\w+), "((?:\\x[0-9a-f]{2})+)", (\S+),/).map do |owner, hex, entry|
+    [owner, [hex.scan(/\\x(\h\h)/).flatten.join].pack('H*'), entry]
+  end
+end
+body_of = ->(code, owner_name) { code[/^\/\/ #{Regexp.escape(owner_name)} \(compiled from irep.*?(?=^\/\/ |\z)/m].to_s }
+
+if run_generated && have_mrbc
+  puts 'generated code: each form compiled alone'
+  codes = {}
+  FORMS.each do |form|
+    code, log = generate.call(DD.program([form]), form.owners)
+    codes[form.name] = [code, log]
+    names = impls.call(code)
+    check.call("#{form.name}: every _impl is defined once", names.size == names.uniq.size)
+    regs = registrations.call(code).map { |owner, name, _entry| [owner, name] }
+    check.call("#{form.name}: no (owner, name) is registered twice", regs.size == regs.uniq.size)
+  end
+
+  get = ->(name) { codes.fetch(name) }
+  one_body = lambda do |name, owner, method|
+    code, = get.call(name)
+    code.scan(/^\/\/ #{Regexp.escape(owner)}##{Regexp.escape(method)} \(compiled from irep/).size
+  end
+  has = ->(name, text) { get.call(name).first.include?(text) }
+  log_has = ->(name, text) { get.call(name).last.include?(text) }
+
+  if FORMS.any? { |f| f.name == 'attr_then_def' }
+    check.call('attr_then_def: the def is compiled and called directly, never the attr_reader',
+               one_body.call('attr_then_def', 'Game::Screen', 'v_attr_then_def') == 1 &&
+               !has.call('attr_then_def', 'LEXICAL_SELF_IVAR_ACCESSOR :v_attr_then_def') &&
+               get.call('attr_then_def').first.match?(/(?:LEXICAL|CLOSED_WORLD)_SELF :v_attr_then_def -> Game::Screen#v_attr_then_def/))
+    check.call('attr_then_def: the log names the kept definition', log_has.call('attr_then_def', 'LAST Game::Screen#v_attr_then_def (1 earlier)'))
+  end
+  if FORMS.any? { |f| f.name == 'def_then_attr' }
+    check.call('def_then_attr: the dead def is not emitted', one_body.call('def_then_attr', 'Game::ChipSet', 'v_def_then_attr') == 0)
+  end
+  if FORMS.any? { |f| f.name == 'attr_then_define_method' }
+    check.call('attr_then_define_method: the define_method body is the one compiled, not an accessor',
+               one_body.call('attr_then_define_method', 'Game::Map', 'v_attr_then_define_method') == 1 &&
+               !has.call('attr_then_define_method', 'IVAR_ACCESSOR :v_attr_then_define_method'))
+  end
+  if FORMS.any? { |f| f.name == 'def_then_define_method' }
+    check.call('def_then_define_method: one body',
+               one_body.call('def_then_define_method', 'Game::Timer', 'v_def_then_define_method') == 1)
+  end
+  if FORMS.any? { |f| f.name == 'define_method_then_def' }
+    check.call('define_method_then_def: one body', one_body.call('define_method_then_def', 'Game::Shop', 'v_define_method_then_def') == 1)
+  end
+  if FORMS.any? { |f| f.name == 'def_then_def' }
+    check.call('def_then_def: one body, the last (returns 2)',
+               one_body.call('def_then_def', 'Game::Troop', 'v_def_then_def') == 1 &&
+               body_of.call(get.call('def_then_def').first, 'Game::Troop#v_def_then_def').include?('mrb_fixnum_value(2)') &&
+               !body_of.call(get.call('def_then_def').first, 'Game::Troop#v_def_then_def').include?('mrb_fixnum_value(1)'))
+  end
+  if FORMS.any? { |f| f.name == 'triple_def_raises' }
+    check.call('triple_def_raises: one body, the third (raises)',
+               one_body.call('triple_def_raises', 'Game::EnemyAi', 'v_triple_def_raises') == 1 &&
+               body_of.call(get.call('triple_def_raises').first, 'Game::EnemyAi#v_triple_def_raises').include?('"\x74\x68\x69\x72\x64"'))
+  end
+  if FORMS.any? { |f| f.name == 'reopened_class' }
+    check.call('reopened_class: one body, the reopened one (returns 2)',
+               one_body.call('reopened_class', 'Game::Enemy', 'v_reopened_class') == 1 &&
+               body_of.call(get.call('reopened_class').first, 'Game::Enemy#v_reopened_class').include?('mrb_fixnum_value(2)'))
+  end
+  if FORMS.any? { |f| f.name == 'alias_over_def' }
+    check.call('alias_over_def: the aliased names are neither compiled, registered nor called directly',
+               %w[b c].all? do |n|
+                 one_body.call('alias_over_def', 'Game::Party', "#{n}_alias_over_def").zero? &&
+                   registrations.call(get.call('alias_over_def').first).none? { |_o, name, _e| name == "#{n}_alias_over_def" } &&
+                   !has.call('alias_over_def', "LEXICAL_SELF :#{n}_alias_over_def")
+               end)
+  end
+  if FORMS.any? { |f| f.name == 'alias_then_redefine' }
+    check.call('alias_then_redefine: the redefined original is the one compiled',
+               one_body.call('alias_then_redefine', 'Game::Actors', 'a_alias_then_redefine') == 1 &&
+               body_of.call(get.call('alias_then_redefine').first, 'Game::Actors#a_alias_then_redefine').include?('mrb_fixnum_value(2)'))
+  end
+  if FORMS.any? { |f| f.name == 'conditional_def' }
+    check.call('conditional_def: a conditional last def withdraws the name (no body, no registration, no direct call)',
+               %w[v w].all? do |n|
+                 name = "#{n}_conditional_def"
+                 one_body.call('conditional_def', 'Game::Actor', name).zero? &&
+                   registrations.call(get.call('conditional_def').first).none? { |_o, rn, _e| rn == name } &&
+                   !has.call('conditional_def', "LEXICAL_SELF :#{name}")
+               end && log_has.call('conditional_def', 'WITHDRAWN Game::Actor#v_conditional_def'))
+  end
+  if FORMS.any? { |f| f.name == 'private_visibility' }
+    regs = registrations.call(get.call('private_visibility').first)
+    check.call('private_visibility: v is registered once, private; w once, public',
+               get.call('private_visibility').first.scan(/mrb_define_private_method\(M, \w+, "\\x76\\x5f/).size == 1 &&
+               regs.count { |_o, name, _e| name == 'v_private_visibility' } == 1 &&
+               regs.count { |_o, name, _e| name == 'w_private_visibility' } == 1)
+  end
+  if FORMS.any? { |f| f.name == 'super_into_double' }
+    check.call('super_into_double: the parent has one body', one_body.call('super_into_double', 'Game::NumberInput', 'v_super_into_double') == 1)
+  end
+  if FORMS.any? { |f| f.name == 'singleton_vs_instance_symbol' }
+    code, = get.call('singleton_vs_instance_symbol')
+    check.call('singleton_vs_instance_symbol: the two bodies have distinct symbols',
+               impls.call(code).grep(/\AGame__Battle_singleton_make/).sort == %w[Game__Battle_singleton_make Game__Battle_singleton_make$2])
+    check.call('singleton_vs_instance_symbol: each registration names its own entry',
+               registrations.call(code).select { |_o, n, _e| %w[make singleton_make].include?(n) }.map { |o, n, e| [o, n, e] }.sort ==
+               [['bc2cpp_owner_reg_Game__Battle', 'singleton_make', 'Game__Battle_singleton_make'],
+                ['bc2cpp_owner_reg_Game__Battle_singleton', 'make', 'Game__Battle_singleton_make$2']])
+  end
+  if FORMS.any? { |f| f.name == 'sdef_then_sdef' }
+    check.call('sdef_then_sdef: one body', one_body.call('sdef_then_sdef', 'Game::Party.singleton', 'm_sdef_then_sdef') == 1)
+  end
+  if FORMS.any? { |f| f.name == 'sdef_then_sclass_def' }
+    check.call('sdef_then_sclass_def: one body', one_body.call('sdef_then_sclass_def', 'Game::States.singleton', 'm_sdef_then_sclass_def') == 1)
+  end
+  if FORMS.any? { |f| f.name == 'module_function_double' }
+    code, = get.call('module_function_double')
+    names = registrations.call(code).map { |_o, name, _e| name }
+    check.call('module_function_double: the copy of a replaced body is neither compiled nor registered',
+               one_body.call('module_function_double', 'RGSS', 'helper_module_function_double').zero? &&
+               !names.include?('helper_module_function_double'))
+    check.call('module_function_double: a copy over `def self.f` is the one body, registered once',
+               one_body.call('module_function_double', 'RGSS', 'f_module_function_double') == 1 &&
+               names.count('f_module_function_double') == 1)
+  end
+
+  puts 'generated code: the programs around the fixture'
+  # A clash that is not a double definition: two different pairs with one spelling, no wired owner involved.
+  code, = generate.call("class DdFoo\n  def bar_baz; 1; end\nend\nclass DdFoo_bar\n  def baz; 2; end\nend\n", %w[DdFoo DdFoo_bar])
+  check.call('two owners whose names join to one spelling get distinct symbols',
+             impls.call(code).grep(/DdFoo.*bar_baz|DdFoo_bar_baz/).sort == %w[DdFoo_bar_baz DdFoo_bar_baz$2])
+  # No double definition anywhere: no suffix, no report, the output of a program that never had the problem.
+  plain = "class DdOne\n  def a; 1; end\n  attr_reader :b\n  def c; a; end\nend\nclass DdTwo\n  def a; 2; end\nend\n"
+  code, log = generate.call(plain, %w[DdOne DdTwo])
+  check.call('a program without a double definition has no report and no suffixed symbol',
+             !log.include?('== double definitions') && !code.include?('$2'))
+  # The same program with the pass left out must give the same text (the kill switch is not offered; the
+  # mutation check covers a pass that changes it).
+  code2, = generate.call(plain, %w[DdOne DdTwo])
+  check.call('generation is deterministic', code == code2)
+  all_code, all_log = generate.call(DD.program, DD::OWNERS)
+  check.call('all forms together: every _impl is defined once', impls.call(all_code).size == impls.call(all_code).uniq.size)
+  regs = registrations.call(all_code).map { |o, n, _e| [o, n] }
+  check.call('all forms together: no (owner, name) is registered twice', regs.size == regs.uniq.size)
+  check.call('all forms together: the report counts every kept and withdrawn name',
+             all_log.include?('== double definitions (') && all_log.scan(/^  WITHDRAWN /).size == 2)
+end
+
 # -- 3. behaviour --------------------------------------------------------------------------------
 
 ran_behaviour = false
