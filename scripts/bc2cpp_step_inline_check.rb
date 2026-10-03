@@ -55,6 +55,9 @@ FIXTURE = <<~'RUBY'
     def downto_list; a = []; 6.downto(3) { |i| a << i }; a; end
     def downto_empty; a = []; 3.downto(6) { |i| a << i }; a; end
     def downto_dynamic; n = 5; a = []; (n * 2).downto(n + 2) { |i| a << i }; a; end
+    # A bound outside the narrowest Fixnum range: not provable, so it keeps the per-loop test.
+    def upto_wide; n = 1073741823; a = []; n.upto(n + 2) { |i| a << i }; a; end
+    def downto_wide; n = 1073741823; a = []; (n + 2).downto(n) { |i| a << i }; a; end
     # Not provably Integer, or not a loop this pass may take: the call stays.
     def float_recv; a = []; 1.0.step(2.0, 0.5) { |x| a << x }; a; end
     def float_limit; a = []; 1.step(2.5, 1) { |x| a << x }; a; end
@@ -84,12 +87,20 @@ EDGE_DRIVER = <<~'RUBY'
   puts 'end'
 RUBY
 
+# The resumable loops answer across Fiber yields: the proven one is compiled, the wide one stays interpreted.
+FLAT_DRIVER = <<~'RUBY'
+  [StFlat, StFlatWide].each do |k|
+    fl = k.new
+    puts "#{k}: #{Array.new(4) { fl.go }.inspect}"
+  end
+RUBY
+
 DRIVER = <<~'RUBY'
   fx = StFx.new
   %i[step_sum step_value step_neg step_empty step_empty_neg step_one step_noparam step_break step_break_none
      step_next step_param_write step_upvar step_ivar step_nested_block step_nested_step step_big step_return
      step_raise upto_sum upto_empty upto_value upto_dynamic downto_list downto_empty downto_dynamic
-     float_recv float_limit float_step float_upto float_dynamic zero_step no_block range_step].each do |name|
+     upto_wide downto_wide float_recv float_limit float_step float_upto float_dynamic zero_step no_block range_step].each do |name|
     out = begin
       fx.send(name).inspect
     rescue => e
@@ -104,11 +115,14 @@ RUBY
 
 INLINED = %w[step_sum step_value step_neg step_empty step_empty_neg step_one step_noparam step_break step_break_none
              step_next step_param_write step_upvar step_ivar step_nested_block step_nested_step step_big step_return
-             step_raise upto_sum upto_empty upto_value downto_list downto_empty].freeze
-# upto_dynamic / downto_dynamic take a bound computed by arithmetic (`n + 2`). Since ADR 0279 that
-# is an Integer but no longer a proven Fixnum (it can overflow into a bignum): the loop is inlined
-# behind one Fixnum test per loop, with the original call as the else branch (ADR 0287).
-GUARDED = %w[upto_dynamic downto_dynamic].freeze
+             step_raise upto_sum upto_empty upto_value downto_list downto_empty
+             upto_dynamic downto_dynamic].freeze
+# upto_dynamic / downto_dynamic take a bound computed by arithmetic on a literal local (`n + 2`, n = 5): its
+# interval lies inside the narrowest Fixnum range, so it is a proven Fixnum (ADR 0326) and needs no test.
+# upto_wide / downto_wide compute past that range: since ADR 0279 an Integer but not a proven Fixnum (it can
+# overflow into a bignum), so the loop is inlined behind one Fixnum test per loop, with the original call as
+# the else branch (ADR 0287).
+GUARDED = %w[upto_wide downto_wide].freeze
 KEPT = %w[float_recv float_limit float_step float_upto float_dynamic unknown_limit unknown_step zero_step no_block
           range_step].freeze
 
@@ -151,12 +165,18 @@ def edge_fixture(top)
   RUBY
 end
 
-# Fibers: a loop that may yield cannot fall back to a call, so a computed bound keeps it interpreted.
+# Fibers: a loop that may yield cannot fall back to a call, so a computed bound that is not a proven Fixnum keeps it
+# interpreted; a proven one (StFlat, interval inside the Fixnum range) is inlined without a guard.
 FLAT_FIXTURE = <<~'RUBY'
   class StFlat
     def initialize; @f = Fiber.new { run; :done }; end
     def go; @f.resume; end
     def run; n = 3; n.upto(n + 2) { |i| Fiber.yield i }; end
+  end
+  class StFlatWide
+    def initialize; @f = Fiber.new { run; :done }; end
+    def go; @f.resume; end
+    def run; n = 1073741823; n.upto(n + 2) { |i| Fiber.yield i }; end
   end
 RUBY
 
@@ -212,9 +232,11 @@ Dir.mktmpdir do |dir|
 end
 
 Dir.mktmpdir do |dir|
-  code, err = Bc2cppFixtureRuntime.generate(FLAT_FIXTURE, dir, only_owners: %w[StFlat])
-  check.call('a resumable loop with a computed bound is not guarded (its body may yield)',
-             !code.include?('STEP_LOOP_GUARD') && err.include?('StFlat#run stays interpreted'))
+  code, err = Bc2cppFixtureRuntime.generate(FLAT_FIXTURE, dir, only_owners: %w[StFlat StFlatWide])
+  check.call('a resumable loop with a computed bound outside the Fixnum range is not guarded (its body may yield)',
+             !code.include?('STEP_LOOP_GUARD') && err.include?('StFlatWide#run stays interpreted'))
+  check.call('a resumable loop with a proven Fixnum computed bound is inlined without a guard',
+             !err.include?('StFlat#run stays interpreted') && code.include?('Lbc2cpp_step_top_') && !code.include?('STEP_LOOP_GUARD'))
 end
 
 # [label, build dir, mrbc, extra flags, width]
@@ -236,18 +258,18 @@ builds.each do |label, build, mrbc, flags, width|
   ENV['BC2CPP_CXXFLAGS'] = flags
   begin
     Dir.mktmpdir do |dir|
-      source = FIXTURE + edge_fixture(TOP_FIXNUM[width])
+      source = FIXTURE + edge_fixture(TOP_FIXNUM[width]) + FLAT_FIXTURE
       _code, err = Bc2cppFixtureRuntime.generate(source, dir)
       body = <<~CPP
         static int scenario(mrb_state* M) {
           std::fflush(stdout);
-          const char* src = R"BCD(#{DRIVER}#{EDGE_DRIVER})BCD";
+          const char* src = R"BCD(#{DRIVER}#{FLAT_DRIVER}#{EDGE_DRIVER})BCD";
           mrb_load_string(M, src);
           if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
           return 0;
         }
       CPP
-      built, output = Bc2cppFixtureRuntime.run(dir, err, %w[StFx StEdge], body, build: build, full: true)
+      built, output = Bc2cppFixtureRuntime.run(dir, err, %w[StFx StEdge StFlat StFlatWide], body, build: build, full: true)
       check.call('the fixtures build and run', built)
       sections = Bc2cppFixtureRuntime.sections(output)
       interpreted = sections['interpreted']

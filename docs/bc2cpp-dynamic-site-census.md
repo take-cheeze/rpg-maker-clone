@@ -694,6 +694,34 @@ results, 8 user readers, 4 `Bitmap#width`/`height`, 4 parameters. `flowfail` of 
 model a class body, not that the constant is not an Integer; `LINE_H`, `SCREEN_W`, `TILE` and `FACE_SIZE` were Fixnum
 constants all along. `shipped.cxx` with the switch off is byte-identical to a clean master build.
 
+## Follow-up: interval operands for the Fixnum proof's consumers (ADR 0326)
+
+`BC2CPP_NUMERIC_INTERVALS=0` is byte-identical to master. Wio closed world, master `7818f0f5`, `3rd/*` populated, default
+against master:
+
+| Measure | master | default | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites | 2,538 | 2,496 | -42 (Array `[]`/`[]=` else) |
+| `bc2cpp_slow_*` callers (`add_f` 720, `sub_f` 479, `mul_f` 451 -> 719 / 473 / 441) | 3,343 | 3,326 | -17 |
+| `mrb_fixnum_p(` / `mrb_integer_p(` tests | 3,597 / 3,822 | 3,444 / 3,510 | -153 / -312 |
+| arms proven (`operands proven Fixnum`) / proven Array index sites | 388 / 0 | 556 / 42 | +168 / +42 |
+| `bc2cpp_getidx`, `bc2cpp_setidx`, `bc2cpp_nomethod` | 2,066 / 210 / 4,386 | same | 0 |
+
+## Follow-up: INTEGER_CONSTANT_PROOF soundness (ADR 0324)
+
+Two latent holes in the older proof are closed: a native `mrb_define_const`/`mrb_const_set` of a bare name now
+withdraws it (the old scan matched no name), and a `SETCONST` that a jump lands on (`X = c || 1`) is no longer an
+Integer definition. Wio closed world, master `7818f0f5`, `3rd/*` populated, master against the fix:
+
+| Measure | master | fix |
+| --- | ---: | ---: |
+| `bc2cpp_send` / `bc2cpp_slow_*` / `bc2cpp_getidx` / `mrb_fixnum_p(` / `bc2cpp_nomethod` | 2,538 / 3,343 / 2,066 / 3,597 / 4,386 | same |
+| Integer constants / with an exact value | 693 / 470 | 691 / 468 (`MAX`, `MIN`) |
+| `shipped.cxx` digit-masked diff | | 28 lines: three symbols, two inlined reads of `Game::Variables::MAX`/`MIN` |
+
+`MAX`/`MIN` collide with the native `Float::MAX`/`MIN` (`mruby-numeric-ext`); the two engine reads
+(`game.rb:1521-1522`) resolve to the Integers, so behaviour did not differ.
+
 ## Follow-up: EXT prefixes folded into their instruction (ADR 0320)
 
 Wio closed world, master `cd86085f`, same tree with `BC2CPP_EXT_PREFIX=0` (byte-identical to master) against the default.
@@ -727,3 +755,28 @@ By-name `bc2cpp_send` sites each landed feature removes on this tree (switch off
 `BLOCK_CORE_DIRECT=0` gives the identical counts, so the 48 depend on it); `ESCAPE_ANALYSIS` and `TUPLE_RETURNS` do not
 change the by-name count (`TUPLE_RETURNS` removes 41 `slow_*` callers). The `core-tables` CI shard is 29.7 minutes on
 this master, not 24.5.
+
+## Block sends: what keeps the dynamic line (ADR 0325, master 7818f0f5, nothing built)
+
+`BC2CPP_BLOCK_SEND_REPORT=<tsv>` writes one row per block send and `scripts/bc2cpp_block_send_report.rb <tsv> [--gem GEM]`
+aggregates it (`mruby-rpg2k` is 352 block sends, 282 with a by-name line; the scope is by gem, the baseline's 277 is by
+function-name prefix). Wio closed world, `3rd/*` populated.
+
+| Shape (rpg2k) | Sites |
+| --- | ---: |
+| `exact_arms`: class tests, dynamic else, receiver not proven | 227 |
+| `removed`: proven class, the compiled call alone | 42 |
+| `dynamic`: no compiled core callee (`new` 10, `section` 9, `loop` 6, `open` 4, `reduce` 4, `index` 3, 2 String iterators) | 38 |
+| `mono_direct`: one resolved call (2 keep a chain else) | 30 |
+| `explicit`: `&expr` | 12 |
+| `proven_guarded`: proven class, block without a direct entry | 3 |
+
+Every literal block is yield-free and every arm body relaxable, so 215 of the 227 `exact_arms` sites become the compiled
+call alone once the receiver class is proven. Receiver of the 282 by-name sites: exact flow 4, post-call facts a usable
+user-class set 0 (21 core/native-bounded, 5 unbounded), no earlier call 252. Producer: call result 76, `x || []` merge 49,
+`GETIDX` element 47, incoming argument 37, constant 20, ivar 16.
+
+Lever ceilings in the engine gems (rpg2k / lcf / rgss): SENDB facts 0; `Array.new(n) { }` 10 / 1 / 0 (all `Array.new`);
+direct entry for `break`/`return` blocks 3 / 0 / 5; `Hash#delete` 6 / 2 / 0 (a flow-proven receiver that
+CORE_EXACT_DIRECT does not read) and `Array#delete` 2 / 0 / 0 (no compiled body); sum 29, below the cutoff of 30, so
+nothing was built.

@@ -1186,6 +1186,11 @@
   `scripts/bc2cpp_refine_report.rb` aggregates. See
   [`docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md`](docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md)
   and `scripts/bc2cpp_call_facts_check.rb`.
+  `BC2CPP_BLOCK_SEND_REPORT=FILE` writes one row per block send (what keeps its dynamic `mrb_funcall_with_block`: an
+  unproven receiver, no compiled callee, no direct entry) for `scripts/bc2cpp_block_send_report.rb`; the four levers it
+  measured (SENDB call facts, `Array.new { }`, break/return direct entries, `delete`) reach 29 engine sends in all, below
+  the cutoff, so none was built. See
+  [`docs/adr/0325-bc2cpp-block-send-measurement.md`](docs/adr/0325-bc2cpp-block-send-measurement.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
   neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio
