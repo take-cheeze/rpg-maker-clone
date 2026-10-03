@@ -1077,6 +1077,8 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_block_send_report_check.rb
               # ADR 0330: BC2CPP_DEAD_ARM_REPORT changes no output and its rows classify the arms of a fixture.
               MRBC="$mrbc" ruby scripts/bc2cpp_dead_arm_report_check.rb
+              # ADR 0331: BC2CPP_RECEIVER_PROOF_REPORT changes no output and its rows describe a receiver-source fixture.
+              MRBC="$mrbc" ruby scripts/bc2cpp_receiver_proof_report_check.rb
           - shard: numeric-constants
             # ADR 0318: generated code with the withdrawal worlds, the full-core and core-only runs, then fifteen
             # mutants and an unmutated control through the shared pool.

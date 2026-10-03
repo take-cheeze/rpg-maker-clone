@@ -808,3 +808,27 @@ The eight `Hash#delete` sends above (six RPG2k, two LCF) are removed by
 FLOW_CORE_DIRECT (ADR 0323). ADR 0327 adds no generator change; it adds pooled
 Hash `delete`/`fetch` fixtures and a mutant on the early return to the
 core-exact check. See [ADR 0327](adr/0327-bc2cpp-flow-core-hash-delete-checks.md).
+## Receiver class proofs: what keeps the unproven receivers (ADR 0331, master eed615c7, nothing built)
+
+`BC2CPP_RECEIVER_PROOF_REPORT=<tsv>` writes one row per engine explicit-receiver send that still holds a by-name line, with
+the source of its receiver and what happens to the line when the receiver is forced to a class set (a forked recompile of
+the one send, so the output is byte-identical); `scripts/bc2cpp_receiver_proof_report.rb <tsv>` aggregates it. 1,970 sends,
+187 with a proven set, **1,783 unproven**.
+
+| Source (unproven) | Sites | Own set removes | Floor removes (every answering class, nil allowed) |
+| --- | ---: | ---: | ---: |
+| call result | 491 | 110 | 71 |
+| ivar | 322 | 8 | 66 |
+| argument | 321 | 0 | 53 |
+| `GETIDX` element | 234 | - | 6 |
+| constant | 164 | - | 0 |
+| other | 119 | - | 3 |
+| `x \|\| []` merge | 85 | 75 | 1 |
+| captured local | 47 | - | 4 |
+
+Roots: 235 ivar sites read a pool dropped by an unmodelled store (a parameter, or a `map`/`select`/`dup` result), 54 an ivar
+a native spells (`@contents` 44), 173 parameters are not pool candidates, 147 have a dropped pool, 207 call results go
+through an ivar accessor, 136 through a native result, and per-class resolution of the callee completes 0 sites. A prototype
+(`h.keys` and `Graphics.snap_to_bitmap` as audited native result classes, and a `<native>` placeholder of a name no linked
+source defines dropped from the return join) removed 22 by-name sends against the cutoff of 30, so nothing was built; the
+lever left is a call-graph audit of the RGSS natives' `self` discipline for `@contents` (about 70 floor-freed sites).
