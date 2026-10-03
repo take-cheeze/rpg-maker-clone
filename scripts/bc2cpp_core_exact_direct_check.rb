@@ -59,6 +59,15 @@ FIXTURE = <<~'RUBY'
     def to_s; "C#{@v}"; end
   end
 
+  # Two project classes sharing the name `delete` give the Hash#delete sites a user-class poly chain to skip (ADR 0327).
+  class CxDeleter
+    def delete(k); k; end
+  end
+
+  class CxDeleter2
+    def delete(k); [k]; end
+  end
+
   class CxBoom
     def <=>(o); raise "boom"; end
   end
@@ -225,7 +234,7 @@ YIELD_DRIVER = <<~'RUBY'
   puts "end"
 RUBY
 
-FIXTURE_OWNERS = %w[CxFx CxCmp CxBoom CxStop CxThrow CxYield].freeze
+FIXTURE_OWNERS = %w[CxFx CxCmp CxBoom CxStop CxThrow CxYield CxDeleter CxDeleter2].freeze
 OWNERS = BC2CPP_CORE_OWNERS + FIXTURE_OWNERS
 
 # -- generation ------------------------------------------------------------------------------
@@ -573,8 +582,8 @@ MUTANTS = {
      "site = { klass: 'Array', recv: recv, name: name } if true || core_extend_enabled? && !self_implicit && irep &&"],
   'a callee that takes no block parameter is refused' =>
     ['codegen_block_core_direct.rb', "unless blockless || takes_block_param?(irep)", 'unless takes_block_param?(irep)'],
-  'the dispatch diagnostic stays on a direct site' =>
-    ['codegen_send.rb', 'return "  #{line}" if line.start_with?(CORE_EXACT_DIRECT_NOTE)', 'nil'],
+  'a flow-proven core receiver is not resolved ahead of the poly chain' =>
+    ['codegen_send.rb', 'return "  #{core_call}" if core_call', 'nil'],
   'a prepend on the receiver class is not looked at' =>
     ['codegen_block_core_direct.rb', 'return false if Array(@prepended_modules[owner]).any? || @unknown_mixins.include?(owner)',
      'return false if @unknown_mixins.include?(owner)'],
