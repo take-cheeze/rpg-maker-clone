@@ -808,3 +808,15 @@ The eight `Hash#delete` sends above (six RPG2k, two LCF) are removed by
 FLOW_CORE_DIRECT (ADR 0323). ADR 0327 adds no generator change; it adds pooled
 Hash `delete`/`fetch` fixtures and a mutant on the early return to the
 core-exact check. See [ADR 0327](adr/0327-bc2cpp-flow-core-hash-delete-checks.md).
+
+## Follow-up: native Window ivar families (ADR 0332)
+
+The native Window call graph accesses `@contents` and `@cursor_rect` only on its Window receiver's `self`.
+Pinned native sources and a scan for outside helper callers let the compiler keep those names poisoned for the
+RGSS::Window family while pooling unrelated scene slots. Unknown native setter values remain unknown.
+
+On master `4bdd9492`, switch off against on on one tree, the Wio shipped census goes from 2,925 to 2,884 cached
+by-name sites. All 41 removals belong to engine methods; 39 nil-receiver helper calls and one no-method helper call
+are added. Class ivar pools grow from 185 to 186 and argument pools from 115 to 117. With
+`BC2CPP_NATIVE_IVAR_SCOPES=0`, the shipped C++ is byte-identical to master. Source changes, new outside callers or
+other outside spellings withdraw the scope proof. See [ADR 0332](adr/0332-bc2cpp-native-window-ivar-families.md).
