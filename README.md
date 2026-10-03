@@ -1195,6 +1195,11 @@
   measured (SENDB call facts, `Array.new { }`, break/return direct entries, `delete`) reach 29 engine sends in all, below
   the cutoff, so none was built. See
   [`docs/adr/0325-bc2cpp-block-send-measurement.md`](docs/adr/0325-bc2cpp-block-send-measurement.md).
+  `BC2CPP_DEAD_ARM_REPORT=FILE` writes one row per `bc2cpp_nomethod` / `bc2cpp_nil_receiver` arm (shape of its send, whether
+  its method can be called, rescue / probe / branch guards, receiver origin) for `scripts/bc2cpp_dead_arm_report.rb`: no
+  send is a sole arm, 822 nil paths are live and unguarded (scene-lifecycle ivars and database chunks, none a bug when read),
+  and making the provable errors compile errors would remove nothing. See
+  [`docs/adr/0330-bc2cpp-dead-arm-measurement.md`](docs/adr/0330-bc2cpp-dead-arm-measurement.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
   neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio

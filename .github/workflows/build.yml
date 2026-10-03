@@ -1075,6 +1075,8 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_call_facts_mutation_check.rb
               # ADR 0325: BC2CPP_BLOCK_SEND_REPORT changes no output and its rows describe a block-send fixture.
               MRBC="$mrbc" ruby scripts/bc2cpp_block_send_report_check.rb
+              # ADR 0330: BC2CPP_DEAD_ARM_REPORT changes no output and its rows classify the arms of a fixture.
+              MRBC="$mrbc" ruby scripts/bc2cpp_dead_arm_report_check.rb
           - shard: numeric-constants
             # ADR 0318: generated code with the withdrawal worlds, the full-core and core-only runs, then fifteen
             # mutants and an unmutated control through the shared pool.
