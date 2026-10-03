@@ -115,9 +115,20 @@ if run_behaviour
       #include <mruby/compile.h>
       #include "dd_gen.cpp"
 
+      // Is the method a class finds for a name a C function (a compiled entry) rather than bytecode?
+      static mrb_value dd_compiled_p(mrb_state* M, mrb_value) {
+        mrb_value klass;
+        mrb_sym name;
+        mrb_get_args(M, "Cn", &klass, &name);
+        struct RClass* c = mrb_class_ptr(klass);
+        mrb_method_t m = mrb_method_search_vm(M, &c, name);
+        return mrb_bool_value(!MRB_METHOD_UNDEF_P(m) && MRB_METHOD_CFUNC_P(m));
+      }
+
       static const char* const kFixture = R"DDFX(@@FIXTURE@@)DDFX";
 
       extern "C" void mrb_bc2cpp_dd_test_gem_init(mrb_state* M) {
+        mrb_define_method(M, M->kernel_module, "dd_compiled?", dd_compiled_p, MRB_ARGS_REQ(2));
         mrb_load_string(M, kFixture);
         if (M->exc) { mrb_print_error(M); M->exc = nullptr; }
         if (getenv("DD_INTERPRETED")) return;
@@ -159,6 +170,7 @@ if run_behaviour
     owners = FORMS.flat_map(&:owners).uniq
     File.write(File.join(work, 'fixture.rb'), fixture)
     File.write(File.join(work, 'driver.rb'), driver)
+    File.write(File.join(work, 'probe.rb'), DD.probe(FORMS))
 
     build = lambda do |variant|
       File.write(File.join(work, "config_#{variant}.rb"), config_for.call(variant))
@@ -184,6 +196,10 @@ if run_behaviour
       env = interpreted ? { 'DD_INTERPRETED' => '1' } : {}
       Open3.capture2e(env, bin, File.join(work, 'driver.rb')).first
     end
+    run_probe = lambda do |bin, interpreted|
+      env = interpreted ? { 'DD_INTERPRETED' => '1' } : {}
+      Open3.capture2e(env, bin, File.join(work, 'probe.rb')).first
+    end
 
     (ENV['DD_VARIANTS'] || VARIANTS.keys.join(',')).split(',').each do |variant|
       puts "double definitions (#{variant}): build"
@@ -205,6 +221,24 @@ if run_behaviour
         end
       end
       puts base_out if ENV['DD_SHOW']
+      probe_compiled = run_probe.call(bin, false)
+      probe_interpreted = run_probe.call(bin, true)
+      puts probe_compiled if ENV['DD_SHOW']
+      check.call("#{variant}: the interpreted run has no compiled entry", !probe_interpreted.include?(': true'))
+      DD.probes(FORMS).each do |form, klass, name, want|
+        got = probe_compiled[/^#{Regexp.escape("#{klass} #{name}")}: (\w+)$/, 1]
+        check.call("#{variant}: #{form}: #{klass}##{name} #{want ? 'is' : 'is not'} a compiled entry (non-vacuity)", got == want.to_s)
+      end
+      by_line = ->(out, label) { out.lines.find { |l| l.start_with?("#{label}: ") } }
+      check.call("#{variant}: the last definition's exception is raised",
+                 by_line.call(comp_out, 'triple_def_raises self') == "triple_def_raises self: raised ArgumentError\n") if FORMS.any? { |f| f.name == 'triple_def_raises' }
+      if FORMS.any? { |f| f.name == 'live_def_raises' }
+        interpreted_line = by_line.call(base_out, 'live_def_raises self')
+        check.call("#{variant}: live_def_raises: compiled prints the interpreter's line (#{interpreted_line.to_s.strip})",
+                   by_line.call(comp_out, 'live_def_raises self') == interpreted_line)
+        check.call("#{variant}: live_def_raises: a core-only build raises (String#succ is absent), full-core does not",
+                   variant == 'core-only' ? interpreted_line.include?('raised') : interpreted_line.include?('ac'))
+      end
       gen = File.join(dir, 'host/mrbgems/bc2cpp-dd-test/dd_gen.cpp')
       File.write(File.join(work, "#{variant}_gen.cpp"), File.read(gen)) if File.exist?(gen)
     end

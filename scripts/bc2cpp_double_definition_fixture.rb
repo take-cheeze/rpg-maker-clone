@@ -392,6 +392,34 @@ module DoubleDefinitionFixture
     "#{DRIVER_HEAD}#{forms.map { |f| f.rename(f.driver) }.join}puts 'end'\n"
   end
 
+  # [form, class expression, method, compiled?]: what the registration leaves for a name once the class
+  # bodies have run. A kept last `def` is a compiled entry; a withdrawn group, an alias and an attr_reader
+  # are not.
+  PROBES = [
+    ['attr_then_def', 'Game::Screen', 'v', true], ['def_then_def', 'Game::Troop', 'v', true],
+    ['triple_def_raises', 'Game::EnemyAi', 'v', true], ['reopened_class', 'Game::Enemy', 'v', true],
+    ['define_method_then_def', 'Game::Shop', 'v', true], ['live_def_raises', 'Game::Transition', 'v', true],
+    ['call_between', 'Game::Interpreter', 'v', true], ['private_visibility', 'Game::TextReveal', 'w', true],
+    ['super_into_double', 'Game::NumberInput', 'v', true], ['alias_over_def', 'Game::Party', 'b', false],
+    ['alias_over_def', 'Game::Party', 'c', false], ['conditional_def', 'Game::Actor', 'v', false],
+    ['conditional_def', 'Game::Actor', 'w', false], ['sdef_then_sdef', 'Game::Party.singleton_class', 'm', true],
+    ['sdef_then_sclass_def', 'Game::States.singleton_class', 'm', true],
+    ['singleton_vs_instance_symbol', 'Game::Battle', 'singleton_make', true],
+    ['singleton_vs_instance_symbol', 'Game::Battle.singleton_class', 'make', true]
+  ].freeze
+
+  def self.probes(forms = FORMS)
+    PROBES.select { |form, *| forms.any? { |f| f.name == form } }.map do |form, klass, name, want|
+      f = forms.find { |x| x.name == form }
+      [form, klass, f.names.include?(name) ? "#{name}_#{form}" : name, want]
+    end
+  end
+
+  def self.probe(forms = FORMS)
+    lines = probes(forms).map { |_form, klass, name, _want| "puts \"#{klass} #{name}: \#{dd_compiled?(#{klass}, :#{name})}\"" }
+    "#{lines.join("\n")}\nputs 'end'\n"
+  end
+
   PROGRAM = program
   DRIVER = driver
 end
