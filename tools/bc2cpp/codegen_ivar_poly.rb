@@ -172,7 +172,7 @@ class CodeGen
       value = type == :value ? "(mrb_undef_p(#{field}) ? mrb_nil_value() : #{field})" : "#{TYPE_OPS.fetch(type)[:box]}(#{field})"
       "#{dst} = #{value};"
     elsif embedded_accessor_linkable?(klass, ivar)
-      "#{dst} = #{sanitize(klass)}_#{sanitize(ivar)}_impl(M, #{recv});"
+      "#{dst} = #{cpp_name(klass, ivar)}_impl(M, #{recv});"
     end
   end
 
@@ -213,7 +213,7 @@ class CodeGen
       "#{"#{frozen}\n#{indent}" if frozen}if (!#{ops[:check]}(#{src})) mrb_raise(M, mrb_exc_get_id(M, mrb_intern_lit(M, \"TypeError\")), \"@#{ivar}: expected #{ops[:err]}\");\n" \
         "#{store}#{tail}"
     elsif embedded_accessor_linkable?(klass, "#{ivar}=")
-      "#{dst ? "#{dst} = " : ''}#{sanitize(klass)}_#{sanitize(ivar)}_eq_impl(M, #{recv}, #{src});"
+      "#{dst ? "#{dst} = " : ''}#{cpp_name(klass, ivar)}_eq_impl(M, #{recv}, #{src});"
     end
   end
 

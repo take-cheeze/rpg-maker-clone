@@ -118,8 +118,9 @@ CatchHandler = Struct.new(:type, :begin_addr, :end_addr, :target, keyword_init: 
 # `installer`: :define_method for a `define_method(:x) { }` body (DefineMethodSites), else nil.
 # `site`: for an accessor a loop installs (LoopInstallers), the [irep label, index] of each attr_* send
 # of that loop, else nil.
+# `conditional`: a forward jump spans the definition, so it may not run (DoubleDefinitions).
 MethodDef = Struct.new(:name, :owner, :irep, :visibility, :kind, :copy_irep, :copy_owner, :core, :installer, :site,
-                       keyword_init: true)
+                       :conditional, keyword_init: true)
 
 # ---------------------------------------------------------------------------
 # mrbc compiles several files on one command line as one program (with class

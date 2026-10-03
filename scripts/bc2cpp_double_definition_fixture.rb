@@ -282,15 +282,13 @@ module DoubleDefinitionFixture
           def initialize; @t = 0; end
           def run_v; v; end
           def run_w; w; end
-          def via(o); o.v; end
-          def via_w(o); o.w; end
         end
       end
     RUBY
       dd_show('private_visibility private self') { Game::TextReveal.new.run_v }
-      dd_show('private_visibility private explicit') { s = Game::TextReveal.new; s.via(s) }
+      dd_show('private_visibility private from outside') { Game::TextReveal.new.v }
       dd_show('private_visibility redefined self') { Game::TextReveal.new.run_w }
-      dd_show('private_visibility redefined explicit') { s = Game::TextReveal.new; s.via_w(s) }
+      dd_show('private_visibility redefined from outside') { Game::TextReveal.new.w }
     RUBY
     # super into a doubly defined parent method
     Form.new(name: 'super_into_double', names: %w[v], owners: %w[Game::NumberInput Game::MessageConfig], program: <<~'RUBY', driver: <<~'RUBY'),
@@ -316,14 +314,14 @@ module DoubleDefinitionFixture
         class Battle
           def singleton_make; 2; end
           def self.make; 1; end
-          def self.pair; [make, new.singleton_make]; end
+          def self.pair(o); [make, o.singleton_make]; end
           def initialize; @t = 0; end
           def run_make; self.class.make; end
           def run_inst; singleton_make; end
         end
       end
     RUBY
-      dd_show('singleton_vs_instance_symbol pair') { Game::Battle.pair.join(',') }
+      dd_show('singleton_vs_instance_symbol pair') { Game::Battle.pair(Game::Battle.new).join(',') }
       dd_show('singleton_vs_instance_symbol class') { Game::Battle.new.run_make }
       dd_show('singleton_vs_instance_symbol instance') { Game::Battle.new.run_inst }
     RUBY

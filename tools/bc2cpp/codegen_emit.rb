@@ -270,7 +270,7 @@ class CodeGen
 
     sname = struct_name(owner)
     ops = TYPE_OPS.fetch(type)
-    base = "#{sanitize(owner)}_#{sanitize(ivar)}"
+    base = cpp_name(owner, ivar)
 
     case which
     when :reader
@@ -823,7 +823,7 @@ class CodeGen
         next unless d.kind == :ivar_accessor && d.irep.nil? && !d.owner.end_with?('.singleton')
         next if only_owners && !only_owners.include?(d.owner)
 
-        base = "#{sanitize(d.owner)}_#{sanitize(d.name.chomp('='))}"
+        base = cpp_name(d.owner, d.name.chomp('='))
         entry = d.name.end_with?('=') ? "#{base}_eq" : base
         entries << entry unless real.include?(entry)
       end

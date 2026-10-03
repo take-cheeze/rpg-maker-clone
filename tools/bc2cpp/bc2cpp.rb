@@ -162,6 +162,14 @@ if $PROGRAM_NAME == __FILE__
     defs.each { |d| d.core = true if d.irep && CoreDefs.core_source?(ireps.fetch(d.irep).file) }
   end
   CodeGen.core_aliases = CoreDefs.alias_map(alias_sites, registry, ireps, core_shadowed_pairs)
+  # DOUBLE_DEFINITIONS (ADR 0319): one definition per (owner, name) before anything reads the registry.
+  double_definitions = DoubleDefinitions.settle(registry)
+  unless double_definitions.dropped.empty? && double_definitions.withdrawn.empty?
+    warn "== double definitions (#{double_definitions.dropped.size} names keep their last definition, " \
+         "#{double_definitions.withdrawn.size} withdrawn) =="
+    double_definitions.dropped.sort.each { |k| warn "  LAST #{k}" }
+    double_definitions.withdrawn.sort.each { |k| warn "  WITHDRAWN #{k}" }
+  end
   # CORE_METHODS: what mruby's own Ruby must keep interpreted is no registry definition either.
   core_refused = CoreMethods.load_refused(ENV['BC2CPP_CORE_REFUSED'] || CoreMethods::DEFAULT_PATH)
   core_ineligible = CoreMethods.excluded_labels(registry, ireps, core_refused)

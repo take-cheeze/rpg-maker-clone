@@ -169,6 +169,8 @@ class CodeGen
     end
     # CORE_VISIBILITY (ADR 0264): compiled, but never a dispatch candidate.
     (self.class.core_hidden_defs || []).each { |d| @owner_of[d.irep] = d if d.irep }
+    @cpp_suffix = DoubleDefinitions.symbol_suffixes(registry.values.flatten + (self.class.core_hidden_defs || []),
+                                                    ->(owner, name) { sanitize("#{owner}_#{name}") })
     @core_guard_index = {}
     @class_layout = class_layout # class_name -> {ivar_name => class_name} -- see ClassLayout's own comment.
     @class_annotations = class_annotations # irep label -> ClassAnnotations::Annotation
@@ -569,8 +571,11 @@ class CodeGen
     end
   end
 
+  # DOUBLE_DEFINITIONS: a clash between two different (owner, name) pairs gets a `$n` suffix.
   def cpp_name(owner, name)
-    sanitize("#{owner}_#{name}")
+    base = sanitize("#{owner}_#{name}")
+    suffix = @cpp_suffix[[owner, name]]
+    suffix ? "#{base}#{suffix}" : base
   end
 
   # NATIVE_ARG_TARGETS' per-position types, shared by compile_method (signature)

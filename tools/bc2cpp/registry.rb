@@ -3,6 +3,7 @@
 require_relative 'core_mixins'
 require_relative 'core_defs'
 require_relative 'define_method_sites'
+require_relative 'double_definitions'
 require_relative 'loop_installers'
 
 # Step 6: the whole-program class/method registry.
@@ -163,6 +164,16 @@ def build_registry(ireps, root_label)
          respond_to_missing?].include?(method_name) ? :private : default_visibility
     end
 
+    # Whether this registration may be skipped at run time (see DoubleDefinitions).
+    conditional_at = ->(addr) { DoubleDefinitions.conditional_at?(irep, addr) }
+    # A later alias or removal of a name this owner already defines replaces that definition, so the
+    # registry must see it as the last one (DoubleDefinitions). A first alias adds nothing.
+    supersede = lambda do |mname, owner, addr|
+      next if CoreDefs.core_source?(irep.file) || registry[mname].none? { |d| d.owner == owner }
+
+      registry[mname] << DoubleDefinitions.marker(mname, owner, :public, conditional: conditional_at.call(addr))
+    end
+
     irep.instructions.each_with_index do |insn, idx|
       case insn.op
       when 'CLASS', 'MODULE'
@@ -233,6 +244,9 @@ def build_registry(ireps, root_label)
       when 'ALIAS'
         old_name = insn.first_of(:name)&.value
         alias_sites << { owner: namespace || 'Object', new: insn.sym, old: old_name, irep: label } if insn.sym && old_name
+        supersede.call(insn.sym, namespace || 'Object', insn.addr) if insn.sym && old_name
+      when 'UNDEF'
+        supersede.call(insn.sym, namespace || 'Object', insn.addr) if insn.sym
       when 'TDEF'
         # "TDEF R1 :speak I[1]"
         child_label = irep.reps[insn.block_index]
@@ -244,7 +258,7 @@ def build_registry(ireps, root_label)
         # see that rule, and reporting them public would let register.cxx expose them.
         visibility = resolve_def_visibility.call(method_name)
         registry[method_name] << MethodDef.new(name: method_name, owner: owner, irep: child_label,
-                                                visibility: visibility)
+                                                visibility: visibility, conditional: conditional_at.call(insn.addr))
       when 'SDEF'
         # "SDEF R1 :clamp I[5]": `def self.foo` / `def SomeConst.foo`. codegen_sdef
         # (mruby-compiler codegen.c) fuses SCLASS+METHOD+DEF into SDEF whenever the
@@ -270,7 +284,8 @@ def build_registry(ireps, root_label)
         recv = resolve_singleton_receiver.call(insn.reg_token, idx)
         if recv
           registry[sdef_name] << MethodDef.new(name: sdef_name, owner: "#{recv}.singleton",
-                                                irep: sdef_child_label, visibility: :public)
+                                                irep: sdef_child_label, visibility: :public,
+                                                conditional: conditional_at.call(insn.addr))
         end
       when 'DEF'
         # "DEF R1 :toned? (R2)": codegen_def/codegen_sdef fuse into TDEF/SDEF only
@@ -307,7 +322,7 @@ def build_registry(ireps, root_label)
           owner = namespace || 'Object' # a top-level `def` lands on Object.
           visibility = resolve_def_visibility.call(def_name)
           registry[def_name] << MethodDef.new(name: def_name, owner: owner, irep: child_label,
-                                               visibility: visibility)
+                                               visibility: visibility, conditional: conditional_at.call(insn.addr))
         else
           # Unfused `def self.foo`: same "X.singleton" pseudo-owner and real irep as
           # SDEF, receiver resolved by resolve_singleton_receiver (unrecognized: not
@@ -317,7 +332,7 @@ def build_registry(ireps, root_label)
           if recv
             owner = "#{recv}.singleton"
             registry[def_name] << MethodDef.new(name: def_name, owner: owner, irep: child_label,
-                                                 visibility: :public)
+                                                 visibility: :public, conditional: conditional_at.call(insn.addr))
           end
         end
       when 'SEND0', 'SEND', 'SSEND0', 'SSEND'
@@ -347,6 +362,14 @@ def build_registry(ireps, root_label)
           end
           next
         end
+        if %w[alias_method undef_method remove_method].include?(name) && %w[SSEND SSEND0].include?(insn.op) &&
+           insn.plain_fixed_argc?
+          names = irep.preceding_run('LOADSYM', idx - 1, limit: insn.argc.to_i).map(&:sym_token)
+          (name == 'alias_method' ? names.first(1) : names).each do |mname|
+            supersede.call(mname, namespace || 'Object', insn.addr)
+          end
+          next
+        end
         next unless %w[private protected public attr_reader attr_writer attr_accessor
                        module_function].include?(name)
 
@@ -371,7 +394,7 @@ def build_registry(ireps, root_label)
             # `private :a, :b, ...` -- retroactively marks already-defined
             # methods, without changing the mode for whatever comes after.
             collect_loadsym_names.call.each do |mname|
-              def_ = registry[mname]&.find { |d| d.owner == namespace }
+              def_ = registry[mname]&.reverse_each&.find { |d| d.owner == namespace }
               def_.visibility = name.to_sym if def_
             end
           end
@@ -388,7 +411,7 @@ def build_registry(ireps, root_label)
             registry[mname] << MethodDef.new(name: mname, owner: "#{namespace || 'Object'}.singleton",
                                               irep: nil, visibility: :public, kind: :module_function,
                                               copy_irep: source&.irep, copy_owner: source&.owner,
-                                              core: CoreDefs.core_source?(irep.file))
+                                              core: CoreDefs.core_source?(irep.file), conditional: conditional_at.call(insn.addr))
           end
         else
           # attr_reader/attr_writer/attr_accessor are native, so their accessors get no
@@ -406,12 +429,14 @@ def build_registry(ireps, root_label)
             # IVAR_ACCESSOR_DEVIRT.
             if getter_flag
               registry[mname] << MethodDef.new(name: mname, owner: owner, irep: nil, visibility: :public,
-                                                kind: :ivar_accessor, core: CoreDefs.core_source?(irep.file))
+                                                kind: :ivar_accessor, core: CoreDefs.core_source?(irep.file),
+                                                conditional: conditional_at.call(insn.addr))
             end
             if setter_flag
               registry["#{mname}="] << MethodDef.new(name: "#{mname}=", owner: owner, irep: nil,
                                                        visibility: :public, kind: :ivar_accessor,
-                                                       core: CoreDefs.core_source?(irep.file))
+                                                       core: CoreDefs.core_source?(irep.file),
+                                                       conditional: conditional_at.call(insn.addr))
             end
           end
         end
@@ -423,7 +448,8 @@ def build_registry(ireps, root_label)
         if site && namespace && !namespace.include?('.singleton') && !namespace.start_with?('<') &&
            default_visibility == :public && !CoreDefs.core_source?(irep.file)
           registry[site.name] << MethodDef.new(name: site.name, owner: namespace, irep: site.child,
-                                                visibility: :public, installer: :define_method)
+                                                visibility: :public, installer: :define_method,
+                                                conditional: conditional_at.call(insn.addr))
         end
       when 'SENDB'
         loop_sites << [label, idx, namespace, default_visibility] if LoopInstallers.candidate?(irep, idx, ireps)
