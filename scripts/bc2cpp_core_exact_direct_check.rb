@@ -59,6 +59,15 @@ FIXTURE = <<~'RUBY'
     def to_s; "C#{@v}"; end
   end
 
+  # Two project classes sharing the name `delete` give the Hash#delete sites a user-class poly chain to skip (ADR 0327).
+  class CxDeleter
+    def delete(k); k; end
+  end
+
+  class CxDeleter2
+    def delete(k); [k]; end
+  end
+
   class CxBoom
     def <=>(o); raise "boom"; end
   end
@@ -88,6 +97,10 @@ FIXTURE = <<~'RUBY'
     def fch_raise(k); { 'a' => 1 }.fetch(k); end
     def fch3(k); { 'a' => 1 }.fetch(k, 1, 2); end
     def hto(a); { a => 1, :z => 2 }.to_a; end
+    def initialize; @cache = { 'a' => 1, 'b' => 2 }; end
+    def pooled_delete(k); @cache.delete(k); end
+    def pooled_fetch(k); @cache.fetch(k, :miss); end
+    def nilable_delete(k); h = k ? @cache : nil; h.delete(k); end
     # -- receivers that are not proven
     def unknown_max(a); a.max; end
     def unknown_min(a); a.min; end
@@ -147,6 +160,11 @@ DRIVER = <<~'RUBY'
     show.call("#{tag} thrown") { catch(:cx_out) { fx.mx(CxThrow.new, CxThrow.new) } }
     show.call("#{tag} after thrown") { fx.mx(1, 2.5) }
     show.call("#{tag} stop then ok") { [(fx.mx(CxStop.new, CxStop.new) rescue :stopped), fx.mx(4, 2.5)] }
+    %w[a b zz].each do |k|
+      show.call("#{tag} pooled_fetch/#{k}") { fx.pooled_fetch(k) }
+      show.call("#{tag} pooled_delete/#{k}") { fx.pooled_delete(k) }
+    end
+    show.call("#{tag} nilable_delete") { fx.nilable_delete(nil) }
     %w[a b zz].each { |k| show.call("#{tag} fch/#{k}") { fx.fch(k) } }
     [1, nil, :a, 2.0].each_with_index { |k, i| show.call("#{tag} fch_other/#{i}") { fx.fch(k) } }
     %w[a b].each { |k| show.call("#{tag} fch_raise/#{k}") { fx.fch_raise(k) } }
@@ -216,7 +234,7 @@ YIELD_DRIVER = <<~'RUBY'
   puts "end"
 RUBY
 
-FIXTURE_OWNERS = %w[CxFx CxCmp CxBoom CxStop CxThrow CxYield].freeze
+FIXTURE_OWNERS = %w[CxFx CxCmp CxBoom CxStop CxThrow CxYield CxDeleter CxDeleter2].freeze
 OWNERS = BC2CPP_CORE_OWNERS + FIXTURE_OWNERS
 
 # -- generation ------------------------------------------------------------------------------
@@ -295,6 +313,13 @@ if run_generated
   check.call('with the class arms off, a direct site reached through the poly path is not marked as a dynamic dispatch',
              arms_off_uq.include?('CORE_EXACT_DIRECT :uniq') && !arms_off_uq.include?('// POLY :uniq') && !arms_off_uq.include?('POLY_DIAG'))
 
+  check.call('pooled Hash delete and fetch call the compiled core without dispatch',
+             nb.call('pooled_delete').include?('Hash_delete_impl(M,') &&
+             nb.call('pooled_fetch').include?('Hash_fetch_impl(M,') &&
+             dispatches.call(nb.call('pooled_delete')).zero? && dispatches.call(nb.call('pooled_fetch')).zero?)
+  check.call('a Hash-or-nil receiver keeps its nil error path',
+             nb.call('nilable_delete').include?('mrb_nil_p('))
+
   puts ' 2. receivers that are not proven keep the by-name send'
   check.call('a.max on an unknown receiver keeps the inline arm and its by-name else',
              nb.call('unknown_max').include?('CORE_MIN_MAX :max') && !nb.call('unknown_max').include?('CORE_EXACT_DIRECT') &&
@@ -306,7 +331,7 @@ if run_generated
 
   puts ' 3. the kill switch'
   check.call('BC2CPP_CORE_EXTEND=0 emits no CORE_EXACT_DIRECT anywhere', !off_code.include?('CORE_EXACT_DIRECT'))
-  %w[mx mn mx_frozen mix_max uq cnt sm fch hto].each do |fn|
+  %w[mx mn mx_frozen mix_max uq cnt sm fch hto pooled_delete pooled_fetch].each do |fn|
     check.call("#{fn}: with the kill switch the site is a by-name send again", dispatches.call(ob.call(fn)).positive?)
   end
   # Symbol indexes number the by-name sends of the whole file, so they shift when a site stops being one.
@@ -319,6 +344,10 @@ if run_generated
   check.call('without the closed world nothing is direct', !open_code.include?('CORE_EXACT_DIRECT'))
   nocore = generate.call(FIXTURE, 'cx_nocore', core: false)
   check.call('without the compiled core nothing is direct', !nocore.include?('CORE_EXACT_DIRECT'))
+  no_pools = generate.call(FIXTURE, 'cx_no_pools', extra_env: { 'BC2CPP_CLASS_POOLS' => '0' })
+  check.call('without class pools the ivar calls retain dispatch',
+             !body_of.call(no_pools, 'pooled_delete').include?('CORE_EXACT_DIRECT') &&
+             !body_of.call(no_pools, 'pooled_fetch').include?('CORE_EXACT_DIRECT'))
   override = generate.call("#{FIXTURE}\nclass Array\n  def max(&b); :mine; end\nend\n", 'cx_max_override')
   check.call('a Ruby Array#max is called, not bypassed: mx has no direct max and the Array receiver reaches the definition',
              !body_of.call(override, 'mx').include?('Enumerable_max_impl') && body_of.call(override, 'mx').include?('Array_max_impl'))
@@ -337,7 +366,8 @@ if run_generated
   singleton = generate.call("#{FIXTURE}\nclass CxFx\n  def mix(o); o.extend(Comparable); end\nend\n", 'cx_singleton')
   check.call('a singleton maker withdraws the exact-receiver proof, so every direct call', !singleton.include?('CORE_EXACT_DIRECT'))
   hash_override = generate.call("#{FIXTURE}\nclass Hash\n  def fetch(*a); :mine; end\nend\n", 'cx_hash_override')
-  check.call('a Ruby Hash#fetch withdraws the Hash#fetch direct call', !body_of.call(hash_override, 'fch').include?('CORE_EXACT_DIRECT :fetch'))
+  check.call('a Ruby Hash#fetch withdraws the Hash#fetch direct call', !body_of.call(hash_override, 'fch').include?('CORE_EXACT_DIRECT :fetch') &&
+             !body_of.call(hash_override, 'pooled_fetch').include?('CORE_EXACT_DIRECT :fetch'))
   yielding = generate.call("#{FIXTURE}\n#{YIELD_FIXTURE}", 'cx_yield')
   check.call('a comparator that yields to a Fiber makes the Enumerable#max body suspendable: ymin (not run by the Fiber) stays dispatched',
              !body_of.call(yielding, 'ymax').include?('CORE_EXACT_DIRECT') && !body_of.call(yielding, 'ymin').include?('CORE_EXACT_DIRECT') &&
@@ -556,8 +586,8 @@ MUTANTS = {
      "site = { klass: 'Array', recv: recv, name: name } if true || core_extend_enabled? && !self_implicit && irep &&"],
   'a callee that takes no block parameter is refused' =>
     ['codegen_block_core_direct.rb', "unless blockless || takes_block_param?(irep)", 'unless takes_block_param?(irep)'],
-  'the dispatch diagnostic stays on a direct site' =>
-    ['codegen_send.rb', 'return "  #{line}" if line.start_with?(CORE_EXACT_DIRECT_NOTE)', 'nil'],
+  'a flow-proven core receiver is not resolved ahead of the poly chain' =>
+    ['codegen_send.rb', 'return flow_core if flow_core', 'nil'],
   'a prepend on the receiver class is not looked at' =>
     ['codegen_block_core_direct.rb', 'return false if Array(@prepended_modules[owner]).any? || @unknown_mixins.include?(owner)',
      'return false if @unknown_mixins.include?(owner)'],

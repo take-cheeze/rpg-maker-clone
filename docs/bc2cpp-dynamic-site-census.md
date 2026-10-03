@@ -801,3 +801,10 @@ The 822 (c) arms are 647 ivar reads (81 scene-lifecycle clusters: set in `start`
 bug; 88 `partial_miss` rows are one pooling imprecision (`Menu#@message` Hash against `Map#@message`). Provable errors
 (sole arms, no class answers, `arity_all`, operators, nil exactly) are 0, so making them compile errors removes nothing;
 the 14 `const_unresolved` rows are desktop-only constants behind `rescue NameError`.
+
+## Follow-up: Hash#delete flow-core coverage (ADR 0327)
+
+The eight `Hash#delete` sends above (six RPG2k, two LCF) are removed by
+FLOW_CORE_DIRECT (ADR 0323). ADR 0327 adds no generator change; it adds pooled
+Hash `delete`/`fetch` fixtures and a mutant on the early return to the
+core-exact check. See [ADR 0327](adr/0327-bc2cpp-flow-core-hash-delete-checks.md).
