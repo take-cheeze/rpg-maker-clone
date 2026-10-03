@@ -54,7 +54,8 @@ MUTANTS = [
   # The constant +name+ can only name', "true\n  end\n\n  # The constant +name+ can only name",
    /NEG a build gem whose (?:Ruby calls const_set|native code sets a computed constant name)/],
   ['the legacy constant proof vouches for a constant leaf', ARGS, '@fixnum_proof_skip_constants = true', '@fixnum_proof_skip_constants = false',
-   /NEG a native source defining the constant/],
+   # The native world no longer tells it apart: IntegerConstants poisons a native name itself (ADR 0324).
+   /NEG a redefined Integer#\*/],
   ['a protected (rescue) range is walked through', INTERVAL, "ctx[:protected].include?(insn.addr) ||\n        ", '', /NEG NcCons#guarded/]
 ].freeze
 

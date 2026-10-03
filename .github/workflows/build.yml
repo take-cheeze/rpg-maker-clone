@@ -1086,6 +1086,13 @@ jobs:
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_ext_prefix_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_ext_prefix_mutation_check.rb
+          - shard: integer-constants
+            # ADR 0324: unit cases for the native-definition scan and the jump onto a SETCONST, generated code, the
+            # full-core and core-only runs, then eight mutants and an unmutated control (the 32-bit run is in
+            # `bc2cpp-width (int32)`).
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_integer_constants_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_integer_constants_mutation_check.rb
           - shard: rdata-slots
             checks: |
               # Links bc2cpp output against the patch-chain mruby and runs it
@@ -1312,6 +1319,8 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_numeric_constants_check.rb
               # ADR 0320: the 32-bit run of the EXT-prefix fixture (the 64-bit runs are in `ext-prefix`).
               MRBC="$mrbc" ruby scripts/bc2cpp_ext_prefix_check.rb
+              # ADR 0324: the 32-bit run of the integer-constant fixture (the 64-bit runs are in `integer-constants`).
+              MRBC="$mrbc" ruby scripts/bc2cpp_integer_constants_check.rb
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
           - variant: nobigint
             checks: |
