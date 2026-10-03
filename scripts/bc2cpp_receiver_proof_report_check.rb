@@ -30,7 +30,7 @@ check = lambda do |what, condition|
   failures << what unless condition
 end
 
-SOURCE = <<~RUBY
+SOURCE = +<<~RUBY
   class RpBox
     def bump; self; end
     def size; 7; end
@@ -46,8 +46,13 @@ SOURCE = <<~RUBY
     def makes; @made; end
     def fromcall; makes.empty?; end
     def box(b); b.bump; b.size; end
+    def many(a); a.rp_floor_answer; end
   end
 RUBY
+
+41.times do |i|
+  SOURCE << "class RpAnswer#{i}; def rp_floor_answer; 7; end; end\n"
+end
 
 # The closed wio world with the compiled core Ruby (as bc2cpp_block_send_report_check builds it), SKIP_UNSUPPORTED=1
 # because the report only runs in the shipped pass, BC2CPP_RECEIVER_PROOF_ANY=1 because the fixture is not an engine gem.
@@ -95,6 +100,9 @@ Dir.mktmpdir do |dir|
   check.call('argument: an incoming parameter with no pool candidate', r && r['source'] == 'argument' && r['why'] == 'no_candidate')
   check.call('argument: the answering classes include Array and the kinds of their definitions are named',
              r && r['answerers'].include?('Array') && !r['kinds'].empty?)
+  r = of.call('many').first
+  check.call('floor: includes every answering class when more than 40 answer the name',
+             r && r['answerers'].split('|').sort == 41.times.map { |i| "RpAnswer#{i}" }.sort)
   r = of.call('fromivar').first
   check.call('fromivar: an ivar whose pool the argument store drops', r && r['source'] == 'ivar' && r['why'].start_with?('dropped:argument'))
   r = of.call('fromcall').first

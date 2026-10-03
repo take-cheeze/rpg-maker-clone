@@ -1206,7 +1206,8 @@
   the receiver comes from, and what the line becomes when the receiver is forced to a class set, by a forked recompile
   that leaves the output byte-identical) for `scripts/bc2cpp_receiver_proof_report.rb`; 1,783 sends are unproven, the best
   sound slice measured (an audited native result class plus dropping the placeholder of a native no linked source defines)
-  removes 22 by-name sends against the cutoff of 30, so none was built. See
+  removes 22 by-name sends against the cutoff of 30, so none was built. Floor probes include every answering class,
+  including sets larger than 40 classes. See
   [`docs/adr/0331-bc2cpp-receiver-class-proofs-measured-not-built.md`](docs/adr/0331-bc2cpp-receiver-class-proofs-measured-not-built.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps

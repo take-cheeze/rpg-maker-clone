@@ -34,8 +34,8 @@ holds nil):
 * `own`: the set the source's data suggests (a merge is Array; a call result is the join of the classes the callee's
   definitions return, plus an assumed class for a native definition the table has no fact for, `to_s` String, `keys`
   Array, `parameters` Array, `snap_to_bitmap` RGSS::Bitmap; an ivar is its pool);
-* `floor`: every class that answers the name. A line that goes at the floor goes whatever set is proven, so it is the
-  number that does not depend on how good the proof is.
+* `floor`: every class that answers the name, without truncating large sets. A line that goes at the floor goes whatever
+  set is proven, so it is the number that does not depend on how good the proof is.
 
 Both are ceilings on what a proof is worth, not results: the forced register ignores every other writer of the value
 the real flow would still have to join (a prototype below measured half of the own-set number).
