@@ -20,6 +20,7 @@ Dir.mktmpdir do |dir|
     [relative, path]
   end
   NativeClassResults::FACTS.each do |name, (kind, allowed)|
+    next if name == 'to_s' # Its subclass/delegate contract is checked by native_string_results_check.
     paths = allowed.map { |relative| copies.fetch(relative) }
     expected = { '<audited-native>' => kind }
     check.call("audited result: #{name}", NativeClassResults.kinds(name, paths) == expected)

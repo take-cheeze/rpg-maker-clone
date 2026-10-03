@@ -80,6 +80,8 @@ A broader native `to_s` audit remained blocked by additional linked definitions 
 alias to native inspect, and foreign/alias visibility. Exact String would additionally require handling String
 subclasses and OnigMatchData's possible nil result after its matched String is shortened. The partial audit is not
 shipped; a source whitelist alone cannot bypass these conditions.
+[ADR 0334](0334-bc2cpp-native-string-results.md) subsequently audits the linked implementations and the Struct alias
+and adds the String subclass and nullable-regexp safeguards.
 
 The ADR 0331 floor probes are ceilings with overlapping sites, not promises that all sites are optimizable.
 Unknown stores, dynamic names, collection elements and arbitrary native setter inputs need further independent

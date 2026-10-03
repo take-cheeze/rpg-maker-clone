@@ -862,3 +862,15 @@ Shared-name argument pools and Window width/height ivar scopes each measured zer
 caller completeness and dynamic setter names still block the `contents`/`bitmap` slice. A partial `to_s` audit remains
 blocked by linked definitions and aliases and is not shipped. The floor counts above overlap and are not guaranteed
 achievable gains. See [ADR 0333](adr/0333-bc2cpp-native-class-results.md) for the contracts and rejected candidates.
+
+## Follow-up: native String results (ADR 0334)
+
+The linked native `to_s` audit now includes Fiber and the core Struct alias to its unique native inspect entry.
+String subclass freedom and all compiled Ruby returns remain part of the proof; native Onig contributes nil as
+well as String. Outside Ruby definitions, unknown aliases/installers and native replacements withdraw it.
+
+On master `98914faf`, the Wio census falls another 20 sites, from 2,865 to 2,845. Class pools grow from 188/120
+ivar/argument pools to 189/136; nil-receiver helpers grow from 918 to 921. Reviewed error fallbacks remain unchanged.
+`BC2CPP_NATIVE_STRING_RESULTS=0` reproduces master byte for byte. The three follow-ups now remove 79 cached sites
+from the original 2,924. Native setter inputs and collection element classes still need independent proofs.
+See [ADR 0334](adr/0334-bc2cpp-native-string-results.md).
