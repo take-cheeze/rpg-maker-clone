@@ -117,6 +117,9 @@ if run_unit && have_mrbc
       def g; 1; end
       private :g
       def g; 2; end
+      def p2; 1; end
+      def p2; 2; end
+      private :p2
       def h; 1; end
       def h; 2; end if $x
       def self.s; 1; end
@@ -136,6 +139,9 @@ if run_unit && have_mrbc
   end
   check.call('a def redefined after `private :g` is the public last one',
              defs_of.call(registry, 'Dd', 'g').map(&:visibility) == [:public] && defs_of.call(before, 'Dd', 'g').first.visibility == :private)
+  check.call('`private :p2` after two defs makes the last one private',
+             defs_of.call(registry, 'Dd', 'p2').map(&:visibility) == [:private] &&
+             defs_of.call(before, 'Dd', 'p2').map(&:visibility) == %i[public private])
   check.call('a conditional last def withdraws the group to a marker',
              defs_of.call(registry, 'Dd', 'h').map(&:irep) == [nil] && report.withdrawn.include?('Dd#h'))
   check.call('def self.s then class << self def s keeps the last on the singleton owner',

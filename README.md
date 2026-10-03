@@ -1186,6 +1186,11 @@
   `scripts/bc2cpp_refine_report.rb` aggregates. See
   [`docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md`](docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md)
   and `scripts/bc2cpp_call_facts_check.rb`.
+  A name an owner defines twice (`attr_reader` then `define_method`, `def` twice, a reopened class, an `alias` over a
+  `def`) keeps its LAST definition in the registry, as in the interpreter; a conditional last definition withdraws the
+  name, and two methods whose C++ spellings clash get a `$n` suffix. See
+  [`docs/adr/0319-bc2cpp-double-definitions.md`](docs/adr/0319-bc2cpp-double-definitions.md) and
+  `scripts/bc2cpp_double_definition_check.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).

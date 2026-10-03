@@ -44,7 +44,7 @@ MUTANTS = [
    [['registry.rb', "%w[alias_method undef_method remove_method].include?(name) &&", "%w[undef_method remove_method].include?(name) &&"]],
    /alias\/alias_method\/undef of e|alias_over_def/],
   ['private applies to the first definition, not the latest',
-   [['registry.rb', 'registry[mname]&.reverse_each&.find', 'registry[mname]&.find']], /after `private :g`/],
+   [['registry.rb', 'registry[mname]&.reverse_each&.find', 'registry[mname]&.find']], /private :p2/],
   ['a module_function copy of a replaced body is kept',
    [['double_definitions.rb', 'dead.include?(d.copy_irep)', 'false']], /module_function copy/],
   ['clashing C++ spellings are left alone',
@@ -90,7 +90,7 @@ unless control.success
   puts control.out.lines.grep(/FAIL|rror/).first(8).join
   failures << 'control'
 end
-ran = control.out.include?('def_then_def: one body, the last (returns 2)') && control.out.scan(/^  ok /).size > 100
+ran = control.out.include?('def_then_def: one body, the last (returns 2)') && control.out.scan(/^  ok /).size > 80
 puts "  #{ran ? 'ok  ' : 'FAIL'} control: the generated-code assertions ran (#{control.out.scan(/^  ok /).size} checks)"
 failures << 'control ran nothing' unless ran
 

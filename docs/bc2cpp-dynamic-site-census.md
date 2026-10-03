@@ -650,3 +650,10 @@ potential), aggregated by `scripts/bc2cpp_refine_report.rb tsv [--list-bugs]`. W
 | NOMETHOD_REVIEWED keys: monomorphic / polymorphic / narrowed / native arms / untraced / candidate bug | 1,774 / 567 / 289 / 58 / 252 / 1 |
 | POLY_SMALL_N chains with two classes on one definition | 50 of 1,525 (177 of 8,906 compares) |
 | `shipped.cxx` with `BC2CPP_CALL_FACTS=0` against master | byte-identical |
+
+## Follow-up: double definitions (ADR 0319)
+
+`DoubleDefinitions.settle` keeps the last definition of each (owner, name) and logs `== double definitions (N names keep
+their last definition, M withdrawn) ==` with a `LAST` or `WITHDRAWN` line per name. Wio closed world, master `cd86085f`:
+no engine name is defined twice (the report is absent from all eight runs: the four compiled gems, hot-only and full),
+and `shipped.cxx` of each is byte-identical to master.

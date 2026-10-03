@@ -1073,6 +1073,13 @@ jobs:
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_call_facts_check.rb
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_call_facts_mutation_check.rb
+          - shard: double-definitions
+            # ADR 0319: the registry reduction, generated code for each form alone, a compiled fixture against the
+            # interpreter on full-core, core-only and 32-bit mrb_int builds (three mruby builds, each run both ways),
+            # then thirteen generator mutants and an unmutated control (est. 15 min).
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp_double_definition_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_double_definition_mutation_check.rb
           - shard: rdata-slots
             checks: |
               # Links bc2cpp output against the patch-chain mruby and runs it
