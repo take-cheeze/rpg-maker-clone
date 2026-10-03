@@ -650,3 +650,15 @@ potential), aggregated by `scripts/bc2cpp_refine_report.rb tsv [--list-bugs]`. W
 | NOMETHOD_REVIEWED keys: monomorphic / polymorphic / narrowed / native arms / untraced / candidate bug | 1,774 / 567 / 289 / 58 / 252 / 1 |
 | POLY_SMALL_N chains with two classes on one definition | 50 of 1,525 (177 of 8,906 compares) |
 | `shipped.cxx` with `BC2CPP_CALL_FACTS=0` against master | byte-identical |
+
+## Follow-up: EXT prefixes folded into their instruction (ADR 0320)
+
+Wio closed world, master `cd86085f`, same tree with `BC2CPP_EXT_PREFIX=0` (byte-identical to master) against the default.
+Three ireps carry a prefix (class bodies of `LCF::Schema`, `RPG2k::Interpreter`, `RPG2k::Scene::Map`: 635 `EXT2`, 9 `EXT1`).
+
+| Measure | off | on |
+| --- | ---: | ---: |
+| constant pools / argument pools | 658 / 110 | 796 / 115 |
+| `bc2cpp_send` in generated bodies / with guarded fallbacks | 2,603 / 3,028 | 2,582 / 3,006 |
+| `INDEX_EXACT` arms / `NUMERIC_OPERAND_PROOF` arms removed | 977 / 423 | 1,000 / 427 |
+| `bc2cpp_nomethod` sites / ivar pools / frozen table shapes | 4,380 / 187 / 49 | 4,380 / 187 / 49 |
