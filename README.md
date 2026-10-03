@@ -1215,6 +1215,10 @@
   census (39 gain nil-receiver helper calls). Source changes or new outside callers withdraw the audit;
   `BC2CPP_NATIVE_IVAR_SCOPES=0` disables it. See
   [`docs/adr/0332-bc2cpp-native-window-ivar-families.md`](docs/adr/0332-bc2cpp-native-window-ivar-families.md).
+  Pinned native Array-returning methods and nullable `Graphics.snap_to_bitmap` results join compiled Ruby
+  returns. Proven absent native placeholders no longer spoil return tables. This removes another 16 cached sends
+  (2,881 to 2,865); `BC2CPP_NATIVE_CLASS_RESULTS=0` and `BC2CPP_ABSENT_NATIVE_RETURNS=0` disable the two proofs.
+  See [`docs/adr/0333-bc2cpp-native-class-results.md`](docs/adr/0333-bc2cpp-native-class-results.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
   neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio

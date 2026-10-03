@@ -846,3 +846,19 @@ by-name sites. All 43 removals belong to engine methods; 39 nil-receiver helper 
 are added, while four obsolete no-method helpers in RPG2k::Window disappear (net -3). Class ivar pools grow from 185 to 187 and argument pools from 115 to 117. With
 `BC2CPP_NATIVE_IVAR_SCOPES=0`, the shipped C++ is byte-identical to master. Source changes, new outside callers or
 other outside spellings withdraw the scope proof. See [ADR 0332](adr/0332-bc2cpp-native-window-ivar-families.md).
+
+## Follow-up: native class results and absent placeholders (ADR 0333)
+
+Audited native `keys`, `values`, `bytes`, `split`, `members`, `to_a` and `parameters` contribute Array results to
+Ruby/native return joins. `Graphics.snap_to_bitmap` contributes Bitmap **or nil**. A placeholder with no linked
+native definition no longer spoils a fully visible return join. The dispatch registry and original calls remain.
+
+On master `43d4d462`, the Wio census falls from 2,881 to 2,865 cached sites: native facts alone remove nine,
+absent placeholders alone seven. Class pools become 188 ivar and 120 argument pools; INDEX_EXACT arms grow
+from 1,000 to 1,025. Nil-receiver helpers remain at 918, while four obsolete reviewed `dispose` fallbacks disappear.
+Both new switches off reproduce master byte for byte. Together with ADR 0332, the measured gain is 59 cached sites.
+
+Shared-name argument pools and Window width/height ivar scopes each measured zero further removals. Native setter
+caller completeness and dynamic setter names still block the `contents`/`bitmap` slice. A partial `to_s` audit remains
+blocked by linked definitions and aliases and is not shipped. The floor counts above overlap and are not guaranteed
+achievable gains. See [ADR 0333](adr/0333-bc2cpp-native-class-results.md) for the contracts and rejected candidates.
