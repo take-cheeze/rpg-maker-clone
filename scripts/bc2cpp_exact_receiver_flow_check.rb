@@ -104,11 +104,11 @@ end
 live_of = ->(code, owner, fn) { body_of.call(code, owner, fn).lines.reject { |l| l.lstrip.start_with?('//') }.join }
 unguarded = lambda do |code, owner, fn|
   body = live_of.call(code, owner, fn)
-  !body.empty? && !body.include?('bc2cpp_send(') && !body.include?('mrb_funcall') && !body.include?('->c == M->')
+  !body.empty? && !body.include?('bc2cpp_send(') && !body.include?('mrb_funcall') && !body.include?('->c == M->') && !body.include?('switch (mrb_type(')
 end
 guarded = lambda do |code, owner, fn|
   body = live_of.call(code, owner, fn)
-  !body.empty? && body.include?('bc2cpp_send(')
+  !body.empty? && (body.include?('bc2cpp_send(') || body.include?('switch (mrb_type('))
 end
 
 generate = lambda do |source, dir, closed: true, env: {}, **options|

@@ -61,3 +61,9 @@ CI int32 job runs the extended core result harness too; the new generated code
 introduces no integer-width arithmetic or bignum conversions. Local CTest passed
 six tests and failed four SDL display probes during renderer initialization;
 SDL_RENDER_DRIVER=software retained the same failures.
+
+The nested-compile-state audit classifies the result memo as a program cache.
+Receiver-flow, captured-local and constructor-pool withdrawal checks recognize
+exhaustive runtime type selections as well as by-name fallbacks. Their positive
+single-class checks reject such selections, preserving the distinction between
+one exact class and a proven set of several classes.

@@ -217,7 +217,7 @@ live_of = lambda do |code, owner, fn|
   code.scan(/^(?:static )?mrb_value #{owner}_#{fn}(?:_\w*?)?_impl\(mrb_state\* M.*?(?=^(?:static )?mrb_value \w+\(mrb_state\* M|\z)/m)
       .join.lines.reject { |l| l.lstrip.start_with?('//') }.join
 end
-DISPATCH = ['bc2cpp_send(', 'mrb_funcall(', 'bc2cpp_getidx(', 'bc2cpp_setidx(', 'bc2cpp_slow_', '->c == M->', 'bc2cpp_owner_class_'].freeze
+DISPATCH = ['bc2cpp_send(', 'mrb_funcall(', 'bc2cpp_getidx(', 'bc2cpp_setidx(', 'bc2cpp_slow_', '->c == M->', 'bc2cpp_owner_class_', 'switch (mrb_type('].freeze
 # The proof removed the class test and the by-name dispatch of the receiver.
 proven = lambda do |code, owner, fn, marker|
   with_comments = code.scan(/^(?:static )?mrb_value #{owner}_#{fn}(?:_\w*?)?_impl\(mrb_state\* M.*?(?=^(?:static )?mrb_value \w+\(mrb_state\* M|\z)/m).join
