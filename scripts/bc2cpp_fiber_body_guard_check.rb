@@ -47,6 +47,16 @@ BASE = <<~'RUBY'
     end
   end
 
+  class FgEnum
+    # An Enumerator builder: mruby-enumerator runs that block on a Fiber, so the
+    # frame that matters is the BLOCK's, not this method's. YieldReach marks only
+    # `Fiber.new` blocks as fiber bodies, so body_yield_free? otherwise reads a
+    # generator builder as yield-free -- which the guard must not admit.
+    def gen; Enumerator.new { |y| y << 1; y << 2 }; end
+
+    def lazy_gen; [1, 2].lazy.map { |x| x * 2 }; end
+  end
+
   class FgProbe
     def plain(x); x.each { |i| i }; end
 
@@ -61,7 +71,7 @@ BASE = <<~'RUBY'
   end
 RUBY
 
-OWNERS = %w[Fg FgYielding FgProbe].freeze
+OWNERS = %w[Fg FgYielding FgEnum FgProbe].freeze
 body = ->(code, fn) { code[/^mrb_value #{fn}_impl\(mrb_state\* M.*?(?=^\}$)/m].to_s }
 entry = ->(code, fn) { code[/^static mrb_value #{fn}\(mrb_state\* M, mrb_value self\) \{.*?(?=^\}$)/m].to_s }
 
@@ -82,6 +92,14 @@ begin
     check.call('a body that suspends the Fiber itself is never admitted (it keeps the #error)',
                entry.call(code, 'FgYielding_each').empty? ||
                  !entry.call(code, 'FgYielding_each').include?('M->c != M->root_c'))
+    # An Enumerator builder looks yield-free by body_yield_free? but its block
+    # runs on a Fiber (mruby-enumerator). Admitting it would put a compiled frame
+    # under a Fiber for real -- this is the case bc2cpp_yield_free_check's
+    # "generator builder" assertion guards.
+    check.call('an Enumerator builder is never admitted (its block runs on a Fiber)',
+               %w[FgEnum_gen FgEnum_lazy_gen].all? do |fn|
+                 entry.call(code, fn).empty? || !entry.call(code, fn).include?('M->c != M->root_c')
+               end)
     check.call('the guard never appears on such a body, and the kill switch exists',
                ENV.key?('BC2CPP_FIBER_BODY_GUARD') || true)
 

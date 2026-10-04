@@ -77,6 +77,23 @@ entry** (`"1|2|3|[1, 2]"`, identical interpreted and in two compiled VMs, no
 FiberError) — the case that would raise or crash if a compiled frame were left in
 place.
 
+A method that calls `Fiber.yield` **itself** is never admitted: there the yield is
+in its own frame, which no hand-off from its own entry can step around.
+
+Neither is a method that hands a literal block to `Enumerator.new` / `Lazy.new` /
+`Generator.new`. mruby-enumerator runs a generator on a Fiber
+(`CoreDefs.fiber_gem?`), so the frame that matters is that **block's**, and it
+sits below a fiber entry by construction rather than by a caller. YieldReach
+marks only `Fiber.new` blocks as fiber bodies (`scan_fiber_call`), so
+`body_yield_free?` reads a generator builder as yield-free when its block is not.
+That gap predates this ADR -- nothing compiled those methods before, so it had no
+effect -- and admitting one would put a compiled frame under a Fiber for real.
+`bc2cpp_yield_free_check` already asserted the builder is not compiled, and caught
+exactly this on the first CI run of the branch.
+
+What this does NOT claim: that the caller's block is yield-free. It is not, and
+it cannot be known — that is precisely what the guard makes irrelevant.
+
 `bc2cpp_block_arm_reach_check.rb` needed one assertion rewritten rather than
 fixed. It asserted that a Ruby `Array#each` "leaves no proven Array direct call
 alone" — true only while `Array#each` was itself kept interpreted by this very
