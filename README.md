@@ -1479,6 +1479,9 @@
   result works rather than just linking: `--rgss_effect_probe` under Xvfb, which
   measures real pixels, followed by both game boot checks on real project data.
 
+- Linux CTest window, renderer, audio and error-dump probes select SDL's X11
+  backend explicitly under Xvfb, including when launched from a Wayland session.
+
 - **Formatting is checked by `build`, not by a lint job** — pre-commit runs there
   as a background step, so a formatting slip fails `build` with no compile error
   in the log. Locally, `pre-commit run clang-format --files <file>`: the hook
