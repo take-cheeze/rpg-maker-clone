@@ -42,9 +42,10 @@ it does not own (20 by-name calls in all the `slow_*` helpers together), and `ge
 for a non-Array/Hash/Integer receiver. The directly dynamic sites are the three `by-name` rows (3,032 all, 2,077 rpg2k).
 
 Other whole-program numbers (same run, all gems): 3,047 compiled entry points (2,507 from bytecode, 540 synthesized
-accessor overrides), method-level coverage 99.5% (2,507 of 2,519 attempted), 21 `#error` markers (8 after ADR 0329
-removed five unhandled-`SUPER` markers in `Range#max`/`#min`/`#to_a` and ADR 0330 cleared the eight BLOCK/SENDB/
-SSENDB markers in `Array#permutation`, `Enumerable#cycle` and `File.foreach`), 448 `BLOCK_FALLBACK`
+accessor overrides), method-level coverage 99.5% (2,507 of 2,519 attempted), 21 `#error` markers (5 after ADR 0329
+removed five unhandled-`SUPER` markers in `Range#max`/`#min`/`#to_a`, ADR 0330 cleared the eight BLOCK/SENDB/
+SSENDB markers in `Array#permutation`, `Enumerable#cycle` and `File.foreach`, and ADR 0333 cleared the three
+Fiber-reachable markers in `LCF::Array2D#each`, `Game::Actors#each` and `Game::Party#each`), 448 `BLOCK_FALLBACK`
 bodies, 616 direct `:new` constructor paths, 3,028 cached by-name sites including guarded fallbacks, 896 POLY-marked
 sites (594 engine, 302 compiled core), generated `shipped.cxx` 443,754 lines.
 

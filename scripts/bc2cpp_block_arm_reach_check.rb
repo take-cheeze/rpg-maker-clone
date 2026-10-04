@@ -267,7 +267,16 @@ if run_generated
   check.call('a Ruby Array#each withdraws the Array arm of a nested send and leaves Hash and Range',
              !body_of.call(override, 'nested_each').include?('Array_each_impl') &&
              body_of.call(override, 'nested_each').include?('Hash_each_impl'))
-  check.call('a Ruby Array#each leaves no proven Array direct call alone', !body_of.call(override, 'patch').include?('Array_each_impl'))
+  check.call('a Ruby Array#each leaves no BLOCK_CORE_DIRECT arm behind (it is a direct call, not a core arm)',
+             !body_of.call(override, 'patch').include?('BLOCK_CORE_DIRECT'))
+  # FIBER_BODY_GUARD (ADR 0333) lets a block-forwarding body compile, so a direct
+  # Array#each call now appears where the receiver IS proven Array. The guard
+  # widens what COMPILES, not what is PROVEN, and it must not re-enable the
+  # core-direct arm for a Ruby body -- which the line above pins.
+  off_guard = generate.call("#{FIXTURE}\nclass Array\n  def each(&b); 1; end\nend\n", 'br_noguard',
+                            extra_env: { 'BC2CPP_FIBER_BODY_GUARD' => '0' })
+  check.call('without the guard the same site keeps its by-name tail',
+             !body_of.call(off_guard, 'patch').include?('Array_each_impl'))
   prepend = generate.call("#{FIXTURE}\nmodule BrShadow; def each; end; end\nclass Array\n  prepend BrShadow\nend\n", 'br_prepend')
   check.call('a prepend on Array withdraws every Array arm, nested ones too',
              !body_of.call(prepend, 'nested_each').include?('Array_each_impl') && !body_of.call(prepend, 'nested_sel').include?('mrb_array_p'))
