@@ -8,6 +8,12 @@ SOURCE = <<~RUBY
     def size; 91; end
   end
   class KrRunner
+    def mixed(flag); value = flag ? [1, 2, 3] : {a: 1, b: 2}; value.size; end
+    def mixed_other(flag); value = flag ? [1, 2, 3] : {a: 1, b: 2}; value = KrOther.new if flag; value.size; end
+    def mixed_nil(flag); value = flag ? [1, 2, 3] : {a: 1, b: 2}; value = nil if flag; value.size; end
+    def unknown_reject(input); input.reject { |x| false }.size; end
+    def unknown_filter(input); input.filter_map { |x| true }.size; end
+    def unknown_break(input); input.filter_map { |x| break KrOther.new }.size; end
     def mapped; [1, 2].map { |x| x + 1 }.size; end
     def collected; [1, 2].collect { |x| x }.size; end
     def selected; [1, 2].select { |x| x == 1 }.size; end
@@ -57,6 +63,15 @@ core_inputs = core_sources.map { |path| [path.delete_prefix(root + '/'), File.re
 worlds = [
   ['core bodies', SOURCE, {}, true],
   ['kill switch', SOURCE, { 'BC2CPP_CORE_RUBY_RESULTS' => '0' }, false],
+  ['union kill switch', SOURCE, { 'BC2CPP_NATIVE_EXPRESSION_UNIONS' => '0' }, true],
+  ['name kill switch', SOURCE, { 'BC2CPP_CORE_RUBY_NAME_RESULTS' => '0' }, true],
+  ['project filter override', SOURCE + "class KrOther; def filter_map(&block); self; end; end\n", {}, true],
+  ['filter installer', SOURCE + "module Enumerable; define_method(:filter_map) { |&block| KrOther.new }; end\n", {}, true],
+  ['filter alias', SOURCE + "class KrOther; alias filter_map size; end\n", {}, true],
+  ['native filter definition', SOURCE, {}, true],
+  ['foreign filter definition', SOURCE, {}, true],
+  ['method missing', SOURCE + "class KrOther; def method_missing(name, *args, &block); self; end; end\n", {}, true],
+  ['outside filter definition', SOURCE, {}, true, nil, "class Array; def filter_map(&block); ignored = -> { 1 }; KrOther.new; end; end"],
   ['Array map override', SOURCE + "class Array; def map(&block); KrOther.new; end; end\n", {}, false],
   ['Enumerable alias override', SOURCE + "module Enumerable; def map(&block); KrOther.new; end; end\n", {}, false],
   ['Array prepend', SOURCE + "module KrMixin; def map(&block); KrOther.new; end; end; Array.prepend KrMixin\n", {}, false],
@@ -93,9 +108,23 @@ if ENV['MRBC']
           [path, replacement]
         end
         inputs << ['3rd/mruby/mrbgems/mruby-array-ext/mrblib/zz_override.rb', core_override] if core_override
-        code, err = runtime.generate(source, dir, extra: inputs, only_owners: OWNERS, closed: name != 'open world')
-        check.call("#{name}: mapped result", exact_size.call(code, 'mapped') == proven)
+        native = name == 'native filter definition' ? [['extra.c', 'void replace(mrb_state *mrb, struct RClass *c) { mrb_define_method(mrb, c, "filter_map", replacement, MRB_ARGS_NONE()); }']] : []
+        linked = name == 'foreign filter definition' ? [['kr-foreign', File.join(dir, 'kr-foreign')]] : []
+        FileUtils.mkdir_p(File.join(dir, 'kr-foreign/mrblib')) unless linked.empty?
+        foreign = linked.empty? ? [] : [['kr-foreign/mrblib/outside.rb', 'module Enumerable; def filter_map(&block); Object.new; end; end']]
+        code, err = runtime.generate(source, dir, extra: inputs, native: native, foreign: foreign, build_gems: linked, only_owners: OWNERS, closed: name != 'open world')
+        check.call("#{name}: mapped result", exact_size.call(code, 'mapped') == proven) unless name == 'filter installer' || name == 'filter alias'
+        if ['core bodies', 'kill switch', 'name kill switch', 'union kill switch', 'project filter override', 'filter installer', 'filter alias', 'outside filter definition', 'native filter definition', 'foreign filter definition', 'method missing', 'open world'].include?(name)
+          check.call("#{name}: unknown filter result", exact_size.call(code, 'unknown_filter') == ['core bodies', 'union kill switch'].include?(name))
+          check.call("#{name}: unknown break stays unproved", !exact_size.call(code, 'unknown_break'))
+          check.call("#{name}: reject joins Array and Hash without dispatch", body_of.call(code, 'unknown_reject').include?('NATIVE_EXPRESSION_UNION :size') == ['core bodies', 'project filter override', 'outside filter definition', 'native filter definition', 'foreign filter definition', 'filter alias'].include?(name))
+        end
         check.call("#{name}: helper result stays unproved", !exact_size.call(code, 'dedup')) if %w[core\ helper\ installer interpreted\ core\ helper].include?(name)
+        if ['core bodies', 'union kill switch'].include?(name)
+          check.call("#{name}: mixed exact classes", body_of.call(code, 'mixed').include?('NATIVE_EXPRESSION_UNION :size') == (name == 'core bodies'))
+          check.call("#{name}: unrepresented class keeps dispatch", !body_of.call(code, 'mixed_other').include?('NATIVE_EXPRESSION_UNION :size'))
+          check.call("#{name}: nil keeps error path", !body_of.call(code, 'mixed_nil').include?('NATIVE_EXPRESSION_UNION :size'))
+        end
         next unless name == 'core bodies' || name == 'kill switch'
 
         %w[collected selected found rejected hash_map range_map next_value partitioned nil_receiver].each do |method|
@@ -121,6 +150,20 @@ if ENV['MRBC']
             for (const char* name : {"mapped", "collected", "selected", "found", "rejected", "hash_map", "range_map", "next_value", "breaking", "nested_break", "nonlocal_return", "no_block", "dedup", "dedup_block", "hash_identity", "tallied", "partitioned"}) {
               call(M, name, runner, name);
             }
+            for (mrb_value flag : {mrb_true_value(), mrb_false_value()}) {
+              call(M, "mixed", runner, "mixed", 1, &flag);
+              call(M, "mixed_other", runner, "mixed_other", 1, &flag);
+              call(M, "mixed_nil", runner, "mixed_nil", 1, &flag);
+            }
+            mrb_value unknown = mrb_ary_new(M);
+            mrb_ary_push(M, unknown, mrb_fixnum_value(1));
+            mrb_ary_push(M, unknown, mrb_fixnum_value(2));
+            call(M, "unknown_reject", runner, "unknown_reject", 1, &unknown);
+            call(M, "unknown_filter", runner, "unknown_filter", 1, &unknown);
+            call(M, "unknown_break", runner, "unknown_break", 1, &unknown);
+            unknown = mrb_hash_new(M);
+            mrb_hash_set(M, unknown, mrb_fixnum_value(1), mrb_fixnum_value(2));
+            call(M, "hash_reject", runner, "unknown_reject", 1, &unknown);
             call(M, "stored", runner, "stored");
             call(M, "read", runner, "read");
             for (mrb_value flag : {mrb_true_value(), mrb_false_value()}) {

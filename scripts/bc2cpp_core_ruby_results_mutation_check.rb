@@ -11,6 +11,11 @@ abort 'SKIP: set MRBC' unless ENV['MRBC']
 AUDIT = 'codegen_core_ruby_results.rb'
 MUTANTS = [
   ['control', nil, nil, nil, nil],
+  ['union switch ignored', "return nil if ENV['BC2CPP_NATIVE_EXPRESSION_UNIONS'] == '0'", 'return nil if false', 'union kill switch', /mixed exact classes/, 'codegen_native_send.rb'],
+  ['union coverage ignored', 'classes.keys.reduce(0, :|) == mask', 'true', 'core bodies', /unrepresented class keeps dispatch|nil keeps error path/, 'codegen_native_send.rb'],
+  ['name switch ignored', "return nil if ENV['BC2CPP_CORE_RUBY_NAME_RESULTS'] == '0'", 'return nil if false', 'name kill switch', /unknown filter result/],
+  ['foreign name ignored', 'return nil unless @closed_world.native_return_sources_visible?(name, paths)', 'return nil if false', 'foreign filter definition', /unknown filter result/],
+  ['opaque name ignored', 'return nil unless opaque && opaque.none? { |_owner, method| method == name }', 'return nil if false', 'outside filter definition', /unknown filter result/],
   ['kill switch ignored', "return nil if ENV['BC2CPP_CORE_RUBY_RESULTS'] == '0'", 'return nil if false', 'kill switch', /mapped result/],
   ['caller break ignored', 'caller ? %w[BREAK] : %w[BREAK RETURN_BLK]', 'caller ? [] : %w[BREAK RETURN_BLK]', 'core bodies', /breaking stays unproved/],
   ['callee nonlocal return ignored', 'caller ? %w[BREAK] : %w[BREAK RETURN_BLK]', 'caller ? %w[BREAK] : %w[BREAK]', 'core nonlocal return', /mapped result/],
@@ -23,7 +28,7 @@ MUTANTS = [
   ['core installer ignored', 'return nil unless core_installed && !core_installed.include?(name)', 'return nil if false', 'core alias_method override', /mapped result/]
 ].freeze
 
-mutate = lambda do |(_name, pattern, replacement, test_case, expected)|
+mutate = lambda do |(_name, pattern, replacement, test_case, expected, audit)|
   Dir.mktmpdir do |dir|
     Dir.children(ROOT).reject { |entry| %w[.git tools .commandcode].include?(entry) }.each do |entry|
       FileUtils.ln_s(File.join(ROOT, entry), File.join(dir, entry))
@@ -34,7 +39,7 @@ mutate = lambda do |(_name, pattern, replacement, test_case, expected)|
     end
     FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), File.join(dir, 'tools'))
     if pattern
-      path = File.join(dir, 'tools/bc2cpp', AUDIT)
+      path = File.join(dir, 'tools/bc2cpp', audit || AUDIT)
       text = File.read(path)
       next nil unless text.include?(pattern)
 

@@ -1050,6 +1050,9 @@
   eligible exact classes, with adapters for Ruby methods, accessors and audited native entries. Short chains
   retain their existing form; table misses retain the checked fallback. See
   [generated interface tables](docs/bc2cpp-interface-tables.md) for usage and measurements.
+  Core collection bytecode can also prove results independent of the receiver
+  class, and exhaustive exact class sets select audited native bodies without
+  a dynamic fallback; see [core Ruby returns](docs/bc2cpp-core-ruby-returns.md).
   A shared escape analysis (`tools/bc2cpp/escape_analysis.rb`) answers whether the value a creation site makes
   leaves its frame, with callee summaries over a closed world; its first consumer lets a literal block that captures
   locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything
