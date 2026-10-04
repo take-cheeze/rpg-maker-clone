@@ -112,7 +112,19 @@ table('ivar sites: the ivar, why, and sites the floor (nil allowed) frees',
       ivars.group_by { |r| [r['detail'], r['why']] }.map { |k, g| [[k, g.count(&floor_nil)].flatten.join(' | '), g.size] }
            .sort_by { |k, v| [-v, k] }.first(25))
 args = unproven.select { |r| r['source'] == 'argument' }
+# `no_candidate` is a union of entry_arg_candidates' admission rules 1-8, each a different proof, plus two rows no
+# rule describes (a block parameter, whose value the callee yields, and a native entry with no bytecode body); the
+# rule is in the `why` so the non-candidates split by what they actually need.
+no_cand = ->(r) { r['why'].start_with?('no_candidate') }
 table('argument sites: why the parameter has no class pool', tally(args) { |r| r['why'].start_with?('dropped') ? 'dropped' : r['why'] })
+table('non-candidate sites: the rule each refuses on, and how many the floor (nil allowed) frees',
+      tally(args.select(&no_cand)) { |r| [r['why'].sub('no_candidate:', ''), floor_nil.call(r) ? 'freed' : 'blocked'] }
+        .sort_by { |k, _v| [-k[1].to_s.size, k[0].to_s] })
+table('non-candidate sites the floor (nil allowed) frees, by rule',
+      tally(args.select(&no_cand).select(&floor_nil)) { |r| r['why'].sub('no_candidate:', '') })
+table('non-candidate rows: rule, method, and how many of its sites the floor frees',
+      args.select(&no_cand).group_by { |r| [r['why'].sub('no_candidate:', ''), r['owner']] }
+        .map { |k, g| [[k, g.count(&floor_nil)].join(' | '), g.size] }.sort_by { |k, v| [-v, k] }.first(25))
 table('argument sites: dropped, by the producers of the unmodelled arguments',
       tally(args.select { |r| r['why'].start_with?('dropped') }) { |r| r['why'].sub('dropped:', '').split(',').map { |k| k.sub(/:.*/, '') }.uniq.sort.join(',') }.first(12))
 table('merge sites: class and what the other arm is', tally(unproven.select { |r| r['source'] == 'merge' }) { |r| r['detail'] }.first(15))

@@ -47,6 +47,10 @@ SOURCE = +<<~RUBY
     def fromcall; makes.empty?; end
     def box(b); b.bump; b.size; end
     def many(a); a.rp_floor_answer; end
+    # A block parameter is the CALLEE's yield, not this method's argument: `|c|` must be named a block parameter,
+    # never an admission rule of `each_block` (which numeric_irep_owner would otherwise hand us, since a nested rep
+    # is attributed to its enclosing definition).
+    def each_block; @rows.each { |c| c.empty? }; end
   end
 RUBY
 
@@ -97,9 +101,22 @@ Dir.mktmpdir do |dir|
   r = of.call('element').first
   check.call('element: the receiver is a GETIDX result, no hypothesis', r && r['source'] == 'element' && r['hyp'] == '-')
   r = of.call('argument').first
-  check.call('argument: an incoming parameter with no pool candidate', r && r['source'] == 'argument' && r['why'] == 'no_candidate')
+  # The `why` names the admission rule the method fails, not just `no_candidate`: `argument` is named as a token by a
+  # scanned outside source, so rule 3 (outside_token) refuses it before its call site is ever read.
+  check.call('argument: an incoming parameter whose method fails admission rule 3 (a name an outside source spells)',
+             r && r['source'] == 'argument' && r['why'] == 'no_candidate:outside_token')
+  r = of.call('box').first
+  # `box` is called from nowhere in the world, so rule 8 (no call site to pool) is what refuses it -- a different
+  # proof from rule 3, which is why the rule is named.
+  check.call('argument: a parameter no call site reaches names rule 8 (no call site)',
+             r && r['source'] == 'argument' && r['why'] == 'no_candidate:nosites')
   check.call('argument: the answering classes include Array and the kinds of their definitions are named',
              r && r['answerers'].include?('Array') && !r['kinds'].empty?)
+  # A `|c|` block parameter must not inherit the enclosing method's admission rule: the two are different proofs,
+  # and misnaming it would send the next reader after rule 8 for a yield the callee decides.
+  r = of.call('each_block').first
+  check.call('argument: a block parameter is named a block parameter, not a rule of the enclosing method',
+             r && r['source'] == 'argument' && r['why'] == 'no_candidate:block_param')
   r = of.call('many').first
   check.call('floor: includes every answering class when more than 40 answer the name',
              r && r['answerers'].split('|').sort == 41.times.map { |i| "RpAnswer#{i}" }.sort)
