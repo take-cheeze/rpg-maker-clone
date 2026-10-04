@@ -1237,6 +1237,13 @@
   it never enables native-family pooling. Current Wio output remains unchanged. See
   [`docs/bc2cpp-native-setter-inputs.md`](docs/bc2cpp-native-setter-inputs.md) and
   [`ADR 0337`](docs/adr/0337-bc2cpp-native-setter-input-audit.md).
+  Selected core Ruby collection bodies now retain exact return classes across zero-argument calls,
+  including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
+  `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks
+  withdraw the proof. The same-tree Wio comparison removes five cached sites (2,858 to 2,853).
+  `BC2CPP_CORE_RUBY_RESULTS=0` disables it. See
+  [`docs/bc2cpp-core-ruby-returns.md`](docs/bc2cpp-core-ruby-returns.md) and
+  [`ADR 0338`](docs/adr/0338-bc2cpp-core-ruby-return-classes.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
   neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio
