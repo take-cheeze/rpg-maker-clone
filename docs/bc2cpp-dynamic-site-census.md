@@ -923,3 +923,27 @@ index arms, and preserves nil error paths through six more nil-helper sites.
 Master's newly emitted block bodies explain the different starting count from
 ADR 0337. Overrides, forwarded blocks, captured writes and nonlocal callee exits
 retain refusal. See [core Ruby returns](bc2cpp-core-ruby-returns.md).
+
+### Nested core results and Range inputs (ADR 0343)
+
+On the same 959773b8 tree with the workspace's native submodule contents,
+`BC2CPP_CORE_RUBY_NESTED_RESULTS=0` provides the
+control for the nested helper/super analysis and audited native range contract.
+
+| Measure | Control | Enabled |
+| --- | ---: | ---: |
+| Cached calls, including helper-held sends | 2,776 | 2,774 |
+| Ordinary send lines in bodies | 2,349 | 2,350 |
+| Block funcall lines in bodies | 403 | 400 |
+| Index helper callers | 2,248 | 2,246 |
+| Numeric helper callers | 3,264 | 3,264 |
+| Equality helper callers | 110 | 110 |
+| Other body funcalls | 30 | 30 |
+| **Sites that can reach by-name dispatch** | **8,404** | **8,400** |
+
+The four removals are three sort_by block fallbacks in
+Game::Transition#compute_block_order and one size fallback in
+Game::Transition#block_count_through. Two index helper callers become inline
+by-name fallbacks, so their disappearance is a relocation. All changes occur
+in RPG2k; core and other compiled gems retain their dynamic sites.
+See [ADR 0343](adr/0343-bc2cpp-nested-core-ruby-results.md).

@@ -71,3 +71,31 @@ On `7cad57bf` with the current native submodules, both proofs together remove
 five cached sends (2,781 to 2,776). All five are RPG2k ordinary sends (1,569 to
 1,564); block and helper counts do not change. Both switches off reproduce the
 parent generated C++ byte for byte. These are static counts, not measured speed.
+
+## Nested core collection results (ADR 0343)
+
+The specialized core oracle can follow another zero-argument core Ruby call
+with a dominating literal block and a known exact receiver class. For example,
+Array's actual `sort_by` body ends in `ary.collect! { |e, i| self[i] }`. Analyzing
+the selected `collect!` body proves that it returns its Array receiver, which
+preserves the class of the outer `sort_by` result.
+
+Every nested call retains the lookup, captured-write and block-exit exclusions
+of the outer proof. Forwarded blocks and unknown receiver classes remain
+unmodelled. A repeated specialization of the same bytecode, receiver class and
+block context returns unknown, terminating recursive and mutually recursive
+helper analysis. This analysis reads no growing class pools or return tables.
+
+Set `BC2CPP_CORE_RUBY_NESTED_RESULTS=0` to retain the previous core oracle.
+The existing result and mutation checks cover nested results, replacements,
+caller breaks, recursion and the switch; runtime parity includes `sort_by`.
+
+The same oracle analyzes argument-free `super` calls without a supplied block
+along the known core receiver chain, refusing extra included modules. A pinned
+Array-or-nil contract for Range's native `__num_to_a` helper lets the actual Ruby
+`Range#to_a` body join its numeric path with the inherited Enumerable fallback.
+Integer and String ranges therefore both prove Array results. The native range
+body and its Array allocator must match the audited sources, and
+`BC2CPP_NATIVE_CLASS_RESULTS=0` withdraws that helper fact.
+Aliased super calls retain unknown results when the invoked method name differs
+from the selected definition's name.
