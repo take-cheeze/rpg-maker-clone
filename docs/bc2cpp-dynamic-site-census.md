@@ -947,3 +947,30 @@ Game::Transition#block_count_through. Two index helper callers become inline
 by-name fallbacks, so their disappearance is a relocation. All changes occur
 in RPG2k; core and other compiled gems retain their dynamic sites.
 See [ADR 0343](adr/0343-bc2cpp-nested-core-ruby-results.md).
+
+### Profiler block results (ADR 0344)
+
+On e50a09dc plus the Profiler helper-frame repairs, with the same workspace
+native sources, `BC2CPP_PROFILER_RESULTS=0` supplies the control.
+
+| Measure | Control | Enabled |
+| --- | ---: | ---: |
+| Cached calls, including helper-held sends | 2,774 | 2,772 |
+| Ordinary send lines in bodies | 2,350 | 2,348 |
+| Block funcall lines in bodies | 400 | 400 |
+| Index helper callers | 2,246 | 2,246 |
+| Numeric helper callers | 3,264 | 3,264 |
+| Equality helper callers | 110 | 110 |
+| Other body funcalls | 30 | 30 |
+| **Sites that can reach by-name dispatch** | **8,400** | **8,398** |
+
+The two removed fallbacks are map width and height in RPG2k#start_new_game.
+The receiver is the Game::Map returned by the map-loading block; the remaining
+error branches are reviewed dead fallbacks. Game::State from the party block
+also establishes two argument pools and simplifies existing guard chains.
+No calls move into shared helpers. The nineteen `@map` receiver sites still
+require proofs for their other writers; the earlier seventeen-site
+counterfactual is not a measured saving from this change.
+
+See [Profiler block results](bc2cpp-profiler-results.md) and
+[ADR 0344](adr/0344-bc2cpp-profiler-block-results.md).

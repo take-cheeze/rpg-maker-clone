@@ -1165,6 +1165,8 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_range_each_arity_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_forwarded_yield_times_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_profiler_section_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_profiler_results_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_profiler_results_mutation_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_nilable_retclass_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_unique_class_names_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_class_arg_devirtualization_check.rb

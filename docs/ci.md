@@ -200,6 +200,10 @@ BC2CPP_MRUBY_FULL32=/tmp/w32/host BC2CPP_MRBC32=/tmp/w32/host/bin/mrbc \
 A check whose environment variable is missing prints `SKIP` and exits 0; the
 job fails instead when the libmruby it should have built is absent.
 
+The `fast` shard also runs the Profiler block-result checks and mutation
+checks (ADR 0344), including full-core interpreter parity with profiling enabled
+and disabled, captures, nested helper frames and nonlocal returns.
+
 ## Cross-PR interaction (merge queue)
 
 A pull request is tested against the `master` it branched from. Two PRs that
