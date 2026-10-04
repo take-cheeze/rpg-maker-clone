@@ -1,8 +1,9 @@
 # Core Ruby return classes
 
-bc2cpp can prove the result of a zero-argument core Ruby collection method when
+bc2cpp can prove the result of a core Ruby collection method when
 the receiver class and lookup are known. It analyzes the actual method bytecode
-with that receiver and the supplied-block context. This lets later calls and
+with that receiver, fixed positional argument masks and the supplied-block
+context. This lets later calls and
 ivar pools retain an exact collection class across operations such as `map`,
 `select`, `reject`, `partition`, `tally` and `Hash#to_h`.
 
@@ -14,8 +15,8 @@ forwarded blocks also retain the original behavior.
 The proof uses existing core lookup exclusions and analyzes changed source anew.
 Overrides, aliases that replace lookup, prepends, unresolved mixins and dynamic
 installers withdraw it. Descendant breaks in the caller block and nonlocal exits
-in the callee also withdraw it. Splats, keyword calls, nonzero argument counts,
-non-dominating block writers are not admitted by the receiver-specific proof.
+in the callee also withdraw it. Splats, keyword calls, unsupported parameter
+shapes and non-dominating block writers are not admitted by the proof.
 Only exact Array/Hash/String results leave the specialized flow.
 Interpreted-only core definitions, accessors, conditional/unmodelled aliases and
 core Ruby installers retain lookup exclusions even after leaving the compiled
