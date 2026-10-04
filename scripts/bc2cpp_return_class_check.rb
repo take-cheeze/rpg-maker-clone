@@ -41,6 +41,8 @@ CLASSES = <<~RUBY
     def val; @v; end
     def tag; :box; end
     def count; :cnt_box; end
+    def handoff; RcOther.new; end
+    def mixed_handoff(flag); flag ? RcOther.new : RcBox.new; end
   end
 
   class RcSub < RcBox
@@ -53,6 +55,7 @@ CLASSES = <<~RUBY
     def val; 7; end
     def tag; :other; end
     def count; :cnt_other; end
+    def handoff; RcBox.new; end
   end
 RUBY
 
@@ -92,6 +95,10 @@ FX_OPEN = <<~RUBY
     def e_local; b = RcBox.new; b.tag; end
     def e_call; b = make_box; [b.bump(1), b.bump(2), b.val, b.tag]; end
     def e_chain; make_box.tag; end
+    def e_scoped_chain_box; make_box.handoff.tag; end
+    def e_scoped_chain_other; make_other.handoff.tag; end
+    def e_scoped_inherited_chain; make_sub.handoff.tag; end
+    def e_scoped_mixed_chain(flag); make_box.mixed_handoff(flag).tag; end
     def e_forward; b = forward_box; b.tag; end
     def e_recursive; rec(2).tag; end
     def e_rescue; make_rescued.tag; end
@@ -121,8 +128,8 @@ FX_OPEN = <<~RUBY
 RUBY
 
 OWNERS = %w[RcBox RcSub RcOther RcFx RcMM RcPre RcDrv].freeze
-EXACT = %w[e_local e_call e_chain e_forward e_recursive e_rescue e_block_return e_ivar e_sub e_sub_inherited e_moved
-           e_typed e_typed_ivar].freeze
+EXACT = %w[e_local e_call e_chain e_scoped_chain_box e_scoped_chain_other e_scoped_inherited_chain e_forward e_recursive e_rescue
+           e_block_return e_ivar e_sub e_sub_inherited e_moved e_typed e_typed_ivar].freeze
 GUARDED = %w[g_mixed g_param g_ivar_read g_after_call g_yield g_reassigned g_branch g_captured g_ensure g_typed].freeze
 # The sends that go through the table (the others in EXACT are the fresh `.new` of the same proof).
 TABLE_ONLY = %w[e_call e_chain e_forward e_recursive e_rescue e_block_return e_sub e_sub_inherited e_moved e_typed].freeze
@@ -157,6 +164,22 @@ Dir.mktmpdir do |dir|
              body_of.call(code, 'e_call').scan(/EXACT_CLASS :bump -> RcBox#bump/).size == 2 &&
                body_of.call(code, 'e_sub').include?('EXACT_CLASS :tag -> RcSub#tag') &&
                body_of.call(code, 'e_sub_inherited').include?('EXACT_CLASS :val -> RcBox#val'))
+  check.call('receiver-scoped returns carry distinct results through an ambiguous method name',
+             body_of.call(code, 'e_scoped_chain_box').include?('EXACT_CLASS :handoff -> RcBox#handoff') &&
+               body_of.call(code, 'e_scoped_chain_box').include?('EXACT_CLASS :tag -> RcOther#tag') &&
+               body_of.call(code, 'e_scoped_chain_other').include?('EXACT_CLASS :handoff -> RcOther#handoff') &&
+               body_of.call(code, 'e_scoped_chain_other').include?('EXACT_CLASS :tag -> RcBox#tag') &&
+               body_of.call(code, 'e_scoped_inherited_chain').include?('EXACT_CLASS :handoff -> RcBox#handoff') &&
+               body_of.call(code, 'e_scoped_inherited_chain').include?('EXACT_CLASS :tag -> RcOther#tag') &&
+               !err.include?('RETCLASS handoff '))
+  check.call('a receiver-specific method with mixed return classes does not prove the next receiver',
+             !body_of.call(code, 'e_scoped_mixed_chain').include?('EXACT_CLASS :tag ->'))
+  d = File.join(dir, 'scoped_runtime_definition')
+  Dir.mkdir(d)
+  scoped_code, = generate.call(CLASSES + FX_OPEN +
+                               "class RcBox\n  define_method(:handoff) { RcBox.new }\nend\n", d)
+  check.call('a runtime-installed class-specific method keeps the ambiguous chain dynamic',
+             !body_of.call(scoped_code, 'e_scoped_chain_box').include?('EXACT_CLASS :handoff'))
   check.call('a name an RGSS native also spells takes the guard-free TYPED call, from the table and from an ivar slot',
              body_of.call(code, 'e_typed').include?('EXACT_TYPED :count -> RcBox#count') &&
                body_of.call(code, 'e_typed_ivar').include?('EXACT_TYPED :count -> RcBox#count') &&
@@ -225,7 +248,9 @@ else
   driver = <<~RUBY
     class RcDrv
       def go(fx)
-        [fx.e_local, fx.e_call, fx.e_chain, fx.e_forward, fx.e_recursive, fx.e_rescue,
+        [fx.e_local, fx.e_call, fx.e_chain, fx.e_scoped_chain_box, fx.e_scoped_chain_other,
+         fx.e_scoped_inherited_chain, fx.e_scoped_mixed_chain(true), fx.e_scoped_mixed_chain(false),
+         fx.e_forward, fx.e_recursive, fx.e_rescue,
          fx.e_block_return([nil, 1]), fx.e_ivar, fx.e_sub, fx.e_sub_inherited, fx.e_moved,
          fx.g_mixed(true), fx.g_mixed(false), fx.g_param(RcOther.new), fx.g_param(RcSub.new),
          fx.g_ivar_read, fx.g_after_call, fx.g_yield, fx.g_reassigned(RcOther.new),
@@ -239,7 +264,8 @@ else
       static int scenario(mrb_state* M) {
         mrb_value fx = mrb_obj_new(M, mrb_class_get(M, "RcFx"), 0, nullptr);
         static const char* const plain[] = {
-          "e_local", "e_call", "e_chain", "e_forward", "e_recursive", "e_rescue", "e_ivar", "e_sub",
+          "e_local", "e_call", "e_chain", "e_scoped_chain_box", "e_scoped_chain_other",
+          "e_scoped_inherited_chain", "e_forward", "e_recursive", "e_rescue", "e_ivar", "e_sub",
           "e_sub_inherited", "e_moved", "g_ivar_read", "g_after_call", "g_yield", "g_captured", "g_ensure"
         };
         for (const char* name : plain) call(M, name, fx, name);
@@ -279,6 +305,10 @@ else
                  lines.include?('g_mixed true => :box') && lines.include?('g_mixed false => :other'))
       check.call('a nil result still raises NoMethodError at the send', lines.include?('g_nil false => raised NoMethodError'))
       check.call('the subclass result dispatches to the subclass body', lines.include?('e_sub => :sub'))
+      check.call('receiver-scoped method chains answer through both direct and inherited methods',
+                 lines.include?('e_scoped_chain_box => :other') &&
+                   lines.include?('e_scoped_chain_other => :box') &&
+                   lines.include?('e_scoped_inherited_chain => :other'))
     end
   end
 end
