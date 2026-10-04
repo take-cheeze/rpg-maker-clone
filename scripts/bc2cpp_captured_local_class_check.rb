@@ -99,11 +99,11 @@ live_of = ->(code, owner, fn) { bodies_of.call(code, owner, fn).lines.reject { |
 unguarded = lambda do |code, owner, fn|
   body = live_of.call(code, owner, fn)
   !body.empty? && !body.include?('bc2cpp_send(') && !body.include?('mrb_funcall(') && !body.include?('bc2cpp_getidx(') &&
-    !body.include?('bc2cpp_setidx(') && !body.include?('->c == M->')
+    !body.include?('bc2cpp_setidx(') && !body.include?('->c == M->') && !body.include?('switch (mrb_type(')
 end
 guarded = lambda do |code, owner, fn|
   body = live_of.call(code, owner, fn)
-  !body.empty? && (body.include?('bc2cpp_send(') || body.include?('bc2cpp_getidx(') || body.include?('bc2cpp_setidx(') || body.include?('->c == M->'))
+  !body.empty? && (body.include?('bc2cpp_send(') || body.include?('bc2cpp_getidx(') || body.include?('bc2cpp_setidx(') || body.include?('->c == M->') || body.include?('switch (mrb_type('))
 end
 
 generate = lambda do |source, dir, closed: true, env: {}, **options|

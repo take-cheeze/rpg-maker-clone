@@ -101,7 +101,7 @@ NOT_PER_METHOD = %w[
   @frozen_tables @frozen_tables_refusal @frozen_table_sites @frozen_table_name_safe
   @class_arg_pools @class_const_pools @class_ivar_pools @class_pools_on @kernel_freeze_only @nil_ancestor_modules @nil_unanswerable
   @numeric_return @numeric_return_send_ireps @numeric_states @numeric_wild_families @numeric_writes
-  @native_result_kinds @native_result_name_kinds @native_results_ready @native_struct_string_alias_safe @native_dup_result_safe
+  @core_ruby_name_results @native_result_kinds @native_result_name_kinds @native_results_ready @native_struct_string_alias_safe @native_dup_result_safe
   @captured_local_class_enabled @rc_writes
   @tuple_returns @tuple_sites @tuple_consumers @numeric_root_depth @numeric_root_lines
   @escape_analyzer

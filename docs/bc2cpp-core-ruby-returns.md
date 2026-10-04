@@ -15,7 +15,7 @@ The proof uses existing core lookup exclusions and analyzes changed source anew.
 Overrides, aliases that replace lookup, prepends, unresolved mixins and dynamic
 installers withdraw it. Descendant breaks in the caller block and nonlocal exits
 in the callee also withdraw it. Splats, keyword calls, nonzero argument counts,
-subclass/unknown receivers and non-dominating block writers are not admitted.
+non-dominating block writers are not admitted by the receiver-specific proof.
 Only exact Array/Hash/String results leave the specialized flow.
 Interpreted-only core definitions, accessors, conditional/unmodelled aliases and
 core Ruby installers retain lookup exclusions even after leaving the compiled
@@ -45,3 +45,29 @@ The runtime check builds full-core mruby if one is not supplied. The mutation
 check uses generated code and an unmutated control. See
 [ADR 0338](adr/0338-bc2cpp-core-ruby-return-classes.md) for the oracle, width
 validation and remaining proof boundaries.
+
+## Results independent of the receiver class (ADR 0342)
+
+For an unknown receiver, bc2cpp can join the actual return classes of every
+compiled core definition of a name. Each body is analyzed with an unknown self
+and the supplied-block context. The proof requires no linked native definition,
+no project or outside Ruby replacement, no installer or alias of the name, and
+no omitted or unmodelled core definition. A literal caller block must have no
+descendant break. Missing and forwarded blocks keep their existing exclusions.
+
+For example, `input.filter_map { |x| x }.size` can prove an Array result even
+when `input` has no class fact. `input.reject { |x| false }` joins Array and Hash;
+it never chooses one optimistically. An exhaustive native expression selection
+can then implement `size` for that exact class set without a by-name fallback.
+It requires an audited expression for every member, safe built-in lookup, and
+no nil, unknown, subclass or other unrepresented class bit. Other sets retain
+dispatch. Calls and their side effects still run normally.
+
+`BC2CPP_CORE_RUBY_NAME_RESULTS=0` disables the new return proof;
+`BC2CPP_NATIVE_EXPRESSION_UNIONS=0` disables exhaustive native selections.
+Both switches preserve the receiver-specific proofs from ADR 0338.
+
+On `7cad57bf` with the current native submodules, both proofs together remove
+five cached sends (2,781 to 2,776). All five are RPG2k ordinary sends (1,569 to
+1,564); block and helper counts do not change. Both switches off reproduce the
+parent generated C++ byte for byte. These are static counts, not measured speed.
