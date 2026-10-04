@@ -99,3 +99,23 @@ body and its Array allocator must match the audited sources, and
 `BC2CPP_NATIVE_CLASS_RESULTS=0` withdraws that helper fact.
 Aliased super calls retain unknown results when the invoked method name differs
 from the selected definition's name.
+
+## Fixed positional core results (ADR 0349)
+
+The core bytecode oracle also accepts calls with fixed positional arguments when
+the selected method has exactly that many mandatory arguments and no optional,
+rest, trailing or keyword parameters. It seeds the argument registers from the
+caller's flow masks and locates a literal block after those arguments.
+
+This proves that `each_with_object([]) { ... }` returns Array and that the same
+call with a Hash memo returns Hash. It can also prove argument-independent
+results such as Enumerable `drop(n)`. Unresolved receivers use the existing
+all-definition proof; any project override or unmodelled definition withdraws it.
+Argument masks are part of specialization and result-cache keys, so an unknown
+memo cannot reuse a result proved for a literal Array memo.
+
+Captured writes, caller breaks and forwarded blocks retain their existing
+exclusions. Set `BC2CPP_CORE_RUBY_POSITIONAL_RESULTS=0` to disable calls with
+positional arguments. Generated, mutation and runtime parity checks exercise
+memo classes, wrong arity, optional/rest/keyword shapes, replacements and the
+switch.
