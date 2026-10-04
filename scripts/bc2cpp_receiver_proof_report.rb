@@ -117,8 +117,39 @@ table('argument sites: dropped, by the producers of the unmodelled arguments',
       tally(args.select { |r| r['why'].start_with?('dropped') }) { |r| r['why'].sub('dropped:', '').split(',').map { |k| k.sub(/:.*/, '') }.uniq.sort.join(',') }.first(12))
 table('merge sites: class and what the other arm is', tally(unproven.select { |r| r['source'] == 'merge' }) { |r| r['detail'] }.first(15))
 table('by-name lines the own set removes (nil allowed), nil-helper lines it adds instead',
-      [["by-name lines removed #{unproven.select(&own_nil).sum { |r| r['before'].to_i - r['after_nil'].to_i }}", 0],
-       ["bc2cpp_nil_receiver lines added #{unproven.select(&own_nil).sum { |r| r['reloc'].to_i }}", 0],
-       ["bc2cpp_nomethod lines added #{unproven.select(&own_nil).sum { |r| r['nomethod_delta'].to_i }}", 0]])
+      [["by-name lines removed #{unproven.select(&own_nil).sum { |r| r["before"].to_i - r["after_nil"].to_i }}", 0],
+       ["bc2cpp_nil_receiver lines added #{unproven.select(&own_nil).sum { |r| r["reloc"].to_i }}", 0],
+       ["bc2cpp_nomethod lines added #{unproven.select(&own_nil).sum { |r| r["nomethod_delta"].to_i }}", 0]])
+
+# ADR 0341: which LEVER removes a site's by-name line. The risk-tier table above ranks how hard a proof would be; this
+# one ranks what would actually have to change, and the two are not the same population -- most unproven sites are not
+# waiting on a receiver proof at all.
+ABSENT_CELLS = %w[absent absent_or_native].freeze
+lever = lambda do |r|
+  return 'no_floor (unbounded or unanswered name)' unless r['floor_nil'] =~ /\A\d+\z/
+  return 'freed by any receiver proof' if floor_nil.call(r)
+  return 'consumer gap (no Ruby body to call)' if (r['kinds'].split('+') & ABSENT_CELLS).any?
+
+  'other cell'
+end
+puts '-- structural lever: what would actually remove the by-name line (ADR 0341) --'
+puts format('%-42s %6s %6s', 'lever', 'sites', 'lines')
+unproven.group_by { |r| lever.call(r) }.sort_by { |_k, g| -g.size }.each do |name, g|
+  puts format('%-42s %6d %6d', name, g.size, g.sum { |r| r['before'].to_i })
+end
+block_only = unproven.select { |r| r['argc'].to_i.zero? && r['before'].to_i.positive? }
+puts format('%-42s %6d %6d', 'of which a block-only callee (argc 0)', block_only.size,
+            block_only.sum { |r| r['before'].to_i })
+gap = unproven.select { |r| lever.call(r).start_with?('consumer gap') }
+puts format('%-42s %6d %6d', 'consumer-gap sites with a block-only callee',
+            gap.count { |r| r['argc'].to_i.zero? }, gap.select { |r| r['argc'].to_i.zero? }.sum { |r| r['before'].to_i })
+# The check ADR 0341 exists to keep honest: relaxing direct_callable? for a &block parameter looks like a win from the
+# `each` concentration, so count what it would actually reach (a site with no absent cell to bypass).
+rnd = unproven.select { |r| r['kinds'].split('+').include?('ruby_not_direct') }
+puts format('%-42s %6d %6d', 'ruby_not_direct sites', rnd.size, rnd.sum { |r| r['before'].to_i })
+puts format('%-42s %6d %6d', '  ... of those, no absent cell to bypass',
+            rnd.count { |r| (r['kinds'].split('+') & ABSENT_CELLS).empty? },
+            rnd.select { |r| (r['kinds'].split('+') & ABSENT_CELLS).empty? }.sum { |r| r['before'].to_i })
+puts
 
 puts unproven.select { |r| r['source'] == list }.map { |r| r.values_at(*cols).join("\t") } if list
