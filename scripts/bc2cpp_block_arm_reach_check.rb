@@ -29,6 +29,7 @@ TOOL_DIR = ENV['BR_TOOL_DIR'] || File.join(ROOT, 'tools/bc2cpp')
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/nomethod_reviewed'
 require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative 'bc2cpp_mutant_pool'
 
 MRUBY = File.join(ROOT, '3rd/mruby')
 MRBC_PATH = ENV['MRBC'] || 'mrbc'
@@ -487,23 +488,34 @@ MUTANTS = {
 
 if ENV['BR_MUTANTS'] == '1' && MODE != 'run' && tool?(MRBC_PATH)
   puts 'mutants'
-  MUTANTS.each do |name, (file, from, to)|
+  # Each mutant is a copy of the generator with one soundness condition broken, run as its own
+  # subprocess, so the pool runs several at a time (BC2CPP_JOBS; docs/ci.md, "Mutant pool").
+  # This was one of the two slowest single commands in the bc2cpp check matrix as a serial loop,
+  # and each mutant costs a full generated-code run of this check.
+  mutate = lambda do |(name, (file, from, to))|
     Dir.mktmpdir('bc2cpp_reach_mutant') do |dir|
       FileUtils.cp_r(File.join(ROOT, 'tools/bc2cpp'), dir)
       path = File.join(dir, 'bc2cpp', file)
       text = File.read(path)
-      unless text.include?(from)
-        check.call("mutant #{name}: the mutated text is still in #{file}", false)
-        next
-      end
+      next [:site_gone, file] unless text.include?(from)
+
       File.write(path, text.sub(from) { to })
-      out, status = Open3.capture2e({ 'BR_TOOL_DIR' => File.join(dir, 'bc2cpp'), 'BR_MODE' => 'generated', 'BR_MUTANTS' => '0',
-                                      'MRBC' => MRBC_PATH },
-                                    RbConfig.ruby, __FILE__)
-      caught = !status.success? && out.include?('FAIL')
-      check.call("mutant killed: #{name}", caught)
-      puts out.lines.grep(/FAIL|rror/).first(4).join unless caught
+      Bc2cppMutantPool.run({ 'BR_TOOL_DIR' => File.join(dir, 'bc2cpp'), 'BR_MODE' => 'generated',
+                             'BR_MUTANTS' => '0', 'MRBC' => MRBC_PATH },
+                          [RbConfig.ruby, __FILE__])
     end
+  end
+
+  # MUTANTS is a Hash; the pool indexes its items, so hand it the pairs in the order the
+  # literal declares them.
+  Bc2cppMutantPool.each_ordered(MUTANTS.to_a, work: mutate) do |(name, _spec), run|
+    if run.is_a?(Array) && run.first == :site_gone
+      check.call("mutant #{name}: the mutated text is still in #{run.last}", false)
+      next
+    end
+    caught = !run.success && run.out.include?('FAIL')
+    check.call("mutant killed: #{name}", caught)
+    puts run.out.lines.grep(/FAIL|rror/).first(4).join unless caught
   end
 end
 
