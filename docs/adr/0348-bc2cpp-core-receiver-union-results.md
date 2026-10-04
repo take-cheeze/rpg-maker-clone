@@ -38,8 +38,8 @@ The analysis performs one existing specialization per possible receiver class.
 Missing information remains a dynamic call. Collection inlining respects
 exhaustive flow facts even when an older heuristic claims a narrower class.
 
-The Wio census with the inlining correction present in both runs reports 2,776
-cached sends with the union switch off and 2,775 with it on. Both have 892 generic
+The Wio census with the inlining correction present in both runs reports 2,782
+cached sends with the union switch off and 2,781 with it on. Both have 904 generic
 POLY sites and 3,056 compiled entry points. The earlier parent census had 2,773
-cached sends: restoring safe dispatch increases the net count despite the new
+cached sends: restoring safe dispatch adds eight net sites despite the new
 result proof. These are static sites, not runtime frequency or speed measurements.
