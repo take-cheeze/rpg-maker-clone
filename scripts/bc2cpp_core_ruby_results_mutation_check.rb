@@ -11,6 +11,9 @@ abort 'SKIP: set MRBC' unless ENV['MRBC']
 AUDIT = 'codegen_core_ruby_results.rb'
 MUTANTS = [
   ['control', nil, nil, nil, nil],
+  ['receiver union switch ignored', "classes.size > 1 && ENV['BC2CPP_CORE_RUBY_RECEIVER_UNIONS'] == '0'", 'false', 'receiver union kill switch', /every union member returns Array/],
+  ['receiver union member omitted', 'classes.reduce(0) do |joined, (bit, klass)|', 'classes.first(1).reduce(0) do |joined, (bit, klass)|', 'Hash map override', /every union member returns Array/],
+  ['union receiver treated as Array', 'return RETURN_CORE_CLASS[mask] == klass', 'return true', 'core bodies', /union map preserves both receiver paths/, 'codegen_loop_regions.rb'],
   ['union switch ignored', "return nil if ENV['BC2CPP_NATIVE_EXPRESSION_UNIONS'] == '0'", 'return nil if false', 'union kill switch', /mixed exact classes/, 'codegen_native_send.rb'],
   ['union coverage ignored', 'classes.keys.reduce(0, :|) == mask', 'true', 'core bodies', /unrepresented class keeps dispatch|nil keeps error path/, 'codegen_native_send.rb'],
   ['name switch ignored', "return nil if ENV['BC2CPP_CORE_RUBY_NAME_RESULTS'] == '0'", 'return nil if false', 'name kill switch', /unknown filter result/],

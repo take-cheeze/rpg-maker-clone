@@ -99,3 +99,21 @@ body and its Array allocator must match the audited sources, and
 `BC2CPP_NATIVE_CLASS_RESULTS=0` withdraws that helper fact.
 Aliased super calls retain unknown results when the invoked method name differs
 from the selected definition's name.
+
+## Exhaustive core receiver results (ADR 0348)
+
+The specialized core oracle analyzes every class in an exhaustive core receiver
+set and joins their results. Array and Hash `map` both return Array, so a
+following `compact` or `size` can retain that proof even when the original
+receiver can be either collection. Every member must resolve through its audited
+core lookup chain and produce a modelled result. Unknown receivers, unmodelled
+members, method replacements and caller block exits withdraw the proof.
+
+Complete core receiver flow sets also take precedence over collection inlining
+hints. In particular, an Array-or-Hash `reject` result cannot justify an
+Array-only `map` inline region.
+
+Set `BC2CPP_CORE_RUBY_RECEIVER_UNIONS=0` to disable these specialized union
+results while retaining the existing receiver-independent proofs. Generated-code,
+mutation and interpreter parity checks cover both receiver paths, replacements,
+unknown members, caller breaks and the switch.
