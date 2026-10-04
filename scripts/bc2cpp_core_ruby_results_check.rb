@@ -46,6 +46,10 @@ SOURCE = <<~RUBY
     def read; @items.size; end
     def dedup; [1, 1, 2].uniq.size; end
     def dedup_block; [1, 1, 2].uniq { |x| x }.size; end
+    def sorted; [3, 1, 2].sort_by { |x| x }.size; end
+    def range_sorted; (1..3).to_a.sort_by { |x| -x }.size; end
+    def range_strings; ('a'..'c').to_a.size; end
+    def range_entries; ('a'..'c').entries.size; end
   end
 RUBY
 OWNERS = (BC2CPP_CORE_OWNERS + %w[KrOther KrRunner]).freeze
@@ -65,6 +69,14 @@ worlds = [
   ['kill switch', SOURCE, { 'BC2CPP_CORE_RUBY_RESULTS' => '0' }, false],
   ['union kill switch', SOURCE, { 'BC2CPP_NATIVE_EXPRESSION_UNIONS' => '0' }, true],
   ['name kill switch', SOURCE, { 'BC2CPP_CORE_RUBY_NAME_RESULTS' => '0' }, true],
+  ['nested kill switch', SOURCE, { 'BC2CPP_CORE_RUBY_NESTED_RESULTS' => '0' }, true],
+  ['nested project override', SOURCE + "class Array; def collect!(&block); KrOther.new; end; end\n", {}, true],
+  ['nested core override', SOURCE, {}, true, nil, "class Array; def collect!(&block); KrOther.new; end; end"],
+  ['nested core recursion', SOURCE, {}, true, nil, "class Array; def collect!(&block); self.collect! { |x| x }; end; end"],
+  ['nested caller break', SOURCE, {}, true, nil, "class Array; def sort_by(&block); ary = []; ary.collect! { break KrOther.new }; end; end"],
+  ['super core override', SOURCE, {}, true, nil, "module Enumerable; def to_a; KrOther.new; end; end"],
+  ['super included override', SOURCE + "module KrRangeMixin; def to_a; KrOther.new; end; end; Range.include KrRangeMixin\n", {}, false],
+  ['native range switch', SOURCE, { 'BC2CPP_NATIVE_CLASS_RESULTS' => '0' }, true],
   ['project filter override', SOURCE + "class KrOther; def filter_map(&block); self; end; end\n", {}, true],
   ['filter installer', SOURCE + "module Enumerable; define_method(:filter_map) { |&block| KrOther.new }; end\n", {}, true],
   ['filter alias', SOURCE + "class KrOther; alias filter_map size; end\n", {}, true],
@@ -114,6 +126,12 @@ if ENV['MRBC']
         foreign = linked.empty? ? [] : [['kr-foreign/mrblib/outside.rb', 'module Enumerable; def filter_map(&block); Object.new; end; end']]
         code, err = runtime.generate(source, dir, extra: inputs, native: native, foreign: foreign, build_gems: linked, only_owners: OWNERS, closed: name != 'open world')
         check.call("#{name}: mapped result", exact_size.call(code, 'mapped') == proven) unless name == 'filter installer' || name == 'filter alias'
+        check.call("#{name}: nested sort result", exact_size.call(code, 'sorted') == (name == 'core bodies')) if ['core bodies', 'kill switch', 'nested kill switch', 'nested project override', 'nested core override', 'nested core recursion', 'nested caller break', 'open world'].include?(name)
+        if ['core bodies', 'kill switch', 'nested kill switch', 'super core override', 'super included override', 'native range switch', 'open world'].include?(name)
+          check.call("#{name}: range helper and super result", exact_size.call(code, 'range_strings') == (name == 'core bodies'))
+          check.call("#{name}: range sort result", exact_size.call(code, 'range_sorted') == (name == 'core bodies'))
+          check.call("#{name}: aliased super stays unproved", !exact_size.call(code, 'range_entries'))
+        end
         if ['core bodies', 'kill switch', 'name kill switch', 'union kill switch', 'project filter override', 'filter installer', 'filter alias', 'outside filter definition', 'native filter definition', 'foreign filter definition', 'method missing', 'open world'].include?(name)
           check.call("#{name}: unknown filter result", exact_size.call(code, 'unknown_filter') == ['core bodies', 'union kill switch'].include?(name))
           check.call("#{name}: unknown break stays unproved", !exact_size.call(code, 'unknown_break'))
@@ -147,7 +165,7 @@ if ENV['MRBC']
         harness = <<~CPP
           static int scenario(mrb_state* M) {
             mrb_value runner = mrb_obj_new(M, mrb_class_get(M, "KrRunner"), 0, nullptr);
-            for (const char* name : {"mapped", "collected", "selected", "found", "rejected", "hash_map", "range_map", "next_value", "breaking", "nested_break", "nonlocal_return", "no_block", "dedup", "dedup_block", "hash_identity", "tallied", "partitioned"}) {
+            for (const char* name : {"mapped", "collected", "selected", "found", "rejected", "hash_map", "range_map", "next_value", "breaking", "nested_break", "nonlocal_return", "no_block", "dedup", "dedup_block", "sorted", "range_sorted", "range_strings", "hash_identity", "tallied", "partitioned"}) {
               call(M, name, runner, name);
             }
             for (mrb_value flag : {mrb_true_value(), mrb_false_value()}) {

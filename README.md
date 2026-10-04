@@ -1247,6 +1247,13 @@
   `BC2CPP_CORE_RUBY_RESULTS=0` disables it. See
   [`docs/bc2cpp-core-ruby-returns.md`](docs/bc2cpp-core-ruby-returns.md) and
   [`ADR 0338`](docs/adr/0338-bc2cpp-core-ruby-return-classes.md).
+  The same analysis follows zero-argument literal-block calls between known core
+  receiver classes, including Array's `sort_by` to `collect!` result. Recursive
+  specializations and unsafe blocks retain unknown results.
+  Range's audited Array-or-nil numeric helper and actual superclass fallback
+  also prove its `to_a` result, preserving the fallback for String ranges.
+  `BC2CPP_CORE_RUBY_NESTED_RESULTS=0` disables nested analysis. See
+  [`ADR 0343`](docs/adr/0343-bc2cpp-nested-core-ruby-results.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
   neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio

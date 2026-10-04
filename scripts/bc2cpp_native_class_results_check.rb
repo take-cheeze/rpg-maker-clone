@@ -37,6 +37,19 @@ Dir.mktmpdir do |dir|
     end
   end
   check.call('snapshot retains every nil return', NativeClassResults::FACTS.fetch('snap_to_bitmap').first == ['RGSS::Bitmap', :nil])
+  check.call('numeric range conversion retains nil fallback', NativeClassResults::FACTS.fetch('__num_to_a').first == ['Array', :nil])
+  array_helper = copies.fetch('3rd/mruby/src/array.c')
+  original_array = File.binread(array_helper)
+  File.binwrite(array_helper, original_array + "\nvoid changed_range_array_allocator() {}\n")
+  check.call('numeric range conversion audits Array allocation', NativeClassResults.kinds('__num_to_a', [copies.fetch('3rd/mruby/src/range.c')]).nil?)
+  File.binwrite(array_helper, original_array)
+  nested_switch = ENV['BC2CPP_CORE_RUBY_NESTED_RESULTS']
+  begin
+    ENV['BC2CPP_CORE_RUBY_NESTED_RESULTS'] = '0'
+    check.call('nested switch withdraws native range helper', NativeClassResults.kinds('__num_to_a', [copies.fetch('3rd/mruby/src/range.c')]).nil?)
+  ensure
+    ENV['BC2CPP_CORE_RUBY_NESTED_RESULTS'] = nested_switch
+  end
   check.call('Method parameters requires its Proc delegate',
              NativeClassResults.kinds('parameters', [copies.fetch('3rd/mruby/mrbgems/mruby-method/src/method.c')]).nil?)
   saved = ENV['BC2CPP_NATIVE_CLASS_RESULTS']
