@@ -174,15 +174,68 @@ Dir.mktmpdir do |dir|
                !err.include?('RETCLASS handoff '))
   check.call('a receiver-specific method with mixed return classes does not prove the next receiver',
              !body_of.call(code, 'e_scoped_mixed_chain').include?('EXACT_CLASS :tag ->'))
+  unrelated_foreign = "class RcUnrelated; def handoff; RcBox.new; end; end\n"
+  foreign_dir = File.join(dir, 'unrelated_foreign')
+  Dir.mkdir(foreign_dir)
+  foreign_code, = runtime.generate(CLASSES + FX_OPEN, foreign_dir, only_owners: OWNERS,
+                                   foreign: [['outside.rb', unrelated_foreign]])
+  check.call('an outside Ruby definition on an unrelated class keeps the receiver-scoped chain exact',
+             body_of.call(foreign_code, 'e_scoped_chain_box').include?('EXACT_CLASS :handoff -> RcBox#handoff') &&
+               body_of.call(foreign_code, 'e_scoped_chain_box').include?('EXACT_CLASS :tag -> RcOther#tag'))
+  native_other = <<~'C'
+    static mrb_value rc_other_handoff(mrb_state* M, mrb_value self) { return self; }
+    void rc_other_init(mrb_state* M) {
+      struct RClass *owner = mrb_define_class(M, "RcNativeOther", M->object_class);
+      mrb_define_method(M, owner, "handoff", rc_other_handoff, MRB_ARGS_NONE());
+    }
+  C
+  native_dir = File.join(dir, 'unrelated_native')
+  Dir.mkdir(native_dir)
+  native_code, = runtime.generate(CLASSES + FX_OPEN, native_dir,
+                                  only_owners: OWNERS, native: [['unrelated.c', native_other]])
+  check.call('a known native registration on an unrelated class keeps the receiver-scoped chain exact',
+             body_of.call(native_code, 'e_scoped_chain_box').include?('EXACT_CLASS :handoff -> RcBox#handoff') &&
+               body_of.call(native_code, 'e_scoped_chain_box').include?('EXACT_CLASS :tag -> RcOther#tag'))
+  unknown_native = 'void rc_unknown_init(mrb_state* M, struct RClass *owner) { mrb_define_method(M, owner, "handoff", body, MRB_ARGS_NONE()); }'
+  unknown_dir = File.join(dir, 'unknown_native')
+  Dir.mkdir(unknown_dir)
+  unknown_code, = runtime.generate(CLASSES + FX_OPEN, unknown_dir,
+                                   only_owners: OWNERS, native: [['unknown.c', unknown_native]])
+  check.call('a native registration with an unresolved owner withdraws the receiver-scoped chain',
+             !body_of.call(unknown_code, 'e_scoped_chain_box').include?('EXACT_CLASS :handoff'))
+  native_same_owner = <<~'C'
+    static mrb_value rc_box_handoff(mrb_state* M, mrb_value self) { return self; }
+    void rc_box_init(mrb_state* M) {
+      struct RClass *owner = mrb_class_get_id(M, MRB_SYM(RcBox));
+      mrb_define_method(M, owner, "handoff", rc_box_handoff, MRB_ARGS_NONE());
+    }
+  C
+  same_owner_dir = File.join(dir, 'same_owner_native')
+  Dir.mkdir(same_owner_dir)
+  same_owner_code, = runtime.generate(CLASSES + FX_OPEN, same_owner_dir,
+                                      only_owners: OWNERS, native: [['same_owner.c', native_same_owner]])
+  check.call('a known native registration on the receiver ancestry withdraws its scoped chain',
+             !body_of.call(same_owner_code, 'e_scoped_chain_box').include?('EXACT_CLASS :handoff'))
+  saved_call_facts = ENV['BC2CPP_CALL_FACTS']
+  begin
+    ENV['BC2CPP_CALL_FACTS'] = '0'
+    disabled_dir = File.join(dir, 'call_facts_disabled')
+    Dir.mkdir(disabled_dir)
+    disabled_code, = runtime.generate(CLASSES + FX_OPEN, disabled_dir, only_owners: OWNERS)
+    check.call('the call-facts kill switch withdraws receiver-scoped exact lookup',
+               !body_of.call(disabled_code, 'e_scoped_chain_box').include?('EXACT_CLASS :handoff'))
+  ensure
+    ENV['BC2CPP_CALL_FACTS'] = saved_call_facts
+  end
   d = File.join(dir, 'scoped_runtime_definition')
   Dir.mkdir(d)
   scoped_code, = generate.call(CLASSES + FX_OPEN +
                                "class RcBox\n  define_method(:handoff) { RcBox.new }\nend\n", d)
   check.call('a runtime-installed class-specific method keeps the ambiguous chain dynamic',
              !body_of.call(scoped_code, 'e_scoped_chain_box').include?('EXACT_CLASS :handoff'))
-  check.call('a name an RGSS native also spells takes the guard-free TYPED call, from the table and from an ivar slot',
-             body_of.call(code, 'e_typed').include?('EXACT_TYPED :count -> RcBox#count') &&
-               body_of.call(code, 'e_typed_ivar').include?('EXACT_TYPED :count -> RcBox#count') &&
+  check.call('a name an RGSS native also spells takes a guard-free call from the table and an ivar slot',
+             body_of.call(code, 'e_typed').match?(/(?:EXACT_TYPED|EXACT_CLASS) :count -> RcBox#count/) &&
+               body_of.call(code, 'e_typed_ivar').match?(/(?:EXACT_TYPED|EXACT_CLASS) :count -> RcBox#count/) &&
                body_of.call(code, 'g_typed').include?('POLY_SMALL_N :count') && !body_of.call(code, 'g_typed').include?('EXACT_TYPED'))
   check.call('the exact send leaves no guard: no owner-class comparison in an exact-only body',
              !body_of.call(code, 'e_chain').include?('mrb_obj_class(M, r'))

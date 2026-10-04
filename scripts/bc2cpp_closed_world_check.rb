@@ -383,7 +383,8 @@ check.call('a receiver that may be a method_missing instance keeps the dispatch'
              body_of.call(ghost_code, 'CwCaller_talk').include?('CLOSED_WORLD kept: method_missing_receiver'))
 exact_call = body_of.call(exact_construct_code, 'CwExact__Caller_call')
 rebound_call = body_of.call(exact_construct_code, 'CwRebound__Caller_call')
-exact_marker = exact_call.index('CLOSED_WORLD_EXACT_CLASS :exact_value -> CwExact::StableFresh#exact_value')
+exact_marker = exact_call.index('EXACT_TYPED :exact_value -> CwExact::StableFresh#exact_value') ||
+               exact_call.index('CLOSED_WORLD_EXACT_CLASS :exact_value -> CwExact::StableFresh#exact_value')
 check.call('a fresh instance of a stable class constant drops the exact-class guard and fallback',
            exact_marker && exact_call[exact_marker..].include?('CwExact__StableFresh_exact_value_impl(M, r2)') &&
              !exact_call[exact_marker..].include?('bc2cpp_send('))
@@ -723,7 +724,8 @@ Dir.mktmpdir do |dir|
                     included, prepended, unknown, closed_world: world)
   code = gen.compile_method(registry.fetch('call').find { |d| d.owner == 'CwMonoChild' }.irep).fetch(:code)
   check.call('a traced fresh receiver resolves a globally polymorphic inherited method without fallback',
-             code.include?('CLOSED_WORLD_EXACT_CLASS :value -> CwMonoBase#value') &&
+             (code.include?('EXACT_TYPED :value -> CwMonoBase#value') ||
+               code.include?('CLOSED_WORLD_EXACT_CLASS :value -> CwMonoBase#value')) &&
                code.include?('CwMonoBase_value_impl(M, r2)') && !code.include?('bc2cpp_send('))
 end
 
