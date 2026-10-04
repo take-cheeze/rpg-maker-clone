@@ -214,8 +214,10 @@ body_of = lambda do |code, fn|
   code[/^mrb_value CrFx_#{fn}_impl\(mrb_state\* M.*?(?=^(?:static )?mrb_value \w+\(mrb_state\* M|\z)/m].to_s
 end
 live_of = ->(code, fn) { body_of.call(code, fn).lines.reject { |l| l.lstrip.start_with?('//') }.join }
-# `tag` / `count` is sent to an exact CrBox: the closed-world lookup or the TYPED call, with no guard.
-exact_tag = ->(code, fn) { body_of.call(code, fn).match?(%r{(?:CLOSED_WORLD_EXACT_CLASS :tag -> CrBox#tag|EXACT_TYPED :count -> CrBox#count)}) }
+# `tag` / `count` is sent to an exact CrBox by a guard-free exact or TYPED call.
+exact_tag = lambda do |code, fn|
+  body_of.call(code, fn).match?(%r{(?:CLOSED_WORLD_EXACT_CLASS :tag -> CrBox#tag|(?:CLOSED_WORLD_EXACT_CLASS|EXACT_TYPED) :count -> CrBox#count)})
+end
 guarded_tag = lambda do |code, fn|
   body = body_of.call(code, fn)
   !body.empty? && !body.match?(%r{(?:CLOSED_WORLD_EXACT_CLASS :tag -> CrBox#tag|EXACT_TYPED :count -> CrBox#count)})
@@ -257,7 +259,7 @@ if ENV['MRBC']
     ACCESSOR_METHODS.each do |fn|
       check.call("#{fn}: the attr_reader result is an exact CrBox, so tag is called with no guard", exact_tag.call(code, fn))
     end
-    check.call('acc_typed / acc_typed_param: a name an RGSS native also spells takes the guard-free TYPED call',
+    check.call('acc_typed / acc_typed_param: a name an RGSS native also spells takes a guard-free exact call',
                exact_tag.call(code, 'acc_typed') && exact_tag.call(code, 'acc_typed_param'))
     check.call('the diagnostic lists the reader in the return table', err.include?('RETCLASS thing (CrBox)'))
     check.call('the exact result of `h.thing` leaves no dispatch of the second send',
