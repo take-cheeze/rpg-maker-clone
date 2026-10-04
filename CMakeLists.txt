@@ -1033,4 +1033,12 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
     NAME error_dump
     COMMAND ${error_dump_cmd}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Xvfb provides X11; an inherited Wayland session must not select another
+    # SDL backend and bypass the test's reserved virtual display.
+    set_property(
+      TEST exe_open render_probe audio_probe error_dump
+      APPEND
+      PROPERTY ENVIRONMENT "SDL_VIDEODRIVER=x11")
+  endif()
 endif()

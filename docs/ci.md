@@ -5,6 +5,14 @@ workflow. It runs on pull requests to `master`, pushes to `master`, merge-queue
 runs, manual dispatch and (for the Cloudflare preview only) `/preview` comments.
 Deployment is covered in [deploy.md](deploy.md).
 
+## Native SDL probes
+
+On Linux, `exe_open`, `render_probe`, `audio_probe` and `error_dump` use reserved
+Xvfb displays and set `SDL_VIDEODRIVER=x11` through CTest. This ensures SDL uses
+the virtual display even when the parent environment describes a Wayland
+session. The audio probe retains `SDL_AUDIODRIVER=dummy`. Normal desktop runs
+continue to select their backend through SDL's usual configuration.
+
 ## bc2cpp gate
 
 The status check `bc2cpp` is the aggregate of `bc2cpp-build`, every
