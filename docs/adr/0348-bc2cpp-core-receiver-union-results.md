@@ -23,6 +23,8 @@ Unknown or unsupported receiver members cannot use this specialization.
 
 Complete core flow masks take precedence over older collection inlining hints.
 A mixed Array/Hash receiver cannot enter an Array-only inline region.
+The legacy select/reject hint also requires a traced Array receiver; disabling
+the core oracle must retain correct Hash dispatch.
 
 `BC2CPP_CORE_RUBY_RECEIVER_UNIONS=0` disables the new specialization while
 preserving receiver-independent results. Generated checks, mutation checks and

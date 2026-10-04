@@ -15,6 +15,7 @@ SOURCE = <<~RUBY
     def mixed_map_other(flag); value = flag ? [1, 2] : KrOther.new; value.map { |x| x }.size; end
     def mixed_map_break(flag); value = flag ? [1, 2] : {a: 1}; value.map { |x| break KrOther.new }.size; end
     def reject_map(input); input.reject { |x| false }.map { |x| x }.compact.size; end
+    def select_map(input); input.select { |x| true }.map { |x| x }.compact.size; end
     def unknown_reject(input); input.reject { |x| false }.size; end
     def unknown_filter(input); input.filter_map { |x| true }.size; end
     def unknown_break(input); input.filter_map { |x| break KrOther.new }.size; end
@@ -138,9 +139,11 @@ if ENV['MRBC']
           check.call("#{name}: reject-map-compact chain", exact_size.call(code, 'reject_map') == union_proven)
           check.call("#{name}: unknown union member stays unproved", !exact_size.call(code, 'mixed_map_other'))
           check.call("#{name}: union caller break stays unproved", !exact_size.call(code, 'mixed_map_break'))
-          if name == 'core bodies'
+          if ['core bodies', 'kill switch'].include?(name)
             check.call('core bodies: union map preserves both receiver paths',
                        !body_of.call(code, 'reject_map').include?('Array receiver for inlined #map'))
+            check.call("#{name}: select-map preserves both receiver paths",
+                       !body_of.call(code, 'select_map').include?('Array receiver for inlined #map'))
           end
         end
         check.call("#{name}: nested sort result", exact_size.call(code, 'sorted') == (name == 'core bodies')) if ['core bodies', 'kill switch', 'nested kill switch', 'nested project override', 'nested core override', 'nested core recursion', 'nested caller break', 'open world'].include?(name)
@@ -199,12 +202,14 @@ if ENV['MRBC']
             mrb_ary_push(M, unknown, mrb_fixnum_value(2));
             call(M, "unknown_reject", runner, "unknown_reject", 1, &unknown);
             call(M, "reject_map", runner, "reject_map", 1, &unknown);
+            call(M, "select_map", runner, "select_map", 1, &unknown);
             call(M, "unknown_filter", runner, "unknown_filter", 1, &unknown);
             call(M, "unknown_break", runner, "unknown_break", 1, &unknown);
             unknown = mrb_hash_new(M);
             mrb_hash_set(M, unknown, mrb_fixnum_value(1), mrb_fixnum_value(2));
             call(M, "hash_reject", runner, "unknown_reject", 1, &unknown);
             call(M, "hash_reject_map", runner, "reject_map", 1, &unknown);
+            call(M, "hash_select_map", runner, "select_map", 1, &unknown);
             call(M, "stored", runner, "stored");
             call(M, "read", runner, "read");
             for (mrb_value flag : {mrb_true_value(), mrb_false_value()}) {

@@ -112,6 +112,8 @@ members, method replacements and caller block exits withdraw the proof.
 Complete core receiver flow sets also take precedence over collection inlining
 hints. In particular, an Array-or-Hash `reject` result cannot justify an
 Array-only `map` inline region.
+Legacy `select` and `reject` hints also require a traced Array receiver, so
+disabling the core result oracle cannot reintroduce that narrowing.
 
 Set `BC2CPP_CORE_RUBY_RECEIVER_UNIONS=0` to disable these specialized union
 results while retaining the existing receiver-independent proofs. Generated-code,
