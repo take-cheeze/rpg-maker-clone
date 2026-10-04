@@ -1053,6 +1053,9 @@
   Core collection bytecode can also prove results independent of the receiver
   class, and exhaustive exact class sets select audited native bodies without
   a dynamic fallback; see [core Ruby returns](docs/bc2cpp-core-ruby-returns.md).
+  Audited Profiler blocks also retain their result classes; captured slots use a
+  separate helper frame and nonlocal returns keep the method-return fallback. See
+  [Profiler block results](docs/bc2cpp-profiler-results.md).
   A shared escape analysis (`tools/bc2cpp/escape_analysis.rb`) answers whether the value a creation site makes
   leaves its frame, with callee summaries over a closed world; its first consumer lets a literal block that captures
   locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything

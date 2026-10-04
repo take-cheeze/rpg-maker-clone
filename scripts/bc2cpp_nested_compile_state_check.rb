@@ -103,6 +103,7 @@ NOT_PER_METHOD = %w[
   @numeric_return @numeric_return_send_ireps @numeric_states @numeric_wild_families @numeric_writes
   @core_ruby_name_results @native_result_kinds @native_result_name_kinds @native_results_ready @native_struct_string_alias_safe @native_dup_result_safe
   @captured_local_class_enabled @rc_writes
+  @profiler_result_lookup @profiler_result_parents
   @tuple_returns @tuple_sites @tuple_consumers @numeric_root_depth @numeric_root_lines
   @escape_analyzer
   @constructor_pool_candidates @constructor_pool_status @constructor_pool_refusal @constructor_pool_stats @constructor_aliased
