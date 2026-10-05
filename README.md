@@ -1262,6 +1262,9 @@
   Immediate in-bounds fresh array reads can prove primitive element receivers
   through a bounded literal corridor; see
   [literal element proofs](docs/bc2cpp-literal-elements.md).
+  Proven Integer receivers can call audited zero-argument `to_s` and `to_i`
+  bodies directly, including bigints; see
+  [numeric native conversions](docs/bc2cpp-numeric-native-direct.md).
   Selected core Ruby collection bodies now retain exact return classes across zero-argument calls,
   including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
   `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks

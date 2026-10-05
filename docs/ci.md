@@ -273,3 +273,15 @@ paths. The receiver-union suite separately checks exhaustive dispatch.
 ADR 0356 adds `bc2cpp_readonly_call_effects_check.rb` and its mutation checker to
 the core shard: readonly getters, receiver unions, unknown and outside writers,
 strict opcode/arity checks, runtime parity, and thirteen mutants plus a control.
+
+
+### Numeric native conversions
+
+The core-mrbtest shard runs enabled and disabled Integer conversion parity and
+nine proof-condition mutants plus control. Cases include fixnums, bigints beyond
+64 bits, decimal ABI, mixed numeric inputs, overrides, singleton makers, open
+worlds, wrong arity and blocks. See ADR 0357.
+
+The conversion parity check also runs in both width shards with width-safe
+literals and matching bigint defines. Visibility changes withdraw the numeric
+proof alongside altered method lookup.
