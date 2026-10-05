@@ -245,8 +245,8 @@ Dir.mktmpdir do |dir|
   check.call('a name that returns two classes is not exact, a nil-or-one-class name is not either',
              !err.include?('RETCLASS make_mixed ') && !err.include?('RETCLASS maybe '))
 
-  # Each of these withdraws the table's proof for `make_box` (and so every TABLE_ONLY shape) while
-  # the fresh `Klass.new` shapes that never consult the table keep theirs.
+  # Global summaries withdraw; an exact lexical receiver can still select its
+  # own unchanged body when only an unrelated lookup gains a definition.
   variants = {
     'alias_method on the name' => "class RcFx\n  alias_method :make_box_alias, :make_box\nend\n",
     'define_method of the name' => "class RcFx\n  define_method(:make_box) { RcOther.new }\nend\n",
@@ -259,8 +259,11 @@ Dir.mktmpdir do |dir|
     d = File.join(dir, what.gsub(/\W+/, '_'))
     Dir.mkdir(d)
     vcode, verr = generate.call(CLASSES + FX_OPEN + extra, d)
-    check.call("#{what} withdraws the table's proof for the name",
-               %w[e_call e_chain e_forward].none? { |fn| exact.call(vcode, fn) } && !verr.include?('RETCLASS make_box '))
+    check.call("#{what} withdraws the table's proof for the name", !verr.include?('RETCLASS make_box '))
+    scoped_safe = ENV['BC2CPP_CALL_CONTEXT_RESULTS'] != '0' &&
+                  ['a second definition of the name in another class', 'a method_missing class', 'a singleton make_box on a class'].include?(what)
+    check.call("#{what}: lexical receiver follows its own lookup",
+               %w[e_call e_chain e_forward].all? { |fn| exact.call(vcode, fn) == scoped_safe })
     check.call("#{what} leaves the fresh `Klass.new` shape exact", exact.call(vcode, 'e_local'))
   end
 

@@ -228,3 +228,10 @@ The `changes` job's path filter (dorny/paths-filter) has not been exercised on a
 `merge_group` run; watch the first queued PR for it. A required check must be reported on
 `merge_group` as well as on `pull_request`; every job here has no event filter
 beyond excluding `issue_comment`, so it is.
+
+### Call-context receiver results
+
+The bc2cpp core-mrbtest shard runs the call-context result parity check and its
+mutation check. They exercise exact self, positional inputs, inherited overrides,
+cache separation and withdrawal for uncertain returns or unsupported method
+shapes. See ADR 0351.
