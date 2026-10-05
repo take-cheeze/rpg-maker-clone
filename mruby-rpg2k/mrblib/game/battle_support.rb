@@ -1500,13 +1500,13 @@ module Game
     # wordings (message_actor / message_enemy). nil when the database has no
     # sentence, so the caller can compose its own.
     def self.inflict_message(id, table, battler_name, ally)
-      message(battler_name,
-              field(id, table, ally ? :message_actor : :message_enemy))
+      compose_message(battler_name,
+                      field(id, table, ally ? :message_actor : :message_enemy))
     end
 
     # ... and for a state lifting, which has one wording for both sides.
     def self.recovery_message(id, table, battler_name)
-      message(battler_name, field(id, table, :message_recovery))
+      compose_message(battler_name, field(id, table, :message_recovery))
     end
 
     # ... and the per-turn reminder a battler still carrying (or just having
@@ -1514,7 +1514,7 @@ module Game
     # action -- distinct from #inflict_message, which fires only the instant
     # a state first lands. One wording for both sides, like recovery.
     def self.affected_message(id, table, battler_name)
-      message(battler_name, field(id, table, :message_affected))
+      compose_message(battler_name, field(id, table, :message_affected))
     end
 
     # ... and for one the target **already** carried when something tried to
@@ -1523,7 +1523,7 @@ module Game
     # rather than a silent no-op, which is why the field exists at all: 15 of
     # Nepheshel's 25 states and 7 of mtf-meido-action's 10 fill it in.
     def self.already_message(id, table, battler_name)
-      message(battler_name, field(id, table, :message_already))
+      compose_message(battler_name, field(id, table, :message_already))
     end
 
     def self.field(id, table, name)
@@ -1532,7 +1532,9 @@ module Game
       v.nil? || v.empty? ? nil : v
     end
 
-    def self.message(battler_name, predicate)
+    # Not `message`: Exception#message makes that name unresolvable for
+    # bc2cpp's lexical-self devirtualization of these bare calls.
+    def self.compose_message(battler_name, predicate)
       return nil unless predicate
       "#{battler_name}#{predicate}"
     end
