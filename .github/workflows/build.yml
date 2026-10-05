@@ -975,6 +975,10 @@ jobs:
               # ADR 0351: call-context receiver results and eleven proof-condition mutants.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_call_context_results_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_call_context_results_mutation_check.rb
+              # ADR 0354: fresh literal element parity and six withdrawal mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_literal_element_check.rb
+              BC2CPP_LITERAL_ELEMENT_PROOF=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_literal_element_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_literal_element_mutation_check.rb
               # ADR 0352: agreeing user receiver families and ten condition mutants.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_check.rb
               BC2CPP_USER_RECEIVER_UNIONS=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_check.rb
