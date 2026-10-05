@@ -150,7 +150,9 @@ What it does and does not buy: the fixtures themselves are small (a
 `return_class` fixture compiles in under a second), so the cache matters for the
 mruby builds, about 2 minutes each in CI and a handful per shard. The caches are
 only written by pushes to `master` (`SCCACHE_GHA_RW_MODE`), so a pull request
-sees the effect once `master` has run these steps once, and only for build
+sees the effect once `master` has run these steps once (the workflow compiles through
+the `sccache-action` binary, not the dev shell's nixpkgs 0.15.0, whose GHA backend ignores
+`SCCACHE_GHA_RW_MODE`; read-only mode needs 0.16.0 or later), and only for build
 directories whose path is stable between runs (`BC2CPP_FULL_BUILD_DIR`,
 `BC2CPP_BLOCK_DIRECT_DIR`, the `$RUNNER_TEMP` ones the workflow names; a check
 that builds in a random temp directory still misses). Run with

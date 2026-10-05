@@ -278,6 +278,15 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11
 
+      # The dev shell's launcher is nixpkgs' sccache 0.15.0, whose GHA backend
+      # has no read-only mode (added in 0.16.0), so SCCACHE_GHA_RW_MODE was
+      # ignored and every pull request minted sccache blobs. Compile through
+      # the action's own sccache instead.
+      - name: Use the sccache from sccache-action
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+
       # Runs while the background steps above are still in flight.
       # -DENABLE_TIME_REPORT=ON (CMakeLists.txt) is this job's own opt-in --
       # local/dev builds don't pay for it -- turning on GCC's
@@ -909,6 +918,15 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11
 
+      # The dev shell's launcher is nixpkgs' sccache 0.15.0, whose GHA backend
+      # has no read-only mode (added in 0.16.0), so SCCACHE_GHA_RW_MODE was
+      # ignored and every pull request minted sccache blobs. Compile through
+      # the action's own sccache instead.
+      - name: Use the sccache from sccache-action
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+
       - name: Configure host build
         run: cmake -S . -B build-bc2cpp -GNinja
 
@@ -1349,6 +1367,15 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11
 
+      # The dev shell's launcher is nixpkgs' sccache 0.15.0, whose GHA backend
+      # has no read-only mode (added in 0.16.0), so SCCACHE_GHA_RW_MODE was
+      # ignored and every pull request minted sccache blobs. Compile through
+      # the action's own sccache instead.
+      - name: Use the sccache from sccache-action
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+
       - name: Configure host build
         run: cmake -S . -B build-bc2cpp -GNinja
 
@@ -1472,6 +1499,15 @@ jobs:
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11
+
+      # The dev shell's launcher is nixpkgs' sccache 0.15.0, whose GHA backend
+      # has no read-only mode (added in 0.16.0), so SCCACHE_GHA_RW_MODE was
+      # ignored and every pull request minted sccache blobs. Compile through
+      # the action's own sccache instead.
+      - name: Use the sccache from sccache-action
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
 
       - name: Configure host build
         run: cmake -S . -B build-bc2cpp -GNinja
