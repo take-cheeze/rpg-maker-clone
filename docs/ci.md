@@ -245,3 +245,9 @@ The bc2cpp core checks run `bc2cpp_enumerator_wrappers_check.rb` and its mutatio
 check. They verify the seven admitted wrappers' unconditional Fiber guards,
 saved bytecode registration, admission gates and runtime parity for yielding
 callbacks, state changes, overrides and GC. See ADR 0350.
+
+### User receiver unions
+
+The core-mrbtest shard runs user receiver union parity and mutation checks.
+They verify shared-body direct calls, every family member, differing overrides, unknown and nil bits,
+constructor lookup, hierarchy bounds and outside replacements. See ADR 0352.
