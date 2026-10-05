@@ -265,3 +265,7 @@ ADR 0355 expands call-context checks to positional defaults, rest and trailing
 arguments, with interpreter parity and fourteen proof-condition mutants plus a
 control. The core shard also runs `bc2cpp_context_arguments_check.rb` and its
 seven-mutant binding checker.
+
+The native class-arm and join-dominance checks disable exhaustive user receiver
+unions so their guarded fallback assertions continue to exercise those proof
+paths. The receiver-union suite separately checks exhaustive dispatch.
