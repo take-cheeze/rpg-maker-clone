@@ -263,3 +263,7 @@ worlds, wrong arity and blocks. See ADR 0357.
 The conversion parity check also runs in both width shards with width-safe
 literals and matching bigint defines. Visibility changes withdraw the numeric
 proof alongside altered method lookup.
+
+The native class-arm and join-dominance checks disable exhaustive user receiver
+unions so their guarded fallback assertions continue to exercise those proof
+paths. The receiver-union suite separately checks exhaustive dispatch.
