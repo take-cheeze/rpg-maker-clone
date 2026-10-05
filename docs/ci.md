@@ -252,3 +252,7 @@ callbacks, state changes, overrides and GC. See ADR 0350.
 The core-mrbtest shard runs user receiver union parity and mutation checks.
 They verify shared-body direct calls, every family member, differing overrides, unknown and nil bits,
 constructor lookup, hierarchy bounds and outside replacements. See ADR 0352.
+
+The native class-arm and join-dominance checks disable exhaustive user receiver
+unions so their guarded fallback assertions continue to exercise those proof
+paths. The receiver-union suite separately checks exhaustive dispatch.
