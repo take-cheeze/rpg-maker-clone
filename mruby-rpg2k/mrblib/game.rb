@@ -694,6 +694,39 @@ module Game
     v
   end
 
+  # A battler's base stat / per-battle modifier for `key` (:atk, :def, :spi or
+  # :agi) -- 0 for a fixture without it. Spelled as literal calls so bc2cpp
+  # sees every reader (closed-world lint, ADR 0212).
+  def self.stat_of(b, key)
+    v = case key
+        when :atk then b.respond_to?(:atk) ? b.atk : 0
+        when :def then b.respond_to?(:def) ? b.def : 0
+        when :spi then b.respond_to?(:spi) ? b.spi : 0
+        else b.respond_to?(:agi) ? b.agi : 0
+        end
+    v || 0
+  end
+
+  def self.stat_mod_of(b, key)
+    v = case key
+        when :atk then b.respond_to?(:atk_mod) ? b.atk_mod : 0
+        when :def then b.respond_to?(:def_mod) ? b.def_mod : 0
+        when :spi then b.respond_to?(:spi_mod) ? b.spi_mod : 0
+        else b.respond_to?(:agi_mod) ? b.agi_mod : 0
+        end
+    v || 0
+  end
+
+  # No-op for a battler without the modifier field.
+  def self.set_stat_mod(b, key, value)
+    case key
+    when :atk then b.atk_mod = value if b.respond_to?(:atk_mod=)
+    when :def then b.def_mod = value if b.respond_to?(:def_mod=)
+    when :spi then b.spi_mod = value if b.respond_to?(:spi_mod=)
+    else b.agi_mod = value if b.respond_to?(:agi_mod=)
+    end
+  end
+
   # round(num.to_f / den), banker's rounding (ties go to the nearest *even*
   # integer, not always up) -- integer arithmetic standing in for C's
   # `std::lrint` under the default IEEE 754 `FE_TONEAREST` rounding mode,
@@ -5974,32 +6007,32 @@ module Game
     # accessor every
     # context (a basic Attack, a Skill, in battle or, for HP/SP only, out of
     # it) reads through.
-    def modified_stat(base, b, mod_field)
-      mod = b.respond_to?(mod_field) ? (b.send(mod_field) || 0) : 0
+    def modified_stat(base, b, stat)
+      mod = Game.stat_mod_of(b, stat)
       Game.clamp(base + mod, 1, Battle::MAX_STAT_BATTLE_VALUE)
     end
 
     def effective_atk(b)
-      adjust_stat(modified_stat(b.atk, b, :atk_mod), stat_mode(b, :affect_attack))
+      adjust_stat(modified_stat(b.atk, b, :atk), stat_mode(b, :affect_attack))
     end
 
     def effective_int(b)
-      adjust_stat(modified_stat(b.int, b, :spi_mod), stat_mode(b, :affect_spirit))
+      adjust_stat(modified_stat(b.int, b, :spi), stat_mode(b, :affect_spirit))
     end
 
     def effective_def(b)
       base = (b.respond_to?(:def) ? b.def : 0) || 0
-      adjust_stat(modified_stat(base, b, :def_mod), stat_mode(b, :affect_defense))
+      adjust_stat(modified_stat(base, b, :def), stat_mode(b, :affect_defense))
     end
 
     def effective_spi(b)
       base = (b.respond_to?(:spi) ? b.spi : 0) || 0
-      adjust_stat(modified_stat(base, b, :spi_mod), stat_mode(b, :affect_spirit))
+      adjust_stat(modified_stat(base, b, :spi), stat_mode(b, :affect_spirit))
     end
 
     def effective_agi(b)
       base = (b.respond_to?(:agi) ? b.agi : 0) || 0
-      adjust_stat(modified_stat(base, b, :agi_mod), stat_mode(b, :affect_agility))
+      adjust_stat(modified_stat(base, b, :agi), stat_mode(b, :affect_agility))
     end
 
     # The base HP/SP amount a recovery skill restores, per RPG2000's formula
