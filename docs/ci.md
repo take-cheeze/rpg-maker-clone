@@ -251,3 +251,11 @@ callbacks, state changes, overrides and GC. See ADR 0350.
 The core-mrbtest shard runs user receiver union parity and mutation checks.
 They verify shared-body direct calls, every family member, differing overrides, unknown and nil bits,
 constructor lookup, hierarchy bounds and outside replacements. See ADR 0352.
+
+
+### Fresh literal element receivers
+
+The core-mrbtest shard runs enabled and disabled literal element parity checks,
+plus six proof-condition mutants and their control. They cover exact primitive
+results and withdrawal for captured writes, effects, branch entries, unknown
+indices and out-of-bounds reads. See ADR 0354.
