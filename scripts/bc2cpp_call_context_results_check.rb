@@ -102,7 +102,9 @@ Dir.mktmpdir('call-context') do |dir|
     block_enabled = enabled && ENV['BC2CPP_BLOCK_CONTEXT_RESULTS'] != '0'
     check.call("#{name}: block-containing method carries exact receiver", body.call(name).include?('EXACT_CLASS :tag -> CcA#tag') == block_enabled)
   end
-  %w[unknown mixed nilable wrong_arity recursive closure optional rest blocked captured_write nested_return break_result captured_b later_write].each do |name|
+  # `optional` and `rest` are asserted exact by the positional-binding block below (ADR 0355),
+  # so they are not in this list: a resolved signature is exactly what that proof consumes.
+  %w[unknown mixed nilable wrong_arity recursive closure blocked captured_write nested_return break_result captured_b later_write].each do |name|
     check.call("#{name}: uncertain result stays dynamic", !body.call(name).include?('EXACT_CLASS :tag ->'))
   end
   shapes = enabled && ENV['BC2CPP_CONTEXT_ARGUMENT_SHAPES'] != '0'
