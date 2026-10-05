@@ -1044,3 +1044,20 @@ Three shapes are worth naming because they are gaps rather than missing proofs:
 
 See [native arm Integer guards](bc2cpp-native-int-guards.md) and
 [ADR 0358](adr/0358-bc2cpp-native-direct-exact-int-guard.md).
+
+## Follow-up: closed-world helper else (ADR 0359)
+
+Measured on the wio closed world (shipped pass) at master `0a9adfc`, helper emission only:
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` calls held in helpers | 24 | 23 | -1 |
+| generated callers of a helper that holds a by-name call | 5,781 | 5,509 | -272 |
+| `bc2cpp_send` call sites in generated bodies | 2,408 | 2,408 | 0 |
+| **Sites that can reach by-name dispatch** (bodies + helper callers + 417 block + 30 funcall sites) | **8,636** | **8,364** | **-272 (-3.1%)** |
+
+`bc2cpp_slow_div` (272 callers) is the only helper whose operator is answered by Integer and Float alone
+(`CallFacts::Answers#members`), so its else is now a proven NoMethodError. The ADR lists the answering
+classes of every other helper name: `>>`, `round` and `^` need operand-coercion or object.c bodies, `+ - *` need
+`Array`/`String` (and, in this scan, `Time`) bodies that are static in mruby, `< <= > >=` need the Comparable
+includers, `[]`/`[]=` have thirteen native classes besides the eight registry ones.
