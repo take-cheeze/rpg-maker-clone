@@ -1265,6 +1265,10 @@
   Proven Integer receivers can call audited zero-argument `to_s` and `to_i`
   bodies directly, including bigints; see
   [numeric native conversions](docs/bc2cpp-numeric-native-direct.md).
+  A native arm whose receiver is already proven exact no longer needs a runtime
+  Integer tag test on an argument the Fixnum proof covers, which removes the
+  arm's only remaining by-name dispatch; see
+  [native arm Integer guards](docs/bc2cpp-native-int-guards.md).
   Selected core Ruby collection bodies now retain exact return classes across zero-argument calls,
   including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
   `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks

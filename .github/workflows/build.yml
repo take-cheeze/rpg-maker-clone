@@ -988,6 +988,10 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_native_direct_check.rb
               BC2CPP_NUMERIC_NATIVE_DIRECT=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_native_direct_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_numeric_native_direct_mutation_check.rb
+              # ADR 0358: the Fixnum proof on a NATIVE_DIRECT_EXACT arm's :int argument, and six mutants.
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_int_guard_check.rb
+              BC2CPP_NATIVE_INT_GUARDS=0 MRBC="$mrbc" ruby scripts/bc2cpp_native_int_guard_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_int_guard_mutation_check.rb
               # ADR 0352: agreeing user receiver families and ten condition mutants.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_check.rb
               BC2CPP_USER_RECEIVER_UNIONS=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_check.rb
