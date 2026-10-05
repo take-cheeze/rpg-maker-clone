@@ -269,15 +269,16 @@ analysed(CODE) do |result, registry, gen|
   check.call('an Array key that only holds Array literals is inlined with no dynamic fallback',
              sum.include?('Array receiver for inlined #each') && !sum.include?('mrb_funcall_with_block'))
   go = code_of.call('RhHost', 'rh_engine_go')
+  exact_go = ->(code) { code.match?(/(?:CLOSED_WORLD_EXACT_CLASS|EXACT_TYPED) :rh_go -> RhEngine#rh_go/) }
   check.call('a key holding only fresh RhEngine.new is an exact-class direct call',
-             go.include?('CLOSED_WORLD_EXACT_CLASS :rh_go -> RhEngine#rh_go') && !dispatch.call(go))
+             exact_go.call(go) && !dispatch.call(go))
   mixed = code_of.call('RhHost', 'rh_mixed_go')
   check.call('a key another method stores an unknown value into keeps its dispatch',
-             !mixed.include?('CLOSED_WORLD_EXACT_CLASS :rh_go') && dispatch.call(mixed))
+             !mixed.match?(/(?:CLOSED_WORLD_EXACT_CLASS|EXACT_TYPED) :rh_go/) && dispatch.call(mixed))
   check.call('a deletable Array key is not inlined (it may read nil)',
              !code_of.call('RhDelHost', 'rh_dsum').include?('Array receiver for inlined #each'))
   check.call('a key next to a deleted one keeps its exact class',
-             code_of.call('RhDelHost', 'rh_dgo').include?('CLOSED_WORLD_EXACT_CLASS :rh_go -> RhEngine#rh_go'))
+             exact_go.call(code_of.call('RhDelHost', 'rh_dgo')))
   list = code_of.call('RhHost', 'rh_list_sum')
   check.call('an Array key with an unclassified store keeps the fallback loop',
              !list.include?('Array receiver for inlined #each') || list.include?('mrb_funcall_with_block'))

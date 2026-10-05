@@ -202,6 +202,9 @@ WORLD = <<~'RUBY'
   class NdCaller
     def set_z(w, v); w.z = v; end
     def set_x(w, v); w.x = v; end
+    def set_angle(w, v); w.angle = v; end
+    def set_zoom_x(w, v); w.zoom_x = v; end
+    def transition_alpha(w, map, progress, vague); w._transition_alpha(map, progress, vague); end
     def set_visible(w, v); w.visible = v; end
     def set_contents(w, v); w.contents = v; end
     def flash_both(w, c); w.flash(c, 4); end
@@ -252,6 +255,16 @@ check.call('without the closed world the last resort is still the by-name dispat
 check.call('a boolean argument is read with mrb_test, as mrb_get_args "b" does',
            body_of.call(open_code, 'NdCaller_set_visible').include?('rgss::object_visible_set_direct(M, r') &&
              body_of.call(open_code, 'NdCaller_set_visible').include?('mrb_test(r'))
+float_angle = body_of.call(open_code, 'NdCaller_set_angle')
+float_zoom = body_of.call(open_code, 'NdCaller_set_zoom_x')
+float_transition = body_of.call(open_code, 'NdCaller_transition_alpha')
+check.call('RGSS float arguments use mrb_as_float like mrb_get_args "f" for angle, zoom and transition calls',
+           float_angle.include?('rgss::spr_set_angle_direct(M,') && float_angle.include?('mrb_as_float(M, r') &&
+             float_zoom.include?('rgss::spr_set_zoom_x_direct(M,') && float_zoom.include?('mrb_as_float(M, r') &&
+             float_transition.include?('rgss::bmp_transition_alpha_direct(M,') &&
+             float_transition.scan('mrb_as_float(M, r').size == 2)
+check.call('float conversion preserves a dynamic fallback for receivers outside the native class arms',
+           float_angle.include?('bc2cpp_send(') && !float_angle.include?('mrb_float_p('))
 contents = body_of.call(open_code, 'NdCaller_set_contents')
 check.call('an untyped argument is passed through with no guard, and a name with no Ruby definer still gets its arm',
            contents.include?('rgss::window_contents_set_direct(M, r') && !contents.include?('mrb_integer_p') &&

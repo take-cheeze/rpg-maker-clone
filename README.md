@@ -1056,6 +1056,9 @@
   Exhaustive core receiver sets also preserve collection chains: Array/Hash
   `map` results join to Array; see
   [ADR 0348](docs/adr/0348-bc2cpp-core-receiver-union-results.md).
+  Fixed positional core calls also preserve memo classes through
+  `each_with_object` and Array results through `drop`; see
+  [ADR 0349](docs/adr/0349-bc2cpp-core-positional-results.md).
   Audited Profiler blocks also retain their result classes; captured slots use a
   separate helper frame and nonlocal returns keep the method-return fallback. See
   [Profiler block results](docs/bc2cpp-profiler-results.md).

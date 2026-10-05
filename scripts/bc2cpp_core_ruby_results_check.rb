@@ -55,6 +55,21 @@ SOURCE = <<~RUBY
     def range_sorted; (1..3).to_a.sort_by { |x| -x }.size; end
     def range_strings; ('a'..'c').to_a.size; end
     def range_entries; ('a'..'c').entries.size; end
+    def memo_array; [1, 2].each_with_object([]) { |x, out| out << x }.size; end
+    def memo_hash; [1, 2].each_with_object({}) { |x, out| out[x] = x }.size; end
+    def memo_unknown(input); [1, 2].each_with_object(input) { |x, out| x }.size; end
+    def memo_nil; [1, 2].each_with_object(nil) { |x, out| x }.size; end
+    def memo_unresolved(input); input.each_with_object([]) { |x, out| out << x }.size; end
+    def memo_unresolved_hash(input); input.each_with_object({}) { |x, out| out[x] = x }.size; end
+    def memo_unresolved_unknown(input, memo); input.each_with_object(memo) { |x, out| x }.size; end
+    def memo_break; [1, 2].each_with_object([]) { |x, out| break KrOther.new }.size; end
+    def memo_forwarded(&block); [1, 2].each_with_object([], &block).size; end
+    def memo_no_block; [1, 2].each_with_object([]).size; end
+    def memo_wrong_arity; [1, 2].each_with_object([], {}) { |x, out| x }.size; end
+    def memo_keyword; [1, 2].each_with_object([], extra: 1) { |x, out| x }.size; end
+    def memo_splat(args); [1, 2].each_with_object(*args) { |x, out| x }.size; end
+    def dropped; [1, 2].drop(1).size; end
+    def dropped_unknown(input); input.drop(1).size; end
   end
 RUBY
 OWNERS = (BC2CPP_CORE_OWNERS + %w[KrOther KrRunner]).freeze
@@ -77,6 +92,15 @@ worlds = [
   ['nested kill switch', SOURCE, { 'BC2CPP_CORE_RUBY_NESTED_RESULTS' => '0' }, true],
   ['receiver union kill switch', SOURCE, { 'BC2CPP_CORE_RUBY_RECEIVER_UNIONS' => '0' }, true],
   ['Hash map override', SOURCE + "class Hash; def map(&block); KrOther.new; end; end\n", {}, true],
+  ['positional kill switch', SOURCE, { 'BC2CPP_CORE_RUBY_POSITIONAL_RESULTS' => '0' }, true],
+  ['positional project override', SOURCE + "class Array; def each_with_object(obj, &block); KrOther.new; end; end\n", {}, true],
+  ['positional foreign override', SOURCE + "class KrOther; def each_with_object(obj, &block); self; end; end\n", {}, true],
+  ['positional core return', SOURCE, {}, true, nil, "module Enumerable; def each_with_object(obj, &block); KrOther.new; end; end"],
+  ['positional core captured write', SOURCE, {}, true, nil, "module Enumerable; def each_with_object(obj, &block); self.each { obj = KrOther.new }; obj; end; end"],
+  ['positional optional argument', SOURCE, {}, true, nil, "module Enumerable; def each_with_object(obj, extra = nil, &block); obj; end; end"],
+  ['positional core arity', SOURCE, {}, true, nil, "module Enumerable; def each_with_object(obj, other, &block); obj; end; end"],
+  ['positional rest argument', SOURCE, {}, true, nil, "module Enumerable; def each_with_object(obj, *rest, &block); obj; end; end"],
+  ['positional keyword argument', SOURCE, {}, true, nil, "module Enumerable; def each_with_object(obj, extra: nil, &block); obj; end; end"],
   ['nested project override', SOURCE + "class Array; def collect!(&block); KrOther.new; end; end\n", {}, true],
   ['nested core override', SOURCE, {}, true, nil, "class Array; def collect!(&block); KrOther.new; end; end"],
   ['nested core recursion', SOURCE, {}, true, nil, "class Array; def collect!(&block); self.collect! { |x| x }; end; end"],
@@ -146,6 +170,22 @@ if ENV['MRBC']
                        !body_of.call(code, 'select_map').include?('Array receiver for inlined #map'))
           end
         end
+        if name.start_with?('positional ') || ['core bodies', 'kill switch', 'open world', 'name kill switch', 'method missing'].include?(name)
+          positional_proven = ['core bodies', 'name kill switch', 'method missing', 'positional foreign override'].include?(name)
+          check.call("#{name}: positional Array memo", exact_size.call(code, 'memo_array') == positional_proven)
+          check.call("#{name}: positional Hash memo", body_of.call(code, 'memo_hash').include?('CLOSED_WORLD_NATIVE_EXACT :size -> Hash') == positional_proven)
+          check.call("#{name}: unresolved receiver memo", exact_size.call(code, 'memo_unresolved') == (name == 'core bodies'))
+          check.call("#{name}: unresolved receiver Hash memo", body_of.call(code, 'memo_unresolved_hash').include?('CLOSED_WORLD_NATIVE_EXACT :size -> Hash') == (name == 'core bodies'))
+          check.call("#{name}: unresolved unknown memo stays unproved", !exact_size.call(code, 'memo_unresolved_unknown'))
+          %w[memo_unknown memo_nil memo_break memo_forwarded memo_no_block memo_keyword memo_splat].each do |method|
+            check.call("#{name}: #{method} stays unproved", !exact_size.call(code, method))
+          end
+          check.call("#{name}: positional call arity", exact_size.call(code, 'memo_wrong_arity') == (name == 'positional core arity'))
+          if ['core bodies', 'positional kill switch', 'kill switch', 'open world', 'name kill switch'].include?(name)
+            check.call("#{name}: positional drop result", exact_size.call(code, 'dropped') == ['core bodies', 'name kill switch'].include?(name))
+            check.call("#{name}: unresolved drop result", exact_size.call(code, 'dropped_unknown') == (name == 'core bodies'))
+          end
+        end
         check.call("#{name}: nested sort result", exact_size.call(code, 'sorted') == (name == 'core bodies')) if ['core bodies', 'kill switch', 'nested kill switch', 'nested project override', 'nested core override', 'nested core recursion', 'nested caller break', 'open world'].include?(name)
         if ['core bodies', 'kill switch', 'nested kill switch', 'super core override', 'super included override', 'native range switch', 'open world'].include?(name)
           check.call("#{name}: range helper and super result", exact_size.call(code, 'range_strings') == (name == 'core bodies'))
@@ -163,7 +203,7 @@ if ENV['MRBC']
           check.call("#{name}: unrepresented class keeps dispatch", !body_of.call(code, 'mixed_other').include?('NATIVE_EXPRESSION_UNION :size'))
           check.call("#{name}: nil keeps error path", !body_of.call(code, 'mixed_nil').include?('NATIVE_EXPRESSION_UNION :size'))
         end
-        if name == 'core bodies' || name == 'kill switch'
+        if ['core bodies', 'kill switch', 'positional kill switch', 'positional project override', 'positional foreign override'].include?(name)
           %w[collected selected found rejected hash_map range_map next_value partitioned nil_receiver].each do |method|
             check.call("#{name}: #{method} result", exact_size.call(code, method) == proven)
           end
@@ -175,7 +215,7 @@ if ENV['MRBC']
           end
           check.call("#{name}: stored result pool", exact_size.call(code, 'read') == proven)
         end
-        next unless ['core bodies', 'kill switch', 'Hash map override', 'receiver union kill switch'].include?(name)
+        next unless ['core bodies', 'kill switch', 'Hash map override', 'receiver union kill switch', 'positional kill switch', 'positional project override', 'positional foreign override'].include?(name)
         next if ENV['KRR_GENERATED_ONLY'] == '1'
         build = runtime.full_or_build
         unless build
@@ -186,7 +226,7 @@ if ENV['MRBC']
         harness = <<~CPP
           static int scenario(mrb_state* M) {
             mrb_value runner = mrb_obj_new(M, mrb_class_get(M, "KrRunner"), 0, nullptr);
-            for (const char* name : {"mapped", "collected", "selected", "found", "rejected", "hash_map", "range_map", "next_value", "breaking", "nested_break", "nonlocal_return", "no_block", "dedup", "dedup_block", "sorted", "range_sorted", "range_strings", "hash_identity", "tallied", "partitioned"}) {
+            for (const char* name : {"mapped", "collected", "selected", "found", "rejected", "hash_map", "range_map", "next_value", "breaking", "nested_break", "nonlocal_return", "no_block", "dedup", "dedup_block", "sorted", "range_sorted", "range_strings", "hash_identity", "tallied", "partitioned", "memo_array", "memo_hash", "memo_nil", "memo_break", "memo_no_block", "memo_wrong_arity", "memo_keyword", "dropped"}) {
               call(M, name, runner, name);
             }
             for (mrb_value flag : {mrb_true_value(), mrb_false_value()}) {
@@ -205,6 +245,12 @@ if ENV['MRBC']
             call(M, "select_map", runner, "select_map", 1, &unknown);
             call(M, "unknown_filter", runner, "unknown_filter", 1, &unknown);
             call(M, "unknown_break", runner, "unknown_break", 1, &unknown);
+            call(M, "memo_unresolved", runner, "memo_unresolved", 1, &unknown);
+            call(M, "memo_unresolved_hash", runner, "memo_unresolved_hash", 1, &unknown);
+            mrb_value memo_args[] = {unknown, mrb_ary_new(M)};
+            call(M, "memo_unresolved_unknown", runner, "memo_unresolved_unknown", 2, memo_args);
+            call(M, "dropped_unknown", runner, "dropped_unknown", 1, &unknown);
+            call(M, "memo_unknown", runner, "memo_unknown", 1, &unknown);
             unknown = mrb_hash_new(M);
             mrb_hash_set(M, unknown, mrb_fixnum_value(1), mrb_fixnum_value(2));
             call(M, "hash_reject", runner, "unknown_reject", 1, &unknown);

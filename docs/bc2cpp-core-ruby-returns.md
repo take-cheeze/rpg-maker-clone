@@ -1,8 +1,9 @@
 # Core Ruby return classes
 
-bc2cpp can prove the result of a zero-argument core Ruby collection method when
+bc2cpp can prove the result of a core Ruby collection method when
 the receiver class and lookup are known. It analyzes the actual method bytecode
-with that receiver and the supplied-block context. This lets later calls and
+with that receiver, fixed positional argument masks and the supplied-block
+context. This lets later calls and
 ivar pools retain an exact collection class across operations such as `map`,
 `select`, `reject`, `partition`, `tally` and `Hash#to_h`.
 
@@ -14,8 +15,8 @@ forwarded blocks also retain the original behavior.
 The proof uses existing core lookup exclusions and analyzes changed source anew.
 Overrides, aliases that replace lookup, prepends, unresolved mixins and dynamic
 installers withdraw it. Descendant breaks in the caller block and nonlocal exits
-in the callee also withdraw it. Splats, keyword calls, nonzero argument counts,
-non-dominating block writers are not admitted by the receiver-specific proof.
+in the callee also withdraw it. Splats, keyword calls, unsupported parameter
+shapes and non-dominating block writers are not admitted by the proof.
 Only exact Array/Hash/String results leave the specialized flow.
 Interpreted-only core definitions, accessors, conditional/unmodelled aliases and
 core Ruby installers retain lookup exclusions even after leaving the compiled
@@ -119,3 +120,23 @@ Set `BC2CPP_CORE_RUBY_RECEIVER_UNIONS=0` to disable these specialized union
 results while retaining the existing receiver-independent proofs. Generated-code,
 mutation and interpreter parity checks cover both receiver paths, replacements,
 unknown members, caller breaks and the switch.
+
+## Fixed positional core results (ADR 0349)
+
+The core bytecode oracle also accepts calls with fixed positional arguments when
+the selected method has exactly that many mandatory arguments and no optional,
+rest, trailing or keyword parameters. It seeds the argument registers from the
+caller's flow masks and locates a literal block after those arguments.
+
+This proves that `each_with_object([]) { ... }` returns Array and that the same
+call with a Hash memo returns Hash. It can also prove argument-independent
+results such as Enumerable `drop(n)`. Unresolved receivers use the existing
+all-definition proof; any project override or unmodelled definition withdraws it.
+Argument masks are part of specialization and result-cache keys, so an unknown
+memo cannot reuse a result proved for a literal Array memo.
+
+Captured writes, caller breaks and forwarded blocks retain their existing
+exclusions. Set `BC2CPP_CORE_RUBY_POSITIONAL_RESULTS=0` to disable calls with
+positional arguments. Generated, mutation and runtime parity checks exercise
+memo classes, wrong arity, optional/rest/keyword shapes, replacements and the
+switch.
