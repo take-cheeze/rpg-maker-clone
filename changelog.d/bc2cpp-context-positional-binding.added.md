@@ -1,0 +1,1 @@
+- Add strict positional argument binding for bc2cpp receiver-result contexts, including optional initializer selection, rest Arrays, and trailing required arguments.

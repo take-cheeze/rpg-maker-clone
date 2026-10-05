@@ -14,15 +14,16 @@ small enumerable subclass families; with that extension disabled, parents with
 subclasses receive no lexical-self assumption.
 
 Call-input analysis requires an exact receiver and stable closed-world lookup, a
-matching fixed mandatory arity. Methods containing blocks are admitted when
-all nested nonlocal returns can be conservatively modeled. Block frames retain
-their own argument and self facts; caller masks are never used as block arguments.
-Read-only captured locals use the defining context at creation joined with all
-later parent stores, including through nested captures. Captured registers
-written by a nested block remain unknown. A block `break`
-changes the block-taking call result, so it does not change an unrelated
-method return. Optional, rest, keyword,
-block and unknown argument shapes keep the existing analysis. The body is
+valid positional arity, and no nested ireps. Methods containing blocks are
+admitted when all nested nonlocal returns can be conservatively modeled. Block
+frames retain their own argument and self facts; caller masks are never used as
+block arguments. Read-only captured locals use the defining context at creation
+joined with all later parent stores, including through nested captures. Captured
+registers written by a nested block remain unknown. A block `break` changes the
+block-taking call result, so it does not change an unrelated method return.
+Required, optional, rest and trailing positional arguments follow
+[strict argument binding](bc2cpp-context-arguments.md). Keyword, block and
+unknown argument shapes keep the existing analysis. The body is
 analyzed over its control-flow graph; mixed, nilable and unknown returns cannot
 justify an exact call. Recursive active contexts supply no assumption.
 
@@ -32,9 +33,9 @@ narrow the method's global argument pools or change emitted method bodies.
 Set `BC2CPP_CALL_CONTEXT_RESULTS=0` to disable this extension. Run
 `scripts/bc2cpp_call_context_results_check.rb` with `MRBC` and a full-core mruby
 build for generated-code and runtime parity checks. Its mutation check verifies
-sixteen withdrawn conditions and an unchanged control, including captured
-writes, nested nonlocal returns, later parent stores, capture context and the
-block-analysis switch.
+the withdrawn conditions and an unchanged control: captured writes, nested
+nonlocal returns, later parent stores, capture context, positional argument
+binding and the block-analysis switch.
 
 Set `BC2CPP_BLOCK_CONTEXT_RESULTS=0` to restore rejection of methods with
 nested ireps while keeping the other call-context proofs enabled. See
