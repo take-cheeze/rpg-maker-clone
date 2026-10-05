@@ -8,8 +8,10 @@ retains the actual receiver class, including a subclass inheriting `identity`.
 
 Method flow also seeds lexical self for a declared leaf instance class whose
 bytecode body has one owner. This lets implicit helper calls select their own
-method bodies. A parent with subclasses, a module, shared bytecode or a nested
-closure receives no lexical-self assumption.
+method bodies. Modules, shared bytecode and nested closures receive no lexical-self assumption.
+[User receiver unions](bc2cpp-user-receiver-unions.md) extend this analysis to
+small enumerable subclass families; with that extension disabled, parents with
+subclasses receive no lexical-self assumption.
 
 Call-input analysis requires an exact receiver and stable closed-world lookup, a
 matching fixed mandatory arity, and no nested ireps. Optional, rest, keyword,

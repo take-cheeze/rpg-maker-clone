@@ -236,7 +236,8 @@ Dir.mktmpdir do |dir|
   check.call('a name an RGSS native also spells takes a guard-free call from the table and an ivar slot',
              body_of.call(code, 'e_typed').match?(/(?:EXACT_TYPED|EXACT_CLASS) :count -> RcBox#count/) &&
                body_of.call(code, 'e_typed_ivar').match?(/(?:EXACT_TYPED|EXACT_CLASS) :count -> RcBox#count/) &&
-               body_of.call(code, 'g_typed').include?('POLY_SMALL_N :count') && !body_of.call(code, 'g_typed').include?('EXACT_TYPED'))
+               body_of.call(code, 'g_typed').include?(ENV['BC2CPP_USER_RECEIVER_UNIONS'] == '0' ? 'POLY_SMALL_N :count' : 'USER_RECEIVER_CASES :count') &&
+               !body_of.call(code, 'g_typed').include?('EXACT_TYPED'))
   check.call('the exact send leaves no guard: no owner-class comparison in an exact-only body',
              !body_of.call(code, 'e_chain').include?('mrb_obj_class(M, r'))
   check.call('the diagnostic lists the names the table proves exact',
