@@ -1258,6 +1258,9 @@
   Small exact receiver unions and inherited self families can join agreeing
   user-method results and call shared bodies directly; see
   [user receiver unions](docs/bc2cpp-user-receiver-unions.md).
+  Proven Integer receivers can call audited zero-argument `to_s` and `to_i`
+  bodies directly, including bigints; see
+  [numeric native conversions](docs/bc2cpp-numeric-native-direct.md).
   Selected core Ruby collection bodies now retain exact return classes across zero-argument calls,
   including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
   `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks
