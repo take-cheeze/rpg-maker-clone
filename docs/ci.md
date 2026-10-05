@@ -259,3 +259,7 @@ The core-mrbtest shard runs enabled and disabled literal element parity checks,
 plus six proof-condition mutants and their control. They cover exact primitive
 results and withdrawal for captured writes, effects, branch entries, unknown
 indices and out-of-bounds reads. See ADR 0354.
+
+The native class-arm and join-dominance checks disable exhaustive user receiver
+unions so their guarded fallback assertions continue to exercise those proof
+paths. The receiver-union suite separately checks exhaustive dispatch.
