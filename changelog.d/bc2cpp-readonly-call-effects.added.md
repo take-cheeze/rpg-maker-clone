@@ -1,0 +1,1 @@
+- Preserve exact ivar receiver facts across stable zero-argument Ruby calls whose complete bytecode proves they cannot write fields or invoke other code.

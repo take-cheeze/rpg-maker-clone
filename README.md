@@ -1910,3 +1910,5 @@ part that explains it). Nothing else is collected.
 See [`docs/TODO.md`](docs/TODO.md) for the detailed, per-maker TODO list.
 
 Receiver analysis positional binding is described in [call-context arguments](docs/bc2cpp-context-arguments.md).
+
+Receiver flow also models [readonly Ruby call effects](docs/bc2cpp-readonly-call-effects.md) for proven zero-argument getter bodies.
