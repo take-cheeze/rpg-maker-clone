@@ -32,4 +32,5 @@ See [ADR 0351](adr/0351-bc2cpp-call-context-receiver-results.md).
 With identical Wio inputs on base `8b011eae`, disabling/enabling this extension
 changes cached dispatch sites from 2,769 to 2,765. POLY stays 897 and compiled
 entries stay 3,056. The reduction is in guarded fallback paths; these static
-counts do not measure runtime hotness or speedup.
+counts do not measure runtime hotness or speedup. The four removed fallback
+arms are `x=`, `y=`, `width=` and `height=` in `RGSS::Window#initialize`.
