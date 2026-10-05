@@ -20,6 +20,9 @@
 
 require 'set'
 require 'tmpdir'
+
+# Exercise guarded join hints separately from exhaustive user receiver unions.
+ENV['BC2CPP_USER_RECEIVER_UNIONS'] = '0'
 require_relative '../tools/bc2cpp/irep'
 require_relative '../tools/bc2cpp/bytecode_ir'
 require_relative '../tools/bc2cpp/ivar_layout'
