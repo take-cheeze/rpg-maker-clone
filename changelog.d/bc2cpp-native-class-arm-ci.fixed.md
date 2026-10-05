@@ -1,0 +1,1 @@
+- Isolate native class-arm withdrawal checks from exhaustive user receiver proofs.
