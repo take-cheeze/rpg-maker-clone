@@ -234,7 +234,10 @@ beyond excluding `issue_comment`, so it is.
 The bc2cpp core-mrbtest shard runs the call-context result parity check and its
 mutation check. They exercise exact self, positional inputs, inherited overrides,
 cache separation and withdrawal for uncertain returns or unsupported method
-shapes. See ADR 0351.
+shapes. See ADR 0351. Native-summary withdrawal checks and profiler mutation
+checks disable call-context results so an independent local proof cannot mask
+the proof path they are testing. The dedicated call-context checks exercise the
+enabled analysis.
 
 ### Enumerator wrapper compilation
 

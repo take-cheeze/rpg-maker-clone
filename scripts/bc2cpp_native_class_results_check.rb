@@ -6,6 +6,9 @@ require 'fileutils'
 require_relative 'bc2cpp_fixture_runtime'
 require ENV.fetch('NCR_AUDIT_TOOL') { File.expand_path('../tools/bc2cpp/native_class_results', __dir__) }
 
+# Keep the native-summary withdrawal checks independent of local receiver proofs.
+ENV['BC2CPP_CALL_CONTEXT_RESULTS'] = '0'
+
 ROOT = File.expand_path('..', __dir__)
 failures = []
 check = lambda do |name, ok|

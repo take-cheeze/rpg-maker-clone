@@ -44,7 +44,8 @@ mutate = lambda do |(_name, pattern, replacement, test_case, expected, audit, ru
 
       File.write(path, text.sub(pattern) { replacement })
     end
-    env = { 'BC2CPP_TOOL' => File.join(dir, 'tools/bc2cpp/bc2cpp.rb'), 'PFR_GENERATED_ONLY' => runtime ? '0' : '1', 'PFR_CASE' => test_case }
+    # Local receiver proofs can independently recover the mutated global fixpoint.
+    env = { 'BC2CPP_CALL_CONTEXT_RESULTS' => '0', 'BC2CPP_TOOL' => File.join(dir, 'tools/bc2cpp/bc2cpp.rb'), 'PFR_GENERATED_ONLY' => runtime ? '0' : '1', 'PFR_CASE' => test_case }
     Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_profiler_results_check.rb')])
   end
 end
