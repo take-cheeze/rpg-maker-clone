@@ -1259,6 +1259,9 @@
   Small exact receiver unions and inherited self families can join agreeing
   user-method results and call shared bodies directly; see
   [user receiver unions](docs/bc2cpp-user-receiver-unions.md).
+  Proven Integer receivers can call audited zero-argument `to_s` and `to_i`
+  bodies directly, including bigints; see
+  [numeric native conversions](docs/bc2cpp-numeric-native-direct.md).
   Immediate in-bounds fresh array reads can prove primitive element receivers
   through a bounded literal corridor; see
   [literal element proofs](docs/bc2cpp-literal-elements.md).

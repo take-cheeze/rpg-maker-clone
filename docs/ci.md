@@ -253,6 +253,16 @@ The core-mrbtest shard runs user receiver union parity and mutation checks.
 They verify shared-body direct calls, every family member, differing overrides, unknown and nil bits,
 constructor lookup, hierarchy bounds and outside replacements. See ADR 0352.
 
+### Numeric native conversions
+
+The core-mrbtest shard runs enabled and disabled Integer conversion parity and
+nine proof-condition mutants plus control. Cases include fixnums, bigints beyond
+64 bits, decimal ABI, mixed numeric inputs, overrides, singleton makers, open
+worlds, wrong arity and blocks. See ADR 0357.
+
+The conversion parity check also runs in both width shards with width-safe
+literals and matching bigint defines. Visibility changes withdraw the numeric
+proof alongside altered method lookup.
 
 ### Fresh literal element receivers
 

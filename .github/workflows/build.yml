@@ -975,6 +975,10 @@ jobs:
               # ADRs 0351/0353: call-context receiver results and sixteen proof-condition mutants.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_call_context_results_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_call_context_results_mutation_check.rb
+              # ADR 0357: exact Integer conversion parity and nine condition mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_native_direct_check.rb
+              BC2CPP_NUMERIC_NATIVE_DIRECT=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_native_direct_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_numeric_native_direct_mutation_check.rb
               # ADR 0354: fresh literal element parity and six withdrawal mutants.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_literal_element_check.rb
               BC2CPP_LITERAL_ELEMENT_PROOF=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_literal_element_check.rb
@@ -1368,6 +1372,7 @@ jobs:
           - variant: int32
             checks: |
               width="$RUNNER_TEMP/bc2cpp-width/host"
+              NN_WIDTH_SAFE=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_numeric_native_direct_check.rb
               export BC2CPP_MRUBY_FULL32="$width" BC2CPP_MRBC32="$width/bin/mrbc"
               # The 64-bit host mrbc stays MRBC; each check swaps in BC2CPP_MRBC32 for its 32-bit run.
               MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
@@ -1401,6 +1406,7 @@ jobs:
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
           - variant: nobigint
             checks: |
+              NN_WIDTH_SAFE=1 NN_NO_BIGINT=1 BC2CPP_MRUBY_FULL="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$RUNNER_TEMP/bc2cpp-width/host/bin/mrbc" ruby scripts/bc2cpp_numeric_native_direct_check.rb
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
