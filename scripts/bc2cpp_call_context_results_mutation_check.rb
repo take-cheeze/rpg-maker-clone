@@ -20,7 +20,12 @@ MUTANTS = [
   ['optional initializer slot ignored', 'call_context_arguments.rb', 'target = index + supplied + 1', 'target = index + 1', {}],
   ['ENTER selection ignored', 'numeric_flow.rb', 'oracle.respond_to?(:context_enter_edges) && oracle.context_enter_edges.key?(i)', 'false', {}],
   ['signature switch ignored', 'call_context_arguments.rb', "ENV['BC2CPP_CONTEXT_ARGUMENT_SHAPES'] == '0'", 'false', { 'BC2CPP_CONTEXT_ARGUMENT_SHAPES' => '0' }],
-  ['closure gate omitted', 'codegen_return_classes.rb', 'return nil unless Array(body.reps).empty?', 'return nil if false', {}],
+  ['block switch ignored', 'codegen_return_classes.rb', "ENV['BC2CPP_BLOCK_CONTEXT_RESULTS'] == '0'", 'false', { 'BC2CPP_BLOCK_CONTEXT_RESULTS' => '0' }],
+  ['reflective local writer audit omitted', 'codegen_return_classes.rb', 'return nil unless captured_local_class_enabled?', 'return nil if false', {}],
+  ['captured writes ignored', 'codegen_return_classes.rb', 'NumericFlow.states(body, oracle, fixnum_proof_ctx(body)[:upvars], writes)', 'NumericFlow.states(body, oracle, Set.new, writes)', {}],
+  ['later capture stores omitted', 'codegen_return_classes.rb', '(frame[:writes][index] || 0)', '0', {}],
+  ['capture context omitted', 'codegen_return_classes.rb', '@cg.return_class_context_upvar_mask(irep, insn, @contexts)', 'NumericFlow::OTHER', {}],
+  ['nonlocal block returns omitted', 'codegen_return_classes.rb', 'block_returns = return_class_context_block_returns(body, states, writes)', 'block_returns = 0', {}],
   ['LOADSELF fact omitted', 'numeric_flow.rb', 'oracle.respond_to?(:loadself_mask) ? oracle.loadself_mask : OTHER', 'OTHER', {}],
   ['outside lookup ignored', 'codegen_return_classes.rb', 'definition = closed_world_exact_target(name, receiver_class)', 'definition = @registry.fetch(name, []).find { |d| d.owner == receiver_class }', {}],
   ['implicit receiver ignored', 'codegen_return_classes.rb', 'inputs[insn.reg.to_i] = @receiver', 'inputs[insn.reg.to_i] = NumericFlow::OTHER', {}]

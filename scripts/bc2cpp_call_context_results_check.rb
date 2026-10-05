@@ -24,6 +24,15 @@ SOURCE = <<~RUBY
     def blocked(value, &block); value; end
     def recursive(value); self.recursive(value); self.recursive(value); end
     def closure(value); [1].each { return CcB.new }; value; end
+    def readonly(value); [1].each { |item| item }; value; end
+    def same_return(value); [1].each { return CcA.new }; value; end
+    def discarded_break(value); [1].each { break CcB.new }; value; end
+    def captured_write(value); [1].each { value = CcB.new }; value; end
+    def nested_return(value); [1].each { [1].each { return CcB.new } }; value; end
+    def captured_return(value); [1].each { return value }; CcA.new; end
+    def break_result(value); [1].each { break value }; end
+    def later_write(value); block = proc { return value }; value = CcB.new; block.call; CcA.new; end
+    def deep_capture(value); [1].each { [1].each { return value } }; CcA.new; end
   end
   class CcSubRelay < CcRelay
     def carry(value); CcB.new; end
@@ -61,6 +70,17 @@ SOURCE = <<~RUBY
     def poison(value); [CcRelay.new.optional(value), CcRelay.new.rest(value), CcRelay.new.blocked(value)]; end
     def recursive; CcRelay.new.recursive(CcA.new).tag; end
     def closure; CcRelay.new.closure(CcA.new).tag; end
+    def readonly; CcRelay.new.readonly(CcA.new).tag; end
+    def same_return; CcRelay.new.same_return(CcA.new).tag; end
+    def discarded_break; CcRelay.new.discarded_break(CcA.new).tag; end
+    def captured_write; CcRelay.new.captured_write(CcA.new).tag; end
+    def nested_return; CcRelay.new.nested_return(CcA.new).tag; end
+    def captured_return; CcRelay.new.captured_return(CcA.new).tag; end
+    def break_result; CcRelay.new.break_result(CcA.new).tag; end
+    def deep_capture; CcRelay.new.deep_capture(CcA.new).tag; end
+    def captured_b; CcRelay.new.captured_return(CcB.new).tag; end
+    def later_write; CcRelay.new.later_write(CcA.new).tag; end
+    def poison_blocks(value); CcRelay.new.captured_return(value); end
   end
 RUBY
 failures = []
@@ -78,7 +98,11 @@ Dir.mktmpdir('call-context') do |dir|
     check.call("#{name}: context carries exact receiver", body.call(name).include?("EXACT_CLASS :tag -> #{klass}#tag") == enabled)
   end
   check.call('array: context carries core receiver', body.call('array').include?('CLOSED_WORLD_NATIVE_EXACT :size -> Array') == enabled)
-  %w[unknown mixed nilable wrong_arity recursive closure blocked].each do |name|
+  %w[readonly same_return discarded_break captured_return deep_capture].each do |name|
+    block_enabled = enabled && ENV['BC2CPP_BLOCK_CONTEXT_RESULTS'] != '0'
+    check.call("#{name}: block-containing method carries exact receiver", body.call(name).include?('EXACT_CLASS :tag -> CcA#tag') == block_enabled)
+  end
+  %w[unknown mixed nilable wrong_arity recursive closure blocked captured_write nested_return break_result captured_b later_write].each do |name|
     check.call("#{name}: uncertain result stays dynamic", !body.call(name).include?('EXACT_CLASS :tag ->'))
   end
   shapes = enabled && ENV['BC2CPP_CONTEXT_ARGUMENT_SHAPES'] != '0'
@@ -99,13 +123,20 @@ Dir.mktmpdir('call-context') do |dir|
   end
   outside_body = outside_code[/mrb_value CcFixture_a_impl\([^\n]*\) \{(.*?)^\}/m, 1].to_s
   check.call('outside replacement withdraws the input-specific receiver', !outside_body.include?('EXACT_CLASS :tag -> CcA#tag'))
+  FileUtils.mkdir_p(File.join(dir, 'reflective/cc-reflect/src'))
+  reflective_code, = runtime.generate(SOURCE, File.join(dir, 'reflective'),
+    only_owners: %w[CcA CcB CcRelay CcSubRelay CcParent CcChild CcFixture],
+    build_gems: [['cc-reflect', File.join(dir, 'reflective/cc-reflect')]],
+    native: [['cc-reflect/src/writer.c', 'static void cc_writer(mrb_state *mrb, struct RClass *klass) { mrb_define_method(mrb, klass, "binding", cc_binding, MRB_ARGS_NONE()); }']])
+  reflective_body = reflective_code[/mrb_value CcFixture_readonly_impl\([^\n]*\) \{(.*?)^\}/m, 1].to_s
+  check.call('reflective local writer withdraws block context', !reflective_body.include?('EXACT_CLASS :tag -> CcA#tag'))
   unless ENV['CC_GENERATED_ONLY'] == '1'
     build = runtime.full_or_build
     if build
       harness = <<~CPP
         static int scenario(mrb_state* M) {
           mrb_value fixture = mrb_obj_new(M, mrb_class_get(M, "CcFixture"), 0, nullptr);
-          for (const char* name : {"implicit", "a", "b", "nested", "self_chain", "explicit_self", "inherited", "array", "wrong_arity", "closure", "optional", "rest", "blocked", "omitted", "supplied", "trailing", "rest_array"})
+          for (const char* name : {"implicit", "a", "b", "nested", "self_chain", "explicit_self", "inherited", "array", "wrong_arity", "closure", "optional", "rest", "blocked", "readonly", "same_return", "discarded_break", "captured_write", "nested_return", "captured_return", "break_result", "deep_capture", "captured_b", "later_write", "omitted", "supplied", "trailing", "rest_array"})
             call(M, name, fixture, name);
           for (mrb_value flag : {mrb_true_value(), mrb_false_value()}) {
             call(M, "mixed", fixture, "mixed", 1, &flag);

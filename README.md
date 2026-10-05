@@ -1253,7 +1253,8 @@
   [`docs/bc2cpp-native-setter-inputs.md`](docs/bc2cpp-native-setter-inputs.md) and
   [`ADR 0337`](docs/adr/0337-bc2cpp-native-setter-input-audit.md).
   User-method identity and forwarding calls can retain exact receiver classes
-  using call-specific self and positional argument facts; see
+  using call-specific self and positional argument facts, including methods
+  containing blocks with conservatively joined nonlocal returns; see
   [call-context receiver results](docs/bc2cpp-call-context-results.md).
   Small exact receiver unions and inherited self families can join agreeing
   user-method results and call shared bodies directly; see
