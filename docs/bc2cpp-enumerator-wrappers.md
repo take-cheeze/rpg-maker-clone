@@ -21,7 +21,7 @@ See [ADR 0350](adr/0350-bc2cpp-enumerator-wrappers.md).
 
 ## Measured world
 
-With the same Wio analysis inputs, enabling wrappers raises compiled entries
+On base `945afc11`, with the same Wio analysis inputs, enabling wrappers raises compiled entries
 from 3,056 to 3,063 and compiled core methods from 183 to 190. Deliberate core
 exclusions fall from 29 to 22; three rejected method bodies remain, giving 25
 interpreter-only method bodies instead of 32. Guarded methods retain bytecode
