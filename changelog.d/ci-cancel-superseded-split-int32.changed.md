@@ -5,3 +5,6 @@
   queue and manual runs still run them.
 - **CI** keys the `flake` job's Nix store cache on `flake.*` like every other
   job; its `**/*.nix` key hashed to nothing and stored a second 2.8 GB copy.
+- **CI** splits the `hot-only` shard (two 15 minute checks in sequence) into
+  `hot-only` and `hot-proven-miss`, and moves the slowest `fast` checks into a
+  new `coverage` shard.

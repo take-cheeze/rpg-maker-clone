@@ -955,9 +955,12 @@ jobs:
           - shard: hot-only
             checks: |
               MRBC="$mrbc" ruby scripts/bc2cpp_nomethod_reviewed_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_hot_only_check.rb
+          - shard: hot-proven-miss
+            # Split from hot-only: each of the two reviewed-set checks takes ~15 min.
+            checks: |
               # PROVEN_MISS_REVIEWED (docs/adr/0275): a send to a proven class nothing answers.
               MRBC="$mrbc" ruby scripts/bc2cpp_proven_miss_check.rb
-              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_hot_only_check.rb
           - shard: registrations
             checks: |
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_embedded_ivar_access_check.rb
@@ -1164,11 +1167,15 @@ jobs:
           - shard: optcarrot-benchmark
             checks: |
               MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+          - shard: coverage
+            # Split from fast: the three slowest checks there (~10, ~5 and ~0.2 min).
+            checks: |
+              ./scripts/bc2cpp_coverage_check.bash build-bc2cpp/mruby
+              ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
+              MRBC="$mrbc" ruby scripts/bc2cpp_rescue_shadow_check.rb
           - shard: fast
             checks: |
               MRBC="$mrbc" ruby scripts/bc2cpp_yield_reach_check.rb
-              ./scripts/bc2cpp_coverage_check.bash build-bc2cpp/mruby
-              ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
               MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_foreign_def_forms_check.rb
               # -DBC2CPP_NOMETHOD_VERIFY aborts at a dead bc2cpp_nomethod site (docs/adr/0275).
@@ -1242,7 +1249,6 @@ jobs:
               ruby scripts/bc2cpp_irep_scans_check.rb
               ruby scripts/bc2cpp_bytecode_ir_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_bytecode_ir_dataflow_check.rb
-              MRBC="$mrbc" ruby scripts/bc2cpp_rescue_shadow_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_fallback_bodies_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_operand_schema_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_binary_loader_check.rb

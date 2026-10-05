@@ -37,6 +37,13 @@ all, so a mutation regression blocks the merge queue rather than the PR. Timing
 estimates in the shard table include the mutants and apply to those runs. To run
 them on a PR, use `workflow_dispatch` on its branch.
 
+### Splitting long shards
+
+`hot-only` ran its two ~15 minute reviewed-set checks back to back, so
+`hot-proven-miss` now runs `bc2cpp_proven_miss_check`. `coverage` takes the three
+slowest checks out of `fast` (`bc2cpp_coverage_check`, the optcarrot coverage
+check and `rescue_shadow`). Timings come from the "Check timings" job summary.
+
 ### Width shards
 
 The `int32` variant is split into `int32-a` and `int32-b` (both build the same
