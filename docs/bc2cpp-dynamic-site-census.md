@@ -29,214 +29,212 @@ byte-identical, so counts are comparable across revisions.
   for where the receiver register was last assigned.
 * The categories in the "why" table are exclusive; the first matching rule wins
   (see `category` in the script).
+* `--tsv` writes one row per body site (line, owner method, name, arity, fast-path
+  flag or `class_arm`, marker family, guard shape, receiver origin, category,
+  `POLY_DIAG` path). The owner tables are a grouping of the owner method's
+  prefix; the "Now" numbers below were produced this way from `0a9adfc`.
 
-## Results (master at `f70fef67`, PRs #1947-#1962 merged)
+## Results (master at `0a9adfc`)
 
-The baseline is the same measurement on the tree before that round of work
-(9,733 `bc2cpp_send` lines).
+The previous snapshot of this section was master `f70fef67` (PRs #1947-#1962
+merged, 9,733 `bc2cpp_send` lines before that round); the follow-ups below
+carry the ADRs that landed since. "Then" is that snapshot, "Now" is a fresh run
+of the census on the shipped set of `0a9adfc` (`shipped.cxx`, 441,136 lines,
+helper region lines 1..22,574).
 
-| Measure | Baseline | Now | Delta |
+| Measure | Then (`f70fef67`) | Now (`0a9adfc`) | Delta |
 | --- | ---: | ---: | ---: |
-| `bc2cpp_send` call sites in generated bodies | 9,730 | 5,081 | -4,649 |
-| `bc2cpp_send` calls held in helpers | 3 | 24 | +21 |
-| **`bc2cpp_send` total (what a text count sees)** | **9,733** | **5,105** | **-4,628 (-47.5%)** |
-| `mrb_funcall_with_block` sites (`BLOCK_FALLBACK` markers 447) | 448 | 448 | 0 |
-| `mrb_funcall` / `_argv` / `_id` in bodies | 28 | 28 | 0 |
-| `mrb_funcall*` held in helpers | 2 | 5 | +3 |
-| `bc2cpp_nomethod` sites (error raise, not dispatch) | 4,694 | 4,562 | -132 |
+| `bc2cpp_send` call sites in generated bodies | 5,081 | 2,325 | -2,756 (-54.2%) |
+| `bc2cpp_send` calls held in helpers | 24 | 24 | 0 |
+| **`bc2cpp_send` total (what a text count sees)** | **5,105** | **2,349** | **-2,756 (-54.0%)** |
+| `mrb_funcall_with_block` sites (`BLOCK_FALLBACK` markers 447 then, 462 now) | 448 | 417 | -31 |
+| `mrb_funcall` / `_argv` / `_id` in bodies | 28 | 30 | +2 |
+| `mrb_funcall*` held in helpers | 5 | 5 | 0 |
+| `bc2cpp_nomethod` sites (error raise, not dispatch) | 4,562 | 4,460 | -102 |
 
-The three new helper-held funcalls are not dispatch in the shipped build: two
-sit under `#ifdef MRB_UTF8_STRING` (String#size/length, ADR 0291; the project does
-not define it) and one is the `puts` of the guard-violation error path.
+The helper-held `mrb_funcall*` are not dispatch in the shipped build: two sit
+under `#ifdef MRB_UTF8_STRING` (String#size/length, ADR 0291; the project does
+not define it) and one is the `puts` of the guard-violation error path. The
+helper region also holds one `mrb_yield_argv`.
 
 ### Relocated into helpers versus removed
 
-A text count overstates the win, because most of the drop is a by-name call that
-moved into a shared helper. Counting the generated sites that can still reach a
-by-name call (their own `bc2cpp_send`, plus every call into a helper whose slow
-arm dispatches by name, plus the block and funcall sites):
+A text count overstates a win whenever a by-name call moved into a shared
+helper. Counting the generated sites that can still reach a by-name call (their
+own `bc2cpp_send`, plus every call into a helper whose slow arm dispatches by
+name, plus the block and funcall sites):
 
-| | Baseline | Now |
+| | Then | Now |
 | --- | ---: | ---: |
-| Own `bc2cpp_send` in bodies | 9,730 | 5,081 |
-| Calls into `bc2cpp_slow_*` (ADR 0292) | 0 | 3,542 |
-| Calls into `bc2cpp_eqq` (ADR 0293) | 0 | 110 |
-| Calls into `bc2cpp_getidx` / `getidx0` / `setidx` | 2,899 | 2,584 |
-| `mrb_funcall_with_block` + body `mrb_funcall*` | 476 | 476 |
-| **Sites that can reach by-name dispatch** | **13,105** | **11,793** |
+| Own `bc2cpp_send` in bodies | 5,081 | 2,325 |
+| Calls into `bc2cpp_slow_*` (ADR 0292) | 3,542 | 3,274 |
+| Calls into `bc2cpp_eqq` (ADR 0293) | 110 | 110 |
+| Calls into `bc2cpp_getidx` / `getidx0` / `setidx` | 2,584 | 2,397 |
+| `mrb_funcall_with_block` + body `mrb_funcall*` | 476 | 447 |
+| **Sites that can reach by-name dispatch** | **11,793** | **8,553** |
 
-* Of the 4,649 sites that left the bodies, **3,652 are relocated** (3,542 numeric
-  operator sites now call 21 `bc2cpp_slow_*` helpers that hold 20 by-name calls,
-  and 110 `===` sites call `bc2cpp_eqq`). They still dispatch by name for an
-  operand or receiver class the helper does not own.
-* **997 are truly removed**: 456 `===` sites and 55 `is_a?`/`kind_of?` sites
-  became direct tests, 267 `:new` sites a direct construct, the rest typed or
-  guard-violation arms (311 guard-violation calls, 246 guard-free `EXACT_TYPED`),
-  and 8 numeric arms by NUMERIC_OPERAND_PROOF (353 to 361).
-* The three index helpers are older relocations (OUTLINED_INDEX_OPS). The LCF row
-  flow cut their callers by 315 (2,899 to 2,584); those were removed, not moved.
-* Net effect on sites that can reach by-name dispatch: **-1,312 (-10%)**, against
-  a text-count drop of -47.5%. The numeric helpers still make Integer/Float
-  mixes cheap, because they do the Float arithmetic natively where the old else
-  arm sent, so the relocation is a speedup even though it is not a removal.
+* Of the net -3,240, -2,756 are removed `bc2cpp_send` sites in bodies. The rest
+  is callers that stopped reaching a helper: 268 `slow_*`, 187 index-helper
+  callers (2,584 to 2,397) and 29 block or funcall sites.
+* The shared helpers still hold by-name calls that thousands of generated sites
+  reach (`getidx` 2,017 callers, `slow_add_f` 712, `slow_sub_f` 471,
+  `slow_mul_f` 442, `setidx` 348, `slow_gt` 311, `slow_lt` 296, `slow_div` 272).
+  The numeric helpers do the Float arithmetic natively where the old else arm
+  sent, so the relocation is a speedup even though it is not a removal.
+* Net effect on sites that can reach by-name dispatch: -27.5% since
+  `f70fef67`, against -54.0% on the text count. The helper-held calls barely
+  moved, so the reachable count falls more slowly than the text count.
 
-### Where the remaining 5,081 sites sit
+### Where the remaining 2,325 sites sit
 
-| Position | Sites | Share |
-| --- | ---: | ---: |
-| Else arm of an inline fast path (class or tag test above it) | 3,442 | 67.7% |
-| Arm of a class the guard proves exactly, still by name | 1,198 | 23.6% |
-| Bare dispatch, no guard at all | 441 | 8.7% |
+| Position | Then | Now | Share now |
+| --- | ---: | ---: | ---: |
+| Else arm of an inline fast path (class or tag test above it) | 3,442 | 1,841 | 79.2% |
+| Arm of a class the guard proves exactly, still by name | 1,198 | 33 | 1.4% |
+| Bare dispatch, no guard at all | 441 | 451 | 19.4% |
 
-Only 441 sites are "only dispatch". Everything else already has a typed or
-tag-tested arm and keeps the send as its soundness fallback; removing it needs a
-proof that the else is unreachable (ADR 0290 turns such an else into a
+The known-class arm, the second largest position last time, is almost gone:
+1,198 to 33 (the ADR 0296/0297 class pools and unlisted-class arms and the
+follow-ups below). The 33 left are `actor` 17, `load_face_bitmap` 5, `skills` 4
+and `party` 4 (23 in `Game`, 10 in `RPG2k`). Everything else is an else arm kept
+as a soundness fallback (1,841) or a bare send (451); removing the else needs a
+proof that it is unreachable (ADR 0290 turns such an else into a
 guard-violation raise).
+
+By owner prefix of the generated method that holds the site:
+
+| Owner | Sites |
+| --- | ---: |
+| `RPG2k` | 941 |
+| `Game` | 591 |
+| `RGSS` | 216 |
+| `LCF` | 102 |
+| core and ext gems | 475 |
+
+The core and ext gems are `Array` 94, `String` 76, `Enumerable` 71, `Hash` 58,
+`Range` 49, `StringIO` 42, `IO` 27, `Integer` 19, `Enumerator` 13, `Struct` 11,
+`File` 7 and a tail of smaller owners.
+
+The guard shape directly above the site is `core_exact_class_chain` 1,064,
+`no_guard_nearby` 531, `owner_class_chain` 340, `rgss_native_class_guard` 238 and
+`numeric_tag_guard` 152. The nearest marker family is `POLY` 493, `NONE` 397,
+`POLY_SMALL_N` 255, `NATIVE_CORE_DIRECT` 250, `NATIVE_DIRECT` 130 and
+`INDEX_EXACT` 127. 1,684 sites carry no `POLY_DIAG` line.
 
 ### Top 25 method names
 
-| # | Name | Now | Baseline | Cumulative share |
+| # | Name | Now | Then | Cumulative share |
 | ---: | --- | ---: | ---: | ---: |
-| 1 | `[]` | 619 | 619 | 12.2% |
-| 2 | `[]=` | 267 | 267 | 17.4% |
-| 3 | `party` | 264 | 264 | 22.6% |
-| 4 | `size` | 260 | 261 | 27.8% |
-| 5 | `empty?` | 258 | 259 | 32.8% |
-| 6 | `dispose` | 169 | 169 | 36.2% |
-| 7 | `id` | 161 | 161 | 39.3% |
-| 8 | `to_s` | 152 | 152 | 42.3% |
-| 9 | `new` | 131 | 398 | 44.9% |
-| 10 | `width` | 113 | 113 | 47.1% |
-| 11 | `length` | 97 | 97 | 49.0% |
-| 12 | `push` | 95 | 95 | 50.9% |
-| 13 | `update` | 87 | 87 | 52.6% |
-| 14 | `y=` | 87 | 87 | 54.3% |
-| 15 | `x=` | 83 | 83 | 56.0% |
-| 16 | `z=` | 68 | 180 | 57.3% |
-| 17 | `to_enum` | 63 | 63 | 58.5% |
-| 18 | `to_i` | 60 | 60 | 59.7% |
-| 19 | `fill_rect` | 58 | 58 | 60.9% |
-| 20 | `name` | 54 | 54 | 61.9% |
-| 21 | `include?` | 53 | 53 | 63.0% |
-| 22 | `max` | 51 | 51 | 64.0% |
-| 23 | `draw_text` | 50 | 50 | 64.9% |
-| 24 | `resume` | 45 | 45 | 65.8% |
-| 25 | `screen` | 44 | 44 | 66.7% |
+| 1 | `[]` | 208 | 619 | 8.9% |
+| 2 | `empty?` | 205 | 258 | 17.8% |
+| 3 | `size` | 187 | 260 | 25.8% |
+| 4 | `to_s` | 151 | 152 | 32.3% |
+| 5 | `length` | 85 | 97 | 36.0% |
+| 6 | `to_enum` | 66 | 63 | 38.8% |
+| 7 | `new` | 66 | 131 | 41.6% |
+| 8 | `to_i` | 60 | 60 | 44.2% |
+| 9 | `[]=` | 51 | 267 | 46.4% |
+| 10 | `push` | 50 | 95 | 48.6% |
+| 11 | `width` | 47 | 113 | 50.6% |
+| 12 | `y=` | 44 | 87 | 52.5% |
+| 13 | `x=` | 44 | 83 | 54.4% |
+| 14 | `update` | 42 | 87 | 56.2% |
+| 15 | `name` | 37 | 54 | 57.8% |
+| 16 | `include?` | 37 | 53 | 59.4% |
+| 17 | `height` | 33 | - | 60.8% |
+| 18 | `inspect` | 28 | - | 62.0% |
+| 19 | `flash` | 25 | - | 63.1% |
+| 20 | `delete` | 22 | - | 64.0% |
+| 21 | `key?` | 21 | - | 64.9% |
+| 22 | `first` | 21 | - | 65.8% |
+| 23 | `to_f` | 20 | - | 66.7% |
+| 24 | `string` | 19 | - | 67.5% |
+| 25 | `pack` | 19 | - | 68.3% |
 
-329 distinct names remain (363 before). Every operator name (`+ - * / % < > <= >=
-<< >> & | ^ -@ zero? round`) went from 3,550 inline sends to 0, and `===` from 577
-to 11. The remaining names are almost all untouched by this round.
+241 distinct names remain (329 before). "-" means the name was outside the old
+top 25. `party` (264), `dispose` (169) and `id` (161) left the top of the table:
+they were the exact-class arms that sent by name. What is left is dominated by
+core container names (`[]`, `empty?`, `size`, `to_s`, `length` are 836 sites,
+36%) in a tag chain whose else is the only by-name path.
 
 ### Why the sites are still dynamic (top categories)
 
-Exclusive categories, largest first. "Estimate" is how many sites the named proof
-could remove; it is a judgement from the site mix, not a measurement.
+Exclusive categories, largest first; the first matching rule wins (see
+`category` in the script). "Then" is the `f70fef67` snapshot, which grouped a few
+categories differently ("-" marks one it did not list).
 
-| # | Category | Sites | Share |
-| ---: | --- | ---: | ---: |
-| 1 | Core tag chain else, receiver not an ivar | 1,201 | 23.6% |
-| 2 | Known-class arm, still by name | 1,198 | 23.6% |
-| 3 | Core tag chain else, receiver is an ivar | 830 | 16.3% |
-| 4 | RGSS native exact-class else | 628 | 12.4% |
-| 5 | `CLOSED_WORLD kept: core_or_native` | 325 | 6.4% |
-| 6 | `CLOSED_WORLD kept: singleton_definer` | 168 | 3.3% |
-| 7 | `POLY_DIAG` genuinely dynamic (all sub-reasons) | 469 | 9.2% |
-| 8 | No guard nearby (literal receivers) | 162 | 3.2% |
-| 9 | `CLOSED_WORLD kept: dynamic_install` | 77 | 1.5% |
-| 10 | Everything else | 23 | 0.5% |
+| # | Category | Then | Now | Share now |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | Core tag chain else, receiver not an ivar | 1,201 | 849 | 36.5% |
+| 2 | Core tag chain else, receiver is an ivar | 830 | 215 | 9.2% |
+| 3 | RGSS native exact-class else | 628 | 206 | 8.9% |
+| 4 | `CLOSED_WORLD kept: core_or_native` | 325 | 186 | 8.0% |
+| 5 | `POLY_DIAG` genuinely dynamic (all sub-reasons) | 469 | 475 | 20.4% |
+| 6 | Numeric tag guard | - | 121 | 5.2% |
+| 7 | No guard nearby | 162 | 95 | 4.1% |
+| 8 | `CLOSED_WORLD kept: singleton_definer` | 168 | 91 | 3.9% |
+| 9 | Known-class arm, still by name | 1,198 | 33 | 1.4% |
+| 10 | `CLOSED_WORLD kept: dynamic_install` | 77 | 29 | 1.2% |
+| 11 | Owner-chain default else | - | 21 | 0.9% |
+| 12 | Everything else (`opaque_definer` 2, `unlisted_class` 2) | 23 | 4 | 0.2% |
 
-**1. Core tag chain else, receiver not an ivar (1,201).** The site tests
-`Array`/`Hash`/`String`/`Integer` tags inline and sends in the else:
-`empty?` 227, `[]=` 187, `size` 185, `to_s` 152, `length` 95, `push` 56, `to_i`
-53. Receiver origin: register copy 598, unknown 137, direct-call result 130,
-other 109, indexed result 65, dynamic result 60, captured upvar 42. The proof is a
-receiver class set (exact `Array`/`Hash`/`String`) carried through register
-copies, return-class tables and arguments, so the else becomes a guard
-violation. Estimate 300-450 sites. `to_s` (152) is interpolation of arbitrary
-values and stays dynamic.
+The proof estimates the old snapshot carried (about 2,300-3,100 of its 5,081
+sites removable with five proofs: class-arm lookup fixes, `{Hash, nil}` ivar
+sets, copy-propagated receiver classes, RGSS argument and receiver facts, and
+literal receivers) have largely been spent. The known-class lookup fixes took
+1,198 to 33, the ivar sets 830 to 215, and the RGSS facts 628 to 206. What is
+listed below is what those proofs did not reach.
 
-**2. Known-class arm, still by name (1,198).** The class is proven by the guard
-and the arm still sends. Instrumenting `unlisted_class_call` for one run gave
-the reason for each arm: 851 `lookup_unknown`, 260 `not_inherited_safe`, 86
-`no_target`, 1 other.
+**1. Core tag chain else, receiver not an ivar (849).** The site tests
+`Array`/`Hash`/`String`/`Integer` tags inline and sends in the else: `empty?`
+181, `to_s` 151, `size` 125, `length` 85, `to_i` 53, `[]` 47, `push` 26. Receiver
+origin: register copy 410, unknown 122, direct-call result 113, indexed result
+77, other 41. The lever is still a receiver class set carried through register
+copies, return-class tables and arguments so the else becomes a guard violation;
+the 849 are the receivers it has not proven. `to_s` (151) is interpolation of
+arbitrary values and stays dynamic.
 
-* `lookup_unknown` (851): `closed_world_lookup_target` only accepts a single
-  public definition with an `irep` for a non-self call. An `attr_reader` or
-  `attr_writer` on the exact class has no `irep` (`id` 23 classes, `party`
-  `ShopState` 127), and a `private` definition (`Game::Interpreter#party` 132,
-  defined after `private` at `interpreter.rb:1233`) is a `NoMethodError` for an
-  explicit receiver. Both are static facts about the exact class. Proof: reuse
-  `ivar_accessor_call_code` for the exact class, and compile a private
-  explicit-receiver call to its error. Estimate 750-850.
-* `not_inherited_safe` (260): `inherited_lookup_safe?` refuses any name in
-  `@outside_names`, which `dispose`, `x=`, `y=`, `contents=` are because the
-  RGSS natives define them. `RPG2k3::Scene::Battle#dispose` (166) inherits a Ruby
-  definition and no native sits on its chain. Proof: test the class's own
-  ancestor chain for an outside definer instead of the global name. Estimate
-  200-260.
-* `no_target` (86, mostly `RPG2k3::Scene::Battle` methods): the lookup finds no
-  definition for a class the chain still lists. Cause not established.
+**2. Core tag chain else, receiver is an ivar (215).** 136 embedded ivars and 79
+plain ivar reads: `size` 62, `[]` 40, `[]=` 26, `empty?` 24, `push` 22, `pop` 16.
 
-Combined estimate 950-1,100 sites, the largest single lever (about 19-22% of
-what is left).
+**3. RGSS native exact-class else (206).** `new` 62, `y=` 36, `x=` 36, `flash`
+18, `update` 10, `z=` 7, `fill_rect` 7. The receiver class is proven and an
+argument is not provably an Integer, so the native-direct arm keeps its else.
+Receiver origin: register copy 63, other 31, direct-call result 29, unknown 26.
 
-**3. Core tag chain else, receiver is an ivar (830).** `@ui` alone is 401 sites
-(`[]=` 409 and `[]` 208 across the category), across 101 distinct ivars. `@ui`
-is written twice (`scene/battle.rb:158` a Hash literal, `:4840` `nil`), so it is
-`Hash` or `nil`, and the else is the nil `NoMethodError`. Proof: an ivar class
-set of `{Hash, nil}` from the write set (no computed-name writer, ADR 0279),
-with the else compiled to the nil error. Estimate 450-600 (`@ui` plus part of the
-other 100 ivars). 596 ivars are currently "poisoned to unknown, OPAQUE" in the
-coverage report, so more of this is fixable.
+**4. `CLOSED_WORLD kept: core_or_native` (186).** The name has a core or native
+definer the world cannot exclude: `name` 37, `delete` 18, `map` 17, `string` 16,
+`resume` 11, `at` 10, `write` 9. Receiver origin unknown 60, register copy 33.
+Needs an exact receiver class per name (for `resume`, a Fiber).
 
-**4. RGSS native exact-class else (628).** 333 are an argument-tag else: the
-receiver class is proven and the argument is not (`Bitmap.new(w, h)` 115, `x=`
-62, `y=` 66, `z=` 68, `flash` 18). 295 are a receiver-class else for an
-ivar-held native (`fill_rect` 58, `draw_text` 50, `blt` 40, `clear` 32,
-`bitmap=` 31). Proofs: Integer facts for the direct entry's arguments
-(NUMERIC_OPERAND_PROOF reaching the native-direct guard), and an exact native
-class for the ivar. Estimate 250-400.
+**5. `POLY_DIAG` genuinely dynamic (475).** `receiver_class_unresolved` 210
+(`inspect` 28, `call` 14, `__to_int` 12, `<=>` 12, `read` 8 among the largest
+sub-group), `implicit_self_unresolved` 199 (core mrblib self calls; `to_enum` is
+66 across the whole census), `traced_class_no_direct_target` 44 and
+`chain/runtime_class` 22. Mostly inherent: user objects, procs and IO-like
+receivers. This category did not shrink (469 to 475) while the others did, so it
+is now a fifth of what is left. Unresolved receiver origins across all diag
+sites: `send_result` 90, `incoming_or_unwritten_register` 49, `constant_lookup`
+42, `indexed_result` 17, `captured_upvar` 11.
 
-**5. `CLOSED_WORLD kept: core_or_native` (325).** The name has a core or
-native definer the world cannot exclude (`name` 53, `resume` 45, `delete` 26,
-`include?` 24, `map` 21, `index` 20). Proof: an exact receiver class for each
-(for `resume`, a Fiber). Estimate about 100.
+**6. Numeric tag guard (121).** 102 are `[]` behind an `Integer`-tag test; the
+else sends by name.
 
-**6. `CLOSED_WORLD kept: singleton_definer` (168).** `width` 113 and `height` 41:
-some definer is a singleton method, so any instance might carry one. Proof:
-extend `exact_instances_singleton_free?` from the core classes to the project
-classes. Estimate 100-168.
+**7. No guard nearby (95).** `to_f` 20, `[]` 18, `abs` 17, `===` 11, `include?`
+10, `respond_to?` 7. Down from 162.
 
-**7. `POLY_DIAG` genuinely dynamic (469).** `receiver_class_unresolved` 210,
-`implicit_self_unresolved` 189 (`to_enum` 63, core mrblib self calls),
-`traced_class_no_direct_target` 53, `chain/runtime_class` 16. Names are
-`inspect`, `call`, `<=>`, `__to_int`, `read`, `send`: user objects, procs and
-IO-like receivers. Mostly inherent. Estimate 100-180.
+**8. `CLOSED_WORLD kept: singleton_definer` (91).** `width` 47, `height` 33: some
+definer is a singleton method, so any instance might carry one.
 
-**8. No guard nearby (162).** `max` 51 and `min` 32 on a literal array
-(`[a, b].max`), `to_f` 20, `abs` 17, `[]=` 17, `===` 11: 77 of these have a
-literal or fresh receiver. A literal receiver is exactly its class, so the else
-is dead. Estimate 120-140.
-
-**9. `CLOSED_WORLD kept: dynamic_install` (77).** `update` 76: a runtime
-definition site can install a method of that name (ADR 0288 resolves only
-literal names). Proof: enumerate the installed names. Estimate 0-76.
-
-Taking the estimates together, about 2,300-3,100 of the 5,081 sites (45-60%)
-are removable with five proofs: the class-arm lookup fixes (2), `{Hash, nil}`
-ivar sets (3), copy-propagated receiver classes (1), RGSS argument and receiver
-facts (4), and literal receivers (8). The remaining 2,000 or so need
-inter-procedural receiver typing or are genuinely polymorphic.
+**9. `CLOSED_WORLD kept: dynamic_install` (29).** A runtime definition site can
+install a method of that name (ADR 0288 resolves only literal names).
 
 ### Block and funcall sites
 
-`mrb_funcall_with_block` has 448 sites. 340 are the dynamic else of a
-`BLOCK_CORE_DIRECT` chain (`each` 183, `map` 41, `each_with_index` 40, `any?` 18,
-`select` 13) and fall under category 1's proof. 73 are dynamic only (`each` 14,
-`new` 12, `section` 9, `loop` 7, `open` 7, `times` 5). 35 are other fallbacks.
-`BLOCK_FALLBACK` markers are unchanged at 447 because none of the proofs in this
-round reaches block bodies. The `mrb_funcall*` sites in bodies are 28, mostly
-literal-sized splat forwarding (`sprintf`, `puts`, `read`, `write`, `new`).
+`mrb_funcall_with_block` has 417 sites (448 before) and there are 462
+`BLOCK_FALLBACK` markers. The `mrb_funcall*` sites in bodies are 30, mostly
+literal-sized splat forwarding. The census script does not break block sites
+down by name; see the ADR 0325 section below for the block-arm measurements.
 
 ## Follow-up: the exact receiver reaches every arm wrapper (ADR 0301)
 
