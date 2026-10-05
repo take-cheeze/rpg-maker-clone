@@ -130,7 +130,12 @@ RUBY
 OWNERS = %w[RcBox RcSub RcOther RcFx RcMM RcPre RcDrv].freeze
 EXACT = %w[e_local e_call e_chain e_scoped_chain_box e_scoped_chain_other e_scoped_inherited_chain e_forward e_recursive e_rescue
            e_block_return e_ivar e_sub e_sub_inherited e_moved e_typed e_typed_ivar].freeze
-GUARDED = %w[g_mixed g_param g_ivar_read g_after_call g_yield g_reassigned g_branch g_captured g_ensure g_typed].freeze
+GUARDED = %w[g_mixed g_param g_ivar_read g_yield g_reassigned g_branch g_captured g_ensure g_typed].freeze
+# ADR 0356: `g_after_call` writes `@b = RcBox.new`, calls `helper` (which cannot touch `@b`) and
+# reads `@b.tag`. The readonly-call proof keeps the ivar slot alive across the call, so the
+# read becomes a guard-free CLOSED_WORLD_EXACT_CLASS. It was a GUARDED case before that proof
+# and is exact after it; the runtime section below still pins its value.
+READONLY_IVAR = %w[g_after_call].freeze
 # The sends that go through the table (the others in EXACT are the fresh `.new` of the same proof).
 TABLE_ONLY = %w[e_call e_chain e_forward e_recursive e_rescue e_block_return e_sub e_sub_inherited e_moved e_typed].freeze
 
@@ -155,6 +160,13 @@ Dir.mktmpdir do |dir|
   end
   GUARDED.each do |fn|
     check.call("NEG #{fn}: keeps its guard or its dispatch", guarded.call(code, fn))
+  end
+  # ADR 0356's readonly-call proof, on the case it newly frees. With the proof off the read
+  # falls back to the guarded form the other NEG cases keep, so both directions are pinned.
+  READONLY_IVAR.each do |fn|
+    enabled = ENV['BC2CPP_READONLY_CALL_EFFECTS'] != '0'
+    check.call("#{fn}: the readonly call keeps the ivar slot (#{enabled ? 'exact' : 'guarded'})",
+               enabled ? exact.call(code, fn) : guarded.call(code, fn))
   end
   # nil-or-one-class (ADR 0296): one nil test, and the non-nil path is the exact call.
   check.call('g_nil: a nil-or-one-class result takes a nil test and a guard-free call',

@@ -1915,3 +1915,5 @@ part that explains it). Nothing else is collected.
 ## TODO
 
 See [`docs/TODO.md`](docs/TODO.md) for the detailed, per-maker TODO list.
+
+Receiver flow also models [readonly Ruby call effects](docs/bc2cpp-readonly-call-effects.md) for proven zero-argument getter bodies.
