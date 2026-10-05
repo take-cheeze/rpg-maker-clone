@@ -235,3 +235,10 @@ The bc2cpp core-mrbtest shard runs the call-context result parity check and its
 mutation check. They exercise exact self, positional inputs, inherited overrides,
 cache separation and withdrawal for uncertain returns or unsupported method
 shapes. See ADR 0351.
+
+### Enumerator wrapper compilation
+
+The bc2cpp core checks run `bc2cpp_enumerator_wrappers_check.rb` and its mutation
+check. They verify the seven admitted wrappers' unconditional Fiber guards,
+saved bytecode registration, admission gates and runtime parity for yielding
+callbacks, state changes, overrides and GC. See ADR 0350.

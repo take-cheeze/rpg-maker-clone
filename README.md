@@ -1053,6 +1053,9 @@
   Core collection bytecode can also prove results independent of the receiver
   class, and exhaustive exact class sets select audited native bodies without
   a dynamic fallback; see [core Ruby returns](docs/bc2cpp-core-ruby-returns.md).
+  Exhaustive core receiver sets also preserve collection chains: Array/Hash
+  `map` results join to Array; see
+  [ADR 0348](docs/adr/0348-bc2cpp-core-receiver-union-results.md).
   Fixed positional core calls also preserve memo classes through
   `each_with_object` and Array results through `drop`; see
   [ADR 0349](docs/adr/0349-bc2cpp-core-positional-results.md).
@@ -1125,7 +1128,7 @@
   [`docs/adr/0281-bc2cpp-constant-singleton-and-native-exact-direct.md`](docs/adr/0281-bc2cpp-constant-singleton-and-native-exact-direct.md).
   mruby's own Ruby (core mrblib, the core gems' mrblib, mruby-stringio and
   mruby-onig-regexp) is compiled too, by `mruby-core-compiled`: every method that
-  neither names the Fiber class, builds a lambda, nor comes from mruby-enumerator is
+  neither names the Fiber class, builds a lambda, nor comes from an unaudited mruby-enumerator body is
   registered over its bytecode for the RPG2000/2003 maker, and the ones whose name no
   native method shares (and that take no block) also become direct call targets.
   The block-taking ones (`Array#each`, `Integer#times`, `Kernel#loop`, `Hash#each`,
@@ -1136,6 +1139,9 @@
   [`docs/adr/0264-bc2cpp-compiled-core-mrblib.md`](docs/adr/0264-bc2cpp-compiled-core-mrblib.md)
   and
   [`docs/adr/0269-bc2cpp-core-block-methods-fiber-guard.md`](docs/adr/0269-bc2cpp-core-block-methods-fiber-guard.md).
+  Seven Enumerator wrappers (`inspect`, `size`, `rewind`, `feed`, `next`, `peek`,
+  `peek_values`) also compile, with an unconditional root-context guard and saved
+  bytecode inside Fibers. See [Enumerator wrappers](docs/bc2cpp-enumerator-wrappers.md).
   A literal-block send from compiled engine code to one of them (`list.each { ... }`,
   `h.select { ... }`, `xs.map { ... }`) tries exact-class Array, Hash and Range arms first and
   calls the compiled body directly at the root context, keeping the ordinary send as its else; see

@@ -1098,6 +1098,9 @@ jobs:
               # ADR 0338: actual core Ruby return bodies, block exits, overrides and ten mutants.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_core_ruby_results_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_core_ruby_results_mutation_check.rb
+              # ADR 0350: guarded Enumerator wrappers and admission mutations.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_enumerator_wrappers_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_enumerator_wrappers_mutation_check.rb
               # ADR 0336: name-wide native transformations and File.join subclass boundary.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_native_array_transforms_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_array_transforms_mutation_check.rb
