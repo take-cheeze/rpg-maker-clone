@@ -157,5 +157,17 @@ Dir.mktmpdir do |dir|
   check.call('a passing block exits 0 and still prints the table', status_ok.success? && out_ok.include?('== check timings') && out_ok.include?('total'))
 end
 
+Dir.mktmpdir do |dir|
+  checks = "echo run-fixture\nCSEND_MUTANTS=1 echo run-switch\necho mutation_check.rb\nruby x_mutation_check.rb\n"
+  generated, = Open3.capture2({ 'CI_SKIP_MUTANTS' => '1' }, RbConfig.ruby, File.join(__dir__, 'ci_timed_checks.rb'), stdin_data: checks)
+  script = File.join(dir, 'skip.sh')
+  File.write(script, generated)
+  out, status = Open3.capture2e('bash', '-eo', 'pipefail', '-c', ". #{script}")
+  table = out[/== check timings.*\z/m].to_s
+  check.call('CI_SKIP_MUTANTS keeps fixture checks and drops _mutation_check.rb commands',
+             status.success? && table.include?('run-fixture') && !table.include?('ruby x_mutation_check.rb'))
+  check.call('CI_SKIP_MUTANTS strips the *_MUTANTS=1 switch but still runs the check', table.include?('run-switch') && !table.include?('CSEND_MUTANTS'))
+end
+
 puts(failures.empty? ? 'ci helpers check OK' : "FAILED: #{failures.size}")
 exit(failures.empty? ? 0 : 1)

@@ -27,6 +27,16 @@ commit (workflow-level `concurrency`, keyed on the PR number). Master pushes,
 merge-queue runs, manual dispatches and `/preview` comments use a per-run group
 and are never cancelled.
 
+### Mutation checks run off pull requests
+
+On `pull_request` runs the `bc2cpp-checks` job sets `CI_SKIP_MUTANTS=1`, and
+`scripts/ci_timed_checks.rb` then drops every `*_mutation_check.rb` command and
+strips `*_MUTANTS=1` switches, so each shard keeps its fixture checks but not the
+mutant rebuilds. Master pushes, merge-queue runs and manual dispatch run them
+all, so a mutation regression blocks the merge queue rather than the PR. Timing
+estimates in the shard table include the mutants and apply to those runs. To run
+them on a PR, use `workflow_dispatch` on its branch.
+
 ### Width shards
 
 The `int32` variant is split into `int32-a` and `int32-b` (both build the same

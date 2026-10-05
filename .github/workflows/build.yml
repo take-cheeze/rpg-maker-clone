@@ -1292,6 +1292,8 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_direct_natives_check.rb
 
     env:
+      # Pull requests skip the mutation checks; master and the merge queue run them (docs/ci.md).
+      CI_SKIP_MUTANTS: ${{ github.event_name == 'pull_request' && '1' || '' }}
       RPGMAKER_BC2CPP: "1"
       SCCACHE_GHA_ENABLED: "true"
       ACTIONS_CACHE_SERVICE_V2: "on"
