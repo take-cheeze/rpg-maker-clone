@@ -20,6 +20,36 @@ The status check `bc2cpp` is the aggregate of `bc2cpp-build`, every
 `bc2cpp` rather than the individual shards, so adding a shard needs no settings
 change.
 
+### Superseded runs
+
+A push to a pull request cancels the run still going for that PR's previous
+commit (workflow-level `concurrency`, keyed on the PR number). Master pushes,
+merge-queue runs, manual dispatches and `/preview` comments use a per-run group
+and are never cancelled.
+
+### Mutation checks run off pull requests
+
+On `pull_request` runs the `bc2cpp-checks` job sets `CI_SKIP_MUTANTS=1`, and
+`scripts/ci_timed_checks.rb` then drops every `*_mutation_check.rb` command and
+strips `*_MUTANTS=1` switches, so each shard keeps its fixture checks but not the
+mutant rebuilds. Master pushes, merge-queue runs and manual dispatch run them
+all, so a mutation regression blocks the merge queue rather than the PR. Timing
+estimates in the shard table include the mutants and apply to those runs. To run
+them on a PR, use `workflow_dispatch` on its branch.
+
+### Splitting long shards
+
+`hot-only` ran its two ~15 minute reviewed-set checks back to back, so
+`hot-proven-miss` now runs `bc2cpp_proven_miss_check`. `coverage` takes the three
+slowest checks out of `fast` (`bc2cpp_coverage_check`, the optcarrot coverage
+check and `rescue_shadow`). Timings come from the "Check timings" job summary.
+
+### Width shards
+
+The `int32` variant is split into `int32-a` and `int32-b` (both build the same
+32-bit libmruby via the matrix `build:` field) so its 40 minute run no longer
+sets the workflow's wall clock. Add new 32-bit legs to whichever is shorter.
+
 ### Check shards
 
 `bc2cpp-checks` is a matrix; each shard is its own job with a 45 minute
@@ -38,20 +68,20 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 | `core-mrbtest` | block/yield-free/exact-receiver/return-class, `step_inline`, `eqq_direct`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, `numeric_slow`, `tuple_return` (ADR 0311, +30 s), mruby's own suites | 20 min |
 | `core-flow` | `exact_receiver_flow` and its mutation check, `computed_send` with `CSEND_MUTANTS=1` | see the timing table |
 | `core-tables` | `frozen_tables` and its mutation check (ADR 0306) | see the timing table |
-| `call-results` | `call_results` and its mutation check (ADR 0309; its 32-bit leg runs in `bc2cpp-width (int32)`) | see the timing table |
+| `call-results` | `call_results` and its mutation check (ADR 0309; its 32-bit leg runs in `bc2cpp-width (int32-a)` or `(int32-b)`) | see the timing table |
 | `native-wrappers` | `exact_native_wrappers` (ADR 0307) and its eight mutants | 5 min |
 | `core-mutants` | `unlisted_class_call` with `UCC_MUTANTS=1` (seven mutant rebuilds) | 23 min |
 | `block-arm-reach` | `block_arm_reach` with `BR_MUTANTS=1` (ADR 0310: six mruby builds, eight generator mutants) | 10 min (local, 4 cores) |
 | `escape-analysis` | `escape_analysis` (unit, generated code, six mruby builds) and its mutation check (ADR 0316: eighteen mutants and a control) | est. 12 min (local: 6 min + 2 min) |
 | `core-exact-direct` | `core_exact_direct` with `CX_MUTANTS=1` (ADR 0314: four mruby builds each run compiled and interpreted, nine generator mutants and a control) | 15 min (4 cores) |
 | `captured-locals` | `captured_local_class` (generated code, full-core and core-only runs) and its mutation check (ADR 0308) | est. 15 min |
-| `constructor-pools` | `constructor_pools` (generated code, full-core and core-only runs) and its mutation check, 13 mutants plus a control (ADR 0313); the 32-bit run is in `bc2cpp-width (int32)` | est. 15 min |
-| `numeric-constants` | `numeric_constants` (generated code with fifteen withdrawal worlds, full-core and core-only runs) and its mutation check, 15 mutants plus a control (ADR 0318; the mutation check ran 12 min locally with three jobs); the 32-bit run is in `bc2cpp-width (int32)` | est. 20 min |
-| `native-class-arms` | `native_class_arms` (generated code with sixteen withdrawal worlds, full-core and core-only runs over the base fixture, the compiled core and the method_missing, module and reopened-Hash worlds) and its mutation check, 13 mutants plus a control, mutants stop at the first matching FAIL line (ADR 0323); the 32-bit run is in `bc2cpp-width (int32)` | est. 20 min |
-| `numeric-intervals` | `numeric_intervals` (generated code with five withdrawal worlds and both kill switches, full-core and core-only runs) and its mutation check, 9 mutants plus a control (ADR 0326); the 32-bit run is in `bc2cpp-width (int32)` | est. 10 min |
-| `call-facts` | `call_facts` (generated code with ten withdrawal worlds, full-core and core-only runs) and its mutation check, 10 mutants plus a control (ADR 0317), `block_send_report` (ADR 0325, generated code only, 15 s), `dead_arm_report` (ADR 0330, generated code only, 15 s), `receiver_proof_report` (ADR 0331, generated code only, 30 s), `native_ivar_scopes` (ADR 0332, source audit, withdrawal worlds, full-core/core-only parity for Window/Sprite/Plane/Tilemap and subclasses, eleven mutants plus a control, including bitmap setter families in ADR 0337), `native_setter_report` (ADR 0337, byte-identical code, input masks, mentions and incomplete caller coverage), `native_class_results` (ADR 0333, pinned-source audit, mixed Ruby/native returns, withdrawal worlds, full-core/core-only parity, eight mutants plus a control), and `native_string_results` (ADR 0334, linked native and Struct alias audits, generated withdrawal cases, full-core/core-only parity and eleven mutants plus a control), and `native_collection_results` (ADR 0335, copy/collection source and helper audits, override withdrawal, full-core/core-only parity and seven mutants plus a control), and `native_array_transforms` (ADR 0336, name-wide allocation contracts, File.join subclass boundary, source/helper audits, full-core parity and seven mutants plus a control), and `core_ruby_results` (ADR 0338, actual core bytecode, aliases, block exit/override/captured-write refusals, full-core parity and ten mutants plus a control); the 32-bit runs are in `bc2cpp-width (int32)` | est. 16 min |
-| `ext-prefix` | `ext_prefix` (decoder cases, folded listing, generated code with the kill switch, full-core and core-only runs) and its mutation check, 8 mutants plus a control (ADR 0320); the 32-bit run is in `bc2cpp-width (int32)` | est. 12 min |
-| `integer-constants` | `integer_constants` (unit cases for the native-definition scan and the jump onto a SETCONST, generated code, full-core and core-only runs) and its mutation check, 8 mutants plus a control (ADR 0324); the 32-bit run is in `bc2cpp-width (int32)` | est. 8 min |
+| `constructor-pools` | `constructor_pools` (generated code, full-core and core-only runs) and its mutation check, 13 mutants plus a control (ADR 0313); the 32-bit run is in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 15 min |
+| `numeric-constants` | `numeric_constants` (generated code with fifteen withdrawal worlds, full-core and core-only runs) and its mutation check, 15 mutants plus a control (ADR 0318; the mutation check ran 12 min locally with three jobs); the 32-bit run is in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 20 min |
+| `native-class-arms` | `native_class_arms` (generated code with sixteen withdrawal worlds, full-core and core-only runs over the base fixture, the compiled core and the method_missing, module and reopened-Hash worlds) and its mutation check, 13 mutants plus a control, mutants stop at the first matching FAIL line (ADR 0323); the 32-bit run is in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 20 min |
+| `numeric-intervals` | `numeric_intervals` (generated code with five withdrawal worlds and both kill switches, full-core and core-only runs) and its mutation check, 9 mutants plus a control (ADR 0326); the 32-bit run is in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 10 min |
+| `call-facts` | `call_facts` (generated code with ten withdrawal worlds, full-core and core-only runs) and its mutation check, 10 mutants plus a control (ADR 0317), `block_send_report` (ADR 0325, generated code only, 15 s), `dead_arm_report` (ADR 0330, generated code only, 15 s), `receiver_proof_report` (ADR 0331, generated code only, 30 s), `native_ivar_scopes` (ADR 0332, source audit, withdrawal worlds, full-core/core-only parity for Window/Sprite/Plane/Tilemap and subclasses, eleven mutants plus a control, including bitmap setter families in ADR 0337), `native_setter_report` (ADR 0337, byte-identical code, input masks, mentions and incomplete caller coverage), `native_class_results` (ADR 0333, pinned-source audit, mixed Ruby/native returns, withdrawal worlds, full-core/core-only parity, eight mutants plus a control), and `native_string_results` (ADR 0334, linked native and Struct alias audits, generated withdrawal cases, full-core/core-only parity and eleven mutants plus a control), and `native_collection_results` (ADR 0335, copy/collection source and helper audits, override withdrawal, full-core/core-only parity and seven mutants plus a control), and `native_array_transforms` (ADR 0336, name-wide allocation contracts, File.join subclass boundary, source/helper audits, full-core parity and seven mutants plus a control), and `core_ruby_results` (ADR 0338, actual core bytecode, aliases, block exit/override/captured-write refusals, full-core parity and ten mutants plus a control); the 32-bit runs are in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 16 min |
+| `ext-prefix` | `ext_prefix` (decoder cases, folded listing, generated code with the kill switch, full-core and core-only runs) and its mutation check, 8 mutants plus a control (ADR 0320); the 32-bit run is in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 12 min |
+| `integer-constants` | `integer_constants` (unit cases for the native-definition scan and the jump onto a SETCONST, generated code, full-core and core-only runs) and its mutation check, 8 mutants plus a control (ADR 0324); the 32-bit run is in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 8 min |
 
 Shards no longer share `BC2CPP_FULL_BUILD_DIR`, so each one that needs the
 full-core build makes its own (about two minutes). The times are estimates from
@@ -70,7 +100,7 @@ clock of the whole job, setup included):
 | `hot-only` | 6 min | 4 min |
 | the other shards | 3-5 min | 1-2 min |
 
-`bc2cpp-width (int32)` took 9 min. `core-flow` is the long pole of the whole
+`bc2cpp-width (int32-a)` or `(int32-b)` took 9 min. `core-flow` is the long pole of the whole
 workflow; the mutation checks inside it are the first thing to shorten.
 
 ### Reading the timing table

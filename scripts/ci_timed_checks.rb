@@ -55,6 +55,17 @@ BASH
 
 VARIABLE_ONLY = /\A(?:export\s+)?(?:\w+=(?:"[^"]*"|'[^']*'|\S*)\s*)+\z/
 
+# CI_SKIP_MUTANTS=1 (pull requests, docs/ci.md) drops the `*_mutation_check.rb` commands and the
+# `*_MUTANTS=1` switches, leaving each fixture check itself; master and the merge queue run them all.
+MUTATION_SCRIPT = /_mutation_check\.rb\b/
+MUTANT_SWITCH = /\b\w*_MUTANTS=1\s+/
+
+def without_mutants(line)
+  return nil if MUTATION_SCRIPT.match?(line)
+
+  line.gsub(MUTANT_SWITCH, '')
+end
+
 # Joins `\` continuations and drops comments and blanks.
 def commands(text)
   joined = text.gsub(/\\\n/, ' ')
@@ -67,7 +78,15 @@ def label(line)
 end
 
 puts PRELUDE
+skip_mutants = ENV['CI_SKIP_MUTANTS'] == '1'
 commands($stdin.read).each do |line|
+  if skip_mutants
+    stripped = without_mutants(line)
+    puts "echo #{Shellwords.escape("skipping mutants: #{label(line)}")}" if stripped.nil? || stripped != line
+    next if stripped.nil?
+
+    line = stripped
+  end
   if VARIABLE_ONLY.match?(line)
     puts line
   else
