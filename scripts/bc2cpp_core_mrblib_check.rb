@@ -9,7 +9,7 @@
 #     and no entry is stale;
 #   - every core-source method the four compiled gems emit is emitted by exactly one gem
 #     (no duplicate `_impl`), and only by mruby-core-compiled;
-#   - none of them names the Fiber class, builds a lambda or comes from mruby-enumerator;
+#   - none of them names the Fiber class, builds a lambda or comes from unaudited mruby-enumerator bodies;
 #     each one that touches a block has the Fiber guard in its entry (a `Fiber.yield`
 #     inside a block cannot cross a compiled frame, ADR 0269), saves its bytecode before it
 #     is registered, is a hidden definition and is never called directly;
@@ -106,17 +106,18 @@ check.call('Array#include? (mruby-rgss) is emitted by mruby-rgss-compiled, not t
 # A compiled core body that touches a block sits on the C stack while the block runs, so its entry
 # hands the call to the bytecode whenever a Fiber runs (CORE_BLOCK_GUARD, ADR 0269; a body that cannot
 # suspend a Fiber stays compiled while its block is proved yield-free, ADR 0283). Nothing that
-# names the Fiber class, builds a lambda or comes from mruby-enumerator is compiled at all.
+# names the Fiber class, builds a lambda or comes from unaudited mruby-enumerator bodies is compiled at all.
 compiled_defs = core_defs(registry, ireps).select { |d| core_keys.include?("#{d.owner}##{d.name}") }
 unsafe = compiled_defs.select do |d|
   irep = ireps.fetch(d.irep)
-  CoreDefs.references_fiber?(irep, ireps) || CoreDefs.builds_lambda?(irep, ireps) || CoreDefs.fiber_gem?(irep.file)
+  CoreDefs.references_fiber?(irep, ireps) || CoreDefs.builds_lambda?(irep, ireps) ||
+    (CoreDefs.fiber_gem?(irep.file) && !CoreMethods.enumerator_wrapper?(d, ireps))
 end
-check.call("no compiled core method names Fiber, builds a lambda or comes from mruby-enumerator (#{unsafe.map { |d| "#{d.owner}##{d.name}" }.first(3).join(', ')})",
+check.call("no compiled core method names Fiber, builds a lambda or comes from unaudited mruby-enumerator bodies (#{unsafe.map { |d| "#{d.owner}##{d.name}" }.first(3).join(', ')})",
            unsafe.empty?)
 core_run = runs.find { |name, _, _| name == 'mruby-core-compiled' }
 # A later definition replaces an earlier one (shadowed), so count by name.
-block_defs = compiled_defs.select { |d| CoreDefs.touches_block?(ireps.fetch(d.irep), ireps) }.uniq { |d| "#{d.owner}##{d.name}" }
+block_defs = compiled_defs.select { |d| CoreDefs.touches_block?(ireps.fetch(d.irep), ireps) || CoreMethods.enumerator_wrapper?(d, ireps) }.uniq { |d| "#{d.owner}##{d.name}" }
 guard_entries = core_run[1].scan(/^static mrb_value (\S+)\(mrb_state\* M, mrb_value self\) \{\n  if \(mrb_unlikely\(\(?M->c != M->root_c/).flatten
 check.call("compiled core methods that touch a block (#{block_defs.size}) all have the guard in their entry (#{guard_entries.size})",
            block_defs.size.positive? && block_defs.size == guard_entries.size)
@@ -130,6 +131,11 @@ check.call("no direct call reaches a guarded _impl (#{direct.first(3).join(', ')
 # finding 1) and is never a call target anyway.
 check.call('guarded methods are hidden definitions',
            block_defs.all? { |d| core_run[2].include?("  HIDDEN #{d.owner}##{d.name}\n") })
+CoreMethods::ENUMERATOR_WRAPPERS.each do |name|
+  definition = compiled_defs.find { |d| d.owner == 'Enumerator' && d.name == name }
+  check.call("Enumerator##{name} is compiled behind an unconditional root guard", definition &&
+             core_run[1].match?(/static mrb_value Enumerator_#{name}_?\w*\(mrb_state\* M, mrb_value self\) \{\n  if \(mrb_unlikely\(M->c != M->root_c\)\) return bc2cpp_core_interpreted/))
+end
 # `proc.call(x)` from a C frame runs OP_CALL over that frame, which crashes for a compiled block
 # (a cfunc proc): a core body yields to a plain Proc instead (CORE_PROC_CALL), and dispatches
 # `call` only in the else arm.

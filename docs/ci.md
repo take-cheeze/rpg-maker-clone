@@ -228,3 +228,10 @@ The `changes` job's path filter (dorny/paths-filter) has not been exercised on a
 `merge_group` run; watch the first queued PR for it. A required check must be reported on
 `merge_group` as well as on `pull_request`; every job here has no event filter
 beyond excluding `issue_comment`, so it is.
+
+### Enumerator wrapper compilation
+
+The bc2cpp core checks run `bc2cpp_enumerator_wrappers_check.rb` and its mutation
+check. They verify the seven admitted wrappers' unconditional Fiber guards,
+saved bytecode registration, admission gates and runtime parity for yielding
+callbacks, state changes, overrides and GC. See ADR 0350.
