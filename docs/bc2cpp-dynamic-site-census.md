@@ -974,3 +974,73 @@ counterfactual is not a measured saving from this change.
 
 See [Profiler block results](bc2cpp-profiler-results.md) and
 [ADR 0344](adr/0344-bc2cpp-profiler-block-results.md).
+
+### The Fixnum proof on a native arm's Integer argument (ADR 0358)
+
+Fresh census on this tree (all three engine gems, `RPG2k*`/`Game*` owners in
+parentheses), shipped pass, `3rd/*` populated. The nine removals are the
+`BC2CPP_NATIVE_INT_GUARDS=0` control against the default, one tree, same method:
+
+| Measure | Control | Enabled |
+| --- | ---: | ---: |
+| `bc2cpp_send` call sites, all gems | 2,343 | 2,334 |
+| of them in `RPG2k_*`/`Game_*` | 1,553 | 1,544 |
+| `NATIVE_DIRECT_EXACT` arms keeping an `mrb_integer_p` test | 26 | 17 |
+| `bc2cpp_getidx` / `setidx` / `slow_*` / `eqq` callers | unchanged | unchanged |
+
+No helper gained a caller, so all nine are removals: `z=` 6, `x=` 2, `flash` 1.
+
+Where the remaining 1,544 engine sites sit, by exclusive category:
+
+| Category | Sites |
+| --- | ---: |
+| `core_tag_chain_else:receiver_other` | 589 |
+| `rgss_native_exact_class_else` | 187 |
+| `core_tag_chain_else:receiver_is_ivar` | 184 |
+| `closed_world_kept:core_or_native` | 165 |
+| `other:numeric_tag_guard` | 99 |
+| `closed_world_kept:singleton_definer` | 81 |
+| `other:no_guard_nearby` | 66 |
+| `poly_diag:dynamic_single_registered_definition/receiver_class_unresolved` | 61 |
+| `known_class_arm_still_by_name` | 34 |
+| everything else | 78 |
+
+`core_tag_chain_else:receiver_other` is the largest lever left and is a
+receiver-class problem, not an argument one: `empty?` 160, `to_s` 139, `size` 70,
+`length` 49. Its receiver-origin heuristic splits `register_copy` 291,
+`direct_call_result` 110, `indexed_result` 75, `unknown` 35 — and the first of
+those is a text heuristic that a register `MOVE` hides, so the real split is not
+yet measured.
+
+Two categories are known over-conservative rather than genuinely dynamic:
+`closed_world_kept:singleton_definer` (81, all `width`/`height`/`row`, from the
+`class << Graphics` body in mruby-rgss/mrblib/lib.rb:1558) and
+`closed_world_kept:core_or_native` (165, where `@outside_names` is class-blind
+and unrelated mruby gems registering a name refuse the engine's own class).
+Neither is measurable without building its proof.
+
+The `core_tag_chain_else` receiver-origin split is a floor, not an answer, and
+its blind spot is worth naming before the next round picks a target: `register_copy`
+fires on any register `MOVE`, and the emitter emits a `MOVE` for every Ruby local
+assignment, block-parameter binding and block-result assignment. So those 291 sites
+are an aggregate over several distinct Ruby-level origins, and reading them as one
+root cause would misdirect the work. Making `receiver_origin` follow `MOVE` chains
+is a measurement-only change to `tools/bc2cpp/site_census.rb` and would re-partition
+them before anything is built.
+
+Three shapes are worth naming because they are gaps rather than missing proofs:
+
+* **A local receiver that a fresh allocation or an inlined `select`/`map` collector
+  produced.** `Game::State#to_lsd` alone holds 13 `empty?` sites of this kind;
+  `CHAINED_ARRAY_METHODS` already knows those calls return an Array, but
+  `exact_core_value_class` never asks.
+* **A method result whose receiver-specific return class exists but is refused.**
+  `Game::Variables#to_h` returns `@data`, a Hash the class layout already knows;
+  `codegen_return_classes.rb`'s `RETURN_CORE_CLASS` veto rejects the mask even
+  though the scoped form is stricter than the name-wide one it falls back to.
+* **A `Hash#[]` element.** `@ui[:skills]` in the battle scene is a RecordHash whose
+  per-key value classes `RecordHash.analyze` already computes, but which is not an
+  oracle for `element_index_mask`.
+
+See [native arm Integer guards](bc2cpp-native-int-guards.md) and
+[ADR 0358](adr/0358-bc2cpp-native-direct-exact-int-guard.md).

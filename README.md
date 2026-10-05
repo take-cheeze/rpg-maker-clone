@@ -1262,6 +1262,10 @@
   Immediate in-bounds fresh array reads can prove primitive element receivers
   through a bounded literal corridor; see
   [literal element proofs](docs/bc2cpp-literal-elements.md).
+  A native arm whose receiver is already proven exact no longer needs a runtime
+  Integer tag test on an argument the Fixnum proof covers, which removes the
+  arm's only remaining by-name dispatch; see
+  [native arm Integer guards](docs/bc2cpp-native-int-guards.md).
   Selected core Ruby collection bodies now retain exact return classes across zero-argument calls,
   including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
   `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks

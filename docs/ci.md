@@ -264,3 +264,13 @@ indices and out-of-bounds reads. See ADR 0354.
 The native class-arm and join-dominance checks disable exhaustive user receiver
 unions so their guarded fallback assertions continue to exercise those proof
 paths. The receiver-union suite separately checks exhaustive dispatch.
+
+### Native arm Integer guards
+
+The core shard runs `bc2cpp_native_int_guard_check.rb` enabled and disabled, plus
+its mutation check (control, switch-off control and six mutants covering the
+gate, the kind filter, the proof's register test and the position argument).
+The check pins both emitters' shape for every answer the Fixnum proof can give
+and drives the real proof over its own refusals; the generated-code section
+covers a closed and an open world. See ADR 0358 and
+[bc2cpp-native-int-guards](bc2cpp-native-int-guards.md).
