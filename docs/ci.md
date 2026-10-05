@@ -234,7 +234,8 @@ beyond excluding `issue_comment`, so it is.
 The bc2cpp core-mrbtest shard runs the call-context result parity check and its
 mutation check. They exercise exact self, positional inputs, inherited overrides,
 cache separation and withdrawal for uncertain returns or unsupported method
-shapes. See ADR 0351. Native-summary withdrawal checks and profiler mutation
+shapes, captured writes and nonlocal block returns (sixteen mutants plus a
+control). See ADRs 0351 and 0353. Native-summary withdrawal checks and profiler mutation
 checks disable call-context results so an independent local proof cannot mask
 the proof path they are testing. The dedicated call-context checks exercise the
 enabled analysis.
@@ -252,7 +253,6 @@ The core-mrbtest shard runs user receiver union parity and mutation checks.
 They verify shared-body direct calls, every family member, differing overrides, unknown and nil bits,
 constructor lookup, hierarchy bounds and outside replacements. See ADR 0352.
 
-
 ### Numeric native conversions
 
 The core-mrbtest shard runs enabled and disabled Integer conversion parity and
@@ -263,6 +263,13 @@ worlds, wrong arity and blocks. See ADR 0357.
 The conversion parity check also runs in both width shards with width-safe
 literals and matching bigint defines. Visibility changes withdraw the numeric
 proof alongside altered method lookup.
+
+### Fresh literal element receivers
+
+The core-mrbtest shard runs enabled and disabled literal element parity checks,
+plus six proof-condition mutants and their control. They cover exact primitive
+results and withdrawal for captured writes, effects, branch entries, unknown
+indices and out-of-bounds reads. See ADR 0354.
 
 The native class-arm and join-dominance checks disable exhaustive user receiver
 unions so their guarded fallback assertions continue to exercise those proof
