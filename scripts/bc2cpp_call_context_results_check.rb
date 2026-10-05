@@ -18,6 +18,9 @@ SOURCE = <<~RUBY
     def nested(value); self.carry(value); end
     def optional(value, extra = nil); value; end
     def rest(value, *extra); value; end
+    def default(value = CcB.new); value; end
+    def trailing(value = CcB.new, *extra, tail); tail; end
+    def rest_array(*values); values; end
     def blocked(value, &block); value; end
     def recursive(value); self.recursive(value); self.recursive(value); end
     def closure(value); [1].each { return CcB.new }; value; end
@@ -59,6 +62,10 @@ SOURCE = <<~RUBY
     def wrong_arity; CcRelay.new.carry(CcA.new, CcB.new).tag; end
     def optional; CcRelay.new.optional(CcA.new).tag; end
     def rest; CcRelay.new.rest(CcA.new).tag; end
+    def omitted; CcRelay.new.default.tag; end
+    def supplied; CcRelay.new.default(CcA.new).tag; end
+    def trailing; CcRelay.new.trailing(CcB.new, CcB.new, CcA.new).tag; end
+    def rest_array; CcRelay.new.rest_array(CcA.new, CcB.new).size; end
     def blocked; CcRelay.new.blocked(CcA.new).tag; end
     def poison(value); [CcRelay.new.optional(value), CcRelay.new.rest(value), CcRelay.new.blocked(value)]; end
     def recursive; CcRelay.new.recursive(CcA.new).tag; end
@@ -95,9 +102,16 @@ Dir.mktmpdir('call-context') do |dir|
     block_enabled = enabled && ENV['BC2CPP_BLOCK_CONTEXT_RESULTS'] != '0'
     check.call("#{name}: block-containing method carries exact receiver", body.call(name).include?('EXACT_CLASS :tag -> CcA#tag') == block_enabled)
   end
-  %w[unknown mixed nilable wrong_arity recursive closure optional rest blocked captured_write nested_return break_result captured_b later_write].each do |name|
+  # `optional` and `rest` are asserted exact by the positional-binding block below (ADR 0355),
+  # so they are not in this list: a resolved signature is exactly what that proof consumes.
+  %w[unknown mixed nilable wrong_arity recursive closure blocked captured_write nested_return break_result captured_b later_write].each do |name|
     check.call("#{name}: uncertain result stays dynamic", !body.call(name).include?('EXACT_CLASS :tag ->'))
   end
+  shapes = enabled && ENV['BC2CPP_CONTEXT_ARGUMENT_SHAPES'] != '0'
+  { 'optional' => 'CcA', 'rest' => 'CcA', 'omitted' => 'CcB', 'supplied' => 'CcA', 'trailing' => 'CcA' }.each do |name, klass|
+    check.call("#{name}: positional binding carries exact receiver", body.call(name).include?("EXACT_CLASS :tag -> #{klass}#tag") == shapes)
+  end
+  check.call('rest Array result', body.call('rest_array').include?('CLOSED_WORLD_NATIVE_EXACT :size -> Array') == shapes)
   parent_body = code[/mrb_value CcParent_run_impl\([^\n]*\) \{(.*?)^\}/m, 1].to_s
   check.call('subclassed lexical self stays unresolved', !parent_body.include?('EXACT_CLASS :tag -> CcA#tag'))
   outside = File.join(dir, 'outside')
@@ -124,7 +138,7 @@ Dir.mktmpdir('call-context') do |dir|
       harness = <<~CPP
         static int scenario(mrb_state* M) {
           mrb_value fixture = mrb_obj_new(M, mrb_class_get(M, "CcFixture"), 0, nullptr);
-          for (const char* name : {"implicit", "a", "b", "nested", "self_chain", "explicit_self", "inherited", "array", "wrong_arity", "closure", "optional", "rest", "blocked", "readonly", "same_return", "discarded_break", "captured_write", "nested_return", "captured_return", "break_result", "deep_capture", "captured_b", "later_write"})
+          for (const char* name : {"implicit", "a", "b", "nested", "self_chain", "explicit_self", "inherited", "array", "wrong_arity", "closure", "optional", "rest", "blocked", "omitted", "supplied", "trailing", "rest_array", "readonly", "same_return", "discarded_break", "captured_write", "nested_return", "captured_return", "break_result", "deep_capture", "captured_b", "later_write"})
             call(M, name, fixture, name);
           for (mrb_value flag : {mrb_true_value(), mrb_false_value()}) {
             call(M, "mixed", fixture, "mixed", 1, &flag);

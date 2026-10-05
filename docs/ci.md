@@ -283,6 +283,11 @@ The core-mrbtest shard runs user receiver union parity and mutation checks.
 They verify shared-body direct calls, every family member, differing overrides, unknown and nil bits,
 constructor lookup, hierarchy bounds and outside replacements. See ADR 0352.
 
+ADR 0355 expands call-context checks to positional defaults, rest and trailing
+arguments, with interpreter parity and fourteen proof-condition mutants plus a
+control. The core shard also runs `bc2cpp_context_arguments_check.rb` and its
+seven-mutant binding checker.
+
 ### Numeric native conversions
 
 The core-mrbtest shard runs enabled and disabled Integer conversion parity and
