@@ -1252,6 +1252,12 @@
   it never enables native-family pooling. Current Wio output remains unchanged. See
   [`docs/bc2cpp-native-setter-inputs.md`](docs/bc2cpp-native-setter-inputs.md) and
   [`ADR 0337`](docs/adr/0337-bc2cpp-native-setter-input-audit.md).
+  User-method identity and forwarding calls can retain exact receiver classes
+  using call-specific self and positional argument facts; see
+  [call-context receiver results](docs/bc2cpp-call-context-results.md).
+  Small exact receiver unions and inherited self families can join agreeing
+  user-method results and call shared bodies directly; see
+  [user receiver unions](docs/bc2cpp-user-receiver-unions.md).
   Selected core Ruby collection bodies now retain exact return classes across zero-argument calls,
   including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
   `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks

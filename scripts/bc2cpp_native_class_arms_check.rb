@@ -25,6 +25,9 @@
 # NA_GENERATED_ONLY=1 skips the behavioural half (the mutation check uses it).
 
 require 'fileutils'
+# Isolate the class-arm gate from independently exhaustive user receiver calls.
+ENV['BC2CPP_USER_RECEIVER_UNIONS'] = '0'
+
 require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
 

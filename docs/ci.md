@@ -229,9 +229,29 @@ The `changes` job's path filter (dorny/paths-filter) has not been exercised on a
 `merge_group` as well as on `pull_request`; every job here has no event filter
 beyond excluding `issue_comment`, so it is.
 
+### Call-context receiver results
+
+The bc2cpp core-mrbtest shard runs the call-context result parity check and its
+mutation check. They exercise exact self, positional inputs, inherited overrides,
+cache separation and withdrawal for uncertain returns or unsupported method
+shapes. See ADR 0351. Native-summary withdrawal checks and profiler mutation
+checks disable call-context results so an independent local proof cannot mask
+the proof path they are testing. The dedicated call-context checks exercise the
+enabled analysis.
+
 ### Enumerator wrapper compilation
 
 The bc2cpp core checks run `bc2cpp_enumerator_wrappers_check.rb` and its mutation
 check. They verify the seven admitted wrappers' unconditional Fiber guards,
 saved bytecode registration, admission gates and runtime parity for yielding
 callbacks, state changes, overrides and GC. See ADR 0350.
+
+### User receiver unions
+
+The core-mrbtest shard runs user receiver union parity and mutation checks.
+They verify shared-body direct calls, every family member, differing overrides, unknown and nil bits,
+constructor lookup, hierarchy bounds and outside replacements. See ADR 0352.
+
+The native class-arm and join-dominance checks disable exhaustive user receiver
+unions so their guarded fallback assertions continue to exercise those proof
+paths. The receiver-union suite separately checks exhaustive dispatch.

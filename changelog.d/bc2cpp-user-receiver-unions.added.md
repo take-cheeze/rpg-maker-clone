@@ -1,0 +1,1 @@
+- Prove agreeing user-method results across small exact receiver unions and inherited self families, retaining constructor result facts through control-flow joins and calling shared method bodies directly.

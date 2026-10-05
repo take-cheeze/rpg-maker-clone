@@ -1,0 +1,1 @@
+- Isolate join-dominance regression checks from exhaustive user receiver dispatch.

@@ -77,6 +77,7 @@ check.call('METHOD_COMPILE_STATE matches the constructor\'s initial values',
 # Every ivar written outside `initialize`, split by what it is. @closed_world is swapped out for the
 # body of a core method (ADR 0264) and restored by an `ensure` before compile_method returns;
 # @core_program_world holds it for the arms of ADR 0270 and is cleared by the same `ensure`.
+# The textual scan also sees fields of the nested flow-oracle objects.
 NOT_PER_METHOD = %w[
   @clean_cache @probing
   @builtin_class_send_safe @entry_arg_body_owner @entry_arg_call_index @eqq_direct_safe @eqq_helper_code
@@ -87,7 +88,7 @@ NOT_PER_METHOD = %w[
   @owner_class_cache @synthesize_accessor_for @poly_tables @poly_tables_emitted
   @rc_new_class @rc_oracle @rc_return @rc_send_ireps @rc_states @numeric_class_bits
   @rc_scoped_return_cache @rc_scoped_return_active @rc_scoped_ready @rc_scoped_states
-  @rc_scoped_writes @rc_scoped_active_labels
+  @rc_scoped_writes @rc_scoped_active_labels @rc_body_owners
   @array_return_names @class_return_names @entry_arg_fixnum @fixnum_return_names @fiber_unsafe_methods
   @fiber_roots @fiber_yield_names @resumable_plans @resumable_warned
   @yf_blocks @yf_arm_sites
@@ -96,7 +97,7 @@ NOT_PER_METHOD = %w[
   @constant_object_probe @direct_alloc_used @poly_diagnostic_reason_cache @rescued_exception_message_safe
   @sanitized @strict_ancestors @subtree_ivar_names @rescue_covered_labels @record_key_exact_class
   @foreign_written_ivar_facts
-  @cg @entry_arg_numeric @entry_cand @numeric_allocate_free @numeric_assured @numeric_block_parents
+  @cg @receiver @arguments @entry_arg_numeric @entry_cand @numeric_allocate_free @numeric_assured @numeric_block_parents
   @numeric_const_groups @numeric_dynamic_names @numeric_family_find @numeric_irep_owner @numeric_irep_slots
   @numeric_ivar_disabled @numeric_ivar_groups @numeric_nil_raises @numeric_op_native @numeric_oracle
   @lcf_rows @lcf_rows_refusal

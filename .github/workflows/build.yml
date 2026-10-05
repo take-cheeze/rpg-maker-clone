@@ -972,6 +972,13 @@ jobs:
               # Return-class table and the guard-free TYPED call (docs/adr/0289): generated code with every
               # way of losing the proof, then a compiled fixture against the interpreter.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_return_class_check.rb
+              # ADR 0351: call-context receiver results and eleven proof-condition mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_call_context_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_call_context_results_mutation_check.rb
+              # ADR 0352: agreeing user receiver families and ten condition mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_check.rb
+              BC2CPP_USER_RECEIVER_UNIONS=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_mutation_check.rb
               # Inlined Integer#step/upto/downto loops (docs/adr/0273) against the interpreter; builds
               # a full-core mruby once into BC2CPP_FULL_BUILD_DIR.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
