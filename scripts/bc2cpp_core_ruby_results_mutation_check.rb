@@ -11,6 +11,14 @@ abort 'SKIP: set MRBC' unless ENV['MRBC']
 AUDIT = 'codegen_core_ruby_results.rb'
 MUTANTS = [
   ['control', nil, nil, nil, nil],
+  ['positional switch ignored', "argc.positive? && ENV['BC2CPP_CORE_RUBY_POSITIONAL_RESULTS'] == '0'", 'false', 'positional kill switch', /positional Array memo/],
+  ['positional argument masks ignored', '@arguments.fetch(reg - 1, NumericFlow::OTHER)', 'NumericFlow::ARR', 'core bodies', /positional Hash memo|memo_unknown stays unproved|memo_nil stays unproved/],
+  ['positional argument cache omitted', 'key = [insn.sym, block_given, arguments]', 'key = [insn.sym, block_given]', 'core bodies', /unresolved receiver memo|unresolved receiver Hash memo|unresolved unknown memo stays unproved/],
+  ['positional arity ignored', 'fields[0] == arguments.size', 'true', 'positional core arity', /positional Array memo/],
+  ['positional optional shape ignored', 'fields.values_at(1, 2, 3, 4, 5, 7).all?(&:zero?)', 'fields.values_at(2, 3, 4, 5, 7).all?(&:zero?)', 'positional optional argument', /positional Array memo/],
+  ['positional rest shape ignored', 'fields.values_at(1, 2, 3, 4, 5, 7).all?(&:zero?)', 'fields.values_at(1, 3, 4, 5, 7).all?(&:zero?)', 'positional rest argument', /positional Array memo/],
+  ['positional keyword shape ignored', 'fields.values_at(1, 2, 3, 4, 5, 7).all?(&:zero?)', 'fields.values_at(1, 2, 3, 5, 7).all?(&:zero?)', 'positional keyword argument', /positional Array memo/],
+  ['positional captured write ignored', 'fixnum_proof_ctx(body)[:upvars]', 'Set.new', 'positional core captured write', /positional Array memo/],
   ['union switch ignored', "return nil if ENV['BC2CPP_NATIVE_EXPRESSION_UNIONS'] == '0'", 'return nil if false', 'union kill switch', /mixed exact classes/, 'codegen_native_send.rb'],
   ['union coverage ignored', 'classes.keys.reduce(0, :|) == mask', 'true', 'core bodies', /unrepresented class keeps dispatch|nil keeps error path/, 'codegen_native_send.rb'],
   ['name switch ignored', "return nil if ENV['BC2CPP_CORE_RUBY_NAME_RESULTS'] == '0'", 'return nil if false', 'name kill switch', /unknown filter result/],
