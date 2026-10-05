@@ -3739,7 +3739,8 @@ jobs:
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
 
       # `?submodules=1` is what puts the submodule sources in the store copy of
       # this flake, which `packages.build` compiles. It is asked for here rather
