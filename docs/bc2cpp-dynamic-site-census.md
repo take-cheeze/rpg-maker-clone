@@ -1044,3 +1044,12 @@ Three shapes are worth naming because they are gaps rather than missing proofs:
 
 See [native arm Integer guards](bc2cpp-native-int-guards.md) and
 [ADR 0358](adr/0358-bc2cpp-native-direct-exact-int-guard.md).
+
+### Exact proofs inside core bodies (ADR 0359)
+
+The `receiver_other` core tag chain was not losing proofs through register copies: the flow and the
+dominating walk already follow MOVEs. Its unproven receivers have an unknown source (ivar, argument, call
+result, element, `x || []`). The one gap found was structural: a compiled core body was compiled without
+the world, so its literal and `*rest` receivers were never proven. Core bodies now use the program world
+for that walk (`BC2CPP_CORE_BODY_EXACT=0` disables it): `bc2cpp_send` sites 2,408 to 2,368, the category
+849 to 804. See [ADR 0359](adr/0359-bc2cpp-exact-proofs-in-core-bodies.md).

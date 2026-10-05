@@ -6,6 +6,12 @@
 # write counts (plus exact_flow_core_class, ADR 0289), and only while ClosedWorld#exact_instances_singleton_free?. A ClassLayout hint,
 # an annotation or a branch join is a guarded fact and never enters here.
 class CodeGen
+  # The world the literal and `*rest` proofs rest on: the engine's, or for a compiled core body the
+  # program's (ADR 0359). BC2CPP_CORE_BODY_EXACT=0 keeps core bodies unproven.
+  def exact_proof_world
+    ENV['BC2CPP_CORE_BODY_EXACT'] == '0' ? @closed_world : block_core_world
+  end
+
   EXACT_LITERAL_CLASS = {
     'ARRAY' => 'Array', 'ARRAY2' => 'Array', 'HASH' => 'Hash', 'STRING' => 'String',
     'RANGE_INC' => 'Range', 'RANGE_EXC' => 'Range', 'LOADNIL' => 'NilClass'
@@ -16,7 +22,7 @@ class CodeGen
   # 'Array' | 'Hash' | 'Range' | 'String' (| 'NilClass', for arguments) when the value in `reg`
   # at `idx` is exactly that class.
   def exact_core_value_class(irep, idx, reg)
-    return nil unless @closed_world&.exact_instances_singleton_free? && irep && idx&.positive? && reg
+    return nil unless exact_proof_world&.exact_instances_singleton_free? && irep && idx&.positive? && reg
 
     at_entry = ->(entry_reg) { rest_entry_class(irep, entry_reg.to_i) }
     written = irep.walk_dominating_writers(idx - 1, reg.to_s, use: idx, exhausted: at_entry) do |insn, _i, _cur|
@@ -44,7 +50,7 @@ class CodeGen
   # `owner_def` is carried so an arm wrapper can ask native_int_arg_proven? about an :int
   # argument (ADR 0358); without it the wrapper cannot reach the Fixnum proof at all.
   def exact_core_site(irep, idx, receiver_reg, argv, reg_offset, new_class = nil, recv: nil, name: nil, owner_def: nil)
-    return nil unless @closed_world&.exact_instances_singleton_free?
+    return nil unless exact_proof_world&.exact_instances_singleton_free?
 
     klass = exact_core_value_class(irep, idx, receiver_reg) || new_class
     return nil unless klass
