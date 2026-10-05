@@ -983,6 +983,10 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_check.rb
               BC2CPP_USER_RECEIVER_UNIONS=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_check.rb
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_mutation_check.rb
+              # ADR 0358: the Fixnum proof on a NATIVE_DIRECT_EXACT arm's :int argument, and six mutants.
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_int_guard_check.rb
+              BC2CPP_NATIVE_INT_GUARDS=0 MRBC="$mrbc" ruby scripts/bc2cpp_native_int_guard_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_int_guard_mutation_check.rb
               # Inlined Integer#step/upto/downto loops (docs/adr/0273) against the interpreter; builds
               # a full-core mruby once into BC2CPP_FULL_BUILD_DIR.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
