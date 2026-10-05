@@ -27,6 +27,14 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+# A new push to a pull request supersedes the run still going for its previous
+# commit, so cancel it instead of queueing ~35 jobs behind the stale ones.
+# Everything else (master pushes, merge queue, dispatch, `/preview` comments)
+# gets a unique group and is never cancelled.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # Path-based gate for the `psp`/`psp-smoke`/`psp-smoke-game` pipeline below:
@@ -1361,7 +1369,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - variant: int32
+          - variant: int32-a
+            build: int32
             checks: |
               width="$RUNNER_TEMP/bc2cpp-width/host"
               export BC2CPP_MRUBY_FULL32="$width" BC2CPP_MRBC32="$width/bin/mrbc"
@@ -1379,6 +1388,11 @@ jobs:
               # ADR 0317: the 32-bit run of the call-facts fixture (the 64-bit runs are in `call-facts`).
               MRBC="$mrbc" ruby scripts/bc2cpp_call_facts_check.rb
               NIS_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_native_ivar_scopes_check.rb
+          - variant: int32-b
+            build: int32
+            checks: |
+              width="$RUNNER_TEMP/bc2cpp-width/host"
+              export BC2CPP_MRUBY_FULL32="$width" BC2CPP_MRBC32="$width/bin/mrbc"
               NCR_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_native_class_results_check.rb
               NSR_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_native_string_results_check.rb
               NCR2_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_native_collection_results_check.rb
@@ -1442,7 +1456,7 @@ jobs:
         run: cmake --build build-bc2cpp --target mruby_host_mrbc
 
       - name: Build ${{ matrix.variant }} libmruby
-        run: ruby scripts/bc2cpp_width_build.rb "${{ matrix.variant }}" "$RUNNER_TEMP/bc2cpp-width"
+        run: ruby scripts/bc2cpp_width_build.rb "${{ matrix.build || matrix.variant }}" "$RUNNER_TEMP/bc2cpp-width"
 
       - name: Run ${{ matrix.variant }} checks
         run: |
