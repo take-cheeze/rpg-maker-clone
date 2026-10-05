@@ -1,0 +1,1 @@
+- Classify the receiver oracle fields and shared-body owner cache in the nested compiler state audit.
