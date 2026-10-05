@@ -14,8 +14,9 @@ small enumerable subclass families; with that extension disabled, parents with
 subclasses receive no lexical-self assumption.
 
 Call-input analysis requires an exact receiver and stable closed-world lookup, a
-matching fixed mandatory arity, and no nested ireps. Optional, rest, keyword,
-block and unknown argument shapes keep the existing analysis. The body is
+valid positional arity, and no nested ireps. Required, optional, rest and
+trailing positional arguments follow [strict argument binding](bc2cpp-context-arguments.md).
+Keyword, block and unknown argument shapes keep the existing analysis. The body is
 analyzed over its control-flow graph; mixed, nilable and unknown returns cannot
 justify an exact call. Recursive active contexts supply no assumption.
 
@@ -25,7 +26,7 @@ narrow the method's global argument pools or change emitted method bodies.
 Set `BC2CPP_CALL_CONTEXT_RESULTS=0` to disable this extension. Run
 `scripts/bc2cpp_call_context_results_check.rb` with `MRBC` and a full-core mruby
 build for generated-code and runtime parity checks. Its mutation check verifies
-eleven withdrawn conditions and an unchanged control.
+fourteen withdrawn conditions and an unchanged control.
 
 See [ADR 0351](adr/0351-bc2cpp-call-context-receiver-results.md).
 

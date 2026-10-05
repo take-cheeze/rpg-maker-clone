@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative 'numeric_flow'
+require_relative 'call_context_arguments'
 
 # CodeGen: RETURN_CLASS_TABLE (ADR 0289).
 #
@@ -67,9 +68,12 @@ class CodeGen
   end
 
   class ContextOracle < ReceiverOracle
-    def initialize(codegen, receiver, arguments)
+    attr_reader :context_enter_edges
+
+    def initialize(codegen, receiver, binding)
       super(codegen, receiver)
-      @arguments = arguments
+      @arguments = binding.masks
+      @context_enter_edges = binding.enter_edges
     end
 
     def entry_mask(_irep, reg) = @arguments.fetch(reg - 1, NumericFlow::OTHER)
@@ -410,11 +414,11 @@ class CodeGen
   # argument registers and captured writes (ADR 0351).
   def return_class_context_def_mask(definition, receiver, arguments)
     body = @ireps.fetch(definition.irep)
-    fields = body.enter&.enter_fields
-    return nil unless fields && fields.size == 8 && fields[0] == arguments.size && fields.drop(1).all?(&:zero?)
+    binding = CallContextArguments.bind(body, arguments)
+    return nil unless binding
     return nil unless Array(body.reps).empty?
 
-    oracle = ContextOracle.new(self, receiver, arguments)
+    oracle = ContextOracle.new(self, receiver, binding)
     states = NumericFlow.states(body, oracle, fixnum_proof_ctx(body)[:upvars])
     return nil unless states
 

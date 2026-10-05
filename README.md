@@ -1907,3 +1907,5 @@ part that explains it). Nothing else is collected.
 ## TODO
 
 See [`docs/TODO.md`](docs/TODO.md) for the detailed, per-maker TODO list.
+
+Receiver analysis positional binding is described in [call-context arguments](docs/bc2cpp-context-arguments.md).

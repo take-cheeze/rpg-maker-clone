@@ -259,3 +259,8 @@ The core-mrbtest shard runs enabled and disabled literal element parity checks,
 plus six proof-condition mutants and their control. They cover exact primitive
 results and withdrawal for captured writes, effects, branch entries, unknown
 indices and out-of-bounds reads. See ADR 0354.
+
+ADR 0355 expands call-context checks to positional defaults, rest and trailing
+arguments, with interpreter parity and fourteen proof-condition mutants plus a
+control. The core shard also runs `bc2cpp_context_arguments_check.rb` and its
+seven-mutant binding checker.
