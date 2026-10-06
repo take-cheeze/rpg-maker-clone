@@ -5733,7 +5733,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                           MRB_ARGS_REQ(3));
   mrb_define_class_method(M, states, "field", Game__States_singleton_field,
                           MRB_ARGS_REQ(3));
-  mrb_define_class_method(M, states, "message", Game__States_singleton_message,
+  mrb_define_class_method(M, states, "compose_message",
+                          Game__States_singleton_compose_message,
                           MRB_ARGS_REQ(2));
   mrb_define_class_method(M, states, "int_field",
                           Game__States_singleton_int_field, MRB_ARGS_REQ(2));
