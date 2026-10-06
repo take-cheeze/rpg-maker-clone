@@ -308,7 +308,7 @@ def closed_div_generated_checks(check, runtime)
   Dir.mktmpdir do |dir|
     code, = runtime.generate(FIXTURE_DIV, dir, closed: true, only_owners: %w[NsDiv NsDivBox])
     call = code[/^\/\/ NsDiv#div \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
-    helper = code[/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(?:.*?^\}\n){2}#endif\n/m].to_s
+    helper = code[/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(?:.*?^\}\n){2}\n*#endif\n/m].to_s
     check.call('NsDiv#div calls bc2cpp_slow_div and has no by-name call of its own',
                call.include?('bc2cpp_slow_div(M, ') && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
     closed = helper.split("#else\n", 2)[1].to_s
