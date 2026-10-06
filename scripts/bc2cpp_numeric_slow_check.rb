@@ -152,6 +152,17 @@ FIXTURE_BIG = <<~RUBY
   end
 RUBY
 
+# NUMERIC_SLOW_CLOSED (ADR 0360): no class of this world answers `/` except Integer and Float, so the helper's
+# else is a proven NoMethodError instead of a by-name call. NsDivBox has no `/` (NsBox in FIXTURE does).
+FIXTURE_DIV = <<~RUBY
+  class NsDivBox
+    def inspect = "divbox"
+  end
+  class NsDiv
+    def div(a, b) = a / b
+  end
+RUBY
+
 # Redefined operators: the arm must not be taken, the program's own method must still run.
 REDEFINED = <<~RUBY
   class Integer
@@ -291,12 +302,102 @@ def generated_checks(check, runtime)
   end
 end
 
+# The `/` helper of a world where only Integer and Float answer it.
+def closed_div_generated_checks(check, runtime)
+  puts '-- generated code (closed world, only Integer and Float answer `/`)'
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_DIV, dir, closed: true, only_owners: %w[NsDiv NsDivBox])
+    call = code[/^\/\/ NsDiv#div \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
+    helper = code[/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(?:.*?^\}\n){2}\n*#endif\n/m].to_s
+    check.call('NsDiv#div calls bc2cpp_slow_div and has no by-name call of its own',
+               call.include?('bc2cpp_slow_div(M, ') && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
+    closed = helper.split("#else\n", 2)[1].to_s
+    check.call('bc2cpp_slow_div holds no by-name call: any other receiver is a proven NoMethodError',
+               !helper.empty? && !closed.empty? && !closed.include?('bc2cpp_send(') && !closed.include?('mrb_funcall(') &&
+               closed.include?('bc2cpp_nomethod'))
+    check.call('bc2cpp_slow_div keeps the by-name helper for a build with Complex or Rational operands',
+               helper.start_with?('#if defined(MRB_USE_COMPLEX) || defined(MRB_USE_RATIONAL)') &&
+               helper.split("#else\n", 2).first.include?('bc2cpp_send('))
+  end
+  Dir.mktmpdir do |dir|
+    source = "#{FIXTURE_DIV}class NsDivBox\n  def /(o) = :divbox\nend\n"
+    code, = runtime.generate(source, dir, closed: true, only_owners: %w[NsDiv NsDivBox])
+    helper = code[/^static mrb_value bc2cpp_slow_div\(mrb_state\* M.*?^\}\n/m].to_s
+    check.call('NEG: a user class answering `/` keeps the by-name call in the helper', helper.include?('bc2cpp_send('))
+  end
+end
+
+def div_driver(width)
+  <<~RUBY
+  FM = #{WIDTHS.fetch(width)[:fmax]}
+  $vals = [0, 1, -1, 2, -2, 7, -7, FM, -FM, FM - 1, 0.0, -0.0, 0.5, -1.5, 3.0, 1.0e19, Float::NAN, Float::INFINITY,
+           -Float::INFINITY, nil, true, false, "s", :sym, [1], {a: 1}, 1..2, NsDivBox.new, NsDivBox, Object.new]
+  $vals += [FM + 1, -FM - 2, 2 ** 100, -(2 ** 100), 2.0 ** 70] if $bigint
+  def try
+    v = yield
+    s = v.inspect
+    s += " h=\#{v.hash}" if v.is_a?(Integer)
+    s
+  rescue => e
+    "\#{e.class}: \#{e.message}"
+  end
+  o = NsDiv.new
+  $vals.each { |a| $vals.each { |b| puts "div \#{a.inspect} \#{b.inspect} => \#{try { o.div(a, b) }}" } }
+  puts 'end'
+  RUBY
+end
+
+DIV_SCENARIO = <<~CPP
+  #include <string>
+  static mrb_value div_body(mrb_state* M, void* ud) {
+    mrb_value* ab = (mrb_value*)ud;
+    return bc2cpp_slow_div(M, ab[0], ab[1]);
+  }
+  static mrb_value div_method(mrb_state* M, void* ud) {
+    mrb_value* ab = (mrb_value*)ud;
+    return (mrb_funcall)(M, ab[0], "/", 1, ab[1]);
+  }
+  static std::string div_describe(mrb_state* M, mrb_value v, bool raised) {
+    if (raised) {
+      mrb_value msg = (mrb_funcall)(M, v, "message", 0);
+      return std::string("raised ") + mrb_obj_classname(M, v) + ": " + std::string(RSTRING_PTR(msg), RSTRING_LEN(msg));
+    }
+    mrb_value s = mrb_inspect(M, v);
+    return std::string(RSTRING_PTR(s), RSTRING_LEN(s));
+  }
+  static int scenario(mrb_state* M) {
+    std::fflush(stdout);
+    const char* src = R"BCD(__SOURCE__)BCD";
+    mrb_load_string(M, src);
+    if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
+    // The helper called directly against the method it stands for.
+    mrb_value vals = mrb_gv_get(M, mrb_intern_lit(M, "$vals"));
+    int total = 0, bad = 0;
+    for (mrb_int i = 0; i < RARRAY_LEN(vals); ++i) for (mrb_int j = 0; j < RARRAY_LEN(vals); ++j) {
+      mrb_value ab[2] = { RARRAY_PTR(vals)[i], RARRAY_PTR(vals)[j] };
+      int ai = mrb_gc_arena_save(M);
+      mrb_bool e1 = FALSE, e2 = FALSE;
+      std::string g = div_describe(M, mrb_protect_error(M, div_body, ab, &e1), e1);
+      std::string w = div_describe(M, mrb_protect_error(M, div_method, ab, &e2), e2);
+      mrb_gc_arena_restore(M, ai);
+      ++total;
+      if (g != w) {
+        ++bad;
+        if (bad <= 8) std::printf("  H MISMATCH %s vs %s\\n", g.c_str(), w.c_str());
+      }
+    }
+    std::printf("  H summary %d cases, %d mismatches\\n", total, bad);
+    return 0;
+  }
+CPP
+
 unless runtime.mrbc && system(runtime.mrbc, '--version', out: File::NULL, err: File::NULL)
   puts '  SKIP: no host mrbc (set MRBC); the generated-code and behavioural checks need it'
   exit 0
 end
 
 generated_checks(check, runtime)
+closed_div_generated_checks(check, runtime)
 
 # [label, build dir, mrbc, extra flags, width, bigint?]
 builds = []
@@ -516,6 +617,45 @@ builds.each do |label, build, mrbc, flags, width, bigint|
       bad.first(5).each { |l| puts "    dispatched: #{l.strip}" }
       arena = compiled.grep(/\A  A /).map { |l| l.split.last.to_i }
       check.call("a bigint operation leaves at most one arena entry (#{arena.max})", !arena.empty? && arena.max <= 1)
+    end
+  ensure
+    ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved
+  end
+end
+
+builds.each do |label, build, mrbc, flags, width, bigint|
+  puts "-- closed `/` helper on real mruby (#{label}), interpreted and compiled"
+  saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
+  ENV['MRBC'] = mrbc
+  ENV['BC2CPP_CXXFLAGS'] = flags
+  begin
+    Dir.mktmpdir do |dir|
+      _code, err = runtime.generate(FIXTURE_DIV, dir, closed: true, only_owners: %w[NsDiv NsDivBox])
+      source = "$bigint = #{bigint}\n#{div_driver(width)}"
+      scenario = DIV_SCENARIO.sub('__SOURCE__') { source }
+      built, output = runtime.run(dir, err, %w[NsDiv NsDivBox], scenario, build: build, full: true)
+      check.call('the closed `/` fixture compiles and runs against real mruby', built)
+      puts output.to_s.lines.last(25).join unless built
+      next unless built
+
+      sections = runtime.sections(output)
+      interpreted = sections['interpreted'].to_a
+      compiled = sections['compiled'].to_a
+      strip = ->(lines) { lines.reject { |l| l.start_with?('  ') } }
+      check.call('both runs finish', strip.call(interpreted).last == 'end' && strip.call(compiled).last == 'end')
+      check.call("every `/` answer is the interpreter's (#{strip.call(interpreted).size} answers)",
+                 strip.call(interpreted) == strip.call(compiled) && strip.call(interpreted).size > 500)
+      strip.call(interpreted).zip(strip.call(compiled)).reject { |a, b| a == b }.first(8).each do |a, b|
+        puts "    interpreted: #{a}\n    compiled:    #{b}"
+      end
+      check.call('the matrix has NoMethodError and TypeError rows',
+                 interpreted.count { |l| l.include?('NoMethodError') } > 50 && interpreted.count { |l| l.include?('TypeError') } > 20)
+      [interpreted, compiled].each do |lines|
+        summary = lines.grep(/\A  H summary /).first.to_s
+        lines.grep(/\A  H MISMATCH /).first(5).each { |l| puts "    #{l.strip}" }
+        check.call("the helper agrees with Integer#/ and Float#/ called directly (#{summary.strip})",
+                   summary.match?(/ 0 mismatches/) && summary[/ (\d+) cases/, 1].to_i > 500)
+      end
     end
   ensure
     ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved

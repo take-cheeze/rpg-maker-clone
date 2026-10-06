@@ -520,6 +520,26 @@ class RPG2k
       # combined verdict for the whole item (see #build_cand_window's own
       # history for the summed-arrow this replaced) and never sharing a row
       # with any other stat.
+      # STAT_DEFS' effective-stat method / actor accessor, as literal calls
+      # (closed-world lint, ADR 0212).
+      def effective_stat(method, a)
+        case method
+        when :effective_atk then @state.party.effective_atk(a)
+        when :effective_def then @state.party.effective_def(a)
+        when :effective_int then @state.party.effective_int(a)
+        else @state.party.effective_agi(a)
+        end
+      end
+
+      def base_stat(accessor, a)
+        case accessor
+        when :atk then a.atk
+        when :def then a.def
+        when :int then a.int
+        else a.agi
+        end
+      end
+
       def draw_stat_row(c, a)
         previewing = @mode == :items
         cand_id = previewing ? candidates[@cand_index].first : nil
@@ -536,7 +556,7 @@ class RPG2k
           # `Game::Party#effective_atk`/`#effective_def`/`#effective_int`/
           # `#effective_agi` already port this (built for skill formulas);
           # this screen never called them.
-          value = @state.party.send(effective_method, a)
+          value = effective_stat(effective_method, a)
           draw_system_text c, 0, y, STATS_W, LINE_H, term(term_key), @skin, LABEL_COLOR
           draw_system_text c, 0, y, STAT_VALUE_R, LINE_H, value.to_s, @skin, TEXT_COLOR, 2
           draw_system_text c, STAT_ARROW_X, y, STAT_ARROW_W, LINE_H, STAT_ARROW,
@@ -560,7 +580,7 @@ class RPG2k
           # that reference implementation's own equivalent clamp) *before*
           # the state adjustment -- the reference's clamp
           # runs ahead of the state-adjustment step, not after.
-          new_base = Game.clamp(a.send(accessor) + delta, 1,
+          new_base = Game.clamp(base_stat(accessor, a) + delta, 1,
                                  Game::Actor::MAX_EFFECTIVE_STAT)
           new_value = @state.party.adjust_stat(
             new_base, @state.party.stat_mode(a, stat_flag)

@@ -8,11 +8,3 @@
 1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :_probe_update, :update
 1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :_rgss1_initialize, :initialize
 1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :update, :_probe_update
-1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	b.send(mod_field)
-1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	b.send(name)
-1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send("#{field}=", 0)
-1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send("#{field}=", new_mod)
-1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send(field)
-1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send(key)
-1	Dynamic/Send	mruby-rpg2k/mrblib/scene/equip_menu.rb	@state.party.send(effective_method, a)
-1	Dynamic/Send	mruby-rpg2k/mrblib/scene/equip_menu.rb	a.send(accessor)

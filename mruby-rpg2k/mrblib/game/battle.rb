@@ -426,7 +426,17 @@ module Game
     end
 
     # A boolean predicate on the source row, false for a fixture without it.
-    def self.flag_of(b, name); b.respond_to?(name) && b.send(name) ? true : false; end
+    def self.flag_of(b, name)
+      case name
+      when :dual_attack? then b.respond_to?(:dual_attack?) && b.dual_attack? ? true : false
+      when :ignores_evasion? then b.respond_to?(:ignores_evasion?) && b.ignores_evasion? ? true : false
+      when :attack_all? then b.respond_to?(:attack_all?) && b.attack_all? ? true : false
+      when :preemptive? then b.respond_to?(:preemptive?) && b.preemptive? ? true : false
+      when :strong_defence? then b.respond_to?(:strong_defence?) && b.strong_defence? ? true : false
+      when :half_sp_cost? then b.respond_to?(:half_sp_cost?) && b.half_sp_cost? ? true : false
+      else b.respond_to?(:physical_evasion_up?) && b.physical_evasion_up? ? true : false
+      end
+    end
 
     # Enemies have no source actor (that field stays nil), so the post-battle
     # write-back skips them; they carry no status set into this simple sim.
@@ -1512,9 +1522,14 @@ module Game
       adjust_stat(modified_stat(b.agi, b.agi_mod), stat_mode(b, :affect_agility))
     end
 
-    # The Combatant field (Combatant#atk_mod and friends) each ability-value
-    # key names.
-    STAT_MOD_FIELD = { atk: :atk_mod, def: :def_mod, spi: :spi_mod, agi: :agi_mod }.freeze
+    # The ability-value keys #apply_stat_mods accepts. A `case`, not a `%i[]` list: its pooled "atk"/"agi"
+    # strings make STATIC_DISPATCH_UNREGISTERED names that start or end with them look dynamic.
+    def stat_mod_key?(key)
+      case key
+      when :atk, :def, :spi, :agi then true
+      else false
+      end
+    end
 
     # Apply `amount` -- the exact same final signed effect a skill hit just
     # applied to HP/SP (post elemental-attribute scaling, variance, and the
@@ -1543,14 +1558,13 @@ module Game
       return {} unless keys && !keys.empty? && amount != 0
       applied = {}
       keys.each do |key|
-        field = STAT_MOD_FIELD[key]
-        next unless field
-        base = target.respond_to?(key) ? (target.send(key) || 0) : 0
-        cur = target.send(field) || 0
+        next unless stat_mod_key?(key)
+        base = Game.stat_of(target, key)
+        cur = Game.stat_mod_of(target, key)
         new_mod = Game.clamp(cur + amount, -(base / 2), base)
         d = new_mod - cur
         next if d == 0
-        target.send("#{field}=", new_mod)
+        Game.set_stat_mod(target, key, new_mod)
         applied[key] = d
       end
       applied
@@ -4347,9 +4361,10 @@ module Game
     def apply_knockout_reset(target)
       return unless target.dead?
       target.gauge = 0 if target.respond_to?(:gauge)
-      %i[atk_mod def_mod spi_mod agi_mod].each do |field|
-        target.send("#{field}=", 0) if target.respond_to?(field)
-      end
+      Game.set_stat_mod(target, :atk, 0)
+      Game.set_stat_mod(target, :def, 0)
+      Game.set_stat_mod(target, :spi, 0)
+      Game.set_stat_mod(target, :agi, 0)
       target.attr_ranks = {} if target.respond_to?(:attr_ranks=)
       target.defending = false if target.respond_to?(:defending=)
       target.charged = false if target.respond_to?(:charged=)
