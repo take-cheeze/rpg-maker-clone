@@ -1095,3 +1095,18 @@ can reach it: before, every non-number (String, Symbol, nil, any object) dispatc
 and every other receiver is a proven NoMethodError or Comparable's body computed in C++. The four added textual
 calls are the closed form's Hash call beside the unchanged `#if` copy. Closing the last arm needs a per-element
 `==` proof or a compiled `Hash#<` reachable from the helper's translation unit.
+
+## Follow-up: core-body helper closure (ADR 0364)
+
+Measured on the wio closed world (shipped pass) at master `9361f234`; the `#if` arm kept for Complex/Rational builds
+is stripped from both runs, as ADR 0360 counted `/`.
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` calls held in helpers | 23 | 19 | -4 |
+| generated callers of a helper that holds a by-name call | 5,509 | 5,483 | -26 |
+| `bc2cpp_send` call sites in generated bodies | 2,321 | 2,321 | 0 |
+
+`bc2cpp_slow_xor` (4 callers), `bc2cpp_slow_rshift` (17) and `bc2cpp_slow_round` (5) mirror the bodies of Integer,
+nil/true/false and Float inside the helper. `& | << % -@ zero? ===` stay open: their member sets contain a static
+body that public API cannot reproduce (Array, String, IO), Ruby definers, or are unbounded (ADR 0364 lists each).

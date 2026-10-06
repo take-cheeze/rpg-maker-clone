@@ -18,6 +18,10 @@
 #    mrb_int is 32 bits (BC2CPP_MRUBY_FULL32, BC2CPP_MRBC32; -DMRB_32BIT -DMRB_INT32: 31-bit Fixnums) and,
 #    with BC2CPP_MRUBY_NOBIGINT, on a build without mruby-bigint (where the bigint arms vanish).
 #
+# 3. ADR 0360 / 0364: the helpers whose operator only core classes answer (`/`, `^`, `>>`, `round`) have a closed
+#    form with no by-name call; each is run directly against the real method over every member class pair, at all
+#    three widths, and a user definer or a Complex/Rational build keeps the by-name body.
+#
 # Usage: [MRBC=path/to/mrbc BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_FULL32=dir BC2CPP_MRBC32=mrbc32
 #         BC2CPP_MRUBY_NOBIGINT=dir BC2CPP_NUMERIC_SLOW_ONLY=cmp] ruby scripts/bc2cpp_numeric_slow_check.rb
 
@@ -210,6 +214,20 @@ CMP_WORLDS = [
   ['a `<=>` on a class outside the lookup of String, Symbol and Numeric (NsSortKey)', "", %w[], ALL]
 ].freeze
 
+# ADR 0364: `^` (Integer, nil, true, false), `>>` (Integer) and `round` (Integer, Float) are answered by no other
+# class of this world. NsBitsBox has none of them (the main FIXTURE's NsBox defines `>>`, so `>>` stays open there).
+FIXTURE_BITS = <<~RUBY
+  class NsBitsBox
+    def inspect = "bitsbox"
+  end
+  class NsBits
+    def xor(a, b) = a ^ b
+    def rsh(a, b) = a >> b
+    def rnd(a) = a.round
+  end
+RUBY
+BITS_OWNERS = %w[NsBits NsBitsBox].freeze
+
 # Redefined operators: the arm must not be taken, the program's own method must still run.
 REDEFINED = <<~RUBY
   class Integer
@@ -307,8 +325,11 @@ def generated_checks(check, runtime)
       check.call("NsOpen##{name}: `#{op}` calls bc2cpp_slow_#{key} and has no by-name call of its own",
                  c.match?(/bc2cpp_slow_#{key}(?:_f)?\(M, /) && !c.include?('bc2cpp_send(') && !c.include?('mrb_funcall('))
       helper = code[/^static mrb_value bc2cpp_slow_#{key}(?:_f)?\(mrb_state\* M.*?^\}\n/m].to_s
+      # `^` has no definer outside the core in this world (ADR 0364): its helper is the '#if Complex/Rational' pair,
+      # the by-name body in front and the closed form behind (checked in closed_bits_generated_checks).
+      definitions = key == 'xor' ? 2 : 1
       check.call("bc2cpp_slow_#{key} is defined once and dispatches the operands it does not own",
-                 code.scan(/^static mrb_value bc2cpp_slow_#{key}(?:_f)?\(/).size == 1 && helper.include?('bc2cpp_send('))
+                 code.scan(/^static mrb_value bc2cpp_slow_#{key}(?:_f)?\(/).size == definitions && helper.include?('bc2cpp_send('))
     end
     UNARY.each_key do |name|
       c = chunk.call("NsOpen##{name}")
@@ -790,6 +811,44 @@ def core_compare_model_checks(check)
   end
 end
 
+# ADR 0364: the `^`, `>>` and `round` helpers of a world where no other class answers them.
+def closed_bits_generated_checks(check, runtime)
+  puts '-- generated code (closed world, `^` `>>` `round` answered by core classes only)'
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_BITS, dir, closed: true, only_owners: BITS_OWNERS)
+    blocks = code.scan(/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(?:.*?^\}\n){2}\n*#endif\n/m)
+    { 'xor' => ['NsBits#xor', '^'], 'rshift' => ['NsBits#rsh', '>>'], 'round' => ['NsBits#rnd', 'round'] }.each do |key, (method, op)|
+      call = code[/^\/\/ #{Regexp.escape(method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
+      check.call("#{method} calls bc2cpp_slow_#{key} and has no by-name call of its own",
+                 call.include?("bc2cpp_slow_#{key}(M, ") && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
+      helper = blocks.find { |b| b.include?("bc2cpp_slow_#{key}(mrb_state* M") }.to_s
+      open, closed = helper.split("}\n\n#else\n", 2).map(&:to_s)
+      check.call("bc2cpp_slow_#{key} (`#{op}`) holds no by-name call: any other receiver is a proven NoMethodError",
+                 !closed.empty? && !closed.include?('bc2cpp_send(') && !closed.include?('mrb_funcall(') &&
+                 closed.include?('bc2cpp_nomethod'))
+      check.call("bc2cpp_slow_#{key} keeps the by-name body for a build with Complex or Rational",
+                 open.start_with?('#if defined(MRB_USE_COMPLEX) || defined(MRB_USE_RATIONAL)') && open.include?('bc2cpp_send('))
+    end
+  end
+  Dir.mktmpdir do |dir|
+    source = "#{FIXTURE_BITS}class NsBitsBox\n  def ^(o) = :x\n  def >>(o) = :y\n  def round = :z\nend\n"
+    code, = runtime.generate(source, dir, closed: true, only_owners: BITS_OWNERS)
+    { 'xor' => '^', 'rshift' => '>>', 'round' => 'round' }.each do |key, op|
+      helper = code[/^static mrb_value bc2cpp_slow_#{key}\(mrb_state\* M.*?^\}\n/m].to_s
+      # A user definition of the name also takes the site off the helper, so for `^` and `round` there may be none.
+      check.call("NEG: a user class answering `#{op}` leaves no closed helper (by-name call kept)",
+                 !code.include?("#else\n" \
+ "static mrb_value bc2cpp_slow_#{key}(") && (helper.empty? || helper.include?('bc2cpp_send(')))
+    end
+  end
+  Dir.mktmpdir do |dir|
+    # The main fixture's NsBox defines `>>`: that helper stays open while `^` and `round` close.
+    code, = runtime.generate(FIXTURE, dir, closed: true, only_owners: %w[NsOpen NsProven NsBox NsCmp])
+    shift = code[/^static mrb_value bc2cpp_slow_rshift\(mrb_state\* M.*?^\}\n/m].to_s
+    check.call('NEG: NsBox#>> keeps the `>>` helper open', !shift.empty? && shift.include?('bc2cpp_send('))
+  end
+end
+
 def div_driver(width)
   <<~RUBY
   FM = #{WIDTHS.fetch(width)[:fmax]}
@@ -810,49 +869,113 @@ def div_driver(width)
   RUBY
 end
 
-DIV_SCENARIO = <<~CPP
-  #include <string>
-  static mrb_value div_body(mrb_state* M, void* ud) {
-    mrb_value* ab = (mrb_value*)ud;
-    return bc2cpp_slow_div(M, ab[0], ab[1]);
-  }
-  static mrb_value div_method(mrb_state* M, void* ud) {
-    mrb_value* ab = (mrb_value*)ud;
-    return (mrb_funcall)(M, ab[0], "/", 1, ab[1]);
-  }
-  static std::string div_describe(mrb_state* M, mrb_value v, bool raised) {
-    if (raised) {
-      mrb_value msg = (mrb_funcall)(M, v, "message", 0);
-      return std::string("raised ") + mrb_obj_classname(M, v) + ": " + std::string(RSTRING_PTR(msg), RSTRING_LEN(msg));
+def bits_driver(width)
+  <<~RUBY
+  FM = #{WIDTHS.fetch(width)[:fmax]}
+  IM = $bigint ? FM * 2 + 1 : FM # mrb_int max, computed: a parser without mruby-bigint rejects the 64-bit literal
+  $vals = [0, 1, -1, 2, -2, 3, 7, -7, 255, FM, -FM, FM - 1, -FM - 1, IM, -IM, -IM - 1, 0.0, -0.0, 0.5, -0.5, 1.5, -1.5,
+           2.5, -2.5, 3.0, 1.0e19, -1.0e19, Float::NAN, Float::INFINITY, -Float::INFINITY, nil, true, false, "s",
+           "s".freeze, :sym, [1], {a: 1}, 1..2, NsBitsBox.new, NsBitsBox, Numeric.new, Object.new]
+  $vals += [FM + 1, -FM - 2, IM + 1, -IM - 2, IM * IM, -(IM * IM), 2 ** 100, -(2 ** 100), 2.0 ** 70] if $bigint
+  $counts = [0, 1, -1, 2, 5, 30, 31, 32, 33, 62, 63, 64, 65, 100, -2, -30, -31, -32, -62, -63, -64, -65, -100, -IM,
+             -IM - 1, 2.5, -2.5, 0.0, 1.0e19, Float::NAN, nil, true, "s", :sym, [1], NsBitsBox.new]
+  $counts += [2 ** 100, -(2 ** 100), IM + 1, -IM - 2] if $bigint
+  def try
+    v = yield
+    s = v.inspect
+    s += " h=\#{v.hash}" if v.is_a?(Integer)
+    s
+  rescue => e
+    "\#{e.class}: \#{e.message}"
+  end
+  o = NsBits.new
+  # An Integer receiver reads a non-Integer operand as its raw word (the method does too), which for a heap
+  # object is its address and differs between the two runs; the direct matrix (same objects) covers those pairs.
+  heap = ->(x) { !(x.is_a?(Numeric) || x.nil? || x == true || x == false || x.is_a?(Symbol)) || x.instance_of?(Numeric) }
+  $vals.each { |a| $vals.each { |b| next if a.is_a?(Integer) && heap.(b); puts "xor \#{a.inspect} \#{b.inspect} => \#{try { o.xor(a, b) }}" } }
+  $vals.each { |a| $counts.each { |b| puts "rsh \#{a.inspect} \#{b.inspect} => \#{try { o.rsh(a, b) }}" } }
+  $vals.each { |a| puts "rnd \#{a.inspect} => \#{try { o.rnd(a) }}" }
+  puts 'end'
+  RUBY
+end
+
+# Each helper in `specs` ([helper, op, arity, rights]) called directly against the method it stands for, over every
+# receiver in $vals and every operand in $vals (or $counts for a shift), compiled TU and interpreter in one process:
+# value, Float bits, Integer#hash, exception class and message must agree.
+def closed_scenario(specs, source)
+  table = specs.map do |helper, op, arity, rights|
+    "{ \"#{op}\", #{arity == 1 ? 'nullptr' : helper}, #{arity == 1 ? helper : 'nullptr'}, #{rights == :counts} }"
+  end.join(",\n    ")
+  <<~CPP
+    #include <string>
+    struct ClosedSpec {
+      const char* op;
+      mrb_value (*bin)(mrb_state*, mrb_value, mrb_value);
+      mrb_value (*un)(mrb_state*, mrb_value);
+      bool counts;
+    };
+    static const ClosedSpec closed_specs[] = {
+        #{table}
+    };
+    struct ClosedCall { const ClosedSpec* s; mrb_value a, b; bool method; };
+    static mrb_value closed_body(mrb_state* M, void* ud) {
+      ClosedCall* k = (ClosedCall*)ud;
+      if (k->method) return k->s->un ? (mrb_funcall)(M, k->a, k->s->op, 0) : (mrb_funcall)(M, k->a, k->s->op, 1, k->b);
+      return k->s->un ? k->s->un(M, k->a) : k->s->bin(M, k->a, k->b);
     }
-    mrb_value s = mrb_inspect(M, v);
-    return std::string(RSTRING_PTR(s), RSTRING_LEN(s));
-  }
-  static int scenario(mrb_state* M) {
-    std::fflush(stdout);
-    const char* src = R"BCD(__SOURCE__)BCD";
-    mrb_load_string(M, src);
-    if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
-    // The helper called directly against the method it stands for.
-    mrb_value vals = mrb_gv_get(M, mrb_intern_lit(M, "$vals"));
-    int total = 0, bad = 0;
-    for (mrb_int i = 0; i < RARRAY_LEN(vals); ++i) for (mrb_int j = 0; j < RARRAY_LEN(vals); ++j) {
-      mrb_value ab[2] = { RARRAY_PTR(vals)[i], RARRAY_PTR(vals)[j] };
-      int ai = mrb_gc_arena_save(M);
-      mrb_bool e1 = FALSE, e2 = FALSE;
-      std::string g = div_describe(M, mrb_protect_error(M, div_body, ab, &e1), e1);
-      std::string w = div_describe(M, mrb_protect_error(M, div_method, ab, &e2), e2);
-      mrb_gc_arena_restore(M, ai);
-      ++total;
-      if (g != w) {
-        ++bad;
-        if (bad <= 8) std::printf("  H MISMATCH %s vs %s\\n", g.c_str(), w.c_str());
+    static std::string closed_describe(mrb_state* M, mrb_value v, bool raised) {
+      if (raised) {
+        mrb_value msg = (mrb_funcall)(M, v, "message", 0);
+        return std::string("raised ") + mrb_obj_classname(M, v) + ": " + std::string(RSTRING_PTR(msg), RSTRING_LEN(msg));
       }
+      mrb_value s = mrb_inspect(M, v);
+      std::string out(RSTRING_PTR(s), RSTRING_LEN(s));
+      if (mrb_integer_p(v) || mrb_bigint_p(v)) {
+        mrb_value h = mrb_inspect(M, (mrb_funcall)(M, v, "hash", 0));
+        out += " h=" + std::string(RSTRING_PTR(h), RSTRING_LEN(h));
+      }
+      return out;
     }
-    std::printf("  H summary %d cases, %d mismatches\\n", total, bad);
-    return 0;
-  }
-CPP
+    static int scenario(mrb_state* M) {
+      std::fflush(stdout);
+      const char* src = R"BCD(#{source})BCD";
+      mrb_load_string(M, src);
+      if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
+      mrb_value vals = mrb_gv_get(M, mrb_intern_lit(M, "$vals"));
+      mrb_value counts = mrb_gv_get(M, mrb_intern_lit(M, "$counts"));
+      int total = 0, bad = 0;
+      for (const ClosedSpec& s : closed_specs) {
+        mrb_value rights = s.counts ? counts : vals;
+        mrb_int nb = s.un ? 1 : RARRAY_LEN(rights);
+        int cases = 0, wrong = 0;
+        for (mrb_int i = 0; i < RARRAY_LEN(vals); ++i) for (mrb_int j = 0; j < nb; ++j) {
+          mrb_value a = RARRAY_PTR(vals)[i];
+          mrb_value b = s.un ? mrb_nil_value() : RARRAY_PTR(rights)[j];
+          int ai = mrb_gc_arena_save(M);
+          ClosedCall got_call = { &s, a, b, false }, want_call = { &s, a, b, true };
+          mrb_bool e1 = FALSE, e2 = FALSE;
+          std::string g = closed_describe(M, mrb_protect_error(M, closed_body, &got_call, &e1), e1);
+          std::string w = closed_describe(M, mrb_protect_error(M, closed_body, &want_call, &e2), e2);
+          mrb_gc_arena_restore(M, ai);
+          ++cases;
+          if (g != w) {
+            ++wrong;
+            if (wrong <= 4) {
+              mrb_value as = mrb_inspect(M, a), bs = mrb_inspect(M, b);
+              std::printf("  H MISMATCH %s %.*s %.*s helper=%s method=%s\\n", s.op, (int)RSTRING_LEN(as), RSTRING_PTR(as),
+                          (int)RSTRING_LEN(bs), RSTRING_PTR(bs), g.c_str(), w.c_str());
+            }
+          }
+        }
+        std::printf("  H op %s %d cases, %d mismatches\\n", s.op, cases, wrong);
+        total += cases;
+        bad += wrong;
+      }
+      std::printf("  H summary %d cases, %d mismatches\\n", total, bad);
+      return 0;
+    }
+  CPP
+end
 
 # Receivers and operands of the comparison matrix. A class or module is an operand only: the full-core libmruby
 # links mruby-class-ext (Module#<), which the wio gem set the proof is made for does not. Time, Set and Rational
@@ -977,6 +1100,7 @@ end
 generated_checks(check, runtime) unless ONLY_CMP
 closed_div_generated_checks(check, runtime) unless ONLY_CMP
 closed_arith_generated_checks(check, runtime) unless ONLY_CMP
+closed_bits_generated_checks(check, runtime) unless ONLY_CMP
 closed_cmp_generated_checks(check, runtime) unless ONLY_CMP_RUN
 mirrored_body_checks(check, Bc2cppFixtureRuntime::ROOT)
 
@@ -1205,43 +1329,54 @@ builds.each do |label, build, mrbc, flags, width, bigint|
   end
 end
 
-builds.each do |label, build, mrbc, flags, width, bigint|
-  next if ONLY_CMP
-  puts "-- closed `/` helper on real mruby (#{label}), interpreted and compiled"
-  saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
-  ENV['MRBC'] = mrbc
-  ENV['BC2CPP_CXXFLAGS'] = flags
-  begin
-    Dir.mktmpdir do |dir|
-      _code, err = runtime.generate(FIXTURE_DIV, dir, closed: true, only_owners: %w[NsDiv NsDivBox])
-      source = "$bigint = #{bigint}\n#{div_driver(width)}"
-      scenario = DIV_SCENARIO.sub('__SOURCE__') { source }
-      built, output = runtime.run(dir, err, %w[NsDiv NsDivBox], scenario, build: build, full: true)
-      check.call('the closed `/` fixture compiles and runs against real mruby', built)
-      puts output.to_s.lines.last(25).join unless built
-      next unless built
+# [name, fixture, owners, driver, [[helper, op, arity, rights]...]]: a helper whose else is a proven NoMethodError
+# (ADR 0360 `/`, ADR 0364 `^` `>>` `round`) against the methods it replaces, interpreted and compiled.
+CLOSED_RUNS = [
+  ['`/`', FIXTURE_DIV, %w[NsDiv NsDivBox], :div_driver, [['bc2cpp_slow_div', '/', 2, :vals]]],
+  ['`^` `>>` `round`', FIXTURE_BITS, BITS_OWNERS, :bits_driver,
+   [['bc2cpp_slow_xor', '^', 2, :vals], ['bc2cpp_slow_rshift', '>>', 2, :counts], ['bc2cpp_slow_round', 'round', 1, :vals]]]
+].freeze
 
-      sections = runtime.sections(output)
-      interpreted = sections['interpreted'].to_a
-      compiled = sections['compiled'].to_a
-      strip = ->(lines) { lines.reject { |l| l.start_with?('  ') } }
-      check.call('both runs finish', strip.call(interpreted).last == 'end' && strip.call(compiled).last == 'end')
-      check.call("every `/` answer is the interpreter's (#{strip.call(interpreted).size} answers)",
-                 strip.call(interpreted) == strip.call(compiled) && strip.call(interpreted).size > 500)
-      strip.call(interpreted).zip(strip.call(compiled)).reject { |a, b| a == b }.first(8).each do |a, b|
-        puts "    interpreted: #{a}\n    compiled:    #{b}"
+CLOSED_RUNS.each do |name, fixture, owners, driver_name, specs|
+  builds.each do |label, build, mrbc, flags, width, bigint|
+    next if ONLY_CMP
+
+    puts "-- closed #{name} helper on real mruby (#{label}), interpreted and compiled"
+    saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
+    ENV['MRBC'] = mrbc
+    ENV['BC2CPP_CXXFLAGS'] = flags
+    begin
+      Dir.mktmpdir do |dir|
+        _code, err = runtime.generate(fixture, dir, closed: true, only_owners: owners)
+        source = "$bigint = #{bigint}\n#{send(driver_name, width)}"
+        built, output = runtime.run(dir, err, owners, closed_scenario(specs, source), build: build, full: true)
+        check.call("the closed #{name} fixture compiles and runs against real mruby", built)
+        puts output.to_s.lines.last(25).join unless built
+        next unless built
+
+        sections = runtime.sections(output)
+        interpreted = sections['interpreted'].to_a
+        compiled = sections['compiled'].to_a
+        strip = ->(lines) { lines.reject { |l| l.start_with?('  ') } }
+        check.call('both runs finish', strip.call(interpreted).last == 'end' && strip.call(compiled).last == 'end')
+        check.call("every #{name} answer is the interpreter's (#{strip.call(interpreted).size} answers)",
+                   strip.call(interpreted) == strip.call(compiled) && strip.call(interpreted).size > 500)
+        strip.call(interpreted).zip(strip.call(compiled)).reject { |a, b| a == b }.first(8).each do |a, b|
+          puts "    interpreted: #{a}\n    compiled:    #{b}"
+        end
+        check.call('the matrix has NoMethodError and TypeError rows',
+                   interpreted.count { |l| l.include?('NoMethodError') } > 50 && interpreted.count { |l| l.include?('TypeError') } > 20)
+        [interpreted, compiled].each do |lines|
+          summary = lines.grep(/\A  H summary /).first.to_s
+          lines.grep(/\A  H MISMATCH /).first(5).each { |l| puts "    #{l.strip}" }
+          lines.grep(/\A  H op /).each { |l| puts "    #{l.strip}" }
+          check.call("each helper agrees with its method called directly (#{summary.strip})",
+                     summary.match?(/ 0 mismatches/) && summary[/ (\d+) cases/, 1].to_i > 500)
+        end
       end
-      check.call('the matrix has NoMethodError and TypeError rows',
-                 interpreted.count { |l| l.include?('NoMethodError') } > 50 && interpreted.count { |l| l.include?('TypeError') } > 20)
-      [interpreted, compiled].each do |lines|
-        summary = lines.grep(/\A  H summary /).first.to_s
-        lines.grep(/\A  H MISMATCH /).first(5).each { |l| puts "    #{l.strip}" }
-        check.call("the helper agrees with Integer#/ and Float#/ called directly (#{summary.strip})",
-                   summary.match?(/ 0 mismatches/) && summary[/ (\d+) cases/, 1].to_i > 500)
-      end
+    ensure
+      ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved
     end
-  ensure
-    ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved
   end
 end
 
