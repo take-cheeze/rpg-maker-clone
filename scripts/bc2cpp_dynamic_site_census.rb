@@ -55,7 +55,8 @@ def show(title, pairs, limit = nil)
 end
 
 body_count = ->(re) { lines.each_with_index.count { |l, i| l =~ re && l !~ %r{^\s*//} && i >= first_method } }
-helper_count = ->(re) { lines[0...first_method].count { |l| l =~ re && l !~ %r{^\s*//} } }
+open_form = SiteCensus.open_form_mask(lines, first_method)
+helper_count = ->(re) { lines[0...first_method].each_with_index.count { |l, i| l =~ re && l !~ %r{^\s*//} && !open_form[i] } }
 
 puts "file: #{File.basename(path)} (#{lines.size} lines); helper region = lines 1..#{first_method}"
 puts

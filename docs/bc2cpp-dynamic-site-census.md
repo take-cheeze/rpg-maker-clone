@@ -1059,3 +1059,20 @@ Measured on the wio closed world (shipped pass) at master `0a9adfc`, helper emis
 classes of every other helper name: `>>`, `round` and `^` need operand-coercion or object.c bodies, `+ - *` need
 `Array`/`String` (and, in this scan, `Time`) bodies that are static in mruby, `< <= > >=` need the Comparable
 includers, `[]`/`[]=` have thirteen native classes besides the eight registry ones.
+
+## Follow-up: closed `+` and `*` helpers (ADR 0361)
+
+Measured on the wio closed world (shipped pass) at master `9361f234`. The census scan now skips the by-name copy that a
+closed helper keeps under `#if defined(MRB_USE_COMPLEX) || defined(MRB_USE_RATIONAL)` (wio never defines them), so the
+`/` helper of ADR 0360 no longer counts either:
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` calls held in helpers | 23 | 21 | -2 |
+| generated callers of a helper that holds a by-name call | 5,509 | 4,355 | -1,154 |
+| `bc2cpp_send` call sites in generated bodies | 2,321 | 2,321 | 0 |
+| **Sites that can reach by-name dispatch** (bodies + helper callers + 417 block + 30 funcall sites) | **8,277** | **7,123** | **-1,154 (-13.9%)** |
+
+`bc2cpp_slow_add_f` (712 callers) and `bc2cpp_slow_mul_f` (442) switch on Integer, Float, String and Array tags and raise the
+proven NoMethodError for any other receiver. `bc2cpp_slow_sub_f` (471) stays: `Array#-` (mruby-array-ext) is a hash walk
+with no entry point to mirror, and Time answers `-` wherever mruby-time is linked.
