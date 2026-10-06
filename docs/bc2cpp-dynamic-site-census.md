@@ -1081,19 +1081,20 @@ with no entry point to mirror, and Time answers `-` wherever mruby-time is linke
 
 `bc2cpp_slow_lt`/`le`/`gt`/`ge` (296 + 134 + 311 + 166 generated callers) now carry a closed form beside the by-name
 helper (the latter under `#if defined(MRB_USE_COMPLEX) || defined(MRB_USE_RATIONAL)`). Wio closed world, shipped
-pass, master `9361f23` against the branch, helper emission only (the census counts both `#if` arms of `bc2cpp_slow_div`, which is why 5,781 is not ADR 0360's 5,509):
+pass, master `9361f234` against the branch, with the census counting only the live arm of a helper written twice
+(see the combined section below for the census fix that makes that hold for nested `#if`):
 
 | Measure | Before | After |
 | --- | ---: | ---: |
-| `bc2cpp_send` calls held in helpers (by text, both `#if` arms) | 24 | 28 |
-| generated callers of a helper that holds a by-name call | 5,781 | 5,781 |
+| `bc2cpp_send` calls held in helpers | 23 | 23 |
+| generated callers of a helper that holds a by-name call | 5,509 | 5,509 |
 | `bc2cpp_send` call sites in generated bodies | 2,321 | 2,321 |
 
 The headline number does not move: the closed form of each helper still holds one by-name call, for a **Hash**
 receiver, because `Hash#<` is Ruby over `==` of the stored values (mruby-hash-ext). What changed is which receivers
 can reach it: before, every non-number (String, Symbol, nil, any object) dispatched by name; now only a Hash does,
-and every other receiver is a proven NoMethodError or Comparable's body computed in C++. The four added textual
-calls are the closed form's Hash call beside the unchanged `#if` copy. Closing the last arm needs a per-element
+and every other receiver is a proven NoMethodError or Comparable's body computed in C++. The closed form's Hash call
+sits beside the unchanged `#if` copy, which the census does not count. Closing the last arm needs a per-element
 `==` proof or a compiled `Hash#<` reachable from the helper's translation unit.
 
 ## Follow-up: core-body helper closure (ADR 0364)
@@ -1110,3 +1111,23 @@ is stripped from both runs, as ADR 0360 counted `/`.
 `bc2cpp_slow_xor` (4 callers), `bc2cpp_slow_rshift` (17) and `bc2cpp_slow_round` (5) mirror the bodies of Integer,
 nil/true/false and Float inside the helper. `& | << % -@ zero? ===` stay open: their member sets contain a static
 body that public API cannot reproduce (Array, String, IO), Ruby definers, or are unbounded (ADR 0364 lists each).
+
+## Combined: ADR 0360, 0361, 0362 and 0364 together
+
+The helper keys are independent (`add`/`mul` 0361, `lt`/`le`/`gt`/`ge` 0362, `xor`/`rshift`/`round` 0364, `div`
+0360), so one shipped pass shows every closure at once. Wio closed world, shipped pass, master `9361f234` against
+the combined tree, both measured with the same census. The census now also keeps a helper's own `#ifdef` and
+`#else` inside the by-name copy from ending its mask early: `bc2cpp_slow_rshift`'s by-name copy has
+`#ifdef MRB_USE_BIGINT ... #else return bc2cpp_send(...)`, and that inner `#else` used to leave one `>>` call live and
+attributed to the `round` helper.
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` calls held in helpers | 23 | 17 | -6 |
+| generated callers of a helper that holds a by-name call | 5,509 | 4,329 | -1,180 |
+| `bc2cpp_send` call sites in generated bodies | 2,321 | 2,321 | 0 |
+| **Sites that can reach by-name dispatch** (bodies + helper callers + 417 block + 30 funcall sites) | **8,277** | **7,097** | **-1,180 (-14.3%)** |
+
+The five helpers that left the list (six by-name calls, `rshift` held two) are `bc2cpp_slow_add_f` (712 callers),
+`bc2cpp_slow_mul_f` (442), `bc2cpp_slow_rshift` (17), `bc2cpp_slow_xor` (4) and `bc2cpp_slow_round` (5). The
+comparison helpers stay listed with their one Hash call.
