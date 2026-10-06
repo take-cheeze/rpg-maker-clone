@@ -192,7 +192,7 @@ generated_checks(check, runtime)
 # [label, build dir, mrbc, flags, width, full-core?]
 builds = []
 full = runtime.full || (ENV['BC2CPP_FULL_BUILD_DIR'] ? runtime.full_or_build : nil)
-builds << ['full-core, mrb_int 64', full, ENV['MRBC'], '', 64, true] if full
+builds << ['full-core, mrb_int 64', full, ENV['MRBC'], '-DMRB_USE_BIGINT', 64, true] if full
 # The core build need not be 64 bits wide, so it gets the Fixnum range every width shares and no bigint.
 builds << ['core only (no gems)', runtime.core, ENV['MRBC'], '', :nobig, false] if runtime.core
 if ENV['BC2CPP_MRUBY_FULL32'] && ENV['BC2CPP_MRBC32']
