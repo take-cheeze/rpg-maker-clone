@@ -1633,7 +1633,7 @@ jobs:
             run: |
               ruby scripts/rpg2k_closed_world_lint_check.rb
               ruby scripts/rpg2k_closed_world_lint.rb
-
+              ruby scripts/bc2cpp_lint_crosscheck_check.rb
           # ADR 0262: a should-not-happen path raises or reports instead of
           # falling back silently (bc2cpp source readers, constant-proof
           # invariants, every broad mrblib rescue).
