@@ -998,6 +998,11 @@ jobs:
               # Unguarded exact-receiver proofs for those arms and the native ones (docs/adr/0280): generated
               # code, then a compiled fixture against the interpreter (Fibers, break/next/return, raise).
               MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_check.rb
+              # ADR 0359: the same proofs inside compiled core bodies are checked at run time (class test, else
+              # bc2cpp_guard_violation); generated code, an honouring and a violated fixture, and the audit of
+              # mruby's own Ruby for singleton-making constructs that the proof's world scan skips.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_body_exact_check.rb
+              ruby scripts/bc2cpp_core_singleton_audit.rb
               # Return-class table and the guard-free TYPED call (docs/adr/0289): generated code with every
               # way of losing the proof, then a compiled fixture against the interpreter.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_return_class_check.rb
