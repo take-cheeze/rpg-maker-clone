@@ -9,17 +9,19 @@ require 'fileutils'
 require_relative '../tools/bc2cpp/lint_crosscheck'
 
 ROOT_DIR = File.expand_path('..', __dir__)
-Fake = Struct.new(:method_missing_classes)
+Fake = Struct.new(:method_missing_files)
 failures = []
 check = lambda do |what, ok|
   puts "  #{ok ? 'ok  ' : 'FAIL'} #{what}"
   failures << what unless ok
 end
 
-check.call('real tree and an empty analysis agree', LintCrosscheck.violations(ROOT_DIR, Fake.new(Set.new)).empty?)
+check.call('real tree and an empty analysis agree', LintCrosscheck.violations(ROOT_DIR, Fake.new([])).empty?)
 
-p = LintCrosscheck.violations(ROOT_DIR, Fake.new(Set['Foo']))
-check.call('method_missing class with a clean lint cop is a disagreement', p.one? && p.first.include?('method_missing classes: Foo'))
+p = LintCrosscheck.violations(ROOT_DIR, Fake.new(['/x/mruby-rgss/mrblib/a.rb']))
+check.call('method_missing in a linted file with a clean lint cop is a disagreement', p.one? && p.first.include?('mruby-rgss/mrblib/a.rb'))
+check.call('method_missing in a fixture file is outside the lint domain',
+           LintCrosscheck.violations(ROOT_DIR, Fake.new(['/tmp/fixture.rb'])).empty?)
 
 Dir.mktmpdir do |dir|
   FileUtils.mkdir_p(File.join(dir, 'scripts'))
