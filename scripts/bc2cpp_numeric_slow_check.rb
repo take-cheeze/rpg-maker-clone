@@ -317,7 +317,7 @@ def closed_div_generated_checks(check, runtime)
                closed.include?('bc2cpp_nomethod'))
     check.call('bc2cpp_slow_div keeps the by-name helper for a build with Complex or Rational operands',
                helper.start_with?('#if defined(MRB_USE_COMPLEX) || defined(MRB_USE_RATIONAL)') &&
-               helper.split("#else\n", 2).first.include?('mrb_funcall(M, a, "/"'))
+               helper.split("#else\n", 2).first.include?('bc2cpp_send('))
   end
   Dir.mktmpdir do |dir|
     source = "#{FIXTURE_DIV}class NsDivBox\n  def /(o) = :divbox\nend\n"
