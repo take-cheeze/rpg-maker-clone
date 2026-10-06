@@ -1522,8 +1522,14 @@ module Game
       adjust_stat(modified_stat(b.agi, b.agi_mod), stat_mode(b, :affect_agility))
     end
 
-    # The ability-value keys #apply_stat_mods accepts (see Game.stat_mod_of).
-    STAT_MOD_KEYS = %i[atk def spi agi].freeze
+    # The ability-value keys #apply_stat_mods accepts. A `case`, not a `%i[]` list: its pooled "atk"/"agi"
+    # strings make STATIC_DISPATCH_UNREGISTERED names that start or end with them look dynamic.
+    def stat_mod_key?(key)
+      case key
+      when :atk, :def, :spi, :agi then true
+      else false
+      end
+    end
 
     # Apply `amount` -- the exact same final signed effect a skill hit just
     # applied to HP/SP (post elemental-attribute scaling, variance, and the
@@ -1552,7 +1558,7 @@ module Game
       return {} unless keys && !keys.empty? && amount != 0
       applied = {}
       keys.each do |key|
-        next unless STAT_MOD_KEYS.include?(key)
+        next unless stat_mod_key?(key)
         base = Game.stat_of(target, key)
         cur = Game.stat_mod_of(target, key)
         new_mod = Game.clamp(cur + amount, -(base / 2), base)
@@ -4355,7 +4361,10 @@ module Game
     def apply_knockout_reset(target)
       return unless target.dead?
       target.gauge = 0 if target.respond_to?(:gauge)
-      STAT_MOD_KEYS.each { |key| Game.set_stat_mod(target, key, 0) }
+      Game.set_stat_mod(target, :atk, 0)
+      Game.set_stat_mod(target, :def, 0)
+      Game.set_stat_mod(target, :spi, 0)
+      Game.set_stat_mod(target, :agi, 0)
       target.attr_ranks = {} if target.respond_to?(:attr_ranks=)
       target.defending = false if target.respond_to?(:defending=)
       target.charged = false if target.respond_to?(:charged=)
