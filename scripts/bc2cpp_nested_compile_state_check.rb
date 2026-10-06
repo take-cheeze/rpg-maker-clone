@@ -112,6 +112,7 @@ NOT_PER_METHOD = %w[
   @constructor_pool_candidates @constructor_pool_status @constructor_pool_refusal @constructor_pool_stats @constructor_aliased
   @constructor_body_classes @constructor_chain
   @call_facts_answers @call_facts_states @call_facts_classes @symbol_instance_installed_names @nil_unanswerable_instances
+  @numeric_slow_closed_cmp
 ].freeze
 # CodeGen is reopened across several tools/bc2cpp files (scripts/bc2cpp_split.rb).
 written = Set.new
