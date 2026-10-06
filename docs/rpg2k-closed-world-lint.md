@@ -36,7 +36,8 @@ data-driven, allow it in place with a reason:
 value = obj.send(accessor) # rpg2k-lint:allow Dynamic/Send -- accessor names come from a fixed table
 ```
 
-See ADR 0212.
+See ADR 0212. bc2cpp itself re-runs this lint on every closed-world build and
+aborts when it fails or disagrees with the `ClosedWorld` analysis (ADR 0368).
 
 The wio build's unreachable-method strip (ADR 0218) relies on the same
 property: a method counts as reachable only when some literal spells its name.
