@@ -49,9 +49,10 @@ Soundness:
   definers make it nil). `bc2cpp_nomethod` is the existing proven-dead arm: it dispatches by name first, so a wrong
   proof raises `RuntimeError: closed-world proof violated` instead of running the wrong code (ADR 0262, 0275).
 * `int_div`'s operand switch has `Complex` and `Rational` arms under `MRB_USE_COMPLEX`/`MRB_USE_RATIONAL`, which the
-  gems define. The scan would list those gems as `/` definers, so the closed form never applies to a build that
-  has them; the helper also says `#error` if either macro is set, so a mismatch between the scan and the compiled
-  libmruby fails the build instead of changing behavior.
+  gems define. The scan would list those gems as `/` definers, so the closed form never applies to a world that
+  has them; the helper also keeps the old by-name body under `#if defined(MRB_USE_COMPLEX) ||
+  defined(MRB_USE_RATIONAL)`, so a libmruby that links those gems behaves as before even when the scanned world
+  did not list them (the full-core test builds define `MRB_USE_COMPLEX`).
 * Float receivers do not arrive here from the `FLOAT_DIV_RECEIVER` arm, but the helper answers them anyway so it
   does not depend on its callers.
 * The helper is outside the `NOMETHOD_REVIEWED` list: that list is per generated method, and the marker is not

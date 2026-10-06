@@ -308,14 +308,16 @@ def closed_div_generated_checks(check, runtime)
   Dir.mktmpdir do |dir|
     code, = runtime.generate(FIXTURE_DIV, dir, closed: true, only_owners: %w[NsDiv NsDivBox])
     call = code[/^\/\/ NsDiv#div \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
-    helper = code[/^static mrb_value bc2cpp_slow_div\(mrb_state\* M.*?^\}\n/m].to_s
+    helper = code[/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(?:.*?^\}\n){2}#endif\n/m].to_s
     check.call('NsDiv#div calls bc2cpp_slow_div and has no by-name call of its own',
                call.include?('bc2cpp_slow_div(M, ') && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
+    closed = helper.split("#else\n", 2)[1].to_s
     check.call('bc2cpp_slow_div holds no by-name call: any other receiver is a proven NoMethodError',
-               !helper.empty? && !helper.include?('bc2cpp_send(') && !helper.include?('mrb_funcall(') &&
-               helper.include?('bc2cpp_nomethod(M, a'))
-    check.call('bc2cpp_slow_div refuses a build with Complex or Rational operands',
-               helper.include?('#if defined(MRB_USE_COMPLEX) || defined(MRB_USE_RATIONAL)') && helper.include?('#error'))
+               !helper.empty? && !closed.empty? && !closed.include?('bc2cpp_send(') && !closed.include?('mrb_funcall(') &&
+               closed.include?('bc2cpp_nomethod'))
+    check.call('bc2cpp_slow_div keeps the by-name helper for a build with Complex or Rational operands',
+               helper.start_with?('#if defined(MRB_USE_COMPLEX) || defined(MRB_USE_RATIONAL)') &&
+               helper.split("#else\n", 2).first.include?('mrb_funcall(M, a, "/"'))
   end
   Dir.mktmpdir do |dir|
     source = "#{FIXTURE_DIV}class NsDivBox\n  def /(o) = :divbox\nend\n"
