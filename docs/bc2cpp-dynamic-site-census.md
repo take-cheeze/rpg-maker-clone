@@ -1060,6 +1060,28 @@ classes of every other helper name: `>>`, `round` and `^` need operand-coercion 
 `Array`/`String` (and, in this scan, `Time`) bodies that are static in mruby, `< <= > >=` need the Comparable
 includers, `[]`/`[]=` have thirteen native classes besides the eight registry ones.
 
+## Follow-up: checked exact proofs in core bodies (ADR 0359)
+
+The `receiver_other` core tag chain was not losing proofs through register copies: the flow and the
+dominating walk already follow MOVEs. Its unproven receivers have an unknown source (ivar, argument, call
+result, element, `x || []`). The one structural gap was that a compiled core body is compiled without the
+engine's world, so its literal and `*rest` receivers were never proven. They are now proven under the
+program world and **checked**: each site keeps one class test and its else is `bc2cpp_guard_violation`
+(`GUARD_VIOLATION CORE_BODY_EXACT`), not an unguarded access. `BC2CPP_CORE_BODY_EXACT=0` disables it (the
+output is then byte-identical to master).
+
+Measured on the wio closed world (shipped pass), same tree, switch off against on:
+
+| Measure | Off | On | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 2,321 | 2,286 | -35 |
+| `mrb_funcall_with_block` sites in generated bodies | 417 | 414 | -3 |
+| `bc2cpp_guard_violation` call sites (all families) | 310 | 348 | +38 |
+| `CORE_BODY_EXACT_CHECKED` sites (35 `CLOSED_WORLD_NATIVE_EXACT`, 3 `BLOCK_CORE_DIRECT`) | 0 | 38 | +38 |
+
+The unguarded version of this change removed the same sites, so the check costs the class test and 38 cold
+violation arms, not the gain. See [ADR 0359](adr/0359-bc2cpp-exact-proofs-in-core-bodies.md).
+
 ## Follow-up: closed `+` and `*` helpers (ADR 0361)
 
 Measured on the wio closed world (shipped pass) at master `9361f234`. The census scan now skips the by-name copy that a

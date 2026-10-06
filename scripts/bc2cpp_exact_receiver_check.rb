@@ -154,14 +154,14 @@ gems = NomethodReviewedProbe.wio_gems(ROOT)
 native_srcs = Dir[File.join(ROOT, 'mruby-rgss/src/*.cxx')] + core_native_srcs(MRUBY) + external_gem_native_srcs(ROOT)
 core_srcs = core_compiled_mrblib_srcs(ROOT)
 
-generate = lambda do |source, name, closed: true, core: true, owners: ['ExFx']|
+generate = lambda do |source, name, closed: true, core: true, owners: ['ExFx'], extra_env: {}|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
     env = { 'MRBC' => MRBC, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
             'NATIVE_SRCS' => Shellwords.join(native_srcs),
             'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)),
-            'ONLY_OWNERS' => (BC2CPP_CORE_OWNERS + owners).join(',') }
+            'ONLY_OWNERS' => (BC2CPP_CORE_OWNERS + owners).join(',') }.merge(extra_env)
     if closed
       env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
                  'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
@@ -235,6 +235,22 @@ check.call('an unknown receiver keeps the three arms and their class tests',
 check.call('break, next and return still catch around a proven arm',
            fn.call('range_break').include?('catch (bc2cpp_block_break&') && fn.call('range_return').include?('BLOCK_CORE_DIRECT'))
 
+# ADR 0359: the literal and `*rest` proofs also hold inside a compiled core body, as CHECKED proofs: the
+# arm sits behind the class test and its else is bc2cpp_guard_violation (scripts/bc2cpp_core_body_exact_check.rb
+# runs it). Array#dig's `args.size` reads its own rest Array; Enumerable#uniq's `hash.values` reads a Hash literal.
+core_exact = lambda do |code|
+  body = body_of.call(code, 'dig', 'Array')
+  body.include?('CLOSED_WORLD_NATIVE_EXACT :size -> Array') && body.include?('CORE_BODY_EXACT_CHECKED :size -> Array') &&
+    body.include?('(CORE_BODY_EXACT)')
+end
+check.call('a compiled core body proves its *rest Array and its literals, checked', core_exact.call(closed) &&
+             body_of.call(closed, 'uniq', 'Enumerable').match?(/CORE_BODY_EXACT_CHECKED :values -> Hash.*CLOSED_WORLD_NATIVE_EXACT :values -> Hash/m))
+check.call('no compiled core body keeps an unchecked proof',
+           closed.scan(%r{^// (\S+#\S+) \(compiled from[^\n]*\n(.*?)(?=^// \S+#\S+ \(compiled from|\z)}m)
+                 .none? { |name, text| !name.start_with?('ExFx#') && text.include?('unguarded proof') && !text.include?('CORE_BODY_EXACT_CHECKED') })
+off = generate.call(FIXTURE, 'ex_core_off', extra_env: { 'BC2CPP_CORE_BODY_EXACT' => '0' })
+check.call('BC2CPP_CORE_BODY_EXACT=0 leaves the core body with its tag chain', !core_exact.call(off) && !off.include?('CORE_BODY_EXACT'))
+
 # A world where an object can gain a singleton class proves nothing. The first five only lose the
 # unguarded proofs (the guarded arms stay); define_singleton_method is a global refusal already.
 [['instance_eval', "def maker(o); o.instance_eval { 1 }; end", true],
@@ -246,6 +262,7 @@ check.call('break, next and return still catch around a proven arm',
   code = generate.call("#{FIXTURE.sub(/^end\n\z/, '')}  #{body}\nend\n", 'ex_maker')
   proven = body_of.call(code, 'lit_join').include?('NATIVE_CORE_EXACT') || body_of.call(code, 'range_map').include?('proven')
   check.call("#{what} withdraws every proof of the world", !proven)
+  check.call("#{what} withdraws the core body proofs too", !core_exact.call(code))
   check.call("#{what} withdraws the *rest Array arm too", !body_of.call(code, 'rest_compact').include?('NATIVE_CORE_DIRECT_REST'))
   check.call("#{what} leaves the guarded arms", body_of.call(code, 'lit_join').include?('NATIVE_CORE_DIRECT')) if guarded
 end
@@ -259,7 +276,7 @@ check.call('a Ruby Array#join or #compact withdraws the exact call as well',
 range_override = generate.call("#{FIXTURE}\nclass Enumerable\nend\nmodule Enumerable\n  def map(&b); 1; end\nend\n", 'ex_range_override')
 check.call('a Ruby Enumerable#map withdraws the Range arm', !body_of.call(range_override, 'range_map').include?('Enumerable_collect_impl'))
 open_code = generate.call(FIXTURE, 'ex_open', closed: false)
-check.call('without the closed world nothing is proven', !open_code.include?('NATIVE_CORE_EXACT') && !open_code.match?(/proven (?:Array|Hash|Range|String) receiver/))
+check.call('without the closed world nothing is proven, core bodies included', !core_exact.call(open_code) && !open_code.include?('NATIVE_CORE_EXACT') && !open_code.match?(/proven (?:Array|Hash|Range|String) receiver/))
 
 rg = generate.call(RG_FIXTURE, 'ex_rgss', core: false, owners: ['RGSS::ExRg'])
 rgfn = ->(name) { body_of.call(rg, name, 'RGSS__ExRg') }
