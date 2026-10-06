@@ -18,14 +18,21 @@
 #    mrb_int is 32 bits (BC2CPP_MRUBY_FULL32, BC2CPP_MRBC32; -DMRB_32BIT -DMRB_INT32: 31-bit Fixnums) and,
 #    with BC2CPP_MRUBY_NOBIGINT, on a build without mruby-bigint (where the bigint arms vanish).
 #
+# 3. ADR 0360 / 0364: the helpers whose operator only core classes answer (`/`, `^`, `>>`, `round`) have a closed
+#    form with no by-name call; each is run directly against the real method over every member class pair, at all
+#    three widths, and a user definer or a Complex/Rational build keeps the by-name body.
+#
 # Usage: [MRBC=path/to/mrbc BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_FULL32=dir BC2CPP_MRBC32=mrbc32
-#         BC2CPP_MRUBY_NOBIGINT=dir] ruby scripts/bc2cpp_numeric_slow_check.rb
+#         BC2CPP_MRUBY_NOBIGINT=dir BC2CPP_NUMERIC_SLOW_ONLY=cmp] ruby scripts/bc2cpp_numeric_slow_check.rb
 
 require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
 
 runtime = Bc2cppFixtureRuntime
 failures = []
+# BC2CPP_NUMERIC_SLOW_ONLY=cmp runs only the comparison-helper sections (ADR 0362), cmp-run only their runs on libmruby.
+ONLY_CMP = %w[cmp cmp-run].include?(ENV['BC2CPP_NUMERIC_SLOW_ONLY'])
+ONLY_CMP_RUN = ENV['BC2CPP_NUMERIC_SLOW_ONLY'] == 'cmp-run'
 check = lambda do |what, condition|
   puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
   failures << what unless condition
@@ -163,6 +170,64 @@ FIXTURE_DIV = <<~RUBY
   end
 RUBY
 
+# NUMERIC_SLOW_CLOSED_CMP (ADR 0362): the numeric natives, Comparable's body (String, Symbol) and Hash's Ruby are
+# the only answers to `<` `<=` `>` `>=`, so the helper mirrors the first two, keeps the method for a Hash and
+# proves every other receiver a NoMethodError. NsSortKey has `<=>` without Comparable, which String and Symbol
+# never reach. Neither class answers a comparison operator (NsCmp in FIXTURE includes Comparable).
+FIXTURE_CMP = <<~RUBY
+  class NsCmpBox
+    def inspect = "cmpbox"
+  end
+  class NsSortKey
+    def <=>(o) = 0
+  end
+  class NsCmpOpen
+    def lt(a, b) = a < b
+    def le(a, b) = a <= b
+    def gt(a, b) = a > b
+    def ge(a, b) = a >= b
+  end
+RUBY
+CMP_OWNERS = %w[NsCmpOpen NsCmpBox NsSortKey].freeze
+CMP_NAMES = { 'lt' => '<', 'le' => '<=', 'gt' => '>', 'ge' => '>=' }.freeze
+
+# [what, source appended to FIXTURE_CMP, owners it adds, the helpers that stay closed]: a world that adds another
+# answer to an operator, or another definition of the `<=>` the String/Symbol arm relies on, keeps the by-name helper
+# of that operator (a `<` answer leaves `<=` `>` `>=` alone; a `<=>` one takes all four). NsSortKey in FIXTURE_CMP is
+# the unrelated `<=>` definer that leaves them closed.
+ALL = %w[lt le gt ge].freeze
+REST = %w[le gt ge].freeze
+NONE = [].freeze
+CMP_WORLDS = [
+  ['a class that includes Comparable', "class NsCmpUser\n  include Comparable\n  def <=>(o) = 0\nend\n", %w[NsCmpUser], NONE],
+  ['a class that defines `<`', "class NsLess\n  def <(o) = true\nend\n", %w[NsLess], REST],
+  ['a class method `<`', "class NsMetaLess\n  def self.<(o) = true\nend\n", %w[NsMetaLess], REST],
+  ['a Hash subclass', "class NsHash < Hash\nend\n", %w[NsHash], NONE],
+  ['a Numeric subclass', "class NsNum < Numeric\nend\n", %w[NsNum], NONE],
+  ['a String subclass', "class NsStr < String\nend\n", %w[NsStr], NONE],
+  ['Integer#< reopened', "class Integer\n  def <(o) = true\nend\n", %w[], REST],
+  ['Comparable#< reopened', "module Comparable\n  def <(o) = true\nend\n", %w[], REST],
+  ['String#<=> reopened', "class String\n  def <=>(o) = 0\nend\n", %w[], NONE],
+  ['Symbol#<=> reopened', "class Symbol\n  def <=>(o) = 0\nend\n", %w[], NONE],
+  ['Numeric#<=> reopened', "class Numeric\n  def <=>(o) = 0\nend\n", %w[], NONE],
+  ['Object#<=> reopened', "class Object\n  def <=>(o) = 0\nend\n", %w[], NONE],
+  ['a `<=>` on a class outside the lookup of String, Symbol and Numeric (NsSortKey)', "", %w[], ALL]
+].freeze
+
+# ADR 0364: `^` (Integer, nil, true, false), `>>` (Integer) and `round` (Integer, Float) are answered by no other
+# class of this world. NsBitsBox has none of them (the main FIXTURE's NsBox defines `>>`, so `>>` stays open there).
+FIXTURE_BITS = <<~RUBY
+  class NsBitsBox
+    def inspect = "bitsbox"
+  end
+  class NsBits
+    def xor(a, b) = a ^ b
+    def rsh(a, b) = a >> b
+    def rnd(a) = a.round
+  end
+RUBY
+BITS_OWNERS = %w[NsBits NsBitsBox].freeze
+
 # Redefined operators: the arm must not be taken, the program's own method must still run.
 REDEFINED = <<~RUBY
   class Integer
@@ -260,8 +325,11 @@ def generated_checks(check, runtime)
       check.call("NsOpen##{name}: `#{op}` calls bc2cpp_slow_#{key} and has no by-name call of its own",
                  c.match?(/bc2cpp_slow_#{key}(?:_f)?\(M, /) && !c.include?('bc2cpp_send(') && !c.include?('mrb_funcall('))
       helper = code[/^static mrb_value bc2cpp_slow_#{key}(?:_f)?\(mrb_state\* M.*?^\}\n/m].to_s
+      # `^` has no definer outside the core in this world (ADR 0364): its helper is the '#if Complex/Rational' pair,
+      # the by-name body in front and the closed form behind (checked in closed_bits_generated_checks).
+      definitions = key == 'xor' ? 2 : 1
       check.call("bc2cpp_slow_#{key} is defined once and dispatches the operands it does not own",
-                 code.scan(/^static mrb_value bc2cpp_slow_#{key}(?:_f)?\(/).size == 1 && helper.include?('bc2cpp_send('))
+                 code.scan(/^static mrb_value bc2cpp_slow_#{key}(?:_f)?\(/).size == definitions && helper.include?('bc2cpp_send('))
     end
     UNARY.each_key do |name|
       c = chunk.call("NsOpen##{name}")
@@ -327,6 +395,460 @@ def closed_div_generated_checks(check, runtime)
   end
 end
 
+# The two copies of a helper written twice (ADR 0360, 0361): [by-name copy for a Complex or Rational build, the
+# closed copy], or nil when the helper is written once.
+def helper_pair(code, key)
+  m = code.match(/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(static mrb_value bc2cpp_slow_#{key}(?:_f)?\(mrb_state\* M.*?^\}\n\n)#else\n(.*?^\}\n\n)#endif\n/m)
+  m && [m[1], m[2]]
+end
+
+# What mruby's own static bodies and the helper's mirrors of them stand on: the four bodies the String and Array
+# arms rewrite, and the Integer/Float ones the numeric arms reach through mrb_num_*. A changed digest means the
+# mruby tree changed one: re-derive the mirror before updating it. The one native definition of each operator per
+# class is audited the same way, so a second definer (a gem redefining String#+ in C) cannot slip in.
+MIRRORED_BODIES = {
+  'src/array.c' => { 'mrb_ary_plus' => '70d052eb8d9b436a', 'mrb_ary_times' => '7b777f06a387ade7' },
+  'src/string.c' => { 'mrb_str_plus_m' => '1b53105d32fe238a', 'mrb_str_times' => '489feea491fd043d' },
+  'src/numeric.c' => { 'int_add' => 'e2ff7790d345696a', 'int_mul' => 'ec37fa6c951f6b88',
+                       'flo_add' => '2a7487f52044d706', 'flo_mul' => 'cf89b421d3a89f54' },
+  'src/numops.c' => { 'mrb_num_add' => 'e819f8f8fe810d67', 'mrb_num_mul' => 'ee5f08a1b611d22c' }
+}.freeze
+OPERATOR_DEFINERS = { 'array.c' => 2, 'string.c' => 2, 'numeric.c' => 4, 'time.c' => 1 }.freeze
+
+def mirrored_body_checks(check, root)
+  require 'digest'
+  mruby = File.join(root, '3rd/mruby')
+  unless File.exist?(File.join(mruby, 'src/array.c'))
+    puts '  SKIP: no 3rd/mruby tree to pin the mirrored bodies against'
+    return
+  end
+  puts '-- the mruby bodies the closed `+` / `*` helpers mirror are unchanged, and no second native definer exists --'
+  MIRRORED_BODIES.each do |file, bodies|
+    text = File.read(File.join(mruby, file))
+    bodies.each do |name, digest|
+      body = text[/^#{Regexp.escape(name)}\(mrb_state \*mrb, mrb_value[^)]*\)\n\{.*?^\}\n/m].to_s
+      got = Digest::SHA256.hexdigest(body.gsub(/\s+/, ''))[0, 16]
+      check.call("#{file}: #{name} is the body the helper mirrors (#{got})", !body.empty? && got == digest)
+    end
+  end
+  found = Hash.new(0)
+  (core_native_srcs(mruby) + external_gem_native_srcs(root) + Dir[File.join(root, 'mruby-rgss/src/*.cxx')]).each do |path|
+    File.read(path, encoding: 'BINARY').scan(/MRB_OPSYM\((?:add|mul)\)|mrb_define_method(?:_id)?\([^;]*"[+*]"/) { found[File.basename(path)] += 1 }
+  end
+  check.call("`+` and `*` have exactly the native definitions the helper covers (#{found.sort.to_h})", found == OPERATOR_DEFINERS)
+end
+
+def closed_arith_generated_checks(check, runtime)
+  puts '-- generated code (closed world, only Integer, Float, Array and String answer `+` and `*`) --'
+  fixture_owners = %w[NsArith NsArithBox NsArithConv NsArithStr NsArithAry]
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_ARITH, dir, closed: true, only_owners: fixture_owners)
+    call = code[/^\/\/ NsArith#add \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
+    check.call('NsArith#add calls bc2cpp_slow_add_f and has no by-name call of its own',
+               call.include?('bc2cpp_slow_add_f(M, ') && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
+    %w[add mul].each do |key|
+      pair = helper_pair(code, key)
+      check.call("bc2cpp_slow_#{key}_f is written twice: by name for Complex/Rational builds, closed otherwise", !pair.nil?)
+      next unless pair
+
+      open_form, closed = pair
+      check.call("bc2cpp_slow_#{key}_f keeps its by-name copy for a build with Complex or Rational", open_form.include?('bc2cpp_send('))
+      check.call("bc2cpp_slow_#{key}_f holds no by-name call: any other receiver is a proven NoMethodError",
+                 !closed.include?('bc2cpp_send(') && !closed.include?('mrb_funcall(') && closed.include?('bc2cpp_nomethod'))
+      check.call("bc2cpp_slow_#{key}_f has an arm for each of String and Array",
+                 closed.include?('mrb_string_p(a)') && closed.include?('mrb_array_p(a)'))
+      check.call("bc2cpp_slow_#{key}_f is defined once per preprocessor branch",
+                 code.scan(/^static mrb_value bc2cpp_slow_#{key}_f\(/).size == 2)
+    end
+    sub = code[/^static mrb_value bc2cpp_slow_sub_f\(mrb_state\* M.*?^\}\n/m].to_s
+    check.call('`-` stays by name (Array#- is a hash walk with no entry point to mirror), written once',
+               !sub.empty? && sub.include?('bc2cpp_send(') && helper_pair(code, 'sub').nil?)
+  end
+  Dir.mktmpdir do |dir|
+    source = "#{FIXTURE_ARITH}class NsArithBox\n  def +(o) = :box_add\nend\n"
+    code, = runtime.generate(source, dir, closed: true, only_owners: fixture_owners)
+    check.call('NEG: a user class answering `+` keeps the by-name helper for `+`', helper_pair(code, 'add').nil? &&
+               code[/^static mrb_value bc2cpp_slow_add_f\(mrb_state\* M.*?^\}\n/m].to_s.include?('bc2cpp_send('))
+    check.call('...and `*` stays closed', !helper_pair(code, 'mul').nil?)
+  end
+  Dir.mktmpdir do |dir|
+    source = "#{FIXTURE_ARITH}class NsArithBox\n  def *(o) = :box_mul\nend\n"
+    code, = runtime.generate(source, dir, closed: true, only_owners: fixture_owners)
+    check.call('NEG: a user class answering `*` keeps the by-name helper for `*`', helper_pair(code, 'mul').nil?)
+    check.call('...and `+` stays closed', !helper_pair(code, 'add').nil?)
+  end
+  Dir.mktmpdir do |dir|
+    source = "#{FIXTURE_ARITH}class Integer\n  def +(o) = :int_plus\nend\n"
+    code, = runtime.generate(source, dir, closed: true, only_owners: fixture_owners)
+    check.call('NEG: Integer#+ redefined in Ruby leaves no helper for `+`', !code.include?('bc2cpp_slow_add'))
+  end
+  Dir.mktmpdir do |dir|
+    time = File.join(Bc2cppFixtureRuntime::ROOT, '3rd/mruby/mrbgems/mruby-time')
+    code, = runtime.generate(FIXTURE_ARITH, dir, closed: true, only_owners: fixture_owners, build_gems: { 'mruby-time' => time })
+    check.call('NEG: a build that links mruby-time keeps `+` by name (Time#+ is static in mruby-time)',
+               helper_pair(code, 'add').nil? && code[/^static mrb_value bc2cpp_slow_add_f\(mrb_state\* M.*?^\}\n/m].to_s.include?('bc2cpp_send('))
+    check.call('...and `*`, which Time does not answer, stays closed', !helper_pair(code, 'mul').nil?)
+  end
+  Dir.mktmpdir do |dir|
+    saved = ENV['BC2CPP_NUMERIC_SLOW_CLOSED']
+    ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = '0'
+    begin
+      code, = runtime.generate(FIXTURE_ARITH, dir, closed: true, only_owners: fixture_owners)
+    ensure
+      ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = saved
+    end
+    check.call('BC2CPP_NUMERIC_SLOW_CLOSED=0 restores the old helpers',
+               helper_pair(code, 'add').nil? && helper_pair(code, 'mul').nil? && code.include?('bc2cpp_send('))
+  end
+end
+
+# NUMERIC_SLOW_CLOSED `+` and `*` (ADR 0361): the classes that answer them are Integer, Float, Array and String (Time
+# is out of a world without mruby-time), so the helpers' else is a proven NoMethodError. `-` stays open (Array#-).
+# NsArithBox has no operator; NsArithConv answers every implicit conversion mruby does not apply here.
+FIXTURE_ARITH = <<~RUBY
+  class NsArithBox
+    def inspect = "arithbox"
+  end
+  class NsArithConv
+    def to_str = "conv"
+    def to_ary = [9]
+    def to_int = 3
+    def to_f = 1.5
+    def inspect = "conv"
+  end
+  class NsArithStr < String
+  end
+  class NsArithAry < Array
+  end
+  class NsArith
+    def add(a, b) = a + b
+    def sub(a, b) = a - b
+    def mul(a, b) = a * b
+
+    def arena(a, b)
+      w = NsProbe.arena
+      a + b
+      x = NsProbe.arena - w
+      w = NsProbe.arena
+      a * b
+      y = NsProbe.arena - w
+      [x, y].max
+    end
+
+    def dispatched(a, b, op)
+      w = NsProbe.dispatches
+      case op
+      when 0 then a + b
+      when 1 then a * b
+      end
+      NsProbe.dispatches - w - 1 # the second probe call is itself one dispatch
+    end
+
+    # Strings and Arrays built and dropped under GC pressure: the helpers' arena entries must not leak or dangle.
+    def churn(n)
+      acc = []
+      s = ""
+      i = 0
+      while i < n
+        acc = acc + [i, i.to_s]
+        acc = acc * 1
+        acc = acc[-20, 20] if acc.size > 40
+        s = s + "ab"
+        s = s * 1
+        s = s[-30, 30] if s.size > 60
+        GC.start if i % 50 == 0
+        i += 1
+      end
+      [acc, s]
+    end
+  end
+RUBY
+
+# The same pairs on the repeat counts a String or Array may take: the interpreter allocates the result, so a count
+# that would not overflow into an error is skipped (an empty Array loops count times, a one-byte String allocates it).
+def arith_driver(width)
+  <<~RUBY
+  FM = #{WIDTHS.fetch(width)[:fmax]}
+  IM = $bigint ? FM * 2 + 1 : FM # mrb_int max, computed: a parser without mruby-bigint rejects the 64-bit literal
+  $vals = [0, 1, -1, 2, 3, 7, -7, 10, FM, FM - 1, -FM, -FM - 1, IM, -IM, -IM - 1, 0.0, -0.0, 0.5, -1.5, 3.0, 2.5, 1.0e19,
+           -1.0e19, Float::NAN, Float::INFINITY, -Float::INFINITY, nil, true, false, :sym, "", "ab", "\\u3042\\u3044",
+           "ab".freeze, NsArithStr.new("xy"), [], [1, 2], [[3], 4], [1, "a", nil].freeze, NsArithAry.new([5, 6]),
+           Array.new(131072, 0), {a: 1}, 1..2, Object.new, NsArithBox.new, NsArithBox, NsArithConv.new, Class]
+  $vals += [FM + 1, -FM - 2, IM + 1, -IM - 2, IM * IM, 2 ** 100, -(2 ** 100), 2.0 ** 70] if $bigint
+  def skip_repeat(a, b)
+    return false unless b.is_a?(Integer) && b > 1000
+    return a.empty? if a.is_a?(Array)
+    return false unless a.is_a?(String)
+    # Only a count that overflows the length is cheap; without bigint IM is not mrb_int's maximum (64 bits on the host).
+    a.bytesize > 0 && (!$bigint || b <= IM / a.bytesize)
+  end
+  def desc(v)
+    return "object" if v.instance_of?(Object) # its inspect carries an address
+    return "ary(\#{v.size}, \#{v.first.inspect})" if v.is_a?(Array) && v.size > 20
+    s = v.inspect
+    s += " cls=\#{v.class}" if v.is_a?(String) || v.is_a?(Array)
+    s += " frozen" if v.frozen? && (v.is_a?(String) || v.is_a?(Array))
+    s += " h=\#{v.hash}" if v.is_a?(Integer)
+    s
+  end
+  def try
+    desc(yield)
+  rescue => e
+    "\#{e.class}: \#{e.message}"
+  end
+  o = NsArith.new
+  %w[add sub mul].each do |op|
+    $vals.each do |a|
+      $vals.each do |b|
+        next if op == 'mul' && skip_repeat(a, b)
+        puts "\#{op} \#{desc(a)} \#{desc(b)} => \#{try { o.send(op, a, b) }}"
+      end
+    end
+  end
+  puts 'end'
+  RUBY
+end
+
+ARITH_SCENARIO = <<~CPP
+  #include <string>
+  struct ArithCase {
+    const char* name;
+    const char* op;
+    mrb_value (*bin)(mrb_state*, mrb_value, mrb_value);
+  };
+  static const ArithCase arith_cases[] = {
+    { "add", "+", bc2cpp_slow_add_f }, { "mul", "*", bc2cpp_slow_mul_f }, { "sub", "-", bc2cpp_slow_sub_f },
+  };
+  struct ArithCall { const ArithCase* c; mrb_value a, b; bool method; };
+  static mrb_value arith_body(mrb_state* M, void* ud) {
+    ArithCall* k = (ArithCall*)ud;
+    return k->method ? (mrb_funcall)(M, k->a, k->c->op, 1, k->b) : k->c->bin(M, k->a, k->b);
+  }
+  // Class, message and the printed value (frozen-ness and class of a String or Array result included).
+  static std::string arith_describe(mrb_state* M, mrb_value v, bool raised, bool class_only) {
+    if (raised) {
+      std::string out = std::string("raised ") + mrb_obj_classname(M, v);
+      if (!class_only) {
+        mrb_value msg = (mrb_funcall)(M, v, "message", 0);
+        out += ": " + std::string(RSTRING_PTR(msg), RSTRING_LEN(msg));
+      }
+      return out;
+    }
+    mrb_value s = mrb_inspect(M, v);
+    std::string out = std::string(mrb_obj_classname(M, v)) + " " + std::string(RSTRING_PTR(s), RSTRING_LEN(s));
+    out += mrb_test((mrb_funcall)(M, v, "frozen?", 0)) ? " frozen" : " live";
+    if (mrb_integer_p(v) || mrb_bigint_p(v)) {
+      mrb_value h = mrb_inspect(M, (mrb_funcall)(M, v, "hash", 0));
+      out += " h=" + std::string(RSTRING_PTR(h), RSTRING_LEN(h));
+    }
+    return out;
+  }
+  static int scenario(mrb_state* M) {
+    RClass* probe = mrb_define_module(M, "NsProbe");
+    mrb_define_class_method(M, probe, "arena", [](mrb_state* M, mrb_value) { return mrb_fixnum_value(mrb_gc_arena_save(M)); }, MRB_ARGS_NONE());
+    mrb_define_class_method(M, probe, "dispatches", [](mrb_state*, mrb_value) { return mrb_fixnum_value(dispatches); }, MRB_ARGS_NONE());
+    std::fflush(stdout);
+    const char* src = R"BCD(__SOURCE__)BCD";
+    mrb_load_string(M, src);
+    if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
+    // Each helper called directly against the method it stands for, over every pair of the driver's values.
+    mrb_value vals = mrb_gv_get(M, mrb_intern_lit(M, "$vals"));
+    mrb_value skip_owner = mrb_obj_value(M->object_class);
+    int total = 0, bad = 0;
+    for (const ArithCase& c : arith_cases) {
+      for (mrb_int i = 0; i < RARRAY_LEN(vals); ++i) for (mrb_int j = 0; j < RARRAY_LEN(vals); ++j) {
+        mrb_value a = RARRAY_PTR(vals)[i], b = RARRAY_PTR(vals)[j];
+        mrb_value skip = (mrb_funcall)(M, skip_owner, "skip_repeat", 2, a, b);
+        if (c.name[0] == 'm' && mrb_test(skip)) continue;
+        int ai = mrb_gc_arena_save(M);
+        ArithCall got_call = { &c, a, b, false }, want_call = { &c, a, b, true };
+        mrb_bool e1 = FALSE, e2 = FALSE;
+        mrb_value got = mrb_protect_error(M, arith_body, &got_call, &e1);
+        mrb_value want = mrb_protect_error(M, arith_body, &want_call, &e2);
+        // Two Integers are vm.c OP_MATH in the helper: an MRB_INT_MIN operand (wrong in the 32-bit bigint core's
+        // Integer#op) is skipped, and without bigint the overflow RangeError is worded differently.
+        bool ints = mrb_integer_p(a) && mrb_integer_p(b);
+        if (ints && (mrb_integer(a) == MRB_INT_MIN || mrb_integer(b) == MRB_INT_MIN)) { mrb_gc_arena_restore(M, ai); continue; }
+  #ifdef MRB_USE_BIGINT
+        bool class_only = false;
+  #else
+        bool class_only = ints && e1 && e2;
+  #endif
+        std::string g = arith_describe(M, got, e1, class_only), w = arith_describe(M, want, e2, class_only);
+        mrb_gc_arena_restore(M, ai);
+        ++total;
+        if (g != w) {
+          ++bad;
+          if (bad <= 8) {
+            mrb_value as = mrb_inspect(M, a), bs = mrb_inspect(M, b);
+            std::printf("  H MISMATCH %s %.60s %.60s helper=%.200s method=%.200s\\n", c.name, RSTRING_PTR(as), RSTRING_PTR(bs), g.c_str(), w.c_str());
+          }
+        }
+      }
+    }
+    std::printf("  H summary %d cases, %d mismatches\\n", total, bad);
+    return 0;
+  }
+CPP
+
+# The helper of `key` as generated: [the #if-wrapped by-name form, the closed form] or nil when the helper has one body.
+def cmp_helper_forms(code, key)
+  wrapped = code[/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(?:static mrb_value bc2cpp_slow_#{key}\(.*?^\}\n\n)#else\n(?:static mrb_value bc2cpp_slow_#{key}\(.*?^\}\n\n)#endif\n/m]
+  return nil unless wrapped
+
+  by_name, closed = wrapped.split("#else\n", 2)
+  [by_name, closed.to_s.sub(/#endif\n\z/, '')]
+end
+
+# The comparison helpers of a world where only the numeric natives, Comparable and Hash answer an operator.
+def closed_cmp_generated_checks(check, runtime)
+  puts '-- generated code (closed world, comparison operators answered by numbers, Comparable and Hash)'
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_CMP, dir, closed: true, only_owners: CMP_OWNERS)
+    CMP_NAMES.each do |name, op|
+      call = code[/^\/\/ NsCmpOpen##{name} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
+      check.call("NsCmpOpen##{name} calls bc2cpp_slow_#{name} and has no by-name call of its own",
+                 call.include?("bc2cpp_slow_#{name}(M, ") && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
+      by_name, closed = cmp_helper_forms(code, name)
+      check.call("bc2cpp_slow_#{name}: the closed form is only a Hash call by name; every other receiver is a proven NoMethodError",
+                 closed && closed.scan('bc2cpp_send(').size == 1 && closed.include?('MRB_TT_HASH') &&
+                 closed.include?('bc2cpp_nomethod(') && closed.include?('mrb_cmp(') &&
+                 closed.include?('comparison of %T with %T failed') && !closed.include?('mrb_funcall('))
+      check.call("bc2cpp_slow_#{name} keeps the by-name helper for a build with Complex or Rational operands",
+                 by_name && by_name.include?('bc2cpp_send(') && by_name.include?('comparison of %t with %t failed') &&
+                 !by_name.include?('MRB_TT_HASH'))
+    end
+  end
+  CMP_WORLDS.each do |what, extra, owners, closed|
+    Dir.mktmpdir do |dir|
+      code, = runtime.generate("#{FIXTURE_CMP}#{extra}", dir, closed: true, only_owners: CMP_OWNERS + owners)
+      forms = CMP_NAMES.keys.select { |name| cmp_helper_forms(code, name) }
+      check.call("#{closed == ALL ? 'POS' : 'NEG'}: #{what}: the closed form stays on [#{closed.join(' ')}]", forms == closed)
+    end
+  end
+  Dir.mktmpdir do |dir|
+    saved = ENV['BC2CPP_NUMERIC_SLOW_CLOSED']
+    ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = '0'
+    begin
+      code, = runtime.generate(FIXTURE_CMP, dir, closed: true, only_owners: CMP_OWNERS)
+    ensure
+      ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = saved
+    end
+    check.call('BC2CPP_NUMERIC_SLOW_CLOSED=0 keeps the by-name helpers',
+               CMP_NAMES.keys.none? { |name| cmp_helper_forms(code, name) } && code.include?('bc2cpp_slow_lt('))
+  end
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_CMP, dir, closed: false, only_owners: CMP_OWNERS)
+    check.call('NEG: an open world keeps the by-name helpers', CMP_NAMES.keys.none? { |name| cmp_helper_forms(code, name) })
+  end
+end
+
+# CoreCompare against the real core and against trees that stop matching its model (host only).
+def core_compare_model_checks(check)
+  require 'fileutils'
+  require_relative '../tools/bc2cpp/core_compare'
+  puts '-- Comparable model (host)'
+  root = File.expand_path('..', __dir__)
+  compar_body = lambda do |op|
+    <<~RUBY.gsub(/^/, '  ')
+      def #{op} other
+        cmp = self <=> other
+        if cmp.nil?
+          raise ArgumentError, "comparison of \#{self.class} with \#{other.class} failed"
+        end
+        cmp #{op} 0
+      end
+    RUBY
+  end
+  compar = lambda do |ops = CoreCompare::OPS, mutate: nil|
+    text = "module Comparable\n#{ops.map { |op| compar_body.call(op) }.join("\n")}end\n"
+    mutate ? text.sub(*mutate) : text
+  end
+  hash = "class Hash\n#{CoreCompare::OPS.map { |op| "  def #{op}(hash)\n    size #{op} hash.size\n  end\n" }.join}end\n"
+  natives = CoreCompare::OPS.to_h { |op| [op, ['/x/3rd/mruby/src/numeric.c']] }
+  Dir.mktmpdir do |dir|
+    write = lambda do |rel, text|
+      File.join(dir, rel).tap { |path| FileUtils.mkdir_p(File.dirname(path)) && File.write(path, text) }
+    end
+    tree = lambda do |compar_text: compar.call, hash_text: hash, extra: nil|
+      paths = [write.call('3rd/mruby/mrblib/compar.rb', compar_text),
+               write.call('3rd/mruby/mrbgems/mruby-hash-ext/mrblib/hash.rb', hash_text)]
+      paths << write.call('3rd/mruby/mrbgems/mruby-other/mrblib/other.rb', extra) if extra
+      paths
+    end
+    all = CoreCompare::OPS.to_set
+    check.call('a core tree that matches the model verifies every operator', CoreCompare.verified(tree.call, natives) == all)
+    # `String#sub` changes the first occurrence, which is the `<` body.
+    check.call('a changed message turns the operator off (the interpolation is part of the body)',
+               CoreCompare.verified(tree.call(compar_text: compar.call(mutate: ['failed', 'failed.'])), natives) == Set.new(%w[<= > >=]))
+    check.call('a changed class in the message turns the operator off',
+               CoreCompare.verified(tree.call(compar_text: compar.call(mutate: ['#{self.class}', '#{self}'])), natives) == Set.new(%w[<= > >=]))
+    check.call('a changed test turns the operator off',
+               CoreCompare.verified(tree.call(compar_text: compar.call(mutate: ['cmp < 0', 'cmp <= 0'])), natives) == Set.new(%w[<= > >=]))
+    check.call('a second Ruby definer turns the operator off',
+               !CoreCompare.verified(tree.call(extra: "class Time\n  def <(o) = true\nend\n"), natives).include?('<') &&
+                 CoreCompare.verified(tree.call(extra: "class Time\n  def <(o) = true\nend\n"), natives).include?('<='))
+    check.call('`<<` and `<=>` are not definers of `<` or `<=`',
+               CoreCompare.verified(tree.call(extra: "class Proc\n  def <<(o) = o\nend\nclass Rational\n  def <=>(o) = 0\nend\n"), natives) == all)
+    check.call('an alias of the name turns it off',
+               !CoreCompare.verified(tree.call(extra: "class Array\n  alias < first\nend\n"), natives).include?('<'))
+    check.call('the Hash definer is part of the model (a missing one turns the operator off)',
+               CoreCompare.verified(tree.call(hash_text: "class Hash\nend\n"), natives).empty?)
+    check.call('an unexpected native registration turns it off',
+               !CoreCompare.verified(tree.call, natives.merge('<' => ['/x/mruby-rgss/src/lib.cxx'])).include?('<') &&
+                 CoreCompare.verified(tree.call, natives.merge('<' => ['/x/mruby-rgss/src/lib.cxx'])).include?('>'))
+    check.call('no sources prove nothing', CoreCompare.verified(nil, natives).empty? && CoreCompare.verified(tree.call, nil).empty?)
+  end
+  real = File.join(root, '3rd/mruby/mrblib/compar.rb')
+  if File.exist?(real)
+    require_relative '../tools/bc2cpp/compiled_gems'
+    require_relative '../tools/bc2cpp/bc2cpp'
+    native = core_native_srcs("#{root}/3rd/mruby") + Dir["#{root}/mruby-rgss/src/*.cxx"] + external_gem_native_srcs(root)
+    check.call('the real 3rd/mruby still matches the model (review CoreCompare when this fails)',
+               CoreCompare.verified(foreign_mrblib_srcs(root), extract_native_method_sources(native)) == CoreCompare::OPS.to_set)
+  else
+    puts '  SKIP: no 3rd/mruby checkout'
+  end
+end
+
+# ADR 0364: the `^`, `>>` and `round` helpers of a world where no other class answers them.
+def closed_bits_generated_checks(check, runtime)
+  puts '-- generated code (closed world, `^` `>>` `round` answered by core classes only)'
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_BITS, dir, closed: true, only_owners: BITS_OWNERS)
+    blocks = code.scan(/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(?:.*?^\}\n){2}\n*#endif\n/m)
+    { 'xor' => ['NsBits#xor', '^'], 'rshift' => ['NsBits#rsh', '>>'], 'round' => ['NsBits#rnd', 'round'] }.each do |key, (method, op)|
+      call = code[/^\/\/ #{Regexp.escape(method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
+      check.call("#{method} calls bc2cpp_slow_#{key} and has no by-name call of its own",
+                 call.include?("bc2cpp_slow_#{key}(M, ") && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
+      helper = blocks.find { |b| b.include?("bc2cpp_slow_#{key}(mrb_state* M") }.to_s
+      open, closed = helper.split("}\n\n#else\n", 2).map(&:to_s)
+      check.call("bc2cpp_slow_#{key} (`#{op}`) holds no by-name call: any other receiver is a proven NoMethodError",
+                 !closed.empty? && !closed.include?('bc2cpp_send(') && !closed.include?('mrb_funcall(') &&
+                 closed.include?('bc2cpp_nomethod'))
+      check.call("bc2cpp_slow_#{key} keeps the by-name body for a build with Complex or Rational",
+                 open.start_with?('#if defined(MRB_USE_COMPLEX) || defined(MRB_USE_RATIONAL)') && open.include?('bc2cpp_send('))
+    end
+  end
+  Dir.mktmpdir do |dir|
+    source = "#{FIXTURE_BITS}class NsBitsBox\n  def ^(o) = :x\n  def >>(o) = :y\n  def round = :z\nend\n"
+    code, = runtime.generate(source, dir, closed: true, only_owners: BITS_OWNERS)
+    { 'xor' => '^', 'rshift' => '>>', 'round' => 'round' }.each do |key, op|
+      helper = code[/^static mrb_value bc2cpp_slow_#{key}\(mrb_state\* M.*?^\}\n/m].to_s
+      # A user definition of the name also takes the site off the helper, so for `^` and `round` there may be none.
+      check.call("NEG: a user class answering `#{op}` leaves no closed helper (by-name call kept)",
+                 !code.include?("#else\n" \
+ "static mrb_value bc2cpp_slow_#{key}(") && (helper.empty? || helper.include?('bc2cpp_send(')))
+    end
+  end
+  Dir.mktmpdir do |dir|
+    # The main fixture's NsBox defines `>>`: that helper stays open while `^` and `round` close.
+    code, = runtime.generate(FIXTURE, dir, closed: true, only_owners: %w[NsOpen NsProven NsBox NsCmp])
+    shift = code[/^static mrb_value bc2cpp_slow_rshift\(mrb_state\* M.*?^\}\n/m].to_s
+    check.call('NEG: NsBox#>> keeps the `>>` helper open', !shift.empty? && shift.include?('bc2cpp_send('))
+  end
+end
+
 def div_driver(width)
   <<~RUBY
   FM = #{WIDTHS.fetch(width)[:fmax]}
@@ -347,17 +869,168 @@ def div_driver(width)
   RUBY
 end
 
-DIV_SCENARIO = <<~CPP
+def bits_driver(width)
+  <<~RUBY
+  FM = #{WIDTHS.fetch(width)[:fmax]}
+  IM = $bigint ? FM * 2 + 1 : FM # mrb_int max, computed: a parser without mruby-bigint rejects the 64-bit literal
+  $vals = [0, 1, -1, 2, -2, 3, 7, -7, 255, FM, -FM, FM - 1, -FM - 1, IM, -IM, -IM - 1, 0.0, -0.0, 0.5, -0.5, 1.5, -1.5,
+           2.5, -2.5, 3.0, 1.0e19, -1.0e19, Float::NAN, Float::INFINITY, -Float::INFINITY, nil, true, false, "s",
+           "s".freeze, :sym, [1], {a: 1}, 1..2, NsBitsBox.new, NsBitsBox, Numeric.new, Object.new]
+  $vals += [FM + 1, -FM - 2, IM + 1, -IM - 2, IM * IM, -(IM * IM), 2 ** 100, -(2 ** 100), 2.0 ** 70] if $bigint
+  $counts = [0, 1, -1, 2, 5, 30, 31, 32, 33, 62, 63, 64, 65, 100, -2, -30, -31, -32, -62, -63, -64, -65, -100, -IM,
+             -IM - 1, 2.5, -2.5, 0.0, 1.0e19, Float::NAN, nil, true, "s", :sym, [1], NsBitsBox.new]
+  $counts += [2 ** 100, -(2 ** 100), IM + 1, -IM - 2] if $bigint
+  def try
+    v = yield
+    s = v.inspect
+    s += " h=\#{v.hash}" if v.is_a?(Integer)
+    s
+  rescue => e
+    "\#{e.class}: \#{e.message}"
+  end
+  o = NsBits.new
+  # An Integer receiver reads a non-Integer operand as its raw word (the method does too), which for a heap
+  # object is its address and differs between the two runs; the direct matrix (same objects) covers those pairs.
+  heap = ->(x) { !(x.is_a?(Numeric) || x.nil? || x == true || x == false || x.is_a?(Symbol)) || x.instance_of?(Numeric) }
+  $vals.each { |a| $vals.each { |b| next if a.is_a?(Integer) && heap.(b); puts "xor \#{a.inspect} \#{b.inspect} => \#{try { o.xor(a, b) }}" } }
+  $vals.each { |a| $counts.each { |b| puts "rsh \#{a.inspect} \#{b.inspect} => \#{try { o.rsh(a, b) }}" } }
+  $vals.each { |a| puts "rnd \#{a.inspect} => \#{try { o.rnd(a) }}" }
+  puts 'end'
+  RUBY
+end
+
+# Each helper in `specs` ([helper, op, arity, rights]) called directly against the method it stands for, over every
+# receiver in $vals and every operand in $vals (or $counts for a shift), compiled TU and interpreter in one process:
+# value, Float bits, Integer#hash, exception class and message must agree.
+def closed_scenario(specs, source)
+  table = specs.map do |helper, op, arity, rights|
+    "{ \"#{op}\", #{arity == 1 ? 'nullptr' : helper}, #{arity == 1 ? helper : 'nullptr'}, #{rights == :counts} }"
+  end.join(",\n    ")
+  <<~CPP
+    #include <string>
+    struct ClosedSpec {
+      const char* op;
+      mrb_value (*bin)(mrb_state*, mrb_value, mrb_value);
+      mrb_value (*un)(mrb_state*, mrb_value);
+      bool counts;
+    };
+    static const ClosedSpec closed_specs[] = {
+        #{table}
+    };
+    struct ClosedCall { const ClosedSpec* s; mrb_value a, b; bool method; };
+    static mrb_value closed_body(mrb_state* M, void* ud) {
+      ClosedCall* k = (ClosedCall*)ud;
+      if (k->method) return k->s->un ? (mrb_funcall)(M, k->a, k->s->op, 0) : (mrb_funcall)(M, k->a, k->s->op, 1, k->b);
+      return k->s->un ? k->s->un(M, k->a) : k->s->bin(M, k->a, k->b);
+    }
+    static std::string closed_describe(mrb_state* M, mrb_value v, bool raised) {
+      if (raised) {
+        mrb_value msg = (mrb_funcall)(M, v, "message", 0);
+        return std::string("raised ") + mrb_obj_classname(M, v) + ": " + std::string(RSTRING_PTR(msg), RSTRING_LEN(msg));
+      }
+      mrb_value s = mrb_inspect(M, v);
+      std::string out(RSTRING_PTR(s), RSTRING_LEN(s));
+      if (mrb_integer_p(v) || mrb_bigint_p(v)) {
+        mrb_value h = mrb_inspect(M, (mrb_funcall)(M, v, "hash", 0));
+        out += " h=" + std::string(RSTRING_PTR(h), RSTRING_LEN(h));
+      }
+      return out;
+    }
+    static int scenario(mrb_state* M) {
+      std::fflush(stdout);
+      const char* src = R"BCD(#{source})BCD";
+      mrb_load_string(M, src);
+      if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
+      mrb_value vals = mrb_gv_get(M, mrb_intern_lit(M, "$vals"));
+      mrb_value counts = mrb_gv_get(M, mrb_intern_lit(M, "$counts"));
+      int total = 0, bad = 0;
+      for (const ClosedSpec& s : closed_specs) {
+        mrb_value rights = s.counts ? counts : vals;
+        mrb_int nb = s.un ? 1 : RARRAY_LEN(rights);
+        int cases = 0, wrong = 0;
+        for (mrb_int i = 0; i < RARRAY_LEN(vals); ++i) for (mrb_int j = 0; j < nb; ++j) {
+          mrb_value a = RARRAY_PTR(vals)[i];
+          mrb_value b = s.un ? mrb_nil_value() : RARRAY_PTR(rights)[j];
+          int ai = mrb_gc_arena_save(M);
+          ClosedCall got_call = { &s, a, b, false }, want_call = { &s, a, b, true };
+          mrb_bool e1 = FALSE, e2 = FALSE;
+          std::string g = closed_describe(M, mrb_protect_error(M, closed_body, &got_call, &e1), e1);
+          std::string w = closed_describe(M, mrb_protect_error(M, closed_body, &want_call, &e2), e2);
+          mrb_gc_arena_restore(M, ai);
+          ++cases;
+          if (g != w) {
+            ++wrong;
+            if (wrong <= 4) {
+              mrb_value as = mrb_inspect(M, a), bs = mrb_inspect(M, b);
+              std::printf("  H MISMATCH %s %.*s %.*s helper=%s method=%s\\n", s.op, (int)RSTRING_LEN(as), RSTRING_PTR(as),
+                          (int)RSTRING_LEN(bs), RSTRING_PTR(bs), g.c_str(), w.c_str());
+            }
+          }
+        }
+        std::printf("  H op %s %d cases, %d mismatches\\n", s.op, cases, wrong);
+        total += cases;
+        bad += wrong;
+      }
+      std::printf("  H summary %d cases, %d mismatches\\n", total, bad);
+      return 0;
+    }
+  CPP
+end
+
+# Receivers and operands of the comparison matrix. A class or module is an operand only: the full-core libmruby
+# links mruby-class-ext (Module#<), which the wio gem set the proof is made for does not. Time, Set and Rational
+# are left out for the same reason. Messages carry no address (`%p` of a plain object would).
+def cmp_driver(width)
+  <<~RUBY
+    FM = #{WIDTHS.fetch(width)[:fmax]}
+    IM = $bigint ? FM * 2 + 1 : FM
+    NsPair = Struct.new(:a)
+    $recvs = [0, 1, -1, 2, -2, 7, FM, FM - 1, -FM, -FM - 1, IM, -IM, -IM - 1, 0.0, -0.0, 0.5, -1.5, 3.0, 1.0e19, -1.0e19,
+              Float::NAN, Float::INFINITY, -Float::INFINITY, nil, true, false,
+              "", "a", "b", "ab", "abc", "B", "a\\0b", "\\u00e9", "\\u3042", "a" * 40, :a, :b, :ab, :"", :"a b", :abcdefghijkl, :"\\u00e9",
+              [1], [], {}, {a: 1}, {a: 1, b: 2}, {b: 1}, {a: Float::NAN}, Hash.new(0), 1..2, Object.new, NsCmpBox.new,
+              NsSortKey.new, Numeric.new, NsPair.new(1)]
+    $recvs += [FM + 1, -FM - 2, IM + 1, -IM - 2, IM * 2, IM * IM, -(IM * IM), 2 ** 100, -(2 ** 100), 2.0 ** 70] if $bigint
+    $vals = $recvs + [NsCmpBox, String, Symbol, Hash, Integer, Comparable]
+    # ASCII only, so the run does not depend on the locale of the process reading its output.
+    def lbl(v)
+      s = v.inspect
+      return "\#<\#{v.class}>" if s.include?(':0x')
+      s.each_byte.map { |b| b < 128 ? b.chr : '\\\\x' + b.to_s(16) }.join
+    end
+    def try
+      v = yield
+      s = v.inspect
+      s += " h=\#{v.hash}" if v.is_a?(Integer)
+      s
+    rescue => e
+      "\#{e.class}: \#{e.message}"
+    end
+    o = NsCmpOpen.new
+    %w[lt le gt ge].each do |op|
+      $recvs.each { |a| $vals.each { |b| puts "\#{op} \#{lbl(a)} \#{lbl(b)} => \#{try { o.send(op, a, b) }}" } }
+    end
+    puts 'end'
+  RUBY
+end
+
+# The four helpers called directly (the generated TU is part of main.cpp) against the operator they stand for.
+# A receiver a helper owns (a number, a String, a Symbol, a Numeric) makes no by-name call; a Hash makes one (the
+# method); every other receiver one, the proof's dispatch that raises the NoMethodError.
+CMP_SCENARIO = <<~CPP
   #include <string>
-  static mrb_value div_body(mrb_state* M, void* ud) {
-    mrb_value* ab = (mrb_value*)ud;
-    return bc2cpp_slow_div(M, ab[0], ab[1]);
+  typedef mrb_value (*CmpFn)(mrb_state*, mrb_value, mrb_value);
+  struct CmpCase { const char* name; const char* op; CmpFn fn; };
+  static const CmpCase cmp_cases[] = {
+    { "lt", "<", bc2cpp_slow_lt }, { "le", "<=", bc2cpp_slow_le }, { "gt", ">", bc2cpp_slow_gt }, { "ge", ">=", bc2cpp_slow_ge },
+  };
+  struct CmpCall { const CmpCase* c; mrb_value a, b; bool method; };
+  static mrb_value cmp_body(mrb_state* M, void* ud) {
+    CmpCall* k = (CmpCall*)ud;
+    if (k->method) return (mrb_funcall)(M, k->a, k->c->op, 1, k->b);
+    return k->c->fn(M, k->a, k->b);
   }
-  static mrb_value div_method(mrb_state* M, void* ud) {
-    mrb_value* ab = (mrb_value*)ud;
-    return (mrb_funcall)(M, ab[0], "/", 1, ab[1]);
-  }
-  static std::string div_describe(mrb_state* M, mrb_value v, bool raised) {
+  static std::string cmp_describe(mrb_state* M, mrb_value v, bool raised) {
     if (raised) {
       mrb_value msg = (mrb_funcall)(M, v, "message", 0);
       return std::string("raised ") + mrb_obj_classname(M, v) + ": " + std::string(RSTRING_PTR(msg), RSTRING_LEN(msg));
@@ -365,39 +1038,71 @@ DIV_SCENARIO = <<~CPP
     mrb_value s = mrb_inspect(M, v);
     return std::string(RSTRING_PTR(s), RSTRING_LEN(s));
   }
+  static bool cmp_owned(mrb_state* M, mrb_value a) {
+    return mrb_integer_p(a) || mrb_bigint_p(a) || mrb_float_p(a) || mrb_string_p(a) || mrb_symbol_p(a) ||
+           mrb_obj_is_kind_of(M, a, mrb_class_get(M, "Numeric"));
+  }
   static int scenario(mrb_state* M) {
     std::fflush(stdout);
     const char* src = R"BCD(__SOURCE__)BCD";
     mrb_load_string(M, src);
     if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
-    // The helper called directly against the method it stands for.
+    // Class instances only the matrix has: an anonymous class prints an address, which both sides share here.
+    mrb_load_string(M, "$anon = Class.new; $recvs += [$anon.new, Class.new(String).new]; $vals += [$anon, Class.new(Hash)]");
+    if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
+    mrb_value recvs = mrb_gv_get(M, mrb_intern_lit(M, "$recvs"));
     mrb_value vals = mrb_gv_get(M, mrb_intern_lit(M, "$vals"));
-    int total = 0, bad = 0;
-    for (mrb_int i = 0; i < RARRAY_LEN(vals); ++i) for (mrb_int j = 0; j < RARRAY_LEN(vals); ++j) {
-      mrb_value ab[2] = { RARRAY_PTR(vals)[i], RARRAY_PTR(vals)[j] };
+    int total = 0, bad = 0, wrong_calls = 0, hashes = 0, strings = 0, symbols = 0, errors = 0;
+    for (const CmpCase& c : cmp_cases) for (mrb_int i = 0; i < RARRAY_LEN(recvs); ++i) for (mrb_int j = 0; j < RARRAY_LEN(vals); ++j) {
+      mrb_value a = RARRAY_PTR(recvs)[i], b = RARRAY_PTR(vals)[j];
       int ai = mrb_gc_arena_save(M);
+      CmpCall got_call = { &c, a, b, false }, want_call = { &c, a, b, true };
       mrb_bool e1 = FALSE, e2 = FALSE;
-      std::string g = div_describe(M, mrb_protect_error(M, div_body, ab, &e1), e1);
-      std::string w = div_describe(M, mrb_protect_error(M, div_method, ab, &e2), e2);
+      dispatches = 0;
+      mrb_value got = mrb_protect_error(M, cmp_body, &got_call, &e1);
+      int made = dispatches;
+      std::string g = cmp_describe(M, got, e1);
+      mrb_value want = mrb_protect_error(M, cmp_body, &want_call, &e2);
+      std::string w = cmp_describe(M, want, e2);
       mrb_gc_arena_restore(M, ai);
       ++total;
+      if (e1) ++errors;
+      if (mrb_string_p(a)) ++strings;
+      if (mrb_symbol_p(a)) ++symbols;
+      if (mrb_type(a) == MRB_TT_HASH) ++hashes;
+      int expect = cmp_owned(M, a) ? 0 : 1;
+      if (made != expect) {
+        ++wrong_calls;
+        if (wrong_calls <= 8) std::printf("  H DISPATCH %s %d by-name calls, expected %d: %s\\n", c.name, made, expect, g.c_str());
+      }
       if (g != w) {
         ++bad;
-        if (bad <= 8) std::printf("  H MISMATCH %s vs %s\\n", g.c_str(), w.c_str());
+        if (bad <= 8) {
+          mrb_value as = mrb_inspect(M, a), bs = mrb_inspect(M, b);
+          std::printf("  H MISMATCH %s %.*s %.*s helper=%s method=%s\\n", c.name, (int)RSTRING_LEN(as), RSTRING_PTR(as),
+                      (int)RSTRING_LEN(bs), RSTRING_PTR(bs), g.c_str(), w.c_str());
+        }
       }
     }
-    std::printf("  H summary %d cases, %d mismatches\\n", total, bad);
+    std::printf("  H summary %d cases, %d mismatches, %d wrong dispatch counts (%d errors, %d String, %d Symbol, %d Hash receivers)\\n",
+                total, bad, wrong_calls, errors, strings, symbols, hashes);
     return 0;
   }
 CPP
+
+core_compare_model_checks(check)
 
 unless runtime.mrbc && system(runtime.mrbc, '--version', out: File::NULL, err: File::NULL)
   puts '  SKIP: no host mrbc (set MRBC); the generated-code and behavioural checks need it'
   exit 0
 end
 
-generated_checks(check, runtime)
-closed_div_generated_checks(check, runtime)
+generated_checks(check, runtime) unless ONLY_CMP
+closed_div_generated_checks(check, runtime) unless ONLY_CMP
+closed_arith_generated_checks(check, runtime) unless ONLY_CMP
+closed_bits_generated_checks(check, runtime) unless ONLY_CMP
+closed_cmp_generated_checks(check, runtime) unless ONLY_CMP_RUN
+mirrored_body_checks(check, Bc2cppFixtureRuntime::ROOT)
 
 # [label, build dir, mrbc, extra flags, width, bigint?]
 builds = []
@@ -530,6 +1235,7 @@ def scenario_body(source)
 end
 
 builds.each do |label, build, mrbc, flags, width, bigint|
+  next if ONLY_CMP
   puts "-- fixture on real mruby (#{label}), interpreted and compiled"
   saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
   ENV['MRBC'] = mrbc
@@ -623,18 +1329,151 @@ builds.each do |label, build, mrbc, flags, width, bigint|
   end
 end
 
+# [name, fixture, owners, driver, [[helper, op, arity, rights]...]]: a helper whose else is a proven NoMethodError
+# (ADR 0360 `/`, ADR 0364 `^` `>>` `round`) against the methods it replaces, interpreted and compiled.
+CLOSED_RUNS = [
+  ['`/`', FIXTURE_DIV, %w[NsDiv NsDivBox], :div_driver, [['bc2cpp_slow_div', '/', 2, :vals]]],
+  ['`^` `>>` `round`', FIXTURE_BITS, BITS_OWNERS, :bits_driver,
+   [['bc2cpp_slow_xor', '^', 2, :vals], ['bc2cpp_slow_rshift', '>>', 2, :counts], ['bc2cpp_slow_round', 'round', 1, :vals]]]
+].freeze
+
+CLOSED_RUNS.each do |name, fixture, owners, driver_name, specs|
+  builds.each do |label, build, mrbc, flags, width, bigint|
+    next if ONLY_CMP
+
+    puts "-- closed #{name} helper on real mruby (#{label}), interpreted and compiled"
+    saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
+    ENV['MRBC'] = mrbc
+    ENV['BC2CPP_CXXFLAGS'] = flags
+    begin
+      Dir.mktmpdir do |dir|
+        _code, err = runtime.generate(fixture, dir, closed: true, only_owners: owners)
+        source = "$bigint = #{bigint}\n#{send(driver_name, width)}"
+        built, output = runtime.run(dir, err, owners, closed_scenario(specs, source), build: build, full: true)
+        check.call("the closed #{name} fixture compiles and runs against real mruby", built)
+        puts output.to_s.lines.last(25).join unless built
+        next unless built
+
+        sections = runtime.sections(output)
+        interpreted = sections['interpreted'].to_a
+        compiled = sections['compiled'].to_a
+        strip = ->(lines) { lines.reject { |l| l.start_with?('  ') } }
+        check.call('both runs finish', strip.call(interpreted).last == 'end' && strip.call(compiled).last == 'end')
+        check.call("every #{name} answer is the interpreter's (#{strip.call(interpreted).size} answers)",
+                   strip.call(interpreted) == strip.call(compiled) && strip.call(interpreted).size > 500)
+        strip.call(interpreted).zip(strip.call(compiled)).reject { |a, b| a == b }.first(8).each do |a, b|
+          puts "    interpreted: #{a}\n    compiled:    #{b}"
+        end
+        check.call('the matrix has NoMethodError and TypeError rows',
+                   interpreted.count { |l| l.include?('NoMethodError') } > 50 && interpreted.count { |l| l.include?('TypeError') } > 20)
+        [interpreted, compiled].each do |lines|
+          summary = lines.grep(/\A  H summary /).first.to_s
+          lines.grep(/\A  H MISMATCH /).first(5).each { |l| puts "    #{l.strip}" }
+          lines.grep(/\A  H op /).each { |l| puts "    #{l.strip}" }
+          check.call("each helper agrees with its method called directly (#{summary.strip})",
+                     summary.match?(/ 0 mismatches/) && summary[/ (\d+) cases/, 1].to_i > 500)
+        end
+      end
+    ensure
+      ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved
+    end
+  end
+end
+
+# The second pass defines MRB_USE_COMPLEX and MRB_USE_RATIONAL, as a libmruby that links those gems does: the helpers
+# then keep their by-name copy, which must still build and answer as the interpreter does.
+builds.product([false, true]).each do |(label, build, mrbc, flags, width, bigint), legacy|
+  next if ONLY_CMP
+  puts "-- closed `+` and `*` helpers on real mruby (#{label}#{legacy ? ', Complex and Rational macros set' : ''}), " \
+       'interpreted and compiled'
+  saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
+  ENV['MRBC'] = mrbc
+  ENV['BC2CPP_CXXFLAGS'] = legacy ? "#{flags} -DMRB_USE_COMPLEX -DMRB_USE_RATIONAL" : flags
+  begin
+    Dir.mktmpdir do |dir|
+      owners = %w[NsArith NsArithBox NsArithConv NsArithStr NsArithAry]
+      _code, err = runtime.generate(FIXTURE_ARITH, dir, closed: true, only_owners: owners)
+      source = "$bigint = #{bigint}\n#{arith_driver(width)}"
+      # Dispatch counts and arena depths (two-space lines, which the comparison skips), then a GC-pressure loop.
+      source += <<~RUBY
+        o = NsArith.new
+        pool = $vals.reject { |v| v.is_a?(Array) && v.size > 20 }
+        pool.each do |a|
+          pool.each do |b|
+            [0, 1].each do |k|
+              next if k == 1 && skip_repeat(a, b)
+              own = (a.is_a?(Integer) || a.is_a?(Float) || a.is_a?(String) || a.is_a?(Array)) ? 1 : 0
+              puts "  D \#{k} \#{own} \#{desc(a)} \#{desc(b)} \#{(o.dispatched(a, b, k) rescue -1)}"
+            end
+          end
+        end
+        [["ab", "cd"], ["ab", 3], [[1, 2], [3]], [[1], 3], [[1], ","], [1.5, 2], [1, "x"]].each do |a, b|
+          puts "  A \#{desc(a)} \#{desc(b)} \#{(o.arena(a, b) rescue -1)}"
+        end
+        ($bigint ? [[2 ** 70, 1], [2 ** 70, 2 ** 70], [1.5, 2 ** 70]] : []).each do |a, b|
+          puts "  A \#{desc(a)} \#{desc(b)} \#{(o.arena(a, b) rescue -1)}"
+        end
+        puts "churn => \#{o.churn(2000).inspect}"
+        puts 'end churn'
+      RUBY
+      scenario = ARITH_SCENARIO.sub('__SOURCE__') { source }
+      built, output = runtime.run(dir, err, owners, scenario, build: build, full: true)
+      check.call('the closed `+` / `*` fixture compiles and runs against real mruby', built)
+      puts output.to_s.lines.last(25).join unless built
+      next unless built
+
+      sections = runtime.sections(output)
+      interpreted = sections['interpreted'].to_a
+      compiled = sections['compiled'].to_a
+      strip = ->(lines) { lines.reject { |l| l.start_with?('  ') } }
+      check.call('both runs finish', strip.call(interpreted).last == 'end churn' && strip.call(compiled).last == 'end churn')
+      check.call("every `+` / `-` / `*` answer is the interpreter's: value, class, frozen-ness, error class and message " \
+                 "(#{strip.call(interpreted).size} answers)",
+                 strip.call(interpreted) == strip.call(compiled) && strip.call(interpreted).size > 5000)
+      strip.call(interpreted).zip(strip.call(compiled)).reject { |a, b| a == b }.first(8).each do |a, b|
+        puts "    interpreted: #{a}\n    compiled:    #{b}"
+      end
+      check.call('the matrix has NoMethodError, TypeError, ArgumentError and RangeError rows',
+                 %w[NoMethodError TypeError ArgumentError RangeError].all? { |e| interpreted.count { |l| l.include?(e) } > 20 })
+      check.call('the matrix reaches the String#*, Array#* and Array#+ size errors and the negative count',
+                 (!bigint || interpreted.any? { |l| l.include?('argument too big') }) && interpreted.any? { |l| l.include?('array size too big') } &&
+                 interpreted.any? { |l| l.include?('negative argument') })
+      [interpreted, compiled].each do |lines|
+        summary = lines.grep(/\A  H summary /).first.to_s
+        lines.grep(/\A  H MISMATCH /).first(5).each { |l| puts "    #{l.strip}" }
+        check.call("each helper agrees with its method called directly (#{summary.strip})",
+                   summary.match?(/ 0 mismatches/) && summary[/ (\d+) cases/, 1].to_i > 5000)
+      end
+      unless legacy
+        owned_lines = compiled.grep(/\A  D \d 1 /)
+        bad = owned_lines.reject { |l| %w[0 -1].include?(l.split.last) }
+        check.call("a pair the helpers own makes no by-name call (#{owned_lines.size} pairs)",
+                   owned_lines.size > 1000 && bad.empty? && owned_lines.count { |l| l.end_with?(' 0') } > 1000)
+        bad.first(5).each { |l| puts "    dispatched: #{l.strip}" }
+        arena = compiled.grep(/\A  A /).map { |l| l.split.last.to_i }
+        check.call("a String, Array or bigint result leaves at most one arena entry (#{arena.max})", !arena.empty? && arena.max <= 1)
+      end
+      check.call('a loop of String and Array arithmetic survives GC and ends where the interpreter does',
+                 strip.call(interpreted).any? { |l| l.start_with?('churn =>') } &&
+                 strip.call(interpreted).grep(/\Achurn =>/) == strip.call(compiled).grep(/\Achurn =>/))
+    end
+  ensure
+    ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved
+  end
+end
+
 builds.each do |label, build, mrbc, flags, width, bigint|
-  puts "-- closed `/` helper on real mruby (#{label}), interpreted and compiled"
+  puts "-- closed comparison helpers on real mruby (#{label}), interpreted and compiled"
   saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
   ENV['MRBC'] = mrbc
   ENV['BC2CPP_CXXFLAGS'] = flags
   begin
     Dir.mktmpdir do |dir|
-      _code, err = runtime.generate(FIXTURE_DIV, dir, closed: true, only_owners: %w[NsDiv NsDivBox])
-      source = "$bigint = #{bigint}\n#{div_driver(width)}"
-      scenario = DIV_SCENARIO.sub('__SOURCE__') { source }
-      built, output = runtime.run(dir, err, %w[NsDiv NsDivBox], scenario, build: build, full: true)
-      check.call('the closed `/` fixture compiles and runs against real mruby', built)
+      _code, err = runtime.generate(FIXTURE_CMP, dir, closed: true, only_owners: CMP_OWNERS)
+      source = "$bigint = #{bigint}\n#{cmp_driver(width)}"
+      scenario = CMP_SCENARIO.sub('__SOURCE__') { source }
+      built, output = runtime.run(dir, err, CMP_OWNERS, scenario, build: build, full: true)
+      check.call('the closed comparison fixture compiles and runs against real mruby', built)
       puts output.to_s.lines.last(25).join unless built
       next unless built
 
@@ -643,18 +1482,24 @@ builds.each do |label, build, mrbc, flags, width, bigint|
       compiled = sections['compiled'].to_a
       strip = ->(lines) { lines.reject { |l| l.start_with?('  ') } }
       check.call('both runs finish', strip.call(interpreted).last == 'end' && strip.call(compiled).last == 'end')
-      check.call("every `/` answer is the interpreter's (#{strip.call(interpreted).size} answers)",
-                 strip.call(interpreted) == strip.call(compiled) && strip.call(interpreted).size > 500)
-      strip.call(interpreted).zip(strip.call(compiled)).reject { |a, b| a == b }.first(8).each do |a, b|
+      rows = strip.call(interpreted)
+      check.call("every comparison answer is the interpreter's (#{rows.size} answers)",
+                 rows == strip.call(compiled) && rows.size > 10_000)
+      rows.zip(strip.call(compiled)).reject { |a, b| a == b }.first(8).each do |a, b|
         puts "    interpreted: #{a}\n    compiled:    #{b}"
       end
-      check.call('the matrix has NoMethodError and TypeError rows',
-                 interpreted.count { |l| l.include?('NoMethodError') } > 50 && interpreted.count { |l| l.include?('TypeError') } > 20)
+      check.call('the matrix has NoMethodError, ArgumentError and TypeError rows, and String, Symbol and Hash receivers',
+                 %w[NoMethodError ArgumentError TypeError].all? { |e| rows.count { |l| l.include?(e) } > 50 } &&
+                 rows.any? { |l| l.start_with?('lt "a" "b" => true') } && rows.any? { |l| l.start_with?('lt :a :b => true') } &&
+                 rows.any? { |l| l.start_with?('lt {a: 1} {a: 1, b: 2} => true') })
+      check.call("String and Symbol receivers raise Comparable's message",
+                 rows.any? { |l| l.start_with?('lt "a" 1 =>') && l.end_with?('ArgumentError: comparison of String with Integer failed') } &&
+                 rows.any? { |l| l.start_with?('ge :a nil =>') && l.end_with?('ArgumentError: comparison of Symbol with NilClass failed') })
       [interpreted, compiled].each do |lines|
         summary = lines.grep(/\A  H summary /).first.to_s
-        lines.grep(/\A  H MISMATCH /).first(5).each { |l| puts "    #{l.strip}" }
-        check.call("the helper agrees with Integer#/ and Float#/ called directly (#{summary.strip})",
-                   summary.match?(/ 0 mismatches/) && summary[/ (\d+) cases/, 1].to_i > 500)
+        lines.grep(/\A  H (?:MISMATCH|DISPATCH) /).first(5).each { |l| puts "    #{l.strip}" }
+        check.call("each helper agrees with its operator called directly, with the by-name calls the proof allows (#{summary.strip})",
+                   summary.match?(/ 0 mismatches, 0 wrong dispatch counts/) && summary[/ (\d+) cases/, 1].to_i > 10_000)
       end
     end
   ensure
