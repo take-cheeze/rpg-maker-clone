@@ -19,13 +19,16 @@
 #    with BC2CPP_MRUBY_NOBIGINT, on a build without mruby-bigint (where the bigint arms vanish).
 #
 # Usage: [MRBC=path/to/mrbc BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_FULL32=dir BC2CPP_MRBC32=mrbc32
-#         BC2CPP_MRUBY_NOBIGINT=dir] ruby scripts/bc2cpp_numeric_slow_check.rb
+#         BC2CPP_MRUBY_NOBIGINT=dir BC2CPP_NUMERIC_SLOW_ONLY=cmp] ruby scripts/bc2cpp_numeric_slow_check.rb
 
 require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
 
 runtime = Bc2cppFixtureRuntime
 failures = []
+# BC2CPP_NUMERIC_SLOW_ONLY=cmp runs only the comparison-helper sections (ADR 0362), cmp-run only their runs on libmruby.
+ONLY_CMP = %w[cmp cmp-run].include?(ENV['BC2CPP_NUMERIC_SLOW_ONLY'])
+ONLY_CMP_RUN = ENV['BC2CPP_NUMERIC_SLOW_ONLY'] == 'cmp-run'
 check = lambda do |what, condition|
   puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
   failures << what unless condition
@@ -162,6 +165,50 @@ FIXTURE_DIV = <<~RUBY
     def div(a, b) = a / b
   end
 RUBY
+
+# NUMERIC_SLOW_CLOSED_CMP (ADR 0362): the numeric natives, Comparable's body (String, Symbol) and Hash's Ruby are
+# the only answers to `<` `<=` `>` `>=`, so the helper mirrors the first two, keeps the method for a Hash and
+# proves every other receiver a NoMethodError. NsSortKey has `<=>` without Comparable, which String and Symbol
+# never reach. Neither class answers a comparison operator (NsCmp in FIXTURE includes Comparable).
+FIXTURE_CMP = <<~RUBY
+  class NsCmpBox
+    def inspect = "cmpbox"
+  end
+  class NsSortKey
+    def <=>(o) = 0
+  end
+  class NsCmpOpen
+    def lt(a, b) = a < b
+    def le(a, b) = a <= b
+    def gt(a, b) = a > b
+    def ge(a, b) = a >= b
+  end
+RUBY
+CMP_OWNERS = %w[NsCmpOpen NsCmpBox NsSortKey].freeze
+CMP_NAMES = { 'lt' => '<', 'le' => '<=', 'gt' => '>', 'ge' => '>=' }.freeze
+
+# [what, source appended to FIXTURE_CMP, owners it adds, the helpers that stay closed]: a world that adds another
+# answer to an operator, or another definition of the `<=>` the String/Symbol arm relies on, keeps the by-name helper
+# of that operator (a `<` answer leaves `<=` `>` `>=` alone; a `<=>` one takes all four). NsSortKey in FIXTURE_CMP is
+# the unrelated `<=>` definer that leaves them closed.
+ALL = %w[lt le gt ge].freeze
+REST = %w[le gt ge].freeze
+NONE = [].freeze
+CMP_WORLDS = [
+  ['a class that includes Comparable', "class NsCmpUser\n  include Comparable\n  def <=>(o) = 0\nend\n", %w[NsCmpUser], NONE],
+  ['a class that defines `<`', "class NsLess\n  def <(o) = true\nend\n", %w[NsLess], REST],
+  ['a class method `<`', "class NsMetaLess\n  def self.<(o) = true\nend\n", %w[NsMetaLess], REST],
+  ['a Hash subclass', "class NsHash < Hash\nend\n", %w[NsHash], NONE],
+  ['a Numeric subclass', "class NsNum < Numeric\nend\n", %w[NsNum], NONE],
+  ['a String subclass', "class NsStr < String\nend\n", %w[NsStr], NONE],
+  ['Integer#< reopened', "class Integer\n  def <(o) = true\nend\n", %w[], REST],
+  ['Comparable#< reopened', "module Comparable\n  def <(o) = true\nend\n", %w[], REST],
+  ['String#<=> reopened', "class String\n  def <=>(o) = 0\nend\n", %w[], NONE],
+  ['Symbol#<=> reopened', "class Symbol\n  def <=>(o) = 0\nend\n", %w[], NONE],
+  ['Numeric#<=> reopened', "class Numeric\n  def <=>(o) = 0\nend\n", %w[], NONE],
+  ['Object#<=> reopened', "class Object\n  def <=>(o) = 0\nend\n", %w[], NONE],
+  ['a `<=>` on a class outside the lookup of String, Symbol and Numeric (NsSortKey)', "", %w[], ALL]
+].freeze
 
 # Redefined operators: the arm must not be taken, the program's own method must still run.
 REDEFINED = <<~RUBY
@@ -327,6 +374,126 @@ def closed_div_generated_checks(check, runtime)
   end
 end
 
+# The helper of `key` as generated: [the #if-wrapped by-name form, the closed form] or nil when the helper has one body.
+def cmp_helper_forms(code, key)
+  wrapped = code[/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(?:static mrb_value bc2cpp_slow_#{key}\(.*?^\}\n\n)#else\n(?:static mrb_value bc2cpp_slow_#{key}\(.*?^\}\n\n)#endif\n/m]
+  return nil unless wrapped
+
+  by_name, closed = wrapped.split("#else\n", 2)
+  [by_name, closed.to_s.sub(/#endif\n\z/, '')]
+end
+
+# The comparison helpers of a world where only the numeric natives, Comparable and Hash answer an operator.
+def closed_cmp_generated_checks(check, runtime)
+  puts '-- generated code (closed world, comparison operators answered by numbers, Comparable and Hash)'
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_CMP, dir, closed: true, only_owners: CMP_OWNERS)
+    CMP_NAMES.each do |name, op|
+      call = code[/^\/\/ NsCmpOpen##{name} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
+      check.call("NsCmpOpen##{name} calls bc2cpp_slow_#{name} and has no by-name call of its own",
+                 call.include?("bc2cpp_slow_#{name}(M, ") && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
+      by_name, closed = cmp_helper_forms(code, name)
+      check.call("bc2cpp_slow_#{name}: the closed form is only a Hash call by name; every other receiver is a proven NoMethodError",
+                 closed && closed.scan('bc2cpp_send(').size == 1 && closed.include?('MRB_TT_HASH') &&
+                 closed.include?('bc2cpp_nomethod(') && closed.include?('mrb_cmp(') &&
+                 closed.include?('comparison of %T with %T failed') && !closed.include?('mrb_funcall('))
+      check.call("bc2cpp_slow_#{name} keeps the by-name helper for a build with Complex or Rational operands",
+                 by_name && by_name.include?('bc2cpp_send(') && by_name.include?('comparison of %t with %t failed') &&
+                 !by_name.include?('MRB_TT_HASH'))
+    end
+  end
+  CMP_WORLDS.each do |what, extra, owners, closed|
+    Dir.mktmpdir do |dir|
+      code, = runtime.generate("#{FIXTURE_CMP}#{extra}", dir, closed: true, only_owners: CMP_OWNERS + owners)
+      forms = CMP_NAMES.keys.select { |name| cmp_helper_forms(code, name) }
+      check.call("#{closed == ALL ? 'POS' : 'NEG'}: #{what}: the closed form stays on [#{closed.join(' ')}]", forms == closed)
+    end
+  end
+  Dir.mktmpdir do |dir|
+    saved = ENV['BC2CPP_NUMERIC_SLOW_CLOSED']
+    ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = '0'
+    begin
+      code, = runtime.generate(FIXTURE_CMP, dir, closed: true, only_owners: CMP_OWNERS)
+    ensure
+      ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = saved
+    end
+    check.call('BC2CPP_NUMERIC_SLOW_CLOSED=0 keeps the by-name helpers',
+               CMP_NAMES.keys.none? { |name| cmp_helper_forms(code, name) } && code.include?('bc2cpp_slow_lt('))
+  end
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_CMP, dir, closed: false, only_owners: CMP_OWNERS)
+    check.call('NEG: an open world keeps the by-name helpers', CMP_NAMES.keys.none? { |name| cmp_helper_forms(code, name) })
+  end
+end
+
+# CoreCompare against the real core and against trees that stop matching its model (host only).
+def core_compare_model_checks(check)
+  require 'fileutils'
+  require_relative '../tools/bc2cpp/core_compare'
+  puts '-- Comparable model (host)'
+  root = File.expand_path('..', __dir__)
+  compar_body = lambda do |op|
+    <<~RUBY.gsub(/^/, '  ')
+      def #{op} other
+        cmp = self <=> other
+        if cmp.nil?
+          raise ArgumentError, "comparison of \#{self.class} with \#{other.class} failed"
+        end
+        cmp #{op} 0
+      end
+    RUBY
+  end
+  compar = lambda do |ops = CoreCompare::OPS, mutate: nil|
+    text = "module Comparable\n#{ops.map { |op| compar_body.call(op) }.join("\n")}end\n"
+    mutate ? text.sub(*mutate) : text
+  end
+  hash = "class Hash\n#{CoreCompare::OPS.map { |op| "  def #{op}(hash)\n    size #{op} hash.size\n  end\n" }.join}end\n"
+  natives = CoreCompare::OPS.to_h { |op| [op, ['/x/3rd/mruby/src/numeric.c']] }
+  Dir.mktmpdir do |dir|
+    write = lambda do |rel, text|
+      File.join(dir, rel).tap { |path| FileUtils.mkdir_p(File.dirname(path)) && File.write(path, text) }
+    end
+    tree = lambda do |compar_text: compar.call, hash_text: hash, extra: nil|
+      paths = [write.call('3rd/mruby/mrblib/compar.rb', compar_text),
+               write.call('3rd/mruby/mrbgems/mruby-hash-ext/mrblib/hash.rb', hash_text)]
+      paths << write.call('3rd/mruby/mrbgems/mruby-other/mrblib/other.rb', extra) if extra
+      paths
+    end
+    all = CoreCompare::OPS.to_set
+    check.call('a core tree that matches the model verifies every operator', CoreCompare.verified(tree.call, natives) == all)
+    # `String#sub` changes the first occurrence, which is the `<` body.
+    check.call('a changed message turns the operator off (the interpolation is part of the body)',
+               CoreCompare.verified(tree.call(compar_text: compar.call(mutate: ['failed', 'failed.'])), natives) == Set.new(%w[<= > >=]))
+    check.call('a changed class in the message turns the operator off',
+               CoreCompare.verified(tree.call(compar_text: compar.call(mutate: ['#{self.class}', '#{self}'])), natives) == Set.new(%w[<= > >=]))
+    check.call('a changed test turns the operator off',
+               CoreCompare.verified(tree.call(compar_text: compar.call(mutate: ['cmp < 0', 'cmp <= 0'])), natives) == Set.new(%w[<= > >=]))
+    check.call('a second Ruby definer turns the operator off',
+               !CoreCompare.verified(tree.call(extra: "class Time\n  def <(o) = true\nend\n"), natives).include?('<') &&
+                 CoreCompare.verified(tree.call(extra: "class Time\n  def <(o) = true\nend\n"), natives).include?('<='))
+    check.call('`<<` and `<=>` are not definers of `<` or `<=`',
+               CoreCompare.verified(tree.call(extra: "class Proc\n  def <<(o) = o\nend\nclass Rational\n  def <=>(o) = 0\nend\n"), natives) == all)
+    check.call('an alias of the name turns it off',
+               !CoreCompare.verified(tree.call(extra: "class Array\n  alias < first\nend\n"), natives).include?('<'))
+    check.call('the Hash definer is part of the model (a missing one turns the operator off)',
+               CoreCompare.verified(tree.call(hash_text: "class Hash\nend\n"), natives).empty?)
+    check.call('an unexpected native registration turns it off',
+               !CoreCompare.verified(tree.call, natives.merge('<' => ['/x/mruby-rgss/src/lib.cxx'])).include?('<') &&
+                 CoreCompare.verified(tree.call, natives.merge('<' => ['/x/mruby-rgss/src/lib.cxx'])).include?('>'))
+    check.call('no sources prove nothing', CoreCompare.verified(nil, natives).empty? && CoreCompare.verified(tree.call, nil).empty?)
+  end
+  real = File.join(root, '3rd/mruby/mrblib/compar.rb')
+  if File.exist?(real)
+    require_relative '../tools/bc2cpp/compiled_gems'
+    require_relative '../tools/bc2cpp/bc2cpp'
+    native = core_native_srcs("#{root}/3rd/mruby") + Dir["#{root}/mruby-rgss/src/*.cxx"] + external_gem_native_srcs(root)
+    check.call('the real 3rd/mruby still matches the model (review CoreCompare when this fails)',
+               CoreCompare.verified(foreign_mrblib_srcs(root), extract_native_method_sources(native)) == CoreCompare::OPS.to_set)
+  else
+    puts '  SKIP: no 3rd/mruby checkout'
+  end
+end
+
 def div_driver(width)
   <<~RUBY
   FM = #{WIDTHS.fetch(width)[:fmax]}
@@ -391,13 +558,129 @@ DIV_SCENARIO = <<~CPP
   }
 CPP
 
+# Receivers and operands of the comparison matrix. A class or module is an operand only: the full-core libmruby
+# links mruby-class-ext (Module#<), which the wio gem set the proof is made for does not. Time, Set and Rational
+# are left out for the same reason. Messages carry no address (`%p` of a plain object would).
+def cmp_driver(width)
+  <<~RUBY
+    FM = #{WIDTHS.fetch(width)[:fmax]}
+    IM = $bigint ? FM * 2 + 1 : FM
+    NsPair = Struct.new(:a)
+    $recvs = [0, 1, -1, 2, -2, 7, FM, FM - 1, -FM, -FM - 1, IM, -IM, -IM - 1, 0.0, -0.0, 0.5, -1.5, 3.0, 1.0e19, -1.0e19,
+              Float::NAN, Float::INFINITY, -Float::INFINITY, nil, true, false,
+              "", "a", "b", "ab", "abc", "B", "a\\0b", "\\u00e9", "\\u3042", "a" * 40, :a, :b, :ab, :"", :"a b", :abcdefghijkl, :"\\u00e9",
+              [1], [], {}, {a: 1}, {a: 1, b: 2}, {b: 1}, {a: Float::NAN}, Hash.new(0), 1..2, Object.new, NsCmpBox.new,
+              NsSortKey.new, Numeric.new, NsPair.new(1)]
+    $recvs += [FM + 1, -FM - 2, IM + 1, -IM - 2, IM * 2, IM * IM, -(IM * IM), 2 ** 100, -(2 ** 100), 2.0 ** 70] if $bigint
+    $vals = $recvs + [NsCmpBox, String, Symbol, Hash, Integer, Comparable]
+    # ASCII only, so the run does not depend on the locale of the process reading its output.
+    def lbl(v)
+      s = v.inspect
+      return "\#<\#{v.class}>" if s.include?(':0x')
+      s.each_byte.map { |b| b < 128 ? b.chr : '\\\\x' + b.to_s(16) }.join
+    end
+    def try
+      v = yield
+      s = v.inspect
+      s += " h=\#{v.hash}" if v.is_a?(Integer)
+      s
+    rescue => e
+      "\#{e.class}: \#{e.message}"
+    end
+    o = NsCmpOpen.new
+    %w[lt le gt ge].each do |op|
+      $recvs.each { |a| $vals.each { |b| puts "\#{op} \#{lbl(a)} \#{lbl(b)} => \#{try { o.send(op, a, b) }}" } }
+    end
+    puts 'end'
+  RUBY
+end
+
+# The four helpers called directly (the generated TU is part of main.cpp) against the operator they stand for.
+# A receiver a helper owns (a number, a String, a Symbol, a Numeric) makes no by-name call; a Hash makes one (the
+# method); every other receiver one, the proof's dispatch that raises the NoMethodError.
+CMP_SCENARIO = <<~CPP
+  #include <string>
+  typedef mrb_value (*CmpFn)(mrb_state*, mrb_value, mrb_value);
+  struct CmpCase { const char* name; const char* op; CmpFn fn; };
+  static const CmpCase cmp_cases[] = {
+    { "lt", "<", bc2cpp_slow_lt }, { "le", "<=", bc2cpp_slow_le }, { "gt", ">", bc2cpp_slow_gt }, { "ge", ">=", bc2cpp_slow_ge },
+  };
+  struct CmpCall { const CmpCase* c; mrb_value a, b; bool method; };
+  static mrb_value cmp_body(mrb_state* M, void* ud) {
+    CmpCall* k = (CmpCall*)ud;
+    if (k->method) return (mrb_funcall)(M, k->a, k->c->op, 1, k->b);
+    return k->c->fn(M, k->a, k->b);
+  }
+  static std::string cmp_describe(mrb_state* M, mrb_value v, bool raised) {
+    if (raised) {
+      mrb_value msg = (mrb_funcall)(M, v, "message", 0);
+      return std::string("raised ") + mrb_obj_classname(M, v) + ": " + std::string(RSTRING_PTR(msg), RSTRING_LEN(msg));
+    }
+    mrb_value s = mrb_inspect(M, v);
+    return std::string(RSTRING_PTR(s), RSTRING_LEN(s));
+  }
+  static bool cmp_owned(mrb_state* M, mrb_value a) {
+    return mrb_integer_p(a) || mrb_bigint_p(a) || mrb_float_p(a) || mrb_string_p(a) || mrb_symbol_p(a) ||
+           mrb_obj_is_kind_of(M, a, mrb_class_get(M, "Numeric"));
+  }
+  static int scenario(mrb_state* M) {
+    std::fflush(stdout);
+    const char* src = R"BCD(__SOURCE__)BCD";
+    mrb_load_string(M, src);
+    if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
+    // Class instances only the matrix has: an anonymous class prints an address, which both sides share here.
+    mrb_load_string(M, "$anon = Class.new; $recvs += [$anon.new, Class.new(String).new]; $vals += [$anon, Class.new(Hash)]");
+    if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
+    mrb_value recvs = mrb_gv_get(M, mrb_intern_lit(M, "$recvs"));
+    mrb_value vals = mrb_gv_get(M, mrb_intern_lit(M, "$vals"));
+    int total = 0, bad = 0, wrong_calls = 0, hashes = 0, strings = 0, symbols = 0, errors = 0;
+    for (const CmpCase& c : cmp_cases) for (mrb_int i = 0; i < RARRAY_LEN(recvs); ++i) for (mrb_int j = 0; j < RARRAY_LEN(vals); ++j) {
+      mrb_value a = RARRAY_PTR(recvs)[i], b = RARRAY_PTR(vals)[j];
+      int ai = mrb_gc_arena_save(M);
+      CmpCall got_call = { &c, a, b, false }, want_call = { &c, a, b, true };
+      mrb_bool e1 = FALSE, e2 = FALSE;
+      dispatches = 0;
+      mrb_value got = mrb_protect_error(M, cmp_body, &got_call, &e1);
+      int made = dispatches;
+      std::string g = cmp_describe(M, got, e1);
+      mrb_value want = mrb_protect_error(M, cmp_body, &want_call, &e2);
+      std::string w = cmp_describe(M, want, e2);
+      mrb_gc_arena_restore(M, ai);
+      ++total;
+      if (e1) ++errors;
+      if (mrb_string_p(a)) ++strings;
+      if (mrb_symbol_p(a)) ++symbols;
+      if (mrb_type(a) == MRB_TT_HASH) ++hashes;
+      int expect = cmp_owned(M, a) ? 0 : 1;
+      if (made != expect) {
+        ++wrong_calls;
+        if (wrong_calls <= 8) std::printf("  H DISPATCH %s %d by-name calls, expected %d: %s\\n", c.name, made, expect, g.c_str());
+      }
+      if (g != w) {
+        ++bad;
+        if (bad <= 8) {
+          mrb_value as = mrb_inspect(M, a), bs = mrb_inspect(M, b);
+          std::printf("  H MISMATCH %s %.*s %.*s helper=%s method=%s\\n", c.name, (int)RSTRING_LEN(as), RSTRING_PTR(as),
+                      (int)RSTRING_LEN(bs), RSTRING_PTR(bs), g.c_str(), w.c_str());
+        }
+      }
+    }
+    std::printf("  H summary %d cases, %d mismatches, %d wrong dispatch counts (%d errors, %d String, %d Symbol, %d Hash receivers)\\n",
+                total, bad, wrong_calls, errors, strings, symbols, hashes);
+    return 0;
+  }
+CPP
+
+core_compare_model_checks(check)
+
 unless runtime.mrbc && system(runtime.mrbc, '--version', out: File::NULL, err: File::NULL)
   puts '  SKIP: no host mrbc (set MRBC); the generated-code and behavioural checks need it'
   exit 0
 end
 
-generated_checks(check, runtime)
-closed_div_generated_checks(check, runtime)
+generated_checks(check, runtime) unless ONLY_CMP
+closed_div_generated_checks(check, runtime) unless ONLY_CMP
+closed_cmp_generated_checks(check, runtime) unless ONLY_CMP_RUN
 
 # [label, build dir, mrbc, extra flags, width, bigint?]
 builds = []
@@ -530,6 +813,7 @@ def scenario_body(source)
 end
 
 builds.each do |label, build, mrbc, flags, width, bigint|
+  next if ONLY_CMP
   puts "-- fixture on real mruby (#{label}), interpreted and compiled"
   saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
   ENV['MRBC'] = mrbc
@@ -624,6 +908,7 @@ builds.each do |label, build, mrbc, flags, width, bigint|
 end
 
 builds.each do |label, build, mrbc, flags, width, bigint|
+  next if ONLY_CMP
   puts "-- closed `/` helper on real mruby (#{label}), interpreted and compiled"
   saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
   ENV['MRBC'] = mrbc
@@ -655,6 +940,51 @@ builds.each do |label, build, mrbc, flags, width, bigint|
         lines.grep(/\A  H MISMATCH /).first(5).each { |l| puts "    #{l.strip}" }
         check.call("the helper agrees with Integer#/ and Float#/ called directly (#{summary.strip})",
                    summary.match?(/ 0 mismatches/) && summary[/ (\d+) cases/, 1].to_i > 500)
+      end
+    end
+  ensure
+    ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved
+  end
+end
+
+builds.each do |label, build, mrbc, flags, width, bigint|
+  puts "-- closed comparison helpers on real mruby (#{label}), interpreted and compiled"
+  saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
+  ENV['MRBC'] = mrbc
+  ENV['BC2CPP_CXXFLAGS'] = flags
+  begin
+    Dir.mktmpdir do |dir|
+      _code, err = runtime.generate(FIXTURE_CMP, dir, closed: true, only_owners: CMP_OWNERS)
+      source = "$bigint = #{bigint}\n#{cmp_driver(width)}"
+      scenario = CMP_SCENARIO.sub('__SOURCE__') { source }
+      built, output = runtime.run(dir, err, CMP_OWNERS, scenario, build: build, full: true)
+      check.call('the closed comparison fixture compiles and runs against real mruby', built)
+      puts output.to_s.lines.last(25).join unless built
+      next unless built
+
+      sections = runtime.sections(output)
+      interpreted = sections['interpreted'].to_a
+      compiled = sections['compiled'].to_a
+      strip = ->(lines) { lines.reject { |l| l.start_with?('  ') } }
+      check.call('both runs finish', strip.call(interpreted).last == 'end' && strip.call(compiled).last == 'end')
+      rows = strip.call(interpreted)
+      check.call("every comparison answer is the interpreter's (#{rows.size} answers)",
+                 rows == strip.call(compiled) && rows.size > 10_000)
+      rows.zip(strip.call(compiled)).reject { |a, b| a == b }.first(8).each do |a, b|
+        puts "    interpreted: #{a}\n    compiled:    #{b}"
+      end
+      check.call('the matrix has NoMethodError, ArgumentError and TypeError rows, and String, Symbol and Hash receivers',
+                 %w[NoMethodError ArgumentError TypeError].all? { |e| rows.count { |l| l.include?(e) } > 50 } &&
+                 rows.any? { |l| l.start_with?('lt "a" "b" => true') } && rows.any? { |l| l.start_with?('lt :a :b => true') } &&
+                 rows.any? { |l| l.start_with?('lt {a: 1} {a: 1, b: 2} => true') })
+      check.call("String and Symbol receivers raise Comparable's message",
+                 rows.any? { |l| l.start_with?('lt "a" 1 =>') && l.end_with?('ArgumentError: comparison of String with Integer failed') } &&
+                 rows.any? { |l| l.start_with?('ge :a nil =>') && l.end_with?('ArgumentError: comparison of Symbol with NilClass failed') })
+      [interpreted, compiled].each do |lines|
+        summary = lines.grep(/\A  H summary /).first.to_s
+        lines.grep(/\A  H (?:MISMATCH|DISPATCH) /).first(5).each { |l| puts "    #{l.strip}" }
+        check.call("each helper agrees with its operator called directly, with the by-name calls the proof allows (#{summary.strip})",
+                   summary.match?(/ 0 mismatches, 0 wrong dispatch counts/) && summary[/ (\d+) cases/, 1].to_i > 10_000)
       end
     end
   ensure

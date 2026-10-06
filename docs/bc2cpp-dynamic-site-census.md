@@ -1059,3 +1059,22 @@ Measured on the wio closed world (shipped pass) at master `0a9adfc`, helper emis
 classes of every other helper name: `>>`, `round` and `^` need operand-coercion or object.c bodies, `+ - *` need
 `Array`/`String` (and, in this scan, `Time`) bodies that are static in mruby, `< <= > >=` need the Comparable
 includers, `[]`/`[]=` have thirteen native classes besides the eight registry ones.
+
+## Follow-up: closed comparison helpers (ADR 0362)
+
+`bc2cpp_slow_lt`/`le`/`gt`/`ge` (296 + 134 + 311 + 166 generated callers) now carry a closed form beside the by-name
+helper (the latter under `#if defined(MRB_USE_COMPLEX) || defined(MRB_USE_RATIONAL)`). Wio closed world, shipped
+pass, master `9361f23` against the branch, helper emission only (the census counts both `#if` arms of `bc2cpp_slow_div`, which is why 5,781 is not ADR 0360's 5,509):
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `bc2cpp_send` calls held in helpers (by text, both `#if` arms) | 24 | 28 |
+| generated callers of a helper that holds a by-name call | 5,781 | 5,781 |
+| `bc2cpp_send` call sites in generated bodies | 2,321 | 2,321 |
+
+The headline number does not move: the closed form of each helper still holds one by-name call, for a **Hash**
+receiver, because `Hash#<` is Ruby over `==` of the stored values (mruby-hash-ext). What changed is which receivers
+can reach it: before, every non-number (String, Symbol, nil, any object) dispatched by name; now only a Hash does,
+and every other receiver is a proven NoMethodError or Comparable's body computed in C++. The four added textual
+calls are the closed form's Hash call beside the unchanged `#if` copy. Closing the last arm needs a per-element
+`==` proof or a compiled `Hash#<` reachable from the helper's translation unit.
