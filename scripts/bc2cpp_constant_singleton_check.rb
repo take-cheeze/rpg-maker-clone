@@ -156,9 +156,9 @@ if ENV['MRBC']
                  site.call('RGSS_singleton_retitle').match?(/rgss::window_title_set_m_direct\(M, r\d+, r\d+\)/) &&
                  !site.call('RGSS_singleton_retitle').include?('bc2cpp_send('))
     make = site.call('RGSS__Bitmap_make')
-    check.call('`self` of an exact class calls the instance entry point; a non-Integer argument keeps the send',
-               marker.call('_init_size', 'RGSS::Bitmap') && make.include?('rgss::bmp_init_size_direct(M, self, mrb_integer(') &&
-                 make.match?(/if \(mrb_integer_p\(r\d+\) && mrb_integer_p\(r\d+\)\)/) && make.scan('bc2cpp_send(').size == 1)
+    check.call('`self` of an exact class calls the instance entry point, converting both arguments as "ii" does (ADR 0372)',
+               marker.call('_init_size', 'RGSS::Bitmap') && make.include?('rgss::bmp_init_size_direct(M, self, bc2cpp_pu') &&
+                 make.scan('mrb_as_int(M, ').size == 2 && !make.include?('mrb_integer_p(') && !make.include?('bc2cpp_send('))
     include_dirs = ["-I#{dir}", "-I#{runtime.core}/include", "-I#{runtime::ROOT}/3rd/mruby/include", "-I#{runtime::ROOT}/include"]
     if runtime.core && runtime.compiler?
       check.call('the generated calls compile against include/rgss_native_direct.hxx',

@@ -172,12 +172,12 @@ end
 mrbc = ENV['MRBC'] || 'mrbc'
 gems = NomethodReviewedProbe.wio_gems(root)
 native_srcs = rgss_srcs + core_native_srcs(File.join(root, '3rd/mruby')) + external_gem_native_srcs(root)
-generate = lambda do |source, name, closed|
+generate = lambda do |source, name, closed, extra_env = {}|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
-            'NATIVE_SRCS' => Shellwords.join(native_srcs) }
+            'NATIVE_SRCS' => Shellwords.join(native_srcs) }.merge(extra_env)
     if closed
       env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
                  'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
@@ -239,6 +239,9 @@ open_code = generate.call(WORLD, 'nd_open', false)
 closed_code = generate.call(WORLD, 'nd_closed', true)
 sub_code = generate.call(SUBCLASS_WORLD, 'nd_sub', true)
 override_code = generate.call(OVERRIDE_WORLD, 'nd_override', true)
+# BC2CPP_NATIVE_PARAM_UNBOX=0 (ADR 0372) restores the Integer tag test and its by-name else.
+legacy_open = generate.call(WORLD, 'nd_open_legacy', false, 'BC2CPP_NATIVE_PARAM_UNBOX' => '0')
+legacy_closed = generate.call(WORLD, 'nd_closed_legacy', true, 'BC2CPP_NATIVE_PARAM_UNBOX' => '0')
 
 open_z = body_of.call(open_code, 'NdCaller_set_z')
 check.call('an integer setter tries the program chain first, then one arm per native entry point',
@@ -248,8 +251,17 @@ check.call('an integer setter tries the program chain first, then one arm per na
 check.call('classes sharing an entry point share an arm',
            open_z.include?('bc2cpp_native_class == rgss::native_viewport_class() || ' \
                            'bc2cpp_native_class == rgss::native_sprite_class()'))
-check.call('an Integer argument selects the entry point unboxed; anything else dispatches to the binding',
-           open_z.match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = rgss::object_z_set_direct\(M, r\d+, mrb_integer\(r\d+\)\);\n\s+\} else \{\n\s+r\d+ = bc2cpp_send\(/))
+closed_z = body_of.call(closed_code, 'NdCaller_set_z')
+check.call('in a closed world an :int argument is converted in place as mrb_get_args "i" does: no tag test, no by-name else (ADR 0372)',
+           closed_z.match?(/\{\n\s+mrb_int bc2cpp_pu\d+_0 = mrb_as_int\(M, r\d+\);\n\s+r\d+ = rgss::object_z_set_direct\(M, r\d+, bc2cpp_pu\d+_0\);\n\s+\}\n\s+\} else if/) &&
+             !closed_z.include?('mrb_integer_p(') && !closed_z.include?('mrb_integer('))
+check.call('without the closed world nothing proves the name reaches the native: the Integer test and its by-name else stay',
+           open_z.match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = rgss::object_z_set_direct\(M, r\d+, mrb_integer\(r\d+\)\);\n\s+\} else \{\n\s+r\d+ = bc2cpp_send\(/) &&
+             !open_z.include?('mrb_as_int('))
+legacy_z = body_of.call(legacy_open, 'NdCaller_set_z')
+check.call('BC2CPP_NATIVE_PARAM_UNBOX=0 restores the Integer tag test whose else dispatches to the binding',
+           legacy_z.match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = rgss::object_z_set_direct\(M, r\d+, mrb_integer\(r\d+\)\);\n\s+\} else \{\n\s+r\d+ = bc2cpp_send\(/) &&
+             !legacy_z.include?('mrb_as_int('))
 check.call('without the closed world the last resort is still the by-name dispatch',
            open_z.match?(/\} else \{\n\s+r\d+ = bc2cpp_send\([^;]*\);\n\s+\}\n\s+\}\n\s+\}/) && !open_z.include?('bc2cpp_nomethod'))
 check.call('a boolean argument is read with mrb_test, as mrb_get_args "b" does',
@@ -263,28 +275,38 @@ check.call('RGSS float arguments use mrb_as_float like mrb_get_args "f" for angl
              float_zoom.include?('rgss::spr_set_zoom_x_direct(M,') && float_zoom.include?('mrb_as_float(M, r') &&
              float_transition.include?('rgss::bmp_transition_alpha_direct(M,') &&
              float_transition.scan('mrb_as_float(M, r').size == 2)
+check.call('two float conversions are statements in argument order, never operands of one call expression (ADR 0372)',
+           float_transition.match?(/mrb_float (bc2cpp_pu\d+_1) = mrb_as_float\(M, r\d+\);\n\s+mrb_float (bc2cpp_pu\d+_2) = mrb_as_float\(M, r\d+\);\n\s+r\d+ = rgss::bmp_transition_alpha_direct\(M, r\d+, r\d+, \1, \2\);/))
 check.call('float conversion preserves a dynamic fallback for receivers outside the native class arms',
            float_angle.include?('bc2cpp_send(') && !float_angle.include?('mrb_float_p('))
 contents = body_of.call(open_code, 'NdCaller_set_contents')
 check.call('an untyped argument is passed through with no guard, and a name with no Ruby definer still gets its arm',
            contents.include?('rgss::window_contents_set_direct(M, r') && !contents.include?('mrb_integer_p') &&
              contents.include?('bc2cpp_send('))
-flash = body_of.call(open_code, 'NdCaller_flash_both')
-check.call('a two-argument entry guards only its integer argument',
-           flash.match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = rgss::sprite_flash_direct\(M, r\d+, r\d+, mrb_integer\(r\d+\)\);/) &&
-             flash.include?('rgss::viewport_flash_direct('))
+flash = body_of.call(closed_code, 'NdCaller_flash_both')
+open_flash = body_of.call(open_code, 'NdCaller_flash_both')
+check.call('a two-argument entry guards only its integer argument while no closed world proves the name',
+           open_flash.match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = rgss::sprite_flash_direct\(M, r\d+, r\d+, mrb_integer\(r\d+\)\);/))
+check.call('in a closed world it passes its untyped argument straight through and converts only the :int one',
+           flash.match?(/mrb_int bc2cpp_pu\d+_1 = mrb_as_int\(M, r\d+\);\n\s+r\d+ = rgss::sprite_flash_direct\(M, r\d+, r\d+, bc2cpp_pu\d+_1\);/) &&
+             flash.include?('rgss::viewport_flash_direct(') && !flash.include?('mrb_integer_p('))
+legacy_flash = body_of.call(legacy_open, 'NdCaller_flash_both')
+check.call('and with the switch off guards only its integer argument',
+           legacy_flash.match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = rgss::sprite_flash_direct\(M, r\d+, r\d+, mrb_integer\(r\d+\)\);/))
 check.call('a call whose arity no native entry point has gets no arm',
            !body_of.call(open_code, 'NdCaller_flash_short').include?('rgss::'))
 check.call('a getter arm covers the classes the older tables leave out',
            body_of.call(open_code, 'NdCaller_read_visible').include?('rgss::visible_direct(M, r') &&
              body_of.call(open_code, 'NdCaller_read_visible').include?('rgss::native_tilemap_class()'))
 
-closed_z = body_of.call(closed_code, 'NdCaller_set_z')
 check.call('in a closed world the arms make the final else a proven-dead nomethod',
            closed_z.match?(/\} else \{\n\s+r\d+ = bc2cpp_nomethod\(M, r\d+, \d+, 1, r\d+\); \/\* CLOSED_WORLD nomethod: recv\.z= \*\//) &&
              !closed_z.include?('kept: core_or_native'))
-check.call('the type-mismatch arm still dispatches, so the binding raises the real TypeError',
-           closed_z.scan(/mrb_integer_p\(/).size == 2 && closed_z.scan(/bc2cpp_send\(/).size == 2)
+check.call('an :int argument of any type reaches the converting arm; only a receiver outside the arms still dispatches',
+           !closed_z.include?('mrb_integer_p(') && closed_z.scan(/mrb_as_int\(M, /).size == 2 && closed_z.scan(/bc2cpp_send\(/).size == 0)
+legacy_closed_z = body_of.call(legacy_closed, 'NdCaller_set_z')
+check.call('with the switch off the type-mismatch arm still dispatches, so the binding raises the real TypeError',
+           legacy_closed_z.scan(/mrb_integer_p\(/).size == 2 && legacy_closed_z.scan(/bc2cpp_send\(/).size == 2)
 check.call('a class-only guard chain lifts too: x= names Rect, Sprite and Window',
            body_of.call(closed_code, 'NdCaller_set_x').then do |x|
              x.include?('rgss::rect_x_set_direct(') && x.include?('rgss::object_x_set_direct(') &&
