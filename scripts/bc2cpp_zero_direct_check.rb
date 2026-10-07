@@ -34,14 +34,32 @@ unless runtime.mrbc && system(runtime.mrbc, '--version', out: File::NULL, err: F
   exit 0
 end
 
-OWNERS = %w[ZdOpen ZdBox].freeze
+OWNERS = %w[ZdOpen ZdBox ZdN1 ZdN2 ZdN3 ZdN4 ZdN5 ZdN6 ZdFile ZdPlain].freeze
+# Every class the run sends `zero?` to is in the program: the closed world is proven for these and mruby's own.
 FIXTURE = <<~RUBY
+  $zlog = []
   class ZdBox
     def inspect = "box"
   end
   class ZdOpen
     def zero(a) = a.zero?
   end
+  class ZdN1 < Numeric; end
+  class ZdN2 < Numeric
+    def ==(o) = ($zlog << :eq; o == 0)
+  end
+  class ZdN3 < Numeric
+    def ==(o) = raise(ArgumentError, "zd eq")
+  end
+  class ZdN4 < Numeric
+    def ==(o) = :weird
+  end
+  class ZdN5 < Numeric
+    def <=>(o) = 0
+  end
+  class ZdN6 < ZdN2; end
+  class ZdFile < File; end
+  class ZdPlain; end
 RUBY
 
 # The closed form of the zero helper (the `#else` arm of the Complex/Rational `#if`), or nil.
@@ -96,9 +114,7 @@ NEG_WORLDS = [
 ].freeze
 NEG_WORLDS.each do |what, extra|
   c, = generate(runtime, extra: extra)
-  # An alias adds a definer name, not a zero? definer: it must not turn the arm off.
-  expected = what == 'an alias of zero?'
-  check.call("#{expected ? 'POS' : 'NEG'}: #{what}: #{expected ? 'still' : 'not'} the compiled arm", direct?(c) == expected)
+  check.call("NEG: #{what}: not the compiled arm", !direct?(c))
 end
 
 c, = generate(runtime, drop_gems: %w[mruby-numeric-ext])
@@ -126,39 +142,41 @@ end
 
 # ----- run
 DRIVER = <<~RUBY
-  $zlog = []
-  class ZdN1 < Numeric; end
-  class ZdN2 < Numeric
-    def ==(o) = ($zlog << :eq; o == 0)
-  end
-  class ZdN3 < Numeric
-    def ==(o) = raise(ArgumentError, "zd eq")
-  end
-  class ZdN4 < Numeric
-    def ==(o) = :weird
-  end
-  class ZdN5 < Numeric
-    def <=>(o) = 0
-  end
-  class ZdN6 < ZdN2; end
-  class ZdFile < File; end
-  class ZdPlain; end
   $big = begin; 2 ** 70; rescue RangeError; 0; end
   $recvs = [0, 1, -1, 2, 1 << 30, -(1 << 30), $big, -$big, $big - $big, 0.0, -0.0, 1.5, Float::NAN, Float::INFINITY,
             -Float::INFINITY, Numeric.new, ZdN1.new, ZdN2.new, ZdN3.new, ZdN4.new, ZdN5.new, ZdN6.new,
             ZdN1.new.freeze, ZdN2.new.freeze, 3.freeze, File, FileTest, ZdFile, Class.new(File), Class.new(ZdFile), Object,
             Integer, Numeric, Comparable, Kernel, Class.new, Module.new, File.singleton_class, nil, true, false, "s", :s, [], {},
             Object.new, ZdPlain.new, ZdBox.new, 1..2, proc { 1 }, "s".freeze]
-  # Calls the helper itself makes by name: 1 for the proof's dispatch that raises, 0 otherwise; -1 for a receiver whose own
-  # `==` / `<=>` is Ruby (the compiled body runs it by name: at most one).
+  # Calls the helper makes by name: 1 for the proof's dispatch that raises, 0 for a Float or a class object it answers; a
+  # Numeric runs the compiled body, whose `==` is by name once a program `==` exists (the body's own site): -1, at most one.
   $exp = $recvs.map do |r|
-    if r.is_a?(Float) || r.is_a?(Integer) || r == File || r == FileTest || r == ZdFile || (r.is_a?(Class) && r.ancestors.include?(File)) then 0
-    elsif r.is_a?(Numeric) then (r.is_a?(ZdN2) || r.is_a?(ZdN3) || r.is_a?(ZdN4) || r.is_a?(ZdN5)) ? -1 : 0
+    if r.is_a?(Float) || r.equal?(FileTest) || (r.is_a?(Class) && r.ancestors.include?(File)) then 0
+    elsif r.is_a?(Numeric) then -1
     else 1
     end
   end
   puts 'end'
 RUBY
+
+# A program `==` makes the compiled bodies' `==` arms name rgss's native Rect/Color/Tone; libmruby does not link rgss.
+RGSS_STUBS = <<~CPP
+  namespace rgss {
+  RClass* native_rect_class(void) { return nullptr; }
+  RClass* native_color_class(void) { return nullptr; }
+  RClass* native_tone_class(void) { return nullptr; }
+  mrb_value rect_eq_direct(mrb_state*, mrb_value, mrb_value) { return mrb_false_value(); }
+  mrb_value color_eq_direct(mrb_state*, mrb_value, mrb_value) { return mrb_false_value(); }
+  mrb_value tone_eq_direct(mrb_state*, mrb_value, mrb_value) { return mrb_false_value(); }
+  }
+CPP
+
+STUB = <<~CPP
+  static mrb_value bc2cpp_slow_zero(mrb_state* M, mrb_value a) {
+    mrb_value o = mrb_obj_new(M, mrb_class_get(M, "ZdOpen"), 0, nullptr);
+    return (mrb_funcall)(M, o, "zero", 1, a);
+  }
+CPP
 
 SCENARIO = <<~CPP
   #include <string>
@@ -182,6 +200,7 @@ SCENARIO = <<~CPP
     mrb_value recvs = mrb_gv_get(M, mrb_intern_lit(M, "$recvs"));
     mrb_value exps = mrb_gv_get(M, mrb_intern_lit(M, "$exp"));
     mrb_value zlog = mrb_gv_get(M, mrb_intern_lit(M, "$zlog"));
+    bool closed = mrb_test(mrb_gv_get(M, mrb_intern_lit(M, "$closed")));
     int total = 0, bad = 0, wrong_calls = 0, errors = 0, trues = 0, falses = 0, classes = 0, numerics = 0, logs = 0;
     for (int round = 0; round < 3; ++round) for (mrb_int i = 0; i < RARRAY_LEN(recvs); ++i) {
       mrb_value a = RARRAY_PTR(recvs)[i];
@@ -208,7 +227,7 @@ SCENARIO = <<~CPP
       if (mrb_class_p(a)) ++classes;
       if (mrb_obj_is_kind_of(M, a, mrb_class_get(M, "Numeric"))) ++numerics;
       logs += (int)got_log;
-      bool calls_ok = expect < 0 ? made <= 1 : made == expect;
+      bool calls_ok = !closed || (expect < 0 ? made <= 1 : made == expect);
       if (!calls_ok) {
         ++wrong_calls;
         if (wrong_calls <= 8) std::printf("  MISCOUNT %d by-name calls, expected %d: %s\\n", made, (int)expect, g.c_str());
@@ -261,8 +280,10 @@ else
         Dir.mktmpdir do |dir|
           code, err = runtime.generate("#{FIXTURE}#{program}", dir, closed: true, only_owners: OWNERS, core: true)
           check.call("#{world}: the closed form is #{closed ? 'on' : 'off'}", direct?(code) == closed)
-          source = DRIVER.sub("puts 'end'\n", "#{driver_extra}puts 'end'\n")
-          built, output = runtime.run(dir, err, OWNERS, SCENARIO.sub('__SOURCE__') { source }, build: build, full: true, vms: [true])
+          source = DRIVER.sub("puts 'end'\n", "$closed = #{closed}\n#{driver_extra}puts 'end'\n")
+          # A world without the helper has no site to call it from: the compiled call site stands in.
+          stub = code.include?('static mrb_value bc2cpp_slow_zero(') ? '' : STUB
+          built, output = runtime.run(dir, err, OWNERS + %w[Numeric], RGSS_STUBS + stub + SCENARIO.sub('__SOURCE__') { source }, build: build, full: true, vms: [true])
           check.call("#{world}: the fixture builds and runs", built)
           puts output.to_s.lines.last(15).join unless built
           next unless built
@@ -271,7 +292,7 @@ else
           check.call("#{world}: every helper call agrees with the real zero? (value, error class and message, user == calls)", output.to_s.include?(' 0 mismatches,'))
           # A world that turned the closed form off holds the by-name helper, which calls once for every non-Float receiver.
           check.call("#{world}: by-name call counts are as proven", !closed || output.to_s.include?(' 0 wrong dispatch counts,'))
-          check.call("#{world}: the matrix has class objects, Numerics, exceptions, true and false answers",
+          check.call("#{world}: the matrix has class objects, Numerics, exceptions, true and false answers", !closed ||
                      output.to_s =~ /(\d+) exceptions, (\d+) true, (\d+) false, (\d+) class objects, (\d+) Numerics/ &&
                      $1.to_i > 30 && $2.to_i > 10 && $3.to_i > 10 && $4.to_i > 20 && $5.to_i > 40)
         end
