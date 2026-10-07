@@ -116,6 +116,8 @@ NOT_PER_METHOD = %w[
   @index_closed_plan @index_closed_reasons @index_helper_requested @index_mruby_root @index_sources @index_outside_supers
   @setter_arg_candidates @setter_literal_names @setter_outside_names @setter_pool_reads @setter_pool_refusal @checked_pools_used
   @aliased_operand_names @rc_checked_alias_names @rc_admitted_alias_names
+  @class_tests @class_test_subjects @class_test_objects @class_test_positive @class_test_name_safe @class_object_eq_safe
+  @class_narrowing_raise @core_class_subclass_free @kind @klass @partitions
 ].freeze
 # CodeGen is reopened across several tools/bc2cpp files (scripts/bc2cpp_split.rb).
 written = Set.new
