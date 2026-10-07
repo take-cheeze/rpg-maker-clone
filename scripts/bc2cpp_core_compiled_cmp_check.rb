@@ -90,6 +90,7 @@ CC_WORLDS = [
   ['Hash#<= reopened by the program', "class Hash\n  def <=(o) = true\nend\n", %w[lt gt ge]],
   ['a module prepended to Hash (every Hash name is then unplain)', "module CcP\n  def >(o) = true\nend\nHash.prepend(CcP)\n", NONE],
   ['a user `==` that may yield a Fiber', "class CcY\n  def ==(o) = Fiber.yield(1)\nend\n", NONE],
+  ['a module prepended to Hash that defines an unrelated name', "module CcQ\n  def cc_other = 1\nend\nHash.prepend(CcQ)\n", NONE],
   ['a computed installer on Hash', "Hash.send(:define_method, ARGV[0].to_sym) { |o| true }\n", NONE],
   ['an alias of Hash#<', "class Hash\n  alias_method :cc_lt, :<\nend\n", REST]
 ].freeze
@@ -99,6 +100,9 @@ CC_WORLDS.each do |what, extra, expected|
   puts "    got #{got.inspect}" unless got == expected
   check.call("#{expected == ALL ? 'POS' : 'NEG'}: #{what}: compiled Hash arm on [#{expected.join(' ')}]", got == expected)
 end
+
+c, = generate(runtime, foreign: [['cc_outside.rb', "class Hash\n  def <(o) = true\nend\n"]])
+check.call('NEG: an outside Ruby source (not compiled here) that defines Hash#< takes `<` off', compiled_ops(c) == REST)
 
 %w[BC2CPP_CORE_COMPILED_CMP].each do |var|
   saved = ENV[var]
@@ -129,7 +133,9 @@ end
 
 # ----- run
 full = runtime.full || (ENV['BC2CPP_FULL_BUILD_DIR'] ? runtime.full_or_build : nil)
-if full && runtime.compiler?
+if ENV['CC_GENERATED_ONLY'] == '1'
+  puts '-- generated code only (mutation run)'
+elsif full && runtime.compiler?
   puts '-- run (compiled helper against the interpreted operator)'
   RUN_DRIVER = <<~RUBY
     class CcNanBox
