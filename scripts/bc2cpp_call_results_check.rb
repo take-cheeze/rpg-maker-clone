@@ -136,6 +136,19 @@ WORLDS = {
       def held2_tag; @held2.tag; end
     end
   RUBY
+  'a writer the setter pool refuses' => <<~RUBY,
+    class CrHolder
+      attr_writer :thing
+    end
+    class CrHolder2
+      attr_reader :thing
+      def initialize; @thing = CrOther.new; end
+    end
+    class CrFx
+      def acc_named_set; h = CrHolder.new; h.public_send('thing=', CrOther.new); h.thing.tag; end
+      def acc_named_any(h); h.thing.tag; end
+    end
+  RUBY
   'a second class with a reader of the same name' => <<~RUBY,
     class CrHolder2
       attr_reader :thing
@@ -290,6 +303,12 @@ if ENV['MRBC']
                  %w[acc_local acc_ivar].all? { |fn| guarded_tag.call(wcode, fn) })
       check.call("NEG #{what}: `thing` leaves the return table", !werr.include?('RETCLASS thing (CrBox)'))
       check.call("#{what}: the Array proofs are untouched", exact_push.call(wcode, 'push_local') && exact_typed.call(wcode, 'typed_has'))
+      if what == 'a writer the setter pool refuses'
+        # The slot has no class pool at all (no group key), which is not an empty pool: a name joined with another
+        # class's reader must stay unknown, never become nil-or-that-class's exact call.
+        check.call("NEG #{what}: a reader without a pool joins its name as unknown, so the call on `thing` keeps its guard",
+                   !body_of.call(wcode, 'acc_named_any').include?('CLOSED_WORLD_EXACT_CLASS :tag') && body_of.call(wcode, 'acc_named_any').include?('POLY_SMALL_N :tag'))
+      end
       next unless what == 'a writer on the ivar'
 
       # The writer's value joins the reader's result: an ivar fed from it must not look like a CrBox or like nil.

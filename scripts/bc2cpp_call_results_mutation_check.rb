@@ -26,7 +26,7 @@ MUTANTS = [
    /an unassigned slot: the send keeps its guard/],
   ['a slot with no pool counts as an empty one', 'codegen_return_accessors.rb',
    'return NumericFlow::OTHER unless pool', 'pool ||= 0',
-   /NEG a writer on the ivar|NEG an instance_variable_set|NEG a store from a subclass|NEG a second class/],
+   /NEG a writer the setter pool refuses|NEG an instance_variable_set|NEG a store from a subclass|NEG a second class/],
   ['the accessor kill switch is ignored', 'codegen_return_accessors.rb',
    "ENV.fetch('BC2CPP_RETURN_ACCESSORS', '1') != '0'", 'true', /BC2CPP_RETURN_ACCESSORS=0/],
   ['the exact-core kill switch is ignored', 'codegen_exact_core_arms.rb',

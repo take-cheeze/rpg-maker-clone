@@ -37,6 +37,7 @@ CLASSES = <<~RUBY
     def first; :first_widget; end
     def delete(v); v; end
     def at(v); v; end
+    def pop; self; end
     def bump; self; end
     def other; CfPlain.new; end
   end
@@ -47,6 +48,7 @@ CLASSES = <<~RUBY
     def first; :first_gadget; end
     def delete(v); v; end
     def at(v); v; end
+    def pop; self; end
     def bump; self; end
     def other; self; end
   end
@@ -80,7 +82,8 @@ FIXTURE = <<~RUBY
     def neg_reassign(x, y); x.bump; x = y; x.name; end
     def neg_branch(x, f); x.bump if f; x.name; end
     def neg_result(x); x.other.name; end
-    def neg_native(x); x.at(1); x.name; end
+    # Array#pop is only native, so its registration is what puts Array in the set (Array#at gets no fact, so it cannot show it).
+    def neg_native(x); x.pop; x.name; end
     def neg_global(x); x.bump; x = $cf_g; x.name; end
     def neg_after_rescue(x); begin; x.bump; rescue NoMethodError; 0; end; x.name; end
     def neg_block_write(x, y); x.bump; [1].each { x = y }; x.name; end
