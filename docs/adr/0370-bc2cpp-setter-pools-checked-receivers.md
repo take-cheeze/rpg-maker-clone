@@ -100,29 +100,47 @@ earlier output byte for byte: `shipped.cxx` of the shipped pass is `cmp`-identic
 
 ## Measured
 
-Wio closed world, shipped pass, base `8ab8aa75`, `BC2CPP_SETTER_POOLS=0` against the default on the same tree
-(`scripts/bc2cpp_dynamic_site_census.rb`):
+Wio closed world, shipped pass of `scripts/bc2cpp_coverage_report.rb`, `BC2CPP_SETTER_POOLS=0` against the default on the
+same tree, counted by `scripts/bc2cpp_dynamic_site_census.rb`. Two trees, because master moved under the branch:
 
-| Measure | Off (= base) | On | Delta |
-| --- | ---: | ---: | ---: |
-| `bc2cpp_send` call sites in generated bodies | 2,286 | 2,259 | -27 |
-| `mrb_funcall_with_block` | 414 | 414 | 0 |
-| `bc2cpp_nomethod` sites | 4,460 | 4,458 | -2 |
-| `CHECKED_POOL_EXACT` arms | 0 | 25 | +25 |
-| checked ivar pools / checked argument pools | 0 | 34 / 11 | |
+| Measure | Branch point `8ab8aa75`, off (= base) | on | Delta | master `16e2bc43`, off (= master) | on | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 2,286 | 2,259 | -27 | 2,208 | 2,197 | **-11** |
+| `mrb_funcall_with_block` | 414 | 414 | 0 | 414 | 414 | 0 |
+| `bc2cpp_nomethod` sites | 4,460 | 4,458 | -2 | 4,541 | 4,539 | -2 |
+| `CHECKED_POOL_EXACT` arms | 0 | 25 | +25 | 0 | 9 | +9 |
+| checked ivar / argument pools | 0 | 34 / 11 | | 0 | 34 / 11 | |
 
-By name (the rest are unchanged): `width` 47 to 34 (-13), `height` 33 to 30 (-3), `x=` and `y=` 44 to 42 (-2 each, on
-`Game::Character`), `name` 37 to 35 (-2, `Game::Shop`), `clear` 7 to 5, `blt` `fill_rect` `text_size` -1 each. By category:
-`rgss_native_exact_class_else` 206 to 197, `closed_world_kept:singleton_definer` 91 to 75, `core_or_native` 186 to 184; the
-two `core_tag_chain_else` rows (814, 215) do not move. Of the 25 arms 21 are `RGSS::Bitmap` after `win.contents` /
-`@contents` (the `contents` pools of `RGSS::Window`, `RPG2k::Window` and `MessageState`, 62 `contents=` sites all
-passing a Bitmap), 2 `Game::Shop`, 2 `Game::Character`. **-27 of 2,286 is 1.2%**: below the 30 that ADR 0331 set as the bar,
-and the three largest unproven populations (call results of `map`/`to_s`/`new`, parameters without a visible caller,
+Off is `cmp`-identical to the tree without this change on both trees (the kill switch is byte for byte).
+
+Body `bc2cpp_send` sites by name, the ten largest and every name that changed (branch point, then master):
+
+| Name | Base off | on | Master off | on |
+| --- | ---: | ---: | ---: | ---: |
+| `[]` `empty?` `size` `to_s` `length` | 208 202 176 151 69 | same | 207 202 177 151 69 | same |
+| `new` `to_enum` `to_i` `[]=` `push` | 66 66 60 51 50 | same | 66 66 60 51 51 | same |
+| `width` | 47 | 34 | 0 | 0 |
+| `height` | 33 | 30 | 0 | 0 |
+| `x=` / `y=` | 44 / 44 | 42 / 42 | 44 / 44 | 42 / 42 |
+| `name` | 37 | 35 | 37 | 35 |
+| `clear` | 7 | 5 | 7 | 5 |
+| `blt` / `fill_rect` / `text_size` | 7 / 7 / 4 | 6 / 6 / 3 | 7 / 7 / 4 | 6 / 6 / 3 |
+
+At the branch point the largest part of the gain was `width` (-13) and `height` (-3) after `win.contents`, whose else was
+a by-name send behind a `singleton_definer` marker (91 to 75 in that category). PR #2050 (ADR 0369, identity arms for
+module singleton definers) merged first and removed those elses for every receiver (91 to 10), so on master the
+same receivers are already direct and the pools shed only what the singleton arms could not: `x=`/`y=` on
+`Game::Character` and the Bitmap drawing calls `clear` `blt` `fill_rect` `text_size` (nine sites of the
+`rgss_native_exact_class_else` row, 206 to 197), and `name` on `Game::Shop` (two of `core_or_native`, 188 to 186). The two `core_tag_chain_else` rows (820, 216 on master) do not move.
+The 62 `contents=` sites all pass a Bitmap, so the `contents` pools of `RGSS::Window`, `RPG2k::Window` and
+`MessageState` are exact; the arms that remain are the ones whose by-name else was not a singleton arm.
+**-11 of 2,208 is 0.5%** (-27 of 2,286, 1.2%, before PR #2050): below the 30 that ADR 0331 set as the bar, and the
+three largest unproven populations (call results of `map`/`to_s`/`new`, parameters without a visible caller,
 container elements) are untouched.
 
 What the pools do not free, from the same run: `bitmap` (11 sites) needs seven of its 31 `bitmap=` sites typed (a
 parameter, a cache call); `map` (9) is a name `Array#map` also answers, so it is no return-table candidate; 16
-of the setters a pool depends on are refused (10 poisoned by a Symbol, 6 called by a native or foreign source).
+of the setters a pool depends on are refused (10 poisoned by a Symbol, 6 called by a native or foreign source) on the branch-point tree.
 
 ## Checks
 

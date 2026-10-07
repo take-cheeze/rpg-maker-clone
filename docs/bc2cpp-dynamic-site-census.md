@@ -1273,17 +1273,19 @@ index helpers when the index-body patch is absent.
 
 ## Follow-up: checked setter-site pools (ADR 0370)
 
-`BC2CPP_SETTER_POOLS=0` against the default, wio closed world, shipped pass, branch base `8ab8aa75` (the off run is
-`cmp`-identical to the base tree):
+`BC2CPP_SETTER_POOLS=0` against the default, wio closed world, shipped pass; the off run is `cmp`-identical to the tree
+without the change on both trees. PR #2050's identity arms for module singleton definers (ADR 0369) removed the
+`singleton_definer` elses the pools' `width`/`height` arms also shed, so the gain is measured before and after it:
 
-| Measure | Off | On | Delta |
-| --- | ---: | ---: | ---: |
-| `bc2cpp_send` call sites in generated bodies | 2,286 | 2,259 | -27 |
-| `mrb_funcall_with_block` | 414 | 414 | 0 |
-| `bc2cpp_nomethod` sites | 4,460 | 4,458 | -2 |
-| `CHECKED_POOL_EXACT` arms (class test, nil arm, guard-violation else) | 0 | 25 | +25 |
+| Measure | Branch point `8ab8aa75` off | on | Delta | master `16e2bc43` off | on | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 2,286 | 2,259 | -27 | 2,208 | 2,197 | -11 |
+| `mrb_funcall_with_block` | 414 | 414 | 0 | 414 | 414 | 0 |
+| `bc2cpp_nomethod` sites | 4,460 | 4,458 | -2 | 4,541 | 4,539 | -2 |
+| `CHECKED_POOL_EXACT` arms (class test, nil arm, guard-violation else) | 0 | 25 | +25 | 0 | 9 | +9 |
 
-Body `bc2cpp_send` sites by name, the ten largest and every name that changed:
+Body `bc2cpp_send` sites by name, the ten largest and every name that changed, branch point (the ten largest do not move
+on either tree):
 
 | Name | Off | On | Delta |
 | --- | ---: | ---: | ---: |
@@ -1305,7 +1307,7 @@ Body `bc2cpp_send` sites by name, the ten largest and every name that changed:
 | `clear` | 7 | 5 | -2 |
 | `blt` `fill_rect` `text_size` | 7 + 7 + 4 | 6 + 6 + 3 | -1 each |
 
-By category: `rgss_native_exact_class_else` 206 to 197, `closed_world_kept:singleton_definer` 91 to 75,
-`closed_world_kept:core_or_native` 186 to 184; the two `core_tag_chain_else` rows (814 and 215) do not move. The gain
-is the `contents` and `@contents` receivers of three window families (62 `contents=` sites, all passing a Bitmap) and
-two attr_accessor classes; element, tuple-slot and argument-Integer typing are not built (ADR 0370, Context).
+On master `width` and `height` have no by-name site left, off or on, and every other changed row is identical (-11 in all). By
+category on master: `rgss_native_exact_class_else` 206 to 197, `closed_world_kept:core_or_native` 188 to 186; the two
+`core_tag_chain_else` rows (820 and 216) do not move. Element, tuple-slot and argument-Integer typing are not built
+(ADR 0370, Context).
