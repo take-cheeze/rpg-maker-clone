@@ -1,0 +1,1 @@
+- The bc2cpp lint cross-check keys files relative to the root it was given, so the mutation checks that build from a symlinked temp tree no longer see every lint baseline entry as new and stale (follow-up to ADR 0368).
