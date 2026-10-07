@@ -134,7 +134,8 @@ if ENV['MRBC']
   puts '== generated code'
   Dir.mktmpdir do |dir|
     code, err = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS)
-    violation = /\bbc2cpp_guard_violation\(M,/
+    # ADR 0290's families only: CLASS_NARROWING (ADR 0375) has its own check and goes with its own kill switch.
+    violation = /\bbc2cpp_guard_violation\(M,(?![^\n]*\(CLASS_NARROWING\))/
     # ADR 0293: an unproven `is_a?` argument raises its TypeError in place and an unproven `===`
     # receiver calls the shared bc2cpp_eqq helper; neither is a violation site.
     NO_PROOF_FALLBACK = /bc2cpp_send\(|"%v is not class\/module"|\bbc2cpp_eqq\(M,/

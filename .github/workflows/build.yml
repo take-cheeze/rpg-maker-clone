@@ -986,7 +986,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_typed_slot_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
           - shard: core-mrbtest
-            # Interpreter-vs-compiled fixtures and mruby's own suites (~20 min).
+            # Interpreter-vs-compiled fixtures and mruby's own suites (~25 min; the full-core numeric checks are in `full-core-numeric`).
             checks: |
               # Literal-block arms into the compiled core (docs/adr/0270): a closed-world fixture compiled
               # with the core, against the interpreter; two more mruby builds.
@@ -1037,8 +1037,6 @@ jobs:
               # ADR 0376: block loops inside a rescue range are inlined into the try function, and a
               # multi-parameter #each spreads its Array rows; against the interpreter on the full-core build.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_rescue_inline_block_check.rb
-              # ADR 0293: direct === / is_a? / kind_of? against the interpreter, on the full-core build above.
-              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_direct_check.rb
               # ADR 0288: class-body define_method(:name) { } as an ordinary definition.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_define_method_sites_check.rb
               # ADR 0304: attr_* installed by a constant-driven loop, against CRuby and the interpreter;
@@ -1053,6 +1051,15 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_io_puts_model_check.rb
               # ADR 0279: the fixnum-overflow boundary matrix against the interpreter, on the full-core build above.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb
+              # mruby's own suites (rake test) on a full-core host build, interpreted and with the
+              # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
+              ruby scripts/bc2cpp_core_mrbtest.rb
+          - shard: full-core-numeric
+            # Split from core-mrbtest, which had grown to the job's 45 minute limit: the checks that compare compiled
+            # numeric/index/tuple helpers with the interpreter on one full-core build (~17 min).
+            checks: |
+              # ADR 0293: direct === / is_a? / kind_of? against the interpreter, on the full-core build above.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_direct_check.rb
               # ADR 0292: the numeric slow-path helpers against the interpreter over a
               # Fixnum/bigint/Float/nil/String/user-class operand matrix; same build.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
@@ -1061,9 +1068,6 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_index_closed_check.rb
               # ADR 0311: destructured fixed-arity Array returns; the full-core run (the core-only run is in `fast`).
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
-              # mruby's own suites (rake test) on a full-core host build, interpreted and with the
-              # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
-              ruby scripts/bc2cpp_core_mrbtest.rb
           - shard: core-flow
             # ADR 0301 exact-receiver flow and its five mutants (~13 min).
             checks: |
@@ -1197,6 +1201,13 @@ jobs:
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_intervals_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_numeric_intervals_mutation_check.rb
+          - shard: class-narrowing
+            # ADR 0375: generated code for every narrowing form, the negatives and twenty-one withdrawal worlds, the
+            # full-core and core-only runs (with the rogue-subclass guard violation), then the mutants and an
+            # unmutated control through the shared pool (the 32-bit run is in `bc2cpp-width (int32-a)`).
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_class_narrowing_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_class_narrowing_mutation_check.rb
           - shard: ext-prefix
             # ADR 0320: decoder unit cases, folded-vs-unfolded listing, generated code with the kill switch, the
             # full-core and core-only runs, then eight mutants and an unmutated control (the 32-bit run is in
@@ -1473,6 +1484,8 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_check.rb
               # ADR 0317: the 32-bit run of the call-facts fixture (the 64-bit runs are in `call-facts`).
               MRBC="$mrbc" ruby scripts/bc2cpp_call_facts_check.rb
+              # ADR 0375: the 32-bit run of the class-narrowing fixture (the 64-bit runs are in `class-narrowing`).
+              MRBC="$mrbc" ruby scripts/bc2cpp_class_narrowing_check.rb
               NIS_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_native_ivar_scopes_check.rb
           - variant: int32-b
             build: int32
