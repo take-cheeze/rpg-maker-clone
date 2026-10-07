@@ -1311,3 +1311,27 @@ On master `width` and `height` have no by-name site left, off or on, and every o
 category on master: `rgss_native_exact_class_else` 206 to 197, `closed_world_kept:core_or_native` 188 to 186; the two
 `core_tag_chain_else` rows (820 and 216) do not move. Element, tuple-slot and argument-Integer typing are not built
 (ADR 0370, Context).
+
+## Follow-up: splatted `blk.call(*args)` on a core block (ADR 0373)
+
+Wio closed-world shipped pass, master `38f7267a`, before and after. All 28 by-name `"call"` sites in generated bodies
+(`mrb_funcall_argv(M, r, "call", RARRAY_LEN, RARRAY_PTR)`, the else arm of CORE_PROC_CALL's runtime-sized splat) were in
+`Enumerable` block bodies of mruby's `enum.rb`: 26 `block.call(*val)` on the method's own `&block` (22 methods) and 2
+`yield(*val)` in `Enumerable#cycle` (a `BLKPUSH`). Each is now a `mrb_proc_p` arm that yields with the Array's length and
+elements, and a `bc2cpp_nomethod` else.
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| by-name `"call"` sites in bodies | 28 | 0 | -28 |
+| `mrb_funcall` / `_argv` / `_id` in bodies | 30 | 2 | -28 |
+| `bc2cpp_nomethod` sites | 4,539 | 4,567 | +28 |
+| `bc2cpp_send` sites in bodies | 2,197 | 2,197 | 0 |
+
+| Receiver | Sites | Result |
+| --- | ---: | --- |
+| method's own `&block` through `GETUPVAR` (BLOCK_PARAM_CALL proof) | 26 | closed |
+| `BLKPUSH` (`yield *val`) | 2 | closed |
+| stored callable, `Method`, plain parameter | 0 | none with a runtime-sized splat |
+
+The two remaining body `mrb_funcall*` sites are not `call`. Core bodies exist only in this measurement world and in a
+`BC2CPP_HOT_ONLY=0` closed build, so the shipped firmware is byte-identical.
