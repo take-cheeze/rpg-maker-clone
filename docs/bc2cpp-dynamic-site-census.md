@@ -569,8 +569,10 @@ dispatch (7,605 to 7,349), all removals. No remaining cause is above about 5% of
   a neighbour's; the exclusive categories use position and guard shape first so
   they do not depend on it.
 * The receiver origin is a text heuristic over the register's last assignment. A
-  register copy hides the real origin, so `register_copy` is a floor on what is
-  unknown, not an answer.
+  register copy (`rN = rM;`, `rN = self;`) is followed back to its source, up to
+  eight copies, so `register_copy` now only marks a chain that runs out of hops.
+  The walk is text order, not control flow, so a copy assigned on one branch can
+  still be read as the nearest assignment.
 * The `unlisted_class_call` reasons came from a one-run instrumentation that is
   not in the tree; they are per class and name, and the counts here map each
   site to its class's dominant reason.
@@ -1025,6 +1027,33 @@ are an aggregate over several distinct Ruby-level origins, and reading them as o
 root cause would misdirect the work. Making `receiver_origin` follow `MOVE` chains
 is a measurement-only change to `tools/bc2cpp/site_census.rb` and would re-partition
 them before anything is built.
+
+That re-split is now measured (census tool only; no generated code changes). `receiver_origin`
+follows `rN = rM;` and `rN = self;` back to the value's source and reads `self`, a method
+parameter, a literal (`mrb_nil_value()`, `mrb_bool_value(...)` and the like) or the receiver
+named directly. On the two saved `shipped.cxx` snapshots kept outside the tree
+(`/tmp/keep_base`, 2,306 sites, and `/tmp/m_master`, 2,208 sites), `core_tag_chain_else:receiver_other`
+goes from 834 to 826 and from 820 to 812, and `register_copy` (387 and 378) disappears. Before and after
+on `/tmp/keep_base`:
+
+| Origin | Before | After |
+| --- | ---: | ---: |
+| `register_copy` | 387 | 0 |
+| `self` (receiver named directly) | 0 | 77 |
+| `parameter` | 0 | 102 |
+| `literal_or_fresh` | 23 | 105 |
+| `unknown` | 123 | 35 |
+| `direct_call_result` | 113 | 200 |
+| `indexed_result` | 77 | 134 |
+| `dynamic_call_result` | 34 | 73 |
+| `other` | 40 | 63 |
+| `captured_upvar` | 28 | 28 |
+| `constant` | 9 | 9 |
+
+The `receiver_is_ivar` category moves with it, 215 to 223 on that snapshot, because a copy of an
+ivar now reads as `ivar_read`. The 589 figure in the table above is from a wio build that is not
+saved here, so it cannot be re-split from these snapshots. The new `direct_call_result` and
+`indexed_result` mass is the copy-of-a-call chains that were hidden behind `register_copy`.
 
 Three shapes are worth naming because they are gaps rather than missing proofs:
 

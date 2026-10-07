@@ -1,0 +1,1 @@
+- **bc2cpp census**: the receiver-origin heuristic now follows register `MOVE` copies back to their source (`self`, a method parameter, a literal, a call result, an ivar, a constant or still unknown), so `register_copy` no longer hides most of `core_tag_chain_else:receiver_other`. Measurement tooling only; generated C++ is unchanged. See `docs/bc2cpp-dynamic-site-census.md`.
