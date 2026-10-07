@@ -66,7 +66,9 @@ FIXTURE = <<~'RUBY'
     def nested_mutate(a); r = []; 2.times { |j| a.each { |x| r << x; a << x + 10 if a.size < 4 } }; r; end
 
     # -- a proven class that was a dynamic-only send because the arm chain was built twice
-    def patch; @acc = 0; @cells.each { |a, b, c, d, e| @acc += a * b + c + d + e }; @acc; end
+    # Nine parameters are past EACH_SPREAD_MAX (ADR 0376), so this stays a call; five would be an inlined loop.
+    def patch; @acc = 0; @cells.each { |a, b, c, d, e, _f, _g, _h, _i| @acc += a * b + c + d + e }; @acc; end
+    def patch_spread; @acc = 0; @cells.each { |a, b, c, d, e| @acc += a * b + c + d + e }; @acc; end
     def tmp_ewo; @cells.each_with_object({}) { |c, h| h[c[0]] = c.size }; end
 
     # -- the proven arm and its else
@@ -244,6 +246,9 @@ if run_generated
     check.call("#{fn}: a proven class is a direct arm (it was a dynamic-only send)",
                nb.call(fn).include?('BLOCK_CORE_DIRECT') && !ob.call(fn).include?('BLOCK_CORE_DIRECT'))
   end
+
+  check.call('patch_spread: the same chain with five parameters is an inlined loop, not an arm (ADR 0376)',
+             nb.call('patch_spread').include?('bc2cpp_row_') && !nb.call('patch_spread').include?('BLOCK_CORE_DIRECT'))
 
   puts ' 3. a proven arm and its else'
   check.call('a proven class and a yield-free block is the direct call alone',

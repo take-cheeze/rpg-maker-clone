@@ -1388,6 +1388,56 @@ elements, and a `bc2cpp_nomethod` else.
 The two remaining body `mrb_funcall*` sites are not `call`. Core bodies exist only in this measurement world and in a
 `BC2CPP_HOT_ONLY=0` closed build, so the shipped firmware is byte-identical.
 
+## Follow-up: block loops inside a rescue range, and `each` over Array rows (ADR 0376)
+
+Wio closed-world shipped pass, master `d7212a1c`. "Before" is the same tree with `BC2CPP_RESCUE_INLINE_BLOCKS=0
+BC2CPP_EACH_SPREAD=0` (byte-identical to master), "after" has the change. Two worlds: the full one (every method of the three
+compiled gems) and the hot-only one the firmware ships (`BC2CPP_HOT_METHODS=tools/bc2cpp/hot_methods.txt`, ADR 0214).
+
+```sh
+# once per world and per switch setting (KEEP_DIR keeps shipped.cxx)
+MRBC=<host mrbc> [BC2CPP_HOT_METHODS=$PWD/tools/bc2cpp/hot_methods.txt] [BC2CPP_RESCUE_INLINE_BLOCKS=0 BC2CPP_EACH_SPREAD=0] \
+  BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep-<name> ruby scripts/bc2cpp_coverage_report.rb > /dev/null
+ruby scripts/bc2cpp_rescue_inline_census.rb /tmp/keep-before/shipped.cxx /tmp/keep-after/shipped.cxx \
+  apply_move_requests apply_location_requests apply_halt_request apply_sprite_flash_requests build_parallels \
+  draw_transition_mask patch_anim_cells
+```
+
+A method's functions are its entry, `_impl`, try bodies, block functions and inlined-section functions. "Markers" are
+`// BLOCK_FALLBACK` lines: one RProc and one block function each.
+
+| Measure | Hot-only before | Hot-only after | Full before | Full after |
+| --- | ---: | ---: | ---: | ---: |
+| `mrb_funcall_with_block` sites | 39 | 29 | 445 | 441 |
+| `BLOCK_FALLBACK` markers | 37 | 27 | 461 | 439 |
+| generated functions | 808 | 788 | 6,771 | 6,727 |
+| lines inside generated functions | 55,743 | 55,569 | 444,731 | 444,272 |
+| lines of `shipped.cxx` | 56,014 | 55,840 | 445,055 | 444,596 |
+
+The seven methods of the ADR (`apply_move_requests`, `apply_location_requests`, `apply_halt_request`,
+`apply_sprite_flash_requests`, `build_parallels`, `draw_transition_mask`, `patch_anim_cells`, all `Scene::Map`):
+
+| Measure | Hot-only before | Hot-only after | Full before | Full after |
+| --- | ---: | ---: | ---: | ---: |
+| `mrb_funcall_with_block` sites | 10 | 1 | 1 | 1 |
+| `BLOCK_FALLBACK` markers | 10 | 1 | 10 | 1 |
+| generated functions | 40 | 22 | 40 | 22 |
+| lines of those functions | 1,824 | 1,672 | 1,922 | 1,778 |
+
+The full world has one `mrb_funcall_with_block` there before as well as after because ADR 0310's direct arms already call the
+compiled `Array#each` with the block's RProc; the markers show what is removed (the RProc and its block function). Per method
+(hot-only, funcall sites / lines): `apply_move_requests` 1 to 0 / 143 to 130, `apply_location_requests` 1 to 0 / 144 to 130,
+`apply_halt_request` 1 to 0 / 145 to 132, `apply_sprite_flash_requests` 1 to 0 / 207 to 191, `build_parallels` 4 to 1 / 692
+to 643, `draw_transition_mask` 1 to 0 / 310 to 289, `patch_anim_cells` 1 to 0 / 183 to 157. The remaining `build_parallels`
+site is `@common.each`, whose receiver is not a proven Array.
+
+Outside the seven methods the hot-only world loses one more site (`Game::Interpreter#key_input_result`, an unprotected
+arity-2 `each` over a constant Array of pairs), the full world loses it too and twelve more markers (`Game::Actor#learn_level_skills`,
+`Game::State#seed_screen_transitions` and `#seed_vehicle_positions`, `Scene::Battle#apply_battle_event_requests` (2),
+`#battle_recovery_lines`, `#draw_battle_stat_segment`, `#run_battle_events`, `Scene::Map#draw_captured_transition`,
+`RGSS.windowskin_rect_probe`, `RPG2k#continue_game`, `RPG2k#start_new_game`). `bc2cpp_send`, `bc2cpp_nomethod`
+(`NOMETHOD_REVIEWED`) and `POLY` listings are identical before and after, and there are no `#error` markers in either file.
+
 ## Follow-up: class narrowing by a runtime test (ADR 0375)
 
 Wio closed-world shipped pass (`scripts/bc2cpp_coverage_report.rb`, `3rd/*` populated, host `mrbc` prebuilt,
