@@ -1428,7 +1428,11 @@
   proven NoMethodError instead (`/ + * < <= > >= ^ >> round % -@`; ADR 0360-0364 and
   [`docs/adr/0367-bc2cpp-expose-misc-core-bodies.md`](docs/adr/0367-bc2cpp-expose-misc-core-bodies.md),
   whose `patches/mruby-expose-misc-bodies.patch` exports the static `Float#%`, `String#-@` and
-  sprintf bodies the `%` and `-@` helpers call).
+  sprintf bodies the `%` and `-@` helpers call). A closed world that compiles mruby's own Ruby
+  also closes `zero?`: a Numeric runs the compiled `Numeric#zero?`, `File`/`FileTest` raise the
+  `File.zero?` argument error, the rest is a NoMethodError (`BC2CPP_CORE_COMPILED_ZERO=0` turns it
+  off; not in the hot-only firmware builds; see
+  [`docs/adr/0374-bc2cpp-zero-helper-compiled-numeric.md`](docs/adr/0374-bc2cpp-zero-helper-compiled-numeric.md)).
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
