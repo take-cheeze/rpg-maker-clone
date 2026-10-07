@@ -1270,3 +1270,44 @@ census world and in a closed build with `BC2CPP_HOT_ONLY=0`. Core compile counts
 190 compiled, 25 interpreted; the compiler now prints the 25 with their reasons). Still open: `zero?` (33, the receiver
 set is unbounded because `File.zero?`/`FileTest.zero?` are native class methods), `===` (110), `&` `|` `<<` `-` and the
 index helpers when the index-body patch is absent.
+
+## Follow-up: checked setter-site pools (ADR 0370)
+
+`BC2CPP_SETTER_POOLS=0` against the default, wio closed world, shipped pass; the off run is `cmp`-identical to the tree
+without the change on both trees. PR #2050's identity arms for module singleton definers (ADR 0369) removed the
+`singleton_definer` elses the pools' `width`/`height` arms also shed, so the gain is measured before and after it:
+
+| Measure | Branch point `8ab8aa75` off | on | Delta | master `16e2bc43` off | on | Delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 2,286 | 2,259 | -27 | 2,208 | 2,197 | -11 |
+| `mrb_funcall_with_block` | 414 | 414 | 0 | 414 | 414 | 0 |
+| `bc2cpp_nomethod` sites | 4,460 | 4,458 | -2 | 4,541 | 4,539 | -2 |
+| `CHECKED_POOL_EXACT` arms (class test, nil arm, guard-violation else) | 0 | 25 | +25 | 0 | 9 | +9 |
+
+Body `bc2cpp_send` sites by name, the ten largest and every name that changed, branch point (the ten largest do not move
+on either tree):
+
+| Name | Off | On | Delta |
+| --- | ---: | ---: | ---: |
+| `[]` | 208 | 208 | 0 |
+| `empty?` | 202 | 202 | 0 |
+| `size` | 176 | 176 | 0 |
+| `to_s` | 151 | 151 | 0 |
+| `length` | 69 | 69 | 0 |
+| `new` | 66 | 66 | 0 |
+| `to_enum` | 66 | 66 | 0 |
+| `to_i` | 60 | 60 | 0 |
+| `[]=` | 51 | 51 | 0 |
+| `push` | 50 | 50 | 0 |
+| `width` | 47 | 34 | -13 |
+| `x=` | 44 | 42 | -2 |
+| `y=` | 44 | 42 | -2 |
+| `height` | 33 | 30 | -3 |
+| `name` | 37 | 35 | -2 |
+| `clear` | 7 | 5 | -2 |
+| `blt` `fill_rect` `text_size` | 7 + 7 + 4 | 6 + 6 + 3 | -1 each |
+
+On master `width` and `height` have no by-name site left, off or on, and every other changed row is identical (-11 in all). By
+category on master: `rgss_native_exact_class_else` 206 to 197, `closed_world_kept:core_or_native` 188 to 186; the two
+`core_tag_chain_else` rows (820 and 216) do not move. Element, tuple-slot and argument-Integer typing are not built
+(ADR 0370, Context).
