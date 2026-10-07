@@ -83,6 +83,32 @@ FIXTURE = <<~'RUBY'
   class IxBox
     def inspect = "box"
   end
+  # Procs indexed by compiled methods that capture a block: the block is a cfunc-backed proc (ADR 0266), which OP_CALL cannot run
+  # from a compiled frame, so the helper must yield to it.
+  class IxCap
+    def cap_idx(x, &blk) = blk[x]
+    def stored(&b)
+      @s = b
+    end
+    def stored_idx(x) = @s[x]
+    def forms(&b) = [b[1], b.call(2), b.(3), b.yield(4)]
+    def ret(&b) = b
+    def run_idx = cap_idx(3) { |x| x * 2 }
+    def run_stored
+      stored { |x| x + 40 }
+      stored_idx(2)
+    end
+    def run_forms = forms { |x| x + 1 }
+    def run_ret = ret { |x| x + 1 }[3]
+    def run_lambda = cap_idx(2, &lambda { |x| x * 5 })
+    def run_lambda_arity = cap_idx(1, &lambda { |a, b| a })
+    def run_break = cap_idx(1) { |x| break :b }
+    def run_upvar
+      n = 10
+      cap_idx(1) { |x| x + n }
+    end
+    def run_nested = cap_idx(1) { |x| cap_idx(x + 1) { |y| y * 3 } }
+  end
   class IxOpen
     def get(x, i) = x[i]
     def get0(x) = x[0]
@@ -107,7 +133,7 @@ FIXTURE = <<~'RUBY'
     end
   end
 RUBY
-OWNERS = %w[IxVars IxGrid IxSub IxOwn IxArr IxArrOver IxHsh IxStr IxPoint IxPointSub IxConv IxBox IxOpen].freeze
+OWNERS = %w[IxVars IxGrid IxSub IxOwn IxArr IxArrOver IxHsh IxStr IxPoint IxPointSub IxConv IxBox IxCap IxOpen].freeze
 
 def helper_text(code, name)
   start = code.index(/^static mrb_value #{Regexp.escape(name)}\(/) or return nil
@@ -377,6 +403,10 @@ def index_driver(width)
     recv, key, val, = Ix.set_pair(i)
     r = (Ix.desc(o.set(recv, key, val)) rescue Ix.err($!))
     puts "set \#{Ix.set_label(i)} => \#{r} then \#{Ix.desc(recv)}"
+  end
+  c = IxCap.new
+  %i[run_idx run_stored run_forms run_ret run_lambda run_lambda_arity run_break run_upvar run_nested].each do |m|
+    puts "cap \#{m} => \#{(Ix.desc(c.send(m)) rescue Ix.err($!))}"
   end
   puts 'end driver'
   RUBY

@@ -103,3 +103,5 @@ candidates), and more than 16 subclasses of one definer overflow the chain; both
 The check's Table run uses a stand-in with rgss's three entry points because libmruby does not link rgss. The real bodies are
 the old `table_get` / `table_set` text moved behind the same wrappers (`mruby-rgss/test` exercises them interpreted);
 `scripts/native_binding_split_check.rb` needs libclang and was not run here.
+
+A cfunc-backed Proc (every compiled block, ADR 0266) cannot run `call_proc`'s OP_CALL from a compiled frame, so the Proc arm yields to it (`bc2cpp_yield_argv`) exactly as `bc2cpp_funcall_argv` does for the by-name call it replaces, and only a bytecode Proc takes `mrb_proc_aref_impl`. `scripts/bc2cpp_index_closed_check.rb` runs `IxCap`, compiled methods that capture a block and index it (`blk[x]`, a stored proc, `b[1]` next to `call`/`.()`/`yield`, a returned proc, lambdas, a break, upvars, nesting), interpreted and compiled; `scripts/bc2cpp_proc_call_block_given_check.rb` passes.
