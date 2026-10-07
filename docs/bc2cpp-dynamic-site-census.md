@@ -1153,3 +1153,9 @@ attributed to the `round` helper.
 The five helpers that left the list (six by-name calls, `rshift` held two) are `bc2cpp_slow_add_f` (712 callers),
 `bc2cpp_slow_mul_f` (442), `bc2cpp_slow_rshift` (17), `bc2cpp_slow_xor` (4) and `bc2cpp_slow_round` (5). The
 comparison helpers stay listed with their one Hash call.
+
+## Index helpers closed (ADR 0365)
+
+`bc2cpp_getidx`, `bc2cpp_getidx0` and `bc2cpp_setidx` no longer hold a by-name call: 2,017 + 32 + 348 generated callers stop
+reaching by-name dispatch, helper-held by-name calls go from 19 to 16 and `bc2cpp_send` in the helper region from 17 to 14
+(shipped wio pass, base `b4efe59e`). Bodies and nomethod sites are unchanged (2,286 and 4,460).

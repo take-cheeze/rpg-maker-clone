@@ -820,14 +820,24 @@ mrb_value data_init_copy(mrb_state* M, V self) {
   return self;
 }
 
-mrb_value table_get(mrb_state* M, V self) {
-  mrb_int x, y = 0, z = 0;
-  mrb_get_args(M, "i|ii", &x, &y, &z);
+// Table#[] after the arguments are read; also rgss_table_aref_impl, the entry
+// bc2cpp's closed index helper calls with its own arguments (ADR 0365).
+mrb_value table_get_impl(mrb_state* M,
+                         V self,
+                         mrb_int x,
+                         mrb_int y,
+                         mrb_int z) {
   Table& t = DataType<Table>::get(M, self);
   long i = table_index(t, x, y, z);
   if (i < 0)
     return mrb_nil_value();
   return mrb_fixnum_value(t.data[i]);
+}
+
+mrb_value table_get(mrb_state* M, V self) {
+  mrb_int x, y = 0, z = 0;
+  mrb_get_args(M, "i|ii", &x, &y, &z);
+  return table_get_impl(M, self, x, y, z);
 }
 
 // A write outside the table is dropped, and the value is only converted once it
@@ -839,10 +849,13 @@ mrb_value table_get(mrb_state* M, V self) {
 // the arguments up front (mrb_get_args "ii|ii") raised "TypeError: true cannot
 // be converted to Integer" instead, which killed the game on New Game. An
 // *in-range* write of a non-Integer still raises, as it should.
-mrb_value table_set(mrb_state* M, V self) {
-  mrb_value a0, a1, a2 = mrb_nil_value(), a3 = mrb_nil_value();
-  mrb_get_args(M, "oo|oo", &a0, &a1, &a2, &a3);
-  const mrb_int argc = mrb_get_argc(M);
+mrb_value table_set_impl(mrb_state* M,
+                         V self,
+                         mrb_int argc,
+                         mrb_value a0,
+                         mrb_value a1,
+                         mrb_value a2,
+                         mrb_value a3) {
   mrb_int x = mrb_as_int(M, a0), y = 0, z = 0;
   mrb_value v;
   if (argc == 2) {
@@ -861,6 +874,12 @@ mrb_value table_set(mrb_state* M, V self) {
     return v;
   t.data[i] = (int16_t)mrb_as_int(M, v);
   return v;
+}
+
+mrb_value table_set(mrb_state* M, V self) {
+  mrb_value a0, a1, a2 = mrb_nil_value(), a3 = mrb_nil_value();
+  mrb_get_args(M, "oo|oo", &a0, &a1, &a2, &a3);
+  return table_set_impl(M, self, mrb_get_argc(M), a0, a1, a2, a3);
 }
 
 mrb_value table_resize(mrb_state* M, V self) {
@@ -7391,6 +7410,33 @@ void define_rect(mrb_state* M, RClass* m) {
 }
 
 }  // namespace
+
+// Table#[] and Table#[]= for bc2cpp's closed index helpers (ADR 0365): the
+// bodies of table_get and table_set with their arguments passed in, and the
+// test for the receivers those methods answer.
+extern "C" {
+mrb_bool rgss_table_p(mrb_value v) {
+  return mrb_data_p(v) && DATA_TYPE(v) == &DataType<Table>::data_type;
+}
+
+mrb_value rgss_table_aref_impl(mrb_state* M,
+                               mrb_value self,
+                               mrb_int x,
+                               mrb_int y,
+                               mrb_int z) {
+  return table_get_impl(M, self, x, y, z);
+}
+
+mrb_value rgss_table_aset_impl(mrb_state* M,
+                               mrb_value self,
+                               mrb_int argc,
+                               mrb_value a0,
+                               mrb_value a1,
+                               mrb_value a2,
+                               mrb_value a3) {
+  return table_set_impl(M, self, argc, a0, a1, a2, a3);
+}
+}
 
 // Exported Bitmap pixel access (see include/rgss_bitmap.hxx). Defined at file
 // scope but still able to reach the anonymous-namespace Bitmap/DataType above,
