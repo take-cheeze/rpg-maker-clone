@@ -4,6 +4,8 @@
 # Check CLASS_NARROWING (docs/adr/0375): inside the region a runtime class test dominates, the tested variable's
 # class set is narrowed, so `x.name` there is proven where the same call outside the test dispatches by name.
 #
+# 0. The flow with a stub oracle (host only, no MRBC): a test narrows both edges and a copy chain, a captured register,
+#    a rewrite, a call before an ivar's test, a join, `a || b`, `raise` and the chain of `case x when C` do what they say.
 # 1. Generated code (needs MRBC): every narrowing form (`is_a?`, `kind_of?`, `instance_of?`, `C === x`, `case/when`
 #    with one and several classes and the else-branch complement, `nil?` and `!` as a value, `respond_to?`, early
 #    `return`/`raise`/`next`, `&&`, `||` and `?:` joins, an ivar, a core class test) does less dispatch work than the
@@ -19,12 +21,16 @@
 #    world) raises the CLASS_NARROWING guard violation instead of calling a body of another class.
 #
 # Usage: [MRBC=path/to/mrbc BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_CORE=dir] ruby scripts/bc2cpp_class_narrowing_check.rb
-# CN_GENERATED_ONLY=1 skips the behavioural half; CN_SKIP_WORLDS=1 the withdrawal worlds and CN_WORLDS=<regexp> keeps
+# CN_UNIT_ONLY=1 runs only the stub-oracle half; CN_GENERATED_ONLY=1 skips the behavioural half; CN_SKIP_WORLDS=1 the withdrawal worlds and CN_WORLDS=<regexp> keeps
 # only the worlds it matches (the mutation check uses them to run only what a mutant can break).
 
 require 'fileutils'
+require 'set'
 require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
+# The flow comes from the tree under test (BC2CPP_TOOL, a mutant copy in the mutation check), not from this checkout.
+tool_dir = ENV['BC2CPP_TOOL'] ? File.dirname(File.expand_path(ENV['BC2CPP_TOOL'])) : File.expand_path('../tools/bc2cpp', __dir__)
+%w[irep bytecode_ir numeric_flow].each { |lib| require File.join(tool_dir, lib) }
 
 failures = []
 check = lambda do |what, condition|
@@ -119,6 +125,8 @@ FIXTURE = <<~RUBY
       end
     end
     def neg_join_test(x, f); v = f ? x.is_a?(CnShape) : true; v ? x.name : 0; end
+    def neg_stale_test(x, y); ok = x.is_a?(CnShape); x = y; ok ? x.name : 0; end
+    def neg_stale_ivar(x); @cn = x; ok = @cn.is_a?(CnShape); bump_cn; ok ? @cn.name : 0; end
     def neg_false_edge(x); if x.is_a?(CnShape) then 0 else x.name end; end
     def neg_or_other(x, y); (x.is_a?(CnCircle) || y) ? x.name : 0; end
     def bump_cn; @cn = CnOther.new; end
@@ -130,7 +138,7 @@ POSITIVE = %w[pos_is_a pos_kind_of pos_instance_of pos_eqq pos_case pos_case_mul
               pos_early_raise pos_next pos_and pos_or pos_ternary pos_copy pos_nil_value pos_not pos_respond pos_class_eq pos_ivar
               pos_loop pos_array pos_hash pos_string pos_integer].freeze
 NEGATIVE = %w[neg_none neg_other_var neg_reassign neg_block_write neg_call_between neg_global neg_loop_swap neg_rescue
-              neg_join_test neg_false_edge neg_or_other].freeze
+              neg_join_test neg_stale_test neg_stale_ivar neg_false_edge neg_or_other].freeze
 
 # The positives each test spelling carries, so a world that breaks one of them names exactly those.
 IS_A = %w[pos_is_a pos_early_return pos_early_raise pos_next pos_and pos_or pos_ternary pos_copy pos_ivar pos_loop
@@ -209,6 +217,90 @@ generate = lambda do |source, dir, closed: true, env: {}, **options|
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
+end
+
+
+# -- 0. the flow, with a stub oracle ------------------------------------------------------
+
+puts '== NumericFlow with a stub oracle (host)'
+nf = NumericFlow
+nf_other = nf::OTHER
+make_insn = ->(addr, op, args) { Insn.new(lineno: 1, addr: addr, op: op, args: args, raw: "#{op} #{args}") }
+# The test of `x.is_a?(Array)` / `x.kind_of?(Hash)`: the bit of the class passes, OTHER becomes the class on the true edge.
+stub_test = Struct.new(:bit) do
+  def narrow(mask, truth)
+    return mask & ~bit unless truth
+
+    (mask & bit) | (mask.anybits?(NumericFlow::OTHER) ? bit : 0)
+  end
+end
+array_test = stub_test.new(nf::ARR)
+hash_test = stub_test.new(nf::HSH)
+stub_oracle = Class.new do
+  attr_accessor :slots
+
+  def initialize(array_test, hash_test)
+    @slots = []
+    @tests = { 'is_a?' => [0, array_test], 'kind_of?' => [0, hash_test] }
+  end
+
+  def entry_mask(_irep, _reg) = NumericFlow::OTHER
+  def const_mask(_insn) = NumericFlow::OTHER
+  def ivar_slots(_irep) = @slots
+  def ivar_entry_mask(_irep, _name) = NumericFlow::OTHER
+  def ivar_fact_mask(_irep, _name) = NumericFlow::OTHER
+  def send_mask(_irep, _index, _insn, _state) = NumericFlow::OTHER
+  def pool_mask(_irep, _insn) = NumericFlow::OTHER
+  def op_native?(_sym) = false
+  def nil_raises?(_sym) = false
+  def class_narrowing_active? = true
+  def class_test(_irep, _index, insn, _state) = @tests[insn.sym]
+  def noreturn_call?(_irep, _index, insn) = insn.sym == 'raise'
+end
+flow = lambda do |list, opaque = Set.new, slots = []|
+  irep = Irep.new(label: "cn#{list.hash}", nregs: 10, instructions: list, catch_handlers: [], reps: [], pool: [])
+  NumericFlow.states(irep, stub_oracle.new(array_test, hash_test).tap { |o| o.slots = slots }, opaque)
+end
+test_send = ->(addr, sym) { make_insn.call(addr, 'SEND', "R5\t:#{sym}\tn=1") }
+ret = ->(addr, reg) { make_insn.call(addr, 'RETURN', reg) }
+mov = ->(addr, dst, src) { make_insn.call(addr, 'MOVE', "#{dst}\t#{src}") }
+# The two arms of `if x.is_a?(Array)`: R6 is what `x` (R1) is on each, read at the RETURN of each arm.
+two_arms = [mov.call(0, 'R5', 'R1'), test_send.call(3, 'is_a?'), make_insn.call(7, 'JMPNOT', "R5\t16"), mov.call(11, 'R6', 'R1'),
+            ret.call(14, 'R6'), mov.call(16, 'R6', 'R1'), ret.call(19, 'R6')]
+states = flow.call(two_arms)
+check.call('a test narrows the variable on the edge where it holds', states[4][6] == nf::ARR)
+check.call('and drops the class on the other edge (an unknown value stays unknown)', states[6][6] == nf_other)
+check.call('a captured register is never narrowed', flow.call(two_arms, Set['1'])[4][6] == nf_other)
+stale = [mov.call(0, 'R5', 'R1'), test_send.call(3, 'is_a?'), mov.call(7, 'R4', 'R5'), mov.call(10, 'R1', 'R2'),
+         make_insn.call(13, 'JMPNOT', "R4\t22"), mov.call(17, 'R6', 'R1'), ret.call(20, 'R6'), mov.call(22, 'R6', 'R1'),
+         ret.call(25, 'R6')]
+check.call('NEG a rewrite of the variable forgets the test its copy holds', flow.call(stale)[6][6] == nf_other)
+stale_slot = [make_insn.call(0, 'GETIV', "R5\t@cn"), test_send.call(3, 'is_a?'), mov.call(7, 'R4', 'R5'),
+              make_insn.call(10, 'SEND0', "R6\t:bump"), make_insn.call(13, 'JMPNOT', "R4\t22"),
+              make_insn.call(17, 'GETIV', "R6\t@cn"), ret.call(20, 'R6'), make_insn.call(22, 'GETIV', "R6\t@cn"),
+              ret.call(25, 'R6')]
+check.call('NEG a call between the test and the branch forgets a test aimed at an ivar',
+           flow.call(stale_slot, Set.new, ['cn'])[6][6] == nf_other)
+joined = [make_insn.call(0, 'JMPNOT', "R3\t13"), mov.call(4, 'R5', 'R1'), test_send.call(7, 'is_a?'), make_insn.call(11, 'JMP', '15'),
+          make_insn.call(13, 'LOADTRUE', "R5\t(true)"), make_insn.call(15, 'JMPNOT', "R5\t24"), mov.call(19, 'R6', 'R1'),
+          ret.call(22, 'R6'), mov.call(24, 'R6', 'R1'), ret.call(27, 'R6')]
+check.call('NEG a join keeps a test only when both paths hold it', flow.call(joined)[7][6] == nf_other)
+either = [mov.call(0, 'R5', 'R1'), test_send.call(3, 'is_a?'), make_insn.call(7, 'JMPIF', "R5\t22"), mov.call(11, 'R5', 'R1'),
+          test_send.call(14, 'kind_of?'), make_insn.call(22, 'JMPNOT', "R5\t31"), mov.call(26, 'R6', 'R1'), ret.call(29, 'R6'),
+          mov.call(31, 'R6', 'R1'), ret.call(34, 'R6')]
+check.call('`a || b` in a condition keeps both narrowings (the second branch is decided by the first edge)',
+           flow.call(either)[7][6] == (nf::ARR | nf::HSH))
+no_return = [mov.call(0, 'R5', 'R1'), test_send.call(3, 'is_a?'), make_insn.call(7, 'JMPIF', "R5\t18"),
+             make_insn.call(11, 'SSEND0', "R6\t:raise"), mov.call(18, 'R6', 'R1'), ret.call(21, 'R6')]
+check.call('`raise` has no normal successor, so `raise unless test` narrows what follows', flow.call(no_return)[5][6] == nf::ARR)
+copy_chain = [mov.call(0, 'R3', 'R1'), mov.call(3, 'R5', 'R3'), test_send.call(6, 'is_a?'), make_insn.call(10, 'JMPNOT', "R5\t19"),
+              mov.call(14, 'R6', 'R1'), ret.call(17, 'R6'), mov.call(19, 'R6', 'R1'), ret.call(22, 'R6')]
+check.call('the argument of `case x when C` copies the case temporary, which copies x: all of them are narrowed',
+           flow.call(copy_chain)[5][6] == nf::ARR)
+
+if ENV['CN_UNIT_ONLY']
+  puts failures.empty? ? 'bc2cpp class narrowing check: PASS (stub oracle only)' : "bc2cpp class narrowing check: #{failures.size} failure(s)"
+  exit(failures.empty? ? 0 : 1)
 end
 
 # -- 1. generated code -----------------------------------------------------------------
@@ -290,7 +382,7 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['CN_GENERATED_ONLY
   calls = []
   one = %w[pos_is_a pos_kind_of pos_instance_of pos_eqq pos_case pos_case_multi pos_early_return pos_early_raise pos_and
            pos_or pos_ternary pos_copy pos_respond pos_class_eq pos_ivar pos_loop pos_array pos_hash pos_string pos_integer neg_none
-           neg_call_between neg_global neg_false_edge]
+           neg_call_between neg_stale_ivar neg_global neg_false_edge]
   one.each { |m| everything.each { |v| calls << [m, [v]] } }
   %w[pos_case_else pos_nil_value pos_not].each { |m| %w[true false].each { |v| calls << [m, [v]] } }
   calls << ['pos_next', ['mixed']]
@@ -298,6 +390,7 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['CN_GENERATED_ONLY
     %w[neg_other_var neg_reassign neg_block_write neg_loop_swap neg_rescue neg_or_other].each { |m| calls << [m, args] }
   end
   [%w[circle true], %w[circle false], %w[other true], %w[nil false]].each { |args| calls << ['neg_join_test', args] }
+  [%w[circle other], %w[other circle], %w[nil circle]].each { |args| calls << ['neg_stale_test', args] }
   # The interpreter answers for the rogue class; a narrowed test must raise the guard violation (or the site was not
   # narrowed and answers the same), never call a body of another class.
   rogue_calls = %w[pos_is_a pos_kind_of pos_eqq pos_case pos_early_return pos_and pos_ternary pos_ivar pos_respond].map { |m| [m, ['rogue']] }

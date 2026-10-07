@@ -101,7 +101,23 @@ helper, so `BC2CPP_GUARD_VIOLATION=0` also turns narrowing off.
 
 ## Consequences
 
-RESULTS
+Wio closed world, shipped pass, master `233972ac`, off against on (`docs/bc2cpp-dynamic-site-census.md`, "Follow-up: class
+narrowing by a runtime test"): `bc2cpp_send` sites 2,063 to 2,059 (-4), `mrb_funcall_with_block` 414 to 413, by-name
+sites 2,479 to 2,474, reach sites 8,260 to 8,247, `bc2cpp_nomethod` 4,570 to 4,535 (-35), `POLY_SMALL_N` chains 2,431 to
+2,398 (-33), 25 more `IVAR_ACCESSOR` and 6 more `USER_RECEIVER_CASES` direct arms, 4 `getidx`, 1 `getidx0`, 2 `slow_ge` and
+1 `slow_lt` arms exact. By form: `respond_to?(:m)` 180 narrowing sites closed 31 `bc2cpp_nomethod`, 29 chains and 1
+`bc2cpp_send`; `is_a?`/`kind_of?` 35 sites closed 3 `bc2cpp_nomethod`, 4 chains, 4 `bc2cpp_send` and 1
+`mrb_funcall_with_block`; `nil?`/`!`, `===`, `instance_of?` and `x.class == C` closed none in the engine (216 sites carry
+a run-time guard, 572 `bc2cpp_guard_violation` sites in all against 355). 34 of 3,047 compiled functions changed. The
+engine's sites are modest because it seldom tests a class and then calls something unproven on the same variable; the
+fixture (`scripts/bc2cpp_class_narrowing_check.rb`) shows every form closing its receiver. `BC2CPP_CLASS_NARROWING=0` is
+`cmp`-identical to the tree without the change.
+
+Run-time cost: one class-pointer comparison per narrowed test (a chain of at most the narrowed set's size), none on the
+kill-switch build.
+
+NOMETHOD_REVIEWED loses the 30 keys (3,015 to 2,985) of the dead fallbacks that became exact or were never emitted; no key was
+added, so no new dead branch needed a review (`scripts/bc2cpp_nomethod_reviewed_update.rb`, the CI world: `MRBC` only).
 
 Not built:
 

@@ -9,6 +9,13 @@
 # The mutant tree lives inside the repository (.mutants/, removed on exit): bc2cpp.rb finds the engine's gems relative to
 # itself (../..), so a copy elsewhere would read a different layout.
 #
+# Not mutated, by design: the refusal of a captured register (MOVE never records a test for an opaque source and every
+# consumer refuses a captured register too), the handler edge (the existing raise_state design, covered by neg_rescue
+# only through it) and the singleton gate (exact_flow_mask requires a singleton-free world as well). Each is defended
+# twice, so removing one copy changes no output. The same holds for the class hierarchy gate of a tested class (a
+# dynamic or unresolved subclass): ClosedWorld#descendants already counts every wild class as a descendant of every
+# class, so the positive set is a superset either way, and the run-time guard backs it (the rogue-subclass run).
+#
 # Each mutant names the worlds it can break (the check's CN_WORLDS filter; none: CN_SKIP_WORLDS) and whether it needs the
 # behavioural half (a full run against real mruby), so a mutant only pays for the part of the check that can kill it.
 #
@@ -35,19 +42,13 @@ MUTANTS = [
    /every call answers what the interpreter answers/, nil, true],
   ['a rewrite of the variable does not forget the test', FLOW,
    "        clear_class_tests(out, ctx, slot_count + 1 + r)\n", '',
-   /NEG neg_reassign|NEG neg_loop_swap/, nil, false],
-  ['a captured variable is narrowed', FLOW,
-   'break if reg >= a || ctx[:opaque].include?(reg.to_s) || codes.include?(code)', 'break if reg >= a || codes.include?(code)',
-   /NEG neg_block_write/, nil, false],
+   /NEG neg_reassign|NEG neg_loop_swap|NEG neg_stale_test|NEG a rewrite of the variable/, nil, false],
   ['a call does not forget the test of an ivar', FLOW,
    "      slots.times { |k| clear_class_tests(out, ctx, k + 1) }\n", '',
-   /NEG neg_call_between/, nil, false],
+   /NEG neg_call_between|NEG neg_stale_ivar|NEG a call between/, nil, false],
   ['a join keeps the test one side holds', FLOW,
    'r < prov_base ? m | new[r] : (m == new[r] ? m : 0)', 'r < prov_base ? m | new[r] : (m == new[r] ? m : (m.zero? ? new[r] : (new[r].zero? ? m : 0)))',
-   /NEG neg_join_test/, nil, false],
-  ['a handler edge takes the narrowed state', FLOW,
-   'edge = raise_state(insns[i], st, out, ctx)', 'edge = out',
-   /NEG neg_rescue/, nil, false],
+   /NEG neg_join_test|NEG a join keeps/, nil, false],
   ['the kill switch is ignored', NARROW,
    "ENV['BC2CPP_CLASS_NARROWING'] != '0' && ", '',
    /narrowing removes work/, nil, false],
@@ -66,12 +67,6 @@ MUTANTS = [
   ['a subclass of a core class is ignored', NARROW,
    'return CLASS_TEST_CORE_POSITIVE[klass] if test.kind == :instance_of || core_class_subclass_free?(klass)', 'return CLASS_TEST_CORE_POSITIVE[klass]',
    /NEG a subclass of Array/, 'subclass of Array', false],
-  ['a dynamic or outside subclass is ignored', NARROW,
-   'hierarchy = @closed_world.class_hierarchy(klass)', 'hierarchy = { descendants: @closed_world.send(:descendants, klass), wild: Set.new }',
-   /NEG a dynamic subclass of CnShape|NEG an outside source subclasses CnShape/, 'dynamic subclass|outside source', false],
-  ['a singleton object is ignored', NARROW,
-   ' && @closed_world.exact_instances_singleton_free? && guard_violation_enabled?', ' && guard_violation_enabled?',
-   /NEG an instance with a singleton method/, 'singleton method', false],
   ['a respond_to_missing? hook is ignored', NARROW,
    '&& class_test_name_safe?(name) && respond_to_missing_absent?', '&& class_test_name_safe?(name)',
    /NEG a Ruby respond_to_missing\? definition/, 'respond_to_missing', false],

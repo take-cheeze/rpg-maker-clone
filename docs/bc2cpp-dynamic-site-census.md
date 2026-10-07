@@ -1387,3 +1387,39 @@ elements, and a `bc2cpp_nomethod` else.
 
 The two remaining body `mrb_funcall*` sites are not `call`. Core bodies exist only in this measurement world and in a
 `BC2CPP_HOT_ONLY=0` closed build, so the shipped firmware is byte-identical.
+
+## Follow-up: class narrowing by a runtime test (ADR 0375)
+
+Wio closed-world shipped pass (`scripts/bc2cpp_coverage_report.rb`, `3rd/*` populated, host `mrbc` prebuilt,
+`LANG=C.UTF-8`), master `233972ac` against the same tree with the change. `BC2CPP_CLASS_NARROWING=0` against the tree
+without the change is `cmp`-identical (the shipped C++ of both runs, 21.5 MB). The engine rarely tests a class and then
+calls a method that was still unproven, so the gain is small; what it removes is by form below.
+
+| Measure | Off | On | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 2,063 | 2,059 | -4 |
+| `mrb_funcall_with_block` | 414 | 413 | -1 |
+| by-name sites in total (the two above plus 2 `mrb_funcall`) | 2,479 | 2,474 | -5 |
+| reach sites (by-name, `slow_*`, `getidx*`, `setidx`, `eqq` callers) | 8,260 | 8,247 | -13 |
+| `bc2cpp_nomethod` sites | 4,570 | 4,535 | -35 |
+| NOMETHOD_REVIEWED sites / keys (the full world) | 4,293 / 3,015 | 4,260 / 2,985 | -33 / -30 |
+| `POLY_SMALL_N` chains | 2,431 | 2,398 | -33 |
+| `IVAR_ACCESSOR` / `USER_RECEIVER_CASES` direct arms | 1,136 / 1 | 1,161 / 7 | +25 / +6 |
+| `NILABLE_RECEIVER` / `EXACT_TYPED` | 934 / 20 | 931 / 21 | -3 / +1 |
+| `getidx` / `getidx0` callers | 2,017 / 32 | 2,013 / 31 | -4 / -1 |
+| `slow_ge` / `slow_lt` callers | 166 / 296 | 164 / 295 | -2 / -1 |
+| `bc2cpp_guard_violation` sites | 355 | 572 | +217 (216 are `CLASS_NARROWING` run-time guards) |
+
+Tests the engine spells, by form, and what each closed (functions the narrowing changed: 34 of 3,047):
+
+| Form | Narrowing sites (guards) | Closed |
+| --- | ---: | --- |
+| `respond_to?(:m)` | 180 | 31 `bc2cpp_nomethod` and 29 `POLY_SMALL_N` chains of the `m` call (the chain over every definer becomes an exhaustive class case or an ivar accessor), 1 `bc2cpp_send` |
+| `is_a?` / `kind_of?` | 35 | 3 `bc2cpp_nomethod`, 4 `POLY_SMALL_N`, 4 `bc2cpp_send`, 1 `mrb_funcall_with_block`; the Integer, Array and Hash tests also make 4 `getidx`, 1 `getidx0`, 2 `slow_ge` and 1 `slow_lt` arms exact |
+| `nil?` as a value, `!x` | no run-time guard (the test computes its own answer) | 0: removing nil from an unproven receiver proves nothing, and `x.nil?` in a condition was already a `JMPNIL` |
+| `===` / `case x when C`, `instance_of?`, `x.class == C` | 0 | the engine's `case` arms name Integer constants and literals, and no site spells the other two |
+| `raise ... unless`, `&&`/`||` joins | inside the sites above | the fixture needs them (`pos_early_raise`, `pos_or`, `pos_and`); the engine's sites are plain `if`/`unless` |
+
+What stays by name in the sites that carry a test: a test of a class with no bit (`Symbol`, `true`/`false`, a native
+class) narrows nothing from an unknown value; a receiver that is a call result or an element of a container has no
+variable to narrow; an `else` edge only drops the classes that pass, so it narrows a known set and never an unknown one.
