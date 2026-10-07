@@ -29,6 +29,8 @@ check = lambda do |what, condition|
   failures << what unless condition
 end
 abort 'SKIP: set MRBC' unless ENV['MRBC']
+# This check drives the tag-test emitters in process; ADR 0372's unboxing replaces them for a proven name, so it is off.
+ENV['BC2CPP_NATIVE_PARAM_UNBOX'] = '0'
 
 # -- the emitters, driven directly -------------------------------------------------
 #

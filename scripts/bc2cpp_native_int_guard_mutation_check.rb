@@ -47,7 +47,9 @@ work = lambda do |(_name, file, pattern, replacement, extra)|
 
       File.write(path, source.sub(pattern) { replacement })
     end
-    env = { 'BC2CPP_TOOL' => File.join(dir, 'tools/bc2cpp/bc2cpp.rb'), 'CC_GENERATED_ONLY' => '1' }.merge(extra)
+    env = { 'BC2CPP_TOOL' => File.join(dir, 'tools/bc2cpp/bc2cpp.rb'), 'CC_GENERATED_ONLY' => '1',
+           # The copy of tools/ has no scripts/ beside it for the lint cross-check (ADR 0368), as in the other mutation checks.
+           'BC2CPP_LINT_CROSSCHECK' => '0' }.merge(extra)
     Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_native_int_guard_check.rb')],
                         stop_on: /^\s+FAIL /)
   end
