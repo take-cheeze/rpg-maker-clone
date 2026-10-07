@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# ADR 0373: each soundness condition of the compiled Numeric#zero? arm, broken one at a time in a copy of
+# ADR 0374: each soundness condition of the compiled Numeric#zero? arm, broken one at a time in a copy of
 # tools/bc2cpp, must make scripts/bc2cpp_zero_direct_check.rb's generated-code half fail.
 require 'fileutils'
 require 'rbconfig'

@@ -347,7 +347,7 @@ covers a closed and an open world. See ADR 0358 and
 
 ### The zero? helper through compiled core
 
-The `core-flow` shard also runs `bc2cpp_zero_direct_check.rb` and its mutation check (ADR 0373); the `int32`
+The `core-flow` shard also runs `bc2cpp_zero_direct_check.rb` and its mutation check (ADR 0374); the `int32`
 and `nobigint` width legs run the same check against their own libmruby. A closed world that compiles
 mruby's own Ruby has `bc2cpp_slow_zero` call the compiled `Numeric#zero?` for every Numeric that is not a
 Float, raise the `File.zero?` argument error for those class objects, and keep the NoMethodError proof for

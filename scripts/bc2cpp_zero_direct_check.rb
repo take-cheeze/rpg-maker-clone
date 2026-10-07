@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# ADR 0373: the `zero?` helper (bc2cpp_slow_zero) calls the compiled Numeric#zero? of the run's own core Ruby for every
+# ADR 0374: the `zero?` helper (bc2cpp_slow_zero) calls the compiled Numeric#zero? of the run's own core Ruby for every
 # Numeric that is not a Float, raises the ArgumentError of File.zero? / FileTest.zero? for those class objects, and
 # dispatches by name only to raise the proven NoMethodError.
 #

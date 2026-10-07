@@ -1271,6 +1271,27 @@ census world and in a closed build with `BC2CPP_HOT_ONLY=0`. Core compile counts
 set is unbounded because `File.zero?`/`FileTest.zero?` are native class methods), `===` (110), `&` `|` `<<` `-` and the
 index helpers when the index-body patch is absent.
 
+## Follow-up: the `zero?` helper through compiled core (ADR 0374)
+
+`bc2cpp_slow_zero` (33 generated callers) no longer holds a by-name call in a closed world that compiles mruby's own Ruby: every
+Numeric that is not a Float runs the compiled `Numeric#zero?` (its `==` is the body's own site), `File`, `FileTest` and `File`
+subclasses raise the `File.zero?` argument error (the helper has no argument), and every other receiver is a proven NoMethodError.
+Wio closed world, shipped pass, base `38f7267a` (master after ADR 0371), the `#if` arm for Complex/Rational builds not counted:
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` calls held in helpers | 13 | 12 | -1 |
+| generated callers of a helper that holds a by-name call | 3,423 | 3,390 | -33 |
+| `bc2cpp_send` call sites in generated bodies | 2,184 | 2,183 | -1 |
+| `bc2cpp_nomethod` sites | 4,539 | 4,540 | +1 |
+| **Sites that can reach by-name dispatch** (bodies + helper callers + 414 block + 30 funcall sites) | **6,051** | **6,017** | **-34 (-0.6%)** |
+
+The body delta is the scan change that came with it: a name that native sources spell only as class-level registrations
+(`start` is `GC.start`) is attributed to its class object instead of left unbounded. The shipped firmware closed builds are
+hot-only and hold no core Ruby, so none of this applies there; it is the census world and `BC2CPP_HOT_ONLY=0` builds. Still
+open: `===` (110), `&` `|` `<<` `-` and the index helpers when their body patches are absent; `implicit_self_unresolved` is 198
+body sites (88 + 82 + 27 + 1 by registered-definition path).
+
 ## Follow-up: checked setter-site pools (ADR 0370)
 
 `BC2CPP_SETTER_POOLS=0` against the default, wio closed world, shipped pass; the off run is `cmp`-identical to the tree

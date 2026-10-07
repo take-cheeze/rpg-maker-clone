@@ -3,4 +3,4 @@
   `FileTest.zero?` receivers raise the argument error their natives raise, and the rest are a
   proven NoMethodError, with no by-name call left in the helper
   (`BC2CPP_CORE_COMPILED_ZERO=0` restores it). The call-facts scan now attributes a name that
-  native sources spell only as class-level registrations (ADR 0373).
+  native sources spell only as class-level registrations (ADR 0374).
