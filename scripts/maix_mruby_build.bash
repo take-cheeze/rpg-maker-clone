@@ -72,7 +72,8 @@ for p in mruby-colon3-assign-setmcnst mruby-dollar-bang-scoped \
   mruby-gc-type-live-counts mruby-rdata-ivar-slots \
   mruby-io-maxpathlen-fallback mruby-io-direct-puts \
   mruby-force-no-cxx-exception-escape-hatch mruby-presym-compact-table \
-  mruby-cdump-const-reps mruby-no-irep-debug mruby-expose-index-bodies; do
+  mruby-cdump-const-reps mruby-no-irep-debug \
+  mruby-expose-misc-bodies mruby-expose-index-bodies; do
   apply_patch "$root/3rd/mruby" "$root/patches/$p.patch"
 done
 apply_patch "$root/3rd/mruby-stringio" "$root/patches/mruby-stringio-native-getbyte.patch"

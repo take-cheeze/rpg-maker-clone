@@ -338,6 +338,12 @@ function(rpg2k_add_mruby)
   set(mruby_no_irep_debug_patch
       "${ARG_REPO_ROOT}/patches/mruby-no-irep-debug.patch")
 
+  # Exports the bodies of Integer#%, Float#%, String#-@ and the sprintf
+  # formatter under `*_impl` names so bc2cpp's closed helpers can call them (ADR
+  # 0367). The registered methods call the same bodies; behaviour is unchanged.
+  set(mruby_expose_misc_bodies_patch
+      "${ARG_REPO_ROOT}/patches/mruby-expose-misc-bodies.patch")
+
   # Frame-independent bodies of `[]` / `[]=` / `.[]` for bc2cpp's closed index
   # helpers (docs/adr/0365). Adds exported functions and routes the original
   # methods through them; behaviour of interpreted code does not change.
@@ -373,6 +379,7 @@ function(rpg2k_add_mruby)
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_presym_compact_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_cdump_const_reps_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_no_irep_debug_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_expose_misc_bodies_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_expose_index_bodies_patch}")
 
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
