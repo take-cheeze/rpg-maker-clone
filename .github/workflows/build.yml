@@ -1173,6 +1173,9 @@ jobs:
               # worlds, a run against the interpreted operator, and four mutants.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_core_compiled_cmp_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_core_compiled_cmp_mutation_check.rb
+              # ADR 0373: the zero? helper calls the compiled core Numeric#zero?; negative worlds and a run against zero?.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_zero_direct_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_zero_direct_mutation_check.rb
               # ADR 0336: name-wide native transformations and File.join subclass boundary.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_native_array_transforms_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_array_transforms_mutation_check.rb
@@ -1482,6 +1485,8 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_native_class_arms_check.rb
               # ADR 0324: the 32-bit run of the integer-constant fixture (the 64-bit runs are in `integer-constants`).
               MRBC="$mrbc" ruby scripts/bc2cpp_integer_constants_check.rb
+              # ADR 0373: the 32-bit run of the zero? helper against the real zero? (the 64-bit run is in `core-flow`).
+              MRBC="$mrbc" ruby scripts/bc2cpp_zero_direct_check.rb
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
           - variant: nobigint
             checks: |
@@ -1490,6 +1495,7 @@ jobs:
               BC2CPP_INDEX_CLOSED_ONLY=run BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_index_closed_check.rb
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
+              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_zero_direct_check.rb
 
     env:
       RPGMAKER_BC2CPP: "1"

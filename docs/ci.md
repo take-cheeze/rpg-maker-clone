@@ -217,8 +217,8 @@ checks on a libmruby built by `scripts/bc2cpp_width_build.rb`:
 | --- | --- | --- |
 | `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `call_results` |
 | `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow` |
-| `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `index_closed`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `tuple_return` |
-| `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow`, `index_closed`, `getidx_integer_arm`, `tuple_return` |
+| `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `index_closed`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `tuple_return`, `zero_direct` |
+| `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow`, `index_closed`, `getidx_integer_arm`, `tuple_return`, `zero_direct` |
 
 The 32-bit build is the 64-bit host with the targets' arithmetic defines, so it
 does not exercise 32-bit pointers. To run a variant locally, after the mruby
@@ -344,3 +344,15 @@ The check pins both emitters' shape for every answer the Fixnum proof can give
 and drives the real proof over its own refusals; the generated-code section
 covers a closed and an open world. See ADR 0358 and
 [bc2cpp-native-int-guards](bc2cpp-native-int-guards.md).
+
+### The zero? helper through compiled core
+
+The `core-flow` shard also runs `bc2cpp_zero_direct_check.rb` and its mutation check (ADR 0373); the `int32`
+and `nobigint` width legs run the same check against their own libmruby. A closed world that compiles
+mruby's own Ruby has `bc2cpp_slow_zero` call the compiled `Numeric#zero?` for every Numeric that is not a
+Float, raise the `File.zero?` argument error for those class objects, and keep the NoMethodError proof for
+the rest. The check covers the generated code, twelve negative worlds (reopened, aliased, included,
+prepended, singleton or class-level definers, a computed installer, `method_missing`, a `==` that may
+yield, a build without mruby-numeric-ext or mruby-io, an open world, no core compile, both kill switches)
+and a run of the helper against the real `zero?` (values, error class and message, user `==` calls, the
+by-name call count) at every width, in the closed world and in four worlds that must keep the by-name helper.
