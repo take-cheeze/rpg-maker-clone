@@ -73,12 +73,13 @@ RUBY
 
 HOST = <<~RUBY
   class SpHost
-    attr_accessor :spwin, :spmix, :spprm, :spsend, :spnat, :spreg, :spalias, :spbad, :spstr
+    attr_accessor :spwin, :spmix, :spprm, :spsend, :spnat, :spreg, :spalias, :spbad, :spstr, :spkw
     attr_writer :spwr
 
     def initialize
-      @spwin = nil; @spmix = nil; @spprm = nil; @spsend = nil; @spnat = nil; @spreg = nil; @spalias = nil
-      @spbad = nil; @spwr = nil; @spstr = nil
+      @spwin = nil; @spmix = nil; @spprm = nil; @spnat = nil; @spreg = nil; @spbad = nil; @spwr = nil
+      # A SpBox here makes the pool of a refused setter non-empty, so an admission mutant has something to type.
+      @spsend = SpBox.new; @spalias = SpBox.new; @spstr = SpBox.new; @spkw = SpBox.new
     end
 
     def read_win; @spwin.size; end
@@ -92,10 +93,13 @@ HOST = <<~RUBY
     def via_win(h); h.spwin.size; end
     def read_bad; @spbad.size; end
     def read_str; @spstr.size; end
+    def read_kw; @spkw.size; end
   end
 
   class SpHost
     alias_method :spalias_other=, :spalias=
+    # The keyword form names the old setter without a Symbol literal.
+    alias spkw_other= spkw=
   end
 
   # An attr_accessor and an unrelated alias_method share a class body: only the names the alias spells are withdrawn.
@@ -138,6 +142,8 @@ HOST = <<~RUBY
       h.spbad = SpBox.new
       h.spstr = SpBox.new
       h.send("spstr=", SpOther.new)
+      h.spkw = SpBox.new
+      h.spkw_other = SpOther.new
       al = SpAl.new
       al.spal_keep = SpBox.new
       al.spal_old = SpBox.new
@@ -227,7 +233,7 @@ if ENV['MRBC']
     # NEG: each keeps its by-name send (the old output).
     { 'read_mix' => 'a call passes a SpOther: two classes', 'read_prm' => 'a call passes a parameter',
       'read_send' => 'send(:spsend=, ..) reaches the writer', 'read_nat' => 'a native funcalls `spnat=`',
-      'read_alias' => 'alias_method names `spalias=`', 'read_str' => 'the program spells "spstr=" as a String' }.each do |fn, why|
+      'read_alias' => 'alias_method names `spalias=`', 'read_kw' => 'the `alias` keyword names `spkw=`', 'read_str' => 'the program spells "spstr=" as a String' }.each do |fn, why|
       check.call("NEG SpHost##{fn}: #{why}", !checked.call(code, 'SpHost', fn) && by_name.call(code, 'SpHost', fn))
     end
 
@@ -318,7 +324,7 @@ if ENV['MRBC'] && build && runtime.compiler? && !ENV['SP_GENERATED_ONLY']
       mrb_value box = mrb_obj_new(M, mrb_class_get(M, "SpBox"), 0, nullptr);
       mrb_value other = mrb_obj_new(M, mrb_class_get(M, "SpOther"), 0, nullptr);
       const char* reads[] = { "read_win", "read_wr", "read_mix", "read_prm", "read_send", "read_nat", "read_reg",
-                              "read_alias", "read_bad", "read_str" };
+                              "read_alias", "read_bad", "read_str", "read_kw" };
       for (const char* name : reads) sp_call(M, (std::string(name) + " before fill").c_str(), host, name);
       mrb_value fill_args[] = { host, box };
       sp_quiet(M, drv, "fill", 2, fill_args);

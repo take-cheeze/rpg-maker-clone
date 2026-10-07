@@ -43,9 +43,10 @@ receiver-proof report of ADR 0331 on the same tree, with a new `accessor:ivar_ac
 
 Every way to call a setter is a send named `x=`. `CodeGen#setter_pool_reads` is the argument register of every such
 send of the closed world (`entry_arg_call_index`), admitted only when (`compute_setter_pool_refusal`): no `:x=` Symbol
-is spelled (`send(:x=)`, `alias_method`, `method(:x=)` poison it) and no String spells it; no definition is
-foreign, runtime-installed (`define_method`, `unknown_def?`) or a module_function copy; every Ruby definition takes
-exactly one mandatory argument and none calls `super` (a forwarded value would bypass the sites); every site passes
+is spelled (`send(:x=)`, `alias_method`, `method(:x=)`, a `define_method(:x=)` poison it; the `alias` keyword poisons
+its old name) and no String spells it; no definition is foreign or installed out of sight (`unknown_def?`); every
+Ruby definition takes exactly one mandatory argument and none calls `super` (a forwarded value would bypass the
+sites); every site passes
 one argument; the name is not funcalled by a native source, spelled by foreign Ruby, or spelled by a native string
 literal other than the method name of its own registration (`ClosedWorld#record_native_other_literals`: a
 `mrb_define_method(M, cls, "contents=", ...)` is a definition, not a call). `numeric_dynamically_named?`'s clause "any
@@ -134,7 +135,7 @@ of the setters a pool depends on are refused (10 poisoned by a Symbol, 6 called 
   (identical answers, nil receivers raising the interpreter's NoMethodError), and the two failure modes as
   **loud**: a setter called from outside the closed world and a composed name `send("#{stem}=")` each end in
   `BC2cppGuardViolation` where the interpreter answers, and the kill switch makes the outside call match again.
-* `scripts/bc2cpp_setter_pools_mutation_check.rb`: twelve mutants, one per admission rule, the provenance bit, the
+* `scripts/bc2cpp_setter_pools_mutation_check.rb`: eleven mutants, one per admission rule, the provenance bit, the
   class test, the nil arm, the mixed-set decoder and the alias rule.
 * `scripts/bc2cpp_aliased_names_check.rb`: the operand set and the computed-operand fallback.
 * Not run: a 32-bit `mrb_int` leg (nothing here touches an integer constant or a codec; the new Ruby is host-side tooling),

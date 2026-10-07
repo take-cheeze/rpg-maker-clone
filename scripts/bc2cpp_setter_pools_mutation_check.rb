@@ -21,7 +21,7 @@ abort 'SKIP: set MRBC' unless ENV['MRBC']
 MUTANTS = [
   ['a Symbol of the setter (send(:x=), alias_method) does not withdraw it', 'codegen_setter_pools.rb',
    'return :poisoned if poisoned.include?(setter)', '',
-   /read_send|read_alias|a Symbol of the setter/, false],
+   /read_kw|a Symbol of the setter/, false],
   ['a String the program spells does not withdraw the setter', 'codegen_setter_pools.rb',
    'return :spelled_name if setter_spelled_as_literal?(setter)', '', /read_str|spells "spstr="/, false],
   ['a native or foreign call of the name does not withdraw it', 'codegen_setter_pools.rb',
@@ -31,11 +31,10 @@ MUTANTS = [
    'return :arity unless pure_mandatory_arity?(irep) && mandatory_arity(irep) == 1', '', /setter taking two arguments/, false],
   ['a setter that forwards with super is accepted', 'codegen_setter_pools.rb',
    "return :super if irep_tree_op?(irep, 'SUPER')", '', /forwards with super/, false],
-  ['a setter installed by define_method is accepted', 'codegen_setter_pools.rb',
-   'return :installed_body if d.installer || d.copy_irep', '', /runtime installer/, false],
   ['a group is pooled although one of its setters is refused', 'codegen_setter_pools.rb',
-   'return nil if group.checked[:setters].any? { |setter| setter_pool_reads(setter).nil? }', '',
-   /read_send|read_alias|read_str/, false],
+   'return nil if group.checked[:setters].any? { |setter| setter_pool_reads(setter).nil? }',
+   'group.checked[:setters].select! { |setter| setter_pool_reads(setter) }',
+   /read_send|read_alias|read_str|read_kw/, false],
   ['the pool does not carry the CHECKED provenance (the guard-free exact arms read it)', 'codegen_class_pools.rb',
    'stores[:classes].reduce(NumericFlow::CHECKED)', 'stores[:classes].reduce(0)', /nil-or-SpBox behind a class test|diagnostic marks/, false],
   ['the checked arm has no class test', 'codegen_setter_pools.rb',
@@ -47,9 +46,8 @@ MUTANTS = [
    'klass = return_class_name_of_bit(mask & ~(NumericFlow::NIL | NumericFlow::CHECKED))',
    "rest = mask & ~(NumericFlow::NIL | NumericFlow::CHECKED)\n    klass = return_class_name_of_bit(rest & -rest)",
    /read_mix|mixed pool/, false],
-  ['an unchecked accessor name is judged by the alias operands', 'codegen_numeric_returns.rb',
-   'return true unless checked_accessor_name?(name)', 'return false unless checked_accessor_name?(name) || true',
-   /stays withdrawn by the coarse alias rule/, false]
+  ['an unchecked accessor name is admitted by the alias operands', 'codegen_return_classes.rb',
+   '|| !checked_accessor_name?(name)', '|| false', /stays withdrawn by the coarse alias rule/, false]
 ].freeze
 
 failures = []
@@ -61,7 +59,8 @@ mutate = lambda do |(_name, file, pattern, replacement, expected, needs_run)|
     next :site_gone unless text.include?(pattern)
 
     File.write(path, text.sub(pattern) { replacement })
-    env = { 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb') }
+    # The copy has no scripts/ beside it for the lint cross-check (ADR 0368), which no mutant is about.
+    env = { 'BC2CPP_TOOL' => File.join(dir, 'bc2cpp', 'bc2cpp.rb'), 'BC2CPP_LINT_CROSSCHECK' => '0' }
     env['SP_GENERATED_ONLY'] = '1' unless needs_run
     Bc2cppMutantPool.run(env, [RbConfig.ruby, File.join(ROOT, 'scripts/bc2cpp_setter_pools_check.rb')],
                          stop_on: /^\s+FAIL .*(?:#{expected.source})/)
