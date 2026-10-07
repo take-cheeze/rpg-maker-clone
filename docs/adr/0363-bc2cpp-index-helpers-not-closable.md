@@ -4,7 +4,7 @@ Date: 2026-10-06
 
 ## Status
 
-Accepted (analysis only; no generator change)
+Accepted (analysis only; no generator change). Superseded by [0365](0365-bc2cpp-index-helpers-closed-by-exposed-bodies.md): the bodies are exported by a patch instead of mirrored.
 
 ## Context
 
