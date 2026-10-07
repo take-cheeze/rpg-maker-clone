@@ -1154,6 +1154,53 @@ The five helpers that left the list (six by-name calls, `rshift` held two) are `
 `bc2cpp_slow_mul_f` (442), `bc2cpp_slow_rshift` (17), `bc2cpp_slow_xor` (4) and `bc2cpp_slow_round` (5). The
 comparison helpers stay listed with their one Hash call.
 
+## Follow-up: what remains after ADRs 0360-0368, and module singleton arms (ADR 0369)
+
+Measured at master `c973a581` (PRs #2044-#2046 merged), wio closed world, shipped pass, the same tree before and after
+(`3rd/mruby`, `mruby-marshal`, `mruby-onig-regexp` and `mruby-stringio` populated; a run without the last one lacks the
+`StringIO` bodies and reads 2,236 sites).
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 2,286 | 2,205 | -81 |
+| `bc2cpp_send` calls held in helpers | 17 | 17 | 0 |
+| `bc2cpp_nomethod` sites | 4,460 | 4,541 | +81 |
+| `closed_world_kept: singleton_definer` | 91 | 10 | -81 |
+| callers of a helper holding a by-name call | unchanged | unchanged | 0 |
+
+All 81 are removals (`width` 47, `height` 33, `transition` 1): the one singleton definer of those names is
+`RGSS::Graphics`, a module, and the chains already listed every instance definer. The else is a `bc2cpp_nomethod`
+behind an identity arm (`mrb_type == MRB_TT_MODULE && mrb_class_ptr == RGSS::Graphics`), 63 new
+NOMETHOD_REVIEWED keys. The 10 left (`action` 3, `wait` 3, `row` 3, `term` 1) are singleton definers on class objects.
+
+### Remaining sites, by name and by reason (2,286 before the change)
+
+By name: `[]` 208, `empty?` 202, `size` 176, `to_s` 151, `length` 69, `new` 66, `to_enum` 66, `to_i` 60, `[]=` 51,
+`push` 50, `width` 47 (now 0), `x=` 44, `y=` 44, `update` 42, `include?` 37, `name` 37. 241 names remain; the top five
+(`[]`, `empty?`, `size`, `to_s`, `length`) are 806 sites. Of the 2,286, 80 sit in the RGSS probes
+(`effect_probe`, `audio_probe`, `probe_wav`, ...) that `scripts/strip_wio_rgss_probes.rb` deletes from the real wio build:
+the census counts them, the shipped binary does not.
+
+By reason, with the proof each one needs (the receiver class sets come from the exact-class flow):
+
+| Reason | Sites | Why the receiver is unproven | The proof that would close it |
+| --- | ---: | --- | --- |
+| core tag chain else, receiver not an ivar | 814 | register copy 658, direct-call result 206 (project getters and `LCF` readers whose result class set is a union with an unpooled return), `GETIDX` element 61+ (elements of containers filled by `map`/masgn/parsed data) | element and tuple-slot classes of the container (ADR 0312 measured it as the dominant unknown); return-class sets for getters over `@x \|\| []` stores |
+| core tag chain else, receiver is an ivar | 215 | `@list` (22) is stored from a parameter (`commands \|\| []`) and from `@list, @index, @id = @call_stack.pop`, a tuple slot of another ivar's element; `@actors` from `map { @roster[i] }.compact` | argument pools for `start(commands)` plus tuple-slot typing of `@call_stack` elements; `map` over an unproven receiver is not an Array while a user-defined `map` exists |
+| RGSS native exact-class else | 206 | the receiver is proven (`Sprite`, `Window`); an argument (`x=`, `y=`) is not provably an Integer | argument-shape propagation across call edges (ADR 0358 does the call-local part) |
+| `core_or_native` | 186 | `name` 37, `delete` 18, `map` 17, `resume` 11: a native or core definer the world cannot exclude, receiver unproven | an exact receiver class per name |
+| `receiver_class_unresolved` (POLY_DIAG) | 210 | `inspect` 28, `call` 14, `<=>` 12, procs and user objects | inherent |
+| `implicit_self_unresolved` | 194 | `to_enum` 66: `Kernel#to_enum` lives in mruby-enumerator, whose bodies stay interpreted (Fiber and closures), so there is no direct target whatever the receiver | not closable by analysis; needs a compiled enumerator body |
+| numeric tag guard | 121 | `[]` behind an Integer test, the receiver is an exact Array/Hash and the index is not provably an Integer | the index-body helper work (not analysis) |
+| `no_guard_nearby` | 95 | `to_f` 20 (a Float-only arm, the Integer registration is not a derived expression), `===` 11 in core bodies (`Array#deconstruct`), `abs` 17 | an Integer `to_f` arm only moves the line, a receiver proof removes it |
+| `singleton_definer` | 91 to 10 | a module singleton definer is not an instance of any listed class | ADR 0369 |
+| `dynamic_install` | 29 | `update`: a runtime definition site can install the name | per-class resolution of the installer |
+
+Judged not worth doing (or unsound) as analysis changes: widening `direct_callable?` to `&block` bodies (ADR 0341: one
+site); arming class-object singleton definers the same way (10 sites left, and a class object has class-side
+inheritance, so each subclass needs its own arm); dropping the probe sites by analysis (they are stripped by the build,
+the census should read the stripped source instead).
+
 ## Follow-up: exported core bodies (ADR 0367)
 
 `bc2cpp_slow_mod` (138 generated callers, two by-name calls) and `bc2cpp_slow_neg_f` (71 callers, one) carry a closed
@@ -1175,3 +1222,9 @@ The generated method bodies are byte-identical (only the two helpers changed). W
 | `bc2cpp_slow_zero` | 33 | `zero?` | `Numeric#zero?` is `self == 0`: any Numeric that is not an Integer or Float dispatches `==` by name |
 | `bc2cpp_slow_lt` `le` `gt` `ge` | 908 | `Hash#<` ... | Ruby over `all?`, `key?` and `==` of the stored values; `mrb_equal` differs for NaN and a user `==` |
 | `bc2cpp_eqq` | 110 | `===` | `Kernel#===` answers every object; Data (Regexp) and Proc `===` are static in other gems |
+
+## Index helpers closed (ADR 0365)
+
+`bc2cpp_getidx`, `bc2cpp_getidx0` and `bc2cpp_setidx` no longer hold a by-name call: 2,017 + 32 + 348 generated callers stop
+reaching by-name dispatch, helper-held by-name calls go from 19 to 16 and `bc2cpp_send` in the helper region from 17 to 14
+(shipped wio pass, base `b4efe59e`). Bodies and nomethod sites are unchanged (2,286 and 4,460).
