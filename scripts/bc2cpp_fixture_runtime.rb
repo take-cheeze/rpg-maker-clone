@@ -95,12 +95,13 @@ module Bc2cppFixtureRuntime
   # `extra` is more sources ([path, text] pairs) compiled after the fixture, e.g. engine Ruby
   # next to a core fixture. `build_gems` ([name, dir] pairs) adds gems to the closed-world build, whose
   # src/ and mrblib/ then count as outside native and Ruby sources.
+  # `drop_gems` (names) leaves gems out of that list while their sources stay in the scanned ones: a build that lacks them.
   # `core` compiles mruby's own mrblib (BC2CPP_CORE_OWNERS) in front of the fixture, as a build does.
   # `skip_unsupported: false` drops SKIP_UNSUPPORTED, so a method the compiler
   # refuses keeps its `#error` in the output instead of being dropped whole --
   # what a check that asserts on a refusal needs.
   def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil, path: 'fixture.rb', extra: [],
-               native: [], foreign: [], build_gems: [], core: false, skip_unsupported: true)
+               native: [], foreign: [], build_gems: [], drop_gems: [], core: false, skip_unsupported: true)
     src = File.join(dir, path)
     FileUtils.mkdir_p(File.dirname(src))
     File.write(src, source)
@@ -122,7 +123,7 @@ module Bc2cppFixtureRuntime
       env.merge!('NATIVE_SRCS' => Shellwords.join(natives),
                  'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT) + write_outside.call(foreign)),
                  'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).merge(build_gems.to_h).map { |n, d| "#{n}=#{d}" }),
+                 'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).merge(build_gems.to_h).except(*drop_gems).map { |n, d| "#{n}=#{d}" }),
                  NomethodReviewed::ALLOW_ENV => 'allow')
     end
     core_srcs = core ? core_compiled_mrblib_srcs(ROOT) : []

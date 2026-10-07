@@ -1200,3 +1200,25 @@ Judged not worth doing (or unsound) as analysis changes: widening `direct_callab
 site); arming class-object singleton definers the same way (10 sites left, and a class object has class-side
 inheritance, so each subclass needs its own arm); dropping the probe sites by analysis (they are stripped by the build,
 the census should read the stripped source instead).
+
+## Follow-up: exported core bodies (ADR 0367)
+
+`bc2cpp_slow_mod` (138 generated callers, two by-name calls) and `bc2cpp_slow_neg_f` (71 callers, one) carry a closed
+form that calls bodies `patches/mruby-expose-misc-bodies.patch` exports (`Integer#%`, `Float#%`, `String#-@`, the
+sprintf formatter). Wio closed world, shipped pass, branch base `b4efe59e` (PR #2045's head) against the branch, the
+`#if` arm for Complex/Rational builds stripped from both runs as before:
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` calls held in helpers | 17 | 14 | -3 |
+| generated callers of a helper that holds a by-name call | 4,331 | 4,122 | -209 |
+| `bc2cpp_send` call sites in generated bodies | 2,306 | 2,306 | 0 |
+| **Sites that can reach by-name dispatch** (bodies + helper callers + 414 block + 30 funcall sites) | **7,081** | **6,872** | **-209 (-3.0%)** |
+
+The generated method bodies are byte-identical (only the two helpers changed). What stays open, and why:
+
+| Helper | Callers | Held by-name call | Why it cannot close exactly |
+| --- | ---: | --- | --- |
+| `bc2cpp_slow_zero` | 33 | `zero?` | `Numeric#zero?` is `self == 0`: any Numeric that is not an Integer or Float dispatches `==` by name |
+| `bc2cpp_slow_lt` `le` `gt` `ge` | 908 | `Hash#<` ... | Ruby over `all?`, `key?` and `==` of the stored values; `mrb_equal` differs for NaN and a user `==` |
+| `bc2cpp_eqq` | 110 | `===` | `Kernel#===` answers every object; Data (Regexp) and Proc `===` are static in other gems |
