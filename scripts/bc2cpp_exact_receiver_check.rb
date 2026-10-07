@@ -284,8 +284,9 @@ check.call('a fresh RGSS::Tilemap.new calls the entry point with no class test',
            rgfn.call('tile').match?(/NATIVE_DIRECT_EXACT :map_data= .*\n\s+r\d+ = rgss::tilemap_set_map_data_direct\(M, r\d+, r\d+\);/) &&
              !rgfn.call('tile').include?('bc2cpp_native_class'))
 sprite = rgfn.call('sprite_src')
-check.call('an integer argument stays guarded, with the send as its else',
-           sprite.match?(/NATIVE_DIRECT_EXACT :z= .*\n\s+if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = rgss::object_z_set_direct\(.*\} else \{\n\s+r\d+ = bc2cpp_send\(/m))
+check.call('an integer argument is converted as mrb_get_args does, with no guard and no send (ADR 0372)',
+           sprite.match?(/NATIVE_DIRECT_EXACT :z= .*\n\s+\{\n\s+mrb_int bc2cpp_pu\d+_0 = mrb_as_int\(M, r\d+\);\n\s+r\d+ = rgss::object_z_set_direct\(/m) &&
+             !sprite.include?('mrb_integer_p('))
 check.call('a parameter or a reassigned register keeps the class-identity arm',
            rgfn.call('sprite_param').include?('bc2cpp_native_class == rgss::native_sprite_class()') &&
              rgfn.call('sprite_reassigned').include?('bc2cpp_native_class == rgss::native_sprite_class()') &&

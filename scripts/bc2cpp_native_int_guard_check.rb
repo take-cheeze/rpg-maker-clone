@@ -29,6 +29,8 @@ check = lambda do |what, condition|
   failures << what unless condition
 end
 abort 'SKIP: set MRBC' unless ENV['MRBC']
+# This check drives the tag-test emitters in process; ADR 0372's unboxing replaces them for a proven name, so it is off.
+ENV['BC2CPP_NATIVE_PARAM_UNBOX'] = '0'
 
 # -- the emitters, driven directly -------------------------------------------------
 #
@@ -127,8 +129,10 @@ generate = lambda do |source, name, closed|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
+    # This check owns the tag-test machinery (the Fixnum proof dropping a test); ADR 0372's unboxing removes the test of a
+    # proven name outright (scripts/bc2cpp_native_param_unbox_check.rb), so it is off here.
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
-            'NATIVE_SRCS' => Shellwords.join(native_srcs) }
+            'NATIVE_SRCS' => Shellwords.join(native_srcs), 'BC2CPP_NATIVE_PARAM_UNBOX' => '0' }
     if closed
       env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
                  'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),

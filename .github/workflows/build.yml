@@ -1091,6 +1091,9 @@ jobs:
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_native_wrappers_check.rb
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_native_wrappers_mutation_check.rb
+              # ADR 0372: the native-parameter audit, generated code and a compiled fixture against the interpreter
+              # (64-bit mrb_int, bigints on; the 32-bit run is in the width job).
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" BC2CPP_CXXFLAGS="-DMRB_USE_BIGINT" MRBC="$mrbc" ruby scripts/bc2cpp_native_param_unbox_check.rb
           - shard: core-mutants
             # bc2cpp_unlisted_class_call_check with UCC_MUTANTS=1: seven mutant rebuilds (~23 min).
             checks: |
@@ -1478,6 +1481,8 @@ jobs:
               NCR2_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_native_collection_results_check.rb
               BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_core_ruby_results_check.rb
               BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_native_array_transforms_check.rb
+              # ADR 0372: the 32-bit run of the native-parameter fixture (the 64-bit run is in `native-wrappers`).
+              BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp_native_param_unbox_check.rb
               # ADR 0318: the 32-bit run of the numeric-constant fixture (the 64-bit runs are in `numeric-constants`).
               MRBC="$mrbc" ruby scripts/bc2cpp_numeric_constants_check.rb
               # ADR 0326: the 32-bit run of the interval-operand fixture (the 64-bit runs are in `numeric-intervals`).
