@@ -398,8 +398,10 @@ singleton_other = body_of.call(singleton_code, 'CwBase_outside')
 check.call('a self call in an instance method ignores a .singleton definer: class hierarchy analysis resolves it',
            singleton_self.include?('CLOSED_WORLD_SELF :cw_hello') && !singleton_self.include?('bc2cpp_send(') &&
              !singleton_self.include?('kept: singleton_definer'))
-check.call('a non-self receiver may be the module object, so the singleton definer keeps the dispatch',
-           singleton_other.include?('kept: singleton_definer') && !singleton_other.include?('bc2cpp_nomethod('))
+check.call('a non-self receiver may be the module object: it gets an identity arm (ADR 0369) and the else raises',
+           singleton_other.include?('CLOSED_WORLD_CONSTANT_OBJECT :cw_hello -> CwHolder.singleton#cw_hello') &&
+             singleton_other.include?('MRB_TT_MODULE && mrb_class_ptr(') && singleton_other.include?('bc2cpp_nomethod(') &&
+             !singleton_other.include?('kept: singleton_definer'))
 respond_outside = bc2cpp_closed_world_outside_srcs('wio', wio_gems, root)
 respond_code, = generate.call(RESPOND_WORLD, 'cw_respond', true, nil, respond_outside)
 respond_hook_code, = generate.call(RESPOND_HOOK_WORLD, 'cw_respond_hook', true, nil, respond_outside)

@@ -65,7 +65,7 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 
 | Shard | Checks | Approx. |
 | --- | --- | --- |
-| `core-mrbtest` | block/yield-free/exact-receiver (+ `core_body_exact` and `core_singleton_audit`, ADR 0359, about 1 min)/return-class, `step_inline`, `eqq_direct`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, `numeric_slow`, `tuple_return` (ADR 0311, +30 s), mruby's own suites | 20 min |
+| `core-mrbtest` | block/yield-free/exact-receiver (+ `core_body_exact` and `core_singleton_audit`, ADR 0359, about 1 min)/return-class, `step_inline`, `eqq_direct`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, `numeric_slow`, `index_closed` (ADR 0365, about 2 min), `tuple_return` (ADR 0311, +30 s), mruby's own suites | 20 min |
 | `core-flow` | `exact_receiver_flow` and its mutation check, `computed_send` with `CSEND_MUTANTS=1` | see the timing table |
 | `core-tables` | `frozen_tables` and its mutation check (ADR 0306) | see the timing table |
 | `call-results` | `call_results` and its mutation check (ADR 0309; its 32-bit leg runs in `bc2cpp-width (int32-a)` or `(int32-b)`) | see the timing table |
@@ -217,8 +217,8 @@ checks on a libmruby built by `scripts/bc2cpp_width_build.rb`:
 | --- | --- | --- |
 | `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `call_results` |
 | `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow` |
-| `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `tuple_return` |
-| `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow`, `getidx_integer_arm`, `tuple_return` |
+| `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `index_closed`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `tuple_return` |
+| `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow`, `index_closed`, `getidx_integer_arm`, `tuple_return` |
 
 The 32-bit build is the 64-bit host with the targets' arithmetic defines, so it
 does not exercise 32-bit pointers. To run a variant locally, after the mruby
@@ -231,6 +231,10 @@ ruby scripts/bc2cpp_width_build.rb int32 /tmp/w32
 BC2CPP_MRUBY_FULL32=/tmp/w32/host BC2CPP_MRBC32=/tmp/w32/host/bin/mrbc \
   MRBC=<64-bit host mrbc> ruby scripts/bc2cpp_numeric_slow_check.rb
 ```
+
+`numeric_slow` also needs the tree to carry `patches/mruby-expose-collection-op-bodies.patch` (ADR 0366): the
+`- & | <<` helpers call the exported `Array#-`, `&`, `|`, `String#<<` and `IO#<<` bodies, and the libmruby it runs
+against must be built from that patched tree.
 
 A check whose environment variable is missing prints `SKIP` and exits 0; the
 job fails instead when the libmruby it should have built is absent.
@@ -281,6 +285,18 @@ The bc2cpp core checks run `bc2cpp_enumerator_wrappers_check.rb` and its mutatio
 check. They verify the seven admitted wrappers' unconditional Fiber guards,
 saved bytecode registration, admission gates and runtime parity for yielding
 callbacks, state changes, overrides and GC. See ADR 0350.
+
+### Compiled core definers and the Hash comparison arm
+
+The `core-flow` shard also runs `bc2cpp_core_compiled_cmp_check.rb` and its mutation check
+(ADR 0371). A closed world that compiles mruby's own Ruby puts the compiled `Hash#<`, `<=`, `>`
+and `>=` in the Hash arm of the four comparison helpers; the check covers the generated code, the
+negative worlds (reopened, prepended, aliased, outside or computed definers, a `==` that may
+yield, `method_missing`, a singleton, a build without mruby-hash-ext, an open world, no core
+compile, the `BC2CPP_CORE_COMPILED_CMP=0` kill switch), and a run of every helper against the
+interpreted operator on a full-core build. The compiler also prints `== core-source methods left
+interpreted ==` with a reason and the language features per method, which the coverage report's
+core line counts.
 
 ### User receiver unions
 

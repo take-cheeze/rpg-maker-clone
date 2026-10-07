@@ -73,7 +73,7 @@ env = {
   # world that the wio compiled gems use. `allow` skips the reviewed-site audit
   # failure for this measurement run; it does not alter generated dispatch.
   'BC2CPP_CLOSED_WORLD' => '1',
-  'BC2CPP_BUILD_NAME' => 'wio',
+  'BC2CPP_BUILD_NAME' => 'wio', 'BC2CPP_COLLECTION_EXPORTS' => '1',
   'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).map { |n, d| "#{n}=#{d}" }),
   NomethodReviewed::ALLOW_ENV => 'allow',
 }
