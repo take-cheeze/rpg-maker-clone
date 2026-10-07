@@ -12,6 +12,10 @@ require 'open3'
 module Bc2cppMutantPool
   Result = Struct.new(:out, :success, :stopped)
 
+  # A mutant is a copy of tools/bc2cpp alone, so the lint cross-check (ADR 0368) cannot find
+  # scripts/rpg2k_closed_world_lint.rb beside it; the check owns that agreement, the mutant does not.
+  MUTANT_ENV = { 'BC2CPP_LINT_CROSSCHECK' => '0' }.freeze
+
   module_function
 
   def jobs
@@ -26,6 +30,7 @@ module Bc2cppMutantPool
   # nonzero exit (every check here ends in `exit 1` when it recorded one), so a mutant it already
   # reports as caught need not run to the end.
   def run(env, argv, stop_on: nil)
+    env = MUTANT_ENV.merge(env)
     out = +''
     stopped = false
     status = nil
