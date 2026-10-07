@@ -1,0 +1,164 @@
+Expose the native bodies of Array#-, Array#&, Array#|, String#<< and IO#<< (docs/adr/0366).
+
+bc2cpp's closed-world numeric helpers (bc2cpp_slow_sub_f, _and, _or, _lshift) have to run the method a
+receiver class would have answered with, and these five are `static` in mruby-array-ext, mruby-string-ext and
+mruby-io. Each one is split into an exported, C-linkage `<name>_impl` that takes its operands explicitly
+(no mrb_get_args) and holds the whole body, and the original method wrapper, which now calls mrb_get_args
+and then the impl. The interpreter runs the same statements in the same order as before: Array#- / #| / #&
+keep `mrb_get_args "A"` in the wrapper, String#<< and IO#<< call the impl only for the one-operand shape
+(`mrb_get_argc == 1`) and keep their old sequence for any other (IO#<< checks the stream before the arity).
+The C hunks carry no comments on purpose: bc2cpp treats every identifier of the gem sources as spelled outside the
+closed world (outside_world_tokens), so a comment word would poison the proofs of a Ruby method of that name.
+Array#<< needs no patch: its one-operand body is the public mrb_ary_push.
+
+Applied last, after every other mruby patch (cmake/build-mruby.cmake, scripts/maix_mruby_build.bash,
+scripts/wio_bc2cpp_measure.bash).
+
+diff --git a/mrbgems/mruby-array-ext/src/array.c b/mrbgems/mruby-array-ext/src/array.c
+--- a/mrbgems/mruby-array-ext/src/array.c
++++ b/mrbgems/mruby-array-ext/src/array.c
+@@ -29,6 +29,12 @@
+ 
+ typedef khash_t(ary_set) ary_set_t;
+ 
++MRB_BEGIN_DECL
++MRB_API mrb_value mrb_ary_ext_sub_impl(mrb_state *mrb, mrb_value self, mrb_value other);
++MRB_API mrb_value mrb_ary_ext_or_impl(mrb_state *mrb, mrb_value self, mrb_value other);
++MRB_API mrb_value mrb_ary_ext_and_impl(mrb_state *mrb, mrb_value self, mrb_value other);
++MRB_END_DECL
++
+ /* Combination state structure for repeated_combination optimization */
+ struct mrb_combination_state {
+   mrb_int *indices;
+@@ -546,12 +552,18 @@
+  *     [ 1, 1, 2, 2, 3, 3, 4, 5 ] - [ 1, 2, 4 ]  #=> [ 3, 3, 5 ]
+  */
+ 
++mrb_value
++mrb_ary_ext_sub_impl(mrb_state *mrb, mrb_value self, mrb_value other)
++{
++  return ary_subtract_internal(mrb, self, 1, &other);
++}
++
+ static mrb_value
+ ary_sub(mrb_state *mrb, mrb_value self)
+ {
+   mrb_value other;
+   mrb_get_args(mrb, "A", &other);
+-  return ary_subtract_internal(mrb, self, 1, &other);
++  return mrb_ary_ext_sub_impl(mrb, self, other);
+ }
+ 
+ /*
+@@ -690,12 +702,18 @@
+  *           #=> [ "a", "b", "c", "d" ]
+  */
+ 
++mrb_value
++mrb_ary_ext_or_impl(mrb_state *mrb, mrb_value self, mrb_value other)
++{
++  return ary_union_internal(mrb, self, 1, &other);
++}
++
+ static mrb_value
+ ary_union(mrb_state *mrb, mrb_value self)
+ {
+   mrb_value other;
+   mrb_get_args(mrb, "A", &other);
+-  return ary_union_internal(mrb, self, 1, &other);
++  return mrb_ary_ext_or_impl(mrb, self, other);
+ }
+ 
+ /*
+@@ -825,12 +843,18 @@
+  *     [ 1, 1, 3, 5 ] & [ 1, 2, 3 ]   #=> [ 1, 3 ]
+  */
+ 
++mrb_value
++mrb_ary_ext_and_impl(mrb_state *mrb, mrb_value self, mrb_value other)
++{
++  return ary_intersection_internal(mrb, self, 1, &other);
++}
++
+ static mrb_value
+ ary_intersection(mrb_state *mrb, mrb_value self)
+ {
+   mrb_value other;
+   mrb_get_args(mrb, "A", &other);
+-  return ary_intersection_internal(mrb, self, 1, &other);
++  return mrb_ary_ext_and_impl(mrb, self, other);
+ }
+ 
+ /*
+diff --git a/mrbgems/mruby-io/src/io.c b/mrbgems/mruby-io/src/io.c
+--- a/mrbgems/mruby-io/src/io.c
++++ b/mrbgems/mruby-io/src/io.c
+@@ -1169,14 +1169,39 @@
+  * String Output - Writes obj to ios. obj will be converted to a string using
+  * to_s.
+  */
+-static mrb_value
+-io_lshift(mrb_state *mrb, mrb_value io)
++MRB_BEGIN_DECL
++MRB_API mrb_value mrb_io_lshift_impl(mrb_state *mrb, mrb_value io, mrb_value str);
++MRB_END_DECL
++
++static int
++io_lshift_fd(mrb_state *mrb, mrb_value io)
+ {
+   struct mrb_io *fptr = io_get_write_fptr(mrb, io);
+   int fd = io_get_write_fd(fptr);
+ 
+   /* Prepare IO for writing (handle read buffer adjustment) */
+   io_prepare_write(mrb, fptr);
++  return fd;
++}
++
++mrb_value
++mrb_io_lshift_impl(mrb_state *mrb, mrb_value io, mrb_value str)
++{
++  int fd = io_lshift_fd(mrb, io);
++
++  str = mrb_obj_as_string(mrb, str);
++  fd_write(mrb, fd, str);
++
++  return io;
++}
++
++static mrb_value
++io_lshift(mrb_state *mrb, mrb_value io)
++{
++  if (mrb_get_argc(mrb) == 1) {
++    return mrb_io_lshift_impl(mrb, io, mrb_get_arg1(mrb));
++  }
++  int fd = io_lshift_fd(mrb, io);
+ 
+   mrb_value str = mrb_get_arg1(mrb);
+   str = mrb_obj_as_string(mrb, str);
+diff --git a/mrbgems/mruby-string-ext/src/string.c b/mrbgems/mruby-string-ext/src/string.c
+--- a/mrbgems/mruby-string-ext/src/string.c
++++ b/mrbgems/mruby-string-ext/src/string.c
+@@ -151,9 +151,23 @@
+  *    s.concat(32, 'bar', 32, 'baz') # => "foo bar baz"
+  *
+  */
++MRB_BEGIN_DECL
++MRB_API mrb_value mrb_str_ext_concat_impl(mrb_state *mrb, mrb_value self, mrb_value other);
++MRB_END_DECL
++
++mrb_value
++mrb_str_ext_concat_impl(mrb_state *mrb, mrb_value self, mrb_value other)
++{
++  str_concat(mrb, self, other, RSTR_BINARY_P(mrb_str_ptr(self)));
++  return self;
++}
++
+ static mrb_value
+ str_concat_m(mrb_state *mrb, mrb_value self)
+ {
++  if (mrb_get_argc(mrb) == 1) {
++    return mrb_str_ext_concat_impl(mrb, self, mrb_get_arg1(mrb));
++  }
+   mrb_bool binary = RSTR_BINARY_P(mrb_str_ptr(self));
+   return str_concat0(mrb, self, binary);
+ }

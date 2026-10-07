@@ -350,6 +350,13 @@ function(rpg2k_add_mruby)
   set(mruby_expose_index_bodies_patch
       "${ARG_REPO_ROOT}/patches/mruby-expose-index-bodies.patch")
 
+  # Exports the native bodies of Array#-, Array#&, Array#|, String#<< and IO#<<
+  # (docs/adr/0366) so bc2cpp's closed-world helpers can call them directly.
+  # Applied last: it edits array.c/string.c/io.c, which the patches above also
+  # touch.
+  set(mruby_expose_collection_op_bodies_patch
+      "${ARG_REPO_ROOT}/patches/mruby-expose-collection-op-bodies.patch")
+
   # One `apply_mruby_patch.bash DIR PATCH &&` link per patch, run in this order
   # ahead of rake by both mruby_build and mruby_host_mrbc below.
   set(mruby_patch_chain "")
@@ -381,6 +388,8 @@ function(rpg2k_add_mruby)
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_no_irep_debug_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_expose_misc_bodies_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_expose_index_bodies_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}"
+                    "${mruby_expose_collection_op_bodies_patch}")
 
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from

@@ -143,6 +143,7 @@ apply 3rd/mruby mruby-cdump-const-reps.patch
 apply 3rd/mruby mruby-no-irep-debug.patch
 apply 3rd/mruby mruby-expose-misc-bodies.patch
 apply 3rd/mruby mruby-expose-index-bodies.patch
+apply 3rd/mruby mruby-expose-collection-op-bodies.patch
 
 # The standalone arm-none-eabi uni-algo. PlatformIO's LDF cannot build it (no
 # library.json, platformio.ini's own comment on env:wio_rgss_boot), so compile
