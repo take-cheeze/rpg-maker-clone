@@ -1175,3 +1175,9 @@ The generated method bodies are byte-identical (only the two helpers changed). W
 | `bc2cpp_slow_zero` | 33 | `zero?` | `Numeric#zero?` is `self == 0`: any Numeric that is not an Integer or Float dispatches `==` by name |
 | `bc2cpp_slow_lt` `le` `gt` `ge` | 908 | `Hash#<` ... | Ruby over `all?`, `key?` and `==` of the stored values; `mrb_equal` differs for NaN and a user `==` |
 | `bc2cpp_eqq` | 110 | `===` | `Kernel#===` answers every object; Data (Regexp) and Proc `===` are static in other gems |
+
+## Index helpers closed (ADR 0365)
+
+`bc2cpp_getidx`, `bc2cpp_getidx0` and `bc2cpp_setidx` no longer hold a by-name call: 2,017 + 32 + 348 generated callers stop
+reaching by-name dispatch, helper-held by-name calls go from 19 to 16 and `bc2cpp_send` in the helper region from 17 to 14
+(shipped wio pass, base `b4efe59e`). Bodies and nomethod sites are unchanged (2,286 and 4,460).

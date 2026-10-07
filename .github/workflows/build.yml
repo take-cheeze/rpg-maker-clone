@@ -1053,6 +1053,9 @@ jobs:
               # ADR 0292: the numeric slow-path helpers against the interpreter over a
               # Fixnum/bigint/Float/nil/String/user-class operand matrix; same build.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
+              # ADR 0365: the index helpers bc2cpp_getidx/getidx0/setidx without their by-name tail, each run against
+              # the real `[]` / `[]=` over a receiver and key matrix (the 32-bit and no-bigint legs are in bc2cpp-width).
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_index_closed_check.rb
               # ADR 0311: destructured fixed-arity Array returns; the full-core run (the core-only run is in `fast`).
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
               # mruby's own suites (rake test) on a full-core host build, interpreted and with the
@@ -1431,6 +1434,7 @@ jobs:
               export BC2CPP_MRUBY_FULL32="$width" BC2CPP_MRBC32="$width/bin/mrbc"
               # The 64-bit host mrbc stays MRBC; each check swaps in BC2CPP_MRBC32 for its 32-bit run.
               MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
+              BC2CPP_INDEX_CLOSED_ONLY=run MRBC="$mrbc" ruby scripts/bc2cpp_index_closed_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_overflow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_step_inline_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
@@ -1468,6 +1472,7 @@ jobs:
             checks: |
               NN_WIDTH_SAFE=1 NN_NO_BIGINT=1 BC2CPP_MRUBY_FULL="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$RUNNER_TEMP/bc2cpp-width/host/bin/mrbc" ruby scripts/bc2cpp_numeric_native_direct_check.rb
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
+              BC2CPP_INDEX_CLOSED_ONLY=run BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_index_closed_check.rb
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
               BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
 
