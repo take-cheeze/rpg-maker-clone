@@ -338,6 +338,13 @@ function(rpg2k_add_mruby)
   set(mruby_no_irep_debug_patch
       "${ARG_REPO_ROOT}/patches/mruby-no-irep-debug.patch")
 
+  # Exports the bodies of Integer#%, Float#%, String#-@ and the sprintf
+  # formatter under `*_impl` names so bc2cpp's closed helpers can call them
+  # (ADR 0367). The registered methods call the same bodies; behaviour is
+  # unchanged.
+  set(mruby_expose_misc_bodies_patch
+      "${ARG_REPO_ROOT}/patches/mruby-expose-misc-bodies.patch")
+
   # One `apply_mruby_patch.bash DIR PATCH &&` link per patch, run in this order
   # ahead of rake by both mruby_build and mruby_host_mrbc below.
   set(mruby_patch_chain "")
@@ -367,6 +374,7 @@ function(rpg2k_add_mruby)
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_presym_compact_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_cdump_const_reps_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_no_irep_debug_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_expose_misc_bodies_patch}")
 
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
