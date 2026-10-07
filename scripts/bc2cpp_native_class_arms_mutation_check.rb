@@ -51,8 +51,8 @@ MUTANTS = [
    'return :unknown_definer if @unknown_defs.include?(name)', /pos_update: the proven receiver set/],
   ['the class-object installs are still installed names', 'codegen_send.rb',
    '    installed = instance_scope ? symbol_instance_installed_names : symbol_installed_names
-    reason = argv.size', '    installed = symbol_installed_names
-    reason = argv.size', /pos_update: the proven receiver set/],
+    refuse = lambda do |chain, arms = nil|', '    installed = symbol_installed_names
+    refuse = lambda do |chain, arms = nil|', /pos_update: the proven receiver set/],
   ['a nil the flow cannot exclude does not keep the gates of a name nil answers', 'codegen_call_facts.rb',
    '(!mask.is_a?(Integer) || mask.anybits?(NumericFlow::NIL)) && !nil_unanswerable_for_instances?(name)', 'false',
    /NEG a native source defines na_zork on NilClass/],
