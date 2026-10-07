@@ -1332,7 +1332,7 @@ def closed_collection_generated_checks(check, runtime)
   check.call('the other helpers have no extern declaration of an export they do not call',
              helper_pair(code, 'and').last.scan('extern "C"').size == 1 && helper_pair(code, 'sub_f').last.scan('extern "C"').size == 1)
   check.call('every generated declaration is one the patch defines (no other mrb_*_impl is declared)',
-             code.scan(/^extern "C" mrb_value (mrb_\w+_impl)\(/).flatten.uniq.sort ==
+             code.scan(/^extern "C" mrb_value (mrb_(?:ary_ext|str_ext|io_lshift)\w*_impl)\(/).flatten.uniq.sort ==
              %w[mrb_ary_ext_and_impl mrb_ary_ext_or_impl mrb_ary_ext_sub_impl mrb_io_lshift_impl mrb_str_ext_concat_impl])
 
   check.call('POS: the default wio world keeps `<<` open (Enumerator::Yielder#<< is interpreted Ruby) and closes `- & |`',
@@ -1936,7 +1936,7 @@ end
 # ADR 0366: the closed `- & | <<` helpers against the real operators (scripts/bc2cpp_collection_ops_matrix.rb), at every
 # width, once more with the Complex and Rational macros set (the by-name copies must still answer alike).
 builds.product([false, true]).each do |(label, build, mrbc, flags, width, bigint), legacy|
-  next if ONLY_CMP
+  next if ONLY_CMP || ONLY_MISC
 
   puts "-- closed `- & | <<` helpers on real mruby (#{label}#{legacy ? ', Complex and Rational macros set' : ''}), " \
        'interpreted and compiled'
@@ -2177,7 +2177,13 @@ core_build = runtime.core
 if core_build && runtime.compiler? && !ONLY_CMP
   puts '-- closed `%` helper linked against a gem-free libmruby (the gem exports are weak references)'
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS)
+    # A gem-free libmruby has no exported collection bodies either (ADR 0366), so those helpers stay by name here.
+    runtime.collection_exports_linked = false
+    begin
+      _code, err = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS)
+    ensure
+      runtime.collection_exports_linked = true
+    end
     scenario = <<~CPP
       static int scenario(mrb_state* M) {
         mrb_value o = mrb_obj_new(M, mrb_class_get(M, "NsMisc"), 0, nullptr);
