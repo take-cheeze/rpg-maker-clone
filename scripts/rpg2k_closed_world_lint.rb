@@ -21,7 +21,7 @@
 require 'prism'
 require 'set'
 
-ROOT = File.expand_path('..', __dir__)
+ROOT = File.expand_path('..', __dir__) unless defined?(ROOT)
 GEMS = %w[mruby-rpg2k mruby-lcf mruby-rgss].freeze
 BASELINE = File.join(__dir__, 'rpg2k_closed_world_lint_baseline.txt')
 
@@ -184,24 +184,38 @@ def global_reassignment_offences(global_writes)
   end
 end
 
+# Lints every closed-world gem file and compares the offences with the baseline.
+# Shared by the CLI below and by bc2cpp's closed-world cross-check (ADR 0368).
+def closed_world_lint_run(root: ROOT)
+  files = GEMS.flat_map { |g| Dir[File.join(root, g, 'mrblib', '**', '*.rb')] }.sort
+  offences = []
+  malformed = []
+  global_writes = Hash.new { |h, k| h[k] = [] }
+  files.each do |f|
+    o, bad, writes, allowed = lint_file(f)
+    offences.concat(o)
+    malformed.concat(bad)
+    writes.each do |name, file, line, snippet, repeatable|
+      global_writes[name] << [file, line, snippet, repeatable] unless allowed[line].include?('Dynamic/GlobalVariableReassignment') ||
+                                                                     allowed[line - 1].include?('Dynamic/GlobalVariableReassignment')
+    end
+  end
+  offences.concat(global_reassignment_offences(global_writes))
+  # Defaults to 0: a baseline entry whose offences are all fixed is simply absent.
+  counts = Hash.new(0).merge(offences.group_by(&:key).transform_values(&:size))
+  baseline = load_baseline
+  { files: files, offences: offences, malformed: malformed, counts: counts, baseline: baseline,
+    new_offences: offences.select { |o| counts[o.key] > baseline[o.key] },
+    stale: baseline.select { |key, n| counts[key] < n } }
+end
+
 return unless $PROGRAM_NAME == __FILE__
 
-files = GEMS.flat_map { |g| Dir[File.join(ROOT, g, 'mrblib', '**', '*.rb')] }.sort
-offences = []
-malformed = []
-global_writes = Hash.new { |h, k| h[k] = [] }
-files.each do |f|
-  o, bad, writes, allowed = lint_file(f)
-  offences.concat(o)
-  malformed.concat(bad)
-  writes.each do |name, file, line, snippet, repeatable|
-    global_writes[name] << [file, line, snippet, repeatable] unless allowed[line].include?('Dynamic/GlobalVariableReassignment') ||
-                                                                   allowed[line - 1].include?('Dynamic/GlobalVariableReassignment')
-  end
-end
-offences.concat(global_reassignment_offences(global_writes))
-# Defaults to 0: a baseline entry whose offences are all fixed is simply absent.
-counts = Hash.new(0).merge(offences.group_by(&:key).transform_values(&:size))
+run = closed_world_lint_run
+files = run[:files]
+offences = run[:offences]
+malformed = run[:malformed]
+counts = run[:counts]
 
 if ARGV.include?('--regenerate-baseline')
   grown = counts.select { |key, n| n > load_baseline[key] }
@@ -218,11 +232,8 @@ if ARGV.include?('--regenerate-baseline')
   exit 0
 end
 
-baseline = load_baseline
-new_offences = offences.select do |o|
-  counts[o.key] > baseline[o.key]
-end
-stale = baseline.select { |key, n| counts[key] < n }
+new_offences = run[:new_offences]
+stale = run[:stale]
 
 by_cop = offences.group_by(&:cop).transform_values(&:size)
 COPS.each_key { |cop| puts format('  %-26s %4d', cop, by_cop.fetch(cop, 0)) }
