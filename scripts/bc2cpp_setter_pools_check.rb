@@ -262,7 +262,8 @@ end
 
 # -- 2. behaviour -----------------------------------------------------------------------------------------------------
 
-build = runtime.full || runtime.core || runtime.full_or_build
+# The fixture needs Kernel#send, alias_method and interpolation: a full-core build, never the bare core.
+build = runtime.full || runtime.full_or_build
 if ENV['MRBC'] && build && runtime.compiler? && !ENV['SP_GENERATED_ONLY']
   puts '== fixture on real mruby, interpreted and compiled'
   body = <<~'CPP'
