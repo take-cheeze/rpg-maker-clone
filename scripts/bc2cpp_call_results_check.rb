@@ -400,6 +400,7 @@ if ENV['MRBC'] && !builds.empty? && runtime.compiler? && !ENV['CR_GENERATED_ONLY
                  d_push_nilable_t d_push_nilable_f d_typed_param_array d_typed_param_hash d_typed_mixed_t d_typed_mixed_f]
   world_calls = {
     'a writer on the ivar' => [%w[acc_set stash_held held_tag stash_boxed stash_held2 held2_tag], []],
+    'a writer the setter pool refuses' => [%w[acc_named_set acc_named_any], []],
     'a second class with a reader of the same name' => [%w[acc_second], []],
     'a store of a second class' => [%w[acc_swap], []],
     'a store from a subclass' => [%w[acc_poke], []],
