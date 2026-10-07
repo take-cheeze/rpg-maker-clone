@@ -1270,3 +1270,34 @@ census world and in a closed build with `BC2CPP_HOT_ONLY=0`. Core compile counts
 190 compiled, 25 interpreted; the compiler now prints the 25 with their reasons). Still open: `zero?` (33, the receiver
 set is unbounded because `File.zero?`/`FileTest.zero?` are native class methods), `===` (110), `&` `|` `<<` `-` and the
 index helpers when the index-body patch is absent.
+
+## Follow-up: native parameters unboxed (ADR 0372)
+
+A native direct arm no longer tests an `:int` argument for Integer: when the closed world proves the
+name reaches the RGSS native, the call site runs `mrb_as_int` (`mrb_get_args "i"` is exactly that, in
+`3rd/mruby/src/class.c`) on each argument as its own statement, in argument order, then calls the entry
+point. The old arm's else was a by-name send whose only job was to re-derive what the conversion does.
+
+Wio closed world, shipped pass, same tree, `BC2CPP_NATIVE_PARAM_UNBOX=0` against default
+(`scripts/bc2cpp_coverage_report.rb` with `BC2CPP_COVERAGE_KEEP_DIR`, then
+`scripts/bc2cpp_dynamic_site_census.rb`):
+
+| Measure | Control | Enabled |
+| --- | ---: | ---: |
+| `bc2cpp_send` call sites, generated bodies | 2,208 | 2,101 |
+| `bc2cpp_nomethod` sites (not dynamic) | 4,541 | 4,560 |
+| `rgss_native_exact_class_else` sites | 206 | 118 |
+| generated `shipped.cxx` | 21,461,897 B / 441,808 lines | 21,523,288 B / 443,666 lines |
+
+`rgss_native_exact_class_else` by name (control / enabled): `x=` 36 / 0, `y=` 36 / 0, `z=` 7 / 0,
+`flash` 18 / 6, `new` 62 / 39, `opacity=` 3 / 3, `_transition_alpha` 1 / 1, `update` 10 / 10,
+`fill_rect` 7 / 17, `draw_text` 7 / 19, `clear` 7 / 10, `blt` 7 / 7, `text_size` 4 / 4. The three
+growing rows hold no `:int` argument (their entries take `:value`): they are the same sites,
+reclassified once the `x=`/`y=` ones in front of them stopped matching. The 19 new `bc2cpp_nomethod`
+sites are chains whose last else is now proven dead (eight new reviewed keys, all `Viewport`/`Bitmap`
+ivars set only from `Viewport.new`/`Bitmap.new`). The file grows 0.3% by the per-arm blocks.
+
+What stays gated: `Bitmap.new`'s first argument (`Bitmap#initialize` branches on `f.kind_of? String`),
+any name an alias, Symbol definition, computed-name installer, `undef` or visibility change can reach,
+and every arm of an open world. See [ADR 0372](adr/0372-bc2cpp-native-param-unbox.md) and
+`scripts/bc2cpp_native_param_unbox_check.rb`.

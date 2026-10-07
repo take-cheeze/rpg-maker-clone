@@ -445,7 +445,7 @@ end
 # -- 3. behaviour -------------------------------------------------------------------------
 
 builds = []
-if ENV['MRBC'] && runtime.compiler?
+if ENV['MRBC'] && runtime.compiler? && !ENV['PU_GENERATED_ONLY']
   flags = ENV.fetch('BC2CPP_CXXFLAGS', '')
   primary = runtime.full || runtime.full_or_build
   builds << ['full-core', primary, ENV.fetch('MRBC'), flags] if primary

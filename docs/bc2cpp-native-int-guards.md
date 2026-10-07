@@ -42,3 +42,11 @@ Wio closed world, shipped pass, `BC2CPP_NATIVE_INT_GUARDS=0` against default on 
 
 Nine `z=`/`x=`/`flash` sends are removed, not relocated: no helper gained a caller. The
 remaining 17 are arguments the Fixnum proof does not cover.
+
+## Superseded for a proven name (ADR 0372)
+
+When the closed world proves the name reaches the RGSS native, the arm no longer tests the
+argument at all: it converts it with `mrb_as_int`, which is what `mrb_get_args "i"` is
+(`docs/adr/0372-bc2cpp-native-param-unbox.md`). The machinery above still runs for a name
+that proof refuses (an alias, a computed-name installer, an open world) and under
+`BC2CPP_NATIVE_PARAM_UNBOX=0`, so this check generates with that switch off.

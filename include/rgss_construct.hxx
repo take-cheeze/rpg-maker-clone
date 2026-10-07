@@ -121,9 +121,11 @@ mrb_value viewport_tone_set_direct(mrb_state* M,
 // Setters and getters shared by the mrb_define_method bindings and by bc2cpp's
 // exact-class-guarded calls (tools/bc2cpp/native_direct.rb): the binding
 // unpacks mrb_get_args and forwards here, so both paths run one body. The
-// generated call site checks argument types (mrb_integer_p for mrb_int) and
-// dispatches instead on a mismatch, so coercion and TypeError stay with the
-// binding. A disposed receiver raises RGSSError exactly as the binding does.
+// generated call site converts mrb_int/mrb_float arguments with the
+// mrb_as_int/mrb_as_float that mrb_get_args "i"/"f" are (ADR 0372), in
+// argument order; a name it cannot prove still tests mrb_integer_p and
+// dispatches on a mismatch. A disposed receiver raises RGSSError exactly as
+// the binding does.
 mrb_value object_x_set_direct(mrb_state* M, mrb_value self, mrb_int x);
 mrb_value object_y_set_direct(mrb_state* M, mrb_value self, mrb_int y);
 mrb_value object_z_set_direct(mrb_state* M, mrb_value self, mrb_int z);

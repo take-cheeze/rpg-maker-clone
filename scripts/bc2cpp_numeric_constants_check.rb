@@ -23,6 +23,10 @@ require 'fileutils'
 require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
 
+# This check owns the Fixnum proof's tag-test machinery (ADR 0318); ADR 0372's unboxing converts the second argument of
+# Bitmap.new instead of testing it (scripts/bc2cpp_native_param_unbox_check.rb), so it is off here.
+ENV['BC2CPP_NATIVE_PARAM_UNBOX'] = '0'
+
 failures = []
 check = lambda do |what, condition|
   puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
