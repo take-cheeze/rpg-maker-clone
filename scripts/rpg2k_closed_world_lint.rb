@@ -138,8 +138,8 @@ end
 
 ALLOW = /#\s*rpg2k-lint:allow\s+(\S+)\s+--\s+\S/
 
-def lint_file(path, source: nil)
-  rel = path.delete_prefix("#{ROOT}/")
+def lint_file(path, source: nil, root: ROOT)
+  rel = path.delete_prefix("#{root}/")
   result = source ? Prism.parse(source) : Prism.parse_file(path)
   raise "#{rel}: #{result.errors.map(&:message).join('; ')}" unless result.errors.empty?
 
@@ -192,7 +192,7 @@ def closed_world_lint_run(root: ROOT)
   malformed = []
   global_writes = Hash.new { |h, k| h[k] = [] }
   files.each do |f|
-    o, bad, writes, allowed = lint_file(f)
+    o, bad, writes, allowed = lint_file(f, root: root)
     offences.concat(o)
     malformed.concat(bad)
     writes.each do |name, file, line, snippet, repeatable|
