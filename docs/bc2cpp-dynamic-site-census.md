@@ -1153,3 +1153,24 @@ attributed to the `round` helper.
 The five helpers that left the list (six by-name calls, `rshift` held two) are `bc2cpp_slow_add_f` (712 callers),
 `bc2cpp_slow_mul_f` (442), `bc2cpp_slow_rshift` (17), `bc2cpp_slow_xor` (4) and `bc2cpp_slow_round` (5). The
 comparison helpers stay listed with their one Hash call.
+
+## Follow-up: exported collection bodies (ADR 0366)
+
+`patches/mruby-expose-collection-op-bodies.patch` exports `Array#-`, `#&`, `#|` (mruby-array-ext), `String#<<`
+(mruby-string-ext) and `IO#<<` (mruby-io), and the `- & |` helpers now call them instead of dispatching by name.
+Wio closed world, shipped pass; "before" is the head of PR #2045 over an mruby tree without the patch, "after" the
+branch. The generated method bodies are identical (0 methods differ once symbol and send indices are normalised).
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` calls held in helpers | 17 | 14 | -3 |
+| helpers that hold a by-name call | 15 | 12 | -3 |
+| generated callers of a helper that holds a by-name call | 4,329 | 3,778 | -551 |
+| `bc2cpp_send` call sites in generated bodies | 2,286 | 2,286 | 0 |
+| **Sites that can reach by-name dispatch** (bodies + helper callers + 414 block + 30 funcall sites) | **7,059** | **6,508** | **-551 (-7.8%)** |
+
+The three removals are `bc2cpp_slow_sub_f` (471 callers), `bc2cpp_slow_and` (66) and `bc2cpp_slow_or` (14).
+`bc2cpp_slow_lshift` (122) stays: the wio world has two more `<<` definers, `RGSS::ErrorReport::Tee#<<` (compiled
+Ruby) and `Enumerator::Yielder#<<` (interpreted Ruby of mruby-enumerator), and the second has no compiled body to call.
+The closed `<<` form is generated, and proven against the real operators, in worlds without such a definer. Builds that
+link mruby-time (psp, maix, desktop) keep `-` open because `Time#-` is static.
