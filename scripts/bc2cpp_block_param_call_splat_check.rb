@@ -2,7 +2,7 @@
 # encoding: UTF-8
 # frozen_string_literal: true
 
-# BLOCK_PARAM_CALL_SPLAT (docs/adr/0372): `blk.call(*args)` on a compiled core method's own
+# BLOCK_PARAM_CALL_SPLAT (docs/adr/0373): `blk.call(*args)` on a compiled core method's own
 # `&blk`, with a runtime-sized splat, has a Proc arm and a NoMethodError else instead of a
 # by-name `mrb_funcall_argv`. Checks the generated code only: what is taken, every reason it is
 # withheld, and that the Proc arm yields with the splatted Array's own length and elements.

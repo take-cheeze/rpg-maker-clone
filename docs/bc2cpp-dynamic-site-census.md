@@ -1312,7 +1312,7 @@ category on master: `rgss_native_exact_class_else` 206 to 197, `closed_world_kep
 `core_tag_chain_else` rows (820 and 216) do not move. Element, tuple-slot and argument-Integer typing are not built
 (ADR 0370, Context).
 
-## Follow-up: splatted `blk.call(*args)` on a core block (ADR 0372)
+## Follow-up: splatted `blk.call(*args)` on a core block (ADR 0373)
 
 Wio closed-world shipped pass, master `38f7267a`, before and after. All 28 by-name `"call"` sites in generated bodies
 (`mrb_funcall_argv(M, r, "call", RARRAY_LEN, RARRAY_PTR)`, the else arm of CORE_PROC_CALL's runtime-sized splat) were in

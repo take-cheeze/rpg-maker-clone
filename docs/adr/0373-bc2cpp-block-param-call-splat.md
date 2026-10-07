@@ -1,4 +1,4 @@
-# 0372. `blk.call(*args)` on a core method's own block yields to the Proc, with no by-name else
+# 0373. `blk.call(*args)` on a core method's own block yields to the Proc, with no by-name else
 
 Date: 2026-10-07
 

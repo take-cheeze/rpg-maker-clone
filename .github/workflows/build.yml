@@ -1351,7 +1351,7 @@ jobs:
               # Sends replaced by audited direct code (docs/adr/0274): audit, withdrawal reasons and the
               # compiled run; its core half needs a full-core libmruby (BC2CPP_MRUBY_FULL) and skips without one.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_direct_natives_check.rb
-              # ADR 0372: `blk.call(*args)` on a core method's own `&blk` yields to a Proc and raises nil's
+              # ADR 0373: `blk.call(*args)` on a core method's own `&blk` yields to a Proc and raises nil's
               # NoMethodError instead of a by-name `mrb_funcall_argv`; generated code and withdrawals only.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_block_param_call_splat_check.rb
 
