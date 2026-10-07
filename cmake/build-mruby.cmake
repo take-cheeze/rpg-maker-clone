@@ -339,9 +339,8 @@ function(rpg2k_add_mruby)
       "${ARG_REPO_ROOT}/patches/mruby-no-irep-debug.patch")
 
   # Exports the bodies of Integer#%, Float#%, String#-@ and the sprintf
-  # formatter under `*_impl` names so bc2cpp's closed helpers can call them
-  # (ADR 0367). The registered methods call the same bodies; behaviour is
-  # unchanged.
+  # formatter under `*_impl` names so bc2cpp's closed helpers can call them (ADR
+  # 0367). The registered methods call the same bodies; behaviour is unchanged.
   set(mruby_expose_misc_bodies_patch
       "${ARG_REPO_ROOT}/patches/mruby-expose-misc-bodies.patch")
 
