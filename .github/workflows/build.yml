@@ -1132,6 +1132,15 @@ jobs:
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_mutation_check.rb
+          - shard: setter-pools
+            # ADR 0370: the native store audit, generated code with the withdrawal worlds and the kill switches, then
+            # a full-core run that compares compiled with interpreted answers and shows an outside setter call (and a
+            # composed name) as a loud guard violation.
+            checks: |
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_setter_pools_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_setter_pools_mutation_check.rb
+              # ADR 0370: the aliased-name set holds only the names an aliasing operation spells.
+              MRBC="$mrbc" ruby scripts/bc2cpp_aliased_names_check.rb
           - shard: call-facts
             # ADR 0317: generated code with the withdrawal worlds, the full-core and core-only runs, then ten
             # mutants and an unmutated control through the shared pool.

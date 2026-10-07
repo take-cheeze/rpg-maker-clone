@@ -1179,6 +1179,12 @@
   the wio build, see
   [`docs/adr/0313-bc2cpp-constructor-pools.md`](docs/adr/0313-bc2cpp-constructor-pools.md) and
   `scripts/bc2cpp_constructor_pools_check.rb`).
+  The arguments of every call of a setter (`x=`) are joined into a class pool for the ivar an `attr_writer` or an audited
+  native writes and for the parameter of a setter with several definitions; a receiver those pools prove nil or one
+  class takes a class test whose else is `bc2cpp_guard_violation` (`BC2CPP_SETTER_POOLS=0` turns it off; 11 fewer
+  by-name sends on the wio build, 27 before the singleton-definer arms, see
+  [`docs/adr/0370-bc2cpp-setter-pools-checked-receivers.md`](docs/adr/0370-bc2cpp-setter-pools-checked-receivers.md) and
+  `scripts/bc2cpp_setter_pools_check.rb`).
   `BC2CPP_SITE_PROFILE=DIR` builds count how often each remaining by-name `bc2cpp_send` and
   `mrb_funcall*` site runs, and `scripts/bc2cpp_dynamic_site_census.rb --rank` ranks the sites by
   executed hits with the reason each was kept dynamic; off by default and byte-identical when unset
