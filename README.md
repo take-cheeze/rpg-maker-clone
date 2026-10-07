@@ -1433,6 +1433,17 @@
   `File.zero?` argument error, the rest is a NoMethodError (`BC2CPP_CORE_COMPILED_ZERO=0` turns it
   off; not in the hot-only firmware builds; see
   [`docs/adr/0374-bc2cpp-zero-helper-compiled-numeric.md`](docs/adr/0374-bc2cpp-zero-helper-compiled-numeric.md)).
+  A runtime class test narrows the tested variable inside the region it dominates: after
+  `x.is_a?(C)`, `kind_of?`, `instance_of?`, `C === x` (so `case x when C`, several `when`s and the else
+  complement), `x.nil?`, `!x`, `x.respond_to?(:m)` and `x.class == C`, on the then edge, an early
+  `return`/`raise`/`next`, or either side of `&&`, `||` and `?:`, the receivers of `x` see the smaller class set and
+  lose their guard arms or their by-name else. The narrowing stops at a rewrite of the variable, a captured variable,
+  a call that may write an ivar, a handler edge and a loop back-edge, and is off for any Ruby definition, alias or
+  computed install of the tested name, a singleton, a BasicObject subclass and a dynamic or outside subclass; each
+  narrowed test checks its claim at run time and raises a guard violation when the closed world was wrong.
+  `BC2CPP_CLASS_NARROWING=0` turns it off (byte-identical to the tree without it); see
+  [`docs/adr/0375-bc2cpp-class-narrowing.md`](docs/adr/0375-bc2cpp-class-narrowing.md) and
+  `scripts/bc2cpp_class_narrowing_check.rb`.
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
