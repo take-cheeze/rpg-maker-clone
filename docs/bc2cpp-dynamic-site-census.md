@@ -1250,3 +1250,23 @@ The three removals are `bc2cpp_slow_sub_f` (471 callers), `bc2cpp_slow_and` (66)
 Ruby) and `Enumerator::Yielder#<<` (interpreted Ruby of mruby-enumerator), and the second has no compiled body to call.
 The closed `<<` form is generated, and proven against the real operators, in worlds without such a definer. Builds that
 link mruby-time (psp, maix, desktop) keep `-` open because `Time#-` is static.
+
+## Follow-up: the Hash arm of the comparison helpers through compiled core (ADR 0371)
+
+`bc2cpp_slow_lt`/`le`/`gt`/`ge` (296 + 134 + 311 + 166 generated callers) no longer hold a by-name call in a closed world
+that compiles mruby's own Ruby: the Hash branch calls the compiled `Hash#<` family behind an exact-Hash test.
+Wio closed world, shipped pass, same tree with `BC2CPP_CORE_COMPILED_CMP=0` as the base (the `#if` arm for
+Complex/Rational builds stripped from both runs):
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` calls held in helpers | 17 | 13 | -4 |
+| generated callers of a helper that holds a by-name call | 4,329 | 3,422 | -907 |
+| `bc2cpp_send` call sites in generated bodies | 2,205 | 2,205 | 0 |
+| **Sites that can reach by-name dispatch** (bodies + helper callers + 414 block + 30 funcall sites) | **6,978** | **6,071** | **-907 (-13.0%)** |
+
+The three shipped closed builds (wio, psp, maix) are hot-only and hold no core Ruby, so the arm exists only in the
+census world and in a closed build with `BC2CPP_HOT_ONLY=0`. Core compile counts are unchanged (215 core-source methods,
+190 compiled, 25 interpreted; the compiler now prints the 25 with their reasons). Still open: `zero?` (33, the receiver
+set is unbounded because `File.zero?`/`FileTest.zero?` are native class methods), `===` (110), `&` `|` `<<` `-` and the
+index helpers when the index-body patch is absent.
