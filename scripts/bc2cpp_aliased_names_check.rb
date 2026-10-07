@@ -1,10 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Check CodeGen#numeric_aliased_names (docs/adr/0370): the names a body is given by `alias`, `alias_method` and
-# `define_method`. An irep whose aliasing operands are all Symbol literals contributes exactly those names, so an
-# `attr_reader` next to an unrelated `alias_method` keeps its return facts; an operand that is not a literal keeps
-# the old rule for that irep (every Symbol it loads).
+# Check CodeGen#aliased_operand_names (docs/adr/0370): the names `alias`, `alias_method` and `define_method` spell as
+# Symbol literals, which an attr_reader of a checked pool is withdrawn by instead of by every Symbol of the irep
+# (numeric_aliased_names, unchanged for every other name). An operand that is not a literal gives nil.
 #
 # Usage: ruby scripts/bc2cpp_aliased_names_check.rb   (needs a host mrbc: MRBC=path)
 
@@ -48,14 +47,19 @@ ireps, = Dir.mktmpdir do |dir|
   parsed, root_label = compile_ireps(path, 'bc2cpp_aliased', dir)
   [parsed, build_registry(parsed, root_label)[0]]
 end
-names = CodeGen.new(ireps, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new).numeric_aliased_names
+gen = CodeGen.new(ireps, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
+per_irep = ireps.values.to_h { |irep| [irep.label, gen.aliased_operand_names(irep)] }
+literal = per_irep.values.compact.reduce(Set.new, :|)
+coarse = gen.numeric_aliased_names
 
-check.call('the names an alias, alias_method and define_method spell are aliased',
-           %w[al_kw al_orig al_meth al_def].all? { |n| names.include?(n) })
-check.call('an attr_reader in the same class body is not', !names.include?('al_keep') && !names.include?('al_other'))
-check.call('NEG a computed alias_method keeps the old rule for its irep: every Symbol the irep loads',
-           names.include?('ac_orig') && names.include?('ac_keep'))
-check.call('a class body with no aliasing operation contributes nothing', !names.include?('an_keep'))
+check.call('the names an alias, alias_method and define_method spell are the operands',
+           %w[al_kw al_orig al_meth al_def].all? { |n| literal.include?(n) })
+check.call('an attr_reader in the same class body is not an operand', !literal.include?('al_keep') && !literal.include?('al_other'))
+check.call('the coarse set (every Symbol of the irep) still holds it, so only a checked accessor name uses the operands',
+           coarse.include?('al_keep') && coarse.include?('al_orig'))
+check.call('NEG a computed alias_method has no operand list: the caller keeps the coarse set for that irep',
+           per_irep.values.count(&:nil?) == 1 && coarse.include?('ac_orig') && coarse.include?('ac_keep'))
+check.call('a class body with no aliasing operation contributes nothing', !coarse.include?('an_keep') && !literal.include?('an_keep'))
 
 if failures.empty?
   puts 'bc2cpp aliased names check: PASS'

@@ -98,6 +98,18 @@ HOST = <<~RUBY
     alias_method :spalias_other=, :spalias=
   end
 
+  # An attr_accessor and an unrelated alias_method share a class body: only the names the alias spells are withdrawn.
+  class SpAl
+    attr_accessor :spal_keep, :spal_old
+    attr_reader :spal_plain
+    def spal_orig; 1; end
+    alias_method :spal_new, :spal_orig
+    alias_method :spal_old_copy, :spal_old
+    def initialize; @spal_keep = nil; @spal_old = nil; @spal_plain = SpBox.new; end
+    def read_keep; @spal_keep.size; end
+    def read_old; @spal_old.size; end
+  end
+
   # One name, two definitions: the single-definition rule of the argument pools refuses it.
   class SpDefA
     def initialize; @spda = nil; end
@@ -126,6 +138,9 @@ HOST = <<~RUBY
       h.spbad = SpBox.new
       h.spstr = SpBox.new
       h.send("spstr=", SpOther.new)
+      al = SpAl.new
+      al.spal_keep = SpBox.new
+      al.spal_old = SpBox.new
       h
     end
 
@@ -133,6 +148,10 @@ HOST = <<~RUBY
     def wild(h, stem, v)
       h.send("\#{stem}=", v)
     end
+
+    def via_keep(al); al.spal_keep.size; end
+    def via_old(al); al.spal_old.size; end
+    def via_plain(al); al.spal_plain.size; end
 
     def fill_defs
       a = SpDefA.new
@@ -144,7 +163,7 @@ HOST = <<~RUBY
   end
 RUBY
 
-OWNERS = %w[SpBox SpOther SpHost SpDefA SpDefB SpDrv].freeze
+OWNERS = %w[SpBox SpOther SpHost SpAl SpDefA SpDefB SpDrv].freeze
 # A native source that calls `spnat=` by name and only registers `spreg=`.
 NATIVE = [['sp_native.cxx', <<~CPP]].freeze
   static void sp_call(mrb_state* M, mrb_value o) { mrb_funcall(M, o, "spnat=", 1, mrb_nil_value()); }
@@ -192,6 +211,13 @@ if ENV['MRBC']
                win.include?('bc2cpp_guard_violation(M, r2, ') && win.include?('(CHECKED_POOL_EXACT)') && !win.include?('bc2cpp_send('))
     check.call('the nil arm is the NoMethodError helper, not a send', win.include?('bc2cpp_nil_receiver(M, r2'))
     check.call('an accessor call result is typed too', checked.call(code, 'SpHost', 'via_win'))
+    check.call('an attr_accessor next to an unrelated alias_method keeps its checked pool (the alias spells other names)',
+               checked.call(code, 'SpAl', 'read_keep'))
+    check.call('an accessor call result of a name the alias does not spell is typed', checked.call(code, 'SpDrv', 'via_keep'))
+    check.call('NEG a name no pool checks (an exact attr_reader) stays withdrawn by the coarse alias rule: only a checked accessor name uses the operands',
+               !checked.call(code, 'SpDrv', 'via_plain') && by_name.call(code, 'SpDrv', 'via_plain'))
+    check.call('NEG a name an alias_method spells keeps the by-name call (its table may be wrong), though its ivar pool is checked',
+               checked.call(code, 'SpAl', 'read_old') && !checked.call(code, 'SpDrv', 'via_old') && by_name.call(code, 'SpDrv', 'via_old'))
     check.call('a setter with two definitions: the Ruby definition\'s parameter pool types its ivar',
                checked.call(code, 'SpDefA', 'read_a'))
     check.call('the diagnostic marks the checked pools',
