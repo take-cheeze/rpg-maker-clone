@@ -231,6 +231,10 @@ BC2CPP_MRUBY_FULL32=/tmp/w32/host BC2CPP_MRBC32=/tmp/w32/host/bin/mrbc \
   MRBC=<64-bit host mrbc> ruby scripts/bc2cpp_numeric_slow_check.rb
 ```
 
+`numeric_slow` also needs the tree to carry `patches/mruby-expose-collection-op-bodies.patch` (ADR 0366): the
+`- & | <<` helpers call the exported `Array#-`, `&`, `|`, `String#<<` and `IO#<<` bodies, and the libmruby it runs
+against must be built from that patched tree.
+
 A check whose environment variable is missing prints `SKIP` and exits 0; the
 job fails instead when the libmruby it should have built is absent.
 

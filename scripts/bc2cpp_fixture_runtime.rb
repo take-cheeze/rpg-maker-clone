@@ -26,6 +26,14 @@ module Bc2cppFixtureRuntime
   # BC2CPP_TOOL names another bc2cpp.rb (a mutant copy, scripts/bc2cpp_class_pools_mutation_check.rb).
   BC2CPP = ENV.fetch('BC2CPP_TOOL') { File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb') }
 
+  # The `- & | <<` helpers call exported gem bodies (ADR 0366), which a core-only libmruby lacks: fixtures link one by
+  # default, so generation leaves those helpers by name unless a check that runs against the full-core build opts in.
+  @collection_exports_linked = false
+
+  class << self
+    attr_accessor :collection_exports_linked
+  end
+
   module_function
 
   def mrbc
@@ -125,6 +133,7 @@ module Bc2cppFixtureRuntime
                  'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
                  'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).merge(build_gems.to_h).except(*drop_gems).map { |n, d| "#{n}=#{d}" }),
                  NomethodReviewed::ALLOW_ENV => 'allow')
+      env['BC2CPP_COLLECTION_EXPORTS'] = '1' if Bc2cppFixtureRuntime.collection_exports_linked
     end
     core_srcs = core ? core_compiled_mrblib_srcs(ROOT) : []
     code, err, status = Open3.capture3(env, RbConfig.ruby, BC2CPP, *core_srcs, src, *extra_srcs)

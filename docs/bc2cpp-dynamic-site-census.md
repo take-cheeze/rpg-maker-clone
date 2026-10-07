@@ -1228,3 +1228,25 @@ The generated method bodies are byte-identical (only the two helpers changed). W
 `bc2cpp_getidx`, `bc2cpp_getidx0` and `bc2cpp_setidx` no longer hold a by-name call: 2,017 + 32 + 348 generated callers stop
 reaching by-name dispatch, helper-held by-name calls go from 19 to 16 and `bc2cpp_send` in the helper region from 17 to 14
 (shipped wio pass, base `b4efe59e`). Bodies and nomethod sites are unchanged (2,286 and 4,460).
+
+## Follow-up: exported collection bodies (ADR 0366)
+
+`patches/mruby-expose-collection-op-bodies.patch` exports `Array#-`, `#&`, `#|` (mruby-array-ext), `String#<<`
+(mruby-string-ext) and `IO#<<` (mruby-io), and the `- & |` helpers now call them instead of dispatching by name.
+Wio closed world, shipped pass; "before" is master `da29f561` (ADR 0365 and 0367 merged) over an mruby tree with the
+misc and index patches only, "after" the branch over all three. The generated method bodies are identical (0 methods
+differ once symbol and send indices are normalised).
+
+| Measure | Before | After | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` calls held in helpers | 11 | 8 | -3 |
+| helpers that hold a by-name call | 10 | 7 | -3 |
+| generated callers of a helper that holds a by-name call | 1,723 | 1,172 | -551 |
+| `bc2cpp_send` call sites in generated bodies | 2,205 | 2,205 | 0 |
+| **Sites that can reach by-name dispatch** (bodies + helper callers + 414 block + 30 funcall sites) | **4,372** | **3,821** | **-551 (-12.6%)** |
+
+The three removals are `bc2cpp_slow_sub_f` (471 callers), `bc2cpp_slow_and` (66) and `bc2cpp_slow_or` (14).
+`bc2cpp_slow_lshift` (122) stays: the wio world has two more `<<` definers, `RGSS::ErrorReport::Tee#<<` (compiled
+Ruby) and `Enumerator::Yielder#<<` (interpreted Ruby of mruby-enumerator), and the second has no compiled body to call.
+The closed `<<` form is generated, and proven against the real operators, in worlds without such a definer. Builds that
+link mruby-time (psp, maix, desktop) keep `-` open because `Time#-` is static.
