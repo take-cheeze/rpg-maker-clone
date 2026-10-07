@@ -251,9 +251,13 @@ check.call('an integer setter tries the program chain first, then one arm per na
 check.call('classes sharing an entry point share an arm',
            open_z.include?('bc2cpp_native_class == rgss::native_viewport_class() || ' \
                            'bc2cpp_native_class == rgss::native_sprite_class()'))
-check.call('an :int argument is converted in place as mrb_get_args "i" does: no tag test, no by-name else (ADR 0372)',
-           open_z.match?(/\{\n\s+mrb_int bc2cpp_pu\d+_0 = mrb_as_int\(M, r\d+\);\n\s+r\d+ = rgss::object_z_set_direct\(M, r\d+, bc2cpp_pu\d+_0\);\n\s+\}\n\s+\} else if/) &&
-             !open_z.include?('mrb_integer_p(') && !open_z.include?('mrb_integer('))
+closed_z = body_of.call(closed_code, 'NdCaller_set_z')
+check.call('in a closed world an :int argument is converted in place as mrb_get_args "i" does: no tag test, no by-name else (ADR 0372)',
+           closed_z.match?(/\{\n\s+mrb_int bc2cpp_pu\d+_0 = mrb_as_int\(M, r\d+\);\n\s+r\d+ = rgss::object_z_set_direct\(M, r\d+, bc2cpp_pu\d+_0\);\n\s+\}\n\s+\} else if/) &&
+             !closed_z.include?('mrb_integer_p(') && !closed_z.include?('mrb_integer('))
+check.call('without the closed world nothing proves the name reaches the native: the Integer test and its by-name else stay',
+           open_z.match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = rgss::object_z_set_direct\(M, r\d+, mrb_integer\(r\d+\)\);\n\s+\} else \{\n\s+r\d+ = bc2cpp_send\(/) &&
+             !open_z.include?('mrb_as_int('))
 legacy_z = body_of.call(legacy_open, 'NdCaller_set_z')
 check.call('BC2CPP_NATIVE_PARAM_UNBOX=0 restores the Integer tag test whose else dispatches to the binding',
            legacy_z.match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = rgss::object_z_set_direct\(M, r\d+, mrb_integer\(r\d+\)\);\n\s+\} else \{\n\s+r\d+ = bc2cpp_send\(/) &&
@@ -279,8 +283,11 @@ contents = body_of.call(open_code, 'NdCaller_set_contents')
 check.call('an untyped argument is passed through with no guard, and a name with no Ruby definer still gets its arm',
            contents.include?('rgss::window_contents_set_direct(M, r') && !contents.include?('mrb_integer_p') &&
              contents.include?('bc2cpp_send('))
-flash = body_of.call(open_code, 'NdCaller_flash_both')
-check.call('a two-argument entry passes its untyped argument straight through and converts only the :int one',
+flash = body_of.call(closed_code, 'NdCaller_flash_both')
+open_flash = body_of.call(open_code, 'NdCaller_flash_both')
+check.call('a two-argument entry guards only its integer argument while no closed world proves the name',
+           open_flash.match?(/if \(mrb_integer_p\(r\d+\)\) \{\n\s+r\d+ = rgss::sprite_flash_direct\(M, r\d+, r\d+, mrb_integer\(r\d+\)\);/))
+check.call('in a closed world it passes its untyped argument straight through and converts only the :int one',
            flash.match?(/mrb_int bc2cpp_pu\d+_1 = mrb_as_int\(M, r\d+\);\n\s+r\d+ = rgss::sprite_flash_direct\(M, r\d+, r\d+, bc2cpp_pu\d+_1\);/) &&
              flash.include?('rgss::viewport_flash_direct(') && !flash.include?('mrb_integer_p('))
 legacy_flash = body_of.call(legacy_open, 'NdCaller_flash_both')
@@ -292,7 +299,6 @@ check.call('a getter arm covers the classes the older tables leave out',
            body_of.call(open_code, 'NdCaller_read_visible').include?('rgss::visible_direct(M, r') &&
              body_of.call(open_code, 'NdCaller_read_visible').include?('rgss::native_tilemap_class()'))
 
-closed_z = body_of.call(closed_code, 'NdCaller_set_z')
 check.call('in a closed world the arms make the final else a proven-dead nomethod',
            closed_z.match?(/\} else \{\n\s+r\d+ = bc2cpp_nomethod\(M, r\d+, \d+, 1, r\d+\); \/\* CLOSED_WORLD nomethod: recv\.z= \*\//) &&
              !closed_z.include?('kept: core_or_native'))
