@@ -73,12 +73,12 @@ RUBY
 
 HOST = <<~RUBY
   class SpHost
-    attr_accessor :spwin, :spmix, :spprm, :spsend, :spnat, :spreg, :spalias, :spbad
+    attr_accessor :spwin, :spmix, :spprm, :spsend, :spnat, :spreg, :spalias, :spbad, :spstr
     attr_writer :spwr
 
     def initialize
       @spwin = nil; @spmix = nil; @spprm = nil; @spsend = nil; @spnat = nil; @spreg = nil; @spalias = nil
-      @spbad = nil; @spwr = nil
+      @spbad = nil; @spwr = nil; @spstr = nil
     end
 
     def read_win; @spwin.size; end
@@ -91,6 +91,7 @@ HOST = <<~RUBY
     def read_alias; @spalias.size; end
     def via_win(h); h.spwin.size; end
     def read_bad; @spbad.size; end
+    def read_str; @spstr.size; end
   end
 
   class SpHost
@@ -123,7 +124,14 @@ HOST = <<~RUBY
       h.spalias = SpBox.new
       h.spalias_other = SpOther.new
       h.spbad = SpBox.new
+      h.spstr = SpBox.new
+      h.send("spstr=", SpOther.new)
       h
+    end
+
+    # A name composed at run time: no site spells `spwin=`.
+    def wild(h, stem, v)
+      h.send("\#{stem}=", v)
     end
 
     def fill_defs
@@ -193,14 +201,13 @@ if ENV['MRBC']
     # NEG: each keeps its by-name send (the old output).
     { 'read_mix' => 'a call passes a SpOther: two classes', 'read_prm' => 'a call passes a parameter',
       'read_send' => 'send(:spsend=, ..) reaches the writer', 'read_nat' => 'a native funcalls `spnat=`',
-      'read_alias' => 'alias_method names `spalias=`' }.each do |fn, why|
+      'read_alias' => 'alias_method names `spalias=`', 'read_str' => 'the program spells "spstr=" as a String' }.each do |fn, why|
       check.call("NEG SpHost##{fn}: #{why}", !checked.call(code, 'SpHost', fn) && by_name.call(code, 'SpHost', fn))
     end
 
     # Withdrawal worlds: each must stop the always-checked control read_win.
     variants = {
       'a runtime installer of the setter' => "class SpHost\n  define_method(:spwin=) { |v| @spwin = v }\nend\n",
-      'a computed-name send' => "class SpHost\n  def wild(n, v); send(\"\#{n}=\", v); end\nend\n",
       'a reopened class whose setter forwards with super' =>
         "class SpHostSub < SpHost\n  def spwin=(v); super(v.to_s); end\nend\n",
       'instance_variable_set(:@spwin)' => "class SpHost\n  def poke(v); instance_variable_set(:@spwin, v); end\nend\n",
@@ -217,6 +224,8 @@ if ENV['MRBC']
     d = File.join(dir, 'method_missing')
     Dir.mkdir(d)
     mm_code, = generate.call(CLASSES + HOST + "class SpHost\n  def method_missing(n, *a); 1; end\nend\n", d)
+    check.call('a computed-name send in the world (SpDrv#wild) does not withdraw: its failure mode is the reader\'s guard violation',
+               checked.call(code, 'SpHost', 'read_win'))
     check.call('a method_missing class changes nothing: it answers no call that has a definition', checked.call(mm_code, 'SpHost', 'read_win'))
 
     d = File.join(dir, 'native_call')
@@ -276,12 +285,13 @@ if ENV['MRBC'] && build && runtime.compiler? && !ENV['SP_GENERATED_ONLY']
     static int scenario(mrb_state* M) {
       const char* mode = std::getenv("SP_SCENARIO");
       bool outside = mode && !std::strcmp(mode, "outside");
+      bool computed = mode && !std::strcmp(mode, "computed");
       mrb_value host = mrb_obj_new(M, mrb_class_get(M, "SpHost"), 0, nullptr);
       mrb_value drv = mrb_obj_new(M, mrb_class_get(M, "SpDrv"), 0, nullptr);
       mrb_value box = mrb_obj_new(M, mrb_class_get(M, "SpBox"), 0, nullptr);
       mrb_value other = mrb_obj_new(M, mrb_class_get(M, "SpOther"), 0, nullptr);
       const char* reads[] = { "read_win", "read_wr", "read_mix", "read_prm", "read_send", "read_nat", "read_reg",
-                              "read_alias", "read_bad" };
+                              "read_alias", "read_bad", "read_str" };
       for (const char* name : reads) sp_call(M, (std::string(name) + " before fill").c_str(), host, name);
       mrb_value fill_args[] = { host, box };
       sp_quiet(M, drv, "fill", 2, fill_args);
@@ -289,6 +299,11 @@ if ENV['MRBC'] && build && runtime.compiler? && !ENV['SP_GENERATED_ONLY']
         // A call of the setter from outside the closed world: the writer no scan of the build sees.
         sp_quiet(M, host, "spwin=", 1, &other);
         sp_quiet(M, host, "spwr=", 1, &other);
+      }
+      if (computed) {
+        // A composed name: `send("#{stem}=", v)` from the driver, which no site of the world spells.
+        mrb_value wild_args[] = { host, mrb_str_new_lit(M, "spwin"), other };
+        sp_quiet(M, drv, "wild", 3, wild_args);
       }
       for (const char* name : reads) sp_call(M, name, host, name);
       mrb_value via[] = { host };
@@ -312,10 +327,10 @@ if ENV['MRBC'] && build && runtime.compiler? && !ENV['SP_GENERATED_ONLY']
        sections.fetch('compiled', []).reject { |l| l.start_with?('  dispatches') }]
     end
     built, results = runtime.run(dir, err, OWNERS, source, build: build, full: full,
-                                                           envs: [{ 'SP_SCENARIO' => 'inside' }, { 'SP_SCENARIO' => 'outside' }])
+                                                           envs: [{ 'SP_SCENARIO' => 'inside' }, { 'SP_SCENARIO' => 'outside' }, { 'SP_SCENARIO' => 'computed' }])
     check.call('the fixture compiles and runs against real mruby', built)
     if built
-      (in_out, in_ok), (out_out, out_ok) = results
+      (in_out, in_ok), (out_out, out_ok), (comp_out, comp_ok) = results
       interpreted, compiled = values.call(in_out)
       puts in_out if interpreted != compiled || ENV['BC2CPP_CHECK_VERBOSE']
       check.call("every read answers what the interpreter answers (#{interpreted.size} lines), values and exceptions alike",
@@ -334,6 +349,15 @@ if ENV['MRBC'] && build && runtime.compiler? && !ENV['SP_GENERATED_ONLY']
                  out_ok && compiled.any? { |l| l.start_with?('read_win => raised BC2cppGuardViolation: closed-world guard violation: SpOther#size at SpHost#read_win') } &&
                    compiled.none? { |l| l == 'read_win => 1' } &&
                    compiled.any? { |l| l.start_with?('read_a after outside write => raised BC2cppGuardViolation') })
+    end
+
+    if built
+      interpreted, compiled = values.call(comp_out)
+      check.call('the interpreter answers the composed-name call (read_win => 2)', interpreted.include?('read_win => 2'))
+      check.call('LOUD: a composed name that stores a SpOther is a guard violation at the reader, not a silent answer',
+                 comp_ok && compiled.any? { |l| l.start_with?('read_win => raised BC2cppGuardViolation: closed-world guard violation: SpOther#size at SpHost#read_win') } &&
+                   compiled.none? { |l| l == 'read_win => 1' })
+      check.call('the String-spelled setter is withdrawn, so its read answers the SpOther', compiled.include?('read_str => 2'))
     end
 
     Dir.mktmpdir do |off_dir|
