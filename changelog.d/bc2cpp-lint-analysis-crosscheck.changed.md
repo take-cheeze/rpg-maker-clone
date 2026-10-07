@@ -1,0 +1,1 @@
+- bc2cpp closed-world builds now cross-check the closed-world lint against the `ClosedWorld` analysis and abort when they disagree (ADR 0368; `BC2CPP_LINT_CROSSCHECK=0` disables it).
