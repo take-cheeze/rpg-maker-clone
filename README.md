@@ -1418,6 +1418,11 @@
   where each site used to carry its own send; see
   [`docs/adr/0292-bc2cpp-numeric-slow-path-helpers.md`](docs/adr/0292-bc2cpp-numeric-slow-path-helpers.md)
   and `scripts/bc2cpp_numeric_slow_check.rb`.
+  In a closed world where only core classes answer an operator, the helper's by-name else is a
+  proven NoMethodError instead (`/ + * < <= > >= ^ >> round % -@`; ADR 0360-0364 and
+  [`docs/adr/0367-bc2cpp-expose-misc-core-bodies.md`](docs/adr/0367-bc2cpp-expose-misc-core-bodies.md),
+  whose `patches/mruby-expose-misc-bodies.patch` exports the static `Float#%`, `String#-@` and
+  sprintf bodies the `%` and `-@` helpers call).
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
