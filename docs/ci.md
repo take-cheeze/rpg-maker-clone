@@ -281,6 +281,18 @@ check. They verify the seven admitted wrappers' unconditional Fiber guards,
 saved bytecode registration, admission gates and runtime parity for yielding
 callbacks, state changes, overrides and GC. See ADR 0350.
 
+### Compiled core definers and the Hash comparison arm
+
+The `core-flow` shard also runs `bc2cpp_core_compiled_cmp_check.rb` and its mutation check
+(ADR 0371). A closed world that compiles mruby's own Ruby puts the compiled `Hash#<`, `<=`, `>`
+and `>=` in the Hash arm of the four comparison helpers; the check covers the generated code, the
+negative worlds (reopened, prepended, aliased, outside or computed definers, a `==` that may
+yield, `method_missing`, a singleton, a build without mruby-hash-ext, an open world, no core
+compile, the `BC2CPP_CORE_COMPILED_CMP=0` kill switch), and a run of every helper against the
+interpreted operator on a full-core build. The compiler also prints `== core-source methods left
+interpreted ==` with a reason and the language features per method, which the coverage report's
+core line counts.
+
 ### User receiver unions
 
 The core-mrbtest shard runs user receiver union parity and mutation checks.
