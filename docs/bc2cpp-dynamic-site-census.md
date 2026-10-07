@@ -1390,7 +1390,7 @@ The two remaining body `mrb_funcall*` sites are not `call`. Core bodies exist on
 
 ## Follow-up: block loops inside a rescue range, and `each` over Array rows (ADR 0376)
 
-Wio closed-world shipped pass, master `233972ac`. "Before" is the same tree with `BC2CPP_RESCUE_INLINE_BLOCKS=0
+Wio closed-world shipped pass, master `d7212a1c`. "Before" is the same tree with `BC2CPP_RESCUE_INLINE_BLOCKS=0
 BC2CPP_EACH_SPREAD=0` (byte-identical to master), "after" has the change. Two worlds: the full one (every method of the three
 compiled gems) and the hot-only one the firmware ships (`BC2CPP_HOT_METHODS=tools/bc2cpp/hot_methods.txt`, ADR 0214).
 
@@ -1408,11 +1408,11 @@ A method's functions are its entry, `_impl`, try bodies, block functions and inl
 
 | Measure | Hot-only before | Hot-only after | Full before | Full after |
 | --- | ---: | ---: | ---: | ---: |
-| `mrb_funcall_with_block` sites | 39 | 29 | 446 | 442 |
-| `BLOCK_FALLBACK` markers | 37 | 27 | 462 | 440 |
-| generated functions | 808 | 788 | 6,773 | 6,729 |
-| lines inside generated functions | 55,663 | 55,489 | 443,286 | 442,827 |
-| lines of `shipped.cxx` | 55,934 | 55,760 | 443,610 | 443,151 |
+| `mrb_funcall_with_block` sites | 39 | 29 | 445 | 441 |
+| `BLOCK_FALLBACK` markers | 37 | 27 | 461 | 439 |
+| generated functions | 808 | 788 | 6,771 | 6,727 |
+| lines inside generated functions | 55,743 | 55,569 | 444,731 | 444,272 |
+| lines of `shipped.cxx` | 56,014 | 55,840 | 445,055 | 444,596 |
 
 The seven methods of the ADR (`apply_move_requests`, `apply_location_requests`, `apply_halt_request`,
 `apply_sprite_flash_requests`, `build_parallels`, `draw_transition_mask`, `patch_anim_cells`, all `Scene::Map`):

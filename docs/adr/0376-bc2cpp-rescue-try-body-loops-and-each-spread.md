@@ -77,17 +77,17 @@ for a spread block (the elements are the row's, not the row). A block wider than
 
 ## Consequences
 
-Measured on master `233972ac`, the wio closed-world shipped pass of `scripts/bc2cpp_coverage_report.rb`, before being the
+Measured on master `d7212a1c`, the wio closed-world shipped pass of `scripts/bc2cpp_coverage_report.rb`, before being the
 same tree with both switches off (byte-identical output), after with the change; `scripts/bc2cpp_rescue_inline_census.rb`
 counts them (docs/bc2cpp-dynamic-site-census.md has the per-method table):
 
 | Measure | Hot-only before | Hot-only after | Full before | Full after |
 | --- | ---: | ---: | ---: | ---: |
-| `mrb_funcall_with_block` sites | 39 | 29 | 446 | 442 |
-| `BLOCK_FALLBACK` markers (an RProc and a block function per site) | 37 | 27 | 462 | 440 |
+| `mrb_funcall_with_block` sites | 39 | 29 | 445 | 441 |
+| `BLOCK_FALLBACK` markers (an RProc and a block function per site) | 37 | 27 | 461 | 439 |
 | the seven methods above: `BLOCK_FALLBACK` markers | 10 | 1 | 10 | 1 |
 | the seven methods above: generated lines | 1,824 | 1,672 | 1,922 | 1,778 |
-| generated lines of the shipped file | 55,934 | 55,760 | 443,610 | 443,151 |
+| generated lines of the shipped file | 56,014 | 55,840 | 445,055 | 444,596 |
 
 All nine sites of the table are closed in the hot-only world (the tenth removed site is `Game::Interpreter#key_input_result`,
 an unprotected arity-2 `each`). The one that remains in `build_parallels` is `@common.each`, an ivar whose class is not proven.
