@@ -338,10 +338,10 @@ function(rpg2k_add_mruby)
   set(mruby_no_irep_debug_patch
       "${ARG_REPO_ROOT}/patches/mruby-no-irep-debug.patch")
 
-  # Exports the native bodies of Array#-, Array#&, Array#|, String#<< and
-  # IO#<< (docs/adr/0366) so bc2cpp's closed-world helpers can call them
-  # directly. Applied last: it edits array.c/string.c/io.c, which the
-  # patches above also touch.
+  # Exports the native bodies of Array#-, Array#&, Array#|, String#<< and IO#<<
+  # (docs/adr/0366) so bc2cpp's closed-world helpers can call them directly.
+  # Applied last: it edits array.c/string.c/io.c, which the patches above also
+  # touch.
   set(mruby_expose_collection_op_bodies_patch
       "${ARG_REPO_ROOT}/patches/mruby-expose-collection-op-bodies.patch")
 
