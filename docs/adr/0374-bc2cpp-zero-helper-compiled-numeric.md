@@ -137,6 +137,11 @@ Measured on the wio closed world (`BC2CPP_COVERAGE_KEEP_DIR`, `scripts/bc2cpp_dy
 | **Sites that can reach by-name dispatch** (bodies + helper callers + 414 block + 30 funcall sites) | **6,051** | **6,017** | **-34 (-0.6%)** |
 | generated `shipped.cxx` | 21,463,372 B | 21,464,359 B | +987 B |
 
+Both columns come from a tree whose shared `3rd/mruby` does not carry the export patches of ADR 0365-0367 (the index,
+misc and collection-op bodies), so `[]`, `%`, `-@`, `-`, `&`, `|` and `<<` still hold their by-name calls in both; the
+absolute numbers are therefore higher than a patched build's, the `zero?` delta does not depend on those patches (it reads
+`file_test.c` and the Ruby of `mruby-numeric-ext`, which no patch touches).
+
 The 33 callers are the `INTEGER_UNARY :zero?` sites. The generated method bodies are otherwise unchanged; the -1/+1 pair is the
 `start` site of the scan change. Core compile counts do not move (215 / 190 / 25). The firmware size budgets were not rebuilt and
 cannot move: the three builds are hot-only and the generated helper is byte-identical there.
@@ -163,8 +168,10 @@ Verification, `scripts/bc2cpp_zero_direct_check.rb` (core-flow shard, and the `i
 
 Also run and green: nested_compile_state (the new memo ivar is classified), closed_world, guard_violation, lint_crosscheck,
 call_facts, static_dispatch, core_mrblib, core_exact_direct, `bc2cpp_nomethod_reviewed_check` after the one reviewed key.
-`bc2cpp_native_class_results_check` fails the same three `audited result` cases (`compact`, `flatten`, `__uniq`) on the base
-tree in this environment (digest pins against the shared 3rd/mruby), so it is not caused by this change.
+`bc2cpp_native_class_results_check` (three `audited result` cases: `compact`, `flatten`, `__uniq`), `bc2cpp_index_closed_check`
+and the closed-`%`/`-@`/`-`/`&`/`|`/`<<` sections of `bc2cpp_numeric_slow_check` fail identically on the base tree in this
+environment (the shared `3rd/mruby` lacks the patches those pin), so they are not caused by this change; every other section of
+`bc2cpp_numeric_slow_check` (102 checks, including the `zero` rows of the helper matrix at 64, 32 and no-bigint) passes.
 
 Not run: the PlatformIO wio/psp/maix firmware builds and size budgets, the desktop and Emscripten builds (the generated helper is
 unchanged there), `mruby_patch_context_check` (no patch was added).
