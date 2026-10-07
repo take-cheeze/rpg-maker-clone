@@ -221,7 +221,9 @@ checks on a libmruby built by `scripts/bc2cpp_width_build.rb`:
 
 The 32-bit build is the 64-bit host with the targets' arithmetic defines, so it
 does not exercise 32-bit pointers. To run a variant locally, after the mruby
-patch chain has been applied (any cmake build does it):
+patch chain has been applied (any cmake build does it; the numeric-slow check
+links `mrb_int_mod_impl` and friends from `patches/mruby-expose-misc-bodies.patch`,
+ADR 0367, so a libmruby built from an unpatched tree fails to link):
 
 ```bash
 ruby scripts/bc2cpp_width_build.rb int32 /tmp/w32

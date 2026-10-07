@@ -22,7 +22,11 @@
 #    form with no by-name call; each is run directly against the real method over every member class pair, at all
 #    three widths, and a user definer or a Complex/Rational build keeps the by-name body.
 #
-# 4. ADR 0366: `-`, `&`, `|` and `<<` run bodies mruby keeps static (Array#- & |, String#<<, IO#<<), which
+# 4. ADR 0367: `%` and `-@` call the bodies patches/mruby-expose-misc-bodies.patch exports (`mrb_int_mod_impl`,
+#    `mrb_flo_mod_impl`, `mrb_str_uminus_impl`, `mrb_str_format_impl`); CoreMisc pins the wrappers that call them, so
+#    an unpatched tree keeps the by-name helpers. The libmruby builds must come from a tree with every patch applied.
+#
+# 5. ADR 0366: `-`, `&`, `|` and `<<` run bodies mruby keeps static (Array#- & |, String#<<, IO#<<), which
 #    patches/mruby-expose-collection-op-bodies.patch exports; their helpers are closed when the scanned tree carries
 #    the patch and the build links the gems. scripts/bc2cpp_collection_ops_matrix.rb is the matrix: every helper
 #    against the real operator over fresh receivers and operands (empty, frozen, subclass, shared, UTF-8, large,
@@ -30,7 +34,8 @@
 #    result class and identity, mutation of the receiver, the elements' logged calls and what an IO wrote.
 #
 # Usage: [MRBC=path/to/mrbc BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_FULL32=dir BC2CPP_MRBC32=mrbc32
-#         BC2CPP_MRUBY_NOBIGINT=dir BC2CPP_NUMERIC_SLOW_ONLY=cmp] ruby scripts/bc2cpp_numeric_slow_check.rb
+#         BC2CPP_MRUBY_NOBIGINT=dir BC2CPP_MRUBY_CORE=dir BC2CPP_NUMERIC_SLOW_ONLY=cmp|cmp-run|misc]
+#         ruby scripts/bc2cpp_numeric_slow_check.rb
 
 require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
@@ -43,6 +48,8 @@ failures = []
 # BC2CPP_NUMERIC_SLOW_ONLY=cmp runs only the comparison-helper sections (ADR 0362), cmp-run only their runs on libmruby.
 ONLY_CMP = %w[cmp cmp-run].include?(ENV['BC2CPP_NUMERIC_SLOW_ONLY'])
 ONLY_CMP_RUN = ENV['BC2CPP_NUMERIC_SLOW_ONLY'] == 'cmp-run'
+# BC2CPP_NUMERIC_SLOW_ONLY=misc runs only the `%` / `-@` sections (ADR 0367).
+ONLY_MISC = ENV['BC2CPP_NUMERIC_SLOW_ONLY'] == 'misc'
 check = lambda do |what, condition|
   puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
   failures << what unless condition
@@ -335,10 +342,11 @@ def generated_checks(check, runtime)
       check.call("NsOpen##{name}: `#{op}` calls bc2cpp_slow_#{key} and has no by-name call of its own",
                  c.match?(/bc2cpp_slow_#{key}(?:_f)?\(M, /) && !c.include?('bc2cpp_send(') && !c.include?('mrb_funcall('))
       helper = code[/^static mrb_value bc2cpp_slow_#{key}(?:_f)?\(mrb_state\* M.*?^\}\n/m].to_s
-      # `^` `&` `|` have no definer outside the core in this world (ADR 0364, 0366): their helper is the
+      # `^` `%` `&` `|` have no definer outside the core in this world (ADR 0364, 0367, 0366): their helper is the
       # '#if Complex/Rational' pair, the by-name body in front and the closed form behind (checked in
-      # closed_bits_generated_checks and closed_collection_generated_checks).
-      definitions = %w[xor and or].include?(key) ? 2 : 1
+      # closed_bits_generated_checks, closed_misc_generated_checks and
+      # closed_collection_generated_checks).
+      definitions = %w[xor mod and or].include?(key) ? 2 : 1
       check.call("bc2cpp_slow_#{key} is defined once and dispatches the operands it does not own",
                  code.scan(/^static mrb_value bc2cpp_slow_#{key}(?:_f)?\(/).size == definitions && helper.include?('bc2cpp_send('))
     end
@@ -786,6 +794,397 @@ def closed_cmp_generated_checks(check, runtime)
     code, = runtime.generate(FIXTURE_CMP, dir, closed: false, only_owners: CMP_OWNERS)
     check.call('NEG: an open world keeps the by-name helpers', CMP_NAMES.keys.none? { |name| cmp_helper_forms(code, name) })
   end
+end
+
+# ADR 0367: `%` (Integer, Float, String) and `-@` (Integer, Float, Numeric, String) are answered by no other class of
+# this world. NsMiscBox has neither; NsMiscNum is a Numeric that defines no operator (`-@` is Numeric's `0 - self`);
+# NsMiscConv answers every implicit conversion mruby could apply to an operand; NsMutator's to_s empties the Array
+# the format reads its arguments from.
+FIXTURE_MISC = <<~RUBY
+  class NsMiscBox
+    def inspect = "miscbox"
+    def to_s = "box"
+  end
+  class NsMiscNum < Numeric
+    def inspect = "miscnum"
+    def to_s = "miscnum"
+  end
+  class NsMiscStr < String
+  end
+  class NsMiscAry < Array
+  end
+  class NsMiscConv
+    def to_str = "%s!"
+    def to_ary = [9]
+    def to_int = 3
+    def to_f = 1.5
+    def to_s = "conv"
+    def inspect = "conv"
+  end
+  class NsMutator
+    def initialize(a) = @a = a
+    def to_s
+      3.times { @a.shift } # not `clear`: an RGSS native of that name would take the call
+      "m"
+    end
+  end
+  class NsMisc
+    def mod(a, b) = a % b
+    def neg(a) = -a
+
+    def arena(a, b)
+      w = NsProbe.arena
+      a % b
+      x = NsProbe.arena - w
+      w = NsProbe.arena
+      -a
+      y = NsProbe.arena - w
+      [x, y].max
+    end
+
+    def dispatched(a, b, op)
+      w = NsProbe.dispatches
+      op == 0 ? a % b : -a
+      NsProbe.dispatches - w - 1 # the second probe call is itself one dispatch
+    end
+
+    # Formats and frozen copies built and dropped under GC pressure: the arena entries must not leak or dangle.
+    def churn(n)
+      acc = []
+      i = 0
+      while i < n
+        s = "%05d-%s-%x" % [i, "ab" * 3, i * 7]
+        t = -s
+        u = -(s + "x")
+        acc << [s, t.frozen?, u.frozen?, t.equal?(s)]
+        acc = acc[-10, 10] if acc.size > 20
+        GC.start if i % 50 == 0
+        i += 1
+      end
+      acc
+    end
+  end
+RUBY
+MISC_OWNERS = %w[NsMisc NsMiscBox NsMiscNum NsMiscStr NsMiscAry NsMiscConv NsMutator].freeze
+
+def misc_driver(width)
+  <<~RUBY
+    FM = #{WIDTHS.fetch(width)[:fmax]}
+    IM = $bigint ? FM * 2 + 1 : FM # mrb_int max, computed: a parser without mruby-bigint rejects the 64-bit literal
+    $fmts = ["", "abc", "%d", "%i", "%u", "%s", "%p", "%%", "%x", "%X", "%o", "%b", "%B", "%e", "%E", "%f", "%g",
+             "%G", "%a", "%5.2f", "%-6s|", "%+d", "% d", "%05d", "%#x", "%#o", "%*d", "%-*d", "%1$s %1$s", "%2$s %1$s",
+             "%<a>d", "%<a>s", "%{a}", "%<a>5.1f", "%s %s", "%d %d %d", "%.3s", "%10.4s|", "%\\u3042",
+             "\\u3042%s\\u3044", "%s" * 10, "%", "%z", "%-", "a\\0b%s", "%.0f", "%.10g", "% 5d", "%+.2e", "%08.3f",
+             "%x%%%s", "%.2s", "%s\\n"]
+    $strs = $fmts + ["%d".freeze, "%s".dup, NsMiscStr.new("%s-%s"), NsMiscStr.new("%d").freeze, "\\u3042\\u3044", "ab"]
+    $nums = [0, 1, -1, 2, -2, 3, 7, -7, 10, 255, FM, FM - 1, -FM, -FM - 1, IM, -IM, -IM - 1, 0.0, -0.0, 0.5, -1.5, 2.5, 3.0,
+             1.0e19, -1.0e19, 1.0e-5, Float::NAN, Float::INFINITY, -Float::INFINITY]
+    $nums += [FM + 1, -FM - 2, IM + 1, -IM - 2, IM * 2, IM * IM, -(IM * IM), 2 ** 100, -(2 ** 100), 2.0 ** 70] if $bigint
+    $others = [nil, true, false, :sym, :"", [], [1], [1, 2], [1, 2, 3], ["a", "b"], [[1]], [nil], [1.5, "x", :s], {}, {a: 1},
+               {a: 1.5, b: "x"}, Hash.new(0), 1..2, NsMiscBox.new, NsMiscNum.new, Numeric.new, NsMiscAry.new([1, 2]),
+               NsMiscConv.new, NsMiscBox, NsMiscNum, String, Integer, Object.new]
+    $recvs = $nums + $strs + $others
+    # The right-hand operands: numbers, format arguments, and every other class (Object.new and Numeric.new print an
+    # address, so they are receivers only).
+    $args = $nums + ["s", "42", "3.5", "", "\\u3042"] + $others.reject { |v| v.instance_of?(Object) || v.instance_of?(Numeric) }
+    $vals = $recvs
+    # ASCII only, so the run does not depend on the bytes a format produces (`%c` of a large code point).
+    def esc(s)
+      s.each_byte.map { |b| b < 128 ? b.chr : 92.chr + "x" + b.to_s(16) }.join
+    end
+    def desc(v)
+      s = esc(v.inspect)
+      s = "\#<\#{v.class}>" if s.include?(':0x') # a plain object's inspect carries an address
+      s += " cls=\#{v.class}" if v.is_a?(String) || v.is_a?(Array)
+      s += " frozen" if v.frozen? && (v.is_a?(String) || v.is_a?(Array))
+      s += " h=\#{v.hash}" if v.is_a?(Integer)
+      s
+    end
+    def try
+      desc(yield)
+    rescue => e
+      "\#{e.class}: \#{esc(e.message)}"
+    end
+    def mut
+      a = []
+      a << NsMutator.new(a) << 1 << 2
+      a
+    end
+    o = NsMisc.new
+    $recvs.each do |a|
+      $args.each { |b| puts "mod \#{desc(a)} \#{desc(b)} => \#{try { o.mod(a, b) }}" }
+    end
+    $recvs.each do |a|
+      puts "neg \#{desc(a)} => \#{try { o.neg(a) }}"
+      puts "neg same \#{desc(a)} => \#{try { a.frozen? && o.neg(a).equal?(a) }}" if a.is_a?(String)
+    end
+    # %c with a code point that is not a character reads an unset buffer under MRB_UTF8_STRING, so only valid ones are rows.
+    ["%c", "%3c", "%-3c|", "%c%c"].each do |f|
+      [65, 97, 0x3042, "x", "xy", "", nil, :sym, 1.5, [65, 66], [65, "z"]].each { |v| puts "chr \#{f} \#{desc(v)} => \#{try { o.mod(f, v) }}" }
+    end
+    puts "mut => \#{try { o.mod('%s %d %d', mut) }}"
+    puts "mut short => \#{try { o.mod('%s %s', mut) }}"
+    puts "mut hash => \#{try { o.mod('%{a} %s', mut) }}"
+    puts 'end'
+  RUBY
+end
+
+# The two helpers called directly (the generated TU is part of main.cpp) against the method they stand for. A receiver
+# a helper owns makes no by-name call; every other receiver one, the proof's dispatch that raises the NoMethodError.
+# `__LEGACY__` is 1 for a build that defines MRB_USE_COMPLEX / MRB_USE_RATIONAL, where the by-name copies run instead.
+MISC_SCENARIO = <<~CPP
+  #include <string>
+  struct MiscCase { const char* name; const char* op; mrb_value (*bin)(mrb_state*, mrb_value, mrb_value); mrb_value (*un)(mrb_state*, mrb_value); };
+  static const MiscCase misc_cases[] = {
+    { "mod", "%", bc2cpp_slow_mod, nullptr }, { "neg", "-@", nullptr, bc2cpp_slow_neg_f },
+  };
+  struct MiscCall { const MiscCase* c; mrb_value a, b; bool method; };
+  static mrb_value misc_body(mrb_state* M, void* ud) {
+    MiscCall* k = (MiscCall*)ud;
+    if (k->method) return k->c->un ? (mrb_funcall)(M, k->a, k->c->op, 0) : (mrb_funcall)(M, k->a, k->c->op, 1, k->b);
+    return k->c->un ? k->c->un(M, k->a) : k->c->bin(M, k->a, k->b);
+  }
+  // Class, message and printed value; a String or Array result also its class, frozen-ness and identity with the receiver.
+  static std::string misc_describe(mrb_state* M, mrb_value v, bool raised, mrb_value recv) {
+    if (raised) {
+      mrb_value msg = (mrb_funcall)(M, v, "message", 0);
+      return std::string("raised ") + mrb_obj_classname(M, v) + ": " + std::string(RSTRING_PTR(msg), RSTRING_LEN(msg));
+    }
+    mrb_value s = mrb_inspect(M, v);
+    std::string out(RSTRING_PTR(s), RSTRING_LEN(s));
+    if (mrb_string_p(v) || mrb_array_p(v)) {
+      out += std::string(" cls=") + mrb_obj_classname(M, v);
+      out += mrb_test((mrb_funcall)(M, v, "frozen?", 0)) ? " frozen" : " live";
+      out += mrb_obj_eq(M, v, recv) ? " same" : " fresh";
+    }
+    if (mrb_integer_p(v) || mrb_bigint_p(v)) {
+      mrb_value h = mrb_inspect(M, (mrb_funcall)(M, v, "hash", 0));
+      out += " h=" + std::string(RSTRING_PTR(h), RSTRING_LEN(h));
+    }
+    return out;
+  }
+  // Receivers a helper owns: no by-name call. Numeric receivers are Integer, Float, bigint and any Numeric for `-@`;
+  // String for both; `%` has Integer, Float and String.
+  static bool misc_owned(mrb_state* M, const MiscCase& c, mrb_value a) {
+    bool num = mrb_integer_p(a) || mrb_bigint_p(a) || mrb_float_p(a);
+    if (c.un) return num || mrb_string_p(a) || mrb_obj_is_kind_of(M, a, mrb_class_get(M, "Numeric"));
+    return num || mrb_string_p(a);
+  }
+  static int scenario(mrb_state* M) {
+    RClass* probe = mrb_define_module(M, "NsProbe");
+    mrb_define_class_method(M, probe, "arena", [](mrb_state* M, mrb_value) { return mrb_fixnum_value(mrb_gc_arena_save(M)); }, MRB_ARGS_NONE());
+    mrb_define_class_method(M, probe, "dispatches", [](mrb_state*, mrb_value) { return mrb_fixnum_value(dispatches); }, MRB_ARGS_NONE());
+    std::fflush(stdout);
+    const char* src = R"BCD(__SOURCE__)BCD";
+    mrb_load_string(M, src);
+    if (M->exc) { mrb_print_error(M); M->exc = nullptr; return 1; }
+    mrb_value recvs = mrb_gv_get(M, mrb_intern_lit(M, "$recvs"));
+    mrb_value args = mrb_gv_get(M, mrb_intern_lit(M, "$args"));
+    int total = 0, bad = 0, wrong_calls = 0, strings = 0, errors = 0;
+    for (const MiscCase& c : misc_cases) {
+      mrb_int nb = c.un ? 1 : RARRAY_LEN(args);
+      for (mrb_int i = 0; i < RARRAY_LEN(recvs); ++i) for (mrb_int j = 0; j < nb; ++j) {
+        mrb_value a = RARRAY_PTR(recvs)[i];
+        mrb_value b = c.un ? mrb_nil_value() : RARRAY_PTR(args)[j];
+        int ai = mrb_gc_arena_save(M);
+        MiscCall got_call = { &c, a, b, false }, want_call = { &c, a, b, true };
+        mrb_bool e1 = FALSE, e2 = FALSE;
+        dispatches = 0;
+        mrb_value got = mrb_protect_error(M, misc_body, &got_call, &e1);
+        int made = dispatches;
+        std::string g = misc_describe(M, got, e1, a);
+        mrb_value want = mrb_protect_error(M, misc_body, &want_call, &e2);
+        std::string w = misc_describe(M, want, e2, a);
+        mrb_gc_arena_restore(M, ai);
+        ++total;
+        if (e1) ++errors;
+        if (mrb_string_p(a)) ++strings;
+        if (__LEGACY__ == 0) {
+          int expect = misc_owned(M, c, a) ? 0 : 1;
+          if (made != expect) {
+            ++wrong_calls;
+            if (wrong_calls <= 8) std::printf("  H DISPATCH %s %d by-name calls, expected %d: %s\\n", c.name, made, expect, g.c_str());
+          }
+        }
+        if (g != w) {
+          ++bad;
+          if (bad <= 8) {
+            mrb_value as = mrb_inspect(M, a), bs = mrb_inspect(M, b);
+            std::printf("  H MISMATCH %s %.*s %.*s helper=%s method=%s\\n", c.name, (int)RSTRING_LEN(as), RSTRING_PTR(as),
+                        (int)RSTRING_LEN(bs), RSTRING_PTR(bs), g.c_str(), w.c_str());
+          }
+        }
+      }
+    }
+    std::printf("  H summary %d cases, %d mismatches, %d wrong dispatch counts (%d errors, %d String receivers)\\n",
+                total, bad, wrong_calls, errors, strings);
+    return 0;
+  }
+CPP
+
+# [what, source appended to FIXTURE_MISC, owners it adds, the helpers that stay closed]: a world that adds another
+# answer to an operator, or another definition of what the String arm of `%` calls, keeps the by-name helper.
+MISC_WORLDS = [
+  ['a class that defines `%`', "class NsPct\n  def %(o) = 1\nend\n", %w[NsPct], %w[neg]],
+  ['a class that defines `-@`', "class NsNeg\n  def -@ = 1\nend\n", %w[NsNeg], %w[mod]],
+  ['a class method `%`', "class NsMetaPct\n  def self.%(o) = 1\nend\n", %w[NsMetaPct], %w[neg]],
+  ['a String subclass that defines `%`', "class NsStrPct < String\n  def %(o) = 1\nend\n", %w[NsStrPct], %w[neg]],
+  ['a Numeric subclass that defines `-@`', "class NsNumNeg < Numeric\n  def -@ = 1\nend\n", %w[NsNumNeg], %w[mod]],
+  ['Integer#% reopened', "class Integer\n  def %(o) = 1\nend\n", %w[], %w[neg]],
+  ['String#% reopened', "class String\n  def %(o) = 1\nend\n", %w[], %w[neg]],
+  ['String#-@ reopened', "class String\n  def -@ = 1\nend\n", %w[], %w[mod]],
+  ['Numeric#-@ reopened', "class Numeric\n  def -@ = 1\nend\n", %w[], %w[mod]],
+  ['Integer#- reopened (the `0 - self` of Numeric#-@)', "class Integer\n  def -(o) = 1\nend\n", %w[], %w[mod]],
+  ['a user `is_a?` (String#% calls it)', "class NsIsA\n  def is_a?(k) = true\nend\n", %w[NsIsA], %w[neg]],
+  ['a user `kind_of?` leaves `%` closed', "class NsKindOf\n  def kind_of?(k) = true\nend\n", %w[NsKindOf], %w[mod neg]],
+  ['a user `sprintf` (String#% calls it)', "class NsSprintf\n  def sprintf(*a) = 1\nend\n", %w[NsSprintf], %w[neg]],
+  ['`Array` rebound', "Array = Hash\n", %w[], %w[neg]],
+  ['a class under BasicObject (no Kernel#is_a?)', "class NsBare < BasicObject\nend\n", %w[NsBare], %w[neg]],
+  ['a constant bound to BasicObject', "NS_BASE = BasicObject\n", %w[], %w[neg]]
+].freeze
+
+# The two helpers of a world where only Integer, Float, String and Numeric answer `%` and `-@`.
+def closed_misc_generated_checks(check, runtime)
+  puts '-- generated code (closed world, `%` and `-@` answered by Integer, Float, String and Numeric only)'
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS)
+    { 'mod' => ['NsMisc#mod', '%'], 'neg' => ['NsMisc#neg', '-@'] }.each do |key, (method, op)|
+      call = code[/^\/\/ #{Regexp.escape(method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
+      check.call("#{method} calls bc2cpp_slow_#{key} and has no by-name call of its own",
+                 call.match?(/bc2cpp_slow_#{key}(?:_f)?\(M, /) && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
+      by_name, closed = helper_pair(code, key).to_a
+      check.call("bc2cpp_slow_#{key} (`#{op}`) is written twice: by name for Complex/Rational builds, closed otherwise", !closed.nil?)
+      next unless closed
+
+      check.call("bc2cpp_slow_#{key} holds no by-name call: any other receiver is a proven NoMethodError",
+                 !closed.include?('bc2cpp_send(') && !closed.include?('mrb_funcall(') && closed.include?('bc2cpp_nomethod('))
+      check.call("bc2cpp_slow_#{key} keeps the by-name copy for a build with Complex or Rational", by_name.include?('bc2cpp_send('))
+    end
+    _, mod = helper_pair(code, 'mod').to_a
+    check.call('bc2cpp_slow_mod calls the exported bodies: Integer#%, Float#% and the sprintf formatter (String#%)',
+               mod.to_s.include?('mrb_int_mod_impl(M, a, b)') && mod.to_s.include?('mrb_flo_mod_impl(M, a, b)') &&
+               mod.to_s.include?('mrb_str_format_impl(') && mod.to_s.include?('extern "C" mrb_value mrb_int_mod_impl('))
+    check.call('...with the Array test String#% makes (Kernel#is_a? against Array), copying the elements the splat copies',
+               mod.to_s.include?('mrb_obj_is_kind_of(M, b, M->array_class)') && mod.to_s.include?('mrb_ary_new_from_values('))
+    _, neg = helper_pair(code, 'neg').to_a
+    check.call('bc2cpp_slow_neg calls String#-@ (exported) and mirrors Numeric#-@ (`0 - self`) for the rest',
+               neg.to_s.include?('mrb_str_uminus_impl(M, a)') && neg.to_s.include?('mrb_num_sub(M, mrb_fixnum_value(0), a)') &&
+               neg.to_s.include?('mrb_bint_sub_ii('))
+  end
+  MISC_WORLDS.each do |what, extra, owners, closed|
+    Dir.mktmpdir do |dir|
+      code, = runtime.generate("#{FIXTURE_MISC}#{extra}", dir, closed: true, only_owners: MISC_OWNERS + owners)
+      forms = %w[mod neg].select { |key| helper_pair(code, key) }
+      check.call("NEG: #{what}: the closed form stays on [#{closed.join(' ')}]", forms == closed)
+    end
+  end
+  Dir.mktmpdir do |dir|
+    saved = ENV['BC2CPP_NUMERIC_SLOW_CLOSED']
+    ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = '0'
+    begin
+      code, = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS)
+    ensure
+      ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = saved
+    end
+    check.call('BC2CPP_NUMERIC_SLOW_CLOSED=0 keeps the by-name helpers', %w[mod neg].none? { |key| helper_pair(code, key) } && code.include?('bc2cpp_slow_mod('))
+  end
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_MISC, dir, closed: false, only_owners: MISC_OWNERS)
+    check.call('NEG: an open world keeps the by-name helpers', %w[mod neg].none? { |key| helper_pair(code, key) })
+  end
+  # A build without the gem a String arm links against has no String arm: `-@` keeps the by-name helper when the scanned
+  # natives still list string-ext's body (the exported function is not linked), `%` closes without the arm when sprintf's
+  # Ruby is absent (there is no String#% to mirror).
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS, drop_gems: %w[mruby-string-ext])
+    check.call('NEG: a build without mruby-string-ext keeps the by-name `neg` helper', helper_pair(code, 'neg').nil?)
+  end
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS, drop_gems: %w[mruby-sprintf])
+    _, mod = helper_pair(code, 'mod').to_a
+    check.call('a build without mruby-sprintf closes `%` for Integer and Float only: no String arm, no formatter',
+               mod && mod.include?('mrb_int_mod_impl(') && !mod.include?('mrb_str_format_impl') && !mod.include?('mrb_string_p(a)'))
+  end
+end
+
+# The Ruby and native definitions the closed `%` and `-@` helpers stand on (CoreMisc), against the real core and against
+# trees that stop matching the model (host only).
+def core_misc_model_checks(check)
+  require 'fileutils'
+  require_relative '../tools/bc2cpp/core_misc'
+  puts '-- CoreMisc model (host)'
+  root = File.expand_path('..', __dir__)
+  numeric_rb = "class Numeric\n  def -@\n    0 - self\n  end\nend\n"
+  string_rb = <<~RUBY
+    class String
+      def %(args)
+        if args.is_a? Array
+          sprintf(self, *args)
+        else
+          sprintf(self, args)
+        end
+      end
+    end
+  RUBY
+  numeric_c = "static mrb_value\nint_mod(mrb_state *mrb, mrb_value x)\n{\n  return mrb_int_mod_impl(mrb, x, mrb_get_arg1(mrb));\n}\n" \
+              "static mrb_value\nflo_mod(mrb_state *mrb, mrb_value x)\n{\n  return mrb_flo_mod_impl(mrb, x, mrb_get_arg1(mrb));\n}\n"
+  string_c = "static mrb_value\nstr_uminus(mrb_state *mrb, mrb_value str)\n{\n  return mrb_str_uminus_impl(mrb, str);\n}\n"
+  Dir.mktmpdir do |dir|
+    write = ->(rel, text) { File.join(dir, rel).tap { |path| FileUtils.mkdir_p(File.dirname(path)) && File.write(path, text) } }
+    numeric_path = write.call('3rd/mruby/src/numeric.c', numeric_c)
+    string_path = write.call('3rd/mruby/mrbgems/mruby-string-ext/src/string.c', string_c)
+    entry = ->(owner, function, path) { { owner: { class_name: owner }, function: function, path: path } }
+    regs = lambda do
+      { '%' => [entry.call('Integer', 'int_mod', numeric_path), entry.call('Float', 'flo_mod', numeric_path)],
+        '-@' => [entry.call('String', 'str_uminus', string_path)] }
+    end
+    ruby = ->(numeric: numeric_rb, string: string_rb, extra: nil) do
+      paths = [write.call('3rd/mruby/mrblib/numeric.rb', numeric), write.call('3rd/mruby/mrbgems/mruby-sprintf/mrblib/string.rb', string)]
+      paths << write.call('3rd/mruby/mrbgems/mruby-other/mrblib/other.rb', extra) if extra
+      paths
+    end
+    verified = ->(op, paths = ruby.call, registrations = regs.call, opaque = {}) { CoreMisc.verified(op, paths, registrations, opaque) }
+    check.call('a core tree that matches the model verifies both operators',
+               verified.call('-@') == Set.new(%w[Numeric String]) && verified.call('%') == Set.new(%w[String Integer Float]))
+    check.call('a changed Numeric#-@ body turns `-@` off',
+               verified.call('-@', ruby.call(numeric: numeric_rb.sub('0 - self', 'self - 0'))).nil?)
+    check.call('a changed String#% body turns `%` off',
+               verified.call('%', ruby.call(string: string_rb.sub('args.is_a? Array', 'args.kind_of? Array'))).nil?)
+    check.call('a second Ruby definer turns the operator off (Complex#-@ in a build that links it)',
+               verified.call('-@', ruby.call(extra: "class Complex\n  def -@ = self\nend\n")).nil?)
+    check.call('an alias of the name turns it off', verified.call('-@', ruby.call(extra: "class Array\n  alias -@ first\nend\n")).nil?)
+    check.call('a build without sprintf has no String arm of `%` (String#% is absent)',
+               verified.call('%', [ruby.call.first]) == Set.new(%w[Integer Float]))
+    check.call('an unpatched wrapper (the old body, no exported impl) turns `%` off', begin
+      write.call('3rd/mruby/src/numeric.c', numeric_c.sub('return mrb_int_mod_impl(mrb, x, mrb_get_arg1(mrb));',
+                                                          "mrb_value y = mrb_get_arg1(mrb);\n  return y;"))
+      verified.call('%').nil?
+    ensure
+      write.call('3rd/mruby/src/numeric.c', numeric_c)
+    end)
+    check.call('an unexpected native registration turns the operator off',
+               verified.call('-@', ruby.call, { '-@' => [entry.call('String', 'str_uminus', string_path), entry.call('Rational', 'rational_minus', numeric_path)] }).nil?)
+    check.call('an opaque registration of the name turns the operator off', verified.call('-@', ruby.call, regs.call, { '-@' => ['Foo'] }).nil?)
+    check.call('no sources prove nothing', verified.call('-@', nil).nil? && CoreMisc.verified('-@', ruby.call, nil, {}).nil? && CoreMisc.verified('+', ruby.call, regs.call, {}).nil?)
+  end
+  real = File.join(root, '3rd/mruby/src/numeric.c')
+  unless File.exist?(real)
+    puts '  SKIP: no 3rd/mruby checkout'
+    return
+  end
+  require_relative '../tools/bc2cpp/compiled_gems'
+  require_relative '../tools/bc2cpp/bc2cpp'
+  native = core_native_srcs("#{root}/3rd/mruby") + Dir["#{root}/mruby-rgss/src/*.cxx"] + external_gem_native_srcs(root)
+  registrations, opaque = NativeExpressionDevirt.class_registrations(native)
+  # The wio gem set has neither Complex nor Rational; foreign_mrblib_srcs lists every core gem's Ruby.
+  core_ruby = foreign_mrblib_srcs(root).reject { |path| path.include?('/mruby-complex/') || path.include?('/mruby-rational/') }
+  check.call('the patched 3rd/mruby still matches the model for `-@` (review CoreMisc when this fails; the patch must be applied)',
+             CoreMisc.verified('-@', core_ruby, registrations.to_h, opaque.to_h) == Set.new(%w[Numeric String]))
+  check.call('...for `%`', CoreMisc.verified('%', core_ruby, registrations.to_h, opaque.to_h) == Set.new(%w[String Integer Float]))
+  check.call('...and for the calls String#% makes (Kernel#is_a?, Kernel#sprintf, the exported formatter)',
+             CoreMisc.format_pins?(registrations.to_h, opaque.to_h, native))
+  check.call('a build that links Complex keeps `-@` by name (Complex#-@ is a second definer)',
+             CoreMisc.verified('-@', foreign_mrblib_srcs(root), registrations.to_h, opaque.to_h).nil?)
 end
 
 # CoreCompare against the real core and against trees that stop matching its model (host only).
@@ -1242,18 +1641,20 @@ CMP_SCENARIO = <<~CPP
 CPP
 
 core_compare_model_checks(check)
+core_misc_model_checks(check)
 
 unless runtime.mrbc && system(runtime.mrbc, '--version', out: File::NULL, err: File::NULL)
   puts '  SKIP: no host mrbc (set MRBC); the generated-code and behavioural checks need it'
   exit 0
 end
 
-generated_checks(check, runtime) unless ONLY_CMP
-closed_div_generated_checks(check, runtime) unless ONLY_CMP
-closed_arith_generated_checks(check, runtime) unless ONLY_CMP
-closed_bits_generated_checks(check, runtime) unless ONLY_CMP
-closed_collection_generated_checks(check, runtime) unless ONLY_CMP
-closed_cmp_generated_checks(check, runtime) unless ONLY_CMP_RUN
+generated_checks(check, runtime) unless ONLY_CMP || ONLY_MISC
+closed_div_generated_checks(check, runtime) unless ONLY_CMP || ONLY_MISC
+closed_arith_generated_checks(check, runtime) unless ONLY_CMP || ONLY_MISC
+closed_bits_generated_checks(check, runtime) unless ONLY_CMP || ONLY_MISC
+closed_collection_generated_checks(check, runtime) unless ONLY_CMP || ONLY_MISC
+closed_misc_generated_checks(check, runtime) unless ONLY_CMP
+closed_cmp_generated_checks(check, runtime) unless ONLY_CMP_RUN || ONLY_MISC
 mirrored_body_checks(check, Bc2cppFixtureRuntime::ROOT)
 
 # [label, build dir, mrbc, extra flags, width, bigint?]
@@ -1387,7 +1788,7 @@ def scenario_body(source)
 end
 
 builds.each do |label, build, mrbc, flags, width, bigint|
-  next if ONLY_CMP
+  next if ONLY_CMP || ONLY_MISC
   puts "-- fixture on real mruby (#{label}), interpreted and compiled"
   saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
   ENV['MRBC'] = mrbc
@@ -1491,7 +1892,7 @@ CLOSED_RUNS = [
 
 CLOSED_RUNS.each do |name, fixture, owners, driver_name, specs|
   builds.each do |label, build, mrbc, flags, width, bigint|
-    next if ONLY_CMP
+    next if ONLY_CMP || ONLY_MISC
 
     puts "-- closed #{name} helper on real mruby (#{label}), interpreted and compiled"
     saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
@@ -1602,7 +2003,7 @@ end
 # The second pass defines MRB_USE_COMPLEX and MRB_USE_RATIONAL, as a libmruby that links those gems does: the helpers
 # then keep their by-name copy, which must still build and answer as the interpreter does.
 builds.product([false, true]).each do |(label, build, mrbc, flags, width, bigint), legacy|
-  next if ONLY_CMP
+  next if ONLY_CMP || ONLY_MISC
   puts "-- closed `+` and `*` helpers on real mruby (#{label}#{legacy ? ', Complex and Rational macros set' : ''}), " \
        'interpreted and compiled'
   saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
@@ -1681,7 +2082,141 @@ builds.product([false, true]).each do |(label, build, mrbc, flags, width, bigint
   end
 end
 
+# ADR 0367: the closed `%` and `-@` helpers against the methods they replace, at every width. The second pass defines
+# MRB_USE_COMPLEX and MRB_USE_RATIONAL, as a libmruby that links those gems does: the by-name copies then run, and must
+# answer as the interpreter does.
+builds.product([false, true]).each do |(label, build, mrbc, flags, width, bigint), legacy|
+  next if ONLY_CMP
+
+  puts "-- closed `%` and `-@` helpers on real mruby (#{label}#{legacy ? ', Complex and Rational macros set' : ''}), " \
+       'interpreted and compiled'
+  saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
+  ENV['MRBC'] = mrbc
+  ENV['BC2CPP_CXXFLAGS'] = legacy ? "#{flags} -DMRB_USE_COMPLEX -DMRB_USE_RATIONAL" : flags
+  begin
+    Dir.mktmpdir do |dir|
+      _code, err = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS)
+      source = "$bigint = #{bigint}\n#{misc_driver(width)}"
+      # Dispatch counts and arena depths (two-space lines, which the comparison skips), then a GC-pressure loop.
+      source += <<~RUBY
+        o = NsMisc.new
+        ($nums + $strs.first(12)).each do |a|
+          [1, 2.5, "x", [1, 2], nil].each do |b|
+            own = (a.is_a?(Integer) || a.is_a?(Float) || a.is_a?(String)) ? 1 : 0
+            puts "  D 0 \#{own} \#{desc(a)} \#{desc(b)} \#{(o.dispatched(a, b, 0) rescue -1)}"
+          end
+        end
+        $recvs.each do |a|
+          own = (a.is_a?(Integer) || a.is_a?(Float) || a.is_a?(String) || a.is_a?(Numeric)) ? 1 : 0
+          puts "  D 1 \#{own} \#{desc(a)} nil \#{(o.dispatched(a, nil, 1) rescue -1)}"
+        end
+        [["%s %s", ["a", "b"]], ["%d", 5], ["%05.1f", 2.5], ["%{a}", {a: 1}], ["abc", []]].each do |a, b|
+          puts "  A \#{desc(a)} \#{desc(b)} \#{(o.arena(a, b) rescue -1)}"
+        end
+        ($bigint ? [[2 ** 70, 3], [-(2 ** 70), 2 ** 65]] : [[IM, 3]]).each do |a, b|
+          puts "  A \#{desc(a)} \#{desc(b)} \#{(o.arena(a, b) rescue -1)}"
+        end
+        puts "churn => \#{o.churn(1500).inspect}"
+        puts 'end churn'
+      RUBY
+      scenario = MISC_SCENARIO.sub('__SOURCE__') { source }.gsub('__LEGACY__', legacy ? '1' : '0')
+      built, output = runtime.run(dir, err, MISC_OWNERS, scenario, build: build, full: true)
+      check.call('the closed `%` / `-@` fixture compiles and runs against real mruby', built)
+      puts output.to_s.lines.last(25).join unless built
+      next unless built
+
+      sections = runtime.sections(output.to_s.scrub)
+      interpreted = sections['interpreted'].to_a
+      compiled = sections['compiled'].to_a
+      strip = ->(lines) { lines.reject { |l| l.start_with?('  ') } }
+      check.call('both runs finish', strip.call(interpreted).last == 'end churn' && strip.call(compiled).last == 'end churn')
+      rows = strip.call(interpreted)
+      check.call("every `%` and `-@` answer is the interpreter's: value, class, frozen-ness, error class and message (#{rows.size} answers)",
+                 rows == strip.call(compiled) && rows.size > 5000)
+      rows.zip(strip.call(compiled)).reject { |a, b| a == b }.first(8).each do |a, b|
+        puts "    interpreted: #{a}\n    compiled:    #{b}"
+      end
+      check.call('the matrix has NoMethodError, TypeError, ArgumentError, ZeroDivisionError and RangeError rows',
+                 %w[NoMethodError TypeError ArgumentError ZeroDivisionError RangeError].all? { |e| rows.count { |l| l.include?(e) } > 10 })
+      check.call('the format directives are exercised (a padded integer, a hash reference, a width taken from an argument)',
+                 rows.any? { |l| l.start_with?('mod "%05d" cls=String 7 h=') && l.include?('=> "00007" cls=String') } &&
+                 rows.any? { |l| l.start_with?('mod "%{a}" cls=String {a: 1}') && l.include?('=> "1" cls=String') } &&
+                 rows.any? { |l| l.start_with?('mod "%s %s" cls=String [1, 2] cls=Array =>') && l.include?('"1 2"') })
+      check.call('String#-@ keeps a frozen receiver and freezes a copy of any other',
+                 rows.any? { |l| l.start_with?('neg same "%d" cls=String frozen') && l.end_with?('=> true') } &&
+                 rows.any? { |l| l.start_with?('neg "%s" cls=String =>') && l.include?('frozen') })
+      check.call('an Array a format argument empties while it formats is read from the copy the splat made',
+                 rows.include?('mut => "m 1 2" cls=String') && rows.include?('mut hash => ArgumentError: one hash required'))
+      [interpreted, compiled].each do |lines|
+        summary = lines.grep(/\A  H summary /).first.to_s
+        lines.grep(/\A  H (?:MISMATCH|DISPATCH) /).first(5).each { |l| puts "    #{l.strip}" }
+        check.call("each helper agrees with its operator called directly, with the by-name calls the proof allows (#{summary.strip})",
+                   summary.match?(/ 0 mismatches, 0 wrong dispatch counts/) && summary[/ (\d+) cases/, 1].to_i > 5000)
+      end
+      unless legacy
+        owned_lines = compiled.grep(/\A  D \d 1 /)
+        bad = owned_lines.reject { |l| %w[0 -1].include?(l.split.last) }
+        check.call("a receiver the helpers own makes no by-name call (#{owned_lines.size} receivers)",
+                   owned_lines.size > 150 && bad.empty? && owned_lines.count { |l| l.end_with?(' 0') } > 150)
+        bad.first(5).each { |l| puts "    dispatched: #{l.strip}" }
+        arena = compiled.grep(/\A  A /).map { |l| l.split.last.to_i }
+        check.call("a String or bigint result leaves at most one arena entry (#{arena.max})", !arena.empty? && arena.max <= 1)
+      end
+      check.call('a loop of formats and frozen copies survives GC and ends where the interpreter does',
+                 rows.any? { |l| l.start_with?('churn =>') } && rows.grep(/\Achurn =>/) == strip.call(compiled).grep(/\Achurn =>/))
+    end
+  ensure
+    ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved
+  end
+end
+
+# The String arms call exports of mruby-sprintf and mruby-string-ext through weak references, so a libmruby without
+# those gems (the gem-free core build the other checks share) links the same generated code, and a String then takes
+# the helper's NoMethodError arm, which is what that libmruby's interpreter answers (ADR 0367).
+core_build = runtime.core
+if core_build && runtime.compiler? && !ONLY_CMP
+  puts '-- closed `%` helper linked against a gem-free libmruby (the gem exports are weak references)'
+  Dir.mktmpdir do |dir|
+    _code, err = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS)
+    scenario = <<~CPP
+      static int scenario(mrb_state* M) {
+        mrb_value o = mrb_obj_new(M, mrb_class_get(M, "NsMisc"), 0, nullptr);
+        mrb_value a1[] = { mrb_str_new_lit(M, "%d"), mrb_fixnum_value(5) };
+        call(M, "string", o, "mod", 2, a1);
+        mrb_value a2[] = { mrb_fixnum_value(7), mrb_fixnum_value(3) };
+        call(M, "integer", o, "mod", 2, a2);
+        mrb_value a3[] = { mrb_float_value(M, 7.5), mrb_fixnum_value(2) };
+        call(M, "float", o, "mod", 2, a3);
+        mrb_value a4[] = { mrb_fixnum_value(7), mrb_float_value(M, 2.5) };
+        call(M, "mixed", o, "mod", 2, a4);
+        mrb_value a5[] = { mrb_fixnum_value(7), mrb_fixnum_value(0) };
+        call(M, "zero", o, "mod", 2, a5);
+        mrb_value a6[] = { mrb_nil_value(), mrb_fixnum_value(1) };
+        call(M, "nil", o, "mod", 2, a6);
+        return 0;
+      }
+    CPP
+    built, output = runtime.run(dir, err, MISC_OWNERS, scenario, build: core_build, full: false)
+    check.call('the closed `%` / `-@` fixture links against a gem-free libmruby', built)
+    puts output.to_s.lines.last(25).join unless built
+    if built
+      sections = runtime.sections(output)
+      strip = ->(lines) { lines.reject { |l| l.start_with?('  ') } }
+      unless strip.call(sections['interpreted'].to_a) == strip.call(sections['compiled'].to_a)
+        puts output.to_s.lines.map { |l| "    #{l}" }.join
+      end
+      check.call("...and answers as that libmruby's interpreter does: a String receiver raises, a number gets the method's answer (#{strip.call(sections['compiled'].to_a).size} answers)",
+                 strip.call(sections['interpreted'].to_a) == strip.call(sections['compiled'].to_a) &&
+                 strip.call(sections['compiled'].to_a).any? { |l| l.start_with?('string => raised') } &&
+                 strip.call(sections['compiled'].to_a).any? { |l| l.start_with?('integer => 1') } &&
+                 strip.call(sections['compiled'].to_a).any? { |l| l.start_with?('zero => raised ZeroDivisionError') })
+    end
+  end
+end
+
 builds.each do |label, build, mrbc, flags, width, bigint|
+  next if ONLY_MISC
+
   puts "-- closed comparison helpers on real mruby (#{label}), interpreted and compiled"
   saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
   ENV['MRBC'] = mrbc

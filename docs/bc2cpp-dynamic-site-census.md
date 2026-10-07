@@ -1154,6 +1154,12 @@ The five helpers that left the list (six by-name calls, `rshift` held two) are `
 `bc2cpp_slow_mul_f` (442), `bc2cpp_slow_rshift` (17), `bc2cpp_slow_xor` (4) and `bc2cpp_slow_round` (5). The
 comparison helpers stay listed with their one Hash call.
 
+## Follow-up: exported core bodies (ADR 0367)
+
+`bc2cpp_slow_mod` (138 generated callers, two by-name calls) and `bc2cpp_slow_neg_f` (71 callers, one) carry a closed
+form that calls bodies `patches/mruby-expose-misc-bodies.patch` exports (`Integer#%`, `Float#%`, `String#-@`, the
+sprintf formatter). Wio closed world, shipped pass, branch base `b4efe59e` (PR #2045's head) against the branch, the
+`#if` arm for Complex/Rational builds stripped from both runs as before:
 ## Follow-up: exported collection bodies (ADR 0366)
 
 `patches/mruby-expose-collection-op-bodies.patch` exports `Array#-`, `#&`, `#|` (mruby-array-ext), `String#<<`
@@ -1164,6 +1170,17 @@ branch. The generated method bodies are identical (0 methods differ once symbol 
 | Measure | Before | After | Delta |
 | --- | ---: | ---: | ---: |
 | `bc2cpp_send` calls held in helpers | 17 | 14 | -3 |
+| generated callers of a helper that holds a by-name call | 4,331 | 4,122 | -209 |
+| `bc2cpp_send` call sites in generated bodies | 2,306 | 2,306 | 0 |
+| **Sites that can reach by-name dispatch** (bodies + helper callers + 414 block + 30 funcall sites) | **7,081** | **6,872** | **-209 (-3.0%)** |
+
+The generated method bodies are byte-identical (only the two helpers changed). What stays open, and why:
+
+| Helper | Callers | Held by-name call | Why it cannot close exactly |
+| --- | ---: | --- | --- |
+| `bc2cpp_slow_zero` | 33 | `zero?` | `Numeric#zero?` is `self == 0`: any Numeric that is not an Integer or Float dispatches `==` by name |
+| `bc2cpp_slow_lt` `le` `gt` `ge` | 908 | `Hash#<` ... | Ruby over `all?`, `key?` and `==` of the stored values; `mrb_equal` differs for NaN and a user `==` |
+| `bc2cpp_eqq` | 110 | `===` | `Kernel#===` answers every object; Data (Regexp) and Proc `===` are static in other gems |
 | helpers that hold a by-name call | 15 | 12 | -3 |
 | generated callers of a helper that holds a by-name call | 4,329 | 3,778 | -551 |
 | `bc2cpp_send` call sites in generated bodies | 2,286 | 2,286 | 0 |
