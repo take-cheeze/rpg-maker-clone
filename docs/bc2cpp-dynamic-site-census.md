@@ -1175,3 +1175,42 @@ The generated method bodies are byte-identical (only the two helpers changed). W
 | `bc2cpp_slow_zero` | 33 | `zero?` | `Numeric#zero?` is `self == 0`: any Numeric that is not an Integer or Float dispatches `==` by name |
 | `bc2cpp_slow_lt` `le` `gt` `ge` | 908 | `Hash#<` ... | Ruby over `all?`, `key?` and `==` of the stored values; `mrb_equal` differs for NaN and a user `==` |
 | `bc2cpp_eqq` | 110 | `===` | `Kernel#===` answers every object; Data (Regexp) and Proc `===` are static in other gems |
+
+## Follow-up: checked setter-site pools (ADR 0370)
+
+`BC2CPP_SETTER_POOLS=0` against the default, wio closed world, shipped pass, branch base `8ab8aa75` (the off run is
+`cmp`-identical to the base tree):
+
+| Measure | Off | On | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send` call sites in generated bodies | 2,286 | 2,259 | -27 |
+| `mrb_funcall_with_block` | 414 | 414 | 0 |
+| `bc2cpp_nomethod` sites | 4,460 | 4,458 | -2 |
+| `CHECKED_POOL_EXACT` arms (class test, nil arm, guard-violation else) | 0 | 25 | +25 |
+
+Body `bc2cpp_send` sites by name, the ten largest and every name that changed:
+
+| Name | Off | On | Delta |
+| --- | ---: | ---: | ---: |
+| `[]` | 208 | 208 | 0 |
+| `empty?` | 202 | 202 | 0 |
+| `size` | 176 | 176 | 0 |
+| `to_s` | 151 | 151 | 0 |
+| `length` | 69 | 69 | 0 |
+| `new` | 66 | 66 | 0 |
+| `to_enum` | 66 | 66 | 0 |
+| `to_i` | 60 | 60 | 0 |
+| `[]=` | 51 | 51 | 0 |
+| `push` | 50 | 50 | 0 |
+| `width` | 47 | 34 | -13 |
+| `x=` | 44 | 42 | -2 |
+| `y=` | 44 | 42 | -2 |
+| `height` | 33 | 30 | -3 |
+| `name` | 37 | 35 | -2 |
+| `clear` | 7 | 5 | -2 |
+| `blt` `fill_rect` `text_size` | 7 + 7 + 4 | 6 + 6 + 3 | -1 each |
+
+By category: `rgss_native_exact_class_else` 206 to 197, `closed_world_kept:singleton_definer` 91 to 75,
+`closed_world_kept:core_or_native` 186 to 184; the two `core_tag_chain_else` rows (814 and 215) do not move. The gain
+is the `contents` and `@contents` receivers of three window families (62 `contents=` sites, all passing a Bitmap) and
+two attr_accessor classes; element, tuple-slot and argument-Integer typing are not built (ADR 0370, Context).
