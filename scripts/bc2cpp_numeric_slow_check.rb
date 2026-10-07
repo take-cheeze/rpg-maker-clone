@@ -22,11 +22,19 @@
 #    form with no by-name call; each is run directly against the real method over every member class pair, at all
 #    three widths, and a user definer or a Complex/Rational build keeps the by-name body.
 #
+# 4. ADR 0366: `-`, `&`, `|` and `<<` run bodies mruby keeps static (Array#- & |, String#<<, IO#<<), which
+#    patches/mruby-expose-collection-op-bodies.patch exports; their helpers are closed when the scanned tree carries
+#    the patch and the build links the gems. scripts/bc2cpp_collection_ops_matrix.rb is the matrix: every helper
+#    against the real operator over fresh receivers and operands (empty, frozen, subclass, shared, UTF-8, large,
+#    nested, elements with a user hash/eql?/==, wrong operand types), comparing result or error class and message,
+#    result class and identity, mutation of the receiver, the elements' logged calls and what an IO wrote.
+#
 # Usage: [MRBC=path/to/mrbc BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_FULL32=dir BC2CPP_MRBC32=mrbc32
 #         BC2CPP_MRUBY_NOBIGINT=dir BC2CPP_NUMERIC_SLOW_ONLY=cmp] ruby scripts/bc2cpp_numeric_slow_check.rb
 
 require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
+require_relative 'bc2cpp_collection_ops_matrix'
 
 runtime = Bc2cppFixtureRuntime
 failures = []
@@ -325,9 +333,10 @@ def generated_checks(check, runtime)
       check.call("NsOpen##{name}: `#{op}` calls bc2cpp_slow_#{key} and has no by-name call of its own",
                  c.match?(/bc2cpp_slow_#{key}(?:_f)?\(M, /) && !c.include?('bc2cpp_send(') && !c.include?('mrb_funcall('))
       helper = code[/^static mrb_value bc2cpp_slow_#{key}(?:_f)?\(mrb_state\* M.*?^\}\n/m].to_s
-      # `^` has no definer outside the core in this world (ADR 0364): its helper is the '#if Complex/Rational' pair,
-      # the by-name body in front and the closed form behind (checked in closed_bits_generated_checks).
-      definitions = key == 'xor' ? 2 : 1
+      # `^` `&` `|` have no definer outside the core in this world (ADR 0364, 0366): their helper is the
+      # '#if Complex/Rational' pair, the by-name body in front and the closed form behind (checked in
+      # closed_bits_generated_checks and closed_collection_generated_checks).
+      definitions = %w[xor and or].include?(key) ? 2 : 1
       check.call("bc2cpp_slow_#{key} is defined once and dispatches the operands it does not own",
                  code.scan(/^static mrb_value bc2cpp_slow_#{key}(?:_f)?\(/).size == definitions && helper.include?('bc2cpp_send('))
     end
@@ -406,12 +415,30 @@ end
 # arms rewrite, and the Integer/Float ones the numeric arms reach through mrb_num_*. A changed digest means the
 # mruby tree changed one: re-derive the mirror before updating it. The one native definition of each operator per
 # class is audited the same way, so a second definer (a gem redefining String#+ in C) cannot slip in.
+# ADR 0366 adds the bodies of `- & | <<` the same way: the numeric and object.c ones the helpers mirror, Array#<<'s
+# one-operand body (mrb_ary_push), and the three patched gems, whose wrappers and `_impl` bodies the exported functions
+# split (the patch's own text is part of what is pinned).
 MIRRORED_BODIES = {
-  'src/array.c' => { 'mrb_ary_plus' => '70d052eb8d9b436a', 'mrb_ary_times' => '7b777f06a387ade7' },
+  'src/array.c' => { 'mrb_ary_plus' => '70d052eb8d9b436a', 'mrb_ary_times' => '7b777f06a387ade7',
+                     'mrb_ary_push_m' => '286db48a1f83255f' },
   'src/string.c' => { 'mrb_str_plus_m' => '1b53105d32fe238a', 'mrb_str_times' => '489feea491fd043d' },
   'src/numeric.c' => { 'int_add' => 'e2ff7790d345696a', 'int_mul' => 'ec37fa6c951f6b88',
-                       'flo_add' => '2a7487f52044d706', 'flo_mul' => 'cf89b421d3a89f54' },
-  'src/numops.c' => { 'mrb_num_add' => 'e819f8f8fe810d67', 'mrb_num_mul' => 'ee5f08a1b611d22c' }
+                       'flo_add' => '2a7487f52044d706', 'flo_mul' => 'cf89b421d3a89f54',
+                       'int_sub' => '659a377919b60994', 'flo_sub' => 'c2655d4207e6df80', 'int_and' => 'b2cd98473eb58b5b',
+                       'int_or' => '6a1f42516621cc17', 'int_lshift' => '988fa8922d825990' },
+  'src/numops.c' => { 'mrb_num_add' => 'e819f8f8fe810d67', 'mrb_num_mul' => 'ee5f08a1b611d22c',
+                      'mrb_num_sub' => '3e8d0b786849d6e3' },
+  'src/object.c' => { 'true_and' => '1e4ce0d7604fbb30', 'true_or' => 'b487ed39272e00bc',
+                      'false_and' => '613a0eab4d74b51c', 'false_or' => '7496a278915d63d4' },
+  'mrbgems/mruby-array-ext/src/array.c' => { 'ary_sub' => 'd8200c43d995a595', 'ary_union' => '668fec870a0e18a8',
+                                             'ary_intersection' => 'dce89a213b2522ec',
+                                             'mrb_ary_ext_sub_impl' => 'b5b13a123ae63c10',
+                                             'mrb_ary_ext_or_impl' => 'd7da4ea4d7183cef',
+                                             'mrb_ary_ext_and_impl' => '1998f2c25ba0b8ad' },
+  'mrbgems/mruby-string-ext/src/string.c' => { 'str_concat' => '1b0e42f3a9bc4cde', 'str_concat_m' => '8d67d65d7ba98435',
+                                               'mrb_str_ext_concat_impl' => '74f63294577109f8' },
+  'mrbgems/mruby-io/src/io.c' => { 'io_lshift' => '4cd6ffc961668c8b', 'io_lshift_fd' => 'd9d256d1429a2215',
+                                   'mrb_io_lshift_impl' => '461cd91be12adb81' }
 }.freeze
 OPERATOR_DEFINERS = { 'array.c' => 2, 'string.c' => 2, 'numeric.c' => 4, 'time.c' => 1 }.freeze
 
@@ -460,9 +487,17 @@ def closed_arith_generated_checks(check, runtime)
       check.call("bc2cpp_slow_#{key}_f is defined once per preprocessor branch",
                  code.scan(/^static mrb_value bc2cpp_slow_#{key}_f\(/).size == 2)
     end
-    sub = code[/^static mrb_value bc2cpp_slow_sub_f\(mrb_state\* M.*?^\}\n/m].to_s
-    check.call('`-` stays by name (Array#- is a hash walk with no entry point to mirror), written once',
-               !sub.empty? && sub.include?('bc2cpp_send(') && helper_pair(code, 'sub').nil?)
+    pair = helper_pair(code, 'sub')
+    check.call('bc2cpp_slow_sub_f is written twice: by name for Complex/Rational builds, closed otherwise (ADR 0366)', !pair.nil?)
+    if pair
+      open_form, closed = pair
+      check.call('bc2cpp_slow_sub_f keeps its by-name copy for a build with Complex or Rational', open_form.include?('bc2cpp_send('))
+      check.call('bc2cpp_slow_sub_f holds no by-name call: its Array arm is the exported Array#- body, any other receiver a proven NoMethodError',
+                 !closed.include?('bc2cpp_send(') && !closed.include?('mrb_funcall(') && closed.include?('bc2cpp_nomethod') &&
+                 closed.include?('mrb_ary_ext_sub_impl(M, a, b)') && closed.include?('mrb_ensure_array_type(M, b)') &&
+                 closed.include?('extern "C" mrb_value mrb_ary_ext_sub_impl(mrb_state*, mrb_value, mrb_value);') &&
+                 !closed.include?('mrb_string_p(a)'))
+    end
   end
   Dir.mktmpdir do |dir|
     source = "#{FIXTURE_ARITH}class NsArithBox\n  def +(o) = :box_add\nend\n"
@@ -470,6 +505,13 @@ def closed_arith_generated_checks(check, runtime)
     check.call('NEG: a user class answering `+` keeps the by-name helper for `+`', helper_pair(code, 'add').nil? &&
                code[/^static mrb_value bc2cpp_slow_add_f\(mrb_state\* M.*?^\}\n/m].to_s.include?('bc2cpp_send('))
     check.call('...and `*` stays closed', !helper_pair(code, 'mul').nil?)
+  end
+  Dir.mktmpdir do |dir|
+    source = "#{FIXTURE_ARITH}class NsArithBox\n  def -(o) = :box_sub\nend\n"
+    code, = runtime.generate(source, dir, closed: true, only_owners: fixture_owners)
+    check.call('NEG: a user class answering `-` keeps the by-name helper for `-`', helper_pair(code, 'sub').nil? &&
+               code[/^static mrb_value bc2cpp_slow_sub_f\(mrb_state\* M.*?^\}\n/m].to_s.include?('bc2cpp_send('))
+    check.call('...and `+` `*` stay closed', !helper_pair(code, 'add').nil? && !helper_pair(code, 'mul').nil?)
   end
   Dir.mktmpdir do |dir|
     source = "#{FIXTURE_ARITH}class NsArithBox\n  def *(o) = :box_mul\nend\n"
@@ -488,6 +530,7 @@ def closed_arith_generated_checks(check, runtime)
     check.call('NEG: a build that links mruby-time keeps `+` by name (Time#+ is static in mruby-time)',
                helper_pair(code, 'add').nil? && code[/^static mrb_value bc2cpp_slow_add_f\(mrb_state\* M.*?^\}\n/m].to_s.include?('bc2cpp_send('))
     check.call('...and `*`, which Time does not answer, stays closed', !helper_pair(code, 'mul').nil?)
+    check.call('NEG: ...and `-` (Time#-)', helper_pair(code, 'sub').nil?)
   end
   Dir.mktmpdir do |dir|
     saved = ENV['BC2CPP_NUMERIC_SLOW_CLOSED']
@@ -498,7 +541,7 @@ def closed_arith_generated_checks(check, runtime)
       ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = saved
     end
     check.call('BC2CPP_NUMERIC_SLOW_CLOSED=0 restores the old helpers',
-               helper_pair(code, 'add').nil? && helper_pair(code, 'mul').nil? && code.include?('bc2cpp_send('))
+               %w[add mul sub].all? { |key| helper_pair(code, key).nil? } && code.include?('bc2cpp_send('))
   end
 end
 
@@ -849,6 +892,104 @@ def closed_bits_generated_checks(check, runtime)
   end
 end
 
+# ADR 0366: the `- & | <<` helpers of a world whose only definers are the core natives and the three exported gem bodies.
+# `<<` also needs the world to have no Ruby definer: the wio gem list less mruby-enumerator (Enumerator::Yielder#<< is
+# interpreted Ruby of another gem), which is how the shipped wio world keeps `<<` open.
+def closed_collection_generated_checks(check, runtime)
+  puts '-- generated code (closed world, `- & | <<` answered by core classes and the exported gem bodies)'
+  owners = Bc2cppCollectionOpsMatrix::OWNERS
+  fixture = Bc2cppCollectionOpsMatrix::FIXTURE.gsub('\\#', '#')
+  gen = lambda do |source = fixture, **options|
+    Dir.mktmpdir do |dir|
+      code, = runtime.generate(source, dir, closed: true, only_owners: owners, **options)
+      code
+    end
+  end
+  forms = ->(code) { %w[sub_f and or lshift].select { |key| helper_pair(code, key) } }
+
+  code = gen.call(drop_gems: %w[mruby-enumerator])
+  { 'sub_f' => ['NsColl#sub', '-', 'mrb_ary_ext_sub_impl'], 'and' => ['NsColl#band', '&', 'mrb_ary_ext_and_impl'],
+    'or' => ['NsColl#bor', '|', 'mrb_ary_ext_or_impl'],
+    'lshift' => ['NsColl#lsh', '<<', 'mrb_str_ext_concat_impl'] }.each do |key, (method, op, impl)|
+    call = code[/^\/\/ #{Regexp.escape(method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
+    check.call("#{method} calls bc2cpp_slow_#{key} and has no by-name call of its own",
+               call.match?(/bc2cpp_slow_#{key}\(M, /) && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
+    pair = helper_pair(code, key)
+    check.call("bc2cpp_slow_#{key} (`#{op}`) is written twice: by name for Complex/Rational builds, closed otherwise", !pair.nil?)
+    next unless pair
+
+    open_form, closed = pair
+    check.call("bc2cpp_slow_#{key} keeps its by-name copy for a build with Complex or Rational", open_form.include?('bc2cpp_send('))
+    check.call("bc2cpp_slow_#{key} holds no by-name call: any other receiver is a proven NoMethodError, the bodies are the exported ones",
+               !closed.include?('bc2cpp_send(') && !closed.include?('mrb_funcall(') && closed.include?('bc2cpp_nomethod') &&
+               closed.include?("#{impl}(M, a, b)") && closed.include?("extern \"C\" mrb_value #{impl}(mrb_state*, mrb_value, mrb_value);"))
+  end
+  lshift = helper_pair(code, 'lshift')&.last.to_s
+  check.call('`<<` has an arm for each of Integer, Array, String and IO (the class and its subclasses, not an exact class)',
+             lshift.include?('mrb_ary_push(M, a, b)') && lshift.include?('mrb_io_lshift_impl(M, a, b)') &&
+             lshift.include?('mrb_obj_is_kind_of(M, a, mrb_class_get(M, "IO"))'))
+  check.call('the other helpers have no extern declaration of an export they do not call',
+             helper_pair(code, 'and').last.scan('extern "C"').size == 1 && helper_pair(code, 'sub_f').last.scan('extern "C"').size == 1)
+  check.call('every generated declaration is one the patch defines (no other mrb_*_impl is declared)',
+             code.scan(/^extern "C" mrb_value (mrb_\w+_impl)\(/).flatten.uniq.sort ==
+             %w[mrb_ary_ext_and_impl mrb_ary_ext_or_impl mrb_ary_ext_sub_impl mrb_io_lshift_impl mrb_str_ext_concat_impl])
+
+  check.call('POS: the default wio world keeps `<<` open (Enumerator::Yielder#<< is interpreted Ruby) and closes `- & |`',
+             forms.call(gen.call) == %w[sub_f and or])
+  check.call('NEG: a user class answering `<<` keeps `<<` open', forms.call(gen.call("#{fixture}class NsCollBox\n  def <<(o) = :x\nend\n", drop_gems: %w[mruby-enumerator])) == %w[sub_f and or])
+  check.call('NEG: a user class answering `-` keeps `-` open', forms.call(gen.call("#{fixture}class NsCollBox\n  def -(o) = :x\nend\n", drop_gems: %w[mruby-enumerator])) == %w[and or lshift])
+  check.call('NEG: a user class answering `&` keeps `&` open', forms.call(gen.call("#{fixture}class NsCollBox\n  def &(o) = :x\nend\n", drop_gems: %w[mruby-enumerator])) == %w[sub_f or lshift])
+  check.call('NEG: a user class answering `|` keeps `|` open', forms.call(gen.call("#{fixture}class NsCollBox\n  def |(o) = :x\nend\n", drop_gems: %w[mruby-enumerator])) == %w[sub_f and lshift])
+  check.call('NEG: Array#- reopened in Ruby keeps `-` open', forms.call(gen.call("#{fixture}class Array\n  def -(o) = []\nend\n", drop_gems: %w[mruby-enumerator])) == %w[and or lshift])
+  check.call('NEG: Integer#<< reopened in Ruby keeps `<<` open', forms.call(gen.call("#{fixture}class Integer\n  def <<(o) = 0\nend\n", drop_gems: %w[mruby-enumerator])) == %w[sub_f and or])
+  check.call('NEG: a build without mruby-array-ext keeps `- & |` open (no exported body to link)',
+             forms.call(gen.call(drop_gems: %w[mruby-enumerator mruby-array-ext])) == %w[lshift])
+  check.call('NEG: a build without mruby-string-ext keeps `<<` open', forms.call(gen.call(drop_gems: %w[mruby-enumerator mruby-string-ext])) == %w[sub_f and or])
+  check.call('NEG: a build without mruby-io keeps `<<` open', forms.call(gen.call(drop_gems: %w[mruby-enumerator mruby-io])) == %w[sub_f and or])
+  time = File.join(Bc2cppFixtureRuntime::ROOT, '3rd/mruby/mrbgems/mruby-time')
+  check.call('NEG: a build that links mruby-time keeps `-` open (Time#-)',
+             forms.call(gen.call(drop_gems: %w[mruby-enumerator], build_gems: { 'mruby-time' => time })) == %w[and or lshift])
+  extra_native = [['other_ext.c', "static void other_ext(mrb_state *mrb, struct RClass *klass) {\n" \
+                                  "  mrb_define_method(mrb, klass, \"-\", other_minus, MRB_ARGS_REQ(1));\n" \
+                                  "  mrb_define_method(mrb, klass, \"<<\", other_lshift, MRB_ARGS_REQ(1));\n}\n"]]
+  check.call('NEG: a native `-` and `<<` another gem registers on a class the scan cannot name keep those helpers open',
+             forms.call(gen.call(drop_gems: %w[mruby-enumerator], native: extra_native)) == %w[and or])
+  saved = ENV['BC2CPP_NUMERIC_SLOW_CLOSED']
+  ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = '0'
+  begin
+    off = gen.call(drop_gems: %w[mruby-enumerator])
+  ensure
+    ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = saved
+  end
+  check.call('BC2CPP_NUMERIC_SLOW_CLOSED=0 restores the old helpers', forms.call(off).empty? && !off.include?('mrb_ary_ext_sub_impl'))
+  Dir.mktmpdir do |dir|
+    check.call('NEG: an open world keeps the by-name helpers',
+               forms.call(runtime.generate(fixture, dir, closed: false, only_owners: owners).first).empty?)
+  end
+
+  # The proof reads the scanned sources: a wrapper that no longer calls the export, or an export that went static.
+  real = File.join(Bc2cppFixtureRuntime::ROOT, '3rd/mruby/mrbgems/mruby-array-ext/src/array.c')
+  if File.exist?(real)
+    gen_probe = CodeGen.allocate
+    text = File.read(real)
+    Dir.mktmpdir do |dir|
+      file = lambda do |name, body|
+        File.join(dir, name).tap { |path| File.write(path, body) }
+      end
+      sub = ['ary_sub', 'mrb_ary_ext_sub_impl', 'mrb_ary_ext_sub_impl(mrb, self, other)']
+      check.call('the patched array.c has the export and a wrapper that calls it', gen_probe.numeric_slow_export?(file.call('real.c', text), *sub))
+      check.call('NEG: a wrapper that does not call the export (an unpatched tree)',
+                 !gen_probe.numeric_slow_export?(file.call('unwrapped.c', text.sub('return mrb_ary_ext_sub_impl(mrb, self, other);', 'return mrb_nil_value();')), *sub))
+      check.call('NEG: an export made static',
+                 !gen_probe.numeric_slow_export?(file.call('static.c', text.sub("mrb_value\nmrb_ary_ext_sub_impl(", "static mrb_value\nmrb_ary_ext_sub_impl(")), *sub))
+      check.call('NEG: a tree without the export at all',
+                 !gen_probe.numeric_slow_export?(file.call('absent.c', text.gsub('mrb_ary_ext_sub_impl', 'other_name')), *sub))
+    end
+  else
+    puts '  SKIP: no 3rd/mruby checkout'
+  end
+end
+
 def div_driver(width)
   <<~RUBY
   FM = #{WIDTHS.fetch(width)[:fmax]}
@@ -1101,6 +1242,7 @@ generated_checks(check, runtime) unless ONLY_CMP
 closed_div_generated_checks(check, runtime) unless ONLY_CMP
 closed_arith_generated_checks(check, runtime) unless ONLY_CMP
 closed_bits_generated_checks(check, runtime) unless ONLY_CMP
+closed_collection_generated_checks(check, runtime) unless ONLY_CMP
 closed_cmp_generated_checks(check, runtime) unless ONLY_CMP_RUN
 mirrored_body_checks(check, Bc2cppFixtureRuntime::ROOT)
 
@@ -1377,6 +1519,73 @@ CLOSED_RUNS.each do |name, fixture, owners, driver_name, specs|
     ensure
       ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved
     end
+  end
+end
+
+# ADR 0366: the closed `- & | <<` helpers against the real operators (scripts/bc2cpp_collection_ops_matrix.rb), at every
+# width, once more with the Complex and Rational macros set (the by-name copies must still answer alike).
+builds.product([false, true]).each do |(label, build, mrbc, flags, width, bigint), legacy|
+  next if ONLY_CMP
+
+  puts "-- closed `- & | <<` helpers on real mruby (#{label}#{legacy ? ', Complex and Rational macros set' : ''}), " \
+       'interpreted and compiled'
+  saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
+  ENV['MRBC'] = mrbc
+  ENV['BC2CPP_CXXFLAGS'] = legacy ? "#{flags} -DMRB_USE_COMPLEX -DMRB_USE_RATIONAL" : flags
+  begin
+    Dir.mktmpdir do |dir|
+      owners = Bc2cppCollectionOpsMatrix::OWNERS
+      _code, err = runtime.generate(Bc2cppCollectionOpsMatrix::FIXTURE.gsub('\\#', '#'), dir, closed: true, only_owners: owners,
+                                                                                               drop_gems: %w[mruby-enumerator])
+      consts = "FM = #{WIDTHS.fetch(width)[:fmax]}\nIM = $bigint ? FM * 2 + 1 : FM"
+      source = "$bigint = #{bigint}\n#{Bc2cppCollectionOpsMatrix.driver(consts)}"
+      scenario = Bc2cppCollectionOpsMatrix::SCENARIO.sub('__SOURCE__') { source }
+      built, output = runtime.run(dir, err, owners, scenario, build: build, full: true)
+      check.call('the closed `- & | <<` fixture compiles and runs against real mruby', built)
+      puts output.to_s.lines.last(25).join unless built
+      next unless built
+
+      sections = runtime.sections(output)
+      interpreted = sections['interpreted'].to_a
+      compiled = sections['compiled'].to_a
+      strip = ->(lines) { lines.reject { |l| l.start_with?(' ') } }
+      check.call('both runs finish', strip.call(interpreted).last == 'end' && strip.call(compiled).last == 'end')
+      rows = strip.call(interpreted)
+      check.call("every `- & | <<` answer is the interpreter's: result, class, identity, mutation, element calls, IO data, error class and message (#{rows.size} answers)",
+                 rows == strip.call(compiled) && rows.size > 3000)
+      rows.zip(strip.call(compiled)).reject { |a, b| a == b }.first(8).each { |a, b| puts "    interpreted: #{a}\n    compiled:    #{b}" }
+      check.call('the matrix has NoMethodError, TypeError, FrozenError, RangeError and IOError rows',
+                 %w[NoMethodError TypeError FrozenError RangeError IOError].all? { |e| rows.count { |l| l.include?(e) } > 5 })
+      check.call('the matrix runs the elements\' own hash, eql? and == (logged), a failing one, an IO write and a shared Array',
+                 rows.any? { |l| l.include?('[:hash, 1]') } && rows.any? { |l| l.include?('[:eql, 2]') } && rows.any? { |l| l.include?('[:eq, 1]') } &&
+                 rows.any? { |l| l.include?('RuntimeError: bad hash') } && rows.any? { |l| l.include?('RuntimeError: bad ==') } &&
+                 rows.any? { |l| l.include?('io="io"') } && rows.any? { |l| l.include?('NsCollFile') })
+      messages = ['NsCollPlain cannot be converted to Array', "can't modify frozen Array", "can't modify frozen String",
+                  'out of char range', 'closed stream']
+      missing = messages.reject { |m| rows.any? { |l| l.include?(m) } }
+      puts "    missing messages: #{missing.inspect}" unless missing.empty?
+      check.call('the matrix reaches the wrong-type, frozen and out-of-range messages', missing.empty?)
+      [interpreted, compiled].each do |lines|
+        summary = lines.grep(/\A  H summary /).first.to_s
+        lines.grep(/\A  H MISMATCH |\A    (?:helper|method)=/).first(15).each { |l| puts "    #{l.strip}" }
+        lines.grep(/\A  H op /).each { |l| puts "    #{l.strip}" }
+        check.call("each helper agrees with its operator called directly, fresh operands per call (#{summary.strip})",
+                   summary.match?(/ 0 mismatches/) && summary[/ (\d+) cases/, 1].to_i > 3000)
+      end
+      unless legacy
+        owned_lines = compiled.grep(/\A  D \S+ 1 /)
+        bad = owned_lines.reject { |l| %w[0 -1].include?(l.split.last) }
+        check.call("a pair the helpers own makes no by-name call (#{owned_lines.size} pairs)",
+                   owned_lines.size > 30 && bad.empty? && owned_lines.count { |l| l.end_with?(" 0") } > 30)
+        bad.first(5).each { |l| puts "    dispatched: #{l.strip}" }
+        arena = compiled.grep(/\A  A /).map { |l| l.split.last.to_i }
+        check.call("an Array, String, IO or bigint result leaves at most one arena entry (#{arena.max})", !arena.empty? && arena.max <= 1)
+      end
+      check.call('a loop of Array and String operations survives GC and ends where the interpreter does',
+                 rows.any? { |l| l.start_with?('churn =>') } && rows.grep(/\Achurn =>/) == strip.call(compiled).grep(/\Achurn =>/))
+    end
+  ensure
+    ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved
   end
 end
 
