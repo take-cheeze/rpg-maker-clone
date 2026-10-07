@@ -1290,6 +1290,8 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_operand_schema_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_binary_loader_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_closed_world_check.rb
+              # ADR 0369: identity arms for module singleton definers, generated code and compiled-vs-interpreted runs.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_singleton_arms_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_direct_check.rb
               # ADR 0302: RGSS native result facts (audited against the native sources), the native
               # class constant proof, and the instance-receiver proof of a `.singleton` definer.
