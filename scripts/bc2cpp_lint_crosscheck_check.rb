@@ -23,6 +23,14 @@ check.call('method_missing in a linted file with a clean lint cop is a disagreem
 check.call('method_missing in a fixture file is outside the lint domain',
            LintCrosscheck.violations(ROOT_DIR, Fake.new(['/tmp/fixture.rb'])).empty?)
 
+# The mutation checks run bc2cpp from a temp tree whose gem directories are symlinks to the checkout;
+# the baseline's repo-relative file names must still match there.
+Dir.mktmpdir do |dir|
+  Dir.children(ROOT_DIR).reject { |e| %w[.git tools].include?(e) }.each { |e| FileUtils.ln_s(File.join(ROOT_DIR, e), File.join(dir, e)) }
+  run = closed_world_lint_run(root: dir)
+  check.call('a symlinked tree keys files like the checkout', run[:new_offences].empty? && run[:stale].empty?)
+end
+
 Dir.mktmpdir do |dir|
   FileUtils.mkdir_p(File.join(dir, 'scripts'))
   FileUtils.mkdir_p(File.join(dir, 'mruby-rpg2k/mrblib'))
