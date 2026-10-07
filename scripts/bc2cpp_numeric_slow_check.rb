@@ -37,6 +37,8 @@ require_relative 'bc2cpp_fixture_runtime'
 require_relative 'bc2cpp_collection_ops_matrix'
 
 runtime = Bc2cppFixtureRuntime
+# Every build this check runs against is full-core, so the exported gem bodies are linked.
+runtime.collection_exports_linked = true
 failures = []
 # BC2CPP_NUMERIC_SLOW_ONLY=cmp runs only the comparison-helper sections (ADR 0362), cmp-run only their runs on libmruby.
 ONLY_CMP = %w[cmp cmp-run].include?(ENV['BC2CPP_NUMERIC_SLOW_ONLY'])
@@ -962,6 +964,14 @@ def closed_collection_generated_checks(check, runtime)
     ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = saved
   end
   check.call('BC2CPP_NUMERIC_SLOW_CLOSED=0 restores the old helpers', forms.call(off).empty? && !off.include?('mrb_ary_ext_sub_impl'))
+  Bc2cppFixtureRuntime.collection_exports_linked = false
+  begin
+    unlinked = gen.call(drop_gems: %w[mruby-enumerator])
+  ensure
+    Bc2cppFixtureRuntime.collection_exports_linked = true
+  end
+  check.call('without BC2CPP_COLLECTION_EXPORTS=1 (a harness over a libmruby that lacks the exported bodies) `- & | <<` stay by name',
+             forms.call(unlinked).empty? && !unlinked.include?('mrb_ary_ext_sub_impl'))
   Dir.mktmpdir do |dir|
     check.call('NEG: an open world keeps the by-name helpers',
                forms.call(runtime.generate(fixture, dir, closed: false, only_owners: owners).first).empty?)
