@@ -22,10 +22,7 @@ require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
 
 failures = []
-check = lambda do |what, condition|
-  puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
-  failures << what unless condition
-end
+check = Bc2cppFixtureRuntime.checker(failures)
 
 # Only core natives and no mrblib exist in the harness VM: no Array#each, so
 # the fixture yields from its own methods. Callees named after the
@@ -464,9 +461,4 @@ else
   end
 end
 
-if failures.empty?
-  puts 'bc2cpp block semantics check: PASS'
-else
-  warn "bc2cpp block semantics check: #{failures.size} failure(s)"
-  exit 1
-end
+Bc2cppFixtureRuntime.finish('bc2cpp block semantics check', failures)

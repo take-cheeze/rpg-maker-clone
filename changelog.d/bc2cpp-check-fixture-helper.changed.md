@@ -1,0 +1,1 @@
+- The bc2cpp check scripts now share their ok/FAIL reporter and PASS/FAIL tail through `Bc2cppFixtureRuntime.checker` and `Bc2cppFixtureRuntime.finish` in `scripts/bc2cpp_fixture_runtime.rb`, instead of repeating the same block in each script. Check output and exit status are unchanged.

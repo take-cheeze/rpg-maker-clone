@@ -22,10 +22,7 @@ require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
 
 failures = []
-check = lambda do |what, condition|
-  puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
-  failures << what unless condition
-end
+check = Bc2cppFixtureRuntime.checker(failures)
 
 runtime = Bc2cppFixtureRuntime
 
@@ -515,9 +512,4 @@ else
   puts '-- SKIP run: set MRBC, BC2CPP_MRUBY_FULL (or have rake, g++ and 3rd/mruby) and have g++'
 end
 
-if failures.empty?
-  puts 'bc2cpp exact native wrappers check: PASS'
-else
-  warn "bc2cpp exact native wrappers check: #{failures.size} failure(s)"
-  exit 1
-end
+Bc2cppFixtureRuntime.finish('bc2cpp exact native wrappers check', failures)

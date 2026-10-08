@@ -23,10 +23,7 @@ require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
 
 failures = []
-check = lambda do |what, condition|
-  puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
-  failures << what unless condition
-end
+check = Bc2cppFixtureRuntime.checker(failures)
 
 runtime = Bc2cppFixtureRuntime
 CORE_PATH = '3rd/mruby/mrblib/gvc_core.rb'
@@ -272,9 +269,4 @@ else
   puts '-- SKIP run: set MRBC, BC2CPP_MRUBY_CORE and have g++'
 end
 
-if failures.empty?
-  puts 'bc2cpp core body exact check: PASS'
-else
-  warn "bc2cpp core body exact check: #{failures.size} failure(s)"
-  exit 1
-end
+Bc2cppFixtureRuntime.finish('bc2cpp core body exact check', failures)

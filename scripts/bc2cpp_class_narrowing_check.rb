@@ -33,10 +33,7 @@ tool_dir = ENV['BC2CPP_TOOL'] ? File.dirname(File.expand_path(ENV['BC2CPP_TOOL']
 %w[irep bytecode_ir numeric_flow].each { |lib| require File.join(tool_dir, lib) }
 
 failures = []
-check = lambda do |what, condition|
-  puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
-  failures << what unless condition
-end
+check = Bc2cppFixtureRuntime.checker(failures)
 
 runtime = Bc2cppFixtureRuntime
 
@@ -492,9 +489,4 @@ else
   puts '-- SKIP run: set MRBC, BC2CPP_MRUBY_FULL (or have rake, g++ and 3rd/mruby) and have g++'
 end
 
-if failures.empty?
-  puts 'bc2cpp class narrowing check: PASS'
-else
-  warn "bc2cpp class narrowing check: #{failures.size} failure(s)"
-  exit 1
-end
+Bc2cppFixtureRuntime.finish('bc2cpp class narrowing check', failures)

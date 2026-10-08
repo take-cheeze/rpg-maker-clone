@@ -36,6 +36,25 @@ module Bc2cppFixtureRuntime
 
   module_function
 
+  # The `check` lambda of a check script: prints one ok/FAIL line per named condition and
+  # records each failed name in `failures`, which `finish` reads.
+  def checker(failures)
+    lambda do |what, condition|
+      puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
+      failures << what unless condition
+    end
+  end
+
+  # The last line of a check: PASS on stdout, or the failure count on stderr and exit 1.
+  def finish(label, failures)
+    if failures.empty?
+      puts "#{label}: PASS"
+    else
+      warn "#{label}: #{failures.size} failure(s)"
+      exit 1
+    end
+  end
+
   def mrbc
     ENV['MRBC'] || 'mrbc'
   end

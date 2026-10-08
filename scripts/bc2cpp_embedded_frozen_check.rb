@@ -20,10 +20,7 @@ require 'tmpdir'
 require_relative 'bc2cpp_fixture_runtime'
 
 failures = []
-check = lambda do |what, condition|
-  puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
-  failures << what unless condition
-end
+check = Bc2cppFixtureRuntime.checker(failures)
 
 runtime = Bc2cppFixtureRuntime
 
@@ -327,9 +324,4 @@ builds.each do |label, build, full_flag, mrbc, flags|
   end
 end
 
-if failures.empty?
-  puts 'bc2cpp embedded frozen check: PASS'
-else
-  warn "bc2cpp embedded frozen check: #{failures.size} failure(s)"
-  exit 1
-end
+Bc2cppFixtureRuntime.finish('bc2cpp embedded frozen check', failures)

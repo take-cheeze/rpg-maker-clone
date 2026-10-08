@@ -31,10 +31,7 @@ ROOT = File.expand_path('..', __dir__)
 runtime = Bc2cppFixtureRuntime
 
 failures = []
-check = lambda do |what, condition|
-  puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
-  failures << what unless condition
-end
+check = Bc2cppFixtureRuntime.checker(failures)
 
 mruby_dir = File.join(ROOT, '3rd/mruby')
 native_srcs = Dir[File.join(ROOT, 'mruby-rgss/src/*.cxx')] + core_native_srcs(mruby_dir) + external_gem_native_srcs(ROOT)
@@ -500,9 +497,4 @@ else
   puts '  SKIP core behaviour: no libmruby.a with the full-core gems (set BC2CPP_MRUBY_FULL) or no g++'
 end
 
-if failures.empty?
-  puts 'bc2cpp direct natives check: PASS'
-else
-  warn "bc2cpp direct natives check: #{failures.size} failure(s)"
-  exit 1
-end
+Bc2cppFixtureRuntime.finish('bc2cpp direct natives check', failures)
