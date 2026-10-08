@@ -59,6 +59,15 @@ check.call('a register above a call is clobbered after it, not before',
 check.call('the call result is a definition of its own register', defs_of.call(call, 2, '3') == [1])
 check.call('a register below the call is untouched', defs_of.call(call, 2, '0') == [:entry])
 
+# A yield pushes its block frame at R(a) too (vm.c OP_BLKCALL: cipush(mrb, a, ...)), so a register above it is clobbered.
+yield_frame = program.call([
+  insn(0, 'LOADI_5', 'R3 (5)'), insn(2, 'BLKPUSH', "R2\t0:0:0:0 (0)"), insn(6, 'BLKCALL', "R2\t0"),
+  insn(8, 'SEND0', "R3\t:foo"), insn(10, 'RETURN', 'R3')
+])
+check.call('a register above a yield frame is clobbered, not passed through', yield_frame.reaching_definitions(3, '3').nil?)
+check.call('the yield result is a definition of its own register', defs_of.call(yield_frame, 3, '2') == [2])
+check.call('a register below the yield frame is untouched', defs_of.call(yield_frame, 3, '1') == [:entry])
+
 # An op outside the write model refuses.
 unknown = program.call([insn(0, 'RESCUE', "R3\tR2"), insn(2, 'RETURN', 'R1')])
 check.call('an unmodelled op refuses', unknown.reaching_definitions(1, '1').nil?)
