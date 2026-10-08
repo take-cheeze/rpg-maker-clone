@@ -1,0 +1,1 @@
+- **bc2cpp site origin table** no longer reports an exact origin for a register that a fallback send, `BLKCALL` or an `ENTER` rest, keyword or block slot writes: the origin walk now refuses those reads. Generated C++ is unchanged.
