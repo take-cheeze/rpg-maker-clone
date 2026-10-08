@@ -1,0 +1,1 @@
+- **bc2cpp census**: the exact receiver-origin walk (SiteOriginTable) now follows `JMPUW`, `RESCUE` and the handler-target `EXCEPT` instead of refusing at them. Origin-only: generated C++ is unchanged. Covered by `scripts/bc2cpp_origin_transfers_check.rb`.
