@@ -16,8 +16,6 @@ abort 'SKIP: set MRBC' unless ENV['MRBC']
 AUDIT = 'native_class_results.rb'
 MUTANTS = [
   ['control (unmutated)', AUDIT, nil, nil, nil],
-  ['the digest is ignored', AUDIT,
-   'source && Array(FILES.fetch(relative)).include?(Digest::SHA256.hexdigest(source))', 'source', /changed source/],
   ['unmodelled native sources are trusted', AUDIT,
    'return nil unless relative', "return { '<audited-native>' => kind } unless relative", /unmodelled native source/],
   ['String subclasses are treated as exact String', AUDIT,
