@@ -197,8 +197,8 @@ listed below is what those proofs did not reach.
 **1. Core tag chain else, receiver not an ivar (849).** The site tests
 `Array`/`Hash`/`String`/`Integer` tags inline and sends in the else: `empty?`
 181, `to_s` 151, `size` 125, `length` 85, `to_i` 53, `[]` 47, `push` 26. Receiver
-origin: register copy 410, unknown 122, direct-call result 113, indexed result
-77, other 41. The lever is still a receiver class set carried through register
+origin (text walk on `0a9adfc`; these five sum to 763 of the 849): register copy 410, unknown 122,
+direct-call result 113, indexed result 77, other 41. The lever is still a receiver class set carried through register
 copies, return-class tables and arguments so the else becomes a guard violation;
 the 849 are the receivers it has not proven. `to_s` (151) is interpolation of
 arbitrary values and stays dynamic.
@@ -209,11 +209,12 @@ plain ivar reads: `size` 62, `[]` 40, `[]=` 26, `empty?` 24, `push` 22, `pop` 16
 **3. RGSS native exact-class else (206).** `new` 62, `y=` 36, `x=` 36, `flash`
 18, `update` 10, `z=` 7, `fill_rect` 7. The receiver class is proven and an
 argument is not provably an Integer, so the native-direct arm keeps its else.
-Receiver origin: register copy 63, other 31, direct-call result 29, unknown 26.
+Receiver origin (text walk on `0a9adfc`; these four sum to 149 of 206): register copy 63, other 31,
+direct-call result 29, unknown 26.
 
 **4. `CLOSED_WORLD kept: core_or_native` (186).** The name has a core or native
 definer the world cannot exclude: `name` 37, `delete` 18, `map` 17, `string` 16,
-`resume` 11, `at` 10, `write` 9. Receiver origin unknown 60, register copy 33.
+`resume` 11, `at` 10, `write` 9. Receiver origin (text walk on `0a9adfc`; these two sum to 93 of 186): unknown 60, register copy 33.
 Needs an exact receiver class per name (for `resume`, a Fiber).
 
 **5. `POLY_DIAG` genuinely dynamic (475).** `receiver_class_unresolved` 210
@@ -1539,7 +1540,13 @@ same tree, so one build covers both). Before is the text walk over the untagged 
 exact walk over the tagged build. The tagged file with the `/*SO:*/` comments removed is byte-identical to the
 untagged one.
 
-| Origin | Text walk (before) | Exact walk (after) | Delta |
+The table below is table-wide, not by-name sends. Its 7,428 rows are every row of the origin table (one per
+distinct by-name tag the code generator recorded, helper rows included). That is more than the census sites
+(2,082 at `f8ff1015`) and more than the tags the shipped file carries (1,770 before the per-line tags, 2,022
+after), so it is not a count of by-name sends. The by-name census sites are in the table `Origin of the
+receiver (census sites)` further down.
+
+| Origin (table rows) | Text walk (before) | Exact walk (after) | Delta |
 | --- | ---: | ---: | ---: |
 | `literal_or_fresh` | 1,726 | 409 | -1,317 |
 | `unknown` | 1,251 | 2,701 | +1,450 |
@@ -1553,19 +1560,22 @@ untagged one.
 | `constant` | 80 | 654 | +574 |
 | `self` | 68 | 68 | 0 |
 | `captured_upvar` | 38 | 93 | +55 |
-| **total sites** | **7,428** | **7,428** | 0 |
+| **total rows** | **7,428** | **7,428** | 0 |
 
-Origins that changed: 5,323 of 7,428 (72%). By cause: 3,124 exact walks that now name a different category;
-848 sends whose fast path and dispatch disagree (`unknown`); 489 `refused`, 451
-`ambiguous` and 404 `untagged` sites that were guessed before and are now `unknown`; 7 `not_a_register`.
+Table rows whose origin changed: 5,323 of 7,428 (72%). By cause: 3,124 exact walks that now name a different
+category; 848 rows whose defining instruction has two producers that disagree (a fast path and its dispatch),
+which the multi-producer rule answers `unknown` (not a register mismatch; `reg_mismatch` is 0, see the dispatch-line
+rows below); 489 `refused`, 451 `ambiguous` and 404 `untagged` rows that were guessed before and are now
+`unknown`; 7 `not_a_register`.
 
-Ambiguous sites: **547** (status `ambiguous`, counted as `unknown`). The table holds 777 ambiguous writes
-across all by-name and helper rows. Exact status: 5,692 sites; refused 630; untagged 552; not a register 7.
-Raising the dataflow state cap (`STATE_CAP`) left every site count unchanged, so the refusals are not a
-budget artefact.
+Ambiguous rows: **547** (status `ambiguous`, counted as `unknown`). The table holds 777 ambiguous writes
+across all by-name and helper rows. Exact status over the 7,428 rows: 5,692 exact, 630 refused, 552 untagged,
+7 not a register and 547 ambiguous. The 630 refused and 552 untagged are
+table-wide counts on `2b1867b0`, before the transfers and per-line tags; they are not census sites. Raising the
+dataflow state cap (`STATE_CAP`) left every count unchanged, so the refusals are not a budget artefact.
 
-The `dynamic_call_result` drop (882 to 58) is mostly the text walk reading the dispatch line of a send
-whose value also comes from a fast path (428 of the 882 are now `unknown`), not a removed dispatch: the
+The table-wide `dynamic_call_result` drop (882 to 58 rows) is mostly the text walk reading the dispatch line of a
+send whose value also comes from a fast path (428 of the 882 rows are now `unknown`), not a removed dispatch: the
 generated code is unchanged.
 
 ### Refused origins: origin-only transfers
@@ -1631,7 +1641,7 @@ both before and after (21,505,993 bytes; 1,770 tags before, 2,022 after).
 | `no_table_row` | 0 | 0 |
 | **sites** | **2,082** | **2,082** |
 
-`reg_mismatch` is 0 on master as well. The 848 sends quoted above are not a register mismatch: they are
+`reg_mismatch` is 0 on master as well. The 848 table rows quoted above are not a register mismatch: they are
 definitions whose single instruction has two producers (a fast path and its dispatch both write the same
 register), which the category rule answers as `unknown` and which this change leaves as it was. After the
 change that is 126 `exact` sites (`unknown` by that rule).
@@ -1652,6 +1662,9 @@ Origin of the receiver (census sites, `unknown` = every non-`exact` status plus 
 | `other` | 62 | 67 |
 | `self` | 332 | 332 |
 | `dynamic_call_result` | 5 | 5 |
+
+By-name census sites only (not the table-wide rows above): on the `f8ff1015` shipped pass, `direct_call_result`
+is 195 before and 235 after, and `dynamic_call_result` is 5 before and 5 after (2,082 sites in all).
 
 What the 241 `untagged` sites became: 239 `exact`, 1 `ambiguous`, 1 `refused`. Each now resolves through the
 register its own line receives.
@@ -1714,7 +1727,7 @@ with the tags is byte-identical with the option off and on, and both match the m
 
 The 124 sites answered are 115 `exact` and 9 `ambiguous`; the other 8 `query_guarded` sites reach an
 `EXCEPT` (a handler's own op, refused on the handler path). The receiver origins that change are the
-`unknown` rows (399 before, 286 after): `constant` +50, `indexed_result` +19, `embedded_ivar` +6,
+census sites whose origin is `unknown` (399 before, 286 after): `constant` +50, `indexed_result` +19, `embedded_ivar` +6,
 `ivar_read` +12, `parameter` +14, `direct_call_result` +5, `other` +6, `literal_or_fresh` +1.
 
 ### The callee frame clobber (not relaxed)
