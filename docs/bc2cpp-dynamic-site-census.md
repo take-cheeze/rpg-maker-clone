@@ -1566,3 +1566,36 @@ budget artefact.
 The `dynamic_call_result` drop (882 to 58) is mostly the text walk reading the dispatch line of a send
 whose value also comes from a fast path (428 of the 882 are now `unknown`), not a removed dispatch: the
 generated code is unchanged.
+
+### Refused origins: origin-only transfers
+
+The origin walk (`BytecodeIR.reaching_definitions` with `origin_transfers: true`, used only by
+`SiteOriginTable`) follows three ops that the codegen walk refuses: `JMPUW` writes no register; `RESCUE a b`
+writes only `R[b]`; `EXCEPT a` writes `R[a]` on every entry, so its handler edges need not be known for that
+register. Each follows vm.c. Codegen never passes the option, so generated C++ is unchanged: the shipped pass
+with the `/*SO:*/` comments stripped is byte-identical before and after (442,855 lines).
+`scripts/bc2cpp_origin_transfers_check.rb` has a positive and a negative case per transfer.
+
+Refusal causes at the site level (the 232 refused `bc2cpp_send` sites on master `f8ff1015`, from the census's
+own scan joined to the probe log of each walk's first refusal):
+
+| Cause (first refusing op) | Before | After | Status |
+| --- | ---: | ---: | --- |
+| `query_guarded`: the send itself lies in a `begin`/`rescue`/`ensure` range (SEND 62, SEND0 59) | 121 | 121 | unknown: exception flow is not modelled |
+| `callee_frame_clobber` (SEND 34, SEND0 31, SSEND 11, SENDB 1) | 77 | 77 | unknown: a callee's frame overwrites registers above its base |
+| `op_no_transfer` RESCUE | 11 | 0 | resolved (RESCUE writes `R[b]`) |
+| `op_no_transfer` JMPUW | 6 | 0 | resolved (writes no register) |
+| `pred_guarded` EXCEPT (handler target) | 5 | 12 | partly resolved: the query register equal to `R[a]` is defined; other registers stay unknown |
+| `no_preds` JMP (dead or handler-reached code) | 9 | 11 | unknown |
+| `opaque_reg` MOVE (a nested block's SETUPVAR) | 3 | 3 | unknown |
+| **total** | **232** | **224** | |
+
+The EXCEPT row rises from 5 to 12 because RESCUE sites now walk on to their handler-target EXCEPT, and the
+transfer above resolves the ones that query `R[a]`. Site status after: exact 1,513 (was 1,505), refused 224
+(was 232), ambiguous 98 (unchanged), untagged 241 and `not_a_register` 7 (unchanged). Table-wide refused
+rows: 1,665 to 1,495.
+
+Left unknown, with reasons: a send inside a protected range (the walk does not model the handler's entry
+values; through_handlers would answer it with ambiguous sets, which is a different query); a callee frame's
+clobbered register (its value is the callee's, not the caller's); dead or handler-reached code with no normal
+predecessor; a register written by a nested block.
