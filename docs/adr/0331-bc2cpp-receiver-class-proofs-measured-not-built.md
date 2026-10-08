@@ -15,7 +15,7 @@ arguments 37); ADR 0307, 0309, 0312 and 0313 measured pieces of the same populat
 once, by source, with the counterfactual done by the real code generator instead of a model: for every engine send that
 still dispatches by name and whose receiver is not proven, what happens to its by-name lines if the receiver class set
 *were* proven, and what the proof would have to establish. The cutoff for building is at least 30 by-name sends removed
-in the engine gems, kill switch off against on, on one tree.
+in the engine gems, kill switch off against on, on one tree. The cutoff this sentence states was replaced by ADR 0377.
 
 ## Method
 
