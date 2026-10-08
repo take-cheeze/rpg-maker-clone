@@ -8,6 +8,7 @@
 [submodule "third_party/lvgl"]
 	path = 3rd/lvgl
 	url = https://github.com/lvgl/lvgl.git
+	ignore = dirty
 [submodule "third_party/ng-log"]
 	path = 3rd/ng-log
 	url = https://github.com/ng-log/ng-log.git
