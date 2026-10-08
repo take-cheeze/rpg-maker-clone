@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Origin census across exception flow (BC2CPP_SITE_ORIGIN_EXCEPTIONS=1, see
-# SiteOriginTable::Writer.origin). A query the normal walk refuses inside a
+# Origin census across exception flow (on by default; BC2CPP_SITE_ORIGIN_EXCEPTIONS=0
+# turns it off, see SiteOriginTable::Writer.origin). A query the normal walk refuses inside a
 # begin/rescue/ensure range is answered from the through_handlers walk, and that
 # answer is taken only when it is one definition: the same writer on every normal
 # and handler path. Hand-built shapes with fixed answers; codegen never reads the option.
@@ -24,7 +24,7 @@ check = ->(label, ok) { failures << label unless ok }
 
 # [status, category, definition] the writer records for the query at +index+ of +reg+.
 def writer_origin(list, handlers, index, reg, exceptions:)
-  ENV['BC2CPP_SITE_ORIGIN_EXCEPTIONS'] = exceptions ? '1' : nil
+  ENV['BC2CPP_SITE_ORIGIN_EXCEPTIONS'] = exceptions ? nil : '0'
   irep = Irep.new(label: 'origin_check', instructions: list, catch_handlers: handlers)
   SiteOriginTable::Writer.origin(irep, index, reg)
 ensure
