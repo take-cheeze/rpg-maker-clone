@@ -1530,8 +1530,9 @@ and the table; no text is walked. Categories are unchanged. How a writer is clas
   walk. Several producers inside one instruction (a fast path and its dispatch) give that origin only when
   they agree; otherwise the origin is `unknown`.
 * `ambiguous` (several definitions reach through a join or a loop), `refused` (the dataflow cannot prove the
-  set: handler and protected ranges, unmodelled ops), `untagged` (a by-name line emitted outside compile_send,
-  so it has no row) and `reg_mismatch` are `unknown`.
+  set: handler and protected ranges, unmodelled ops) and `untagged` (see "Dispatch-line rows" below for what
+  is left) are `unknown`. `reg_mismatch` is a row whose register is not the line's: it cannot arise now, since
+  the tag carries the line's own register.
 
 Measured on the wio closed world, shipped pass, master `2b1867b0` (the branch base; the master pass is this
 same tree, so one build covers both). Before is the text walk over the untagged `shipped.cxx`; after is the
@@ -1599,3 +1600,74 @@ Left unknown, with reasons: a send inside a protected range (the walk does not m
 values; through_handlers would answer it with ambiguous sets, which is a different query); a callee frame's
 clobbered register (its value is the callee's, not the caller's); dead or handler-reached code with no normal
 predecessor; a register written by a nested block.
+
+### Dispatch-line rows
+
+Each by-name line now carries its own tag, `/*SO:<label>:<index>:<reg>:<walk>*/`:
+
+* `reg` is the register the line receives (the receiver of its first by-name call), so a row cannot name a
+  different register than the line dispatches on (`reg_mismatch` cannot arise).
+* `walk` is the register the reaching-definition walk runs on. It is `reg` except in a shifted block body
+  (`compile_block_body_insn`, offset > 0): there the line names the shifted register, and the block's own
+  register is `reg - offset`. The fast path's proof walks that register (`unshift_proof_reg`); the table
+  walked the shifted number in the block's irep before.
+* A by-name line that `compile_send` returns untagged (a splat or keyword send, no site) is tagged by the
+  `compile_insn` that emitted it, when the line receives a register that instruction names. The GETIDX and
+  SETIDX fallbacks, emitted by the codegen directly, are tagged this way.
+* The table has a seventh column, `walk`. Rows are keyed by (label, index, reg, walk).
+
+Measured on the wio closed world, shipped pass, master `f8ff1015`, before and after (the same tree, the
+same `MRBC`). The tagged file with the `/*SO:*/` tags removed is byte-identical to the untagged shipped pass
+both before and after (21,505,993 bytes; 1,770 tags before, 2,022 after).
+
+| Status (census sites) | Before | After |
+| --- | ---: | ---: |
+| `exact` (of which 332 `self`) | 1,504 | 1,816 |
+| `refused` | 232 | 156 |
+| `ambiguous` | 98 | 103 |
+| `untagged` | 241 | 0 |
+| `not_a_register` | 7 | 7 |
+| `reg_mismatch` | 0 | 0 |
+| `no_table_row` | 0 | 0 |
+| **sites** | **2,082** | **2,082** |
+
+`reg_mismatch` is 0 on master as well. The 848 sends quoted above are not a register mismatch: they are
+definitions whose single instruction has two producers (a fast path and its dispatch both write the same
+register), which the category rule answers as `unknown` and which this change leaves as it was. After the
+change that is 126 `exact` sites (`unknown` by that rule).
+
+Origin of the receiver (census sites, `unknown` = every non-`exact` status plus the multi-producer rule):
+
+| Origin | Before | After |
+| --- | ---: | ---: |
+| `unknown` | 691 | 392 |
+| `parameter` | 216 | 276 |
+| `embedded_ivar` | 122 | 180 |
+| `ivar_read` | 109 | 164 |
+| `direct_call_result` | 195 | 235 |
+| `constant` | 84 | 135 |
+| `captured_upvar` | 48 | 91 |
+| `indexed_result` | 144 | 149 |
+| `literal_or_fresh` | 74 | 56 |
+| `other` | 62 | 67 |
+| `self` | 332 | 332 |
+| `dynamic_call_result` | 5 | 5 |
+
+What the 241 `untagged` sites became: 239 `exact`, 1 `ambiguous`, 1 `refused`. Each now resolves through the
+register its own line receives.
+
+Sites whose origin or status changed: 333, by cause:
+
+* 214 unshifted: the `untagged` sites above.
+* 138 in a shifted block body (every such site): 27 were `untagged`; 77 moved `refused` to `exact` (73) or
+  `ambiguous` (4), which the block's own register answers; 34 stayed `exact` with a different origin
+  (`literal_or_fresh` to `parameter`, `captured_upvar` or `constant`), because the walk now runs on the
+  block's register.
+
+Classification: 83 sites moved from `core_tag_chain_else:receiver_other` to `core_tag_chain_else:receiver_is_ivar`,
+because that category reads the receiver origin and their receiver is now an ivar read. No other
+classification changed. The shape, marker, why and guard columns are unchanged for all 2,082 sites.
+
+Remaining `unknown` after the change: `refused` 156 and `ambiguous` 103 (dataflow limits, not a dispatch
+register problem), `not_a_register` 7, and 126 `exact` sites whose one defining instruction has two
+producers.
