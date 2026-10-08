@@ -32,11 +32,19 @@ if ARGV.first == '--rank'
   exit
 end
 
-path = ARGV.shift or abort "usage: #{$PROGRAM_NAME} shipped.cxx [--tsv FILE] | --rank SITES_DIR --workload NAME=HITS_DIR"
-tsv = ARGV[0] == '--tsv' ? ARGV[1] : nil
+path = ARGV.shift or abort "usage: #{$PROGRAM_NAME} shipped.cxx [--origins TABLE] [--tsv FILE] | --rank SITES_DIR --workload NAME=HITS_DIR"
+tsv = nil
+origins = nil
+until ARGV.empty?
+  case ARGV.shift
+  when '--tsv' then tsv = ARGV.shift
+  when '--origins' then origins = ARGV.shift
+  else abort "unknown option (see #{$PROGRAM_NAME})"
+  end
+end
 src = File.read(path)
 begin
-  scan = SiteCensus.scan(src)
+  scan = SiteCensus.scan(src, origins: origins && SiteCensus.origin_table(origins))
 rescue RuntimeError => e
   abort e.message
 end
@@ -81,7 +89,9 @@ show('else-arm of an inline fast path vs only dispatch', tally(sites, ->(s) { s[
 puts
 show('category (exclusive; first matching rule wins)', tally(sites, ->(s) { s[:category] }), 30)
 puts
-show('receiver origin (heuristic)', tally(sites, ->(s) { s[:origin] }))
+show(origins ? 'receiver origin (exact walk, SiteOriginTable)' : 'receiver origin (heuristic text walk)', tally(sites, ->(s) { s[:origin] }))
+puts
+show('receiver origin status', tally(sites, ->(s) { s[:origin_status] }))
 puts
 show('guard shape guarding the dispatch (code immediately before the site)', tally(sites, ->(s) { s[:shape] }))
 puts
@@ -101,6 +111,6 @@ show('TOP 40 method names', tally(sites, ->(s) { s[:name] }), 40)
 
 if tsv
   File.open(tsv, 'w') do |f|
-    sites.each { |s| f.puts [s[:line], s[:fn], s[:name], s[:argc], s[:class_arm] ? 'class_arm' : s[:else_arm], s[:marker], s[:shape], s[:origin], s[:category], s[:why]].join("\t") }
+    sites.each { |s| f.puts [s[:line], s[:fn], s[:name], s[:argc], s[:class_arm] ? 'class_arm' : s[:else_arm], s[:marker], s[:shape], s[:origin], s[:category], s[:why], s[:origin_status]].join("\t") }
   end
 end
