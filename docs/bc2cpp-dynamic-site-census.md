@@ -11,7 +11,16 @@ generated C++.
 mkdir -p /tmp/keep
 MRBC=<host mrbc> BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep ruby scripts/bc2cpp_coverage_report.rb > /dev/null
 ruby scripts/bc2cpp_dynamic_site_census.rb /tmp/keep/shipped.cxx [--tsv sites.tsv]
+
+# exact receiver origins (SiteOriginTable): the same pass also writes the origin table
+MRBC=<host mrbc> BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep2 BC2CPP_COVERAGE_ORIGIN_TABLE=/tmp/keep2/origins.tsv \
+  ruby scripts/bc2cpp_coverage_report.rb > /dev/null
+ruby scripts/bc2cpp_dynamic_site_census.rb /tmp/keep2/shipped.cxx --origins /tmp/keep2/origins.tsv [--tsv sites.tsv]
 ```
+
+With the table, the generated `shipped.cxx` carries a `/*SO:<label>:<index>*/`
+comment on every by-name line (the join key). Stripping those comments gives back
+the untagged file byte for byte (checked when the numbers below were measured).
 
 `shipped.cxx` is the `SKIP_UNSUPPORTED=1` pass of the whole-program wio build
 (all three compiled gems, the shipped set). Two runs of the same tree are
@@ -568,11 +577,13 @@ dispatch (7,605 to 7,349), all removals. No remaining cause is above about 5% of
 * The marker is the nearest preceding family comment within 25 lines and can be
   a neighbour's; the exclusive categories use position and guard shape first so
   they do not depend on it.
-* The receiver origin is a text heuristic over the register's last assignment. A
-  register copy (`rN = rM;`, `rN = self;`) is followed back to its source, up to
-  eight copies, so `register_copy` now only marks a chain that runs out of hops.
-  The walk is text order, not control flow, so a copy assigned on one branch can
-  still be read as the nearest assignment.
+* The receiver origin is exact only where the table answers. Without
+  `BC2CPP_COVERAGE_ORIGIN_TABLE` the census runs the old text walk, kept as the
+  before-measurement. With the table, the origin is the single reaching definition
+  of the receiver register (MOVE chains followed; see "Exact receiver origins"
+  below). `ambiguous`, `refused`, `untagged` and `not_a_register` count as
+  `unknown`, and so does a send whose defining instruction emits several producers
+  (a fast path and its dispatch).
 * The `unlisted_class_call` reasons came from a one-run instrumentation that is
   not in the tree; they are per class and name, and the counts here map each
   site to its class's dominant reason.
@@ -1502,3 +1513,56 @@ Tests the engine spells, by form, and what each closed (functions the narrowing 
 What stays by name in the sites that carry a test: a test of a class with no bit (`Symbol`, `true`/`false`, a native
 class) narrows nothing from an unknown value; a receiver that is a call result or an element of a container has no
 variable to narrow; an `else` edge only drops the classes that pass, so it narrows a known set and never an unknown one.
+
+## Follow-up: exact receiver origins (SiteOriginTable)
+
+The receiver origin is now the single reaching definition of the receiver register, from the same
+`BytecodeIR.reaching_definitions` the code generator uses (MOVE chains followed, through joins and
+loops). `tools/bc2cpp/site_origin_table.rb` (`BC2CPP_SITE_ORIGIN_TABLE`, set for the shipped pass by
+`BC2CPP_COVERAGE_ORIGIN_TABLE`) tags each by-name line with its `(irep, instruction)` and writes one row per
+send: the status, the origin category and the writer as `OP@index`. The census (`--origins`) reads the tag
+and the table; no text is walked. Categories are unchanged. How a writer is classified:
+
+* `ENTRY`: `self` for register 0, `parameter` for a positional register, `literal_or_fresh` otherwise (the
+  nil every local starts as); `LOADSELF` is `self`.
+* `GETCONST`/`GETMCNST` are `constant`; `GETIV` is `ivar_read` or `embedded_ivar` by its emitted form.
+* Any other writer: the right-hand side compile_insn emitted for it, through the same rules as the text
+  walk. Several producers inside one instruction (a fast path and its dispatch) give that origin only when
+  they agree; otherwise the origin is `unknown`.
+* `ambiguous` (several definitions reach through a join or a loop), `refused` (the dataflow cannot prove the
+  set: handler and protected ranges, unmodelled ops), `untagged` (a by-name line emitted outside compile_send,
+  so it has no row) and `reg_mismatch` are `unknown`.
+
+Measured on the wio closed world, shipped pass, master `2b1867b0` (the branch base; the master pass is this
+same tree, so one build covers both). Before is the text walk over the untagged `shipped.cxx`; after is the
+exact walk over the tagged build. The tagged file with the `/*SO:*/` comments removed is byte-identical to the
+untagged one.
+
+| Origin | Text walk (before) | Exact walk (after) | Delta |
+| --- | ---: | ---: | ---: |
+| `literal_or_fresh` | 1,726 | 409 | -1,317 |
+| `unknown` | 1,251 | 2,701 | +1,450 |
+| `direct_call_result` | 1,207 | 866 | -341 |
+| `dynamic_call_result` | 882 | 58 | -824 |
+| `other` | 610 | 585 | -25 |
+| `parameter` | 499 | 827 | +328 |
+| `indexed_result` | 457 | 504 | +47 |
+| `ivar_read` | 363 | 362 | -1 |
+| `embedded_ivar` | 247 | 301 | +54 |
+| `constant` | 80 | 654 | +574 |
+| `self` | 68 | 68 | 0 |
+| `captured_upvar` | 38 | 93 | +55 |
+| **total sites** | **7,428** | **7,428** | 0 |
+
+Origins that changed: 5,323 of 7,428 (72%). By cause: 3,124 exact walks that now name a different category;
+848 sends whose fast path and dispatch disagree (`unknown`); 489 `refused`, 451
+`ambiguous` and 404 `untagged` sites that were guessed before and are now `unknown`; 7 `not_a_register`.
+
+Ambiguous sites: **547** (status `ambiguous`, counted as `unknown`). The table holds 777 ambiguous writes
+across all by-name and helper rows. Exact status: 5,692 sites; refused 630; untagged 552; not a register 7.
+Raising the dataflow state cap (`STATE_CAP`) left every site count unchanged, so the refusals are not a
+budget artefact.
+
+The `dynamic_call_result` drop (882 to 58) is mostly the text walk reading the dispatch line of a send
+whose value also comes from a fast path (428 of the 882 are now `unknown`), not a removed dispatch: the
+generated code is unchanged.

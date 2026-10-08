@@ -98,7 +98,10 @@ end
 # real "what does the shipped build actually contain" run is the only
 # way to get a true whole-program dynamic-dispatch count.
 Dir.mktmpdir do |dir|
-  shipped_env = env.merge('OUT_SYMBOL' => 'coverage_report_shipped', 'SKIP_UNSUPPORTED' => '1', 'OUT_DIR' => dir)
+  # BC2CPP_COVERAGE_ORIGIN_TABLE: the shipped pass also writes the exact receiver-origin table (SiteOriginTable);
+  # its generated text carries the /*SO:*/ join tags, so it is measured apart from the untagged shipped.cxx.
+  shipped_env = env.merge('OUT_SYMBOL' => 'coverage_report_shipped', 'SKIP_UNSUPPORTED' => '1', 'OUT_DIR' => dir,
+                          'BC2CPP_SITE_ORIGIN_TABLE' => ENV['BC2CPP_COVERAGE_ORIGIN_TABLE'])
   @shipped_stdout, @shipped_stderr, shipped_status = Open3.capture3(shipped_env, cmd)
   raise "bc2cpp.rb (SKIP_UNSUPPORTED=1) failed (exit #{shipped_status.exitstatus}):\n#{@shipped_stderr[-4000..]}" unless shipped_status.success?
 end
