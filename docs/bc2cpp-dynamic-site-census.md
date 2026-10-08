@@ -1698,7 +1698,8 @@ Every `refused` row of the origin table now names its first refusal cause in the
 * `unmodelled:<OP>` (an op outside the write model, e.g. `RESCUE`, `EXCEPT`, `JMPUW`), `no_predecessor`,
   `opaque_reg`, `state_cap`, `unresolved`, `bad_index` and `move_without_source`.
 
-`BC2CPP_SITE_ORIGIN_EXCEPTIONS=1` (read only by the table writer, so no generated code changes) answers a
+The re-ask is on by default. `BC2CPP_SITE_ORIGIN_EXCEPTIONS=0` turns it off (read only by the table writer, so no
+generated code changes either way). It answers a
 refused query again through `through_handlers: true` (ADR 0285's walk: each instruction that can raise into a
 handler contributes the value it is entered with and the value it leaves). The answer is taken only when it
 is one definition; two or more give `ambiguous`, and a refusal keeps its cause. It is sound because the
@@ -1729,6 +1730,36 @@ The 124 sites answered are 115 `exact` and 9 `ambiguous`; the other 8 `query_gua
 `EXCEPT` (a handler's own op, refused on the handler path). The receiver origins that change are the
 census sites whose origin is `unknown` (399 before, 286 after): `constant` +50, `indexed_result` +19, `embedded_ivar` +6,
 `ivar_read` +12, `parameter` +14, `direct_call_result` +5, `other` +6, `literal_or_fresh` +1.
+
+### Re-ask on by default (master `cfd027ac`)
+
+Measured again on the wio closed world, shipped pass, with `BC2CPP_COVERAGE_ORIGIN_TABLE` and the option
+off (`BC2CPP_SITE_ORIGIN_EXCEPTIONS=0`) and on (unset). `shipped.cxx` is byte-identical in both runs. Census
+sites (2,064; the 280 `self` receivers and the 7 non-register receivers are not table rows and are the same in
+both runs):
+
+| Receiver status (census sites) | Option off | Option on (default) |
+| --- | ---: | ---: |
+| `exact` | 1,801 | 1,916 |
+| `ambiguous` | 103 | 112 |
+| `refused` | 153 | 29 |
+| `untagged` (register receiver with no tag) | 0 | 0 |
+| `not_a_register` | 7 | 7 |
+
+Refusal causes: off, `query_guarded` 139, `no_predecessor` 11, `opaque_reg` 3; on, `unmodelled:EXCEPT` 15,
+`no_predecessor` 11, `opaque_reg` 3. Every site whose status changed went from `refused` to `exact` (115) or
+`refused` to `ambiguous` (9); no `exact` or `ambiguous` site changed. The 115 new exact origins are
+`constant` 50, `indexed_result` 19, `parameter` 14, `ivar_read` 12, `embedded_ivar` 6, `other` 6,
+`direct_call_result` 5, `unknown` 2 and `literal_or_fresh` 1.
+
+Soundness was checked by hand on 10 of the 115 sites, chosen with a fixed seed. For each, the bytecode
+(the irep, its handler table and the jumps into the range) shows one writer on every path into the send,
+including the handler path: the handler's target never reaches the send, and no jump enters the send's
+straight-line run past its writer. Nine are the same walk through a `GETCONST`, `GETIV`, `SEND0` or `GETIDX`
+writer; the tenth receives a block parameter through a `MOVE` chain, which is `ENTRY`. That tenth site is
+classed `literal_or_fresh` by the entry rule (a non-positional register is treated as the nil every local
+starts as), which is a label imprecision that predates the option, not a wrong receiver: the value is the
+method's block argument. The answer does not depend on that label.
 
 ### The callee frame clobber (not relaxed)
 
