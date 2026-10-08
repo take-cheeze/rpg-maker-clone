@@ -1,0 +1,1 @@
+- The `3rd/lvgl` submodule ignores dirty working-tree changes (`ignore = dirty` in `.gitmodules`). PlatformIO builds delete LVGL's unused `.S` kernels in place, which otherwise shows as a dirty submodule.
