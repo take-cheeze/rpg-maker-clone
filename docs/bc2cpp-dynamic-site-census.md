@@ -1671,3 +1671,64 @@ classification changed. The shape, marker, why and guard columns are unchanged f
 Remaining `unknown` after the change: `refused` 156 and `ambiguous` 103 (dataflow limits, not a dispatch
 register problem), `not_a_register` 7, and 126 `exact` sites whose one defining instruction has two
 producers.
+
+## Follow-up: refusal causes and exception flow in the origin walk (origin-only)
+
+Every `refused` row of the origin table now names its first refusal cause in the `category` column
+(`-` is kept for every other status). The causes are the refusals of `BytecodeIR.reaching_definitions`:
+
+* `query_guarded`: the walk reached a protected instruction (a begin/rescue/ensure range, end included) or a
+  handler target. The normal walk does not model exception flow, so it refuses there.
+* `callee_frame_clobber`: a callee frame (SEND, SEND0, SSEND, SENDB, SUPER, EXEC) at a lower register than the
+  one asked about lies between the definition and the use. A callee's frame starts at R(a) and may overwrite
+  every register above a, so the walk refuses (the rule is deliberate; see the last section below).
+* `unmodelled:<OP>` (an op outside the write model, e.g. `RESCUE`, `EXCEPT`, `JMPUW`), `no_predecessor`,
+  `opaque_reg`, `state_cap`, `unresolved`, `bad_index` and `move_without_source`.
+
+`BC2CPP_SITE_ORIGIN_EXCEPTIONS=1` (read only by the table writer, so no generated code changes) answers a
+refused query again through `through_handlers: true` (ADR 0285's walk: each instruction that can raise into a
+handler contributes the value it is entered with and the value it leaves). The answer is taken only when it
+is one definition; two or more give `ambiguous`, and a refusal keeps its cause. It is sound because the
+normal walk's answer is unchanged whenever it does not refuse (a walk that never touches a protected
+instruction or a handler target sees no handler edge), so the option only replaces refusals. The edges are
+the VM's: `catch_cover_p` in mruby's `vm.c` covers an instruction when `begin < pc <= end` with `pc` already
+past it, which is the half-open `[begin, end)` range the walk uses. Checked by
+`scripts/bc2cpp_site_origin_exceptions_check.rb` (a raise path that changes the receiver, a retry that re-enters
+the send, and a send whose receiver it writes itself stay unknown).
+
+Measured on the wio closed world, shipped pass, master `d9f0f10d` (`BC2CPP_COVERAGE_ORIGIN_TABLE`; `shipped.cxx`
+with the tags is byte-identical with the option off and on, and both match the master pass). Census sites:
+
+| Refusal cause (census sites) | Before (option off) | After (option on) |
+| --- | ---: | ---: |
+| `query_guarded` | 132 | 0 |
+| `unmodelled:RESCUE` | 11 | 11 |
+| `unmodelled:EXCEPT` | 0 | 8 |
+| `unmodelled:JMPUW` | 6 | 6 |
+| `no_predecessor` | 9 | 9 |
+| `opaque_reg` | 3 | 3 |
+| `callee_frame_clobber` | 0 | 0 |
+| **refused** | **161** | **37** |
+| `ambiguous` | 103 | 112 |
+| `exact` (receiver origin) | 1,871 | 1,986 |
+
+The 124 sites answered are 115 `exact` and 9 `ambiguous`; the other 8 `query_guarded` sites reach an
+`EXCEPT` (a handler's own op, refused on the handler path). The receiver origins that change are the
+`unknown` rows (399 before, 286 after): `constant` +50, `indexed_result` +19, `embedded_ivar` +6,
+`ivar_read` +12, `parameter` +14, `direct_call_result` +5, `other` +6, `literal_or_fresh` +1.
+
+### The callee frame clobber (not relaxed)
+
+The walk's clobber refusal fires on no census site, before or after the option: the cause column reads zero.
+Relaxing it for every query (an experiment, not committed) left the whole origin table, the refusal
+causes included, identical to the option-on table, so the rule frees nothing on this tree. It is also not
+relaxable soundly in general: the callee of a SEND at R(a) runs in a frame that starts at R(a), so a
+register above a may hold the callee's locals after the call, and a bytecode method cannot prove the
+callee does not use them. The send's own register R(a) is already the result (`:define`), so only registers
+above a are affected.
+
+`BLKCALL` (a `yield` with no keyword or splat arguments, `codegen.c` emits `BLKPUSH`/`BLKCALL` at `cursp`)
+is not in `CALLEE_FRAME_OPS`, though `vm.c` `OP_BLKCALL` pushes its callinfo at `regs + a` (`cipush(mrb, a, ...)`),
+so the same overwrite applies. A read above a `yield`'s register is therefore counted as unclobbered. Compiled
+code never keeps a live register above `cursp` across a call, so no census site depends on it; adding `BLKCALL`
+to the list would change the reaching definitions codegen uses, so it is left for a change of its own.
