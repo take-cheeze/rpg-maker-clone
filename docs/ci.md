@@ -66,8 +66,10 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 | Shard | Checks | Approx. |
 | --- | --- | --- |
 | `core-mrbtest` | block/yield-free/exact-receiver (+ `core_body_exact` and `core_singleton_audit`, ADR 0359, about 1 min)/return-class, `step_inline`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, mruby's own suites | about 25 min |
-| `full-core-numeric` | `eqq_direct` (ADR 0293), `numeric_slow` (ADR 0292, about 10 min), `index_closed` (ADR 0365, about 2 min), `tuple_return` (ADR 0311): split from `core-mrbtest`, whose checks plus setup had reached its 45 minute timeout | est. 17 min |
-| `core-flow` | `exact_receiver_flow` and its mutation check, `computed_send` with `CSEND_MUTANTS=1` | see the timing table |
+| `full-core-numeric` | `numeric_slow` (ADR 0292, 454 s in a recent run), `index_closed` (ADR 0365, about 2 min): split from `core-mrbtest`, whose checks plus setup had reached its 45 minute timeout | est. 10 min |
+| `numeric-direct` | `eqq_direct` (ADR 0293) and `tuple_return` (ADR 0311), moved out of `full-core-numeric` so `numeric_slow` runs alone there | see the timing table |
+| `core-flow` | `exact_receiver_flow` (ADR 0301) | see the timing table |
+| `core-flow-mutants` | `exact_receiver_flow_mutation_check` (ADR 0301, five mutants) and `computed_send` with `CSEND_MUTANTS=1` (ADR 0303), moved out of `core-flow` | see the timing table |
 | `core-tables` | `frozen_tables` and its mutation check (ADR 0306) | see the timing table |
 | `call-results` | `call_results` and its mutation check (ADR 0309; its 32-bit leg runs in `bc2cpp-width (int32-a)` or `(int32-b)`) | see the timing table |
 | `native-wrappers` | `exact_native_wrappers` (ADR 0307) and its eight mutants | 5 min |
@@ -103,8 +105,8 @@ clock of the whole job, setup included):
 | `hot-only` | 6 min | 4 min |
 | the other shards | 3-5 min | 1-2 min |
 
-`bc2cpp-width (int32-a)` or `(int32-b)` took 9 min. `core-flow` is the long pole of the whole
-workflow; the mutation checks inside it are the first thing to shorten.
+`bc2cpp-width (int32-a)` or `(int32-b)` took 9 min. `core-flow` was the long pole of the whole
+workflow; its mutation checks now run in `core-flow-mutants`.
 
 ### Reading the timing table
 
