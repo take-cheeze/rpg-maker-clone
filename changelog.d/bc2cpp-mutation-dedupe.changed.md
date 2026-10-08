@@ -1,0 +1,1 @@
+- The bc2cpp `native_string_results` mutation check no longer runs its `the digest is ignored` mutant. It is identical to the mutant `native_class_results` runs earlier in CI (same file, same substituted text, same `changed source` expectation), so one copy is enough.
