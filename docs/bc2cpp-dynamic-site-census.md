@@ -1745,3 +1745,52 @@ is not in `CALLEE_FRAME_OPS`, though `vm.c` `OP_BLKCALL` pushes its callinfo at 
 so the same overwrite applies. A read above a `yield`'s register is therefore counted as unclobbered. Compiled
 code never keeps a live register above `cursp` across a call, so no census site depends on it; adding `BLKCALL`
 to the list would change the reaching definitions codegen uses, so it is left for a change of its own.
+
+## Follow-up: the remaining no_predecessor and opaque_reg refusals (origin-only)
+
+Measured on the wio closed world, shipped pass, base `cfd027ac` (origin/master, PR #2065 merged) against the
+change, both with `BC2CPP_COVERAGE_ORIGIN_TABLE`. The change's `shipped.cxx` is byte-identical to the base once the
+`/*SO:*/` joins are stripped, and identical to it with the joins kept. Census sites (the 2,083 by-name rows the census
+joins to the table):
+
+| Refusal cause | Before | After |
+| --- | ---: | ---: |
+| `query_guarded` | 134 | 134 |
+| `no_predecessor` | 11 | 0 |
+| `opaque_reg` | 3 | 2 |
+| `unmodelled:EXCEPT` | 0 | 0 |
+| **refused** | **148** | **136** |
+| `ambiguous` | 103 | 106 |
+| `exact` | 1,494 | 1,503 |
+
+Table-wide, the refused rows go from 646 to 633.
+
+* **`no_predecessor` (resolved, 11 sites).** A predecessor is dead when no path from the entry reaches it over
+  normal and handler edges. An unguarded instruction with no normal predecessor is one (a handler target is guarded,
+  so a handler edge cannot enter it unguarded), and the walk now skips a dead predecessor of a live query. A dead
+  query keeps the refusal, since it has no value to report. Liveness includes the handler edges, so a node a handler
+  reaches is never called dead (`scripts/bc2cpp_origin_remaining_causes_check.rb`). Every site was a `JMP` after a
+  `RETURN` or `RETURN_BLK` that no jump targets: `Range_each` (irep 1056, dead `JMP`s at 41 and 85) and `Array_bsearch_index` (dead
+  `JMP` at 35). Their answers are 8 `exact` and 3 `ambiguous`.
+* **`opaque_reg` (resolved, 1 site).** A nested block's `SETUPVAR` writes an outer register only once a closure of
+  the frame exists, and a closure exists only after a `BLOCK`, `LAMBDA`, `EXEC`, `CLASS`, `MODULE` or `SCLASS` of
+  that frame has run. If none of those reaches the query, the register is not opaque for it. `Enumerable#drop` at
+  index 2 reads the parameter `n`; its one `BLOCK` (index 12) comes after the read and the irep has no backward jump,
+  so the answer is the method's entry value (`exact`, `parameter`).
+
+Left, with the reason:
+
+* `opaque_reg` in `RPG2k::Scene::Base#wrap_text_to_width` (index 9, register 7 through a MOVE from register 6): the
+  `BLOCK` at 6 is run by the `SENDB` `each` at 7, before the read. Whether the block's `SETUPVAR` writes register 6
+  depends on the body of `each`, which the walk cannot see.
+* `opaque_reg` in `Enumerable#each_slice` (index 25, register 5 through a MOVE from register 4): the `BLOCK` at 22 is run
+  by the `SSENDB` `each` at 23, before the `MOVE` at 24 reads register 4 (`ary`). The same call the walk cannot see.
+* `unmodelled:EXCEPT`: no census site on this master has it. The EXCEPT refusals are now `query_guarded` at the handler
+  target, which the normal walk does not cross. Crossing one needs the handler entry value (the protected range's
+  writes), which is what `BC2CPP_SITE_ORIGIN_EXCEPTIONS` computes; it is not a separate case to resolve here.
+* `query_guarded` (134 sites) is not one of these causes and is unchanged.
+
+Checks run on the change: `bc2cpp_origin_remaining_causes_check.rb` (new; its positive cases fail on master's walk),
+`bc2cpp_origin_transfers_check.rb`, `bc2cpp_site_origin_exceptions_check.rb`, `bc2cpp_bytecode_ir_dataflow_check.rb`
+and `bc2cpp_site_profile_check.rb` (both with `MRBC`), `bc2cpp_bytecode_ir_check.rb`, `bc2cpp_join_dominance_check.rb`
+and `bc2cpp_irep_scans_check.rb`.
