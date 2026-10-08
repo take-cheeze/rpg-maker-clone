@@ -1577,6 +1577,14 @@ register. Each follows vm.c. Codegen never passes the option, so generated C++ i
 with the `/*SO:*/` comments stripped is byte-identical before and after (442,855 lines).
 `scripts/bc2cpp_origin_transfers_check.rb` has a positive and a negative case per transfer.
 
+The origin walk also refuses where vm.c writes above an op's leading register, which the codegen walk
+treats as a write of the leading register only: the fallback send of `GETIDX0`, `GETIDX`, `SETIDX`, the
+operator ops and the comparisons (a frame at `R(a)`, nil at `R(a+2)`, and `R(a+1)` or `R(a+3)` for some of
+them), `BLKCALL` (clears every register above its arguments), and the rest, post, keyword and block slots
+of `ENTER`. Each refusal is a `:callee_clobber` or an unmodelled refusal in the origin walk only. The shipped
+pass with the `/*SO:*/` comments stripped is byte-identical to master (origin/master c1372ea3).
+`scripts/bc2cpp_origin_multiwrite_check.rb` has the positive and negative cases, and pins the codegen walk's answers.
+
 Refusal causes at the site level (the 232 refused `bc2cpp_send` sites on master `f8ff1015`, from the census's
 own scan joined to the probe log of each walk's first refusal):
 
