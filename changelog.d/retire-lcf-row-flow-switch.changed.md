@@ -1,0 +1,1 @@
+- **bc2cpp LCF row flow kill switch retired**: `BC2CPP_LCF_ROW_FLOW=0` no longer turns the proof off; it is always on (ADR 0294). No script set it, so generated C++ is unchanged.
