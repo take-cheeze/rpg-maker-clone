@@ -986,7 +986,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_typed_slot_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
           - shard: core-mrbtest
-            # Interpreter-vs-compiled fixtures and mruby's own suites (~25 min; the full-core numeric checks are in `full-core-numeric`).
+            # Interpreter-vs-compiled fixtures and mruby's own suites (~25 min; the full-core numeric checks are in `full-core-numeric` and `numeric-direct`).
             checks: |
               # Literal-block arms into the compiled core (docs/adr/0270): a closed-world fixture compiled
               # with the core, against the interpreter; two more mruby builds.
@@ -1055,26 +1055,33 @@ jobs:
               # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
               ruby scripts/bc2cpp_core_mrbtest.rb
           - shard: full-core-numeric
-            # Split from core-mrbtest, which had grown to the job's 45 minute limit: the checks that compare compiled
-            # numeric/index/tuple helpers with the interpreter on one full-core build (~17 min).
+            # Runs numeric_slow, the one long check in this group, with the cheap index check; the other full-core
+            # numeric checks are in `numeric-direct`, so this shard's wall clock is set by numeric_slow alone.
             checks: |
-              # ADR 0293: direct === / is_a? / kind_of? against the interpreter, on the full-core build above.
-              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_direct_check.rb
               # ADR 0292: the numeric slow-path helpers against the interpreter over a
-              # Fixnum/bigint/Float/nil/String/user-class operand matrix; same build.
+              # Fixnum/bigint/Float/nil/String/user-class operand matrix; on the full-core build.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_numeric_slow_check.rb
               # ADR 0365: the index helpers bc2cpp_getidx/getidx0/setidx without their by-name tail, each run against
               # the real `[]` / `[]=` over a receiver and key matrix (the 32-bit and no-bigint legs are in bc2cpp-width).
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_index_closed_check.rb
+          - shard: numeric-direct
+            # Split from full-core-numeric, which runs numeric_slow: the direct-dispatch and destructured-return checks
+            # against the interpreter, on one full-core build.
+            checks: |
+              # ADR 0293: direct === / is_a? / kind_of? against the interpreter, on the full-core build.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_direct_check.rb
               # ADR 0311: destructured fixed-arity Array returns; the full-core run (the core-only run is in `fast`).
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_tuple_return_check.rb
           - shard: core-flow
-            # ADR 0301 exact-receiver flow and its five mutants (~13 min).
+            # ADR 0301 exact-receiver flow. Its five mutants and the ADR 0303 computed-send check run in `core-flow-mutants`.
             checks: |
               # ADR 0301: the exact receiver reaching every arm wrapper, and constant class pools; generated
-              # code, then a compiled fixture against the interpreter on the full-core and core-only builds,
-              # then five mutants of the soundness conditions.
+              # code, then a compiled fixture against the interpreter on the full-core and core-only builds.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_flow_check.rb
+          - shard: core-flow-mutants
+            # Split from core-flow: the exact-receiver flow mutants and the computed-send check with its mutants.
+            checks: |
+              # ADR 0301: five mutants of the soundness conditions of the exact-receiver flow check.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_flow_mutation_check.rb
               # ADR 0303: a computed-name send over a provably finite Symbol set becomes direct arms; negative
               # worlds, the interpreter on full-core and core-only builds, and one proof removed at a time.

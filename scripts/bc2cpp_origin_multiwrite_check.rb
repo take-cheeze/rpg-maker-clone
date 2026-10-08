@@ -43,7 +43,7 @@ check.call('ADD: its leading register is still defined by it (negative)',
 blk = program.call([insn(0, 'LOADI_5', 'R5 (5)'), insn(2, 'BLKCALL', "R1\t0"), insn(4, 'MOVE', "R6\tR5"), insn(6, 'RETURN', 'R6')])
 check.call('BLKCALL clears registers above its arguments: origin walk refuses a read above it',
            blk.reaching_definitions(2, '5', origin_transfers: true).nil?)
-check.call('BLKCALL: the default walk is unchanged (codegen)', defs_of.call(blk, 2, '5') == [0])
+check.call('BLKCALL: the default walk refuses too (codegen, since BLKCALL joined CALLEE_FRAME_OPS)', defs_of.call(blk, 2, '5').nil?)
 check.call('BLKCALL: a register below its frame is untouched (negative)',
            defs_of.call(program.call([insn(0, 'LOADI_5', 'R0 (5)'), insn(2, 'BLKCALL', "R1\t0"), insn(4, 'MOVE', "R6\tR0"), insn(6, 'RETURN', 'R6')]), 2, '0', origin_transfers: true) == [0])
 
