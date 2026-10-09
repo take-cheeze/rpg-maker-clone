@@ -151,6 +151,30 @@ Dir.mktmpdir do |dir|
     e.message.include?('UnsafeChild#initialize must call super')
   end
   check.call('compilation rejects an embedded base whose subclass initializer skips super', rejected)
+
+  # NATIVE_DATA_OWNERS (CodeGen): RGSS::Bitmap keeps its native DataType<T> payload in DATA_PTR, so its
+  # compiled #initialize must not embed an ivar struct there, whatever the wired list says. Plain Solo2 stays embedded.
+  native_path = File.join(dir, 'native_layout.rb')
+  File.write(native_path, <<~'RUBY')
+    module RGSS
+      class Bitmap
+        # bc2cpp: (fixnum)
+        def initialize(w); @font = w; end
+        def font2; @font; end
+      end
+    end
+    class Solo2
+      # bc2cpp: (fixnum)
+      def initialize(w); @w = w; end
+      def w2; @w; end
+    end
+  RUBY
+  native_ireps, native_root = compile_ireps(native_path, 'bc2cpp_native_layout', dir)
+  native_registry, native_superclasses = build_registry(native_ireps, native_root)
+  native_gen = CodeGen.new(native_ireps, native_registry, IvarLayout.all(native_ireps, native_registry), {}, {}, {},
+                           native_superclasses, {}, {}, {}, {}, Set.new)
+  check.call('a native DataType owner (RGSS::Bitmap) is never embedded, and a plain class still is',
+             native_gen.embed_type('RGSS::Bitmap', 'font').nil? && native_gen.embed_type('Solo2', 'w') == :value)
 end
 
 puts '-- fixture (foreign and self accessor reads of an embedded ivar)'
