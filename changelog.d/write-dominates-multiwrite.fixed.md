@@ -1,0 +1,1 @@
+- **bc2cpp dominance** no longer takes a write as the value of a register when an op between the write and the read clobbers that register on a fallback or callee frame (`ADD`, `GETIDX0`, `SEND`, `BLKCALL`, ...), or when the write is only a side write of it. Generated C++ is unchanged.
