@@ -157,6 +157,33 @@ source = File.read(File.expand_path('../tools/bc2cpp/codegen_fixnum_proof.rb', _
 listed = source[/FIXNUM_PROOF_STEP_OVER_OPS = Set\[(.*?)\]\.freeze/m, 1].scan(/'([A-Z0-9_]+)'/).flatten.to_set
 check.call('WRITES_LEADING_REG_OPS equals FIXNUM_PROOF_STEP_OVER_OPS', listed == BytecodeIR::WRITES_LEADING_REG_OPS)
 
+# ENTER's rest, keyword-hash and block slots are typed definitions of the ENTER in the origin walk (Definition#built).
+# Post and locals refuse; self, required and optional parameters stay the entry value. Codegen's default walk is
+# unchanged: ENTER passes there, so every slot answers the entry value.
+enter_built = ->(prog, index, reg) { prog.reaching_definitions(index, reg, origin_transfers: true)&.map(&:built) }
+enter_origin_refuses = ->(prog, index, reg) { prog.reaching_definitions(index, reg, origin_transfers: true).nil? }
+enter_codegen = ->(prog, index, reg) { prog.reaching_definitions(index, reg)&.map(&:entry?) }
+enter_rest = program.call([insn(0, 'ENTER', "0:0:1:0:0:0:0:0\t(0x0)"), insn(2, 'MOVE', "R2\tR1"), insn(4, 'RETURN', 'R2')])
+check.call('ENTER rest slot: origin walk types it as the Array (rest)', enter_built.call(enter_rest, 1, '1') == [:rest])
+check.call('ENTER rest slot: codegen default answers the entry value', enter_codegen.call(enter_rest, 1, '1') == [true])
+enter_hash = program.call([insn(0, 'ENTER', "1:0:0:0:1:0:0:0\t(0x0)"), insn(2, 'MOVE', "R4\tR2"), insn(4, 'RETURN', 'R4')])
+check.call('ENTER keyword hash slot: origin walk types it as the Hash', enter_built.call(enter_hash, 1, '2') == [:hash])
+check.call('ENTER keyword hash slot: codegen default answers the entry value', enter_codegen.call(enter_hash, 1, '2') == [true])
+enter_block = program.call([insn(0, 'ENTER', "1:0:0:0:0:0:1:0\t(0x0)"), insn(2, 'MOVE', "R3\tR2"), insn(4, 'RETURN', 'R3')])
+check.call('ENTER block slot: origin walk types it as the block', enter_built.call(enter_block, 1, '2') == [:block])
+check.call('ENTER block slot: codegen default answers the entry value', enter_codegen.call(enter_block, 1, '2') == [true])
+enter_kwblock = program.call([insn(0, 'ENTER', "1:0:0:0:1:0:1:0\t(0x0)"), insn(2, 'MOVE', "R4\tR3"), insn(4, 'RETURN', 'R4')])
+check.call('ENTER keyword hash and block after it: R2 is the Hash, R3 the block (origin)',
+           enter_built.call(enter_kwblock, 1, '2') == [:hash] && enter_built.call(enter_kwblock, 1, '3') == [:block])
+enter_post = program.call([insn(0, 'ENTER', "1:0:1:1:0:0:0:0\t(0x0)"), insn(2, 'MOVE', "R4\tR3"), insn(4, 'RETURN', 'R4')])
+check.call('ENTER post slot: origin walk refuses (an argument or nil, not an ENTER-built value)',
+           enter_origin_refuses.call(enter_post, 1, '3'))
+check.call('ENTER post slot: codegen default answers the entry value', enter_codegen.call(enter_post, 1, '3') == [true])
+check.call('ENTER rest slot of a method with a post argument stays typed (origin)', enter_built.call(enter_post, 1, '2') == [:rest])
+check.call('ENTER local slot past the block: origin walk refuses', enter_origin_refuses.call(enter_block, 1, '3'))
+check.call('ENTER optional and required slots stay the entry value (origin)',
+           enter_built.call(program.call([insn(0, 'ENTER', "1:1:0:0:0:0:0:0\t(0x0)"), insn(2, 'RETURN', 'R2')]), 1, '2') == [nil])
+
 # ---------------------------------------------------------------------------
 # Independent forward fixpoint. IN[i][reg] is the set of definitions that may
 # reach instruction i: an instruction index, :entry, :clobber (a callee frame
@@ -309,6 +336,49 @@ if ENV['MRBC']
   check.call('the sample answers joins and loops', stats[:multi].positive? && stats[:answered] > stats[:refused] / 4)
 else
   warn 'bc2cpp_bytecode_ir_dataflow_check: MRBC unset, skipping the compiled cross-check'
+end
+
+# The same slots against mrbc's own output: each ENTER operand and the register each parameter lands in.
+if ENV['MRBC']
+  enter_src = <<~'RUBY'
+    def rest_m(a, *r); [a, r]; end
+    def kw_m(a, k: 1); [a, k]; end
+    def blk_m(a, &b); [a, b]; end
+    def kwblk_m(a, *r, k: 1, &b); [r, k, b]; end
+    def post_m(a, *r, z); [r, z]; end
+    def opt_m(a, o = 2); [a, o]; end
+  RUBY
+  Dir.mktmpdir do |dir|
+    path = File.join(dir, 'enter_slots.rb')
+    File.write(path, enter_src)
+    ireps, = compile_ireps(path, 'bc2cpp_dataflow_enter_slots', dir)
+    by_fields = lambda do |fields|
+      ireps.each_value.find { |irep| irep.instructions.first.op == 'ENTER' && irep.instructions.first.enter_fields.join(':') == fields }
+    end
+    compiled = lambda do |fields, reg|
+      irep = by_fields.call(fields)
+      irep && BytecodeIR.reaching_definitions(irep, 1, reg, origin_transfers: true)
+    end
+    check.call('mrbc: every ENTER shape above compiled to its own irep',
+               %w[1:0:1:0:0:0:0:0 1:0:0:0:1:0:0:0 1:0:0:0:0:0:1:0 1:0:1:0:1:0:1:0 1:0:1:1:0:0:0:0 1:1:0:0:0:0:0:0]
+                 .all? { |fields| by_fields.call(fields) })
+    check.call('mrbc: rest_m, the rest parameter in R2, is typed as the Array',
+               compiled.call('1:0:1:0:0:0:0:0', '2')&.map(&:built) == [:rest])
+    check.call('mrbc: kw_m, the keyword Hash in R2, is typed as the Hash',
+               compiled.call('1:0:0:0:1:0:0:0', '2')&.map(&:built) == [:hash])
+    check.call('mrbc: blk_m, the block in R2 (no keywords), is typed as the block',
+               compiled.call('1:0:0:0:0:0:1:0', '2')&.map(&:built) == [:block])
+    check.call('mrbc: kwblk_m puts the rest Array in R2, the Hash in R3 and the block in R4',
+               compiled.call('1:0:1:0:1:0:1:0', '2')&.map(&:built) == [:rest] &&
+               compiled.call('1:0:1:0:1:0:1:0', '3')&.map(&:built) == [:hash] &&
+               compiled.call('1:0:1:0:1:0:1:0', '4')&.map(&:built) == [:block])
+    check.call('mrbc: post_m, the post argument in R3, is refused by the origin walk',
+               compiled.call('1:0:1:1:0:0:0:0', '3').nil?)
+    check.call('mrbc: opt_m, the optional argument in R2, stays the entry value',
+               compiled.call('1:1:0:0:0:0:0:0', '2')&.map(&:built) == [nil])
+    check.call('mrbc: the ENTER-built slots are not answered by codegen (entry values, unchanged)',
+               BytecodeIR.reaching_definitions(by_fields.call('1:0:1:0:1:0:1:0'), 1, '4')&.map(&:entry?) == [true])
+  end
 end
 
 # ---------------------------------------------------------------------------
