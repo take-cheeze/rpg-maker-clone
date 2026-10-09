@@ -56,10 +56,11 @@ end
 def relation(name, singleton, kinds)
   core = KIND_NAMES.select { |bit, _| kinds & bit != 0 }.values
   if singleton == 1
-    base = core.empty? ? 'unrelated' : "subclass of #{core.join('/')}"
-    "singleton-classed (#{name}, #{base})"
+    base = core.empty? ? "not a core kind" : "kind #{core.join("/")}"
+    "object with a singleton class (real class #{name}; #{base})"
   elsif CORE_NAMES.include?(name)
-    "exact core #{name} (not a subclass; the chain's own test should have matched)"
+    # The dump does not record which classes each chain tests, so this is only the relation.
+    "exact core #{name} (not a subclass and no singleton class)"
   elsif core.any?
     "user subclass of #{core.join('/')} (#{name})"
   else
@@ -82,7 +83,7 @@ ranked = sites.select { |_, s| s[:hits].positive? }.sort_by { |key, s| [-s[:hits
 puts "top #{[options[:top], ranked.size].min} sites"
 ranked.first(options[:top]).each_with_index do |(key, s), rank|
   sym, id = key
-  puts format('%2d. %10d  %s#%d  %s  line %s  %s  [%s]', rank + 1, s[:hits], sym, id, s[:method], s[:line],
+  puts format('%2d. %10d  %s#%d  %s  %s  %s  [%s]', rank + 1, s[:hits], sym, id, s[:method], s[:line],
               s[:receiver], s[:category])
   puts "      fn #{s[:fn]}, name #{s[:name]}, origin #{s[:origin]}"
   s[:classes].sort_by { |(_, _, _), n| -n }.each do |(name, singleton, kinds), n|
