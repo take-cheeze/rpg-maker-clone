@@ -68,6 +68,40 @@ check.call('a register above a yield frame is clobbered, not passed through', yi
 check.call('the yield result is a definition of its own register', defs_of.call(yield_frame, 3, '2') == [2])
 check.call('a register below the yield frame is untouched', defs_of.call(yield_frame, 3, '1') == [:entry])
 
+# ARGARY R(a) writes R(a) and R(a+1), and R(a+2) when kd is set (vm.c OP_ARGARY); a register below a passes through.
+argary = program.call([
+  insn(0, 'LOADNIL', 'R3 (nil)'), insn(2, 'ARGARY', "R2\t1:0:0:0 (0)"), insn(4, 'RETURN', 'R3')
+])
+check.call('ARGARY defines R(a) and R(a+1), killing the earlier write of R(a+1)',
+           defs_of.call(argary, 2, '3') == [1] && defs_of.call(argary, 2, '2') == [1])
+check.call('ARGARY without kd leaves R(a+2) to the entry value', defs_of.call(argary, 2, '4') == [:entry])
+check.call('ARGARY leaves a register below R(a) to the entry value', defs_of.call(argary, 2, '1') == [:entry])
+argary_kd = program.call([
+  insn(0, 'LOADNIL', 'R4 (nil)'), insn(2, 'ARGARY', "R2\t0:0:0:1 (0)"), insn(4, 'RETURN', 'R4')
+])
+check.call('ARGARY with kd also defines R(a+2)', defs_of.call(argary_kd, 2, '4') == [1])
+
+# APOST R(a) pre:post writes R(a) through R(a+post) (vm.c OP_APOST), whatever the array's length.
+apost = program.call([
+  insn(0, 'LOADNIL', 'R3 (nil)'), insn(2, 'APOST', "R1\t0\t2"), insn(4, 'RETURN', 'R3')
+])
+check.call('APOST defines R(a) through R(a+post), killing the earlier write of R(a+post)',
+           defs_of.call(apost, 2, '3') == [1] && defs_of.call(apost, 2, '1') == [1] && defs_of.call(apost, 2, '2') == [1])
+check.call('APOST leaves the register above R(a+post) to the entry value', defs_of.call(apost, 2, '4') == [:entry])
+apost_move = program.call([
+  insn(0, 'LOADNIL', 'R3 (nil)'), insn(2, 'APOST', "R1\t0\t2"), insn(4, 'MOVE', 'R5	R3'), insn(6, 'RETURN', 'R5')
+])
+check.call('a MOVE of an APOST-written register follows to the APOST', defs_of.call(apost_move, 3, '5') == [1])
+
+# A raising ARGARY inside a protected range: through_handlers sees the entered value and the completed write.
+raising_argary = program.call([
+  insn(0, 'LOADI_1', 'R2 (1)'), insn(2, 'ARGARY', "R2\t0:0:0:0 (0)"), insn(4, 'JMP', '10'),
+  insn(8, 'NOP', ''), insn(10, 'RETURN', 'R2')
+], [CatchHandler.new(type: :rescue, begin_addr: 2, end_addr: 4, target: 8)])
+check.call('a raising ARGARY refuses in its handler without through_handlers', raising_argary.reaching_definitions(3, '2').nil?)
+check.call('a raising ARGARY reaches the handler as both the old and the completed value',
+           defs_of.call(raising_argary, 3, '2', through_handlers: true) == [0, 1])
+
 # An op outside the write model refuses.
 unknown = program.call([insn(0, 'RESCUE', "R3\tR2"), insn(2, 'RETURN', 'R1')])
 check.call('an unmodelled op refuses', unknown.reaching_definitions(1, '1').nil?)
@@ -129,6 +163,19 @@ check.call('WRITES_LEADING_REG_OPS equals FIXNUM_PROOF_STEP_OVER_OPS', listed ==
 # above the call's register) or :unknown (an op the write model does not
 # cover, which taints every register until a later write kills it).
 # ---------------------------------------------------------------------------
+# The register run an ARGARY/APOST writes, parsed from the disassembly text (independent of the decoder):
+# APOST "R<a>\t<pre>\t<post>" writes a..a+post; ARGARY "R<a>\tm1:r:m2:kd (lv)" writes a, a+1, and a+2 iff kd.
+def run_of_text(insn)
+  case insn.op
+  when 'APOST'
+    m = insn.args.match(/\AR(\d+)\t\d+\t(\d+)(?!\d)/) or return nil
+    m[1].to_i..(m[1].to_i + m[2].to_i)
+  when 'ARGARY'
+    m = insn.args.match(/\AR(\d+)\t\d+:\d+:\d+:([01]) \(\d+\)/) or return nil
+    m[1].to_i..(m[1].to_i + (m[2] == '1' ? 2 : 1))
+  end
+end
+
 def forward_reaching(irep)
   prog = BytecodeIR.for(irep)
   ins = irep.instructions
@@ -147,6 +194,9 @@ def forward_reaching(irep)
     out = inn[i].transform_values(&:dup)
     if reads.include?(insn.op)
       nil
+    elsif (run = run_of_text(insn))
+      # ARGARY/APOST write a run (vm.c): every register of it gets this instruction as its definition.
+      run.each { |r| out[r.to_s] = Set[i] }
     elsif BytecodeIR::WRITES_LEADING_REG_OPS.include?(insn.op) || insn.op.start_with?('LOADI')
       lead = insn.reg
       if calls.include?(insn.op) && lead
@@ -227,6 +277,9 @@ SAMPLE = <<~'RUBY'
   def and_or(a, b); (a && b) || A.new; end
   def multi(a); q, w = a; q.foo + w.foo; end
   def opt(a, b = A.new); b.ok; end
+  class Z < A; def ok(a, b = 2, *r, c); super; end; end
+  class Y < A; def ok(a, k: 1); super; end; end
+  def splat_post(a); h, *m, t = a; m.size + t.ok; end
 RUBY
 
 stats = Hash.new(0)

@@ -64,14 +64,18 @@ kw = program.call([insn(0, 'ENTER', "1:0:0:0:1:0:0:0\t(0x0)"), insn(2, 'MOVE', "
 check.call('ENTER with keywords keeps R1 as the entry value (negative)',
            defs_of.call(kw, 1, '1', origin_transfers: true) == [:entry])
 
-# APOST and ARGARY write a range (R[a..a+c], R[a..a+1+kd]). Neither is on the write list, so both refuse
-# under either walk; the origin walk must not guess their write set.
+# APOST and ARGARY write a run (R[a..a+post], R[a..a+1+kd]; BytecodeIR.written_run, vm.c OP_APOST / OP_ARGARY).
+# Both walks answer the run exactly: the read of R2 is the write at index 1, which kills LOADI_5 (index 0).
 apost = program.call([insn(0, 'LOADI_5', 'R2 (5)'), insn(2, 'APOST', "R1\t0\t1"), insn(4, 'MOVE', "R3\tR2"), insn(6, 'RETURN', 'R3')])
-check.call('APOST writes R[a..a+post]: both walks refuse a read of R2', apost.reaching_definitions(2, '2', origin_transfers: true).nil? &&
-  apost.reaching_definitions(2, '2').nil?)
+check.call('APOST writes R[a..a+post]: both walks see the APOST as the definition of R2',
+           defs_of.call(apost, 2, '2', origin_transfers: true) == [1] && defs_of.call(apost, 2, '2') == [1])
+check.call('APOST leaves R[a+post+1] to the entry value (both walks)',
+           defs_of.call(apost, 2, '3', origin_transfers: true) == [:entry] && defs_of.call(apost, 2, '3') == [:entry])
 argary = program.call([insn(0, 'LOADI_5', 'R2 (5)'), insn(2, 'ARGARY', "R1\t0:0:0:0\t(0x0)"), insn(4, 'MOVE', "R3\tR2"), insn(6, 'RETURN', 'R3')])
-check.call('ARGARY writes R[a..a+1+kd]: both walks refuse a read of R2', argary.reaching_definitions(2, '2', origin_transfers: true).nil? &&
-  argary.reaching_definitions(2, '2').nil?)
+check.call('ARGARY writes R[a..a+1+kd]: both walks see the ARGARY as the definition of R2',
+           defs_of.call(argary, 2, '2', origin_transfers: true) == [1] && defs_of.call(argary, 2, '2') == [1])
+check.call('ARGARY without kd leaves R[a+2] to the entry value (both walks)',
+           defs_of.call(argary, 2, '3', origin_transfers: true) == [:entry] && defs_of.call(argary, 2, '3') == [:entry])
 
 abort("bc2cpp_origin_multiwrite_check FAILED: #{failures.join(', ')}") unless failures.empty?
 puts 'bc2cpp_origin_multiwrite_check OK'
