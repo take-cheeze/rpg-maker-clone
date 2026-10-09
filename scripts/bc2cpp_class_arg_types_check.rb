@@ -30,6 +30,8 @@ require_relative '../tools/bc2cpp/native_names'
 require_relative '../tools/bc2cpp/ivar_layout'
 require_relative '../tools/bc2cpp/dispatch_targets'
 require_relative '../tools/bc2cpp/class_arg_types'
+require_relative '../tools/bc2cpp/call_site_index'
+require_relative '../tools/bc2cpp/annotations'
 
 class ClassArgTypesTest < Minitest::Test
   # A minimal stand-in for the pieces trace_new_target reads, so the test
@@ -115,5 +117,75 @@ class ClassArgTypesTest < Minitest::Test
     end
     assert conflict
     assert_equal [nil], [conflict ? nil : slot]
+  end
+
+  # Packed sends (`f(*a)`, n=* in the disassembly, vm.c CALL_MAXARGS): the callee's arguments come from an Array whose
+  # length the send does not name, so a packed caller can pass any class and is no fact. The count is nil for it.
+  ENTER_ONE = '1:0:0:0:0:0:0:0 (0x40000)'
+
+  def set_callee = irep('set', [InsnStub.new(op: 'ENTER', args: ENTER_ONE)])
+  def set_registry = { 'set' => [MethodDefStub.new(irep: 'set', owner: 'Box', name: 'set')] }
+
+  # A packed caller whose argument array sits in R2 (LOADNIL R3; MOVE R2 R3 stands in for the array build).
+  def packed_caller(name = 'set')
+    irep('packed', [InsnStub.new(op: 'LOADNIL', args: 'R3'), InsnStub.new(op: 'MOVE', args: "R2\tR3"),
+                    send_insn(1, name, '*')])
+  end
+
+  def test_call_site_index_records_a_packed_send_with_no_count
+    caller = irep('c', [send_insn(0, 'thing', 1), send_insn(0, 'thing', '*'), InsnStub.new(op: 'SEND0', args: "R1\t:thing")])
+    counts = CallSiteIndex.build({ 'c' => caller })['thing'].map { |*, n| n }
+    # The plain send keeps its count, the packed send has none, and a SEND0 is still zero arguments.
+    assert_equal [1, nil, 0], counts
+  end
+
+  def test_packed_caller_gives_no_argument_type_fact
+    # An unpacked caller passes a Fixnum (LOADI_1). The packed caller can pass a String, so position 1 has no fact.
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    assert_equal [nil], arg_types_for('plain' => plain, 'packed' => packed_caller)
+  end
+
+  def test_packed_send_to_another_name_leaves_the_argument_type
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    assert_equal [:fixnum], arg_types_for('plain' => plain, 'packed' => packed_caller('other'))
+  end
+
+  def test_unpacked_callers_keep_their_argument_type
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    assert_equal [:fixnum], arg_types_for('plain' => plain)
+  end
+
+  def arg_types_for(callers)
+    ireps = { 'set' => set_callee }.merge(callers)
+    ArgTypes.analyze(ireps, set_registry, call_sites: CallSiteIndex.build(ireps))['set']
+  end
+
+  # ClassArgTypes asks trace_new_target for a class; this stands in for it, answering 'A' for every argument.
+  def with_tracer_answering(answer)
+    ClassArgTypes.define_singleton_method(:trace_new_target) { |*_args, **_kw| answer }
+    yield
+  ensure
+    ClassArgTypes.singleton_class.send(:remove_method, :trace_new_target)
+  end
+
+  def class_types_for(callers)
+    ireps = { 't' => set_callee }.merge(callers)
+    owners = ireps.keys.to_h { |label| [label, label == 't' ? 'Box' : 'Main'] }
+    registry = { 'set' => [MethodDefStub.new(irep: 't', owner: 'Box', name: 'set')] }
+    ClassArgTypes.analyze(ireps, registry, owners, {}, nil, call_sites: CallSiteIndex.build(ireps))['set']
+  end
+
+  def test_packed_caller_gives_no_class_fact
+    with_tracer_answering('A') do
+      plain = irep('plain', [send_insn(0, 'set', 1)])
+      assert_equal [nil], class_types_for('plain' => plain, 'packed' => packed_caller)
+    end
+  end
+
+  def test_unpacked_callers_keep_their_class_fact
+    with_tracer_answering('A') do
+      plain = irep('plain', [send_insn(0, 'set', 1)])
+      assert_equal ['A'], class_types_for('plain' => plain)
+    end
   end
 end
