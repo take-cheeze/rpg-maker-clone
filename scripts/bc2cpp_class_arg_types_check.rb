@@ -189,6 +189,88 @@ class ClassArgTypesTest < Minitest::Test
     end
   end
 
+  # Block-passing sends (`f(a) { }`, SENDB/SSENDB). vm.c OP_SENDB puts the block at R[a+n+1], after the positional
+  # arguments: the count is still n and the block is no argument. They were not indexed at all, so a block-passing
+  # caller could contradict the plain callers without anything noticing.
+  def sendb_insn(dest, name, argc, op: 'SENDB')
+    InsnStub.new(op: op, args: "R#{dest}\t:#{name}\tn=#{argc}")
+  end
+
+  # A block-passing caller that passes a String at position 1 (STRING R2 L[0]), then the block in R3 (BLOCK R3 I[0]).
+  def string_block_caller(op: 'SENDB', argc: 1)
+    Irep.new(label: 'blk', pool: ['s'],
+             instructions: [InsnStub.new(op: 'STRING', args: "R2\tL[0]"), InsnStub.new(op: 'BLOCK', args: "R3\tI[0]"),
+                            sendb_insn(1, 'set', argc, op: op)])
+  end
+
+  def test_call_site_index_records_block_sends_with_their_positional_count
+    caller = irep('c', [send_insn(0, 'thing', 1), sendb_insn(0, 'thing', 2), sendb_insn(0, 'thing', '*', op: 'SSENDB')])
+    counts = CallSiteIndex.build({ 'c' => caller })['thing'].map { |*, n| n }
+    # The block register is not counted: a SENDB with n=2 has count 2, and the packed SSENDB has none.
+    assert_equal [1, 2, nil], counts
+  end
+
+  def test_block_passing_caller_gives_no_argument_type_fact
+    # The plain caller passes a Fixnum; the block-passing caller passes a String at the same position.
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    assert_equal [nil], arg_types_for('plain' => plain, 'blk' => string_block_caller)
+  end
+
+  def test_self_implicit_block_passing_caller_gives_no_argument_type_fact
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    assert_equal [nil], arg_types_for('plain' => plain, 'blk' => string_block_caller(op: 'SSENDB'))
+  end
+
+  def test_packed_block_passing_caller_gives_no_argument_type_fact
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    packed_blk = irep('packed_blk', [InsnStub.new(op: 'LOADNIL', args: 'R3'), InsnStub.new(op: 'MOVE', args: "R2\tR3"),
+                                     sendb_insn(1, 'set', '*')])
+    assert_equal [nil], arg_types_for('plain' => plain, 'packed_blk' => packed_blk)
+  end
+
+  def test_agreeing_block_passing_caller_keeps_the_argument_type
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    agree = irep('blk', [InsnStub.new(op: 'LOADI_2', args: "R2\t(2)"), InsnStub.new(op: 'BLOCK', args: "R3\tI[0]"),
+                         sendb_insn(1, 'set', 1)])
+    assert_equal [:fixnum], arg_types_for('plain' => plain, 'blk' => agree)
+  end
+
+  def test_block_register_is_not_a_positional_argument
+    # set(x, y) with a plain two-argument caller. The block-passing caller passes ONE argument, so it is not
+    # this arity's call site; if its block register R3 were counted as argument two, position two would lose
+    # its Fixnum fact.
+    two_args = irep('set', [InsnStub.new(op: 'ENTER', args: '2:0:0:0:0:0:0:0 (0x40000)')])
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), InsnStub.new(op: 'LOADI_2', args: "R3\t(2)"),
+                           send_insn(1, 'set', 2)])
+    ireps = { 'set' => two_args, 'plain' => plain, 'blk' => string_block_caller }
+    sites = CallSiteIndex.build(ireps)
+    assert_equal [:fixnum, :fixnum], ArgTypes.analyze(ireps, set_registry, call_sites: sites)['set']
+  end
+
+  # Stands in for trace_new_target per caller: each caller's label names the class it passes.
+  def with_tracer_by_caller(answers)
+    ClassArgTypes.define_singleton_method(:trace_new_target) { |caller_irep, *_args, **_kw| answers[caller_irep.label] }
+    yield
+  ensure
+    ClassArgTypes.singleton_class.send(:remove_method, :trace_new_target)
+  end
+
+  def test_block_passing_caller_gives_no_class_fact_where_it_contradicts
+    with_tracer_by_caller('plain' => 'A', 'blk' => 'B') do
+      plain = irep('plain', [send_insn(0, 'set', 1)])
+      blk = irep('blk', [sendb_insn(0, 'set', 1)])
+      assert_equal [nil], class_types_for('plain' => plain, 'blk' => blk)
+    end
+  end
+
+  def test_agreeing_block_passing_caller_keeps_the_class_fact
+    with_tracer_by_caller('plain' => 'A', 'blk' => 'A') do
+      plain = irep('plain', [send_insn(0, 'set', 1)])
+      blk = irep('blk', [sendb_insn(0, 'set', 1)])
+      assert_equal ['A'], class_types_for('plain' => plain, 'blk' => blk)
+    end
+  end
+
   # Keyword sends (`f(k: v)`, n=0|nk=1): vm.c OP_SEND packs the nk pairs into one Hash at position n+1 and sets
   # ci->nk = CALL_MAXARGS, so the callee's position 1 receives a Hash. The count is nil, as for a packed send.
   def keyword_send(dest, name, n, nk) = InsnStub.new(op: 'SEND', args: "R#{dest}\t:#{name}\tn=#{n}|nk=#{nk}")
