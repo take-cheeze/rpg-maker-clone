@@ -85,7 +85,7 @@ ARGV.each do |path|
 end
 
 # Else-arm hits per feeding parameter.
-else_by_param = Hash.new { |h, k| h[k] = { hits: 0, sites: [] } }
+else_by_param = Hash.new { |h, k| h[k] = { hits: 0, may_hits: 0, sites: [] } }
 else_total = 0
 options[:else_files].each do |path|
   File.foreach(path) do |raw|
@@ -93,16 +93,19 @@ options[:else_files].each do |path|
     next unless f[0] == 'ELSE_SITE'
 
     else_total += f[3].to_i
-    next unless f[10] == 'parameter'
+    next unless %w[parameter join].include?(f[10])
 
     param = f[12]
     if param.nil? || param == '-'
       else_by_param[:unresolved][:hits] += f[3].to_i
       next
     end
-    e = else_by_param[[f[1], f[6], param]]
-    e[:hits] += f[3].to_i
-    e[:sites] << "#{f[7]} on #{f[11]} #{f[8]}"
+    exact = !param.start_with?('~')
+    param.delete_prefix('~').split('|').each do |name|
+      e = else_by_param[[f[1], f[6], name]]
+      e[exact ? :hits : :may_hits] += f[3].to_i
+      e[:sites] << "#{f[7]} on #{f[11]} #{f[8]}#{exact ? '' : ' (join: may hold this parameter)'}"
+    end
   end
 end
 
@@ -133,7 +136,8 @@ hit.each do |p|
     allowed = allowed_classes(fact)
     next unless allowed
 
-    bad = p[:classes].reject { |c, _| allowed.include?(c) }
+    # A static class name may be unqualified (`Rect` for RGSS::Rect): match on the trailing path too.
+    bad = p[:classes].reject { |c, _| allowed.any? { |a| a == c || c.end_with?("::#{a}") } }
     contradictions << [p, fact, bad] unless bad.empty?
     break unless bad.empty?
   end
@@ -169,25 +173,28 @@ puts ''
 
 unless options[:else_files].empty?
   resolved = else_by_param.reject { |k, _| k == :unresolved }
+  total = ->(e) { e[:hits] + e[:may_hits] }
   puts "== (c) parameters feeding unresolved by-name sends (else-arm hits #{else_total} total; " \
-       "#{resolved.values.sum { |e| e[:hits] }} via a resolved parameter, " \
-       "#{else_by_param[:unresolved][:hits]} via a parameter copy not resolved) =="
-  ranked = resolved.sort_by { |(key), e| [-e[:hits], key.to_s] }
+       "#{else_by_param[:unresolved][:hits]} reach no parameter) =="
+  puts '   "exact" = the receiver register is a plain copy of the parameter; "may" = a control-flow join, some path'
+  puts '   copies the parameter (a hit counts once per candidate parameter, so the column sum can exceed the total).'
+  ranked = resolved.sort_by { |(key), e| [-total.call(e), key.to_s] }
   ranked.first(options[:top]).each_with_index do |(key, e), i|
     p = params[key]
     sym, fn, name = key
     if p
       state = proven.call(p) ? 'PROVEN' : 'unproven'
-      st = p[:static]
-      puts format('%3d. %9d else hits  %s  [%s, static: %s]', i + 1, e[:hits], label(p), state, st)
+      puts format('%3d. %9d else hits (exact %d, may %d)  %s  [%s, static: %s]', i + 1, total.call(e), e[:hits], e[:may_hits], label(p), state, p[:static])
       puts "       runtime (#{p[:calls]} calls): #{histogram(p)}"
     else
-      puts format('%3d. %9d else hits  %s %s (%s): parameter not traced (function not instrumented)', i + 1, e[:hits], fn, name, sym)
+      puts format('%3d. %9d else hits (exact %d, may %d)  %s %s (%s): parameter not traced (function not instrumented)', i + 1, total.call(e), e[:hits], e[:may_hits], fn, name, sym)
     end
     e[:sites].tally.sort_by { |_, n| -n }.first(4).each { |s, n| puts "       send #{s}#{n > 1 ? " x#{n}" : ''}" }
   end
-  total_unproven = resolved.sum { |key, e| params[key] && !proven.call(params[key]) ? e[:hits] : 0 }
-  mono_unproven = resolved.sum { |key, e| (p = params[key]) && mono.include?(p) && !proven.call(p) ? e[:hits] : 0 }
+  traced = resolved.select { |key, _| params[key] }
+  unproven_hits = traced.sum { |key, e| proven.call(params[key]) ? 0 : total.call(e) }
+  mono_unproven_hits = traced.sum { |key, e| (p = params[key]) && mono.include?(p) && !proven.call(p) ? total.call(e) : 0 }
   puts ''
-  puts "else hits through unproven parameters: #{total_unproven}  (of which the parameter was monomorphic: #{mono_unproven})"
+  puts "feeding parameters: #{resolved.size} (traced #{traced.size}); hits through unproven ones: #{unproven_hits} " \
+       "(monomorphic at run time: #{mono_unproven_hits})"
 end
