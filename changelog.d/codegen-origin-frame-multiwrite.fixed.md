@@ -1,0 +1,1 @@
+- bc2cpp codegen no longer answers a definition for a register that an arithmetic, index or block-call op overwrites on its fallback send (vm.c L_SEND_SYM writes nil above the leading register). Matches the origin walk; generated C++ is unchanged.
