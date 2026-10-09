@@ -135,6 +135,44 @@ check.call('a copy no longer mirrors a variable written after the copy', states[
 dead_edge = [insn(0, 'LOADI_1', "R2\t(1)"), insn(2, 'JMPNIL', "R2\t9"), insn(6, 'RETURN', 'R2'), insn(9, 'RETURN', 'R2')]
 check.call('an edge the tested register can never take is infeasible (nil state)', flow.call(dead_edge)[3].nil?)
 
+# Boolean and Symbol literals carry their class bits (ExactOracle#literal_class_mask); FalseClass is falsy like nil.
+class LiteralBitOracle < StubOracle
+  TRUE_BIT = 1 << 9
+  FALSE_BIT = 1 << 10
+  SYM_BIT = 1 << 11
+
+  def literal_class_mask(insn) = { 'LOADTRUE' => TRUE_BIT, 'LOADFALSE' => FALSE_BIT, 'LOADSYM' => SYM_BIT }[insn.op]
+  def false_class_bit = FALSE_BIT
+end
+bits = LiteralBitOracle.new
+check.call('a true literal is its own class bit',
+           flow.call([insn(0, 'LOADTRUE', "R2\t(true)"), insn(2, 'RETURN', 'R2')], bits)[1][2] == LiteralBitOracle::TRUE_BIT)
+check.call('a Symbol literal is its own class bit',
+           flow.call([insn(0, 'LOADSYM', "R2\t:a"), insn(2, 'RETURN', 'R2')], bits)[1][2] == LiteralBitOracle::SYM_BIT)
+check.call('without the oracle a true literal stays unknown', flow.call([insn(0, 'LOADTRUE', "R2\t(true)"), insn(2, 'RETURN', 'R2')])[1][2] == OTHER)
+false_jmpif = [insn(0, 'LOADFALSE', "R2\t(false)"), insn(2, 'JMPIF', "R2\t8"), insn(6, 'RETURN', 'R2'), insn(8, 'RETURN', 'R2')]
+states = flow.call(false_jmpif, bits)
+check.call('a false literal reaches the falsy edge of a truthiness test', states[2][2] == LiteralBitOracle::FALSE_BIT)
+check.call('and makes the truthy edge infeasible (false is not truthy)', states[3].nil?)
+true_jmpnot = [insn(0, 'LOADTRUE', "R2\t(true)"), insn(2, 'JMPNOT', "R2\t8"), insn(6, 'RETURN', 'R2'), insn(8, 'RETURN', 'R2')]
+states = flow.call(true_jmpnot, bits)
+check.call('a true literal reaches the truthy edge of a negated test', states[2][2] == LiteralBitOracle::TRUE_BIT)
+check.call('and makes the falsy edge infeasible (true is not falsy)', states[3].nil?)
+false_jmpnil = [insn(0, 'LOADFALSE', "R2\t(false)"), insn(2, 'JMPNIL', "R2\t8"), insn(6, 'RETURN', 'R2'), insn(8, 'RETURN', 'R2')]
+states = flow.call(false_jmpnil, bits)
+check.call('JMPNIL on a false literal: the taken edge is infeasible (false is not nil)', states[3].nil?)
+# A class bit that arrives from outside the method (a call result, a pool) is narrowed by the FalseClass bit the oracle
+# names; an oracle that names none must keep it on both edges, since it may be false.
+entered = [insn(0, 'JMPIF', "R2\t4"), insn(2, 'RETURN', 'R2'), insn(4, 'RETURN', 'R2')]
+named = LiteralBitOracle.new.tap { |o| o.entry = { 2 => LiteralBitOracle::FALSE_BIT } }
+states = flow.call(entered, named)
+check.call('a FalseClass value from outside reaches the falsy edge of a truthiness test', states[1][2] == LiteralBitOracle::FALSE_BIT)
+check.call('and makes the truthy edge infeasible when the oracle names the bit', states[2].nil?)
+unnamed = StubOracle.new.tap { |o| o.entry = { 2 => LiteralBitOracle::FALSE_BIT } }
+states = flow.call(entered, unnamed)
+check.call('an oracle that names no FalseClass bit keeps a class bit on the falsy edge', states[1][2] == LiteralBitOracle::FALSE_BIT)
+check.call('and on the truthy edge (it may be truthy too)', states[2][2] == LiteralBitOracle::FALSE_BIT)
+
 called = [insn(0, 'LOADI_1', "R3\t(1)"), insn(2, 'LOADI_2', "R1\t(2)"), insn(4, 'SEND0', "R2\t:f"), insn(6, 'RETURN', 'R2')]
 states = flow.call(called)
 check.call('a call clobbers every register above its receiver', states[3][3] == OTHER)
