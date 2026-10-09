@@ -72,6 +72,22 @@ check.call('EXCEPT: the default walk still refuses at the handler target', excep
 check.call('EXCEPT: a register it does not write is refused (its entry value is unmodelled)',
            except.reaching_definitions(3, '1', origin_transfers: true).nil?)
 
+# A break out of begin/ensure: the JMPUW on the normal edge unwinds through the ensure body (vm.c OP_JMPUW, then
+# RAISEIF jumps to the target), so the target reads the ensure body's write. The ensure's own fall-through does not
+# reach the target. through_handlers must refuse at the normal JMPUW edge, not answer the write before it.
+#   0: LOADI_5 R2   2: JMPUW -> 8 (ensure range [2,4), handler 4)   4: LOADI_1 R2 (ensure body)
+#   6: RETURN R3 (the ensure's fall-through)   8: RETURN R2 (the break target)
+unwind = program.call([
+  insn(0, 'LOADI_5', 'R2 (5)'), insn(2, 'JMPUW', '8'), insn(4, 'LOADI_1', 'R2 (1)'),
+  insn(6, 'RETURN', 'R3'), insn(8, 'RETURN', 'R2')
+], [CatchHandler.new(type: :ensure, begin_addr: 2, end_addr: 4, target: 4)])
+check.call('JMPUW out of an ensure range refuses at its normal edge under through_handlers',
+           unwind.reaching_definitions(4, '2', origin_transfers: true, through_handlers: true).nil?)
+check.call('the ensure body is still answered from its handler edge (the JMPUW writes nothing)',
+           defs_of.call(unwind, 2, '2', origin_transfers: true, through_handlers: true) == [0])
+check.call('codegen walk (through_handlers, no origin) still refuses at the JMPUW',
+           unwind.reaching_definitions(4, '2', through_handlers: true).nil?)
+
 # Ops outside the origin transfers keep their default answer: an unmodelled op still refuses.
 unmodelled = program.call([insn(0, 'EXCEPT', 'R3'), insn(2, 'RETURN', 'R1')])
 check.call('an op without an origin transfer still refuses under the origin walk',
