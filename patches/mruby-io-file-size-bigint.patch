@@ -1,0 +1,17 @@
+diff --git a/mrbgems/mruby-io/src/file.c b/mrbgems/mruby-io/src/file.c
+--- a/mrbgems/mruby-io/src/file.c
++++ b/mrbgems/mruby-io/src/file.c
+@@ -780,7 +780,12 @@
+   }
+ 
+   if (sizeof(st.st_size) >= sizeof(mrb_int) && st.st_size > MRB_INT_MAX) {
+-#ifdef MRB_NO_FLOAT
++#ifdef MRB_USE_BIGINT
++    /* Like CRuby, a size past mrb_int is still an Integer (a bignum). st_size
++     * is positive here; mrb_bint_new_uint64 is used because the MRB_INT32
++     * mrb_bint_new_int64 hands mpz_set_int64 an uninitialized mpz_t. */
++    return mrb_bint_new_uint64(mrb, (uint64_t)st.st_size);
++#elif defined(MRB_NO_FLOAT)
+     mrb_raise(mrb, E_RUNTIME_ERROR, "File#size too large for MRB_NO_FLOAT");
+ #else
+     return mrb_float_value(mrb, (mrb_float)st.st_size);
