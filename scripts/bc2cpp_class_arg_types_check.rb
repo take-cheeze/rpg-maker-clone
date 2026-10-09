@@ -306,4 +306,57 @@ class ClassArgTypesTest < Minitest::Test
     plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
     assert_equal [:fixnum], arg_types_for('plain' => plain, 'kw' => keyword_caller('other'))
   end
+
+  # SUPER (vm.c OP_SUPER: `goto L_SENDB_SYM` with mid = ci->mid) has no :name operand; the target is the
+  # ENCLOSING method's name. The enclosing def is found from its TDEF, as a def in a block (invisible to the
+  # registry, so its name can stay MONO) is. The super sits in irep 'sup', the body of `def <name>`.
+  def super_def_irep(def_name, super_insn)
+    parent = Irep.new(label: 'p', reps: ['sup'],
+                      instructions: [InsnStub.new(op: 'TDEF', args: "R1\t:#{def_name}\tI[0]")])
+    sup = irep('sup', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), super_insn])
+    { 'p' => parent, 'sup' => sup }
+  end
+
+  def super_insn(count) = InsnStub.new(op: 'SUPER', args: "R1\tn=#{count}")
+
+  def test_call_site_index_keys_a_super_by_the_enclosing_method_name
+    index = CallSiteIndex.build(super_def_irep('set', super_insn(1)))
+    assert_equal [['sup', 1, 1, 1]], index['set'].map { |i, idx, d, n| [i.label, idx, d, n] }
+    assert_equal ['set'], index.keys
+    assert_equal [nil], CallSiteIndex.build(super_def_irep('set', super_insn('*')))['set'].map { |*, n| n }
+  end
+
+  def test_super_that_disagrees_drops_the_argument_type_fact
+    # The direct caller passes a Fixnum; `def set` calls super with a Symbol (a Symbol stands in for a non-Fixnum).
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    sup = super_def_irep('set', super_insn(1))
+    sup['sup'] = irep('sup', [InsnStub.new(op: 'LOADSYM', args: "R2\t:k"), super_insn(1)])
+    assert_equal [nil], arg_types_for('plain' => plain, **sup)
+  end
+
+  def test_super_that_agrees_keeps_the_argument_type_fact
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    assert_equal [:fixnum], arg_types_for('plain' => plain, **super_def_irep('set', super_insn(1)))
+  end
+
+  def test_super_in_an_unrelated_method_does_not_interfere
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    sup = super_def_irep('other', super_insn(1))
+    sup['sup'] = irep('sup', [InsnStub.new(op: 'LOADSYM', args: "R2\t:k"), super_insn(1)])
+    assert_equal [:fixnum], arg_types_for('plain' => plain, **sup)
+  end
+
+  def test_packed_super_drops_the_argument_type_fact
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    assert_equal [nil], arg_types_for('plain' => plain, **super_def_irep('set', super_insn('*')))
+  end
+
+  def test_super_that_disagrees_drops_the_class_fact
+    answers = { 'plain' => 'A', 'sup' => 'B' }
+    ClassArgTypes.define_singleton_method(:trace_new_target) { |irep, *_a, **_k| answers[irep.label] }
+    plain = irep('plain', [send_insn(0, 'set', 1)])
+    assert_equal [nil], class_types_for('plain' => plain, **super_def_irep('set', super_insn(1)))
+  ensure
+    ClassArgTypes.singleton_class.send(:remove_method, :trace_new_target)
+  end
 end
