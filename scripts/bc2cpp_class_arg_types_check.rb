@@ -270,4 +270,40 @@ class ClassArgTypesTest < Minitest::Test
       assert_equal ['A'], class_types_for('plain' => plain, 'blk' => blk)
     end
   end
+
+  # Keyword sends (`f(k: v)`, n=0|nk=1): vm.c OP_SEND packs the nk pairs into one Hash at position n+1 and sets
+  # ci->nk = CALL_MAXARGS, so the callee's position 1 receives a Hash. The count is nil, as for a packed send.
+  def keyword_send(dest, name, n, nk) = InsnStub.new(op: 'SEND', args: "R#{dest}\t:#{name}\tn=#{n}|nk=#{nk}")
+
+  # The keyword key sits in R2 (LOADSYM :k), the value in R3; the Hash lands at R2, the callee's position 1.
+  def keyword_caller(name = 'set')
+    irep('kw', [InsnStub.new(op: 'LOADSYM', args: "R2\t:k"), InsnStub.new(op: 'LOADNIL', args: 'R3'),
+                keyword_send(1, name, 0, 1)])
+  end
+
+  def test_call_site_index_records_a_keyword_send_with_no_count
+    caller = irep('c', [send_insn(0, 'thing', 1), keyword_send(0, 'thing', 0, 1), keyword_send(0, 'thing', 1, '*'),
+                        keyword_send(0, 'thing', 1, 0), send_insn(0, 'thing', 0)])
+    counts = CallSiteIndex.build({ 'c' => caller })['thing'].map { |*, n| n }
+    # A keyword send has no positional count (nil); an explicit nk=0 is unkeyworded and keeps its count.
+    assert_equal [1, nil, nil, 1, 0], counts
+  end
+
+  def test_keyword_caller_gives_no_argument_type_fact
+    # The plain caller passes a Fixnum; the keyword caller passes a Hash at position 1, so there is no fact.
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    assert_equal [nil], arg_types_for('plain' => plain, 'kw' => keyword_caller)
+  end
+
+  def test_keyword_caller_gives_no_class_fact
+    with_tracer_answering('A') do
+      plain = irep('plain', [send_insn(0, 'set', 1)])
+      assert_equal [nil], class_types_for('plain' => plain, 'kw' => keyword_caller)
+    end
+  end
+
+  def test_keyword_send_to_another_name_leaves_the_argument_type
+    plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
+    assert_equal [:fixnum], arg_types_for('plain' => plain, 'kw' => keyword_caller('other'))
+  end
 end
