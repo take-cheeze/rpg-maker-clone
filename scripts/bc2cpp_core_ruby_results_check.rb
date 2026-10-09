@@ -69,6 +69,12 @@ SOURCE = <<~RUBY
     def memo_keyword; [1, 2].each_with_object([], extra: 1) { |x, out| x }.size; end
     def memo_splat(args); [1, 2].each_with_object(*args) { |x, out| x }.size; end
     def dropped; [1, 2].drop(1).size; end
+    def initialize; @sl = []; end
+    # BOTTOM_BLOCK_RECEIVER: the receiver is a name or slot the growth loop has not classed yet when the block send is first run.
+    def keys_sel(h); h.keys.select { |x| x }; end
+    def keys_sel_size(h); keys_sel(h).size; end
+    def sl_sel; @sl = @sl.select { |x| x }; @sl; end
+    def sl_sel_size; sl_sel.size; end
     def dropped_unknown(input); input.drop(1).size; end
   end
 RUBY
@@ -136,6 +142,9 @@ worlds = [
   ['core helper installer', SOURCE, {}, true, nil, "class Array; alias_method :__uniq, :size; end"],
   ['interpreted core helper', SOURCE, {}, true, nil, "class Array; def __uniq; ignored = -> { 1 }; KrOther.new; end; end"],
   ['core computed installer', SOURCE, {}, false, nil, "class Array; alias_method ('m' + 'ap'), :size; end"],
+  ['bottom kill switch', SOURCE, { 'BC2CPP_BOTTOM_BLOCK_RECEIVERS' => '0' }, true],
+  ['keys override', SOURCE + "class KrOther; def keys; self; end; end\n", {}, true],
+  ['slot store of another class', SOURCE + "class KrRunner; def sl_other; @sl = KrOther.new; end; end\n", {}, true],
   ['open world', SOURCE, {}, false]
 ]
 worlds.select! { |name, _| name == ENV['KRR_CASE'] } if ENV['KRR_CASE']
@@ -185,6 +194,11 @@ if ENV['MRBC']
             check.call("#{name}: positional drop result", exact_size.call(code, 'dropped') == ['core bodies', 'name kill switch'].include?(name))
             check.call("#{name}: unresolved drop result", exact_size.call(code, 'dropped_unknown') == (name == 'core bodies'))
           end
+        end
+        if ['core bodies', 'bottom kill switch', 'keys override', 'slot store of another class', 'kill switch', 'open world'].include?(name)
+          # A literal-block send on a not-yet-classed receiver waits for the loop instead of dropping the name.
+          check.call("#{name}: keys.select enters the return table", err.include?('RETCLASS keys_sel (Array)') == %w[core\ bodies slot\ store\ of\ another\ class].include?(name))
+          check.call("#{name}: @sl = @sl.select enters the return table", err.include?('RETCLASS sl_sel (Array)') == %w[core\ bodies keys\ override].include?(name))
         end
         check.call("#{name}: nested sort result", exact_size.call(code, 'sorted') == (name == 'core bodies')) if ['core bodies', 'kill switch', 'nested kill switch', 'nested project override', 'nested core override', 'nested core recursion', 'nested caller break', 'open world'].include?(name)
         if ['core bodies', 'kill switch', 'nested kill switch', 'super core override', 'super included override', 'native range switch', 'open world'].include?(name)
