@@ -28,14 +28,14 @@ getidx0 = program.call([
   insn(0, 'LOADI_5', 'R2 (5)'), insn(2, 'GETIDX0', "R1\tR0[0]"), insn(4, 'MOVE', "R3\tR2"), insn(6, 'RETURN', 'R3')
 ])
 check.call('GETIDX0 fallback writes R[a+1]: origin walk refuses a read of it', getidx0.reaching_definitions(2, '2', origin_transfers: true).nil?)
-check.call('GETIDX0 fallback: the default walk is unchanged (codegen)', defs_of.call(getidx0, 2, '2') == [0])
+check.call('GETIDX0 fallback: the default walk refuses too (codegen, ORIGIN_FRAME_OPS)', defs_of.call(getidx0, 2, '2').nil?)
 check.call('GETIDX0: a read of its leading register is defined by it (negative)',
            defs_of.call(getidx0, 2, '1', origin_transfers: true) == [1])
 
 # ADD R0 (R1): the fallback sends with nil in R(a+2), so R2 has the LOADI and the ADD as writers.
 add = program.call([insn(0, 'LOADI_5', 'R2 (5)'), insn(2, 'ADD', "R0\t(R1)"), insn(4, 'MOVE', "R3\tR2"), insn(6, 'RETURN', 'R3')])
 check.call('ADD fallback writes R[a+2]: origin walk refuses a read of it', add.reaching_definitions(2, '2', origin_transfers: true).nil?)
-check.call('ADD fallback: the default walk is unchanged (codegen)', defs_of.call(add, 2, '2') == [0])
+check.call('ADD fallback: the default walk refuses too (codegen, ORIGIN_FRAME_OPS)', defs_of.call(add, 2, '2').nil?)
 check.call('ADD: its leading register is still defined by it (negative)',
            defs_of.call(program.call([insn(0, 'LOADI_5', 'R0 (5)'), insn(2, 'ADD', "R0\t(R1)"), insn(4, 'MOVE', "R3\tR0"), insn(6, 'RETURN', 'R3')]), 2, '0', origin_transfers: true) == [1])
 
