@@ -306,4 +306,141 @@ class ClassArgTypesTest < Minitest::Test
     plain = irep('plain', [InsnStub.new(op: 'LOADI_1', args: "R2\t(1)"), send_insn(1, 'set', 1)])
     assert_equal [:fixnum], arg_types_for('plain' => plain, 'kw' => keyword_caller('other'))
   end
+
+  # to_enum / enum_for (Kernel, mrblib): `to_enum(:set, x)` later runs `set(x)`, so it is a caller of `set` although
+  # no SEND spells it. R(dest) is the receiver, R(dest+1) the name, R(dest+2..) the forwarded arguments.
+  def insn(op, args) = InsnStub.new(op: op, args: args)
+
+  # `to_enum(:set, 1)` / `recv.enum_for(:set, 1)`: LOADSYM R2, LOADI_1 R3, then the send at R1 with n=2.
+  def enum_caller(op: 'to_enum', send_op: 'SSEND', name: 'set', value: 'LOADI_1', argc: 2, nk: nil)
+    spec = nk ? "n=#{argc}|nk=#{nk}" : "n=#{argc}"
+    irep('enum', [insn('LOADSYM', "R2\t:#{name}"), insn(value, value == 'LOADI_1' ? "R3\t(1)" : "R3"),
+                  insn(send_op, "R1\t:#{op}\t#{spec}")])
+  end
+
+  def test_call_site_index_records_a_to_enum_site_under_its_target
+    sites = CallSiteIndex.build({ 'e' => enum_caller })
+    # Anchored at the name register (2) with one argument: a consumer's register 2 + 1 is the forwarded argument.
+    assert_equal [['enum', 2, 1]], sites['set'].map { |i, _idx, d, n| [i.label, d, n] }
+    assert_equal [2], sites['to_enum'].map { |*, n| n } # the send itself is still indexed under its own name
+  end
+
+  def test_enum_for_and_other_receivers_are_the_same_caller
+    [%w[enum_for SSEND], %w[to_enum SEND], %w[enum_for SENDB]].each do |op, send_op|
+      sites = CallSiteIndex.build({ 'e' => enum_caller(op: op, send_op: send_op) })
+      assert_equal [1], sites['set'].map { |*, n| n }, "#{op} via #{send_op}"
+    end
+  end
+
+  def test_to_enum_with_only_a_name_is_a_zero_argument_call
+    sites = CallSiteIndex.build({ 'e' => irep('e', [insn('LOADSYM', "R2\t:set"), insn('SSEND', "R1\t:to_enum\tn=1")]) })
+    assert_equal [0], sites['set'].map { |*, n| n }
+  end
+
+  def test_to_enum_with_no_arguments_is_a_call_of_each
+    sites = CallSiteIndex.build({ 'e' => irep('e', [insn('SSEND0', "R1\t:to_enum")]) })
+    assert_equal [0], sites['each'].map { |*, n| n }
+  end
+
+  # ArgTypes already refuses every name spelled as a Symbol literal (DynamicNames, ADR 0279), so a literal to_enum
+  # never produced an unsound fixnum fact; ClassArgTypes had no such guard, which is what the index closes.
+  def test_arg_types_refuses_a_to_enum_target_either_way
+    plain = irep('plain', [insn('LOADI_1', "R2\t(1)"), send_insn(1, 'set', 1)])
+    assert_nil arg_types_for('plain' => plain, 'enum' => enum_caller)
+    assert_nil arg_types_for('enum' => enum_caller)
+  end
+
+  def direct_caller = irep('plain', [send_insn(0, 'set', 1)])
+
+  # with_tracer_answering answers per call, so a contradicting to_enum site is one answering differently.
+  def test_to_enum_class_fact_agrees_or_contradicts
+    with_tracer_by_caller('plain' => 'A', 'enum' => 'A') do
+      assert_equal ['A'], class_types_for('plain' => direct_caller, 'enum' => enum_caller)
+    end
+    with_tracer_by_caller('plain' => 'A', 'enum' => 'B') do
+      assert_equal [nil], class_types_for('plain' => direct_caller, 'enum' => enum_caller)
+    end
+  end
+
+  def test_to_enum_alone_feeds_a_target_that_has_no_direct_caller
+    with_tracer_answering('A') { assert_equal ['A'], class_types_for('enum' => enum_caller) }
+  end
+
+  def test_to_enum_class_fact_is_a_caller_fact_for_block_and_other_receiver_forms
+    with_tracer_answering('A') do
+      assert_equal ['A'], class_types_for('enum' => enum_caller(send_op: 'SSENDB'), 'plain' => direct_caller)
+      assert_equal ['A'], class_types_for('enum' => enum_caller(op: 'enum_for', send_op: 'SEND'))
+    end
+  end
+
+  def test_to_enum_with_an_arity_mismatch_is_ignored
+    with_tracer_answering('A') { assert_equal [nil], class_types_for('enum' => enum_caller(argc: 3)) }
+  end
+
+  def test_to_enum_with_keywords_gives_no_fact
+    # `to_enum(:set, 1, k: v)` forwards a keyword Hash: the count is nil, like a direct keyword send.
+    kw = enum_caller(argc: 2, nk: 1)
+    assert_equal [nil], CallSiteIndex.build({ 'e' => kw })['set'].map { |*, n| n }
+    with_tracer_answering('A') { assert_equal [nil], class_types_for('plain' => direct_caller, 'enum' => kw) }
+  end
+
+  def test_to_enum_with_a_packed_splat_gives_no_fact
+    # `to_enum(:set, *r)`: LOADSYM R2; ARRAY R2 1; MOVE R3 R9; ARYCAT R2 (R3); SSEND R1 n=*.
+    packed = irep('packed', [insn('LOADSYM', "R2\t:set"), insn('ARRAY', "R2\t1"), insn('MOVE', "R3\tR9"),
+                             insn('ARYCAT', "R2\t(R3)"), insn('SSEND', "R1\t:to_enum\tn=*")])
+    assert_equal [nil], CallSiteIndex.build({ 'e' => packed })['set'].map { |*, n| n }
+    with_tracer_answering('A') do
+      assert_equal [nil], class_types_for('plain' => direct_caller, 'enum' => packed)
+      assert_equal ['A'], class_types_for('plain' => direct_caller, 'enum' => enum_caller(name: 'other'))
+    end
+  end
+
+  def test_to_enum_name_through_a_move_is_literal
+    moved = irep('moved', [insn('LOADSYM', "R5\t:set"), insn('MOVE', "R2\tR5"), insn('LOADI_1', "R3\t(1)"),
+                           insn('SSEND', "R1\t:to_enum\tn=2")])
+    assert_equal [1], CallSiteIndex.build({ 'e' => moved })['set'].map { |*, n| n }
+  end
+
+  def test_to_enum_with_a_computed_name_is_a_caller_of_every_same_arity_name
+    # `to_enum(name, str)`: name (R2) comes from an argument, not a LOADSYM. It may reach `set`.
+    computed = irep('enum', [insn('MOVE', "R2\tR7"), insn('SSEND', "R1\t:to_enum\tn=2")])
+    index = CallSiteIndex.build({ 'e' => computed })
+    assert_equal [1], CallSiteIndex.sites(index, 'set').map { |*, n| n }
+    with_tracer_by_caller('plain' => 'A', 'enum' => 'B') do
+      assert_equal [nil], class_types_for('plain' => direct_caller, 'enum' => computed)
+    end
+    # A different arity is no caller of a one-argument target.
+    two = irep('two', [insn('MOVE', "R2\tR7"), insn('SSEND', "R1\t:to_enum\tn=3")])
+    with_tracer_by_caller('plain' => 'A', 'two' => 'B') do
+      assert_equal ['A'], class_types_for('plain' => direct_caller, 'two' => two)
+    end
+  end
+
+  def test_to_enum_with_a_computed_packed_or_keyword_name_blocks_every_target
+    packed = irep('packed', [insn('MOVE', "R2\tR7"), insn('SSEND', "R1\t:to_enum\tn=*")])
+    with_tracer_answering('A') { assert_equal [nil], class_types_for('plain' => direct_caller, 'packed' => packed) }
+  end
+
+  def test_to_enum_with_a_conditional_name_is_not_taken_for_one_literal
+    # `to_enum(c ? :set : :other, 1)`: the nearest LOADSYM of R2 is :other, but a jump lands between it and the send.
+    branch = Irep.new(label: 'cond', instructions: [
+      Insn.new(lineno: 0, addr: 0, op: 'JMPNOT', args: "R7\t010", raw: 'JMPNOT R7 010'),
+      Insn.new(lineno: 0, addr: 4, op: 'LOADSYM', args: "R2\t:set", raw: ''),
+      Insn.new(lineno: 0, addr: 7, op: 'JMP', args: '013', raw: ''),
+      Insn.new(lineno: 0, addr: 10, op: 'LOADSYM', args: "R2\t:other", raw: ''),
+      Insn.new(lineno: 0, addr: 13, op: 'LOADI_1', args: "R3\t(1)", raw: ''),
+      Insn.new(lineno: 0, addr: 15, op: 'SSEND', args: "R1\t:to_enum\tn=2", raw: '')
+    ])
+    index = CallSiteIndex.build({ 'e' => branch })
+    assert_nil index['set'].first
+    assert_nil index['other'].first
+    refute_empty index[CallSiteIndex::UNKNOWN_TARGET]
+  end
+
+  def test_block_form_to_enum_still_forwards_only_the_positional_arguments
+    # The block of `to_enum(:set, 1) { size }` is the size block, not an argument of set.
+    blk = irep('blk', [insn('LOADSYM', "R2\t:set"), insn('LOADI_1', "R3\t(1)"), insn('BLOCK', "R4\tI[0]"),
+                       insn('SSENDB', "R1\t:to_enum\tn=2")])
+    assert_equal [1], CallSiteIndex.build({ 'e' => blk })['set'].map { |*, n| n }
+  end
 end
