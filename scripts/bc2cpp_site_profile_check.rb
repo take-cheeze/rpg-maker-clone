@@ -93,6 +93,18 @@ Dir.mktmpdir do |dir|
     File.write(File.join(dir, 'plain.cxx'), MINI)
     out, _err, st = Open3.capture3(RbConfig.ruby, census, File.join(dir, 'plain.cxx'))
     check.call('the static census still reads the same text', st.success? && out.include?('bc2cpp_send call sites:'))
+
+    # The text walk labels a receiver by its nearest assignment; across a label, or an arm that reassigns it, that is
+    # one path's value, so the label is `join` (straight-line sites keep their label).
+    require_relative '../tools/bc2cpp/site_census'
+    walk = lambda do |body, recv = 'r1'|
+      lines = body.lines
+      SiteCensus.receiver_origin(lines, lines.index { |l| l.include?('bc2cpp_send') } + 1, recv)
+    end
+    check.call('a straight-line fresh receiver keeps literal_or_fresh', walk.call("  r1 = mrb_ary_new(M);\nif (r9) {\n    r9 = 1;\n  }\n  r2 = bc2cpp_send(M, r1, 0, 0);\n") == 'literal_or_fresh')
+    check.call('a receiver across a jump label is join', walk.call("  r1 = mrb_ary_new(M);\nL5:;\nif (r9) {\n    r9 = 1;\n  }\n  r2 = bc2cpp_send(M, r1, 0, 0);\n") == 'join')
+    check.call('a receiver set in an inline fast-path arm is join',
+               walk.call("  r1 = mrb_nil_value();\nif (fast) {\n    r1 = mrb_fixnum_value(1);\n  } else {\n    r1 = bc2cpp_send(M, r1, 0, 0);\n  }\n") == 'join')
     stamp = File.read(Dir[File.join(hits, 'mini.*.hits')].first)[/\A# sites \h+/]
     refused = lambda do |body|
       File.write(File.join(hits, 'mini.1.hits'), body)
