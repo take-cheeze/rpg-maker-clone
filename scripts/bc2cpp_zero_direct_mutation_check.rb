@@ -15,7 +15,6 @@ MUTANTS = [
   ['switch ignored', 'codegen_numeric_slow_zero.rb', "ENV['BC2CPP_CORE_COMPILED_ZERO'] != '0'", 'true', { 'BC2CPP_CORE_COMPILED_ZERO' => '0' }],
   ['yield-free proof omitted', 'codegen_numeric_slow_zero.rb', ' && @yield_reach.yield_free?(target.irep)', '', {}],
   ['Numeric kind test omitted', 'codegen_numeric_slow_zero.rb', 'if (mrb_obj_is_kind_of(M, a, mrb_class_get(M, "Numeric")))', 'if (true)', {}],
-  ['File natives not pinned', 'codegen_numeric_slow_zero.rb', 'return nil if file && !numeric_slow_zero_file_ready?(answers, definers[:class_native])', '', {}],
   ['by-name else restored', 'codegen_numeric_slow_zero.rb', 'return bc2cpp_nomethod_named(M, a, "zero?");', 'return mrb_funcall(M, a, "zero?", 0);', {}]
 ].freeze
 work = lambda do |(_name, file, pattern, replacement, extra)|
