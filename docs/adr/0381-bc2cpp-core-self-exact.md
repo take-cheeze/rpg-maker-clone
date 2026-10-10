@@ -1,4 +1,4 @@
-# 0380. `self` inside a compiled Array, Hash, String or Range body is exactly that class, checked at the site
+# 0381. `self` inside a compiled Array, Hash, String or Range body is exactly that class, checked at the site
 
 Date: 2026-10-10
 

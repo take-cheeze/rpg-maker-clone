@@ -1834,11 +1834,41 @@ Checks run on the change: `bc2cpp_origin_remaining_causes_check.rb` (new; its po
 and `bc2cpp_site_profile_check.rb` (both with `MRBC`), `bc2cpp_bytecode_ir_check.rb`, `bc2cpp_join_dominance_check.rb`
 and `bc2cpp_irep_scans_check.rb`.
 
-## Follow-up: `self` in compiled core bodies (ADR 0380)
+## Follow-up: ENTER slots, EXCEPT pass-through and join may-sets (ADR 0379, origin-only)
+
+Measured on the wio closed world, shipped pass, base `5ddf1d98` against the change, both with
+`BC2CPP_COVERAGE_ORIGIN_TABLE`. `shipped.cxx` is byte-identical (tags included). Census sites (2,060):
+
+| Receiver origin `unknown`, by sub-reason | Before | After |
+| --- | ---: | ---: |
+| refused `unmodelled:ENTER` (R1 of a positional method without keywords) | 271 | 0 |
+| refused `unmodelled:EXCEPT` | 15 | 0 |
+| refused `opaque_reg` | 2 | 2 |
+| ambiguous | 97 | 0 |
+| exact, definition unclassified | 135 | 0 |
+| not a register | 7 | 7 |
+| **unknown** | **527** | **9** |
+
+The 128 ambiguous sites (97 before, 31 more that were refused) are each now `join` (116 sites) or the one origin all definitions share. Join sets:
+`indexed_result|literal_or_fresh` 35, `literal_or_fresh|parameter` 22, `direct_call_result|literal_or_fresh` 13,
+`ivar_read|parameter` 8, `indexed_result` 7, the rest under 5 each (`ruby scripts/bc2cpp_dynamic_site_census.rb ... --origins`
+prints the list). The 135 unclassified exact definitions were SEND0 42, SENDB 28, GETIDX 24, SUB 12, SSEND0 7, DIV 6, MUL 5,
+SEND 4, ADD 3, GETIDX0 3, SSEND 1; they are `call_result`, `operator_result` or `indexed_result` by the writing op. Table
+rows: refused 1,811 to 3.
+
+An `ambiguous` row's category is now the `|`-joined may-set of its definitions' origins, and its definition column lists the
+writers. The census adds `join`, `call_result` and `operator_result` origins and an `origin_set` column in `--tsv`.
+
+The 7 non-register receivers are the element variable of an inlined `&:sym` loop (`mrb_value bc2cpp_sym_e_<n> =
+bc2cpp_ary_entry(...)`, a block-scoped name nothing else assigns); the census now classes them `indexed_result` (status
+`loop_element`) and refuses any other non-register name. `unknown` is then 2 sites (`opaque_reg`: a block's SETUPVAR may
+write the register, which depends on the iterator's body), from 9; `shipped.cxx` is unchanged.
+
+## Follow-up: `self` in compiled core bodies (ADR 0381)
 
 The `implicit_self_unresolved` and `self`-origin sites (about 330) split by body owner. A body of a concrete core class
 (Array 52, Hash 39, String 35, Range 30 sends with `self` origin) has a `self` that is exactly that class once the program
-has no subclass of it; ADR 0380 proves that with a checked site (class test, `bc2cpp_guard_violation` else). Wio shipped
+has no subclass of it; ADR 0381 proves that with a checked site (class test, `bc2cpp_guard_violation` else). Wio shipped
 build, switch off against on, same tree (`BC2CPP_CORE_SELF_EXACT=0`):
 
 | Measure | Off | On | Delta |

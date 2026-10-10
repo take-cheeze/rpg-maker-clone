@@ -157,9 +157,10 @@ source = File.read(File.expand_path('../tools/bc2cpp/codegen_fixnum_proof.rb', _
 listed = source[/FIXNUM_PROOF_STEP_OVER_OPS = Set\[(.*?)\]\.freeze/m, 1].scan(/'([A-Z0-9_]+)'/).flatten.to_set
 check.call('WRITES_LEADING_REG_OPS equals FIXNUM_PROOF_STEP_OVER_OPS', listed == BytecodeIR::WRITES_LEADING_REG_OPS)
 
-# ENTER's rest, keyword-hash and block slots are typed definitions of the ENTER in the origin walk (Definition#built).
-# Post and locals refuse; self, required and optional parameters stay the entry value. Codegen's default walk is
-# unchanged: ENTER passes there, so every slot answers the entry value.
+# ENTER's rest, keyword-hash, block, R1, post and local slots are typed definitions of the ENTER in the origin walk
+# (Definition#built); a temporary above nlocals refuses; self, required and optional parameters (R2 and up, or R1 with
+# keywords) stay the entry value. Codegen's default walk is unchanged: ENTER passes there, so every slot answers the
+# entry value.
 enter_built = ->(prog, index, reg) { prog.reaching_definitions(index, reg, origin_transfers: true)&.map(&:built) }
 enter_origin_refuses = ->(prog, index, reg) { prog.reaching_definitions(index, reg, origin_transfers: true).nil? }
 enter_codegen = ->(prog, index, reg) { prog.reaching_definitions(index, reg)&.map(&:entry?) }
@@ -176,11 +177,11 @@ enter_kwblock = program.call([insn(0, 'ENTER', "1:0:0:0:1:0:1:0\t(0x0)"), insn(2
 check.call('ENTER keyword hash and block after it: R2 is the Hash, R3 the block (origin)',
            enter_built.call(enter_kwblock, 1, '2') == [:hash] && enter_built.call(enter_kwblock, 1, '3') == [:block])
 enter_post = program.call([insn(0, 'ENTER', "1:0:1:1:0:0:0:0\t(0x0)"), insn(2, 'MOVE', "R4\tR3"), insn(4, 'RETURN', 'R4')])
-check.call('ENTER post slot: origin walk refuses (an argument or nil, not an ENTER-built value)',
-           enter_origin_refuses.call(enter_post, 1, '3'))
+check.call('ENTER post slot: origin walk types it as the post parameter (an argument, or nil when none was passed)',
+           enter_built.call(enter_post, 1, '3') == [:post])
 check.call('ENTER post slot: codegen default answers the entry value', enter_codegen.call(enter_post, 1, '3') == [true])
 check.call('ENTER rest slot of a method with a post argument stays typed (origin)', enter_built.call(enter_post, 1, '2') == [:rest])
-check.call('ENTER local slot past the block: origin walk refuses', enter_origin_refuses.call(enter_block, 1, '3'))
+check.call('ENTER local slot past the block, nlocals unknown: origin walk refuses', enter_origin_refuses.call(enter_block, 1, '3'))
 check.call('ENTER optional and required slots stay the entry value (origin)',
            enter_built.call(program.call([insn(0, 'ENTER', "1:1:0:0:0:0:0:0\t(0x0)"), insn(2, 'RETURN', 'R2')]), 1, '2') == [nil])
 
@@ -347,6 +348,7 @@ if ENV['MRBC']
     def kwblk_m(a, *r, k: 1, &b); [r, k, b]; end
     def post_m(a, *r, z); [r, z]; end
     def opt_m(a, o = 2); [a, o]; end
+    def local_m(a); x = 5 if a; x; end
   RUBY
   Dir.mktmpdir do |dir|
     path = File.join(dir, 'enter_slots.rb')
@@ -372,8 +374,22 @@ if ENV['MRBC']
                compiled.call('1:0:1:0:1:0:1:0', '2')&.map(&:built) == [:rest] &&
                compiled.call('1:0:1:0:1:0:1:0', '3')&.map(&:built) == [:hash] &&
                compiled.call('1:0:1:0:1:0:1:0', '4')&.map(&:built) == [:block])
-    check.call('mrbc: post_m, the post argument in R3, is refused by the origin walk',
-               compiled.call('1:0:1:1:0:0:0:0', '3').nil?)
+    check.call('mrbc: post_m, the post argument in R3, is typed as the post parameter',
+               compiled.call('1:0:1:1:0:0:0:0', '3')&.map(&:built) == [:post])
+    check.call('mrbc: the required parameter in R1 (no keywords) is typed as the parameter value',
+               compiled.call('1:0:0:0:0:0:0:0', '1')&.map(&:built) == [:arg] || compiled.call('1:0:1:0:0:0:0:0', '1')&.map(&:built) == [:arg])
+    check.call('mrbc: with keywords R1 stays the entry value',
+               compiled.call('1:0:0:0:1:0:0:0', '1')&.map(&:built) == [nil])
+    # local_m: R3 is the local x (R1 a, R2 the block slot), written on one path only, so its read joins the LOADI and
+    # the nil ENTER clears it to. R5 is above nlocals (4), a temporary ENTER does not touch: refused with its own cause.
+    local_irep = ireps.each_value.find { |irep| irep.instructions.first.op == 'ENTER' && irep.instructions.any? { |i| i.op == 'LOADI_5' } }
+    ret = local_irep&.instructions&.index { |i| i.op == 'RETURN' }
+    local_defs = ret && BytecodeIR.reaching_definitions(local_irep, ret, '3', origin_transfers: true)
+    check.call('mrbc: local_m, the local written on one path, joins the LOADI and the ENTER-stored nil',
+               local_defs&.map(&:built)&.to_set == Set[:local, nil])
+    temp_cause = {}
+    ret && BytecodeIR.reaching_definitions(local_irep, ret, (local_irep.nlocals + 1).to_s, origin_transfers: true, refusal: temp_cause)
+    check.call('mrbc: the register at nlocals is a temporary, refused with its own cause', temp_cause[:cause] == 'unmodelled:ENTER:temp')
     check.call('mrbc: opt_m, the optional argument in R2, stays the entry value',
                compiled.call('1:1:0:0:0:0:0:0', '2')&.map(&:built) == [nil])
     check.call('mrbc: the ENTER-built slots are not answered by codegen (entry values, unchanged)',

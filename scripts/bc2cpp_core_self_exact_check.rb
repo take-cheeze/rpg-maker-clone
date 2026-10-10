@@ -2,7 +2,7 @@
 # encoding: UTF-8
 # frozen_string_literal: true
 
-# Check CORE_SELF_EXACT (docs/adr/0380): inside a compiled body of Array, Hash, String or Range, `self` is exactly
+# Check CORE_SELF_EXACT (docs/adr/0381): inside a compiled body of Array, Hash, String or Range, `self` is exactly
 # that class once the program has no subclass of it, so a send on self takes the exact-class arm of ADR 0359 with its
 # class test and its bc2cpp_guard_violation (docs/adr/0290) else, instead of the tag chain and a by-name send.
 #
