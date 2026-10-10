@@ -93,6 +93,11 @@ show(origins ? 'receiver origin (exact walk, SiteOriginTable)' : 'receiver origi
 puts
 show('receiver origin status', tally(sites, ->(s) { s[:origin_status] }))
 puts
+if origins
+  show('receiver origin of a join (ambiguous row: the origins its definitions have)',
+       tally(sites.select { |s| s[:origin_set] }, ->(s) { s[:origin_set].join('|') }))
+  puts
+end
 show('guard shape guarding the dispatch (code immediately before the site)', tally(sites, ->(s) { s[:shape] }))
 puts
 show('marker family (nearest preceding family comment)', tally(sites, ->(s) { s[:marker] }), 30)
@@ -111,6 +116,6 @@ show('TOP 40 method names', tally(sites, ->(s) { s[:name] }), 40)
 
 if tsv
   File.open(tsv, 'w') do |f|
-    sites.each { |s| f.puts [s[:line], s[:fn], s[:name], s[:argc], s[:class_arm] ? 'class_arm' : s[:else_arm], s[:marker], s[:shape], s[:origin], s[:category], s[:why], s[:origin_status]].join("\t") }
+    sites.each { |s| f.puts [s[:line], s[:fn], s[:name], s[:argc], s[:class_arm] ? 'class_arm' : s[:else_arm], s[:marker], s[:shape], s[:origin], s[:category], s[:why], s[:origin_status], s[:origin_set]&.join('|')].join("\t") }
   end
 end

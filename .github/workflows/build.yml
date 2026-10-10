@@ -1339,6 +1339,8 @@ jobs:
               ruby scripts/bc2cpp_origin_multiwrite_check.rb
               ruby scripts/bc2cpp_site_origin_exceptions_check.rb
               ruby scripts/bc2cpp_origin_remaining_causes_check.rb
+              ruby scripts/bc2cpp_origin_may_sets_check.rb
+              ruby scripts/bc2cpp_origin_enter_mutation_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_fallback_bodies_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_operand_schema_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_binary_loader_check.rb
