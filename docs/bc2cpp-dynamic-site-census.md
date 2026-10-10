@@ -1858,3 +1858,8 @@ rows: refused 1,811 to 3.
 
 An `ambiguous` row's category is now the `|`-joined may-set of its definitions' origins, and its definition column lists the
 writers. The census adds `join`, `call_result` and `operator_result` origins and an `origin_set` column in `--tsv`.
+
+The 7 non-register receivers are the element variable of an inlined `&:sym` loop (`mrb_value bc2cpp_sym_e_<n> =
+bc2cpp_ary_entry(...)`, a block-scoped name nothing else assigns); the census now classes them `indexed_result` (status
+`loop_element`) and refuses any other non-register name. `unknown` is then 2 sites (`opaque_reg`: a block's SETUPVAR may
+write the register, which depends on the iterator's body), from 9; `shipped.cxx` is unchanged.
