@@ -1833,3 +1833,21 @@ Checks run on the change: `bc2cpp_origin_remaining_causes_check.rb` (new; its po
 `bc2cpp_origin_transfers_check.rb`, `bc2cpp_site_origin_exceptions_check.rb`, `bc2cpp_bytecode_ir_dataflow_check.rb`
 and `bc2cpp_site_profile_check.rb` (both with `MRBC`), `bc2cpp_bytecode_ir_check.rb`, `bc2cpp_join_dominance_check.rb`
 and `bc2cpp_irep_scans_check.rb`.
+
+## Follow-up: `self` in compiled core bodies (ADR 0380)
+
+The `implicit_self_unresolved` and `self`-origin sites (about 330) split by body owner. A body of a concrete core class
+(Array 52, Hash 39, String 35, Range 30 sends with `self` origin) has a `self` that is exactly that class once the program
+has no subclass of it; ADR 0380 proves that with a checked site (class test, `bc2cpp_guard_violation` else). Wio shipped
+build, switch off against on, same tree (`BC2CPP_CORE_SELF_EXACT=0`):
+
+| Measure | Off | On | Delta |
+| --- | ---: | ---: | ---: |
+| `bc2cpp_send(` occurrences | 2,082 | 2,028 | -54 |
+| `CORE_BODY_EXACT_CHECKED` sites | 38 | 95 | +57 |
+| generated C++ | 21,553,927 bytes | 21,558,616 bytes | +4,689 |
+
+Module-owned bodies (Enumerable 43 bodies and 2,156 lines for 11 includers, Comparable, Kernel, Enumerator) are not
+cloned per includer: the sites are `to_enum` (no compiled target, 66 in all) and `each` funcalls that keep their funcall
+arm. What is left in the concrete-class owners is `to_enum` 39, and natives with no expression body (`replace` 10,
+`byteslice` 6, `delete` 4, `index` 3, `__empty_range?` 4).

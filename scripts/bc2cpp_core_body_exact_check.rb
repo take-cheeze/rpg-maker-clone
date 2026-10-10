@@ -99,7 +99,7 @@ if ENV['MRBC']
     check.call("no unchecked 'unguarded proof' arm in a compiled core body (#{every.size} bodies scanned)",
                core_unguarded.all? { |name, _| name.start_with?('GvcEngine#') })
     check.call('the violation sites are listed apart from the NOMETHOD sites',
-               err.include?('GUARD_VIOLATION_SITE GvcCore#lit_size -> size') && err.include?('GUARD_VIOLATION CORE_BODY_EXACT: 4') &&
+               err.include?('GUARD_VIOLATION_SITE GvcCore#lit_size -> size') && err.scan(/GUARD_VIOLATION_SITE GvcCore#/).size == 4 &&
                  !err.include?('NOMETHOD GvcCore#'))
   end
 
