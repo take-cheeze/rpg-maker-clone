@@ -1211,6 +1211,12 @@
   `scripts/bc2cpp_send_root_report.rb` ranks which producer left each receiver unproven. See
   [`docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md`](docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md)
   and `scripts/bc2cpp_call_results_check.rb`.
+  A by-name send whose receiver is not proven exact gets, ahead of its by-name else, one exact-class arm per Ruby
+  definition of the name, when the native owner map (`tools/bc2cpp/native_owner_map.rb`) proves that no native
+  registration lands on that class; core forwarders are trusted by default, `BC2CPP_NATIVE_OWNER_MAP=strict` refuses
+  them and `BC2CPP_NATIVE_OWNER_MAP=0` turns the arms off. See
+  [`docs/adr/0397-bc2cpp-native-owner-map.md`](docs/adr/0397-bc2cpp-native-owner-map.md) and
+  `scripts/bc2cpp_native_owner_map_check.rb`.
   After `x.m` returned normally, `x` is an instance of a class that answers `m`: a later `x.n` on the same value
   (a copy of the register, a local, no rewrite and no handler edge between) is judged against those declared
   classes, which drops 63 by-name else arms of the wio build; `BC2CPP_CALL_FACTS=0` turns it off. Provable errors

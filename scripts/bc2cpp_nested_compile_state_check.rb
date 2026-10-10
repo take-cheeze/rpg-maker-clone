@@ -128,7 +128,10 @@ NOT_PER_METHOD = %w[
   @class_tests @class_test_subjects @class_test_objects @class_test_positive @class_test_name_safe @class_object_eq_safe
   @class_narrowing_raise @core_class_subclass_free @kind @klass @partitions
   @integer_tag_else_bodies_used @integer_tag_else_counts
+  @native_owner_map_targets
 ].freeze
+# ADR 0397: @native_owner_map_targets memoizes, per method name and arity, the program-wide candidate set of
+# the NATIVE_OWNER_MAP arms (a nested compile of the same name computes the same set).
 # ADR 0394: the INTEGER_TAG_ELSE body set and refusal tally are program-wide accumulators. A nested compile of the
 # same site writes the same body name, and the tally only feeds the stderr summary.
 # CodeGen is reopened across several tools/bc2cpp files (scripts/bc2cpp_split.rb).
