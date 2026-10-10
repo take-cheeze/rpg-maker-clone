@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Check ENTRY_GUARDED_SPECIALIZATION (docs/adr/0379): BC2CPP_SPECIALIZE=<plan> compiles a second body of a
+# Check ENTRY_GUARDED_SPECIALIZATION (docs/adr/0380): BC2CPP_SPECIALIZE=<plan> compiles a second body of a
 # listed method under "these parameters are exactly these classes" and puts one entry check in front of the
 # original body, which is otherwise untouched.
 #

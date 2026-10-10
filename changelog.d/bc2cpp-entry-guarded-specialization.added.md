@@ -4,4 +4,4 @@
   pointer, a fixnum for `Integer`) and runs unchanged when it fails, so a wrong guess only costs speed. Off by default;
   with the variable unset, empty or `0` the generated C++ is byte-identical. Blocks, rescue ranges, optional, rest,
   keyword and block parameters are not specialized yet. Covered by `scripts/bc2cpp_entry_specialize_check.rb` and its
-  mutation check (ADR 0379).
+  mutation check (ADR 0380).

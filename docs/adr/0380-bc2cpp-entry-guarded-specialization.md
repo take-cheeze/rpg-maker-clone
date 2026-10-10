@@ -1,4 +1,4 @@
-# 0379. bc2cpp: entry-guarded specialization of hot methods (`BC2CPP_SPECIALIZE`)
+# 0380. bc2cpp: entry-guarded specialization of hot methods (`BC2CPP_SPECIALIZE`)
 
 Date: 2026-10-10
 

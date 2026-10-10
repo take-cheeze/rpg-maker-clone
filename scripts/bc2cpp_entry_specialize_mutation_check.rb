@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Mutation test for ENTRY_GUARDED_SPECIALIZATION (docs/adr/0379). Each mutant is a copy of tools/bc2cpp with one
+# Mutation test for ENTRY_GUARDED_SPECIALIZATION (docs/adr/0380). Each mutant is a copy of tools/bc2cpp with one
 # soundness condition broken; scripts/bc2cpp_entry_specialize_check.rb, run against the mutant through
 # BC2CPP_TOOL, must FAIL on the check that guards that condition. A mutant that passes means the condition has no
 # negative case. The headline mutant removes the entry check: the specialized body then runs for every argument.

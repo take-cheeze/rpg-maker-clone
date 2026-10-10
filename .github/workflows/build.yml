@@ -1156,7 +1156,7 @@ jobs:
               # ADR 0370: the aliased-name set holds only the names an aliasing operation spells.
               MRBC="$mrbc" ruby scripts/bc2cpp_aliased_names_check.rb
           - shard: entry-specialize
-            # ADR 0379: BC2CPP_SPECIALIZE. Generated code (gate off byte-identical, the generic body untouched, the
+            # ADR 0380: BC2CPP_SPECIALIZE. Generated code (gate off byte-identical, the generic body untouched, the
             # identity clone, the refused shapes and worlds), a full-core run of every guard hit and miss compared with
             # the interpreter, then the mutants (the entry check removed, weakened class tests, ...).
             checks: |
