@@ -127,7 +127,10 @@ NOT_PER_METHOD = %w[
   @aliased_operand_names @rc_checked_alias_names @rc_admitted_alias_names
   @class_tests @class_test_subjects @class_test_objects @class_test_positive @class_test_name_safe @class_object_eq_safe
   @class_narrowing_raise @core_class_subclass_free @kind @klass @partitions
+  @integer_tag_else_bodies_used @integer_tag_else_counts
 ].freeze
+# ADR 0394: the INTEGER_TAG_ELSE body set and refusal tally are program-wide accumulators. A nested compile of the
+# same site writes the same body name, and the tally only feeds the stderr summary.
 # CodeGen is reopened across several tools/bc2cpp files (scripts/bc2cpp_split.rb).
 written = Set.new
 blocks = 0

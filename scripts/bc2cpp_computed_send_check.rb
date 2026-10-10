@@ -155,7 +155,9 @@ sends_of = lambda do |code, body, name|
   names.each_index.select { |i| names[i] == name }.sum { |i| body.scan(/bc2cpp_send\(M, [^,]+, #{i},/).size }
 end
 expanded = ->(body) { body.include?('// COMPUTED_SEND :') }
-arms_of = ->(body) { body.scan(/^\s*r\d+ = \w+_impl\(M, /).size }
+# A computed send's arms are the `r = <Class>_<name>_impl(M, ...)` lines. The frozen table's own index (`MODES[i]`, ADR
+# 0394) calls the exposed Array body in its else, which is not an arm of the expansion.
+arms_of = ->(body) { body.scan(/^\s*r\d+ = (?!mrb_ary_aget1_impl\(|mrb_ary_aset2_impl\()\w+_impl\(M, /).size }
 
 generate = lambda do |source, closed: true, env: {}, **options|
   saved = env.map { |k, _| [k, ENV[k]] }
@@ -200,6 +202,7 @@ original_call = ->(code, body, name) { sends_of.call(code, body, name) == 1 || b
   end
   body = body_of.call(code, 'CsCpu_by_index')
   check.call("#{label}: by_index is three direct calls over imm/zpg/abs", arms_of.call(body) == 3 && body.include?('over imm/zpg/abs'))
+  check.call("#{label}: the table index in by_index is the exposed Array body (ADR 0394), not a by-name []", body.include?('mrb_ary_aget1_impl(M, ') && !body.include?('"[]"'))
   check.call("#{label}: a table site rejects nil as Kernel##{send_name} does (TypeError), a literal site cannot see nil",
              body.include?('mrb_obj_to_sym(M') && !body_of.call(code, 'CsCpu_by_case').include?('mrb_obj_to_sym'))
   check.call("#{label}: by_hash is two direct calls over the Hash's values", arms_of.call(body_of.call(code, 'CsCpu_by_hash')) == 2)
