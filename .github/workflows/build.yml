@@ -1502,7 +1502,7 @@ jobs:
     if: ${{ github.event_name != 'issue_comment' }}
     name: bc2cpp-width (${{ matrix.variant }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false
