@@ -1211,6 +1211,15 @@ static bool script_host_env_enabled(const std::string& value) {
   return !(value == "0" || value == "false" || value == "off" || value == "no");
 }
 
+// RPG2K_SAVE_MARSHAL_FIRST: the Save/Continue kill switch (docs/adr/0395). Unset,
+// empty or "0" keeps the .lsd save authoritative, the default; any other value
+// restores the old Marshal-first order. Resolved here, like RGSS_SCRIPT_HOST,
+// because this mruby build has no ENV for the Ruby side to read.
+static bool save_marshal_first_env_enabled() {
+  const char* value = std::getenv("RPG2K_SAVE_MARSHAL_FIRST");
+  return value != nullptr && *value != '\0' && std::string(value) != "0";
+}
+
 // Every flag below is debugging or CI-automation tooling: a profiler, a
 // terminal log/stats overlay, headless input-injection ("drive the game as if
 // testing it") and the render/audio/error-report self-probes. None of it
@@ -1792,6 +1801,11 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_PREVIEW_ANIMATION"),
                 mrb_fixnum_value(FLAGS_rpg2k_preview_animation));
+  // RPG2K_SAVE_MARSHAL_FIRST: the save-format kill switch, see the helper above
+  // and RPG2k#marshal_first_saves? (mruby-rpg2k/mrblib/main.rb).
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_SAVE_MARSHAL_FIRST"),
+                mrb_bool_value(save_marshal_first_env_enabled()));
   // The screen size actually configured for this run -- FLAGS_width/height,
   // already finalized above (the XP/VX auto-detect override, if the command
   // line didn't set either flag itself). Scene::MapViewer reads this to fill

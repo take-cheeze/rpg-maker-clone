@@ -2318,6 +2318,17 @@ module LCF
         111 => { name: :map_events, type: :Array1D, elements: SAVE_MAP_EVENT },
         113 => { name: :foreground_event, type: :Array1D, elements: SAVE_FOREGROUND_EVENT },
         114 => { name: :common_events, type: :Array2D, elements: SAVE_COMMON_EVENT },
+        # Chunk 200 is NOT an RPG2000/2003 chunk: it is this project's own
+        # extension, carrying the Game::State fields no liblcf chunk above
+        # models exactly (weather, encounter total, boarded vehicle, flash
+        # power/total, common-event progress, exact picture opacity). The
+        # payload is a list of tagged records written and read by
+        # Game::State.ext_records/#lsd_extension_records in
+        # mruby-rpg2k/mrblib/game/lsd_io.rb. Declared as raw bytes so the
+        # reader hands back the exact payload; an editor save never has it.
+        # See docs/adr/0395. Whether RPG_RT itself tolerates an unknown chunk
+        # id is UNVERIFIED (no genuine RPG_RT run is available for this).
+        200 => { name: :lsd_ext, type: :int8_array },
       }
     }
   end
