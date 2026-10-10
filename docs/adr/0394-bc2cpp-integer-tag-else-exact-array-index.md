@@ -87,8 +87,8 @@ Kill switch: `BC2CPP_INTEGER_TAG_ELSE=0` gives a `shipped.cxx`, a stderr, and an
   the kill switch and the non-exact and Object-definer fixtures are byte-identical to the reference, which is the
   origin/master tool when `BC2CPP_BASE_TOOL` is set, else the kill switch; a prepended module refuses with
   `ancestor_definer`); and a mutant that drops the ancestor rule, which the refused fixture then exposes (`MUTANT=1`).
-- `scripts/bc2cpp_integer_tag_else_run_check.rb`: on a full-core mruby built from this tree's `3rd/mruby`, the compiled
-  `get` / `put` over 19 keys (fixnums either side of the range, out-of-range counts, Float, nil, String, Ranges,
+- `scripts/bc2cpp_integer_tag_else_run_check.rb`: on full-core mruby built from this tree's `3rd/mruby` at 64 bits and at 32 bits (the int32 width build),
+  the compiled `get` / `put` over 26 keys (fixnums and the 31-bit Fixnum and 32-bit `mrb_int` boundaries, bignums, out-of-range counts, Float, nil, String, Ranges,
   reversed and out-of-bounds Ranges, NaN) answers as the interpreter does: value, class, exception class and message.
 - Existing checks rerun against this change, all PASS: `bc2cpp_getidx_integer_arm_check`, `bc2cpp_index_closed_check`
   (with the full build), `bc2cpp_outlined_index_check` (with a core-only build), `bc2cpp_setidx_devirtualization_check`,
