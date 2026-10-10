@@ -150,13 +150,15 @@ WORLD = <<~'RUBY'
   class UcLvlAttrKid < UcLvlAttr
   end
   class UcDriver
-    def initialize; @state = UcState.new; end
+    def initialize; @state = UcState.new; @states = [UcState.new]; end
     def read; @state.coin; end
     def write(v); @state.coin = v; end
     def sec; @state.secret; end
     def sec_args; @state.secret(1, 2); end
     def bid; @state.battle_id; end
     def call_lvl(x); x.lvl(5); end
+    # INLINED_UNLISTED_SITE (ADR 0386): the same send inside an inlined `each` body, whose site has no idx.
+    def sec_each; r = nil; @states.each { |s| r = s.secret }; r; end
   end
   # Objects and exceptions, built by interpreted code only.
   class UcRun
@@ -253,6 +255,8 @@ SCENARIO = <<~'CPP'
       std::snprintf(label, sizeof label, "s%d.read2", i); call_msg(M, label, driver, "read", 0, nullptr);
       std::snprintf(label, sizeof label, "s%d.sec", i);   call_msg(M, label, driver, "sec", 0, nullptr);
       std::snprintf(label, sizeof label, "s%d.bid", i);   call_msg(M, label, driver, "bid", 0, nullptr);
+      mrb_iv_set(M, driver, mrb_intern_lit(M, "@states"), mrb_ary_new_from_values(M, 1, &o));
+      std::snprintf(label, sizeof label, "s%d.each", i);  call_msg(M, label, driver, "sec_each", 0, nullptr);
     }
     for (int i = 0; i < MIX_OBJECTS; ++i) {
       mrb_value o = make(M, "mix_obj", i);
@@ -278,6 +282,7 @@ Dir.mktmpdir do |dir|
   sec = body_of.call(code, 'UcDriver_sec')
     bid = body_of.call(code, 'UcDriver_bid')
   lvl = body_of.call(code, 'UcDriver_call_lvl')
+  each = body_of.call(code, 'UcDriver_sec_each')
   check.call('the driver methods are compiled', [read, write, sec, bid, lvl].none?(&:empty?))
   check.call('an attr_reader on an exact class is a direct ivar read (unset reads nil through mrb_iv_get)',
              arm.call(read, 'ACCESSOR', 'UcShop') && read.include?('mrb_iv_get(M,') && !read.include?('kept: unlisted_class'))
@@ -305,12 +310,30 @@ Dir.mktmpdir do |dir|
                bid.scan('bc2cpp_nomethod(M, r2').size == 2 && sends_of.call(code, bid, 'battle_id').zero?)
   check.call('an attr_reader called with an argument raises the ArgumentError of its argument check',
              arm.call(lvl, 'ACCESSOR', 'UcLvlAttr') && lvl.include?('mrb_argnum_error(M, 1, 0, 0);') && sends_of.call(code, lvl, 'lvl').zero?)
+  check.call('a private def reached through an inlined block body raises the OP_SEND NoMethodError without dispatch',
+             !each.empty? && arm.call(each, 'PRIVATE', 'UcPriv') && arm.call(each, 'PRIVATE', 'UcPrivKid') &&
+               sends_of.call(code, each, 'secret') == 1 && !arm.call(each, 'PRIVATE', 'UcProt') && !arm.call(each, 'CALL', 'UcProt'))
   [['run', 'implicit self'], ['dot', '`self.`']].each do |meth, what|
     body = body_of.call(code, "UcMixin_#{meth}")
     check.call("a private def reached by #{what} sends is a direct call for a class the chain cannot list",
                arm.call(body, 'CALL', 'UcMixKid') && body.include?('UcMixBase_mix_value_impl(M, self);') &&
                  sends_of.call(code, body, 'mix_value').zero?)
   end
+end
+
+# Kill switch: BC2CPP_INLINED_UNLISTED=0 keeps the by-name arm in an inlined block body (the site has no idx).
+Dir.mktmpdir do |dir|
+  saved_switch = ENV['BC2CPP_INLINED_UNLISTED']
+  ENV['BC2CPP_INLINED_UNLISTED'] = '0'
+  begin
+    code, = runtime.generate(WORLD, dir, only_owners: OWNERS, native: HARNESS)
+  ensure
+    ENV['BC2CPP_INLINED_UNLISTED'] = saved_switch
+  end
+  off = body_of.call(code, 'UcDriver_sec_each')
+  check.call('BC2CPP_INLINED_UNLISTED=0: the inlined body keeps its by-name arms, the direct sites are unchanged',
+             !off.empty? && !arm.call(off, 'PRIVATE', 'UcPriv') && sends_of.call(code, off, 'secret') > 1 &&
+               arm.call(body_of.call(code, 'UcDriver_sec'), 'PRIVATE', 'UcPriv'))
 end
 
 # Each world changes one thing that could give a receiver another answer; the affected arm is gone.
@@ -425,7 +448,7 @@ end
 
 
 # label prefix => the compiled run must make exactly this many dynamic dispatches
-NO_DISPATCH = %w[s1.read s1.write s2.read s2.write s3.read s4.read s4.write s5.write s6.read s7.read s9.sec s10.sec
+NO_DISPATCH = %w[s1.read s1.write s2.read s2.write s3.read s4.read s4.write s5.write s6.read s7.read s9.sec s10.sec s9.each s10.each
                  s12.sec s13.bid m1.run m1.dot l2.lvl l3.lvl].freeze
 
 builds = []
@@ -463,7 +486,14 @@ builds.each do |label, build, full_flag, mrbc, flags|
 
     interpreted = values.call(sections, 'interpreted')
     compiled = values.call(sections, 'compiled')
-    expected = (STATE_OBJECTS - 1) * 5 + MIX_OBJECTS * 2 + LVL_OBJECTS
+    expected = (STATE_OBJECTS - 1) * 6 + MIX_OBJECTS * 2 + LVL_OBJECTS
+    # A core-only mruby has no Array#each (it lives in mrblib), so the interpreted run of the inlined-`each`
+    # fixture cannot answer there; the compiled inlined body does. Those calls are compared on full-core builds.
+    unless full_flag
+      interpreted = interpreted.reject { |l| l.match?(/\As\d+\.each /) }
+      compiled = compiled.reject { |l| l.match?(/\As\d+\.each /) }
+      expected -= STATE_OBJECTS - 1
+    end
     check.call("compiled answers what the interpreter answers (#{interpreted.size} calls)", interpreted.size == expected && interpreted == compiled)
     interpreted.zip(compiled).each { |i, c| puts "    interpreted: #{i[0, 300]}\n    compiled:    #{c.to_s[0, 300]}" unless i == c }
     text = interpreted.join("\n")
@@ -508,7 +538,7 @@ builds.first(1).each do |label, build, full_flag, mrbc, flags|
       # These four answers stay out of the comparison: the by-name send is checked by ADR 0299
       # (scripts/bc2cpp_checked_send_check.rb pins that), but this driver's @state holds several
       # classes behind a single traced one, so a devirtualized arm can still answer here.
-      comparable = ->(name) { values.call(sections, name).reject { |l| l.start_with?('s9.sec', 's10.sec', 'l2.lvl', 'l3.lvl') } }
+      comparable = ->(name) { values.call(sections, name).reject { |l| l.start_with?('s9.sec', 's10.sec', 's9.each', 's10.each', 'l2.lvl', 'l3.lvl') } }
       same = !sections.nil? && comparable.call('interpreted').size.positive? && comparable.call('interpreted') == comparable.call('compiled')
       check.call("#{what} (#{label}): compiled answers what the interpreter answers", same)
       next if same || sections.nil?
@@ -532,6 +562,8 @@ MUTANTS = {
   'tools/bc2cpp/codegen_unlisted_class_call.rb' => {
     'a private def called with an explicit receiver is called' =>
       ["return unlisted_private_call(target, klass, name, d, recv, argv, site) unless unlisted_ssend?(site, name)\n", "\n"],
+    'an inlined body site is not read' =>
+      ["site && (site[:insn] || (CodeGen.inlined_unlisted_site? ? site[:trace_insn] : nil))", 'site && site[:insn]'],
     'a private def called implicitly is refused' =>
       ["!insn.nil? && insn.sym == name && insn.op.start_with?('SSEND')", 'false'],
     'a protected def is called' => ["    else\n      return nil\n    end\n    return nil if target.owner", "    end\n    return nil if target.owner"],
