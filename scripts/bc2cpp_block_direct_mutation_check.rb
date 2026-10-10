@@ -76,7 +76,7 @@ MUTANTS = [
   ['profiler: scoped kill switch ignored', PROF_CHECK,
    [[PROF, "ENV['BC2CPP_PROFILER_NAME_SCOPED'] == '0'", 'false']], { 'BC2CPP_PROFILER_NAME_SCOPED' => '0' }, :caught],
   ['profiler: definitions on the module ignored', PROF_CHECK,
-   [[PROF, 'definitions.none? { |definition| profiler_owner?(definition.owner) } &&', '']], {}, :caught],
+   [[PROF, 'definitions.none? { |definition| profiler_owner?(definition.owner) }', 'true']], {}, :caught],
   ['profiler: module owner spelled only qualified', PROF_CHECK,
    [[PROF, "owner.to_s.delete_suffix('.singleton').split('::').last == 'Profiler'", "owner.to_s.delete_suffix('.singleton') == 'RGSS::Profiler'"]], {}, :caught],
   ['profiler: nested section function name not unique', PROF_CHECK,
