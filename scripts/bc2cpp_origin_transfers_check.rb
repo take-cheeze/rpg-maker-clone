@@ -16,7 +16,9 @@ end
 
 failures = []
 check = ->(label, ok) { failures << label unless ok }
-program = ->(list, handlers = []) { BytecodeIR::Program.new(Irep.new(label: 't', instructions: list, catch_handlers: handlers)) }
+program = lambda do |list, handlers = [], nlocals: nil|
+  BytecodeIR::Program.new(Irep.new(label: 't', instructions: list, catch_handlers: handlers, nlocals: nlocals))
+end
 defs_of = lambda do |prog, index, reg, **opts|
   found = prog.reaching_definitions(index, reg, **opts)
   found && found.map { |d| d.entry? ? :entry : d.index }
@@ -69,8 +71,28 @@ except = program.call([
 check.call('EXCEPT: a use of its own register is defined by the EXCEPT (origin walk)',
            defs_of.call(except, 3, '3', origin_transfers: true) == [2])
 check.call('EXCEPT: the default walk still refuses at the handler target', except.reaching_definitions(3, '3').nil?)
-check.call('EXCEPT: a register it does not write is refused (its entry value is unmodelled)',
+check.call('EXCEPT: a register it does not write is refused by the normal origin walk (the handler target is guarded)',
            except.reaching_definitions(3, '1', origin_transfers: true).nil?)
+
+# EXCEPT writes only R[a] (vm.c OP_EXCEPT): under through_handlers another register passes through it to the
+# handler edges, so a use after the handler's EXCEPT sees the value the protected send was entered with.
+#   0: LOADNIL R1   1: SEND0 R2 (@2, protected [2,4))   2: JMP -> 12   3: EXCEPT R3 (@8, handler)   4: NOP (@10)   5: RETURN R1
+except_pass = program.call([
+  insn(0, 'LOADNIL', 'R1 (nil)'), insn(2, 'SEND0', "R2\t:f"), insn(4, 'JMP', '12'), insn(8, 'EXCEPT', 'R3'),
+  insn(10, 'NOP', ''), insn(12, 'RETURN', 'R1')
+], [CatchHandler.new(type: :rescue, begin_addr: 2, end_addr: 4, target: 8)])
+check.call('EXCEPT: another register passes through it under through_handlers',
+           defs_of.call(except_pass, 4, '1', origin_transfers: true, through_handlers: true) == [0])
+check.call('EXCEPT: its own register is still the EXCEPT\'s write under through_handlers (negative)',
+           defs_of.call(except_pass, 4, '3', origin_transfers: true, through_handlers: true) == [3])
+# A raising send whose callee frame can reach the register still refuses: the handler path sees the clobber.
+except_clobber = program.call([
+  insn(0, 'LOADNIL', 'R4 (nil)'), insn(2, 'SEND0', "R2\t:f"), insn(4, 'JMP', '12'), insn(8, 'EXCEPT', 'R3'),
+  insn(10, 'NOP', ''), insn(12, 'RETURN', 'R1')
+], [CatchHandler.new(type: :rescue, begin_addr: 2, end_addr: 4, target: 8)])
+check.call('EXCEPT: a register above the raising send\'s frame still refuses (negative)',
+           except_clobber.reaching_definitions(4, '4', origin_transfers: true, through_handlers: true).nil?)
+check.call('EXCEPT: the default walk still refuses at the handler target (negative)', except_pass.reaching_definitions(4, '1').nil?)
 
 # A break out of begin/ensure: the JMPUW on the normal edge unwinds through the ensure body (vm.c OP_JMPUW, then
 # RAISEIF jumps to the target), so the target reads the ensure body's write. The ensure's own fall-through does not
@@ -89,9 +111,43 @@ check.call('codegen walk (through_handlers, no origin) still refuses at the JMPU
            unwind.reaching_definitions(4, '2', through_handlers: true).nil?)
 
 # Ops outside the origin transfers keep their default answer: an unmodelled op still refuses.
-unmodelled = program.call([insn(0, 'EXCEPT', 'R3'), insn(2, 'RETURN', 'R1')])
+unmodelled = program.call([insn(0, 'CALL', ''), insn(2, 'RETURN', 'R1')])
 check.call('an op without an origin transfer still refuses under the origin walk',
            unmodelled.reaching_definitions(1, '1', origin_transfers: true).nil?)
+
+# ENTER (vm.c OP_ENTER): each slot of its register layout is answered by the transfer for that slot (enter_slot).
+# Precondition of every typed slot: the walk reached the ENTER from the method entry, so the register is read after
+# ENTER ran. The layout comes from the operand (req:opt:rest:post:key:kdict:block:_); the locals need nlocals.
+built_of = ->(prog, index, reg) { prog.reaching_definitions(index, reg, origin_transfers: true)&.map(&:built) }
+cause_of = lambda do |prog, index, reg|
+  refusal = {}
+  prog.reaching_definitions(index, reg, origin_transfers: true, refusal: refusal)
+  refusal[:cause]
+end
+enter = lambda do |fields, nlocals: nil|
+  program.call([insn(0, 'ENTER', "#{fields}\t(0x0)"), insn(2, 'MOVE', "R9\tR1"), insn(4, 'RETURN', 'R9')], nlocals: nlocals)
+end
+# Positive, one per slot kind. "1:1:1:1:1:0:1:0" = req 1, opt 1, rest, post 1, key 1: R1 arg, R2 opt (entry), R3 rest,
+# R4 post, R5 kwhash, R6 block, R7.. locals.
+full = '1:1:1:1:1:0:1:0'
+check.call('ENTER R1 without keywords is the parameter value (:arg)', built_of.call(enter.call('1:1:1:1:0:0:1:0'), 1, '1') == [:arg])
+check.call('ENTER R1 with keywords stays the entry value', defs_of.call(enter.call(full), 1, '1', origin_transfers: true) == [:entry])
+check.call('ENTER optional argument R2 stays the entry value', defs_of.call(enter.call(full), 1, '2', origin_transfers: true) == [:entry])
+check.call('ENTER rest R3', built_of.call(enter.call(full), 1, '3') == [:rest])
+check.call('ENTER post R4', built_of.call(enter.call(full), 1, '4') == [:post])
+check.call('ENTER keyword hash R5', built_of.call(enter.call(full), 1, '5') == [:hash])
+check.call('ENTER block R6', built_of.call(enter.call(full), 1, '6') == [:block])
+check.call('ENTER local R7 (nlocals 9) is the nil it clears', built_of.call(enter.call(full, nlocals: 9), 1, '7') == [:local])
+check.call('ENTER local R8 (nlocals 9), the last register below nlocals', built_of.call(enter.call(full, nlocals: 9), 1, '8') == [:local])
+# Negative: the register at nlocals is a temporary, and an irep that does not say its nlocals has no local to name.
+check.call('ENTER register at nlocals is refused as a temporary (negative)',
+           cause_of.call(enter.call(full, nlocals: 9), 1, '9') == 'unmodelled:ENTER:temp')
+check.call('ENTER local without nlocals is refused as a temporary (negative)', cause_of.call(enter.call(full), 1, '7') == 'unmodelled:ENTER:temp')
+check.call('ENTER post with a rest slot before it is not a rest (negative)', built_of.call(enter.call(full), 1, '4') != [:rest])
+check.call('ENTER typed slots are origin-only: the default walk still answers the entry value',
+           %w[1 3 4 5 6].all? { |r| defs_of.call(enter.call(full), 1, r) == [:entry] })
+check.call('ENTER typed slots are origin-only: the default walk still answers the entry value for a local',
+           defs_of.call(enter.call(full, nlocals: 9), 1, '7') == [:entry])
 
 abort("bc2cpp_origin_transfers_check FAILED: #{failures.join(', ')}") unless failures.empty?
 puts 'bc2cpp_origin_transfers_check OK'
