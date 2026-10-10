@@ -5103,7 +5103,13 @@ check 'to_lsd/from_lsd round-trips the hero\'s own in-flight Flash Sprite ' \
   eq 50, pf[:green]
   eq 10, pf[:blue]
   eq 8, pf[:frames]
-  eq 8, pf[:total], 'no separate peak-duration field on the wire -- resumes decaying from here'
+  # The peak duration (total) and exact power are chunk 200's own fields
+  # (docs/adr/0395): chunk 104 alone only carries the derived current level and
+  # the remaining frames, so before chunk 200 this resumed decaying from the
+  # remaining frames as its own new peak. It now resumes from the true curve,
+  # the same as the Marshal save.
+  eq 12, pf[:total], 'the peak duration round-trips through chunk 200'
+  eq 24.0, pf[:power], 'the exact power round-trips through chunk 200'
 end
 
 check 'to_lsd/from_lsd round-trips a live Set Move Route on the hero ' \

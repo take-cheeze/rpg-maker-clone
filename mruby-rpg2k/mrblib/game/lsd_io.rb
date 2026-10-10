@@ -1,13 +1,11 @@
-# Game::State's RPG_RT-interop (.lsd) save/load path, split out of mrblib/
-# game.rb's own #to_h/.load Marshal round-trip: to_lsd/export_lsd exist so a
-# Save<N>.lsd this game writes is readable by real RPG_RT and other
-# RPG2000/2003 tooling, and from_lsd exists so a genuine editor-written
-# Save<N>.lsd
-# can be loaded here in turn -- see main.rb's own #save_game/#load_save_state
-# comments for how the two formats relate (the Marshal dump is this game's
-# own authoritative save; the .lsd export/import is a best-effort, secondary
-# interop path layered on top of it, not required for Save/Continue to work
-# at all).
+# Game::State's .lsd save/load path, split out of mrblib/game.rb's own #to_h/
+# .load Marshal round-trip: to_lsd writes a Save<N>.lsd, from_lsd reads one
+# back, and a genuine RPG_RT/editor-written Save<N>.lsd loads through the same
+# from_lsd. Since docs/adr/0395 the .lsd this engine writes is the authoritative
+# save (its chunk 200 carries every field the Marshal dump does); the Marshal
+# dump is kept for old saves and for wio. See main.rb's own #save_game/
+# #load_save_state for the save-slot policy and the RPG2K_SAVE_MARSHAL_FIRST
+# kill switch.
 #
 # wio has no PC to hand a save file to and no editor tooling of its own to
 # receive one from, so this whole file is dropped from that build alone (see
@@ -77,7 +75,10 @@ module Game
     # that field's own citation further down). Every other caller (tests,
     # tools) omits either and gets the prior behavior (73/74 simply absent
     # for an uncustomized vehicle; field 125 omitted entirely).
-    def to_lsd(save_count = 1, timestamp = nil, save_slot = 1, db = nil, map_tree = nil)
+    def to_lsd(save_count = nil, timestamp = nil, save_slot = 1, db = nil, map_tree = nil)
+      # Defaults to this state's own counter, so a caller that omits it still
+      # writes the real save_count (sys field 131) rather than a placeholder 1.
+      save_count = @save_count if save_count.nil?
       timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
 
@@ -931,7 +932,188 @@ module Game
         save[114] = ce
       end
 
+      # Chunk 200: the fields no chunk above models exactly (see the
+      # extension section below and docs/adr/0395).
+      save[:lsd_ext] = self.class.ext_payload(lsd_extension_records).bytes
+
       save
+    end
+
+    # -- Save-extension chunk (chunk 200, docs/adr/0395) ----------------------
+    #
+    # Before this, the .lsd export dropped a handful of fields that only the
+    # Marshal dump carried, so the Marshal save stayed the only exact one. Chunk
+    # 200 (SAVE_DATA's :lsd_ext, a project extension, not an RPG2000 chunk)
+    # carries those fields as a list of tagged records:
+    #
+    #   [BER tag][BER body length][body]
+    #
+    # A body is a run of BER integers (non-negative, clamped on write) and, for
+    # the two float fields, 8-byte little-endian doubles (`pack('E')`, exact in
+    # both CRuby and mruby). Tag 0 (version) is always written and is the marker
+    # that this .lsd came from this engine -- see .lsd_extended?. Unknown tags
+    # are skipped on read so a later build can add records without breaking this
+    # one. An absent record leaves that field at its own default, so a save
+    # written before chunk 200 existed loads exactly as it always did.
+    EXT_TAG_VERSION = 0
+    EXT_TAG_WEATHER = 1          # body: type, strength (BER)
+    EXT_TAG_ENCOUNTER_TOTAL = 2  # body: total steps (BER)
+    EXT_TAG_BOARDED = 3          # body: Vehicle::TYPE_ID id, 0 = not boarded (BER)
+    EXT_TAG_FLASH = 4            # body: red, green, blue, frames, total (BER), power (double)
+    EXT_TAG_COMMON_PROGRESS = 5  # body: (event id, index) BER pairs
+    EXT_TAG_PICTURE_OPACITY = 6  # body: per picture: id (BER), opacity, target opacity (doubles)
+    LSD_EXT_VERSION = 1
+
+    # One BER integer for a non-negative field value. A negative value cannot be
+    # written as BER and does not occur for any field here; it clamps to 0.
+    def self.ext_int(value)
+      LCF.write_ber(value.to_i < 0 ? 0 : value.to_i)
+    end
+
+    # Every BER integer in a record body, in order.
+    def self.ext_ints(body)
+      io = StringIO.new(body)
+      ints = []
+      ints.push(LCF.read_ber(io)) until io.eof?
+      ints
+    end
+
+    # A double, as 8 little-endian bytes (pack 'E'), and its inverse.
+    # (A picture's own name is carried as a length-prefixed byte run.)
+    def self.ext_double(value)
+      [value.to_f].pack('E')
+    end
+
+    def self.ext_double_at(io)
+      raw = io.read(8)
+      raise 'truncated extension double' if raw.nil? || raw.bytesize != 8
+      raw.unpack('E')[0]
+    end
+
+    # [[tag, body], ...] parsed from a chunk-200 payload string.
+    def self.ext_records(payload)
+      io = StringIO.new(payload)
+      records = []
+      until io.eof?
+        tag = LCF.read_ber(io)
+        len = LCF.read_ber(io)
+        body = len > 0 ? io.read(len) : ''
+        raise 'truncated extension record' if body.bytesize != len
+        records.push([tag, body])
+      end
+      records
+    end
+
+    # The chunk-200 payload string for a list of [tag, body] records.
+    def self.ext_payload(records)
+      payload = String.new
+      records.each do |tag, body|
+        payload = payload + LCF.write_ber(tag) + LCF.write_ber(body.bytesize) + body
+      end
+      payload
+    end
+
+    # Whether +save+ (an LCF::SaveData) carries this engine's own chunk 200
+    # version record. A genuine editor Save<N>.lsd has no chunk 200 at all, so
+    # this is false for it and for any .lsd written before this landed.
+    def self.lsd_extended?(save)
+      payload = save[:lsd_ext]
+      return false unless payload
+      ext_records(payload.pack('C*')).any? { |tag, _body| tag == EXT_TAG_VERSION }
+    end
+
+    # The chunk-200 records for this state, in tag order. Every field here is
+    # one the chunks above either do not model at all or model only to a coarser
+    # precision (picture opacity: 0..100 transparency in chunk 103; flash power
+    # only as its derived current level).
+    def lsd_extension_records
+      records = [[EXT_TAG_VERSION, self.class.ext_int(LSD_EXT_VERSION)]]
+      weather = @weather.to_h
+      records.push([EXT_TAG_WEATHER,
+                    self.class.ext_int(weather[:type]) + self.class.ext_int(weather[:strength])])
+      records.push([EXT_TAG_ENCOUNTER_TOTAL, self.class.ext_int(@encounter_total)])
+      boarded_id = @boarded ? (Vehicle::TYPE_ID[@boarded] || 0) : 0
+      records.push([EXT_TAG_BOARDED, self.class.ext_int(boarded_id)])
+      flash = @player_flash
+      if flash
+        body = self.class.ext_int(flash[:red]) + self.class.ext_int(flash[:green]) +
+               self.class.ext_int(flash[:blue]) + self.class.ext_int(flash[:frames]) +
+               self.class.ext_int(flash[:total]) + self.class.ext_double(flash[:power])
+        records.push([EXT_TAG_FLASH, body])
+      end
+      progress = @common_event_progress || {}
+      unless progress.empty?
+        body = String.new
+        progress.each { |id, idx| body = body + self.class.ext_int(id) + self.class.ext_int(idx) }
+        records.push([EXT_TAG_COMMON_PROGRESS, body])
+      end
+      unless @pictures.empty?
+        body = String.new
+        @pictures.each do |id, pic|
+          h = pic.to_h
+          name = (h[:name] || '').to_s
+          body = body + self.class.ext_int(id) + self.class.ext_int(name.bytesize) + name +
+                 self.class.ext_double(h[:opacity])
+          if h[:topacity].nil?
+            body = body + self.class.ext_int(0)
+          else
+            body = body + self.class.ext_int(1) + self.class.ext_double(h[:topacity])
+          end
+        end
+        records.push([EXT_TAG_PICTURE_OPACITY, body])
+      end
+      records
+    end
+
+    # Restore the chunk-200 fields onto +state+. Called last by .from_lsd so the
+    # exact values replace whatever the liblcf chunks gave their coarser
+    # approximations. An absent payload (a save from before chunk 200) changes
+    # nothing.
+    def self.apply_lsd_extension(state, save)
+      payload = save[:lsd_ext]
+      return state unless payload
+      ext_records(payload.pack('C*')).each do |tag, body|
+        case tag
+        when EXT_TAG_WEATHER
+          ints = ext_ints(body)
+          state.weather.set(ints[0] || 0, ints[1] || 0)
+        when EXT_TAG_ENCOUNTER_TOTAL
+          state.encounter_total = ext_ints(body)[0] || 0
+        when EXT_TAG_BOARDED
+          id = ext_ints(body)[0] || 0
+          state.boarded = nil
+          Vehicle::TYPE_ID.each { |type, type_id| state.boarded = type if type_id == id }
+        when EXT_TAG_FLASH
+          io = StringIO.new(body)
+          ints = [LCF.read_ber(io), LCF.read_ber(io), LCF.read_ber(io),
+                  LCF.read_ber(io), LCF.read_ber(io)]
+          power = ext_double_at(io)
+          state.player_flash = { red: ints[0], green: ints[1], blue: ints[2],
+                                 power: power, frames: ints[3], total: ints[4] }
+        when EXT_TAG_COMMON_PROGRESS
+          pairs = ext_ints(body)
+          progress = {}
+          i = 0
+          while i + 1 < pairs.size
+            progress[pairs[i]] = pairs[i + 1]
+            i += 2
+          end
+          state.common_event_progress = progress
+        when EXT_TAG_PICTURE_OPACITY
+          io = StringIO.new(body)
+          until io.eof?
+            id = LCF.read_ber(io)
+            name_len = LCF.read_ber(io)
+            name = name_len > 0 ? io.read(name_len) : ''
+            opacity = ext_double_at(io)
+            has_target = LCF.read_ber(io) != 0
+            topacity = has_target ? ext_double_at(io) : nil
+            pic = state.pictures[id]
+            pic.restore_exact(name, opacity, topacity) if pic
+          end
+        end
+      end
+      state
     end
 
     # Build a BGM chunk (an LCF::Array1D over the BGM schema) from our stored
@@ -1593,6 +1775,11 @@ module Game
           state.common_event_exec[id] = frames if frames
         end
       end
+      # Chunk 200 last: its exact values replace the coarser liblcf-chunk
+      # approximations above (flash, picture opacity) and add the fields no
+      # chunk above carries (weather, encounter total, boarded vehicle, the
+      # common-event progress registry). See .apply_lsd_extension.
+      apply_lsd_extension(state, save)
       state
     end
 
@@ -1743,6 +1930,22 @@ module Game
       return nil if name.nil? || name.empty?
       { name: name, volume: chunk[:volume] || 100, tempo: chunk[:pitch] || 100,
         balance: chunk[:balance] || 50 }
+    end
+  end
+
+  # Chunk 200's picture name/opacity/target-opacity, written back onto the
+  # picture the liblcf chunks already re-showed (see .apply_lsd_extension). Mutates
+  # in place rather than rebuilding via Picture.from_h: a rebuilt picture is
+  # always shown again, which would silently drop an erased picture's state (see
+  # Picture#erase!).
+  class Picture
+    # Name, opacity and target opacity exactly as the save held them. Erased
+    # pictures keep their name here (chunk 103 drops it on erase, as RPG_RT does).
+    def restore_exact(name, opacity, target)
+      @name = name
+      @opacity = opacity
+      @topacity = target
+      self
     end
   end
 end
