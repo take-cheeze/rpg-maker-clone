@@ -487,6 +487,13 @@ builds.each do |label, build, full_flag, mrbc, flags|
     interpreted = values.call(sections, 'interpreted')
     compiled = values.call(sections, 'compiled')
     expected = (STATE_OBJECTS - 1) * 6 + MIX_OBJECTS * 2 + LVL_OBJECTS
+    # A core-only mruby has no Array#each (it lives in mrblib), so the interpreted run of the inlined-`each`
+    # fixture cannot answer there; the compiled inlined body does. Those calls are compared on full-core builds.
+    unless full_flag
+      interpreted = interpreted.reject { |l| l.match?(/\As\d+\.each /) }
+      compiled = compiled.reject { |l| l.match?(/\As\d+\.each /) }
+      expected -= STATE_OBJECTS - 1
+    end
     check.call("compiled answers what the interpreter answers (#{interpreted.size} calls)", interpreted.size == expected && interpreted == compiled)
     interpreted.zip(compiled).each { |i, c| puts "    interpreted: #{i[0, 300]}\n    compiled:    #{c.to_s[0, 300]}" unless i == c }
     text = interpreted.join("\n")
