@@ -1211,10 +1211,11 @@ static bool script_host_env_enabled(const std::string& value) {
   return !(value == "0" || value == "false" || value == "off" || value == "no");
 }
 
-// RPG2K_SAVE_MARSHAL_FIRST: the Save/Continue kill switch (docs/adr/0395). Unset,
-// empty or "0" keeps the .lsd save authoritative, the default; any other value
-// restores the old Marshal-first order. Resolved here, like RGSS_SCRIPT_HOST,
-// because this mruby build has no ENV for the Ruby side to read.
+// RPG2K_SAVE_MARSHAL_FIRST: the Save/Continue kill switch (docs/adr/0395).
+// Unset, empty or "0" keeps the .lsd save authoritative, the default; any other
+// value restores the old Marshal-first order. Resolved here, like
+// RGSS_SCRIPT_HOST, because this mruby build has no ENV for the Ruby side to
+// read.
 static bool save_marshal_first_env_enabled() {
   const char* value = std::getenv("RPG2K_SAVE_MARSHAL_FIRST");
   return value != nullptr && *value != '\0' && std::string(value) != "0";
