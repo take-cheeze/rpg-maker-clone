@@ -4,14 +4,14 @@
 # LOOP_FLOW_POSITION (docs/adr/0398): a send compiled from an inlined loop body takes the flow position the proof
 # reads, instead of being judged with no position (closed_world_site got `idx` nil there).
 #   - a receiver the block defines is judged at the block's own flow position;
-#   - a receiver read from a method local (GETUPVAR at level 0, the inlined body's frame is the method's) is judged at
-#     the method's flow at the loop's SENDB, unless the body or a nested block writes that local;
+#   - a receiver read from a method local (GETUPVAR at level 0) is refused (upvar_narrowed): the method's flow at the
+#     loop's SENDB created proven dead fallbacks in mruby-rpg2k's Scene::Map, so that path is out of ADR 0398;
 #   - a receiver holding the loop element is refused when the body reassigns the element register R1.
-# The checks generate C++ for four worlds through the closed-world generator and read the counts the generator
+# The checks generate C++ for worlds through the closed-world generator and read the counts the generator
 # prints under BC2CPP_LOOP_FLOW_REPORT=1 (accepted and refused positions, by path or reason):
-#   1. positive: an upvar receiver in an inlined `each` takes the method-flow position (accepted, no refusal);
-#   2. negative: the element reassigned (refused element_reassigned);
-#   3. negative: the local written by the body (refused upvar_written);
+#   1. positive: a receiver the block defines in an inlined `each` is judged (accepted local, proven tail);
+#   2. negative: a method-local receiver is refused (upvar_narrowed) and its send stays by name;
+#   3. negative: the element reassigned (refused element_reassigned);
 #   4. negative: a receiver from an argument has no definition to read (its positions stay out of the proof).
 # BC2CPP_LOOP_FLOW_POSITION=0 must leave every position out (no accepted, no refused count), the switch-off control.
 # LFP_MUTANTS=1 (needs 1): the generator with one guard removed or a wrong position used at a time must fail a
@@ -75,6 +75,26 @@ POSITIVE = CLASSES + <<~'RUBY'
       acc = []
       @list.each do |i|
         acc << req.wait if req.respond_to?(:wait)
+      end
+      acc
+    end
+  end
+RUBY
+
+# 1b. The receiver is defined by the block itself (`r = pick(i)`): judged at the block's own flow position.
+LOCAL = CLASSES + <<~'RUBY'
+  class LfMapLocal
+    def initialize; @list = [1, 2]; end
+    def pick(flag)
+      return LfKey.new if flag == 1
+      return LfPlain.new if flag == 2
+      LfNone.new
+    end
+    def go(flag)
+      acc = []
+      @list.each do |i|
+        r = pick(i)
+        acc << r.wait if r.respond_to?(:wait)
       end
       acc
     end
@@ -152,12 +172,20 @@ wait_marks = lambda do |code|
   }
 end
 
-puts '-- positive: an inlined-loop receiver read from a method local takes the method-flow position'
-code, err, dir = generate.call(POSITIVE, %w[LfMapPos LfKey LfPlain LfNone], 'pos')
-check.call('an upvar position is accepted', counts.call(err, 'accepted').fetch('upvar', 0).positive?)
-check.call('no position of the positive world is refused', counts.call(err, 'refused').empty?)
+puts '-- positive: an inlined-loop receiver the block defines takes the block-flow position'
+code, err, dir = generate.call(LOCAL, %w[LfMapLocal LfKey LfPlain LfNone], 'local')
+check.call('a local position is accepted', counts.call(err, 'accepted').fetch('local', 0).positive?)
+check.call('the block-defined receiver is not refused (the self call is self_send, the method-local acc is upvar_narrowed)',
+           counts.call(err, 'refused').keys.sort == %w[self_send upvar_narrowed])
 check.call('the wait send takes the proven nomethod tail', wait_marks.call(code)[:proven] >= 1)
-check.call('no wait send of the positive world is kept as a singleton definer', wait_marks.call(code)[:singleton].zero?)
+check.call('no wait send of the local world is kept as a singleton definer', wait_marks.call(code)[:singleton].zero?)
+FileUtils.rm_rf(dir)
+
+puts '-- negative: a method-local receiver is refused (upvar_narrowed), and its send stays by name'
+code, err, dir = generate.call(POSITIVE, %w[LfMapPos LfKey LfPlain LfNone], 'pos')
+check.call('no upvar position is accepted', counts.call(err, 'accepted').fetch('upvar', 0).zero?)
+check.call('upvar_narrowed is counted', counts.call(err, 'refused').fetch('upvar_narrowed', 0).positive?)
+check.call('the method-local wait send is not a proven tail', wait_marks.call(code)[:proven].zero?)
 FileUtils.rm_rf(dir)
 
 puts '-- negative: the element reassigned in the body is refused, and its send stays by name'
@@ -166,9 +194,8 @@ check.call('element_reassigned is counted', counts.call(err, 'refused').fetch('e
 check.call('the element send stays kept as a singleton definer', wait_marks.call(code)[:singleton].positive?)
 FileUtils.rm_rf(dir)
 
-puts '-- negative: a method local the body writes is refused'
+puts '-- negative: a method local the body writes is refused too (the narrowed path refuses every method local)'
 code, err, dir = generate.call(UPVAR_WRITTEN, %w[LfMapWrite LfKey LfPlain LfNone], 'write')
-check.call('upvar_written is counted', counts.call(err, 'refused').fetch('upvar_written', 0).positive?)
 check.call('the written-local send stays kept', wait_marks.call(code)[:proven].zero?)
 FileUtils.rm_rf(dir)
 
@@ -193,11 +220,9 @@ if ENV['LFP_MUTANTS'] == '1'
      'original = irep.instructions[trace_idx]', 'original = irep.instructions[trace_idx - 1]'],
     ['element reassignment guard dropped', 'tools/bc2cpp/codegen_send.rb',
      'if element && loop_element_reassigned?(irep)', 'if false'],
-    ['written-local guard dropped', 'tools/bc2cpp/codegen_send.rb',
-     'return loop_flow_refuse(irep, trace_idx, :upvar_written) if fixnum_proof_ctx(host)[:upvars].include?(k.to_s)',
-     'nil'],
-    ['method-flow position at the send instead of the SENDB', 'tools/bc2cpp/codegen_send.rb',
-     'idx: parent[:idx], insn: flow_insn', 'idx: trace_idx, insn: flow_insn']
+    ['method-local receiver accepted again (narrowing dropped)', 'tools/bc2cpp/codegen_send.rb',
+     'loop_flow_refuse(irep, trace_idx, :upvar_narrowed)',
+     'loop_flow_accept(irep, trace_idx, :local, { irep: irep, idx: trace_idx, insn: original })']
   ]
   mutants.each do |what, file, from, to|
     Dir.mktmpdir('lfp-mutant') do |tmp|

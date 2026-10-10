@@ -36,13 +36,18 @@ that already pass `trace_idx`, and attaches `site[:flow]`, the flow position of 
    the send (`site[:flow] = { irep: block_irep, idx: trace_idx, insn: original }`). A block activation starts from
    unknown inputs (`CallFacts::Flow.states`), and the inlined frame is reset every iteration (`inline_block_frame`),
    so the facts there hold for that iteration, exactly as the BLOCK_FALLBACK bodies already use them (idx passed).
-5. **Method local.** Every definition is a GETUPVAR at level 0, which in an inlined body is the method register
-   `upvar_idx` (`codegen_loop_regions`). The method's flow is taken at the loop's own SENDB (`@inline_loop_parent`,
-   bound by `compile_inline_block_body`). Between that instruction and the send only the body runs, so the fact
-   holds for every iteration unless the body or a nested block writes the register: the method's opaque upvars
-   (`fixnum_proof_ctx(method)[:upvars]`) refuse it (`upvar_written`). The flow instruction is a synthetic SEND of
-   that register with the send's name, so the consumers read the same receiver and symbol.
+5. **Method local (refused, `upvar_narrowed`).** Every definition is a GETUPVAR at level 0, which in an inlined body is
+   the method register `upvar_idx` (`codegen_loop_regions`). This path would take the method's flow at the loop's own
+   SENDB, but it is out of this ADR: the first version of the change judged these receivers that way, and it created
+   proven dead fallbacks in `RPG2k::Scene::Map` (the nomethod reviewed-list and proven-miss checks fail on
+   `mruby-rpg2k-compiled`, while master passes them). The method-flow position is not built.
 6. Anything else (several definitions, mixed upvar and local, no SENDB binding) is refused.
+
+**Narrowing.** Only rule 4 (block-local) and rule 3 (element refusal) give positions. A send whose receiver is a
+method local, including an accumulator the body appends to (`acc << x`), is refused with `upvar_narrowed`. The
+`@inline_loop_parent` state and its save/restore were removed with the method-flow path.
+
+The measurement below is the first version (rules 4 and 5 both on). It is not re-measured for the narrowed version.
 
 Every refusal is counted by reason (`BC2CPP_LOOP_FLOW_REPORT=1` prints the counts at exit; `=2` one line per send).
 
@@ -98,16 +103,16 @@ largest trust extension in this change and is the first thing to re-check if a r
 
 `scripts/bc2cpp_loop_flow_position_check.rb` (MRBC) generates four worlds through the closed-world generator:
 
-* positive: a method local read in an inlined `each` takes the method-flow position; the `wait` send becomes the
-  proven nomethod tail (the switch-off control keeps `singleton_definer`);
+* positive: a receiver the block defines in an inlined `each` is accepted (`local`), and its `wait` send becomes the
+  proven nomethod tail;
+* negative: a method-local receiver is refused (`upvar_narrowed`), its `wait` send is not a proven tail;
 * negative: the element copy with the element reassigned is refused (`element_reassigned`) and stays by name;
-* negative: a method local written by the body is refused (`upvar_written`) and stays by name;
 * negative: an argument receiver has no set to prove, so no send of that world is a proven tail;
 * switch off: nothing is read or refused, and the positive world keeps its singleton sends.
 
-`LFP_MUTANTS=1` runs the same checks on four mutated copies of `tools/bc2cpp`: the wrong iteration position
-(`trace_idx - 1`), the element guard dropped, the written-local guard dropped, and the method-flow position taken
-at the body's index instead of the SENDB. Each must fail a check.
+`LFP_MUTANTS=1` runs the same checks on two mutated copies of `tools/bc2cpp`: the wrong iteration position
+(`trace_idx - 1`), and the element guard dropped. Plus the narrowing removed (`:upvar_narrowed` replaced by an accept).
+Each must fail a check.
 
 The existing `bc2cpp_exact_receiver_check` and `bc2cpp_unlisted_class_call_check` still pass with the change
 (the second one on its generated-code section; its g++ section needs a full-core build and was not run here).
