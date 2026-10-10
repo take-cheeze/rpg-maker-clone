@@ -1319,6 +1319,10 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_outlined_index_check.rb
               # ADR 0305: the GETIDX helper's Integer arm against the interpreter, with mutants.
               GIA_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_getidx_integer_arm_check.rb
+              # ADR 0394: an exact Array receiver's non-fixnum index runs the native Array body (INTEGER_TAG_ELSE),
+              # on real mruby against the interpreter, and the generated code with the kill switch and a mutant.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_integer_tag_else_run_check.rb
+              MUTANT=1 MRBC="$mrbc" ruby scripts/bc2cpp_integer_tag_else_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_runtime_devirt_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_inherited_self_devirt_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_poly_table_check.rb
