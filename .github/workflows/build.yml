@@ -1248,6 +1248,9 @@ jobs:
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_native_class_arms_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_class_arms_mutation_check.rb
+              # ADR 0384: native arms emitted ahead of the else cover their class of a proven set, then the mutants.
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_arm_cover_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_arm_cover_mutation_check.rb
           - shard: integer-constants
             # ADR 0324: unit cases for the native-definition scan and the jump onto a SETCONST, generated code, the
             # full-core and core-only runs, then eight mutants and an unmutated control (the 32-bit run is in
