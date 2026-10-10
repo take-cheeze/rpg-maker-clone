@@ -42,6 +42,7 @@ SOURCE = <<~RUBY
     def mapped(a); a.map { |x| x + 1 }; end
     def looped; i = 0; loop { i += 1; break if i > 2 }; i; end
     def newarr(n); Array.new(n) { |i| i }; end
+    def newhash; Hash.new { |h, k| h[k] = k }; end
     def symblk(a, pr); a.select(&pr); end
     def broke(a); a.each { |x| return x if x > 1 }; nil; end
     def factbox(b); b.bump; b.each_thing { |x| x }; end
@@ -97,9 +98,11 @@ Dir.mktmpdir do |dir|
   check.call('mapped: the same shape for map', r && r['shape'] == 'exact_arms' && r['name'] == 'map')
   r = by_owner.call(all, 'looped').first
   check.call('loop: no compiled callee, the reason is named', r && r['shape'] == 'dynamic' && r['arms'].empty? && !r['why'].empty?)
-  r = by_owner.call(all, 'newarr').first
-  check.call('Array.new with a block: no compiled callee, receiver produced by a constant',
+  r = by_owner.call(all, 'newhash').first
+  check.call('Hash.new with a block: no compiled callee, receiver produced by a constant',
              r && r['shape'] == 'dynamic' && r['name'] == 'new' && r['producer'].start_with?('const'))
+  check.call('Array.new with a block is an inlined loop (ADR 0391), so it has no block-send row',
+             by_owner.call(all, 'newarr').empty? && code_on.include?('ARRAY_NEW_BLOCK'))
   r = all.find { |row| row['gem'] == 'other' && row['kind'] == 'explicit' }
   check.call('&expr is an explicit block send', r && r['kind'] == 'explicit' && r['shape'] == 'explicit')
   r = by_owner.call(all, 'broke').first

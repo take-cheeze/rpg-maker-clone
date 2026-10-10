@@ -81,7 +81,11 @@ check.call('METHOD_COMPILE_STATE matches the constructor\'s initial values',
 # ADR 0380: @entry_spec_plan (the parsed BC2CPP_SPECIALIZE file) and @entry_spec_cache (label -> specialization) are
 # program-wide memos; @entry_spec_active and @entry_spec_suffix are set around the clone compile and restored by
 # its own `ensure` in entry_specialize_compile, so a nested compile never sees them half-set.
+# ADR 0391: @symbol_installed_destinations is a program-wide memo like @symbol_installed_names; @array_new_sites is the
+# ARRAY_NEW_BLOCK report, a write-once-per-site tally keyed by [irep label, index] (a nested compile of the same site
+# stores the same outcome).
 NOT_PER_METHOD = %w[
+  @symbol_installed_destinations @array_new_sites
   @clean_cache @probing
   @builtin_class_send_safe @entry_arg_body_owner @entry_arg_call_index @eqq_direct_safe @eqq_helper_code
   @eqq_literal_devirt_safe
