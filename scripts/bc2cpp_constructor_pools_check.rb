@@ -119,7 +119,7 @@ HOLDER = <<~RUBY
   end
   class CpZsup < CpBaseZ; def initialize(items); super; end; end
 
-  # ADR 0380: a keyword parameter leaves positions 1..mand alone, so this constructor is pooled.
+  # ADR 0382: a keyword parameter leaves positions 1..mand alone, so this constructor is pooled.
   class CpKw
     def initialize(items, flag: false); @items = items; end
     def kw_count; @items.size; end

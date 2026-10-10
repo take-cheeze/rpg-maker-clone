@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Mutation test for docs/adr/0380 (CONSTRUCTOR_KEYWORDS, POOL_SELF_CLASS). Each mutant is a copy of tools/bc2cpp with one
+# Mutation test for docs/adr/0382 (CONSTRUCTOR_KEYWORDS, POOL_SELF_CLASS). Each mutant is a copy of tools/bc2cpp with one
 # soundness condition broken; scripts/bc2cpp_ivar_typing_check.rb, run against the mutant through BC2CPP_TOOL, must FAIL on
 # the check that guards that condition. A mutant that passes means the condition has no negative case.
 #

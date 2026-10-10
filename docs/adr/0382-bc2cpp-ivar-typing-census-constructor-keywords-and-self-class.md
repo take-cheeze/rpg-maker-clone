@@ -1,4 +1,4 @@
-# 0380. bc2cpp: why ivar class facts fail (a census), keyword constructors, and the class of `self` in pools
+# 0382. bc2cpp: why ivar class facts fail (a census), keyword constructors, and the class of `self` in pools
 
 Date: 2026-10-10
 

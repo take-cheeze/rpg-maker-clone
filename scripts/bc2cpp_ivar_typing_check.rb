@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Check docs/adr/0380 (ivar typing): the two rules that add class facts to the pools of ADR 0295/0313, each with its
+# Check docs/adr/0382 (ivar typing): the two rules that add class facts to the pools of ADR 0295/0313, each with its
 # preconditions and its refusals, and the diagnostics that count what is left.
 #
 #   * CONSTRUCTOR_KEYWORDS: an `initialize` with keyword parameters, and a `new` / `super` call with literal keywords,

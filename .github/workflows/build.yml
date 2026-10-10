@@ -1147,7 +1147,7 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_mutation_check.rb
           - shard: ivar-typing
-            # ADR 0380: keyword constructors and the class of `self` in the pools, each with its withdrawal worlds and
+            # ADR 0382: keyword constructors and the class of `self` in the pools, each with its withdrawal worlds and
             # kill switch, then nine mutants through the shared pool.
             checks: |
               MRBC="$mrbc" ruby scripts/bc2cpp_ivar_typing_check.rb
