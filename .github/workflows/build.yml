@@ -1037,6 +1037,10 @@ jobs:
               # ADR 0376: block loops inside a rescue range are inlined into the try function, and a
               # multi-parameter #each spreads its Array rows; against the interpreter on the full-core build.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_rescue_inline_block_check.rb
+              # ADR 0391: Array.new(n) { } as an inlined loop, and Profiler section/frame inlining inside rescue
+              # ranges and beside same-named Ruby methods; against the interpreter on the full-core build.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_array_new_block_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_profiler_scope_check.rb
               # ADR 0288: class-body define_method(:name) { } as an ordinary definition.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_define_method_sites_check.rb
               # ADR 0304: attr_* installed by a constant-driven loop, against CRuby and the interpreter;
@@ -1323,6 +1327,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_packed_attr_args_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_rescue_live_in_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_rescue_inline_block_mutation_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_block_direct_mutation_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_return_join_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_nested_compile_state_check.rb
               ruby scripts/bc2cpp_insn_operands_check.rb
