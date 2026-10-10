@@ -78,7 +78,14 @@ check.call('METHOD_COMPILE_STATE matches the constructor\'s initial values',
 # body of a core method (ADR 0264) and restored by an `ensure` before compile_method returns;
 # @core_program_world holds it for the arms of ADR 0270 and is cleared by the same `ensure`.
 # The textual scan also sees fields of the nested flow-oracle objects.
+# ADR 0380: @entry_spec_plan (the parsed BC2CPP_SPECIALIZE file) and @entry_spec_cache (label -> specialization) are
+# program-wide memos; @entry_spec_active and @entry_spec_suffix are set around the clone compile and restored by
+# its own `ensure` in entry_specialize_compile, so a nested compile never sees them half-set.
+# ADR 0391: @symbol_installed_destinations is a program-wide memo like @symbol_installed_names; @array_new_sites is the
+# ARRAY_NEW_BLOCK report, a write-once-per-site tally keyed by [irep label, index] (a nested compile of the same site
+# stores the same outcome).
 NOT_PER_METHOD = %w[
+  @symbol_installed_destinations @array_new_sites
   @clean_cache @probing
   @builtin_class_send_safe @entry_arg_body_owner @entry_arg_call_index @eqq_direct_safe @eqq_helper_code
   @eqq_literal_devirt_safe
@@ -89,6 +96,7 @@ NOT_PER_METHOD = %w[
   @rc_new_class @rc_oracle @rc_return @rc_send_ireps @rc_states @numeric_class_bits
   @rc_scoped_return_cache @rc_scoped_return_active @rc_scoped_ready @rc_scoped_states
   @rc_scoped_writes @rc_scoped_active_labels @rc_body_owners
+  @pool_self_class_refusal @rc_load_self_oracles
   @array_return_names @class_return_names @entry_arg_fixnum @fixnum_return_names @fiber_unsafe_methods
   @fiber_roots @fiber_yield_names @resumable_plans @resumable_warned
   @yf_blocks @yf_arm_sites
@@ -97,6 +105,7 @@ NOT_PER_METHOD = %w[
   @constant_object_probe @direct_alloc_used @poly_diagnostic_reason_cache @rescued_exception_message_safe
   @sanitized @strict_ancestors @subtree_ivar_names @rescue_covered_labels @record_key_exact_class
   @foreign_written_ivar_facts
+  @entry_spec_plan @entry_spec_cache @entry_spec_active @entry_spec_suffix
   @cg @receiver @arguments @contexts @context_enter_edges @entry_arg_numeric @entry_cand @numeric_allocate_free @numeric_assured @numeric_block_parents
   @numeric_const_groups @numeric_dynamic_names @numeric_family_find @numeric_irep_owner @numeric_irep_slots
   @numeric_ivar_disabled @numeric_ivar_groups @numeric_nil_raises @numeric_op_native @numeric_oracle

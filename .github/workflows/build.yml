@@ -1003,6 +1003,9 @@ jobs:
               # mruby's own Ruby for singleton-making constructs that the proof's world scan skips.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_body_exact_check.rb
               ruby scripts/bc2cpp_core_singleton_audit.rb
+              # ADR 0381: `self` inside a compiled Array/Hash/String/Range body is that exact class when the program
+              # has no subclass of it; the same class test and violation else as ADR 0359, with a late subclass.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_self_exact_check.rb
               # Return-class table and the guard-free TYPED call (docs/adr/0289): generated code with every
               # way of losing the proof, then a compiled fixture against the interpreter.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_return_class_check.rb
@@ -1037,6 +1040,10 @@ jobs:
               # ADR 0376: block loops inside a rescue range are inlined into the try function, and a
               # multi-parameter #each spreads its Array rows; against the interpreter on the full-core build.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_rescue_inline_block_check.rb
+              # ADR 0391: Array.new(n) { } as an inlined loop, and Profiler section/frame inlining inside rescue
+              # ranges and beside same-named Ruby methods; against the interpreter on the full-core build.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_array_new_block_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_profiler_scope_check.rb
               # ADR 0288: class-body define_method(:name) { } as an ordinary definition.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_define_method_sites_check.rb
               # ADR 0304: attr_* installed by a constant-driven loop, against CRuby and the interpreter;
@@ -1146,6 +1153,12 @@ jobs:
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_constructor_pools_mutation_check.rb
+          - shard: ivar-typing
+            # ADR 0382: keyword constructors and the class of `self` in the pools, each with its withdrawal worlds and
+            # kill switch, then nine mutants through the shared pool.
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp_ivar_typing_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_ivar_typing_mutation_check.rb
           - shard: setter-pools
             # ADR 0370: the native store audit, generated code with the withdrawal worlds and the kill switches, then
             # a full-core run that compares compiled with interpreted answers and shows an outside setter call (and a
@@ -1155,6 +1168,13 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_setter_pools_mutation_check.rb
               # ADR 0370: the aliased-name set holds only the names an aliasing operation spells.
               MRBC="$mrbc" ruby scripts/bc2cpp_aliased_names_check.rb
+          - shard: entry-specialize
+            # ADR 0380: BC2CPP_SPECIALIZE. Generated code (gate off byte-identical, the generic body untouched, the
+            # identity clone, the refused shapes and worlds), a full-core run of every guard hit and miss compared with
+            # the interpreter, then the mutants (the entry check removed, weakened class tests, ...).
+            checks: |
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_entry_specialize_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_entry_specialize_mutation_check.rb
           - shard: call-facts
             # ADR 0317: generated code with the withdrawal worlds, the full-core and core-only runs, then ten
             # mutants and an unmutated control through the shared pool.
@@ -1326,6 +1346,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_packed_attr_args_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_rescue_live_in_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_rescue_inline_block_mutation_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_block_direct_mutation_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_return_join_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_nested_compile_state_check.rb
               ruby scripts/bc2cpp_insn_operands_check.rb

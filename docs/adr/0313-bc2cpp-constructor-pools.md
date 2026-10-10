@@ -4,7 +4,9 @@ Date: 2026-10-02
 
 ## Status
 
-Accepted
+Accepted. The keyword rows of the table below are superseded by [ADR 0382](0382-bc2cpp-ivar-typing-census-constructor-keywords-and-self-class.md):
+a keyword parameter and a literal-keyword `new` / `super` call no longer withdraw the initialize (a post-mandatory parameter and
+`**opts` still do).
 
 ## Context
 
@@ -70,11 +72,11 @@ D is a candidate for positions `1..mand` (optional parameters' default code may 
 | `alias_method :x, :initialize` / `alias x initialize` in a class body | that class's initialize | `CpAliased`; another class stays pooled |
 | a Ruby `new`, a module or singleton `initialize`, an explicit `initialize` call, a `def` installed out of sight, a mixin into `Class`, a String `"new"`/`"initialize"` next to a computed-name send | everything | one world each |
 | a `new` on a receiver that is neither constant nor rooted | every D it can get past ENTER for (`mand <= argc <= mand + opt`, any count with a rest parameter); everything when the count is a splat or keyword | computed receiver world (keeps the 4-argument constructor) |
-| a splat or keyword at a site naming K | the D K runs | `CpSplat` |
+| a splat or `**opts` at a site naming K (any keyword call until ADR 0382) | the D K runs | `CpSplat` |
 | a constant bound by `SETCONST` | its `new` sites are unresolved (the line above) | `CpHandle = CpBound` |
 | a wild (unresolved) superclass, an opaque class or descendant (`Class.new(K)`), a class outside a plain declared chain to Object (an Exception subclass is built by `raise`) | the D | wild, dynamic subclass, `CpErr` |
 | a native or foreign Ruby source that spells both the root and the last segment of a class that runs D (`ClosedWorld#outside_spells_class?`; native comments are stripped, unlike `@outside_tokens`) | the D | the two build-gem worlds |
-| keyword or post-mandatory parameters | the D (arity) | `CpKw` |
+| post-mandatory parameters (keyword parameters too until ADR 0382) | the D (arity) | `CpPost` |
 | a call with fewer than `mand` or more than `mand + opt` positionals | nothing: it raises in ENTER before the body | `CpOpt2` (the widest call keeps its own class) |
 
 `method_missing` is not a withdrawal condition of its own: a proxy that forwards `new` does so with a `new(*args)` site,
