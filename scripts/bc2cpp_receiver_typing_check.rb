@@ -153,11 +153,26 @@ fixture(RUNTIME, 'rt_kw') do |code_of|
 end
 fixture(RUNTIME, 'rt_kw_embed', embed: 'RtActor') do |code_of|
   guarded = code_of.call('RtProbe', 'call_set')
-  check.call('an embedding owner keeps a runtime class guard with a dynamic fallback',
+  check.call('an embedding owner keeps a runtime class guard; the closed world proves its else arm a nomethod (ADR 0386)',
              guarded.include?('RtActor_rt_set_level_impl') && guarded.include?('mrb_obj_class(M, r') &&
-               guarded.match?(DISPATCH))
+               guarded.include?('bc2cpp_nomethod_named(M, r') && !guarded.match?(DISPATCH))
   check.call('an implicit self in the embedding owner itself, with no subclass, drops the guard',
              !code_of.call('RtActor', 'rt_reset').include?('mrb_obj_class'))
+end
+# KEYWORDLESS_FALLBACK kill switch and refusal: the else arm is the old by-name dispatch.
+saved_kw = ENV['BC2CPP_KEYWORDLESS_FALLBACK']
+ENV['BC2CPP_KEYWORDLESS_FALLBACK'] = '0'
+begin
+  fixture(RUNTIME, 'rt_kw_embed_off', embed: 'RtActor') do |code_of|
+    check.call('BC2CPP_KEYWORDLESS_FALLBACK=0 keeps the dynamic fallback of the embedding guard',
+               code_of.call('RtProbe', 'call_set').match?(DISPATCH))
+  end
+ensure
+  ENV['BC2CPP_KEYWORDLESS_FALLBACK'] = saved_kw
+end
+fixture("#{RUNTIME}class RtGhost\n  def method_missing(n, *a); 1; end\nend\n", 'rt_kw_embed_mm', embed: 'RtActor') do |code_of|
+  check.call('a method_missing class keeps the dynamic fallback of the embedding guard',
+             code_of.call('RtProbe', 'call_set').match?(DISPATCH))
 end
 fixture("#{RUNTIME}class RtActor2\n  def rt_need(v, must:); v + must; end\n  def go; rt_need(1); end\nend\n", 'rt_kw_required') do |code_of|
   check.call('a missing required keyword keeps the dynamic call (the interpreter raises ArgumentError)',

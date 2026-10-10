@@ -1003,6 +1003,9 @@ jobs:
               # mruby's own Ruby for singleton-making constructs that the proof's world scan skips.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_body_exact_check.rb
               ruby scripts/bc2cpp_core_singleton_audit.rb
+              # ADR 0381: `self` inside a compiled Array/Hash/String/Range body is that exact class when the program
+              # has no subclass of it; the same class test and violation else as ADR 0359, with a late subclass.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_self_exact_check.rb
               # Return-class table and the guard-free TYPED call (docs/adr/0289): generated code with every
               # way of losing the proof, then a compiled fixture against the interpreter.
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_return_class_check.rb
