@@ -96,6 +96,7 @@ NOT_PER_METHOD = %w[
   @rc_new_class @rc_oracle @rc_return @rc_send_ireps @rc_states @numeric_class_bits
   @rc_scoped_return_cache @rc_scoped_return_active @rc_scoped_ready @rc_scoped_states
   @rc_scoped_writes @rc_scoped_active_labels @rc_body_owners
+  @pool_self_class_refusal @rc_load_self_oracles
   @array_return_names @class_return_names @entry_arg_fixnum @fixnum_return_names @fiber_unsafe_methods
   @fiber_roots @fiber_yield_names @resumable_plans @resumable_warned
   @yf_blocks @yf_arm_sites
