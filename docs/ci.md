@@ -73,11 +73,11 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 
 | Shard | Checks | Approx. |
 | --- | --- | --- |
-| `core-mrbtest` | block/yield-free/exact-receiver (+ `core_body_exact` and `core_singleton_audit`, ADR 0359, about 1 min)/return-class, `step_inline`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, mruby's own suites | about 25 min |
+| `core-mrbtest` | block/yield-free/exact-receiver (+ `core_body_exact` and `core_singleton_audit`, ADR 0359, about 1 min)/return-class, `step_inline`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, `loop_flow_position` (ADR 0398), mruby's own suites | about 25 min |
 | `full-core-numeric` | `numeric_slow` (ADR 0292, 454 s in a recent run), `index_closed` (ADR 0365, about 2 min): split from `core-mrbtest`, whose checks plus setup had reached its 45 minute timeout | est. 10 min |
 | `numeric-direct` | `eqq_direct` (ADR 0293) and `tuple_return` (ADR 0311), moved out of `full-core-numeric` so `numeric_slow` runs alone there | see the timing table |
 | `core-flow` | `exact_receiver_flow` (ADR 0301) | see the timing table |
-| `core-flow-mutants` | `exact_receiver_flow_mutation_check` (ADR 0301, five mutants) and `computed_send` with `CSEND_MUTANTS=1` (ADR 0303), moved out of `core-flow` | see the timing table |
+| `core-flow-mutants` | `loop_flow_position` with `LFP_MUTANTS=1` (ADR 0398, four mutants), `exact_receiver_flow_mutation_check` (ADR 0301, five mutants) and `computed_send` with `CSEND_MUTANTS=1` (ADR 0303), moved out of `core-flow` | see the timing table |
 | `core-tables` | `frozen_tables` and its mutation check (ADR 0306) | see the timing table |
 | `call-results` | `call_results` and its mutation check (ADR 0309; its 32-bit leg runs in `bc2cpp-width (int32-a)` or `(int32-b)`) | see the timing table |
 | `native-wrappers` | `exact_native_wrappers` (ADR 0307) and its eight mutants | 5 min |
@@ -369,3 +369,11 @@ prepended, singleton or class-level definers, a computed installer, `method_miss
 yield, a build without mruby-numeric-ext or mruby-io, an open world, no core compile, both kill switches)
 and a run of the helper against the real `zero?` (values, error class and message, user `==` calls, the
 by-name call count) at every width, in the closed world and in four worlds that must keep the by-name helper.
+
+### Loop flow positions (ADR 0398)
+
+The `core-mrbtest` shard runs `bc2cpp_loop_flow_position_check.rb`: four closed-world worlds (a method local read in an
+inlined `each` takes the method's flow at the loop, refused for a reassigned element and for a local the body writes,
+no set for an argument receiver) and the switch-off control, which must read and refuse no position. The
+`core-flow-mutants` shard runs the same check with `LFP_MUTANTS=1`: four copies of `tools/bc2cpp` with one guard
+removed or a wrong position read, each of which must fail. The check needs only `MRBC`; it runs no mruby build.

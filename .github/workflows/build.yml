@@ -1030,6 +1030,8 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_check.rb
               BC2CPP_USER_RECEIVER_UNIONS=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_check.rb
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_user_receiver_unions_mutation_check.rb
+              # ADR 0398: a send in an inlined loop body takes its flow position (proven, refused and switch-off worlds).
+              MRBC="$mrbc" ruby scripts/bc2cpp_loop_flow_position_check.rb
               # ADR 0358: the Fixnum proof on a NATIVE_DIRECT_EXACT arm's :int argument, and six mutants.
               MRBC="$mrbc" ruby scripts/bc2cpp_native_int_guard_check.rb
               BC2CPP_NATIVE_INT_GUARDS=0 MRBC="$mrbc" ruby scripts/bc2cpp_native_int_guard_check.rb
@@ -1088,6 +1090,8 @@ jobs:
           - shard: core-flow-mutants
             # Split from core-flow: the exact-receiver flow mutants and the computed-send check with its mutants.
             checks: |
+              # ADR 0398: the loop-flow position check's four mutants (one guard removed or a wrong position read).
+              LFP_MUTANTS=1 MRBC="$mrbc" ruby scripts/bc2cpp_loop_flow_position_check.rb
               # ADR 0301: five mutants of the soundness conditions of the exact-receiver flow check.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp_exact_receiver_flow_mutation_check.rb
               # ADR 0303: a computed-name send over a provably finite Symbol set becomes direct arms; negative
