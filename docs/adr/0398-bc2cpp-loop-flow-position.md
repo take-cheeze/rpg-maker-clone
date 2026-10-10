@@ -47,6 +47,11 @@ that already pass `trace_idx`, and attaches `site[:flow]`, the flow position of 
 method local, including an accumulator the body appends to (`acc << x`), is refused with `upvar_narrowed`. The
 `@inline_loop_parent` state and its save/restore were removed with the method-flow path.
 
+**Limit: class-narrowed receivers.** A receiver narrowed by a `respond_to?` test (CLASS_NARROWING, ADR 0290) is compiled
+by the narrowing guard rather than through `closed_world_site`, so its sends get no flow position here. A
+block-local receiver sent a plain method (`r = pick(i); r.wait`) is accepted and takes the proven nomethod tail.
+The check's block-local world uses the plain shape; a `respond_to?`-narrowed world is not asserted either way.
+
 The measurement below is the first version (rules 4 and 5 both on). It is not re-measured for the narrowed version.
 
 Every refusal is counted by reason (`BC2CPP_LOOP_FLOW_REPORT=1` prints the counts at exit; `=2` one line per send).

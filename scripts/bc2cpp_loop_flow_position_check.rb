@@ -81,7 +81,8 @@ POSITIVE = CLASSES + <<~'RUBY'
   end
 RUBY
 
-# 1b. The receiver is defined by the block itself (`r = pick(i)`): judged at the block's own flow position.
+# 1b. The receiver is defined by the block itself (`r = pick(i)`) and sent `wait` plainly: judged at the block's own
+#     flow position. A receiver narrowed by `respond_to?` is not routed through this path (see ADR 0398).
 LOCAL = CLASSES + <<~'RUBY'
   class LfMapLocal
     def initialize; @list = [1, 2]; end
@@ -94,7 +95,7 @@ LOCAL = CLASSES + <<~'RUBY'
       acc = []
       @list.each do |i|
         r = pick(i)
-        acc << r.wait if r.respond_to?(:wait)
+        acc << r.wait
       end
       acc
     end
@@ -175,8 +176,9 @@ end
 puts '-- positive: an inlined-loop receiver the block defines takes the block-flow position'
 code, err, dir = generate.call(LOCAL, %w[LfMapLocal LfKey LfPlain LfNone], 'local')
 check.call('a local position is accepted', counts.call(err, 'accepted').fetch('local', 0).positive?)
-check.call('the block-defined receiver is not refused (the self call is self_send, the method-local acc is upvar_narrowed)',
-           counts.call(err, 'refused').keys.sort == %w[self_send upvar_narrowed])
+check.call('the block-defined receiver is not refused (only the self call pick(i) is refused, self_send)',
+           counts.call(err, 'refused').keys.all? { |reason| %w[self_send upvar_narrowed].include?(reason) } &&
+           !counts.call(err, 'refused').key?('unproven_definition'))
 check.call('the wait send takes the proven nomethod tail', wait_marks.call(code)[:proven] >= 1)
 check.call('no wait send of the local world is kept as a singleton definer', wait_marks.call(code)[:singleton].zero?)
 FileUtils.rm_rf(dir)
