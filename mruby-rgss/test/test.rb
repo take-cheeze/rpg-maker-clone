@@ -2794,3 +2794,31 @@ assert "an RPG2000 game's .bmp shadows a .png of the same base name" do
     RGSS.asset_archive = nil
   end
 end
+
+# Regression test for patches/mruby-io-file-size-bigint.patch: upstream mruby's
+# File#size answered a Float once st_size passed mrb_int (and raised under
+# MRB_NO_FLOAT); CRuby answers an Integer. With mruby-bigint linked the size is
+# a bignum. A sparse file keeps this cheap: truncate only sets st_size. It is
+# skipped (no assertion) when the filesystem or a 32-bit off_t cannot make the
+# file that long.
+assert "File#size past mrb_int is an Integer, not a Float" do
+  path = "test-sparse-size.bin"
+  want = 2**31 + 5
+  begin
+    File.open(path, "wb") do |f|
+      sparse = begin
+        f.truncate(want)
+        true
+      rescue StandardError
+        false
+      end
+      if sparse && f.size >= want
+        assert_equal Integer, f.size.class
+        assert_equal want, f.size
+        assert_equal want + 1, f.size + 1
+      end
+    end
+  ensure
+    File.delete(path) if File.exist?(path)
+  end
+end

@@ -29,6 +29,8 @@ MUTANTS = [
    /NEG a writer the setter pool refuses|NEG an instance_variable_set|NEG a store from a subclass|NEG a second class/],
   ['the accessor kill switch is ignored', 'codegen_return_accessors.rb',
    "ENV.fetch('BC2CPP_RETURN_ACCESSORS', '1') != '0'", 'true', /BC2CPP_RETURN_ACCESSORS=0/],
+  ['the scoped accessor kill switch is ignored', 'codegen_return_classes.rb',
+   "ENV.fetch('BC2CPP_SCOPED_ACCESSOR_RETURNS', '1') != '0'", 'true', /BC2CPP_SCOPED_ACCESSOR_RETURNS=0/],
   ['the exact-core kill switch is ignored', 'codegen_exact_core_arms.rb',
    "ENV.fetch('BC2CPP_EXACT_CORE_ARMS', '1') != '0'", 'true', /BC2CPP_EXACT_CORE_ARMS=0/],
   ['the push arm takes any exact core class, not only Array', 'codegen_exact_core_arms.rb',

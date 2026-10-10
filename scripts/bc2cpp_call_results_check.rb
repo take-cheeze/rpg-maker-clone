@@ -119,7 +119,96 @@ CORE_RUBY = <<~RUBY
   end
 RUBY
 
-OWNERS = %w[CrBox CrOther CrLazy CrHolder CrHolder2 CrHolderSub CrHolderSub2 CrArr CrFx CrDrv Array Hash].freeze
+# SCOPED_ACCESSOR_RETURN (this file's section 1b): `slot` is read by two classes with different classes in the slot and
+# by `CrSo#slot`, a Ruby method whose result is unmodelled, so the name is not in the return table and only an exact
+# receiver selecting its own reader can name the class.
+SCOPED_CLASSES = <<~RUBY
+  class CrSa
+    attr_reader :slot
+    def initialize; @slot = CrBox.new; end
+  end
+
+  class CrSb
+    attr_reader :slot
+    def initialize; @slot = CrOther.new; end
+  end
+
+  class CrSaSub < CrSa; end
+
+  class CrSo
+    def slot; $cr_unknown; end
+  end
+
+  class CrScFx
+    def sc_a; CrSa.new.slot.tag; end
+    def sc_b; CrSb.new.slot.tag; end
+    def sc_sub; CrSaSub.new.slot.tag; end
+    def sc_ivar; @h = CrSa.new; @h.slot.tag; end
+    def sc_param(h); h.slot.tag; end
+    def sc_unknown; CrSo.new.slot.tag; end
+  end
+
+  class CrScDrv
+    def d_sc_param_a; CrScFx.new.sc_param(CrSa.new); end
+    def d_sc_param_b; CrScFx.new.sc_param(CrSb.new); end
+  end
+RUBY
+
+SCOPED_OWNERS = %w[CrSa CrSb CrSaSub CrSo CrSl CrScFx CrScDrv].freeze
+OWNERS = (%w[CrBox CrOther CrLazy CrHolder CrHolder2 CrHolderSub CrHolderSub2 CrArr CrFx CrDrv Array Hash] + SCOPED_OWNERS).freeze
+
+# World name => extra Ruby, the methods it reads, and the (method => expected exact class) the scoped proof must still keep.
+SCOPED_WORLDS_SRC = {
+  'a writer on one class' => [<<~RUBY, { 'sc_a' => nil, 'sc_sub' => nil, 'sc_ivar' => nil, 'sc_b' => 'CrOther' }],
+    class CrSa
+      attr_writer :slot
+    end
+  RUBY
+  'a store of a second class in the family' => [<<~RUBY, { 'sc_a' => nil, 'sc_sub' => nil, 'sc_ivar' => nil, 'sc_b' => 'CrOther' }],
+    class CrSa
+      def swap; @slot = CrOther.new; end
+    end
+  RUBY
+  # The subclass's store is a store of the shared slot (the pool is per family), so the base class is withdrawn too.
+  'a store from a subclass' => [<<~RUBY, { 'sc_a' => nil, 'sc_sub' => nil, 'sc_ivar' => nil, 'sc_poke' => nil, 'sc_b' => 'CrOther' }],
+    class CrSaSub
+      def poke; @slot = CrOther.new; end
+    end
+    class CrScFx
+      def sc_poke; a = CrSaSub.new; a.poke; a.slot.tag; end
+    end
+  RUBY
+  'an instance_variable_set of the ivar' => [<<~RUBY, { 'sc_a' => nil, 'sc_sub' => nil, 'sc_ivar' => nil }],
+    class CrScFx
+      def sc_refl; a = CrSa.new; a.instance_variable_set(:@slot, CrOther.new); a.slot.tag; end
+    end
+  RUBY
+  'a define_method of the name' => [<<~RUBY, { 'sc_a' => nil, 'sc_b' => nil, 'sc_sub' => nil }],
+    class CrSb
+      define_method(:slot) { CrBox.new }
+    end
+  RUBY
+  'a subclass overriding the reader' => [<<~RUBY, { 'sc_b' => 'CrOther', 'sc_sub' => 'CrOther' }],
+    class CrSaSub
+      def slot; CrOther.new; end
+    end
+  RUBY
+  'a singleton reader on an object' => [<<~RUBY, { 'sc_a' => nil, 'sc_b' => nil, 'sc_sub' => nil }],
+    class CrScFx
+      def sc_maker; o = CrSa.new; def o.slot; CrOther.new; end; o; end
+    end
+  RUBY
+  'an unassigned slot' => [<<~RUBY, { 'sc_lazy' => :nilable, 'sc_a' => 'CrBox', 'sc_b' => 'CrOther' }]
+    class CrSl
+      attr_reader :slot
+      def build; @slot = CrBox.new; end
+    end
+    class CrScFx
+      def sc_lazy; CrSl.new.slot.tag; end
+      def sc_built; l = CrSl.new; l.build; l.slot.tag; end
+    end
+  RUBY
+}.freeze
 
 # World name => extra Ruby appended to the fixture. Each adds the methods its negative case reads.
 WORLDS = {
@@ -221,6 +310,9 @@ LAZY_WORLD = <<~RUBY
   end
 RUBY
 
+# Worlds where the name stays ambiguous (two readers, an override) but an exact receiver selects one reader.
+SCOPED_WORLDS = ['a second class with a reader of the same name', 'a subclass overriding the reader'].freeze
+
 ACCESSOR_METHODS = %w[acc_local acc_chain acc_ivar acc_param].freeze
 
 body_of = lambda do |code, fn|
@@ -299,8 +391,15 @@ if ENV['MRBC']
       d = File.join(dir, what.gsub(/\W+/, '_'))
       Dir.mkdir(d)
       wcode, werr = generate.call(CLASSES + CORE_RUBY + FIXTURE + extra, d)
-      check.call("NEG #{what}: acc_local and acc_ivar lose the exact result",
-                 %w[acc_local acc_ivar].all? { |fn| guarded_tag.call(wcode, fn) })
+      if SCOPED_WORLDS.include?(what)
+        # SCOPED_ACCESSOR_RETURN: the name is ambiguous, but an exact CrHolder selects CrHolder's own reader, so
+        # the slot's class set still answers.
+        check.call("#{what}: an exact CrHolder still gets the slot's class from its own reader (scoped)",
+                   %w[acc_local acc_ivar].all? { |fn| exact_tag.call(wcode, fn) })
+      else
+        check.call("NEG #{what}: acc_local and acc_ivar lose the exact result",
+                   %w[acc_local acc_ivar].all? { |fn| guarded_tag.call(wcode, fn) })
+      end
       check.call("NEG #{what}: `thing` leaves the return table", !werr.include?('RETCLASS thing (CrBox)'))
       check.call("#{what}: the Array proofs are untouched", exact_push.call(wcode, 'push_local') && exact_typed.call(wcode, 'typed_has'))
       if what == 'a writer the setter pool refuses'
@@ -371,6 +470,63 @@ if ENV['MRBC']
       pcode, perr = generate.call(CLASSES + CORE_RUBY + FIXTURE, pd, env: { 'BC2CPP_CLASS_POOLS' => '0' })
       check.call('BC2CPP_CLASS_POOLS=0: no ivar pool, so no accessor result',
                  !perr.include?('RETCLASS thing (CrBox)') && %w[acc_local acc_ivar].all? { |fn| guarded_tag.call(pcode, fn) })
+    end
+
+    # -- 1b. SCOPED_ACCESSOR_RETURN: an exact receiver selects one attr_reader, the name has other definitions
+    sc_body = lambda do |text, fn|
+      text[/^mrb_value CrScFx_#{fn}_impl\(mrb_state\* M.*?(?=^(?:static )?mrb_value \w+\(mrb_state\* M|\z)/m].to_s
+    end
+    # A plain exact call: no nil test around it (a nil-or-K receiver is the NILABLE_RECEIVER arm, which proves less).
+    sc_exact = lambda do |text, fn, klass|
+      body = sc_body.call(text, fn)
+      body.match?(/CLOSED_WORLD_EXACT_CLASS :tag -> #{klass}#tag/) && !body.include?('NILABLE_RECEIVER :tag')
+    end
+    sc_any_exact = lambda do |text, fn|
+      body = sc_body.call(text, fn)
+      body.match?(/(?:CLOSED_WORLD_EXACT_CLASS|EXACT_TYPED) :tag -> /) && !body.include?('NILABLE_RECEIVER :tag')
+    end
+    sc_guarded = ->(text, fn) { !sc_body.call(text, fn).empty? && !sc_any_exact.call(text, fn) }
+    scoped_src = CLASSES + CORE_RUBY + FIXTURE + SCOPED_CLASSES
+    Dir.mktmpdir do |sd|
+      scode, serr = generate.call(scoped_src, sd)
+      check.call('scoped: `slot` is not in the return table (CrSo#slot is unmodelled), so only the exact receiver names the class',
+                 !serr.include?('RETCLASS slot'))
+      { 'sc_a' => 'CrBox', 'sc_b' => 'CrOther', 'sc_sub' => 'CrBox', 'sc_ivar' => 'CrBox' }.each do |fn, klass|
+        check.call("scoped #{fn}: the exact receiver's own attr_reader gives #{klass}, so tag is called with no guard", sc_exact.call(scode, fn, klass))
+      end
+      %w[sc_param sc_unknown].each do |fn|
+        check.call("NEG scoped #{fn}: an unknown receiver or an unmodelled reader keeps its guard", sc_guarded.call(scode, fn))
+      end
+
+      SCOPED_WORLDS_SRC.each do |what, (extra, expected)|
+        d = File.join(sd, "sc_#{what.gsub(/\W+/, '_')}")
+        Dir.mkdir(d)
+        wcode, = generate.call(scoped_src + extra, d)
+        expected.each do |fn, klass|
+          ok = if klass == :nilable
+                 # nil-or-CrBox: one nil test then the exact call, or the old guard; never a plain exact call.
+                 sc_body.call(wcode, fn).include?('NILABLE_RECEIVER :tag') || sc_guarded.call(wcode, fn)
+               elsif klass
+                 sc_exact.call(wcode, fn, klass)
+               else
+                 !sc_any_exact.call(wcode, fn) && !sc_body.call(wcode, fn).empty?
+               end
+          check.call(klass == :nilable ? "scoped #{what}: #{fn} takes a nil test or keeps its guard, never a plain exact call" : klass ? "scoped #{what}: #{fn} keeps the exact #{klass}" : "NEG scoped #{what}: #{fn} loses the exact result", ok)
+        end
+      end
+    end
+    Dir.mktmpdir do |kd|
+      kcode, = generate.call(scoped_src, kd, env: { 'BC2CPP_SCOPED_ACCESSOR_RETURNS' => '0' })
+      check.call('BC2CPP_SCOPED_ACCESSOR_RETURNS=0: the scoped sends keep their guards, the name-wide accessor proof stays',
+                 %w[sc_a sc_b sc_sub sc_ivar].none? { |fn| sc_any_exact.call(kcode, fn) } && ACCESSOR_METHODS.all? { |fn| exact_tag.call(kcode, fn) })
+    end
+    Dir.mktmpdir do |od|
+      ocode, = generate.call(scoped_src, od, closed: false)
+      check.call('scoped: the open world proves nothing', %w[sc_a sc_b sc_sub sc_ivar].none? { |fn| sc_any_exact.call(ocode, fn) })
+    end
+    Dir.mktmpdir do |pd|
+      pcode, = generate.call(scoped_src, pd, env: { 'BC2CPP_CLASS_POOLS' => '0' })
+      check.call('BC2CPP_CLASS_POOLS=0: no ivar pool, so no scoped accessor result', %w[sc_a sc_b sc_sub sc_ivar].none? { |fn| sc_any_exact.call(pcode, fn) })
     end
   end
 else

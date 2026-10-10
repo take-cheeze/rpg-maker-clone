@@ -266,6 +266,14 @@ function(rpg2k_add_mruby)
   set(mruby_io_direct_puts_patch
       "${ARG_REPO_ROOT}/patches/mruby-io-direct-puts.patch")
 
+  # File#size past mrb_int answers a Float upstream (an error under
+  # MRB_NO_FLOAT); CRuby answers an Integer. With mruby-bigint linked (core gem
+  # in build_config.rb) return a bignum via mrb_bint_new_uint64 (the MRB_INT32
+  # mrb_bint_new_int64 leaves its mpz_t uninitialized), keeping the
+  # Float/MRB_NO_FLOAT arms as the fallback for a build without bigint.
+  set(mruby_io_file_size_bigint_patch
+      "${ARG_REPO_ROOT}/patches/mruby-io-file-size-bigint.patch")
+
   # 3rd/mruby-stringio's StringIO has no native `getbyte` -- mruby's own
   # `IO`/`File` does (mruby-io's io_getbyte, a bare Integer with no allocation),
   # but every LCF chunk (mruby-lcf/mrblib/lcf.rb) is decoded through a StringIO,
@@ -377,6 +385,7 @@ function(rpg2k_add_mruby)
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_rdata_ivar_slots_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_maxpathlen_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_direct_puts_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_file_size_bigint_patch}")
   rpg2k_mruby_patch("${mruby_stringio_prefix}"
                     "${mruby_stringio_getbyte_patch}")
   rpg2k_mruby_patch("${mruby_marshal_prefix}" "${mruby_marshal_onigmo_patch}")
