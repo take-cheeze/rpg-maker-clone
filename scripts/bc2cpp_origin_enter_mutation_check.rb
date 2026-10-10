@@ -36,6 +36,8 @@ MUTANTS = [
   ['a call without text is unknown', TABLE, "'SUPER', 'BLKCALL' then 'call_result'\n      else 'other'", "'SUPER', 'BLKCALL' then 'unknown'\n      else 'other'"],
   ['EXCEPT refuses other registers', DATAFLOW, "when 'EXCEPT' then insn.reg == reg ? :define : :pass", "when 'EXCEPT' then insn.reg == reg ? :define : :refuse"],
   ['EXCEPT passes its own register', DATAFLOW, "when 'EXCEPT' then insn.reg == reg ? :define : :pass", "when 'EXCEPT' then :pass"],
+  ['a re-assigned loop element is trusted', CENSUS, "lines[(j + 1)...i].any? { |l| l =~ /\\b\#{recv} = / }", 'false'],
+  ['any indexed read is a loop element', CENSUS, "origin == 'indexed_result' ? origin : nil", 'origin'],
   ['an unknown member is dropped', CENSUS, "return ['unknown', 'ambiguous', set] if set.include?('unknown')", 'nil'],
   ['agreeing origins are a join', CENSUS, "[set.size == 1 ? set.first : 'join', 'ambiguous', set]", "['join', 'ambiguous', set]"],
   ['a join without a set is a join', CENSUS, "status == 'ambiguous' && category != '-'", "status == 'ambiguous'"],

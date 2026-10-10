@@ -103,5 +103,20 @@ check.call('an exact row is unchanged', census.exact_origin(line, 'r1', table.ca
 check.call('a receiver register that is not the tagged one is not trusted (negative)',
            census.exact_origin(line, 'r2', table.call('ambiguous', 'literal_or_fresh|parameter')) == ['unknown', 'reg_mismatch', nil])
 
+# A non-register receiver: the element variable of an inlined `&:sym` loop is the array read that opens the body.
+loop_lines = <<~CPP.lines
+  for (mrb_int bc2cpp_sym_i_3 = 0; bc2cpp_sym_i_3 < RARRAY_LEN(r2); ++bc2cpp_sym_i_3) {
+    mrb_value bc2cpp_sym_e_3 = bc2cpp_ary_entry(M, r2, bc2cpp_sym_i_3);
+    bc2cpp_send(M, bc2cpp_sym_e_3, 717, 0);
+  }
+CPP
+check.call('a loop element variable read from an array is an indexed_result',
+           census.loop_element_origin(loop_lines, 2, 'bc2cpp_sym_e_3') == 'indexed_result')
+check.call('an element variable assigned again in the body is not trusted (negative)',
+           census.loop_element_origin(loop_lines.dup.insert(2, "    bc2cpp_sym_e_3 = mrb_nil_value();\n"), 3, 'bc2cpp_sym_e_3').nil?)
+check.call('an element variable declared from something else is not classed (negative)',
+           census.loop_element_origin(loop_lines.map { |l| l.sub('bc2cpp_ary_entry(M, r2, bc2cpp_sym_i_3)', 'mrb_nil_value()') }, 2, 'bc2cpp_sym_e_3').nil?)
+check.call('another name is not a loop element (negative)', census.loop_element_origin(loop_lines, 2, 'x').nil?)
+
 abort("bc2cpp_origin_may_sets_check FAILED: #{failures.join(', ')}") unless failures.empty?
 puts 'bc2cpp_origin_may_sets_check OK'
