@@ -8,7 +8,7 @@
 # 1. Generated code (needs MRBC): each positive loses its guard (a pooled Array/Integer/user-class argument reaching a
 #    method through an ivar, through an inherited initialize, through an explicit `super`, through an implicit-self
 #    `new`, through `self.class.new`, through an optional parameter's leading position); each negative keeps it (two
-#    classes at the sites, a splat, a bare `super`, a keyword parameter, an Exception subclass, a class that aliases
+#    classes at the sites, a splat, a bare `super`, a post-mandatory parameter, an Exception subclass, a class that aliases
 #    its initialize, the optional position at its largest count, a subclass that overrides without `super`); each
 #    withdrawal world (a Symbol :new, instance_method(:initialize), a Ruby `def self.new`, a module's initialize, an
 #    explicit initialize call, a forwarded splat `new`, a `new` on a computed receiver, a constant bound to a class, a
@@ -119,9 +119,16 @@ HOLDER = <<~RUBY
   end
   class CpZsup < CpBaseZ; def initialize(items); super; end; end
 
+  # ADR 0380: a keyword parameter leaves positions 1..mand alone, so this constructor is pooled.
   class CpKw
     def initialize(items, flag: false); @items = items; end
     def kw_count; @items.size; end
+  end
+
+  # A post-mandatory parameter is still refused.
+  class CpPost
+    def initialize(items, *rest, last); @items = items; end
+    def post_count; @items.size; end
   end
 
   class CpErr < StandardError
@@ -182,6 +189,7 @@ HOLDER = <<~RUBY
     def base2; CpBase2.new([1]); end
     def zsup; CpZsup.new([1, 2, 3]); end
     def kw; CpKw.new([1]); end
+    def post; CpPost.new([1], 2); end
     def err; CpErr.new([1]); end
     def aliased; CpAliased.new([1]); end
     def opt2_small; CpOpt2.new([1]); end
@@ -203,12 +211,12 @@ POSITIVES = [
   ['CpHold', 'area', 'NUMERIC_OPERAND_PROOF :*'], ['CpHold', 'first', 'INDEX_EXACT'],
   ['CpBase', 'base_count', 'CLOSED_WORLD_NATIVE_EXACT :size'], ['CpMk', 'mk_count', 'CLOSED_WORLD_NATIVE_EXACT :size'],
   ['CpCopy', 'cp_count', 'CLOSED_WORLD_NATIVE_EXACT :size'], ['CpOpt', 'opt_count', 'CLOSED_WORLD_NATIVE_EXACT :size'],
-  ['CpFork', 'fork_prod', 'NUMERIC_OPERAND_PROOF :*']
+  ['CpFork', 'fork_prod', 'NUMERIC_OPERAND_PROOF :*'], ['CpKw', 'kw_count', 'CLOSED_WORLD_NATIVE_EXACT :size']
 ].freeze
 # The negatives of the base world: a class whose argument pool must not be exact.
 NEGATIVES = [
   ['CpMix', 'mix_count'], ['CpSplat', 'splat_count'], ['CpBase2', 'base2_count'], ['CpBaseZ', 'basez_count'],
-  ['CpKw', 'kw_count'], ['CpErr', 'err_count'], ['CpAliased', 'aliased_count'], ['CpOpt2', 'opt2_count'],
+  ['CpPost', 'post_count'], ['CpErr', 'err_count'], ['CpAliased', 'aliased_count'], ['CpOpt2', 'opt2_count'],
   ['CpRoot', 'root_count'], ['CpCopy2', 'cp2_count']
 ].freeze
 
@@ -262,7 +270,8 @@ if ENV['MRBC']
     pools = err[/== class pools.*?\n\n/m].to_s
     ctor = err[/== constructor pools.*?\n\n/m].to_s
     check.call('the diagnostic lists the pooled constructors and why the others are refused',
-               ctor.include?('CTOR CpHold#initialize pooled') && ctor.include?('CTOR CpKw#initialize refused: arity') &&
+               ctor.include?('CTOR CpHold#initialize pooled') && ctor.include?('CTOR CpKw#initialize pooled') &&
+               ctor.include?('CTOR CpPost#initialize refused: arity (req=1 opt=0 rest=1 post=1') &&
                ctor.include?('CTOR CpErr#initialize refused: hierarchy') &&
                ctor.include?('CTOR CpAliased#initialize refused: initialize aliased in CpAliased') &&
                ctor.include?('CTOR CpBaseZ#initialize refused: super with unmodelled arguments') &&
