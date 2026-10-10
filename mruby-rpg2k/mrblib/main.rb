@@ -1130,28 +1130,53 @@ class RPG2k
     (1..MAX_SAVE_SLOTS).any? { |slot| save_exists?(slot) }
   end
 
-  # Persist the running game state to a slot. Our own portable Marshal dump is
-  # the authoritative save (it still carries the two fields the .lsd export does
-  # not model -- the game timer and per-actor name/title overrides for non-leader
-  # members). Alongside it we also export a near-parity editor Save<slot>.lsd via
-  # State#to_lsd, so the slot is readable by real RPG_RT and other
-  # RPG2000/2003 tooling. The
-  # export is best-effort: a failure there is logged but never fails the save.
+  # Kill switch for the save format (docs/adr/0395). By default the .lsd is the
+  # authoritative save: #save_game writes only Save<slot>.lsd, which carries every
+  # Game::State field the Marshal dump does (chunk 200 holds the few the liblcf
+  # chunks cannot). Setting the environment variable RPG2K_SAVE_MARSHAL_FIRST=1
+  # (the native host exports it as this constant) restores the old order: the
+  # Marshal dump is written and authoritative, the .lsd a best-effort sibling.
+  # Either way the two formats are both readable, see #load_save_state.
+  def marshal_first_saves?
+    RPG2K_SAVE_MARSHAL_FIRST ? true : false
+  rescue NameError
+    false
+  end
+
+  # Whether the .lsd save path exists in this build at all. wio strips
+  # mruby-rpg2k/mrblib/game/lsd_io.rb (docs/adr/0128), so it has neither
+  # State#to_lsd nor .from_lsd and always saves Marshal-only.
+  def lsd_saves_available? state
+    state.respond_to?(:to_lsd) && Game::State.respond_to?(:from_lsd)
+  end
+
+  # Persist the running game state to a slot (docs/adr/0395). The default writes
+  # the .lsd alone: it is the authoritative save, and it carries every field of the
+  # Marshal dump. Where the .lsd path does not exist (wio), or under the
+  # RPG2K_SAVE_MARSHAL_FIRST kill switch, the Marshal dump is written instead and,
+  # where the .lsd exists, exported alongside it as before (best-effort).
   def save_game state, slot = 1
-    state.save_count += 1 # RPG2000 counts each save; persisted in the dump below
-    data = Marshal.dump state.to_h
-    File.open(save_path(slot), "wb") { |f| f.write data }
-    export_lsd(state, slot)
+    state.save_count += 1 # RPG2000 counts each save; written into both formats
+    if lsd_saves_available?(state) && !marshal_first_saves?
+      # Not best-effort: a failed .lsd write fails the save, so the player is told
+      # rather than silently keeping an older slot.
+      state.to_lsd(state.save_count, nil, slot, @db, @map_tree).save_to(lsd_path(slot))
+    else
+      data = Marshal.dump state.to_h
+      File.open(save_path(slot), "wb") { |f| f.write data }
+      export_lsd(state, slot)
+    end
     true
   rescue StandardError => e
     $stderr.puts "[RPG2k] Failed to save: #{e.message}"
     false
   end
 
-  # Write a real Save<slot>.lsd next to the Marshal save. Best-effort: any error
-  # is logged and swallowed so it cannot break the primary save. A no-op where
-  # #to_lsd does not exist at all (wio -- see mrbgem.rake/docs/adr/0128): there
-  # is no PC there to hand this file to, so skip the attempt outright rather
+  # Write a real Save<slot>.lsd next to the Marshal save (the kill-switch and wio
+  # path only; the default writes the .lsd itself, see #save_game). Best-effort:
+  # any error is logged and swallowed so it cannot break the primary save. A
+  # no-op where #to_lsd does not exist at all (wio -- see mrbgem.rake/docs/adr/0128):
+  # there is no PC there to hand this file to, so skip the attempt outright rather
   # than pay for it only to have the rescue below swallow a NoMethodError
   # every single save.
   def export_lsd state, slot = 1
@@ -1161,13 +1186,30 @@ class RPG2k
     $stderr.puts "[RPG2k] .lsd export failed for slot #{slot}: #{e.message}"
   end
 
-  # Build a Game::State from a save slot, or nil when the slot is empty. Our
-  # own Marshal save is preferred when present -- it is the full-fidelity
-  # record save_game wrote (save_game also exports a near-parity Save<slot>.lsd
-  # beside it, which would still drop the timer and non-leader actor
-  # name/title overrides if loaded instead). A genuine editor Save<N>.lsd is
-  # the fallback, so a real save dropped straight into the game dir (with no
-  # Marshal save) still resumes/previews through the modelled LCF save schema.
+  # The chunk-200 .lsd this engine wrote for +slot+, parsed; nil when there is none,
+  # when it is a genuine editor save or an old export without the marker, or when
+  # it cannot be parsed (logged, so the Marshal fallback below still applies).
+  def own_lsd_save slot
+    return nil unless Game::State.respond_to?(:from_lsd) && File.exist?(lsd_path(slot))
+    save = File.open(lsd_path(slot), "rb") { |f| LCF::SaveData.new(f) }
+    Game::State.lsd_extended?(save) ? save : nil
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] save slot #{slot} .lsd unreadable, trying the Marshal save: #{e.message}"
+    nil
+  end
+
+  # Build a Game::State from a save slot, or nil when the slot is empty.
+  #
+  # The .lsd this engine wrote (its chunk 200 marker, see docs/adr/0395) is
+  # the authoritative save and is preferred -- it carries every field the
+  # Marshal dump does. Without the kill switch, a slot holding such a save
+  # resumes from it even if an older Marshal save sits beside it.
+  #
+  # An older Marshal save (written before the .lsd became authoritative, or by
+  # the RPG2K_SAVE_MARSHAL_FIRST kill switch) is read next, so existing saves keep
+  # loading unchanged. A genuine editor Save<N>.lsd is the last fallback, so a
+  # real save dropped straight into the game dir (with no Marshal save and no
+  # engine marker) still resumes/previews through the modelled LCF save schema.
   #
   # Shared by #continue_game (which needs the one slot the player picked, or
   # slot 1 for the event-triggered Open Load Menu -- see Scene::Map
@@ -1177,16 +1219,23 @@ class RPG2k
   # caller merely wants to *preview* should degrade to "empty" rather than
   # crash the file-select screen over one unreadable file.
   def load_save_state slot = 1
+    unless marshal_first_saves?
+      own = own_lsd_save(slot)
+      return Game::State.from_lsd(@db, own) if own
+    end
     if File.exist?(save_path(slot))
       data = File.open(save_path(slot), "rb") { |f| f.read }
-      Game::State.load(@db, Marshal.load(data))
-    elsif File.exist?(lsd_path(slot)) && Game::State.respond_to?(:from_lsd)
-      # .from_lsd does not exist at all on wio (see mrbgem.rake/docs/adr/0128)
-      # -- there is no editor there to have written this file in the first
-      # place, so a dropped-in .lsd with no Marshal save alongside it stays
-      # unreadable there rather than resuming with lost fidelity.
-      Game::State.from_lsd(@db, LCF::SaveData.new(File.open(lsd_path(slot), "rb")))
+      return Game::State.load(@db, Marshal.load(data))
     end
+    if File.exist?(lsd_path(slot)) && Game::State.respond_to?(:from_lsd)
+      # A genuine editor Save<N>.lsd (no engine marker). .from_lsd does not
+      # exist at all on wio (see mrbgem.rake/docs/adr/0128) -- there is no
+      # editor there to have written this file in the first place, so a
+      # dropped-in .lsd with no Marshal save alongside it stays unreadable there
+      # rather than resuming with lost fidelity.
+      return Game::State.from_lsd(@db, LCF::SaveData.new(File.open(lsd_path(slot), "rb")))
+    end
+    nil
   rescue StandardError => e
     $stderr.puts "[RPG2k] save slot #{slot} unreadable: #{e.message}"
     nil

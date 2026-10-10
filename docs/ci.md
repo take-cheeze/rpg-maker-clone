@@ -59,6 +59,14 @@ aggregate nor branch protection. Every check is listed in exactly one shard.
 Keep each shard under about 25 minutes so one more check does not reach the
 timeout; raise the timeout only as a last resort.
 
+The RPG2k host checks (`rpg2k_logic_check.rb`, `rpg2k_scene_check.rb`,
+`rpg2k_render_check.rb`) run in the `ruby-checks` job's `RPG2k game-logic checks`
+step, not in a bc2cpp shard. The save-format check
+(`rpg2k_lsd_authoritative_check.rb`, ADR 0395) runs in that same step: the
+engine's `.lsd` save and its Marshal save must load back field for field, and the
+save-slot policy (including the `RPG2K_SAVE_MARSHAL_FIRST` kill switch) is tested
+there too.
+
 The compiled-versus-interpreted fixtures that need a full-core mruby are split
 three ways, because each step takes minutes and one shard had reached the
 timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):

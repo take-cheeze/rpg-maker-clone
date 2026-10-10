@@ -1898,6 +1898,9 @@ jobs:
               ruby scripts/rpg2k_logic_check.rb
               ruby scripts/rpg2k_scene_check.rb
               ruby scripts/rpg2k_render_check.rb
+              # ADR 0395: the .lsd-authoritative save (Marshal vs LSD field by
+              # field, each chunk-200 record load-bearing, the save-slot policy).
+              ruby scripts/rpg2k_lsd_authoritative_check.rb
 
           # The iPod nano 7G map-walk export (scripts/export_nano7_map.rb, ADR
           # 61): runs the exporter over real test-bed maps and re-parses
