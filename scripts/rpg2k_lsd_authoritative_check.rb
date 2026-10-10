@@ -16,10 +16,10 @@
 #   3. The .lsd writer's chunk-200 marker tells this engine's save apart from an
 #      editor save or an old export, and an unknown chunk id survives an
 #      LCF::SaveData read/write byte for byte.
-#   4. The save-slot policy in RPG2k#save_game / #load_save_state: the default
-#      writes the .lsd alone and prefers it on load; RPG2K_SAVE_MARSHAL_FIRST
-#      (the kill switch) restores the Marshal-first order; old Marshal saves
-#      still load; a wio-shaped state (no #to_lsd) saves Marshal-only.
+#   4. The save-slot policy in RPG2k#save_game / #load_save_state (docs/adr/0399):
+#      a save writes Save<N>.lsd alone, on every build (a wio-shaped state with
+#      #to_lsd is no longer Marshal-only); a load reads the .lsd; an old Marshal
+#      save/.mrb is not read; a failed .lsd write fails the save with no fallback.
 #
 # Usage: ruby scripts/rpg2k_lsd_authoritative_check.rb   (exits non-zero on failure)
 
@@ -437,15 +437,13 @@ check 'an unknown chunk id survives an LCF::SaveData read and write byte for byt
   eq 'Renamed Hero', round.party.leader.name
 end
 
-# -- 4. the save-slot policy (RPG2k#save_game / #load_save_state) -------------
+# -- 4. the save-slot policy (RPG2k#save_game / #load_save_state, docs/adr/0399) ---
 
-# The real main.rb's RPG2k, bound to a scratch game directory and a fake
-# database, with the kill switch controlled per check.
-def policy_app(db, marshal_first:)
+# The real main.rb's RPG2k, bound to a scratch game directory and a fake database.
+def policy_app(db)
   app = RPG2k.allocate
   app.instance_variable_set(:@db, db)
   app.instance_variable_set(:@map_tree, nil)
-  app.define_singleton_method(:marshal_first_saves?) { marshal_first }
   app
 end
 
@@ -457,19 +455,14 @@ def with_game_dir
   end
 end
 
-check 'the kill switch defaults to LSD-authoritative when the native host does not set it' do
-  app = RPG2k.allocate
-  eq false, app.marshal_first_saves?, 'with no RPG2K_SAVE_MARSHAL_FIRST constant the .lsd stays authoritative'
-end
-
-check 'default save writes the .lsd alone, and load prefers it' do
+check 'a save writes the .lsd alone, and a load reads it back' do
   with_game_dir do |dir|
     db = rich_party_db
-    app = policy_app(db, marshal_first: false)
+    app = policy_app(db)
     st = rich_state(db)
     ok app.save_game(st, 1), 'save_game reports success'
     ok File.exist?(File.join(dir, 'Save01.lsd')), 'the .lsd is written'
-    ok !File.exist?(File.join(dir, 'save1.mrb')), 'no Marshal dump is written by default'
+    ok !File.exist?(File.join(dir, 'save1.mrb')), 'no Marshal dump is written'
     loaded = app.load_save_state(1)
     ok loaded, 'the slot loads'
     diffs = deep_diff(st.to_h, loaded.to_h)
@@ -477,75 +470,13 @@ check 'default save writes the .lsd alone, and load prefers it' do
   end
 end
 
-check 'the kill switch writes the Marshal dump (and the .lsd beside it)' do
-  with_game_dir do |dir|
-    db = rich_party_db
-    app = policy_app(db, marshal_first: true)
-    st = rich_state(db)
-    ok app.save_game(st, 1), 'save_game reports success'
-    ok File.exist?(File.join(dir, 'save1.mrb')), 'the Marshal dump is written under the kill switch'
-    ok File.exist?(File.join(dir, 'Save01.lsd')), 'the .lsd is still exported beside it'
-    loaded = app.load_save_state(1)
-    diffs = deep_diff(st.to_h, loaded.to_h)
-    ok diffs.empty?, "the Marshal-first load differs:\n      " + diffs.join("\n      ")
-  end
-end
-
-check 'when both saves exist, the default prefers the engine .lsd and the kill switch the Marshal dump' do
-  with_game_dir do |dir|
-    db = rich_party_db
-    st_a = rich_state(db)
-    st_a.encounter_total = 3
-    policy_app(db, marshal_first: true).save_game(st_a, 1)
-    st_b = rich_state(db)
-    st_b.encounter_total = 9
-    policy_app(db, marshal_first: false).save_game(st_b, 1)
-    ok File.exist?(File.join(dir, 'save1.mrb')), 'the older Marshal dump is still on disk'
-    eq 9, policy_app(db, marshal_first: false).load_save_state(1).encounter_total,
-       'the default resumes from the .lsd'
-    eq 3, policy_app(db, marshal_first: true).load_save_state(1).encounter_total,
-       'the kill switch resumes from the Marshal dump'
-  end
-end
-
-check 'an old Marshal save (no .lsd at all) still loads' do
+check 'an old Marshal save (save<N>.mrb, no .lsd) is not read (docs/adr/0399)' do
   with_game_dir do |dir|
     db = rich_party_db
     st = rich_state(db)
     File.open(File.join(dir, 'save1.mrb'), 'wb') { |f| f.write Marshal.dump(st.to_h) }
-    loaded = policy_app(db, marshal_first: false).load_save_state(1)
-    ok loaded, 'the legacy Marshal-only slot loads'
-    eq [], deep_diff(st.to_h, loaded.to_h)
-  end
-end
-
-check 'an old Marshal save beside an old .lsd export (no chunk 200) still prefers the Marshal dump' do
-  with_game_dir do |dir|
-    db = rich_party_db
-    st = rich_state(db)
-    File.open(File.join(dir, 'save1.mrb'), 'wb') { |f| f.write Marshal.dump(st.to_h) }
-    stale = rich_state(db)
-    stale.encounter_total = 77
-    export = stale.to_lsd(stale.save_count)
-    export.delete(200)
-    export.save_to(File.join(dir, 'Save01.lsd'))
-    loaded = policy_app(db, marshal_first: false).load_save_state(1)
-    eq 3, loaded.encounter_total, 'the old export without the marker is not the authoritative save'
-  end
-end
-
-check 'a wio-shaped state (no #to_lsd) saves Marshal-only and loads back' do
-  with_game_dir do |dir|
-    db = rich_party_db
-    st = rich_state(db)
-    wio_state = Object.new
-    wio_state.define_singleton_method(:save_count) { st.save_count }
-    wio_state.define_singleton_method(:save_count=) { |v| st.save_count = v }
-    wio_state.define_singleton_method(:to_h) { st.to_h }
-    app = policy_app(db, marshal_first: false)
-    ok app.save_game(wio_state, 1), 'the Marshal-only save reports success'
-    ok File.exist?(File.join(dir, 'save1.mrb')), 'the Marshal dump is written'
-    ok !File.exist?(File.join(dir, 'Save01.lsd')), 'no .lsd is written where the export does not exist'
+    ok !policy_app(db).any_save_exists?, 'a slot holding only a .mrb counts as empty'
+    ok policy_app(db).load_save_state(1).nil?, 'and loads as nothing'
   end
 end
 
@@ -554,23 +485,22 @@ check 'a failed .lsd write fails the save and writes no Marshal fallback' do
     db = rich_party_db
     st = rich_state(db)
     st.define_singleton_method(:to_lsd) { |*_a| raise 'simulated export failure' }
-    app = policy_app(db, marshal_first: false)
+    app = policy_app(db)
     out = capture_stderr { eq false, app.save_game(st, 1), 'the save reports failure' }
     ok out.include?('simulated export failure'), 'the failure is logged'
-    ok !File.exist?(File.join(dir, 'save1.mrb')), 'no silent Marshal fallback'
+    ok !File.exist?(File.join(dir, 'save1.mrb')), 'no Marshal fallback'
+    ok !File.exist?(File.join(dir, 'Save01.lsd')), 'no .lsd is left behind'
   end
 end
 
-check 'an unreadable engine .lsd falls back to an old Marshal save beside it, and says so' do
+check 'an unreadable .lsd loads as an empty slot, and says so' do
   with_game_dir do |dir|
     db = rich_party_db
-    st = rich_state(db)
-    File.open(File.join(dir, 'save1.mrb'), 'wb') { |f| f.write Marshal.dump(st.to_h) }
     File.open(File.join(dir, 'Save01.lsd'), 'wb') { |f| f.write 'not an lcf file' }
-    loaded = nil
-    out = capture_stderr { loaded = policy_app(db, marshal_first: false).load_save_state(1) }
-    ok loaded, 'the Marshal save still loads'
-    ok out.include?('trying the Marshal save'), 'the fallback is logged'
+    loaded = :unset
+    out = capture_stderr { loaded = policy_app(db).load_save_state(1) }
+    ok loaded.nil?, 'the slot resolves to nothing rather than raising'
+    ok out.include?('unreadable'), 'the failure is logged'
   end
 end
 

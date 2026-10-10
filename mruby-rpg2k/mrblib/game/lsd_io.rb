@@ -1,21 +1,13 @@
-# Game::State's .lsd save/load path, split out of mrblib/game.rb's own #to_h/
-# .load Marshal round-trip: to_lsd writes a Save<N>.lsd, from_lsd reads one
-# back, and a genuine RPG_RT/editor-written Save<N>.lsd loads through the same
-# from_lsd. Since docs/adr/0395 the .lsd this engine writes is the authoritative
-# save (its chunk 200 carries every field the Marshal dump does); the Marshal
-# dump is kept for old saves and for wio. See main.rb's own #save_game/
-# #load_save_state for the save-slot policy and the RPG2K_SAVE_MARSHAL_FIRST
-# kill switch.
+# Game::State's .lsd save/load path, split out of mrblib/game.rb: to_lsd writes a
+# Save<N>.lsd, from_lsd reads one back, and a genuine RPG_RT/editor-written
+# Save<N>.lsd loads through the same from_lsd. The .lsd is the only save format on
+# every build (docs/adr/0395, 0399): its chunk 200 carries every field the old
+# Marshal dump did. See main.rb's own #save_game/#load_save_state for the slot policy.
 #
-# wio has no PC to hand a save file to and no editor tooling of its own to
-# receive one from, so this whole file is dropped from that build alone (see
-# mrbgem.rake) -- main.rb's own export_lsd/load_save_state guard each call
-# with respond_to? so Save/Continue keeps working there through the Marshal
-# path unchanged, just without the .lsd side effect/fallback. `Dir.glob(...)
-# .sort` loads this file after mrblib/game.rb regardless of target
-# (`game.rb` < `game/lsd_io.rb` lexically), so Game::State already exists by
-# the time this file's own reopening runs. See docs/adr/0128-wio-strip-lsd-
-# interop.md.
+# Ships on wio too (docs/adr/0399); the wio-only exclusion this file had is gone.
+# `Dir.glob(...).sort` loads this file after mrblib/game.rb regardless of target
+# (`game.rb` < `game/lsd_io.rb` lexically), so Game::State already exists by the
+# time this file's own reopening runs.
 
 module Game
   class State

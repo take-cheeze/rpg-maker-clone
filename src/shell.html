@@ -546,9 +546,8 @@
       // games' saves never collide, and copied back onto /game right before
       // that project starts.
       var PERSIST_ROOT = '/persist';
-      // Root-level filenames only: RPG2000/2003 (this engine's own Marshal
-      // dump, plus the exported editor-format Save<N>.lsd sibling -- see
-      // #save_path/#lsd_path in mruby-rpg2k/mrblib/main.rb), RPG Maker XP
+      // Root-level filenames only: RPG2000/2003 (this engine's own Save<N>.lsd,
+      // see #lsd_path in mruby-rpg2k/mrblib/main.rb), RPG Maker XP
       // (Save<N>.rxdata) and VX/VX Ace (Save<N>.rvdata[2]) -- all written by
       // stock scripts via bare `File.open("SaveN.xxx", "wb")`, resolved
       // against the game directory (src/main.cxx's chdir for RGSS games).
