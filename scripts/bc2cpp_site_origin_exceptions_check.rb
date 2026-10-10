@@ -66,8 +66,8 @@ raise_changes_receiver = [
   insn(6, 'SEND0', "R1\t:g"), insn(8, 'NOP', ''), insn(10, 'RETURN', 'R1')
 ]
 changes_handler = [CatchHandler.new(type: :rescue, begin_addr: 2, end_addr: 6, target: 6)]
-check.call('a raise path that changes the receiver stays unknown (ambiguous, not exact)',
-           writer_origin(raise_changes_receiver, changes_handler, 3, '1', exceptions: true) == ['ambiguous', '-', '-'])
+check.call('a raise path that changes the receiver is a join (ambiguous with the may-set of both writers, not exact)',
+           writer_origin(raise_changes_receiver, changes_handler, 3, '1', exceptions: true)  == ['ambiguous', 'call_result|literal_or_fresh', 'LOADI_1@0,SEND0@1'])
 
 # Negative (the retry shape): the handler (addr 8) re-enters the second send. Its receiver R1 has
 # the LOADI, the first send's completed write, and the second send's own completed write on the
@@ -77,8 +77,8 @@ retry_loop = [
   insn(6, 'JMP', '12'), insn(8, 'JMP', '4'), insn(10, 'NOP', ''), insn(12, 'RETURN', 'R1')
 ]
 retry_handler = [CatchHandler.new(type: :rescue, begin_addr: 2, end_addr: 8, target: 8)]
-check.call('a handler that re-enters the send with a changed receiver stays unknown',
-           writer_origin(retry_loop, retry_handler, 2, '1', exceptions: true) == ['ambiguous', '-', '-'])
+check.call('a handler that re-enters the send with a changed receiver is still ambiguous',
+           writer_origin(retry_loop, retry_handler, 2, '1', exceptions: true)  == ['ambiguous', 'call_result|literal_or_fresh', 'LOADI_1@0,SEND0@1,SEND0@2'])
 
 # Negative (a send whose receiver it writes itself, through a back edge): the loop carries the
 # LOADI and the send's own result, so the receiver is never one definition.
@@ -87,8 +87,8 @@ self_write = [
   insn(8, 'RETURN', 'R1')
 ]
 self_handler = [CatchHandler.new(type: :rescue, begin_addr: 2, end_addr: 6, target: 6)]
-check.call('a send whose receiver it writes itself stays unknown',
-           writer_origin(self_write, self_handler, 1, '1', exceptions: true) == ['ambiguous', '-', '-'])
+check.call('a send whose receiver it writes itself is still ambiguous',
+           writer_origin(self_write, self_handler, 1, '1', exceptions: true)  == ['ambiguous', 'call_result|literal_or_fresh', 'LOADI_1@0,SEND0@1'])
 
 # Negative (a callee frame above the handler's read): the send at addr 2 has its frame at R3, which
 # may overwrite R5 before it raises into the handler that reads R5. Refused on every path, the
