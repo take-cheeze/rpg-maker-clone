@@ -1185,6 +1185,12 @@
   by-name sends on the wio build, 27 before the singleton-definer arms, see
   [`docs/adr/0370-bc2cpp-setter-pools-checked-receivers.md`](docs/adr/0370-bc2cpp-setter-pools-checked-receivers.md) and
   `scripts/bc2cpp_setter_pools_check.rb`).
+  `BC2CPP_SPECIALIZE=<file>` (lines `Owner#name param=Class`, off by default) compiles a second body of a hot
+  method under the assumption that its listed parameters are exactly those classes and puts one entry check in front of
+  the unchanged original, so the by-name sends on those parameters resolve statically and any other argument runs the
+  generic body (see
+  [`docs/adr/0380-bc2cpp-entry-guarded-specialization.md`](docs/adr/0380-bc2cpp-entry-guarded-specialization.md) and
+  `scripts/bc2cpp_entry_specialize_check.rb`).
   `BC2CPP_SITE_PROFILE=DIR` builds count how often each remaining by-name `bc2cpp_send` and
   `mrb_funcall*` site runs, and `scripts/bc2cpp_dynamic_site_census.rb --rank` ranks the sites by
   executed hits with the reason each was kept dynamic; off by default and byte-identical when unset
