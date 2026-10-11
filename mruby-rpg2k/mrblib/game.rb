@@ -753,8 +753,11 @@ module Game
   # The inverse of .trans_to_opacity, for writing a live picture's current
   # `Game::Picture#opacity` (0..255) back to chunk 103 field 34's own 0..100
   # transparency scale on Save (Game::State#to_lsd).
+  # Whole-number result even for a Float opacity (an in-flight move's target
+  # restored from the .lsd chunk-200 doubles), since chunk 103 field 34/35 is
+  # an integer BER field and LCF's writer raises on a Float.
   def self.opacity_to_trans(opacity)
-    100 - clamp(opacity, 0, 255) * 100 / 255
+    (100 - clamp(opacity, 0, 255) * 100 / 255).to_i
   end
 
   # Top-left pixel of the view so the player is centred, clamped so the camera
@@ -8412,6 +8415,13 @@ module Game
     # same way real RPG_RT's own 1/16-pixel subpixel pan position is only ever
     # rounded to a whole pixel for display.
     def pan_offset; [@pan_x.round, @pan_y.round]; end
+
+    # The full pan state for the .lsd chunk-200 pan record: offset, in-flight
+    # target and step, and the lock. Raw values (the offset may sit at a
+    # sub-pixel mid-pan, see #pan_offset), unlike the rounded pair above.
+    def pan_save_data
+      [@pan_x, @pan_y, @pan_tx, @pan_ty, @pan_step, @pan_locked]
+    end
 
     # Whether a Lock operation has frozen the camera in place — the scene stops
     # following the hero while this holds. The pan offset (see #pan_offset) is
