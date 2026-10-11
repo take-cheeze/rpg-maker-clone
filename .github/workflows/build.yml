@@ -1274,6 +1274,7 @@ jobs:
           - shard: optcarrot-benchmark
             checks: |
               ruby scripts/optcarrot_cpu_dispatch_check.rb
+              ruby scripts/optcarrot_ppu_lut_check.rb
               ruby scripts/bc2cpp_optcarrot_world_check.rb
               ruby scripts/optcarrot_onig_aliases_check.rb
               MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
