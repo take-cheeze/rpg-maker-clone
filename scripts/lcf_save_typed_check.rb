@@ -111,17 +111,17 @@ end
 check 'a valid save reads through the typed path, with each value as its declared class' do
   bytes = sample_save.to_lcf
   typed = read_back(bytes).typed
-  ok typed.title.is_a?(LCF::SaveTyped::Title), 'a nested table is its own typed record'
-  eq 'Hero', typed.title.hero_name, 'a string field'
-  eq 7, typed.title.hero_hp, 'an int field'
-  eq 41_000.5, typed.title.timestamp, 'a double field'
-  eq 5, typed.hero.map_id, 'an int field in a nested table'
-  eq true, typed.hero.through, 'a bool field'
-  eq 'Charset', typed.hero.charset_name, 'a string field in a nested table'
-  eq 1234, typed.system.frame_count, 'a system int field'
-  eq 0, typed.title.face1_index, 'an absent field reads its schema default'
-  ok typed.hero.direction.nil?, 'an absent field with no default reads nil'
-  ok typed.boat.nil?, 'an absent table reads as nothing, not garbage'
+  ok typed.save_title.is_a?(LCF::SaveTyped::Title), 'a nested table is its own typed record'
+  eq 'Hero', typed.save_title.save_hero_name, 'a string field'
+  eq 7, typed.save_title.save_hero_hp, 'an int field'
+  eq 41_000.5, typed.save_title.save_timestamp, 'a double field'
+  eq 5, typed.save_hero.save_map_id, 'an int field in a nested table'
+  eq true, typed.save_hero.save_through, 'a bool field'
+  eq 'Charset', typed.save_hero.save_charset_name, 'a string field in a nested table'
+  eq 1234, typed.save_system.save_frame_count, 'a system int field'
+  eq 0, typed.save_title.save_face1_index, 'an absent field reads its schema default'
+  ok typed.save_hero.save_direction.nil?, 'an absent field with no default reads nil'
+  ok typed.save_boat.nil?, 'an absent table reads as nothing, not garbage'
   ok read_back(bytes).typed.check!.is_a?(LCF::SaveTyped::Save), 'the whole tree checks'
 end
 
@@ -181,7 +181,7 @@ check 'a malformed chunk 113 execution-state stack is tolerated by the read itse
   # Game::State.read_event_exec_frames turns it into "nothing to restore".
   err = nil
   begin
-    read.typed.foreground_event.frames
+    read.typed.save_foreground_event.frames
   rescue LCF::SaveTypeError => e
     err = e
   end
@@ -204,8 +204,8 @@ check 'the typed frame has the shape restore_call_stack reads' do
   rows = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_COMMON_EVENT })
   rows[3] = common
   save[114] = rows
-  entry = LCF::SaveTyped::CommonEvent.new(read_back(save.to_lcf).typed.common_events[3], 'Save.common_events[3]')
-  frames = entry.execution_state.frames
+  entry = LCF::SaveTyped::CommonEvent.new(read_back(save.to_lcf).typed.save_common_events[3], 'Save.common_events[3]')
+  frames = entry.save_execution_state.frames
   eq 1, frames.size, 'one frame'
   eq({ commands: [], current_command: 4, event_id: 9, triggered_by_decision_key: true }, frames[0], 'frame shape')
 end

@@ -96,6 +96,8 @@ module GenSaveTyped
     name.to_s
   end
 
+  PREFIX = 'save_'
+
   def generate
     load_schema
     order, fields = tables
@@ -114,17 +116,20 @@ module GenSaveTyped
       names = []
       checked = []
       fields[const].each do |id, f, child|
-        name = snake(f[:name])
+        # Every reader carries the save_ prefix, so a field named like a game method
+        # (zoom, font, level, type) cannot add a candidate to that method's dispatch.
+        field = snake(f[:name])
+        name = PREFIX + field
         raise "#{cls}.#{name} collides with a reserved name" if reserved.include?(name)
         raise "#{cls}.#{name} is declared twice" if names.include?(name)
         names << name
         body =
           if f[:type] == :Array1D && child
-            "table #{id}, #{class_name(child)}, '#{name}'"
+            "table #{id}, #{class_name(child)}, '#{field}'"
           elsif f[:type] == :Array2D && child
-            "rows #{id}, #{class_name(child)}, '#{name}'"
+            "rows #{id}, #{class_name(child)}, '#{field}'"
           else
-            "read #{id}, :#{f[:type]}, '#{name}'"
+            "read #{id}, :#{f[:type]}, '#{field}'"
           end
         out << "      def #{name}; #{body} end\n"
         checked << name unless (UNCHECKED[const.to_s] || []).include?(id)

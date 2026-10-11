@@ -101,10 +101,10 @@ module LCF
     # has been checked against the schema (its command list included).
     class EventExecFrame < Record
       def frame
-        { commands: commands,
-          current_command: current_command,
-          event_id: event_id,
-          triggered_by_decision_key: triggered_by_decision_key }
+        { commands: save_commands,
+          current_command: save_current_command,
+          event_id: save_event_id,
+          triggered_by_decision_key: save_triggered_by_decision_key }
       end
     end
 
@@ -116,7 +116,7 @@ module LCF
     class EventExecState < Record
       # The frames outermost first, or nil when the stack is absent or empty.
       def frames
-        arr = stack
+        arr = save_stack
         return nil if arr.nil?
         out = []
         arr.each { |i, row| out.push(EventExecFrame.new(row, "#{path}.stack[#{i}]").frame) }
