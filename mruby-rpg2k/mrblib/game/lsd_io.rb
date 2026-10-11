@@ -1,8 +1,8 @@
 # Game::State's .lsd save/load path, split out of mrblib/game.rb: to_lsd writes a
 # Save<N>.lsd, from_lsd reads one back, and a genuine RPG_RT/editor-written
 # Save<N>.lsd loads through the same from_lsd. The .lsd is the only save format on
-# every build (docs/adr/0395, 0399): its chunk 200 carries every field the old
-# Marshal dump did. See main.rb's own #save_game/#load_save_state for the slot policy.
+# every build (docs/adr/0395, 0399): its chunk 200 carries the fields the liblcf
+# chunks cannot express. See main.rb's own #save_game/#load_save_state for the slot policy.
 #
 # Ships on wio too (docs/adr/0399); the wio-only exclusion this file had is gone.
 # `Dir.glob(...).sort` loads this file after mrblib/game.rb regardless of target
@@ -933,8 +933,8 @@ module Game
 
     # -- Save-extension chunk (chunk 200, docs/adr/0395) ----------------------
     #
-    # Before this, the .lsd export dropped a handful of fields that only the
-    # Marshal dump carried, so the Marshal save stayed the only exact one. Chunk
+    # Before this, the .lsd export dropped a handful of fields the liblcf chunks
+    # cannot express. Chunk
     # 200 (SAVE_DATA's :lsd_ext, a project extension, not an RPG2000 chunk)
     # carries those fields as a list of tagged records:
     #
@@ -1319,7 +1319,7 @@ module Game
     SYSTEM_SFX_SAVE_FIELD = (0..11).each_with_object({}) { |slot, h| h[slot] = 91 + slot }.freeze
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
-    # by an actual editor, rather than our own Marshal hash. The modelled fields
+    # by an actual editor, or by this engine. The modelled fields
     # are restored: the hero's map / tile position / facing and the leader's
     # on-map CharSet (chunk 104), the party roster / gold / items (inventory,
     # chunk 109), the per-actor level/exp/HP/MP/equipment/skills table (chunk
@@ -1375,7 +1375,7 @@ module Game
           # A live Change Parameters edit (#change_param) -- #set_level just
           # above re-seeds @base/@base_raw from the level-derived baseline,
           # discarding it, so it's restored after, the same order the
-          # Marshal-save path (Party#load_state) already uses. hp_mod/sp_mod
+          # Party#load_state path already uses. hp_mod/sp_mod
           # (fields 33/34) default to -1 (liblcf's own "never touched"
           # sentinel, distinct from a real 0 the other four fields already
           # use); the other four default to 0 outright. Confirmed against a
@@ -1950,7 +1950,7 @@ module Game
 
   # Chunk 200's picture name/opacity/target-opacity, written back onto the
   # picture the liblcf chunks already re-showed (see .apply_lsd_extension). Mutates
-  # in place rather than rebuilding via Picture.from_h: a rebuilt picture is
+  # in place rather than rebuilding it: a rebuilt picture is
   # always shown again, which would silently drop an erased picture's state (see
   # Picture#erase!).
   class Picture

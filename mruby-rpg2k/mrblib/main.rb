@@ -1123,7 +1123,7 @@ class RPG2k
   end
 
   # Persist the running game state to a slot as Save<slot>.lsd (docs/adr/0395, 0399).
-  # The .lsd carries every Game::State field the old Marshal dump did (chunk 200 holds
+  # The .lsd carries every Game::State field (chunk 200 holds
   # the few the liblcf chunks cannot). A failed write fails the save, so the player is
   # told rather than silently keeping an older slot.
   def save_game state, slot = 1
@@ -1140,7 +1140,7 @@ class RPG2k
   # Reads Save<slot>.lsd through the modelled LCF save schema (Game::State.from_lsd).
   # The engine's own .lsd and a genuine editor's are read the same way: the chunk 200
   # marker, when present, is what carries the extra fields (docs/adr/0395). Old
-  # Marshal `save<N>.mrb` saves are no longer read (docs/adr/0399).
+  # Old `save<N>.mrb` files from the removed Marshal save are not read (docs/adr/0399).
   #
   # Shared by #continue_game (which needs the one slot the player picked, or slot 1
   # for the event-triggered Open Load Menu -- see Scene::Map #perform_event_load) and
@@ -1176,7 +1176,7 @@ class RPG2k
     # upper_tiles. See Game::State#tile_substitutions.
     state.map.restore_substitutions(*state.tile_substitutions)
     # apply_access: false -- a resumed save already carries its own
-    # save/teleport/escape access (restored by Game::State.load / .from_lsd
+    # save/teleport/escape access (restored by Game::State.from_lsd
     # from whatever a prior Change Save/Teleport/Escape Access command left
     # it as), which re-deriving from the current map's tree here would
     # silently discard. See Scene::Map#initialize's own comment.

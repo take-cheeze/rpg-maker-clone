@@ -35,9 +35,9 @@ class RPG2k
         ]
 
         # RPG_RT grays out and skips over Continue when there is no save to
-        # resume. `any_save_exists?` (main.rb) covers both our own Marshal
-        # saves and a genuine editor Save<N>.lsd dropped into the game dir,
-        # across every one of the MAX_SAVE_SLOTS slots -- which one, if any,
+        # resume. `any_save_exists?` (main.rb) covers a Save<N>.lsd in the game dir,
+        # whether this engine or a genuine editor wrote it, across every one of the
+        # MAX_SAVE_SLOTS slots -- which one, if any,
         # is now Scene::SaveLoad's own question to ask once Continue opens it.
         @continue_available = continue_available?
 

@@ -29,10 +29,6 @@
 #     and untimed, unlike the ~130 confirmations the opening needs.
 # Both then sit on the map, and the frames are captured and diffed.
 #
-# Our engine's Continue prefers its own Marshal save (save<N>.mrb) over the
-# .lsd, so this refuses to run when one is present: it would silently compare
-# two different game states.
-#
 # Requires everything compare-nepheshel-wine.bash needs (see its header for the
 # wine/Xvfb/32-bit libGL notes, which apply here unchanged) plus a built
 # ./build/rpg_maker_clone and a CRuby for the save generator.
@@ -65,15 +61,6 @@ fi
 
 if [ ! -f "${GAME_DIR}/RPG_RT.exe" ] ; then
     echo "error: ${GAME_DIR} has no RPG_RT.exe to compare against" >&2
-    exit 1
-fi
-
-# Our Continue prefers a Marshal save over the .lsd, which would put the two
-# runtimes in different states without saying so.
-if ls "${GAME_DIR}"/save*.mrb >/dev/null 2>&1 ; then
-    echo "error: ${GAME_DIR} holds a Marshal save (save*.mrb); our Continue" \
-         "would load that instead of the .lsd both runtimes must share." \
-         "Move it aside first." >&2
     exit 1
 fi
 

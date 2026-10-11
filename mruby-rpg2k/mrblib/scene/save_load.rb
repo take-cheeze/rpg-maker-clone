@@ -26,8 +26,8 @@ class RPG2k
     # Cancelling (B) always just pops back to whichever scene pushed this one.
     #
     # Every slot's preview is read once, up front, through
-    # RPG2k#load_save_state -- the same "our own .mrb, else a genuine
-    # Save<N>.lsd, else empty" lookup #continue_game itself uses, so the list
+    # RPG2k#load_save_state -- the same "a Save<N>.lsd, else empty" lookup
+    # #continue_game itself uses, so the list
     # shows exactly what Continue would resume.
     class SaveLoad < Base
       SCREEN_W = RPG2k::WIDTH
@@ -477,7 +477,7 @@ class RPG2k
           # The title-chunk snapshot (`State#preview_level`/`#preview_hp`,
           # see its own citation) when the save carries one, falling back to
           # the live leader's own level/hp only for a state that never had a
-          # snapshot to read (the Marshal round-trip path) -- the same
+          # snapshot to read (a state built directly, not loaded) -- the same
           # snapshot-first, live-fallback shape `#draw_slot_faces` already
           # uses for the face row below.
           has_preview = state.respond_to?(:preview_level) && !state.preview_level.nil?
@@ -551,9 +551,8 @@ class RPG2k
       # from whatever the slot's party/actor data says -- so that is tried
       # first, falling back to deriving from the live party's own members
       # (`actors[0..3]`, the same per-member order `Game::State#to_lsd`
-      # writes the snapshot in) only when a state never carried one (the
-      # Marshal round-trip path, which loses nothing and so never needs the
-      # snapshot). A blank name -- no FaceSet set, or a snapshot slot the
+      # writes the snapshot in) only when a state never carried one (a state built
+      # directly, not loaded from a save). A blank name -- no FaceSet set, or a snapshot slot the
       # save left empty -- simply leaves that slot empty, matching
       # `#draw_message_face`'s own "blank name -> no face" rule
       # (`Scene::Map#load_face_bitmap`).

@@ -166,10 +166,6 @@ REWRITES = {
 ',
         new: '      (@x = @tx; @y = @ty; @zoom = @tzoom; @opacity = @topacity; @red = @tred; @green = @tgreen; @blue = @tblue; @saturation = @tsat) if @frames == 0
 ' }, # finish_move
-      { old: '        timer_frames: timer_frames,
-',
-        new: '        timer_frames: (timer(0).frames),
-' }, # timer_frames
       { old: '        apply_actor_meta(a, m)
 ',
         new: '        (unless !(m); actor.name = m[:name] if m[:name]; actor.title = m[:title] unless m[:title].nil?; if m[:charset_name] && m[:sprite_changed] != false
