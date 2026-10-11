@@ -64,8 +64,8 @@ The RPG2k host checks (`rpg2k_logic_check.rb`, `rpg2k_scene_check.rb`,
 step, not in a bc2cpp shard. The save-format check
 (`rpg2k_lsd_authoritative_check.rb`, ADR 0395) runs in that same step: the
 engine's `.lsd` save and its Marshal save must load back field for field, and the
-save-slot policy (including the `RPG2K_SAVE_MARSHAL_FIRST` kill switch) is tested
-there too.
+save-slot policy (the `.lsd` alone, old `.mrb` saves not read, a failed write
+failing the save; docs/adr/0399) is tested there too.
 
 The compiled-versus-interpreted fixtures that need a full-core mruby are split
 three ways, because each step takes minutes and one shard had reached the
