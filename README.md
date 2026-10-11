@@ -1081,6 +1081,9 @@
   The [Optcarrot benchmark](tools/optcarrot_probe/README.md) measures optimized
   mruby and bc2cpp builds by default; `OPTCARROT_DEBUG=1` selects the diagnostic
   build, with separate build directories for each mode.
+  The mruby bundles factor PPU tile-table construction into fixed pixel rows
+  to reduce startup; `OPTCARROT_ORIGINAL_LUT=1` restores
+  upstream construction. See [tile-table startup](docs/optcarrot-ppu-lut.md).
   `OPTCARROT_STATIC_DISPATCH=1` exposes all CPU opcode calls to bc2cpp;
   `OPTCARROT_CLOSED_WORLD=1` uses a sealed benchmark executable with a validated
   source manifest. See [CPU dispatch](docs/optcarrot-cpu-dispatch.md) and
