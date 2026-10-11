@@ -122,6 +122,9 @@ debug and profiling builds use separate target directories, and the generated
 gem is rebuilt on every invocation to prevent stale compiler output from
 affecting measurements. Historical timings above predate this default change.
 
+The Optcarrot shard also checks all 256 specialized opcode arms and runs the
+`OPTCARROT_STATIC_DISPATCH=1` experiment against the same checksum benchmark.
+
 `bc2cpp-width (int32-a)` or `(int32-b)` took 9 min. `core-flow` was the long pole of the whole
 workflow; its mutation checks now run in `core-flow-mutants`.
 
