@@ -41,6 +41,8 @@ mrblib = File.expand_path('../mruby-lcf/mrblib', __dir__)
 load File.join(mrblib, 'lcf.rb')
 load File.join(mrblib, 'schema.rb')
 load File.join(mrblib, 'lcf_file.rb')
+load File.join(mrblib, 'save_typed.rb')
+load File.join(mrblib, 'save_typed_accessors.rb')
 
 OUT = ARGV[0] || File.expand_path('../data/maix-hello', __dir__)
 FileUtils.mkdir_p(File.join(OUT, 'Title'))

@@ -56,6 +56,8 @@ lcf_lib = File.expand_path('../mruby-lcf/mrblib', __dir__)
 load File.join(lcf_lib, 'lcf.rb')
 load File.join(lcf_lib, 'schema.rb')
 load File.join(lcf_lib, 'lcf_file.rb')
+load File.join(lcf_lib, 'save_typed.rb')
+load File.join(lcf_lib, 'save_typed_accessors.rb')
 
 lib = File.expand_path('../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')

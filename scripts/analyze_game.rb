@@ -50,6 +50,8 @@ mrblib = File.expand_path('../mruby-lcf/mrblib', __dir__)
 load File.join(mrblib, 'lcf.rb')
 load File.join(mrblib, 'schema.rb')
 load File.join(mrblib, 'lcf_file.rb')
+load File.join(mrblib, 'save_typed.rb')
+load File.join(mrblib, 'save_typed_accessors.rb')
 
 # --- RPG2000 event-command opcode names (from liblcf's Cmd enum). -------------
 # Only used for labelling the report; an unknown code is shown as its number so
