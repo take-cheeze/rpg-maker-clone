@@ -8352,9 +8352,8 @@ module Game
     # True while a pan/reset scroll has not yet reached its target.
     def panning?; @pan_x != @pan_tx || @pan_y != @pan_ty; end
 
-    # Restore the pan offset from a `.lsd` read (Game::State.from_lsd, lsd_io.rb).
-    # Only the offset is restored: the Lock is not written to the .lsd, and the pan
-    # target is set to the offset, so a scroll still in flight resumes at rest.
+    # Restore the full pan state from the .lsd EXT_TAG_PAN record (Game::State.from_lsd,
+    # lsd_io.rb): offset, in-flight target and step, and the Lock.
     def load_h(h)
       return unless h
       @pan_x = h[:pan_x] || 0

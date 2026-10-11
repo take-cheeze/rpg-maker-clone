@@ -12266,7 +12266,7 @@ check 'Weather round-trips through the save' do
   eq 1, loaded.weather.strength
 end
 
-check 'Screen pan offset and tint round-trip through the save; shake and flash stay transient' do
+check 'Screen pan offset, in-flight target and lock round-trip through a real .lsd; shake and flash stay transient' do
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
                            max_hp: 100, max_mp: 30, atk: 10, def: 8),
@@ -12285,15 +12285,15 @@ check 'Screen pan offset and tint round-trip through the save; shake and flash s
   before_offset = st.screen.pan_offset
 
   loaded = Game::State.from_lsd(db, st.to_lsd)
-  # Only the pan offset survives a .lsd save: the Lock is not written at all, and the
-  # reader sets the target to the current offset (lsd_io.rb's Screen load_h call), so a
-  # scroll still in flight resumes at rest. Neither is asserted here.
+  eq true, loaded.screen.pan_locked?, 'the Lock survives the save'
   eq before_offset, loaded.screen.pan_offset,
      'the in-progress pan offset survives at whatever point it had scrolled to'
-  ok loaded.screen.tinting?, 'the Tint Screen transition is carried by the .lsd and resumes'
+  ok loaded.screen.panning?, 'the still-unfinished scroll toward its target survives too'
+  2.times { loaded.screen.update } # remaining 16px at 8px/frame lands on the 32px target
+  eq [32, 0], loaded.screen.pan_offset, 'the scroll resumes toward its original target'
+  ok loaded.screen.tinting?, 'the Tint Screen transition is carried by the .lsd (chunk 102) and resumes'
   ok !loaded.screen.shaking?, 'shake stays transient, not carried by the .lsd'
   ok !loaded.screen.flashing?, 'flash stays transient, not carried by the .lsd'
-
 end
 
 # -- Change Teleport / Escape Access ------------------------------------------
