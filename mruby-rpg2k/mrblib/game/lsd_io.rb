@@ -962,6 +962,7 @@ module Game
     EXT_TAG_FLASH = 4            # body: red, green, blue, frames, total (BER), power (double)
     EXT_TAG_COMMON_PROGRESS = 5  # body: (event id, index) BER pairs
     EXT_TAG_PICTURE_OPACITY = 6  # body: per picture: id (BER), opacity, target opacity (doubles)
+    EXT_TAG_PAN = 7              # body: pan x, pan y, target x, target y, step (doubles), locked (BER)
     LSD_EXT_VERSION = 1
 
     # One BER integer for a non-negative field value. A negative value cannot be
@@ -1062,6 +1063,16 @@ module Game
         end
         records.push([EXT_TAG_PICTURE_OPACITY, body])
       end
+      # Written only while the pan is off-centre, in flight, or locked: a
+      # camera at rest and unlocked is exactly what the chunk-102 fields 41/42
+      # (and their absence) already say on a plain load.
+      pan_x, pan_y, pan_tx, pan_ty, pan_step, pan_locked = @screen.pan_save_data
+      if pan_x != 0 || pan_y != 0 || pan_tx != 0 || pan_ty != 0 || pan_locked
+        body = self.class.ext_double(pan_x) + self.class.ext_double(pan_y) +
+               self.class.ext_double(pan_tx) + self.class.ext_double(pan_ty) +
+               self.class.ext_double(pan_step) + self.class.ext_int(pan_locked ? 1 : 0)
+        records.push([EXT_TAG_PAN, body])
+      end
       records
     end
 
@@ -1111,6 +1122,18 @@ module Game
             pic = state.pictures[id]
             pic.restore_exact(name, opacity, topacity) if pic
           end
+        when EXT_TAG_PAN
+          # Exact pan state, replacing the chunk-102 approximation (which
+          # restores at rest and unlocked). Read in the order #save writes.
+          io = StringIO.new(body)
+          px = ext_double_at(io)
+          py = ext_double_at(io)
+          tx = ext_double_at(io)
+          ty = ext_double_at(io)
+          step = ext_double_at(io)
+          locked = LCF.read_ber(io) != 0
+          state.screen.load_h(pan_x: px, pan_y: py, pan_tx: tx, pan_ty: ty,
+                              pan_step: step, pan_locked: locked)
         end
       end
       state
