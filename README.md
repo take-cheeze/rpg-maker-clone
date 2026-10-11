@@ -1081,8 +1081,10 @@
   The [Optcarrot benchmark](tools/optcarrot_probe/README.md) measures optimized
   mruby and bc2cpp builds by default; `OPTCARROT_DEBUG=1` selects the diagnostic
   build, with separate build directories for each mode.
-  `OPTCARROT_STATIC_DISPATCH=1` exposes all CPU opcode calls to bc2cpp; see
-  [CPU dispatch](docs/optcarrot-cpu-dispatch.md) for the proof and FPS measurements.
+  `OPTCARROT_STATIC_DISPATCH=1` exposes all CPU opcode calls to bc2cpp;
+  `OPTCARROT_CLOSED_WORLD=1` uses a sealed benchmark executable with a validated
+  source manifest. See [CPU dispatch](docs/optcarrot-cpu-dispatch.md) and
+  [ADR 0403](docs/adr/0403-optcarrot-sealed-world.md).
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of

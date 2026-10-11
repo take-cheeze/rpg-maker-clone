@@ -31,4 +31,6 @@ full frame checksums validate compiled emulation.
 
 Three alternating 180-frame runs measured a compiled speedup of 1.84x (median
 34.64 to 63.90 wall FPS), with checksum `59662` in all runs. The interpreter's
-linear opcode case is slower, so the experiment remains opt-in.
+linear opcode case is slower, so the experiment remains opt-in. Strict-world
+mode is independently selectable and has additional conservative Fiber
+fallbacks (ADR 0403).

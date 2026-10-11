@@ -1274,8 +1274,11 @@ jobs:
           - shard: optcarrot-benchmark
             checks: |
               ruby scripts/optcarrot_cpu_dispatch_check.rb
+              ruby scripts/bc2cpp_optcarrot_world_check.rb
+              ruby scripts/optcarrot_onig_aliases_check.rb
               MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              OPTCARROT_CLOSED_WORLD=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
           - shard: coverage
             # Split from fast: the three slowest checks there (~10, ~5 and ~0.2 min).
             checks: |
