@@ -1067,6 +1067,9 @@
   locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything
   that reaches it. `BC2CPP_ESCAPE_ANALYSIS=0` restores the earlier output; see
   [`docs/adr/0316-bc2cpp-shared-escape-analysis.md`](docs/adr/0316-bc2cpp-shared-escape-analysis.md).
+  The [Optcarrot benchmark](tools/optcarrot_probe/README.md) measures optimized
+  mruby and bc2cpp builds by default; `OPTCARROT_DEBUG=1` selects the diagnostic
+  build, with separate build directories for each mode.
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
