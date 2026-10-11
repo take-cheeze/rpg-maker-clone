@@ -45,3 +45,13 @@ This changes code ownership rather than native save bytes. The authoritative
 save checks retain legacy migration, unsupported-version, unrelated-chunk and
 old-foreground-wrapper coverage. Native compatibility evidence from ADR 0401
 continues to apply.
+
+## Dispatch review verification
+
+A full Wio closed-world scan produced 4,215 sites across 2,942 unique keys.
+The checked-in list matches those generated keys. In addition to moving the
+seven unchanged legacy adapter keys, the scan identified entries missing from
+ADR 0401's native migration: `to_lsd` pan/picture accessors, `from_lsd` state
+accessors and foreground row serialization. Their receivers are the existing
+`Screen`, `Picture`, freshly constructed `State` and LCF `Array1D` objects.
+Obsolete extension-writer and screen-pan entries were removed.
