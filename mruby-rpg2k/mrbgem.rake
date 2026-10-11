@@ -1490,7 +1490,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
                                     RPG2k::Scene::GameOver
                                     Game.singleton Game::States.singleton
                                     Game::ChipsetLayout.singleton Game::EventGraphic.singleton
-                                    Game::Transition.singleton Game::Party.singleton
+                                    Game::Transition.singleton Game::Party.singleton Game::LegacyLsd.singleton
                                     Game::Picture.singleton Game::Character.singleton
                                     Game::ChipSet.singleton RPG2k::Scene::Map.singleton
                                     Game::MoveType.singleton Game::MapAccess.singleton

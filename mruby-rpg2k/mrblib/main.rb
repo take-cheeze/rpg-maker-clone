@@ -1123,9 +1123,8 @@ class RPG2k
   end
 
   # Persist the running game state to a slot as Save<slot>.lsd (docs/adr/0395, 0399).
-  # The .lsd carries every Game::State field (chunk 200 holds
-  # the few the liblcf chunks cannot). A failed write fails the save, so the player is
-  # told rather than silently keeping an older slot.
+  # Native field precision follows ADR 0401. A failed write fails the save,
+  # so the player is told rather than silently keeping an older slot.
   def save_game state, slot = 1
     state.save_count += 1 # RPG2000 counts each save; written into the .lsd
     state.to_lsd(state.save_count, nil, slot, @db, @map_tree).save_to(lsd_path(slot))
@@ -1138,9 +1137,9 @@ class RPG2k
   # Build a Game::State from a save slot, or nil when the slot is empty.
   #
   # Reads Save<slot>.lsd through the modelled LCF save schema (Game::State.from_lsd).
-  # The engine's own .lsd and a genuine editor's are read the same way: the chunk 200
-  # marker, when present, is what carries the extra fields (docs/adr/0395). Old
-  # Old `save<N>.mrb` files from the removed Marshal save are not read (docs/adr/0399).
+  # Native fields are authoritative; LegacyLsd migrates marked old saves
+  # when loading (ADR 0402). Old
+  # Marshal `save<N>.mrb` saves are no longer read (docs/adr/0399).
   #
   # Shared by #continue_game (which needs the one slot the player picked, or slot 1
   # for the event-triggered Open Load Menu -- see Scene::Map #perform_event_load) and

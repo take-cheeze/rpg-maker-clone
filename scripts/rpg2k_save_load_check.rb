@@ -53,9 +53,11 @@ end
 ROOT = File.expand_path('..', __dir__)
 load File.join(ROOT, 'mruby-lcf', 'mrblib', 'lcf.rb')
 load File.join(ROOT, 'mruby-lcf', 'mrblib', 'schema.rb')
+load File.join(ROOT, 'mruby-lcf', 'mrblib', 'lcf_file.rb')
 load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game.rb')
 load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
 load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'legacy_lsd.rb')
 load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
 
 $errors = 0
@@ -80,11 +82,11 @@ def check_game(dir)
   inv = lsd[:inventory]
   sys = lsd[101]
 
-  # Leader position/facing come straight from the hero chunk.
+  # Native hero direction codes are converted to runtime numpad directions.
   eq hero[:map_id], state.map_id, 'map id'
   eq hero[:x], state.x, 'hero x'
   eq hero[:y], state.y, 'hero y'
-  eq hero[:direction], state.direction, 'hero direction'
+  eq Game::EventGraphic.numpad_direction(hero[:direction]), state.direction, 'hero direction'
 
   # Party roster, gold and items from the inventory chunk. The party leader's
   # database charset must match the saved hero's -- the state really points at

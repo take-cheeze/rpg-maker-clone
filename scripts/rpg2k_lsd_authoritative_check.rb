@@ -3,23 +3,9 @@
 #
 # Host-side checks for the .lsd-authoritative save (docs/adr/0395).
 #
-# Save<N>.lsd is the only save: Save/Continue writes and reads it, and chunk 200
-# of that file carries every Game::State field the engine's old Marshal dump
-# carried (docs/adr/0399 removed that dump). This harness checks, under CRuby (the
-# same way scripts/rpg2k_logic_check.rb does):
-#
-#   1. Field by field: the live state, read back through its own fields, equals the
-#      same state after a real .lsd write and read, for a set of populated states
-#      (party, timers, overrides, switches, variables, pictures in flight and
-#      erased, flash, weather, vehicles...).
-#   2. The chunk-200 records are each load-bearing: dropping any one of them
-#      from the file is caught by check 1's comparison.
-#   3. The .lsd writer's chunk-200 marker tells this engine's save apart from an
-#      editor save or an old export, and an unknown chunk id survives an
-#      LCF::SaveData read/write byte for byte.
-#   4. The save-slot policy in RPG2k#save_game / #load_save_state (docs/adr/0399):
-#      a save writes Save<N>.lsd alone, on every build; a load reads the .lsd; an old
-#      save<N>.mrb is not read; a failed .lsd write fails the save with no fallback.
+# New saves use native fields without chunk 200 (ADR 0401). Checks cover
+# representable state, documented precision limits, native field mutations,
+# legacy extension migration, foreground execution layout and save-slot policy.
 #
 # Usage: ruby scripts/rpg2k_lsd_authoritative_check.rb   (exits non-zero on failure)
 
@@ -65,6 +51,7 @@ lib = File.join(ROOT, 'mruby-rpg2k', 'mrblib')
 load File.join(lib, 'game.rb')
 load File.join(lib, 'game', 'battle.rb')
 load File.join(lib, 'game', 'battle_support.rb')
+load File.join(lib, 'game', 'legacy_lsd.rb')
 load File.join(lib, 'game', 'lsd_io.rb')
 load File.join(lib, 'interpreter.rb')
 load File.join(lib, 'main.rb')
@@ -123,6 +110,11 @@ class FakeActorDB
   # the handful of checks that need Game::ChipSet/#terrain resolution (e.g.
   # SAVE_SYSTEM field 125's own database-backed lookup).
   attr_accessor :chipset, :terrain
+  def common_event
+    { 1 => { event: [LCF::EventCommand.new(11410, 0, '', [1]),
+                     LCF::EventCommand.new(11410, 0, '', [1]),
+                     LCF::EventCommand.new(0, 0, '', [])] } }
+  end
   # `enemy_group` defaults to "every id exists" (Hash.new(true)) since most
   # checks using this fixture have nothing to do with troop validity; pass an
   # explicit hash (e.g. {}) to exercise the missing-troop-id diagnostic path.
@@ -200,8 +192,10 @@ def deep_diff(a, b, path = '')
     end
   elsif a.is_a?(Array) && b.is_a?(Array) && a.size == b.size
     a.each_index { |i| out.concat(deep_diff(a[i], b[i], "#{path}[#{i}]")) }
+  elsif a.is_a?(Numeric) && b.is_a?(Numeric) && (a - b).abs < 1e-9
+    # Wire double conversions may introduce one rounding bit.
   elsif a != b
-    out << "#{path}: live=#{a.inspect[0, 90]} lsd=#{b.inspect[0, 90]}"
+    out << "#{path}: expected=#{a.inspect[0, 90]} lsd=#{b.inspect[0, 90]}"
   end
   out
 end
@@ -364,12 +358,44 @@ end
 # The state after a real .lsd write and read back, through the file bytes (the
 # same path save_game/load_save_state take).
 def via_lsd(db, st)
-  bytes = st.to_lsd(st.save_count).to_lcf
+  bytes = st.to_lsd(st.save_count, nil, 1, db).to_lcf
   Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(bytes)))
 end
 
+def lsd_bytes(st)
+  st.to_lsd(st.save_count, nil, 1, rich_party_db).to_lcf
+end
 
-# -- 1. field by field: live state == LSD load -------------------------------
+def copy_fields(value)
+  case value
+  when Hash
+    value.each_with_object({}) { |(key, child), out| out[key] = copy_fields(child) }
+  when Array
+    value.map { |child| copy_fields(child) }
+  else
+    value
+  end
+end
+
+# Only the native format's documented information losses are canonicalized.
+def native_snapshot(st)
+  h = copy_fields(live_fields(st))
+  if (flash = h[:player_flash]) && flash[:frames] > 0
+    total = flash[:total] && flash[:total] > 0 ? flash[:total] : flash[:frames]
+    flash[:power] = flash[:power].to_f * flash[:frames] / total
+    flash[:total] = flash[:frames]
+  end
+  h[:pictures].each do |id, pic|
+    pic[:name] = '' unless st.pictures[id].shown?
+    if pic[:topacity]
+      trans = (100.0 - pic[:topacity] * 100.0 / 255.0).round
+      pic[:topacity] = Game.trans_to_opacity(trans)
+    end
+  end
+  h
+end
+
+# -- 1. field by field: native representable state --------------------------
 
 # A new-game state, seeded the way a real new game is (screen transitions come
 # from the database; a fresh State has none until seeded).
@@ -408,11 +434,12 @@ SCENARIOS = {
 }
 
 SCENARIOS.each do |label, build|
-  check "LSD save loads back to the live state: #{label}" do
+  check "native LSD preserves representable state: #{label}" do
     db = rich_party_db
     st = build.call
-    loaded = via_lsd(db, st)
-    diffs = deep_diff(live_fields(st), live_fields(loaded))
+    expected = native_snapshot(st)
+    l = live_fields(via_lsd(db, st))
+    diffs = deep_diff(expected, l)
     ok diffs.empty?, "the live state vs its LSD load differ:\n      " + diffs.join("\n      ")
     # No file-level fixed-point assertion here: writing a reloaded in-flight picture again
     # fails (its fields come back as Floats, which the LCF writer rejects), a pre-existing
@@ -426,68 +453,122 @@ check 'a fractional picture opacity survives the LSD save exactly, not rounded t
   st = rich_state(db)
   st.show_picture(9, { name: 'frac', x: 0, y: 0, zoom: 100, opacity: 199.7 })
   l = via_lsd(db, st)
-  eq 199.7, l.pictures[9].to_h[:opacity], 'the fractional opacity round-trips exactly'
+  ok((199.7 - l.pictures[9].to_h[:opacity]).abs < 1e-9, 'fractional current opacity is preserved')
   eq 'frac', l.pictures[9].to_h[:name]
 end
 
-# -- 2. each chunk-200 record is load-bearing ---------------------------------
+# -- 2. native field mutations must be observed -------------------------------
 
-# Tag -> the live_fields path(s) the check expects to differ once that record is gone.
-EXT_MUTATIONS = {
-  Game::State::EXT_TAG_WEATHER => ['weather'],
-  Game::State::EXT_TAG_ENCOUNTER_TOTAL => ['encounter_total'],
-  Game::State::EXT_TAG_BOARDED => ['boarded'],
-  Game::State::EXT_TAG_FLASH => ['player_flash'],
-  Game::State::EXT_TAG_COMMON_PROGRESS => ['common_event_progress'],
-  Game::State::EXT_TAG_PICTURE_OPACITY => ['pictures'],
+NATIVE_MUTATIONS = {
+  'weather' => [102, [48, 49], '.weather'],
+  'encounter accumulation' => [104, [124], '.encounter_total'],
+  'boarded vehicle' => [104, [102, 103], '.boarded'],
+  'flash level' => [104, [84], '.player_flash'],
+  'common-event progress' => [114, nil, '.common_event_progress'],
+  'fractional current opacity' => [103, nil, '.pictures'],
+  'pan target' => [104, [114], '.screen'],
 }.freeze
 
-EXT_MUTATIONS.each do |tag, paths|
-  check "dropping chunk-200 record #{tag} is caught by the field-by-field check" do
+NATIVE_MUTATIONS.each do |label, (chunk, fields, path)|
+  check "dropping native #{label} changes the restored state" do
     db = rich_party_db
     st = rich_state(db)
-    expected = live_fields(st)
-    save = st.to_lsd(st.save_count)
-    records = Game::State.ext_records(save[:lsd_ext].pack('C*'))
-    ok records.any? { |t, _b| t == tag }, "record #{tag} is present in the rich state"
-    save[:lsd_ext] = Game::State.ext_payload(records.reject { |t, _b| t == tag }).bytes
+    st.screen.pan(1, 2, 3)
+    st.screen.update
+    expected = live_fields(via_lsd(db, st))
+    save = st.to_lsd(st.save_count, nil, 1, db)
+    if fields
+      row = save[chunk]
+      fields.each { |id| row.delete(id) }
+      save[chunk] = row
+    else
+      save.delete(chunk)
+    end
     diffs = deep_diff(expected, live_fields(Game::State.from_lsd(db, save)))
-    ok !diffs.empty?, "dropping record #{tag} changed nothing: the check would not notice"
-    ok diffs.any? { |d| paths.any? { |p| d.start_with?(".#{p}") || d.include?(".#{p}") } },
-       "dropping record #{tag} changed #{diffs.inspect}, not #{paths.inspect}"
+    ok diffs.any? { |d| d.start_with?(path) }, "mutation not detected: #{diffs.inspect}"
   end
 end
 
-check 'dropping the version record makes the file read as an editor save' do
+check 'new saves contain only native top-level chunks, never the extension' do
   db = rich_party_db
-  st = rich_state(db)
-  save = st.to_lsd(st.save_count)
-  ok Game::State.lsd_extended?(save), 'a fresh engine .lsd carries the marker'
-  records = Game::State.ext_records(save[:lsd_ext].pack('C*'))
-  save[:lsd_ext] = Game::State.ext_payload(records.reject { |t, _b| t == Game::State::EXT_TAG_VERSION }).bytes
-  ok !Game::State.lsd_extended?(save), 'without its version record the marker is gone'
+  save = rich_state(db).to_lsd(nil, nil, 1, db)
+  ok !save.key?(200), 'chunk 200 is absent'
+  ok !Game::LegacyLsd.marked?(save), 'the old marker is absent'
+  row = save.instance_variable_get(:@root)
+  ids = row.instance_variable_get(:@data).each_index.select { |i| row.key?(i) }
+  ok ids.all? { |i| (100..114).include?(i) }, "non-native chunk ids: #{ids.inspect}"
 end
 
-# -- 3. the marker and unknown chunks ----------------------------------------
+# Captured from the pre-migration writer, including every legacy record kind.
+LEGACY_EXTENSION = [0, 1, 1, 1, 2, 2, 2, 2, 1, 3, 3, 1, 3, 4, 13, 8, 0, 16, 9, 12,
+  0, 0, 0, 0, 0, 0, 68, 64, 5, 2, 1, 2, 6, 31, 3, 3, 112, 105, 99, 0, 0, 0, 0,
+  0, 8, 105, 64, 0, 4, 6, 101, 114, 97, 115, 101, 100, 0, 0, 0, 0, 0, 224, 111,
+  64, 0, 7, 41, 0, 0, 0, 0, 0, 0, 240, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 64, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 240, 63, 0].freeze
 
-check 'a genuine-editor-style .lsd (no chunk 200) loads with the old defaults' do
+check 'a legacy extension loads exactly, then re-saves using native chunks' do
   db = rich_party_db
   st = rich_state(db)
-  save = st.to_lsd(st.save_count)
-  save.delete(200)
-  ok !Game::State.lsd_extended?(save), 'no chunk 200 means no engine marker'
-  old = Game::State.from_lsd(db, save)
-  eq 0, old.weather.type, 'weather is not restored from a save that never carried it'
-  eq 0, old.encounter_total, 'encounter total defaults to 0'
-  eq nil, old.boarded, 'boarded defaults to nil'
-  eq 'Renamed Ally', old.party.actor_by_id(2).name, 'the liblcf chunks still restore names'
-  eq 30, old.timer(0).seconds, 'the liblcf chunks still restore timers'
-  eq 7, old.save_count, 'and save_count (chunk 101 field 131)'
+  st.screen.pan(1, 2, 3)
+  st.screen.update
+  save = st.to_lsd(nil, nil, 1, db)
+  save[:lsd_ext] = LEGACY_EXTENSION
+  loaded = Game::State.from_lsd(db, save)
+  diffs = deep_diff(live_fields(st), live_fields(loaded))
+  ok diffs.empty?, "legacy state changed: #{diffs.inspect}"
+  ok !loaded.to_lsd(nil, nil, 1, db).key?(200), 're-saving migrates the old extension'
+end
+
+check 'an unrelated native/tooling chunk 200 is ignored by the runtime' do
+  db = rich_party_db
+  st = rich_state(db)
+  save = st.to_lsd(nil, nil, 1, db)
+  save[:lsd_ext] = [1, 1, 0, 0, 0]
+  ok !Game::LegacyLsd.marked?(save), 'unmarked bytes are not our legacy extension'
+  diffs = deep_diff(native_snapshot(st), live_fields(Game::State.from_lsd(db, save)))
+  ok diffs.empty?, "unrelated chunk changed state: #{diffs.inspect}"
+end
+
+check 'an unsupported legacy extension version fails explicitly' do
+  db = rich_party_db
+  save = rich_state(db).to_lsd(nil, nil, 1, db)
+  save[:lsd_ext] = [0, 1, 2]
+  begin
+    Game::State.from_lsd(db, save)
+    raise 'unsupported version was accepted'
+  rescue RuntimeError => e
+    ok e.message.include?('unsupported legacy LSD extension version 2'), e.message
+  end
+end
+
+check 'legacy wrapped foreground frames still load' do
+  db = rich_party_db
+  st = rich_state(db)
+  frame = { commands: [LCF::EventCommand.new(11410, 0, '', [1])], current_command: 1, event_id: 5 }
+  st.foreground_event_exec = { frames: [frame] }
+  save = st.to_lsd(nil, nil, 1, db)
+  wrapper = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_LEGACY_FOREGROUND_EVENT })
+  wrapper[1] = save[113]
+  save[113] = wrapper
+  save[:lsd_ext] = [0, 1, 1]
+  loaded = Game::State.from_lsd(db, save)
+  eq 5, loaded.foreground_event_exec[:event_id]
+  eq 1, loaded.foreground_event_exec[:frames][0][:current_command]
+end
+
+check 'cursor-only common progress requires a database command list' do
+  db = rich_party_db
+  begin
+    rich_state(db).to_lsd
+    raise 'cursor without commands was silently discarded'
+  rescue RuntimeError => e
+    ok e.message.include?('needs its database command list'), e.message
+  end
 end
 
 check 'an unknown chunk id survives an LCF::SaveData read and write byte for byte' do
   st = rich_state
-  bytes = st.to_lsd(st.save_count).to_lcf
+  bytes = st.to_lsd(st.save_count, nil, 1, rich_party_db).to_lcf
   extra = LCF.write_ber(201) + LCF.write_ber(3) + 'xyz'
   with_unknown = bytes + extra
   save = LCF::SaveData.new(StringIO.new(with_unknown))
@@ -525,7 +606,7 @@ check 'a save writes the .lsd alone, and a load reads it back' do
     ok !File.exist?(File.join(dir, 'save1.mrb')), 'no Marshal dump is written'
     loaded = app.load_save_state(1)
     ok loaded, 'the slot loads'
-    diffs = deep_diff(live_fields(st), live_fields(loaded))
+    diffs = deep_diff(native_snapshot(st), live_fields(loaded))
     ok diffs.empty?, "the loaded state differs from the saved one:\n      " + diffs.join("\n      ")
   end
 end

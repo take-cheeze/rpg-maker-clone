@@ -560,7 +560,7 @@ assert "LCF::SaveData decodes the inventory, common-event and foreground-event c
                           lcf_int_field(11, 5), lcf_int_field(12, 0),
                           lcf_field(13, "\x00")])
   fg_state = lcf_array1d([lcf_field(1, lcf_array2d([[1, fg_frame]]))])
-  foreground = lcf_array1d([lcf_field(1, fg_state)])
+  foreground = fg_state
   body = lcf_array1d([lcf_field(109, inventory),
                       lcf_field(113, foreground),
                       lcf_field(114, common)])
@@ -577,7 +577,7 @@ assert "LCF::SaveData decodes the inventory, common-event and foreground-event c
   assert_equal 7, ce[:event_id]
   assert_equal true, ce[:triggered_by_decision_key]
 
-  fg = save[:foreground_event][:execution_state][:stack][1]
+  fg = save[:foreground_event][:stack][1]
   assert_equal [], fg[:commands]
   assert_equal 5, fg[:current_command]
   assert_equal 0, fg[:event_id]
@@ -870,4 +870,67 @@ assert 'SaveData built from scratch round-trips through the reader' do
   assert_equal [false, true, false], reread[101][:switches]
   assert_equal [0, 7, 0], reread[101][:variables]
   assert_equal 2, reread[101][:save_count]
+end
+
+assert 'native RPG_RT weather and in-flight pan/flash fields (ADR 0400)' do
+  screen = LCF::Array1D.new([48, 1, 1, 49, 1, 2, 0].pack('C*'),
+                           { elements: LCF::Schema::SAVE_SCREEN })
+  assert_equal 1, screen[:weather]
+  assert_equal 2, screen[:weather_strength]
+  bytes = [81, 1, 31, 82, 1, 7, 83, 1, 3, 84, 8, 0, 0, 0, 0, 0, 0, 57, 64,
+           85, 2, 132, 88, 111, 1, 0, 114, 2, 138, 0, 121, 1, 4, 0].pack('C*')
+  hero = LCF::Array1D.new(bytes, { elements: LCF::Schema::SAVE_PARTY_LOCATION })
+  assert_equal 31, hero[:flash_red]
+  assert_equal 7, hero[:flash_green]
+  assert_equal 3, hero[:flash_blue]
+  assert_equal 25.0, hero[:flash_current_level]
+  assert_equal 600, hero[:flash_time_left]
+  assert_equal 0, hero[:pan_state]
+  assert_equal 2304, hero[:pan_current_x]
+  assert_equal 1792, hero[:pan_current_y]
+  assert_equal 1280, hero[:pan_finish_x]
+  assert_equal 1792, hero[:pan_finish_y]
+  assert_equal 4, hero[:pan_speed]
+end
+
+assert 'native RPG_RT aboard and completed-pan fields (ADR 0400)' do
+  bytes = [102, 1, 1, 103, 1, 3, 113, 2, 136, 0, 115, 2, 136, 0,
+           121, 1, 8, 0].pack('C*')
+  hero = LCF::Array1D.new(bytes, { elements: LCF::Schema::SAVE_PARTY_LOCATION })
+  assert_equal true, hero[:aboard]
+  assert_equal 3, hero[:vehicle]
+  assert_equal false, hero[:boarding]
+  assert_equal false, hero[:unboarding]
+  assert_equal 1, hero[:pan_state]
+  assert_equal 1024, hero[:pan_current_y]
+  assert_equal 1024, hero[:pan_finish_y]
+  assert_equal 8, hero[:pan_speed]
+  vehicle = LCF::Array1D.new([101, 1, 3, 0].pack('C*'),
+                            { elements: LCF::Schema::SAVE_MOVABLE })
+  assert_equal 3, vehicle[:vehicle]
+end
+
+assert 'native RPG_RT fractional current picture transparency (ADR 0400)' do
+  bytes = [8, 8, 248, 40, 92, 143, 194, 117, 49, 64, 34, 1, 63,
+           51, 2, 132, 82, 0].pack('C*')
+  picture = LCF::Array1D.new(bytes, { elements: LCF::Schema::SAVE_PICTURE })
+  assert_true((picture[:current_transparency] - 17.46).abs < 0.000001)
+  assert_equal 63, picture[:transparency]
+  assert_equal 594, picture[:time_left]
+end
+
+assert 'native RPG_RT encounter accumulator and common-event cursor (ADR 0400)' do
+  hero = LCF::Array1D.new([124, 2, 224, 57, 0].pack('C*'),
+                         { elements: LCF::Schema::SAVE_PARTY_LOCATION })
+  assert_equal 12345, hero[:total_encounter_rate]
+  bytes = [1, 37, 1, 30, 1, 1, 1, 1, 17, 2, 17, 214, 62, 0, 0, 2, 1, 1,
+           217, 18, 0, 0, 1, 100, 0, 0, 0, 0, 11, 1, 2, 22, 0, 0,
+           31, 2, 132, 87, 0, 0].pack('C*')
+  common = LCF::Array1D.new(bytes, { elements: LCF::Schema::SAVE_COMMON_EVENT })
+  execution = common[1]
+  frame = execution[:stack][1]
+  assert_equal 2, frame[:current_command]
+  assert_equal 0, frame[:event_id]
+  assert_equal [11070, 11410, 0], frame[:commands].map { |cmd| cmd.code }
+  assert_equal 599, execution[:wait_time]
 end

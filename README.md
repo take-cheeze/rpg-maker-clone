@@ -43,6 +43,17 @@
   camera). Nepheshel's town, an interior and an open-water map now render
   **pixel-identical** to RPG_RT — tile layers, autotiles, upper/lower layering
   and event sprites all on its exact pixels
+- Native LSD fields for weather, hero boarding, camera pan and encounter
+  accumulation are exposed by the save schema. Genuine `RPG_RT.exe` captures
+  also verify active flash, fractional picture transparency and common-event
+  cursors. `scripts/lcf_native_schema_probe.rb` prepares isolated probe games;
+  [ADR 0400](docs/adr/0400-native-lsd-extension-field-slots.md) records the
+  commands, wire values and remaining compatibility limits. New saves use these
+  native fields without extension chunk 200; existing extended saves still load
+  and migrate on their next save. [ADR 0401](docs/adr/0401-native-lsd-without-extension.md)
+  explains native precision limits and foreground-event layout. The read-only
+  `Game::LegacyLsd` adapter handles old extension payloads separately from native
+  serialization ([ADR 0402](docs/adr/0402-isolate-legacy-lsd-migration.md)).
 - RPG_RT's own **Test Play debug keys** work, gated on `--test_play`/`Game.ini`
   `[Game] Test=1` the same way every other debug tool in this engine is (see
   "Profiling" below) — a released game never sees any of them do anything:
