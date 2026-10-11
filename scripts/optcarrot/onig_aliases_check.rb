@@ -2,10 +2,10 @@
 # frozen_string_literal: true
 
 require 'tmpdir'
-require_relative '../tools/optcarrot_probe/onig_aliases'
-require_relative '../tools/bc2cpp/closed_world'
+require_relative '../../tools/optcarrot_probe/onig_aliases'
+require_relative '../../tools/bc2cpp/closed_world'
 
-root = File.expand_path('..', __dir__)
+root = File.expand_path('../..', __dir__)
 source = File.read(File.join(root, '3rd/mruby-onig-regexp/mrblib/onig_regexp.rb'))
 transformed = OptcarrotOnigAliases.transform(source)
 

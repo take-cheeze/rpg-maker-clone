@@ -101,7 +101,7 @@ load File.join(mrblib, 'wolf.rb')
 load File.join(mrblib, 'data_wolf.rb')
 load File.join(mrblib, 'data.rb')
 
-loose_dir = ARGV[0] || File.expand_path('../data/wolfrpg-sample-3.724/WOLF_RPG_Editor3', __dir__)
+loose_dir = ARGV[0] || File.expand_path('../../data/wolfrpg-sample-3.724/WOLF_RPG_Editor3', __dir__)
 unless Wolf::Project.project?(loose_dir)
   puts "No loose WOLF RPG Editor project at #{loose_dir}; nothing to check."
   exit 0

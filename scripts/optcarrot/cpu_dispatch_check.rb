@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require_relative '../tools/optcarrot_probe/cpu_dispatch'
-require_relative '../3rd/optcarrot/lib/optcarrot'
+require_relative '../../tools/optcarrot_probe/cpu_dispatch'
+require_relative '../../3rd/optcarrot/lib/optcarrot'
 
 cpu = Class.new(Optcarrot::CPU)
 cpu.const_set(:RP2A03_CC, Optcarrot::RP2A03_CC)

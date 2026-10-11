@@ -47,6 +47,6 @@ Two behaviours change, both accepted by the session owner:
   0 -> 4206; `bc2cpp_send(M` 2096 -> 2096; live `mrb_funcall` 393 -> 393; gate markers 4206 -> 4206.
   Apart from the callee rename and the new helper, the generated C++ is unchanged.
 - Verified: the NoMethodError (class, message, name, args, backtrace) matches the dispatching form
-  against a real mruby core (`scripts/bc2cpp_nomethod_raise_check.rb`). The verify abort is
+  against a real mruby core (`scripts/bc2cpp/nomethod_raise_check.rb`). The verify abort is
   unchanged. The reviewed-list, proven-miss and nested-compile-state checks pass.
 - Unreviewed sites and sites outside the closed world are unaffected.

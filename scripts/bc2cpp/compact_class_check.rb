@@ -4,18 +4,18 @@
 # is named by its resolved outer constant, and only an unresolvable one keeps the
 # closed-world refusal.
 #
-#   MRBC=path/to/host/mrbc ruby scripts/bc2cpp_compact_class_check.rb
+#   MRBC=path/to/host/mrbc ruby scripts/bc2cpp/compact_class_check.rb
 #
 # Exits non-zero on the first failure. Each fixture is compiled as a closed world
-# of the wio gems, the same way scripts/bc2cpp_nomethod_reviewed_check.rb does.
+# of the wio gems, the same way scripts/bc2cpp/nomethod_reviewed_check.rb does.
 require 'open3'
 require 'rbconfig'
 require 'shellwords'
 require 'tmpdir'
 
-root = File.expand_path('..', __dir__)
+root = File.expand_path('../..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
-require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
 
 $failures = 0
 def check(name, cond)

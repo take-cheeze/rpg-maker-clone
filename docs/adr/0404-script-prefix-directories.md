@@ -1,4 +1,4 @@
-# 0403. Group scripts by their filename prefixes
+# 0404. Group scripts by their filename prefixes
 
 Date: 2026-10-12
 

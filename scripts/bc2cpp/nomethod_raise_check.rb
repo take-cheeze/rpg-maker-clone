@@ -13,16 +13,16 @@
 #   - the raise helper carries the verify switch, and -DBC2CPP_NOMETHOD_VERIFY
 #     aborts naming the site before any raise.
 #
-#   MRBC=path/to/host/mrbc BC2CPP_MRUBY_CORE=dir ruby scripts/bc2cpp_nomethod_raise_check.rb
+#   MRBC=path/to/host/mrbc BC2CPP_MRUBY_CORE=dir ruby scripts/bc2cpp/nomethod_raise_check.rb
 #   (dir: lib/libmruby.a or lib/libmruby_core.a, and include/)
 
 require 'open3'
 require 'tmpdir'
-require_relative '../tools/bc2cpp/symbol_cache'
-require_relative '../tools/bc2cpp/nomethod_reviewed'
-require_relative 'bc2cpp_cxx'
+require_relative '../../tools/bc2cpp/symbol_cache'
+require_relative '../../tools/bc2cpp/nomethod_reviewed'
+require_relative 'cxx'
 
-root = File.expand_path('..', __dir__)
+root = File.expand_path('../..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
 failures = []
 check = lambda do |what, condition|

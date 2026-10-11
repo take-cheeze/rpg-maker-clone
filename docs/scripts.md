@@ -1,8 +1,8 @@
 # Repository scripts
 
 Related scripts live in directories named after their former filename prefix.
-The redundant prefix is removed: `scripts/bc2cpp_array_push_fastpath_check.rb`
-is now `scripts/bc2cpp/array_push_fastpath_check.rb`.
+The redundant prefix is removed: `bc2cpp_array_push_fastpath_check.rb`
+now lives at `scripts/bc2cpp/array_push_fastpath_check.rb`.
 
 | Directory | Purpose |
 | --- | --- |
@@ -12,6 +12,7 @@ is now `scripts/bc2cpp/array_push_fastpath_check.rb`.
 | `wio/`, `nano7/`, `maix/`, `m5stack/` | Target builds, smoke checks and reports |
 | `download/`, `rtp/` | Sample projects, assets and RTP installers |
 | `build/`, `native/`, `mruby/`, `nix/` | Build and dependency utilities |
+| `optcarrot/` | Optcarrot benchmark and dispatch checks |
 | `ci/`, `coverage/` | CI helpers and host Ruby coverage |
 | `gen/`, `compare/`, `run/` | Generators and Wine comparison/run helpers |
 

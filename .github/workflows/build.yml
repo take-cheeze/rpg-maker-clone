@@ -1273,9 +1273,9 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/typed_reflection_check.rb
           - shard: optcarrot-benchmark
             checks: |
-              ruby scripts/optcarrot_cpu_dispatch_check.rb
-              ruby scripts/bc2cpp_optcarrot_world_check.rb
-              ruby scripts/optcarrot_onig_aliases_check.rb
+              ruby scripts/optcarrot/cpu_dispatch_check.rb
+              ruby scripts/bc2cpp/optcarrot_world_check.rb
+              ruby scripts/optcarrot/onig_aliases_check.rb
               MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               OPTCARROT_CLOSED_WORLD=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
@@ -1283,7 +1283,7 @@ jobs:
             # Split from fast: the three slowest checks there (~10, ~5 and ~0.2 min).
             checks: |
               ./scripts/bc2cpp/coverage_check.bash build-bc2cpp/mruby
-              ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
+              ./scripts/optcarrot/bc2cpp_coverage_check.bash build-bc2cpp/mruby
               MRBC="$mrbc" ruby scripts/bc2cpp/rescue_shadow_check.rb
           - shard: fast
             checks: |

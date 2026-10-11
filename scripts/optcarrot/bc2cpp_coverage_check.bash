@@ -6,9 +6,9 @@ set -euo pipefail
 # The generated report is intentionally not tracked: bc2cpp changes update
 # aggregate counts and otherwise make concurrent compiler PRs conflict.
 #
-# Usage: scripts/optcarrot_bc2cpp_coverage_check.bash path/to/mruby/build/dir
+# Usage: scripts/optcarrot/bc2cpp_coverage_check.bash path/to/mruby/build/dir
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 build_dir="${1:-}"
 if [ -z "$build_dir" ] || [ ! -d "$build_dir" ]; then

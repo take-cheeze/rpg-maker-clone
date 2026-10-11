@@ -3,9 +3,9 @@
 
 require 'fileutils'
 require 'tmpdir'
-require_relative '../tools/bc2cpp/compiled_gems'
+require_relative '../../tools/bc2cpp/compiled_gems'
 
-root = File.expand_path('..', __dir__)
+root = File.expand_path('../..', __dir__)
 Dir.mktmpdir('optcarrot-world-check-') do |dir|
   FileUtils.mkdir_p(["#{dir}/mrblib", "#{dir}/src"])
   bundle = "#{dir}/mrblib/benchmark.rb"
