@@ -1123,9 +1123,8 @@ class RPG2k
   end
 
   # Persist the running game state to a slot as Save<slot>.lsd (docs/adr/0395, 0399).
-  # The .lsd carries every Game::State field the old Marshal dump did (chunk 200 holds
-  # the few the liblcf chunks cannot). A failed write fails the save, so the player is
-  # told rather than silently keeping an older slot.
+  # Native field precision follows ADR 0401. A failed write fails the save,
+  # so the player is told rather than silently keeping an older slot.
   def save_game state, slot = 1
     state.save_count += 1 # RPG2000 counts each save; written into the .lsd
     state.to_lsd(state.save_count, nil, slot, @db, @map_tree).save_to(lsd_path(slot))
