@@ -51,7 +51,9 @@
   commands, wire values and remaining compatibility limits. New saves use these
   native fields without extension chunk 200; existing extended saves still load
   and migrate on their next save. [ADR 0401](docs/adr/0401-native-lsd-without-extension.md)
-  explains native precision limits and foreground-event layout.
+  explains native precision limits and foreground-event layout. The read-only
+  `Game::LegacyLsd` adapter handles old extension payloads separately from native
+  serialization ([ADR 0402](docs/adr/0402-isolate-legacy-lsd-migration.md)).
 - RPG_RT's own **Test Play debug keys** work, gated on `--test_play`/`Game.ini`
   `[Game] Test=1` the same way every other debug tool in this engine is (see
   "Profiling" below) — a released game never sees any of them do anything:

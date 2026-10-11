@@ -51,6 +51,7 @@ lib = File.join(ROOT, 'mruby-rpg2k', 'mrblib')
 load File.join(lib, 'game.rb')
 load File.join(lib, 'game', 'battle.rb')
 load File.join(lib, 'game', 'battle_support.rb')
+load File.join(lib, 'game', 'legacy_lsd.rb')
 load File.join(lib, 'game', 'lsd_io.rb')
 load File.join(lib, 'interpreter.rb')
 load File.join(lib, 'main.rb')
@@ -414,7 +415,7 @@ check 'new saves contain only native top-level chunks, never the extension' do
   db = rich_party_db
   save = rich_state(db).to_lsd(nil, nil, 1, db)
   ok !save.key?(200), 'chunk 200 is absent'
-  ok !Game::State.lsd_extended?(save), 'the old marker is absent'
+  ok !Game::LegacyLsd.marked?(save), 'the old marker is absent'
   row = save.instance_variable_get(:@root)
   ids = row.instance_variable_get(:@data).each_index.select { |i| row.key?(i) }
   ok ids.all? { |i| (100..114).include?(i) }, "non-native chunk ids: #{ids.inspect}"
@@ -445,7 +446,7 @@ check 'an unrelated native/tooling chunk 200 is ignored by the runtime' do
   st = rich_state(db)
   save = st.to_lsd(nil, nil, 1, db)
   save[:lsd_ext] = [1, 1, 0, 0, 0]
-  ok !Game::State.lsd_extended?(save), 'unmarked bytes are not our legacy extension'
+  ok !Game::LegacyLsd.marked?(save), 'unmarked bytes are not our legacy extension'
   diffs = deep_diff(native_snapshot(st), Game::State.from_lsd(db, save).to_h)
   ok diffs.empty?, "unrelated chunk changed state: #{diffs.inspect}"
 end
