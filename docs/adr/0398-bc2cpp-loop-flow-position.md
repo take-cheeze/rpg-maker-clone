@@ -36,36 +36,73 @@ that already pass `trace_idx`, and attaches `site[:flow]`, the flow position of 
    the send (`site[:flow] = { irep: block_irep, idx: trace_idx, insn: original }`). A block activation starts from
    unknown inputs (`CallFacts::Flow.states`), and the inlined frame is reset every iteration (`inline_block_frame`),
    so the facts there hold for that iteration, exactly as the BLOCK_FALLBACK bodies already use them (idx passed).
-5. **Method local (refused, `upvar_narrowed`).** Every definition is a GETUPVAR at level 0, which in an inlined body is
-   the method register `upvar_idx` (`codegen_loop_regions`). This path would take the method's flow at the loop's own
-   SENDB, but it is out of this ADR: the first version of the change judged these receivers that way, and it created
-   proven dead fallbacks in `RPG2k::Scene::Map` (the nomethod reviewed-list and proven-miss checks fail on
-   `mruby-rpg2k-compiled`, while master passes them). The method-flow position is not built.
-6. Anything else (several definitions, mixed upvar and local, no SENDB binding) is refused.
+5. **Method local (path `upvar`).** Every definition is a GETUPVAR at level 0, which in an inlined body is the method
+   register `upvar_idx` of the frame that executes the loop's SENDB (`codegen_loop_regions`). The position is that
+   frame's flow at the SENDB (`@inline_loop_parent`, set by `codegen_loop_inline` around the body). The body runs inside
+   that SENDB and nothing else runs between them, so the fact holds for every iteration, provided nothing writes the
+   register: the host's upvar-written set (`fixnum_proof_ctx(host)[:upvars]`, which includes writes from nested blocks)
+   refuses it (`upvar_written`). Several different method registers, or no SENDB binding, are refused
+   (`mixed_definitions`, `upvar_no_position`).
+6. Anything else (several definitions, mixed upvar and local) is refused.
 
-**Narrowing.** Only rule 4 (block-local) and rule 3 (element refusal) give positions. A send whose receiver is a
-method local, including an accumulator the body appends to (`acc << x`), is refused with `upvar_narrowed`. The
-`@inline_loop_parent` state and its save/restore were removed with the method-flow path.
+**Narrowing (superseded).** The first version of this change judged method locals by rule 5 and created proven dead
+fallbacks in `RPG2k::Scene::Map`, which failed the nomethod reviewed-list check on `mruby-rpg2k-compiled`. The narrowed
+version (commit `2f5b8a10`) refused every method local as `upvar_narrowed`. The fallbacks were not a wrong proof: the
+sites are dead because the receiver's class always answers the name (see Review below), and the list was the gate
+that needed them read. Rule 5 is restored after that review.
 
-**Limit: class-narrowed receivers.** A receiver narrowed by a `respond_to?` test (CLASS_NARROWING, ADR 0290) is compiled
-by the narrowing guard rather than through `closed_world_site`, so its sends get no flow position here. A
-block-local receiver sent a plain method (`r = pick(i); r.wait`) is accepted and takes the proven nomethod tail.
-The check's block-local world uses the plain shape; a `respond_to?`-narrowed world is not asserted either way.
+**Review of the proven fallbacks (ADR 0226).** Rule 5 proves four more shipped sites than the narrowed version: three
+`wait` sends in `RPG2k::Scene::Map#resolve_key_input` (`req.wait`, `req` the `KeyInputRequest`) and one `name` send in
+`RPG2k::Scene::Map#shop_lines` (`m.name(id)`, `m` the `Game::Shop`). Each fallback is dead, not a missing method:
+`req` is only ever `KeyInputRequest.new` (`mruby-rpg2k/mrblib/interpreter.rb`, `@key_input_request = req`) or nil,
+and nil returns earlier (`return it.resume_key_input(0) unless req`); `m` is `@shop.model`, only ever `Game::Shop.new`
+(`scene/map.rb`, `open_shop`), and `m.goods` is evaluated before the `name` call, so a nil `m` raises there first.
+Two keys are added to `NOMETHOD_REVIEWED`: `RPG2k::Scene::Map#resolve_key_input -> wait` and
+`RPG2k::Scene::Map#shop_lines -> name`.
 
-The measurement below is the first version (rules 4 and 5 both on). It is not re-measured for the narrowed version.
+**Limit: class-narrowed receivers.** A block-local receiver narrowed by a `respond_to?` test (CLASS_NARROWING, ADR 0290)
+gets no flow position here (72e61c2): its sends are emitted under the narrowing guard. A block-local receiver sent a plain
+method (`r = pick(i); r.wait`) is accepted and takes the proven nomethod tail; the check's block-local world uses that
+shape. A method local narrowed by `respond_to?` is judged by rule 5 (observed: the `POSITIVE` world of the check). Its
+nomethod tail sits inside the CLASS_NARROWING guard, which raises `guard-violation` if the narrowing does not hold, so the
+tail is reachable only when `respond_to?` answers true for a class outside the candidate set.
+
+## Measurement (upvar version: rules 4 and 5 on)
+
+wio closed world, shipped pass (`scripts/bc2cpp_coverage_report.rb`, `SKIP_UNSUPPORTED=1`, `MRBC` the CI-matching
+mrbc), `origin/master` `c4180c74` (narrowed) against the same tree with `2f5b8a1` reverted (rule 5 restored). Live
+(non-comment) counts in `shipped.cxx`:
+
+| site | master (narrowed) | rule 5 on |
+| --- | ---: | ---: |
+| `bc2cpp_send(M` | 1901 | 1897 |
+| `bc2cpp_nomethod(M` | 4506 | 4510 |
+| `mrb_funcall*(` | 396 | 396 |
+| `CLOSED_WORLD kept: singleton_definer` | 9 | 6 |
+| `CLOSED_WORLD kept: core_or_native` | 179 | 178 |
+| all other `kept` reasons | 37 | 37 |
+
+The diff of the two generated files is four lines: the three `req.wait` sends of `resolve_key_input` (`singleton_definer`
+kept now `bc2cpp_nomethod` tail, the `KeyInputRequest` arm stays a direct call) and `m.name(id)` in `shop_lines`
+(`core_or_native` now the proven tail, with its `Game::Shop` arm). All four are the dead fallbacks reviewed above. The
+net gain is four dynamic sends turned into direct calls with a proven-dead tail; the `mrb_funcall` count does not move.
+Of those, the three `wait` sends sit in the per-frame key-input loop.
+
+The older measurement further down (`## Measurement (first version)`) was taken on the first version, before the
+narrowing, against `11fd1034`.
 
 Every refusal is counted by reason (`BC2CPP_LOOP_FLOW_REPORT=1` prints the counts at exit; `=2` one line per send).
 
 **Kill switch.** `BC2CPP_LOOP_FLOW_POSITION=0`: `loop_flow_position` returns nil at once, so the site is the same
 hash as before and every consumer sees the same nil. Measured: the shipped pass with the switch off is
-byte-identical to `origin/master` 11fd1034.
+byte-identical to `origin/master` 11fd1034 (measured on the first version; the rule 5 version was not re-measured with the switch off).
 
 **Consumers.** `site_flow_position(site)` returns `[irep, idx, insn]` from the site's own position or from
 `site[:flow]`. `receiver_instances`, `refined_receiver_instances` and `nil_may_answer?` read it instead of the
 site's fields. Nothing else changes; the element and local arms that use `idx || trace_idx` (ADR 0386 and earlier)
 are unchanged.
 
-## Measurement
+## Measurement (first version)
 
 wio closed world, shipped pass (`BC2CPP_COVERAGE_KEEP_DIR`, `scripts/bc2cpp_coverage_report.rb`), `origin/master`
 `11fd1034` against the same tree with the change. Counts are `CLOSED_WORLD kept:` markers in `shipped.cxx`.
@@ -110,14 +147,18 @@ largest trust extension in this change and is the first thing to re-check if a r
 
 * positive: a receiver the block defines in an inlined `each` is accepted (`local`), and its `wait` send becomes the
   proven nomethod tail;
-* negative: a method-local receiver is refused (`upvar_narrowed`), its `wait` send is not a proven tail;
+* positive: a method-local receiver read in the body, sent plainly, is accepted (`upvar`), and its `wait` send becomes
+  the proven nomethod tail;
+* limit: the same method-local receiver narrowed by `respond_to?` is accepted (`upvar`), and its tail sits under the
+  CLASS_NARROWING guard;
+* negative: a method local the body writes is refused (`upvar_written`), its `wait` send stays by name;
 * negative: the element copy with the element reassigned is refused (`element_reassigned`) and stays by name;
 * negative: an argument receiver has no set to prove, so no send of that world is a proven tail;
 * switch off: nothing is read or refused, and the positive world keeps its singleton sends.
 
-`LFP_MUTANTS=1` runs the same checks on two mutated copies of `tools/bc2cpp`: the wrong iteration position
-(`trace_idx - 1`), and the element guard dropped. Plus the narrowing removed (`:upvar_narrowed` replaced by an accept).
-Each must fail a check.
+`LFP_MUTANTS=1` runs the same checks on four mutated copies of `tools/bc2cpp`: the wrong iteration position
+(`trace_idx - 1`), the element guard dropped, the method-local path disabled (`upvar` replaced by `upvar_narrowed`),
+and the `upvar_written` guard dropped. Each must fail a check.
 
 The existing `bc2cpp_exact_receiver_check` and `bc2cpp_unlisted_class_call_check` still pass with the change
 (the second one on its generated-code section; its g++ section needs a full-core build and was not run here).
