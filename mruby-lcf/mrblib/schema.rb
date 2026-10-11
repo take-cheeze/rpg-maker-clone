@@ -1313,9 +1313,8 @@ module LCF
       # flash_current_level/_time_left stayed absent -- so RPG_RT always
       # writes the RGB triple, defaulting to 0 rather than -1, and only adds
       # the level/time_left pair while a flash is actually in progress. The
-      # *flashing* case's exact byte values (in particular whether
-      # `flash_current_level`'s own decay curve matches this codebase's
-      # linear one) has not been confirmed against genuine RPG_RT.
+      # active-flash wire values are confirmed in ADR 0400; that capture
+      # does not establish the entire decay curve.
       81 => { name: :flash_red, type: :int },
       82 => { name: :flash_green, type: :int },
       83 => { name: :flash_blue, type: :int },
@@ -1323,8 +1322,8 @@ module LCF
       85 => { name: :flash_time_left, type: :int },
       # liblcf's own `SaveVehicleLocation` struct (generator/csv/fields.csv,
       # 0x65 == 101, name `vehicle`) -- a boat/ship/airship-only field this
-      # shared SAVE_MOVABLE table otherwise has no equivalent for (the hero's
-      # own chunk 104 record never carries it). Confirmed present on a
+      # shared layout is overridden for the hero by SAVE_PARTY_LOCATION,
+      # where field 101 means boarding instead. Confirmed present on a
       # genuine kk1.12 save under wine as the vehicle's own 1/2/3 ordinal
       # (boat/ship/airship), on all three vehicle chunks, none of which had
       # ever been boarded that session -- see SAVE_DATA's own 105-107
@@ -1377,6 +1376,24 @@ module LCF
       # `through`/movement timers).
       108 => { name: :parallel_event_execstate, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
     } }
+
+    # Hero-only fields overlap vehicle and map-event ids; keep their types
+    # out of the shared movable layout. Wire evidence and units: ADR 0400.
+    SAVE_PARTY_LOCATION = lazy { SAVE_MOVABLE.call.merge({
+      101 => { name: :boarding, type: :bool, default: false },
+      102 => { name: :aboard, type: :bool, default: false },
+      103 => { name: :vehicle, type: :int, default: 0 },
+      104 => { name: :unboarding, type: :bool, default: false },
+      105 => { name: :preboard_move_speed, type: :int, default: 4 },
+      108 => { name: :menu_calling, type: :bool, default: false },
+      111 => { name: :pan_state, type: :int, default: 1 },
+      112 => { name: :pan_current_x, type: :int, default: 2304 },
+      113 => { name: :pan_current_y, type: :int, default: 1792 },
+      114 => { name: :pan_finish_x, type: :int, default: 2304 },
+      115 => { name: :pan_finish_y, type: :int, default: 1792 },
+      121 => { name: :pan_speed, type: :int, default: 16 },
+      124 => { name: :total_encounter_rate, type: :int, default: 0 },
+    }) }
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)
     # carries a lot more of liblcf's full `SaveMapEventBase` struct
@@ -1957,9 +1974,8 @@ module LCF
     # `Scene::Map#new_parallel`/`#record_parallel_progress`); verified by a
     # from-scratch round trip (encode a captured snapshot, decode it back,
     # confirm a fresh interpreter resumes and finishes identically -- see
-    # `scripts/rpg2k_logic_check.rb`), not against a genuine wine-saved
-    # mid-Parallel-Process `.lsd`, since none was available to compare
-    # byte-for-byte against.
+    # `scripts/rpg2k_logic_check.rb`). Native command/cursor/wait bytes are
+    # also covered by the RPG_RT capture in ADR 0400.
     SAVE_COMMON_EVENT = lazy { {
       1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
     } }
@@ -2250,10 +2266,7 @@ module LCF
       28 => { name: :face4_index, type: :int, default: 0 },
     } }
 
-    # liblcf's SaveScreen (generator/csv/fields.csv), the screen-tint subset
-    # only -- flash/shake/pan/weather/battle-animation are a separate, larger
-    # save-state surface this codebase does not yet model at all in
-    # Game::Screen, and are left out here too.
+    # liblcf SaveScreen fields; native weather captures are recorded in ADR 0400.
     SAVE_SCREEN = lazy { {
       1 => { name: :tint_finish_red, type: :int, default: 100 },
       2 => { name: :tint_finish_green, type: :int, default: 100 },
@@ -2272,6 +2285,8 @@ module LCF
       # `.lsd` write was missing.
       41 => { name: :pan_x, type: :int, default: 0 },
       42 => { name: :pan_y, type: :int, default: 0 },
+      48 => { name: :weather, type: :int, default: 0 },
+      49 => { name: :weather_strength, type: :int, default: 0 },
       # liblcf's own fields 0x2B-0x2F (43-47): the last (or currently
       # playing) battle animation's id/target/frame/active/global-scope --
       # confirmed present (id/target/frame, all nonzero) on the same
@@ -2308,7 +2323,7 @@ module LCF
         101 => { name: :system, type: :Array1D, elements: SAVE_SYSTEM },
         102 => { name: :screen, type: :Array1D, elements: SAVE_SCREEN },
         103 => { name: :pictures, type: :Array2D, elements: SAVE_PICTURE },
-        104 => { name: :hero, type: :Array1D, elements: SAVE_MOVABLE },
+        104 => { name: :hero, type: :Array1D, elements: SAVE_PARTY_LOCATION },
         105 => { name: :boat, type: :Array1D, elements: SAVE_MOVABLE },
         106 => { name: :ship, type: :Array1D, elements: SAVE_MOVABLE },
         107 => { name: :airship, type: :Array1D, elements: SAVE_MOVABLE },
@@ -2325,9 +2340,9 @@ module LCF
         # payload is a list of tagged records written and read by
         # Game::State.ext_records/#lsd_extension_records in
         # mruby-rpg2k/mrblib/game/lsd_io.rb. Declared as raw bytes so the
-        # reader hands back the exact payload; an editor save never has it.
-        # See docs/adr/0395. Whether RPG_RT itself tolerates an unknown chunk
-        # id is UNVERIFIED (no genuine RPG_RT run is available for this).
+        # reader hands back the exact payload. Native fields and this
+        # extension's RPG2000 load probe are documented in ADR 0400;
+        # native compatibility does not establish preservation on re-save.
         200 => { name: :lsd_ext, type: :int8_array },
       }
     }
