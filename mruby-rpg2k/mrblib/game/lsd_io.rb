@@ -1,8 +1,8 @@
 # Game::State's .lsd save/load path, split out of mrblib/game.rb: to_lsd writes a
 # Save<N>.lsd, from_lsd reads one back, and a genuine RPG_RT/editor-written
 # Save<N>.lsd loads through the same from_lsd. The .lsd is the only save format on
-# every build (docs/adr/0395, 0399): its chunk 200 carries every field the old
-# Marshal dump did. See main.rb's own #save_game/#load_save_state for the slot policy.
+# every build. New saves use native chunks; legacy chunk 200 is read only
+# (ADR 0401). See main.rb's #save_game/#load_save_state for the slot policy.
 #
 # Ships on wio too (docs/adr/0399); the wio-only exclusion this file had is gone.
 # `Dir.glob(...).sort` loads this file after mrblib/game.rb regardless of target
@@ -115,7 +115,7 @@ module Game
       end
       save[100] = title
 
-      hero = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+      hero = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PARTY_LOCATION })
       hero[11] = @map_id
       hero[12] = @x
       hero[13] = @y
@@ -207,6 +207,20 @@ module Game
       if leader && leader.charset_name && !leader.charset_name.empty?
         hero[73] = leader.charset_name
         hero[74] = leader.charset_index || 0
+      end
+      # Native camera coordinates are hero-relative sixteenths of pixels.
+      # Right/down camera motion decreases them; see ADR 0400/0401.
+      px, py, tx, ty, step, locked = @screen.pan_save_data
+      hero[111] = locked ? 0 : 1
+      hero[112] = 2304 - (px * 16).round if px != 0
+      hero[113] = 1792 - (py * 16).round if py != 0
+      hero[114] = 2304 - (tx * 16).round if tx != 0
+      hero[115] = 1792 - (ty * 16).round if ty != 0
+      hero[121] = (step * 16).round if step != 1
+      hero[124] = @encounter_total if @encounter_total != 0
+      if @boarded
+        hero[102] = true
+        hero[103] = Vehicle::TYPE_ID[@boarded]
       end
       save[104] = hero
 
@@ -603,10 +617,8 @@ module Game
       # "omit the whole chunk when neutral" this file previously did (which
       # never once produced a byte-identical chunk-102 shape to genuine
       # RPG_RT.exe for the overwhelmingly common "tint never touched" case).
-      # Only tint is modelled here (see @screen's own comment above); the
-      # shake/flash/fade/weather/battle-animation fields liblcf's SaveScreen
-      # also carries are a separate, larger gap this codebase doesn't model
-      # in Game::Screen at all yet, left as a future extension.
+      # Weather belongs to SaveScreen; the complete pan state lives on
+      # SavePartyLocation rather than these screen translation fields.
       scr = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SCREEN })
       finish, current, frames = @screen.tint_save_data
       scr[1] = finish[0] if finish[0] != Screen::NEUTRAL
@@ -618,9 +630,8 @@ module Game
       scr[13] = current[2] if current[2] != Screen::NEUTRAL
       scr[14] = current[3] if current[3] != Screen::NEUTRAL
       scr[15] = frames if frames != 0
-      pan_x, pan_y = @screen.pan_offset
-      scr[41] = pan_x if pan_x != 0
-      scr[42] = pan_y if pan_y != 0
+      scr[48] = @weather.type if @weather.type != 0
+      scr[49] = @weather.strength if @weather.strength != 0
       save[102] = scr
 
       # Chunk 103 is every picture slot RPG2000 offers (Show Picture, 11110)
@@ -695,7 +706,7 @@ module Game
           e[4] = p.x
           e[5] = p.y
           e[7] = p.zoom if p.zoom != 100
-          cur_trans = Game.opacity_to_trans(p.opacity)
+          cur_trans = 100.0 - Game.clamp(p.to_h[:opacity], 0, 255) * 100.0 / 255.0
           e[8] = cur_trans if cur_trans != 0
           # Field 18 (current_bot_trans, RPG2003-only) has no independent
           # value of its own here -- see SAVE_PICTURE's own schema.rb comment
@@ -717,7 +728,7 @@ module Game
           e[31] = fx
           e[32] = fy
           e[33] = fzoom if fzoom != 100
-          fin_trans = Game.opacity_to_trans(fopacity)
+          fin_trans = (100.0 - Game.clamp(fopacity, 0, 255) * 100.0 / 255.0).round
           e[34] = fin_trans if fin_trans != 0
           # Field 35 (finish_bot_trans, RPG2003-only) mirrors field 34 for
           # the same reason field 18 mirrors field 8 above.
@@ -899,9 +910,7 @@ module Game
       # comment for when that is genuinely reachable. Absent otherwise,
       # matching every other "nothing to restore" chunk in this method.
       if @foreground_event_exec && @foreground_event_exec[:frames]
-        fg = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_FOREGROUND_EVENT })
-        fg[1] = self.class.build_event_exec_state(@foreground_event_exec[:frames])
-        save[113] = fg
+        save[113] = self.class.build_event_exec_state(@foreground_event_exec[:frames])
       end
 
       # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
@@ -914,6 +923,13 @@ module Game
       # enumerate "every common event id in the database" without a `db`
       # argument it is not always given.
       running_common = @common_event_exec.select { |_, frames| frames && !frames.empty? }
+      @common_event_progress.each do |id, index|
+        next if running_common[id]
+        events = db && db[:common_event]
+        event = events && events[id]
+        raise "common event #{id} needs its database command list to save a cursor" unless event
+        running_common[id] = [{ commands: event[:event] || [], current_command: index, event_id: 0 }]
+      end
       unless running_common.empty?
         ce = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_COMMON_EVENT })
         running_common.each do |id, frames|
@@ -924,29 +940,12 @@ module Game
         save[114] = ce
       end
 
-      # Chunk 200: the fields no chunk above models exactly (see the
-      # extension section below and docs/adr/0395).
-      save[:lsd_ext] = self.class.ext_payload(lsd_extension_records).bytes
-
       save
     end
 
-    # -- Save-extension chunk (chunk 200, docs/adr/0395) ----------------------
-    #
-    # Before this, the .lsd export dropped a handful of fields that only the
-    # Marshal dump carried, so the Marshal save stayed the only exact one. Chunk
-    # 200 (SAVE_DATA's :lsd_ext, a project extension, not an RPG2000 chunk)
-    # carries those fields as a list of tagged records:
-    #
-    #   [BER tag][BER body length][body]
-    #
-    # A body is a run of BER integers (non-negative, clamped on write) and, for
-    # the two float fields, 8-byte little-endian doubles (`pack('E')`, exact in
-    # both CRuby and mruby). Tag 0 (version) is always written and is the marker
-    # that this .lsd came from this engine -- see .lsd_extended?. Unknown tags
-    # are skipped on read so a later build can add records without breaking this
-    # one. An absent record leaves that field at its own default, so a save
-    # written before chunk 200 existed loads exactly as it always did.
+    # Read-only compatibility for saves written before ADR 0401. No new
+    # save emits this chunk. The leading version record distinguishes our
+    # old payload from unrelated native/tooling chunk-200 data.
     EXT_TAG_VERSION = 0
     EXT_TAG_WEATHER = 1          # body: type, strength (BER)
     EXT_TAG_ENCOUNTER_TOTAL = 2  # body: total steps (BER)
@@ -956,12 +955,6 @@ module Game
     EXT_TAG_PICTURE_OPACITY = 6  # body: per picture: id (BER), opacity, target opacity (doubles)
     EXT_TAG_PAN = 7              # body: pan x, pan y, target x, target y, step (doubles), locked (BER)
     LSD_EXT_VERSION = 1
-
-    # One BER integer for a non-negative field value. A negative value cannot be
-    # written as BER and does not occur for any field here; it clamps to 0.
-    def self.ext_int(value)
-      LCF.write_ber(value.to_i < 0 ? 0 : value.to_i)
-    end
 
     # Every BER integer in a record body, in order.
     def self.ext_ints(body)
@@ -973,10 +966,6 @@ module Game
 
     # A double, as 8 little-endian bytes (pack 'E'), and its inverse.
     # (A picture's own name is carried as a length-prefixed byte run.)
-    def self.ext_double(value)
-      [value.to_f].pack('E')
-    end
-
     def self.ext_double_at(io)
       raw = io.read(8)
       raise 'truncated extension double' if raw.nil? || raw.bytesize != 8
@@ -991,81 +980,17 @@ module Game
         tag = LCF.read_ber(io)
         len = LCF.read_ber(io)
         body = len > 0 ? io.read(len) : ''
-        raise 'truncated extension record' if body.bytesize != len
+        raise 'truncated extension record' if body.nil? || body.bytesize != len
         records.push([tag, body])
       end
       records
     end
 
-    # The chunk-200 payload string for a list of [tag, body] records.
-    def self.ext_payload(records)
-      payload = String.new
-      records.each do |tag, body|
-        payload = payload + LCF.write_ber(tag) + LCF.write_ber(body.bytesize) + body
-      end
-      payload
-    end
-
-    # Whether +save+ (an LCF::SaveData) carries this engine's own chunk 200
-    # version record. A genuine editor Save<N>.lsd has no chunk 200 at all, so
-    # this is false for it and for any .lsd written before this landed.
     def self.lsd_extended?(save)
       payload = save[:lsd_ext]
-      return false unless payload
-      ext_records(payload.pack('C*')).any? { |tag, _body| tag == EXT_TAG_VERSION }
-    end
-
-    # The chunk-200 records for this state, in tag order. Every field here is
-    # one the chunks above either do not model at all or model only to a coarser
-    # precision (picture opacity: 0..100 transparency in chunk 103; flash power
-    # only as its derived current level).
-    def lsd_extension_records
-      records = [[EXT_TAG_VERSION, self.class.ext_int(LSD_EXT_VERSION)]]
-      weather = @weather.to_h
-      records.push([EXT_TAG_WEATHER,
-                    self.class.ext_int(weather[:type]) + self.class.ext_int(weather[:strength])])
-      records.push([EXT_TAG_ENCOUNTER_TOTAL, self.class.ext_int(@encounter_total)])
-      boarded_id = @boarded ? (Vehicle::TYPE_ID[@boarded] || 0) : 0
-      records.push([EXT_TAG_BOARDED, self.class.ext_int(boarded_id)])
-      flash = @player_flash
-      if flash
-        body = self.class.ext_int(flash[:red]) + self.class.ext_int(flash[:green]) +
-               self.class.ext_int(flash[:blue]) + self.class.ext_int(flash[:frames]) +
-               self.class.ext_int(flash[:total]) + self.class.ext_double(flash[:power])
-        records.push([EXT_TAG_FLASH, body])
-      end
-      progress = @common_event_progress || {}
-      unless progress.empty?
-        body = String.new
-        progress.each { |id, idx| body = body + self.class.ext_int(id) + self.class.ext_int(idx) }
-        records.push([EXT_TAG_COMMON_PROGRESS, body])
-      end
-      unless @pictures.empty?
-        body = String.new
-        @pictures.each do |id, pic|
-          h = pic.to_h
-          name = (h[:name] || '').to_s
-          body = body + self.class.ext_int(id) + self.class.ext_int(name.bytesize) + name +
-                 self.class.ext_double(h[:opacity])
-          if h[:topacity].nil?
-            body = body + self.class.ext_int(0)
-          else
-            body = body + self.class.ext_int(1) + self.class.ext_double(h[:topacity])
-          end
-        end
-        records.push([EXT_TAG_PICTURE_OPACITY, body])
-      end
-      # Written only while the pan is off-centre, in flight, or locked: a
-      # camera at rest and unlocked is exactly what the chunk-102 fields 41/42
-      # (and their absence) already say on a plain load.
-      pan_x, pan_y, pan_tx, pan_ty, pan_step, pan_locked = @screen.pan_save_data
-      if pan_x != 0 || pan_y != 0 || pan_tx != 0 || pan_ty != 0 || pan_locked
-        body = self.class.ext_double(pan_x) + self.class.ext_double(pan_y) +
-               self.class.ext_double(pan_tx) + self.class.ext_double(pan_ty) +
-               self.class.ext_double(pan_step) + self.class.ext_int(pan_locked ? 1 : 0)
-        records.push([EXT_TAG_PAN, body])
-      end
-      records
+      return false unless payload && payload[0] == EXT_TAG_VERSION && payload[1] == 1
+      raise "unsupported legacy LSD extension version #{payload[2]}" unless payload[2] == LSD_EXT_VERSION
+      true
     end
 
     # Restore the chunk-200 fields onto +state+. Called last by .from_lsd so the
@@ -1073,8 +998,8 @@ module Game
     # approximations. An absent payload (a save from before chunk 200) changes
     # nothing.
     def self.apply_lsd_extension(state, save)
+      return state unless lsd_extended?(save)
       payload = save[:lsd_ext]
-      return state unless payload
       ext_records(payload.pack('C*')).each do |tag, body|
         case tag
         when EXT_TAG_WEATHER
@@ -1153,6 +1078,18 @@ module Game
       h = {}
       bytes.each_with_index { |v, i| h[i] = v if v != i }
       h
+    end
+
+    def self.read_foreground_frames(save)
+      row = save[113]
+      return nil unless row
+      unless lsd_extended?(save)
+        frames = read_event_exec_frames(row)
+        return frames if frames
+      end
+      # Old engine saves wrapped the native execution state one extra time.
+      legacy = LCF::Array1D.new(row.to_lcf, { elements: LCF::Schema::SAVE_LEGACY_FOREGROUND_EVENT })
+      read_event_exec_frames(legacy[:execution_state])
     end
 
     # Build a SAVE_EVENT_EXEC_STATE chunk (an LCF::Array1D) from a
@@ -1476,7 +1413,7 @@ module Game
         frames = hero[:flash_time_left]
         level = hero[:flash_current_level] || 0.0
         state.player_flash = { red: hero[:flash_red] || 0, green: hero[:flash_green] || 0,
-                               blue: hero[:flash_blue] || 0, power: level.round, frames: frames,
+                               blue: hero[:flash_blue] || 0, power: level, frames: frames,
                                total: frames }
       end
       # Fields 32/41/43/51 (move_frequency/move_route/move_route_index/
@@ -1664,13 +1601,23 @@ module Game
                                    [scr[:tint_current_red], scr[:tint_current_green],
                                     scr[:tint_current_blue], scr[:tint_current_sat]],
                                    scr[:tint_time_left])
-        # The live Pan Screen offset (fields 41/42) -- a genuine save never
-        # carries a separate in-flight target, so this restores at rest
-        # (current == target), the same idle-sync convention already used
-        # for tint/pictures elsewhere in this method.
+        state.weather.set(scr[:weather], scr[:weather_strength])
+      end
+      # Older unmarked exports used only SaveScreen's pixel offsets.
+      if hero.key?(111) || hero.key?(112) || hero.key?(113) || hero.key?(114) || hero.key?(115) || hero.key?(121)
+        state.screen.load_h(pan_x: (2304 - hero[:pan_current_x]) / 16.0,
+                            pan_y: (1792 - hero[:pan_current_y]) / 16.0,
+                            pan_tx: (2304 - hero[:pan_finish_x]) / 16.0,
+                            pan_ty: (1792 - hero[:pan_finish_y]) / 16.0,
+                            pan_step: hero[:pan_speed] / 16.0, pan_locked: hero[:pan_state] == 0)
+      elsif scr
         px = scr[:pan_x] || 0
         py = scr[:pan_y] || 0
         state.screen.load_h(pan_x: px, pan_y: py, pan_tx: px, pan_ty: py)
+      end
+      state.encounter_total = hero[:total_encounter_rate]
+      if hero[:aboard]
+        Vehicle::TYPE_ID.each { |type, id| state.boarded = type if hero[:vehicle] == id }
       end
       restore_pictures(state, save[103])
       # Both Timer Operation countdowns (inventory chunk 109 fields 23-30); a
@@ -1775,8 +1722,7 @@ module Game
       # time, by Scene::Map#restore_foreground_event_exec -- this method
       # itself only decodes the chunk onto Game::State, it does not touch a
       # live interpreter (there is none to touch here).
-      fg_state = save[113] && save[113][:execution_state]
-      fg_frames = read_event_exec_frames(fg_state)
+      fg_frames = read_foreground_frames(save)
       state.foreground_event_exec = fg_frames && { event_id: fg_frames.first[:event_id], frames: fg_frames }
       # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
       # Event Parallel Process -- see #common_event_exec's own comment.
@@ -1787,13 +1733,13 @@ module Game
       if common_events
         common_events.each do |id, entry|
           frames = read_event_exec_frames(entry[:execution_state])
-          state.common_event_exec[id] = frames if frames
+          if frames
+            state.common_event_exec[id] = frames
+            state.common_event_progress[id] = frames.first[:current_command]
+          end
         end
       end
-      # Chunk 200 last: its exact values replace the coarser liblcf-chunk
-      # approximations above (flash, picture opacity) and add the fields no
-      # chunk above carries (weather, encounter total, boarded vehicle, the
-      # common-event progress registry). See .apply_lsd_extension.
+      # Legacy extension values take precedence only for a marked old save.
       apply_lsd_extension(state, save)
       state
     end
@@ -1872,7 +1818,7 @@ module Game
         end
         time_left = pic[:time_left] || 0
         moving = time_left > 0
-        transparency = moving ? pic[:current_transparency] : pic[:transparency]
+        transparency = moving || pic.key?(8) ? pic[:current_transparency] : pic[:transparency]
         state.show_picture(id, name: name,
                                x: ((moving ? pic[:current_x] : pic[:finish_x]) || 0).to_i,
                                y: ((moving ? pic[:current_y] : pic[:finish_y]) || 0).to_i,

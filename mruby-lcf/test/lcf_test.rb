@@ -560,7 +560,7 @@ assert "LCF::SaveData decodes the inventory, common-event and foreground-event c
                           lcf_int_field(11, 5), lcf_int_field(12, 0),
                           lcf_field(13, "\x00")])
   fg_state = lcf_array1d([lcf_field(1, lcf_array2d([[1, fg_frame]]))])
-  foreground = lcf_array1d([lcf_field(1, fg_state)])
+  foreground = fg_state
   body = lcf_array1d([lcf_field(109, inventory),
                       lcf_field(113, foreground),
                       lcf_field(114, common)])
@@ -577,7 +577,7 @@ assert "LCF::SaveData decodes the inventory, common-event and foreground-event c
   assert_equal 7, ce[:event_id]
   assert_equal true, ce[:triggered_by_decision_key]
 
-  fg = save[:foreground_event][:execution_state][:stack][1]
+  fg = save[:foreground_event][:stack][1]
   assert_equal [], fg[:commands]
   assert_equal 5, fg[:current_command]
   assert_equal 0, fg[:event_id]

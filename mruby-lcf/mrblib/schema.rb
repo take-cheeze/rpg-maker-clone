@@ -1999,7 +1999,9 @@ module LCF
     # Menu command (`Cmd::OPEN_SAVE_MENU`, 11910), which parks the
     # interpreter on a `:save_menu` wait rather than stopping it -- see
     # `Game::State#foreground_event_exec`'s own comment.
-    SAVE_FOREGROUND_EVENT = {
+    # Native chunk 113 is the execution state itself (ADR 0400/0401).
+    SAVE_FOREGROUND_EVENT = SAVE_EVENT_EXEC_STATE
+    SAVE_LEGACY_FOREGROUND_EVENT = {
       1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
     }
 
@@ -2333,16 +2335,9 @@ module LCF
         111 => { name: :map_events, type: :Array1D, elements: SAVE_MAP_EVENT },
         113 => { name: :foreground_event, type: :Array1D, elements: SAVE_FOREGROUND_EVENT },
         114 => { name: :common_events, type: :Array2D, elements: SAVE_COMMON_EVENT },
-        # Chunk 200 is NOT an RPG2000/2003 chunk: it is this project's own
-        # extension, carrying the Game::State fields no liblcf chunk above
-        # models exactly (weather, encounter total, boarded vehicle, flash
-        # power/total, common-event progress, exact picture opacity). The
-        # payload is a list of tagged records written and read by
-        # Game::State.ext_records/#lsd_extension_records in
-        # mruby-rpg2k/mrblib/game/lsd_io.rb. Declared as raw bytes so the
-        # reader hands back the exact payload. Native fields and this
-        # extension's RPG2000 load probe are documented in ADR 0400;
-        # native compatibility does not establish preservation on re-save.
+        # Read-only support for the marked extension in old engine saves.
+        # New exports use native fields; unrelated chunk-200 bytes are ignored
+        # by Game::State and preserved by the raw LCF reader (ADR 0401).
         200 => { name: :lsd_ext, type: :int8_array },
       }
     }

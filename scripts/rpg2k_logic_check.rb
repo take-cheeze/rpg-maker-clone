@@ -5103,13 +5103,14 @@ check 'to_lsd/from_lsd round-trips the hero\'s own in-flight Flash Sprite ' \
   eq 50, pf[:green]
   eq 10, pf[:blue]
   eq 8, pf[:frames]
-  # The peak duration (total) and exact power are chunk 200's own fields
-  # (docs/adr/0395): chunk 104 alone only carries the derived current level and
-  # the remaining frames, so before chunk 200 this resumed decaying from the
-  # remaining frames as its own new peak. It now resumes from the true curve,
-  # the same as the Marshal save.
-  eq 12, pf[:total], 'the peak duration round-trips through chunk 200'
-  eq 24.0, pf[:power], 'the exact power round-trips through chunk 200'
+  # Native saves preserve the remaining fade, not its historical peak.
+  eq 8, pf[:total]
+  eq 16.0, pf[:power]
+  (0...8).each do |elapsed|
+    expected = 24.0 * (8 - elapsed) / 12
+    actual = pf[:power] * (pf[:frames] - elapsed) / pf[:total]
+    eq expected, actual, 'the remaining fade curve is unchanged'
+  end
 end
 
 check 'to_lsd/from_lsd round-trips a live Set Move Route on the hero ' \
@@ -5842,16 +5843,8 @@ check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' d
   eq 200, saved[:finish_x].to_i
   eq 150, saved[:finish_y].to_i
   eq 150, saved[:zoom]
-  # Game.opacity_to_trans(191) == 100 - 191*100/255 == 26 -- not 25: this
-  # codebase's own Game::Picture keeps opacity (0..255), not RPG_RT's own
-  # native 0..100 transparency, as its live ground truth (#trans_to_opacity
-  # only ever converts one way for the live command), so a save round-trip
-  # through both integer-truncating conversions is not perfectly lossless.
-  # Ported from a reference implementation, NOT independently confirmed against
-  # genuine RPG_RT under wine: it is the 0..100 value directly there, suggesting real
-  # RPG_RT may have no such drift -- a pre-existing, separate precision gap noted
-  # in docs/TODO.md, out of scope for this fix.
-  eq 26, saved[:transparency]
+  # Native integer targets round to the nearest transparency percentage.
+  eq 25, saved[:transparency]
   eq 50, saved[:tone_red]
   eq 60, saved[:tone_green]
   eq 70, saved[:tone_blue]
@@ -6029,11 +6022,7 @@ check 'to_lsd writes chunk 103\'s current_x/y/zoom/etc unconditionally (not ' \
      'every one is off its own default, though the picture was never moved -- ' \
      'including the mirrored bottom-half transparency fields 18/35'
   eq 133.0, off_default[:current_zoom]
-  # 26, not 25: the same pre-existing opacity/transparency round-trip
-  # precision gap the "to_lsd writes chunk 103..." check above already notes
-  # (Game.trans_to_opacity(25) == 191, then Game.opacity_to_trans(191) ==
-  # 26) -- unrelated to and unaffected by this check's own fix.
-  eq 26, off_default[:transparency]
+  eq 25, off_default[:transparency]
   eq 133, off_default[:zoom]
   eq 140, off_default[:tone_red]
   eq 60, off_default[:tone_green]
@@ -11264,10 +11253,7 @@ check 'to_lsd writes an erased-but-previously-shown picture with its stale ' \
   eq 111, erased[:show_x]
   eq 77, erased[:show_y]
   eq 133, erased[:zoom]
-  # 26, not 25: the same pre-existing opacity<->transparency round-trip
-  # precision gap the "to_lsd writes chunk 103..." check above already
-  # documents (out of scope for this fix; unrelated to erasure).
-  eq 26, erased[:transparency]
+  eq 25, erased[:transparency]
   eq 140, erased[:tone_red]
 
   # Control: an id that was never shown at all is still a fully field-less
@@ -13900,30 +13886,19 @@ check 'to_lsd/from_lsd round-trips a live screen tint transition (chunk 102)' do
   eq false, old.screen.tinting?
 end
 
-check 'to_lsd/from_lsd round-trips a live Pan Screen offset (chunk 102 ' \
-      'fields 41/42)' do
-  # Confirmed against a genuine kk1.12 save under wine: field 42 (pan_y)
-  # was present and nonzero (a vertical-only pan), field 41 (pan_x) absent
-  # at its own default 0 -- #to_lsd previously never wrote either field at
-  # all, so a live Pan Screen offset silently reset to (0,0) on Save/
-  # Continue even though `Game::Screen` already tracks it for the portable
-  # Marshal save format.
-  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+check 'to_lsd/from_lsd preserves native hero pan offsets, targets and lock' do
+  db = FakeActorDB.new({1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10)}, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  st.screen.instance_variable_set(:@pan_x, 0)
-  st.screen.instance_variable_set(:@pan_y, 96)
-  scr = st.to_lsd[102]
-  ok !scr.key?(41), 'pan_x is absent at its own default (0)'
-  eq 96, scr[:pan_y]
-
-  round = Game::State.from_lsd(db, st.to_lsd)
-  eq [0, 96], round.screen.pan_offset, 'the pan offset round-trips, restored at rest'
-
-  # A save written before this landed simply omits both fields; from_lsd
-  # must leave the fresh Screen.new neutral (0, 0) offset alone.
-  legacy = Game::State.new(Game::Party.new(db), 1, 0, 0).to_lsd
-  old = Game::State.from_lsd(db, legacy)
-  eq [0, 0], old.screen.pan_offset
+  st.screen.load_h(pan_y: 96, pan_ty: 128, pan_step: 0.5, pan_locked: true)
+  save = st.to_lsd
+  hero = save[:hero]
+  eq 256, hero[:pan_current_y]
+  eq(-256, hero[:pan_finish_y])
+  eq 8, hero[:pan_speed]
+  eq 0, hero[:pan_state]
+  ok !save[:screen].key?(42), 'hero pan is not written as a screen translation'
+  round = Game::State.from_lsd(db, save)
+  eq st.screen.pan_save_data, round.screen.pan_save_data
 end
 
 # liblcf's SaveMapEventBase.facing (generator/csv/fields.csv, 0x16 == 22) is
