@@ -10397,7 +10397,7 @@ class RPG2k
       # -- previously dropped along with every other SE call site's, before
       # the backend had anywhere to forward it to.
       def play_terrain_footstep_se(row, damaged)
-        return unless @db.respond_to?(:rpg2003?) && @db.rpg2003?
+        return unless Game.rpg2003_database?(@db)
         return unless row && LCF.field?(row, :footstep) && LCF.field?(row, :on_damage_se)
         return if row[:on_damage_se] && !damaged
         se = row[:footstep]

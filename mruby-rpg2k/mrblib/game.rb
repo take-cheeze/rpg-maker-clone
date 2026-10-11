@@ -725,6 +725,13 @@ module Game
   # Game::State.restore_pictures (the save's chunk 103 field 34), which use the
   # same 0..100 scale -- see restore_pictures' comment for how that was
   # confirmed.
+  # Whether a database is an RPG2003 project: the LDB's own answer
+  # (LCF::Database#rpg2003?, which reads the Classes chunk). A bare test double
+  # with no #rpg2003? reads false, the same answer a genuine RPG2000 database gives.
+  def self.rpg2003_database?(db)
+    db.respond_to?(:rpg2003?) && db.rpg2003?
+  end
+
   def self.trans_to_opacity(top_trans)
     (100 - clamp(top_trans, 0, 100)) * 255 / 100
   end
@@ -2367,7 +2374,7 @@ module Game
     # directly, not a `Party` back-reference; a bare test double with no
     # `#rpg2003?` of its own reads false, matching a genuine RPG2000 database.
     def rpg2003?
-      @db.respond_to?(:rpg2003?) && @db.rpg2003?
+      Game.rpg2003_database?(@db)
     end
 
     # RPG2003's "cursed"/forced-state armor rule (a shield/armor/helmet/
@@ -4501,7 +4508,7 @@ module Game
     # no `#rpg2003?` of its own reads false, the same answer a genuine RPG2000
     # database gives.
     def rpg2003?
-      @db.respond_to?(:rpg2003?) && @db.rpg2003?
+      Game.rpg2003_database?(@db)
     end
 
     # Whether the database asks for RPG2003's sprite/gauge battle-screen
