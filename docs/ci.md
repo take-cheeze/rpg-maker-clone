@@ -114,6 +114,17 @@ clock of the whole job, setup included):
 | `hot-only` | 6 min | 4 min |
 | the other shards | 3-5 min | 1-2 min |
 
+The Optcarrot runner now defaults to the toolchain's optimized release build
+(`-O3` with GCC), for both the interpreter and generated C++. Set
+`OPTCARROT_DEBUG=1` to reproduce the earlier `enable_debug` configuration
+(`-O0`, `MRB_DEBUG`). The console and job summary identify the mode. Release,
+debug and profiling builds use separate target directories, and the generated
+gem is rebuilt on every invocation to prevent stale compiler output from
+affecting measurements. Historical timings above predate this default change.
+
+The Optcarrot shard also checks all 256 specialized opcode arms and runs the
+`OPTCARROT_STATIC_DISPATCH=1` experiment against the same checksum benchmark.
+
 `bc2cpp-width (int32-a)` or `(int32-b)` took 9 min. `core-flow` was the long pole of the whole
 workflow; its mutation checks now run in `core-flow-mutants`.
 
