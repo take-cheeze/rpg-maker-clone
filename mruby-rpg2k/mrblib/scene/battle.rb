@@ -187,7 +187,7 @@ class RPG2k
                                                 # (see #apply_attr_multiplier)
                                                 # is handled differently per
                                                 # edition.
-                                                 rpg2003: db.respond_to?(:rpg2003?) && db.rpg2003?,
+                                                 rpg2003: Game.rpg2003_database?(db),
                                                  # RPG2003 battle timing
                                                  # presentation (Battle Setup
                                                  # chunk 0x1D field 7): 0

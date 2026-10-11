@@ -4,7 +4,7 @@ Date: 2026-09-24
 
 ## Status
 
-Accepted
+Accepted. Superseded for reviewed sites by ADR 0401 (direct raise).
 
 ## Context
 
