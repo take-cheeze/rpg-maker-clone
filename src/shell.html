@@ -711,8 +711,8 @@
       }
 
       // Mirror one just-written /game save file into the IDBFS-backed persist
-      // dir and (debounced, so a burst of saves -- e.g. the Marshal dump plus
-      // its .lsd export -- costs one flush) push it to IndexedDB.
+      // dir and (debounced, so a burst of saves -- e.g. several slots written in a
+      // row -- costs one flush) push it to IndexedDB.
       var syncTimer = null;
       function mirrorSave(rel) {
         persistReady.then(function (ok) {

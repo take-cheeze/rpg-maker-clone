@@ -236,7 +236,7 @@ def check_game(dir)
       before = snapshot(actor)
       run(state, [removes[aid]])   # away when the game is saved
 
-      loaded = Game::State.load(db, state.to_h)
+      loaded = Game::State.from_lsd(db, state.to_lsd)
       run(loaded, [adds[aid]])
       back = loaded.party.actor_by_id(aid)
       ok back, 'rejoined the reloaded party'

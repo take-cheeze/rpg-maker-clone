@@ -1143,7 +1143,7 @@ module Game
     SYSTEM_SFX_SAVE_FIELD = (0..11).each_with_object({}) { |slot, h| h[slot] = 91 + slot }.freeze
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
-    # by an actual editor, rather than our own Marshal hash. The modelled fields
+    # by an actual editor, or by this engine. The modelled fields
     # are restored: the hero's map / tile position / facing and the leader's
     # on-map CharSet (chunk 104), the party roster / gold / items (inventory,
     # chunk 109), the per-actor level/exp/HP/MP/equipment/skills table (chunk
@@ -1199,7 +1199,7 @@ module Game
           # A live Change Parameters edit (#change_param) -- #set_level just
           # above re-seeds @base/@base_raw from the level-derived baseline,
           # discarding it, so it's restored after, the same order the
-          # Marshal-save path (Party#load_state) already uses. hp_mod/sp_mod
+          # Party#load_state path already uses. hp_mod/sp_mod
           # (fields 33/34) default to -1 (liblcf's own "never touched"
           # sentinel, distinct from a real 0 the other four fields already
           # use); the other four default to 0 outright. Confirmed against a

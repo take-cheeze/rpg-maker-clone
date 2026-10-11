@@ -4726,8 +4726,7 @@ module Game
     # flags.~~ Stale: `Game::Battle#cast_teleport_skill`/`#teleport_skill_
     # available?` (`mruby-rpg2k/mrblib/game.rb`) do consume this registry now.
     # Also round-trips through a real Save/Continue (chunk 110,
-    # `Game::State#to_lsd`/`.from_lsd`'s own citation), not just this
-    # engine's own portable Marshal save.
+    # `Game::State#to_lsd`/`.from_lsd`'s own citation).
     def do_set_teleport_target(cmd)
       map_id = cmd.param(1)
       if cmd.param(0) != 0
@@ -4792,7 +4791,7 @@ module Game
     # Change System SFX already gets; Scene::GameOver#gameover_bgm_override
     # does the same for slot 6. All seven slots round-trip through a real
     # .lsd Save/Continue now too (Game::State#to_lsd/.from_lsd, SAVE_SYSTEM
-    # fields 72-74/79-82), not just the portable Marshal save.
+    # fields 72-74/79-82).
     def do_change_system_bgm(cmd)
       @state.system_bgm[cmd.param(0)] = {
         name: cmd.string, fadein: cmd.param(1), volume: cmd.param(2),
@@ -4806,8 +4805,7 @@ module Game
     # scene (Scene::Map::DB_SE_FIELD) already plays most of these slots at the
     # moments they name; a slot beyond the ones it plays is still stored for
     # save fidelity, matching the system BGM -- all twelve slots round-trip
-    # through a real .lsd Save/Continue now too (SAVE_SYSTEM fields 91-102),
-    # not just the portable Marshal save.
+    # through a real .lsd Save/Continue too (SAVE_SYSTEM fields 91-102).
     def do_change_system_sfx(cmd)
       @state.system_sfx[cmd.param(0)] = {
         name: cmd.string, volume: cmd.param(1),

@@ -3,8 +3,8 @@
 #
 # Integration smoke-test for loading a real Save<N>.lsd into the runtime.
 #
-# The RPG2000 runtime (mruby-rpg2k) has until now only round-tripped its own
-# portable Marshal save. `Game::State.from_lsd` builds a runtime state straight
+# The RPG2000 runtime (mruby-rpg2k) used to round-trip its own state through a
+# portable Marshal dump, which is gone now. `Game::State.from_lsd` builds a runtime state straight
 # from a parsed `LcfSaveData` instead -- i.e. the "Continue" path can resume from
 # genuine editor output. That crosses two layers (the LCF save parser and the
 # Game:: state model), so this harness loads both sets of mruby/CRuby-common

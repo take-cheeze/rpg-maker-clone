@@ -48,10 +48,16 @@ continues to apply.
 
 ## Dispatch review verification
 
-A full Wio closed-world scan produced 4,215 sites across 2,942 unique keys.
+A full Wio closed-world scan produced 4,137 sites across 2,876 unique keys after merging the removal of Marshal state helpers.
 The checked-in list matches those generated keys. In addition to moving the
 seven unchanged legacy adapter keys, the scan identified entries missing from
 ADR 0401's native migration: `to_lsd` pan/picture accessors, `from_lsd` state
 accessors and foreground row serialization. Their receivers are the existing
 `Screen`, `Picture`, freshly constructed `State` and LCF `Array1D` objects.
 Obsolete extension-writer and screen-pan entries were removed.
+
+The compiled gem's handwritten registration must also stop registering the
+removed `Game.opacity_to_trans` helper; otherwise a host bc2cpp build references
+an absent generated function. Save harnesses compare live state fields directly
+rather than relying on the removed Marshal `State#to_h`/`load` helpers. Native
+common-event cursor fixtures provide database command lists, as real saves do.

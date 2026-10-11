@@ -308,7 +308,7 @@ ruby scripts/bc2cpp_hot_profile.rb select --gen-dir build-full/mruby/host/mrbgem
 Each scenario is an `RPG2k#main_loop` count driven by `--script`, not a
 wall-clock `--timeout_ms`, so callgrind's slowdown does not change the work
 done. The scenarios are: map idle, battle play against troops 1 and 6,
-walking plus every main-menu screen, Marshal and `.lsd` save/load, a battle
+walking plus every main-menu screen, `.lsd` save/load, a battle
 animation, and a boot and a walk for each extra game. Self Ir is attributed by
 source line of the generated `*_gen.cpp`, so an `_impl` inlined into its
 caller still counts for its own method. Block-fallback, rescue-try and

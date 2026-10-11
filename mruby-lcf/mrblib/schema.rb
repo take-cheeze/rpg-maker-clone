@@ -1967,7 +1967,7 @@ module LCF
     # entry's field 1 is that common event's own SAVE_EVENT_EXEC_STATE --
     # NOT a simple resume index like this codebase's own, older
     # `Game::State#common_event_progress` (a command-list cursor per running
-    # Common Event, still used as the `.lsd`-absent/Marshal-only fallback --
+    # Common Event, still used as the fallback for a save without chunk 114 --
     # see that attribute's own comment). Cycle #191 wires this field to a
     # genuine `Game::Interpreter` call-stack snapshot end to end (schema
     # decode plus `Game::State#to_lsd`/`.from_lsd` plus
@@ -2283,8 +2283,7 @@ module LCF
       # Screen offset, confirmed present on a genuine kk1.12 save under
       # wine (field 42/pan_y nonzero, field 41/pan_x absent -- elided at
       # its own default 0, a vertical-only pan). `Game::Screen` already
-      # tracks this (`#pan_offset`) for the Marshal save format; only the
-      # `.lsd` write was missing.
+      # tracks this (`#pan_offset`); only the `.lsd` write was missing.
       41 => { name: :pan_x, type: :int, default: 0 },
       42 => { name: :pan_y, type: :int, default: 0 },
       48 => { name: :weather, type: :int, default: 0 },

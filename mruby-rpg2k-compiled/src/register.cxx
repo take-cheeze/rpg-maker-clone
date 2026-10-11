@@ -140,7 +140,7 @@
 // game.rb, reopened by mruby-rpg2k/mrblib/game/lsd_io.rb) -- the whole-
 // program root save/session object (party, switches, variables, map
 // position, pictures, both timers, the message window config, screen-
-// transition defaults, vehicle placement, and the Marshal/`.lsd`
+// transition defaults, vehicle placement, and the `.lsd`
 // (de)serialisers), 23 of its own 32 real bytecode-defined methods, and
 // RPG2k::Scene::StatusMenu (mruby-rpg2k/mrblib/scene/status_menu.rb --
 // the field per-character status detail screen: stats, equipped gear,
@@ -152,7 +152,7 @@
 // real RData struct embedding, mixed safely on the same object with
 // every other real (non-Fixnum) ivar staying on the ordinary dynamic
 // iv_tbl. Confirmed safe against the exact Game::Actor-shaped bug two
-// follow-ups up: `Game::State.load` (interpreted, a class method) never
+// follow-ups up: `Game::State.from_lsd` (interpreted, a class method) never
 // bypasses the compiled #initialize -- it constructs every real instance
 // via a plain `new(party, map_id, x, y)` call, so mrb_data_init always
 // runs before any embedded field is ever touched. StatusMenu's own
@@ -524,9 +524,9 @@
 // are booleans (a type this compiler's embedding lattice doesn't model),
 // and @frames -- despite a literal-Fixnum source in #initialize (`0`)
 // and #set (`seconds * FPS + ...`) -- gets poisoned back to UNKNOWN by
-// #load_h's own `h[:frames] || 0` (a real opaque Hash#[] read on a
-// caller-provided Hash), the same IvarLayout.join fixed-point poisoning
-// behaviour the earlier round's own join() bugfix established. So
+// the since-removed Timer#load_h's own `h[:frames] || 0` (a real opaque Hash#[]
+// read on a caller-provided Hash), the same IvarLayout.join fixed-point
+// poisoning behaviour the earlier round's own join() bugfix established. So
 // Game::Timer does not appear in bc2cpp's own "classes needing
 // MRB_SET_INSTANCE_TT" diagnostic. Confirmed moot regardless by the
 // real, single construction site for this class in the whole closed
@@ -1322,7 +1322,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // it regardless of source, not a bare `private` call here).
   mrb_define_private_method(M, screen, "initialize", Game__Screen_initialize,
                             MRB_ARGS_NONE());
-  mrb_define_method(M, screen, "to_h", Game__Screen_to_h, MRB_ARGS_NONE());
   mrb_define_method(M, screen, "load_h", Game__Screen_load_h, MRB_ARGS_REQ(1));
   mrb_define_method(M, screen, "tint", Game__Screen_tint, MRB_ARGS_NONE());
   mrb_define_method(M, screen, "tinting?", Game__Screen_tinting$3f,
@@ -1915,7 +1914,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // #cast_escape_skill, #cast_teleport_skill, #cast_switch_skill,
   // #skill_effective?, #cast_skill, #use_item, #battle_skill_command),
   // outside this compiler's pure-mandatory-argument calling convention by
-  // design; 25 use a real Ruby block (BLOCK/SENDB -- #to_h, #load_state,
+  // design; 25 use a real Ruby block (BLOCK/SENDB -- #load_state,
   // #each-based helpers, #apply_map_step_damage/#apply_terrain_damage,
   // #reorder/#toggle_actor_row/#remove_actor, the #use_medicine/#use_seed/
   // #has_item?/#equipped_item_count/#item_effective?/#item_state_ids/
@@ -3603,11 +3602,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // comment for the real gap breakdown (#start/#tick/#drawn?'s own
   // non-mandatory arguments) and why no MRB_SET_INSTANCE_TT call belongs
   // here (no embeddable ivar at all, per the real whole-program EMBED
-  // diagnostic -- @frames is poisoned to UNKNOWN by #load_h's own opaque
-  // Hash#[] read, and @running/@visible/@in_battle are booleans, a type
-  // this compiler's embedding lattice doesn't model). No bare `private`
-  // anywhere in the real source (confirmed directly, not guessed from
-  // bc2cpp's own diagnostic), so every method below is `mrb_define_method`
+  // diagnostic -- @frames is poisoned to UNKNOWN by the since-removed
+  // Timer#load_h's own opaque Hash#[] read, and @running/@visible/@in_battle
+  // are booleans, a type this compiler's embedding lattice doesn't model). No
+  // bare `private` anywhere in the real source (confirmed directly, not guessed
+  // from bc2cpp's own diagnostic), so every method below is `mrb_define_method`
   // except #initialize.
   RClass* timer = mrb_class_get_under(M, game, "Timer");
   // docs/adr/0139's own follow-up: captured for bc2cpp's own generalized
@@ -3625,8 +3624,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, timer, "set", Game__Timer_set, MRB_ARGS_REQ(1));
   mrb_define_method(M, timer, "stop", Game__Timer_stop, MRB_ARGS_NONE());
   mrb_define_method(M, timer, "seconds", Game__Timer_seconds, MRB_ARGS_NONE());
-  mrb_define_method(M, timer, "to_h", Game__Timer_to_h, MRB_ARGS_NONE());
-  mrb_define_method(M, timer, "load_h", Game__Timer_load_h, MRB_ARGS_REQ(1));
   mrb_define_method(M, timer, "start", Game__Timer_start,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   mrb_define_method(M, timer, "tick", Game__Timer_tick, MRB_ARGS_OPT(1));
@@ -4011,7 +4008,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 
   // Game::Weather (mruby-rpg2k/mrblib/game.rb) -- the current
   // screen-weather effect state (rain/snow/fog/... type plus a 0-10
-  // strength). #set/#none?/#to_h/#load_h all compile clean; #initialize
+  // strength). #set/#none?/#to_h all compile clean; #initialize
   // (two optional arguments) is NOT registered here -- it stays entirely
   // interpreted, the same established non-mandatory-arity gap as
   // Game::Picture's/RPG2k::Window's own #initialize above, and
@@ -4030,8 +4027,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, weather, "none?", Game__Weather_none$3f,
                     MRB_ARGS_NONE());
   mrb_define_method(M, weather, "to_h", Game__Weather_to_h, MRB_ARGS_NONE());
-  mrb_define_method(M, weather, "load_h", Game__Weather_load_h,
-                    MRB_ARGS_REQ(1));
   mrb_define_private_method(M, weather, "initialize", Game__Weather_initialize,
                             MRB_ARGS_OPT(2));
 
@@ -4067,7 +4062,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 
   // Game::Vehicle (mruby-rpg2k/mrblib/game.rb) -- a boat/ship/airship's
   // saved location (map id, position, facing, on-map graphic), plain data
-  // rather than a Game::Character. #placed?/#to_h/#load_h/#load_movable
+  // rather than a Game::Character. #placed?/#load_movable
   // all compile clean; #initialize (type, map_id = 0, x = 0, y = 0,
   // direction = 2 -- four optional arguments) is NOT registered here --
   // it stays entirely interpreted, the same established non-mandatory-
@@ -4087,9 +4082,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   RClass* vehicle = mrb_class_get_under(M, game, "Vehicle");
   mrb_define_method(M, vehicle, "placed?", Game__Vehicle_placed$3f,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, vehicle, "to_h", Game__Vehicle_to_h, MRB_ARGS_NONE());
-  mrb_define_method(M, vehicle, "load_h", Game__Vehicle_load_h,
-                    MRB_ARGS_REQ(1));
   mrb_define_method(M, vehicle, "load_movable", Game__Vehicle_load_movable,
                     MRB_ARGS_REQ(1));
   mrb_define_private_method(M, vehicle, "initialize", Game__Vehicle_initialize,
@@ -4432,25 +4424,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // reason from @face_index's, the same two-reasons-at-once shape this
   // file's own `LCF::Tree` follow-up already documents for a sibling gem.)
   //
-  // 4 of its own 5 real bytecode-defined methods compile clean:
-  // #initialize, #face? (`!@face_name.nil? && !@face_name.empty?`),
-  // #clear_face (four plain SETIVs), and #to_h (a literal Hash of all 8
-  // ivars). #load_h is the one gap, and a genuinely new one for
-  // this compiler: both its early-exit `return self unless h` and its own
-  // trailing bare `self` disassemble to RETSELF (mrbc's own dedicated
-  // opcode for returning `self` specifically, distinct from
-  // RETURN/RETNIL/RETFALSE/RETTRUE), and compile_insn has no `when
-  // 'RETSELF'` case at all -- confirmed by grepping bc2cpp.rb (zero hits)
-  // and by disassembling this exact method with the real host `mrbc -v`.
-  // Safe either way, by this compiler's own established discipline
-  // (SKIP_UNSUPPORTED=1 just leaves the whole method on the interpreter);
-  // the other four classes sharing the `:load_h` name (Game::Screen,
-  // Game::Weather, Game::Vehicle, Game::Timer) all use a bare `return
-  // unless h` with no explicit value -- RETNIL, not RETSELF -- so all four
-  // still compile and appear in the real `== compiled entry points ==`
-  // listing; this class's own `#load_h` does not. Not fixed here (no new
-  // bc2cpp.rb opcode work) since nothing here needs it to ship -- left as a
-  // real, confirmed-safe structural gap for a future round.
+  // 3 of its own real bytecode-defined methods compile clean: #initialize,
+  // #face? (`!@face_name.nil? && !@face_name.empty?`), and #clear_face (four
+  // plain SETIVs). #to_h and #load_h were removed with the Marshal save; the
+  // #load_h had been the one gap, on a RETSELF (`return self`) opcode this
+  // compiler has no case for.
+  //
   //
   // Like every other embedding-attempted #initialize above,
   // mrb_define_private_method for #initialize (Ruby's own implicit
@@ -4472,8 +4451,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, message_config, "clear_face",
                     Game__MessageConfig_clear_face, MRB_ARGS_NONE());
-  mrb_define_method(M, message_config, "to_h", Game__MessageConfig_to_h,
-                    MRB_ARGS_NONE());
 
   // Game::Interpreter (docs/adr/0139's own follow-up, mruby-rpg2k/mrblib/
   // interpreter.rb, plus a separate 4-method reopening in mruby-rpg2k/
@@ -4524,7 +4501,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   //     from inside one of these methods' own `until`/loop bodies. Left
   //     unfixed (no new bc2cpp.rb opcode work this round) -- a real,
   //     confirmed-safe structural gap for a future round, the same
-  //     discipline this file's own RETSELF/Game::MessageConfig#load_h
+  //     discipline this file's own RETSELF
   //     writeup already established for a different never-modeled opcode.
   //   - 2 send a keyword-argument-heavy call this compiler's own
   //     `compile_send` already refuses on sight (a splat/keyword argument
@@ -4634,9 +4611,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   //   * Game::Interpreter has no subclass anywhere in the closed world, so
   //     no other class silently inherits MRB_TT_DATA from it.
   //   * The Interpreter object is never Marshal'd or ivar-enumerated: the
-  //     save path serializes Game::State through its own explicit #to_h/
-  //     .load field list (mruby-rpg2k/mrblib/game/lsd_io.rb), never a
-  //     generic instance_variables dump of a live interpreter.
+  //     save path serializes Game::State through its own explicit field list
+  //     (mruby-rpg2k/mrblib/game/lsd_io.rb), never a generic instance_variables
+  //     dump of a live interpreter.
   //   * Every OTHER Game::Interpreter ivar (@state/@list/@index/@running/
   //     ...) stays on the ordinary dynamic iv_tbl, which `struct RData`
   //     carries in its own right (3rd/mruby/include/mruby/data.h) entirely
@@ -5920,11 +5897,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                           Game__Party_singleton_usable_flag$3f,
                           MRB_ARGS_REQ(1));
 
-  // Game::Picture.singleton -- its one real method (mruby-rpg2k/mrblib/
-  // game.rb: `#from_h`, the save-chunk deserializer).
-  mrb_define_class_method(M, picture, "from_h", Game__Picture_singleton_from_h,
-                          MRB_ARGS_REQ(2));
-
   // Game::Character.singleton -- its one real method (mruby-rpg2k/mrblib/
   // game.rb: `#step_tile`, a move-route step's destination tile).
   mrb_define_class_method(M, character, "step_tile",
@@ -6225,49 +6197,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, lru_bitmap_cache, "key?",
                     RPG2k__Scene__Map__LRUBitmapCache_key$3f, MRB_ARGS_REQ(1));
 
-  // Round 32 follow-up: Game.singleton -- `def self.x` methods defined
-  // directly on the `Game` module itself (mruby-rpg2k/mrblib/game.rb,
-  // right above `class ChipSet`), never `class << self`-wrapped. All 5 of
-  // its own real methods compile clean and register below. Every one was
-  // already a real, registry-visible MONO or POLY-by-name entry going back
-  // to the SDEF fix's own original writeup (`Game.clamp` is that fix's own
-  // motivating live-bug example, build_registry's own SDEF case comment,
-  // tools/bc2cpp/bc2cpp.rb) -- this is simply the first round any
-  // `owners:` list actually names `Game.singleton`, so none of these 5
-  // bodies has ever been emitted before. `#clamp` is POLY by name (a real,
-  // unrelated `RPG2k::Scene::MapViewer#clamp` instance method shares the
-  // bare name) -- confirmed directly against the real generated output
-  // that its own two internal callers (`#trans_to_opacity`/
-  // `#opacity_to_trans`, both self-implicit `clamp(...)` sends) correctly
-  // compile to an ordinary `mrb_funcall(M, self, "clamp", ...)` rather
-  // than a wrong direct call, the same fallback every other POLY
-  // self-implicit send in this codebase already takes. The other 4
-  // (`#round_half_even`/`#trans_to_opacity`/`#opacity_to_trans`/
-  // `#camera_offset`) are MONO, so every one of this gem's own
-  // already-compiled call sites that reference them by bare name now
-  // devirtualizes straight into these `_impl` functions instead of
-  // falling back to `mrb_funcall` -- a real, additive optimization to
-  // already-shipped code, confirmed byte-for-byte against the real
-  // regenerated output (no other class's own compiled body changed shape
-  // beyond that one dispatch-comment swap at each such call site). `Game`
-  // is a bare module, never instantiated, so none of these has any
-  // instance state to embed -- no MRB_SET_INSTANCE_TT call belongs here,
-  // confirmed directly: `Game.singleton` does not appear in the real
-  // "classes needing MRB_SET_INSTANCE_TT" listing. No bare
-  // `private`/`private_class_method`/`protected` anywhere near `Game`'s
-  // own real source, so all 5 are plain, public `mrb_define_class_method`
-  // registrations. Reuses the `game` RClass* declared at the top of this
-  // function (Game.singleton methods live on `Game`'s own singleton
-  // class, not a nested module/class under it, so no new
-  // `mrb_module_get_under`/`mrb_class_get_under` call is needed).
+  // Singleton helpers register on Game itself; they have no instance state.
   mrb_define_class_method(M, game, "clamp", Game_singleton_clamp,
                           MRB_ARGS_REQ(3));
   mrb_define_class_method(M, game, "round_half_even",
                           Game_singleton_round_half_even, MRB_ARGS_REQ(2));
   mrb_define_class_method(M, game, "trans_to_opacity",
                           Game_singleton_trans_to_opacity, MRB_ARGS_REQ(1));
-  mrb_define_class_method(M, game, "opacity_to_trans",
-                          Game_singleton_opacity_to_trans, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, game, "camera_offset",
                           Game_singleton_camera_offset, MRB_ARGS_REQ(3));
 #endif  // BC2CPP_HOT_ONLY_STUBS

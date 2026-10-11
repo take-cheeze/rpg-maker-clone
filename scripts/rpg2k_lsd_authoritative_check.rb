@@ -185,8 +185,8 @@ def deep_diff(a, b, path = '')
   out = []
   if a.is_a?(Hash) && b.is_a?(Hash)
     (a.keys | b.keys).each do |k|
-      if !a.key?(k) then out << "#{path}.#{k}: only in LSD (#{b[k].inspect[0, 80]})"
-      elsif !b.key?(k) then out << "#{path}.#{k}: only in Marshal (#{a[k].inspect[0, 80]})"
+      if !a.key?(k) then out << "#{path}.#{k}: only in the LSD load (#{b[k].inspect[0, 80]})"
+      elsif !b.key?(k) then out << "#{path}.#{k}: only in the live state (#{a[k].inspect[0, 80]})"
       else out.concat(deep_diff(a[k], b[k], "#{path}.#{k}"))
       end
     end
@@ -208,7 +208,7 @@ def rich_party_db
   FakeActorDB.new(players, [1])
 end
 
-# A populated state touching every field Marshal carries. Values are realistic
+# A populated state touching every field the save carries. Values are realistic
 # shapes (see the producers in interpreter.rb / scene/map.rb).
 def rich_state(db = rich_party_db)
   party = Game::Party.new(db)
@@ -286,9 +286,73 @@ def rich_state(db = rich_party_db)
   st
 end
 
-# Marshal round trip of the state's own save hash.
-def via_marshal(db, st)
-  Game::State.load(db, Marshal.load(Marshal.dump(st.to_h)))
+# The live state's save-relevant fields, read straight from the live objects. This is
+# the reference the .lsd load is compared against, field by field: the same keys and
+# values the removed Game::State#to_h held (docs/adr/0399), so a field the .lsd drops
+# shows up here as a difference. It reads each object's own fields (ivars and the
+# readers it already has), so it does not depend on any engine method that exists
+# only for that removed serializer.
+def ivars_of(obj, *names)
+  names.to_h { |n| [n, obj.instance_variable_get("@#{n}")] }
+end
+
+def timer_fields(t)
+  { frames: t.frames, running: t.running, visible: t.visible, in_battle: t.in_battle }
+end
+
+def vehicle_fields(v)
+  { map_id: v.map_id, x: v.x, y: v.y, direction: v.direction,
+    charset_name: v.charset_name, charset_index: v.charset_index }
+end
+
+def message_config_fields(mc)
+  %i[transparent position position_fixed continue_events face_name face_index
+     face_right face_flipped].to_h { |n| [n, mc.public_send(n)] }
+end
+
+def party_fields(pt)
+  hp = {}
+  mp = {}
+  exp = {}
+  meta = {}
+  pt.roster.each do |a|
+    hp[a.id] = a.hp
+    mp[a.id] = a.mp
+    exp[a.id] = a.exp
+    meta[a.id] = { name: a.name, title: a.title, charset_name: a.charset_name,
+                   charset_index: a.charset_index, sprite_changed: a.sprite_changed?,
+                   transparent: a.transparent, states: a.states.dup,
+                   base_raw: a.base_raw.dup, class_id: a.class_id,
+                   class_changed: a.class_changed?, battle_commands: a.battle_commands.dup,
+                   row: a.battle_row }
+  end
+  { actor_ids: pt.actors.map(&:id), items: pt.items, item_usage: pt.item_usage,
+    gold: pt.gold, hp: hp, mp: mp, exp: exp, actor_meta: meta }
+end
+
+STATE_IVARS = %i[map_id x y direction menu_access save_access current_bgm memorized_bgm
+                 pre_vehicle_bgm pre_battle_bgm player_flash player_route player_through
+                 player_transparent teleport_access escape_access encounter_rate
+                 encounter_total teleport_targets common_event_progress
+                 map_event_positions map_event_route_index tile_substitutions steps
+                 last_battle_turns save_count battle_count win_count defeat_count
+                 escape_count escape_target system_bgm system_sfx screen_transitions
+                 system_graphic font_id boarded].freeze
+
+def live_fields(st)
+  ivars_of(st, *STATE_IVARS).merge(
+    switches: st.switches.to_h, variables: st.variables.to_h,
+    party: party_fields(st.party),
+    timers: [st.timer(0), st.timer(1)].map { |t| timer_fields(t) },
+    timer_frames: st.timer_frames, timer_running: st.timer_running,
+    timer_visible: st.timer_visible,
+    message_config: message_config_fields(st.message_config),
+    weather: st.weather.to_h,
+    screen: ivars_of(st.screen, :pan_x, :pan_y, :pan_tx, :pan_ty, :pan_step, :pan_locked),
+    pictures: st.instance_variable_get(:@pictures).each_with_object({}) { |(id, p), out| out[id] = p.to_h },
+    vehicles: { boat: vehicle_fields(st.vehicle(:boat)), ship: vehicle_fields(st.vehicle(:ship)),
+                airship: vehicle_fields(st.vehicle(:airship)) }
+  )
 end
 
 # The state after a real .lsd write and read back, through the file bytes (the
@@ -302,9 +366,20 @@ def lsd_bytes(st)
   st.to_lsd(st.save_count, nil, 1, rich_party_db).to_lcf
 end
 
+def copy_fields(value)
+  case value
+  when Hash
+    value.each_with_object({}) { |(key, child), out| out[key] = copy_fields(child) }
+  when Array
+    value.map { |child| copy_fields(child) }
+  else
+    value
+  end
+end
+
 # Only the native format's documented information losses are canonicalized.
 def native_snapshot(st)
-  h = Marshal.load(Marshal.dump(st.to_h))
+  h = copy_fields(live_fields(st))
   if (flash = h[:player_flash]) && flash[:frames] > 0
     total = flash[:total] && flash[:total] > 0 ? flash[:total] : flash[:frames]
     flash[:power] = flash[:power].to_f * flash[:frames] / total
@@ -363,9 +438,12 @@ SCENARIOS.each do |label, build|
     db = rich_party_db
     st = build.call
     expected = native_snapshot(st)
-    l = via_lsd(db, st).to_h
+    l = live_fields(via_lsd(db, st))
     diffs = deep_diff(expected, l)
     ok diffs.empty?, "the live state vs its LSD load differ:\n      " + diffs.join("\n      ")
+    # No file-level fixed-point assertion here: writing a reloaded in-flight picture again
+    # fails (its fields come back as Floats, which the LCF writer rejects), a pre-existing
+    # gap this check does not cover.
   end
 end
 
@@ -397,7 +475,7 @@ NATIVE_MUTATIONS.each do |label, (chunk, fields, path)|
     st = rich_state(db)
     st.screen.pan(1, 2, 3)
     st.screen.update
-    expected = via_lsd(db, st).to_h
+    expected = live_fields(via_lsd(db, st))
     save = st.to_lsd(st.save_count, nil, 1, db)
     if fields
       row = save[chunk]
@@ -406,7 +484,7 @@ NATIVE_MUTATIONS.each do |label, (chunk, fields, path)|
     else
       save.delete(chunk)
     end
-    diffs = deep_diff(expected, Game::State.from_lsd(db, save).to_h)
+    diffs = deep_diff(expected, live_fields(Game::State.from_lsd(db, save)))
     ok diffs.any? { |d| d.start_with?(path) }, "mutation not detected: #{diffs.inspect}"
   end
 end
@@ -436,7 +514,7 @@ check 'a legacy extension loads exactly, then re-saves using native chunks' do
   save = st.to_lsd(nil, nil, 1, db)
   save[:lsd_ext] = LEGACY_EXTENSION
   loaded = Game::State.from_lsd(db, save)
-  diffs = deep_diff(st.to_h, loaded.to_h)
+  diffs = deep_diff(live_fields(st), live_fields(loaded))
   ok diffs.empty?, "legacy state changed: #{diffs.inspect}"
   ok !loaded.to_lsd(nil, nil, 1, db).key?(200), 're-saving migrates the old extension'
 end
@@ -447,7 +525,7 @@ check 'an unrelated native/tooling chunk 200 is ignored by the runtime' do
   save = st.to_lsd(nil, nil, 1, db)
   save[:lsd_ext] = [1, 1, 0, 0, 0]
   ok !Game::LegacyLsd.marked?(save), 'unmarked bytes are not our legacy extension'
-  diffs = deep_diff(native_snapshot(st), Game::State.from_lsd(db, save).to_h)
+  diffs = deep_diff(native_snapshot(st), live_fields(Game::State.from_lsd(db, save)))
   ok diffs.empty?, "unrelated chunk changed state: #{diffs.inspect}"
 end
 
@@ -528,7 +606,7 @@ check 'a save writes the .lsd alone, and a load reads it back' do
     ok !File.exist?(File.join(dir, 'save1.mrb')), 'no Marshal dump is written'
     loaded = app.load_save_state(1)
     ok loaded, 'the slot loads'
-    diffs = deep_diff(native_snapshot(st), loaded.to_h)
+    diffs = deep_diff(native_snapshot(st), live_fields(loaded))
     ok diffs.empty?, "the loaded state differs from the saved one:\n      " + diffs.join("\n      ")
   end
 end
@@ -537,7 +615,8 @@ check 'an old Marshal save (save<N>.mrb, no .lsd) is not read (docs/adr/0399)' d
   with_game_dir do |dir|
     db = rich_party_db
     st = rich_state(db)
-    File.open(File.join(dir, 'save1.mrb'), 'wb') { |f| f.write Marshal.dump(st.to_h) }
+    # The bytes of an old Marshal dump: the loader must not read the file at all.
+    File.open(File.join(dir, 'save1.mrb'), 'wb') { |f| f.write "\x04\b{\x00".b }
     ok !policy_app(db).any_save_exists?, 'a slot holding only a .mrb counts as empty'
     ok policy_app(db).load_save_state(1).nil?, 'and loads as nothing'
   end

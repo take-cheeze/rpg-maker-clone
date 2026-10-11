@@ -3095,9 +3095,9 @@ check "a common event's Parallel Process resumes where it left off after a " \
   eq 1, state.variables[3], 'marker A ran before the wait'
   state.switches[2] = false # "its switch turns off mid-run" -- ticking stops here
 
-  # A Marshal round trip stands in for an actual save/load, exactly like the
+  # An .lsd round trip stands in for an actual save/load, exactly like the
   # other State round-trip checks in scripts/rpg2k_logic_check.rb.
-  restored = Game::State.load(db, Marshal.load(Marshal.dump(state.to_h)))
+  restored = Game::State.from_lsd(db, state.to_lsd)
   restored.map = fake_map(1, {})
   eq false, restored.switches[2], 'the save preserved the gate switch off'
   eq 1, restored.variables[3], 'and the run-so-far progress'
@@ -4256,12 +4256,12 @@ check 'a forced player route survives Save/Continue and resumes correctly' do
   ok pr, 'still in progress'
   mid_index = pr[:index]
 
-  # Simulate Save (#to_h) then Continue (.load + a fresh Scene::Map with
+  # Simulate Save (#to_lsd) then Continue (.from_lsd + a fresh Scene::Map with
   # apply_access: false, the same resume path the BGM Continue checks above
-  # use) -- proving the full stack round-trips, not just #to_lsd/.from_lsd.
-  h = st.to_h
+  # use) -- proving the full stack round-trips through the .lsd.
+  save = st.to_lsd
   db = fake_db
-  new_state = Game::State.load(db, h)
+  new_state = Game::State.from_lsd(db, save)
   new_state.map = fake_map(1, { 1 => event(3, 0, auto) })
   parent = fake_parent(db)
   resumed = RPG2k::Scene::Map.new(parent, new_state, apply_access: false)
@@ -4641,7 +4641,7 @@ end
 check 'Change Map Tileset override does not survive save/Continue' do
   # Continue reconstructs a fresh Scene::Map from the saved Game::State alone
   # (RPG2k#continue_game); the override lives only on the old scene's
-  # @tileset_id, which Game::State#to_h/#to_lsd have no field for, so it
+  # @tileset_id, which Game::State#to_lsd has no field for, so it
   # cannot follow into the new scene -- the destination reverts to the map's
   # own configured tileset, matching RPG_RT.
   ic = Game::Interpreter::Cmd
@@ -6052,7 +6052,7 @@ check "a wandered map event's position and facing survive a save/load, but " \
   eq 2, c.direction, 'and turned to face down at the end of the route'
 
   # Part one: a save/load restores exactly that wandered spot.
-  restored = Game::State.load(db, Marshal.load(Marshal.dump(state.to_h)))
+  restored = Game::State.from_lsd(db, state.to_lsd)
   restored.map = fake_map(1, events)
   fresh = RPG2k::Scene::Map.new(FakeParent.new(db) { |id| fake_map(id, events) },
                                 restored)
@@ -6102,7 +6102,7 @@ check "a page's own custom move route resumes at its saved cursor across a save/
   ok !e.route.done?, 'the route has not finished yet'
   saved_index = e.route.index
 
-  restored = Game::State.load(db, Marshal.load(Marshal.dump(state.to_h)))
+  restored = Game::State.from_lsd(db, state.to_lsd)
   restored.map = fake_map(1, events)
   fresh = RPG2k::Scene::Map.new(FakeParent.new(db) { |id| fake_map(id, events) },
                                 restored)

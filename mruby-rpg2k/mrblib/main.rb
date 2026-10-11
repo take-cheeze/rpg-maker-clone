@@ -1175,7 +1175,7 @@ class RPG2k
     # upper_tiles. See Game::State#tile_substitutions.
     state.map.restore_substitutions(*state.tile_substitutions)
     # apply_access: false -- a resumed save already carries its own
-    # save/teleport/escape access (restored by Game::State.load / .from_lsd
+    # save/teleport/escape access (restored by Game::State.from_lsd
     # from whatever a prior Change Save/Teleport/Escape Access command left
     # it as), which re-deriving from the current map's tree here would
     # silently discard. See Scene::Map#initialize's own comment.
