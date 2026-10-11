@@ -1081,6 +1081,9 @@
   The [Optcarrot benchmark](tools/optcarrot_probe/README.md) measures optimized
   mruby and bc2cpp builds by default; `OPTCARROT_DEBUG=1` selects the diagnostic
   build, with separate build directories for each mode.
+  The mruby bundles factor PPU tile-table construction into fixed pixel rows
+  to reduce startup; `OPTCARROT_ORIGINAL_LUT=1` restores
+  upstream construction. See [tile-table startup](docs/optcarrot-ppu-lut.md).
   `OPTCARROT_STATIC_DISPATCH=1` exposes all CPU opcode calls to bc2cpp;
   `OPTCARROT_CLOSED_WORLD=1` uses a sealed benchmark executable with a validated
   source manifest. See [CPU dispatch](docs/optcarrot-cpu-dispatch.md) and
@@ -1357,7 +1360,9 @@
   its env, the guarded core iterators stay compiled under a Fiber while they run it, and its
   BLOCK_CORE_DIRECT arms drop the root-context test; the build prints how many methods, blocks and arm sites
   it proved. Every method a `Fiber.new` body can reach through any call (explicit receivers, other classes,
-  blocks) that may yield beneath it stays interpreted. See
+  blocks) that may yield beneath it stays interpreted.
+  Literal Proc calls follow their own block when its creation dominates the call; unknown Proc values
+  still follow all escaped blocks. See
   [`docs/adr/0283-bc2cpp-yield-free-blocks.md`](docs/adr/0283-bc2cpp-yield-free-blocks.md).
   A class-body `define_method(:name) { |a| ... }` with a `def`-like block is registered as an ordinary
   definition, so calls to it are devirtualized; any other way of installing a method by name keeps poisoning
