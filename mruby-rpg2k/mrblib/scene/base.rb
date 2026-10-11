@@ -635,7 +635,7 @@ class RPG2k
     # machine. Referenced at call time (not load time), so the RPG2k3 constant
     # resolves however the files happen to be loaded.
     def self.battle_scene_class(db)
-      if db.respond_to?(:rpg2003?) && db.rpg2003?
+      if Game.rpg2003_database?(db)
         RPG2k3::Scene::Battle
       else
         Battle
