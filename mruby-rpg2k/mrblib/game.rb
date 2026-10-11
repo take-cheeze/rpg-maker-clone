@@ -750,16 +750,6 @@ module Game
     (100 - clamp(top_trans, 0, 100)) * 255 / 100
   end
 
-  # The inverse of .trans_to_opacity, for writing a live picture's current
-  # `Game::Picture#opacity` (0..255) back to chunk 103 field 34's own 0..100
-  # transparency scale on Save (Game::State#to_lsd).
-  # Whole-number result even for a Float opacity (an in-flight move's target
-  # restored from the .lsd chunk-200 doubles), since chunk 103 field 34/35 is
-  # an integer BER field and LCF's writer raises on a Float.
-  def self.opacity_to_trans(opacity)
-    (100 - clamp(opacity, 0, 255) * 100 / 255).to_i
-  end
-
   # Top-left pixel of the view so the player is centred, clamped so the camera
   # never scrolls past the edges of a map smaller/larger than the screen.
   def self.camera_offset(player_px, screen_px, map_px)
@@ -8416,9 +8406,8 @@ module Game
     # rounded to a whole pixel for display.
     def pan_offset; [@pan_x.round, @pan_y.round]; end
 
-    # The full pan state for the .lsd chunk-200 pan record: offset, in-flight
-    # target and step, and the lock. Raw values (the offset may sit at a
-    # sub-pixel mid-pan, see #pan_offset), unlike the rounded pair above.
+    # Native hero pan fields need raw offsets, targets and step so saving
+    # retains sub-pixel motion rather than the rounded display position.
     def pan_save_data
       [@pan_x, @pan_y, @pan_tx, @pan_ty, @pan_step, @pan_locked]
     end

@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 #
-# Host-side checks for three .lsd save bugs (chunk 200 and chunk 103 of
+# Host-side checks for native pan and picture saves (hero fields and chunk 103 of
 # Save<N>.lsd, see docs/adr/0399):
 #
 #   1. The Pan Screen lock is written and restored.
@@ -51,6 +51,7 @@ lib = File.join(ROOT, 'mruby-rpg2k', 'mrblib')
 load File.join(lib, 'game.rb')
 load File.join(lib, 'game', 'battle.rb')
 load File.join(lib, 'game', 'battle_support.rb')
+load File.join(lib, 'game', 'legacy_lsd.rb')
 load File.join(lib, 'game', 'lsd_io.rb')
 load File.join(lib, 'interpreter.rb')
 load File.join(lib, 'main.rb')

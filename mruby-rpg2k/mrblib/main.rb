@@ -1137,8 +1137,8 @@ class RPG2k
   # Build a Game::State from a save slot, or nil when the slot is empty.
   #
   # Reads Save<slot>.lsd through the modelled LCF save schema (Game::State.from_lsd).
-  # The engine's own .lsd and a genuine editor's are read the same way: the chunk 200
-  # marker, when present, is what carries the extra fields (docs/adr/0395). Old
+  # Native fields are authoritative; LegacyLsd migrates marked old saves
+  # when loading (ADR 0402). Old
   # Marshal `save<N>.mrb` saves are no longer read (docs/adr/0399).
   #
   # Shared by #continue_game (which needs the one slot the player picked, or slot 1
