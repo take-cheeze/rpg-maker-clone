@@ -1904,19 +1904,6 @@ check 'a Change Face Graphic auto-clears once its own event finishes, unlike sti
 end
 
 
-check 'MessageConfig round-trips through to_h / load_h' do
-  cfg = Game::MessageConfig.new
-  cfg.transparent = true
-  cfg.position = Game::MessageConfig::POS_MIDDLE
-  cfg.position_fixed = true
-  cfg.continue_events = true
-  cfg.face_name = 'Faces1'
-  cfg.face_index = 7
-  cfg.face_right = true
-  cfg.face_flipped = true
-  restored = Game::MessageConfig.new.load_h(cfg.to_h)
-  eq cfg.to_h, restored.to_h
-end
 
 # A Call Event resolver stub: maps common-event id -> command list, and
 # (map event id, page) -> command list.
@@ -4576,23 +4563,40 @@ def party_state(enemy_group: Hash.new(true), rpg2003: false)
                   1, 0, 0)
 end
 
+check 'MessageConfig round-trips through a real .lsd save' do
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  cfg = st.message_config
+  cfg.transparent = true
+  cfg.position = Game::MessageConfig::POS_MIDDLE
+  cfg.position_fixed = true
+  cfg.continue_events = true
+  cfg.face_name = 'Faces1'
+  cfg.face_index = 7
+  cfg.face_right = true
+  cfg.face_flipped = true
+  restored = Game::State.from_lsd(db, st.to_lsd).message_config
+  eq true, restored.transparent
+  eq Game::MessageConfig::POS_MIDDLE, restored.position
+  eq true, restored.position_fixed
+  eq true, restored.continue_events
+  eq 'Faces1', restored.face_name
+  eq 7, restored.face_index
+  eq true, restored.face_right
+  eq true, restored.face_flipped
+end
+
 check 'both timers round-trip through the save; an old save still loads' do
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.timer(0).set(30); st.timer(0).start(true, true)
   st.timer(1).set(90); st.timer(1).start(false, false)
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq 30, loaded.timer(0).seconds
   eq true, loaded.timer(0).in_battle
   eq 90, loaded.timer(1).seconds
   eq false, loaded.timer(1).visible
 
-  # A save from before the second timer existed carries only the flat fields.
-  legacy = st.to_h
-  legacy.delete(:timers)
-  old = Game::State.load(db, legacy)
-  eq 30, old.timer(0).seconds, 'the first timer comes back from the old keys'
-  eq 0, old.timer(1).seconds, 'and the second starts empty'
 end
 
 check 'to_lsd/from_lsd round-trips a non-leader actor\'s Change Actor Name' do
@@ -4713,7 +4717,7 @@ check 'to_lsd/from_lsd round-trips a live Change Parameters edit on every ' \
   # screen's displayed Max HP by exactly that amount. #to_lsd/.from_lsd
   # never touched fields 33/34/41-44 at all, so a live Change Parameters
   # edit -- #change_param's own @base_raw shadow, already correctly
-  # round-tripped through this engine's own Marshal save format via
+  # restored through
   # Actor#restore_base -- silently reverted to the level curve's bare value
   # the instant a genuine Save/Continue ran.
   db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1])
@@ -4734,7 +4738,7 @@ check 'to_lsd/from_lsd round-trips a live Change Parameters edit on every ' \
   restored = round.party.leader
   eq [60, 25, 10, 1, 14, 21],
      [restored.max_hp, restored.max_mp, restored.atk, restored.def, restored.int, restored.agi],
-     'every Change Parameters edit survives Save/Continue via a real .lsd, not just this engine\'s own Marshal format'
+     'every Change Parameters edit survives Save/Continue via a real .lsd'
 
   # An actor nobody ever ran Change Parameters on writes none of the six
   # fields at all -- the same "omit when nothing to restore" convention
@@ -5085,8 +5089,7 @@ check 'to_lsd/from_lsd round-trips the hero\'s own in-flight Flash Sprite ' \
   eq nil, round.player_flash
 
   # A live flash (Flash Sprite / a map-triggered battle-animation pulse)
-  # survives a real Save/Continue, not just this engine's own Marshal
-  # format -- previously tracked only as Scene::Map's own transient
+  # survives a real Save/Continue -- previously tracked only as Scene::Map's own transient
   # @player_flash, dropped silently by any save.
   st.player_flash = { red: 200, green: 50, blue: 10, power: 24, frames: 8, total: 12 }
   saved2 = st.to_lsd[104]
@@ -5107,7 +5110,7 @@ check 'to_lsd/from_lsd round-trips the hero\'s own in-flight Flash Sprite ' \
   # (docs/adr/0395): chunk 104 alone only carries the derived current level and
   # the remaining frames, so before chunk 200 this resumed decaying from the
   # remaining frames as its own new peak. It now resumes from the true curve,
-  # the same as the Marshal save.
+  # as the old Marshal save did.
   eq 12, pf[:total], 'the peak duration round-trips through chunk 200'
   eq 24.0, pf[:power], 'the exact power round-trips through chunk 200'
 end
@@ -5172,8 +5175,8 @@ check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrid
   # @state.system_bgm/@state.system_sfx, keyed by slot -- the same slots
   # Scene::Map's #battle_bgm/#victory_bgm/#vehicle_bgm and
   # Scene::GameOver#gameover_bgm_override, plus Scene::Base#system_se, read
-  # back out. These used to round-trip only through the portable Marshal
-  # save (Game::State#to_h/.load); #to_lsd/.from_lsd now write/read every
+  # back out. These used to round-trip only through the removed Marshal
+  # save; #to_lsd/.from_lsd now write/read every
   # slot too, via SAVE_SYSTEM's BGM fields 72-74/79-82 and SE fields 91-102.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
@@ -5348,7 +5351,7 @@ check 'to_lsd/from_lsd round-trips the vehicle/battle BGM restore point ' \
   eq nil, round.pre_battle_bgm
 
   # A live restore point (mid-ride/mid-fight at save time) survives a real
-  # Save/Continue, not just this engine's own Marshal format.
+  # Save/Continue.
   st.pre_vehicle_bgm = { name: 'town', volume: 80, tempo: 100, balance: 30 }
   st.pre_battle_bgm = { name: 'field', volume: 70, tempo: 90, balance: 60 }
   round2 = Game::State.from_lsd(db, st.to_lsd)
@@ -5703,7 +5706,7 @@ end
 check 'to_lsd/from_lsd round-trips the step counter and battle tallies' do
   # docs/TODO.md used to say a resumed real save "starts counting from 0" for
   # both the step counter and the battle win/defeat/escape/victory tallies --
-  # they were already Marshal-persisted and already live in-game (bumped by
+  # they were already persisted by the old Marshal save and live in-game (bumped by
   # #walk_step and by Interpreter's battle-result handling), but chunk 109
   # only decoded the two timers. Confirmed against liblcf's SaveInventory
   # struct (every field here is a plain int32_t, like gold):
@@ -6265,7 +6268,7 @@ check 'the save carries actors who are out of the party' do
   away.name = 'Renamed'
   st.party.remove_actor(2)          # leaves the party *before* the save
 
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq [1], loaded.party.actors.map { |a| a.id }, 'the party is just the leader'
   restored = loaded.party.roster.existing(2)
   ok restored, 'the absent member is still in the restored roster'
@@ -6353,7 +6356,7 @@ check 'State save round-trips the message configuration' do
   st.save_access = false
   st.current_bgm = { name: 'town', volume: 80, tempo: 100, balance: 30 }
   st.memorized_bgm = { name: 'field', volume: 70, tempo: 90, balance: 60 }
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq true, loaded.message_config.transparent
   eq Game::MessageConfig::POS_TOP, loaded.message_config.position
   eq 'F', loaded.message_config.face_name
@@ -6362,13 +6365,6 @@ check 'State save round-trips the message configuration' do
   eq false, loaded.save_access, 'save access round-trips'
   eq 'town', loaded.current_bgm[:name], 'current BGM round-trips'
   eq 'field', loaded.memorized_bgm[:name], 'memorized BGM round-trips'
-  # A save written before these flags existed keeps them enabled (default on).
-  legacy = st.to_h
-  legacy.delete(:menu_access)
-  legacy.delete(:save_access)
-  legacy_loaded = Game::State.load(db, legacy)
-  eq true, legacy_loaded.menu_access, 'absent menu access defaults on'
-  eq true, legacy_loaded.save_access, 'absent save access defaults on'
 
   # The save / battle tallies round-trip, and default to 0 in a legacy save.
   st.save_count = 4
@@ -6376,15 +6372,12 @@ check 'State save round-trips the message configuration' do
   st.win_count = 5
   st.defeat_count = 1
   st.escape_count = 1
-  counted = Game::State.load(db, st.to_h)
+  counted = Game::State.from_lsd(db, st.to_lsd)
   eq 4, counted.save_count, 'save count round-trips'
   eq 7, counted.battle_count, 'battle count round-trips'
   eq 5, counted.win_count
   eq 1, counted.defeat_count
   eq 1, counted.escape_count
-  legacy2 = st.to_h
-  legacy2.delete(:battle_count)
-  eq 0, Game::State.load(db, legacy2).battle_count, 'absent battle count defaults 0'
 end
 
 check 'Vehicle: unplaced by default, placed once positioned' do
@@ -6393,10 +6386,6 @@ check 'Vehicle: unplaced by default, placed once positioned' do
   eq false, v.placed?                          # map_id 0 -> never positioned
   v.map_id = 4; v.x = 8; v.y = 6; v.direction = 1
   eq true, v.placed?
-  h = v.to_h
-  w = Game::Vehicle.new(:boat)
-  w.load_h(h)
-  eq [4, 8, 6, 1], [w.map_id, w.x, w.y, w.direction]
 end
 
 check 'State save round-trips vehicle locations (boat / ship / airship)' do
@@ -6405,17 +6394,13 @@ check 'State save round-trips vehicle locations (boat / ship / airship)' do
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.vehicle(:boat).map_id = 4; st.vehicle(:boat).x = 8; st.vehicle(:boat).y = 6
   st.vehicle(:airship).map_id = 2; st.vehicle(:airship).x = 3
-  st.vehicle(:airship).y = 5; st.vehicle(:airship).direction = 3
-  loaded = Game::State.load(db, st.to_h)
+  st.vehicle(:airship).y = 5; st.vehicle(:airship).direction = 6
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq [4, 8, 6], [loaded.vehicle(:boat).map_id, loaded.vehicle(:boat).x,
                  loaded.vehicle(:boat).y]
   eq true, loaded.vehicle(:airship).placed?
-  eq 3, loaded.vehicle(:airship).direction
+  eq 6, loaded.vehicle(:airship).direction
   eq false, loaded.vehicle(:ship).placed?      # never positioned -> stays unplaced
-  # A save written before vehicles existed simply restores them unplaced.
-  legacy = st.to_h
-  legacy.delete(:vehicles)
-  eq false, Game::State.load(db, legacy).vehicle(:boat).placed?
 end
 
 check 'Party save round-trips actor name / title / sprite overrides' do
@@ -6430,7 +6415,7 @@ check 'Party save round-trips actor name / title / sprite overrides' do
   hero.title = 'Champion'
   hero.set_charset('Monster', 3)
   hero.transparent = true
-  loaded = Game::State.load(db, st.to_h).party.actor_by_id(1)
+  loaded = Game::State.from_lsd(db, st.to_lsd).party.actor_by_id(1)
   eq 'Renamed', loaded.name
   eq 'Champion', loaded.title
   eq 'Monster', loaded.charset_name
@@ -7015,7 +7000,7 @@ check 'Party save round-trips a Change Parameters adjustment across Continue' do
   hero.change_param(Game::Actor::PARAM_ATK, -2000)  # mod clamps to -999, floors atk at 1
   eq 7, hero.def
   eq 1, hero.atk
-  loaded = Game::State.load(db, st.to_h).party.actor_by_id(1)
+  loaded = Game::State.from_lsd(db, st.to_lsd).party.actor_by_id(1)
   eq hero.level, loaded.level      # the level-up itself round-tripped too
   eq 7, loaded.def                 # ordinary adjustment survives Continue
   eq 1, loaded.atk                 # still floored, not reverted to the level-derived base
@@ -7029,16 +7014,6 @@ check 'Party save round-trips a Change Parameters adjustment across Continue' do
   hero.change_param(Game::Actor::PARAM_ATK, 1000)
   eq 4, loaded.atk
   eq hero.atk, loaded.atk
-end
-
-check 'A save written before base_raw existed keeps the level-derived baseline' do
-  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1])
-  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  st.party.actor_by_id(1).change_param(Game::Actor::PARAM_ATK, 5)
-  legacy = st.to_h
-  legacy[:party][:actor_meta].each_value { |m| m.delete(:base_raw) }
-  loaded = Game::State.load(db, legacy).party.actor_by_id(1)
-  eq 3, loaded.atk # base_raw missing (a pre-fix save) -> the level-derived default
 end
 
 check 'Actor without a growth curve falls back to a level-independent status' do
@@ -7197,8 +7172,8 @@ end
 
 check "Party save/Continue does not fabricate a Change Class for an actor " \
       "merely starting in one" do
-  # Party#to_h/#load_state (this engine's own Marshal Save/Continue, distinct
-  # from the .lsd export) used to call Actor#restore_class whenever an
+  # Party#load_state (the removed Marshal Save/Continue, distinct from the .lsd
+  # export) used to call Actor#restore_class whenever an
   # actor's meta carried a class_id at all -- which every actor starting in a
   # class does, whether or not a live Change Class event ever ran (see the
   # check just above: #class_id reads a startup class immediately, #curve_row
@@ -7210,7 +7185,7 @@ check "Party save/Continue does not fabricate a Change Class for an actor " \
   # through Change Level, not Change EXP: reloading a save taken while one
   # was out of the party re-derived a wildly different level (and dropped
   # every skill learnt past level 1) purely from #set_exp's climb against the
-  # now-wrong curve. #to_h now also carries #class_changed?, and #load_state
+  # now-wrong curve. The save now also carries #class_changed?, and #load_state
   # only calls #restore_class when it says a change genuinely happened.
   db = class_db(1)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
@@ -7219,7 +7194,7 @@ check "Party save/Continue does not fabricate a Change Class for an actor " \
   eq false, hero.class_changed?
   eq 120, hero.max_hp, "the actor's own row curve -- class 1's (220) is not live"
 
-  loaded = Game::State.load(db, st.to_h).party.actor_by_id(1)
+  loaded = Game::State.from_lsd(db, st.to_lsd).party.actor_by_id(1)
   eq false, loaded.class_changed?, 'Continue must not fabricate a class change'
   eq 120, loaded.max_hp, "still the actor's own row curve after Save/Continue"
   eq hero.skills.sort, loaded.skills.sort
@@ -7228,7 +7203,7 @@ check "Party save/Continue does not fabricate a Change Class for an actor " \
   hero.change_class(1, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
                     Game::Actor::CLASS_PARAM_RESET_LEVEL)
   ok hero.class_changed?
-  reloaded = Game::State.load(db, st.to_h).party.actor_by_id(1)
+  reloaded = Game::State.from_lsd(db, st.to_lsd).party.actor_by_id(1)
   ok reloaded.class_changed?
   eq 220, reloaded.max_hp, 'a genuine Change Class survives Continue too'
 end
@@ -7584,9 +7559,9 @@ check 'a class change and its battle commands survive Save / Continue' do
   st.party.actor_by_id(1).change_class(1, 3, Game::Actor::CLASS_SKILL_RESET,
                                        Game::Actor::CLASS_PARAM_RESET_LEVEL)
   st.party.actor_by_id(1).change_battle_commands(true, 7)
-  saved = st.to_h
+  saved = st.to_lsd
 
-  restored = Game::State.load(class_db, saved)
+  restored = Game::State.from_lsd(class_db, saved)
   a = restored.party.actor_by_id(1)
   eq 1, a.class_id
   eq 220, a.max_hp, "the class's curve, not the actor row's"
@@ -8305,12 +8280,16 @@ end
 
 # A two-actor party (Hero max 100/30, Ally max 50/20) plus the given item table,
 # for the medicine-use checks.
-def item_party(items)
+def item_db(items)
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
     2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
   }
-  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], items)), 1, 0, 0)
+  FakeActorDB.new(players, [1, 2], items)
+end
+
+def item_party(items)
+  Game::State.new(Game::Party.new(item_db(items)), 1, 0, 0)
 end
 
 check 'gain_item clamps at 99, silently, past a single gain or several ' \
@@ -8338,7 +8317,7 @@ check "gain_item erases the bag entry outright at count 0, matching RPG_RT's " \
   # This codebase's own #gain_item instead used to store `@items[id] = 0`
   # unconditionally, leaving a phantom zero-count key in the bag hash
   # forever -- invisible to every reader (all guard on count > 0), but not
-  # invisible in the save file: #to_h's own inventory writer builds chunk
+  # invisible in the save file: the .lsd inventory writer builds chunk
   # 109's item_ids/item_counts straight off `@party.items.keys`, so the
   # junk id would have been written into a real save.
   st = item_party({ 5 => fake_item(type: 6, rhp: 50) })
@@ -8425,20 +8404,12 @@ check 'a part-used item keeps its 使用回数 tally across Save / Continue' do
   st.party.use_switch_item(4)
   eq 1, st.party.item_usage[4]
 
-  round = item_party(items)
-  round.party.load_state(st.party.to_h)
+  round = Game::State.from_lsd(item_db(items), st.to_lsd)
   eq 1, round.party.item_usage[4], 'the tally rides along with the bag'
   2.times { round.party.use_switch_item(4) }
   eq 0, round.party.item_count(4),
      'so two more uses finish the copy -- Continue does not refill it'
 
-  # A save written before 使用回数 was modelled has no tally at all; every held
-  # item simply starts its uses over.
-  legacy = st.party.to_h
-  legacy.delete(:item_usage)
-  old = item_party(items)
-  old.party.load_state(legacy)
-  eq 0, old.party.item_usage[4] || 0, 'an older save reads as "nothing spent"'
 end
 
 check 'to_lsd/from_lsd round-trips the 使用回数 tally (chunk 109 field 14)' do
@@ -10888,14 +10859,16 @@ check 'State save round-trips per-actor status states' do
     1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
     2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
   }
-  db = FakeActorDB.new(players, [1, 2])
+  situation = (1..9).to_h { |id| [id, fake_state(type: 0)] } # the database's state table
+  db = FakeActorDB.new(players, [1, 2], {}, {}, {}, situation)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.party.actor_by_id(1).add_state(3)
   st.party.actor_by_id(1).add_state(9)
   st.party.actor_by_id(2).add_state(5)
-  loaded = Game::State.load(db, Marshal.load(Marshal.dump(st.to_h)))
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq [3, 9], loaded.party.actor_by_id(1).states.sort
   eq [5], loaded.party.actor_by_id(2).states.sort
+
 end
 
 check 'Conditional actor: unmodelled sub-condition reads false (type 5, sub 6)' do
@@ -11424,11 +11397,7 @@ check 'player_transparent round-trips through the save' do
   db = FakeActorDB.new(players, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.player_transparent = true
-  eq true, Game::State.load(db, st.to_h).player_transparent
-  # A save written before the flag existed defaults to visible (off).
-  legacy = st.to_h
-  legacy.delete(:player_transparent)
-  eq false, Game::State.load(db, legacy).player_transparent
+  eq true, Game::State.from_lsd(db, st.to_lsd).player_transparent
 end
 
 # ADR 0020 mapped player_transparent to SAVE_SYSTEM's own field 55, citing no
@@ -11472,14 +11441,8 @@ check 'common_event_progress (a Parallel Process interpreter checkpoint) round-t
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.common_event_progress[7] = 3
   st.common_event_progress[12] = 0 # a real index, not a "no checkpoint" marker
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq({ 7 => 3, 12 => 0 }, loaded.common_event_progress)
-  # A save written before this field existed restores an empty table, so every
-  # common event's parallel process simply starts at the top -- the same
-  # behaviour as before this change existed at all.
-  legacy = st.to_h
-  legacy.delete(:common_event_progress)
-  eq({}, Game::State.load(db, legacy).common_event_progress)
 end
 
 # Cycle #191: chunks 113 (SAVE_FOREGROUND_EVENT) and 114 (SAVE_COMMON_EVENT)
@@ -11537,17 +11500,6 @@ check 'to_lsd/from_lsd round-trips a foreground and a common-event call-stack sn
   ok bare_round.foreground_event_exec.nil?, 'chunk 113 is absent, not an empty stub'
   eq({}, bare_round.common_event_exec)
 
-  # The portable Marshal save (#to_h/.load) never carries either field at all
-  # -- deliberately, see #common_event_exec's own comment -- so loading one
-  # restores the same "nothing to resume" state a fresh Game::State starts
-  # with, whatever #foreground_event_exec/#common_event_exec held before it
-  # was dumped.
-  st.foreground_event_exec = { event_id: 42, frames: fg_it.call_stack_snapshot }
-  st.common_event_exec[7] = [{ commands: [], current_command: 0, event_id: 0,
-                                triggered_by_decision_key: false }]
-  via_marshal = Game::State.load(db, st.to_h)
-  ok via_marshal.foreground_event_exec.nil?, 'not carried by #to_h at all'
-  eq({}, via_marshal.common_event_exec)
 end
 
 # Cycle #193: chunk 111's own SAVE_MOVABLE field 108 (parallel_event_execstate)
@@ -11596,24 +11548,11 @@ check "to_lsd/from_lsd round-trips a map event's own Parallel Process " \
   bare_round = Game::State.from_lsd(db, bare.to_lsd)
   eq({}, bare_round.map_event_exec)
 
-  # The portable Marshal save (#to_h/.load) never carries this field at all
-  # either -- deliberately, see #map_event_exec's own comment -- so loading
-  # one restores "nothing to resume", whatever #map_event_exec held before
-  # it was dumped.
-  st.map_event_exec[5] = me_it.call_stack_snapshot
-  via_marshal = Game::State.load(db, st.to_h)
-  eq({}, via_marshal.map_event_exec)
 end
 
-check 'shown pictures round-trip through this engine\'s own internal Marshal-style ' \
-      'save (Game::State#to_h/.load), not just through a genuine .lsd (#to_lsd/.from_lsd)' do
-  # Cycle #158: #to_h never mentioned @pictures at all, so any picture on screen
-  # when Continue used this engine's own preferred `.mrb` quick-resume path
-  # (main.rb picks it over a genuine `.lsd` when both exist) vanished on resume
-  # with no trace -- a real, player-visible loss the `.lsd` path (chunk 103,
-  # SAVE_PICTURE) already avoided. See Game::Picture#to_h's own comment for why
-  # this is a strictly richer snapshot than `.lsd` can carry (fixed_to_map /
-  # use_transparent_color have no SAVE_PICTURE field at all).
+check 'shown pictures round-trip through a real .lsd (#to_lsd/.from_lsd), including a picture mid-move' do
+  # Shown pictures, including one still in flight through a Move Picture, come back
+  # through the .lsd: the picture fields, its erased/shown state and its move.
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
                            max_hp: 100, max_mp: 30, atk: 10, def: 8),
@@ -11632,7 +11571,7 @@ check 'shown pictures round-trip through this engine\'s own internal Marshal-sty
   mid_x = st.pictures[7].x
   ok st.pictures[7].moving?, 'picture 7 should still be moving mid-test'
 
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   p5 = loaded.pictures[5]
   ok p5, 'picture 5 should have survived the round-trip'
   eq 'black', p5.name
@@ -11658,12 +11597,6 @@ check 'shown pictures round-trip through this engine\'s own internal Marshal-sty
   eq false, p7.moving?, 'the restored move still runs to completion after enough frames'
   eq 210, p7.x
 
-  # A save written before this existed carries no `pictures` key at all
-  # (nil), restoring the pre-fix "no pictures shown" behaviour rather than
-  # raising on a missing hash.
-  legacy = st.to_h
-  legacy.delete(:pictures)
-  eq({}, Game::State.load(db, legacy).pictures)
 end
 
 check 'map_event_positions (a wandered NPC\'s live tile + facing) round-trips through the save' do
@@ -11675,14 +11608,8 @@ check 'map_event_positions (a wandered NPC\'s live tile + facing) round-trips th
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.map_event_positions[3] = [5, 9, 8] # event 3, tile (5, 9), facing up
   st.map_event_positions[7] = [0, 0, 2]
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq({ 3 => [5, 9, 8], 7 => [0, 0, 2] }, loaded.map_event_positions)
-  # A save written before this field existed restores an empty table, so every
-  # event falls back to its page's own default placement -- the same
-  # behaviour as before this change existed at all.
-  legacy = st.to_h
-  legacy.delete(:map_event_positions)
-  eq({}, Game::State.load(db, legacy).map_event_positions)
 end
 
 check 'tile_substitutions (a live Tile Substitution table) round-trips through the save' do
@@ -11693,14 +11620,8 @@ check 'tile_substitutions (a live Tile Substitution table) round-trips through t
   db = FakeActorDB.new(players, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.tile_substitutions = [{ 4 => 9 }, { 12 => 30 }]
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq [{ 4 => 9 }, { 12 => 30 }], loaded.tile_substitutions
-  # A save written before this field existed restores no substitutions, so
-  # every tile shows its own database graphic -- the same behaviour as
-  # before this change existed at all.
-  legacy = st.to_h
-  legacy.delete(:tile_substitutions)
-  eq [{}, {}], Game::State.load(db, legacy).tile_substitutions
 end
 
 check 'Return to Title Screen raises a :return_title request' do
@@ -11749,12 +11670,8 @@ check 'Change Screen Transitions sets the chosen slot; round-trips through save'
   st.set_screen_transition(-1, 3)
   eq [0, 0, 5, 0, 0, 9], st.screen_transitions
 
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq [0, 0, 5, 0, 0, 9], loaded.screen_transitions, 'transitions round-trip'
-  # A save written before transitions existed restores all-default.
-  legacy = st.to_h
-  legacy.delete(:screen_transitions)
-  eq [0, 0, 0, 0, 0, 0], Game::State.load(db, legacy).screen_transitions
 end
 
 # -- Vehicle starting positions (map tree's own boat/ship/airship tool) ------
@@ -11828,7 +11745,7 @@ check 'Change System Graphics overrides the windowskin / font; round-trips' do
   ok it.take_system_graphic_changed, 'a windowskin-reload request was raised'
   ok !it.take_system_graphic_changed, 'the request is one-shot'
 
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq 'Skin2', loaded.system_graphic, 'the override round-trips through the save'
   eq 1, loaded.font_id
 end
@@ -11838,7 +11755,7 @@ end
 # *digits* (15/17) instead of the hex value converted to decimal, unlike
 # every other field in the same table. #to_lsd/.from_lsd used the same wrong
 # tags symmetrically, so a same-engine round-trip (like the check above, and
-# the Marshal-based one) never caught it -- only inspecting the actual wire
+# the since-removed Marshal-based one) never caught it -- only inspecting the actual wire
 # tag, or a genuine RPG_RT save, would.
 check 'to_lsd writes the system graphic / font override at the correct ' \
       'liblcf tags (21 / 23, not 15 / 17)' do
@@ -12126,7 +12043,7 @@ check 'vehicle placement / graphic round-trip through the save' do
   it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [0, 0, 5, 10, 12]),
             FakeCmd.new(IC::CHANGE_VEHICLE_GRAPHIC, [0, 1], string: 'Boat1')])
   it.update
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   boat = loaded.vehicle(:boat)
   eq [5, 10, 12], [boat.map_id, boat.x, boat.y], 'position round-trips'
   eq 'Boat1', boat.charset_name, 'graphic round-trips'
@@ -12141,11 +12058,7 @@ check 'the ridden vehicle round-trips through the save' do
   ok !st.boarded?, 'the party starts on foot'
   st.boarded = :ship
   ok st.boarded?
-  eq :ship, Game::State.load(db, st.to_h).boarded, 'the ridden vehicle survives a save'
-  # A save written before boarding existed restores on-foot.
-  legacy = st.to_h
-  legacy.delete(:boarded)
-  ok !Game::State.load(db, legacy).boarded?
+  eq :ship, Game::State.from_lsd(db, st.to_lsd).boarded, 'the ridden vehicle survives a save'
 end
 
 # -- Show Battle Animation ----------------------------------------------------
@@ -12348,16 +12261,12 @@ check 'Weather round-trips through the save' do
   db = FakeActorDB.new(players, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.weather.set(2, 1) # snow, medium
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq 2, loaded.weather.type
   eq 1, loaded.weather.strength
-  # A save written before weather existed defaults to none.
-  legacy = st.to_h
-  legacy.delete(:weather)
-  ok Game::State.load(db, legacy).weather.none?
 end
 
-check 'Screen pan/lock round-trips through the save; other effects stay transient' do
+check 'Screen pan offset and tint round-trip through the save; shake and flash stay transient' do
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
                            max_hp: 100, max_mp: 30, atk: 10, def: 8),
@@ -12375,24 +12284,16 @@ check 'Screen pan/lock round-trips through the save; other effects stay transien
   ok st.screen.panning?
   before_offset = st.screen.pan_offset
 
-  loaded = Game::State.load(db, st.to_h)
-  eq true, loaded.screen.pan_locked?, 'the Lock survives the save'
+  loaded = Game::State.from_lsd(db, st.to_lsd)
+  # Only the pan offset survives a .lsd save: the Lock is not written at all, and the
+  # reader sets the target to the current offset (lsd_io.rb's Screen load_h call), so a
+  # scroll still in flight resumes at rest. Neither is asserted here.
   eq before_offset, loaded.screen.pan_offset,
      'the in-progress pan offset survives at whatever point it had scrolled to'
-  ok loaded.screen.panning?, 'the still-unfinished scroll toward its target survives too'
-  2.times { loaded.screen.update } # remaining 16px at 8px/frame lands on the 32px target
-  eq [32, 0], loaded.screen.pan_offset, 'the scroll resumes toward its original target'
-  ok !loaded.screen.tinting?, 'tint transitions stay transient, unlike pan'
-  ok !loaded.screen.shaking?, 'shake stays transient, unlike pan'
-  ok !loaded.screen.flashing?, 'flash stays transient, unlike pan'
+  ok loaded.screen.tinting?, 'the Tint Screen transition is carried by the .lsd and resumes'
+  ok !loaded.screen.shaking?, 'shake stays transient, not carried by the .lsd'
+  ok !loaded.screen.flashing?, 'flash stays transient, not carried by the .lsd'
 
-  # A save written before Screen pan state was persisted defaults to a
-  # neutral, hero-following camera -- not locked, no offset.
-  legacy = st.to_h
-  legacy.delete(:screen)
-  legacy_loaded = Game::State.load(db, legacy)
-  ok !legacy_loaded.screen.pan_locked?
-  eq [0, 0], legacy_loaded.screen.pan_offset
 end
 
 # -- Change Teleport / Escape Access ------------------------------------------
@@ -12430,29 +12331,17 @@ check 'Teleport / Escape access round-trip through the save' do
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.teleport_access = true
   st.escape_access = true
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq true, loaded.teleport_access
   eq true, loaded.escape_access
 
-  # A save written before these existed defaults them **on** -- cycle #162:
-  # `.from_h` used to coerce a missing key straight to false
-  # (`h[:teleport_access] ? true : false`) instead of falling back to the
-  # constructor default the way `#menu_access`/`#save_access` do; fixed to
-  # match, and the constructor default itself is now true (confirmed against
-  # genuine RPG_RT.exe), so a legacy save missing the key resumes allowed.
-  legacy = st.to_h
-  legacy.delete(:teleport_access)
-  legacy.delete(:escape_access)
-  legacy_loaded = Game::State.load(db, legacy)
-  eq true, legacy_loaded.teleport_access
-  eq true, legacy_loaded.escape_access
 
   # An explicit false still round-trips as false, not swallowed by the new
   # constructor-default fallback.
   st2 = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st2.teleport_access = false
   st2.escape_access = false
-  loaded2 = Game::State.load(db, st2.to_h)
+  loaded2 = Game::State.from_lsd(db, st2.to_lsd)
   eq false, loaded2.teleport_access, 'an explicit false still loads as false'
   eq false, loaded2.escape_access, 'an explicit false still loads as false'
 end
@@ -12637,7 +12526,7 @@ check 'party save round-trips actor EXP and re-derives the level' do
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.party.actor_by_id(1).gain_exp(250) # -> level 3
   eq 3, st.party.actor_by_id(1).level
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   la = loaded.party.actor_by_id(1)
   eq 250, la.exp, 'EXP restored from the save'
   eq 3, la.level, 'level re-derived from the restored EXP'
@@ -12723,22 +12612,12 @@ check 'Targets / rate / system audio round-trip through the save' do
                        tempo: 100, balance: 50 }
   st.system_sfx[1] = { name: 'Decision2', volume: 100, tempo: 100,
                        balance: 50 }
-  loaded = Game::State.load(db, st.to_h)
+  loaded = Game::State.from_lsd(db, st.to_lsd)
   eq 30, loaded.encounter_rate
   eq({ x: 7, y: 9, switch_id: 12 }, loaded.teleport_targets[4])
   eq({ map_id: 8, x: 3, y: 5, switch_id: nil }, loaded.escape_target)
   eq 'Battle1', loaded.system_bgm[0][:name]
   eq 'Decision2', loaded.system_sfx[1][:name]
-  # A save written before these existed restores empty / unset registries.
-  legacy = st.to_h
-  [:encounter_rate, :teleport_targets, :escape_target,
-   :system_bgm, :system_sfx].each { |k| legacy.delete(k) }
-  legacy_loaded = Game::State.load(db, legacy)
-  eq nil, legacy_loaded.encounter_rate
-  eq({}, legacy_loaded.teleport_targets)
-  eq nil, legacy_loaded.escape_target
-  eq({}, legacy_loaded.system_bgm)
-  eq({}, legacy_loaded.system_sfx)
 end
 
 # -- Key Input Processing -----------------------------------------------------
@@ -13649,7 +13528,7 @@ check 'to_lsd/from_lsd round-trips a map event\'s custom-route index' do
   # Chunk 111 (SAVE_MAP_EVENT/SAVE_MOVABLE) used to never be written or read
   # at all -- #map_event_positions/#map_event_route_index already tracked a
   # map event's live position and its page's custom-route cursor, round-
-  # tripping through the portable Marshal save, but docs/TODO.md flagged
+  # tripping through the since-removed Marshal save, but docs/TODO.md flagged
   # both as "remain unmodelled at the `.lsd` layer". Field 43
   # (move_route_index) now carries the route cursor alongside the position
   # fields (12/13/22) chunk 111 already covers.
@@ -13789,7 +13668,7 @@ check 'to_lsd/from_lsd round-trips Set Teleport Target / Set Escape Target ' \
   # unconditionally on every save -- the escape
   # target always at array id 0, every teleport target keyed by its own
   # destination map id. #to_lsd/.from_lsd previously never touched chunk 110
-  # at all (only this engine's own portable Marshal save round-tripped these
+  # at all (only the since-removed Marshal save round-tripped these
   # registries -- see the "Targets / rate / system audio round-trip through
   # the save" check above, `to_h`/.load only), so a real Save/Continue
   # silently dropped every registered target, even though the Escape/
@@ -13906,8 +13785,8 @@ check 'to_lsd/from_lsd round-trips a live Pan Screen offset (chunk 102 ' \
   # was present and nonzero (a vertical-only pan), field 41 (pan_x) absent
   # at its own default 0 -- #to_lsd previously never wrote either field at
   # all, so a live Pan Screen offset silently reset to (0,0) on Save/
-  # Continue even though `Game::Screen` already tracks it for the portable
-  # Marshal save format.
+  # Continue even though `Game::Screen` already tracks it for the removed
+  # Marshal save.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.screen.instance_variable_set(:@pan_x, 0)
@@ -19165,12 +19044,7 @@ check 'the walked-step count advances and round-trips through the save' do
   eq 1, st.walk_step
   eq 3, (st.walk_step; st.walk_step)
   eq 3, st.steps
-  eq 3, Game::State.load(db, st.to_h).steps
-  # A save written before the counter existed restores 0 rather than nil, which
-  # would make the modulo raise on the next step.
-  h = st.to_h
-  h.delete(:steps)
-  eq 0, Game::State.load(db, h).steps
+  eq 3, Game::State.from_lsd(db, st.to_lsd).steps
 end
 
 check 'battle: a blinding state cuts its victim\'s accuracy by reduce_hit_ratio' do

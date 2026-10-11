@@ -665,27 +665,6 @@ module Game
       @face_flipped = false
     end
 
-    # Serialise to a plain hash of primitives (Marshal-friendly) for saving.
-    def to_h
-      { transparent: @transparent, position: @position,
-        position_fixed: @position_fixed, continue_events: @continue_events,
-        face_name: @face_name, face_index: @face_index,
-        face_right: @face_right, face_flipped: @face_flipped }
-    end
-
-    # Restore the fields from a saved hash (missing keys keep their defaults).
-    def load_h(h)
-      return self unless h
-      @transparent = h[:transparent] ? true : false
-      @position = h[:position] || POS_BOTTOM
-      @position_fixed = h[:position_fixed] ? true : false
-      @continue_events = h[:continue_events] ? true : false
-      @face_name = h[:face_name] || ''
-      @face_index = h[:face_index] || 0
-      @face_right = h[:face_right] ? true : false
-      @face_flipped = h[:face_flipped] ? true : false
-      self
-    end
   end
 
   def self.clamp(v, lo, hi)
@@ -1744,9 +1723,8 @@ module Game
     # `Actor.new` site anywhere is `Actors#[]`'s own `Actor.new(@db, id)`,
     # whose `@db` comes from `Actors.new(db)` in `Party#initialize`, whose
     # own `db` in turn comes from `Game::Party.new(@db)` (main.rb) or from
-    # the two save-restore entry points (`State.load` / `State.from_lsd`),
-    # both of which `RPG2k` only ever calls as `Game::State.load(@db, ...)` /
-    # `Game::State.from_lsd(@db, ...)`. `LCF::Database` is a `LCF::File`
+    # the save-restore entry point (`State.from_lsd`), which `RPG2k` only ever
+    # calls as `Game::State.from_lsd(@db, ...)`. `LCF::Database` is a `LCF::File`
     # subclass and is not itself subclassed (grepped). The CRuby-only check
     # harnesses (scripts/rpg2k_logic_check.rb's own `FakeActorDB`) hand in a
     # stub instead, but they are not part of `closed_world_mrblib_srcs` and
@@ -3921,7 +3899,7 @@ module Game
 
     # Per-item 使用回数 progress: item id => uses already spent on the copy
     # currently being used up (see #consume_item_use). Exposed for the save
-    # layer (#to_h) and for tests; the bag itself stays `items`.
+    # layer (#to_lsd) and for tests; the bag itself stays `items`.
     attr_reader :item_usage
 
     # The permanent actor roster this party draws from (see Game::Actors). The
@@ -3954,63 +3932,6 @@ module Game
       @leader_graphic_dirty = false
     end
 
-    # Serialise the mutable party state (see State#to_h). Beyond HP/MP this keeps
-    # the fields the Change Actor Name / Title / Sprite commands mutate, so those
-    # edits survive a Save / Continue instead of reverting to the database row.
-    #
-    # The per-actor tables cover the whole **roster**, not just the current
-    # members: an actor the game has taken out of the party keeps their level,
-    # gear and name for when they rejoin, so the save has to carry them too.
-    # `actor_ids` is the party proper, in order.
-    def to_h
-      hp = {}
-      mp = {}
-      exp = {}
-      meta = {}
-      @roster.each do |a|
-        hp[a.id] = a.hp
-        mp[a.id] = a.mp
-        exp[a.id] = a.exp
-        meta[a.id] = { name: a.name, title: a.title,
-                       charset_name: a.charset_name,
-                       charset_index: a.charset_index,
-                       # Gates whether a restore actually calls #set_charset
-                       # (see #apply_actor_meta below) -- without it, an actor
-                       # whose charset_name is merely their own non-blank
-                       # database default (never a real Change Sprite
-                       # Association) would spuriously come back marked
-                       # #sprite_changed?, the same "changed at all" flag
-                       # Game::State#to_lsd now gates chunk 108's own
-                       # sprite_name/sprite_id/sprite_transparent fields on
-                       # (see that method's own citation) -- mirrors
-                       # class_changed just below.
-                       sprite_changed: a.sprite_changed?,
-                       transparent: a.transparent, states: a.states.dup,
-                       # A Change Parameters command's unclamped shadow total
-                       # (see Actor#change_param / #restore_base) -- without
-                       # it a live adjustment reverts to the level-derived
-                       # baseline the moment #load_state re-seeds it from EXP.
-                       base_raw: a.base_raw.dup,
-                       # RPG2003: a Change Class / Change Battle Commands is a
-                       # permanent edit, so it has to outlive Save / Continue the
-                       # way the name and sprite overrides do. class_changed
-                       # distinguishes that from an actor's ordinary
-                       # database-assigned starting class, which #load_state
-                       # must *not* restore through -- see its own comment.
-                       class_id: a.class_id, class_changed: a.class_changed?,
-                       battle_commands: a.battle_commands.dup,
-                       # RPG2003 battle row (ADR 0053's Row command): outlives
-                       # Save/Continue the same way a live Change Class does.
-                       row: a.battle_row }
-      end
-      { actor_ids: @actors.map { |a| a.id }, items: @items,
-        # Half-spent 使用回数 rides along with the bag, the way the save format
-        # keeps `item_usage` beside `item_counts` -- without it a Save/Continue
-        # silently refills every partly-used item.
-        item_usage: @item_usage, gold: @gold,
-        hp: hp, mp: mp, exp: exp, actor_meta: meta }
-    end
-
     # Restore item/gold, per-actor exp/hp/mp and the name/title/sprite overrides
     # from a saved party hash. EXP is restored first (it re-derives the level and
     # its base stats), then a saved Change Parameters shadow total (base_raw)
@@ -4020,7 +3941,7 @@ module Game
     #
     # Every id the saved tables mention is restored, not just the current
     # members, so an actor waiting out of the party comes back as they left
-    # (#to_h writes the whole roster). Actors are pulled through the roster, so
+    # (the save writes the whole roster). Actors are pulled through the roster, so
     # restoring one that is not in the party enrols them there.
     def load_state(data)
       @revision += 1
@@ -4074,7 +3995,7 @@ module Game
       actor.title = m[:title] unless m[:title].nil?
       # `sprite_changed` false means the database default was never actually
       # overridden -- skip #set_charset so the actor's own #sprite_changed?
-      # stays false too (see #to_h's own citation). A save written before
+      # stays false too (see #to_lsd's own citation). A save written before
       # `sprite_changed` existed carries no such key (nil, not false), read
       # as "assume changed" -- the old behavior, gated on charset_name alone.
       if m[:charset_name] && m[:sprite_changed] != false
@@ -4438,7 +4359,7 @@ module Game
       # 0` here instead used to leave a phantom zero-count key sitting in
       # the bag hash forever -- invisible in ordinary play, since every
       # reader already guards on `count > 0`, but not invisible in the save
-      # file: `#to_h`'s inventory writer builds chunk 109's `item_ids`/
+      # file: `#to_lsd`'s inventory writer builds chunk 109's `item_ids`/
       # `item_counts` straight off `@party.items.keys`, so the junk id got
       # written into SAVE_INVENTORY and read straight back by `.from_lsd`,
       # accumulating one row per item ever fully depleted for the life of
@@ -8421,24 +8342,9 @@ module Game
     # True while a pan/reset scroll has not yet reached its target.
     def panning?; @pan_x != @pan_tx || @pan_y != @pan_ty; end
 
-    # Persisted pan/lock state only, mirroring Weather's own `to_h`/`load_h`
-    # idiom. Every *other* field this class holds (tint transition, shake,
-    # flash, fade) stays deliberately transient -- see the class-level
-    # "Transient screen-effect state" comment on `Game::State#initialize` --
-    # but Pan Screen's Lock is not a per-frame effect the same way: it is a
-    # standing camera mode a script can leave active indefinitely (e.g. a
-    # cutscene that pans and locks the view before a Save event or the
-    # player opening the menu to save), and dropping it silently snapped the
-    # camera back to hero-centred *and* unlocked on every load -- the pan
-    # offset and its still-in-flight target/step are carried too so a pan
-    # that had not finished scrolling when the game was saved resumes the
-    # rest of that scroll instead of jumping straight to (or short of) its
-    # destination.
-    def to_h
-      { pan_x: @pan_x, pan_y: @pan_y, pan_tx: @pan_tx, pan_ty: @pan_ty,
-        pan_step: @pan_step, pan_locked: @pan_locked }
-    end
-
+    # Restore the pan offset from a `.lsd` read (Game::State.from_lsd, lsd_io.rb).
+    # Only the offset is restored: the Lock is not written to the .lsd, and the pan
+    # target is set to the offset, so a scroll still in flight resumes at rest.
     def load_h(h)
       return unless h
       @pan_x = h[:pan_x] || 0
@@ -9017,15 +8923,8 @@ module Game
       @frames -= 1
     end
 
-    # Snapshot for this engine's own internal Marshal-style quick-resume
-    # (Game::State#to_h/.load) -- a private format with none of `.lsd`'s own
-    # field-count/byte-format constraints, so unlike `SAVE_PICTURE` (chunk
-    # 103) this can and does carry every field this class holds, including
-    # `fixed_to_map`/`use_transparent_color` (also modelled in `.lsd` as of
-    # cycle #164 -- chunk 103 fields 6/9, see SAVE_PICTURE's own schema
-    # comment for the genuine-RPG_RT.exe evidence) and the live in-flight
-    # move target/frame-count, so a picture mid-Move-Picture at save time
-    # keeps gliding after a resume instead of snapping to rest.
+    # Every field this class holds, as a plain hash, for the .lsd's chunk 200 picture
+    # record to read (see lsd_io.rb's picture extension).
     def to_h
       { name: @name, x: @x, y: @y, show_x: @show_x, show_y: @show_y,
         zoom: @zoom, opacity: @opacity, red: @red, green: @green,
@@ -9034,22 +8933,6 @@ module Game
         tx: @tx, ty: @ty, tzoom: @tzoom, topacity: @topacity,
         tred: @tred, tgreen: @tgreen, tblue: @tblue, tsat: @tsat,
         frames: @frames }
-    end
-
-    # Inverse of #to_h. `Picture.new`'s own opts already cover every at-rest
-    # field by the same key names; only the in-flight move state (absent from
-    # `opts`) needs restoring afterward, the same two-step shape
-    # `Game::State.restore_pictures` already uses for the `.lsd` path
-    # (`Picture.new` then `#move_to`).
-    def self.from_h(id, h)
-      return nil unless h
-      p = new(id, h)
-      frames = h[:frames] || 0
-      if frames > 0
-        p.move_to(h[:tx], h[:ty], h[:tzoom], h[:topacity], h[:tred],
-                  h[:tgreen], h[:tblue], h[:tsat], frames)
-      end
-      p
     end
 
     private
@@ -9612,11 +9495,6 @@ module Game
 
     def to_h; { type: @type, strength: @strength }; end
 
-    def load_h(h)
-      return unless h
-      @type = h[:type] || 0
-      @strength = h[:strength] || 0
-    end
   end
 
   # A boat / ship / airship's saved location. RPG2000 stores one per vehicle in
@@ -9663,21 +9541,6 @@ module Game
 
     # Whether the vehicle has been placed on a map (0 = never positioned).
     def placed?; @map_id > 0; end
-
-    def to_h
-      { map_id: @map_id, x: @x, y: @y, direction: @direction,
-        charset_name: @charset_name, charset_index: @charset_index }
-    end
-
-    def load_h(h)
-      return unless h
-      @map_id = h[:map_id] || 0
-      @x = h[:x] || 0
-      @y = h[:y] || 0
-      @direction = h[:direction] || 2
-      @charset_name = h[:charset_name] || ''
-      @charset_index = h[:charset_index] || 0
-    end
 
     # Populate from a parsed SAVE_MOVABLE chunk (a vehicle location in a `.lsd`).
     def load_movable(m)
@@ -9802,18 +9665,6 @@ module Game
       "#{s / 60}:#{secs < 10 ? "0#{secs}" : secs}"
     end
 
-    def to_h
-      { frames: @frames, running: @running, visible: @visible,
-        in_battle: @in_battle }
-    end
-
-    def load_h(h)
-      return unless h
-      @frames = h[:frames] || 0
-      @running = h[:running] || false
-      @visible = h[:visible] || false
-      @in_battle = h[:in_battle] || false
-    end
   end
 
   class State
@@ -9911,7 +9762,7 @@ module Game
     # being absent -- confirmed in a session that never boarded a vehicle or
     # fought a battle, i.e. both nil here. Previously tracked only as a
     # transient Scene::Map instance variable, invisible to both save formats;
-    # promoted onto Game::State so #to_h/#load_h and #to_lsd/.from_lsd can
+    # promoted onto Game::State so #to_lsd/.from_lsd can
     # round-trip it like #current_bgm above.
     attr_accessor :pre_vehicle_bgm, :pre_battle_bgm
     # The hero's own in-flight Flash Sprite (11320) or map-triggered battle-
@@ -9920,7 +9771,7 @@ module Game
     # is flashing -- previously tracked only as Scene::Map's own transient
     # `@player_flash`, invisible to both save formats, so a save taken mid-
     # flash and continued silently dropped it instead of resuming the fade.
-    # Promoted onto Game::State so #to_h/#load_h and #to_lsd/.from_lsd can
+    # Promoted onto Game::State so #to_lsd/.from_lsd can
     # round-trip it, wiring up chunk 104's own flash_red/_green/_blue/
     # _current_level/_time_left (liblcf's own generator/csv/fields.csv,
     # 0x51-0x55/81-85) -- see #to_lsd's own citation for exactly what is and
@@ -9935,7 +9786,7 @@ module Game
     # `@player_char`'s own live `move_frequency` (liblcf field 32); `index`
     # is the route's own cursor (field 43, the same field a map event's
     # custom route already uses via #map_event_route_index, here dedicated
-    # to the hero instead). Promoted onto Game::State so #to_h/#load_h and
+    # to the hero instead). Promoted onto Game::State so
     # #to_lsd/.from_lsd can round-trip it -- see #to_lsd's own citation for
     # what is not independently confirmed (in particular, resuming this
     # restarts the route's own step-pacing timer from 0 rather than
@@ -9992,9 +9843,9 @@ module Game
     # status condition's own step interval to decide when a field ailment slips
     # HP / SP (see Party#apply_map_step_damage), which is the only thing reading
     # it so far -- the encounter system that would share it is not built. It
-    # persists in both the Marshal save and the `.lsd` (inventory chunk 109
-    # field 42, see LCF::Schema::SAVE_INVENTORY), so a resumed real save
-    # continues its count rather than restarting from 0.
+    # persists in the `.lsd` (inventory chunk 109 field 42, see
+    # LCF::Schema::SAVE_INVENTORY), so a resumed real save continues its count
+    # rather than restarting from 0.
     attr_accessor :steps
     # How many rounds the most recently finished battle ran for -- RPG2000's
     # "turns passed in latest battle" (inventory chunk 109 field 41, `turns`).
@@ -10002,21 +9853,18 @@ module Game
     # undefaulted read); `Scene::Map#finish_battle` sets it from
     # `Game::Battle#turn` (its live `@rounds` counter) right before the fought
     # `Battle` object is discarded, since nothing else keeps that count once
-    # the fight ends. Persists in both the Marshal save and the `.lsd`, same
-    # as `#steps`.
+    # the fight ends. Persists in the `.lsd`, same as `#steps`.
     attr_accessor :last_battle_turns
     # Running tallies RPG2000 keeps and exposes through the Control Variables
     # "Other" operand: how many times the game was saved, and how many battles
-    # were fought / won / lost / escaped. All persist in the Marshal save; the
-    # battle tallies (not `save_count`) also round-trip through the `.lsd`
-    # inventory chunk (109 fields 32-35).
+    # were fought / won / lost / escaped. All of them round-trip through the
+    # `.lsd` (the battle tallies in its inventory chunk, 109 fields 32-35).
     attr_accessor :save_count, :battle_count, :win_count, :defeat_count,
                   :escape_count
     # The file-select screen's own face-thumbnail snapshot (title chunk 100,
     # fields 21/22..27/28, `LCF::Schema::SAVE_TITLE`'s face1..face4
     # name/index pairs) -- up to four `[faceset_name, faceset_index]` pairs,
-    # or nil for a state that never carried one (a Marshal round-trip, or a
-    # state built directly rather than loaded from a genuine `.lsd`).
+    # or nil for a state built directly rather than loaded from a genuine `.lsd`.
     # Confirmed against a genuine RPG_RT.exe under wine: the save/load
     # file-select screen draws each occupied slot's face row from exactly
     # these title-chunk fields, not from whatever the slot's own party/actor
@@ -10027,15 +9875,13 @@ module Game
     # snapshot from the party's own members at save time (see its own
     # comment); only the read side was missing. `Scene::SaveLoad
     # #draw_slot_faces` reads this when present, falling back to deriving
-    # from the live party's own members only when it is nil -- correct for
-    # the Marshal round-trip path, which is not lossy (unlike `.lsd`'s own
-    # per-actor chunk, which has no FaceSet fields at all) and so needs no
-    # separate snapshot.
+    # from the live party's own members only when it is nil -- which is the case
+    # for a state built directly (a loaded one always has the snapshot: `.lsd`'s
+    # per-actor chunk has no FaceSet fields at all).
     attr_accessor :preview_faces
     # The file-select screen's own level/HP snapshot (title chunk 100, fields
     # 12/13, `hero_level`/`hero_hp`) -- nil for a state that never carried one
-    # (a Marshal round-trip, or a state built directly rather than loaded from
-    # a genuine `.lsd`). Confirmed against a genuine RPG_RT.exe under wine
+    # (a state built directly rather than loaded from a genuine `.lsd`). Confirmed against a genuine RPG_RT.exe under wine
     # exactly like `#preview_faces` above: a synthetic save whose title chunk
     # was edited to a level/HP the party leader's own live actor data (chunk
     # 108) never carried (7/321 against a live 50/600) showed precisely the
@@ -10044,9 +9890,8 @@ module Game
     # object. `#to_lsd` already writes this snapshot from the leader's own
     # level/hp at save time (see its own comment); only the read side was
     # missing. `Scene::SaveLoad#draw_level_hp` reads this when present,
-    # falling back to the live leader's own level/hp only when it is nil --
-    # correct for the Marshal round-trip path, which is not lossy and so
-    # needs no separate snapshot.
+    # falling back to the live leader's own level/hp only when it is nil -- which
+    # is the case for a state built directly (a loaded one always has the snapshot).
     attr_accessor :preview_level, :preview_hp
     # Teleport / Escape skill destinations registered by Set Teleport Target
     # (11810) and Set Escape Target (11830). `teleport_targets` is a hash keyed
@@ -10094,15 +9939,10 @@ module Game
     # An ordinary Transfer Player, by contrast, does not go through this at
     # all: Scene::Map#build_parallels keeps the live Game::Interpreter object
     # across it, which preserves full fidelity (call stack, in-flight wait
-    # timer, everything), not just this coarser checkpoint. Persisted in the
-    # portable Marshal save (#to_h/.load); not persisted through `.lsd` at
-    # all any more as of cycle #191 -- #common_event_exec below is the richer
-    # mechanism that now backs chunk 114, and #new_parallel only ever falls
-    # back to this cursor when that has nothing for a given common event id
-    # (an older save, or one written by a build that predates cycle #191).
-    # Kept, rather than replaced outright, because it is still exactly what
-    # the portable Marshal save round-trips -- see #common_event_exec's own
-    # comment for why that path was deliberately left alone.
+    # timer, everything), not just this coarser checkpoint. Kept as the fallback
+    # #new_parallel uses when #common_event_exec (chunk 114) has nothing for a given
+    # common event id -- an older save, or one written by a build that predates
+    # cycle #191. See #common_event_exec's own comment for why it was left alone.
     attr_accessor :common_event_progress
     # Full `Game::Interpreter` call-stack snapshot (see
     # Game::Interpreter#call_stack_snapshot) of whichever event currently
@@ -10129,10 +9969,8 @@ module Game
     # Snapshotted every frame by Scene::Map#record_foreground_event_exec;
     # consumed once, at Continue time, by Scene::Map#initialize via
     # Scene::Map#restore_foreground_event_exec (Game::Interpreter
-    # #restore_call_stack). Not persisted through the portable Marshal save
-    # (#to_h/.load) -- see #common_event_exec's own comment for why. Round-
-    # trips through a real `.lsd`'s chunk 113 (LCF::Schema::
-    # SAVE_FOREGROUND_EVENT), as of cycle #191.
+    # #restore_call_stack). Round-trips through a real `.lsd`'s chunk 113
+    # (LCF::Schema::SAVE_FOREGROUND_EVENT), as of cycle #191.
     attr_accessor :foreground_event_exec
     # Full `Game::Interpreter` call-stack snapshots of every currently-
     # running Common Event Parallel Process (Scene::Map's own @parallels,
@@ -10153,17 +9991,10 @@ module Game
     # nothing for a given id.
     #
     # Kept as a *separate* hash rather than folded into
-    # #common_event_progress since the two round-trip through different save
-    # formats by design: this one is `.lsd`-only (chunk 114, LCF::Schema::
-    # SAVE_COMMON_EVENT), deliberately never added to the portable Marshal
-    # save (#to_h/.load) -- that path already has full fidelity for free
-    # within one process (a Transfer Player keeps the live
-    # Game::Interpreter objects themselves, per #common_event_progress's own
-    # comment above) and gets by with the coarser cursor otherwise, exactly
-    # as it always has; Marshal-dumping a whole command-list snapshot (an
-    # Array of LCF::EventCommand objects) every tick, for every running
-    # Parallel Process, is unnecessary weight that path's own callers (dev
-    # tooling, this test suite's own round-trip checks) have no need for.
+    # #common_event_progress: the two are different things. This one is `.lsd`-only
+    # (chunk 114, LCF::Schema::SAVE_COMMON_EVENT), and a Transfer Player keeps the
+    # live Game::Interpreter objects themselves (per #common_event_progress's own
+    # comment above), so only a Continue needs the snapshot.
     #
     # Unlike #map_event_exec below, a common event id is global (unique
     # across the whole database, not per-map), so this hash is safe to carry
@@ -10214,9 +10045,7 @@ module Game
     # (round-trips through chunk 111's own SAVE_MOVABLE field 108,
     # LCF::Schema::SAVE_MOVABLE, one entry per live map event, nested inside
     # the same Array2D #map_event_positions/#map_event_route_index already
-    # share -- see #to_lsd/.from_lsd) -- never added to the portable Marshal
-    # save (#to_h/.load), which already gets full fidelity for free within
-    # one process exactly the way #common_event_exec's own comment explains.
+    # share -- see #to_lsd/.from_lsd).
     attr_accessor :map_event_exec
     # The current map's own live event positions, event id => [x, y, direction],
     # snapshotted every frame by Scene::Map#record_map_event_positions. Real
@@ -10230,10 +10059,9 @@ module Game
     # event ids are per-map, not global, so this is cleared on every genuine
     # map change (Scene::Map#perform_teleport) rather than carried across
     # one, the same "resets on leaving-and-returning" family as
-    # #encounter_rate/#parallax just above. Round-trips through both the
-    # portable Marshal save (#to_h/.load) and a real `.lsd` (chunk 111,
-    # LCF::Schema::SAVE_MOVABLE fields 12/13/22 -- see Game::State#to_lsd/
-    # .from_lsd).
+    # #encounter_rate/#parallax just above. Round-trips through a real `.lsd`
+    # (chunk 111, LCF::Schema::SAVE_MOVABLE fields 12/13/22 -- see
+    # Game::State#to_lsd/.from_lsd).
     attr_accessor :map_event_positions
     # The current map's own live custom-move-route (page move_type CUSTOM)
     # cursor, event id => Game::MoveRoute#index, snapshotted alongside
@@ -10245,8 +10073,8 @@ module Game
     # other way: per-map, reset on #perform_teleport, only ever consulted for
     # a page whose move_type is CUSTOM (Scene::Map#build_event's `e[:route]`)
     # -- a page with no custom route of its own leaves a stale entry here
-    # unread and harmless -- and round-trips through both the portable
-    # Marshal save and a real `.lsd` the same way #map_event_positions does.
+    # unread and harmless -- and round-trips through a real `.lsd` the same way
+    # #map_event_positions does.
     attr_accessor :map_event_route_index
     # The current map's own live Tile Substitution table (11750), [{old_id
     # => new_id} for the lower layer, same for upper] -- see Game::Map
@@ -10258,17 +10086,16 @@ module Game
     # behaviour (docs/TODO.md). Scoped identically to #map_event_positions in
     # every other way: per-map, reset on #perform_teleport (a fresh
     # Game::Map's own #initialize starts with no substitutions), snapshotted
-    # every frame by Scene::Map#record_tile_substitutions. Round-trips through
-    # both the portable Marshal save (#to_h/.load) and a real `.lsd` (chunk
-    # 111, LCF::Schema::SAVE_MAP_EVENT fields 21/22 -- see #to_lsd/.from_lsd).
+    # every frame by Scene::Map#record_tile_substitutions. Round-trips through a
+    # real `.lsd` (chunk 111, LCF::Schema::SAVE_MAP_EVENT fields 21/22 -- see
+    # #to_lsd/.from_lsd).
     attr_accessor :tile_substitutions
 
     # `party` is always a real `Game::Party` -- every construction site in
     # the closed world checked, not assumed: `RPG2k#start_new_game`
     # (mruby-rpg2k/mrblib/main.rb) passes a literal `Game::Party.new(@db)`,
-    # and the two save-restore paths (`State.load`, this file, and
-    # `State.from_lsd`, mruby-rpg2k/mrblib/game/lsd_io.rb) each build their
-    # own `Party.new(db, ...)` immediately above their `new(party, ...)`.
+    # and the save-restore path (`State.from_lsd`, mruby-rpg2k/mrblib/game/lsd_io.rb)
+    # builds its own `Party.new(db, ...)` immediately above its `new(party, ...)`.
     # `Game::Party` is never subclassed anywhere (grepped), so the
     # `mrb_obj_class` guard compile_send emits around every resulting
     # direct call is exact rather than "kind_of".
@@ -10284,7 +10111,7 @@ module Game
       @switches = Switches.new
       # RPG2003's own wider +-9999999 variable range (see Game::Variables)
       # rather than RPG2000's +-999999 -- read once here from the party's
-      # database, since #replace (State.load's own restore path) never
+      # database, since #replace (the Game::State.from_lsd restore path) never
       # touches a Variables object's bound, only its stored values.
       @variables = Variables.new(party.respond_to?(:rpg2003?) && party.rpg2003?)
       @timers = [Timer.new, Timer.new]
@@ -10349,23 +10176,15 @@ module Game
       # finish value). Shake/flash/fade/weather/battle-animation stay
       # transient (not serialised, so a reloaded game starts them neutral) --
       # a real gap vs RPG_RT's own SaveScreen, which models those too, left
-      # as a separate future extension. The Pan Screen offset/lock *does*
-      # also survive a save/load, but only through the internal Marshal-style
-      # snapshot (`Game::Screen#to_h`/`#load_h`, `Game::State#to_h`/`.load`,
-      # `main.rb`) used for quick-resume, not through `.lsd` chunk 102 itself.
+      # as a separate future extension. The Pan Screen offset survives a save/load
+      # (restored through `Screen#load_h` from the .lsd), but its Lock and an
+      # in-flight scroll target do not.
       @screen = Screen.new
       # Shown pictures, id => Game::Picture. DOES round-trip through a real
       # Save/Continue (#to_lsd/.from_lsd, chunk 103, SAVE_PICTURE) -- a prior
-      # version of this comment claimed otherwise; corrected the same day
-      # chunk 103 was added (see docs/TODO.md). It now ALSO round-trips
-      # through this engine's own internal Marshal-style quick-resume
-      # (#to_h/.load, the same pair the Pan Screen offset above already
-      # uses) -- cycle #158 found `#to_h` simply never mentioned `@pictures`
-      # at all, so any picture on screen when Continue used the `.mrb` path
-      # (main.rb's own documented preference over `.lsd` when both exist --
-      # see scripts/compare-nepheshel-save-wine.bash's header) vanished on
-      # resume with no trace, a real, player-visible loss this engine's own
-      # `.lsd` path already avoided. See Picture#to_h/.from_h below.
+      # version of this comment claimed otherwise; corrected the same day chunk
+      # 103 was added (see docs/TODO.md). Chunk 200 adds the picture's name,
+      # opacity and target opacity on top (see Picture#to_h).
       @pictures = {}
       # Runtime parallax override from a Change Parallax Background command (nil =
       # use the map's own panorama). Reset on a map change (#clear_parallax,
@@ -10543,7 +10362,7 @@ module Game
     # RPG_RT's counterpart to the hero's own initial_map_id/x/y a few lines up
     # in `RPG2k#start_new_game`, which is the only caller: a vehicle's saved
     # position already carries this (or a later Set Vehicle Location's)
-    # placement through `Vehicle#to_h`/`#load_h`/`#load_movable`, so Continue
+    # placement through `Vehicle#load_movable`, so Continue
     # does not call this and cannot clobber it. A vehicle the tree never
     # positions keeps `Vehicle.new`'s own unplaced default (map_id 0).
     def seed_vehicle_positions(map_tree)
@@ -10572,131 +10391,5 @@ module Game
       @font_id = font || 0
     end
 
-    # Serialise to a plain hash of primitives (Marshal-friendly) for saving. The
-    # map itself is not stored; it is reloaded from map_id on load.
-    def to_h
-      { map_id: @map_id, x: @x, y: @y, direction: @direction,
-        switches: @switches.to_h, variables: @variables.to_h,
-        party: @party.to_h,
-        # Both timers, plus the first one's fields under their old names so a
-        # save this build writes still loads in one that predates the second
-        # timer.
-        timers: @timers.map { |t| t.to_h },
-        timer_frames: timer_frames,
-        timer_running: timer_running, timer_visible: timer_visible,
-        message_config: @message_config.to_h,
-        menu_access: @menu_access, save_access: @save_access,
-        current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
-        pre_vehicle_bgm: @pre_vehicle_bgm, pre_battle_bgm: @pre_battle_bgm,
-        player_flash: @player_flash, player_route: @player_route,
-        player_through: @player_through,
-        player_transparent: @player_transparent, weather: @weather.to_h,
-        screen: @screen.to_h,
-        pictures: @pictures.each_with_object({}) { |(id, p), out| out[id] = p.to_h },
-        teleport_access: @teleport_access, escape_access: @escape_access,
-        encounter_rate: @encounter_rate, encounter_total: @encounter_total,
-        teleport_targets: @teleport_targets,
-        common_event_progress: @common_event_progress,
-        map_event_positions: @map_event_positions,
-        map_event_route_index: @map_event_route_index,
-        tile_substitutions: @tile_substitutions,
-        steps: @steps, last_battle_turns: @last_battle_turns,
-        save_count: @save_count, battle_count: @battle_count,
-        win_count: @win_count, defeat_count: @defeat_count,
-        escape_count: @escape_count,
-        escape_target: @escape_target, system_bgm: @system_bgm,
-        system_sfx: @system_sfx, screen_transitions: @screen_transitions,
-        system_graphic: @system_graphic, font_id: @font_id,
-        vehicles: { boat: @vehicles[:boat].to_h, ship: @vehicles[:ship].to_h,
-                    airship: @vehicles[:airship].to_h }, boarded: @boarded }
-    end
-
-    # Rebuild a State from a saved hash. Actors are re-created from the database
-    # by the saved ids, then their mutable state is restored.
-    def self.load(db, h)
-      pdata = h[:party] || {}
-      party = Party.new(db, pdata[:actor_ids] || [])
-      party.load_state(pdata)
-      state = new(party, h[:map_id], h[:x], h[:y])
-      state.direction = h[:direction] || 2
-      state.switches.replace(h[:switches] || {})
-      state.variables.replace(h[:variables] || {})
-      # A save written since the second timer landed carries both; an older one
-      # only has the first timer's three fields.
-      if h[:timers]
-        h[:timers].each_with_index { |th, i| state.timer(i).load_h(th) }
-      else
-        state.timer_frames = h[:timer_frames] || 0
-        state.timer_running = h[:timer_running] || false
-        state.timer_visible = h[:timer_visible] || false
-      end
-      state.message_config.load_h(h[:message_config])
-      # Access flags default on; only an explicit stored value overrides them
-      # (so a save written before these existed keeps the menu/save enabled).
-      state.menu_access = h[:menu_access] unless h[:menu_access].nil?
-      state.save_access = h[:save_access] unless h[:save_access].nil?
-      state.current_bgm = h[:current_bgm]
-      state.memorized_bgm = h[:memorized_bgm]
-      state.pre_vehicle_bgm = h[:pre_vehicle_bgm]
-      state.pre_battle_bgm = h[:pre_battle_bgm]
-      state.player_flash = h[:player_flash]
-      state.player_route = h[:player_route]
-      state.player_through = h[:player_through] ? true : false
-      state.player_transparent = h[:player_transparent] ? true : false
-      state.weather.load_h(h[:weather])
-      state.screen.load_h(h[:screen])
-      # A save written before this existed carries no `pictures` key at all
-      # (nil), restoring the pre-fix "no pictures shown" behaviour rather
-      # than raising on a missing hash.
-      (h[:pictures] || {}).each do |id, ph|
-        pic = Picture.from_h(id, ph)
-        state.pictures[id] = pic if pic
-      end
-      # Cycle #162: these two used to coerce a missing key straight to false
-      # (`h[:teleport_access] ? true : false`) instead of falling back to the
-      # constructor default the way `#menu_access`/`#save_access` just above
-      # do -- harmless while the constructor default was itself false, but
-      # wrong now that it is true (see `Game::State#initialize`'s own
-      # comment): a quicksave written before these two keys existed should
-      # resume with Teleport/Escape allowed, the same "defaults on" fallback
-      # `#menu_access`/`#save_access` already give an older save.
-      state.teleport_access = h[:teleport_access] unless h[:teleport_access].nil?
-      state.escape_access = h[:escape_access] unless h[:escape_access].nil?
-      # Registries default empty / unset; a save written before these existed
-      # simply restores nothing.
-      state.encounter_rate = h[:encounter_rate]
-      state.encounter_total = h[:encounter_total] || 0
-      state.steps = h[:steps] || 0
-      state.last_battle_turns = h[:last_battle_turns]
-      state.save_count = h[:save_count] || 0
-      state.battle_count = h[:battle_count] || 0
-      state.win_count = h[:win_count] || 0
-      state.defeat_count = h[:defeat_count] || 0
-      state.escape_count = h[:escape_count] || 0
-      state.teleport_targets = h[:teleport_targets] || {}
-      state.common_event_progress = h[:common_event_progress] || {}
-      state.map_event_positions = h[:map_event_positions] || {}
-      state.map_event_route_index = h[:map_event_route_index] || {}
-      state.tile_substitutions = h[:tile_substitutions] || [{}, {}]
-      state.escape_target = h[:escape_target]
-      state.system_bgm = h[:system_bgm] || {}
-      state.system_sfx = h[:system_sfx] || {}
-      # A save written before screen transitions existed restores all-default,
-      # which the seeding below then fills in from the database.
-      stx = h[:screen_transitions]
-      if stx && stx.length == SCREEN_TRANSITION_SLOTS
-        state.screen_transitions = stx.dup
-      end
-      state.seed_screen_transitions(db)
-      state.system_graphic = h[:system_graphic]
-      state.font_id = h[:font_id] || 0
-      if (v = h[:vehicles])
-        state.vehicle(:boat).load_h(v[:boat])
-        state.vehicle(:ship).load_h(v[:ship])
-        state.vehicle(:airship).load_h(v[:airship])
-      end
-      state.boarded = h[:boarded]
-      state
-    end
   end
 end

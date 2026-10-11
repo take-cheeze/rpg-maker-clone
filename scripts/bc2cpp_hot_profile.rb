@@ -314,13 +314,10 @@ module HotProfile
     when 'save_load'
       step.call(240)
       map = map_scene.call
-      game.save_game(map.state, 1) # Marshal save + State#to_lsd export
+      game.save_game(map.state, 1) # Save01.lsd via State#to_lsd
       step.call(30)
-      game.load_save_state(1) # Marshal path (Game::State.load)
+      game.load_save_state(1) # Save01.lsd via Game::State.from_lsd
 
-      # The slot-path helper is static-dispatch only (ADR 0203); naming it here
-      # would count as a dynamic reference, so spell the path out.
-      File.delete("#{GAME_DIR}/save1.mrb")
       game.continue_game(1) # Save01.lsd only: Game::State.from_lsd
       step.call(HP_FRAMES)
       map = map_scene.call

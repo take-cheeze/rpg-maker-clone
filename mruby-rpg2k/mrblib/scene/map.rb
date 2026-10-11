@@ -500,7 +500,7 @@ class RPG2k
         # #perform_teleport already calls #play_map_bgm for separately)
         # recomputes BGM from the map tree, but a Continue resumes a state
         # that already carries its own #current_bgm (restored by
-        # Game::State.load/.from_lsd from the save) -- see #resume_saved_bgm.
+        # Game::State.from_lsd from the save) -- see #resume_saved_bgm.
         RGSS::Profiler.section("map.transition.bgm") do
           if apply_access
             play_map_bgm
@@ -2427,8 +2427,7 @@ class RPG2k
       #         the interpreter's position is cleanly capturable right now; a
       #         tick that returns nil (mid a nested Call Event) simply leaves
       #         the last known-good checkpoint in place rather than clearing
-      #         it. Still the only mechanism the portable Marshal save
-      #         (#to_h/.load) carries.
+      #         it.
       #       - Game::State#common_event_exec (Game::Interpreter
       #         #call_stack_snapshot): the fuller call-stack snapshot a real
       #         `.lsd`'s chunk 114 now backs, captured whenever the
@@ -5124,7 +5123,7 @@ class RPG2k
       end
 
       # Reconstruct a forced player route resumed from a genuine Save/
-      # Continue (Game::State#player_route, populated by .from_lsd/#load_h)
+      # Continue (Game::State#player_route, populated by .from_lsd)
       # -- the counterpart to #sync_player_route_to_state, called once from
       # #initialize. The route's own step-pacing timer is not part of either
       # save format (see that accessor's own citation), so it always
@@ -7252,7 +7251,7 @@ class RPG2k
       # track, not whatever the destination map's tree says, and always
       # restarted from the top (an explicit stop before the replay) even if
       # it happens to name the same file. @state.current_bgm already holds
-      # that exact value here -- Game::State.load/.from_lsd populate it
+      # that exact value here -- Game::State.from_lsd populates it
       # straight from the save before this scene is ever constructed -- so
       # this calls the native backend directly instead of going through
       # #play_bgm, whose same-file check would otherwise compare

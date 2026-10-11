@@ -10,7 +10,7 @@
 # Member and are levelled directly via Change Level (not Change EXP), so an
 # actor's level and its EXP total are not derivable from one another the way
 # every other test bed here happens to leave them -- exactly the shape that
-# exposed the Party#to_h/#load_state Change-Class bug fixed alongside this
+# exposed the Party#load_state Change-Class bug fixed alongside this
 # download (see the "Party save/Continue does not fabricate a Change Class"
 # check in rpg2k_logic_check.rb): Save/Continue used to silently switch such
 # an actor onto their class's own growth curve, mis-deriving both their level

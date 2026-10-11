@@ -1289,7 +1289,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   #     eyeballed.
   #   - `Game::Picture` (mruby-rpg2k/mrblib/game.rb) -- the show/move/erase
   #     picture-command state machine. `Game::Picture.singleton` (its own
-  #     `.from_h`) has been stripped since round 37; this is the separate,
+  #     `.from_h`) is gone; this is the separate,
   #     previously-uncovered plain-instance-method owner of the same class.
   #   - `Game::Vehicle` (mruby-rpg2k/mrblib/game.rb) -- the boat/ship/
   #     airship placement/serialization state (a small, 4-method owner;
