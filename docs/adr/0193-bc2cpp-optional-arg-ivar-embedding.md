@@ -90,7 +90,7 @@ above `drop_unsafe_embeddings` (which asserted optional-arg `#initialize`
   each) -- **77 ivars total**, plus 19 newly synthesized `ATTR_STRUCT_DEVIRT`
   struct-field accessors. **Zero classes lose embedding, zero new `#error`
   markers anywhere in the program.**
-- `scripts/bc2cpp_coverage_report.rb`: entry points 2343 -> 2362 (+19,
+- `scripts/bc2cpp/coverage_report.rb`: entry points 2343 -> 2362 (+19,
   exactly the new accessors), classes needing `MRB_SET_INSTANCE_TT` 24 -> 34
   (+10, exactly the classes above), coverage unchanged at 100.0%/0 `#error`.
   POLY dynamic-dispatch sites 3386 -> 3370 (-16, more devirtualization from

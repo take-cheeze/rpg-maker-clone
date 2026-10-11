@@ -8,7 +8,7 @@
     editing the `## [Unreleased]` section of `CHANGELOG.md` directly. Add one
     `changelog.d/<slug>.<category>.md` file per change so branches never
     collide on the same lines. See `changelog.d/README.md` for the format;
-    `scripts/build_changelog.rb` folds the fragments into `CHANGELOG.md` at
+    `scripts/build/changelog.rb` folds the fragments into `CHANGELOG.md` at
     release time.
 
 ## Pull Requests
@@ -39,7 +39,7 @@ directly. Before opening one:
   patterns, integrations or schema changes get a `docs/adr/` entry (see below),
   and user-facing capabilities get matching `/docs` and `README.md` updates.
 - **Run the tests you touched.** Build and run the Google Test / CTest suite
-  (`cmake --build build -t test`) and any relevant `scripts/*_check.rb`
+  (`cmake --build build -t test`) and any relevant `scripts/**/*_check.rb`
   validators before pushing.
 - **Open a PR when there is code to review.** Push with
   `git push -u origin <branch>`, then open a pull request whenever the change
@@ -143,7 +143,7 @@ an expression).
 `mruby-rpg2k`, `mruby-lcf` and `mruby-rgss` mrblib is compiled by bc2cpp as a
 closed world. Avoid `method_missing`, `send` with a computed name,
 `const_get`, ivar reflection, `define_method`/`alias`, `eval` and `rescue`
-modifiers there: `scripts/rpg2k_closed_world_lint.rb` fails on new ones (see
+modifiers there: `scripts/rpg2k/closed_world_lint.rb` fails on new ones (see
 `docs/rpg2k-closed-world-lint.md`). If a use is genuinely data-driven, allow it
 in place with `# rpg2k-lint:allow Cop/Name -- reason`.
 
@@ -166,7 +166,7 @@ in place with `# rpg2k-lint:allow Cop/Name -- reason`.
   output, not source comments — do not change them without updating the
   checks that read them.
 - A comment-only change to `tools/bc2cpp/*.rb` can be proven code-neutral with
-  `ruby scripts/bc2cpp_comment_only_check.rb [BASE_REF [HEAD_REF]]`, which
+  `ruby scripts/bc2cpp/comment_only_check.rb [BASE_REF [HEAD_REF]]`, which
   compares the Prism ASTs with comments and locations stripped.
 
 ## Error Handling
@@ -186,7 +186,7 @@ in place with `# rpg2k-lint:allow Cop/Name -- reason`.
 
 - Unit tests are written using Google Test and executed by CTest. Use `cmake --build build -t test` to run it
 - Line coverage of the Ruby engine sources comes from the host-side checks:
-  `ruby scripts/coverage_report.rb` runs the `scripts/*_check.rb` harnesses
+  `ruby scripts/coverage/report.rb` runs the `scripts/**/*_check.rb` harnesses
   under CRuby's `Coverage` stdlib and reports `mruby-*/mrblib` per gem and per
   file (`coverage/lcov.info`, `coverage/coverage.json`). It measures only what
   those CRuby harnesses reach — `mruby_test` and the native smoke tests run

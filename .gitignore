@@ -53,7 +53,7 @@
 /ss
 
 # The MIDI instrument patches (~32 MiB of GUS samples) are fetched by
-# scripts/download-freepats.bash rather than committed. Ignore everything the
+# scripts/download/freepats.bash rather than committed. Ignore everything the
 # script writes under assets/timidity, but keep the checked-in README that
 # explains what belongs there and how to get it.
 /assets/.freepats
@@ -61,7 +61,7 @@
 !/assets/timidity/README.md
 
 # The default UI font (~1.7 MiB) is fetched by
-# scripts/download-default-font.bash rather than committed, the same way. Keep
+# scripts/download/default-font.bash rather than committed, the same way. Keep
 # the checked-in README that explains what belongs there and how to get it.
 /assets/fonts/*
 !/assets/fonts/README.md
@@ -69,14 +69,14 @@
 # The offline VOICEVOX synthesis stack behind --zundamon_tts (~90 MiB: the
 # CORE C API library, its ONNX Runtime, the Open JTalk dictionary and
 # Zundamon's voice model) is fetched by
-# scripts/download-voicevox-zundamon.bash rather than committed, the same way.
+# scripts/download/voicevox-zundamon.bash rather than committed, the same way.
 # Keep the checked-in README that explains what belongs there and how to get
 # it.
 /assets/.voicevox
 /assets/voicevox/*
 !/assets/voicevox/README.md
 
-# Line-coverage reports written by scripts/coverage_report.rb (lcov.info,
+# Line-coverage reports written by scripts/coverage/report.rb (lcov.info,
 # coverage.json, and anything genhtml renders from them). Generated output, and
 # CI publishes its own copy as a build artifact.
 /coverage
@@ -89,7 +89,7 @@
 # here; it belongs in a bug report, not in the repository.
 /error-report.md
 
-# Unicode mapping tables scripts/native-build-without-nix.bash downloads (the
+# Unicode mapping tables scripts/native/build-without-nix.bash downloads (the
 # flake supplies these through $cp932_table / $jis0208_table instead). They are
 # build inputs fetched on demand and checked against flake.nix's hashes, not
 # sources.
@@ -101,7 +101,7 @@
 # the same rationale as /.native-build-tables above.
 /.claude/
 
-# Mutant copies of tools/bc2cpp that scripts/bc2cpp_numeric_constants_mutation_check.rb builds inside the
+# Mutant copies of tools/bc2cpp that scripts/bc2cpp/numeric_constants_mutation_check.rb builds inside the
 # repository (a copy elsewhere scans an empty closed world); removed when the run ends.
 /.nc_mutant*/
 /.ni_mutant*/

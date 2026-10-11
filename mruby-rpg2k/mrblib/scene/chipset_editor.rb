@@ -11,7 +11,7 @@ class RPG2k
     # 16x16 cells is a solid colour block (green passable, dark red blocked),
     # not the chipset's actual graphic. Fine per-field edits this doesn't cover
     # (terrain id, water-animation speed, ...) are still reachable through
-    # scripts/lcf_text_convert.rb.
+    # scripts/lcf/text_convert.rb.
     #
     # L switches between the Lower (162 cells) and Upper (144 cells) tables;
     # arrow keys move the cell cursor; C toggles passability on the selected

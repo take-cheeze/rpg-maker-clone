@@ -66,6 +66,6 @@ hand-vetted facts at all.
   compiled by the fixed or native path (those branches are checked first).
 - A method whose superclass method is NOT clean, that has a block parameter, or
   whose class includes a module still falls through to the same honest `#error`.
-- Covered by the extended `scripts/bc2cpp_include_ancestor_check.rb` (synthetic
+- Covered by the extended `scripts/bc2cpp/include_ancestor_check.rb` (synthetic
   world: clean shape fires and agrees from either pair half; block-param and
   include-guard owners decline; emitted `_impl` forwards `self, r1, r2`).

@@ -8,7 +8,7 @@
 #
 # Only classes that need no display can be built here; the Sprite/Window/
 # Viewport/Plane/Tilemap entry points share their bodies with their bindings by
-# construction (scripts/native_binding_split_check.rb) and are exercised by the
+# construction (scripts/native/binding_split_check.rb) and are exercised by the
 # render smoke tests.
 probe = RGSS::DirectProbe
 

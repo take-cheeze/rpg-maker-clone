@@ -6,7 +6,7 @@ It is empty in a fresh checkout — everything except this README is
 downloaded:
 
 ```sh
-./scripts/download-voicevox-zundamon.bash
+./scripts/download/voicevox-zundamon.bash
 ```
 
 ## Why it is needed
@@ -66,7 +66,7 @@ and checksummable — the script verifies a SHA-256 for each before installing
 it. The CORE, ONNX Runtime and VVM versions are pinned *together*: a `.vvm`
 file's format version only loads on a CORE build new enough to understand it,
 and CORE expects a specific ONNX Runtime build — see the version-pinning note
-at the top of `scripts/download-voicevox-zundamon.bash` before bumping any
+at the top of `scripts/download/voicevox-zundamon.bash` before bumping any
 one of them on its own.
 
 - **VOICEVOX CORE** — [`VOICEVOX/voicevox_core`](https://github.com/VOICEVOX/voicevox_core),

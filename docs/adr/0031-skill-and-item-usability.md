@@ -147,10 +147,10 @@ The fixtures were part of the problem, so they moved too: `fake_item` now carrie
 checks that asserted the old model were rewritten to the real rule rather than
 deleted.
 
-Covered by `scripts/rpg2k_logic_check.rb` (subskill categories behave as ordinary
+Covered by `scripts/rpg2k/logic_check.rb` (subskill categories behave as ordinary
 skills; a switch skill casts for its switch and honours its flags; a special item
 invokes its skill free of SP; medicine and switch items read their own occasion
-fields) and by `scripts/rpg2k_testbed_logic_check.rb`, which now asserts against
+fields) and by `scripts/rpg2k/testbed_logic_check.rb`, which now asserts against
 the **real** databases that no menu comes back empty, that no skill is castable
 from neither menu, and that every special item names a real skill while every
 switch item names a switch of its own rather than the default 1. That last set is

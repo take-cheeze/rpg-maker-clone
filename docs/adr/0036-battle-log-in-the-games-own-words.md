@@ -86,14 +86,14 @@ reason rather than forgotten:
   with the same two strings. Getting it backwards would put the wrong sentence on
   every critical, so the line is left as it was rather than guessed at.
 
-Covered by `scripts/rpg2k_logic_check.rb` (each builder's shape, the two damage
+Covered by `scripts/rpg2k/logic_check.rb` (each builder's shape, the two damage
 predicates and their particles, and that a blank / missing / absent term yields
-nil rather than a bare name), by `scripts/rpg2k_scene_check.rb` (the log a real
+nil rather than a bare name), by `scripts/rpg2k/scene_check.rb` (the log a real
 `Scene::Map` produces for an attack from either side, a miss, a no-damage blow,
 each targetless basic action, an autodestruct's two lines, the all-or-nothing
 fallback on a blank term, a skill keeping its composed line, and the state
 sentences still following the action ones) and by
-`scripts/rpg2k_testbed_logic_check.rb`, which composes every basic action
+`scripts/rpg2k/testbed_logic_check.rb`, which composes every basic action
 sentence in **both real term tables** after a battler's name and checks that the
 two damage sides really are worded differently and take their own particles.
 
@@ -140,13 +140,13 @@ rather than a field of its own, and the RPG2000 branch of a reference
 implementation's item-message builder is a different shape from everything
 here; it is left for its own change rather than folded in.
 
-Covered by `scripts/rpg2k_logic_check.rb` (both sentences and the asymmetry
+Covered by `scripts/rpg2k/logic_check.rb` (both sentences and the asymmetry
 between them, a skill with only the first, a skill with neither, a missing row,
 and each of the four `failure_message` values), by
-`scripts/rpg2k_scene_check.rb` (the log a real `Scene::Map` produces for a skill
+`scripts/rpg2k/scene_check.rb` (the log a real `Scene::Map` produces for a skill
 with both sentences, with one, with none, one that missed, a heal that restored
 nothing and one that worked, a skill's states still trailing it, and an item
-keeping its line) and by `scripts/rpg2k_testbed_logic_check.rb`, which composes
+keeping its line) and by `scripts/rpg2k/testbed_logic_check.rb`, which composes
 **every** real skill sentence in both games — asserting the second line is not
 prefixed with the caster's name — and checks every skill's `failure_message`
 indexes a 用語 line the table really has.
@@ -182,13 +182,13 @@ With this the battle log's only remaining invention is the critical-hit line,
 held back for the reason given in the base decision — which is a question about
 what RPG_RT does, not one this runtime can settle by reading more fields.
 
-Covered by `scripts/rpg2k_logic_check.rb` (the item line's two names, the
+Covered by `scripts/rpg2k/logic_check.rb` (the item line's two names, the
 recovery line's pool name from the table in both a full-width and an ASCII
 table, and nil rather than half a sentence when either the term or the pool name
-is blank), by `scripts/rpg2k_scene_check.rb` (a heal that filled one pool and one
+is blank), by `scripts/rpg2k/scene_check.rb` (a heal that filled one pool and one
 that filled both, an item that restored HP, one that only cured — where the state
 sentence carries it — and one that did nothing) and by
-`scripts/rpg2k_testbed_logic_check.rb`, which builds both lines out of each real
+`scripts/rpg2k/testbed_logic_check.rb`, which builds both lines out of each real
 term table.
 
 ## Addendum: the critical-hit line
@@ -229,9 +229,9 @@ blank term loses nothing.
 `actor_critical` / `enemy_critical` are dropped from `rpg2k_field_audit.rb`'s
 `NOT_OURS` table now that they are read.
 
-Covered by `scripts/rpg2k_logic_check.rb` (`BT.critical` keyed on the target,
-nil on a blank term), by `scripts/rpg2k_scene_check.rb` (a critical from each
+Covered by `scripts/rpg2k/logic_check.rb` (`BT.critical` keyed on the target,
+nil on a blank term), by `scripts/rpg2k/scene_check.rb` (a critical from each
 side reading the game's own line between the attack and the damage, and a blank
 critical term falling back to the composed English with its `(critical!)` note)
-and by `scripts/rpg2k_testbed_logic_check.rb`, which reads `actor_critical` /
+and by `scripts/rpg2k/testbed_logic_check.rb`, which reads `actor_critical` /
 `enemy_critical` from each real term table.

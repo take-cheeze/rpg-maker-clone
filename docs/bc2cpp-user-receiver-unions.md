@@ -22,7 +22,7 @@ exhaustive class cases without dynamic fallback. An uncertain, wrong-arity or
 unemitted member keeps dispatch.
 
 Set `BC2CPP_USER_RECEIVER_UNIONS=0` to disable the extension. Run
-`scripts/bc2cpp_user_receiver_unions_check.rb` for generated-code and runtime
+`scripts/bc2cpp/user_receiver_unions_check.rb` for generated-code and runtime
 parity checks, and its mutation check for ten rejected changes plus a control.
 See [ADR 0352](adr/0352-bc2cpp-user-receiver-unions.md).
 

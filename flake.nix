@@ -210,7 +210,7 @@
               postFixup = ''
                 # Compile the JAL-relocation-aware psp-fixup-imports from the
                 # pinned pspsdk sources plus this repo's patch, exactly the two
-                # steps scripts/build_psp_fixup_imports.bash performs on a
+                # steps scripts/build/psp_fixup_imports.bash performs on a
                 # hand-installed SDK (its config.h note applies verbatim:
                 # tools/types.h includes config.h unguarded).
                 cp -r "${pspsdkFixupSrc}" ./fixup-src
@@ -379,7 +379,7 @@
             # above: nothing in the package build runs a Windows binary, so
             # putting it there only made `nix build '.#build'` (the `flake` CI
             # job) realise a 32-bit wine closure it never opens. It is still
-            # load-bearing for the shell — `scripts/rtp_install.bash` /
+            # load-bearing for the shell — `scripts/rtp/install.bash` /
             # `rtp_xp_install.bash` install the RPG Maker 2000/XP RTPs by
             # running the vendors' own installers under wine, and the engine
             # then resolves the RTP through that prefix's registry
@@ -413,8 +413,8 @@
             '';
           });
 
-          # libclang and its Python bindings, for scripts/native_binding_facts.py
-          # (ADR 0263): `nix develop .#clang -c ruby scripts/native_binding_split.rb check`.
+          # libclang and its Python bindings, for scripts/native/binding_facts.py
+          # (ADR 0263): `nix develop .#clang -c ruby scripts/native/binding_split.rb check`.
           # Kept out of the default shell so nothing else pays for the LLVM
           # closure. The script also needs 3rd/ and a built mruby include
           # directory (RGSS_MRUBY_BUILD_DIR, default build/mruby/host).

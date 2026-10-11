@@ -98,7 +98,7 @@ holds a method's `*rest` at entry as `Array`; `xs.each { }` on it is the inlined
   sources): the arms need the compiled definitions to exist.
 - Observable differences are those of every direct call: no callinfo frame for the callee (a
   backtrace omits it), and the entry's arity check is replaced by the compile-time one.
-- `scripts/bc2cpp_block_core_direct_check.rb` checks the generated arms and every reason they
+- `scripts/bc2cpp/block_core_direct_check.rb` checks the generated arms and every reason they
   are withheld, then compiles a closed-world fixture together with the compiled core, links it
   into a full-core mruby and requires the same output as the interpreted build for results,
   `break`/`next`/`return`, exceptions, Fibers, `Enumerator#next`, GC pressure, subclasses,

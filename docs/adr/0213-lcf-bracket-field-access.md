@@ -42,7 +42,7 @@ name, always a Symbol). A stray dotted read now raises `NoMethodError`.
   answer it gave before for every receiver.
 - `File#delete` forwards to the root record, the one root method (besides
   `[]`, `[]=` and `key?`) that a caller reached through the old catch-all
-  forwarding (`scripts/rpg2k_logic_check.rb`, `scripts/gen-rpg2k-save.rb`).
+  forwarding (`scripts/rpg2k/logic_check.rb`, `scripts/gen/rpg2k-save.rb`).
 - Computed `send`/`__send__` calls whose receiver is a record
   (`row.send(name)`, `db.system.send("#{type}_name")`) became `row[name]`;
   string-built names became dynamic Symbols. `send` on game objects is left
@@ -69,17 +69,17 @@ set was then checked against two traces:
   `send`s above.
 - After the change, the hooks were re-added as log-only stand-ins keeping the
   new behaviour. The same runs logged no runtime hit, and no harness hit
-  except `scripts/lcf_schema_coverage.rb` probing `obj.each` inside a bare
+  except `scripts/lcf/schema_coverage.rb` probing `obj.each` inside a bare
   `rescue` (a TypeError before, a NoMethodError now; both rescued).
 
 The host scripts and tests that read real game data were converted the same
 way; the check harnesses' stand-in records gained `[]` where they lacked it
-(`FixtureFields` in `scripts/rpg2k_logic_check.rb`, and a few singletons).
+(`FixtureFields` in `scripts/rpg2k/logic_check.rb`, and a few singletons).
 
 ## Consequences
 
 - A record, section or file answers no field name as a method.
-  `scripts/lcf_bracket_access_check.rb` (CI ruby-checks, coverage report)
+  `scripts/lcf/bracket_access_check.rb` (CI ruby-checks, coverage report)
   fails if a hook or a field-named method comes back, and compares `[]` with
   the removed dotted lookup on real Nepheshel records.
 - LCF's decode and caching are unchanged: `[]` is the path the dotted form

@@ -8,7 +8,7 @@ set -euo pipefail
 # platforms once it needs a dry-run-first idempotency check (`>/dev/null 2>&1`
 # inside a `sh -c "..."` string does not survive CMake's own command-line
 # escaping reliably), so this is a real script instead, the same reasoning
-# scripts/build_psp_fixup_imports.bash already applies for the PSP toolchain
+# scripts/build/psp_fixup_imports.bash already applies for the PSP toolchain
 # patch. Unlike that one, this patches a persistent, in-tree submodule
 # checkout rather than a scratch clone, so it must be safe to run on every
 # configure/build without re-cloning: a dry run first decides whether the

@@ -30,7 +30,7 @@ and are never cancelled.
 ### Mutation checks run off pull requests
 
 On `pull_request` runs the `bc2cpp-checks` job sets `CI_SKIP_MUTANTS=1`, and
-`scripts/ci_timed_checks.rb` then drops every `*_mutation_check.rb` command and
+`scripts/ci/timed_checks.rb` then drops every `*_mutation_check.rb` command and
 strips `*_MUTANTS=1` switches, so each shard keeps its fixture checks but not the
 mutant rebuilds. Master pushes, merge-queue runs and manual dispatch run them
 all, so a mutation regression blocks the merge queue rather than the PR. Timing
@@ -120,13 +120,13 @@ workflow; its mutation checks now run in `core-flow-mutants`.
 ### Reading the timing table
 
 Every `bc2cpp-checks` and `bc2cpp-width` job runs its `checks:` block through
-`scripts/ci_timed_checks.rb`, which leaves the commands exactly as written (same
+`scripts/ci/timed_checks.rb`, which leaves the commands exactly as written (same
 shell, same order, `set -e` still stops at the first failure) and brackets each
 with a stopwatch. When the step ends, pass or fail, it prints
 
 ```
 == check timings (seconds  command), slowest first
-    812.4  CSEND_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" ... ruby scripts/bc2cpp_computed_send_check.rb
+    812.4  CSEND_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" ... ruby scripts/bc2cpp/computed_send_check.rb
     ...
       0.1  FAILED  MRBC="$mrbc" ruby scripts/bc2cpp_foo_check.rb
    1543.9  total
@@ -137,12 +137,12 @@ command that failed is marked `FAILED`, with the time it ran before failing;
 commands after it never ran and are not listed. Lines that only set variables
 (`width=...`, `export ...`) are not timed, comments are dropped. Use the table
 to decide where a new check goes: put it in the shard with the most slack, and
-keep each shard's total under the budget above. `ruby scripts/ci_helpers_check.rb`
+keep each shard's total under the budget above. `ruby scripts/ci/helpers_check.rb`
 (in `ruby-checks`) covers the wrapper.
 
 ### Compiler cache (sccache)
 
-`scripts/bc2cpp_cxx.rb` is where the checks start the C++ compiler
+`scripts/bc2cpp/cxx.rb` is where the checks start the C++ compiler
 (`${CXX:-g++}`) and where they set `CC`/`CXX` for the `rake` that builds mruby
 (the full-core build, `core_mrbtest`, the width builds, the block/exact-receiver
 builds). When an `sccache` is usable it goes in front of the compiler, found in
@@ -180,7 +180,7 @@ stale library to every check. sccache keys on the real compile inputs instead.
 ### Mutant pool
 
 The mutation checks run one subprocess per mutant, each independent. Through
-`scripts/bc2cpp_mutant_pool.rb` they run up to `BC2CPP_JOBS` at a time (default
+`scripts/bc2cpp/mutant_pool.rb` they run up to `BC2CPP_JOBS` at a time (default
 the core count, at most 4; `1` is the old serial order) and report in input
 order, so the log and every `ok`/`FAIL` line read as before. Memory is small
 for the generated-code mutants (the generator stays under 100 MB); a mutant that
@@ -224,7 +224,7 @@ same generator file and would otherwise share — and delete — one copy.
 
 The Emscripten, Wio and PSP targets use a 32-bit `mrb_int`; Wio and PSP also
 have no mruby-bigint. `bc2cpp-width` re-runs the compiled-versus-interpreted
-checks on a libmruby built by `scripts/bc2cpp_width_build.rb`:
+checks on a libmruby built by `scripts/bc2cpp/width_build.rb`:
 
 | Variant | Build | Checks |
 | --- | --- | --- |
@@ -240,9 +240,9 @@ links `mrb_int_mod_impl` and friends from `patches/mruby-expose-misc-bodies.patc
 ADR 0367, so a libmruby built from an unpatched tree fails to link):
 
 ```bash
-ruby scripts/bc2cpp_width_build.rb int32 /tmp/w32
+ruby scripts/bc2cpp/width_build.rb int32 /tmp/w32
 BC2CPP_MRUBY_FULL32=/tmp/w32/host BC2CPP_MRBC32=/tmp/w32/host/bin/mrbc \
-  MRBC=<64-bit host mrbc> ruby scripts/bc2cpp_numeric_slow_check.rb
+  MRBC=<64-bit host mrbc> ruby scripts/bc2cpp/numeric_slow_check.rb
 ```
 
 `numeric_slow` also needs the tree to carry `patches/mruby-expose-collection-op-bodies.patch` (ADR 0366): the

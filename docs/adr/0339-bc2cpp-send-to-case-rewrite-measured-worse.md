@@ -8,7 +8,7 @@ Accepted (a decision not to ship; revisit if a trigger below fires)
 
 ## Context
 
-`scripts/rpg2k_closed_world_lint.rb` (`Dynamic/Send`) had exactly 8 baselined
+`scripts/rpg2k/closed_world_lint.rb` (`Dynamic/Send`) had exactly 8 baselined
 offences left in the closed world after the earlier passes, all of them
 `send` with a computed name in the engine gems (5 in
 `mruby-rpg2k/mrblib/game/battle.rb`, 1 in `game.rb`, 2 in
@@ -44,7 +44,7 @@ measured with the real code generator, and it makes the generated C++ **worse**.
 (`mruby-rpg2k/mrblib/game/battle.rb`, `game.rb`, `scene/equip_menu.rb`), host
 `mrbc` from `3rd/mruby/build/host/bin/mrbc`, once on the tree with the rewrite
 and once with it reverted (`git stash`), same tree otherwise. Dispatch counted
-with `scripts/bc2cpp_dynamic_site_census.rb`, the project's own census of
+with `scripts/bc2cpp/dynamic_site_census.rb`, the project's own census of
 by-name dispatch left in the generated C++, plus a per-`_impl` function count
 parsed from the same output. The measure is `bc2cpp_send` call sites in
 generated-method bodies: a literal-Symbol `send` and a by-name one are the same
@@ -143,7 +143,7 @@ rewrite cannot substitute for it.
   (of 12 total, the other 6 pinning a `respond_to?`) stay: they are the record
   of why the name is still countable as a literal (ADR 0218), and they are
   enforced, not advisory -- removing one without the send fails
-  `scripts/wio_strip_scripts_check.rb` (verified: it reports "a reachable site
+  `scripts/wio/strip_scripts_check.rb` (verified: it reports "a reachable site
   dispatches a computed name; review it in WioUnreachable::REVIEWED").
 * The new helper names a reader might expect here (`apply_one_stat_mod`,
   `apply_stat_mod_pair`, `party_stat`, `actor_stat`) are not on the tree and
@@ -159,7 +159,7 @@ MRBC=$PWD/3rd/mruby/build/host/bin/mrbc OUT_DIR=/tmp/w OUT_SYMBOL=rpg2k \
   ruby tools/bc2cpp/bc2cpp.rb \
   mruby-rpg2k/mrblib/game/battle.rb mruby-rpg2k/mrblib/game.rb \
   mruby-rpg2k/mrblib/scene/equip_menu.rb > /tmp/w.log
-ruby scripts/bc2cpp_dynamic_site_census.rb /tmp/w.log
+ruby scripts/bc2cpp/dynamic_site_census.rb /tmp/w.log
 ```
 
 * The receivers become provable, which is the only thing that makes an arm free:

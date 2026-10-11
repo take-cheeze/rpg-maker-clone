@@ -114,12 +114,12 @@ later mruby-io definition (core raises NotImplementedError); it is refused.
   literals compile); the XP/VX/Wolf/MV makers still keep the bytecode core
   (registration is tied to mruby-rpg2k) because no script host but RPG2000/2003
   has run with the guard, although the guard is what would make it safe.
-- Verification: `scripts/bc2cpp_core_mrbtest.rb` (mruby's own `rake test`,
+- Verification: `scripts/bc2cpp/core_mrbtest.rb` (mruby's own `rake test`,
   1846 assertions, identical interpreted and compiled) now also runs
-  `scripts/bc2cpp_core_blocks_probe.rb` (473 lines: Fibers, nested Fibers,
+  `scripts/bc2cpp/core_blocks_probe.rb` (473 lines: Fibers, nested Fibers,
   `Enumerator#next` over compiled `each`, `loop`, break/return/throw/raise
   through compiled frames, GC pressure) under both builds and requires identical
-  output; `scripts/bc2cpp_core_mrblib_check.rb` checks the guard statically (every
+  output; `scripts/bc2cpp/core_mrblib_check.rb` checks the guard statically (every
   block-touching entry guarded, saved under its own index, never called directly,
   hidden, every `call` dispatch guarded) and runs 5,929 differential cases.
 

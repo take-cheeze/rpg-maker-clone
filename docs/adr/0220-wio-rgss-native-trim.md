@@ -69,7 +69,7 @@ Under `WIO_TERMINAL`, the existing wio macro used by ADR 0126, 0132 and 0140:
      `alias_method :_rgss1_initialize, :initialize`.
    - `Tilemap.new` and `Window.new` therefore raise rather than returning an
      object that never draws.
-3. **Probes.** `scripts/strip_wio_rgss_probes.rb` deletes the nine
+3. **Probes.** `scripts/wio/strip_rgss_probes.rb` deletes the nine
    `def self.` probe methods from a build-time copy of `lib.rb`.
    - `build_config.rb`'s `wio_strip_rgss_probes` applies it. It is the first
      step of `mruby-rgss`'s chain, so it reads the checked-in source.
@@ -78,7 +78,7 @@ Under `WIO_TERMINAL`, the existing wio macro used by ADR 0126, 0132 and 0140:
      - a def shares a line with other code;
      - anything left still calls a stripped name;
      - the output does not parse.
-   - `scripts/wio_strip_scripts_check.rb`, which runs in CI, also fails if any
+   - `scripts/wio/strip_scripts_check.rb`, which runs in CI, also fails if any
      wio mrblib file calls a stripped name after the whole chain.
 
 Nothing changes for other targets.
@@ -86,7 +86,7 @@ Nothing changes for other targets.
 ## Consequences
 
 Each step was measured with a full `wio_rgss_boot` link, the baseline
-configuration of `scripts/wio_bc2cpp_measure.bash`:
+configuration of `scripts/wio/bc2cpp_measure.bash`:
 
 | state | flash (text+extab+exidx) | `FLASH` overflow | step | static RAM |
 | --- | ---: | ---: | ---: | ---: |

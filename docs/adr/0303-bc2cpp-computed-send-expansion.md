@@ -53,7 +53,7 @@ refusal; any class has `method_missing`; a singleton class can be made on a non-
 reopening), which makes its arm a guard chain with a by-name else; or an arm's arity is wrong.
 `send` and `public_send` are never expanded: they come from `mruby-metaprog`, and the closed world scans the
 native sources of more gems than a harness (or a build) may link, so a direct arm could answer where the
-interpreter raises NoMethodError. A first version expanded `send`; `scripts/bc2cpp_numeric_operand_check.rb` on a
+interpreter raises NoMethodError. A first version expanded `send`; `scripts/bc2cpp/numeric_operand_check.rb` on a
 core-only libmruby caught the divergence (`send(:nq_send_target, "s")`). `__send__` ignores visibility, as the arm does.
 
 Kill switches: `BC2CPP_COMPUTED_SEND=0` (the before side of a measurement) and `BC2CPP_GUARD_VIOLATION=0` keep
@@ -74,18 +74,18 @@ Measured with `BC2CPP_COMPUTED_SEND=0` against the default, same tree:
   `send(*array)` arm. Replacing the parameter sends by an arm chain over "every arity-2 method of `CPU`" would
   need the by-name send kept as the fallback, which is a guard hint (ADR 0210) rather than a proof, so it was not
   built.
-- **The RPG engine (wio closed world, shipped pass, `scripts/bc2cpp_dynamic_site_census.rb`, master 27edff71):** no
+- **The RPG engine (wio closed world, shipped pass, `scripts/bc2cpp/dynamic_site_census.rb`, master 27edff71):** no
   change. The generated C++ is byte-identical with the switch off and on (3,186 `bc2cpp_send` sites either way, 0
   `COMPUTED_SEND` arms). Its 8 computed sends (`target.send("#{field}=", v)`, `b.send(name)`) build their names from
   strings or arguments and are outside the proof.
-- Expanded sites are exercised on synthetic programs only (`scripts/bc2cpp_computed_send_check.rb`).
+- Expanded sites are exercised on synthetic programs only (`scripts/bc2cpp/computed_send_check.rb`).
 
 A pre-existing divergence this work found and left alone: a by-name `public_send` from compiled code skips the
 visibility check, because `send_method` in `3rd/mruby/src/vm.c` takes its `funcall` path for a call from C and
 never reaches the `pub` test. The expansion never relies on it (it refuses a non-public name), and the check
 does not run `public_send` of a private name.
 
-`scripts/bc2cpp_computed_send_check.rb` (CI `bc2cpp-checks`, `core-mrbtest` shard, and the `int32` width job)
+`scripts/bc2cpp/computed_send_check.rb` (CI `bc2cpp-checks`, `core-mrbtest` shard, and the `int32` width job)
 pins the generated code (table, hash, `case`, `?:`, private target), 21 negative worlds in which
 the send must stay one computed send (subclass override, `define_method` with literal and computed names,
 `alias_method`, singleton on an instance, `class << obj`, `define_singleton_method`, `method_missing`, redefined

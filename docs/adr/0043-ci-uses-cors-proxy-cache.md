@@ -12,7 +12,7 @@ Accepted
 web loader's benefit. CI has the same shape of problem, independently: `build`
 and `wasm` (`.github/workflows/build.yml`) fetch a handful of test-bed
 archives and assets straight from their origin host on every run —
-`scripts/download-nepheshel.bash` (`til.sakura.ne.jp`),
+`scripts/download/nepheshel.bash` (`til.sakura.ne.jp`),
 `download-prayforyou.bash` (`dl.fgamearchives.com`), `download-freepats.bash`
 (the npm registry, checksum-pinned), `download-default-font.bash`
 (`raw.githubusercontent.com`, commit-pinned), and `rtp_install.bash` /

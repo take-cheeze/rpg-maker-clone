@@ -41,7 +41,7 @@ so `--gc-sections` has to keep every libm routine behind them.
   `conf.gem core: 'mruby-math'`. Every other target is unchanged. Wio's
   `Math` is now strictly smaller than upstream's, not different: every
   member it has behaves exactly as mruby-math's does.
-- **`scripts/wio_dropped_gems_check.rb`** (docs/adr/0202's CI tripwire)
+- **`scripts/wio/dropped_gems_check.rb`** (docs/adr/0202's CI tripwire)
   gains a Math allow-list, `MATH_PROVIDED` (PI, E, DomainError, sin). Any
   other `Math.x`/`Math::X` fails, and so does `include Math`/`extend Math`,
   because the bare `cos` it would enable cannot be checked. Its self-test

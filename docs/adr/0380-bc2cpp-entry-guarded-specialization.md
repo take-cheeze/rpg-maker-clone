@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-`BC2CPP_TRACE_PARAMS=1` (with `scripts/bc2cpp_param_trace_report.rb`) records the class every compiled method parameter holds
+`BC2CPP_TRACE_PARAMS=1` (with `scripts/bc2cpp/param_trace_report.rb`) records the class every compiled method parameter holds
 at run time. On the merged mtf-meido-action boot and battle run it finds parameters that are monomorphic in practice and have
 no static fact, so the compiler resolves every send on them by a class-tag chain with a `bc2cpp_nomethod` fallback, or by a
 dispatch. The four hottest:
@@ -107,7 +107,7 @@ derive from the method's name, so the clone needs a name suffix for the nested c
 
 ## Measurement
 
-Whole program (`SKIP_UNSUPPORTED=1 scripts/bc2cpp_coverage_report.rb`, wio closed world, all three gems, `/*SO:*/` tags stripped), the
+Whole program (`SKIP_UNSUPPORTED=1 scripts/bc2cpp/coverage_report.rb`, wio closed world, all three gems, `/*SO:*/` tags stripped), the
 seed plan, against a control built from the same base commit (`origin/master` 27f18e0f):
 
 - **Gate off**: `shipped.cxx` (21,553,927 bytes), its stderr and the report are byte-identical to the control.
@@ -135,8 +135,8 @@ class compares and their branches minus one guard.
 - Code size grows by one body per specialized method; the identity comparison keeps no-op lines free.
 - The clone mechanism (a label per compile, tables registered for its duration) is also the way to extend this: blocks (a name
   suffix for nested functions), optional parameters (a wrapper arm) and several assumed signatures per method.
-- Checks: `scripts/bc2cpp_entry_specialize_check.rb` (gate-off identity under four spellings, generic body untouched, exact guard
+- Checks: `scripts/bc2cpp/entry_specialize_check.rb` (gate-off identity under four spellings, generic body untouched, exact guard
   strings, identity clone including a call-site-proven parameter, the refused shapes and worlds, a full-core run of 48 calls
   interpreted against compiled with a counter that shows a hit entering the specialized body and a miss not) and
-  `scripts/bc2cpp_entry_specialize_mutation_check.rb` (16 mutants, among them the removed entry check, a guard that accepts a
+  `scripts/bc2cpp/entry_specialize_mutation_check.rb` (16 mutants, among them the removed entry check, a guard that accepts a
   subclass or a Float, an assumption registered under the original label, and admitted blocks or rescue ranges).

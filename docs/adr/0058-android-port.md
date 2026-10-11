@@ -194,7 +194,7 @@ own nine-bug bring-up trail documents:
    `$cp932_table`/`$jis0208_table` are normally supplied by the nix devShell's
    `fetchurl` derivations (`flake.nix`) or, for a bare non-nix build, by
    downloading and verifying them against the same pinned hashes
-   (`scripts/native-build-without-nix.bash` and
+   (`scripts/native/build-without-nix.bash` and
    `.github/workflows/build.yml`'s PSP job already do this). A raw shell with
    neither set left `IO.readlines(ENV["cp932_table"], ...)` calling
    `readlines(nil)`, another two-layers-removed failure. Not a bug in this
@@ -318,7 +318,7 @@ byte is 255 goes down as one `memcpy`; rows with any transparency keep the
 pixel loop, now bounds-check-free because of the pre-clip. The picture is
 unchanged by construction — a fully-opaque row's memcpy writes exactly what
 the per-pixel overwrite branch wrote — and the mruby-rgss blt parity tests
-plus `scripts/rpg2k_render_check.rb`'s 41 frame checks confirm it. Measured
+plus `scripts/rpg2k/render_check.rb`'s 41 frame checks confirm it. Measured
 on the host with a 336-tile full-grid rebuild through `#blt_quads`
 (21x16 chips, the exact shape of `rebuild_tile_cache`): ~0.6ms → ~0.02ms a
 pass (~30x); charset-shaped blits (transparent margins around an opaque
@@ -342,7 +342,7 @@ It installs the APK, stages Nepheshel into the app's own internal storage
 `RpgMakerCloneActivity` with a CI-only `rpg2k_extra_args` intent-extra hook
 (`getArguments()`, absent on every real launch) carrying the same
 `--test_play --rpg2k_new_game --timeout_ms=...` flags
-`scripts/rpg2k_boot_check.bash` already uses on desktop, and asserts the
+`scripts/rpg2k/boot_check.bash` already uses on desktop, and asserts the
 engine reaches `[RPG2k-MAP]` with no native crash marker in the device log.
 This is a *boot-and-crash* check, not a performance measurement — an
 emulator's frame times mean nothing next to the C330 numbers above, which
@@ -709,7 +709,7 @@ aborts before `main()` reaches `--error_dump_probe` (or even
 no ASan error block in a `log_path` capture — this nix devShell's SDL2
 comes from `sdl2-compat`, a shim that `dlopen()`s a real `libSDL3.so` at
 runtime, and that specific `dlopen` fails only in the ASan-instrumented
-binary (tried under `xvfb-run` matching `scripts/rpg2k_boot_check.bash`
+binary (tried under `xvfb-run` matching `scripts/rpg2k/boot_check.bash`
 exactly, with and without `SDL_VIDEODRIVER=dummy`/`SDL_AUDIODRIVER=dummy`
 to sidestep real rendering entirely — same result every time). This is a
 `sdl2-compat`-under-ASan packaging interaction in the dev environment, not

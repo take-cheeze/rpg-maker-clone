@@ -35,7 +35,7 @@ no playthrough -- the editor output is on disk from the start.
   id was physically present in the file, distinguishing an absent optional
   section from one that is present but empty (both read as a falsy value through
   `#[]`).
-- **`scripts/lcf_testbed_check.rb`** now prints the detected edition per game
+- **`scripts/lcf/testbed_check.rb`** now prints the detected edition per game
   and, for a 2003 database, asserts the 2003-only structures decode: the Classes
   section must be readable and every actor's `class_id` must name a real class
   (or be 0 for none). RPG2000 databases are asserted *not* to carry the Classes

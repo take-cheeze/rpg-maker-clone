@@ -29,7 +29,7 @@ rebuild a usable game state, not just decode?).
   through `from_lsd` when one is present (so a real save dropped into the game
   directory resumes correctly), falling back to the Marshal save otherwise;
   `save_exists?` reports a `.lsd` too so the title's Continue is offered.
-- **`scripts/rpg2k_save_load_check.rb`** is a CRuby integration check that loads
+- **`scripts/rpg2k/save_load_check.rb`** is a CRuby integration check that loads
   a real `.lsd` plus the game's `RPG_RT.ldb` and asserts the reconstructed state
   (leader/position/facing, party, gold, items, switch and variable ids). It runs
   next to the other `rpg2k_*_check.rb` harnesses.

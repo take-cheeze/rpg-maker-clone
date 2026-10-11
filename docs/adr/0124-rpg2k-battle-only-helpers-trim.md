@@ -18,7 +18,7 @@ and `scene/base.rb` are the shared field-engine files every target keeps, so
 nobody had a reason to re-audit them once the obviously battle-only files
 were already gone.
 
-Grepping every real (non-comment, non-CRuby-`scripts/*_check.rb`) call site
+Grepping every real (non-comment, non-CRuby-`scripts/**/*_check.rb`) call site
 of the methods/classes those three files define turns up a second, larger
 layer of dead code inside the files wio *does* keep, in three shapes:
 
@@ -57,11 +57,11 @@ layer of dead code inside the files wio *does* keep, in three shapes:
 
 Every removal candidate was checked the same way, not assumed: grep its name
 across every `mruby-rpg2k`/`mruby-rgss`/`mruby-lcf` `.rb` file plus
-`scripts/*.rb`, read each surviving hit in context, and confirm it is either
+`scripts/**/*.rb`, read each surviving hit in context, and confirm it is either
 the definition line itself, a prose comment, an unrelated same-named method
 on a different class (`alive?` also exists on mruby's own `Fiber`; `screen_
 width`/`height` also exist on `mruby-wolf/mrblib/data.rb`'s own `Data` class),
-or a `scripts/*_check.rb` call (a CRuby-only test harness, never compiled
+or a `scripts/**/*_check.rb` call (a CRuby-only test harness, never compiled
 into any real target). A few near-misses stayed: `Game::Party#
 use_skill_item_usable?` takes an `in_battle` flag and is genuinely called by
 both `#field_usable?` and the (now-moved) `#battle_usable?`, so it stayed in
@@ -114,26 +114,26 @@ into the first, since it is conceptually the same "battle is gone" trim
 landing as a follow-up, not a rename of the original). `psp` is untouched --
 it keeps every battle file, so it keeps both support files too.
 
-**Every `scripts/*_check.rb` that `load`s `game/battle.rb` individually
+**Every `scripts/**/*_check.rb` that `load`s `game/battle.rb` individually
 (rather than through a glob) gets one more `load` line for `battle_support.
 rb` right after it** -- the same fix ADR 0123 applied for `lcf_file.rb`, and
 for the identical reason: these CRuby harnesses `load` exact files, not a
 directory glob, so a file split invisible to `spec.rbfiles`' own default glob
 is not invisible to them. Ten call sites: `analyze_game.rb` was *not* one of
 them (it loads `interpreter.rb` alone, never `game.rb`, and exercises none of
-the moved interpreter methods). `scripts/rpg2k_scene_check.rb`'s own `scene/
+the moved interpreter methods). `scripts/rpg2k/scene_check.rb`'s own `scene/
 *.rb` files already load through `Dir[...].sort.each { load }`, so `scene/
 battle_support.rb` needed no extra line there -- only its `game/battle_
 support.rb` counterpart did (that gem still loads individually).
 
 ### What was verified
 
-- `ruby scripts/rpg2k_logic_check.rb`: **1201 checks passed** (unchanged).
-- `ruby scripts/rpg2k_scene_check.rb`: **1062 checks passed** (unchanged).
-- `ruby scripts/rpg2k3_battle_gauge_check.rb` / `rpg2k3_battle_row_check.rb`:
+- `ruby scripts/rpg2k/logic_check.rb`: **1201 checks passed** (unchanged).
+- `ruby scripts/rpg2k/scene_check.rb`: **1062 checks passed** (unchanged).
+- `ruby scripts/rpg2k3/battle_gauge_check.rb` / `rpg2k3_battle_row_check.rb`:
   **15 / 19 checks, 0 failures** (unchanged).
-- `ruby scripts/rpg2k_render_check.rb`: **41 checks passed** (unchanged).
-- `ruby scripts/rpg2k_save_load_check.rb`, `export_nano7_map_check.rb`,
+- `ruby scripts/rpg2k/render_check.rb`: **41 checks passed** (unchanged).
+- `ruby scripts/rpg2k/save_load_check.rb`, `export_nano7_map_check.rb`,
   `rpg2k_command_soak.rb`, `rpg2k_testbed_logic_check.rb`: load and run
   cleanly (the latter two skip their own real-game-data checks in this
   sandbox, same as before this change -- no test-bed downloaded).

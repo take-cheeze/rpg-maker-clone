@@ -22,11 +22,11 @@ ADR 0285's `RecordHash` scanner is Hash-with-Symbol-keys only.
 
 ## Method
 
-Wio closed world, master `247a34e4`, shipped pass of `scripts/bc2cpp_coverage_report.rb` (all three compiled gems),
+Wio closed world, master `247a34e4`, shipped pass of `scripts/bc2cpp/coverage_report.rb` (all three compiled gems),
 restricted to the engine owners (`RPG2k*`, `Game*`). Two measurements, both reproducible:
 
-- `scripts/bc2cpp_dynamic_site_census.rb` (ADR 0295/0296 style), looking at the `indexed_result` receiver origin.
-- New `BC2CPP_ELEMENT_REPORT=<tsv>` (`tools/bc2cpp/element_site_report.rb`) plus `scripts/bc2cpp_element_site_report.rb`:
+- `scripts/bc2cpp/dynamic_site_census.rb` (ADR 0295/0296 style), looking at the `indexed_result` receiver origin.
+- New `BC2CPP_ELEMENT_REPORT=<tsv>` (`tools/bc2cpp/element_site_report.rb`) plus `scripts/bc2cpp/element_site_report.rb`:
   every instruction whose emitted code can still reach a by-name call, the origin of its receiver or operand through
   reaching definitions (an element read shows its container's origin inside), and, for container ivars, the class set
   of every `@x = <literal>` and every `[]=`/`<<`/`push` into them. A class set is the meet of the exact-class flow
@@ -108,8 +108,8 @@ without the report), so there is no before/after delta, no removal and no reloca
 
 ## Triggers to revisit
 
-Run the report again (`BC2CPP_ELEMENT_REPORT=elements.tsv MRBC=<host mrbc> ruby scripts/bc2cpp_coverage_report.rb >
-/dev/null`, then `ruby scripts/bc2cpp_element_site_report.rb elements.tsv`).
+Run the report again (`BC2CPP_ELEMENT_REPORT=elements.tsv MRBC=<host mrbc> ruby scripts/bc2cpp/coverage_report.rb >
+/dev/null`, then `ruby scripts/bc2cpp/element_site_report.rb elements.tsv`).
 
 - "Element-read sites on those ivars" (the ceiling line) passes about 100, which needs the value classes first: the
   return-class table (open call-result work) covering method results, or argument pools covering `@ui[:k] = param`.
@@ -119,6 +119,6 @@ Run the report again (`BC2CPP_ELEMENT_REPORT=elements.tsv MRBC=<host mrbc> ruby 
 
 ## Consequences
 
-`BC2CPP_ELEMENT_REPORT` and `scripts/bc2cpp_element_site_report.rb` are kept as the census, like ADR 0296's guard
+`BC2CPP_ELEMENT_REPORT` and `scripts/bc2cpp/element_site_report.rb` are kept as the census, like ADR 0296's guard
 hint report; they are loaded only when the variable is set. They are not a CI check: a full run is a whole-program
 build, and the output is a measurement with no pass or fail. Nothing in the compiler's output depends on them.

@@ -2,7 +2,7 @@
 // microSD card over USB-CDC serial, for a dev machine with no card reader
 // to pull the card into. Not part of the port's roadmap -- it plays no role
 // in running a game -- and not meant to stay flashed: run it, push game
-// data with scripts/maix_sd_upload.py, then reflash maix_game (or whatever
+// data with scripts/maix/sd_upload.py, then reflash maix_game (or whatever
 // firmware you actually want running).
 //
 // Same top-level shape as app/wio/src/sd_upload_main.cxx (PING/PUT), but
@@ -190,7 +190,7 @@ void setup(void) {
   // well above 115200 on this same USB-serial bridge (its "Programming
   // BIN" throughput implies a comparable rate), so this is a proven-safe
   // rate for this specific hardware, not a guess. Pair with a matching
-  // --baud on the host side (scripts/maix_sd_upload.py's default).
+  // --baud on the host side (scripts/maix/sd_upload.py's default).
   Serial.begin(1500000);
   Serial.setTimeout(5000);
   // TF slot: SPI0 on pins 11/6/10, chip-select 26 -- see maix_tf_sd.h for

@@ -190,7 +190,7 @@ Two CI jobs cover this port (`.github/workflows/build.yml`):
     [`docs/android-perf-followups.md`](../docs/android-perf-followups.md) for
     what is still device-only.
   - The self-driving flags (`--test_play --rpg2k_new_game --timeout_ms=...`,
-    the same ones `scripts/rpg2k_boot_check.bash` uses on desktop) reach the
+    the same ones `scripts/rpg2k/boot_check.bash` uses on desktop) reach the
     running engine through a CI-only hook: `getArguments()` reads an
     `rpg2k_extra_args` string extra off the launch `Intent` and appends it to
     argv when present, so `adb shell am start ... --es rpg2k_extra_args

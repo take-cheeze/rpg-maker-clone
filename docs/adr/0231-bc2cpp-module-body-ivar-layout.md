@@ -29,6 +29,6 @@ intentionally excluded: they write ivars on a different receiver object.
 
 The real RGSS compiler output inlines the two `RGSS::Input#update` index loops.
 The whole-world coverage report falls from 355 to 353 cfunc/RProc block
-fallbacks. The new `scripts/bc2cpp_module_body_ivar_check.rb` covers the module
+fallbacks. The new `scripts/bc2cpp/module_body_ivar_check.rb` covers the module
 path and both class/singleton-class negative cases. No class-body behavior is
 changed; a class singleton loop still uses its existing fallback.

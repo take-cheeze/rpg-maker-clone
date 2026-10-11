@@ -35,7 +35,7 @@ call, and the work on the fallback path is unchanged.
 `mruby-rpg2k-compiled` shrinks by 194 KB at `-Os` (4.944 -> 4.750 MB, -3.9%)
 and by 327 KB at `-O3` (12.011 -> 11.685 MB); lcf and rgss lose 2 KB and 7 KB
 at `-Os`, and the desktop binary loses 492 KB. Behaviour is unchanged:
-`scripts/bc2cpp_symbol_cache_check.rb` checks the rewrite and runs the emitted
+`scripts/bc2cpp/symbol_cache_check.rb` checks the rewrite and runs the emitted
 helper against stubs (receiver, symbol and arguments forwarded, the limit
 raised), and a real `RPGMAKER_BC2CPP=1` build passes the RGSS probes, a New
 Game boot and `--rpg2k_battle_play`.

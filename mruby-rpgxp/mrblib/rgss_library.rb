@@ -30,7 +30,7 @@
 #     graphic, and with no second engine to fall back to (ADR 0030) a raise here
 #     would end the run.
 #   * **Fully-qualified `RGSS::` names**, so the file also loads under the CRuby
-#     harness (scripts/rpgxp_script_host_check.rb), which shims those classes.
+#     harness (scripts/rpgxp/script_host_check.rb), which shims those classes.
 #   * Integer conversions where RGSS relies on Ruby's implicit Float→Integer in
 #     the native setters (`opacity`).
 #
@@ -60,7 +60,7 @@
 # `Errno` *any* exception leaving the game loop — including the timeout a
 # headless run ends on — turned into `NameError: uninitialized constant Errno`.
 # That reads as "the game crashed" when the game was running fine: it is what
-# scripts/rpgxp_boot_check.bash caught the first time it booted a released game
+# scripts/rpgxp/boot_check.bash caught the first time it booted a released game
 # under the host.
 #
 # ENOENT is the one RGSS itself raises (RPGXP::RGSSData#read_object does now, with
@@ -68,7 +68,7 @@
 # to print). The others are here so a script that rescues one resolves the
 # constant rather than losing its real exception to a NameError.
 # Each definition is guarded: this file is also loaded by the CRuby harnesses
-# (scripts/rpgxp_script_host_check.rb), where Ruby's real Errno already exists and
+# (scripts/rpgxp/script_host_check.rb), where Ruby's real Errno already exists and
 # must not be redefined — the shapes match, so the guard is what keeps this a
 # *fill-in* rather than a monkeypatch.
 class SystemCallError < StandardError

@@ -124,10 +124,10 @@ The byte pins trade maintenance convenience for a complete audit boundary: even 
 withdraws the proof. Refresh a digest only after reviewing the native receiver contract and rerunning the audit,
 withdrawal, mutation and runtime checks. A new outside helper caller must be audited before expanding the boundary.
 
-`scripts/bc2cpp_native_ivar_scopes_check.rb` checks pinned inputs, external helper calls and function pointers,
+`scripts/bc2cpp/native_ivar_scopes_check.rb` checks pinned inputs, external helper calls and function pointers,
 outside native/Ruby spellings, Window/Sprite/Plane/Tilemap isolation and subclass native-write parity, shared mixins, reflection, the open world and the kill
 switch. Its runtime fixture compares interpreted and compiled results, including nil and native writes of another
-class into a Window subclass. `scripts/bc2cpp_native_ivar_scopes_mutation_check.rb` kills eight soundness mutants
+class into a Window subclass. `scripts/bc2cpp/native_ivar_scopes_mutation_check.rb` kills eight soundness mutants
 plus an unmodified control. CI runs the checks in `call-facts` and runtime parity on 32-bit mrb_int in `bc2cpp-width`.
 The width job sets `NIS_FULL_ONLY=1`: its supplied full library is 32-bit, while automatic core-library discovery
 can find the separate 64-bit host mrbc build. Core-only parity runs in `call-facts` with an explicit matching library.

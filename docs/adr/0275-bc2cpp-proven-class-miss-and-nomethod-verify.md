@@ -69,8 +69,8 @@ ADR 0226 does (skipped for the stale half on a hot-only run).
 `"<owner>#<method> -> <name> (<kind> <Class>)"`. A separate list keeps each
 entry a read-and-judged decision, not a bulk regeneration of ADR 0226's
 3,000+ keys.
-`scripts/bc2cpp_proven_miss_update.rb [--write]` regenerates it;
-`scripts/bc2cpp_proven_miss_check.rb` (CI `bc2cpp-checks`, hot-only shard) has
+`scripts/bc2cpp/proven_miss_update.rb [--write]` regenerates it;
+`scripts/bc2cpp/proven_miss_check.rb` (CI `bc2cpp-checks`, hot-only shard) has
 fixtures for every case above and re-proves the list over the wio run of all
 gems. `BC2CPP_NOMETHOD_UNREVIEWED=allow` (fixtures only) also turns this abort
 into a warning.
@@ -96,7 +96,7 @@ macro for the C++ compiler only when the environment variable
 is ADR 0262's unchanged (dispatch first, then `NoMethodError` or the
 "proof violated" `RuntimeError`), and the macro does not exist in any shipped
 build. `docs/bc2cpp-nomethod-verify.md` says how to run the smoke suites with it.
-`scripts/bc2cpp_nomethod_verify_check.rb` (`bc2cpp-checks`, fast shard) builds the
+`scripts/bc2cpp/nomethod_verify_check.rb` (`bc2cpp-checks`, fast shard) builds the
 emitted helper against a real mruby core both ways: normal mode dispatches and
 raises, verify mode aborts with the site named and the method never runs.
 

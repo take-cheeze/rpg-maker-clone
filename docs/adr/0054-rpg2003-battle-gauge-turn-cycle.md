@@ -148,7 +148,7 @@ Behavioral notes and deliberate simplifications:
   calls the scene's new `#reposition_actor_sprite` to rebuild that one
   alternate-layout sprite in place rather than leaving the pre-toggle
   position on screen until an unrelated redraw catches it up.
-  `scripts/rpg2k_scene_check.rb`'s placement-check fixture gained a
+  `scripts/rpg2k/scene_check.rb`'s placement-check fixture gained a
   `battle_type:` knob (round-based, so the command phase's actor order is
   deterministic) and a new check pinning the exact before/after sprite X.
 - **Wait-off (active) mode landed 2026-08-17.** The toggle is the save-system

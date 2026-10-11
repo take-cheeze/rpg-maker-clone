@@ -22,7 +22,7 @@ Two things blocked simply treating nil as a concrete value.
 **`String#split` eats `#@`.** Ruby splits a string on a whitespace-
 delimited `#` comment marker, so `split('#', 2)` silently truncates
 `"Optcarrot::CPU#@opcode"` to `"Optcarrot::CPU"`. The declaration parser
-scans for the literal separator instead; `scripts/bc2cpp_fixnum_nil_ivar_check.rb`
+scans for the literal separator instead; `scripts/bc2cpp/fixnum_nil_ivar_check.rb`
 covers it.
 
 **`trace_type`'s `ADD`/`ADDI` arm was unsound on its own.** It returned

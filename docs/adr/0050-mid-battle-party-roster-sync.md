@@ -130,12 +130,12 @@ sync call sites were natural extensions of `#refill_queue` (which already
 runs once per round) and `#step`/`#step_action` (which already special-case
 a dead battler the same way).
 
-Covered by three new checks in `scripts/rpg2k_logic_check.rb`: an actor
+Covered by three new checks in `scripts/rpg2k/logic_check.rb`: an actor
 added mid-fight joins the next round's turn order and can act; an actor
 removed mid-round loses a turn only queued (not yet resolved) at the moment
 they leave, then stops being queued or targetable in the following round;
 an actor who leaves and rejoins the same fight keeps an accumulated state
 and stat modifier on the *same* `Combatant` object. Every pre-existing
-`Game::Battle.new` fixture across `scripts/rpg2k_logic_check.rb` (dozens,
-none passing `party:`) and `scripts/rpg2k_scene_check.rb`'s own
+`Game::Battle.new` fixture across `scripts/rpg2k/logic_check.rb` (dozens,
+none passing `party:`) and `scripts/rpg2k/scene_check.rb`'s own
 `Scene::Map#open_battle`-driven battles continue to pass unchanged.

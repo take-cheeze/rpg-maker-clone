@@ -19,7 +19,7 @@ can skip it: `x = h[k] || []` reads `[]` where the register may hold `h[k]`.
 ADR 0233 assumed the walk stepped past the branch to an older write and
 concluded the sound subset was empty; measured, the walk returns the literal
 first. A shadow run against `BytecodeIR.reaching_definitions` over the wio
-closed world (`scripts/bc2cpp_barrier_shadow_report.rb`'s approach, hook in the
+closed world (`scripts/bc2cpp/barrier_shadow_report.rb`'s approach, hook in the
 run) found 115 receiver-class answers and 135 ivar-type answers (Fixnum 103,
 nil 27, bool 5) whose reaching definitions disagreed: 250 of about 2,800 sites,
 almost all the `x = h[k] || <literal>` family (the other arm a GETIDX, a
@@ -114,7 +114,7 @@ candidates) had 76 such sites, and `dispose` sits at exactly 16.
 
 ## Measured
 
-`scripts/bc2cpp_coverage_report.rb`, wio closed world, shipped pass, parent
+`scripts/bc2cpp/coverage_report.rb`, wio closed world, shipped pass, parent
 commit against this change:
 
 | | before | after |
@@ -154,10 +154,10 @@ class objects or opaque, and 10 traced classes with no direct target.
   `dynamic_candidate_limit`).
 - Follow-ups: `min`/`max` over Ranges and Hashes, the remaining 251 single-definition
   sites (natives whose bodies read the call frame), and CHA for singleton `self`.
-- Verification: `scripts/bc2cpp_join_dominance_check.rb`,
+- Verification: `scripts/bc2cpp/join_dominance_check.rb`,
   `bc2cpp_core_mixins_check.rb` and `bc2cpp_typed_reflection_check.rb`
   (host-only sections in `ruby-checks`; the fixtures compare compiled with
   interpreted runs), `bc2cpp_poly_table_check.rb`'s new wrapper section, and
   `bc2cpp_typed_slot_check.rb`, updated for the descriptor. The runtime patch
   changes mruby's own ivar code, so its behavior must be rechecked whenever the
-  mruby submodule moves (`scripts/mruby_patch_context_check.rb`).
+  mruby submodule moves (`scripts/mruby/patch_context_check.rb`).

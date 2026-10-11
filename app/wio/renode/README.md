@@ -28,7 +28,7 @@ still lacks (a DMA controller model) stops it short of a full render.
   (outside the CASET window) stays `srgb(0,0,0)` -- CASET/PASET windowing,
   RAMWR auto-increment addressing and RGB565→RGB24 decode are all correct.
 - `wio_walk`, booted with a real SD card attached (P4,
-  `scripts/wio_renode_sdcard.bash`), now gets **all the way through
+  `scripts/wio/renode_sdcard.bash`), now gets **all the way through
   `SD.begin()` and `draw_map()`'s backdrop fill** -- a real file was read
   off a real (emulated) FAT filesystem. What's on screen at that point is a
   solid, *wrong-coloured* fill, not a rendering bug: `draw_map()` calls
@@ -102,7 +102,7 @@ original "render a real frame and compare it pixel-for-pixel" goal.
 ```sh
 ruby scripts/export_nano7_map.rb --target wio \
   data/Nepheshel206beta/Nepheshel206Nbeta 1 /tmp/rpg2k_walk_out
-scripts/wio_renode_sdcard.bash /tmp/wio_renode_sdcard \
+scripts/wio/renode_sdcard.bash /tmp/wio_renode_sdcard \
   /tmp/rpg2k_walk_out/map.bin:/RPG2kWalk/map.bin \
   /tmp/rpg2k_walk_out/tiles.bin:/RPG2kWalk/tiles.bin
 # after loading wio_terminal.repl, layer the card on top:
@@ -129,7 +129,7 @@ binary has compiled in -- there is no plain-release-binary path for even a
 P1/P2-style boot check any more.
 
 ```sh
-scripts/wio_renode_build.bash   # needs git, cmake, a C/C++ toolchain (tlib's
+scripts/wio/renode_build.bash   # needs git, cmake, a C/C++ toolchain (tlib's
                                  # native CPU cores) and the .NET 8 SDK
                                  # specifically -- not just the runtime a
                                  # release binary would bundle. A few minutes
@@ -137,13 +137,13 @@ scripts/wio_renode_build.bash   # needs git, cmake, a C/C++ toolchain (tlib's
 
 pio run -e wio_sd_upload   # or wio, or wio_walk
 RENODE_BIN=/tmp/wio-renode-build/renode-src/renode \
-  scripts/wio_renode_boot.bash .pio/build/wio_sd_upload/firmware.elf
+  scripts/wio/renode_boot.bash .pio/build/wio_sd_upload/firmware.elf
 ```
 
 `platformio.ini`'s `[env:wio_sim]` folds the last two lines into PlatformIO's
 own flash gesture: `pio run -e wio_sim -t upload` builds the `wio` firmware
 and boots its ELF (`$BUILD_DIR/firmware.elf`) through
-`scripts/wio_renode_boot.bash` instead of writing it over USB. It `extends`
+`scripts/wio/renode_boot.bash` instead of writing it over USB. It `extends`
 `env:wio`, so there is only one place that defines how that firmware is
 built; the env's `upload_command` is the boot script, and
 `upload_protocol = custom` is load-bearing — under the board's real `sam-ba`
@@ -160,7 +160,7 @@ requested amount of *virtual* time. A genuine unstubbed spin loop (an
 Arduino-core register read this platform does not model, most likely) shows
 up as a wall-clock cost wildly out of proportion to the virtual time
 requested, or as the exact same PC on every sample if you call
-`scripts/wio_renode_boot.bash` more than once back to back.
+`scripts/wio/renode_boot.bash` more than once back to back.
 
 ## `app/wio/renode/peripherals/` -- the ILI9341 display model (P3)
 
@@ -204,7 +204,7 @@ one: see its header comment for exact usage and expected pixel values.
 `SD.SDCard` for `ACMD42` (`SET_CLR_CARD_DETECT`), which it does not
 implement and `Seeed_Arduino_FS`'s driver sends unconditionally, treating
 the correct "illegal command" response as fatal (see the Status section
-above). `scripts/wio_renode_build.bash` applies it automatically
+above). `scripts/wio/renode_build.bash` applies it automatically
 (`git apply`, against the `src/Infrastructure` submodule specifically,
 since that is where `SDCard.cs` actually lives) -- nothing else needs to
 know it exists.
@@ -216,7 +216,7 @@ two bugs above:
   `.resc` (Monitor script) feature only; putting `$foo` in a `.repl` is a
   syntax error. This is why the SD card image (an inherently
   environment-specific path) is a *second*, separately-loaded `.repl`
-  snippet (`scripts/wio_renode_sdcard.bash` generates one) rather than a
+  snippet (`scripts/wio/renode_sdcard.bash` generates one) rather than a
   variable inside `wio_terminal.repl` -- `machine LoadPlatformDescription`
   can be called more than once against the same machine to layer
   additional peripherals onto an already-loaded platform.

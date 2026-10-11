@@ -1,5 +1,5 @@
 # The MV engine core scripts and libraries are fetched by
-# scripts/download-mv-corescript.bash (MIT, rpgtkoolmv/corescript), not
+# scripts/download/mv-corescript.bash (MIT, rpgtkoolmv/corescript), not
 # committed. Only our authored project files (data/, index.html, js/plugins.js,
 # js/main.js) live in git.
 /js/rpg_core.js

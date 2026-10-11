@@ -21,7 +21,7 @@ receivers continue through dispatch.
 
 ## Proofs and measurement
 
-`scripts/bc2cpp_native_direct_check.rb` verifies that float arguments reach
+`scripts/bc2cpp/native_direct_check.rb` verifies that float arguments reach
 the angle, zoom and transition-alpha native entry points through
 `mrb_as_float`, while an unknown receiver class retains `bc2cpp_send`.
 The Wio census decreases cached dynamic-send sites from 2,773 to 2,772 and

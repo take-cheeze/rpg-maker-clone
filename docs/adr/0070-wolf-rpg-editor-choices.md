@@ -17,7 +17,7 @@ ran, and (found while validating this change) that silent skip-through is
 what made a real per-frame "show this shop menu again" retry loop in the
 sample game's own data spin through hundreds of thousands of commands in a
 single `Fiber.resume` with no `Wait`/yield to stop at, tripping
-`scripts/wolf_interpreter_check.rb`'s own dispatched-command safety net (the
+`scripts/wolf/interpreter_check.rb`'s own dispatched-command safety net (the
 soak check's own pre-existing "note" about a suspected infinite loop in the
 shop event).
 

@@ -110,14 +110,14 @@ sites 2,479 to 2,474, reach sites 8,260 to 8,247, `bc2cpp_nomethod` 4,570 to 4,5
 `mrb_funcall_with_block`; `nil?`/`!`, `===`, `instance_of?` and `x.class == C` closed none in the engine (216 sites carry
 a run-time guard, 572 `bc2cpp_guard_violation` sites in all against 355). 34 of 3,047 compiled functions changed. The
 engine's sites are modest because it seldom tests a class and then calls something unproven on the same variable; the
-fixture (`scripts/bc2cpp_class_narrowing_check.rb`) shows every form closing its receiver. `BC2CPP_CLASS_NARROWING=0` is
+fixture (`scripts/bc2cpp/class_narrowing_check.rb`) shows every form closing its receiver. `BC2CPP_CLASS_NARROWING=0` is
 `cmp`-identical to the tree without the change.
 
 Run-time cost: one class-pointer comparison per narrowed test (a chain of at most the narrowed set's size), none on the
 kill-switch build.
 
 NOMETHOD_REVIEWED loses the 30 keys (3,015 to 2,985) of the dead fallbacks that became exact or were never emitted; no key was
-added, so no new dead branch needed a review (`scripts/bc2cpp_nomethod_reviewed_update.rb`, the CI world: `MRBC` only).
+added, so no new dead branch needed a review (`scripts/bc2cpp/nomethod_reviewed_update.rb`, the CI world: `MRBC` only).
 
 Not built:
 

@@ -109,7 +109,7 @@ The root scheme of ADR 0273 is unchanged: the roots and yielding helpers are fou
 
 ## Consequences
 
-- Wio closed world (`scripts/bc2cpp_coverage_report.rb` inputs), from the build's own table
+- Wio closed world (`scripts/bc2cpp/coverage_report.rb` inputs), from the build's own table
   (`== yield-free proof (YIELD_REACH) ==` on stderr): of 2345 compiled methods 2275 are yield-free and 70
   may yield (the iterators that run their block; the bodies of all 2345 are `nb`-free); of 370 compiled
   blocks with a direct entry 350 are yield-free; all 129 guarded core methods stay compiled under a Fiber
@@ -129,8 +129,8 @@ The root scheme of ADR 0273 is unchanged: the roots and yielding helpers are fou
 - Name resolution ignores classes: a definition anywhere with a yielding name makes every call of that name
   may-yield (`Yielder#<<` is why the yielder is isolated). New engine code that defines a method named like a
   yielding one loses the proof for its callers, visibly, in the build table.
-- Verification: `scripts/bc2cpp_yield_reach_check.rb` (analysis unit checks, fast) and
-  `scripts/bc2cpp_yield_free_check.rb` (generated code, and a fixture compiled with the compiled core against
+- Verification: `scripts/bc2cpp/yield_reach_check.rb` (analysis unit checks, fast) and
+  `scripts/bc2cpp/yield_free_check.rb` (generated code, and a fixture compiled with the compiled core against
   the interpreter, default and incremental-GC-stress runs) are wired into `.github/workflows/build.yml`.
   The unit and generated-code checks pin the explicit-receiver case (`Helper#relay` called from a `Fiber.new`
   body in another class is refused).

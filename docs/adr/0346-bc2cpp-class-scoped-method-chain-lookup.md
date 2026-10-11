@@ -30,13 +30,13 @@ dispatch.
 
 ## Proofs and measurement
 
-`scripts/bc2cpp_return_class_check.rb` covers unrelated outside Ruby and native owners, an unresolved
+`scripts/bc2cpp/return_class_check.rb` covers unrelated outside Ruby and native owners, an unresolved
 native owner, a native owner on the receiver, dynamic method installation, mixed return classes and
 the `BC2CPP_CALL_FACTS=0` withdrawal. Its full-core fixture compares interpreted and compiled results
 and exceptions.
 
 The Wio shipped-build census (`MRBC=build/mruby/host/mrbc/bin/mrbc
-ruby scripts/bc2cpp_coverage_report.rb`) remained at 2,773 cached dynamic-send sites and 897
+ruby scripts/bc2cpp/coverage_report.rb`) remained at 2,773 cached dynamic-send sites and 897
 POLY-marked sites, the same as the ADR 0345 baseline. Clean entry points also remained 3,056.
 The guard-free `EXACT_TYPED` diagnostic changed from 426 to 27, but that shift did not reduce
 the aggregate dynamic-send count, so it is not counted as a shipped dispatch removal. The fixture

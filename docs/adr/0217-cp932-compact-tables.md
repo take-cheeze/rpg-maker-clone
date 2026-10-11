@@ -103,7 +103,7 @@ Per object, `arm-none-eabi-g++` 14.2.1 with the wio cross-build flags:
 | total | 79,524 | 20,432 (−59,092) |
 
 A full `wio_rgss_boot` link (the baseline configuration of
-`scripts/wio_bc2cpp_measure.bash`) confirms it:
+`scripts/wio/bc2cpp_measure.bash`) confirms it:
 
 | link | flash (text+extab+exidx) | `FLASH` overflow | static RAM |
 | --- | ---: | ---: | ---: |

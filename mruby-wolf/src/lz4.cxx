@@ -1,7 +1,7 @@
 // Native LZ4 block decoder for Wolf::LZ4.decompress (mruby-wolf/mrblib/wolf.rb
 // no longer defines a Ruby-level fallback -- mruby-lcf's LCF.cp932_to_utf8
 // follows the same shape, native-only in the real build, with a CRuby stand-in
-// in scripts/wolf_testbed_check.rb for the host check).
+// in scripts/wolf/testbed_check.rb for the host check).
 //
 // A 3.5+ WOLF RPG Editor file (CommonEvent.dat, *DataBase.dat, .mps) wraps its
 // body in one LZ4 *block* (no frame header) after its plain header. A hand-

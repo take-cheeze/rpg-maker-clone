@@ -114,7 +114,7 @@ class RPGXP
       idx = -1
       $RGSS_SCRIPTS = sections.map { |name, source| [idx += 1, name, source] }
       # A machine-readable marker: what a headless run
-      # (scripts/rpgxp_boot_check.bash) asserts on to prove a game's own bundle is
+      # (scripts/rpgxp/boot_check.bash) asserts on to prove a game's own bundle is
       # what booted, and how much of it there was.
       $stderr.puts "[RPGXP-SCRIPTS] running #{sections.size} script sections"
       sections.each do |name, source|

@@ -163,7 +163,7 @@ class RPG2k
       # for where that conversion happens) is `1 << s` quarter-tile units (a
       # full tile is SLIDE_UNITS), so frames-per-tile is 64 / (1 << s) = 64,
       # 32, 16, 8, 4, 2 for s = 0..5 -- confirmed by both #walk_slide_step's
-      # own check ("Move Speed is no longer dead", scripts/rpg2k_scene_check.rb:
+      # own check ("Move Speed is no longer dead", scripts/rpg2k/scene_check.rb:
       # eq 1/2/8/32 for s = 0/1/3/5) and, independently, a genuine RPG_RT.exe
       # wine probe (cycle #180: Nepheshel `Map0089.lmu` event 25's own s = 0
       # approach crossed each tile in roughly 50-55 observed captured frames
@@ -438,7 +438,7 @@ class RPG2k
       # unchanged.
       #
       # RGSS::Graphics.render_fps rescued rather than called bare: the
-      # host-side scene checks (scripts/rpg2k_scene_check.rb) load this file
+      # host-side scene checks (scripts/rpg2k/scene_check.rb) load this file
       # under plain CRuby against their own minimal Graphics stub, which has
       # no render_fps method -- same "missing means uncapped" fallback
       # RGSS::Graphics.render_fps itself uses for the native constant it
@@ -1945,7 +1945,7 @@ class RPG2k
       # wait kind reachable without a message window already blocking it
       # first: a waiting Key Input Proc (Cmd::KEY_INPUT_PROC, 11610, wait
       # flag set) issued from a Common Event's or a Map Event's own Parallel
-      # Process -- see scripts/rpg2k_scene_check.rb's own check proving this
+      # Process -- see scripts/rpg2k/scene_check.rb's own check proving this
       # reachable (a Parallel Process genuinely parked on Key Input, no
       # message window up anywhere, still lets #try_open_menu's ordinary
       # Cancel-key shortcut open the menu). Judged out of scope to restore
@@ -6791,7 +6791,7 @@ class RPG2k
       # back-reference before the start of output, RPG Maker's own
       # historically-known "buggy windowskin PNG" shape). Decoded cleanly
       # instead through this project's *own* tolerant inflater
-      # (`RGSS::Bitmap#bmp_decode_into` in `scripts/rgss_cruby_compat.rb`, a
+      # (`RGSS::Bitmap#bmp_decode_into` in `scripts/rgss/cruby_compat.rb`, a
       # pure-Ruby port of `src/lib.cxx`'s `png_tol::inflate_tolerant` --
       # already written for exactly this "RPG Maker windowskins" case per its
       # own doc comment, just never previously exercised on this particular
@@ -10379,7 +10379,7 @@ class RPG2k
       # the terrain's own footstep sound right after applying that step's
       # terrain damage,
       # gated on running as RPG2003 -- RPG2000 never plays it at all, which
-      # is why `scripts/rpg2k_field_audit.rb`'s `NOT_OURS` table used to list
+      # is why `scripts/rpg2k/field_audit.rb`'s `NOT_OURS` table used to list
       # `footstep` as out of scope; wiring it here (RPG2003-gated, matching
       # that ported behaviour) is what retires that entry. `on_damage_se`
       # repurposes

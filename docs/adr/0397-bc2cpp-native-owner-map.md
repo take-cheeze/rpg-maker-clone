@@ -54,7 +54,7 @@ No by-name send is removed. The arm adds a guarded direct call in front of the e
 
 ## Measurement
 
-Shipped pass, `scripts/bc2cpp_coverage_report.rb` (SKIP_UNSUPPORTED=1), fresh-clone mrbc
+Shipped pass, `scripts/bc2cpp/coverage_report.rb` (SKIP_UNSUPPORTED=1), fresh-clone mrbc
 (`scratchpad/fresh/build/mruby/host/mrbc/bin/mrbc`), same `3rd/mruby` sources in both trees (the main checkout's
 `3rd/mruby` carries uncommitted local patches; both worktrees use a copy of them). Counts taken from the kept
 `shipped.cxx` with live lines only (comment lines excluded):
@@ -89,14 +89,14 @@ name with no Ruby definition to call (93).
 
 ## Checks
 
-- `scripts/bc2cpp_native_owner_map_check.rb` (new, generated code only): positive world (a proven site gets
+- `scripts/bc2cpp/native_owner_map_check.rb` (new, generated code only): positive world (a proven site gets
   `if (owner_class == mrb_obj_class) { CxQueue_empty$3f_impl }` with the by-name else kept); negative worlds for an
   unproven native (String defines `empty?` beside its native), an overridden definition (the same class defines it
   twice), a prepend on the candidate, an anonymous class, and a dynamic installer; strict-mode withdrawal; and kill-switch
   byte identity against the same tree at the merge base (`git archive`, copied inside the repository so its closed world
   matches).
-- `scripts/bc2cpp_nested_compile_state_check.rb`: `@native_owner_map_targets` is listed in `NOT_PER_METHOD`.
-- `scripts/bc2cpp_core_exact_direct_check.rb` and `scripts/bc2cpp_native_core_direct_check.rb`: see the report of the
+- `scripts/bc2cpp/nested_compile_state_check.rb`: `@native_owner_map_targets` is listed in `NOT_PER_METHOD`.
+- `scripts/bc2cpp/core_exact_direct_check.rb` and `scripts/bc2cpp/native_core_direct_check.rb`: see the report of the
   run that accompanies this change.
 
 ## Not built

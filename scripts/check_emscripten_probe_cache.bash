@@ -33,7 +33,7 @@ emcmake cmake -S . -B "$build_dir" -GNinja -DEMSCRIPTEN_PROBE_CACHE=OFF >/dev/nu
 
 # Regenerate through the same generator that produced the committed file, so a
 # difference can only mean the *answers* moved, never the formatting.
-ruby scripts/gen_emscripten_probe_cache.rb "$build_dir/CMakeCache.txt" >"$expected"
+ruby scripts/gen/emscripten_probe_cache.rb "$build_dir/CMakeCache.txt" >"$expected"
 
 if diff -u "$cache_file" "$expected"; then
     echo "ok: $cache_file matches the toolchain"
@@ -49,7 +49,7 @@ The pre-seeded probe answers have drifted from what this toolchain reports, so
 the wasm build is configuring with stale values. Regenerate them:
 
   emcmake cmake -S . -B /tmp/wasm-probe -GNinja -DEMSCRIPTEN_PROBE_CACHE=OFF
-  scripts/gen_emscripten_probe_cache.rb /tmp/wasm-probe/CMakeCache.txt \\
+  scripts/gen/emscripten_probe_cache.rb /tmp/wasm-probe/CMakeCache.txt \\
     > $cache_file
 
 EOF

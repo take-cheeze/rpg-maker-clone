@@ -9,7 +9,7 @@ Accepted
 ## Context
 
 Two questions, one measurement each (wio closed world, master `147fe7e6`, shipped pass of
-`scripts/bc2cpp_coverage_report.rb`, `3rd/*` populated, all three engine gems plus core Ruby and `other`):
+`scripts/bc2cpp/coverage_report.rb`, `3rd/*` populated, all three engine gems plus core Ruby and `other`):
 
 1. Would treating *provable runtime errors* as compile-time errors reduce the dynamic calls?
 2. Would *post-call receiver refinement* do it: after `r.m(...)` returned normally, `r` is an instance of a class that
@@ -50,7 +50,7 @@ report; promote a kind to a build error only when it has a hit worth keeping.
 
 ## Part 2: post-call receiver facts (built)
 
-`BC2CPP_REFINE_REPORT=<tsv>` (`tools/bc2cpp/refine_report.rb`, `scripts/bc2cpp_refine_report.rb`) judges every
+`BC2CPP_REFINE_REPORT=<tsv>` (`tools/bc2cpp/refine_report.rb`, `scripts/bc2cpp/refine_report.rb`) judges every
 explicit send. Measured with the facts off (`BC2CPP_CALL_FACTS=0`, `shipped.cxx` byte-identical to master):
 
 | Engine gems | Value |
@@ -111,10 +111,10 @@ Cutoff: at least 30 removed by-name sends in the engine gems. 64 predicted, **63
 the listed classes answer, e.g. `it.wait_kind` then `it.resume`, `state.map_id` then `state.map`). Dynamic calls other than
 `bc2cpp_send` are unchanged (`mrb_funcall_with_block` 401, `mrb_funcall*` 28).
 
-Checks: `scripts/bc2cpp_call_facts_check.rb` (generated code: 6 positives, 9 negatives, 10 withdrawal worlds, kill
+Checks: `scripts/bc2cpp/call_facts_check.rb` (generated code: 6 positives, 9 negatives, 10 withdrawal worlds, kill
 switch, open world; behaviour against the interpreter on full-core, core-only and 32-bit `mrb_int` builds with zero
 dispatches asserted on proven sites and a probe that the compiled bodies ran) and
-`scripts/bc2cpp_call_facts_mutation_check.rb` (10 mutants and an unmutated control, mutated inside the repository).
+`scripts/bc2cpp/call_facts_mutation_check.rb` (10 mutants and an unmutated control, mutated inside the repository).
 
 ## Consequences
 
@@ -127,4 +127,4 @@ dispatches asserted on proven sites and a probe that the compiled bodies ran) an
 * Next-best levers: 130 sites bounded to sets with core/native members (`size`, `count`, `first` on a user class beside
   Array) need per-class native arms; 90 facts bound nothing; 1,652 by-name sites have no earlier call on their value.
 * Not run locally: the firmware smokes, the optcarrot (open-world) comparison, `bc2cpp_nomethod_reviewed_check`
-  (regenerated with `scripts/bc2cpp_nomethod_reviewed_update.rb --write` from the same run it re-proves).
+  (regenerated with `scripts/bc2cpp/nomethod_reviewed_update.rb --write` from the same run it re-proves).

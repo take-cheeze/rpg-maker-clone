@@ -72,7 +72,7 @@ Turn the diagnostic into a real, conservatively-scoped elimination:
   `BC2CPP_WIRED_EMBEDDINGS` owner, never a `.singleton` owner (the same
   conservative scope `strip_wio_bc2cpp_stubs.rb` already uses, for the same
   DEFS/SCLASS-span-finding-is-out-of-scope reason).
-- **`scripts/bc2cpp_prune_never_called_registrations.rb`** (new) removes
+- **`scripts/bc2cpp/prune_never_called_registrations.rb`** (new) removes
   the matching `mrb_define_method`/`mrb_define_private_method` line(s) from
   the real, checked-in `register.cxx` for `mruby-rpg2k-compiled` and
   `mruby-lcf-compiled` (never `mruby-rgss-compiled`: no owner it compiles
@@ -81,7 +81,7 @@ Turn the diagnostic into a real, conservatively-scoped elimination:
   posture the registration-completeness batches already used, since a
   removed registration is worth a human/AI sanity read, not a silent
   automatic rewrite.
-- **`scripts/bc2cpp_never_called_registrations_check.rb`** (new) is the CI
+- **`scripts/bc2cpp/never_called_registrations_check.rb`** (new) is the CI
   regression guard: recomputes the same candidate set and fails only if one
   is *still* present in the real `register.cxx` (cross-checked against the
   actual file content, not just against what bc2cpp.rb could compile --
@@ -115,7 +115,7 @@ exactly two candidates were both compiled and currently registered --
 is clean on both gems afterward.
 
 Confirmed against a real `wio_rgss_boot` ARM cross-build and link
-(`scripts/wio_bc2cpp_measure.bash`), before and after the prune:
+(`scripts/wio/bc2cpp_measure.bash`), before and after the prune:
 
 - **Before** (this session's own fresh full-scope remeasurement, same day):
   bc2cpp flash-needed 4,121,836 bytes (811.5% of the 507,904-byte budget),
@@ -142,7 +142,7 @@ checking-for cost again.
 
 ## Consequences
 
-- `scripts/bc2cpp_never_called_registrations_check.rb` should be added to
+- `scripts/bc2cpp/never_called_registrations_check.rb` should be added to
   CI's static-checks group (alongside `bc2cpp_wired_embedding_check.rb` and
   its siblings) as a follow-up, so a later round that adds a registration
   for a name with no real call evidence is caught immediately rather than

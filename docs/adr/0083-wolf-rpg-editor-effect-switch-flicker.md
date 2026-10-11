@@ -80,8 +80,8 @@ gate, rather than trying to fold it into that gate.
   contiguous range, and confirming the new dispatch is not caught by the
   other two kinds' delay gate), the CRuby harness (119 assertions, 0
   failed), `ctest -R mruby_test` (crash count held at the pre-existing
-  19-crash baseline), `scripts/wolf_testbed_check.rb`,
-  `scripts/wolf_interpreter_check.rb`, and the compiled binary against the
+  19-crash baseline), `scripts/wolf/testbed_check.rb`,
+  `scripts/wolf/interpreter_check.rb`, and the compiled binary against the
   real sample game.
 - `#set_picture_flicker`/`#update_picture_effects`'s own native per-frame
   toggle path could not be exercised end-to-end this pass the same way

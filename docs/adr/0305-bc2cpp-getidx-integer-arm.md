@@ -35,7 +35,7 @@ shim was invisible to the closed world.
   through the numeric helpers of ADR 0292.
 - `tools/optcarrot_probe/compiled_run.rb` passes the Integer shim to bc2cpp. It moved out of `shims.rb` into
   `shim_integer_aref.rb` because the other shim classes embed and cannot be registered by that runner.
-- `scripts/bc2cpp_getidx_integer_arm_check.rb` runs the real shim compiled and interpreted over receivers x keys
+- `scripts/bc2cpp/getidx_integer_arm_check.rb` runs the real shim compiled and interpreted over receivers x keys
   (Fixnum edges, heap Integer, bigint, Float, NaN, nil, String, Array, Hash, Proc, user class) on full-core,
   core-only, 32-bit `mrb_int` and no-bigint builds. Answers (value, Float bits, `Integer#hash`, exception class and
   message) must match, an Integer receiver with a key in 0..199 makes no by-name call, and with `GIA_MUTANTS=1` a

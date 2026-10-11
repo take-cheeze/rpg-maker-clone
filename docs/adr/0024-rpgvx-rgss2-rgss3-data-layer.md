@@ -83,7 +83,7 @@ mirroring how the XP layer was staged (ADR 0010).
   both shells share one driver). Without the host — a project that ships no
   scripts, or that opt-out — the shell reports the pending runtime instead of
   opening a blank window, as the MZ shell does.
-- **Validation** (`scripts/rpgvx_testbed_check.rb`). Since no real bed can be
+- **Validation** (`scripts/rpgvx/testbed_check.rb`). Since no real bed can be
   downloaded, the check *builds* a complete project per edition — every `Data/`
   table, a map with an event, a common event, a script bundle — and drives the
   loader over it loose on disk and then repacked into the edition's real
@@ -94,7 +94,7 @@ mirroring how the XP layer was staged (ADR 0010).
   loaded data must have an accessor. That audit is trivially true for the
   generated bed and is the whole point when the script is pointed at a real
   game, which is how a user with a VX/VX Ace project validates the schema:
-  `ruby scripts/rpgvx_testbed_check.rb path/to/Game`.
+  `ruby scripts/rpgvx/testbed_check.rb path/to/Game`.
 
 ## Consequences
 

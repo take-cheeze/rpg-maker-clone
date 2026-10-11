@@ -32,7 +32,7 @@ byte-identical.
 
 The C dump is still parsed for the irep metadata (`nlocals`, pool, reps and
 labels). `BC2CPP_TEXT_LOADER=1` keeps the text loader as a reference, and
-`scripts/bc2cpp_binary_loader_check.rb` proves both loaders yield the same
+`scripts/bc2cpp/binary_loader_check.rb` proves both loaders yield the same
 stream (address, op, typed operands, args, raw, line, file, catch handlers)
 for the closed-world gems and a synthetic source that forces EXT widening.
 

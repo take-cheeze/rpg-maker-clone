@@ -26,7 +26,7 @@ code has the exact-class guard; otherwise use the existing SETIDX lowering.
 The guard's fallback contains the unchanged Array, Hash, and dynamic dispatch
 paths, and the typed call returns the compiled method's result.
 
-The synthetic `scripts/bc2cpp_setidx_devirtualization_check.rb` regression
+The synthetic `scripts/bc2cpp/setidx_devirtualization_check.rb` regression
 check verifies the TYPED call, runtime guard, and fallback paths. CI runs it
 with the same host mrbc used by the other bc2cpp analysis checks.
 

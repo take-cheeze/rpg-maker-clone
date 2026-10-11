@@ -23,7 +23,7 @@ with `super`. ADR 0146 added `SUPER_TARGETS` for the common case, resolving the
 target as "the same-named method on the declared superclass", and
 `super_reaches_superclass?` **declines whenever the owner has any plain
 `include`**. That is not caution — it is required. Measured against mruby
-(`scripts/bc2cpp_super_ancestry_check.rb`): a class that includes a module
+(`scripts/bc2cpp/super_ancestry_check.rb`): a class that includes a module
 resolves `super` *into* that module, and `Sub.ancestors` is
 `[Sub, Mid, Base, Object, ...]` with `Sub#pick` answering `Mid`, not `Base`. A
 lookup that walked to the superclass would call the wrong method. The same check
@@ -90,16 +90,16 @@ SSENDB (2) — `Array#permutation`, `Enumerable#cycle`,
 `Game::Actors#each`, `Game::Party#each`) and `IO.singleton#popen`'s
 non-mandatory arguments are untouched and still measured.
 
-`scripts/bc2cpp_module_super_check.rb` runs the shape end to end: the kill
+`scripts/bc2cpp/module_super_check.rb` runs the shape end to end: the kill
 switch, module-vs-superclass order, block forwarding (`first=3` vs `negate=1`,
 the pair a dropped block would collapse), a nil block, and the negative worlds
 — a zsuper, two live definitions of the name, a module without the name, and a
 frame with no block slot facing a target that needs one. Seventeen checks, with
 compiled-vs-interpreted parity across two VMs.
-`scripts/bc2cpp_super_ancestry_check.rb` pins the ancestor order this decision
+`scripts/bc2cpp/super_ancestry_check.rb` pins the ancestor order this decision
 rests on, so a future mruby that searched differently would fail a check rather
 than silently mis-resolve.
-`scripts/bc2cpp_module_super_range_check.rb` measures the real `Range` on the
+`scripts/bc2cpp/module_super_range_check.rb` measures the real `Range` on the
 whole-program pass: the five markers return with the kill switch off, and the
 emitted call carries `bc2cpp_blk`. It runs the full three-gem compile twice, so
 like `bc2cpp_coverage_report.rb` it is an on-demand measurement rather than a

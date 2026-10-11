@@ -40,8 +40,8 @@ gap was purely in decoding chunk 108 and feeding it through.
 - **`Game::State.from_lsd`** reads chunk 108, keys it by actor id, and passes the
   roster's saved current HP/SP into `Party#load_state`, so Continue resumes a
   wounded party instead of a fully-healed one.
-- **`scripts/lcf_save_check.rb`** reports each saved actor's level/exp/HP/MP, and
-  **`scripts/rpg2k_save_load_check.rb`** asserts every restored roster member's
+- **`scripts/lcf/save_check.rb`** reports each saved actor's level/exp/HP/MP, and
+  **`scripts/rpg2k/save_load_check.rb`** asserts every restored roster member's
   HP/MP matches its chunk-108 entry.
 
 ## Consequences

@@ -34,7 +34,7 @@ submodule is not patched.
 Add `RGSS::Audio.singleton` and `RGSS::Graphics.singleton` to
 `BC2CPP_WIRED_EMBEDDINGS`, and drop the hand `play_packed` registration from
 `register.cxx`, which ran after the generated one and would make it public
-again. `scripts/bc2cpp_wired_embedding_check.rb` recognises the helper as a
+again. `scripts/bc2cpp/wired_embedding_check.rb` recognises the helper as a
 registration call.
 
 ## Consequences

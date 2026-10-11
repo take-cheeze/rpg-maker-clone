@@ -26,7 +26,7 @@ three external gems) was never part of that:
   *names* (`<native>` placeholders in the registry). Nothing said which class
   registers one.
 
-The baseline (wio closed world, `scripts/bc2cpp_coverage_report.rb`) had 467
+The baseline (wio closed world, `scripts/bc2cpp/coverage_report.rb`) had 467
 generic POLY sites; the largest unresolved names that are core Ruby were `min`
 (32), `sort` (9), `negative?`/`positive?` (18), `read`/`open`, `uniq` and
 `Hash#compact`.
@@ -140,7 +140,7 @@ ireps/walk exclude them, and `symbol_installed_names` ignores core aliases.
   segfault for `5 == nil`-shaped compares that reach the arm. `Integer` joins
   `Float` and `Symbol` in `IMMEDIATE_NATIVE_CLASSES` (616 arms in the wio
   aggregate, 121 in the hot-only build).
-- `scripts/bc2cpp_binary_loader_check.rb` compared the loader with `mrbc -v` text,
+- `scripts/bc2cpp/binary_loader_check.rb` compared the loader with `mrbc -v` text,
   whose `ALIAS :succ next` reads `:succ succ` (codedump.c prints two short-symbol
   `mrb_sym_dump` results from one shared buffer; the bytes agree with vm.c). Only
   the first name of such a line is compared.
@@ -148,7 +148,7 @@ ireps/walk exclude them, and `symbol_installed_names` ignores core aliases.
 
 ### Verification
 
-- `scripts/bc2cpp_core_mrblib_check.rb` (bc2cpp-checks fast shard): owner
+- `scripts/bc2cpp/core_mrblib_check.rb` (bc2cpp-checks fast shard): owner
   completeness; each core method emitted by exactly one gem; no compiled core
   method touches a block, Fiber or mruby-enumerator; no open-world gem
   (rpgxp/rpgvx/wolf/mvjs) redefines a compiled method or, for registry
@@ -160,7 +160,7 @@ ireps/walk exclude them, and `symbol_installed_names` ignores core aliases.
   The only tolerated difference: a registered aspec makes the VM raise
   `expected 1+`/`1..2` where OP_ENTER's own check of the bytecode says
   `expected 1` (vm.c `argnum_error`); class and counts agree.
-- `scripts/bc2cpp_core_mrbtest.rb` (own shard): mruby's own `rake test` on a
+- `scripts/bc2cpp/core_mrbtest.rb` (own shard): mruby's own `rake test` on a
   full-core host build, interpreted and with the compiled core registered over
   it: 1846 assertions, 1845 OK, 0 KO, 0 crash, identically.
 - Semantic diff of the generated engine output against the previous commit

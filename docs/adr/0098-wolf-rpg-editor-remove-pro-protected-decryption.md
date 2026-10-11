@@ -97,7 +97,7 @@ under the same §9.2 reading is a separate, still-open question.
 - `docs/TODO.md`'s WOLF section reverts its "Pro-protected data (v3.5)
   decrypted for real" bullet to reflect refusal, with a pointer to this ADR
   for why (not a technical limitation this time, a terms-of-use one).
-- `scripts/wolf_testbed_check.rb`/`wolf_interpreter_check.rb`/
+- `scripts/wolf/testbed_check.rb`/`wolf_interpreter_check.rb`/
   `wolf_data_wolf_check.rb` no longer load `wolf_crypt_pro.rb`; all three
   re-verified green against the real bundled sample game (none of which is
   Pro-protected, so this was expected to be a no-op for them, and was).

@@ -122,7 +122,7 @@ The three `bc2cpp_nomethod` sites this adds (`Game::State#move_picture` from
 
 ## Consequences
 
-- Wio shipped build (`scripts/bc2cpp_coverage_report.rb`, `39706af5` ->
+- Wio shipped build (`scripts/bc2cpp/coverage_report.rb`, `39706af5` ->
   this change): cached dispatch sites 10134 -> 10108, generic POLY sites
   392 -> 390, `unsupported_arity` definitions across sites 15 -> 14; 32 literal
   block sites, 3 runtime splat sites and 2 literal splat sites become direct
@@ -130,7 +130,7 @@ The three `bc2cpp_nomethod` sites this adds (`Game::State#move_picture` from
   direct call. The population is small because the dominant shapes were
   already covered; the rest is native callees (`each`, `map`, ...) and
   receivers no proof reaches.
-- `scripts/bc2cpp_arg_shapes_check.rb` compiles a fixture with every shape
+- `scripts/bc2cpp/arg_shapes_check.rb` compiles a fixture with every shape
   under a closed world, runs it interpreted and compiled on a real mruby core
   and compares the transcripts (values, break/next/return, exceptions, arity
   errors, rest freshness, empty/nil/non-Array splats, hash-last arguments, `&:sym`,

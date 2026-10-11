@@ -2,20 +2,20 @@
 
 How much by-name dispatch is left in the C++ that bc2cpp generates for the wio
 closed world, why each site is still dynamic, and what proof would remove it.
-`scripts/bc2cpp_dynamic_site_census.rb` reproduces every number below from the
+`scripts/bc2cpp/dynamic_site_census.rb` reproduces every number below from the
 generated C++.
 
 ## Method
 
 ```sh
 mkdir -p /tmp/keep
-MRBC=<host mrbc> BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep ruby scripts/bc2cpp_coverage_report.rb > /dev/null
-ruby scripts/bc2cpp_dynamic_site_census.rb /tmp/keep/shipped.cxx [--tsv sites.tsv]
+MRBC=<host mrbc> BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep ruby scripts/bc2cpp/coverage_report.rb > /dev/null
+ruby scripts/bc2cpp/dynamic_site_census.rb /tmp/keep/shipped.cxx [--tsv sites.tsv]
 
 # exact receiver origins (SiteOriginTable): the same pass also writes the origin table
 MRBC=<host mrbc> BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep2 BC2CPP_COVERAGE_ORIGIN_TABLE=/tmp/keep2/origins.tsv \
-  ruby scripts/bc2cpp_coverage_report.rb > /dev/null
-ruby scripts/bc2cpp_dynamic_site_census.rb /tmp/keep2/shipped.cxx --origins /tmp/keep2/origins.tsv [--tsv sites.tsv]
+  ruby scripts/bc2cpp/coverage_report.rb > /dev/null
+ruby scripts/bc2cpp/dynamic_site_census.rb /tmp/keep2/shipped.cxx --origins /tmp/keep2/origins.tsv [--tsv sites.tsv]
 ```
 
 With the table, the generated `shipped.cxx` carries a `/*SO:<label>:<index>*/`
@@ -421,7 +421,7 @@ export BC2CPP_SITE_PROFILE=/tmp/sites
 MRBC=<host mrbc> BC2CPP_SITE_PROFILE=/tmp/sites BC2CPP_SITE_PROFILE_OUT=/tmp/hits \
   ruby tools/optcarrot_probe/compiled_run.rb 180
 # 3. Rank (several --workload NAME=DIR pairs give a column each).
-ruby scripts/bc2cpp_dynamic_site_census.rb --rank /tmp/sites --workload optcarrot=/tmp/hits \
+ruby scripts/bc2cpp/dynamic_site_census.rb --rank /tmp/sites --workload optcarrot=/tmp/hits \
   --top 30 [--tsv ranked.tsv]
 ```
 
@@ -511,11 +511,11 @@ of the static count.
 
 `BC2CPP_ELEMENT_REPORT=<tsv>` (`tools/bc2cpp/element_site_report.rb`) writes one row per instruction that can
 still reach a by-name call, with the origin of its receiver, and one row per write into a container ivar with the
-class set of the value; `scripts/bc2cpp_element_site_report.rb <tsv>` aggregates it:
+class set of the value; `scripts/bc2cpp/element_site_report.rb <tsv>` aggregates it:
 
 ```sh
-BC2CPP_ELEMENT_REPORT=/tmp/elements.tsv MRBC=<host mrbc> ruby scripts/bc2cpp_coverage_report.rb > /dev/null
-ruby scripts/bc2cpp_element_site_report.rb /tmp/elements.tsv
+BC2CPP_ELEMENT_REPORT=/tmp/elements.tsv MRBC=<host mrbc> ruby scripts/bc2cpp/coverage_report.rb > /dev/null
+ruby scripts/bc2cpp/element_site_report.rb /tmp/elements.tsv
 ```
 
 On the wio closed world (engine owners): 15,349 sites can reach by-name dispatch, 1,151 read an element, 380 of those
@@ -530,11 +530,11 @@ nothing was built. The report changes no generated code.
 a guard chain (family, the else arm of the final code, every `ClosedWorld#refusal` gate the name fails, the proven
 receiver classes or the flow mask that fell short, the receiver's origin, the chain's classes, what each cell of a proven
 set would be, the name's native registrations) and `<tsv>.names` (one row per method name);
-`scripts/bc2cpp_interface_table_report.rb <tsv> [owner-regexp]` aggregates them:
+`scripts/bc2cpp/interface_table_report.rb <tsv> [owner-regexp]` aggregates them:
 
 ```sh
-BC2CPP_ITAB_REPORT=/tmp/itab.tsv MRBC=<host mrbc> ruby scripts/bc2cpp_coverage_report.rb > /dev/null
-ruby scripts/bc2cpp_interface_table_report.rb /tmp/itab.tsv '\A(RPG2k|Game)'
+BC2CPP_ITAB_REPORT=/tmp/itab.tsv MRBC=<host mrbc> ruby scripts/bc2cpp/coverage_report.rb > /dev/null
+ruby scripts/bc2cpp/interface_table_report.rb /tmp/itab.tsv '\A(RPG2k|Game)'
 ```
 
 On the wio closed world (master `43031b24`): 5,730 sends have a chain, 4,377 end in `bc2cpp_nomethod`, 783 have no
@@ -555,8 +555,8 @@ method, build with a tag on every by-name line and join the shipped sites to it:
 
 ```sh
 MRBC=<host mrbc> BC2CPP_SEND_ROOT_REPORT=/tmp/keep/rows.tsv BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep \
-  ruby scripts/bc2cpp_coverage_report.rb > /dev/null
-ruby scripts/bc2cpp_send_root_report.rb /tmp/keep [FUNCTION_PREFIX_REGEX]
+  ruby scripts/bc2cpp/coverage_report.rb > /dev/null
+ruby scripts/bc2cpp/send_root_report.rb /tmp/keep [FUNCTION_PREFIX_REGEX]
 ```
 
 The report is for ranking (the tag changes the generated text). Measured on `master` `2b317417`, the
@@ -602,7 +602,7 @@ Arrays/Hashes in ivars and locals, the bulk of the unknown receiver roots, are n
 ## Numeric operand roots and tuple returns (ADR 0311)
 
 The `bc2cpp_slow_*` rows of the tables above are guarded numeric operators whose operands NumericFlow could not prove.
-`BC2CPP_NUMERIC_ROOTS=<file> MRBC=... ruby scripts/bc2cpp_coverage_report.rb` writes one `ROOT` line per such operator
+`BC2CPP_NUMERIC_ROOTS=<file> MRBC=... ruby scripts/bc2cpp/coverage_report.rb` writes one `ROOT` line per such operator
 of the shipped pass (owner, operator, class set per operand, the leaves it is computed from), through
 `tools/bc2cpp/codegen_numeric_roots.rb`; the generated code is byte-identical with it on. On the branch point
 `247a34e4` the engine owners (`RPG2k*`, `Game*`) had 2,384 sites with an unproven `+ - * / < <= > >=` operand. No root
@@ -633,7 +633,7 @@ computed `new` sites" were constants inside `rescue`-covered methods that `agree
 
 The census above counts by-name sends; this one counts creation sites (`LAMBDA`, `BLOCK`, `ARRAY`, `HASH`, `STRING`,
 `new`) and asks whether the value leaves the frame that made it, with the shared escape analysis
-(`BC2CPP_ESCAPE_REPORT=<tsv>`, `scripts/bc2cpp_escape_report.rb tsv shipped.cxx`). Wio closed world, master
+(`BC2CPP_ESCAPE_REPORT=<tsv>`, `scripts/bc2cpp/escape_report.rb tsv shipped.cxx`). Wio closed world, master
 `56b14771`, shipped pass:
 
 | Measure | Value |
@@ -650,7 +650,7 @@ The census above counts by-name sends; this one counts creation sites (`LAMBDA`,
 ## Follow-up: provable errors and post-call facts (ADR 0317)
 
 `BC2CPP_PROVABLE_ERROR_REPORT=<tsv>` and `BC2CPP_REFINE_REPORT=<tsv>` (run with `BC2CPP_CALL_FACTS=0` to measure the
-potential), aggregated by `scripts/bc2cpp_refine_report.rb tsv [--list-bugs]`. Wio closed world, master `147fe7e6`:
+potential), aggregated by `scripts/bc2cpp/refine_report.rb tsv [--list-bugs]`. Wio closed world, master `147fe7e6`:
 
 | Measure | Value |
 | --- | ---: |
@@ -667,7 +667,7 @@ potential), aggregated by `scripts/bc2cpp_refine_report.rb tsv [--list-bugs]`. W
 ## Follow-up: per-class resolution for proven receiver sets (ADR 0323)
 
 `BC2CPP_NATIVE_ARMS_REPORT=<tsv>` (`tools/bc2cpp/native_arms_report.rb`, aggregated by
-`scripts/bc2cpp_native_arms_report.rb tsv [owner-regexp]`) writes one row per by-name site with its receiver set `S` (proven by
+`scripts/bc2cpp/native_arms_report.rb tsv [owner-regexp]`) writes one row per by-name site with its receiver set `S` (proven by
 the exact-class flow or bounded by call facts, whatever the members), each member's cell kind and the gates that fail
 today. Wio closed world, master `7818f0f5`, engine gems:
 
@@ -771,7 +771,7 @@ this master, not 24.5.
 
 ## Block sends: what keeps the dynamic line (ADR 0325, master 7818f0f5, nothing built)
 
-`BC2CPP_BLOCK_SEND_REPORT=<tsv>` writes one row per block send and `scripts/bc2cpp_block_send_report.rb <tsv> [--gem GEM]`
+`BC2CPP_BLOCK_SEND_REPORT=<tsv>` writes one row per block send and `scripts/bc2cpp/block_send_report.rb <tsv> [--gem GEM]`
 aggregates it (`mruby-rpg2k` is 352 block sends, 282 with a by-name line; the scope is by gem, the baseline's 277 is by
 function-name prefix). Wio closed world, `3rd/*` populated.
 
@@ -797,7 +797,7 @@ nothing was built.
 ## Proven-error arms: are they reachable? (ADR 0330, master 49f39416, nothing built)
 
 `BC2CPP_DEAD_ARM_REPORT=<tsv>` writes one row per `bc2cpp_nomethod` / `bc2cpp_nil_receiver` arm (plus `partial_miss`,
-`const_unresolved`, `arity_*` rows) and `scripts/bc2cpp_dead_arm_report.rb <tsv> [--lcov lcov.info] [--list]` aggregates it.
+`const_unresolved`, `arity_*` rows) and `scripts/bc2cpp/dead_arm_report.rb <tsv> [--lcov lcov.info] [--list]` aggregates it.
 The shipped C++ is byte-identical with the report on. Arms of the engine gems and core, by exclusive class:
 
 | Class | Arms |
@@ -824,7 +824,7 @@ core-exact check. See [ADR 0327](adr/0327-bc2cpp-flow-core-hash-delete-checks.md
 
 `BC2CPP_RECEIVER_PROOF_REPORT=<tsv>` writes one row per engine explicit-receiver send that still holds a by-name line, with
 the source of its receiver and what happens to the line when the receiver is forced to a class set (a forked recompile of
-the one send, so the output is byte-identical); `scripts/bc2cpp_receiver_proof_report.rb <tsv>` aggregates it. 1,970 sends,
+the one send, so the output is byte-identical); `scripts/bc2cpp/receiver_proof_report.rb <tsv>` aggregates it. 1,970 sends,
 187 with a proven set, **1,783 unproven**.
 
 | Source (unproven) | Sites | Own set removes | Floor removes (every answering class, nil allowed) |
@@ -1219,7 +1219,7 @@ NOMETHOD_REVIEWED keys. The 10 left (`action` 3, `wait` 3, `row` 3, `term` 1) ar
 By name: `[]` 208, `empty?` 202, `size` 176, `to_s` 151, `length` 69, `new` 66, `to_enum` 66, `to_i` 60, `[]=` 51,
 `push` 50, `width` 47 (now 0), `x=` 44, `y=` 44, `update` 42, `include?` 37, `name` 37. 241 names remain; the top five
 (`[]`, `empty?`, `size`, `to_s`, `length`) are 806 sites. Of the 2,286, 80 sit in the RGSS probes
-(`effect_probe`, `audio_probe`, `probe_wav`, ...) that `scripts/strip_wio_rgss_probes.rb` deletes from the real wio build:
+(`effect_probe`, `audio_probe`, `probe_wav`, ...) that `scripts/wio/strip_rgss_probes.rb` deletes from the real wio build:
 the census counts them, the shipped binary does not.
 
 By reason, with the proof each one needs (the receiver class sets come from the exact-class flow):
@@ -1320,8 +1320,8 @@ name reaches the RGSS native, the call site runs `mrb_as_int` (`mrb_get_args "i"
 point. The old arm's else was a by-name send whose only job was to re-derive what the conversion does.
 
 Wio closed world, shipped pass, same tree, `BC2CPP_NATIVE_PARAM_UNBOX=0` against default
-(`scripts/bc2cpp_coverage_report.rb` with `BC2CPP_COVERAGE_KEEP_DIR`, then
-`scripts/bc2cpp_dynamic_site_census.rb`):
+(`scripts/bc2cpp/coverage_report.rb` with `BC2CPP_COVERAGE_KEEP_DIR`, then
+`scripts/bc2cpp/dynamic_site_census.rb`):
 
 | Measure | Control | Enabled |
 | --- | ---: | ---: |
@@ -1341,7 +1341,7 @@ ivars set only from `Viewport.new`/`Bitmap.new`). The file grows 0.3% by the per
 What stays gated: `Bitmap.new`'s first argument (`Bitmap#initialize` branches on `f.kind_of? String`),
 any name an alias, Symbol definition, computed-name installer, `undef` or visibility change can reach,
 and every arm of an open world. See [ADR 0372](adr/0372-bc2cpp-native-param-unbox.md) and
-`scripts/bc2cpp_native_param_unbox_check.rb`.
+`scripts/bc2cpp/native_param_unbox_check.rb`.
 
 ## Follow-up: the `zero?` helper through compiled core (ADR 0374)
 
@@ -1438,8 +1438,8 @@ compiled gems) and the hot-only one the firmware ships (`BC2CPP_HOT_METHODS=tool
 ```sh
 # once per world and per switch setting (KEEP_DIR keeps shipped.cxx)
 MRBC=<host mrbc> [BC2CPP_HOT_METHODS=$PWD/tools/bc2cpp/hot_methods.txt] [BC2CPP_RESCUE_INLINE_BLOCKS=0 BC2CPP_EACH_SPREAD=0] \
-  BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep-<name> ruby scripts/bc2cpp_coverage_report.rb > /dev/null
-ruby scripts/bc2cpp_rescue_inline_census.rb /tmp/keep-before/shipped.cxx /tmp/keep-after/shipped.cxx \
+  BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep-<name> ruby scripts/bc2cpp/coverage_report.rb > /dev/null
+ruby scripts/bc2cpp/rescue_inline_census.rb /tmp/keep-before/shipped.cxx /tmp/keep-after/shipped.cxx \
   apply_move_requests apply_location_requests apply_halt_request apply_sprite_flash_requests build_parallels \
   draw_transition_mask patch_anim_cells
 ```
@@ -1481,7 +1481,7 @@ arity-2 `each` over a constant Array of pairs), the full world loses it too and 
 
 ## Follow-up: class narrowing by a runtime test (ADR 0375)
 
-Wio closed-world shipped pass (`scripts/bc2cpp_coverage_report.rb`, `3rd/*` populated, host `mrbc` prebuilt,
+Wio closed-world shipped pass (`scripts/bc2cpp/coverage_report.rb`, `3rd/*` populated, host `mrbc` prebuilt,
 `LANG=C.UTF-8`), master `233972ac` against the same tree with the change. `BC2CPP_CLASS_NARROWING=0` against the tree
 without the change is `cmp`-identical (the shipped C++ of both runs, 21.5 MB). The engine rarely tests a class and then
 calls a method that was still unproven, so the gain is small; what it removes is by form below.
@@ -1585,7 +1585,7 @@ The origin walk (`BytecodeIR.reaching_definitions` with `origin_transfers: true`
 writes only `R[b]`; `EXCEPT a` writes `R[a]` on every entry, so its handler edges need not be known for that
 register. Each follows vm.c. Codegen never passes the option, so generated C++ is unchanged: the shipped pass
 with the `/*SO:*/` comments stripped is byte-identical before and after (442,855 lines).
-`scripts/bc2cpp_origin_transfers_check.rb` has a positive and a negative case per transfer.
+`scripts/bc2cpp/origin_transfers_check.rb` has a positive and a negative case per transfer.
 
 The origin walk also refuses where vm.c writes above an op's leading register, which the codegen walk
 treats as a write of the leading register only: the fallback send of `GETIDX0`, `GETIDX`, `SETIDX`, the
@@ -1593,7 +1593,7 @@ operator ops and the comparisons (a frame at `R(a)`, nil at `R(a+2)`, and `R(a+1
 them), `BLKCALL` (clears every register above its arguments), and the rest, post, keyword and block slots
 of `ENTER`. Each refusal is a `:callee_clobber` or an unmodelled refusal in the origin walk only. The shipped
 pass with the `/*SO:*/` comments stripped is byte-identical to master (origin/master c1372ea3).
-`scripts/bc2cpp_origin_multiwrite_check.rb` has the positive and negative cases, and pins the codegen walk's answers.
+`scripts/bc2cpp/origin_multiwrite_check.rb` has the positive and negative cases, and pins the codegen walk's answers.
 
 Refusal causes at the site level (the 232 refused `bc2cpp_send` sites on master `f8ff1015`, from the census's
 own scan joined to the probe log of each walk's first refusal):
@@ -1715,7 +1715,7 @@ normal walk's answer is unchanged whenever it does not refuse (a walk that never
 instruction or a handler target sees no handler edge), so the option only replaces refusals. The edges are
 the VM's: `catch_cover_p` in mruby's `vm.c` covers an instruction when `begin < pc <= end` with `pc` already
 past it, which is the half-open `[begin, end)` range the walk uses. Checked by
-`scripts/bc2cpp_site_origin_exceptions_check.rb` (a raise path that changes the receiver, a retry that re-enters
+`scripts/bc2cpp/site_origin_exceptions_check.rb` (a raise path that changes the receiver, a retry that re-enters
 the send, and a send whose receiver it writes itself stay unknown).
 
 Measured on the wio closed world, shipped pass, master `d9f0f10d` (`BC2CPP_COVERAGE_ORIGIN_TABLE`; `shipped.cxx`
@@ -1808,7 +1808,7 @@ Table-wide, the refused rows go from 646 to 633.
   normal and handler edges. An unguarded instruction with no normal predecessor is one (a handler target is guarded,
   so a handler edge cannot enter it unguarded), and the walk now skips a dead predecessor of a live query. A dead
   query keeps the refusal, since it has no value to report. Liveness includes the handler edges, so a node a handler
-  reaches is never called dead (`scripts/bc2cpp_origin_remaining_causes_check.rb`). Every site was a `JMP` after a
+  reaches is never called dead (`scripts/bc2cpp/origin_remaining_causes_check.rb`). Every site was a `JMP` after a
   `RETURN` or `RETURN_BLK` that no jump targets: `Range_each` (irep 1056, dead `JMP`s at 41 and 85) and `Array_bsearch_index` (dead
   `JMP` at 35). Their answers are 8 `exact` and 3 `ambiguous`.
 * **`opaque_reg` (resolved, 1 site).** A nested block's `SETUPVAR` writes an outer register only once a closure of
@@ -1851,7 +1851,7 @@ Measured on the wio closed world, shipped pass, base `5ddf1d98` against the chan
 
 The 128 ambiguous sites (97 before, 31 more that were refused) are each now `join` (116 sites) or the one origin all definitions share. Join sets:
 `indexed_result|literal_or_fresh` 35, `literal_or_fresh|parameter` 22, `direct_call_result|literal_or_fresh` 13,
-`ivar_read|parameter` 8, `indexed_result` 7, the rest under 5 each (`ruby scripts/bc2cpp_dynamic_site_census.rb ... --origins`
+`ivar_read|parameter` 8, `indexed_result` 7, the rest under 5 each (`ruby scripts/bc2cpp/dynamic_site_census.rb ... --origins`
 prints the list). The 135 unclassified exact definitions were SEND0 42, SENDB 28, GETIDX 24, SUB 12, SSEND0 7, DIV 6, MUL 5,
 SEND 4, ADD 3, GETIDX0 3, SSEND 1; they are `call_result`, `operator_result` or `indexed_result` by the writing op. Table
 rows: refused 1,811 to 3.

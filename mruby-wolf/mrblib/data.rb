@@ -854,7 +854,7 @@ module Wolf
   # is the only caller that actually blits these; kept here, pure and
   # Bitmap-free, so the geometry itself is exercised directly by
   # mruby-wolf/test's own CRuby-run suite the same way `ChipsetLayout` is
-  # exercised by scripts/rpg2k_render_check.rb.
+  # exercised by scripts/rpg2k/render_check.rb.
   #
   # Both layouts are help/06material.html's own documented "マップチップ"
   # formats (WOLF RPG Editor's manual):

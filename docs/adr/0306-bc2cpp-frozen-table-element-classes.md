@@ -66,11 +66,11 @@ ivar pools' own rules.
 
 ## Consequences
 
-Measured on the wio closed world with `scripts/bc2cpp_dynamic_site_census.rb`, same tree with and without
+Measured on the wio closed world with `scripts/bc2cpp/dynamic_site_census.rb`, same tree with and without
 `BC2CPP_FROZEN_TABLES=0`: see the measurement below. Receivers of
 only 49 shapes exist, and most table reads end in `INT|NIL` (a computed index can be out of range) so few arithmetic
-sites qualify. Tests: `scripts/bc2cpp_frozen_tables_check.rb` (model, generated code with 17 hostile worlds, compiled
-against interpreted on full-core, core-only and 32-bit `mrb_int` builds) and `scripts/bc2cpp_frozen_tables_mutation_check.rb`
+sites qualify. Tests: `scripts/bc2cpp/frozen_tables_check.rb` (model, generated code with 17 hostile worlds, compiled
+against interpreted on full-core, core-only and 32-bit `mrb_int` builds) and `scripts/bc2cpp/frozen_tables_mutation_check.rb`
 (13 mutants).
 
 Mutation check notes: the adjacency of literal and `freeze`, and the computed-installer refusal, are second lines of
@@ -80,7 +80,7 @@ is also proven by the constant pools of ADR 0301 for constants, so the check doe
 slice; `frozen_table_exact_class` adds it only where the numeric flow carries a kind (arguments, ivars, returns).
 
 Measured (wio closed world, three gems, merged tree at ADR 0301, the same tree with `BC2CPP_FROZEN_TABLES=0` as the
-"before"; `scripts/bc2cpp_dynamic_site_census.rb`): `bc2cpp_slow_add_f` callers 727 to 726, `bc2cpp_slow_lt` 299 to
+"before"; `scripts/bc2cpp/dynamic_site_census.rb`): `bc2cpp_slow_add_f` callers 727 to 726, `bc2cpp_slow_lt` 299 to
 296, `bc2cpp_slow_mul_f` 469 to 467; `bc2cpp_send` sites, getidx/setidx callers and funcall sites are unchanged. That
 is 6 sites that can no longer reach by-name dispatch (removal, no helper gains a caller), about 0.06% of the ~9,700.
 Before ADR 0301 landed, the exact-receiver half also removed 20 `bc2cpp_getidx` callers and 13 `bc2cpp_send` sites;

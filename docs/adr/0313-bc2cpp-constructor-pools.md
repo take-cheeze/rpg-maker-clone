@@ -17,7 +17,7 @@ measurements blamed that for about 99 ivar-rooted rpg2k sites and for the 120 `B
 sites (ADR 0307's follow-up), plus 58 "computed `new`" sites that were said to keep the analysis from seeing every
 constructor call.
 
-### Measurement (wio closed world, master `43031b24`, `scripts/bc2cpp_coverage_report.rb` + census, `3rd/*` populated)
+### Measurement (wio closed world, master `43031b24`, `scripts/bc2cpp/coverage_report.rb` + census, `3rd/*` populated)
 
 The `new` sites. There are 675 sends named `new` in the three compiled gems and the core Ruby they link. The "58 computed"
 were a misreading: `IrepScans#agreed_constant_name` returns nil inside a method with a `rescue` handler, so 57
@@ -127,8 +127,8 @@ was run; the 32-bit leg ran on a host build with `MRB_32BIT`/`MRB_INT32`, not on
 
 ## Tests
 
-`scripts/bc2cpp_constructor_pools_check.rb`: generated code for nine positives and eleven negatives, 16 withdrawal worlds,
+`scripts/bc2cpp/constructor_pools_check.rb`: generated code for nine positives and eleven negatives, 16 withdrawal worlds,
 kill switches and the open world; the fixture on real mruby, interpreted and compiled, on full-core, core-only and
 32-bit `mrb_int` builds (nil, Hash and splat arguments included, zero dispatches on the proven methods).
-`scripts/bc2cpp_constructor_pools_mutation_check.rb`: an unmutated control and 13 mutants of the soundness conditions,
+`scripts/bc2cpp/constructor_pools_mutation_check.rb`: an unmutated control and 13 mutants of the soundness conditions,
 each killed. New `constructor-pools` shard in `bc2cpp-checks`; the 32-bit run is in `bc2cpp-width (int32)`.

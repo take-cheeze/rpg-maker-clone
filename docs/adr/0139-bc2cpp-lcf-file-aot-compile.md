@@ -588,7 +588,7 @@ Built as `tools/bc2cpp/profile_annotations.rb`: runs `bc2cpp.rb` for
 real (the same closed-world source list/`NATIVE_SRCS` both real
 `mrbgem.rake`s use) to get the live candidate list, then re-runs this
 project's own real CRuby game-logic harnesses
-(`scripts/rpg2k_logic_check.rb`, `scripts/rpg2k_scene_check.rb`, and
+(`scripts/rpg2k/logic_check.rb`, `scripts/rpg2k/scene_check.rb`, and
 others) each in its own clean subprocess with a `TracePoint(:call)`
 probe installed, recording the real Ruby class of each candidate's
 argument on every real call. Chose `TracePoint` over a
@@ -2481,7 +2481,7 @@ real `RData` struct embedding. Checked directly against the exact
 whole closed world for `ChipSet.new`/`Game::ChipSet.new`/`.allocate`/a
 subclass finds only plain two-argument `.new(db, id)` call sites
 (`mruby-rpg2k/mrblib/scene/map.rb`, `scene/map_viewer.rb`, `game/
-lsd_io.rb`, plus this project's own `scripts/*_check.rb` harnesses) and
+lsd_io.rb`, plus this project's own `scripts/**/*_check.rb` harnesses) and
 no subclass anywhere. `@animation_type`/`@animation_speed` (each
 `c.animation_type || 0`/`c.animation_speed || 0`, both real, provably-
 Fixnum) embed into a new `Game__ChipSet_ivars` struct; the real generated
@@ -2748,7 +2748,7 @@ arity, no `super`, no block -- but neither of this class's own two ivars
 provably Fixnum/Symbol. Every real construction site in the whole closed
 world goes through a plain `MapWorld.new(scene, rng)` call --
 `mruby-rpg2k/mrblib/scene/map.rb`'s own real construction site plus one
-in this project's own `scripts/rpg2k_scene_check.rb` CRuby test harness
+in this project's own `scripts/rpg2k/scene_check.rb` CRuby test harness
 -- confirmed by grepping the whole closed world for `MapWorld.new`/
 `.allocate`/a subclass and finding no bypass and no subclass anywhere.
 
@@ -3341,7 +3341,7 @@ progress: five further mruby submodules the host build actually needs
 bare `git submodule update --init 3rd/mruby` alone is not enough); the
 `cp932_table`/`jis0208_table` env vars `mruby-lcf`'s/`mruby-rgss`'s own
 codegen scripts read are not defaulted anywhere a raw `rake` invocation
-sees (`scripts/native-build-without-nix.bash`'s own values, pointed at
+sees (`scripts/native/build-without-nix.bash`'s own values, pointed at
 this environment's pre-staged `.native-build-tables/` directory, unblock
 it). With both fixed, the build reached and fully compiled
 `mruby-lcf-compiled/src/register.cxx`, ran this round's own real
@@ -6643,7 +6643,7 @@ own environment-limitation writeups all cite (`3rd/mruby`/`3rd/lvgl`
 uninitialized) turned out to be reachable this round simply by initializing
 every submodule the default desktop target needs, plus fetching and
 hash-verifying (against the exact SHA-256 values `flake.nix`/
-`scripts/native-build-without-nix.bash` already pin) the two `cp932_table`/
+`scripts/native/build-without-nix.bash` already pin) the two `cp932_table`/
 `jis0208_table` Unicode.org mapping files `mruby-lcf`'s own `mrbgem.rake`
 needs and has no automatic fetch step for.
 
@@ -6893,7 +6893,7 @@ compiled `#initialize` in this file, not from the bare `private` above
   packages, no missing-dependency failures), and `RPGMAKER_BC2CPP=1
   ninja mruby/host/lib/libmruby.a` (after fetching and SHA-256-verifying
   the two Unicode.org mapping tables `mruby-lcf`'s own build needs, per
-  `scripts/native-build-without-nix.bash`'s own pinned hashes) built the
+  `scripts/native/build-without-nix.bash`'s own pinned hashes) built the
   real host `libmruby.a` end to end: **exit 0, zero `error:` lines
   anywhere in the full build log** (the only `Error`-shaped text is
   literal Ruby exception class names -- `NoMemoryError`, `TypeError`,
@@ -6955,7 +6955,7 @@ Unicode mapping tables (docs/adr/0058's/0111's/0130's own already-
 documented prerequisite) -- unset by default in a fresh worktree, but
 the *main checkout* already had them cached at
 `.native-build-tables/{bestfit932.txt,JIS0208.TXT}` (fetched once by an
-earlier `scripts/native-build-without-nix.bash` run), so this round
+earlier `scripts/native/build-without-nix.bash` run), so this round
 pointed both env vars at that existing cache rather than re-downloading
 it. With those two vars set, the real `cmake ..` configure and the real
 `ninja mruby/host/lib/libmruby.a` (which builds and links all three
@@ -7464,7 +7464,7 @@ desktop target needs (`SDL`, `SDL_mixer`, `effekseer`, `gflags`, `inicpp`,
 initialized, and the two `cp932_table`/`jis0208_table` Unicode.org mapping
 files `mruby-lcf`'s own build-time codegen needs were found already
 cached and SHA-256-verified against the exact values
-`scripts/native-build-without-nix.bash` pins, rather than re-fetched.
+`scripts/native/build-without-nix.bash` pins, rather than re-fetched.
 
 **Every method was individually checked against its own real `#error`
 marker with `SKIP_UNSUPPORTED=0`, not guessed from a shared shape** --
@@ -10166,7 +10166,7 @@ the Nix flake normally supplies, read directly by `mruby-lcf`'s own
 `cp932_to_unicode.rb` build step) were unset in this plain-worktree
 environment; pointed at this machine's already-cached copies
 (`.native-build-tables/{bestfit932.txt,JIS0208.TXT}`, sha256-matching the
-ones `scripts/native-build-without-nix.bash` itself fetches) rather than
+ones `scripts/native/build-without-nix.bash` itself fetches) rather than
 re-downloading. With both fixed, `rm -f mruby/host/lib/libmruby.a &&
 RPGMAKER_BC2CPP=1 cmake .. && RPGMAKER_BC2CPP=1 ninja
 mruby/host/lib/libmruby.a` succeeded end-to-end, zero `error:`/`warning:`

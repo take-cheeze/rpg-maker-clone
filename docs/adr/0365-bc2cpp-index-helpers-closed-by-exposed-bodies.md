@@ -44,8 +44,8 @@ Generated C++ declares the exported functions itself (`extern "C"`; a gem's are 
 so a libmruby without the gem still links).
 
 How every target applies it: the cmake patch chain (`cmake/build-mruby.cmake`, after `mruby-no-irep-debug.patch`) is what
-native, Emscripten, PSP, Wio, Android and the CI jobs build through; `scripts/maix_mruby_build.bash` and
-`scripts/wio_bc2cpp_measure.bash` keep their own copies of the list and gain it. The nix flake and PlatformIO build no mruby of
+native, Emscripten, PSP, Wio, Android and the CI jobs build through; `scripts/maix/mruby_build.bash` and
+`scripts/wio/bc2cpp_measure.bash` keep their own copies of the list and gain it. The nix flake and PlatformIO build no mruby of
 their own (PlatformIO links a libmruby cmake produced).
 
 ### The generator
@@ -67,7 +67,7 @@ their own (PlatformIO links a libmruby cmake produced).
 
 ## Consequences
 
-Measured values are in the "Results" section below. `scripts/bc2cpp_index_closed_check.rb` runs each closed helper against the
+Measured values are in the "Results" section below. `scripts/bc2cpp/index_closed_check.rb` runs each closed helper against the
 real method over a receiver / key matrix (every member class, subclasses, frozen receivers, class objects, procs, non-members;
 valid, invalid, negative, range, wrong-typed and bignum keys), comparing value, error class and message and the receiver
 afterwards, compiled and interpreted, at `mrb_int` 64, 32 and without bigint, with negative worlds, a source audit with
@@ -79,7 +79,7 @@ upstream ones; `NativeIvarScopes::FILES` moves to the new `lib.cxx`.
 
 ## Results
 
-Measured with `scripts/bc2cpp_dynamic_site_census.rb` on the wio closed world (shipped pass, base `b4efe59e`, the head of
+Measured with `scripts/bc2cpp/dynamic_site_census.rb` on the wio closed world (shipped pass, base `b4efe59e`, the head of
 ADR 0364's branch). All three helpers close in the real world: every member of `[]` / `[]=` (the eight and six program
 classes, `LCF::Database` / `MapTree` / `MapUnit` / `SaveData` below `LCF::File`, the reopened core classes, `File` and its
 chain, Array, Hash, String, Struct and the Struct.new classes, Proc, Table, class objects) resolves to a chain arm or a native arm.
@@ -102,6 +102,6 @@ candidates), and more than 16 subclasses of one definer overflow the chain; both
 
 The check's Table run uses a stand-in with rgss's three entry points because libmruby does not link rgss. The real bodies are
 the old `table_get` / `table_set` text moved behind the same wrappers (`mruby-rgss/test` exercises them interpreted);
-`scripts/native_binding_split_check.rb` needs libclang and was not run here.
+`scripts/native/binding_split_check.rb` needs libclang and was not run here.
 
-A cfunc-backed Proc (every compiled block, ADR 0266) cannot run `call_proc`'s OP_CALL from a compiled frame, so the Proc arm yields to it (`bc2cpp_yield_argv`) exactly as `bc2cpp_funcall_argv` does for the by-name call it replaces, and only a bytecode Proc takes `mrb_proc_aref_impl`. `scripts/bc2cpp_index_closed_check.rb` runs `IxCap`, compiled methods that capture a block and index it (`blk[x]`, a stored proc, `b[1]` next to `call`/`.()`/`yield`, a returned proc, lambdas, a break, upvars, nesting), interpreted and compiled; `scripts/bc2cpp_proc_call_block_given_check.rb` passes.
+A cfunc-backed Proc (every compiled block, ADR 0266) cannot run `call_proc`'s OP_CALL from a compiled frame, so the Proc arm yields to it (`bc2cpp_yield_argv`) exactly as `bc2cpp_funcall_argv` does for the by-name call it replaces, and only a bytecode Proc takes `mrb_proc_aref_impl`. `scripts/bc2cpp/index_closed_check.rb` runs `IxCap`, compiled methods that capture a block and index it (`blk[x]`, a stored proc, `b[1]` next to `call`/`.()`/`yield`, a returned proc, lambdas, a break, upvars, nesting), interpreted and compiled; `scripts/bc2cpp/proc_call_block_given_check.rb` passes.

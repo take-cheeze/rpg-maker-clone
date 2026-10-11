@@ -4,7 +4,7 @@ This directory holds the instrument samples that make MIDI music audible. It is
 empty in a fresh checkout — everything except this README is downloaded:
 
 ```sh
-./scripts/download-freepats.bash
+./scripts/download/freepats.bash
 ```
 
 ## Why it is needed

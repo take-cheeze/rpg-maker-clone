@@ -579,7 +579,7 @@
 // call -- mruby-rpg2k/mrblib/scene/map.rb's own real `@world =
 // MapWorld.new(self, @rng)` (inside a `RGSS::Profiler.section` block, not
 // #initialize itself, but still a real, unconditional construction site),
-// plus one in this project's own scripts/rpg2k_scene_check.rb CRuby test
+// plus one in this project's own scripts/rpg2k/scene_check.rb CRuby test
 // harness (`RPG2k::Scene::MapWorld.new(nil, nil)`, exercising #play_sound
 // only) -- confirmed by grepping the whole closed world for
 // `MapWorld.new`/`.allocate`/a subclass and finding no bypass and no

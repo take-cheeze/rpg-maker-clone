@@ -67,7 +67,7 @@ The whole-program `#error` count goes 8 to 5. `LCF::Array2D#each`,
 `Game::Actors#each` and `Game::Party#each` compile behind the guard instead of
 staying interpreted.
 
-`scripts/bc2cpp_fiber_body_guard_check.rb` pins the safety property rather than
+`scripts/bc2cpp/fiber_body_guard_check.rb` pins the safety property rather than
 the fixture's reachability, because a fixture cannot reproduce the engine's Fiber
 root (mruby-wolf's `Fiber.new { execute }` plus the RGSS gem set) — that part is
 measured by `bc2cpp_coverage_report.rb`. What the check does pin: a body that

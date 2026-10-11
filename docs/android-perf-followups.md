@@ -38,7 +38,7 @@ below and mruby game-logic speed (task 5).
 - **Correctness**: this renderer has pixel-parity commitments
   (  [ADR 21](adr/0021-nepheshel-render-parity-under-wine.md)). Run
   `cmake --build build -t test` (mruby-rgss blt parity included),
-  `ruby scripts/rpg2k_render_check.rb` and `ruby scripts/rpg2k_scene_check.rb`
+  `ruby scripts/rpg2k/render_check.rb` and `ruby scripts/rpg2k/scene_check.rb`
   for anything touching composition or invalidation.
 
 ## 1. Verify #1371 on the device (small, do first)

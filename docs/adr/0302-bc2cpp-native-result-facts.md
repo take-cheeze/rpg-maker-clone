@@ -39,7 +39,7 @@ Two related blockers sat in the same census (`docs/bc2cpp-dynamic-site-census.md
 | `RGSS::Color`, `RGSS::Tone` | `red`, `green`, `blue`, `alpha` / `gray` | `:float` (`mrb_float_value`) |
 
 A fact is audited, not inferred. It pins the registration's callee text and the chain of C functions down to
-the one whose `return` statements decide the result. `scripts/bc2cpp_native_result_facts_check.rb` re-reads
+the one whose `return` statements decide the result. `scripts/bc2cpp/native_result_facts_check.rb` re-reads
 `mruby-rgss/src/*.cxx` and fails when the registration is not unique and verbatim, when a link of the chain
 stops delegating, or when any `return` loses the kind's shape; seven source mutants (a `nil` return, a
 Float return, another class, another callee, a second registration) must each be rejected.
@@ -101,8 +101,8 @@ object, an exception, an LCF kind) gives no class list, and the site keeps its r
 
 ## Consequences
 
-Measured on the wio closed world (`scripts/bc2cpp_coverage_report.rb`'s shipped pass, master `c7ff3846` as
-the base, `scripts/bc2cpp_dynamic_site_census.rb` for the send counts):
+Measured on the wio closed world (`scripts/bc2cpp/coverage_report.rb`'s shipped pass, master `c7ff3846` as
+the base, `scripts/bc2cpp/dynamic_site_census.rb` for the send counts):
 
 | | before | after | delta |
 | --- | ---: | ---: | ---: |
@@ -141,7 +141,7 @@ no closed world (an open-world build emits none of this).
 an `mrb_int` and the tag is the same width everywhere); nothing here converts an `mrb_int` to a bignum or
 back, and the generator emits no new >32-bit literal.
 
-Checks: `scripts/bc2cpp_native_result_facts_check.rb` (audit and mutants, ClosedWorld questions, generated
+Checks: `scripts/bc2cpp/native_result_facts_check.rb` (audit and mutants, ClosedWorld questions, generated
 code with positives and negatives for a Ruby override, a rebound `Rect`, a singleton maker, an unproven or
 mixed receiver, a method_missing class and a class-object receiver), run on core-only and full-core
 libmruby together with the existing numeric, class-pool, exact-receiver, closed-world and native-direct checks.

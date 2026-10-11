@@ -33,7 +33,7 @@ Ways to give those projects a font:
   of the font.
 - **Download it with a script** — the repository stays small and redistributes
   nothing; the cost is a setup step, which this repository already has eight of
-  (`scripts/download-*.bash`, `scripts/rtp_install.bash`) plus a CI barrier that
+  (`scripts/download-*.bash`, `scripts/rtp/install.bash`) plus a CI barrier that
   waits on them, and a run-time state where the font is absent.
 - **Use a system font** — nothing to fetch, but "which system font" has no
   portable answer, the result differs per machine (so screenshots and the
@@ -44,7 +44,7 @@ Ways to give those projects a font:
   coverage stops where its tables do.
 
 Which face also matters. The RPG2000 renderer must **not** change: shinonome's
-metrics match RPG_RT's MS Gothic, and `scripts/compare-nepheshel-wine.bash`
+metrics match RPG_RT's MS Gothic, and `scripts/compare/nepheshel-wine.bash`
 diffs our frames against the real runtime's pixels (see ADR 0021). Anything that
 silently swapped RPG2000's face would turn a passing parity comparison into a
 failing one — correctly, because the output would be wrong.
@@ -54,7 +54,7 @@ failing one — correctly, because the output would be wrong.
 Fetch a default UI font with a script, the way the MIDI patch set is fetched
 (ADR 0026), and make the fallback **opt-in per maker** rather than automatic.
 
-- `scripts/download-default-font.bash` installs **M PLUS 1p Regular** into
+- `scripts/download/default-font.bash` installs **M PLUS 1p Regular** into
   `assets/fonts` (git-ignored except its README), verifying a pinned SHA-256.
   The bytes come from the `google/fonts` repository pinned at a commit, so they
   are immutable and checksummable — the Google Fonts API serves a rolling build.

@@ -23,14 +23,14 @@ return from the enclosing Ruby method.
 
 Set `BC2CPP_PROFILER_RESULTS=0` to withdraw the result proof while retaining the
 helper correctness repairs. Compare the same source tree with the switch off
-and on using `scripts/bc2cpp_coverage_report.rb`. Static call counts are not
+and on using `scripts/bc2cpp/coverage_report.rb`. Static call counts are not
 runtime speed measurements.
 
 ```sh
 MRBC=/path/to/mrbc BC2CPP_MRUBY_FULL=/path/to/full-core/build \
-  ruby scripts/bc2cpp_profiler_results_check.rb
+  ruby scripts/bc2cpp/profiler_results_check.rb
 MRBC=/path/to/mrbc BC2CPP_MRUBY_FULL=/path/to/full-core/build \
-  ruby scripts/bc2cpp_profiler_results_mutation_check.rb
+  ruby scripts/bc2cpp/profiler_results_mutation_check.rb
 ```
 
 The checks cover native source changes, replacement and rebinding refusals,

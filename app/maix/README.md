@@ -44,8 +44,8 @@ through LVGL's own inlines); and the smoke's runtime string eval needs
 bytecode, so it can go again later).
 
 ```sh
-scripts/maix_mruby_build.bash      # ./build-maix-mruby (libmruby.a)
-scripts/maix_unialgo_build.bash    # ./build-maix-unialgo (libuni-algo.a)
+scripts/maix/mruby_build.bash      # ./build-maix-mruby (libmruby.a)
+scripts/maix/unialgo_build.bash    # ./build-maix-unialgo (libuni-algo.a)
 MAIX_MRUBY_BUILD_DIR=$PWD/build-maix-mruby/maix \
 MAIX_UNIALGO_LIB_DIR=$PWD/build-maix-unialgo \
   pio run -e maix_rgss_boot
@@ -54,7 +54,7 @@ MAIX_UNIALGO_LIB_DIR=$PWD/build-maix-unialgo \
 ## Status: P2 — a real game boots to title
 
 `pio run -e maix_game` boots `data/maix-hello` -- a synthetic 3-file game
-authored by `scripts/gen-maix-hello-game.rb` (56-byte database, 23-byte
+authored by `scripts/gen/maix-hello-game.rb` (56-byte database, 23-byte
 map tree, generated title picture; nothing vendored) -- to its RPG2k title
 screen: display, input, interpreter, flash-resident game behind
 `GAME_DIR=/game` (baked in at build time by `app/maix/embed_game.py`,
@@ -88,7 +88,7 @@ probing, so the band count is not arbitrary.
 
 `pio run -e maix_game_sd` is the same firmware as `maix_game`, but reads
 its data from the microSD card (`GAME_DIR=/sd/maixgame`, pushed with
-`scripts/maix_sd_upload.py`) instead of the flash-embedded copy, over the
+`scripts/maix/sd_upload.py`) instead of the flash-embedded copy, over the
 SD layer described below. Confirmed on real hardware booting a real
 commercial RPG2k title (not just the tiny synthetic `data/maix-hello`)
 all the way to its title screen.
@@ -205,11 +205,11 @@ see "Status: SD-card game boot" above for how it fares on real hardware.
 the microSD card over the same USB serial used for flashing -- for a dev
 machine that cannot pull the card out and mount it directly. Same
 PING/PUT protocol as the Wio loader, driven by
-`scripts/maix_sd_upload.py`:
+`scripts/maix/sd_upload.py`:
 
 ```sh
 pio run -e maix_sd_upload -t upload --upload-port /dev/ttyUSB1
-scripts/maix_sd_upload.py \
+scripts/maix/sd_upload.py \
   /tmp/maixhello/RPG_RT.ldb:/sd/maixgame/RPG_RT.ldb \
   /tmp/maixhello/Title/maix.png:/sd/maixgame/Title/maix.png
 pio run -e maix_game -t upload --upload-port /dev/ttyUSB1  # reflash real fw
@@ -225,7 +225,7 @@ on that same port.
 
 ## The mruby cross-build (PSP-style)
 
-`scripts/maix_mruby_build.bash` builds `build_config.rb`'s `maix`
+`scripts/maix/mruby_build.bash` builds `build_config.rb`'s `maix`
 `MRuby::CrossBuild`: a native host mruby first (for `mrbc`), then the
 riscv64 cross `libmruby.a` (RV64IMACFD, `medany/lp64f/rv64imafc` to match the
 firmware half) the firmware links in a later slice -- the PSP EBOOT pipeline's
@@ -237,8 +237,8 @@ paths) and its libstdc++ missing C99 stdio/TR1 (`_GLIBCXX_USE_C99_STDIO=1`,
 `::lround` at the kept call sites).
 
 ```sh
-scripts/maix_mruby_build.bash            # ./build-maix-mruby/maix/lib/libmruby.a
-scripts/maix_mruby_build.bash /tmp/maix  # ...or wherever
+scripts/maix/mruby_build.bash            # ./build-maix-mruby/maix/lib/libmruby.a
+scripts/maix/mruby_build.bash /tmp/maix  # ...or wherever
 ```
 
 Needs `ruby`, `rake`, `bison`, `gperf` and the Kendryte toolchain (present
@@ -247,7 +247,7 @@ tables are fetched with the same pins/hashes the `psp` CI job uses.
 
 ## Emulation (Renode)
 
-`scripts/maix_renode_boot.bash` boots a firmware ELF under **stock**
+`scripts/maix/renode_boot.bash` boots a firmware ELF under **stock**
 Renode -- no from-source build the way `wio-renode` needs: Renode ships the
 K210 SoC description (dual RV64, UARTHS, CLINT, PLIC) since 1.9, with only
 small Python stubs in `app/maix/renode/` on top. CI's `maix-smoke` job
@@ -256,7 +256,7 @@ boots the `maix_rgss_boot` ELF (pinned to Renode 1.17.0) and asserts
 `REACHED loop()`.
 
 ```sh
-RENODE_BIN=/path/to/renode scripts/maix_renode_boot.bash \
+RENODE_BIN=/path/to/renode scripts/maix/renode_boot.bash \
   .pio/build/maix_rgss_boot/firmware.elf
 ```
 
@@ -277,7 +277,7 @@ padding -- confirmed the hard way when it silently halved every real
 pixel in the capture. The non-incrementing-source (`sinc`) fill transfers
 are replayed from their single word -- reading them as incrementing walks
 into zeros and heap garbage, confirmed the confusing way.
-`scripts/maix_lcd_decode.py` (stdlib only) replays the ST7789 stream
+`scripts/maix/lcd_decode.py` (stdlib only) replays the ST7789 stream
 (CASET/RASET/RAMWR, RGB565, `frame_bytes // 2` pixels per capture line)
 into a PPM and checks it: currently a blue 320x240 screen with two white
 text lines at the firmware's own cursor rows, asserted as blue ≥ 0.45,
@@ -286,8 +286,8 @@ text lines at the firmware's own cursor rows, asserted as blue ≥ 0.45,
 ```sh
 RENODE_BIN=/path/to/renode \
 MAIX_SPI_LOG=/tmp/maix-spi.log \
-  scripts/maix_renode_boot.bash .pio/build/maix_amigo/firmware.elf 00:00:08
-python3 scripts/maix_lcd_decode.py /tmp/maix-spi.log /tmp/maix-frame.ppm \
+  scripts/maix/renode_boot.bash .pio/build/maix_amigo/firmware.elf 00:00:08
+python3 scripts/maix/lcd_decode.py /tmp/maix-spi.log /tmp/maix-frame.ppm \
   --min-blue 0.45 --min-colors 3 --expect-size 320x240
 ```
 

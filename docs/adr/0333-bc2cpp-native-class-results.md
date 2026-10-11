@@ -94,7 +94,7 @@ More collection operations and stores carry their actual result class without as
 returns. Source pins deliberately withdraw on any byte change, including comments. Refresh them only after
 reviewing the native contract and rerunning the withdrawal, mutation and runtime checks.
 
-`scripts/bc2cpp_native_class_results_check.rb` covers every pin, unknown and changed sources, Method delegation,
+`scripts/bc2cpp/native_class_results_check.rb` covers every pin, unknown and changed sources, Method delegation,
 nullable snapshots, constant rebinding, mixed Ruby/native returns, outside definitions, linked versus unlinked
 native registrations, aliases, installers, method_missing, open worlds and both switches. Runtime fixtures compare
 compiled and interpreted outcomes on full-core and core-only mruby, including a Ruby result of another class.
