@@ -1,0 +1,1 @@
+- **bc2cpp nightly**: the type-check, RBS-signature and emit-RBS mutation checks copy `tools/bc2cpp` inside the repository, and their generator-driven mutants reach the copy (`BC2CPP_TOOL`). The facts-mode mutant now changes the emitted C++, so the byte-identical check can see it.
