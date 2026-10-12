@@ -521,6 +521,8 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/native_core_direct_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/singleton_arity_check.rb
               ruby scripts/native/binding_split_check.rb
+              # ADR 0417: the wio closed world's generated C++ names no RGSS::Tts.
+              MRBC="$mrbc" ruby scripts/tts_limited_check.rb --bc2cpp
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/arg_shapes_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/block_semantics_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/constant_singleton_check.rb

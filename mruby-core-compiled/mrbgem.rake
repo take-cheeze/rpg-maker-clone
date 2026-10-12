@@ -44,7 +44,7 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   # The same closed world every compiled gem reads: the core files first, then
   # mruby-rpg2k/lcf/rgss (compiled_gems.rb closed_world_mrblib_srcs).
   closed_world_prereqs = bc2cpp_closed_world_prerequisites("#{dir}/..")
-  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"] + core_native_srcs("#{dir}/../3rd/mruby") +
+  native_srcs = bc2cpp_rgss_native_srcs("#{dir}/..", build.name) + core_native_srcs("#{dir}/../3rd/mruby") +
                 external_gem_native_srcs("#{dir}/..")
   foreign_ruby_srcs = foreign_mrblib_srcs("#{dir}/..")
 

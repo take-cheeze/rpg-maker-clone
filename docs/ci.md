@@ -569,3 +569,12 @@ inlined `each` takes the method's flow at the loop, refused for a reassigned ele
 no set for an argument receiver) and the switch-off control, which must read and refuse no position. The
 `core-flow-mutants` shard runs the same check with `LFP_MUTANTS=1`: four copies of `tools/bc2cpp` with one guard
 removed or a wrong position read, each of which must fail. The check needs only `MRBC`; it runs no mruby build.
+
+### RGSS::Tts in limited builds (ADR 0417)
+
+`scripts/tts_limited_check.rb` (the `ruby-checks` job, no submodules needed) evaluates the real `mruby-rgss` and
+`mruby-rpg2k` `mrbgem.rake` files for every build name and fails unless `tts.cxx`, `RGSS_NO_TTS` and the
+`speak_message` source (`map_tts.rb` against `map_tts_off.rb`) are exactly what `tools/rgss_tts_config.rb` says, the
+bc2cpp source sets (`compiled_gems.rb`) agree, and `speak_message` behaves as before where Tts exists. With `--bc2cpp`
+(the `fast` nightly shard, needs `MRBC`) it also runs the wio closed world for `mruby-rpg2k-compiled` and fails if the
+generated C++ names Tts.
