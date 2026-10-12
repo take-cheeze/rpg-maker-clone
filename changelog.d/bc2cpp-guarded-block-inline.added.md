@@ -1,5 +1,5 @@
 - **bc2cpp inlines a literal block's loop behind a run-time exact-class test**
-  (`GUARDED_BLOCK_INLINE`, ADR 0417): `x.each { }`, `map`, `select`, `any?`,
+  (`GUARDED_BLOCK_INLINE`, ADR 0420): `x.each { }`, `map`, `select`, `any?`,
   `each_with_index`, `Hash#each` and the other block loops that were only inlined
   for a proven receiver now also run in the method's own function for an
   unproven one when it is an exact `Array` or `Hash`, with no `RProc`, no

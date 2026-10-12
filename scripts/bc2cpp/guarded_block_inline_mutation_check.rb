@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Mutants for scripts/bc2cpp/guarded_block_inline_check.rb (ADR 0417). Each one weakens one condition of the guarded
+# Mutants for scripts/bc2cpp/guarded_block_inline_check.rb (ADR 0420). Each one weakens one condition of the guarded
 # block loops and must be caught by that check's generated-code assertions (GB_GENERATED_ONLY: no compiler runs);
 # the controls must pass.
 require 'fileutils'

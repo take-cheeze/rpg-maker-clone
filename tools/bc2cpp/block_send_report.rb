@@ -20,7 +20,7 @@ require_relative 'block_send_report_columns'
 #   - entry, free, free_if_entry: the block has a direct entry, is proved yield-free, would be yield-free.
 #   - arms: the exact core classes that have a compiled arm for the name, with `+` when the body is relaxable.
 #   - why: why a name has no core arm (first failing gate per class).
-#   - guarded: 1 when the send also has a GUARDED_BLOCK_INLINE loop in front of this code (ADR 0417).
+#   - guarded: 1 when the send also has a GUARDED_BLOCK_INLINE loop in front of this code (ADR 0420).
 module BlockSendReport
   ROWS = {}
     BY_NAME = /\bbc2cpp_send\(|\bmrb_funcall\w*\(|\bbc2cpp_funcall_(?:argv|noarg|explicit)\(/

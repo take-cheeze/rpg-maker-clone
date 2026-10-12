@@ -65,7 +65,7 @@ class CodeGen
     traced = proven_array_source(irep, idx, dest_reg) if klass == 'Array' && traced != 'Array'
     return true if traced == klass
 
-    # GUARDED_BLOCK_INLINE (ADR 0417): an unproven receiver is asked at run time (guarded_inline_receiver?).
+    # GUARDED_BLOCK_INLINE (ADR 0420): an unproven receiver is asked at run time (guarded_inline_receiver?).
     guarded_inline_why(irep, insn, klass, "receiver traced to #{traced}") if traced && guarded_inline_sites?
     !traced && guarded_inline_receiver?(insn, klass)
   end

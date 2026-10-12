@@ -1,4 +1,4 @@
-# 0417. bc2cpp: inline a literal block's loop behind a run-time exact-class test
+# 0420. bc2cpp: inline a literal block's loop behind a run-time exact-class test
 
 Date: 2026-10-12
 

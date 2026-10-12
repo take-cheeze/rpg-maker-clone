@@ -92,7 +92,7 @@ class CodeGen
           next
         end
 
-        # GUARDED_BLOCK_INLINE (ADR 0417): the send stays; the loop runs ahead of it behind a class test, once the
+        # GUARDED_BLOCK_INLINE (ADR 0420): the send stays; the loop runs ahead of it behind a class test, once the
         # send's arms are known (guarded_inline_finish).
         if guarded_klass
           guarded[:pending] << { region: region, inlined: inlined, klass: guarded_klass, anchor: anchor,

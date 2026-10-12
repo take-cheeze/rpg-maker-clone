@@ -2,7 +2,7 @@
 
 require 'set'
 
-# GUARDED_BLOCK_INLINE (docs/adr/0417): the inlined block loops of codegen_loop_inline.rb for a receiver whose class is
+# GUARDED_BLOCK_INLINE (docs/adr/0420): the inlined block loops of codegen_loop_inline.rb for a receiver whose class is
 # NOT proven. The loop is emitted behind a run-time exact-class test (the same test as BLOCK_CORE_DIRECT's arm), and
 # the ordinary BLOCK + SENDB code stays right behind it as the else, so every other receiver (a subclass, a singleton,
 # a Hash, nil, a user class) dispatches exactly as before. A receiver that passes the test runs the block body in the

@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 #
-# Check GUARDED_BLOCK_INLINE (docs/adr/0417): a literal-block send whose receiver class is NOT proven runs the
+# Check GUARDED_BLOCK_INLINE (docs/adr/0420): a literal-block send whose receiver class is NOT proven runs the
 # block body as an inline loop behind an exact-class test (Array, Hash), with the ordinary BLOCK_CORE_DIRECT arms and
 # dynamic send as its else.
 #

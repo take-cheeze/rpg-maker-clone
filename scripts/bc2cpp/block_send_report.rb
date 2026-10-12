@@ -69,7 +69,7 @@ end
 table('why the dynamic line is kept', tally(dyn, &reason))
 table('no core arm: first failing gate per name', tally(dyn.select { |r| r['shape'] == 'dynamic' }) { |r| "#{r['name']}: #{r['why'][0, 90]}" }.first(30))
 
-# GUARDED_BLOCK_INLINE (ADR 0417): the sends that also have an inline loop behind a run-time class test. Their
+# GUARDED_BLOCK_INLINE (ADR 0420): the sends that also have an inline loop behind a run-time class test. Their
 # by-name line is still counted above (it is the else path); what changed is the run-time work for an exact Array
 # or Hash. The second table is what has no such loop, with its shape, receiver proof and arms.
 if cols.include?('guarded') && sel.any? { |r| r['guarded'] == '1' }
