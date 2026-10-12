@@ -244,6 +244,13 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/setter_pools_mutation_check.rb
               # ADR 0370: the aliased-name set holds only the names an aliasing operation spells.
               MRBC="$mrbc" ruby scripts/bc2cpp/aliased_names_check.rb
+          - shard: type-check
+            # ADR 0412: the report-only type check. The report front-end on a hand-written facts file, the analysis on
+            # fixtures (contradictions with their file:line, ignored tokens, inferred types and reasons, the send
+            # ranking, byte-identical C++), then the mutants of the front-end and of the analysis side.
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp/type_check_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/type_check_mutation_check.rb
           - shard: entry-specialize
             # ADR 0380: BC2CPP_SPECIALIZE. Generated code (gate off byte-identical, the generic body untouched, the
             # identity clone, the refused shapes and worlds), a full-core run of every guard hit and miss compared with
