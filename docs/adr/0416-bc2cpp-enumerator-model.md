@@ -94,4 +94,4 @@ assignment, `const_set`, alias, body and construction-chain refusals), the gener
 comparing the compiled core's blockless iterators with the interpreter (next/peek/rewind/size on an array
 enumerator, `with_index`, `with_object`, `each_slice`/`each_cons`, lazy, a user `each` + Enumerable, a redefined
 `map`, Hash and Range sources, `break`/`next`/exceptions, a Fiber, GC) and asserting that the direct core iterators
-make no dispatch. `enumerator_model_mutation_check.rb` removes one condition at a time (23 mutants and a control).
+make no dispatch. `enumerator_model_mutation_check.rb` removes one condition at a time (20 mutants and a control; the owner and source gates of `analyze` and the code generator's model test back up the alias, body and registry checks that refuse the same worlds, so they have none).
