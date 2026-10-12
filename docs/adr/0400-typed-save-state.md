@@ -92,9 +92,24 @@ setters. Round-trip tests show the writer reproduces a read save byte for byte.
   A `env:wio_rgss_boot` link has to be run before this is considered safe. If it
   overflows, the fallback is to swap in a smaller generated file on wio only, the
   way ADR 0109 handles the schema blob, at the cost of the read-time check there.
-- No genuine RPG_RT or EasyRPG `.lsd` is in the repository, so the read-time check
-  has been exercised only on saves this engine writes and on a minimal hand-built
-  file. A genuine save with a field that does not decode as its schema type will now
-  show as an empty slot. The logged reason is what to look at if that happens.
+- No genuine RPG_RT or EasyRPG `.lsd` is in the repository (nor reachable from
+  `scripts/download/*`, which fetch games, not saves), so the read-time check was first
+  exercised only on saves this engine writes. `scripts/rpg2k/lsd_adversarial_check.rb`
+  now builds the unlike-ours cases from the LCF format itself: unknown chunks and
+  fields, trailing data, padded BER numbers, a save with every schema field present,
+  maximum-size tables, RPG2000- and RPG2003-shaped saves all load; a wrong-size field,
+  a chunk running past the end of the file, an absurd chunk id and an empty or
+  header-only file are an empty slot with the reason logged; and every truncation of a
+  valid save plus 2,100 seeded corruptions yield a state or a logged empty slot, never
+  a crash. It found two real defects, fixed with it: a chunk id read from the file
+  indexes a Ruby Array, so an id of 2,000,000,000 died with `NoMemoryError` (not a
+  `StandardError`, so the slot-load `rescue` did not see it) -- ids above
+  `LCF::MAX_CHUNK_ID` (0xffff) are now refused; and a chunk whose declared length ran
+  past the end of the file was read short, so a truncated save loaded with its last
+  field silently garbled -- it is now refused as `truncated chunk`. A save with no hero
+  or inventory record (cut on a chunk boundary) used to log `undefined method '[]' for
+  nil`; `Game::State.from_lsd` now names the missing record. A genuine save with a field
+  that does not decode as its schema type still shows as an empty slot; the logged
+  reason is what to look at.
 - The accessors cover read access only. A write still goes through the schema
   encoder, and a future setter layer would be a separate change.
