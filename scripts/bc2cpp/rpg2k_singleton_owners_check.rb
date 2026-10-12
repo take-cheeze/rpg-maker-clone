@@ -284,6 +284,19 @@ if selected.nil? || selected.include?('base')
     check.call("register.cxx registers #{klass}.#{name} as #{fn} inside the full-build region",
                guarded.match?(/mrb_define_class_method\(M, #{klass}, "#{Regexp.escape(name)}",\s+#{Regexp.escape(fn)},/))
   end
+  # A world that is not closed (the desktop build) refuses from_page; the shipped pass (SKIP_UNSUPPORTED) then drops it and
+  # says so with BC2CPP_SKIPPED_<entry>, which register.cxx's registration of it must be guarded by.
+  check.call('register.cxx guards move_route.from_page with BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page',
+             guarded.match?(/^#ifndef BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page\n\s*mrb_define_class_method\(M, move_route, "from_page",/))
+  Dir.mktmpdir do |dir|
+    code, = runtime.generate(FIXTURE + worlds.fetch('an open world')[:extra], dir, only_owners: OWNERS, build_gems: TIME_GEM,
+                                                                                    drop_gems: ENGINE_GEMS, skip_unsupported: true, closed: false)
+    check.call('an open world, shipped pass: from_page is dropped and BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page says so',
+               code.include?("#define BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page 1\n"))
+    check.call('an open world, shipped pass: same_route? is emitted and not marked skipped',
+               code.match?(/^(?:static )?mrb_value Game__MoveRoute_singleton_same_route\$3f_impl\(mrb_state\* M/) &&
+                 !code.include?('BC2CPP_SKIPPED_Game__MoveRoute_singleton_same_route'))
+  end
   hot_path = wiring.fetch('hot')
   hot = File.readlines(hot_path, chomp: true)
   METHODS.each do |owner, names|

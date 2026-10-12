@@ -6168,6 +6168,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // hot-only build (wio, psp, maix) lists none of these methods in
   // tools/bc2cpp/hot_methods.txt, so it compiles none of them and emits no
   // code for these owners at all.
+  //
+  // MoveRoute.from_page is further conditional inside a full build: its bare
+  // `new(..., repeat:, skippable:)` is compiled only when the closed world
+  // proves Game::MoveRoute has no descendants (KEYWORD_IMPLICIT_NEW), and the
+  // desktop build is not a closed world. There the generator refuses the
+  // method (it stays bytecode) and defines BC2CPP_SKIPPED_<entry>, so the
+  // registration follows what was emitted.
   RClass* common_event = mrb_module_get_under(M, game, "CommonEvent");
 
   mrb_define_class_method(M, common_event, "load",
@@ -6175,8 +6182,10 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, common_event, "eligible",
                           Game__CommonEvent_singleton_eligible,
                           MRB_ARGS_REQ(2));
+#ifndef BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page
   mrb_define_class_method(M, move_route, "from_page",
                           Game__MoveRoute_singleton_from_page, MRB_ARGS_REQ(1));
+#endif
   mrb_define_class_method(M, move_route, "same_route?",
                           Game__MoveRoute_singleton_same_route$3f,
                           MRB_ARGS_REQ(2));

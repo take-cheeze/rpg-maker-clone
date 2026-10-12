@@ -31,6 +31,12 @@ The owners list is the only thing keeping the first two from binding, and `regis
    (`tools/bc2cpp/compiled_gems.rb`), and the four methods are registered by hand next to `Game::Backdrop.singleton`,
    inside the full-build region (`load`, `eligible`, `from_page`, `same_route?`). Neither is a wired embedding: a
    `.singleton` owner never embeds.
+   `from_page` is registered only when the generator emitted it. The desktop build is a full build but not a closed
+   world, so KEYWORD_IMPLICIT_NEW (item 2) refuses it there and `SKIP_UNSUPPORTED` drops it (it stays bytecode); a hand
+   registration that named `Game__MoveRoute_singleton_from_page` was an undeclared identifier in that build (CI
+   `bc2cpp-build`). The generator now writes `#define BC2CPP_SKIPPED_<entry> 1` for every entry it dropped, and
+   `register.cxx` wraps the `from_page` registration in `#ifndef BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page`.
+   `load`, `eligible` and `same_route?` compile in every world and need no guard.
 2. KEYWORD_IMPLICIT_NEW. `compile_keyword_direct_construct` accepts an implicit-self `new(a, k: v)` when
    `implicit_singleton_self_class` names the class (the same evidence the positional path uses: the registry's
    `X.singleton` owner, emitted by this build) **and** the closed world proves the class has no descendants
