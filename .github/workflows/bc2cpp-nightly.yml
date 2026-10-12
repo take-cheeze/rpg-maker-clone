@@ -399,7 +399,7 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_singleton_check.rb
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_singleton_mutation_check.rb
           - shard: rpg2k-singleton-owners
-            # ADR 0422: the real Game::CommonEvent / Game::MoveRoute class methods in a fixture (generated code for the
+            # ADR 0426: the real Game::CommonEvent / Game::MoveRoute class methods in a fixture (generated code for the
             # base world and three withdrawal worlds, the owners/register/hot-only wiring, the interpreted-versus-
             # compiled run), then 11 mutants and an unmutated control through the shared pool.
             checks: |

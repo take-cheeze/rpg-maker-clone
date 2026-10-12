@@ -91,8 +91,8 @@ Measured on the wio closed world's shipped pass (SKIP_UNSUPPORTED=1, the second 
 extra `mrb_funcall*` are the helper's own text (it calls `mrb_funcall_with_method`). The earlier figure of 13 bound sites,
 taken before the last two proof relaxations from a partial run, is superseded by this table.
 
-Not done: Ruby-defined core singletons (`File.open` / `IO.open`: ADR 0422 lists exactly what is missing, with an estimate),
+Not done: Ruby-defined core singletons (`File.open` / `IO.open`: ADR 0426 lists exactly what is missing, with an estimate),
 scoped natives unknown to ConstructClassNames, and a rooted `::File`. (`Game::CommonEvent.singleton` and
-`Game::MoveRoute.singleton` are emitted, and a keyword `new` in a class method compiles, by ADR 0422.) A cached slot is not
+`Game::MoveRoute.singleton` are emitted, and a keyword `new` in a class method compiles, by ADR 0426.) A cached slot is not
 revalidated against a later redefinition; the closed-world proof (no installer anywhere) is what rules that out, as for the
 other direct arms.
