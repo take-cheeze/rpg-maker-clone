@@ -112,6 +112,48 @@ rely on the measurement: the server runs no generation, so no child starts from 
 Pre-existing failure: `scripts/bc2cpp/nested_compile_state_check.rb` fails one assertion (three `CodeGen` ivars are not
 classified). It fails the same way against origin/master's tool, so it is not caused by this change.
 
+### Nightly `fast` shard (2026-10-12)
+
+The `fast` shard has 109 commands. Thirty use `Bc2cppFixtureRuntime`, and with the flag off those checks made 204 of
+the shard's 679 `bc2cpp.rb` runs (the rest are mutant pools and direct tool runs, which the flag does not change).
+Replays of the shard's commands ran on this sandbox, with `LANG=C.UTF-8` (the step's locale), the same environment,
+the scan cache on in both modes, and two modes started together so both saw the same load (load average 4 to 10 on
+4 cores, shared with other agents).
+
+* Flag on for every command: exit status equal for all 109; stdout and stderr differed for three checks that run a
+  mutant copy of the tool (`tuple_return_mutation_check`, `integer_tag_else_check`, `block_direct_mutation_check`).
+  The server loads the copy itself, so it adds a constant warning and prints a load error from its own frames.
+  Those three are opted out (`BC2CPP_WARM_GENERATOR=0`) in the change below.
+* Final configuration (flag on except those three) against the flag-off run: exit status equal for all 109, 102 pass
+  and 7 fail in both (the same seven: sandbox failures such as `nested_compile_state_check`, which fails on master
+  too). stdout and stderr identical after normalizing the per-run temp directory names, except the random `--seed` and
+  timing lines of two Minitest checks, which differ between any two runs.
+* Wall time: the final configuration against the flag-off run, run together: shard 1676 s against 1675 s; the
+  fixture-runtime commands 370 s against 369 s (-0.5%). The first pair (flag on for everything) gave 1611 s against
+  1679 s, and 394 s against 437 s for the fixture commands (+9.8%). The gain does not reproduce on this box, so it is
+  not claimed. A likely cause: the nightly already keeps the ADR 0415 disk scan cache, which absorbs most of the scan
+  cost the memo saves, and each fixture check pays one server boot (2.8 s above).
+
+Leak analysis (ADR table, plus what the replay found):
+
+* Reversed-order switches. `CodeGen.build_gem_names`, `native_source_paths`, `hot_only_excluded` and
+  `wired_embeddings` are set only in the main block of `bc2cpp.rb` (lines 156 to 1758, `if $PROGRAM_NAME == __FILE__`),
+  so only a generation process can set them. No process runs two generations in either mode: flag off, each run is a
+  new `Open3.capture3` process; flag on, each run is a fork of a server that runs none. A check that runs closed-world
+  and then open-world generations (`numeric_slow_check.rb`, for one) therefore gives each generation a fresh state.
+* Not in the ADR table: `SourceText`'s once-per-process missing-path set (`tools/bc2cpp/source_text.rb`). The server's
+  warm scans can add to it, and the server prints the warning once instead of per child. Not reached here: all 83
+  native and 41 foreign paths the warm scans read exist in this checkout.
+* Not in the ADR table: the server's stderr is not captured by the check. Warnings printed when the server requires
+  the tool reach the check's stderr directly; this is the mutant-copy case above.
+* Server lifetime. A normal check exit leaves no server. `kill -9` of a check leaves its server gone about 3 s later
+  (EOF on the server's stdin). No cleanup step is needed.
+* `scripts/bc2cpp/warm_generator_check.rb` fails one assertion in this checkout, "the report written from an at_exit
+  hook is non-empty". The report is 0 bytes in subprocess mode too, so the failure does not depend on the flag.
+
+Status stays Proposed. The identity holds on the nightly shard, but one shared box shows no reproducible speedup and
+the prototype's own check fails here; the nightly run is the test that decides whether to keep it.
+
 ## Consequences
 
 * A fixture check that opts in pays the server's boot (`require` plus the warm scans) once per check process, then
@@ -125,5 +167,9 @@ classified). It fails the same way against origin/master's tool, so it is not ca
   ADR 0415 does not apply to it.
 * Not done: the stateful scans (`scan_native`, `native_scan`, `NativeDirect`) are still computed per child. The
   `NativeDirect` memo keyed by path is the one that would need a content key before it could be shared.
-* Not done: CI wiring. The check is not in `ruby-checks`, and the nightly workflow does not set the variable.
+* Nightly: the `fast` shard sets `BC2CPP_WARM_GENERATOR=1` (an `export` at the top of its checks) and sets `=0` on the
+  three mutant-copy commands above. The PR gate and the other shards do not set it, and
+  `scripts/bc2cpp/warm_generator_check.rb` is still not in `ruby-checks`.
+* Keep or revert: the identity result holds, but the speedup is not measured on this box. If the nightly `fast` timing
+  does not show a gain, revert the workflow lines; the module stays opt-in.
 * Follow-up if the PR merges: decide whether to run the server per check process (as here) or one per job.
