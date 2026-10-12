@@ -119,8 +119,11 @@ check and `rescue_shadow`). Timings come from the "Check timings" job summary.
 ### Width shards
 
 The `int32` variant is split into `int32-a` and `int32-b` (both build the same
-32-bit libmruby via the matrix `build:` field) so its 40 minute run no longer
-sets the workflow's wall clock. Add new 32-bit legs to whichever is shorter.
+32-bit libmruby via the matrix `build:` field). Once that libmruby is built, each
+leg runs its checks in a `ci:parallel` group of three, since they only read it:
+`int32-a` took 45.8 minutes serially and 18.1 in the group (local 4-core run,
+docs/bc2cpp-ci-duration-profile.md). Add new 32-bit legs to whichever is shorter,
+and keep them out of a group if they build a libmruby of their own.
 
 ### Check shards
 
@@ -168,7 +171,9 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 | `setter-pools` | `setter_pools` (the native store audit, generated code with the withdrawal worlds and three kill switches, a full-core run interpreted against compiled including the loud outside-setter and composed-name failures) and `aliased_names` (ADR 0370; its mutation check, eleven mutants: `setter_pools_mutation_check`) | est. 6 min |
 | `type-check` | `type_check` (ADR 0412: the report front-end on a hand-written facts file, then fixture analyses: contradictions with exact text and file:line, ignored annotation tokens, inferred types and reason buckets, the by-name send ranking, byte-identical C++ with the facts on) and its mutation check, 18 mutants (11 front-end mutants need no mruby build) | est. 10 min |
 | `entry-specialize` | `entry_specialize` (ADR 0380: generated code with the gate off and on, the identity clone, the refused shapes and worlds; a full-core run of every guard hit and miss against the interpreter) and its mutation check, 16 mutants | est. 8 min |
-| `call-facts` | `call_facts` (generated code with ten withdrawal worlds, full-core and core-only runs) and its mutation check, 10 mutants plus a control (ADR 0317), `block_send_report` (ADR 0325, generated code only, 15 s), `dead_arm_report` (ADR 0330, generated code only, 15 s), `receiver_proof_report` (ADR 0331, generated code only, 30 s), `native_ivar_scopes` (ADR 0332, source audit, withdrawal worlds, full-core/core-only parity for Window/Sprite/Plane/Tilemap and subclasses, eleven mutants plus a control, including bitmap setter families in ADR 0337), `native_setter_report` (ADR 0337, byte-identical code, input masks, mentions and incomplete caller coverage), `native_class_results` (ADR 0333, pinned-source audit, mixed Ruby/native returns, withdrawal worlds, full-core/core-only parity, eight mutants plus a control), and `native_string_results` (ADR 0334, linked native and Struct alias audits, generated withdrawal cases, full-core/core-only parity and ten mutants plus a control), and `native_collection_results` (ADR 0335, copy/collection source and helper audits, override withdrawal, full-core/core-only parity and seven mutants plus a control), and `native_array_transforms` (ADR 0336, name-wide allocation contracts, File.join subclass boundary, source/helper audits, full-core parity and seven mutants plus a control), and `core_ruby_results` (ADR 0338, actual core bytecode, aliases, block exit/override/captured-write refusals, full-core parity and ten mutants plus a control); the 32-bit runs are in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 16 min |
+| `call-facts` | the non-mutation checks, with the first command (`call_facts`: generated code with ten withdrawal worlds, full-core and core-only runs, ADR 0317) alone because it builds `BC2CPP_FULL_BUILD_DIR`, then the rest as one `ci:parallel` group of three: `block_send_report` (ADR 0325, generated code only, 15 s), `dead_arm_report` (ADR 0330, generated code only, 15 s), `receiver_proof_report` (ADR 0331, generated code only, 30 s), `native_ivar_scopes` (ADR 0332, source audit, withdrawal worlds, full-core/core-only parity for Window/Sprite/Plane/Tilemap and subclasses, ADR 0337 bitmap setter families), `native_setter_report` (ADR 0337, byte-identical code, input masks, mentions and incomplete caller coverage), `native_class_results` (ADR 0333, pinned-source audit, mixed Ruby/native returns, withdrawal worlds, full-core/core-only parity), `native_string_results` (ADR 0334, linked native and Struct alias audits, generated withdrawal cases, full-core/core-only parity), `native_collection_results` (ADR 0335, copy/collection source and helper audits, override withdrawal, full-core/core-only parity), `native_array_transforms` (ADR 0336, name-wide allocation contracts, File.join subclass boundary, source/helper audits, full-core parity), `core_ruby_results` (ADR 0338, actual core bytecode, aliases, block exit/override/captured-write refusals, full-core parity), `enumerator_wrappers` (ADR 0350), `core_compiled_cmp` (ADR 0371) and `zero_direct` (ADR 0374); the mutation checks are in `call-facts-mutants-a` and `call-facts-mutants-b`; the 32-bit runs are in `bc2cpp-width (int32-a)` or `(int32-b)` | see the timing table (about 1988 s of commands in sequence on 4 cores, less through the group) |
+| `call-facts-mutants-a` | the mutation checks `core_ruby_results` (ten mutants plus a control, ADR 0338; 572 s), `call_facts` (ten mutants plus a control, ADR 0317; 382 s, builds its mutant trees in `.mutants/`), `native_collection_results` (seven mutants plus a control, ADR 0335; 49 s) and `enumerator_wrappers` (ADR 0350; 10 s), run one after another | about 17 min (1013 s on 4 cores) |
+| `call-facts-mutants-b` | the mutation checks `native_string_results` (ten mutants plus a control, ADR 0334; 190 s), `zero_direct` (ADR 0374; 164 s), `native_class_results` (eight mutants plus a control, ADR 0333; 134 s), `core_compiled_cmp` (four mutants, ADR 0371; 114 s), `native_ivar_scopes` (eleven mutants plus a control, ADR 0332/0337; 107 s) and `native_array_transforms` (seven mutants plus a control, ADR 0336; 98 s), run one after another | about 13 min (806 s on 4 cores) |
 | `class-narrowing` | `class_narrowing` (generated code for every narrowing form, the negatives and twenty-one withdrawal worlds, full-core and core-only runs, the rogue-subclass guard violation) and its mutation check (ADR 0375); the 32-bit run is in `bc2cpp-width (int32-a)` | est. 14 min |
 | `ext-prefix` | `ext_prefix` (decoder cases, folded listing, generated code with the kill switch, full-core and core-only runs) and its mutation check, 8 mutants plus a control (ADR 0320); the 32-bit run is in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 12 min |
 | `integer-constants` | `integer_constants` (unit cases for the native-definition scan and the jump onto a SETCONST, generated code, full-core and core-only runs) and its mutation check, 8 mutants plus a control (ADR 0324); the 32-bit run is in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 8 min |
@@ -367,16 +372,26 @@ order after the group, so a failing command's output is shown in full and the ot
 (`::group::`). The step fails with the first failed command's status, after the rest of the group
 has finished; the commands after a failed group do not run.
 
-What may go in a group: commands that share no build state. Anything that passes
-`BC2CPP_FULL_BUILD_DIR` (or builds the full-core mruby) stays outside, because two of them would
-build the same directory at once. The mutant pool already uses the cores, so a group is for
-shards made of single-process scripts. A group adds CPU and memory load, so keep N at 3 on the
-4-vCPU runner: `embedded_ivar_access_check` alone uses about 2.5 cores.
+What may go in a group: commands that share no build state. A command that *builds* the
+full-core mruby into `BC2CPP_FULL_BUILD_DIR` stays outside the group and runs first, alone, because
+two builders would race on one directory. A command after it only reads that build
+(`full_or_build` returns an existing `lib/libmruby.a` before it writes anything), so the rest may
+share it in a group. The four mutation checks that build their mutant trees in the repository's
+`.mutants/` directory (`call_facts_mutation`, `class_narrowing_mutation`, `native_arm_cover_mutation`,
+`native_class_arms_mutation`) must not run side by side: each removes `.mutants/` when it finds it
+empty, so one can delete the directory under another. The mutant pool already uses the cores, so a
+group is for shards made of single-process scripts. A group adds CPU and memory load, so keep N at 3
+on the 4-vCPU runner: `embedded_ivar_access_check` alone uses about 2.5 cores.
 
-Measured on a 4-core machine for the `registrations` shard (the one shard that uses it so
-far): its four scripts took 211 s in sequence and 118 s through a group, the longest single
-script. The timing table's `total` is the sum of the command times, so for a group it is more than the
-wall time of the step.
+Groups in use: `registrations`, both width legs, and `call-facts` (its first command builds the
+full core, the rest of the non-mutation checks run as a group). The ten `call-facts` mutation checks are not in
+a group: they are split over the shards `call-facts-mutants-a` and `call-facts-mutants-b` and run in sequence,
+because each already runs a four-wide mutant pool and `call_facts_mutation` is the only one of them that uses
+`.mutants/`. Measured on a 4-core machine for the `registrations` shard:
+its four scripts took 211 s in sequence and 118 s through a group, the longest single script. The
+width leg `int32-a` took 2749 s in sequence and 1085 s in a group (same 1329 passing checks). The
+timing table's `total` is the sum of the command times, so for a group it is more than the wall
+time of the step. docs/bc2cpp-ci-duration-profile.md has the measurements.
 
 ### Width builds (ADR 0300)
 
