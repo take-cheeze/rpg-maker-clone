@@ -74,6 +74,28 @@ no environment variable, (3) it has no side effect, including a warning on succe
 data that Marshal can dump. The three scans were read for these four points: none uses `ENV`, none reads a file
 outside its list, and each returns plain data (Hashes, Arrays, Sets, Strings, Symbols, Integers).
 
+The stateful scans follow the same rule by splitting each into two parts. The scan itself is a function of its
+inputs and returns plain facts; the caller replays them into its own state, in the same order. The three routed
+this way:
+
+* `ClosedWorld#scan_native` is now `ClosedWorld.native_facts(paths)` (one Hash per native source: its tokens,
+  name and literal sets, constant writes, refusal reasons in order, touch facts) plus `apply_native_file`, which
+  writes the closed world's ivars. The touch classification (`TouchScan.native_classify`) depends on the declared
+  class names, which are not files, so it runs at replay and is not in the key; the text-reading part of
+  `TouchScan.native` (the events and the local `mrb_sym` values they name) is the part in the key.
+* `NativeExpressionDevirt.class_registrations` (what `CallFacts::Answers#native_scan` reads) stores the plain form
+  of `scan_class_registrations`' two maps. Its callers get them back with the access-creates-empty defaults the
+  scan always had, so `scan_class_registrations` itself is unchanged.
+* `NativeDirect.file_registrations` is keyed by its file and every `*.cxx` beside it, since the parameter owners
+  it resolves come from those siblings. Its per-process memo stays in `NativeDirect`.
+
+Checked against the four points, for each of the three: (1) holds, the scan reads its listed files and nothing
+else; the `ClosedWorld` replay is the only part that writes state and it is not cached. (2) holds, none reads
+`ENV`. (3) holds for the scan: no ivar writes, no warnings. The `ClosedWorld` replay and the `NativeDirect` memo
+write state by design, outside the cached part. (4) holds for the stored value: no default procs, no objects of
+our own classes. Not satisfied: nothing. `scan_class_registrations` still returns hashes with default procs, so
+`class_registrations` converts them for storage; that conversion is the only thing between the scan and the cache.
+
 ## Consequences
 
 * A warm one-method call takes 2.7 s against 3.55 s with the cache off (-25%), with identical C++; cold costs
@@ -93,5 +115,11 @@ outside its list, and each returns plain data (Hashes, Arrays, Sets, Strings, Sy
 * The cache is not saved between jobs (`actions/cache`): every job starts cold, which keeps a stale entry from
   surviving anything that the key does not cover. The key would allow it, since it holds the checkout's absolute
   paths and content digests only; it is a possible follow-up if the first call of each job is worth saving.
-* Follow-ups, in order of expected value: make the stateful scans (`scan_native`, `native_scan`, `NativeDirect`)
-  return values so they can use the cache too (about 20% more of a call); and the warm-process alternative above.
+* The stateful scans now return values and use the cache (the section above). One-method call, medians of five
+  interleaved runs (committed tool, then this change, per mode) on a 4-core box shared with other jobs (load 19 to
+  22, so well above the quiet-box numbers above): warm 4.00 s to 2.88 s (-28%); cache off 5.64 s to 5.86 s (+4%);
+  cold 5.21 s to 5.69 s (+9%). The warm gain is the scans now loaded; the off and cold cost is the facts being
+  built and replayed in order, which the cache-off path now also does. Reducing that replay is a possible follow-up.
+  The generated C++ is identical in all three modes (see the pull request).
+* Follow-ups, in order of expected value: the warm-process alternative above, and saving the cache between jobs
+  (see the bullet above it).

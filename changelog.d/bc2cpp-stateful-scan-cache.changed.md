@@ -1,0 +1,1 @@
+- bc2cpp's stateful native scans (the closed world's native facts, the class registrations and the per-file `NativeDirect` registrations) now return plain data, so they use the scan cache too (`BC2CPP_SCAN_CACHE_DIR`, ADR 0415). The generated C++ is unchanged.
