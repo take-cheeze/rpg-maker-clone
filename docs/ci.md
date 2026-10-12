@@ -1,9 +1,11 @@
 # Continuous integration
 
-[`.github/workflows/build.yml`](../.github/workflows/build.yml) is the one CI
+[`.github/workflows/build.yml`](../.github/workflows/build.yml) is the CI
 workflow. It runs on pull requests to `master`, pushes to `master`, merge-queue
-runs, manual dispatch, a nightly schedule (the long bc2cpp jobs only) and (for the
-Cloudflare preview only) `/preview` comments.
+runs, manual dispatch and (for the Cloudflare preview only) `/preview` comments.
+The long bc2cpp jobs are in their own workflow,
+[`.github/workflows/bc2cpp-nightly.yml`](../.github/workflows/bc2cpp-nightly.yml),
+which runs once a day and on demand ("Nightly bc2cpp" below).
 Deployment is covered in [deploy.md](deploy.md).
 
 ## Native SDL probes
@@ -16,28 +18,25 @@ continue to select their backend through SDL's usual configuration.
 
 ## bc2cpp gate
 
-The status check `bc2cpp` is the aggregate of `bc2cpp-build`, every
-`bc2cpp-checks (<shard>)` and every `bc2cpp-width (<variant>)` job. Require
-`bc2cpp` rather than the individual shards, so adding a shard needs no settings
-change.
+The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` (skipped on purpose for
+a docs-only change). Every `bc2cpp-checks (<shard>)` and `bc2cpp-width (<variant>)` job is in
+`bc2cpp-nightly.yml` and is not part of this check. Require `bc2cpp` and nothing
+from the nightly workflow: those jobs do not run on a pull request.
 
 ### Nightly bc2cpp
 
-A pull request or a push runs only `bc2cpp-build` of the bc2cpp group. The long jobs, every
-`bc2cpp-checks (<shard>)` and `bc2cpp-width (<variant>)`, run once a day (cron `23 17 * * *`, UTC, on the
-default branch) and on a manual `workflow_dispatch`. The `changes` job's `scope` step decides this and
-publishes two outputs: `bc2cpp_build` (true when the `code` filter matched, or on a nightly or manual run) and
-`bc2cpp_full` (true only on a nightly or manual run). The aggregate `bc2cpp` job accepts a job that is outside
-its scope being skipped, and fails on a skipped job that is in scope, so a nightly run that skips a shard is red.
+A pull request or a push runs only `bc2cpp-build`. The long jobs, the `bc2cpp-checks` shard matrix and the
+`bc2cpp-width` build, are in `.github/workflows/bc2cpp-nightly.yml`, which runs on a daily schedule
+(cron `23 17 * * *`, UTC, on the default branch) and on **Run workflow** (`workflow_dispatch`, pick the
+branch). Nightly and manual runs are not pull requests, so they run the mutation checks and the
+optcarrot benchmark too, and the nightly run (default branch) is the only one allowed to write the
+sccache.
 
-Every other job opts out of the `schedule` trigger, so the nightly run is the bc2cpp group and nothing else.
-Nightly runs are not pull requests, so they run the mutation checks and the optcarrot benchmark too.
-
-What this gives up: a pull request is no longer checked by the long shards before merge, and neither is a push to
-`master` or a merge-queue run. A regression shows up in the next nightly run (look at the Actions tab, or the
-failure email GitHub sends for a scheduled run). To check a branch earlier, run **Run workflow** on it from the
-Actions tab (`workflow_dispatch` runs everything). To make a merge-queue run check everything again, add
-`merge_group` to the first branch of the `case` in the `scope` step.
+What this gives up: a pull request, a push to `master` and a merge-queue run are no longer checked by
+the long shards before merge. A regression shows up in the next nightly run, as a failed run in the
+Actions tab (GitHub also emails a failed scheduled run). To check a branch earlier, run the nightly
+workflow on it. Nothing in that workflow is a required status check, so a red nightly run does not
+block a merge.
 
 ### Superseded runs
 
@@ -48,13 +47,12 @@ and are never cancelled.
 
 ### Mutation checks run off pull requests
 
-On `pull_request` runs the `bc2cpp-checks` job sets `CI_SKIP_MUTANTS=1`, and
-`scripts/ci/timed_checks.rb` then drops every `*_mutation_check.rb` command and
-strips `*_MUTANTS=1` switches, so each shard keeps its fixture checks but not the
-mutant rebuilds. Only the nightly run and a manual dispatch run the shards at all now
-("Nightly bc2cpp" above), and they run the mutants too. Timing estimates in the shard
-table include the mutants and apply to those runs. To run them on a PR, use
-`workflow_dispatch` on its branch.
+`scripts/ci/timed_checks.rb` drops every `*_mutation_check.rb` command and strips
+`*_MUTANTS=1` switches when `CI_SKIP_MUTANTS=1`, so a run keeps each shard's fixture
+checks but not the mutant rebuilds. The shard jobs ran with that set on pull
+requests; now that they run only in `bc2cpp-nightly.yml` ("Nightly bc2cpp" above),
+nothing sets it and every nightly or manual run includes the mutants. The timing
+estimates in the shard table include them.
 
 ### Splitting long shards
 
@@ -71,10 +69,9 @@ sets the workflow's wall clock. Add new 32-bit legs to whichever is shorter.
 
 ### Check shards
 
-`bc2cpp-checks` is a matrix; each shard is its own job with a 45 minute
-timeout, and the aggregate gates on the matrix as a whole
-(`needs: bc2cpp-checks`), so renaming or adding a shard touches neither the
-aggregate nor branch protection. Every check is listed in exactly one shard.
+`bc2cpp-checks` (in `bc2cpp-nightly.yml`) is a matrix; each shard is its own job with a 45 minute
+timeout, and no other job or setting names a shard, so renaming or adding one touches
+neither the `bc2cpp` check nor branch protection. Every check is listed in exactly one shard.
 Keep each shard under about 25 minutes so one more check does not reach the
 timeout; raise the timeout only as a last resort.
 

@@ -1,0 +1,696 @@
+# The long bc2cpp jobs: every `bc2cpp-checks (<shard>)` and `bc2cpp-width (<variant>)`. The longest shards
+# take about half an hour and the whole set about five hours of runner time, so a pull request or a push does not
+# run them (`build.yml` runs `bc2cpp-build` only); they run here once a day, and on demand from the Actions
+# tab ("Run workflow", pick the branch). See docs/ci.md, "Nightly bc2cpp".
+#
+# Scheduled runs use the default branch, and the time is UTC. Nothing here is a required status check, so a
+# red run does not block a merge; it shows up as a failed run (GitHub also emails a failed scheduled run).
+name: bc2cpp nightly
+
+on:
+  schedule:
+    - cron: '23 17 * * *'
+  workflow_dispatch:
+
+jobs:
+  bc2cpp-checks:
+    name: bc2cpp-checks (${{ matrix.shard }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    # Shards are balanced by measured cost (ADR 0228), not by count. Every
+    # check that used to run in the single `bc2cpp` job is listed exactly once;
+    # keep it that way when adding one (put a fast check in `fast`).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: static-dispatch
+            checks: |
+              # Re-proves every STATIC_DISPATCH_UNREGISTERED name (docs/adr/0203):
+              # a new dynamic reference to one is a NoMethodError, so it fails here.
+              MRBC="$mrbc" ruby scripts/bc2cpp/static_dispatch_check.rb
+          - shard: wired-embedding
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp/wired_embedding_check.rb
+          - shard: hot-only
+            # HOT_ONLY (ADR 0214) is no longer checked in CI; scripts/bc2cpp/hot_only_check.rb
+            # still runs by hand. This shard keeps the dead-fallback gate (ADR 0226).
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp/nomethod_reviewed_check.rb
+          - shard: hot-proven-miss
+            # Split from hot-only: each of the two reviewed-set checks takes ~15 min.
+            checks: |
+              # PROVEN_MISS_REVIEWED (docs/adr/0275): a send to a proven class nothing answers.
+              MRBC="$mrbc" ruby scripts/bc2cpp/proven_miss_check.rb
+          - shard: registrations
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/embedded_ivar_access_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/fixnum_nil_ivar_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/typed_slot_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/never_called_registrations_check.rb
+          - shard: core-mrbtest
+            # Interpreter-vs-compiled fixtures and mruby's own suites (~25 min; the full-core numeric checks are in `full-core-numeric` and `numeric-direct`).
+            checks: |
+              # Literal-block arms into the compiled core (docs/adr/0270): a closed-world fixture compiled
+              # with the core, against the interpreter; two more mruby builds.
+              BC2CPP_BLOCK_DIRECT_DIR="$RUNNER_TEMP/bc2cpp-block-direct" MRBC="$mrbc" ruby scripts/bc2cpp/block_core_direct_check.rb
+              # Yield-free proof (docs/adr/0283): blocks and core iterator bodies that cannot suspend a
+              # Fiber stay compiled under one, and every method a Fiber reaches that may yield is refused;
+              # compiled against the interpreter on the interpreted mruby build of the check above.
+              BC2CPP_YIELD_FREE_MRUBY="$RUNNER_TEMP/bc2cpp-block-direct/interpreted/host" MRBC="$mrbc" ruby scripts/bc2cpp/yield_free_check.rb
+              # Unguarded exact-receiver proofs for those arms and the native ones (docs/adr/0280): generated
+              # code, then a compiled fixture against the interpreter (Fibers, break/next/return, raise).
+              MRBC="$mrbc" ruby scripts/bc2cpp/exact_receiver_check.rb
+              # ADR 0359: the same proofs inside compiled core bodies are checked at run time (class test, else
+              # bc2cpp_guard_violation); generated code, an honouring and a violated fixture, and the audit of
+              # mruby's own Ruby for singleton-making constructs that the proof's world scan skips.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/core_body_exact_check.rb
+              ruby scripts/bc2cpp/core_singleton_audit.rb
+              # ADR 0381: `self` inside a compiled Array/Hash/String/Range body is that exact class when the program
+              # has no subclass of it; the same class test and violation else as ADR 0359, with a late subclass.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/core_self_exact_check.rb
+              # Return-class table and the guard-free TYPED call (docs/adr/0289): generated code with every
+              # way of losing the proof, then a compiled fixture against the interpreter.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/return_class_check.rb
+              BC2CPP_READONLY_CALL_EFFECTS=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/return_class_check.rb
+              # ADRs 0351/0353/0355: call-context receiver results and their proof-condition mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/call_context_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/call_context_results_mutation_check.rb
+              ruby scripts/bc2cpp/context_arguments_check.rb
+              ruby scripts/bc2cpp/context_arguments_mutation_check.rb
+              # ADR 0354: fresh literal element parity and six withdrawal mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/literal_element_check.rb
+              BC2CPP_LITERAL_ELEMENT_PROOF=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/literal_element_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/literal_element_mutation_check.rb
+              # ADR 0356: readonly Ruby call effects, parity and thirteen proof-condition mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/readonly_call_effects_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/readonly_call_effects_mutation_check.rb
+              # ADR 0357: exact Integer conversion parity and nine condition mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/numeric_native_direct_check.rb
+              BC2CPP_NUMERIC_NATIVE_DIRECT=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/numeric_native_direct_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/numeric_native_direct_mutation_check.rb
+              # ADR 0352: agreeing user receiver families and ten condition mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/user_receiver_unions_check.rb
+              BC2CPP_USER_RECEIVER_UNIONS=0 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/user_receiver_unions_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/user_receiver_unions_mutation_check.rb
+              # ADR 0398: a send in an inlined loop body takes its flow position (proven, refused and switch-off worlds).
+              MRBC="$mrbc" ruby scripts/bc2cpp/loop_flow_position_check.rb
+              # ADR 0358: the Fixnum proof on a NATIVE_DIRECT_EXACT arm's :int argument, and six mutants.
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_int_guard_check.rb
+              BC2CPP_NATIVE_INT_GUARDS=0 MRBC="$mrbc" ruby scripts/bc2cpp/native_int_guard_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_int_guard_mutation_check.rb
+              # Inlined Integer#step/upto/downto loops (docs/adr/0273) against the interpreter; builds
+              # a full-core mruby once into BC2CPP_FULL_BUILD_DIR.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/step_inline_check.rb
+              # ADR 0376: block loops inside a rescue range are inlined into the try function, and a
+              # multi-parameter #each spreads its Array rows; against the interpreter on the full-core build.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/rescue_inline_block_check.rb
+              # ADR 0391: Array.new(n) { } as an inlined loop, and Profiler section/frame inlining inside rescue
+              # ranges and beside same-named Ruby methods; against the interpreter on the full-core build.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/array_new_block_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/profiler_scope_check.rb
+              # ADR 0288: class-body define_method(:name) { } as an ordinary definition.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/define_method_sites_check.rb
+              # ADR 0304: attr_* installed by a constant-driven loop, against CRuby and the interpreter;
+              # the mutation check breaks one soundness condition at a time.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/loop_installers_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/loop_installers_mutation_check.rb
+              # Resumable Fiber roots (docs/adr/0273): step functions over a heap frame against the
+              # interpreter, with an incremental-GC-stress pass; reuses the build above.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/resumable_check.rb
+              # Shared explicit-receiver puts (docs/adr/0284) against the interpreter: a redirected
+              # $stdout/$stderr, eval, an IO#puts override; reuses the build above.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/io_puts_model_check.rb
+              # ADR 0279: the fixnum-overflow boundary matrix against the interpreter, on the full-core build above.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/fixnum_overflow_check.rb
+              # mruby's own suites (rake test) on a full-core host build, interpreted and with the
+              # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
+              ruby scripts/bc2cpp/core_mrbtest.rb
+          - shard: full-core-numeric
+            # Runs numeric_slow, the one long check in this group, with the cheap index check; the other full-core
+            # numeric checks are in `numeric-direct`, so this shard's wall clock is set by numeric_slow alone.
+            checks: |
+              # ADR 0292: the numeric slow-path helpers against the interpreter over a
+              # Fixnum/bigint/Float/nil/String/user-class operand matrix; on the full-core build.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/numeric_slow_check.rb
+              # ADR 0365: the index helpers bc2cpp_getidx/getidx0/setidx without their by-name tail, each run against
+              # the real `[]` / `[]=` over a receiver and key matrix (the 32-bit and no-bigint legs are in bc2cpp-width).
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/index_closed_check.rb
+          - shard: numeric-direct
+            # Split from full-core-numeric, which runs numeric_slow: the direct-dispatch and destructured-return checks
+            # against the interpreter, on one full-core build.
+            checks: |
+              # ADR 0293: direct === / is_a? / kind_of? against the interpreter, on the full-core build.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/eqq_direct_check.rb
+              # ADR 0311: destructured fixed-arity Array returns; the full-core run (the core-only run is in `fast`).
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/tuple_return_check.rb
+          - shard: core-flow
+            # ADR 0301 exact-receiver flow. Its five mutants and the ADR 0303 computed-send check run in `core-flow-mutants`.
+            checks: |
+              # ADR 0301: the exact receiver reaching every arm wrapper, and constant class pools; generated
+              # code, then a compiled fixture against the interpreter on the full-core and core-only builds.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/exact_receiver_flow_check.rb
+          - shard: core-flow-mutants
+            # Split from core-flow: the exact-receiver flow mutants and the computed-send check with its mutants.
+            checks: |
+              # ADR 0398: the loop-flow position check's four mutants (one guard removed or a wrong position read).
+              LFP_MUTANTS=1 MRBC="$mrbc" ruby scripts/bc2cpp/loop_flow_position_check.rb
+              # ADR 0301: five mutants of the soundness conditions of the exact-receiver flow check.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/exact_receiver_flow_mutation_check.rb
+              # ADR 0303: a computed-name send over a provably finite Symbol set becomes direct arms; negative
+              # worlds, the interpreter on full-core and core-only builds, and one proof removed at a time.
+              CSEND_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/computed_send_check.rb
+          - shard: core-tables
+            # bc2cpp_frozen_tables_check plus its mutation check (ADR 0306), split from core-flow to keep each shard short.
+            checks: |
+              # ADR 0306: element classes of frozen literal tables; generated code, the interpreter on three builds, mutants.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/frozen_tables_check.rb
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/frozen_tables_mutation_check.rb
+          - shard: call-results
+            # ADR 0309: attr_reader result classes and flow-proven Array arms; its own shard (about 15 min with the mutants).
+            checks: |
+              # Generated code with every way of losing a proof, then a compiled fixture against the interpreter on the
+              # full-core and core-only builds (the 32-bit leg runs in bc2cpp-width); six mutants of the conditions.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/call_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/call_results_mutation_check.rb
+          - shard: native-wrappers
+            # ADR 0307: generated code, then a compiled fixture against the interpreter on the full-core and
+            # core-only builds (the stand-in rgss:: bodies need no SDL); eight mutants run concurrently, about a minute and a half.
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/exact_native_wrappers_check.rb
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/exact_native_wrappers_mutation_check.rb
+              # ADR 0372: the native-parameter audit, generated code and a compiled fixture against the interpreter
+              # (64-bit mrb_int, bigints on; the 32-bit run is in the width job).
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" BC2CPP_CXXFLAGS="-DMRB_USE_BIGINT" MRBC="$mrbc" ruby scripts/bc2cpp/native_param_unbox_check.rb
+          - shard: core-mutants
+            # bc2cpp_unlisted_class_call_check with UCC_MUTANTS=1: seven mutant rebuilds (~23 min).
+            checks: |
+              # ADR 0297: exact-class arms of unlisted definers (attr accessors, private defs, no-target
+              # classes, native-registered names) against the interpreter on the full-core and core-only
+              # builds; UCC_MUTANTS=1 also removes one proof at a time from a copy of the generator.
+              UCC_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/unlisted_class_call_check.rb
+          - shard: block-arm-reach
+            # ADR 0310: six mruby builds (full-core, core-only, 32-bit mrb_int; interpreted and compiled)
+            # plus eight generator mutants.
+            checks: |
+              BR_MUTANTS=1 MRBC="$mrbc" ruby scripts/bc2cpp/block_arm_reach_check.rb
+          - shard: core-exact-direct
+            # ADR 0314: generated code with the withdrawal worlds, four mruby builds (full-core, core-only and
+            # 32-bit mrb_int, plus a world whose comparator yields; each also run interpreted), then nine
+            # generator mutants and an unmutated control.
+            checks: |
+              CX_MUTANTS=1 MRBC="$mrbc" ruby scripts/bc2cpp/core_exact_direct_check.rb
+          - shard: escape-analysis
+            # ADR 0316: the shared escape analysis and BLOCK_FALLBACK_PROVEN. Unit cases on hand-built bytecode and
+            # mrbc fixtures, generated code with the withdrawal worlds and the kill switch, a compiled fixture against
+            # the interpreter on full-core, core-only and 32-bit mrb_int builds (six mruby builds), then eighteen
+            # generator mutants and an unmutated control (est. 12 min).
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp/escape_analysis_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/escape_analysis_mutation_check.rb
+          - shard: captured-locals
+            # ADR 0308: generated code with the withdrawal worlds, the full-core and core-only runs, then eight
+            # mutants through the shared pool (est. 15 min).
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/captured_local_class_check.rb
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/captured_local_class_mutation_check.rb
+          - shard: constructor-pools
+            # ADR 0313: generated code with the withdrawal worlds, the full-core and core-only runs, then thirteen
+            # mutants and an unmutated control through the shared pool.
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/constructor_pools_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/constructor_pools_mutation_check.rb
+          - shard: ivar-typing
+            # ADR 0382: keyword constructors and the class of `self` in the pools, each with its withdrawal worlds and
+            # kill switch, then nine mutants through the shared pool.
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp/ivar_typing_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/ivar_typing_mutation_check.rb
+          - shard: setter-pools
+            # ADR 0370: the native store audit, generated code with the withdrawal worlds and the kill switches, then
+            # a full-core run that compares compiled with interpreted answers and shows an outside setter call (and a
+            # composed name) as a loud guard violation.
+            checks: |
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/setter_pools_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/setter_pools_mutation_check.rb
+              # ADR 0370: the aliased-name set holds only the names an aliasing operation spells.
+              MRBC="$mrbc" ruby scripts/bc2cpp/aliased_names_check.rb
+          - shard: entry-specialize
+            # ADR 0380: BC2CPP_SPECIALIZE. Generated code (gate off byte-identical, the generic body untouched, the
+            # identity clone, the refused shapes and worlds), a full-core run of every guard hit and miss compared with
+            # the interpreter, then the mutants (the entry check removed, weakened class tests, ...).
+            checks: |
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/entry_specialize_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/entry_specialize_mutation_check.rb
+          - shard: call-facts
+            # ADR 0317: generated code with the withdrawal worlds, the full-core and core-only runs, then ten
+            # mutants and an unmutated control through the shared pool.
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/call_facts_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/call_facts_mutation_check.rb
+              # ADR 0325: BC2CPP_BLOCK_SEND_REPORT changes no output and its rows describe a block-send fixture.
+              MRBC="$mrbc" ruby scripts/bc2cpp/block_send_report_check.rb
+              # ADR 0330: BC2CPP_DEAD_ARM_REPORT changes no output and its rows classify the arms of a fixture.
+              MRBC="$mrbc" ruby scripts/bc2cpp/dead_arm_report_check.rb
+              # ADR 0331: BC2CPP_RECEIVER_PROOF_REPORT changes no output and its rows describe a receiver-source fixture.
+              MRBC="$mrbc" ruby scripts/bc2cpp/receiver_proof_report_check.rb
+              # ADRs 0332/0337: audited native ivar families, bitmap setters, parity and eleven mutants.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_ivar_scopes_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_ivar_scopes_mutation_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_setter_report_check.rb
+              # ADR 0333: native result classes, absent placeholders, runtime parity and eight mutants.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_class_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_class_results_mutation_check.rb
+              # ADR 0334: native String returns, aliases, source audit and eleven mutants.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_string_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_string_results_mutation_check.rb
+              # ADR 0335: native copy and collection result classes.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_collection_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_collection_results_mutation_check.rb
+              # ADR 0338: actual core Ruby return bodies, block exits, overrides and ten mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/core_ruby_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/core_ruby_results_mutation_check.rb
+              # ADR 0350: guarded Enumerator wrappers and admission mutations.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/enumerator_wrappers_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/enumerator_wrappers_mutation_check.rb
+              # ADR 0371: the Hash arm of the comparison helpers calls the compiled core Hash#<; negative
+              # worlds, a run against the interpreted operator, and four mutants.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/core_compiled_cmp_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/core_compiled_cmp_mutation_check.rb
+              # ADR 0374: the zero? helper calls the compiled core Numeric#zero?; negative worlds and a run against zero?.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/zero_direct_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/zero_direct_mutation_check.rb
+              # ADR 0336: name-wide native transformations and File.join subclass boundary.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_array_transforms_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_array_transforms_mutation_check.rb
+          - shard: numeric-constants
+            # ADR 0318: generated code with the withdrawal worlds, the full-core and core-only runs, then fifteen
+            # mutants and an unmutated control through the shared pool.
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/numeric_constants_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/numeric_constants_mutation_check.rb
+          - shard: numeric-intervals
+            # ADR 0326: generated code with the withdrawal worlds and both kill switches, the full-core and core-only
+            # runs, then nine mutants and an unmutated control (the 32-bit run is in `bc2cpp-width (int32)`).
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/numeric_intervals_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/numeric_intervals_mutation_check.rb
+          - shard: class-narrowing
+            # ADR 0375: generated code for every narrowing form, the negatives and twenty-one withdrawal worlds, the
+            # full-core and core-only runs (with the rogue-subclass guard violation), then the mutants and an
+            # unmutated control through the shared pool (the 32-bit run is in `bc2cpp-width (int32-a)`).
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/class_narrowing_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/class_narrowing_mutation_check.rb
+          - shard: ext-prefix
+            # ADR 0320: decoder unit cases, folded-vs-unfolded listing, generated code with the kill switch, the
+            # full-core and core-only runs, then eight mutants and an unmutated control (the 32-bit run is in
+            # `bc2cpp-width (int32)`).
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/ext_prefix_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/ext_prefix_mutation_check.rb
+          - shard: native-class-arms
+            # ADR 0323: generated code with the withdrawal worlds, the full-core and core-only runs, then thirteen
+            # mutants and an unmutated control through the shared pool (the 32-bit run is in `bc2cpp-width (int32)`).
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_class_arms_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_class_arms_mutation_check.rb
+              # ADR 0384: native arms emitted ahead of the else cover their class of a proven set, then the mutants.
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_arm_cover_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_arm_cover_mutation_check.rb
+          - shard: integer-constants
+            # ADR 0324: unit cases for the native-definition scan and the jump onto a SETCONST, generated code, the
+            # full-core and core-only runs, then eight mutants and an unmutated control (the 32-bit run is in
+            # `bc2cpp-width (int32)`).
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/integer_constants_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/integer_constants_mutation_check.rb
+          - shard: rdata-slots
+            checks: |
+              # Links bc2cpp output against the patch-chain mruby and runs it
+              # under GC pressure; catches a misplaced patch hunk as well as a
+              # raw typed field reaching the descriptor consumers.
+              MRBC="$mrbc" ruby scripts/bc2cpp/rdata_slot_native_check.rb
+              # The same descriptor through the C ivar API: typed slots are
+              # visible to reflection, dup and Marshal, and refuse another class.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/typed_reflection_check.rb
+          - shard: optcarrot-benchmark
+            checks: |
+              ruby scripts/optcarrot/cpu_dispatch_check.rb
+              ruby scripts/optcarrot/ppu_lut_check.rb
+              ruby scripts/bc2cpp/optcarrot_world_check.rb
+              ruby scripts/optcarrot/onig_aliases_check.rb
+              MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              OPTCARROT_CLOSED_WORLD=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+          - shard: coverage
+            # Split from fast: the three slowest checks there (~10, ~5 and ~0.2 min).
+            checks: |
+              ./scripts/bc2cpp/coverage_check.bash build-bc2cpp/mruby
+              ./scripts/optcarrot/bc2cpp_coverage_check.bash build-bc2cpp/mruby
+              MRBC="$mrbc" ruby scripts/bc2cpp/rescue_shadow_check.rb
+          - shard: fast
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp/yield_reach_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/include_ancestor_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/foreign_def_forms_check.rb
+              # -DBC2CPP_NOMETHOD_VERIFY aborts at a dead bc2cpp_nomethod site (docs/adr/0275).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/nomethod_verify_check.rb
+              # A guard on a stable class constant fails with a logged error, not a dispatch (docs/adr/0290).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/guard_violation_check.rb
+              # ADR 0299: by-name sends check visibility and attr_reader arity; embedded stores check frozen.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/checked_send_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/embedded_frozen_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/funcall_argc_check.rb
+              # SITE_PROFILE (docs/adr/0298): executed-count counters are off by default and rank what ran.
+              MRBC="$mrbc" ruby scripts/bc2cpp/site_profile_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/retclass_devirtualization_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/hash_each_value_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/module_body_ivar_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/range_each_arity_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/forwarded_yield_times_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/profiler_section_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/profiler_results_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/profiler_results_mutation_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/nilable_retclass_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/unique_class_names_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/class_arg_devirtualization_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/setidx_devirtualization_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/float_math_fastpath_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/division_fastpath_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/game_variable_range_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/array_push_fastpath_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_expression_devirt_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/runtime_wiring_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/owner_registration_check.rb
+              # ADR 0311: destructured fixed-arity Array returns, core-only run, then one broken soundness condition at a time.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/tuple_return_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/tuple_return_mutation_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/mono_embed_guard_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/symbol_cache_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/const_site_cache_check.rb
+              ruby scripts/bc2cpp/embed_guard_exemption_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_class_const_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/struct_index_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/outlined_index_check.rb
+              # ADR 0305: the GETIDX helper's Integer arm against the interpreter, with mutants.
+              GIA_MUTANTS=1 BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/getidx_integer_arm_check.rb
+              # ADR 0394: an exact Array receiver's non-fixnum index runs the native Array body (INTEGER_TAG_ELSE),
+              # on real mruby against the interpreter, and the generated code with the kill switch and a mutant.
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/integer_tag_else_run_check.rb
+              MUTANT=1 MRBC="$mrbc" ruby scripts/bc2cpp/integer_tag_else_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/runtime_devirt_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/inherited_self_devirt_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/poly_table_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/interface_tables_check.rb
+              # ADR 0329: `super` through an included module, carrying the block.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/module_super_check.rb
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/super_ancestry_check.rb
+              # ADR 0330: a block body forwarding its frame's block.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/optional_block_frame_check.rb
+              # ADR 0332: the `super` no-caller-block proof, derived not listed.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/super_direct_check.rb
+              # ADR 0333: a Fiber-reachable body that cannot suspend, behind a guard.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/fiber_body_guard_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/eqq_integer_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/const_lookup_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/impossible_as_error_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/poly_accessor_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/owner_class_cache_check.rb
+              ruby scripts/bc2cpp/mrbgem_deps_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/integer_const_inline_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/constructed_constant_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/packed_attr_args_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/rescue_live_in_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/rescue_inline_block_mutation_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/block_direct_mutation_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/return_join_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/nested_compile_state_check.rb
+              ruby scripts/bc2cpp/insn_operands_check.rb
+              ruby scripts/bc2cpp/irep_scans_check.rb
+              ruby scripts/bc2cpp/bytecode_ir_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_dataflow_check.rb
+              ruby scripts/bc2cpp/origin_multiwrite_check.rb
+              ruby scripts/bc2cpp/site_origin_exceptions_check.rb
+              ruby scripts/bc2cpp/origin_remaining_causes_check.rb
+              ruby scripts/bc2cpp/origin_may_sets_check.rb
+              ruby scripts/bc2cpp/origin_enter_mutation_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/fallback_bodies_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/operand_schema_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/binary_loader_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/closed_world_check.rb
+              # ADR 0369: identity arms for module singleton definers, generated code and compiled-vs-interpreted runs.
+              BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/singleton_arms_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_direct_check.rb
+              # ADR 0302: RGSS native result facts (audited against the native sources), the native
+              # class constant proof, and the instance-receiver proof of a `.singleton` definer.
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_result_facts_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/receiver_typing_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/native_core_direct_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/singleton_arity_check.rb
+              ruby scripts/native/binding_split_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/arg_shapes_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/block_semantics_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/constant_singleton_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/rescue_errinfo_check.rb
+              # Proc#call of &blk-captured procs and block_given?/iterator? against the interpreter.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/proc_call_block_given_check.rb
+              # ADR 0261: join dominance for the backward walks, core mixins and the
+              # core methods they let bc2cpp inline. Their runtime sections need a
+              # full-core libmruby (BC2CPP_MRUBY_FULL) and skip without one.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/join_dominance_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/core_mixins_check.rb
+              # ADR 0285: record-like Hash slots (analysis fixtures, generated code, and a
+              # run against real mruby that needs BC2CPP_MRUBY_FULL and skips without one).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/record_hash_check.rb
+              # ADR 0294: LCF row flow (real mruby-lcf compiled under the closed world; the run
+              # against real mruby needs BC2CPP_MRUBY_FULL and skips without one).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/lcf_row_flow_check.rb
+              # ADR 0276: arithmetic/compare arms lose their dynamic-send else only for operands
+              # a whole-program numeric proof covers; the runtime section compares against the
+              # interpreter, including Integer overflow.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/numeric_operand_check.rb
+              # ADR 0279: overflow-exact Fixnum tier (also against a 32-bit mrb_int build when
+              # BC2CPP_MRUBY_FULL32/BC2CPP_MRBC32 name one), proofs that see computed-name sends,
+              # and typed ivar slots only where every writer is typed.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/fixnum_overflow_check.rb # generated code only here
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/computed_send_proof_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/foreign_ivar_write_check.rb
+              # `alias new old` poisons old's entry arguments too (a call through new is an unseen site).
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/entry_arg_alias_check.rb
+              # Compiled mruby core mrblib (docs/adr/0264): static invariants, then every compiled body
+              # against the interpreter's answer on edge cases.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/core_mrblib_check.rb
+              # Sends replaced by audited direct code (docs/adr/0274): audit, withdrawal reasons and the
+              # compiled run; its core half needs a full-core libmruby (BC2CPP_MRUBY_FULL) and skips without one.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/direct_natives_check.rb
+              # ADR 0373: `blk.call(*args)` on a core method's own `&blk` yields to a Proc and raises nil's
+              # NoMethodError instead of a by-name `mrb_funcall_argv`; generated code and withdrawals only.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/block_param_call_splat_check.rb
+
+    env:
+      RPGMAKER_BC2CPP: "1"
+      SCCACHE_GHA_ENABLED: "true"
+      ACTIONS_CACHE_SERVICE_V2: "on"
+      SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'schedule' && 'READ_WRITE' || 'READ_ONLY' }}
+
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # Same submodule set as `bc2cpp-build`, which keeps 3rd/optcarrot
+          # for the Optcarrot shards.
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer
+        run: ./scripts/checkout-submodules.bash
+
+      - uses: nixbuild/nix-quick-install-action@v35
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+
+      - name: Set up development environment
+        run: ./scripts/nix/develop-export-env.bash
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      # The dev shell's launcher is nixpkgs' sccache 0.15.0, whose GHA backend
+      # has no read-only mode (added in 0.16.0), so SCCACHE_GHA_RW_MODE was
+      # ignored and every pull request minted sccache blobs. Compile through
+      # the action's own sccache instead.
+      - name: Use the sccache from sccache-action
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+
+      - name: Configure host build
+        run: cmake -S . -B build-bc2cpp -GNinja
+
+      # The same patched sources, build_config.rb and rake rule as the full
+      # build's own bootstrap mrbc -- only the gems are left out (ADR 0228).
+      - name: Build host bootstrap mrbc
+        run: cmake --build build-bc2cpp --target mruby_host_mrbc
+
+      - name: Run ${{ matrix.shard }} checks
+        run: |
+          mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
+          test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }
+          # The checks below quietly SKIP their compiled-code comparison
+          # without these, so a missing piece must fail the shard instead.
+          core="$PWD/build-bc2cpp/mruby/host/mrbc"
+          test -f "$core/lib/libmruby_core.a" && test -d "$core/include" ||
+            { echo "no libmruby_core.a with include/ under $core" >&2; exit 1; }
+          # Same commands, same shell, same order; scripts/ci/timed_checks.rb only brackets each with
+          # a stopwatch and prints the "seconds  command" table at exit, pass or fail (docs/ci.md).
+          ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/checks.sh" <<'CHECKS'
+          ${{ matrix.checks }}
+          CHECKS
+          . "$RUNNER_TEMP/checks.sh"
+
+  # Width-sensitive bc2cpp checks (ADR 0300). The emitted arithmetic differs by
+  # `mrb_int` width, and the Emscripten/Wio/PSP targets are 32-bit while every
+  # other job here is 64-bit, so these re-run the compiled-vs-interpreted
+  # comparisons on a libmruby built with `scripts/bc2cpp/width_build.rb`:
+  # `int32` (-DMRB_32BIT -DMRB_INT32, 31-bit Fixnums) and `nobigint` (no
+  # mruby-bigint, every Integer a Fixnum). Only the bootstrap host mrbc is built
+  # with cmake, as in `bc2cpp-checks`; that step also applies the mruby patch
+  # chain the extra libmruby builds from. Runs in this workflow, nightly.
+  bc2cpp-width:
+    name: bc2cpp-width (${{ matrix.variant }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: int32-a
+            build: int32
+            checks: |
+              width="$RUNNER_TEMP/bc2cpp-width/host"
+              NN_WIDTH_SAFE=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp/numeric_native_direct_check.rb
+              export BC2CPP_MRUBY_FULL32="$width" BC2CPP_MRBC32="$width/bin/mrbc"
+              # The 64-bit host mrbc stays MRBC; each check swaps in BC2CPP_MRBC32 for its 32-bit run.
+              MRBC="$mrbc" ruby scripts/bc2cpp/numeric_slow_check.rb
+              BC2CPP_INDEX_CLOSED_ONLY=run MRBC="$mrbc" ruby scripts/bc2cpp/index_closed_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/fixnum_overflow_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/step_inline_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/getidx_integer_arm_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/lcf_row_flow_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/computed_send_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/call_results_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/tuple_return_check.rb
+              # ADR 0313: the 32-bit run of the constructor-pool fixture (the 64-bit runs are in `constructor-pools`).
+              MRBC="$mrbc" ruby scripts/bc2cpp/constructor_pools_check.rb
+              # ADR 0317: the 32-bit run of the call-facts fixture (the 64-bit runs are in `call-facts`).
+              MRBC="$mrbc" ruby scripts/bc2cpp/call_facts_check.rb
+              # ADR 0375: the 32-bit run of the class-narrowing fixture (the 64-bit runs are in `class-narrowing`).
+              MRBC="$mrbc" ruby scripts/bc2cpp/class_narrowing_check.rb
+              NIS_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp/native_ivar_scopes_check.rb
+          - variant: int32-b
+            build: int32
+            checks: |
+              width="$RUNNER_TEMP/bc2cpp-width/host"
+              export BC2CPP_MRUBY_FULL32="$width" BC2CPP_MRBC32="$width/bin/mrbc"
+              NCR_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp/native_class_results_check.rb
+              NSR_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp/native_string_results_check.rb
+              NCR2_FULL_ONLY=1 BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp/native_collection_results_check.rb
+              BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp/core_ruby_results_check.rb
+              BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp/native_array_transforms_check.rb
+              # ADR 0372: the 32-bit run of the native-parameter fixture (the 64-bit run is in `native-wrappers`).
+              BC2CPP_MRUBY_FULL="$width" MRBC="$width/bin/mrbc" BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32 -no-pie" ruby scripts/bc2cpp/native_param_unbox_check.rb
+              # ADR 0318: the 32-bit run of the numeric-constant fixture (the 64-bit runs are in `numeric-constants`).
+              MRBC="$mrbc" ruby scripts/bc2cpp/numeric_constants_check.rb
+              # ADR 0326: the 32-bit run of the interval-operand fixture (the 64-bit runs are in `numeric-intervals`).
+              MRBC="$mrbc" ruby scripts/bc2cpp/numeric_intervals_check.rb
+              # ADR 0320: the 32-bit run of the EXT-prefix fixture (the 64-bit runs are in `ext-prefix`).
+              MRBC="$mrbc" ruby scripts/bc2cpp/ext_prefix_check.rb
+              # ADR 0323: the 32-bit run of the native-class-arms fixture (the 64-bit runs are in `native-class-arms`).
+              MRBC="$mrbc" ruby scripts/bc2cpp/native_class_arms_check.rb
+              # ADR 0324: the 32-bit run of the integer-constant fixture (the 64-bit runs are in `integer-constants`).
+              MRBC="$mrbc" ruby scripts/bc2cpp/integer_constants_check.rb
+              # ADR 0374: the 32-bit run of the zero? helper against the real zero? (the 64-bit run is in `core-flow`).
+              MRBC="$mrbc" ruby scripts/bc2cpp/zero_direct_check.rb
+              # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
+          - variant: nobigint
+            checks: |
+              NN_WIDTH_SAFE=1 NN_NO_BIGINT=1 BC2CPP_MRUBY_FULL="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$RUNNER_TEMP/bc2cpp-width/host/bin/mrbc" ruby scripts/bc2cpp/numeric_native_direct_check.rb
+              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp/numeric_slow_check.rb
+              BC2CPP_INDEX_CLOSED_ONLY=run BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp/index_closed_check.rb
+              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp/getidx_integer_arm_check.rb
+              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp/tuple_return_check.rb
+              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp/zero_direct_check.rb
+
+    env:
+      RPGMAKER_BC2CPP: "1"
+      SCCACHE_GHA_ENABLED: "true"
+      ACTIONS_CACHE_SERVICE_V2: "on"
+      SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'schedule' && 'READ_WRITE' || 'READ_ONLY' }}
+
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer
+        run: ./scripts/checkout-submodules.bash
+
+      - uses: nixbuild/nix-quick-install-action@v35
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+
+      - name: Set up development environment
+        run: ./scripts/nix/develop-export-env.bash
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      # The dev shell's launcher is nixpkgs' sccache 0.15.0, whose GHA backend
+      # has no read-only mode (added in 0.16.0), so SCCACHE_GHA_RW_MODE was
+      # ignored and every pull request minted sccache blobs. Compile through
+      # the action's own sccache instead.
+      - name: Use the sccache from sccache-action
+        run: |
+          echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+
+      - name: Configure host build
+        run: cmake -S . -B build-bc2cpp -GNinja
+
+      - name: Build host bootstrap mrbc
+        run: cmake --build build-bc2cpp --target mruby_host_mrbc
+
+      - name: Build ${{ matrix.variant }} libmruby
+        run: ruby scripts/bc2cpp/width_build.rb "${{ matrix.build || matrix.variant }}" "$RUNNER_TEMP/bc2cpp-width"
+
+      - name: Run ${{ matrix.variant }} checks
+        run: |
+          mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
+          test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }
+          core="$PWD/build-bc2cpp/mruby/host/mrbc"
+          test -f "$core/lib/libmruby_core.a" && test -d "$core/include" ||
+            { echo "no libmruby_core.a with include/ under $core" >&2; exit 1; }
+          # The checks print SKIP and exit 0 without their libmruby; the width run is the point here.
+          test -f "$RUNNER_TEMP/bc2cpp-width/host/lib/libmruby.a" ||
+            { echo "no ${{ matrix.variant }} libmruby.a" >&2; exit 1; }
+          ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/checks.sh" <<'CHECKS'
+          ${{ matrix.checks }}
+          CHECKS
+          . "$RUNNER_TEMP/checks.sh"
