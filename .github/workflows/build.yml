@@ -27,6 +27,13 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+  # The long bc2cpp jobs (`bc2cpp-checks`, `bc2cpp-width`) run here, once a day, and on a manual
+  # dispatch; a pull request or a push runs only `bc2cpp-build` of the bc2cpp group (docs/ci.md,
+  # "Nightly bc2cpp"). Every other job opts out of this trigger with `github.event_name != 'schedule'`.
+  # Scheduled runs use the default branch, and the time is UTC.
+  schedule:
+    - cron: '23 17 * * *'
+
 # A new push to a pull request supersedes the run still going for its previous
 # commit, so cancel it instead of queueing ~35 jobs behind the stale ones.
 # Everything else (master pushes, merge queue, dispatch, `/preview` comments)
@@ -52,13 +59,20 @@ jobs:
       # markdown cannot, so a PR that touches only those skips the bc2cpp jobs
       # (the aggregate `bc2cpp` job accepts that skip, see there).
       code: ${{ steps.filter.outputs.code }}
+      # What the bc2cpp group runs (the `scope` step below): `bc2cpp_build` is the build job, which is
+      # what a pull request or a push gets; `bc2cpp_full` adds the long check shards and the width
+      # build, and is true only for the nightly run and a manual dispatch.
+      bc2cpp_build: ${{ steps.scope.outputs.build }}
+      bc2cpp_full: ${{ steps.scope.outputs.full }}
     steps:
       - uses: actions/checkout@v7
+        if: github.event_name != 'schedule'
         with:
           fetch-depth: 0
           show-progress: false
           persist-credentials: false
       - uses: dorny/paths-filter@v4
+        if: github.event_name != 'schedule'
         id: filter
         with:
           filters: |
@@ -72,10 +86,27 @@ jobs:
               - '!**/*.md'
               - '.github/**'
 
+      # Decides the bc2cpp scope from the event. The nightly run has no diff to filter, so it and a
+      # manual dispatch run everything; any other event runs the build job when `code` matched and
+      # none of the long jobs.
+      - name: Decide the bc2cpp scope
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          CODE: ${{ steps.filter.outputs.code }}
+        run: |
+          case "$EVENT" in
+            schedule|workflow_dispatch) build=true; full=true ;;
+            *) build="${CODE:-false}"; full=false ;;
+          esac
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "bc2cpp scope for $EVENT: build=$build full=$full" >> "$GITHUB_STEP_SUMMARY"
+
   # This workflow contains a single job called "build"
   build:
     # `/preview` comments only ever want the wasm page; skip the rest of CI.
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'schedule' }}
     # The type of runner that the job will run on
     runs-on: ubuntu-24.04
 
@@ -887,7 +918,7 @@ jobs:
   # check reads, so the shards start at once instead of waiting on the full
   # build; `bc2cpp` aggregates both and keeps the old status-check name.
   bc2cpp-build:
-    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
+    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.bc2cpp_build == 'true' }}
     needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -961,7 +992,7 @@ jobs:
         run: sccache --show-stats
 
   bc2cpp-checks:
-    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
+    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.bc2cpp_full == 'true' }}
     needs: changes
     name: bc2cpp-checks (${{ matrix.shard }})
     runs-on: ubuntu-24.04
@@ -1518,7 +1549,7 @@ jobs:
   # with cmake, as in `bc2cpp-checks`; that step also applies the mruby patch
   # chain the extra libmruby builds from. Gated by `bc2cpp`.
   bc2cpp-width:
-    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
+    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.bc2cpp_full == 'true' }}
     needs: changes
     name: bc2cpp-width (${{ matrix.variant }})
     runs-on: ubuntu-24.04
@@ -1662,15 +1693,17 @@ jobs:
     steps:
       - name: Require every bc2cpp job to succeed
         env:
-          CODE: ${{ needs.changes.outputs.code }}
+          RUN_BUILD: ${{ needs.changes.outputs.bc2cpp_build }}
+          RUN_FULL: ${{ needs.changes.outputs.bc2cpp_full }}
           BUILD: ${{ needs.bc2cpp-build.result }}
           CHECKS: ${{ needs.bc2cpp-checks.result }}
           WIDTH: ${{ needs.bc2cpp-width.result }}
         run: |
-          echo "code: $CODE, bc2cpp-build: $BUILD, bc2cpp-checks: $CHECKS, bc2cpp-width: $WIDTH"
-          # Without code changes the three jobs are skipped on purpose; anything else must succeed.
-          ok() { [ "$1" = success ] || { [ "$CODE" != true ] && [ "$1" = skipped ]; }; }
-          ok "$BUILD" && ok "$CHECKS" && ok "$WIDTH"
+          echo "scope build=$RUN_BUILD full=$RUN_FULL; bc2cpp-build: $BUILD, bc2cpp-checks: $CHECKS, bc2cpp-width: $WIDTH"
+          # A job outside its scope is skipped on purpose (a docs-only change skips the build; only the
+          # nightly run and a manual dispatch run the checks and the width build). A job in scope must succeed.
+          ok() { [ "$1" = success ] || { [ "$2" != true ] && [ "$1" = skipped ]; }; }
+          ok "$BUILD" "$RUN_BUILD" && ok "$CHECKS" "$RUN_FULL" && ok "$WIDTH" "$RUN_FULL"
 
   # Ruby-only checks split out of `build`: none of the nine steps below ever
   # touches the compiled engine binary (they load the mruby-*/mrblib sources
@@ -1686,7 +1719,7 @@ jobs:
   # queueing behind several minutes of C++ compile first, and `build`'s own
   # `parallel:` group has a few fewer steps competing for its worker slots.
   ruby-checks:
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'schedule' }}
     runs-on: ubuntu-24.04
 
     env:
@@ -2040,6 +2073,7 @@ jobs:
     needs: preview-gate
     if: >-
       ${{ !cancelled()
+          && github.event_name != 'schedule'
           && (github.event_name != 'issue_comment'
               || needs.preview-gate.result == 'success') }}
     runs-on: ubuntu-24.04
@@ -2401,7 +2435,7 @@ jobs:
     # in a later slice, built here so a patch or gem that stops
     # cross-compiling breaks CI the way the `psp` job does for its EBOOT.
     # The `maix-smoke` job below boots the firmware under Renode.
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'schedule' }}
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
@@ -2599,7 +2633,7 @@ jobs:
     # ST7789 stream into a framebuffer pixel check (see app/maix/README.md
     # "LCD capture"). Asserts all of it.
     needs: maix
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'schedule' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -3219,7 +3253,7 @@ jobs:
     # and that the Cortex-A8 PMU's cycle counter gives a genuine, working
     # per-frame cost signal (printed, not asserted on -- see the ADR for why
     # that's a comparative signal rather than a pass/fail threshold).
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'schedule' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -3679,7 +3713,7 @@ jobs:
     # and packages them into a real APK via Gradle. It does not itself run the
     # APK -- the `android-smoke` job below does that, on an emulator -- see
     # app/android/README.md and docs/adr/0058-android-port.md.
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'schedule' }}
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
@@ -3796,7 +3830,7 @@ jobs:
     # detail this job does not control and CI emulators are a known source of
     # first-boot flakiness.
     needs: android
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'schedule' }}
     runs-on: ubuntu-24.04
     continue-on-error: true
     env:
@@ -3876,7 +3910,7 @@ jobs:
           if-no-files-found: warn
 
   flake:
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'schedule' }}
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 

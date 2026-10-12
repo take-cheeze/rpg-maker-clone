@@ -2,7 +2,8 @@
 
 [`.github/workflows/build.yml`](../.github/workflows/build.yml) is the one CI
 workflow. It runs on pull requests to `master`, pushes to `master`, merge-queue
-runs, manual dispatch and (for the Cloudflare preview only) `/preview` comments.
+runs, manual dispatch, a nightly schedule (the long bc2cpp jobs only) and (for the
+Cloudflare preview only) `/preview` comments.
 Deployment is covered in [deploy.md](deploy.md).
 
 ## Native SDL probes
@@ -20,6 +21,24 @@ The status check `bc2cpp` is the aggregate of `bc2cpp-build`, every
 `bc2cpp` rather than the individual shards, so adding a shard needs no settings
 change.
 
+### Nightly bc2cpp
+
+A pull request or a push runs only `bc2cpp-build` of the bc2cpp group. The long jobs, every
+`bc2cpp-checks (<shard>)` and `bc2cpp-width (<variant>)`, run once a day (cron `23 17 * * *`, UTC, on the
+default branch) and on a manual `workflow_dispatch`. The `changes` job's `scope` step decides this and
+publishes two outputs: `bc2cpp_build` (true when the `code` filter matched, or on a nightly or manual run) and
+`bc2cpp_full` (true only on a nightly or manual run). The aggregate `bc2cpp` job accepts a job that is outside
+its scope being skipped, and fails on a skipped job that is in scope, so a nightly run that skips a shard is red.
+
+Every other job opts out of the `schedule` trigger, so the nightly run is the bc2cpp group and nothing else.
+Nightly runs are not pull requests, so they run the mutation checks and the optcarrot benchmark too.
+
+What this gives up: a pull request is no longer checked by the long shards before merge, and neither is a push to
+`master` or a merge-queue run. A regression shows up in the next nightly run (look at the Actions tab, or the
+failure email GitHub sends for a scheduled run). To check a branch earlier, run **Run workflow** on it from the
+Actions tab (`workflow_dispatch` runs everything). To make a merge-queue run check everything again, add
+`merge_group` to the first branch of the `case` in the `scope` step.
+
 ### Superseded runs
 
 A push to a pull request cancels the run still going for that PR's previous
@@ -32,10 +51,10 @@ and are never cancelled.
 On `pull_request` runs the `bc2cpp-checks` job sets `CI_SKIP_MUTANTS=1`, and
 `scripts/ci/timed_checks.rb` then drops every `*_mutation_check.rb` command and
 strips `*_MUTANTS=1` switches, so each shard keeps its fixture checks but not the
-mutant rebuilds. Master pushes, merge-queue runs and manual dispatch run them
-all, so a mutation regression blocks the merge queue rather than the PR. Timing
-estimates in the shard table include the mutants and apply to those runs. To run
-them on a PR, use `workflow_dispatch` on its branch.
+mutant rebuilds. Only the nightly run and a manual dispatch run the shards at all now
+("Nightly bc2cpp" above), and they run the mutants too. Timing estimates in the shard
+table include the mutants and apply to those runs. To run them on a PR, use
+`workflow_dispatch` on its branch.
 
 ### Splitting long shards
 
