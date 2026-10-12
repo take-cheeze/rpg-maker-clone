@@ -1,4 +1,4 @@
-# 0421. bc2cpp: a frozen-table slot that is `LITERAL.freeze` takes the literal's container class
+# 0425. bc2cpp: a frozen-table slot that is `LITERAL.freeze` takes the literal's container class
 
 Date: 2026-10-12
 

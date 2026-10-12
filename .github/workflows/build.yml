@@ -1271,7 +1271,7 @@ jobs:
           - name: bc2cpp LCF row flow check (host)
             run: ruby scripts/bc2cpp/lcf_row_flow_check.rb
 
-          # ADR 0421: the frozen-table slot class on hand-built bytecode (host-only; the compiled
+          # ADR 0425: the frozen-table slot class on hand-built bytecode (host-only; the compiled
           # section runs when MRBC is set, in the `bc2cpp-checks` (bc2cpp-nightly.yml) job).
           - name: bc2cpp frozen-table slot class check (host)
             run: ruby scripts/bc2cpp/frozen_slot_check.rb

@@ -377,7 +377,7 @@ Used by `bc2cpp_unlisted_class_call_check` (`UCC_MUTANTS`),
 `bc2cpp_frozen_tables_mutation_check`,
 `bc2cpp_call_results_mutation_check`, `bc2cpp_class_pools_mutation_check`,
 `bc2cpp_tuple_return_mutation_check` (always, no flag needed).
-`ci_helpers_check.rb` covers the pool itself. `frozen_slot_check.rb` (ADR 0421) runs its host section in `build.yml` and
+`ci_helpers_check.rb` covers the pool itself. `frozen_slot_check.rb` (ADR 0425) runs its host section in `build.yml` and
 its MRBC section in the `core-tables` shard of `bc2cpp-nightly.yml`.
 
 Two of these keep their `MUTANTS` as a Hash and pass `MUTANTS.to_a`, because the

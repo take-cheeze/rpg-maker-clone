@@ -110,7 +110,7 @@ CHECKS = [
   { name: 'bc2cpp-tuple-return', command: %w[scripts/bc2cpp/tuple_return_check.rb] },
   # ADR 0416: the class-object resolver on hand-built bytecode; the fixture section skips here.
   { name: 'bc2cpp-class-object-args', command: %w[scripts/bc2cpp/class_object_args_check.rb] },
-  # ADR 0421: the frozen-table slot class on hand-built bytecode; the compiled section needs mrbc and skips here.
+  # ADR 0425: the frozen-table slot class on hand-built bytecode; the compiled section needs mrbc and skips here.
   { name: 'bc2cpp-frozen-slot', command: %w[scripts/bc2cpp/frozen_slot_check.rb] }
 ].freeze
 
