@@ -386,6 +386,7 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/profiler_results_check.rb
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/profiler_results_mutation_check.rb
               ruby scripts/bc2cpp/return_probe_check.rb
+              ruby scripts/bc2cpp/compact_output_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/nilable_retclass_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/unique_class_names_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/class_arg_devirtualization_check.rb

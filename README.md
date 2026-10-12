@@ -1097,6 +1097,8 @@
   `OPTCARROT_CLOSED_WORLD=1` uses a sealed benchmark executable with a validated
   source manifest. See [CPU dispatch](docs/optcarrot-cpu-dispatch.md) and
   [ADR 0403](docs/adr/0403-optcarrot-sealed-world.md).
+  Optional [compact C++ output](docs/bc2cpp-compact-output.md) removes generated
+  line comments with `BC2CPP_COMPACT_OUTPUT=1`; diagnostic output stays the default.
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
