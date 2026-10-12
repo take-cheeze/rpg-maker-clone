@@ -1089,10 +1089,14 @@
   [GC measurements](docs/optcarrot-gc.md).
   `OPTCARROT_STATIC_PPU=1` compiles an upstream-generated synchronous PPU core
   in the ordinary host. Its state comparison accepts additional ROMs and frame
-  counts. See [PPU core](docs/optcarrot-ppu-core.md).
+  counts. The original Fiber path lowers yielding helpers through checked
+  bytecode IR regions while retaining persistent resume state. See
+  [PPU core](docs/optcarrot-ppu-core.md).
   `BC2CPP_IR_INLINE=1` expands eligible method bodies after bytecode decoding,
   avoiding source inlining's bytecode jump limit. See
   [method inlining](docs/bc2cpp-method-inlining.md).
+  `BC2CPP_IR_CPU_DISPATCH=1` experiments with guarded CPU dispatch and nested
+  wrapper calls in decoded bytecode, preserving source and dynamic fallback.
   `OPTCARROT_STATIC_DISPATCH=1` exposes all CPU opcode calls to bc2cpp;
   `OPTCARROT_CLOSED_WORLD=1` uses a sealed benchmark executable with a validated
   source manifest. See [CPU dispatch](docs/optcarrot-cpu-dispatch.md) and

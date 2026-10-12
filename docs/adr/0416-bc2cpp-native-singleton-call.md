@@ -78,15 +78,21 @@ all are killed, and none was dropped to make the run pass: the three that first 
 redundant guard deleted. The nightly shard is `native-singleton`.
 
 Measured on the wio closed world's shipped pass (SKIP_UNSUPPORTED=1, the second pass of
-`scripts/bc2cpp/coverage_report.rb`), feature on, before the two proof relaxations of the last commit (which should add
-about 9 `File.exist?` and 6 `Math.sin` sites; not re-measured, because the full passes were killed by the memory limit of a
-shared machine): 13 sites bound (3 `File.file?`, 1 `File.basename`, 3 `Graphics.snap_to_bitmap`, 2 `Time.now`, 2
-`LCF.cp932_to_utf8`, 1 `RGSS.to_nfd`, 1 `RGSS.__log_bridge_write`); live `bc2cpp_send(M` 1824 with 13 `bc2cpp_native_singleton(M`
-calls, so 1837 sends with the feature off (each bound site replaces exactly one send; a `BC2CPP_NATIVE_SINGLETON=0` pass
-was not completed); `origin=constant_lookup` diagnostics 27 (40 on the older snapshot the task started from);
-`mrb_funcall*` text 391, of which two are the helper's declaration and call.
+`scripts/bc2cpp/coverage_report.rb`; all owners, the same tree at master 7714f4d0, once with
+`BC2CPP_NATIVE_SINGLETON=0` and once without; the two runs' diagnostics are identical, so only the route differs):
 
-Not done: Ruby-defined core singletons (needs rest, block and ensure/rescue in compiled core bodies, ADR 0264/0271),
-emitting `Game::CommonEvent.singleton` and `Game::MoveRoute.singleton` (hand-written registration, wio flash), scoped
-natives unknown to ConstructClassNames, and a rooted `::File`. A cached slot is not revalidated against a later
-redefinition; the closed-world proof (no installer anywhere) is what rules that out, as for the other direct arms.
+| | live `bc2cpp_send(M` | `bc2cpp_native_singleton(M` | live `mrb_funcall*` text | `origin=constant_lookup` |
+|---|---|---|---|---|
+| `BC2CPP_NATIVE_SINGLETON=0` | 1818 | 0 | 392 | 37 |
+| on | 1796 | 22 | 394 | 15 |
+
+22 sites bound, each replacing exactly one send (1818 - 1796): 5 `File.exist?`, 3 `File.file?`, 1 `File.basename`, 4 `Math.sin`,
+3 `Graphics.snap_to_bitmap`, 2 `Time.now`, 2 `LCF.cp932_to_utf8`, 1 `RGSS.to_nfd`, 1 `RGSS.__log_bridge_write`. The two
+extra `mrb_funcall*` are the helper's own text (it calls `mrb_funcall_with_method`). The earlier figure of 13 bound sites,
+taken before the last two proof relaxations from a partial run, is superseded by this table.
+
+Not done: Ruby-defined core singletons (`File.open` / `IO.open`: ADR 0422 lists exactly what is missing, with an estimate),
+scoped natives unknown to ConstructClassNames, and a rooted `::File`. (`Game::CommonEvent.singleton` and
+`Game::MoveRoute.singleton` are emitted, and a keyword `new` in a class method compiles, by ADR 0422.) A cached slot is not
+revalidated against a later redefinition; the closed-world proof (no installer anywhere) is what rules that out, as for the
+other direct arms.
