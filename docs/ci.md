@@ -250,16 +250,14 @@ same generator file and would otherwise share — and delete — one copy.
 
 ### Width builds (ADR 0300)
 
-The Emscripten, Wio and PSP targets use a 32-bit `mrb_int`; Wio and PSP also
-have no mruby-bigint. `bc2cpp-width` re-runs the compiled-versus-interpreted
+The Emscripten, Wio and PSP targets use a 32-bit `mrb_int`. Every shipped target
+links mruby-bigint (`build_config.rb`), so there is no no-bigint variant. `bc2cpp-width` re-runs the compiled-versus-interpreted
 checks on a libmruby built by `scripts/bc2cpp/width_build.rb`:
 
 | Variant | Build | Checks |
 | --- | --- | --- |
 | `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `call_results` |
-| `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow` |
 | `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `index_closed`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `tuple_return`, `zero_direct` |
-| `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow`, `index_closed`, `getidx_integer_arm`, `tuple_return`, `zero_direct` |
 
 The 32-bit build is the 64-bit host with the targets' arithmetic defines, so it
 does not exercise 32-bit pointers. To run a variant locally, after the mruby
@@ -389,7 +387,7 @@ covers a closed and an open world. See ADR 0358 and
 ### The zero? helper through compiled core
 
 The `core-flow` shard also runs `bc2cpp_zero_direct_check.rb` and its mutation check (ADR 0374); the `int32`
-and `nobigint` width legs run the same check against their own libmruby. A closed world that compiles
+width legs run the same check against their own libmruby. A closed world that compiles
 mruby's own Ruby has `bc2cpp_slow_zero` call the compiled `Numeric#zero?` for every Numeric that is not a
 Float, raise the `File.zero?` argument error for those class objects, and keep the NoMethodError proof for
 the rest. The check covers the generated code, twelve negative worlds (reopened, aliased, included,

@@ -560,8 +560,8 @@ jobs:
   # `mrb_int` width, and the Emscripten/Wio/PSP targets are 32-bit while every
   # other job here is 64-bit, so these re-run the compiled-vs-interpreted
   # comparisons on a libmruby built with `scripts/bc2cpp/width_build.rb`:
-  # `int32` (-DMRB_32BIT -DMRB_INT32, 31-bit Fixnums) and `nobigint` (no
-  # mruby-bigint, every Integer a Fixnum). Only the bootstrap host mrbc is built
+  # `int32` (-DMRB_32BIT -DMRB_INT32, 31-bit Fixnums), the width the 32-bit release targets run. A
+  # `nobigint` build was dropped: no release target leaves out mruby-bigint. Only the bootstrap host mrbc is built
   # with cmake, as in `bc2cpp-checks`; that step also applies the mruby patch
   # chain the extra libmruby builds from. Runs in this workflow, nightly.
   bc2cpp-width:
@@ -621,14 +621,6 @@ jobs:
               # ADR 0374: the 32-bit run of the zero? helper against the real zero? (the 64-bit run is in `core-flow`).
               MRBC="$mrbc" ruby scripts/bc2cpp/zero_direct_check.rb
               # bc2cpp_unlisted_class_call_check also has a 32-bit leg but fails on master at 64 bits; add it back once fixed.
-          - variant: nobigint
-            checks: |
-              NN_WIDTH_SAFE=1 NN_NO_BIGINT=1 BC2CPP_MRUBY_FULL="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$RUNNER_TEMP/bc2cpp-width/host/bin/mrbc" ruby scripts/bc2cpp/numeric_native_direct_check.rb
-              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp/numeric_slow_check.rb
-              BC2CPP_INDEX_CLOSED_ONLY=run BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp/index_closed_check.rb
-              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp/getidx_integer_arm_check.rb
-              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp/tuple_return_check.rb
-              BC2CPP_MRUBY_NOBIGINT="$RUNNER_TEMP/bc2cpp-width/host" MRBC="$mrbc" ruby scripts/bc2cpp/zero_direct_check.rb
 
     env:
       RPGMAKER_BC2CPP: "1"
