@@ -67,17 +67,31 @@ Fiber machinery run, and the guarded wrappers of ADR 0350 are unchanged.
 
 ## Consequences
 
-Measured on the same tree, shipped pass (numbers in the PR). `to_enum` sends in compiled core bodies fall from 65 to
-the ones whose receiver is not an exact core class (module owners, Integer, Float, Struct, IO). The 22 `Enumerable`
-sites stay: the includer set is not one class (ADR 0381 measured cloning at 5% of the build for at most 8 sends).
+Measured on master `59cc590d` against the same tree plus this change, shipped pass of the Wio closed world:
+
+| | master | this change |
+| --- | ---: | ---: |
+| live `bc2cpp_send(M` | 1,792 | 1,758 |
+| live `mrb_funcall*` | 379 | 379 |
+| `to_enum` by-name sends | 65 | 31 |
+| `TO_ENUM_DIRECT` sites | 0 | 34 |
+| known ivar class hints | 285 | 286 (`Game::Battle#@queue` is `Array`) |
+| ivar class candidates poisoned to unknown | 603 | 602 |
+| `bc2cpp_nomethod(M` sites | 304 | 304 |
+
+The 31 remaining `to_enum` sends are the `Enumerable` module bodies (22; the includer set is not one class, ADR 0381
+measured cloning at 5% of the build for at most 8 sends), `Integer` (4), `IO` (3), `Struct` and `Float`: none is a
+CORE_SELF_EXACT class. `Game::Battle#turn_order` was rewritten in #2159 on the belief that its Enumerator chain kept
+`@queue` unproven; on `59cc590d` it still was, and only the `reject` store change here proves it. The proven `@queue`
+removes no further site by itself (the nomethod count is unchanged): its readers were already guarded arms.
 
 The direct build skips the lookup of `to_enum` and one interpreted frame (`Kernel#to_enum`); `Enumerator#initialize`
 still runs in the VM. An Array/Hash/Range/String subclass instance reaching such a body logs and raises
 `BC2cppGuardViolation` exactly as for the other CORE_SELF_EXACT sites.
 
-`scripts/bc2cpp/enumerator_model_check.rb` covers the proofs (26 worlds, including the nested-statement,
+`scripts/bc2cpp/enumerator_model_check.rb` covers the proofs (including the nested-statement,
 assignment, `const_set`, alias, body and construction-chain refusals), the generated sites, and a full-core run
 comparing the compiled core's blockless iterators with the interpreter (next/peek/rewind/size on an array
 enumerator, `with_index`, `with_object`, `each_slice`/`each_cons`, lazy, a user `each` + Enumerable, a redefined
 `map`, Hash and Range sources, `break`/`next`/exceptions, a Fiber, GC) and asserting that the direct core iterators
-make no dispatch. `enumerator_model_mutation_check.rb` removes one condition at a time (24 mutants and a control).
+make no dispatch. `enumerator_model_mutation_check.rb` removes one condition at a time (23 mutants and a control).
