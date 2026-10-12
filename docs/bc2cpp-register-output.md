@@ -40,12 +40,36 @@ declarations scan cannot see:
 What a register reads and writes is taken from the emitted C++ text of each
 instruction, not from the opcode: only a text of the exact shape
 `  rD = <expression>;` is a definition, and any other text reads every register
-it names. A method is left untouched when it has an exception handler, a
-`goto` the IR does not explain (an inlined block loop that jumps between
-instruction texts), a reference alias, or is resumable. `r0`, registers a
-nested block reaches by upvar, registers whose address is taken (`&rN`) and
-registers redeclared inside a text are never removed or substituted. Window
-consumers (`SEND`, `ARRAY`, `ADD`, ...) keep the copies that feed them.
+it names. A method is left untouched when it has a `goto` the IR does not
+explain (an inlined block loop that jumps between instruction texts), a
+reference alias, a catch handler the handler model below does not cover, or is
+resumable. `r0`, registers a nested block reaches by upvar, registers whose
+address is taken (`&rN`) and registers redeclared inside a text are never
+removed or substituted. Window consumers (`SEND`, `ARRAY`, `ADD`, ...) keep the
+copies that feed them.
+
+**Rescue regions (handler edges).** A `begin ... rescue` region is emitted as a
+glue at its begin address that runs the try body under `mrb_protect_error`, and
+the clause tests follow it. The pass models the exception path as one edge from
+every instruction the region protects (the half-open range `[begin, end)`) to
+the region's except address, which the IR reads as an ordinary handler edge
+(`BytecodeIR`, `include_handlers:`). A write is never killed along that edge: a
+raise can come before the write completes, so the handler still sees the value
+the write replaced. The model applies only when all of these hold, and any
+other handler refuses the method:
+
+- every catch handler is a rescue region codegen recognized, one for one (same
+  begin, end and target), and the IR's handler targets resolve;
+- each glue names every outer register its try body reads: a saved copy
+  (`rN`) or a `&rN` alias. Argument values reach the try body through the
+  method's parameters, not through a register name, and the pass never changes
+  a parameter;
+- every instruction in a protected range except the glue emitted no text, so the
+  outer function enters a handler only through the glue.
+
+Ensure regions and methods with an ensure guard are not optimized, as before.
+`BC2CPP_REGISTER_FLOW_HANDLERS=0` refuses every handler method again;
+window mode (`BC2CPP_REGISTER_FLOW_WINDOWS=1`) keeps refusing them.
 
 `BC2CPP_REGISTER_FLOW=0` turns the pass off and the generated C++ is then
 byte-identical to the output without it; `BC2CPP_REGISTER_FLOW_STATS=1` prints
