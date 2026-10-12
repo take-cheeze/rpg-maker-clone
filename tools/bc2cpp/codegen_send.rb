@@ -1776,6 +1776,8 @@ class CodeGen
       line = with_exact_core_site(exact_site) { native_direct_dynamic_line(d, recv, name, argv) }
       # CORE_EXACT_DIRECT: no dispatch is left, so the site is not a dynamic one to diagnose.
       return "  #{line}" if line.start_with?(CORE_EXACT_DIRECT_NOTE)
+      # TO_ENUM_DIRECT (ADR 0416): the Enumerator is built in place, the checked arm's else is a guard violation.
+      return "  #{line}" if line.include?(TO_ENUM_DIRECT_NOTE)
 
       "#{diag}#{note}#{miss}  #{line}"
     end
