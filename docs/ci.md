@@ -54,6 +54,27 @@ requests; now that they run only in `bc2cpp-nightly.yml` ("Nightly bc2cpp" above
 nothing sets it and every nightly or manual run includes the mutants. The timing
 estimates in the shard table include them.
 
+### Device jobs run on a pull request only for their own files
+
+`android` (with `android-smoke`), `maix` (with `maix-smoke`) and `nano7-qemu` build or emulate one
+device target each. On a `pull_request` run they are skipped unless the `changes` job's filter for
+that device matched; a push to `master`, a merge-queue run and a manual dispatch always run them.
+The smoke jobs need their build job, so they are skipped with it. `wasm` is not gated and still runs
+on every pull request, and `psp` keeps its own filter (it runs only when `app/psp/**` or the workflow
+changed, and not on other pushes).
+
+| Filter | Files that count as related |
+| --- | --- |
+| `android` | `app/android/**`, `scripts/android_smoke_check.bash`, `CMakeLists.txt`, `cmake/**`, `build_config.rb`, the workflow |
+| `maix` | `app/maix/**`, `app/shared/**`, `scripts/maix/**`, `scripts/gen/maix-hello-game.rb`, `build_config.rb`, the workflow |
+| `nano7` | `app/nano7/**`, `app/shared/**`, `scripts/nano7/**`, `scripts/export_nano7_map*.rb`, `scripts/stage_nano7_walk_app.bash`, `scripts/download/nepheshel.bash`, the workflow |
+
+`build_config.rb` holds each device's cross-build definition, so a change to it runs the Android and
+Maix jobs. Shared engine code (`src/`, the `mruby-*` gems) is not in any list: a pull request that
+changes only that skips these jobs, and the push to `master` after the merge runs them. A device
+regression from shared code therefore shows up on `master`, not on the pull request. To check a branch
+earlier, use `workflow_dispatch` on it, or add the path to the filter.
+
 ### Splitting long shards
 
 `hot-only` ran its two ~15 minute reviewed-set checks back to back, so

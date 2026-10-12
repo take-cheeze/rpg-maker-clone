@@ -52,6 +52,11 @@ jobs:
       # markdown cannot, so a PR that touches only those skips the bc2cpp jobs
       # (the aggregate `bc2cpp` job accepts that skip, see there).
       code: ${{ steps.filter.outputs.code }}
+      # The Android, Maix and nano 7 device jobs run on a pull request only when one of their own
+      # files changed (a push to master, the merge queue and a manual run always run them).
+      android: ${{ steps.filter.outputs.android }}
+      maix: ${{ steps.filter.outputs.maix }}
+      nano7: ${{ steps.filter.outputs.nano7 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -71,6 +76,28 @@ jobs:
               - '!changelog.d/**'
               - '!**/*.md'
               - '.github/**'
+            android:
+              - 'app/android/**'
+              - 'scripts/android_smoke_check.bash'
+              - 'CMakeLists.txt'
+              - 'cmake/**'
+              - 'build_config.rb'
+              - '.github/workflows/build.yml'
+            maix:
+              - 'app/maix/**'
+              - 'app/shared/**'
+              - 'scripts/maix/**'
+              - 'scripts/gen/maix-hello-game.rb'
+              - 'build_config.rb'
+              - '.github/workflows/build.yml'
+            nano7:
+              - 'app/nano7/**'
+              - 'app/shared/**'
+              - 'scripts/nano7/**'
+              - 'scripts/export_nano7_map*.rb'
+              - 'scripts/stage_nano7_walk_app.bash'
+              - 'scripts/download/nepheshel.bash'
+              - '.github/workflows/build.yml'
 
   # This workflow contains a single job called "build"
   build:
@@ -1708,7 +1735,8 @@ jobs:
     # in a later slice, built here so a patch or gem that stops
     # cross-compiling breaks CI the way the `psp` job does for its EBOOT.
     # The `maix-smoke` job below boots the firmware under Renode.
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && (github.event_name != 'pull_request' || needs.changes.outputs.maix == 'true') }}
+    needs: changes
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
@@ -2526,7 +2554,8 @@ jobs:
     # and that the Cortex-A8 PMU's cycle counter gives a genuine, working
     # per-frame cost signal (printed, not asserted on -- see the ADR for why
     # that's a comparative signal rather than a pass/fail threshold).
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && (github.event_name != 'pull_request' || needs.changes.outputs.nano7 == 'true') }}
+    needs: changes
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -2986,7 +3015,8 @@ jobs:
     # and packages them into a real APK via Gradle. It does not itself run the
     # APK -- the `android-smoke` job below does that, on an emulator -- see
     # app/android/README.md and docs/adr/0058-android-port.md.
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && (github.event_name != 'pull_request' || needs.changes.outputs.android == 'true') }}
+    needs: changes
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
