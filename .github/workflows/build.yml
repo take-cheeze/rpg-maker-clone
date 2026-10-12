@@ -1260,6 +1260,11 @@ jobs:
               ruby scripts/rpg2k/lsd_authoritative_check.rb
               # ADR 0399: the native pan lock, an in-flight pan, and a moving picture with a Float target opacity.
               ruby scripts/rpg2k/lsd_pan_picture_check.rb
+              # ADR 0400: the typed save read path and its generated accessors being
+              # current, then a save this engine did not write: unusual-but-valid loads,
+              # a mismatched field is a logged empty slot, truncation and corruption never crash.
+              ruby scripts/lcf_save_typed_check.rb
+              ruby scripts/rpg2k/lsd_adversarial_check.rb
 
           # The iPod nano 7G map-walk export (scripts/export_nano7_map.rb, ADR
           # 61): runs the exporter over real test-bed maps and re-parses

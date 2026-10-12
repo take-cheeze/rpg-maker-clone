@@ -49,6 +49,13 @@ module LCF
   # hex literals keeps the exact same "computed once, at load time" win
   # while staying loadable on every target.
   INT32_MASK = 0xffff_ffff
+  # The largest chunk id / table row id a reader accepts. A chunk id indexes a
+  # Ruby Array (Array1D#@data), so an id read from a corrupt or hostile file
+  # ("chunk 2000000000") would otherwise ask for a multi-gigabyte array and die
+  # with NoMemoryError, which no `rescue StandardError` catches. No genuine id
+  # comes near this: the schema's highest field id is 140 and database tables
+  # hold a few thousand rows.
+  MAX_CHUNK_ID = 0xffff
   INT32_SIGN_BIT = 0x8000_0000
   INT32_WRAP = 0x1_0000_0000
 
@@ -580,9 +587,15 @@ module LCF
         until s.eof?
           idx = LCF.read_ber s
           break if idx == 0
+          raise "chunk id #{idx} out of range" if idx < 0 || idx > MAX_CHUNK_ID
 
           len = LCF.read_ber s
-          @data[idx] = s.read len
+          # A chunk that runs past the end of the stream is a truncated file, not
+          # a shorter chunk: reading it short would load the file with that
+          # field silently garbled or missing.
+          d = len > 0 ? s.read(len) : ''
+          raise "truncated chunk #{idx}: #{len} bytes declared" if len < 0 || d.nil? || d.bytesize != len
+          @data[idx] = d
         end
       rescue StopIteration => e
         e.result
@@ -774,6 +787,7 @@ module LCF
       # Array1D#[] uses for its own nested chunks).
       (0...LCF.read_ber(s)).each do
         idx = LCF.read_ber s
+        raise "row id #{idx} out of range" if idx < 0 || idx > MAX_CHUNK_ID
         @data[idx] = read_row_bytes(s)
       end
     end
@@ -865,7 +879,9 @@ module LCF
           out << LCF.write_ber(idx)
           break if idx == 0
           len = LCF.read_ber s
-          out << LCF.write_ber(len) << s.read(len)
+          d = len > 0 ? s.read(len) : ''
+          raise "truncated chunk #{idx}: #{len} bytes declared" if len < 0 || d.nil? || d.bytesize != len
+          out << LCF.write_ber(len) << d
         end
       rescue StopIteration => e
         e.result

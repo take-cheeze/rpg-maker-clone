@@ -102,7 +102,11 @@ step, not in a bc2cpp shard. The save-format check
 (`rpg2k_lsd_authoritative_check.rb`, ADR 0395) runs in that same step: the
 engine's `.lsd` save must load back field for field against the live state, and the
 save-slot policy (the `.lsd` alone, old `.mrb` saves not read, a failed write
-failing the save; docs/adr/0399) is tested there too.
+failing the save; docs/adr/0399) is tested there too. So are the typed-save checks
+(`lcf_save_typed_check.rb`, which also fails when the generated
+`save_typed_accessors.rb` is stale, and `rpg2k_lsd_adversarial_check.rb`, ADR 0400:
+a save this engine did not write loads, or is an empty slot with the reason logged,
+and truncated or corrupted saves never crash).
 
 The compiled-versus-interpreted fixtures that need a full-core mruby are split
 three ways, because each step takes minutes and one shard had reached the
