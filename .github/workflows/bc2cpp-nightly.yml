@@ -179,6 +179,8 @@ jobs:
               # ADR 0306: element classes of frozen literal tables; generated code, the interpreter on three builds, mutants.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/frozen_tables_check.rb
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/frozen_tables_mutation_check.rb
+              # ADR 0421: the Symbol class bit of frozen tables; the generated-code half (facts report, kill switch, hostile worlds).
+              MRBC="$mrbc" ruby scripts/bc2cpp/symbol_class_check.rb
           - shard: call-results
             # ADR 0309: attr_reader result classes and flow-proven Array arms; its own shard (about 15 min with the mutants).
             checks: |

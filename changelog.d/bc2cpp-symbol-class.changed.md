@@ -1,0 +1,1 @@
+- **bc2cpp** now knows that a Symbol element of a frozen literal table (`[:a, :b].freeze`) is a Symbol: the numeric class flow gives reads of such a table the Symbol class bit instead of an unknown class. `BC2CPP_SYMBOL_CLASS=0` restores the earlier output. See ADR 0421 and `docs/bc2cpp-symbol-class.md`.
