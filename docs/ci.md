@@ -403,8 +403,16 @@ empty, so one can delete the directory under another. The mutant pool already us
 group is for shards made of single-process scripts. A group adds CPU and memory load, so keep N at 3
 on the 4-vCPU runner: `embedded_ivar_access_check` alone uses about 2.5 cores.
 
-Groups in use: `registrations`, both width legs, and `call-facts` (its first command builds the
-full core, the rest of the non-mutation checks run as a group). The ten `call-facts` mutation checks are not in
+A command that appends to the job summary (`$GITHUB_STEP_SUMMARY`) shares that file with the other
+commands, so it joins a group only with a file of its own. Prefix it with `GITHUB_STEP_SUMMARY=<file>`
+and add a line after `# ci:parallel end` that appends the files to the summary in input order. The
+prefix works because a group runs each command with `eval` in its own subshell. If the group fails,
+the appending line does not run, so the summaries of that shard are missing and the failing command's
+output is in the log.
+
+Groups in use: `registrations`, both width legs, `call-facts` (its first command builds the
+full core, the rest of the non-mutation checks run as a group) and `coverage` (the two job-summary
+reports, each with its own file, and the rescue shadow check; see the summary rule above). The ten `call-facts` mutation checks are not in
 a group: they are split over the shards `call-facts-mutants-a` and `call-facts-mutants-b` and run in sequence,
 because each already runs a four-wide mutant pool and `call_facts_mutation` is the only one of them that uses
 `.mutants/`. Measured on a 4-core machine for the `registrations` shard:

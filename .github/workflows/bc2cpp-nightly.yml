@@ -407,10 +407,15 @@ jobs:
               OPTCARROT_CLOSED_WORLD=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
           - shard: coverage
             # Split from fast: the three slowest checks there (~10, ~5 and ~0.2 min).
+            # The two reports append to the job summary, so each one writes its own file inside the group; the
+            # files are appended to the summary in order after the group (docs/ci.md, "Parallel groups").
             checks: |
-              ./scripts/bc2cpp/coverage_check.bash build-bc2cpp/mruby
-              ./scripts/optcarrot/bc2cpp_coverage_check.bash build-bc2cpp/mruby
+              # ci:parallel begin 3
+              GITHUB_STEP_SUMMARY="$RUNNER_TEMP/coverage-bc2cpp.md" ./scripts/bc2cpp/coverage_check.bash build-bc2cpp/mruby
+              GITHUB_STEP_SUMMARY="$RUNNER_TEMP/coverage-optcarrot.md" ./scripts/optcarrot/bc2cpp_coverage_check.bash build-bc2cpp/mruby
               MRBC="$mrbc" ruby scripts/bc2cpp/rescue_shadow_check.rb
+              # ci:parallel end
+              cat "$RUNNER_TEMP/coverage-bc2cpp.md" "$RUNNER_TEMP/coverage-optcarrot.md" >> "$GITHUB_STEP_SUMMARY"
           - shard: fast
             checks: |
               MRBC="$mrbc" ruby scripts/bc2cpp/yield_reach_check.rb

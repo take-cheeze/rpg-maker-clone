@@ -172,6 +172,9 @@ Ranked by what they would save on the critical path. The first item is partly do
    at the price of resetting the generator's global state between calls.
 2. **`coverage` (3 commands, 22.5 min).** The two bash reports append to `$GITHUB_STEP_SUMMARY` with `tee -a`, so
    they cannot share a group without interleaving the summary. Giving each its own summary file would allow it.
+   Done: each report writes its own file inside a group and the files are appended in order after it. On a quiet
+   4-core box the checks step went from 1015 s to 679 s (the coverage report alone is 676 s serial and 679 s grouped);
+   the job summary body is byte-identical across the runs (docs/ci.md, "What may go in a group").
 3. **Single-command shards** (`hot-only`, `hot-proven-miss`, `block-arm-reach`, `core-exact-direct`,
    `core-mutants`). Each waits on one script, so only parallelism inside that script (its own mutant or
    fixture loop) would shorten them.
