@@ -1279,7 +1279,7 @@ jobs:
           # ADR 0424: the Symbol class bit of frozen tables (host model; the generated-code half needs MRBC, see bc2cpp-nightly).
           - name: bc2cpp symbol class check (host)
             run: ruby scripts/bc2cpp/symbol_class_check.rb
-          # ADR 0428: the Symbol bit of a LOADSYM register and the Symbol class chain (host model; the generated-code
+          # ADR 0429: the Symbol bit of a LOADSYM register and the Symbol class chain (host model; the generated-code
           # half needs MRBC, see bc2cpp-nightly).
           - name: bc2cpp loadsym class check (host)
             run: ruby scripts/bc2cpp/loadsym_class_check.rb

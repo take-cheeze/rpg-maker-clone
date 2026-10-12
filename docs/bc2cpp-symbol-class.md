@@ -7,7 +7,7 @@ literals), so `TABLE[i]` reads SYM (or SYM|NIL) in the numeric class flow instea
 Code: `tools/bc2cpp/codegen_frozen_tables.rb` (slot reader, switch), `tools/bc2cpp/frozen_tables.rb` (naming),
 `tools/bc2cpp/codegen_numeric_proof.rb` (`numeric_mask_name`), `tools/bc2cpp/numeric_flow.rb` (header).
 Kill switch: `BC2CPP_SYMBOL_CLASS=0` (also off when `BC2CPP_IMMEDIATE_CLASS_BITS=0`). Check:
-`scripts/bc2cpp/symbol_class_check.rb`. A `LOADSYM` register carries the same bit in the numeric flow (ADR 0428, the
+`scripts/bc2cpp/symbol_class_check.rb`. A `LOADSYM` register carries the same bit in the numeric flow (ADR 0429, the
 section below), with kill switch `BC2CPP_LOADSYM_CLASS=0` and check `scripts/bc2cpp/loadsym_class_check.rb`.
 
 ## Consumers audited
@@ -70,7 +70,7 @@ Not run: `frozen_tables_mutation_check.rb`, `numeric_native_direct_check.rb`, `l
 and the behavioural halves (g++ on a full mruby build). The corpus run covers the generated code of every shipped
 method.
 
-## LOADSYM registers (ADR 0428)
+## LOADSYM registers (ADR 0429)
 
 A `LOADSYM` in a register is the Symbol bit in the numeric flow too (`NumericOracle#literal_class_mask`, the bit of
 `frozen_symbol_bit`). Its consumers, by where the mask goes (`BC2CPP_LOADSYM_CLASS=0` restores OTHER):
@@ -90,7 +90,7 @@ A `LOADSYM` in a register is the Symbol bit in the numeric flow too (`NumericOra
 | Arithmetic (`arith`, `ADD`/`SUB`/`MUL`/`DIV`, `ADDI`) | a non-numeric operand gives OTHER | refused |
 | `numeric?`, `== INT` (native direct, step loop, `frozen_table_exact_class`) | SYM is not INT; the frozen-table subset fails | refused |
 | Truthiness (`narrow_by_truth`) | a Symbol is truthy: dropped on the falsy edge | sound |
-| Class narrowing verdict (`class_test_verdict`, `class_test_chain`) | the Symbol chain is `[Symbol]`: exact verdict for every admitted test name | sound (ADR 0428) |
+| Class narrowing verdict (`class_test_verdict`, `class_test_chain`) | the Symbol chain is `[Symbol]`: exact verdict for every admitted test name | sound (ADR 0429) |
 | Class narrowing claims (`class_narrowing_membership`) | a SYM membership needs a declared `Symbol` class (none): no claim on a dropped SYM | sound |
 | Class narrowing positive (`class_test_positive`) | Symbol is bitless: no positive class, OTHER stays OTHER | sound |
 | `respond_to?` (`class_test_responds_verdict`) | Symbol is not in CLASS_TEST_CORE_CHAIN: unknown, both edges | sound |
@@ -105,7 +105,7 @@ Class narrowing on a LOADSYM literal (the exact-class run) also decides the Symb
 empty truth edge and `x.is_a?(Symbol)` on `SYM|NIL` keeps nil on the falsy edge. Each such test is claimed by a
 CLASS_NARROWING guard that the closed world checks at run time.
 
-### Measurement (ADR 0428)
+### Measurement (ADR 0429)
 
 Trees: origin/master (`git archive`, baseline) and this branch, both with the main checkout's mruby sources linked in.
 Command: `LANG=C.UTF-8 MRBC=3rd/mruby/build/host/bin/mrbc BC2CPP_COVERAGE_KEEP_DIR=... ruby scripts/bc2cpp/coverage_report.rb`.
@@ -128,7 +128,7 @@ claim the narrowing makes and never fires for a correct flow), and a literal Sym
 guard on its empty truth edge. Before the one-class chain was added, the same fixture lost the numeric arm of its
 Integer branch (a precision regression: the unknown Symbol kept both edges); the chain restores it.
 
-## Checks run (ADR 0428)
+## Checks run (ADR 0429)
 
 * `scripts/bc2cpp/loadsym_class_check.rb`: host model and generated half (MRBC): PASS.
 * `symbol_class_check.rb` (MRBC): PASS. `frozen_tables_check.rb` (`FT_GENERATED_ONLY=1`), `numeric_operand_check.rb`,

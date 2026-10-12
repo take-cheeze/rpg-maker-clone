@@ -107,7 +107,7 @@ CHECKS = [
   { name: 'bc2cpp-numeric-operand', command: %w[scripts/bc2cpp/numeric_operand_check.rb] },
   # ADR 0424: the Symbol class bit of frozen tables (the model half; the fixture half needs mrbc).
   { name: 'bc2cpp-symbol-class', command: %w[scripts/bc2cpp/symbol_class_check.rb] },
-  # ADR 0428: the Symbol bit of a LOADSYM register and the Symbol class chain (the model half; the fixture half needs mrbc).
+  # ADR 0429: the Symbol bit of a LOADSYM register and the Symbol class chain (the model half; the fixture half needs mrbc).
   { name: 'bc2cpp-loadsym-class', command: %w[scripts/bc2cpp/loadsym_class_check.rb] },
   # ADR 0302: the RGSS native result facts against the native sources, and the ClosedWorld questions;
   # the generated-code section skips here.

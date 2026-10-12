@@ -1,4 +1,4 @@
-# 0428. bc2cpp: a Symbol literal in a register carries the Symbol class bit in the numeric flow
+# 0429. bc2cpp: a Symbol literal in a register carries the Symbol class bit in the numeric flow
 
 Date: 2026-10-12
 
