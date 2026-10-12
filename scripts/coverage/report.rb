@@ -95,7 +95,7 @@ CHECKS = [
   # The host-only hand-built shapes of the register flow pass (ADR 0415).
   { name: 'bc2cpp-register-flow', command: %w[scripts/bc2cpp/register_flow_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp/core_mixins_check.rb] },
-  # LEXICAL_CONST (ADR 0421): the fixtures need the host mrbc and skip without MRBC; no mrblib lines.
+  # LEXICAL_CONST (ADR 0423): the fixtures need the host mrbc and skip without MRBC; no mrblib lines.
   { name: 'bc2cpp-lexical-const', command: %w[scripts/bc2cpp/lexical_const_check.rb] },
   { name: 'bc2cpp-typed-reflection', command: %w[scripts/bc2cpp/typed_reflection_check.rb] },
   # Reads every schema field through the real LCF reader (ADR 0285).

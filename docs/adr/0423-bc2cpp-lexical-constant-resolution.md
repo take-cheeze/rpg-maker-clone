@@ -1,4 +1,4 @@
-# 0421. bc2cpp: resolve a constant read through its lexical scope, not its bare name
+# 0423. bc2cpp: resolve a constant read through its lexical scope, not its bare name
 
 Date: 2026-10-12
 

@@ -30,7 +30,7 @@ C++ compiler's inlining decisions.
 
 The numeric proof and the class pools (ADR 0276, 0296, 0301) read a constant's class set from the definitions it
 reaches. Those are keyed by the definition's qualified name, resolved lexically by `tools/bc2cpp/lexical_consts.rb`
-(ADR 0421): a bare read takes the first scope of its lexical chain that defines the name, and is refused (falls back
+(ADR 0423): a bare read takes the first scope of its lexical chain that defines the name, and is refused (falls back
 to the integer-constant proof or OTHER) when another definition reachable from that lookup could be read instead.
 `Game::Character::TURN_LEFT` and `Game::MoveRoute::TURN_LEFT` therefore keep their own pools. `BC2CPP_LEXICAL_CONST=0`
 keys by bare name again.
