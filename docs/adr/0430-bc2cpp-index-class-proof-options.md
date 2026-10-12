@@ -1,4 +1,4 @@
-# 0428. bc2cpp: options for proving constant-table indexes Integer (random and clamp)
+# 0430. bc2cpp: options for proving constant-table indexes Integer (random and clamp)
 
 Date: 2026-10-12
 
@@ -303,7 +303,7 @@ lines on master to confirm the POLY status of `random` and `clamp`, and whether 
 - No code changes. The claims above were verified by reading the cited lines on
   origin/master 5b8f987. The site counts are grep estimates. A measured count needs
   `3rd/mruby` checked out and a bc2cpp run.
-- ADR numbers 0426 and 0427 are not present on master. This ADR uses 0428 as the
+- ADR numbers 0426 and 0427 are not present on master. This ADR uses 0430 as the
   branch was assigned.
 - Option 1 is the only option whose output change is broad (about 35 bitwise sites).
   Options 2 and 4 are the only ones that widen what the numeric flow believes about
