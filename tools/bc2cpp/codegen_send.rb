@@ -1397,6 +1397,12 @@ class CodeGen
         exact_via_flow = true
       end
       # EXACT_CORE_ARMS (ADR 0309): a core class the flow proves exact; only the TYPED guard below uses it.
+      # EXACT_FLOW_RESULT_CLASS: when the receiver trace names no class at all (a call result such as
+      # `h.keys`, `x.to_s`, `r.to_a`), the flow's proof supplies the class; the TYPED lookup below still decides
+      # whether any direct target exists, so a class without one changes nothing.
+      if known_class.nil? && exact_class.nil? && exact_flow_result_class_enabled?
+        known_class = exact_core_arm_class(irep, proof_idx, proof_reg, self_implicit)
+      end
       exact_core_typed = exact_class.nil? && !known_class.nil? &&
                          exact_core_arm_class(irep, proof_idx, proof_reg, self_implicit) == known_class
       if exact_class
@@ -2016,32 +2022,38 @@ class CodeGen
 
   # The uncached GETCONST lookup: resolve the owner's lexical scope chain, probe
   # each scope innermost-first, fall back to Object. `d` is the destination
-  # register number (a string). Used inline, and as the slow path of a
+  # register number (a string). Used at ordinary sites and as the slow path of a
   # CONST_SITE_CACHE helper (which passes d = "0").
   def const_lookup_block(d, name, owner_path)
     if owner_path == ['Object']
       "  r#{d} = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, \"#{name}\"));\n"
     else
       @const_lookup_helper_used = true
-      out = String.new
-      out << "  {\n"
-      scope_vars = []
+      @const_scope_helpers ||= {}
+      slot = (@const_scope_helpers[owner_path] ||= { index: @const_scope_helpers.size })
+      "  r#{d} = bc2cpp_const_scope_#{slot[:index]}(M, mrb_intern_cstr(M, \"#{name}\"));\n"
+    end
+  end
+
+  # Resolve the complete owner path before probing, just as the inline lookup
+  # did. Scope values remain on the mruby arena; no constant values are cached.
+  def emit_const_scope_helpers
+    out = String.new
+    (@const_scope_helpers || {}).each do |owner_path, slot|
+      out << "static mrb_value bc2cpp_const_scope_#{slot[:index]}(mrb_state* M, mrb_sym name) {\n"
       current = 'mrb_obj_value(M->object_class)'
       owner_path.each_with_index do |seg, i|
-        out << "    mrb_value scope#{i} = mrb_const_get(M, #{current}, mrb_intern_cstr(M, \"#{seg}\"));\n"
-        scope_vars << "scope#{i}"
+        out << "  mrb_value scope#{i} = mrb_const_get(M, #{current}, mrb_intern_cstr(M, \"#{seg}\"));\n"
         current = "scope#{i}"
       end
-      out << "    mrb_bool ok = FALSE;\n"
-      out << "    mrb_value r#{d}_tmp = mrb_nil_value();\n"
-      scope_vars.reverse_each do |sv|
-        out << "    if (!ok) r#{d}_tmp = bc2cpp_const_try(M, #{sv}, mrb_intern_cstr(M, \"#{name}\"), &ok);\n"
+      out << "  mrb_bool ok = FALSE;\n  mrb_value result = mrb_nil_value();\n"
+      (owner_path.size - 1).downto(0) do |i|
+        out << "  if (!ok) result = bc2cpp_const_try(M, scope#{i}, name, &ok);\n"
       end
-      out << "    if (!ok) r#{d}_tmp = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, \"#{name}\"));\n"
-      out << "    r#{d} = r#{d}_tmp;\n"
-      out << "  }\n"
-      out
+      out << "  if (!ok) result = mrb_const_get(M, mrb_obj_value(M->object_class), name);\n"
+      out << "  return result;\n}\n"
     end
+    out
   end
 
   # File-scope state and helpers for CONST_SITE_CACHE. Each helper returns the
