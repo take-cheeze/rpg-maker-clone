@@ -1251,7 +1251,7 @@ jobs:
           # The host-only sections (hand-built bytecode, a synthetic core tree,
           # the patch text); the fixture sections need mrbc and the patched
           # mruby, so they run in the `bc2cpp-checks` (bc2cpp-nightly.yml) job (ADR 0261).
-          - name: bc2cpp join dominance, core mixins, typed reflection and numeric operand checks
+          - name: bc2cpp join dominance, core mixins, typed reflection, numeric operand and class object argument checks
             run: |
               ruby scripts/bc2cpp/join_dominance_check.rb
               ruby scripts/bc2cpp/core_mixins_check.rb
@@ -1259,6 +1259,7 @@ jobs:
               ruby scripts/bc2cpp/numeric_operand_check.rb
               ruby scripts/bc2cpp/native_result_facts_check.rb
               ruby scripts/bc2cpp/tuple_return_check.rb
+              ruby scripts/bc2cpp/class_object_args_check.rb
 
           # ADR 0285: the LCF schema oracle against the real reader (host-only, no mrbc).
           - name: bc2cpp LCF schema oracle check

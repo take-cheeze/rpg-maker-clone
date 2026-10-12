@@ -233,6 +233,12 @@ jobs:
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/constructor_pools_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/constructor_pools_mutation_check.rb
+          - shard: class-object-args
+            # ADR 0416: the class-object resolver on hand-built bytecode, then the generated code of a closed-world
+            # fixture with its withdrawal worlds and the kill switch, then seventeen host-only mutants.
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp/class_object_args_check.rb
+              ruby scripts/bc2cpp/class_object_args_mutation_check.rb
           - shard: ivar-typing
             # ADR 0382: keyword constructors and the class of `self` in the pools, each with its withdrawal worlds and
             # kill switch, then nine mutants through the shared pool.
