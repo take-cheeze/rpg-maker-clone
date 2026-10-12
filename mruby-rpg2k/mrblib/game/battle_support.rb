@@ -406,8 +406,10 @@ module Game
       # agility term — the same ordering `Game::Battle#to_hit` already uses for a
       # basic attack.
       to_hit = to_hit * hit_modifier(source) / 100
-      # 必中: a source that ignores evasion skips the agility term entirely.
-      return to_hit if source.ignores_evasion
+      # 必中: a source that ignores evasion skips the agility term entirely. So does a call with no target:
+      # Game::Battle#enemy_skill_ready? asks for a skill's command before any target is picked (cost and
+      # usability only), and there is no agility or evasion to apply to nobody.
+      return to_hit if source.ignores_evasion || target.nil?
       src = effective_agi(source)
       src = 1 if src < 1
       tgt = effective_agi(target)
