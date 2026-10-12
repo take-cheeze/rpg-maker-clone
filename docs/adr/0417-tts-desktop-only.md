@@ -94,3 +94,20 @@ of `map.rb` that the closed-world analysis would also have to repeat. A new targ
 added to `RgssTtsConfig::BACKEND_BUILDS`; the check lists every build name, so a forgotten one is a failure
 rather than a silent no-op. Nothing about the desktop feature changed: `src/voicevox_tts.cxx`, the flags, the
 assets and `RGSS::Tts` itself are as ADR 0046 left them.
+
+## NOMETHOD_REVIEWED follow-up
+
+The "21 fewer by-name sends" above are not all gains. With the native `stop` registration gone, a `x.stop` receiver
+whose class set that registration used to widen resolves to the closed set of project classes, so its `else` arm
+becomes a dead `bc2cpp_nomethod -> stop` fallback and ADR 0226's full-run gate wants it reviewed. Four sites, each
+read in the Ruby and found dead, so they are listed in `NOMETHOD_REVIEWED`:
+
+- `Game::Interpreter#do_timer`: `t = @state.timer(id)` is `@timers[id] || @timers[0]`, and `@timers` holds only
+  `Game::Timer` instances (`Game::Timer#stop`).
+- `Scene::Map#perform_exit_game`, `#perform_game_over`, `#perform_return_to_title`: `it`/`interp` defaults to
+  `@interpreter` and is otherwise the `Game::Interpreter` a parallel process or `Scene::Battle`'s `@owner` passes;
+  `Game::Interpreter#stop` defines it.
+
+Only classes that define `stop` reach these sites; the hot-only wio build never compiled them, so the build itself was
+unaffected. The same check also dropped a stale `Game.singleton#rpg2003_database? -> rpg2003?` entry: that site vanished
+between #2168 and #2169 (a generator change, unrelated to Tts), so the key is removed.

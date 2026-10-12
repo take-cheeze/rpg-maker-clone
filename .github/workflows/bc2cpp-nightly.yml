@@ -394,6 +394,13 @@ jobs:
             checks: |
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_singleton_check.rb
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_singleton_mutation_check.rb
+          - shard: rpg2k-singleton-owners
+            # ADR 0422: the real Game::CommonEvent / Game::MoveRoute class methods in a fixture (generated code for the
+            # base world and three withdrawal worlds, the owners/register/hot-only wiring, the interpreted-versus-
+            # compiled run), then 11 mutants and an unmutated control through the shared pool.
+            checks: |
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/rpg2k_singleton_owners_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/rpg2k_singleton_owners_mutation_check.rb
           - shard: integer-constants
             # ADR 0324: unit cases for the native-definition scan and the jump onto a SETCONST, generated code, the
             # full-core and core-only runs, then eight mutants and an unmutated control (the 32-bit run is in
@@ -427,8 +434,8 @@ jobs:
             # mutants (16), and STRICT_HINTS_REVIEWED over the real wio closed world (hot-only passes the gate,
             # the full run equals the list; est. 15 min like the NOMETHOD_REVIEWED check).
             checks: |
-              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_check.rb
-              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_mutation_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_mutation_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_reviewed_check.rb
           - shard: coverage
             # Split from fast: the three slowest checks there (~10, ~5 and ~0.2 min).
@@ -526,6 +533,7 @@ jobs:
               ruby scripts/bc2cpp/insn_operands_check.rb
               ruby scripts/bc2cpp/irep_scans_check.rb
               ruby scripts/bc2cpp/bytecode_ir_check.rb
+              BC2CPP_CPU_IR_NATIVE=1 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_cpu_dispatch_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_dataflow_check.rb
               ruby scripts/bc2cpp/origin_multiwrite_check.rb
               ruby scripts/bc2cpp/site_origin_exceptions_check.rb

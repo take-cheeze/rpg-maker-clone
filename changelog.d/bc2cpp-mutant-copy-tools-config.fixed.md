@@ -1,0 +1,1 @@
+- **bc2cpp nightly**: the mutation checks whose mutant is a copy of `tools/bc2cpp` in a temp directory now copy `tools/*.rb` beside it (`Bc2cppMutantPool.copy_generator`); `compiled_gems.rb` requires `../rgss_tts_config` since ADR 0417, so those copies died with a LoadError and every mutant counted as unkilled.
