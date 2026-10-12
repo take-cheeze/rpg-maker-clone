@@ -100,7 +100,7 @@ wall time includes startup; each process retained the complete table.
 | 1,800 continuous frames | 7.1957 s | 7.0762 s | 250.15 / 254.37 |
 
 All twelve checksums matched (`59662` at 180 frames, `60838` at 1,800).
-Cold wall time improved by 12.1% as a ratio, saving about 103 ms. The longer
+Cold wall FPS increased by 12.1%, saving about 103 ms per process. The longer
 run still includes one initialization; its 1.7% difference does not establish
 faster steady emulation. The advertised full-preset runner also passed with
 `MRBC` unset and installed 356 compiled methods.

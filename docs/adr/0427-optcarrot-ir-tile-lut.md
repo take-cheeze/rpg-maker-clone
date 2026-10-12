@@ -1,4 +1,4 @@
-# 0423. Lower the Optcarrot tile initializer from decoded bytecode IR
+# 0427. Lower the Optcarrot tile initializer from decoded bytecode IR
 
 Date: 2026-10-13
 
