@@ -896,10 +896,10 @@ if $PROGRAM_NAME == __FILE__
   warn "== stable class constants (CONST_SITE_CACHE): #{CodeGen.stable_class_constants.size} =="
   # ENUMERATOR_MODEL (ADR 0418): the `Enumerator` constant Kernel#to_enum reads, proven apart from StableClassConstants (mruby's
   # chain/lazy gems reopen the class, which that analysis counts as a second definition).
-  if CodeGen.enumerator_model&.to_enum_direct
+  if CodeGen.enumerator_model
     unstable = EnumeratorModel.constant_unstable_reason(ireps, root_label, native_paths, foreign_ruby_srcs)
     CodeGen.enumerator_model.constant_stable = unstable.nil?
-    CodeGen.enumerator_model.reason = unstable
+    CodeGen.enumerator_model.reason ||= unstable
   end
   warn "== enumerator model (ADR 0418): to_enum direct #{CodeGen.enumerator_model&.to_enum_direct ? 'proven' : 'refused'}" \
        "#{CodeGen.enumerator_model&.reason ? " (#{CodeGen.enumerator_model.reason})" : ''}, Enumerator constant " \

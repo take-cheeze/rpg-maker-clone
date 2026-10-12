@@ -92,7 +92,7 @@ if ENV['MRBC'] && PHASE != 'behavior'
   def_text = real[/^  def to_enum\(meth=:each.*?^  end\n/m]
   without_def = real.sub(def_text) { '' }
   check.call('NEG: to_enum defined on another owner, while the Kernel alias stays in mruby-enumerator (owner gate alone)',
-             model_for.call(enumerator_text: without_def, extra: "class Foo\n#{def_text}end\n").to_enum_direct == false)
+             model_for.call(enumerator_text: "#{without_def}\nclass Foo\n#{def_text}end\n").to_enum_direct == false)
   check.call('NEG: Kernel#to_enum defined outside mruby-enumerator, alias inside it (source gate alone)',
              model_for.call(enumerator_text: without_def, extra: "module Kernel\n#{def_text}end\n").to_enum_direct == false)
   check.call('NEG: a to_enum that is not from mruby-enumerator', model_for.call(enumerator_path: 'other/enumerator.rb').to_enum_direct == false)
