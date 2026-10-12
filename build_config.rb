@@ -309,11 +309,11 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # Opt-in (docs/bc2cpp-nomethod-verify.md, ADR 0275): a dead bc2cpp_nomethod site aborts
   # without dispatching. Off unless BC2CPP_NOMETHOD_VERIFY=1, so no shipped build changes.
   conf.cxx.defines << 'BC2CPP_NOMETHOD_VERIFY' if ENV['BC2CPP_NOMETHOD_VERIFY'] == '1'
-  # Test-only (ADR 0421): the sealed desktop host keeps the hand-written registrations of a hot-only build
+  # Test-only (ADR 0426): the sealed desktop host keeps the hand-written registrations of a hot-only build
   # (register.cxx drops them there as duplicates of the generated ones; singleton methods such as
   # Game.clamp are not duplicated, and their bytecode def is stripped, so they would be undefined).
   conf.cxx.defines << 'BC2CPP_KEEP_HAND_REGISTRATIONS' if conf.name == 'host' && ENV['RPGMAKER_BC2CPP_CLOSED_WORLD_HOST'] == '1'
-  # Opt-in (ADR 0421): the strict-hint survey mode, each distinct violation logged once and dispatched.
+  # Opt-in (ADR 0426): the strict-hint survey mode, each distinct violation logged once and dispatched.
   conf.cxx.defines << 'BC2CPP_HINT_VIOLATION_LOG' if ENV['BC2CPP_HINT_VIOLATION_LOG'] == '1'
 
   # A cross build's bootstrap host build exists only to produce `mrbc`, and the
@@ -326,7 +326,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   bc2cpp = ENV['RPGMAKER_BC2CPP'] &&
            !(ENV['MRUBY_BC2CPP_SKIP_HOST'] && conf.name == 'host')
 
-  # RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1 (test-only, ADR 0421, tools/bc2cpp/compiled_gems.rb): the desktop
+  # RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1 (test-only, ADR 0426, tools/bc2cpp/compiled_gems.rb): the desktop
   # engine as the same RPG2k-only world, to verify the closed-world tiers on real workloads.
   sealed_host = conf.name == 'host' && ENV['RPGMAKER_BC2CPP_CLOSED_WORLD_HOST'] == '1'
 

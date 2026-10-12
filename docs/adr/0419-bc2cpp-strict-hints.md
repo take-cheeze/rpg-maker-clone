@@ -146,3 +146,7 @@ See `docs/bc2cpp-strict-hints.md`. `scripts/bc2cpp/strict_hints_check.rb` (night
 asserts: default build dispatches and answers what the interpreter answers; strict build logs
 and raises `BC2cppHintViolation`; verify build aborts naming the site; dispatch build answers
 again. `strict_hints_mutation_check.rb` kills 16 mutants of the tier's conditions.
+
+## Addendum
+
+The verify run was done on a sealed desktop host and changed the candidate-set families: see ADR 0426.

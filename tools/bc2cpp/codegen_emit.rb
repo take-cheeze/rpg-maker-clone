@@ -696,7 +696,7 @@ class CodeGen
   # reads the gem's hand-wired accessor; a HOT_ONLY build reads the owner-class cache instead, because
   # register.cxx captures the g_direct_construct_* globals under `#ifndef BC2CPP_HOT_ONLY_STUBS`, so in
   # a hot-only build every such accessor would return nullptr (found by the BC2CPP_STRICT_HINTS verify
-  # run on the sealed desktop host, ADR 0421: Game::Party#initialize crashed in bc2cpp_direct_alloc).
+  # run on the sealed desktop host, ADR 0426: Game::Party#initialize crashed in bc2cpp_direct_alloc).
   # The sealed desktop host (RPGMAKER_BC2CPP_CLOSED_WORLD_HOST, BC2CPP_BUILD_NAME=host) always reads the
   # cache: a full build of it must link without a hand-written accessor per listed owner (most are unwired).
   def direct_construct_class_expr(owner)

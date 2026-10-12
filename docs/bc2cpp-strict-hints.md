@@ -16,7 +16,7 @@ with the variable unset, empty or `0` the generated code is byte-identical.
 | --- | --- |
 | unset, empty, `0` | none |
 | `1` | `typed`, `element`, `ivar_accessor`, `mono_embed` (a receiver hint: layout, annotation, element) |
-| `all` | those four plus `poly_small_n`, `poly_table`, `interface_table` (the candidate set of a name, receivers not traced) |
+| `all` | those four plus `poly_small_n`, `poly_table`, `interface_table` (the candidate set of a name; forced only where no known class outside the set answers the name, ADR 0426) |
 | `typed,ivar_accessor` | the listed ones (an unknown name aborts the run) |
 
 `BC2CPP_STRICT_HINTS_PROVEN=1` restricts the tier to sites whose hint class has no
@@ -38,20 +38,36 @@ tier: reaching a forced site prints
 bc2cpp: NOMETHOD_VERIFY: hint violation reached: <Class>#<name> at <Owner#method (FAMILY)>
 ```
 
-and aborts, so a workload that finishes has reached no forced site wrongly. Build into a
-fresh build directory:
+and aborts. `-DBC2CPP_HINT_VIOLATION_LOG` (ADR 0426) is the survey mode: each distinct violation is
+printed once as `bc2cpp: HINT_VIOLATION_LOG: <Class>#<name> at <site>` and the by-name send runs, so
+one workload run lists every wrong hint.
+
+The closed world is only built for wio/maix/psp, none of which runs here. The sealed desktop host
+(`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1`, test-only, RPG2000/2003 games only) is the same world with
+the real engine around it:
 
 ```
-BC2CPP_STRICT_HINTS=1 BC2CPP_STRICT_HINTS_UNREVIEWED=allow BC2CPP_NOMETHOD_VERIFY=1 \
-  RPGMAKER_BC2CPP=1 cmake --build build-strict --target mruby_build
+RPGMAKER_BC2CPP=1 RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1 BC2CPP_STRICT_HINTS=all \
+  BC2CPP_STRICT_HINTS_UNREVIEWED=allow BC2CPP_NOMETHOD_UNREVIEWED=allow \
+  BC2CPP_NOMETHOD_VERIFY=1 BC2CPP_HINT_VIOLATION_LOG=1 BC2CPP_HOT_ONLY=0 \
+  cmake --build build-strict      # configure once with cmake -S . -B build-strict -GNinja
+ENGINE=build-strict/rpg_maker_clone scripts/bc2cpp/strict_hints_verify.bash
 ```
 
-then run the real workloads against that binary: `scripts/rpg2k/boot_check.bash` (boot, map,
-a battle, a battle played to the end), mruby's own `rake test` of the compiled gems, the
-RPG2k game-logic checks that run in-engine, and optcarrot where it is compiled. A violation
-is a wrong or incomplete hint: fix the inference or annotation, widen the hint class set if the
-extra class is legitimate, or fix the Ruby. `-DBC2CPP_HINT_VIOLATION_DISPATCH` (compile time,
-no regeneration) restores the by-name send silently to tell a wrong hint from another bug.
+(`cp932_table`/`jis0208_table` as for any build without nix, see `scripts/wio/bc2cpp_measure.bash`.)
+`BC2CPP_HOT_ONLY=0` compiles every method; leave it out for the shipped hot set, which also needs
+`BC2CPP_KEEP_HAND_REGISTRATIONS` (the sealed host defines it, ADR 0426). The script runs boot,
+map previews, battles played to the end, the editors and animations on the repo's test beds
+(`scripts/download/nepheshel.bash`, `mtf-meido-action.bash`) and fails on any violation or abort.
+mruby's `rake test` does not test the compiled gems (they are initialised by the dispatch, not by
+`mrb_open`), and the CRuby checks never run compiled code.
+
+A violation is a wrong or incomplete hint: fix the inference or annotation, widen the hint class
+set if the extra class is legitimate, or fix the Ruby. A candidate-set family (`poly_small_n`,
+`poly_table`, `interface_table`) keeps the dispatch when a known class outside the set answers the
+name (`ClosedWorld#answered_outside?`), so on the wio world `all` forces what `1` forces.
+`-DBC2CPP_HINT_VIOLATION_DISPATCH` (compile time, no regeneration) restores the by-name send
+silently to tell a wrong hint from another bug.
 
 To compare the hints with what ran, generate with `BC2CPP_TRACE_PARAMS=1` as well and feed the
 dumps to `scripts/bc2cpp/param_trace_report.rb` (ADR 0298): its second ranking lists a

@@ -378,7 +378,7 @@ class ClosedWorld
     @outside_names
   end
 
-  # STRICT_HINTS (ADR 0421): does a KNOWN receiver outside `listed` answer `name`? A definer the registry has
+  # STRICT_HINTS (ADR 0426): does a KNOWN receiver outside `listed` answer `name`? A definer the registry has
   # but the chain does not list (uncompiled, excluded by a hot-only build, an embedded accessor, a subclass), a
   # core or native definer, or a module's singleton definition (a class or module object is the receiver)
   # reaches the else arm of a candidate-set chain in a correct program, so the set is incomplete by design and
