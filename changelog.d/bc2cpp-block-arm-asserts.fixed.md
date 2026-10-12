@@ -1,0 +1,1 @@
+- **bc2cpp nightly**: the `block_core_direct_check` arm assertions count only the BLOCK_CORE_DIRECT arms. ADR 0420 added a guarded inline loop with its own root-context test, so the whole-body count no longer matched.
