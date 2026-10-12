@@ -244,6 +244,16 @@ existing `libmruby.a` as current and never checks the inputs (patches, the mruby
 submodule, the gembox config, the compiler), so a key that missed one would hand a
 stale library to every check. sccache keys on the real compile inputs instead.
 
+### Test mruby builds execute prerequisites in parallel
+
+The bc2cpp fixture, width and core-test builders pass `rake -m -jN`, with
+`N` capped at 16. `-j` alone limits the thread pool but leaves mruby's ordinary
+task prerequisites serial; `-m` enables their concurrent execution, as in the
+main host build. Existing artifact checks and error handling still apply.
+[ADR 0410](adr/0410-bc2cpp-test-rake-multitask.md) records a clean-build
+comparison. For a local concurrency check, add `RAKEOPT=--job-stats` and inspect
+the builder's saved log for `Total threads in play`.
+
 ### Mutant pool
 
 The mutation checks run one subprocess per mutant, each independent. Through
