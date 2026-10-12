@@ -9429,22 +9429,10 @@ class RPG2k
         set_choice_cursor if choice
       end
 
-      # Zundamon (ずんだもん) message-window narration: read a page's plain,
-      # fully-expanded text aloud (variables and actor names already
-      # substituted, colour/pacing control codes already stripped -- see
-      # `plain` in #open_message/#append_choice_lines) as the page opens.
-      # Covers both Show Text and Show Choices -- a standalone choice window
-      # reads its options through #open_message(lines, true), and one merged
-      # onto a preceding Show Text reads just the appended options through
-      # #append_choice_lines, never the text above it again. A no-op whenever
-      # --zundamon_tts was not passed or its VOICEVOX assets are not
-      # installed (RGSS::Tts.available? is false either way), so this changes
-      # nothing about any other run.
-      def speak_message(plain_lines)
-        return unless RGSS::Tts.available?
-        text = plain_lines.join("\n")
-        RGSS::Tts.speak(text) unless text.strip.empty?
-      end
+      # #speak_message (Zundamon narration, ADR 0046) is defined per build, not
+      # here: scene/map_tts.rb on the desktop build, which can have a VOICEVOX
+      # backend, and the empty mrblib_limited/map_tts_off.rb on every other one
+      # (ADR 0417).
 
       # Append a Show Choices block's labels to the still-open message window
       # from a Show Text that immediately preceded it (RPG_RT keeps one window

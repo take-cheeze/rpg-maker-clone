@@ -1,3 +1,5 @@
+require_relative '../tools/rgss_tts_config'
+
 MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   spec.license = 'MIT'
   spec.author = 'take-cheeze'
@@ -72,6 +74,13 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   linker.libraries << "pthread" unless %w[psp wio].include?(build.name)
 
   objs << objfile("#{build_dir}/shinonome")
+
+  # ADR 0417: RGSS::Tts (src/tts.cxx) forwards to a backend only the desktop
+  # "host" build's executable can install (src/voicevox_tts.cxx). Elsewhere it
+  # is a permanent no-op, so src/tts_off.cxx (an empty rgss_tts_define, so
+  # lib.cxx stays untouched -- its digest is pinned by bc2cpp) takes its place:
+  # no object, no registration, no RGSS::Tts constant.
+  objs.delete(objfile("#{build_dir}/src/#{RgssTtsConfig.backend_possible?(build.name) ? 'tts_off' : 'tts'}"))
 
   # docs/adr/0110/0112: build_config.rb's wio CrossBuild defaults both this
   # and SHINONOME_GOTHIC_SD_FILE (read directly from ENV by

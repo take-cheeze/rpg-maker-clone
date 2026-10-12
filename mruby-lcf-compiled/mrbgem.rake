@@ -93,7 +93,7 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   # core_native_srcs above can never reach them regardless of its own gem
   # list, even though every one of the three is a real, always-active gem
   # in this project's own build (see that helper's own comment).
-  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"] + core_native_srcs("#{dir}/../3rd/mruby") +
+  native_srcs = bc2cpp_rgss_native_srcs("#{dir}/..", build.name) + core_native_srcs("#{dir}/../3rd/mruby") +
                 external_gem_native_srcs("#{dir}/..")
 
   # INTEGER_CONSTANT_PROOF: the Ruby-side twin of native_srcs above --

@@ -1097,6 +1097,8 @@
   `OPTCARROT_CLOSED_WORLD=1` uses a sealed benchmark executable with a validated
   source manifest. See [CPU dispatch](docs/optcarrot-cpu-dispatch.md) and
   [ADR 0403](docs/adr/0403-optcarrot-sealed-world.md).
+  Optional [compact C++ output](docs/bc2cpp-compact-output.md) removes generated
+  line comments with `BC2CPP_COMPACT_OUTPUT=1`; diagnostic output stays the default.
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
@@ -1356,10 +1358,12 @@
   ([`docs/adr/0287-bc2cpp-step-loop-fixnum-guard.md`](docs/adr/0287-bc2cpp-step-loop-fixnum-guard.md)).
   A method that a `Fiber.new { root; :done }` block calls and that reaches
   `Fiber.yield` (through `while` loops, those inlined loops and tiny yielding helpers expanded at
-  their call sites) is compiled as a resumable step function over a GC-marked heap frame, driven
-  by a few lines of bytecode so `Fiber.yield` never has a compiled frame beneath it; a root that
-  does not qualify stays interpreted and bc2cpp logs why. See
-  [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md).
+  their call sites) is compiled as a resumable step function over a GC-marked heap frame
+  with slots only for actual register identifiers (diagnostic and literal text cannot inflate
+  the frame), driven by a few lines of bytecode so `Fiber.yield` never has a compiled frame
+  beneath it; a root that does not qualify stays interpreted and bc2cpp logs why. See
+  [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md)
+  and [`docs/adr/0414-bc2cpp-compact-resumable-registers.md`](docs/adr/0414-bc2cpp-compact-resumable-registers.md).
   Every explicit-receiver `puts` (`$stderr.puts`, `io.puts`) is one call to a shared helper that
   runs mruby-io's `IO#puts` body while the receiver still resolves to it and dispatches by name
   otherwise, so a redirected `$stdout`/`$stderr` or an `IO#puts` override behaves as in the
@@ -1439,6 +1443,8 @@
   the same module's emitted singleton copies.
   [Symbol-cache scanning](docs/bc2cpp-symbol-scanning.md) uses byte offsets and preserves
   Unicode text and slot order while avoiding repeated suffix scans.
+  [Lexical constant lookup](docs/bc2cpp-constant-lookup.md) shares one uncached
+  scope helper per owner to reduce generated source size.
   The generator is `tools/bc2cpp/bc2cpp.rb`, which loads its part files in
   order; `ruby scripts/bc2cpp/split.rb --verify REF` proves that layout is a
   mechanical split of REF's single-file `bc2cpp.rb`. Statically named ivars
@@ -1721,8 +1727,20 @@
   [`docs/deploy.md`](docs/deploy.md) for the one-time repo setup (Pages source +
   Cloudflare secrets).
 - bc2cpp CI enables CRuby's YJIT for host analysis and code generation,
-  including nightly fixture and mutation checks. See [the CI guide](docs/ci.md)
+  including nightly fixture and mutation checks. Mutation workers flush Ruby
+  failure output so the pool can stop caught mutants promptly. See [the CI guide](docs/ci.md)
   for verification and local comparisons.
+- bc2cpp initializes argument registers directly and removes unreferenced
+  nil-only register declarations from ordinary compiled methods and blocks
+  (see [generated register declarations](docs/bc2cpp-register-output.md)).
+- bc2cpp binary decoding shares source-file lookups between filename and line
+  metadata and avoids per-instruction enumerator allocations. The binary-loader
+  check compares source locations and instructions with mrbc (see
+  [CI documentation](docs/ci.md)).
+- Manual bc2cpp nightly runs can compare decoded-tree reuse for repeated worlds,
+  restoring private objects before each analysis. It defaults off because cold
+  population can slow a parallel build. See
+  [ADR 0411](docs/adr/0411-bc2cpp-decoded-tree-cache.md).
 - bc2cpp test builders run mruby prerequisite tasks concurrently with bounded
   Rake workers, reducing cold fixture and width-build setup time. See
   [the CI guide](docs/ci.md).

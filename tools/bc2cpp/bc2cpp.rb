@@ -19,6 +19,7 @@
 
 require 'shellwords'
 require 'set'
+require_relative 'compact_output'
 
 # Parts split out by scripts/bc2cpp/split.rb, loaded in original definition order.
 require_relative 'irep'
@@ -39,8 +40,10 @@ require_relative 'class_arg_types'
 require_relative 'closed_world'
 require_relative 'nomethod_reviewed'
 require_relative 'proven_miss_reviewed'
+require_relative 'strict_hints'
 require_relative 'hot_methods'
 require_relative 'core_methods'
+require_relative 'enumerator_model'
 
 require_relative 'integer_constants'
 require_relative 'integer_constant_ranges'
@@ -48,6 +51,7 @@ require_relative 'native_construct_schema'
 require_relative 'dynamic_names'
 require_relative 'ivar_layout'
 require_relative 'annotations'
+require_relative 'rbs_signatures'
 require_relative 'class_layout'
 require_relative 'element_layouts'
 require_relative 'record_hash'
@@ -60,6 +64,7 @@ require_relative 'codegen_native_send'
 require_relative 'codegen_exact_receiver'
 require_relative 'codegen_native_direct'
 require_relative 'codegen_native_exact_direct'
+require_relative 'codegen_native_singleton'
 require_relative 'codegen_exact_native_wrappers'
 require_relative 'codegen_native_core_direct'
 require_relative 'codegen_native_owner_map'
@@ -198,6 +203,8 @@ if $PROGRAM_NAME == __FILE__
   # ADR 0338: an interpreted core replacement still intercepts inherited lookup.
   CodeGen.core_result_opaque_defs = CoreRubyResults.opaque_definitions(registry, core_ineligible, ireps, alias_sites, CodeGen.core_aliases)
   CodeGen.core_result_installed_names = CoreRubyResults.installed_names(ireps)
+  # ENUMERATOR_MODEL (ADR 0418): read before the core filtering below drops the interpreted Kernel#to_enum.
+  CodeGen.enumerator_model = EnumeratorModel.analyze(registry, ireps, alias_sites)
   core_stale_refusals = CoreMethods.stale(registry, ireps, core_refused)
   core_bytecode = registry.values.flatten.count { |d| d.irep && CoreDefs.core_source?(ireps.fetch(d.irep).file) }
   core_all_defs = registry.values.flatten.select { |d| d.irep && d.core }
@@ -386,6 +393,24 @@ if $PROGRAM_NAME == __FILE__
   warn '  (none inferred)' unless inferred_any
 
   annotations = profile_call.call('Annotations.extract') { Annotations.extract(ireps, registry) }
+  # RBS_SIGNATURES (docs/adr/0413): signature files feed the same three annotation tables. With no .rbs file nothing
+  # here runs and nothing is printed.
+  sig_applied = nil
+  sig_class_annotations = nil
+  sig_element_annotations = nil
+  sig_root = ENV['BC2CPP_SIG_ROOT'] || File.expand_path('../..', __dir__)
+  if (sig_loaded = RbsSignatures.load(RbsSignatures.dirs_from_env(File.expand_path('../..', __dir__)), display_root: sig_root))
+    sig_owners = registry.values.flatten.map(&:owner).uniq
+    sig_class_annotations = ClassAnnotations.extract(ireps, registry, sig_owners)
+    sig_element_annotations = ElementAnnotations.extract(ireps, registry, sig_owners)
+    sig_applied = RbsSignatures.apply(sig_loaded, ireps, registry, annotations, sig_class_annotations, sig_element_annotations)
+    warn '== signature files (RBS_SIGNATURES) =='
+    sig_loaded.files.each { |f| warn "  SIG_FILE #{f}" }
+    sig_applied.diagnostics.each { |d| warn "  #{d.file}:#{d.line}:#{d.col}: #{d.severity}: #{d.message} [#{d.code}]" }
+    if sig_applied.diagnostics.any? { |d| d.severity == 'error' } && !ENV['BC2CPP_TYPE_FACTS'].to_s.then { |v| !v.empty? }
+      abort "\n[bc2cpp] RBS_SIGNATURES: #{sig_applied.diagnostics.count { |d| d.severity == 'error' }} unusable signature(s) (see above)."
+    end
+  end
   warn ''
   warn '== magic-comment annotations (# bc2cpp: (T, ...) -> T) =='
   if annotations.empty?
@@ -505,7 +530,7 @@ if $PROGRAM_NAME == __FILE__
   profile_phase.call('initial ivar layout')
 
   known_owners = registry.values.flatten.map(&:owner).uniq
-  class_annotations = profile_call.call('ClassAnnotations.extract') do
+  class_annotations = sig_class_annotations || profile_call.call('ClassAnnotations.extract') do
     ClassAnnotations.extract(ireps, registry, known_owners)
   end
   warn ''
@@ -607,6 +632,9 @@ if $PROGRAM_NAME == __FILE__
                         module_body_ivar_labels: module_body_ivar_labels)
   end
   class_layout = ClassLayout.known(class_layout_raw)
+  # RBS_SIGNATURES: a declared ivar class fills an ivar the analysis left unknown (guarded hint, like CLASS_HINT); an
+  # inferred class is kept and a disagreement is a contradiction in the type check.
+  RbsSignatures.seed_table(class_layout, sig_applied.ivar_classes) if sig_applied
   profile_phase.call('class layout fixed-point passes')
   # Step 6c-bis: the same call-site inference ArgTypes does, for the class-name
   # lattice. Its only consumer is RBS_SEED_CONTRADICTION below -- a class
@@ -684,7 +712,7 @@ if $PROGRAM_NAME == __FILE__
 
   # ELEMENT_CLASS_SUPPORT: after ClassLayout (only proven-Array ivars are swept)
   # and ClassAnnotations (argument class hints are terminals).
-  element_annotations = profile_call.call('ElementAnnotations.extract') do
+  element_annotations = sig_element_annotations || profile_call.call('ElementAnnotations.extract') do
     ElementAnnotations.extract(ireps, registry, known_owners)
   end
   warn ''
@@ -710,6 +738,7 @@ if $PROGRAM_NAME == __FILE__
                                prepended_modules: prepended_modules, unknown_mixins: unknown_mixins)
   end
   element_layout = ArrayElementLayout.known(element_raw)
+  RbsSignatures.seed_table(element_layout, sig_applied.ivar_elements) if sig_applied
   warn ''
   warn '== known-array-element-class hints (guarded devirtualization only) =='
   if element_layout.empty?
@@ -773,6 +802,7 @@ if $PROGRAM_NAME == __FILE__
                               prepended_modules: prepended_modules, unknown_mixins: unknown_mixins)
   end
   hash_element_layout = HashElementLayout.known(hash_element_raw)
+  RbsSignatures.seed_table(hash_element_layout, sig_applied.ivar_hash_elements) if sig_applied
   profile_phase.call('array/hash element layouts')
   warn ''
   warn '== known-hash-element-class hints (guarded devirtualization only) =='
@@ -866,6 +896,18 @@ if $PROGRAM_NAME == __FILE__
       StableClassConstants.analyze_native(ireps, native_paths, foreign_ruby_srcs)
   end
   warn "== stable class constants (CONST_SITE_CACHE): #{CodeGen.stable_class_constants.size} =="
+  # ENUMERATOR_MODEL (ADR 0418): the `Enumerator` constant Kernel#to_enum reads, proven apart from StableClassConstants (mruby's
+  # chain/lazy gems reopen the class, which that analysis counts as a second definition).
+  if CodeGen.enumerator_model
+    unstable = EnumeratorModel.constant_unstable_reason(ireps, root_label, native_paths, foreign_ruby_srcs)
+    CodeGen.enumerator_model.constant_stable = unstable.nil?
+    CodeGen.enumerator_model.reason ||= unstable
+  end
+  warn "== enumerator model (ADR 0418): to_enum direct #{CodeGen.enumerator_model&.to_enum_direct ? 'proven' : 'refused'}" \
+       "#{CodeGen.enumerator_model&.reason ? " (#{CodeGen.enumerator_model.reason})" : ''}, Enumerator constant " \
+       "#{CodeGen.enumerator_model&.constant_stable ? 'stable' : 'not stable'} =="
+  # NATIVE_SINGLETON_CALL (ADR 0416): the native and outside-Ruby sources the proof must account for.
+  CodeGen.native_singleton_inputs = native_paths && foreign_ruby_srcs ? { native: native_paths, ruby: foreign_ruby_srcs } : nil
   # COMPUTED_SEND_EXPANSION (ADR 0303): frozen Symbol tables a computed-name send may index.
   CodeGen.computed_send_tables = profile_call.call('ComputedSendNames::SymbolTables.analyze') do
     ComputedSendNames::SymbolTables.analyze(ireps, native_paths, foreign_ruby_srcs)
@@ -969,6 +1011,25 @@ if $PROGRAM_NAME == __FILE__
   contradictions = AnnotationContradictions.find(ireps, registry, annotations, arg_types,
                                                 gen.fixnum_return_names, class_annotations,
                                                 class_arg_types)
+  # TYPE_CHECK (docs/adr/0412): the report front-end reads the settled types as data; a build never sets this.
+  type_facts_path = ENV['BC2CPP_TYPE_FACTS']
+  type_facts_path = nil if type_facts_path&.empty?
+  if type_facts_path
+    require_relative 'type_facts'
+    TypeFacts.write(type_facts_path, TypeFacts.collect(TypeFacts::Ctx.new(
+      ireps: ireps, registry: registry, annotations: annotations, class_annotations: class_annotations,
+      element_annotations: element_annotations, arg_types: arg_types, class_arg_types: class_arg_types,
+      class_layout_raw: class_layout_raw, class_poison_reason: class_poison_reason, store_log: ivar_store_log,
+      poison_buckets: poison_buckets, ivar_layout: ivar_layout, element_raw: element_raw,
+      element_poison_reason: element_poison_reason, hash_element_raw: hash_element_raw,
+      hash_poison_reason: hash_poison_reason, container_constants: container_constants, gen: gen,
+      contradictions: contradictions, dynamic_names: DynamicNames.universe(ireps), call_sites: call_sites,
+      root: ENV['BC2CPP_TYPE_FACTS_ROOT'], signature_origins: sig_applied&.origins, signature_locs: sig_applied&.locs,
+      signature_diagnostics: sig_applied&.diagnostics&.map(&:to_h), signature_ivars: sig_applied&.ivar_sigs,
+      constant_sites: constant_assignment_sites, modules: declared_modules, superclass_of: superclass_of,
+      integer_constants: integer_constants
+    )))
+  end
   warn '== annotation/proof contradictions (RBS_SEED_CONTRADICTION) =='
   if contradictions.empty?
     warn '  (none)'
@@ -978,8 +1039,9 @@ if $PROGRAM_NAME == __FILE__
       warn "  CONTRADICTION #{owner}##{name} #{where}: annotation says #{declared.inspect}, " \
            "inference proved #{got.inspect}"
     end
+    # The type check reports them (with file:line) instead of stopping the run that collects them.
     abort "\n[bc2pp] RBS_SEED_CONTRADICTION: #{contradictions.size} annotation(s) disagree with a " \
-          "proved type (see above). Fix the annotation, or the code it claims to describe."
+          "proved type (see above). Fix the annotation, or the code it claims to describe." unless type_facts_path
   end
   warn ''
   # ARRAY_RETURN_PROOF listing, one line per name like the one above, so the
@@ -1087,6 +1149,8 @@ if $PROGRAM_NAME == __FILE__
     warn "== hot-only: listed but not compiled (#{lost.size}) =="
     lost.map { |d| HotMethods.key(d) }.uniq.sort.each { |k| warn "  NOT_COMPILED #{k}" }
   end
+
+  CompactOutput.capture_stdout if ENV['BC2CPP_COMPACT_OUTPUT'] == '1'
 
   # SITE_PROFILE (ADR 0298): opt-in counters on by-name dispatch; unset leaves stdout untouched.
   if (site_profile_dir = ENV['BC2CPP_SITE_PROFILE']) && !site_profile_dir.empty?
@@ -1471,6 +1535,7 @@ if $PROGRAM_NAME == __FILE__
   puts ''
   print gen.emit_structs
   print gen.emit_ary_entry_helper(compiled)
+  print gen.emit_to_enum_helper(compiled)
   print gen.emit_bool_check_helper(compiled)
   print gen.emit_native_core_helpers(compiled)
   print gen.emit_numeric_proof_helpers(compiled)
@@ -1534,6 +1599,24 @@ if $PROGRAM_NAME == __FILE__
 
       warn msg.sub('bc2cpp:', "bc2cpp: #{NomethodReviewed::ALLOW_ENV}=allow, ignoring")
     end
+    # STRICT_HINTS (docs/adr/0419): the forced hint sites, listed and held to STRICT_HINTS_REVIEWED.
+    unless StrictHints.families.empty?
+      hint_sites = StrictHints.sites(compiled)
+      warn "== strict hints (#{StrictHints.families.join(',')}): #{hint_sites.size} bc2cpp_hint_violation =="
+      StrictHints.family_counts(compiled).sort.each { |f, n| warn "  STRICT_HINT #{f}: #{n}" }
+      hint_sites.map { |s| s[:key] }.uniq.sort.each { |k| warn "  STRICT_HINT_SITE #{k}" }
+      warn ''
+      hint_violations = StrictHints.violations(hint_sites, compiled, stale: !ENV['BC2CPP_HOT_METHODS'])
+      unless hint_violations.empty?
+        msg = "bc2cpp: #{hint_violations.size} STRICT_HINTS_REVIEWED violation(s) (docs/adr/0419):\n  " \
+              "#{hint_violations.join("\n  ")}\n" \
+              'Run the verify build over the real workloads, then list the sites in ' \
+              'tools/bc2cpp/strict_hints_reviewed.rb (scripts/bc2cpp/strict_hints_update.rb).'
+        abort msg unless ENV[StrictHints::ALLOW_ENV] == 'allow'
+
+        warn msg.sub('bc2cpp:', "bc2cpp: #{StrictHints::ALLOW_ENV}=allow, ignoring")
+      end
+    end
     # PROVEN_MISS_REVIEWED (docs/adr/0275): a send to a proven class that nothing answers.
     miss_sites = ProvenMiss.sites(compiled)
     warn "== closed world proven-class miss sites: #{miss_sites.size} =="
@@ -1551,6 +1634,7 @@ if $PROGRAM_NAME == __FILE__
     end
   end
   const_site_cache_code = SymbolCache.rewrite(gen.emit_const_site_cache, symbol_table)
+  const_scope_code = SymbolCache.rewrite(gen.emit_const_scope_helpers, symbol_table)
   # OUTLINED_INDEX_OPS: after the symbol cache (their fallbacks become
   # bc2cpp_send too), ahead of every function that calls them.
   index_helpers_code = SymbolCache.rewrite(gen.emit_index_helpers(compiled), symbol_table)
@@ -1569,6 +1653,7 @@ if $PROGRAM_NAME == __FILE__
   warn "== poly table dispatch: #{poly_table_sites.map { |t, n| "#{t} #{n}" }.join(', ').then { |s| s.empty? ? 'none' : s }} sites =="
   warn ''
   print SymbolCache.emit(symbol_table)
+  print const_scope_code
   print const_site_cache_code
   print index_helpers_code
   print eqq_helper_code

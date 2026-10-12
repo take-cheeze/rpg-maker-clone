@@ -27,8 +27,13 @@
 // VOICEVOX CORE ships as a native shared library with no Emscripten/PSP/Wio
 // port, so this backend only makes sense where dlopen() is both available and
 // meaningful -- the desktop native build. Everywhere else rgss_tts_init()
-// below leaves the backend uninstalled.
-#if !defined(__EMSCRIPTEN__) && (defined(__linux__) || defined(__APPLE__))
+// below leaves the backend uninstalled. Android defines __linux__ but is not
+// such a build (no VOICEVOX CORE is shipped there, and the asset directory
+// is a host source path): its mruby-rgss has no tts.cxx either, so
+// rgss_tts_install_backend must not be referenced (ADR 0417,
+// tools/rgss_tts_config.rb).
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__) && \
+    (defined(__linux__) || defined(__APPLE__))
 #define RGSS_TTS_HAVE_DLOPEN 1
 #include <dlfcn.h>
 #endif
