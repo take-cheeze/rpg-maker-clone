@@ -1463,6 +1463,8 @@
   call-site proofs refuse method names a computed-name `send` could reach and ivars a
   foreign write could store a non-typed value into; see
   [`docs/adr/0279-bc2cpp-overflow-exact-fixnum-tier.md`](docs/adr/0279-bc2cpp-overflow-exact-fixnum-tier.md).
+  [Return-hint probes](docs/bc2cpp-return-probes.md) skip embedding checks when a missing
+  outside-method scan already forces the Fixnum proof to stay empty.
   The else of the guarded numeric arms (`+ - * / % & | ^ << >> < <= > >= -@`) is one typed
   helper per operator that calls mruby's own bigint/numeric C function for a bigint, heap
   Integer or Float operand and dispatches by name only for the classes it does not own,
