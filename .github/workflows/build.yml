@@ -1237,6 +1237,11 @@ jobs:
           - name: bc2cpp fallback bodies check (unit half)
             run: ruby scripts/bc2cpp/fallback_bodies_check.rb
 
+          # LEXICAL_CONST (ADR 0423): each fixture is compiled by a host mrbc, which this job
+          # does not build, so here the check prints SKIP and passes; the fixtures run where MRBC is set.
+          - name: bc2cpp lexical constant check
+            run: ruby scripts/bc2cpp/lexical_const_check.rb
+
           # Unit check for the Wio bc2cpp flash-overflow report's map/ld parsing
           # (scripts/wio/overflow_report.rb, ADR 0152) against a hand-built map
           # with known numbers -- the real `wio-bc2cpp` job exercises it too,
