@@ -9,21 +9,21 @@ module LCF
   module SaveTyped
 
     class Save < Record
-      def save_title; table 100, Title, 'title' end
-      def save_system; table 101, System, 'system' end
-      def save_screen; table 102, Screen, 'screen' end
-      def save_pictures; rows 103, Picture, 'pictures' end
-      def save_hero; table 104, PartyLocation, 'hero' end
-      def save_boat; table 105, Movable, 'boat' end
-      def save_ship; table 106, Movable, 'ship' end
-      def save_airship; table 107, Movable, 'airship' end
-      def save_actors; rows 108, PartyActor, 'actors' end
-      def save_inventory; table 109, Inventory, 'inventory' end
-      def save_targets; rows 110, Target, 'targets' end
-      def save_map_events; table 111, MapEvent, 'map_events' end
-      def save_foreground_event; table 113, EventExecState, 'foreground_event' end
-      def save_common_events; rows 114, CommonEvent, 'common_events' end
-      def save_lsd_ext; read 200, :int8_array, 'lsd_ext' end
+      def save_title; table 100, Title, :title end
+      def save_system; table 101, System, :system end
+      def save_screen; table 102, Screen, :screen end
+      def save_pictures; rows 103, Picture, :pictures end
+      def save_hero; table 104, PartyLocation, :hero end
+      def save_boat; table 105, Movable, :boat end
+      def save_ship; table 106, Movable, :ship end
+      def save_airship; table 107, Movable, :airship end
+      def save_actors; rows 108, PartyActor, :actors end
+      def save_inventory; table 109, Inventory, :inventory end
+      def save_targets; rows 110, Target, :targets end
+      def save_map_events; table 111, MapEvent, :map_events end
+      def save_foreground_event; table 113, EventExecState, :foreground_event end
+      def save_common_events; rows 114, CommonEvent, :common_events end
+      def save_lsd_ext; read 200, :int8_array, :lsd_ext end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -48,18 +48,18 @@ module LCF
     end
 
     class Title < Record
-      def save_timestamp; read 1, :double, 'timestamp' end
-      def save_hero_name; read 11, :string, 'hero_name' end
-      def save_hero_level; read 12, :int, 'hero_level' end
-      def save_hero_hp; read 13, :int, 'hero_hp' end
-      def save_face1_name; read 21, :string, 'face1_name' end
-      def save_face1_index; read 22, :int, 'face1_index' end
-      def save_face2_name; read 23, :string, 'face2_name' end
-      def save_face2_index; read 24, :int, 'face2_index' end
-      def save_face3_name; read 25, :string, 'face3_name' end
-      def save_face3_index; read 26, :int, 'face3_index' end
-      def save_face4_name; read 27, :string, 'face4_name' end
-      def save_face4_index; read 28, :int, 'face4_index' end
+      def save_timestamp; read 1, :double, :timestamp end
+      def save_hero_name; read 11, :string, :hero_name end
+      def save_hero_level; read 12, :int, :hero_level end
+      def save_hero_hp; read 13, :int, :hero_hp end
+      def save_face1_name; read 21, :string, :face1_name end
+      def save_face1_index; read 22, :int, :face1_index end
+      def save_face2_name; read 23, :string, :face2_name end
+      def save_face2_index; read 24, :int, :face2_index end
+      def save_face3_name; read 25, :string, :face3_name end
+      def save_face3_index; read 26, :int, :face3_index end
+      def save_face4_name; read 27, :string, :face4_name end
+      def save_face4_index; read 28, :int, :face4_index end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -81,62 +81,62 @@ module LCF
     end
 
     class System < Record
-      def save_scene; read 1, :int, 'scene' end
-      def save_frame_count; read 11, :int, 'frame_count' end
-      def save_system_graphic; read 21, :string, 'system_graphic' end
-      def save_wallpaper_type; read 22, :int, 'wallpaper_type' end
-      def save_font; read 23, :int, 'font' end
-      def save_switch_size; read 31, :int, 'switch_size' end
-      def save_switches; read 32, :bool_array, 'switches' end
-      def save_variable_size; read 33, :int, 'variable_size' end
-      def save_variables; read 34, :int32_array, 'variables' end
-      def save_message_transparent; read 41, :int, 'message_transparent' end
-      def save_message_position; read 42, :int, 'message_position' end
-      def save_message_prevent_overlap; read 43, :bool, 'message_prevent_overlap' end
-      def save_message_continue_events; read 44, :bool, 'message_continue_events' end
-      def save_face_name; read 51, :string, 'face_name' end
-      def save_face_index; read 52, :int, 'face_index' end
-      def save_face_right_position; read 53, :int, 'face_right_position' end
-      def save_face_flip; read 54, :bool, 'face_flip' end
-      def save_bgm_stopping; read 61, :bool, 'bgm_stopping' end
-      def save_title_bgm; table 71, Bgm, 'title_bgm' end
-      def save_battle_bgm; table 72, Bgm, 'battle_bgm' end
-      def save_battle_end_bgm; table 73, Bgm, 'battle_end_bgm' end
-      def save_inn_bgm; table 74, Bgm, 'inn_bgm' end
-      def save_current_bgm; table 75, Bgm, 'current_bgm' end
-      def save_before_vehicle_music; table 76, Bgm, 'before_vehicle_music' end
-      def save_before_battle_music; table 77, Bgm, 'before_battle_music' end
-      def save_stored_bgm; table 78, Bgm, 'stored_bgm' end
-      def save_boat_bgm; table 79, Bgm, 'boat_bgm' end
-      def save_ship_bgm; table 80, Bgm, 'ship_bgm' end
-      def save_airship_bgm; table 81, Bgm, 'airship_bgm' end
-      def save_gameover_bgm; table 82, Bgm, 'gameover_bgm' end
-      def save_cursor_se; table 91, Se, 'cursor_se' end
-      def save_decision_se; table 92, Se, 'decision_se' end
-      def save_cancel_se; table 93, Se, 'cancel_se' end
-      def save_buzzer_se; table 94, Se, 'buzzer_se' end
-      def save_battle_start_se; table 95, Se, 'battle_start_se' end
-      def save_escape_se; table 96, Se, 'escape_se' end
-      def save_enemy_attack_se; table 97, Se, 'enemy_attack_se' end
-      def save_enemy_damaged_se; table 98, Se, 'enemy_damaged_se' end
-      def save_ally_damaged_se; table 99, Se, 'ally_damaged_se' end
-      def save_evasion_se; table 100, Se, 'evasion_se' end
-      def save_enemy_death_se; table 101, Se, 'enemy_death_se' end
-      def save_item_se; table 102, Se, 'item_se' end
-      def save_teleport_erase_transition; read 111, :uint8, 'teleport_erase_transition' end
-      def save_teleport_show_transition; read 112, :uint8, 'teleport_show_transition' end
-      def save_battle_start_erase_transition; read 113, :uint8, 'battle_start_erase_transition' end
-      def save_battle_start_show_transition; read 114, :uint8, 'battle_start_show_transition' end
-      def save_battle_end_erase_transition; read 115, :uint8, 'battle_end_erase_transition' end
-      def save_battle_end_show_transition; read 116, :uint8, 'battle_end_show_transition' end
-      def save_teleport_allowed; read 121, :bool, 'teleport_allowed' end
-      def save_escape_allowed; read 122, :bool, 'escape_allowed' end
-      def save_save_allowed; read 123, :bool, 'save_allowed' end
-      def save_menu_allowed; read 124, :bool, 'menu_allowed' end
-      def save_battle_background; read 125, :string, 'battle_background' end
-      def save_save_count; read 131, :int, 'save_count' end
-      def save_save_slot; read 132, :int, 'save_slot' end
-      def save_atb_mode; read 140, :int, 'atb_mode' end
+      def save_scene; read 1, :int, :scene end
+      def save_frame_count; read 11, :int, :frame_count end
+      def save_system_graphic; read 21, :string, :system_graphic end
+      def save_wallpaper_type; read 22, :int, :wallpaper_type end
+      def save_font; read 23, :int, :font end
+      def save_switch_size; read 31, :int, :switch_size end
+      def save_switches; read 32, :bool_array, :switches end
+      def save_variable_size; read 33, :int, :variable_size end
+      def save_variables; read 34, :int32_array, :variables end
+      def save_message_transparent; read 41, :int, :message_transparent end
+      def save_message_position; read 42, :int, :message_position end
+      def save_message_prevent_overlap; read 43, :bool, :message_prevent_overlap end
+      def save_message_continue_events; read 44, :bool, :message_continue_events end
+      def save_face_name; read 51, :string, :face_name end
+      def save_face_index; read 52, :int, :face_index end
+      def save_face_right_position; read 53, :int, :face_right_position end
+      def save_face_flip; read 54, :bool, :face_flip end
+      def save_bgm_stopping; read 61, :bool, :bgm_stopping end
+      def save_title_bgm; table 71, Bgm, :title_bgm end
+      def save_battle_bgm; table 72, Bgm, :battle_bgm end
+      def save_battle_end_bgm; table 73, Bgm, :battle_end_bgm end
+      def save_inn_bgm; table 74, Bgm, :inn_bgm end
+      def save_current_bgm; table 75, Bgm, :current_bgm end
+      def save_before_vehicle_music; table 76, Bgm, :before_vehicle_music end
+      def save_before_battle_music; table 77, Bgm, :before_battle_music end
+      def save_stored_bgm; table 78, Bgm, :stored_bgm end
+      def save_boat_bgm; table 79, Bgm, :boat_bgm end
+      def save_ship_bgm; table 80, Bgm, :ship_bgm end
+      def save_airship_bgm; table 81, Bgm, :airship_bgm end
+      def save_gameover_bgm; table 82, Bgm, :gameover_bgm end
+      def save_cursor_se; table 91, Se, :cursor_se end
+      def save_decision_se; table 92, Se, :decision_se end
+      def save_cancel_se; table 93, Se, :cancel_se end
+      def save_buzzer_se; table 94, Se, :buzzer_se end
+      def save_battle_start_se; table 95, Se, :battle_start_se end
+      def save_escape_se; table 96, Se, :escape_se end
+      def save_enemy_attack_se; table 97, Se, :enemy_attack_se end
+      def save_enemy_damaged_se; table 98, Se, :enemy_damaged_se end
+      def save_ally_damaged_se; table 99, Se, :ally_damaged_se end
+      def save_evasion_se; table 100, Se, :evasion_se end
+      def save_enemy_death_se; table 101, Se, :enemy_death_se end
+      def save_item_se; table 102, Se, :item_se end
+      def save_teleport_erase_transition; read 111, :uint8, :teleport_erase_transition end
+      def save_teleport_show_transition; read 112, :uint8, :teleport_show_transition end
+      def save_battle_start_erase_transition; read 113, :uint8, :battle_start_erase_transition end
+      def save_battle_start_show_transition; read 114, :uint8, :battle_start_show_transition end
+      def save_battle_end_erase_transition; read 115, :uint8, :battle_end_erase_transition end
+      def save_battle_end_show_transition; read 116, :uint8, :battle_end_show_transition end
+      def save_teleport_allowed; read 121, :bool, :teleport_allowed end
+      def save_escape_allowed; read 122, :bool, :escape_allowed end
+      def save_save_allowed; read 123, :bool, :save_allowed end
+      def save_menu_allowed; read 124, :bool, :menu_allowed end
+      def save_battle_background; read 125, :string, :battle_background end
+      def save_save_count; read 131, :int, :save_count end
+      def save_save_slot; read 132, :int, :save_slot end
+      def save_atb_mode; read 140, :int, :atb_mode end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -202,19 +202,19 @@ module LCF
     end
 
     class Screen < Record
-      def save_tint_finish_red; read 1, :int, 'tint_finish_red' end
-      def save_tint_finish_green; read 2, :int, 'tint_finish_green' end
-      def save_tint_finish_blue; read 3, :int, 'tint_finish_blue' end
-      def save_tint_finish_sat; read 4, :int, 'tint_finish_sat' end
-      def save_tint_current_red; read 11, :double, 'tint_current_red' end
-      def save_tint_current_green; read 12, :double, 'tint_current_green' end
-      def save_tint_current_blue; read 13, :double, 'tint_current_blue' end
-      def save_tint_current_sat; read 14, :double, 'tint_current_sat' end
-      def save_tint_time_left; read 15, :int, 'tint_time_left' end
-      def save_pan_x; read 41, :int, 'pan_x' end
-      def save_pan_y; read 42, :int, 'pan_y' end
-      def save_weather; read 48, :int, 'weather' end
-      def save_weather_strength; read 49, :int, 'weather_strength' end
+      def save_tint_finish_red; read 1, :int, :tint_finish_red end
+      def save_tint_finish_green; read 2, :int, :tint_finish_green end
+      def save_tint_finish_blue; read 3, :int, :tint_finish_blue end
+      def save_tint_finish_sat; read 4, :int, :tint_finish_sat end
+      def save_tint_current_red; read 11, :double, :tint_current_red end
+      def save_tint_current_green; read 12, :double, :tint_current_green end
+      def save_tint_current_blue; read 13, :double, :tint_current_blue end
+      def save_tint_current_sat; read 14, :double, :tint_current_sat end
+      def save_tint_time_left; read 15, :int, :tint_time_left end
+      def save_pan_x; read 41, :int, :pan_x end
+      def save_pan_y; read 42, :int, :pan_y end
+      def save_weather; read 48, :int, :weather end
+      def save_weather_strength; read 49, :int, :weather_strength end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -237,30 +237,30 @@ module LCF
     end
 
     class Picture < Record
-      def save_name; read 1, :string, 'name' end
-      def save_show_x; read 2, :double, 'show_x' end
-      def save_show_y; read 3, :double, 'show_y' end
-      def save_current_x; read 4, :double, 'current_x' end
-      def save_current_y; read 5, :double, 'current_y' end
-      def save_fixed_to_map; read 6, :bool, 'fixed_to_map' end
-      def save_current_zoom; read 7, :double, 'current_zoom' end
-      def save_current_transparency; read 8, :double, 'current_transparency' end
-      def save_use_transparent_color; read 9, :bool, 'use_transparent_color' end
-      def save_current_tone_red; read 11, :double, 'current_tone_red' end
-      def save_current_tone_green; read 12, :double, 'current_tone_green' end
-      def save_current_tone_blue; read 13, :double, 'current_tone_blue' end
-      def save_current_tone_saturation; read 14, :double, 'current_tone_saturation' end
-      def save_current_bot_transparency; read 18, :double, 'current_bot_transparency' end
-      def save_finish_x; read 31, :double, 'finish_x' end
-      def save_finish_y; read 32, :double, 'finish_y' end
-      def save_zoom; read 33, :int, 'zoom' end
-      def save_transparency; read 34, :int, 'transparency' end
-      def save_bot_transparency; read 35, :int, 'bot_transparency' end
-      def save_tone_red; read 41, :int, 'tone_red' end
-      def save_tone_green; read 42, :int, 'tone_green' end
-      def save_tone_blue; read 43, :int, 'tone_blue' end
-      def save_tone_saturation; read 44, :int, 'tone_saturation' end
-      def save_time_left; read 51, :int, 'time_left' end
+      def save_name; read 1, :string, :name end
+      def save_show_x; read 2, :double, :show_x end
+      def save_show_y; read 3, :double, :show_y end
+      def save_current_x; read 4, :double, :current_x end
+      def save_current_y; read 5, :double, :current_y end
+      def save_fixed_to_map; read 6, :bool, :fixed_to_map end
+      def save_current_zoom; read 7, :double, :current_zoom end
+      def save_current_transparency; read 8, :double, :current_transparency end
+      def save_use_transparent_color; read 9, :bool, :use_transparent_color end
+      def save_current_tone_red; read 11, :double, :current_tone_red end
+      def save_current_tone_green; read 12, :double, :current_tone_green end
+      def save_current_tone_blue; read 13, :double, :current_tone_blue end
+      def save_current_tone_saturation; read 14, :double, :current_tone_saturation end
+      def save_current_bot_transparency; read 18, :double, :current_bot_transparency end
+      def save_finish_x; read 31, :double, :finish_x end
+      def save_finish_y; read 32, :double, :finish_y end
+      def save_zoom; read 33, :int, :zoom end
+      def save_transparency; read 34, :int, :transparency end
+      def save_bot_transparency; read 35, :int, :bot_transparency end
+      def save_tone_red; read 41, :int, :tone_red end
+      def save_tone_green; read 42, :int, :tone_green end
+      def save_tone_blue; read 43, :int, :tone_blue end
+      def save_tone_saturation; read 44, :int, :tone_saturation end
+      def save_time_left; read 51, :int, :time_left end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -294,39 +294,39 @@ module LCF
     end
 
     class PartyLocation < Record
-      def save_map_id; read 11, :int, 'map_id' end
-      def save_x; read 12, :int, 'x' end
-      def save_y; read 13, :int, 'y' end
-      def save_sprite_direction; read 21, :int, 'sprite_direction' end
-      def save_direction; read 22, :int, 'direction' end
-      def save_transparency; read 24, :int, 'transparency' end
-      def save_move_frequency; read 32, :int, 'move_frequency' end
-      def save_layer; read 33, :int, 'layer' end
-      def save_animation_type; read 35, :int, 'animation_type' end
-      def save_move_speed; read 37, :int, 'move_speed' end
-      def save_move_route; table 41, MoveRoute, 'move_route' end
-      def save_move_route_index; read 43, :int, 'move_route_index' end
-      def save_through; read 51, :bool, 'through' end
-      def save_charset_name; read 73, :string, 'charset_name' end
-      def save_charset_index; read 74, :int, 'charset_index' end
-      def save_flash_red; read 81, :int, 'flash_red' end
-      def save_flash_green; read 82, :int, 'flash_green' end
-      def save_flash_blue; read 83, :int, 'flash_blue' end
-      def save_flash_current_level; read 84, :double, 'flash_current_level' end
-      def save_flash_time_left; read 85, :int, 'flash_time_left' end
-      def save_boarding; read 101, :bool, 'boarding' end
-      def save_aboard; read 102, :bool, 'aboard' end
-      def save_vehicle; read 103, :int, 'vehicle' end
-      def save_unboarding; read 104, :bool, 'unboarding' end
-      def save_preboard_move_speed; read 105, :int, 'preboard_move_speed' end
-      def save_menu_calling; read 108, :bool, 'menu_calling' end
-      def save_pan_state; read 111, :int, 'pan_state' end
-      def save_pan_current_x; read 112, :int, 'pan_current_x' end
-      def save_pan_current_y; read 113, :int, 'pan_current_y' end
-      def save_pan_finish_x; read 114, :int, 'pan_finish_x' end
-      def save_pan_finish_y; read 115, :int, 'pan_finish_y' end
-      def save_pan_speed; read 121, :int, 'pan_speed' end
-      def save_total_encounter_rate; read 124, :int, 'total_encounter_rate' end
+      def save_map_id; read 11, :int, :map_id end
+      def save_x; read 12, :int, :x end
+      def save_y; read 13, :int, :y end
+      def save_sprite_direction; read 21, :int, :sprite_direction end
+      def save_direction; read 22, :int, :direction end
+      def save_transparency; read 24, :int, :transparency end
+      def save_move_frequency; read 32, :int, :move_frequency end
+      def save_layer; read 33, :int, :layer end
+      def save_animation_type; read 35, :int, :animation_type end
+      def save_move_speed; read 37, :int, :move_speed end
+      def save_move_route; table 41, MoveRoute, :move_route end
+      def save_move_route_index; read 43, :int, :move_route_index end
+      def save_through; read 51, :bool, :through end
+      def save_charset_name; read 73, :string, :charset_name end
+      def save_charset_index; read 74, :int, :charset_index end
+      def save_flash_red; read 81, :int, :flash_red end
+      def save_flash_green; read 82, :int, :flash_green end
+      def save_flash_blue; read 83, :int, :flash_blue end
+      def save_flash_current_level; read 84, :double, :flash_current_level end
+      def save_flash_time_left; read 85, :int, :flash_time_left end
+      def save_boarding; read 101, :bool, :boarding end
+      def save_aboard; read 102, :bool, :aboard end
+      def save_vehicle; read 103, :int, :vehicle end
+      def save_unboarding; read 104, :bool, :unboarding end
+      def save_preboard_move_speed; read 105, :int, :preboard_move_speed end
+      def save_menu_calling; read 108, :bool, :menu_calling end
+      def save_pan_state; read 111, :int, :pan_state end
+      def save_pan_current_x; read 112, :int, :pan_current_x end
+      def save_pan_current_y; read 113, :int, :pan_current_y end
+      def save_pan_finish_x; read 114, :int, :pan_finish_x end
+      def save_pan_finish_y; read 115, :int, :pan_finish_y end
+      def save_pan_speed; read 121, :int, :pan_speed end
+      def save_total_encounter_rate; read 124, :int, :total_encounter_rate end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -369,28 +369,28 @@ module LCF
     end
 
     class Movable < Record
-      def save_map_id; read 11, :int, 'map_id' end
-      def save_x; read 12, :int, 'x' end
-      def save_y; read 13, :int, 'y' end
-      def save_sprite_direction; read 21, :int, 'sprite_direction' end
-      def save_direction; read 22, :int, 'direction' end
-      def save_transparency; read 24, :int, 'transparency' end
-      def save_move_frequency; read 32, :int, 'move_frequency' end
-      def save_layer; read 33, :int, 'layer' end
-      def save_animation_type; read 35, :int, 'animation_type' end
-      def save_move_speed; read 37, :int, 'move_speed' end
-      def save_move_route; table 41, MoveRoute, 'move_route' end
-      def save_move_route_index; read 43, :int, 'move_route_index' end
-      def save_through; read 51, :bool, 'through' end
-      def save_charset_name; read 73, :string, 'charset_name' end
-      def save_charset_index; read 74, :int, 'charset_index' end
-      def save_flash_red; read 81, :int, 'flash_red' end
-      def save_flash_green; read 82, :int, 'flash_green' end
-      def save_flash_blue; read 83, :int, 'flash_blue' end
-      def save_flash_current_level; read 84, :double, 'flash_current_level' end
-      def save_flash_time_left; read 85, :int, 'flash_time_left' end
-      def save_vehicle; read 101, :int, 'vehicle' end
-      def save_parallel_event_execstate; table 108, EventExecState, 'parallel_event_execstate' end
+      def save_map_id; read 11, :int, :map_id end
+      def save_x; read 12, :int, :x end
+      def save_y; read 13, :int, :y end
+      def save_sprite_direction; read 21, :int, :sprite_direction end
+      def save_direction; read 22, :int, :direction end
+      def save_transparency; read 24, :int, :transparency end
+      def save_move_frequency; read 32, :int, :move_frequency end
+      def save_layer; read 33, :int, :layer end
+      def save_animation_type; read 35, :int, :animation_type end
+      def save_move_speed; read 37, :int, :move_speed end
+      def save_move_route; table 41, MoveRoute, :move_route end
+      def save_move_route_index; read 43, :int, :move_route_index end
+      def save_through; read 51, :bool, :through end
+      def save_charset_name; read 73, :string, :charset_name end
+      def save_charset_index; read 74, :int, :charset_index end
+      def save_flash_red; read 81, :int, :flash_red end
+      def save_flash_green; read 82, :int, :flash_green end
+      def save_flash_blue; read 83, :int, :flash_blue end
+      def save_flash_current_level; read 84, :double, :flash_current_level end
+      def save_flash_time_left; read 85, :int, :flash_time_left end
+      def save_vehicle; read 101, :int, :vehicle end
+      def save_parallel_event_execstate; table 108, EventExecState, :parallel_event_execstate end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -422,34 +422,34 @@ module LCF
     end
 
     class PartyActor < Record
-      def save_actor_name; read 1, :string, 'actor_name' end
-      def save_title; read 2, :string, 'title' end
-      def save_sprite_name; read 11, :string, 'sprite_name' end
-      def save_sprite_id; read 12, :int, 'sprite_id' end
-      def save_sprite_transparent; read 13, :int, 'sprite_transparent' end
-      def save_level; read 31, :int, 'level' end
-      def save_exp; read 32, :int, 'exp' end
-      def save_hp_mod; read 33, :int, 'hp_mod' end
-      def save_sp_mod; read 34, :int, 'sp_mod' end
-      def save_attack_mod; read 41, :int, 'attack_mod' end
-      def save_defense_mod; read 42, :int, 'defense_mod' end
-      def save_spirit_mod; read 43, :int, 'spirit_mod' end
-      def save_agility_mod; read 44, :int, 'agility_mod' end
-      def save_skill_size; read 51, :int, 'skill_size' end
-      def save_skills; read 52, :int16_array, 'skills' end
-      def save_equipment; read 61, :int16_array, 'equipment' end
-      def save_hp; read 71, :int, 'hp' end
-      def save_mp; read 72, :int, 'mp' end
-      def save_battle_commands; read 80, :int32_array, 'battle_commands' end
-      def save_state_size; read 81, :int, 'state_size' end
-      def save_states; read 82, :int16_array, 'states' end
-      def save_changed_battle_commands; read 83, :bool, 'changed_battle_commands' end
-      def save_class_id; read 90, :int, 'class_id' end
-      def save_row; read 91, :int, 'row' end
-      def save_two_weapon; read 92, :bool, 'two_weapon' end
-      def save_lock_equipment; read 93, :bool, 'lock_equipment' end
-      def save_auto_battle; read 94, :bool, 'auto_battle' end
-      def save_super_guard; read 95, :bool, 'super_guard' end
+      def save_actor_name; read 1, :string, :actor_name end
+      def save_title; read 2, :string, :title end
+      def save_sprite_name; read 11, :string, :sprite_name end
+      def save_sprite_id; read 12, :int, :sprite_id end
+      def save_sprite_transparent; read 13, :int, :sprite_transparent end
+      def save_level; read 31, :int, :level end
+      def save_exp; read 32, :int, :exp end
+      def save_hp_mod; read 33, :int, :hp_mod end
+      def save_sp_mod; read 34, :int, :sp_mod end
+      def save_attack_mod; read 41, :int, :attack_mod end
+      def save_defense_mod; read 42, :int, :defense_mod end
+      def save_spirit_mod; read 43, :int, :spirit_mod end
+      def save_agility_mod; read 44, :int, :agility_mod end
+      def save_skill_size; read 51, :int, :skill_size end
+      def save_skills; read 52, :int16_array, :skills end
+      def save_equipment; read 61, :int16_array, :equipment end
+      def save_hp; read 71, :int, :hp end
+      def save_mp; read 72, :int, :mp end
+      def save_battle_commands; read 80, :int32_array, :battle_commands end
+      def save_state_size; read 81, :int, :state_size end
+      def save_states; read 82, :int16_array, :states end
+      def save_changed_battle_commands; read 83, :bool, :changed_battle_commands end
+      def save_class_id; read 90, :int, :class_id end
+      def save_row; read 91, :int, :row end
+      def save_two_weapon; read 92, :bool, :two_weapon end
+      def save_lock_equipment; read 93, :bool, :lock_equipment end
+      def save_auto_battle; read 94, :bool, :auto_battle end
+      def save_super_guard; read 95, :bool, :super_guard end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -487,27 +487,27 @@ module LCF
     end
 
     class Inventory < Record
-      def save_party_count; read 1, :int, 'party_count' end
-      def save_party; read 2, :int16_array, 'party' end
-      def save_item_count; read 11, :int, 'item_count' end
-      def save_item_ids; read 12, :int16_array, 'item_ids' end
-      def save_item_counts; read 13, :int8_array, 'item_counts' end
-      def save_item_usage; read 14, :int8_array, 'item_usage' end
-      def save_gold; read 21, :int, 'gold' end
-      def save_timer1_frames; read 23, :int, 'timer1_frames' end
-      def save_timer1_active; read 24, :bool, 'timer1_active' end
-      def save_timer1_visible; read 25, :bool, 'timer1_visible' end
-      def save_timer1_battle; read 26, :bool, 'timer1_battle' end
-      def save_timer2_frames; read 27, :int, 'timer2_frames' end
-      def save_timer2_active; read 28, :bool, 'timer2_active' end
-      def save_timer2_visible; read 29, :bool, 'timer2_visible' end
-      def save_timer2_battle; read 30, :bool, 'timer2_battle' end
-      def save_battles; read 32, :int, 'battles' end
-      def save_defeats; read 33, :int, 'defeats' end
-      def save_escapes; read 34, :int, 'escapes' end
-      def save_victories; read 35, :int, 'victories' end
-      def save_turns; read 41, :int, 'turns' end
-      def save_steps; read 42, :int, 'steps' end
+      def save_party_count; read 1, :int, :party_count end
+      def save_party; read 2, :int16_array, :party end
+      def save_item_count; read 11, :int, :item_count end
+      def save_item_ids; read 12, :int16_array, :item_ids end
+      def save_item_counts; read 13, :int8_array, :item_counts end
+      def save_item_usage; read 14, :int8_array, :item_usage end
+      def save_gold; read 21, :int, :gold end
+      def save_timer1_frames; read 23, :int, :timer1_frames end
+      def save_timer1_active; read 24, :bool, :timer1_active end
+      def save_timer1_visible; read 25, :bool, :timer1_visible end
+      def save_timer1_battle; read 26, :bool, :timer1_battle end
+      def save_timer2_frames; read 27, :int, :timer2_frames end
+      def save_timer2_active; read 28, :bool, :timer2_active end
+      def save_timer2_visible; read 29, :bool, :timer2_visible end
+      def save_timer2_battle; read 30, :bool, :timer2_battle end
+      def save_battles; read 32, :int, :battles end
+      def save_defeats; read 33, :int, :defeats end
+      def save_escapes; read 34, :int, :escapes end
+      def save_victories; read 35, :int, :victories end
+      def save_turns; read 41, :int, :turns end
+      def save_steps; read 42, :int, :steps end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -538,11 +538,11 @@ module LCF
     end
 
     class Target < Record
-      def save_map_id; read 1, :int, 'map_id' end
-      def save_x; read 2, :int, 'x' end
-      def save_y; read 3, :int, 'y' end
-      def save_switch_on; read 4, :bool, 'switch_on' end
-      def save_switch_id; read 5, :int, 'switch_id' end
+      def save_map_id; read 1, :int, :map_id end
+      def save_x; read 2, :int, :x end
+      def save_y; read 3, :int, :y end
+      def save_switch_on; read 4, :bool, :switch_on end
+      def save_switch_id; read 5, :int, :switch_id end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -557,19 +557,19 @@ module LCF
     end
 
     class MapEvent < Record
-      def save_scroll_x; read 1, :int, 'scroll_x' end
-      def save_scroll_y; read 2, :int, 'scroll_y' end
-      def save_encounter_steps; read 3, :int, 'encounter_steps' end
-      def save_events; rows 11, Movable, 'events' end
-      def save_chip_replacement_lower; read 21, :int8_array, 'chip_replacement_lower' end
-      def save_chip_replacement_upper; read 22, :int8_array, 'chip_replacement_upper' end
-      def save_parallax_name; read 32, :string, 'parallax_name' end
-      def save_parallax_horz; read 33, :bool, 'parallax_horz' end
-      def save_parallax_vert; read 34, :bool, 'parallax_vert' end
-      def save_parallax_horz_auto; read 35, :bool, 'parallax_horz_auto' end
-      def save_parallax_horz_speed; read 36, :int, 'parallax_horz_speed' end
-      def save_parallax_vert_auto; read 37, :bool, 'parallax_vert_auto' end
-      def save_parallax_vert_speed; read 38, :int, 'parallax_vert_speed' end
+      def save_scroll_x; read 1, :int, :scroll_x end
+      def save_scroll_y; read 2, :int, :scroll_y end
+      def save_encounter_steps; read 3, :int, :encounter_steps end
+      def save_events; rows 11, Movable, :events end
+      def save_chip_replacement_lower; read 21, :int8_array, :chip_replacement_lower end
+      def save_chip_replacement_upper; read 22, :int8_array, :chip_replacement_upper end
+      def save_parallax_name; read 32, :string, :parallax_name end
+      def save_parallax_horz; read 33, :bool, :parallax_horz end
+      def save_parallax_vert; read 34, :bool, :parallax_vert end
+      def save_parallax_horz_auto; read 35, :bool, :parallax_horz_auto end
+      def save_parallax_horz_speed; read 36, :int, :parallax_horz_speed end
+      def save_parallax_vert_auto; read 37, :bool, :parallax_vert_auto end
+      def save_parallax_vert_speed; read 38, :int, :parallax_vert_speed end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -592,28 +592,28 @@ module LCF
     end
 
     class EventExecState < Record
-      def save_stack; rows 1, EventExecFrame, 'stack' end
-      def save_show_message; read 4, :bool, 'show_message' end
-      def save_abort_on_escape; read 11, :bool, 'abort_on_escape' end
-      def save_wait_movement; read 13, :bool, 'wait_movement' end
-      def save_keyinput_wait; read 21, :bool, 'keyinput_wait' end
-      def save_keyinput_variable; read 22, :uint8, 'keyinput_variable' end
-      def save_keyinput_all_directions; read 23, :bool, 'keyinput_all_directions' end
-      def save_keyinput_decision; read 24, :int, 'keyinput_decision' end
-      def save_keyinput_cancel; read 25, :int, 'keyinput_cancel' end
-      def save_keyinput_2kshift_2k3numbers; read 26, :int, 'keyinput_2kshift_2k3numbers' end
-      def save_keyinput_2kdown_2k3operators; read 27, :int, 'keyinput_2kdown_2k3operators' end
-      def save_keyinput_2kleft_2k3shift; read 28, :int, 'keyinput_2kleft_2k3shift' end
-      def save_keyinput_2kright; read 29, :int, 'keyinput_2kright' end
-      def save_keyinput_2kup; read 30, :int, 'keyinput_2kup' end
-      def save_wait_time; read 31, :int, 'wait_time' end
-      def save_keyinput_time_variable; read 32, :int, 'keyinput_time_variable' end
-      def save_keyinput_2k3down; read 35, :int, 'keyinput_2k3down' end
-      def save_keyinput_2k3left; read 36, :int, 'keyinput_2k3left' end
-      def save_keyinput_2k3right; read 37, :int, 'keyinput_2k3right' end
-      def save_keyinput_2k3up; read 38, :int, 'keyinput_2k3up' end
-      def save_keyinput_timed; read 41, :bool, 'keyinput_timed' end
-      def save_wait_key_enter; read 42, :bool, 'wait_key_enter' end
+      def save_stack; rows 1, EventExecFrame, :stack end
+      def save_show_message; read 4, :bool, :show_message end
+      def save_abort_on_escape; read 11, :bool, :abort_on_escape end
+      def save_wait_movement; read 13, :bool, :wait_movement end
+      def save_keyinput_wait; read 21, :bool, :keyinput_wait end
+      def save_keyinput_variable; read 22, :uint8, :keyinput_variable end
+      def save_keyinput_all_directions; read 23, :bool, :keyinput_all_directions end
+      def save_keyinput_decision; read 24, :int, :keyinput_decision end
+      def save_keyinput_cancel; read 25, :int, :keyinput_cancel end
+      def save_keyinput_2kshift_2k3numbers; read 26, :int, :keyinput_2kshift_2k3numbers end
+      def save_keyinput_2kdown_2k3operators; read 27, :int, :keyinput_2kdown_2k3operators end
+      def save_keyinput_2kleft_2k3shift; read 28, :int, :keyinput_2kleft_2k3shift end
+      def save_keyinput_2kright; read 29, :int, :keyinput_2kright end
+      def save_keyinput_2kup; read 30, :int, :keyinput_2kup end
+      def save_wait_time; read 31, :int, :wait_time end
+      def save_keyinput_time_variable; read 32, :int, :keyinput_time_variable end
+      def save_keyinput_2k3down; read 35, :int, :keyinput_2k3down end
+      def save_keyinput_2k3left; read 36, :int, :keyinput_2k3left end
+      def save_keyinput_2k3right; read 37, :int, :keyinput_2k3right end
+      def save_keyinput_2k3up; read 38, :int, :keyinput_2k3up end
+      def save_keyinput_timed; read 41, :bool, :keyinput_timed end
+      def save_wait_key_enter; read 42, :bool, :wait_key_enter end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -644,7 +644,7 @@ module LCF
     end
 
     class CommonEvent < Record
-      def save_execution_state; table 1, EventExecState, 'execution_state' end
+      def save_execution_state; table 1, EventExecState, :execution_state end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -655,11 +655,11 @@ module LCF
     end
 
     class Bgm < Record
-      def save_file; read 1, :string, 'file' end
-      def save_fade_in; read 2, :int, 'fade_in' end
-      def save_volume; read 3, :int, 'volume' end
-      def save_pitch; read 4, :int, 'pitch' end
-      def save_balance; read 5, :int, 'balance' end
+      def save_file; read 1, :string, :file end
+      def save_fade_in; read 2, :int, :fade_in end
+      def save_volume; read 3, :int, :volume end
+      def save_pitch; read 4, :int, :pitch end
+      def save_balance; read 5, :int, :balance end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -674,10 +674,10 @@ module LCF
     end
 
     class Se < Record
-      def save_file; read 1, :string, 'file' end
-      def save_volume; read 3, :int, 'volume' end
-      def save_pitch; read 4, :int, 'pitch' end
-      def save_balance; read 5, :int, 'balance' end
+      def save_file; read 1, :string, :file end
+      def save_volume; read 3, :int, :volume end
+      def save_pitch; read 4, :int, :pitch end
+      def save_balance; read 5, :int, :balance end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -691,10 +691,10 @@ module LCF
     end
 
     class MoveRoute < Record
-      def save_command_size; read 11, :int, 'command_size' end
-      def save_commands; read 12, :move_commands, 'commands' end
-      def save_repeat; read 21, :bool, 'repeat' end
-      def save_skippable; read 22, :bool, 'skippable' end
+      def save_command_size; read 11, :int, :command_size end
+      def save_commands; read 12, :move_commands, :commands end
+      def save_repeat; read 21, :bool, :repeat end
+      def save_skippable; read 22, :bool, :skippable end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.
@@ -708,13 +708,13 @@ module LCF
     end
 
     class EventExecFrame < Record
-      def save_command_size; read 1, :int, 'command_size' end
-      def save_commands; read 2, :event, 'commands' end
-      def save_current_command; read 11, :int, 'current_command' end
-      def save_event_id; read 12, :int, 'event_id' end
-      def save_triggered_by_decision_key; read 13, :bool, 'triggered_by_decision_key' end
-      def save_subcommand_path_size; read 21, :int, 'subcommand_path_size' end
-      def save_subcommand_path; read 22, :int8_array, 'subcommand_path' end
+      def save_command_size; read 1, :int, :command_size end
+      def save_commands; read 2, :event, :commands end
+      def save_current_command; read 11, :int, :current_command end
+      def save_event_id; read 12, :int, :event_id end
+      def save_triggered_by_decision_key; read 13, :bool, :triggered_by_decision_key end
+      def save_subcommand_path_size; read 21, :int, :subcommand_path_size end
+      def save_subcommand_path; read 22, :int8_array, :subcommand_path end
 
       # Reads every declared field, so a field whose bytes do not decode as its
       # schema type raises LCF::SaveTypeError here, not at a later lookup.

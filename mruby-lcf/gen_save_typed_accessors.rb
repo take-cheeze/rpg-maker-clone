@@ -125,11 +125,11 @@ module GenSaveTyped
         names << name
         body =
           if f[:type] == :Array1D && child
-            "table #{id}, #{class_name(child)}, '#{field}'"
+            "table #{id}, #{class_name(child)}, :#{field}"
           elsif f[:type] == :Array2D && child
-            "rows #{id}, #{class_name(child)}, '#{field}'"
+            "rows #{id}, #{class_name(child)}, :#{field}"
           else
-            "read #{id}, :#{f[:type]}, '#{field}'"
+            "read #{id}, :#{f[:type]}, :#{field}"
           end
         out << "      def #{name}; #{body} end\n"
         checked << name unless (UNCHECKED[const.to_s] || []).include?(id)
