@@ -414,6 +414,7 @@ jobs:
             checks: |
               ruby scripts/optcarrot/cpu_dispatch_check.rb
               ruby scripts/optcarrot/ppu_lut_check.rb
+              MRBC="$mrbc" ruby scripts/optcarrot/ppu_ir_lut_check.rb
               ruby scripts/optcarrot/ppu_core_check.rb
               ruby scripts/bc2cpp/optcarrot_world_check.rb
               ruby scripts/optcarrot/onig_aliases_check.rb
