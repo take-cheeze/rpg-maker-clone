@@ -25,3 +25,15 @@ GCC 15.2 at `-O0` also reduced the object from 12,834,984 to 10,416,752
 bytes (18.8%), with its text section decreasing from 9,583,112 to 7,576,386
 bytes (20.9%). Optimized binary size and runtime performance depend on the
 C++ compiler's inlining decisions.
+
+## Constant definitions in the numeric and class pools
+
+The numeric proof and the class pools (ADR 0276, 0296, 0301) read a constant's class set from the definitions it
+reaches. Those are keyed by the definition's qualified name, resolved lexically by `tools/bc2cpp/lexical_consts.rb`
+(ADR 0421): a bare read takes the first scope of its lexical chain that defines the name, and is refused (falls back
+to the integer-constant proof or OTHER) when another definition reachable from that lookup could be read instead.
+`Game::Character::TURN_LEFT` and `Game::MoveRoute::TURN_LEFT` therefore keep their own pools. `BC2CPP_LEXICAL_CONST=0`
+keys by bare name again.
+
+`ruby scripts/bc2cpp/lexical_const_check.rb` checks the resolution and each refusal against compiled fixtures (it needs
+`MRBC`).
