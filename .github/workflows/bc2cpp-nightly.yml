@@ -45,10 +45,13 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp/proven_miss_check.rb
           - shard: registrations
             checks: |
+              # Independent of each other (no shared build directory); at most 3 at a time (docs/ci.md, "Parallel groups").
+              # ci:parallel begin
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/embedded_ivar_access_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/fixnum_nil_ivar_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/typed_slot_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/never_called_registrations_check.rb
+              # ci:parallel end
           - shard: core-mrbtest
             # Interpreter-vs-compiled fixtures and mruby's own suites (~25 min; the full-core numeric checks are in `full-core-numeric` and `numeric-direct`).
             checks: |

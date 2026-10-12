@@ -165,7 +165,7 @@ command that failed is marked `FAILED`, with the time it ran before failing;
 commands after it never ran and are not listed. Lines that only set variables
 (`width=...`, `export ...`) are not timed, comments are dropped. Use the table
 to decide where a new check goes: put it in the shard with the most slack, and
-keep each shard's total under the budget above. `ruby scripts/ci/helpers_check.rb`
+keep each shard's total under the budget above (commands in a `ci:parallel` group overlap, so their sum is more than the wall time). `ruby scripts/ci/helpers_check.rb`
 (in `ruby-checks`) covers the wrapper.
 
 ### Compiler cache (sccache)
@@ -247,6 +247,38 @@ alone, ahead of the pool: it is what says the copy-and-run path itself still
 works, so running it beside a mutant would attribute a broken path to that
 mutant. Its mutant directories carry an index, because two mutants may edit the
 same generator file and would otherwise share — and delete — one copy.
+
+### Parallel groups
+
+A shard can run independent checks at the same time. Put the commands between two
+comment lines in the `checks:` block:
+
+```
+# ci:parallel begin 3
+MRBC="$mrbc" ruby scripts/bc2cpp/a_check.rb
+MRBC="$mrbc" ruby scripts/bc2cpp/b_check.rb
+# ci:parallel end
+```
+
+`scripts/ci/timed_checks.rb` runs them at most N at a time (without a number, `CI_PARALLEL_JOBS`,
+then 3). The markers are comments, so a block that is not run through the script runs the same
+commands in order. Each command runs in a subshell of the step, so it sees the step's variables
+(`$mrbc`, `$core`) but cannot set one for later commands; assigning a variable inside a group is
+refused when the script is generated. Output goes to a log per command and is printed in input
+order after the group, so a failing command's output is shown in full and the others are folded
+(`::group::`). The step fails with the first failed command's status, after the rest of the group
+has finished; the commands after a failed group do not run.
+
+What may go in a group: commands that share no build state. Anything that passes
+`BC2CPP_FULL_BUILD_DIR` (or builds the full-core mruby) stays outside, because two of them would
+build the same directory at once. The mutant pool already uses the cores, so a group is for
+shards made of single-process scripts. A group adds CPU and memory load, so keep N at 3 on the
+4-vCPU runner: `embedded_ivar_access_check` alone uses about 2.5 cores.
+
+Measured on a 4-core machine for the `registrations` shard (the one shard that uses it so
+far): its four scripts took 211 s in sequence and 118 s through a group, the longest single
+script. The timing table's `total` is the sum of the command times, so for a group it is more than the
+wall time of the step.
 
 ### Width builds (ADR 0300)
 
