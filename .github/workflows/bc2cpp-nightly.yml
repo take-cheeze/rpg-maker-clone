@@ -596,6 +596,11 @@ jobs:
           echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
           echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
 
+      # ADR 0415: the generator's native-source scans are stored here by the first check that needs them and
+      # loaded by the rest of the job (parallel group members included; entries are written atomically).
+      - name: Share the generator's scan cache within the job
+        run: echo "BC2CPP_SCAN_CACHE_DIR=$RUNNER_TEMP/bc2cpp-scan-cache" >> "$GITHUB_ENV"
+
       - name: Configure host build
         run: cmake -S . -B build-bc2cpp -GNinja
 
@@ -740,6 +745,11 @@ jobs:
         run: |
           echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
           echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
+
+      # ADR 0415: the generator's native-source scans are stored here by the first check that needs them and
+      # loaded by the rest of the job (parallel group members included; entries are written atomically).
+      - name: Share the generator's scan cache within the job
+        run: echo "BC2CPP_SCAN_CACHE_DIR=$RUNNER_TEMP/bc2cpp-scan-cache" >> "$GITHUB_ENV"
 
       - name: Configure host build
         run: cmake -S . -B build-bc2cpp -GNinja
