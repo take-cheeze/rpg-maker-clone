@@ -1152,7 +1152,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 // BC2CPP_HOT_ONLY_STUBS is defined by the generated file this register.cxx
 // #includes, and only on the hot-only path, so this guard selects between the
 // two builds with no second flag and the two cannot drift.
-#ifndef BC2CPP_HOT_ONLY_STUBS
+#if !defined(BC2CPP_HOT_ONLY_STUBS) || defined(BC2CPP_KEEP_HAND_REGISTRATIONS)
   mrb_define_method(M, picture, "opacity", Game__Picture_opacity,
                     MRB_ARGS_NONE());
   mrb_define_method(M, picture, "x", Game__Picture_x, MRB_ARGS_NONE());
@@ -6160,7 +6160,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                           Game__Backdrop_singleton_name_for,
                           MRB_ARGS_REQ(2) | MRB_ARGS_OPT(1));
 
-  // Game::CommonEvent.singleton and Game::MoveRoute.singleton (docs/adr/0422):
+  // Game::CommonEvent.singleton and Game::MoveRoute.singleton (docs/adr/0426):
   // the singleton methods whose call sites in Scene::Map#initialize,
   // #build_event and #rebuild_events_preserving_positions are bound by
   // CLOSED_WORLD_CONSTANT_OBJECT / MONO once their owners are emitted. Like

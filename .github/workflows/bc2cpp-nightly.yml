@@ -399,7 +399,7 @@ jobs:
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_singleton_check.rb
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_singleton_mutation_check.rb
           - shard: rpg2k-singleton-owners
-            # ADR 0422: the real Game::CommonEvent / Game::MoveRoute class methods in a fixture (generated code for the
+            # ADR 0426: the real Game::CommonEvent / Game::MoveRoute class methods in a fixture (generated code for the
             # base world and three withdrawal worlds, the owners/register/hot-only wiring, the interpreted-versus-
             # compiled run), then 11 mutants and an unmutated control through the shared pool.
             checks: |
@@ -428,7 +428,9 @@ jobs:
               ruby scripts/optcarrot/ppu_core_check.rb
               ruby scripts/bc2cpp/optcarrot_world_check.rb
               ruby scripts/optcarrot/onig_aliases_check.rb
-              MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              OPTCARROT_DEBUG=0 OPTCARROT_GRAY_STACK_SIZE=16384 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              # Reuse the ordinary probe host built above, including its ABI flags and regexp gem.
+              MRUBY_BUILD="$PWD/3rd/mruby/build/optcarrotinterpretedreleasegray16384" MRBC="$mrbc" ruby scripts/optcarrot/ppu_ir_lut_check.rb
               OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               BC2CPP_IR_INLINE=1 OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
