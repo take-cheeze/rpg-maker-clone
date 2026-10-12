@@ -78,3 +78,8 @@ and final row. Median generation time was 110.37 ms for the previous factored
 Ruby algorithm and 21.54 ms for native IR lowering (5.12x, about 88.83 ms saved).
 Other agent builds ran on the shared host, so these are indicative startup
 measurements, not a controlled whole-emulator FPS comparison.
+
+The nightly Optcarrot shard runs the native check after its first ordinary
+probe benchmark, reusing that interpreter build and its exact ABI flags and
+regexp gem. Missing native libraries fail the check; an explicit direct
+IR-only invocation without `MRUBY_BUILD` reports the native half as skipped.
