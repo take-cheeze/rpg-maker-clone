@@ -14,7 +14,7 @@ require_relative '../../tools/bc2cpp/strict_hints'
 
 root = File.expand_path('../..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
-ENV[StrictHints::ENV_NAME] ||= '1'
+ENV[StrictHints::ENV_NAME] = 'all'
 sites = BC2CPP_COMPILED_GEMS.keys.map do |gem_name|
   Thread.new do
     _out, err, status = NomethodReviewedProbe.run(gem_name, root, mrbc, hot_methods: nil, allow: true)

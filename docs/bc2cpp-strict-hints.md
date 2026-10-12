@@ -15,7 +15,8 @@ with the variable unset, empty or `0` the generated code is byte-identical.
 | `BC2CPP_STRICT_HINTS` | forced families |
 | --- | --- |
 | unset, empty, `0` | none |
-| `1`, `all` | `typed`, `element`, `ivar_accessor`, `mono_embed`, `poly_small_n`, `poly_table`, `interface_table` |
+| `1` | `typed`, `element`, `ivar_accessor`, `mono_embed` (a receiver hint: layout, annotation, element) |
+| `all` | those four plus `poly_small_n`, `poly_table`, `interface_table` (the candidate set of a name, receivers not traced) |
 | `typed,ivar_accessor` | the listed ones (an unknown name aborts the run) |
 
 `BC2CPP_STRICT_HINTS_PROVEN=1` restricts the tier to sites whose hint class has no

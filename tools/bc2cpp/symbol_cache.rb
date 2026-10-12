@@ -209,8 +209,7 @@ module SymbolCache
         return bc2cpp_funcall_argv(M, recv, bc2cpp_sym(M, i), argc, argv);
       }
       #{table.nomethod_used ? NOMETHOD : ''}
-      #{table.violation_used ? GUARD_VIOLATION : ''}
-      #{table.hint_violation_used ? HINT_VIOLATION : ''}
+      #{table.violation_used ? GUARD_VIOLATION : ''}#{table.hint_violation_used ? HINT_VIOLATION : ''}
       #{table.nil_receiver_used ? NIL_RECEIVER : ''}
     CPP
   end

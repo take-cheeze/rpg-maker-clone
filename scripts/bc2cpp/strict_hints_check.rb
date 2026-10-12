@@ -38,9 +38,13 @@ runtime = Bc2cppFixtureRuntime
 # -- 1. the gate --------------------------------------------------------------------
 
 puts '== switch, marker, listing, reviewed list'
+# The gate only judges the families this run forces.
+ENV['BC2CPP_STRICT_HINTS'] = '1'
 check.call('unset, empty and 0 select no family', [nil, '', '0'].all? { |v| StrictHints.families(v).empty? })
-check.call('1 and all select the default families', StrictHints.families('1') == StrictHints::DEFAULT_FAMILIES &&
-                                                       StrictHints.families('all') == StrictHints::DEFAULT_FAMILIES)
+check.call('1 selects the receiver-hint families, all every family',
+           StrictHints.families('1') == StrictHints::DEFAULT_FAMILIES &&
+             StrictHints.families('all') == StrictHints::FAMILIES &&
+             (StrictHints::FAMILIES - StrictHints::DEFAULT_FAMILIES).sort == %w[interface_table poly_small_n poly_table])
 check.call('a comma list selects those families', StrictHints.families('typed, ivar_accessor') == %w[typed ivar_accessor])
 check.call('an unknown family is an error, not silently off',
            (begin
@@ -74,6 +78,9 @@ check.call('SymbolCache turns the named call into an indexed one and flags the h
 check.call('the helper is emitted only when a site uses it',
            SymbolCache.emit(table).include?('bc2cpp_hint_violation_raise') &&
              !SymbolCache.emit(SymbolCache::Table.new).include?('bc2cpp_hint_violation_raise'))
+check.call('an entry of a family this run does not force is not stale',
+           StrictHints.violations(sites, compiled, reviewed: Set['A#m -> foo (TYPED)', 'B#n -> x (POLY_SMALL_N)']).empty?)
+ENV.delete('BC2CPP_STRICT_HINTS')
 
 # -- fixture ---------------------------------------------------------------------------
 

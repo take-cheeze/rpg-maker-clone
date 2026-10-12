@@ -17,7 +17,7 @@ require_relative '../../tools/bc2cpp/strict_hints_reviewed'
 
 root = File.expand_path('../..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
-ENV[StrictHints::ENV_NAME] = '1'
+ENV[StrictHints::ENV_NAME] = 'all'
 failures = []
 check = lambda do |what, condition|
   puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"

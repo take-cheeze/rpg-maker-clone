@@ -79,7 +79,65 @@ this ADR.
 
 ## Consequences
 
-RESULTS_PLACEHOLDER
+Measured on the wio closed world, all three gems, the shipped (`SKIP_UNSUPPORTED`) codegen of
+`scripts/bc2cpp/coverage_report.rb` at master 5ead3a77, counted with the marker-attributing
+counter used for ADR 0290:
+
+| | default | `BC2CPP_STRICT_HINTS=1` | `BC2CPP_STRICT_HINTS=all` |
+| --- | ---: | ---: | ---: |
+| live `bc2cpp_send(M` | 1,837 | 1,793 (-44) | 1,637 (-200) |
+| live `mrb_funcall*` | 386 | 387 (+1, the helper's `$stderr` puts) | 387 |
+| `bc2cpp_hint_violation` sites | 0 | 45 | 210 |
+
+Forced sites per family (`all`; `1` is the first four rows, 45 sites): `IVAR_ACCESSOR` 25,
+`TYPED` 19, `ELEMENT` 1, `MONO_EMBED_GUARD` 0, `POLY_SMALL_N` 134, `POLY_TABLE` 31, interface
+tables 0. The sends the tier removes, by the marker of the site that carried them:
+`POLY_SMALL_N` 114 -> 21, `IVAR_ACCESSOR` 26 -> 1, `TYPED` 17 -> 7, `NATIVE_DIRECT` 40 -> 8,
+`NATIVE_OWNER_MAP` 246 -> 229, `INHERITED_GUARD` 19 -> 0, `NATIVE_CORE_DIRECT` 243 -> 240. The
+default output is byte-identical to master (`cmp` of the kept `shipped.cxx` of the same coverage run on master and on this branch: identical, 21,550,689 bytes);
+`g++ -fsyntax-only` accepts the strict output.
+
+The first measurement forced every hint chain, including the ones that already ended in
+`bc2cpp_nomethod`: 3,527 sites and only the same 200 sends fewer, because 3,300 of them
+replaced a proven-dead arm (`NOMETHOD_REVIEWED`) that is already an error and has no by-name
+send. `strict_hint_wrap` therefore forces only a chain whose terminal else is a by-name send.
+
+What remains of the 1,637, and why it is not forced:
+
+| marker | live sends | reason it stays |
+| --- | ---: | --- |
+| `NONE`, `POLY` | 623 + 423 | no class guard at all: a by-name send on a receiver nothing traces. There is no hint to force |
+| `NATIVE_CORE_DIRECT`, `NATIVE_OWNER_MAP`, `NATIVE_DIRECT` | 240 + 229 + 8 | else arms of exact core-type guards (`mrb_array_p(x) && x->c == array_class`). 547 sends in the unforced core-type chains of the default output: 423 of them (77%) are names (`empty?` 193, `size` 132, `update` 37, `key?` 20, ...) that engine Ruby classes (`Game::*`, `LCF::*`, `RGSS::*`) also define, so a user class is a legitimate receiver of the else arm, and the receiver is untraced, so there is no class to name in an error |
+| `CLOSED_WORLD_STABLE_CLASS`, `..._CONSTANT_OBJECT`, `..._SELF` | 39 + 7 + 3 | module/constant-object arms; the else is the by-name call on an object the proof is about |
+| `POLY_SMALL_N`, `TYPED`, `IVAR_ACCESSOR`, `MONO_EMBED_GUARD` | 21 + 7 + 1 + 4 | literal-block sites, calls with more than 16 arguments, sites inside outlined helpers |
+| `MONO`, `LEXICAL_SELF`, ... | about 30 | no guard (a single definition), the send is the call itself |
+| numeric arms | in `NONE` | Fixnum/Float/Bignum/overflow are a legitimate flow (ADR 0292) |
+
+Verify on the real workloads: **not run, so zero violations is not claimed.** The sandbox this
+was written in had 1.3 GB of free disk and a load of 25-40 from concurrent jobs; the engine
+build `boot_check.bash` needs (about 700 ninja steps, 1.1 GB, an hour and three quarters on an
+idle machine) did not fit, and the coverage run alone took 1 to 2 hours. What was run: the
+fixture check on real mruby (a deliberately violated annotation: default dispatches and
+answers what the interpreter answers, strict logs and raises `BC2cppHintViolation`, verify
+aborts naming the site, dispatch answers again), the mutation check (16 of 16 mutants killed)
+and `g++ -fsyntax-only` of the whole strict output. The violations found on the real
+workloads are therefore 0 *run*, not 0 *proven*; the tier is off by default for that reason,
+`docs/bc2cpp-strict-hints.md` is the procedure, and the first CI/nightly run that does it
+decides which sites in `tools/bc2cpp/strict_hints_reviewed.rb` are wrong hints to fix and
+which family to drop.
+
+Trade of each family. `typed`, `element`, `ivar_accessor`, `mono_embed` read a receiver
+class that a ClassLayout ivar store, an annotation or an element hint names; a violation is a
+wrong store/annotation or a legitimate subclass or `nil` (`PROVEN` removes those two). They
+are what `1` selects. `poly_small_n`, `poly_table`, `interface_table` use the candidate set of
+a name as the hint, so every receiver outside it is an error: 134 + 31 sites whose else arm
+was kept for a reason (`core_or_native`, `singleton_definer`, `unlisted_class`) that says
+something outside the set answers. They are only in `all` and are not claimed clean until the
+verify build has run the workloads.
+
+Residual risk: a hint that is wrong only on a path no workload takes. The default tier is
+therefore off, the reviewed list names every site, and `-DBC2CPP_HINT_VIOLATION_DISPATCH`
+turns the tier into the old dispatch without regenerating.
 
 ## Verify
 

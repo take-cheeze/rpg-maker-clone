@@ -7,7 +7,7 @@
 # BC2cppHintViolation < NoMethodError, so no by-name send is left at the site and a wrong hint
 # fails loudly instead of costing speed. Default OFF: the default output is byte-identical.
 #
-# Families (BC2CPP_STRICT_HINTS=1 selects DEFAULT_FAMILIES; a comma list selects some):
+# Families (BC2CPP_STRICT_HINTS=1 selects the first four, `all` every one; a comma list selects some):
 #   typed             TYPED / CLOSED_WORLD_TYPED_INHERITED: receiver class traced from a ClassLayout ivar
 #                     fact, a ClassAnnotations argument, a class pool or a capture hint
 #   element           the same for the element hint of an inlined loop parameter (TYPED/ELEMENT)
@@ -32,7 +32,9 @@ module StrictHints
   ENV_NAME = 'BC2CPP_STRICT_HINTS'
   ALLOW_ENV = 'BC2CPP_STRICT_HINTS_UNREVIEWED'
   FAMILIES = %w[typed element ivar_accessor mono_embed poly_small_n poly_table interface_table].freeze
-  DEFAULT_FAMILIES = FAMILIES
+  # `1` forces the families that read a receiver hint (layout, annotation, element); `all` adds the
+  # candidate-set chains and tables, whose receivers are not traced (docs/adr/0411).
+  DEFAULT_FAMILIES = %w[typed element ivar_accessor mono_embed].freeze
   MARKER = %r{/\* STRICT_HINT (\w+): (\S+) \*/}
   LISTING = /^  STRICT_HINT_SITE (.+ -> \S+ \(\w+\))$/
   # Classes whose exact-class guards are exact-core-type guards (kept) or whose instances are the
@@ -43,10 +45,12 @@ module StrictHints
 
   module_function
 
-  # The enabled families: nil/""/"0" none, "1"/"all" the defaults, else a comma list (unknown names abort).
+  # The enabled families: nil/""/"0" none, "1" the receiver-hint families, "all" every family, else a
+  # comma list (unknown names abort).
   def families(env = ENV[ENV_NAME])
     return [] if env.nil? || env.empty? || env == '0'
-    return DEFAULT_FAMILIES if %w[1 all].include?(env)
+    return DEFAULT_FAMILIES if env == '1'
+    return FAMILIES if env == 'all'
 
     list = env.split(',').map(&:strip).reject(&:empty?)
     unknown = list - FAMILIES
@@ -95,7 +99,11 @@ module StrictHints
     unreviewed = (found - reviewed).sort.map { |k| "unreviewed forced hint: #{k}" }
     return unreviewed unless stale
 
-    gone = reviewed.select { |k| compiled_methods.include?(k.split(' -> ', 2).first) && !found.include?(k) }
+    # An entry of a family this run did not force is not stale: it is simply not in play.
+    on = families.map(&:upcase)
+    gone = reviewed.select do |k|
+      compiled_methods.include?(k.split(' -> ', 2).first) && on.include?(k[/\((\w+)\)\z/, 1]) && !found.include?(k)
+    end
     unreviewed + gone.sort.map { |k| "stale STRICT_HINTS_REVIEWED entry (no such site any more): #{k}" }
   end
 
