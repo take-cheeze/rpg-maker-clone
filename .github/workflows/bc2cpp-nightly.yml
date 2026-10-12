@@ -370,6 +370,13 @@ jobs:
               # ADR 0384: native arms emitted ahead of the else cover their class of a proven set, then the mutants.
               MRBC="$mrbc" ruby scripts/bc2cpp/native_arm_cover_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/native_arm_cover_mutation_check.rb
+          - shard: native-singleton
+            # ADR 0416: generated code for the base world and the seventeen withdrawal worlds, the kill switch, the
+            # interpreted-versus-compiled runs (a runtime private, redefinition and prepend after
+            # compilation included), then 17 mutants and an unmutated control through the shared pool.
+            checks: |
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_singleton_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_singleton_mutation_check.rb
           - shard: integer-constants
             # ADR 0324: unit cases for the native-definition scan and the jump onto a SETCONST, generated code, the
             # full-core and core-only runs, then eight mutants and an unmutated control (the 32-bit run is in
