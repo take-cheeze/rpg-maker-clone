@@ -1,0 +1,1 @@
+- bc2cpp can keep the results of its native-source scans on disk (`BC2CPP_SCAN_CACHE_DIR`, ADR 0405), keyed by the scanner sources and the bytes of every file a scan reads. It is off unless the variable is set; the nightly bc2cpp jobs set it per job, which takes `numeric_slow` from 398 s to 316 s. The generated C++ is unchanged.

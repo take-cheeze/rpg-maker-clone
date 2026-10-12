@@ -144,14 +144,13 @@ those 1076 make the same 1189 as the serial run.
 
 ## 4. Next levers
 
-Ranked by what they would save on the critical path. Nothing in this list is implemented here.
+Ranked by what they would save on the critical path. The first item is partly done (ADR 0405); the rest are not.
 
-1. **Native-world cache in bc2cpp (needs an ADR).** Memoize the native-source scans that every generator call
-   repeats (`NativeExpressionDevirt.analyze`, `analyze_exact_class_expressions`, `extract_native_method_sources`,
-   the `scan_class_registrations` family, the closed-world outside-source lists) under a digest of the native
-   sources' contents. It is the main part of the 7.9 s per call. This is what would cut `numeric_slow` and every
-   closed-world check, and it is a change to the compiler's analysis, so it needs the soundness argument written
-   down before code.
+1. **More of the native-source scans in the disk cache (ADR 0405).** The cache is in for the three pure scans
+   (`numeric_slow` 398 s to 316 s). `ClosedWorld#scan_native`, `CallFacts::Answers#native_scan` and `NativeDirect.*`
+   are about 20% of a call more but fill instance state while they scan; making them return a value first would let
+   them use it. A warm generator process (or batching fixtures into one) would remove the repeated work altogether,
+   at the price of resetting the generator's global state between calls.
 2. **`coverage` (3 commands, 22.5 min).** The two bash reports append to `$GITHUB_STEP_SUMMARY` with `tee -a`, so
    they cannot share a group without interleaving the summary. Giving each its own summary file would allow it.
 3. **Single-command shards** (`hot-only`, `hot-proven-miss`, `block-arm-reach`, `core-exact-direct`,
