@@ -2221,7 +2221,7 @@ class CodeGen
       "#{NomethodReviewed.violation_marker(name)}\n"
   end
 
-  # STRICT_HINTS (docs/adr/0411): the else arm of a guard on a whole-program class hint, as an error.
+  # STRICT_HINTS (docs/adr/0419): the else arm of a guard on a whole-program class hint, as an error.
   # Same marker rewrite as guard_violation_line; the STRICT_HINT comment keeps the site listed and gated.
   def strict_hint_line(d, recv, name, argv, family)
     args = ", #{argv.size}#{argv.map { |a| ", #{a}" }.join}"
@@ -2243,7 +2243,7 @@ class CodeGen
     @strict_hints_off = previous
   end
 
-  # The strict else line when `family` is on. Policy (ADR 0411): a hint is not a proof and a violation
+  # The strict else line when `family` is on. Policy (ADR 0419): a hint is not a proof and a violation
   # is a wrong hint to fix, so no proof gates it; BC2CPP_STRICT_HINTS_PROVEN=1 restricts it to owners
   # with no descendant and a name nil does not answer. Core owners, singletons, literal-block sites and
   # argument lists the helper cannot carry keep the dispatch. `owner` is nil for a chain (POLY, table).

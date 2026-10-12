@@ -34,7 +34,7 @@ module SymbolCache
     attr_accessor :nomethod_used
     # GUARD_VIOLATION (ADR 0290): the same for bc2cpp_guard_violation.
     attr_accessor :violation_used
-    # STRICT_HINTS (ADR 0411): the same for bc2cpp_hint_violation.
+    # STRICT_HINTS (ADR 0419): the same for bc2cpp_hint_violation.
     attr_accessor :hint_violation_used
     # NIL_RECEIVER (ADR 0296): the same for bc2cpp_nil_receiver.
     attr_accessor :nil_receiver_used
@@ -423,7 +423,7 @@ module SymbolCache
   CPP
   private_constant :GUARD_VIOLATION
 
-  # STRICT_HINTS (docs/adr/0411): the else arm of a guard on a whole-program class HINT, forced by
+  # STRICT_HINTS (docs/adr/0419): the else arm of a guard on a whole-program class HINT, forced by
   # BC2CPP_STRICT_HINTS. A wrong hint is reached here with a correct program: log, then raise
   # BC2cppHintViolation < NoMethodError (a `rescue NoMethodError` sees it after the log line). Never
   # dispatches, never undefined behavior. -DBC2CPP_NOMETHOD_VERIFY aborts, naming class, name and site,

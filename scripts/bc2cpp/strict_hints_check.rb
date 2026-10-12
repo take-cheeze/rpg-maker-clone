@@ -2,7 +2,7 @@
 # encoding: UTF-8
 # frozen_string_literal: true
 
-# Check STRICT_HINTS (docs/adr/0411): BC2CPP_STRICT_HINTS=1 turns the else arm of a guard on a
+# Check STRICT_HINTS (docs/adr/0419): BC2CPP_STRICT_HINTS=1 turns the else arm of a guard on a
 # whole-program class hint (TYPED, ELEMENT, IVAR_ACCESSOR, MONO_EMBED_GUARD) into bc2cpp_hint_violation.
 #
 # 1. Gate logic: family parsing, marker, listing, STRICT_HINTS_REVIEWED, the SymbolCache rewrite.

@@ -1598,7 +1598,7 @@ if $PROGRAM_NAME == __FILE__
 
       warn msg.sub('bc2cpp:', "bc2cpp: #{NomethodReviewed::ALLOW_ENV}=allow, ignoring")
     end
-    # STRICT_HINTS (docs/adr/0411): the forced hint sites, listed and held to STRICT_HINTS_REVIEWED.
+    # STRICT_HINTS (docs/adr/0419): the forced hint sites, listed and held to STRICT_HINTS_REVIEWED.
     unless StrictHints.families.empty?
       hint_sites = StrictHints.sites(compiled)
       warn "== strict hints (#{StrictHints.families.join(',')}): #{hint_sites.size} bc2cpp_hint_violation =="
@@ -1607,7 +1607,7 @@ if $PROGRAM_NAME == __FILE__
       warn ''
       hint_violations = StrictHints.violations(hint_sites, compiled, stale: !ENV['BC2CPP_HOT_METHODS'])
       unless hint_violations.empty?
-        msg = "bc2cpp: #{hint_violations.size} STRICT_HINTS_REVIEWED violation(s) (docs/adr/0411):\n  " \
+        msg = "bc2cpp: #{hint_violations.size} STRICT_HINTS_REVIEWED violation(s) (docs/adr/0419):\n  " \
               "#{hint_violations.join("\n  ")}\n" \
               'Run the verify build over the real workloads, then list the sites in ' \
               'tools/bc2cpp/strict_hints_reviewed.rb (scripts/bc2cpp/strict_hints_update.rb).'

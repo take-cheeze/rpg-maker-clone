@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Mutation test for STRICT_HINTS (docs/adr/0411). Each mutant is a copy of tools/bc2cpp with one
+# Mutation test for STRICT_HINTS (docs/adr/0419). Each mutant is a copy of tools/bc2cpp with one
 # condition of the tier broken; scripts/bc2cpp/strict_hints_check.rb, run against the mutant through
 # BC2CPP_TOOL, must FAIL on the check that guards that condition. A mutant that passes means the
 # condition has no negative case.

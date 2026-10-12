@@ -413,7 +413,7 @@ jobs:
               BC2CPP_IR_INLINE=1 OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               OPTCARROT_CLOSED_WORLD=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
           - shard: strict-hints
-            # BC2CPP_STRICT_HINTS (docs/adr/0411): the forced-hint tier. The generated-code and run checks, the
+            # BC2CPP_STRICT_HINTS (docs/adr/0419): the forced-hint tier. The generated-code and run checks, the
             # mutants (16), and STRICT_HINTS_REVIEWED over the real wio closed world (hot-only passes the gate,
             # the full run equals the list; est. 15 min like the NOMETHOD_REVIEWED check).
             checks: |

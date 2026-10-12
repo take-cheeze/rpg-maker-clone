@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Check STRICT_HINTS_REVIEWED (docs/adr/0411) over the real wio closed world, with BC2CPP_STRICT_HINTS=1:
+# Check STRICT_HINTS_REVIEWED (docs/adr/0419) over the real wio closed world, with BC2CPP_STRICT_HINTS=1:
 #
 #   - the real hot-only codegen of each compiled gem (what a build runs) passes the gate: every forced
 #     site is listed in tools/bc2cpp/strict_hints_reviewed.rb;
@@ -52,5 +52,5 @@ if failures.empty?
   puts "bc2cpp strict hints reviewed check: ok (#{STRICT_HINTS_REVIEWED.size} reviewed)"
 else
   abort "bc2cpp strict hints reviewed check: #{failures.size} failure(s) -- regenerate with " \
-        'scripts/bc2cpp/strict_hints_update.rb after the verify build is clean (docs/adr/0411)'
+        'scripts/bc2cpp/strict_hints_update.rb after the verify build is clean (docs/adr/0419)'
 end

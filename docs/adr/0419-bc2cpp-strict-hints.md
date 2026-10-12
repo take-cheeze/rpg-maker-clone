@@ -1,4 +1,4 @@
-# 0411. Strict hints: a wrong class hint fails loudly instead of costing a by-name send
+# 0419. Strict hints: a wrong class hint fails loudly instead of costing a by-name send
 
 Date: 2026-10-12
 

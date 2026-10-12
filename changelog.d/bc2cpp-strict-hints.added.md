@@ -5,6 +5,6 @@
   `[RPG2k] hint violation: <Class>#<name> at <Owner#method (FAMILY)>` and raises
   `BC2cppHintViolation` (a `NoMethodError`); `-DBC2CPP_NOMETHOD_VERIFY` aborts naming the site.
   Every forced site is marked, listed on stderr (`STRICT_HINT_SITE`) and gated by
-  `tools/bc2cpp/strict_hints_reviewed.rb`. See `docs/adr/0411-bc2cpp-strict-hints.md` and
+  `tools/bc2cpp/strict_hints_reviewed.rb`. See `docs/adr/0419-bc2cpp-strict-hints.md` and
   `docs/bc2cpp-strict-hints.md`; covered by `scripts/bc2cpp/strict_hints_check.rb`, its mutation
   check and `strict_hints_reviewed_check.rb` (nightly `strict-hints` shard).

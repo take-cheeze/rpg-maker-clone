@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 # Regenerates STRICT_HINTS_REVIEWED (tools/bc2cpp/strict_hints_reviewed.rb) from a full wio closed-world
-# run of all three compiled gems with BC2CPP_STRICT_HINTS=1 (docs/adr/0411).
+# run of all three compiled gems with BC2CPP_STRICT_HINTS=1 (docs/adr/0419).
 #
 #   MRBC=path/to/host/mrbc ruby scripts/bc2cpp/strict_hints_update.rb [--write]
 #

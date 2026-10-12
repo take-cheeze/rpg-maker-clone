@@ -1,6 +1,6 @@
 # Running the strict hint tier and its verify build
 
-`BC2CPP_STRICT_HINTS` (ADR 0411) forces the whole-program class hints of a closed-world
+`BC2CPP_STRICT_HINTS` (ADR 0419) forces the whole-program class hints of a closed-world
 build: the else arm of a guarded hint site, which dispatched by name, becomes
 
 ```

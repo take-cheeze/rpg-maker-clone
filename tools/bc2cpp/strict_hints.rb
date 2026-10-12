@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# STRICT_HINTS (docs/adr/0411): an opt-in tier that forces the whole-program class HINTS of a
+# STRICT_HINTS (docs/adr/0419): an opt-in tier that forces the whole-program class HINTS of a
 # closed-world build. A guarded hint site is `if (class guard) direct-call else bc2cpp_send(...)`;
 # with BC2CPP_STRICT_HINTS=1 the else arm of the families below is `bc2cpp_hint_violation`, which
 # logs `[RPG2k] hint violation: <Class>#<name> at <Owner#method (FAMILY)>` to $stderr and raises
@@ -17,7 +17,7 @@
 #   poly_table        the else arm of an outlined POLY_TABLE
 #   interface_table   the else arm of an interface-table dispatch
 # Not forced: numeric arms (Float, Bignum and overflow promotion are legitimate flows on their
-# slow-path helpers) and the families docs/adr/0411 lists with their evidence.
+# slow-path helpers) and the families docs/adr/0419 lists with their evidence.
 #
 # Policy: a hint is not a proof, so no proof gates the forcing; every violation the verify build finds
 # is a wrong or incomplete hint, fixed at its source. BC2CPP_STRICT_HINTS_PROVEN=1 restricts the tier to
@@ -33,7 +33,7 @@ module StrictHints
   ALLOW_ENV = 'BC2CPP_STRICT_HINTS_UNREVIEWED'
   FAMILIES = %w[typed element ivar_accessor mono_embed poly_small_n poly_table interface_table].freeze
   # `1` forces the families that read a receiver hint (layout, annotation, element); `all` adds the
-  # candidate-set chains and tables, whose receivers are not traced (docs/adr/0411).
+  # candidate-set chains and tables, whose receivers are not traced (docs/adr/0419).
   DEFAULT_FAMILIES = %w[typed element ivar_accessor mono_embed].freeze
   MARKER = %r{/\* STRICT_HINT (\w+): (\S+) \*/}
   LISTING = /^  STRICT_HINT_SITE (.+ -> \S+ \(\w+\))$/
