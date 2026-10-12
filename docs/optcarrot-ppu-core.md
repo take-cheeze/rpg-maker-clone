@@ -77,3 +77,13 @@ variants preserve the captured state at the seven default frame counts under
 CRuby, but mrbc rejects them with `too big jump offset` before native
 compilation. They need a smaller generated control-flow structure before
 their native performance can be measured.
+
+The original Fiber PPU can also use bc2cpp's resumable compiler. Yielding
+helpers now lower through decoded `BytecodeIR::ResumableRegion` control-flow
+graphs, with helper registers retained in the persistent caller frame. The
+compiler refuses unresolved branches, nonlocal exits, handler-bearing or
+block-building helpers, and branches back into argument entry. This does not
+replace the synchronous source generator or specialize clock branches. Run
+`ruby scripts/bc2cpp/bytecode_ir_check.rb` and
+`ruby scripts/bc2cpp/resumable_check.rb` for region refusals and native
+yield/resume comparisons, including GC pressure. See ADR 0421.

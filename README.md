@@ -1089,7 +1089,9 @@
   [GC measurements](docs/optcarrot-gc.md).
   `OPTCARROT_STATIC_PPU=1` compiles an upstream-generated synchronous PPU core
   in the ordinary host. Its state comparison accepts additional ROMs and frame
-  counts. See [PPU core](docs/optcarrot-ppu-core.md).
+  counts. The original Fiber path lowers yielding helpers through checked
+  bytecode IR regions while retaining persistent resume state. See
+  [PPU core](docs/optcarrot-ppu-core.md).
   `BC2CPP_IR_INLINE=1` expands eligible method bodies after bytecode decoding,
   avoiding source inlining's bytecode jump limit. See
   [method inlining](docs/bc2cpp-method-inlining.md).
@@ -1738,6 +1740,9 @@
 - bc2cpp initializes argument registers directly and removes unreferenced
   nil-only register declarations from ordinary compiled methods and blocks
   (see [generated register declarations](docs/bc2cpp-register-output.md)).
+  A liveness pass over the emitted instruction texts also drops dead register
+  copies and constant loads and propagates plain copies (`BC2CPP_REGISTER_FLOW=0`
+  turns it off; see [the same page](docs/bc2cpp-register-output.md)).
 - bc2cpp binary decoding shares source-file lookups between filename and line
   metadata and avoids per-instruction enumerator allocations. The binary-loader
   check compares source locations and instructions with mrbc (see

@@ -1259,6 +1259,7 @@ jobs:
               ruby scripts/bc2cpp/numeric_operand_check.rb
               ruby scripts/bc2cpp/native_result_facts_check.rb
               ruby scripts/bc2cpp/tuple_return_check.rb
+              ruby scripts/bc2cpp/register_flow_check.rb
               ruby scripts/bc2cpp/class_object_args_check.rb
 
           # ADR 0285: the LCF schema oracle against the real reader (host-only, no mrbc).

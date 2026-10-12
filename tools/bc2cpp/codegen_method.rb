@@ -350,6 +350,9 @@ class CodeGen
     blk_field = needs_blk_param || has_blk ? [{ name: 'bc2cpp_blk', c_type: 'mrb_value' }] : []
     @blk_param_name = blk_field.empty? ? nil : 'bc2cpp_blk'
     @blk_param_level = 0
+    # REGISTER_FLOW: the outer registers each glue's try body reads, by the same fields the glue
+    # initialises (saved copies and `&rN` aliases). The pass checks the glue text names them.
+    rescue_glue_reads = {}
     rescue_regions.each_with_index do |region, i|
       suppressed.merge((region[:begin_addr]..region[:end_addr]).to_a)
       suppressed << region[:except_addr]
@@ -359,6 +362,9 @@ class CodeGen
                                                                                                   inline_mand: mand)
       glue_at[region[:begin_addr]] = emit_rescue_glue(try_name, region, arg_names, arg_native_types,
                                                       extra_field_values: saved.map { |f| rescue_field_value(f) })
+      rescue_glue_reads[region[:begin_addr]] = saved.filter_map do |f|
+        f[:name][/\Abc2cpp_(?:saved|ref)_r(\d+)\z/, 1]&.to_i
+      end
     end
     @blk_param_name = nil
 
@@ -502,14 +508,31 @@ class CodeGen
     end
     # RESUMABLE_ENTRY: the method's own instructions are the flat part of the step function.
     @resumable.flat = true if @resumable
+    # REGISTER_FLOW (ADR 0415): an ordinary method keeps each instruction's text
+    # apart until the whole body exists, so dead copies can be dropped.
+    flow_captured = RegisterFlow.captured_registers(irep) if !@resumable && prefix_at.empty? && RegisterFlow.enabled?
+    flow_bodies = flow_captured && Array.new(irep.instructions.length, '')
+    flow_labels = flow_captured && Array.new(irep.instructions.length, '')
     irep.instructions.each_with_index do |insn, idx|
       out << guarded_inline[:after][insn.addr] if guarded_inline[:after].key?(insn.addr)
       out << prefix_at[insn.addr] if prefix_at.key?(insn.addr)
       next if suppressed.include?(insn.addr) && !glue_at.key?(insn.addr)
 
-      out << "  L#{insn.addr}:;\n" if targets.include?(insn.addr)
-      out << guarded_inline[:at][insn.addr] if guarded_inline[:at].key?(insn.addr)
-      out << (glue_at[insn.addr] || compile_insn(insn, irep, d, idx))
+      jump_label = targets.include?(insn.addr) ? "  L#{insn.addr}:;\n" : ''
+      # The guarded-inline prefix is part of this instruction's text, so the flow pass sees it as one unit.
+      text = (guarded_inline[:at][insn.addr] || '') + (glue_at[insn.addr] || compile_insn(insn, irep, d, idx))
+      if flow_bodies
+        flow_labels[idx] = jump_label
+        flow_bodies[idx] = text
+      else
+        out << jump_label << text
+      end
+    end
+    if flow_bodies
+      flow_handlers = { regions: recognize_rescue_regions(irep).map { |r| r.slice(:begin_addr, :end_addr, :except_addr) },
+                        glue_reads: rescue_glue_reads }
+      flow_bodies = RegisterFlow.optimize(irep, flow_bodies, flow_captured, handlers: flow_handlers)
+      flow_labels.each_with_index { |jump_label, idx| out << jump_label << flow_bodies[idx] }
     end
     @resumable.flat = false if @resumable
     @blk_param_name = nil

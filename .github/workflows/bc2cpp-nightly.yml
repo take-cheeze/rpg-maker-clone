@@ -555,6 +555,8 @@ jobs:
               # ADR 0417: the wio closed world's generated C++ names no RGSS::Tts.
               MRBC="$mrbc" ruby scripts/tts_limited_check.rb --bc2cpp
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/arg_shapes_check.rb
+              # ADR 0415: dead register writes and copies, hand-built shapes plus a compiled-vs-interpreted run.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/register_flow_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/block_semantics_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/constant_singleton_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/rescue_errinfo_check.rb
@@ -666,6 +668,9 @@ jobs:
         run: |
           mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
           test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }
+          # Absolute: several checks run the generator from a fixture directory (chdir), where a relative MRBC
+          # does not resolve and the analysis fails with exit 2.
+          mrbc="$PWD/$mrbc"
           # The checks below quietly SKIP their compiled-code comparison
           # without these, so a missing piece must fail the shard instead.
           core="$PWD/build-bc2cpp/mruby/host/mrbc"
