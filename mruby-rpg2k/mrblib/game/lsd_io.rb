@@ -1158,6 +1158,11 @@ module Game
     def self.from_lsd(db, save)
       hero = save[:hero]
       inv = save[:inventory]
+      # A save missing either record is not a save of a game in progress (a
+      # truncated file cut on a chunk boundary, or a foreign file); say which,
+      # rather than failing later with a NoMethodError on nil.
+      raise 'save has no hero record (chunk 104)' if hero.nil?
+      raise 'save has no inventory record (chunk 109)' if inv.nil?
       member_ids = inv[:party] || []
       party = Party.new(db, member_ids)
       items = {}

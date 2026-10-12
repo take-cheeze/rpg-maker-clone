@@ -45,6 +45,31 @@ commit (workflow-level `concurrency`, keyed on the PR number). Master pushes,
 merge-queue runs, manual dispatches and `/preview` comments use a per-run group
 and are never cancelled.
 
+### Host Ruby uses YJIT for bc2cpp
+
+`bc2cpp-build` and both nightly job families set `RUBY_YJIT_ENABLE=1` for the
+Nix-provided CRuby. Rake, the check harnesses and their Ruby code-generation
+subprocesses inherit it, including mutant generators. A step after the Nix
+environment export verifies `RubyVM::YJIT.enabled?` and logs `RUBY_DESCRIPTION`,
+so losing JIT support fails visibly instead of silently restoring slower runs.
+This accelerates host analysis; the generated C++ and target mruby VM are unchanged.
+See [ADR 0408](adr/0408-bc2cpp-ci-yjit.md) for measurements and the memory tradeoff.
+
+For a local comparison, run the same generator or check with
+`RUBY_YJIT_ENABLE=0` and `RUBY_YJIT_ENABLE=1`. The environment switch is documented
+in [Ruby's YJIT manual](https://docs.ruby-lang.org/en/3.4/yjit/yjit_md.html).
+
+### Repeated bytecode dataflow queries
+
+bc2cpp's `BytecodeIR::Program` reuses reaching-definition and write-dominance
+answers for the same instruction/register query. Each body keeps at most 1,024
+answers per query type, including refusals. Query options and opaque registers
+are part of the key; mutable opaque sets and refusal diagnostics bypass reuse.
+Returned definition arrays and register strings remain private to each caller.
+The existing dataflow check compares answers with an independent forward
+fixpoint and covers mutation of caller-owned state. See
+[ADR 0409](adr/0409-bc2cpp-dataflow-query-cache.md) for performance measurements.
+
 ### Mutation checks run off pull requests
 
 `scripts/ci/timed_checks.rb` drops every `*_mutation_check.rb` command and strips
@@ -102,7 +127,11 @@ step, not in a bc2cpp shard. The save-format check
 (`rpg2k_lsd_authoritative_check.rb`, ADR 0395) runs in that same step: the
 engine's `.lsd` save must load back field for field against the live state, and the
 save-slot policy (the `.lsd` alone, old `.mrb` saves not read, a failed write
-failing the save; docs/adr/0399) is tested there too.
+failing the save; docs/adr/0399) is tested there too. So are the typed-save checks
+(`lcf_save_typed_check.rb`, which also fails when the generated
+`save_typed_accessors.rb` is stale, and `rpg2k_lsd_adversarial_check.rb`, ADR 0400:
+a save this engine did not write loads, or is an empty slot with the reason logged,
+and truncated or corrupted saves never crash).
 
 The compiled-versus-interpreted fixtures that need a full-core mruby are split
 three ways, because each step takes minutes and one shard had reached the
@@ -225,6 +254,16 @@ The full-core build is not stored with `actions/cache`: `full_or_build` treats a
 existing `libmruby.a` as current and never checks the inputs (patches, the mruby
 submodule, the gembox config, the compiler), so a key that missed one would hand a
 stale library to every check. sccache keys on the real compile inputs instead.
+
+### Test mruby builds execute prerequisites in parallel
+
+The bc2cpp fixture, width and core-test builders pass `rake -m -jN`, with
+`N` capped at 16. `-j` alone limits the thread pool but leaves mruby's ordinary
+task prerequisites serial; `-m` enables their concurrent execution, as in the
+main host build. Existing artifact checks and error handling still apply.
+[ADR 0410](adr/0410-bc2cpp-test-rake-multitask.md) records a clean-build
+comparison. For a local concurrency check, add `RAKEOPT=--job-stats` and inspect
+the builder's saved log for `Total threads in play`.
 
 ### Mutant pool
 
