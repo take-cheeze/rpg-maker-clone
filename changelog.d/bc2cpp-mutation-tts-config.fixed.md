@@ -1,0 +1,1 @@
+- The bc2cpp frozen tables mutation check (`scripts/bc2cpp/frozen_tables_mutation_check.rb`) builds its mutants with the shared generator copy, so the `tools/rgss_tts_config.rb` that `compiled_gems.rb` requires comes along. Before, every mutant failed to load and was reported as not killed.
