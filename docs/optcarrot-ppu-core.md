@@ -109,4 +109,21 @@ Run `scripts/bc2cpp/resumable_check.rb` with both IR flags enabled for native
 comparisons covering arguments, nested helpers, GC inside a helper, caller
 values retained across later yields, indirect suspension and Fiber reentry.
 The default run verifies the opt-out. This optimization does not replace the
-synchronous source generator. See ADR 0428.
+synchronous source generator. See ADR 0430.
+
+Three alternating release pairs used matching compiler revisions, the original
+Fiber PPU, static CPU dispatch, ordinary IR inlining and the 16,384-pointer gray
+stack. The optimized build expanded 27 PPU helper regions; both installed 355
+methods. Full pixels, audio, RAM and CPU/PPU register snapshots matched at 2,
+180 and 1,800 frames. All twelve timing checksums also matched.
+
+| Workload | Ordinary helper calls | Transient IR helper regions |
+| --- | ---: | ---: |
+| 180 frames, cold | 1.1510 s (156.39 FPS) | 1.1535 s (156.05 FPS) |
+| 1,800 continuous frames | 9.6371 s (186.78 FPS) | 9.5811 s (187.87 FPS) |
+
+The 0.6% continuous difference is within run-to-run noise; no runtime speedup
+is claimed, and the mode remains opt-in. The existing synchronous source preset
+remains the faster PPU experiment. A first version retained helper temporaries
+in the heap frame and regressed; non-suspension proofs now allow those values
+in local scopes without extending their lifetime across yields.
