@@ -9,4 +9,4 @@
   refused entries). Their call sites in `Scene::Map` become direct C++ calls. `BC2CPP_NSC_DEBUG=1` now names why a
   candidate was not compiled clean. Covered by
   `scripts/bc2cpp/rpg2k_singleton_owners_check.rb` and its mutation check; see
-  `docs/adr/0422-bc2cpp-rpg2k-singleton-owners.md`.
+  `docs/adr/0426-bc2cpp-rpg2k-singleton-owners.md`.
