@@ -227,6 +227,14 @@ to decide where a new check goes: put it in the shard with the most slack, and
 keep each shard's total under the budget above (commands in a `ci:parallel` group overlap, so their sum is more than the wall time). `ruby scripts/ci/helpers_check.rb`
 (in `ruby-checks`) covers the wrapper.
 
+The binary decoder shares each opcode's debug-file lookup between filename
+and line decoding, and scans multi-file records without allocating an
+enumerator. A local 125,640-instruction world decoded in about 0.87 seconds
+instead of 0.95 seconds, with roughly one million fewer allocations.
+`scripts/bc2cpp/binary_loader_check.rb` checks file boundaries, absent records,
+duplicate start positions and reverse queries, then compares full instruction
+and line metadata with mrbc output.
+
 ### Decoded tree cache
 
 Manual nightly runs offer a `decoded_tree_cache` comparison input, off by
