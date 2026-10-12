@@ -1,0 +1,1 @@
+- **bc2cpp checks**: the profiler results mutation check's "Ruby lookup ignored" mutant again targets the current profiler name lookup (`profiler_name_unshadowed?`, ADR 0391). It had failed as a missing mutation site since that change, so the nightly `fast` shard was red. Generated C++ is unchanged.
