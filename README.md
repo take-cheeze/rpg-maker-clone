@@ -1732,7 +1732,8 @@
   [`docs/deploy.md`](docs/deploy.md) for the one-time repo setup (Pages source +
   Cloudflare secrets).
 - bc2cpp CI enables CRuby's YJIT for host analysis and code generation,
-  including nightly fixture and mutation checks. See [the CI guide](docs/ci.md)
+  including nightly fixture and mutation checks. Mutation workers flush Ruby
+  failure output so the pool can stop caught mutants promptly. See [the CI guide](docs/ci.md)
   for verification and local comparisons.
 - bc2cpp initializes argument registers directly and removes unreferenced
   nil-only register declarations from ordinary compiled methods and blocks

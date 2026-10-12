@@ -1,3 +1,5 @@
+require_relative '../tools/rgss_tts_config'
+
 MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   spec.license = 'MIT'
   spec.author = 'take-cheeze'
@@ -21,6 +23,16 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   add_dependency 'mruby-numeric-ext'
   add_dependency 'mruby-enum-ext'
   add_dependency 'mruby-range-ext'
+
+  # ADR 0417: Zundamon narration (Scene::Map#speak_message) calls RGSS::Tts,
+  # which only the desktop "host" build can back. Every other build ships the
+  # empty stand-in instead (appended last: Scene::Map is defined by then), so
+  # no Ruby there names RGSS::Tts. This runs before every other rbfiles filter.
+  unless RgssTtsConfig.backend_possible?(build.name)
+    tts_rb = "#{dir}/mrblib/scene/map_tts.rb"
+    spec.rbfiles -= [tts_rb]
+    spec.rbfiles << "#{dir}/mrblib_limited/map_tts_off.rb"
+  end
 
   # RPG_RT's own F9 debug menu (Switch/Variable browser, the chipset
   # passability editor, the whole-map viewer) and the matching

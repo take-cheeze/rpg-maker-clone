@@ -1,0 +1,1 @@
+- `CodeGen#numeric_aliased_names` is computed once instead of on every call (it re-walked every instruction of every irep per name), which cuts the first generator pass over the whole engine from about 510 s to 326 s. The generated C++ and diagnostics are byte-identical.
