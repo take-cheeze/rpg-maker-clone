@@ -14,7 +14,12 @@
 #   4. a field whose bytes do not decode as its declared type raises
 #      LCF::SaveTypeError naming the field, and a wrong class is refused too;
 #   5. a malformed chunk 113/114 execution-state stack is still tolerated (the
-#      read succeeds, and the frames read as nil), as it always was.
+#      read succeeds, and the frames read as nil), as it always was;
+#   6. the typed writers (docs/adr/0407): every field of every table, set through
+#      its generated writer, writes the same bytes as `rec[id] = value` (the schema
+#      encoder), a populated save read back through the readers and written out
+#      through the writers reproduces its bytes, and the generated writer file has no
+#      String literal (field names are Symbols, so bc2cpp's static-dispatch proof holds).
 #
 # Usage: ruby scripts/lcf_save_typed_check.rb   (exits non-zero on failure)
 
@@ -34,9 +39,15 @@ module LCF
 end
 
 mrblib = File.expand_path('../mruby-lcf/mrblib', __dir__)
-%w[lcf.rb schema.rb lcf_file.rb save_typed.rb save_typed_accessors.rb].each do |f|
+%w[lcf.rb schema.rb lcf_file.rb save_typed.rb save_typed_accessors.rb
+   save_typed_put.rb save_typed_setters.rb].each do |f|
   load File.join(mrblib, f)
 end
+
+# The generator's table walk matches nested tables to their SAVE_* constants by identity,
+# which LCF.elements_of's in-place caching (any read of a save) breaks: walk it first.
+load File.expand_path('../mruby-lcf/gen_save_typed_accessors.rb', __dir__)
+TABLES = GenSaveTyped.tables
 
 $checks = 0
 $failures = 0
@@ -101,11 +112,12 @@ def chunk_stream(pairs)
 end
 
 check 'the generated accessors are up to date with mrblib/schema.rb' do
-  load File.expand_path('../mruby-lcf/gen_save_typed_accessors.rb', __dir__)
   generated = GenSaveTyped.generate
   current = File.read(File.join(mrblib, 'save_typed_accessors.rb'))
   ok generated == current, 'mruby-lcf/mrblib/save_typed_accessors.rb is stale: ' \
                            'run ruby mruby-lcf/gen_save_typed_accessors.rb'
+  ok GenSaveTyped.generate_setters == File.read(File.join(mrblib, 'save_typed_setters.rb')),
+     'mruby-lcf/mrblib/save_typed_setters.rb is stale: run ruby mruby-lcf/gen_save_typed_accessors.rb'
 end
 
 check 'a valid save reads through the typed path, with each value as its declared class' do
@@ -208,6 +220,133 @@ check 'the typed frame has the shape restore_call_stack reads' do
   frames = entry.save_execution_state.frames
   eq 1, frames.size, 'one frame'
   eq({ commands: [], current_command: 4, event_id: 9, triggered_by_decision_key: true }, frames[0], 'frame shape')
+end
+
+# -- the typed writers (docs/adr/0407) -----------------------------------------------------
+
+# A value of the Ruby class each schema type declares, distinct per depth.
+def sample_value(field, depth = 0)
+  case field[:type]
+  when :int then 12_345 - depth
+  when :uint8 then 200
+  when :bool then true
+  when :double then 41_000.5
+  when :string then 'Sample'
+  when :int8_array then [1, 2, 3, 250]
+  when :bool_array then [true, false, true]
+  when :int16_array then field[:order] ? field[:order].map.with_index { |_, i| i - 1 } : [1, -2, 300]
+  when :int32_array then [1, -2, 70_000]
+  when :event then [LCF::EventCommand.new(10110, 0, 'hi', [0, 1, 2]), LCF::EventCommand.new(0, 0, '', [])]
+  when :move_commands
+    [{ command_id: 1 }, { command_id: 32, parameter_a: 3 }, { command_id: 34, parameter_string: 'x', parameter_a: 1 }]
+  when :Array1D
+    rec = LCF::Array1D.new('', field)
+    LCF.elements_of(field).each { |id, f| rec[id] = sample_value(f, depth + 1) }
+    rec
+  when :Array2D
+    tbl = LCF::Array2D.new('', field)
+    [1, 2, 50].each do |row|
+      rec = LCF::Array1D.new('', field)
+      LCF.elements_of(field).each { |id, f| rec[id] = sample_value(f, depth + 1) }
+      tbl[row] = rec
+    end
+    tbl
+  else raise "no sample for #{field[:type]}"
+  end
+end
+
+def table_schema(const)
+  return LCF::Schema::SAVE_DATA if const == :SAVE_DATA
+  { elements: GenSaveTyped.resolve(LCF::Schema.const_get(const)) }
+end
+
+check 'every field of every table: the typed writer writes the same bytes as the schema encoder' do
+  order, fields = TABLES
+  kinds = {}
+  count = 0
+  order.each do |const|
+    cls = LCF::SaveTyped.const_get(GenSaveTyped.class_name(const))
+    fields[const].each do |id, f, _child|
+      v = sample_value(f)
+      direct = LCF::Array1D.new('', table_schema(const))
+      direct[id] = v
+      rec = LCF::Array1D.new('', table_schema(const))
+      cls.new(rec, 'T').send("save_#{f[:name]}=", v)
+      eq direct.to_lcf, rec.to_lcf, "#{const} field #{id} (#{f[:name]}, #{f[:type]})"
+      kinds[f[:type]] = true
+      count += 1
+    end
+  end
+  ok count >= 250, "covers every field (#{count})"
+  eq %i[Array1D Array2D bool bool_array double event int int16_array int32_array int8_array move_commands string uint8],
+     kinds.keys.sort_by(&:to_s), 'every field kind in the save schema'
+end
+
+check 'a populated save read through the readers and written through the writers keeps its bytes' do
+  full = LCF::SaveData.new
+  LCF::Schema::SAVE_DATA[:elements].each { |id, f| full[id] = sample_value(f) }
+  bytes = full.to_lcf
+  src = read_back(bytes).typed
+  dst = LCF::SaveData.new
+  out = LCF::SaveTyped::Save.new(dst.instance_variable_get(:@root), 'Save')
+  %w[title system screen pictures hero boat ship airship actors inventory targets map_events
+     foreground_event common_events lsd_ext].each do |name|
+    out.send("save_#{name}=", src.send("save_#{name}"))
+  end
+  eq bytes, dst.to_lcf, 'bytes after read -> write'
+end
+
+check 'a writer refuses a value of the wrong class, naming the field, and writes nothing' do
+  rec = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+  hero = LCF::SaveTyped::Movable.new(rec, 'Save.hero')
+  {
+    'save_map_id=' => 'seven', 'save_through=' => 1, 'save_charset_name=' => 5,
+    'save_x=' => 1.5, 'save_event_id=' => true,
+  }.each do |m, v|
+    next unless hero.respond_to?(m)
+    err = (begin; hero.send(m, v); rescue LCF::SaveTypeError => e; e; end)
+    ok err, "#{m} refused #{v.inspect}"
+    ok err.message.start_with?('Save.hero.'), "message names the field (#{err.message})"
+  end
+  eq '', rec.to_lcf(false), 'nothing was written'
+end
+
+check 'a writer accepts an Integer for a double, a typed record for a table, and nil to drop a chunk' do
+  save = LCF::SaveData.new
+  typed = save.typed
+  title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
+  typed.save_title = title
+  typed.save_title.save_timestamp = 3
+  eq 3.0, typed.save_title.save_timestamp
+  typed.save_title.save_hero_name = 'Hero'
+  eq 'Hero', save.typed.save_title.save_hero_name
+  direct = LCF::SaveData.new
+  d = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
+  d[1] = 3
+  d[11] = 'Hero'
+  direct[100] = d
+  eq direct.to_lcf, save.to_lcf, 'bytes match the encoder'
+  typed.save_title.save_hero_name = nil
+  ok !save.typed.save_title.rec.key?(11), 'nil drops the chunk'
+  ok save.typed.save_title.save_hero_name.nil?, 'and the field reads as absent (no schema default)'
+end
+
+check 'a named 16-bit array (a Hash on read) is written back in schema order' do
+  # No save table names an int16_array's members, so use a one-field table that does.
+  schema = { elements: { 1 => { name: :stats, type: :int16_array, order: %i[hp sp] } } }
+  rec = LCF::Array1D.new('', schema)
+  klass = Class.new(LCF::SaveTyped::Record) { def save_stats=(v); save_put 1, v end }
+  klass.new(rec, 'T').save_stats = { hp: 7, sp: -3 }
+  direct = LCF::Array1D.new('', schema)
+  direct[1] = [7, -3]
+  eq direct.to_lcf, rec.to_lcf, 'schema order'
+  eq({ hp: 7, sp: -3 }, rec[1], 'reads back as the same Hash')
+end
+
+check 'the generated writers use Symbol-only dispatch: no String literal, no dynamic send' do
+  src = File.read(File.join(mrblib, 'save_typed_setters.rb')).lines.reject { |l| l.start_with?('#') }.join
+  ok !src.match?(/["']/), 'a String literal in save_typed_setters.rb'
+  ok !src.match?(/\b(send|public_send|__send__|define_method|instance_variable_set)\b/), 'dynamic dispatch'
 end
 
 puts

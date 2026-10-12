@@ -73,7 +73,7 @@ change makes the frames it receives typed and checked when the save is read.
 
 **Writing is unchanged.** `Game::State#to_lsd` still stores each field through
 `LCF::Array1D#[]=`, which already encodes by the schema type. There are no typed
-setters. Round-trip tests show the writer reproduces a read save byte for byte.
+setters here (they came later, as a separate layer: docs/adr/0407). Round-trip tests show the writer reproduces a read save byte for byte.
 
 ## Consequences
 

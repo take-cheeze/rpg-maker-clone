@@ -85,6 +85,17 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
     end
   end
 
+  # docs/adr/0407: the typed save writers (save_typed_setters.rb, 251 one-line
+  # methods, plus save_typed_put.rb's helper) are about 22 KB of bytecode with the
+  # host `mrbc` (no -g), well over the ~8 KB a flash-bound target can take for an
+  # opt-in layer, and nothing the game runs calls them (Game::State#to_lsd writes
+  # through LCF::Array1D#[]=, the same schema encoder they use). wio does not ship
+  # them. Every other target compiles them; the readers (save_typed_accessors.rb)
+  # are unaffected.
+  if spec.build.name == 'wio'
+    spec.rbfiles -= ["#{dir}/mrblib/save_typed_put.rb", "#{dir}/mrblib/save_typed_setters.rb"]
+  end
+
   # docs/adr/0144: mruby-rgss/mrbgem.rake was, until this round, the ONLY
   # caller of wio_strip_bc2cpp_stubs; this round wires mruby-lcf up too,
   # alongside mruby-rpg2k's own first round (see that gem's own mrbgem.rake
