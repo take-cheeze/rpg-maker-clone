@@ -1,0 +1,1 @@
+- **bc2cpp nightly**: the `ext_prefix_mutation_check` mutants that rewrite the decoder's `build(...)` call match its current text (the call gained a `debug_file` argument in 8c24e06f), so the mutation site is found again.

@@ -179,6 +179,8 @@ jobs:
               # ADR 0306: element classes of frozen literal tables; generated code, the interpreter on three builds, mutants.
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/frozen_tables_check.rb
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/frozen_tables_mutation_check.rb
+              # ADR 0425: the compiled section of the frozen-table slot class (BC2CPP_FREEZE_SLOT, the host section runs in build.yml).
+              MRBC="$mrbc" ruby scripts/bc2cpp/frozen_slot_check.rb
           - shard: call-results
             # ADR 0309: attr_reader result classes and flow-proven Array arms; its own shard (about 15 min with the mutants).
             checks: |
@@ -394,6 +396,13 @@ jobs:
             checks: |
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_singleton_check.rb
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/native_singleton_mutation_check.rb
+          - shard: rpg2k-singleton-owners
+            # ADR 0422: the real Game::CommonEvent / Game::MoveRoute class methods in a fixture (generated code for the
+            # base world and three withdrawal worlds, the owners/register/hot-only wiring, the interpreted-versus-
+            # compiled run), then 11 mutants and an unmutated control through the shared pool.
+            checks: |
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/rpg2k_singleton_owners_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/rpg2k_singleton_owners_mutation_check.rb
           - shard: integer-constants
             # ADR 0324: unit cases for the native-definition scan and the jump onto a SETCONST, generated code, the
             # full-core and core-only runs, then eight mutants and an unmutated control (the 32-bit run is in
@@ -427,8 +436,8 @@ jobs:
             # mutants (16), and STRICT_HINTS_REVIEWED over the real wio closed world (hot-only passes the gate,
             # the full run equals the list; est. 15 min like the NOMETHOD_REVIEWED check).
             checks: |
-              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_check.rb
-              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_mutation_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_mutation_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_reviewed_check.rb
           - shard: coverage
             # Split from fast: the three slowest checks there (~10, ~5 and ~0.2 min).
@@ -446,6 +455,8 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp/yield_reach_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/include_ancestor_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/foreign_def_forms_check.rb
+              # ADR 0423: the lexical reads of constants (TURN_LEFT in two scopes) against compiled fixtures.
+              MRBC="$mrbc" ruby scripts/bc2cpp/lexical_const_check.rb
               # -DBC2CPP_NOMETHOD_VERIFY aborts at a dead bc2cpp_nomethod site (docs/adr/0275).
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/nomethod_verify_check.rb
               # A guard on a stable class constant fails with a logged error, not a dispatch (docs/adr/0290).
@@ -524,6 +535,7 @@ jobs:
               ruby scripts/bc2cpp/insn_operands_check.rb
               ruby scripts/bc2cpp/irep_scans_check.rb
               ruby scripts/bc2cpp/bytecode_ir_check.rb
+              BC2CPP_CPU_IR_NATIVE=1 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_cpu_dispatch_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_dataflow_check.rb
               ruby scripts/bc2cpp/origin_multiwrite_check.rb
               ruby scripts/bc2cpp/site_origin_exceptions_check.rb
@@ -548,6 +560,8 @@ jobs:
               # ADR 0417: the wio closed world's generated C++ names no RGSS::Tts.
               MRBC="$mrbc" ruby scripts/tts_limited_check.rb --bc2cpp
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/arg_shapes_check.rb
+              # ADR 0415: dead register writes and copies, hand-built shapes plus a compiled-vs-interpreted run.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/register_flow_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/block_semantics_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/constant_singleton_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/rescue_errinfo_check.rb
@@ -659,6 +673,9 @@ jobs:
         run: |
           mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
           test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }
+          # Absolute: several checks run the generator from a fixture directory (chdir), where a relative MRBC
+          # does not resolve and the analysis fails with exit 2.
+          mrbc="$PWD/$mrbc"
           # The checks below quietly SKIP their compiled-code comparison
           # without these, so a missing piece must fail the shard instead.
           core="$PWD/build-bc2cpp/mruby/host/mrbc"

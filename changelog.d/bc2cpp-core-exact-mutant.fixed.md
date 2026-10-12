@@ -1,0 +1,1 @@
+- **bc2cpp nightly**: the `core_exact_direct_check` arity mutant matches the current `core_exact_target` call (it carries `private_ok:` since ADR 0380), so it is killed again instead of reporting its site as gone.

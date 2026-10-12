@@ -20,3 +20,103 @@ binary size and compile-time benefits depend on the C++ compiler.
 conditional nil locals and captured locals. Its native-argument case checks
 fixnum, float and bool boxing. The full compiled-core mruby suite checks the
 remaining core methods and Fiber behavior.
+
+## Dead copies and constant loads (REGISTER_FLOW)
+
+The step above only removes declarations. A second pass, `RegisterFlow`
+(`tools/bc2cpp/register_flow.rb`, ADR 0415), runs on each ordinary compiled
+method after all of its instruction texts exist and removes assignments the
+declarations scan cannot see:
+
+- **Dead writes.** A backward liveness fixpoint over the method's
+  `BytecodeIR` CFG drops a `MOVE`, `LOADI*`, `LOADL`, `LOADSYM`, `LOADNIL`,
+  `LOADSELF`, `LOADTRUE` or `LOADFALSE` whose register no path reads before it
+  is overwritten or the method returns.
+- **Copy propagation.** `rD = rS;` is removed when every reader of `rD` is a
+  plain-operand instruction (`MOVE`, `RETURN`, `JMPIF/JMPNOT/JMPNIL`,
+  `SETIV/SETGV/SETCV/SETCONST`) that can read `rS` instead: the copy reaches it
+  on every path and `rS` is not written in between.
+
+What a register reads and writes is taken from the emitted C++ text of each
+instruction, not from the opcode: only a text of the exact shape
+`  rD = <expression>;` is a definition, and any other text reads every register
+it names. A method is left untouched when it has a `goto` the IR does not
+explain (an inlined block loop that jumps between instruction texts), a
+reference alias, a catch handler the handler model below does not cover, or is
+resumable. The one generated `goto` the IR does not explain on its own is the
+optional-argument `switch` that replaces ENTER's jump table
+(`RegisterFlow.dispatch_text`): its default-value targets become normal
+successors of the switch's text, and only when that text is exactly the switch
+over the table's targets with every other table entry empty.
+`BC2CPP_REGISTER_FLOW_GOTO=0` turns this model off and refuses such methods
+again. `r0`, registers a nested block reaches by upvar, registers whose address
+is taken (`&rN`) and registers redeclared inside a text are never removed or
+substituted. Window consumers (`SEND`, `ARRAY`, `ADD`, ...) keep the copies that
+feed them.
+
+**Rescue regions (handler edges).** A `begin ... rescue` region is emitted as a
+glue at its begin address that runs the try body under `mrb_protect_error`, and
+the clause tests follow it. The pass models the exception path as one edge from
+every instruction the region protects (the half-open range `[begin, end)`) to
+the region's except address, which the IR reads as an ordinary handler edge
+(`BytecodeIR`, `include_handlers:`). A write is never killed along that edge: a
+raise can come before the write completes, so the handler still sees the value
+the write replaced. The model applies only when all of these hold, and any
+other handler refuses the method:
+
+- every catch handler is a rescue region codegen recognized, one for one (same
+  begin, end and target), and the IR's handler targets resolve;
+- each glue names every outer register its try body reads: a saved copy
+  (`rN`) or a `&rN` alias. Argument values reach the try body through the
+  method's parameters, not through a register name, and the pass never changes
+  a parameter;
+- every instruction in a protected range except the glue emitted no text, so the
+  outer function enters a handler only through the glue.
+
+Ensure regions and methods with an ensure guard are not optimized, as before.
+`BC2CPP_REGISTER_FLOW_HANDLERS=0` refuses every handler method again;
+window mode (`BC2CPP_REGISTER_FLOW_WINDOWS=1`) keeps refusing them.
+
+`BC2CPP_REGISTER_FLOW=0` turns the pass off and the generated C++ is then
+byte-identical to the output without it; `BC2CPP_REGISTER_FLOW_STATS=1` prints
+the counters at exit. `BC2CPP_REGISTER_FLOW_WINDOWS=1` is an experimental,
+default-off extension that also rewrites reads inside window consumers; it is
+exercised by the same check but not by default CI builds.
+
+Measured on the full closed-world generation (`coverage_report.rb`, 7,622
+compiled methods, kill switch on versus off at the same revision):
+
+| | off | on |
+| --- | ---: | ---: |
+| lines | 409,582 | 408,906 (-676, -0.17%) |
+| bytes | 19,954,696 | 19,942,878 (-11,818, -0.06%) |
+| `rN = rM;` copies | 20,825 | 20,336 |
+| `mrb_value rN = mrb_nil_value();` declarations | 15,000 | 14,817 |
+
+1,094 methods changed; 1,352 `MOVE`s, 6 `LOADI` and 2 `LOADNIL` were dropped
+and 1,227 copies propagated; 650 methods were refused for a `goto` and 430 for a
+handler. Most copies stay because they feed argument windows. The experimental
+window mode on the same input gives 404,626 lines (-4,956 against off, -1.2%),
+19,876,990 bytes (-0.39%) and 16,680 copies. The optimizer already removes these
+stores: compiling the whole output with `g++ -O1 -c` gives the same `.text` (6,142,800
+bytes off, 6,142,782 on), so the gain is source size and parse time, not code size.
+`scripts/bc2cpp/register_flow_check.rb` holds hand-built soundness shapes and a
+compiled-versus-interpreted run with the pass on, off and in window mode.
+
+Optional-argument switch model (`BC2CPP_REGISTER_FLOW_GOTO`), same tree, shipped
+build (`coverage_report.rb`, `SKIP_UNSUPPORTED=1`):
+
+| | goto model off | goto model on |
+| --- | ---: | ---: |
+| `refused goto` methods | 285 | 0 |
+| `refused handlers` methods | 429 | 429 |
+| lines | 367,719 | 367,648 (-71) |
+| bytes | 18,989,327 | 18,988,221 (-1,106) |
+| copies propagated | 1,311 | 1,467 (+156) |
+| `MOVE` dropped | 1,432 | 1,603 (+171) |
+| `LOADNIL` dropped | 0 | 9 |
+
+The goto-off build is byte-identical to the same tree before the change. With
+the model on, 39 emitted method functions differ; every one has the optional-
+argument switch in its goto-off text, and the 246 other newly accepted methods
+keep their text (the copy and write counts above come from those 39).
