@@ -5,7 +5,7 @@
 # event-command features they actually use, so the clone's coverage gaps can be
 # prioritised from real content rather than guesswork.
 #
-# Like scripts/lcf_testbed_check.rb this loads the pure-Ruby LCF parser
+# Like scripts/lcf/testbed_check.rb this loads the pure-Ruby LCF parser
 # (mruby-lcf/mrblib/{lcf,schema}.rb) under CRuby and runs it over a game's
 # RPG_RT.ldb / RPG_RT.lmt / Map*.lmu. It walks:
 #   * the database common events (their packed command lists),

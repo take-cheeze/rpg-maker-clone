@@ -81,7 +81,7 @@ initialization for the real owner changes what happens when a wrong-typed
 `self` reaches the accessor.
 
 `Game::Actor` itself is **not** added to `BC2CPP_WIRED_EMBEDDINGS` by this
-change. `scripts/bc2cpp_wired_embedding_check.rb` (a separate, pre-existing
+change. `scripts/bc2cpp/wired_embedding_check.rb` (a separate, pre-existing
 invariant) already refuses it for an independent reason: 44 of its 124
 compiled entry points -- including `#initialize` itself -- are not installed
 by `mruby-rpg2k-compiled/src/register.cxx`, so real construction never runs
@@ -101,6 +101,6 @@ on `Game::ChipSet#terrain` as well as the specific `Game::Actor` shape this
 was found investigating. The cost is one extra class-pointer compare on a
 MONO call whose target owns embedded ivars -- unmeasured here, expected to be
 negligible next to the direct-call win MONO already provides over
-`mrb_funcall`. `scripts/bc2cpp_mono_embed_guard_check.rb` covers both the
+`mrb_funcall`. `scripts/bc2cpp/mono_embed_guard_check.rb` covers both the
 guarded (embedding target) and unguarded (plain, non-embedding target) shapes
 so a regression in either direction fails loudly.

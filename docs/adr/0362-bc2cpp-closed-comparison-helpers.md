@@ -27,7 +27,7 @@ is the kill switch) and:
 * The Ruby bodies the helper mirrors are the build's own: `CoreCompare` (`tools/bc2cpp/core_compare.rb`, modelled on
   `CoreMixins`, ADR 0261) compares `Comparable#<` ... `#>=` in `mrblib/compar.rb` by owner, file and normalized body
   (the message interpolation included), requires `Hash` to be the only other Ruby definer and `src/numeric.c` the
-  only native one. `scripts/bc2cpp_numeric_slow_check.rb` fails when the real 3rd/mruby stops matching.
+  only native one. `scripts/bc2cpp/numeric_slow_check.rb` fails when the real 3rd/mruby stops matching.
 * `self <=> other` of a String, Symbol or other Numeric stays an Integer or nil answer: no engine or outside Ruby
   definition, prepend, unknown mixin or computed installer reaches `<=>` on String, Symbol, Numeric, Comparable,
   Object, Kernel or BasicObject (`core_native_arm_safe?`), and the String and Symbol registrations are exactly
@@ -47,7 +47,7 @@ answers through Comparable, which the world scan of such a build lists but a lib
 
 ## Consequences
 
-Soundness rests on the two lists above; the equivalence matrix in `scripts/bc2cpp_numeric_slow_check.rb` runs the
+Soundness rests on the two lists above; the equivalence matrix in `scripts/bc2cpp/numeric_slow_check.rb` runs the
 four helpers against the operator itself over Integer, bigint, Float (NaN, infinities, -0.0), nil, booleans,
 String, Symbol, Hash, Array, Range, Numeric.new, Struct, Object and anonymous-class receivers with every operand,
 comparing value, exception class and message, and the number of by-name calls (zero for a number, String, Symbol

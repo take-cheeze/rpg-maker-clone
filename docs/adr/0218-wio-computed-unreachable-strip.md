@@ -31,8 +31,8 @@ Three facts make a sound analysis possible:
 
 ## Decision
 
-`scripts/wio_unreachable_methods.rb` computes the unreachable methods, and
-`scripts/strip_wio_unreachable_methods.rb` deletes them from the wio build's
+`scripts/wio/unreachable_methods.rb` computes the unreachable methods, and
+`scripts/wio/strip_unreachable_methods.rb` deletes them from the wio build's
 mrblib copies. `build_config.rb`'s `wio_strip_unreachable` runs both, after
 every other rbfiles filter. It is called from the three gems' `mrbgem.rake`.
 
@@ -130,7 +130,7 @@ scripts) is outside what the analysis sees.
 
 ### Checks
 
-- **`scripts/wio_unreachable_methods_check.rb` (CI).** A fixture world has a
+- **`scripts/wio/unreachable_methods_check.rb` (CI).** A fixture world has a
   method reachable only through each of: `&:sym`, `super`, native
   `mrb_funcall`, a `respond_to?` guard, a String literal, a binary blob, an
   interpolated Symbol, outside Ruby, and a VM hook. It also has seven
@@ -146,7 +146,7 @@ scripts) is outside what the analysis sees.
   under CRuby. It also asserts an unreviewed computed `send` fails the
   analysis. Disabling any single rule makes it fail, checked for all ten
   rules.
-- **`scripts/wio_strip_scripts_check.rb` (CI).** It now also runs the analysis
+- **`scripts/wio/strip_scripts_check.rb` (CI).** It now also runs the analysis
   on the wio rbfiles, which it gets by evaluating each `mrbgem.rake` as the wio
   build does, and requires every strip to apply and parse. CI has no
   submodules, which only makes it strip more (one more def than with `3rd/`).

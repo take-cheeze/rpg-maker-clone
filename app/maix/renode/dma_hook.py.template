@@ -32,7 +32,7 @@
 # instead of trusting the DMAC's memory-access width.
 #
 # This is a template, not loadable as-is: @DMA_ADDR@ is
-# dmac_channel_enable's address, filled in by scripts/maix_renode_boot.bash;
+# dmac_channel_enable's address, filled in by scripts/maix/renode_boot.bash;
 # 0x0 when the ELF never uses DMA, an address PC never reaches, so the hook
 # is inert. Only the LCD path's shape is implemented (single-block MEM2PRF);
 # anything else is logged and skipped, and the body is still skipped so the

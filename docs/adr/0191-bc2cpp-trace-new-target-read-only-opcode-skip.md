@@ -74,7 +74,7 @@ reintroducing the exact false negative ADR 0188 already fixed once, just on
 `ClassLayout`'s side of the same shared helper instead of `IvarLayout`'s.
 
 Verified to have **zero measurable effect** on the real project today, not
-assumed: `scripts/bc2cpp_coverage_report.rb`'s full output (compiled entry
+assumed: `scripts/bc2cpp/coverage_report.rb`'s full output (compiled entry
 points, `CLASS_HINT`/`ELEM_HINT`/`HASH_ELEM_HINT` resolved/poisoned counts,
 `EMBED`, dynamic-dispatch counts, everything) is byte-identical before and
 after, confirmed with a `git stash`-bracketed A/B diff against the same

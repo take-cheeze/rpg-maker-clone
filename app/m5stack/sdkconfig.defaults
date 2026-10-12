@@ -13,7 +13,7 @@ CONFIG_FREERTOS_HZ=1000
 
 # The espidf framework's own default (2 MB) does not match the
 # m5stack-core-esp32 board's real 4 MB flash, which the toolchain otherwise
-# warns about (and scripts/m5stack_qemu_boot.bash's own merge_bin step
+# warns about (and scripts/m5stack/qemu_boot.bash's own merge_bin step
 # assumes 4 MB throughout).
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="4MB"

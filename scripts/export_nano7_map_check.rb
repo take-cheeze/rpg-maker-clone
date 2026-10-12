@@ -15,7 +15,7 @@
 # the Wio Terminal, whose smaller buffers (app/wio/src/walk_main.cxx) it must
 # either fit or be refused by, never silently exceed.
 # With no GAME_DIR, uses data/Nepheshel206beta/Nepheshel206Nbeta (see
-# scripts/download-nepheshel.bash). With no MAP_ID, checks a small sample of
+# scripts/download/nepheshel.bash). With no MAP_ID, checks a small sample of
 # maps spread across the project. Exits non-zero on any failure.
 
 require 'tmpdir'
@@ -27,14 +27,14 @@ EXPORTER = File.join(ROOT, 'scripts/export_nano7_map.rb')
 # For check_hero_geometry only: the same Game::CharSet.frame_rect geometry
 # and colour-keyed PNG decoder the exporter's own hero code calls, loaded
 # independently here (this check never calls into export_nano7_map.rb's own
-# Ruby) the same way scripts/rpg2k_render_check.rb already exercises
+# Ruby) the same way scripts/rpg2k/render_check.rb already exercises
 # Game::ChipsetLayout standalone.
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game.rb')
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'legacy_lsd.rb')
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
-load File.join(ROOT, 'scripts/rgss_cruby_compat.rb')
+load File.join(ROOT, 'scripts/rgss/cruby_compat.rb')
 
 # Mirrors TARGETS in the exporter, which mirrors each firmware's buffers.
 TARGETS = {
@@ -450,7 +450,7 @@ end
 
 game_dir = ARGV[0] || File.join(ROOT, 'data/Nepheshel206beta/Nepheshel206Nbeta')
 unless Dir.exist?(game_dir)
-  warn "no test-bed game at #{game_dir} -- run scripts/download-nepheshel.bash first, or pass a GAME_DIR"
+  warn "no test-bed game at #{game_dir} -- run scripts/download/nepheshel.bash first, or pass a GAME_DIR"
   exit 0
 end
 

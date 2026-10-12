@@ -99,10 +99,10 @@ by this project's encoder.
 
 ### Reproducing
 
-`scripts/lcf_native_schema_probe.rb` prepares a fresh isolated game copy:
+`scripts/lcf/native_schema_probe.rb` prepares a fresh isolated game copy:
 
 ```sh
-ruby scripts/lcf_native_schema_probe.rb \
+ruby scripts/lcf/native_schema_probe.rb \
   data/Nepheshel206beta/Nepheshel206Nbeta /tmp/lsd-screen screen
 ```
 

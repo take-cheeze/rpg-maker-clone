@@ -23,7 +23,7 @@ much smaller than its site count.
 ## Method
 
 Same census as ADR 0331/0340: `BC2CPP_RECEIVER_PROOF_REPORT=rp.tsv MRBC=<host mrbc> ruby
-scripts/bc2cpp_coverage_report.rb`, on master `921e1ee3` (ADR 0340 merged), 1,826 rows, 1,671 unproven, 1,728
+scripts/bc2cpp/coverage_report.rb`, on master `921e1ee3` (ADR 0340 merged), 1,826 rows, 1,671 unproven, 1,728
 unproven by-name lines. The report changes no generated code. Classification is by the columns the report already
 carries, read in this order:
 
@@ -110,7 +110,7 @@ Hints are not proofs (ADR 0210, 0290): no guard hint was added.
 ## Consequences
 
 * No generated code changes, no kill switch; this is host-side analysis only.
-* `scripts/bc2cpp_receiver_proof_report.rb` gains the structural-lever classification and prints it as a table, so the
+* `scripts/bc2cpp/receiver_proof_report.rb` gains the structural-lever classification and prints it as a table, so the
   ranking is reproducible rather than asserted here.
 * Not run, because nothing was built: no mutation check, no compiled-versus-interpreted comparison, no withdrawal
   worlds.

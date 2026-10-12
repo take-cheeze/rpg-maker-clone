@@ -42,7 +42,7 @@ staleness as a careful manual one.
 
 Add a `wio-bc2cpp` CI job, plus the two scripts it drives:
 
-- **`scripts/wio_bc2cpp_measure.bash`** reproduces the manual recipe of ADRs
+- **`scripts/wio/bc2cpp_measure.bash`** reproduces the manual recipe of ADRs
   0141/0143/0144 in one place: the nine `patches/*.patch` (via
   `scripts/apply_mruby_patch.bash`), the two SHA-256-verified Unicode tables,
   the standalone ARM `libuni-algo.a` with `cmake/uni-algo-trim.cmake`'s defines,
@@ -52,13 +52,13 @@ Add a `wio-bc2cpp` CI job, plus the two scripts it drives:
   variant gets its own `MRUBY_BUILD_DIR`, wiped before it is built, and the two
   links are expected to fail on the overflow — a failure for any *other* reason
   fails the script.
-- **`scripts/wio_overflow_report.rb`** reads the resulting `firmware.map` pair
+- **`scripts/wio/overflow_report.rb`** reads the resulting `firmware.map` pair
   and posts the A/B table (section sizes, flash needed, real overflow, % of
   budget, the `ld` cross-check and the delta) plus a best-effort
   per-object/archive breakdown of the bc2cpp image, following the existing
   `*_report.rb` conventions (`$GITHUB_STEP_SUMMARY`, plain-text twin, no-data
   path).
-- **`scripts/wio_overflow_report_check.rb`** pins the parsing/arithmetic
+- **`scripts/wio/overflow_report_check.rb`** pins the parsing/arithmetic
   against a hand-built map, so the report is tested without a multi-minute
   cross-build; it joins the `ruby-checks` job.
 
@@ -82,7 +82,7 @@ Two deliberate shape decisions:
   on the CI runners (``could not convert '1' from 'int' to 'mrb_value'``, a
   real, separate codegen bug whose occurrence depends on the filesystem
   ordering bc2cpp sees), and the job should surface that in the summary rather
-  than block the baseline number behind it. `scripts/wio_overflow_report.rb`
+  than block the baseline number behind it. `scripts/wio/overflow_report.rb`
   reads the `rake-failed.txt` the measure script leaves and prints the compiler
   error; once the codegen bug is fixed the variant can be made fatal.
 - **The build is cached on a content hash, and only that way.** The cache key
@@ -107,7 +107,7 @@ Two deliberate shape decisions:
   links, which is why it is a separate job with a 180-minute timeout rather
   than an addition to the two-minute `wio` job. The content-hash cache is what
   makes the common case cheap.
-- **The measurement is reusable outside CI.** `scripts/wio_bc2cpp_measure.bash`
+- **The measurement is reusable outside CI.** `scripts/wio/bc2cpp_measure.bash`
   is the scripted form of a process that until now lived only in ADR prose, so
   reproducing or extending an ADR's numbers no longer means re-deriving it.
 - **`env:wio_rgss_boot` is unchanged.** Nothing about the firmware, its link

@@ -35,7 +35,7 @@ the same posture this engine already takes with SDL_mixer's MIDI patch set
 (ADR 0026): an optional, downloaded run-time asset that a build can simply
 not have.
 
-- `scripts/download-voicevox-zundamon.bash` fetches four pinned GitHub
+- `scripts/download/voicevox-zundamon.bash` fetches four pinned GitHub
   release assets into `assets/voicevox/` (git-ignored, ~90 MiB — see
   `assets/voicevox/README.md` for exactly what and why): VOICEVOX CORE's C
   API library, its ONNX Runtime, the Open JTalk dictionary it uses for

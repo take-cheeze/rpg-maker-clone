@@ -44,7 +44,7 @@ BreakEvent(172) hiding in a shared fallback bucket) confirmed this is real:
 
 - All 3 real repeating-Custom-route pages in the bundled sample game now
   actually loop their route instead of running it once and stopping;
-  `scripts/wolf_interpreter_check.rb`'s own soak run no longer logs "map
+  `scripts/wolf/interpreter_check.rb`'s own soak run no longer logs "map
   event page's own repeating custom move route" as unimplemented.
 - Two new `mruby-wolf/test/wolf_test.rb` unit tests replace the old
   "skips a repeating Custom route" one: a repeat test walking two full

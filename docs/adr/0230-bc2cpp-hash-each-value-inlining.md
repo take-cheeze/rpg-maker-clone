@@ -31,7 +31,7 @@ the ordinary fallback.
 
 The real hot-only RPG2K generated source drops from 2,457,756 to 2,456,393 bytes
 (1,363 bytes), with both hot `each_value` fallback regions removed. LCF and RGSS
-generated sources are unchanged. `scripts/bc2cpp_hash_each_value_check.rb` covers
+generated sources are unchanged. `scripts/bc2cpp/hash_each_value_check.rb` covers
 the values snapshot, result value, `break` result, foreign receiver fallback,
 and execution against real mruby. The guard remains a deliberate tripwire: a
 future receiver-proof bug fails loudly instead of bypassing a Hash subclass's

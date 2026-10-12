@@ -1208,7 +1208,7 @@ end
 # (h - 12) / 2 + 1 for every rect height.
 assert "RGSS::Bitmap#draw_text centres the glyph cell in the rect height" do
   # This file also runs under the CRuby compat harness
-  # (scripts/rgss_cruby_compat.rb, via scripts/rgss_cruby_test_check.rb), whose
+  # (scripts/rgss/cruby_compat.rb, via scripts/rgss/cruby_test_check.rb), whose
   # Bitmap is a pure-Ruby stand-in for measuring text rather than the native
   # renderer: it paints glyphs its own way and does not model this centring at
   # all (and has no #blend_text whatever). The rule under test lives in
@@ -1243,7 +1243,7 @@ end
 # the flat #draw_text run above.
 assert "RGSS::Bitmap#blend_text centres the glyph cell the same way" do
   # This file also runs under the CRuby compat harness
-  # (scripts/rgss_cruby_compat.rb, via scripts/rgss_cruby_test_check.rb), whose
+  # (scripts/rgss/cruby_compat.rb, via scripts/rgss/cruby_test_check.rb), whose
   # Bitmap is a pure-Ruby stand-in for measuring text rather than the native
   # renderer: it paints glyphs its own way and does not model this centring at
   # all (and has no #blend_text whatever). The rule under test lives in
@@ -1693,7 +1693,7 @@ assert "RGSS::Profiler aggregates frames and sections when enabled" do
     # Under real mruby this is never empty -- the interpreter's own bootstrap
     # objects alone guarantee at least one live Object/Class/String -- but
     # this same file also runs under the CRuby compat harness
-    # (scripts/rgss_cruby_compat.rb), which has no equivalent GC introspection
+    # (scripts/rgss/cruby_compat.rb), which has no equivalent GC introspection
     # and stubs it as {}, so only the shape is asserted unconditionally; the
     # per-entry invariants below still exercise real data on a native build.
     object_types = st[:object_types]
@@ -1975,7 +1975,7 @@ end
 #
 # Unlike the RPG2000/XP/VX/Ace archive above, an MV/MZ project with "Encrypt
 # Audio" ticked never packs its Audio/ tree -- each file sits loose on disk,
-# individually obfuscated (scripts/gen-mz-encrypted.py's own `encrypt`, which
+# individually obfuscated (scripts/gen/mz-encrypted.py's own `encrypt`, which
 # this mirrors) and renamed with a trailing `.ogg_`/`.m4a_` (MZ) or
 # `.rpgmvo`/`.rpgmvm` (MV). Found missing against a real downloaded MZ release
 # (EgoicAnswers) whose every BGM/SE logged "no BGM/SE found" despite the file

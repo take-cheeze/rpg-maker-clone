@@ -12,7 +12,7 @@
 #      (rpgtkoolmv, redistributed by KADOKAWA) that `data/mv-sample` fetches —
 #      MZ has no equivalent official open-source release, so `data/mz-sample`
 #      commits only an authored database and art and fetches the rmmz engine from
-#      a community mirror at build time (`scripts/download-mz-corescript.bash`) —
+#      a community mirror at build time (`scripts/download/mz-corescript.bash`) —
 #      a CI-only test fixture, downloaded the same way the proprietary RPG2k/XP
 #      games are, never committed or redistributed.
 #   2. It ships **PIXI v5, which is WebGL-only** — there is no Canvas2D renderer
@@ -116,7 +116,7 @@ class MZ
 
   # Where the transfer probe sends the player, and how long it waits for the
   # destination to load (see #maybe_transfer_test). Map 2 and the tile are the
-  # bed's (scripts/gen-mz-sample.py); the wait covers the fade out, the scene
+  # bed's (scripts/gen/mz-sample.py); the wait covers the fade out, the scene
   # re-creation, `DataManager.loadMapData` and the fade back in, all at
   # software-GL speed.
   TRANSFER_MAP_ID = 2
@@ -833,7 +833,7 @@ class MZ
     # changed; it does not prove the new map's data was fetched or that its
     # events were set up. The bed's second map runs a parallel event writing
     # variable 2, which only ever becomes non-zero if the arriving map really
-    # loaded and its interpreter is running — see scripts/gen-mz-sample.py.
+    # loaded and its interpreter is running — see scripts/gen/mz-sample.py.
     def transfer_state_js
       "(function(){ var m = (typeof $gameMap !== 'undefined' && $gameMap) ? " \
       "$gameMap.mapId() : -1; " \
@@ -1137,7 +1137,7 @@ class MZ
 
   # Native entry point. Boot the real MZ engine on the shared host through the
   # WebGL renderer, report how far it got and then run the game. A `[MZ-BOOT]`
-  # marker naming the reached scene is what `scripts/mz_boot_check.bash` asserts
+  # marker naming the reached scene is what `scripts/mz/boot_check.bash` asserts
   # in CI; a boot error is surfaced instead. The rest of the binary — and the
   # other makers — are unaffected either way.
   def start
@@ -2445,8 +2445,8 @@ class MZ
   # chain — AudioManager -> the bridge's op queue -> #pump_audio -> RGSS::Audio
   # -> the SDL mixer — rather than only that the bridge is installed. The sample
   # ships an authored `audio/se/Beep.ogg` for exactly this (named `.ogg` so
-  # scripts/gen-mz-encrypted.py's own encryption sweep picks it up too --
-  # see scripts/gen-mz-sample.py's comment on that asset). One-shot; a no-op
+  # scripts/gen/mz-encrypted.py's own encryption sweep picks it up too --
+  # see scripts/gen/mz-sample.py's comment on that asset). One-shot; a no-op
   # during normal play. Mirrors MV#maybe_audio_test.
   def maybe_audio_test
     return if @audio_test_done
@@ -2724,8 +2724,8 @@ class MZ
   # Records the reached scene name in `@boot_scene`, and returns the caught boot
   # error (empty string on success, or when the engine scripts are absent so
   # there is nothing to run). The engine is fetched into `data/mz-sample` by
-  # `scripts/download-mz-corescript.bash`, so — unlike under M6.2 — this now runs
-  # in CI (`scripts/mz_boot_check.bash`), not only against a user-supplied
+  # `scripts/download/mz-corescript.bash`, so — unlike under M6.2 — this now runs
+  # in CI (`scripts/mz/boot_check.bash`), not only against a user-supplied
   # project.
   def boot_probe
     @boot_scene = ""

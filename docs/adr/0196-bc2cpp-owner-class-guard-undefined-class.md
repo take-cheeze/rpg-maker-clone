@@ -48,5 +48,5 @@ fallback that `mrb_const_get` applies to a nested segment, which only matters
 for an owner path that does not name a real nested class; generated owners
 always do.
 
-`scripts/bc2cpp_owner_class_cache_check.rb` now asserts that an undefined
+`scripts/bc2cpp/owner_class_cache_check.rb` now asserts that an undefined
 class yields `nullptr` without raising and is not cached.

@@ -23,7 +23,7 @@ core Ruby installers retain lookup exclusions even after leaving the compiled
 registry. Their effects also withdraw native helper facts inside this analysis.
 
 Set `BC2CPP_CORE_RUBY_RESULTS=0` to measure the same source tree without these
-facts. Use `MRBC=/path/to/mrbc ruby scripts/bc2cpp_coverage_report.rb` for the full
+facts. Use `MRBC=/path/to/mrbc ruby scripts/bc2cpp/coverage_report.rb` for the full
 Wio census. The comparison must use the same tree: master gained additional
 compiled block bodies after ADR 0337's 2,844-site measurement.
 
@@ -38,8 +38,8 @@ Run the focused checks with:
 
 ```sh
 MRBC=/path/to/mrbc BC2CPP_MRUBY_FULL=/path/to/full-core/build \
-  ruby scripts/bc2cpp_core_ruby_results_check.rb
-MRBC=/path/to/mrbc ruby scripts/bc2cpp_core_ruby_results_mutation_check.rb
+  ruby scripts/bc2cpp/core_ruby_results_check.rb
+MRBC=/path/to/mrbc ruby scripts/bc2cpp/core_ruby_results_mutation_check.rb
 ```
 
 The runtime check builds full-core mruby if one is not supplied. The mutation

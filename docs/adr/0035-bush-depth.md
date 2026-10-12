@@ -86,14 +86,14 @@ a guess would be worse than the omission.
 **Battle sprites** never had it: bush depth is a map-layer property and RPG_RT's
 battle screen does not consult the terrain for it.
 
-Covered by `scripts/rpg2k_render_check.rb` (the divisor arithmetic, the 1..3
+Covered by `scripts/rpg2k/render_check.rb` (the divisor arithmetic, the 1..3
 range, scaling to a 16px frame, and the round-up halving), by
-`scripts/rpg2k_scene_check.rb` (which terrain depth the hero reads, the jumping
+`scripts/rpg2k/scene_check.rb` (which terrain depth the hero reads, the jumping
 and boarded exemptions, the same/below/above layer gate for events, and the blit
 itself — one call on plain ground, a split pair at the water line with the right
 source rows and opacities, one half-opacity call when the frame sinks entirely,
 and the same through the real `draw_event` path) and by
-`scripts/rpg2k_testbed_logic_check.rb`, which sweeps every `Map*.lmu` in each
+`scripts/rpg2k/testbed_logic_check.rb`, which sweeps every `Map*.lmu` in each
 test bed through the same chipset lookup the scene uses and asserts that every
 sinking terrain the games define converts to a real pixel split — and reports
 how much shipped ground actually stands on one.

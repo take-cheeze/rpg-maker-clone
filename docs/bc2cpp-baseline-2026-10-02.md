@@ -8,8 +8,8 @@ measured by turning its kill switch off on that tree.
 * Tree: `origin/master` `cd86085f` (PR #1991 merged), wio closed world, `3rd/*` populated, host `mrbc` prebuilt,
   `LANG=C.UTF-8`. Later master commits (for example ADR 0320, EXT1/2/3 folding) are not in these numbers.
 * Method: `docs/bc2cpp-dynamic-site-census.md` (`## Method`), plus one run per switch
-  (`BC2CPP_<SWITCH>=0 MRBC=<host mrbc> BC2CPP_COVERAGE_KEEP_DIR=<dir> ruby scripts/bc2cpp_coverage_report.rb`, then
-  `scripts/bc2cpp_dynamic_site_census.rb <dir>/shipped.cxx --tsv ...`). Two runs of one tree are byte-identical, and
+  (`BC2CPP_<SWITCH>=0 MRBC=<host mrbc> BC2CPP_COVERAGE_KEEP_DIR=<dir> ruby scripts/bc2cpp/coverage_report.rb`, then
+  `scripts/bc2cpp/dynamic_site_census.rb <dir>/shipped.cxx --tsv ...`). Two runs of one tree are byte-identical, and
   every debug report (`BC2CPP_ITAB_REPORT`, `_ESCAPE_REPORT`, `_ELEMENT_REPORT`, `_GUARD_HINT_REPORT`,
   `_REFINE_REPORT`, `_NUMERIC_ROOTS`, `_PROVABLE_ERROR_REPORT`, `_SEND_ROOT_REPORT`) left every count below unchanged
   (checked against the plain run). Only `BC2CPP_SEND_ROOT_REPORT` changes the generated text (its tags), and the same
@@ -17,7 +17,7 @@ measured by turning its kill switch off on that tree.
 * Scopes: **all** = every compiled gem (engine plus mruby-core mrblib); **non-core** = functions named
   `RPG2k_|Game_|RGSS_|LCF_`; **rpg2k** = functions named `RPG2k_|Game_` (the engine proper).
 * Counts are generated-code lines in method bodies (the helper region is excluded), counted per enclosing generated
-  function. The scope split is mine (a function-name prefix); `scripts/bc2cpp_dynamic_site_census.rb` itself prints
+  function. The scope split is mine (a function-name prefix); `scripts/bc2cpp/dynamic_site_census.rb` itself prints
   the all-gems numbers only, and those match: 2,603 / 401 / 28 / 4,380.
 
 ## 1. Totals (default switches)
@@ -307,7 +307,7 @@ reach, and the log tool returned only the last lines.
 
 ## 6. Tool problems found
 
-* `BC2CPP_SITE_PROFILE=<dir>` makes `scripts/bc2cpp_coverage_report.rb` abort (`POLY markers exceed dispatch sites`,
+* `BC2CPP_SITE_PROFILE=<dir>` makes `scripts/bc2cpp/coverage_report.rb` abort (`POLY markers exceed dispatch sites`,
   exit 1): the profile instrumentation rewrites sends, so the report's own sanity check fires. The documented use is the
   optcarrot-probe workflow (a built binary writes hits), not the coverage report. The static `sites.tsv` it wrote
   before aborting is not used here. `site_rank` / executed-count ranking needs a workload binary, so the hit ranking
@@ -317,7 +317,7 @@ reach, and the log tool returned only the last lines.
 * `BC2CPP_SEND_ROOT_REPORT` joins 1,598 of the 1,800 rpg2k sites (202 untagged); its call-result table prints only the
   top 30 producers and needs the (deleted) `shipped.cxx` to re-join, so per-producer counts below the top 30 are
   unjoined all-irep rows.
-* `scripts/bc2cpp_dynamic_site_census.rb` prints all-gems numbers only and does not count `getidx`/`setidx`/`guard_violation`
+* `scripts/bc2cpp/dynamic_site_census.rb` prints all-gems numbers only and does not count `getidx`/`setidx`/`guard_violation`
   or per-family chains per scope; the scope split and the family chain counts here come from a throwaway scan of the
   same `shipped.cxx` (function-name prefix), kept out of the repository (no new tooling in this PR).
 * `docs/bc2cpp-dynamic-site-census.md` ADR 0317 table says "kept else arms 462 -> 399"; the refine report's kept-else

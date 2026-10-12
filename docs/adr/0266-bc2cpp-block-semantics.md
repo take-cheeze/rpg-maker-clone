@@ -13,7 +13,7 @@ A block in compiled code is a cfunc-backed `RProc` (BLOCK_FALLBACK, see the
 `return` are C++ exceptions, and captured locals are pointers into the defining
 C++ frame. ADR 0265 listed four divergences from the interpreter that it left
 alone. Writing a compiled-versus-interpreter differential for the whole block
-surface (`scripts/bc2cpp_block_semantics_check.rb`, 162 scenarios on the
+surface (`scripts/bc2cpp/block_semantics_check.rb`, 162 scenarios on the
 core-only VM, 28 more on a full-core VM) found more. Before this change 54 of
 the 162 core scenarios and 4 of the 28 full-core ones differed, and 34 of them
 killed the process (a segfault, or `std::terminate` from an uncaught
@@ -116,7 +116,7 @@ the method stays interpreted.
 
 ## Consequences
 
-- `scripts/bc2cpp_block_semantics_check.rb` (in the `bc2cpp-checks` fast shard)
+- `scripts/bc2cpp/block_semantics_check.rb` (in the `bc2cpp-checks` fast shard)
   compiles a closed-world fixture of 164 scenarios and runs each in its own
   process, interpreted and compiled, comparing the value or the exception class
   and message. With `BC2CPP_MRUBY_FULL` it adds 29 scenarios that need the
@@ -124,7 +124,7 @@ the method stays interpreted.
   `Hash#each`, `each_with_index`, destructuring, `times`, `sort` blocks. Every
   scenario agrees except the five known ones below, which the check requires to
   keep differing.
-- Wio shipped build (`scripts/bc2cpp_coverage_report.rb`): coverage, entry point
+- Wio shipped build (`scripts/bc2cpp/coverage_report.rb`): coverage, entry point
   and dispatch counts are unchanged. 12 call sites own a break frame and 20
   methods a return frame; 113 entry wrappers use `bc2cpp_check_argc`. The whole
   output still type-checks with `g++ -fsyntax-only`.
@@ -154,7 +154,7 @@ modelled the same way; before, it dispatched from the compiled frame and always
 answered false. `block_given?` inside a block body inlined into its method
 (`n.times { ... block_given? ... }`) emitted the destination register shifted
 twice, an undeclared `r<N>` that failed the C++ build; the instruction is
-already shifted. `scripts/bc2cpp_proc_call_block_given_check.rb` (109
+already shifted. `scripts/bc2cpp/proc_call_block_given_check.rb` (109
 scenarios: `&blk` procs called as `.call`/`.()`/`[]`/`yield`, `lambda(&blk)`,
 procs kept in ivars, arrays and hashes, escaping procs, break/next/return
 through a called proc, `block_given?`/`iterator?`/`defined?(yield)` at every

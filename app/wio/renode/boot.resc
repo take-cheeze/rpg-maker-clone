@@ -5,7 +5,7 @@
 # Usage: pass -e "set elf_path @/path/to/firmware.elf" before including this,
 # plus platform_path (@/path/to/wio_terminal.repl) and setup_addr/loop_addr
 # -- that ELFs own setup/loop symbol addresses (arm-none-eabi-nm firmware.elf,
-# grep -w setup and loop). scripts/wio_renode_boot.bash wraps all of this.
+# grep -w setup and loop). scripts/wio/renode_boot.bash wraps all of this.
 
 mach create "wio"
 machine LoadPlatformDescription $platform_path

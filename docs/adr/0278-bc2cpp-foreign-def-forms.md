@@ -32,7 +32,7 @@ literal symbol/string arguments of `alias_method`, `define_method` and `attr*` (
 and only ever loses an optimisation, never soundness. A file that does not parse is reported
 on stderr (the tree still recovers around the error).
 
-`scripts/bc2cpp_foreign_def_forms_check.rb` (bc2cpp-checks `fast` shard) puts each form in a
+`scripts/bc2cpp/foreign_def_forms_check.rb` (bc2cpp-checks `fast` shard) puts each form in a
 fixture gem's mrblib and requires both that the name is collected and that the generated
 guard chain keeps its dispatch instead of ending in `bc2cpp_nomethod`.
 

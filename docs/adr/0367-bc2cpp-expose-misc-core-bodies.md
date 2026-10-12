@@ -49,13 +49,13 @@ How each target gets the patch. `cmake/build-mruby.cmake`'s `rpg2k_mruby_patch` 
 build that goes through cmake: the root `CMakeLists.txt` (native, Emscripten, and Android, whose Gradle project points
 its CMake build at it) and `app/psp/CMakeLists.txt`; one line after `mruby-no-irep-debug.patch` covers them. Three
 builds do not go through that module and keep their own list, which the cmake file's comment says must stay in sync,
-and each got the same entry: `scripts/maix_mruby_build.bash` (the Kendryte build),
-`scripts/wio_bc2cpp_measure.bash` (the `MRUBY_TARGET=wio rake` the PlatformIO `wio_rgss_boot` env links, in CI and
-for the size measurement) and the check libmruby builds (`scripts/bc2cpp_width_build.rb`, which runs on a tree "any
+and each got the same entry: `scripts/maix/mruby_build.bash` (the Kendryte build),
+`scripts/wio/bc2cpp_measure.bash` (the `MRUBY_TARGET=wio rake` the PlatformIO `wio_rgss_boot` env links, in CI and
+for the size measurement) and the check libmruby builds (`scripts/bc2cpp/width_build.rb`, which runs on a tree "any
 cmake build" already patched, `docs/ci.md`). The nix flake patches no mruby source (its patch list is ppsspp and the
 psp fixup tool), `platformio.ini` names no patch, and `scripts/apply_mruby_patch.bash` is idempotent, so the patch
 applies on top of the other thirteen in the order of the chain (the last link) and a second configure leaves it
-alone. `scripts/mruby_patch_context_check.rb` passes (every hunk carries context).
+alone. `scripts/mruby/patch_context_check.rb` passes (every hunk carries context).
 
 ### The analysis
 
@@ -127,7 +127,7 @@ those gems has more definers than the scan lists); `BC2CPP_NUMERIC_SLOW_CLOSED=0
 
 ## Consequences
 
-Measured with `scripts/bc2cpp_dynamic_site_census.rb` on the wio closed world (shipped pass), base `b4efe59e` (the
+Measured with `scripts/bc2cpp/dynamic_site_census.rb` on the wio closed world (shipped pass), base `b4efe59e` (the
 head of PR #2045, which carries ADR 0360-0364), the `#if` arm kept for Complex/Rational builds stripped from both
 runs:
 
@@ -142,7 +142,7 @@ The generated method bodies are byte-identical to the base's; only `bc2cpp_slow_
 `bc2cpp_slow_neg_f` (71) changed. A build that links Complex or Rational, a tree without the patch, and
 `BC2CPP_NUMERIC_SLOW_CLOSED=0` keep the old helpers byte for byte.
 
-Equivalence is run by `scripts/bc2cpp_numeric_slow_check.rb` (also `BC2CPP_NUMERIC_SLOW_ONLY=misc`): every helper is
+Equivalence is run by `scripts/bc2cpp/numeric_slow_check.rb` (also `BC2CPP_NUMERIC_SLOW_ONLY=misc`): every helper is
 called directly against the operator over every member class pair (Fixnum, heap Integer and bigint edges, `MRB_INT_MIN`,
 zero divisors, Float NaN/-0.0/infinities, every sprintf directive class including the `%<a>` / `%{a}` / `%1$s` /
 `%*d` forms, frozen strings, String and Array subclasses, Hash arguments with NaN values, an Array a `to_s` empties
@@ -151,7 +151,7 @@ message, compiled against interpreted (about 9,000 answers per run and 8,900 dir
 are checked (0 for an owned receiver, 1 for the proof's dispatch). It runs at `mrb_int` 64, 32 (`BC2CPP_MRUBY_FULL32`)
 and without bigint (`BC2CPP_MRUBY_NOBIGINT`), each also with `MRB_USE_COMPLEX` and `MRB_USE_RATIONAL` defined (the
 by-name copies), plus a link of the closed forms against the gem-free core build. The libmruby builds are made from a
-tree with every `patches/mruby-*.patch` applied in order (`scripts/bc2cpp_width_build.rb`, `docs/ci.md`). Six mutants of
+tree with every `patches/mruby-*.patch` applied in order (`scripts/bc2cpp/width_build.rb`, `docs/ci.md`). Six mutants of
 the generator (the splat copy dropped, `Float#%` replaced by `fmod`, `-0.0` negated directly, `String#-@` dup-and-freeze,
 the Array test inverted, the `MRB_INT_MIN` overflow dropped) each fail the check. `CoreMisc` has its own unit cases
 (changed Ruby body, second definer, alias, unpatched wrapper, extra or opaque registration) and runs against the real

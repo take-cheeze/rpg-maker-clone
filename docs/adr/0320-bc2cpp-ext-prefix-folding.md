@@ -17,7 +17,7 @@ constant pools dropped because their class body has an `EXT2`".
 
 ### Phase 1: measurement
 
-Wio closed world, master `cd86085f`, `scripts/bc2cpp_coverage_report.rb` shipped pass (`SKIP_UNSUPPORTED=1`).
+Wio closed world, master `cd86085f`, `scripts/bc2cpp/coverage_report.rb` shipped pass (`SKIP_UNSUPPORTED=1`).
 
 | What carries a prefix | Count |
 | --- | ---: |
@@ -92,7 +92,7 @@ constant pools are almost all constants of those three class bodies that no meth
 
 * A method with more than 255 registers now compiles instead of being dropped. None exists in the engine today.
 * The checks that read the listing text (`bc2cpp_binary_loader_check.rb`) fold the `mrbc -v` prefix lines the same way.
-* `scripts/bc2cpp_ext_prefix_check.rb` and its mutation check (eight mutants and a control, mutated inside the repository)
+* `scripts/bc2cpp/ext_prefix_check.rb` and its mutation check (eight mutants and a control, mutated inside the repository)
   guard the folding; the shard `ext-prefix` runs them.
 * Not built: nothing else is gated on a prefix. Next-best levers (ADR 0308 table): exact arm for `ARRAY_PUSH`, the
   `attr_writer` call-site join, constructor argument pools.

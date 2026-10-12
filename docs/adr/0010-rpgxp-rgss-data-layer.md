@@ -65,9 +65,9 @@ the game's bundled scripts. Concretely:
   sheet, grid movement with tileset passability and a follow camera). This is the
   same staged path the RPG2000 runtime took (colour-block tiles first, real
   chipset blitting later).
-- **Sources are the mruby/CRuby common subset**, so `scripts/rpgxp_testbed_check.rb`
+- **Sources are the mruby/CRuby common subset**, so `scripts/rpgxp/testbed_check.rb`
   loads the exact schema under CRuby and validates it against a real downloaded
-  project (`data/OpenGame.exe/Testbed/XP`), the way `scripts/lcf_testbed_check.rb`
+  project (`data/OpenGame.exe/Testbed/XP`), the way `scripts/lcf/testbed_check.rb`
   guards the LCF loaders. `src/main.cxx` sizes the window to XP's native
   640×480 when it detects an XP project and the size was not overridden.
 

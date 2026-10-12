@@ -165,13 +165,13 @@ say *a no-op for an actor not in the party* now says what RPG_RT says, and the
 only remaining nil is an id the **database** has no row for — which is logged,
 once per id so a parallel process asking every frame cannot flood the log.
 
-Covered by `scripts/rpg2k_logic_check.rb` (rejoining keeps state; the roster
+Covered by `scripts/rpg2k/logic_check.rb` (rejoining keeps state; the roster
 builds each id once; the save carries actors who are out of the party) and
-`scripts/rpg2k_scene_check.rb` (`\N[n]` names the live actor, `\N[0]` the
+`scripts/rpg2k/scene_check.rb` (`\N[n]` names the live actor, `\N[0]` the
 leader).
 
 Fixtures were not enough to find this, so the change also adds
-`scripts/rpg2k_testbed_logic_check.rb`: a new harness that drives a **real**
+`scripts/rpg2k/testbed_logic_check.rb`: a new harness that drives a **real**
 test bed's `RPG_RT.ldb` through the **real** `Game::Interpreter`, joining what
 `lcf_testbed_check.rb` (real data, not run) and `rpg2k_logic_check.rb` (run, not
 real data) each do half of. It finds every actor a game's common events both add

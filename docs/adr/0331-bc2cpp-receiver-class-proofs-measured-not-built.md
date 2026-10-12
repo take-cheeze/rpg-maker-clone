@@ -20,7 +20,7 @@ in the engine gems, kill switch off against on, on one tree. The cutoff this sen
 ## Method
 
 `BC2CPP_RECEIVER_PROOF_REPORT=<tsv>` (`tools/bc2cpp/receiver_proof_report.rb`, aggregated by
-`scripts/bc2cpp_receiver_proof_report.rb`) writes one row per explicit-receiver send of the engine gems
+`scripts/bc2cpp/receiver_proof_report.rb`) writes one row per explicit-receiver send of the engine gems
 (`mruby-rpg2k`, `mruby-lcf`, `mruby-rgss`) whose shipped code holds a by-name line. Per row: the nearest writer of the
 receiver register (`call`, `ivar`, `argument`, `element`, `const`, `upvar`, `merge` for a literal written on one arm of a
 join, `other`) and the reason that writer has no class set (the unmodelled returns of the callee's definitions, the
@@ -43,7 +43,7 @@ the real flow would still have to join (a prototype below measured half of the o
 The fork is what keeps the report output-neutral: a recompile leaves memos behind (the direct-entry decision of a
 block, for one) that changed seven `any?` block sends the first time the recompile ran in the build process.
 `shipped.cxx` of the master tree and of the same tree with the report on are byte-identical (`cmp`), and
-`scripts/bc2cpp_receiver_proof_report_check.rb` asserts it on a fixture. Wio closed world, `3rd/*` populated, host
+`scripts/bc2cpp/receiver_proof_report_check.rb` asserts it on a fixture. Wio closed world, `3rd/*` populated, host
 `mrbc` prebuilt, `LANG=C.UTF-8`, master `eed615c7`; the shipped pass is the only pass reported (about 390 s of wall time
 on this machine against about 230 s without the report).
 
@@ -142,7 +142,7 @@ the mruby test builds. It is the lever to build next, on its own.
 ### A prototype below the cutoff
 
 The cheapest candidate the data pointed at was built as a prototype and measured, kill switch off against on, the same
-tree (`shipped.cxx` pass of `scripts/bc2cpp_coverage_report.rb`, engine gems):
+tree (`shipped.cxx` pass of `scripts/bc2cpp/coverage_report.rb`, engine gems):
 
 * ABSENT_NATIVE_DEFS: the registry holds a `<native>` placeholder for every name `NATIVE_SRCS` defines, whichever gems
   the build links, while `ClosedWorld` knows the natives that are really linked. A name no linked source spells has no
@@ -184,10 +184,10 @@ Hints are not proofs (ADR 0210, 0290): none was added.
 
 * No generated code changes: there is no kill switch to measure and no removed-versus-relocated number from a build.
   The prototype's numbers above are the only build measurement; its code is not in this change.
-* `BC2CPP_RECEIVER_PROOF_REPORT=<tsv>` and `scripts/bc2cpp_receiver_proof_report.rb` are the census for the next
+* `BC2CPP_RECEIVER_PROOF_REPORT=<tsv>` and `scripts/bc2cpp/receiver_proof_report.rb` are the census for the next
   attempt; they load only when the variable is set and need the shipped pass (`SKIP_UNSUPPORTED=1`), or
   `BC2CPP_RECEIVER_PROOF_ANY=1` to include a fixture that is not an engine gem.
-* `scripts/bc2cpp_receiver_proof_report_check.rb` (generated code only, about 30 seconds) runs in the `call-facts` shard:
+* `scripts/bc2cpp/receiver_proof_report_check.rb` (generated code only, about 30 seconds) runs in the `call-facts` shard:
   byte-identical output with the report on, and the rows of a fixture with a merge, an element, a parameter, an ivar
   dropped by a parameter store, a self call to an accessor and a proven literal.
 * Not run, because nothing was built: no mutation check (the report changes no output, so there is no mutant to kill by
@@ -196,8 +196,8 @@ Hints are not proofs (ADR 0210, 0290): none was added.
 
 ## Triggers to revisit
 
-Run `BC2CPP_RECEIVER_PROOF_REPORT=rp.tsv MRBC=<host mrbc> ruby scripts/bc2cpp_coverage_report.rb > /dev/null`, then
-`ruby scripts/bc2cpp_receiver_proof_report.rb rp.tsv`.
+Run `BC2CPP_RECEIVER_PROOF_REPORT=rp.tsv MRBC=<host mrbc> ruby scripts/bc2cpp/coverage_report.rb > /dev/null`, then
+`ruby scripts/bc2cpp/receiver_proof_report.rb rp.tsv`.
 
 * A call-graph audit of the RGSS natives' `self` discipline lands (the `@contents`/`@cursor_rect`/`bitmap` rows above,
   about 70 floor-freed sites), or any other ivar name stops being poisoned by a native spelling.

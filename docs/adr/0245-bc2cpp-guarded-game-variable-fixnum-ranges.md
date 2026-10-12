@@ -38,5 +38,5 @@ integers, or values introduced through bulk replacement keep the ordinary
 fallback. The extra range checks cost instructions on these specialized paths;
 performance should be measured before expanding the proof to other operations.
 
-`scripts/bc2cpp_game_variable_range_check.rb` pins the emitted guards and
+`scripts/bc2cpp/game_variable_range_check.rb` pins the emitted guards and
 fallbacks.

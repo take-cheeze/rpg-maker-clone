@@ -40,7 +40,7 @@ adding a second, weaker soundness bar to the same file. `+`, `-`, `*`, and
 
 Ivars whose every write is a chain of literals, already-embedded ivars, and
 `%`/`&`/`|`/`^` now embed. The real project's own 3 compiled gems (RPG2k,
-RGSS, LCF) show a byte-identical `scripts/bc2cpp_coverage_report.rb` before
+RGSS, LCF) show a byte-identical `scripts/bc2cpp/coverage_report.rb` before
 and after -- no ivar there currently fits this exact shape. The standalone
 Optcarrot bc2cpp probe (`tools/optcarrot_probe/`) gains 4 embedded ivars:
 `Optcarrot::APU#@frame_divider`, `APU::Pulse#@step`, `APU::Triangle#@step`,

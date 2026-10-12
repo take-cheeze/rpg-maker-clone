@@ -176,7 +176,7 @@ void init_midi_config(void) {
   // and no environment to set, only the build flag that packages the patches.
   LOG(WARNING) << "Audio: this page carries no MIDI patch set, so .mid BGM/ME "
                   "will not play. Rebuild it after running "
-                  "scripts/download-freepats.bash (or with "
+                  "scripts/download/freepats.bash (or with "
                   "-DWASM_MIDI_PATCHES=ON).";
 #else
   LOG(WARNING) << "Audio: no TiMidity configuration found; MIDI music will "

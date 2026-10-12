@@ -23,11 +23,11 @@ is routed to the exact line instead, where the test can be dropped.
 
 ## Checks
 
-- `scripts/bc2cpp_native_int_guard_check.rb` pins the emitters' shape for every answer the
+- `scripts/bc2cpp/native_int_guard_check.rb` pins the emitters' shape for every answer the
   proof can give (proven, unproven, no site, a proof for another position, a non-`:int`
   kind), drives the real `native_int_arg_proven?` over its own refusals, and generates code
   for a closed and an open world.
-- `scripts/bc2cpp_native_int_guard_mutation_check.rb` weakens the gate, the switch, the
+- `scripts/bc2cpp/native_int_guard_mutation_check.rb` weakens the gate, the switch, the
   proof's register test and the position argument in turn; each must be caught.
 
 ## Measured effect

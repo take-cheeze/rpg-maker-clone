@@ -74,13 +74,13 @@ user-reader intervals with their own switch.
 
 ## Tests
 
-`scripts/bc2cpp_numeric_intervals_check.rb`: generated code for four arithmetic and three index positives and seven
+`scripts/bc2cpp/numeric_intervals_check.rb`: generated code for four arithmetic and three index positives and seven
 negatives (a parameter, a constant above 32 bits, a Float constant, an arithmetic result of an unproven operand, a
 parameter receiver, an index parameter, a Float index constant), five withdrawal worlds (a reopened String constant, a native
 definition, `const_set`, a redefined `Integer#+`, `const_missing`), the open world and both kill switches; the fixture on
 real mruby interpreted and compiled (values and exceptions, with a Hash and a String reaching the parameter receiver),
 full-core, core-only and 32-bit `mrb_int`, with zero dispatches on the proven methods.
-`scripts/bc2cpp_numeric_intervals_mutation_check.rb`: an unmutated control and nine mutants (each kill switch ignored,
+`scripts/bc2cpp/numeric_intervals_mutation_check.rb`: an unmutated control and nine mutants (each kill switch ignored,
 every index or constant proven, no static-world gate on either source, an arithmetic result always a Fixnum, the Array read and
 write not using the proof), each killed. New `numeric-intervals` shard in `bc2cpp-checks`; the 32-bit run is in
 `bc2cpp-width (int32)`.

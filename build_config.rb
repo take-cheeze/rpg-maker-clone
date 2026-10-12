@@ -41,7 +41,7 @@ UNI_ALGO_TRIM_DEFINES = %w[
 def wio_strip_debug_rbfiles(spec)
   return unless spec.build.name == 'wio'
 
-  strip_script = File.expand_path('scripts/strip_wio_debug_output.rb', __dir__)
+  strip_script = File.expand_path('scripts/wio/strip_debug_output.rb', __dir__)
   out_dir = "#{spec.build_dir}/wio_debug_stripped"
   spec.rbfiles = spec.rbfiles.map do |src|
     rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
@@ -61,7 +61,7 @@ end
 # set of files to fold a handful of methods with exactly one real *engine*
 # caller into that call site -- strip_wio_inline_helpers.rb's own file
 # comment covers why this is a curated, hand-verified rewrite table rather
-# than a general single-caller inliner: scripts/*.rb's own CRuby-based
+# than a general single-caller inliner: scripts/**/*.rb's own CRuby-based
 # regression checks call several of these same methods directly by name,
 # so deleting them from the checked-in source would silently break real
 # test coverage that has nothing to do with wio. This rewrites only a
@@ -70,7 +70,7 @@ end
 def wio_strip_inline_helpers(spec)
   return unless spec.build.name == 'wio'
 
-  strip_script = File.expand_path('scripts/strip_wio_inline_helpers.rb', __dir__)
+  strip_script = File.expand_path('scripts/wio/strip_inline_helpers.rb', __dir__)
   out_dir = "#{spec.build_dir}/wio_inline_helpers"
   spec.rbfiles = spec.rbfiles.map do |src|
     rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
@@ -89,7 +89,7 @@ end
 def wio_strip_rgss_probes(spec)
   return unless spec.build.name == 'wio'
 
-  strip_script = File.expand_path('scripts/strip_wio_rgss_probes.rb', __dir__)
+  strip_script = File.expand_path('scripts/wio/strip_rgss_probes.rb', __dir__)
   lib_rb = "#{spec.dir}/mrblib/lib.rb"
   out = "#{spec.build_dir}/wio_rgss_probes_stripped/mrblib/lib.rb"
   raise "wio_strip_rgss_probes: #{lib_rb} is not in #{spec.name}'s rbfiles" unless spec.rbfiles.include?(lib_rb)
@@ -108,7 +108,7 @@ end
 def wio_strip_clock(spec)
   return unless spec.build.name == 'wio'
 
-  strip_script = File.expand_path('scripts/strip_wio_clock.rb', __dir__)
+  strip_script = File.expand_path('scripts/wio/strip_clock.rb', __dir__)
   out_dir = "#{spec.build_dir}/wio_clock_stripped"
   spec.rbfiles = spec.rbfiles.map do |src|
     rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
@@ -188,7 +188,7 @@ def wio_strip_bc2cpp_stubs(spec, compiled_gem:, owners:)
 
   repo_root = __dir__
   probe_script = File.expand_path('tools/bc2cpp/wio_registered_methods.rb', __dir__)
-  strip_script = File.expand_path('scripts/strip_wio_bc2cpp_stubs.rb', __dir__)
+  strip_script = File.expand_path('scripts/wio/strip_bc2cpp_stubs.rb', __dir__)
   compiled_gems_rb = File.expand_path('tools/bc2cpp/compiled_gems.rb', __dir__)
   bc2cpp = File.expand_path('tools/bc2cpp/bc2cpp.rb', __dir__)
 
@@ -232,7 +232,7 @@ def wio_strip_bc2cpp_stubs(spec, compiled_gem:, owners:)
 end
 
 # docs/adr/0218: wio-only, per-gem build step, called after every other
-# rbfiles filter. Deletes each `def` scripts/wio_unreachable_methods.rb proves
+# rbfiles filter. Deletes each `def` scripts/wio/unreachable_methods.rb proves
 # nothing in the build can call. The analysis needs every closed-world gem's
 # final rbfiles, so one shared task per build runs it; each gem registers its
 # files here, and the task reads the rest of the build's gems when it runs,
@@ -249,12 +249,12 @@ def wio_strip_unreachable(spec)
   return if ENV['RPGMAKER_WIO_KEEP_UNREACHABLE']
 
   root = __dir__
-  analysis = File.expand_path('scripts/wio_unreachable_methods.rb', root)
-  strip_script = File.expand_path('scripts/strip_wio_unreachable_methods.rb', root)
+  analysis = File.expand_path('scripts/wio/unreachable_methods.rb', root)
+  strip_script = File.expand_path('scripts/wio/strip_unreachable_methods.rb', root)
   state = WIO_UNREACHABLE_STATE[build.name] ||= begin
     dir = "#{build.build_dir}/wio_unreachable"
     st = { tsv: "#{dir}/unreachable.tsv", world: {} }
-    deps = [analysis, strip_script, *Dir["#{root}/scripts/strip_wio_bc2cpp_stubs.rb"], *Dir["#{root}/tools/bc2cpp/*.rb"],
+    deps = [analysis, strip_script, *Dir["#{root}/scripts/wio/strip_bc2cpp_stubs.rb"], *Dir["#{root}/tools/bc2cpp/*.rb"],
             *Dir["#{MRUBY_ROOT}/{src,include,mrblib}/**/*.{c,h,rb}"],
             *Dir["#{MRUBY_ROOT}/mrbgems/*/{src,core,include,mrblib}/**/*.{c,h,rb}"],
             *Dir["#{root}/{app/wio,include,mruby-rgss/src,mruby-lcf/src,mruby-rpg2k/src}/**/*.{c,cc,cpp,cxx,h,hpp,hxx}"]]
@@ -326,7 +326,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # supply these — they live in mruby-enum-ext and are absent from the default
   # gem set, so calling e.g. Array#sort_by raises NoMethodError in the built
   # engine (the RPG2000 battle turn-order and message-pacing code both use it),
-  # while the CRuby host checks pass. See scripts/rpg2k_boot_check.bash.
+  # while the CRuby host checks pass. See scripts/rpg2k/boot_check.bash.
   conf.gem core: 'mruby-enum-ext'
   conf.gem core: 'mruby-io'
   # Dir: mruby-io stopped shipping it in mruby 4.0 -- the class moved to this
@@ -402,7 +402,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # mruby-kernel-ext above) and the engine's own gems use only those two --
   # while mruby-math's ~30 registered functions keep every libm routine
   # behind them (erf, cbrt, the hyperbolics, ...) linked. 20.8 KB.
-  # scripts/wio_dropped_gems_check.rb keeps the engine inside that set. See
+  # scripts/wio/dropped_gems_check.rb keeps the engine inside that set. See
   # docs/adr/0204.
   if conf.name == 'wio'
     conf.gem "#{MRUBY_ROOT}/../../app/wio/mruby-math-wio"
@@ -777,7 +777,7 @@ MRuby::Build.new do |conf|
 
     conf.gem core: 'mruby-bin-mrbc'
     rpg_maker_gems(conf)
-    # MRUBY_FORCE_NO_CXX_EXCEPTION (set by scripts/maix_mruby_build.bash for
+    # MRUBY_FORCE_NO_CXX_EXCEPTION (set by scripts/maix/mruby_build.bash for
     # the maix cross target) also stops load_gems.rb from enabling C++
     # exceptions in THIS host build -- which then compiles the same .cxx gem
     # sources exception-free-or-not per its own flags below. Without the flag
@@ -1205,7 +1205,7 @@ if maix
       # the first rescued Ruby exception kills the firmware, confirmed by
       # actually raising one on-device. Keep load_gems.rb from ever enabling
       # it (see its MRUBY_FORCE_NO_CXX_EXCEPTION escape hatch, which
-      # scripts/maix_mruby_build.bash sets) and compile without exceptions
+      # scripts/maix/mruby_build.bash sets) and compile without exceptions
       # instead: setjmp/longjmp, mruby's own portable fallback, needs no
       # unwind tables. Our own .cxx sources use no try/catch/throw (same
       # verification the wio stanza's own "Tried and reverted" comment

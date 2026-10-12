@@ -9,7 +9,7 @@ Accepted
 ## Context
 
 Closed forms (ADRs 0290, 0359-0364) rest on two independent scans of the same
-Ruby: `scripts/rpg2k_closed_world_lint.rb` (Prism, CI-gated, baseline of 8
+Ruby: `scripts/rpg2k/closed_world_lint.rb` (Prism, CI-gated, baseline of 8
 offences in `mruby-rgss`) and `ClosedWorld` (bytecode, run by bc2cpp). On the
 real build the analysis already reports no global refusal, no
 `method_missing` class and no singleton maker, so the lint adds no proof power;
@@ -29,7 +29,7 @@ aborts when:
 
 The runtime guards (`bc2cpp_guard_violation`) stay as they are: the cross-check
 is a build-time gate in front of them, not a replacement.
-`BC2CPP_LINT_CROSSCHECK=0` disables it. `scripts/bc2cpp_lint_crosscheck_check.rb`
+`BC2CPP_LINT_CROSSCHECK=0` disables it. `scripts/bc2cpp/lint_crosscheck_check.rb`
 covers it in the `ruby-checks` CI job.
 
 ## Consequences

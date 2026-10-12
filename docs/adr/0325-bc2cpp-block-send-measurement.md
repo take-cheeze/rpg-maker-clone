@@ -19,10 +19,10 @@ four levers, and to build the sound ones that remove at least 30 sends (the same
 * (d) `Hash#delete` / `Array#delete` direct entries (21 engine `delete` sends, 6 with a proven Hash receiver).
 
 Measured on master `7818f0f5` (wio closed world, `3rd/*` populated, host `mrbc` of mruby 4.0, shipped pass of
-`scripts/bc2cpp_coverage_report.rb`; `bc2cpp_send` 2,513 and `mrb_funcall_with_block` 400 in the generated bodies, the
+`scripts/bc2cpp/coverage_report.rb`; `bc2cpp_send` 2,513 and `mrb_funcall_with_block` 400 in the generated bodies, the
 numbers moved from the 2,603 / 401 of `docs/bc2cpp-baseline-2026-10-02.md` by ADR 0320 and later commits). The new
 report `BC2CPP_BLOCK_SEND_REPORT=<tsv>` (`tools/bc2cpp/block_send_report.rb`, aggregated by
-`scripts/bc2cpp_block_send_report.rb`) writes one row per block send (the last compile of a site wins) and changes no
+`scripts/bc2cpp/block_send_report.rb`) writes one row per block send (the last compile of a site wins) and changes no
 generated code (`shipped.cxx` of two runs, with and without other reports, is byte-identical; the check compares the
 output with the report on and off). Scope below is by gem (`mruby-rpg2k`), not by function-name prefix, so it differs by
 a few sites from the 277 of the baseline.
@@ -120,8 +120,8 @@ Shipped instead:
 * `BC2CPP_BLOCK_SEND_REPORT=<tsv>`: one row per block send with the shape of its glue, the receiver proof
   (exact flow), the post-call facts (names, class kinds, whether CALL_FACTS would accept the set), the direct-entry and
   yield-free flags, the exact core arms and why a name has none, and the nearest producer of the receiver.
-  `scripts/bc2cpp_block_send_report.rb bs.tsv [--gem GEM] [--list SHAPE|facts]` prints every table of this ADR.
-* `scripts/bc2cpp_block_send_report_check.rb` (generated code only): the report changes no output, and the rows of a
+  `scripts/bc2cpp/block_send_report.rb bs.tsv [--gem GEM] [--list SHAPE|facts]` prints every table of this ADR.
+* `scripts/bc2cpp/block_send_report_check.rb` (generated code only): the report changes no output, and the rows of a
   fixture with a proven receiver, an unproven one, `loop`, `Array.new`, `&expr`, a returning block and a receiver bounded
   by one fact are what they should be. It runs in the `call-facts` shard (about 15 seconds).
 * The census section of `docs/bc2cpp-dynamic-site-census.md`.

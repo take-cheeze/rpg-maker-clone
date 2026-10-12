@@ -20,7 +20,7 @@ Two constraints shape the design:
 
 - **The SDL/mruby binary cannot be built or run in CI's cheap path.** The pure
   gameplay logic therefore has to be verifiable under host CRuby, the same way
-  `scripts/lcf_testbed_check.rb` verifies the loaders. That pushes the movement
+  `scripts/lcf/testbed_check.rb` verifies the loaders. That pushes the movement
   logic out of the drawing/scene layer and into plain `Game::` objects that
   touch neither RGSS nor the native parser.
 - **mruby is built here without `mruby-random`** (see `build_config.rb`), so
@@ -55,8 +55,8 @@ eagerly as each event moves, so an event that has already moved this frame
 blocks the next one — events never stack on a tile, the player or impassable
 terrain.
 
-The logic is covered by `scripts/rpg2k_logic_check.rb` (pure engine) and
-`scripts/rpg2k_scene_check.rb` (the real `Scene::Map` behind RGSS stubs), both
+The logic is covered by `scripts/rpg2k/logic_check.rb` (pure engine) and
+`scripts/rpg2k/scene_check.rb` (the real `Scene::Map` behind RGSS stubs), both
 run in CI.
 
 ## Consequences

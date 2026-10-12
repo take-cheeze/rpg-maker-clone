@@ -48,12 +48,12 @@ native or singleton definer really can answer, so they keep their dispatch.
 - **mrblib**: launcher-constant probes rescue `NameError` only; the other broad
   rescues keep their fallback but report `[RPG2k]` on `$stderr` (`RGSS.warn_once`
   in the two per-frame sites); `Scene::Map#record_value` replaces the rescue
-  modifiers. `scripts/rpg2k_closed_world_lint_baseline.txt` loses the 14
+  modifiers. `scripts/rpg2k/closed_world_lint_baseline.txt` loses the 14
   entries. A rescue with several classes is not used: bc2cpp does not compile
   the multi-class `EXCEPT` form.
 - `scripts/impossible_as_error_check.rb` (ruby-checks, `coverage_report.rb`)
   fails on a broad mrblib rescue that does not report or a new rescue modifier;
-  `scripts/bc2cpp_impossible_as_error_check.rb` (bc2cpp-checks) runs the emitted
+  `scripts/bc2cpp/impossible_as_error_check.rb` (bc2cpp-checks) runs the emitted
   helper against a real mruby core for both errors.
 
 ## Consequences

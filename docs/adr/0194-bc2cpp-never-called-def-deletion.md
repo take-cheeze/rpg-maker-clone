@@ -36,7 +36,7 @@ This was not a hypothetical near-miss: `LCF::Database#maker` and
 called" list with identical evidence. A repo-wide search (not scoped to
 `closed_world_mrblib_srcs`) shows `#maker` is called from
 `mruby-lcf/test/lcf_test.rb` (a real mrbtest assertion), and from
-`scripts/lcf_testbed_check.rb`/`scripts/rpg2k3_battle_command_check.rb`
+`scripts/lcf/testbed_check.rb`/`scripts/rpg2k3/battle_command_check.rb`
 (host-side CRuby check harnesses) -- deleting its `def` would have broken
 all three. `#front_tile` has no such reference anywhere in the repository.
 
@@ -44,7 +44,7 @@ all three. `#front_tile` has no such reference anywhere in the repository.
 
 Deleting a method's checked-in `def` outright requires a second,
 independent check beyond bc2cpp.rb's own diagnostic:
-**`scripts/bc2cpp_def_deletion_safety_check.rb <name>`**, a deliberately
+**`scripts/bc2cpp/def_deletion_safety_check.rb <name>`**, a deliberately
 blunt, whole-repository, `3rd/`-and-build-output-excluded text search. Not
 another whole-program bytecode/AST analysis -- the point is precisely to
 see the file kinds (tests, check scripts, docs) bc2cpp.rb's own scan was
@@ -75,7 +75,7 @@ method that is no longer real.
   confirmation that "never called" per bc2cpp.rb's own scope is not the
   same claim as "dead code," and that the gap between them is real, not
   theoretical).
-- `scripts/bc2cpp_def_deletion_safety_check.rb` is the reusable
+- `scripts/bc2cpp/def_deletion_safety_check.rb` is the reusable
   infrastructure for future rounds: every future def-deletion candidate
   (whether surfaced by docs/adr/0193's own mechanism growing its safe-owner
   set, or by any other means) runs through it before the `def` comes out.

@@ -19,7 +19,7 @@ entry point and the compiler's table could drift apart silently.
 
 Tooling, in two halves.
 
-- `scripts/native_binding_facts.py` (libclang's Python bindings) parses each
+- `scripts/native/binding_facts.py` (libclang's Python bindings) parses each
   `mruby-rgss/src/*.cxx` once per configuration (host, wio, psp, maix,
   emscripten) and reports, for every `mrb_define_method` /
   `mrb_define_class_method` / `mrb_define_module_function` registration, the
@@ -33,7 +33,7 @@ Tooling, in two halves.
   CMake's `CMAKE_EXPORT_COMPILE_COMMANDS` does not describe it; the script
   derives the flags from the gem's include paths (`--emit-compile-commands`
   writes them as a `compile_commands.json`).
-- `scripts/native_binding_split.rb` (plain Ruby over that JSON and the source
+- `scripts/native/binding_split.rb` (plain Ruby over that JSON and the source
   text) classifies, reports, rewrites and generates. `report` lists every
   registration with class, name, format, typed parameters and either
   `splittable` or the refusal reasons. `write` applies the split; `check` fails
@@ -70,12 +70,12 @@ class it cannot resolve (audio, tts, profiler) are reported but not rewritten,
 since nothing could call their entry points and they would only cost flash on
 wio.
 
-Tests: `scripts/native_binding_split_check.rb` (no compiler; a fixture with
+Tests: `scripts/native/binding_split_check.rb` (no compiler; a fixture with
 checked-in facts, a golden rewrite, and text invariants of the tree, in the
-`ruby-checks` job and `scripts/coverage_report.rb`);
+`ruby-checks` job and `scripts/coverage/report.rb`);
 `mruby-rgss/test/native_direct.rb` runs the split bindings and their entry
 points side by side in mrbtest through a generated probe table.
-`scripts/native_binding_split.rb check` is the full freshness check and needs
+`scripts/native/binding_split.rb check` is the full freshness check and needs
 libclang: the `clang` flake dev shell adds it.
 
 ## Consequences

@@ -7,7 +7,7 @@ class RPG2k
       LINE_HEIGHT = 16
       # Where RPG_RT parks the title command window: horizontally centred, with
       # its *bottom* edge at 53/60 of the screen height. Measured off a genuine
-      # RPG_RT frame (see scripts/compare-nepheshel-wine.bash): for Nepheshel's
+      # RPG_RT frame (see scripts/compare/nepheshel-wine.bash): for Nepheshel's
       # three 48px-wide labels the window lands at (128, 148) 64x64.
       BOTTOM_NUM = 53
       BOTTOM_DEN = 60
@@ -159,7 +159,7 @@ class RPG2k
             # input loop to drive a second screen, so it keeps resuming slot 1
             # directly instead -- the same single-slot behaviour Continue had
             # before this screen existed, which is all
-            # scripts/compare-nepheshel-wine.bash (watching stderr for the
+            # scripts/compare/nepheshel-wine.bash (watching stderr for the
             # [RPG2k-MAP] marker only #continue_game emits) needs.
             #
             # The headless auto-select path fades here too, ported from a
@@ -275,7 +275,7 @@ class RPG2k
       # --rpg2k_preview_map also auto-selects New Game (see #auto_new_game?
       # above), so a preview needs only that one flag. Guarded the same way as
       # #hide_title?/#continue_available? below: a bare Title built without a
-      # real parent (scripts/rpg2k_scene_check.rb) answers nil rather than
+      # real parent (scripts/rpg2k/scene_check.rb) answers nil rather than
       # raising.
       def preview_map_id
         parent.preview_map_id
@@ -317,7 +317,7 @@ class RPG2k
 
       # HideTitle, as RPG2k#initialize parsed it off RPG_RT.exe's legacy CLI
       # arguments. Guarded the same way as the two flags above: a bare instance
-      # built without a real parent (see scripts/rpg2k_scene_check.rb's
+      # built without a real parent (see scripts/rpg2k/scene_check.rb's
       # title_selector) answers false rather than raising.
       def hide_title?
         parent.hide_title?
@@ -327,7 +327,7 @@ class RPG2k
 
       # Whether Continue has anything to resume, per `RPG2k#any_save_exists?`.
       # Guarded the same way as `hide_title?` above: a bare instance built
-      # without a real parent (see scripts/rpg2k_scene_check.rb's
+      # without a real parent (see scripts/rpg2k/scene_check.rb's
       # title_selector) answers false rather than raising.
       def continue_available?
         parent.any_save_exists?

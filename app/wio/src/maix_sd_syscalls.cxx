@@ -12,7 +12,7 @@
 // bring-up environments leave it off, and CI compiles it once with the flag
 // on as a dedicated proof step. Runtime proof needs a real card (Renode
 // models no SD controller), so that half waits for hardware -- but note
-// scripts/wio_renode_sdcard.bash's own shape for how it will be tested: an
+// scripts/wio/renode_sdcard.bash's own shape for how it will be tested: an
 // SD image attached under Renode with game data on it.
 // Call maix_sd_init() once from setup() before opening anything.
 

@@ -11,7 +11,7 @@ Accepted
 ADR 0009-0017 built the `LcfSaveData` **read** path: the `SAVE_DATA` schema
 (`mruby-lcf/mrblib/schema.rb`), the chunk/BER decoders (`mruby-lcf/mrblib/lcf.rb`),
 and validation against genuine RPG Maker 2000 (Nepheshel) and 2003
-(mtf-meido-action) saves via `scripts/lcf_save_check.rb`. `Game::State.from_lsd`
+(mtf-meido-action) saves via `scripts/lcf/save_check.rb`. `Game::State.from_lsd`
 loads a parsed save into the running game, so **Continue** can already resume a
 real `.lsd`.
 
@@ -69,7 +69,7 @@ Two framing details had to be pinned down against the real fixtures:
 
 ## Consequences
 
-- **Byte-exact round-trip on real saves.** `scripts/lcf_save_roundtrip.rb` parses
+- **Byte-exact round-trip on real saves.** `scripts/lcf/save_roundtrip.rb` parses
   a genuine `.lsd`, re-serializes it, and asserts the bytes equal the original --
   verified against both the RPG2000 (Nepheshel, 17797 B) and RPG2003
   (mtf-meido-action, 11132 B) fixtures. Because the undocumented chunks are
@@ -83,7 +83,7 @@ Two framing details had to be pinned down against the real fixtures:
 - **CI coverage is synthetic-but-real.** The real `.lsd` fixtures are generated
   under wine and not vendored (`data/` is git-ignored), so -- like
   `lcf_save_check.rb` -- the round-trip harness runs on demand
-  (`scripts/gen-lcf-save-wine.bash` now runs it after generating a save), not in
+  (`scripts/gen/lcf-save-wine.bash` now runs it after generating a save), not in
   CI. The writer's CI guard is `mruby-lcf/test/lcf_test.rb`, which exercises
   `write_ber` against the reference encoder, `Array1D`/`Array2D#to_lcf`,
   `Array1D#[]=`, and a whole-file `SaveData#to_lcf` round-trip on self-consistent

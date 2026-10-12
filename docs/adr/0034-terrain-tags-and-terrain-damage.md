@@ -99,11 +99,11 @@ values are deliberate, and the runtime now honours them, but no walk through
 either shipped game will exercise it. The chipset half is the opposite — it moves
 almost every tile in both games.
 
-Covered by `scripts/rpg2k_logic_check.rb` (an absent and an empty terrain table
+Covered by `scripts/rpg2k/logic_check.rb` (an absent and an empty terrain table
 both read 1; a populated one reads its own values; an unindexable tile reads the
-first), by `scripts/rpg2k_scene_check.rb` (walking a damaging tile drains the
+first), by `scripts/rpg2k/scene_check.rb` (walking a damaging tile drains the
 party and flashes, gear blocks it, it floors at 1 HP and skips a member already
-down) and by `scripts/rpg2k_testbed_logic_check.rb`, which asserts against the
+down) and by `scripts/rpg2k/testbed_logic_check.rb`, which asserts against the
 **real** tables that every one of the 96 / 92 untabled chipsets names terrain 1
 across every lower block, that each game's damaging terrain wears the real party
 down to 1 HP without killing it, and that each 地形ダメージ無効 item stops it

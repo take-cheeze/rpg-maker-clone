@@ -86,14 +86,14 @@ ppsspp-headless --log --graphics=software build-psp/EBOOT.PBP
 Otherwise: install the [pspdev toolchain](https://github.com/pspdev/pspdev)
 with `$PSPDEV`
 set (it provides `psp-gcc`, the CMake toolchain file and `create_pbp_file`).
-Run `scripts/build_psp_fixup_imports.bash` first — it replaces the
+Run `scripts/build/psp_fixup_imports.bash` first — it replaces the
 toolchain's own `$PSPDEV/bin/psp-fixup-imports` with a patched build; see
 the bug trail lower in this section for why this EBOOT needs it to
 actually boot. Configuring without it is a hard error, so there is no way
 to get a silently mis-linked EBOOT out of this build:
 
 ```sh
-scripts/build_psp_fixup_imports.bash
+scripts/build/psp_fixup_imports.bash
 cmake -S app/psp -B build-psp \
   -DCMAKE_TOOLCHAIN_FILE=$PSPDEV/psp/share/pspdev.cmake
 cmake --build build-psp          # -> build-psp/EBOOT.PBP
@@ -194,7 +194,7 @@ upstream, not worth working around here.
   executable section for `jal` instructions targeting a moved slot and
   repoints them, the same relocation work a real ET_EXEC loader would do
   and this prebuilt-binary tool skips.
-  `scripts/build_psp_fixup_imports.bash` fetches pspsdk at the pinned
+  `scripts/build/psp_fixup_imports.bash` fetches pspsdk at the pinned
   commit `patches/psp-fixup-imports-jal-relocation-aware.patch` targets,
   applies it, and drops the rebuilt tool in place of the container's own —
   wired into the `psp` CI job ahead of `psp-cmake`/`cmake --build`. Not yet
@@ -540,7 +540,7 @@ free RAM, `lvgl_used`/`lvgl_max` are LVGL's pool, and `arena_used=` is the
 mruby arena's occupancy once a game is actually running.
 
 For a packed RPG Maker XP/VX/VX Ace title,
-[`scripts/rgssad_unpack.rb`](../../scripts/rgssad_unpack.rb) unpacks
+[`scripts/rgssad/unpack.rb`](../../scripts/rgssad/unpack.rb) unpacks
 `Game.rgssad`/`.rgss2a`/`.rgss3a` into a loose file tree in place — the
 loose-file-first loaders already prefer it over the archive, so this avoids
 the whole-archive-resident-in-RAM read the packed form forces (see the ADR's

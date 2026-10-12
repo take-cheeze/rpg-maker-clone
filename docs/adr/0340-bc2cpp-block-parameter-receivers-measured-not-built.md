@@ -28,13 +28,13 @@ the same rule order, so the value is the compiler's own answer, not a re-derivat
 are named separately: `native_entry` (a definition with no bytecode body, so no call site can be enumerated) and
 `block_param` (below).
 
-The measurement is `BC2CPP_RECEIVER_PROOF_REPORT=rp.tsv MRBC=<host mrbc> ruby scripts/bc2cpp_coverage_report.rb`,
-aggregated by `scripts/bc2cpp_receiver_proof_report.rb`, on master `bf25f9cc`. Baseline before this change is
+The measurement is `BC2CPP_RECEIVER_PROOF_REPORT=rp.tsv MRBC=<host mrbc> ruby scripts/bc2cpp/coverage_report.rb`,
+aggregated by `scripts/bc2cpp/receiver_proof_report.rb`, on master `bf25f9cc`. Baseline before this change is
 reproduced first and is unchanged in row count and by-name totals: 1,826 rows, 1,671 unproven, 1,728 unproven by-name
 lines, against ADR 0331's 1,970/1,783/1,841 on its tree (within 6% on every row, as ADR 0331's own re-run
 methodology anticipates).
 
-The report changes no generated code, asserted by `scripts/bc2cpp_receiver_proof_report_check.rb` on a fixture
+The report changes no generated code, asserted by `scripts/bc2cpp/receiver_proof_report_check.rb` on a fixture
 (`the report changes no generated code`) and in CI (`.github/workflows/build.yml`).
 
 ## Results
@@ -56,7 +56,7 @@ The argument bucket, 320 sites, split by the rule the method's pool candidacy fa
 | `multidef5` | 1 | 0 | 5 definitions |
 | `pooled` | 1 | 0 | already proven |
 
-"Floor-freed" is the aggregator's own `floor_nil` predicate (`scripts/bc2cpp_receiver_proof_report.rb:41`): the
+"Floor-freed" is the aggregator's own `floor_nil` predicate (`scripts/bc2cpp/receiver_proof_report.rb:41`): the
 column is a number (not `-`, which is a site the floor could not be computed for), `before > 0`, and it reaches 0.
 17 of the 91 `block_param` rows are `-`, not 0 — a count that treats `-` as 0 overstates this bucket by exactly those
 17.
@@ -121,7 +121,7 @@ Hints are not proofs (ADR 0210, 0290): no guard hint was added for the 91.
 * No generated code changes: no kill switch, and `shipped.cxx` is unaffected. The one build measurement is the
   row-count and by-name-total reproduction above.
 * The report's `why` column for an argument row is now `no_candidate:<rule>`, `no_candidate:block_param`,
-  `no_candidate:native_entry` or `dropped:<kinds>`. `scripts/bc2cpp_receiver_proof_report_check.rb` asserts the rule
+  `no_candidate:native_entry` or `dropped:<kinds>`. `scripts/bc2cpp/receiver_proof_report_check.rb` asserts the rule
   for three distinct rules (3 `outside_token`, 8 `nosites`, and `block_param`) and the block case has a **negative
   control**: with the block-parameter guard disabled, `RpFx#each_block`'s `|c|` is reported
   `no_candidate:nosites` — the misattribution this ADR exists to stop — and the check fails.
@@ -135,8 +135,8 @@ Hints are not proofs (ADR 0210, 0290): no guard hint was added for the 91.
 
 ```sh
 MRBC=$PWD/3rd/mruby/build/host/bin/mrbc BC2CPP_RECEIVER_PROOF_REPORT=rp.tsv \
-  ruby scripts/bc2cpp_coverage_report.rb > /dev/null
-ruby scripts/bc2cpp_receiver_proof_report.rb rp.tsv
+  ruby scripts/bc2cpp/coverage_report.rb > /dev/null
+ruby scripts/bc2cpp/receiver_proof_report.rb rp.tsv
 ```
 
 * **ADR 0312's element classes land.** That is the trigger that moves the largest bucket: the 70 `block_param` sites

@@ -37,7 +37,7 @@ encoder — is what keeps that risk bounded.
 The binary codec itself did not need to be built new. `mruby-lcf/mrblib/
 lcf.rb`'s `Array1D#to_lcf` / `Array2D#to_lcf` / `File#to_lcf` already
 round-trip a real save (`.lsd`) byte-exact and support field-level edits
-through `LCF.encode`, proven by `scripts/lcf_save_roundtrip.rb` — the format
+through `LCF.encode`, proven by `scripts/lcf/save_roundtrip.rb` — the format
 is shared across every LCF file type (only the schema, from `mruby-lcf/
 mrblib/schema.rb`, differs), so that machinery generalises to `.ldb`/`.lmu`/
 `.lsd` directly. `LCF.encode` was missing two cases though: the `:event` and
@@ -59,7 +59,7 @@ Two changes:
    checked both for byte-exact inversion of a hand-built blob and for
    round-tripping through `LCF.encode`/`.parse_*` together.
 
-2. **`scripts/lcf_text_convert.rb`**, a CLI tool with three subcommands:
+2. **`scripts/lcf/text_convert.rb`**, a CLI tool with three subcommands:
    - `to_text IN.ldb|lmu|lmt|lsd OUT.yml` — reads the binary file (its LCF
      class picked by extension) and walks it with `schema.rb`'s field names,
      not raw chunk ids, into a YAML document. Only chunks actually *present*
@@ -87,7 +87,7 @@ Two changes:
    implemented'` for that shape. `to_binary`/`check` report this plainly as
    a validation error rather than attempting an unproven encoder.
 
-   `scripts/lcf_text_convert_check.rb` proves the whole pipeline against
+   `scripts/lcf/text_convert_check.rb` proves the whole pipeline against
    synthetic fixtures built the same from-scratch-`Array1D` way `mruby-lcf/
    test/lcf_test.rb` does (no real test-bed project needed): byte-exact
    round-trip for both `map_unit` and `database` — including a `move_route`
@@ -115,7 +115,7 @@ Two changes:
   browser (guarding against a text edit producing a structurally "valid" but
   logically broken If/Else/Loop nesting) will need regardless of whether
   editing happens through this text tool or that future browser.
-- The tool is offline (a `scripts/*.rb` CLI, loaded under CRuby exactly like
+- The tool is offline (a `scripts/**/*.rb` CLI, loaded under CRuby exactly like
   `lcf_save_roundtrip.rb`/`lcf_testbed_check.rb` already are) rather than
   in-engine: no new runtime dependency, no game-loop cost, and it needs no
   native build to run or test.

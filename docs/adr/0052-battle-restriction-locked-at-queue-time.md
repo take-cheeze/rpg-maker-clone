@@ -121,7 +121,7 @@ Every other `#apply_turn_states` call site -- direct calls in older checks
 that never go through `#refill_queue` -- is unaffected, since `queued_no_act`
 defaults to falsy.
 
-Covered by two new checks in `scripts/rpg2k_logic_check.rb`, each written to
+Covered by two new checks in `scripts/rpg2k/logic_check.rb`, each written to
 fail under the *other* implementation as well as the pre-fix one: a do-nothing
 restriction present when the queue is built still blocks the turn even after
 the state is cleared before dequeue (fails under a purely-live recheck); a

@@ -3,18 +3,18 @@
 Almost all of the runtime is Ruby: the LCF and RGSS data layers, the RPG2000
 game logic and its scenes, the MV/MZ core — about 39 000 lines under
 `mruby-*/mrblib`, against roughly 3 000 lines of C++ glue in `src/`. That Ruby
-is written in the mruby/CRuby common subset and the `scripts/*_check.rb`
+is written in the mruby/CRuby common subset and the `scripts/**/*_check.rb`
 harnesses load it under CRuby (see any harness header), which is what makes it
 measurable: CRuby ships a `Coverage` module, mruby does not.
 
-`scripts/coverage_report.rb` runs those harnesses with coverage switched on and
+`scripts/coverage/report.rb` runs those harnesses with coverage switched on and
 reports which lines they reached.
 
 ```sh
-ruby scripts/coverage_report.rb            # run every check, write coverage/
-ruby scripts/coverage_report.rb --per-file # ... listing every file
-ruby scripts/coverage_report.rb --only rpg2k   # just the rpg2k-* checks
-ruby scripts/coverage_report.rb --list     # what it would run
+ruby scripts/coverage/report.rb            # run every check, write coverage/
+ruby scripts/coverage/report.rb --per-file # ... listing every file
+ruby scripts/coverage/report.rb --only rpg2k   # just the rpg2k-* checks
+ruby scripts/coverage/report.rb --list     # what it would run
 ```
 
 Output:
@@ -42,7 +42,7 @@ plus, in `coverage/`:
 ## How it works
 
 `Coverage.start` has to run before the sources are loaded, so
-`scripts/coverage_hook.rb` is injected into each check with
+`scripts/coverage/hook.rb` is injected into each check with
 `RUBYOPT=-r<hook>` instead of being required by the harnesses. The harnesses
 stay untouched, any `ruby` a harness spawns is measured too, and each process
 dumps its own result as JSON into a temporary directory that the reporter then
@@ -66,7 +66,7 @@ So a file reported at 0% is not necessarily untested — `mruby-mvjs/mrblib/{mv,
 read as 0% because they need a JS engine, which is why no CRuby harness loads
 them. The RGSS runtime was in the same boat (its `mrblib` read 0% for the same
 reason); the `rgss-cruby-test` check — the mruby-rgss test suite run through the
-RGSS compatibility layer, `scripts/rgss_cruby_compat.rb` — now covers it, so a
+RGSS compatibility layer, `scripts/rgss/cruby_compat.rb` — now covers it, so a
 0% RGSS row would mean a real regression rather than "not measurable here".
 Read the report as "this much of the engine is covered by the host-side checks",
 and use the per-file tail as a list of where the next host-side check would pay
@@ -97,7 +97,7 @@ the coverage re-run, fails the job rather than silently producing no report.
 To make it a gate instead, pass a floor:
 
 ```sh
-ruby scripts/coverage_report.rb --min-line-rate 75
+ruby scripts/coverage/report.rb --min-line-rate 75
 ```
 
 which exits non-zero when total line coverage falls below it. The reporter also

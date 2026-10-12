@@ -31,7 +31,7 @@ dumped this way are `MRB_IREP_STATIC`, so they are never freed.
 ## Consequences
 
 Measured with a full `wio_rgss_boot` link (the baseline configuration of
-`scripts/wio_bc2cpp_measure.bash`):
+`scripts/wio/bc2cpp_measure.bash`):
 
 - **Static RAM: −10,544 B.** `.data` shrinks from 12,720 to 2,176 B.
 - **Flash: −320 B**, measured at the end of the load image (the last
@@ -39,7 +39,7 @@ Measured with a full `wio_rgss_boot` link (the baseline configuration of
   `.rodata` instead of as `.data` initializers.
 
 `ld`'s `region 'FLASH' overflowed by N` number rises by 10,216 B for this
-change, and so does `scripts/wio_overflow_report.rb`'s "flash needed". Both
+change, and so does `scripts/wio/overflow_report.rb`'s "flash needed". Both
 count `.text`, `.ARM.extab` and `.ARM.exidx`, but not the `.data`
 initializers the image also carries in flash. So they show the bytes
 arriving in `.rodata` but not the same bytes leaving `.data`. Making the

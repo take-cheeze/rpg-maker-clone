@@ -71,8 +71,8 @@ on `mruby-fiber`:
   `DebugMessage`, `StringCondition`'s string-vs-variable comparison
   encoding, `SetVariable`'s trig/random/bitwise operators, event/hero
   position get-or-set, database field writes) is an explicit, logged no-op.
-- **`scripts/wolf_interpreter_check.rb`** soak-tests the interpreter the
-  way `scripts/rpg2k_command_soak.rb` does for RPG2000: it drives every
+- **`scripts/wolf/interpreter_check.rb`** soak-tests the interpreter the
+  way `scripts/rpg2k/command_soak.rb` does for RPG2000: it drives every
   auto/parallel Common Event in the fetched sample game (225 Common
   Events, the entire "RPG Basic System") for 120 frames under a
   step-bounded `Run` subclass, asserting nothing raises and nothing hangs.
@@ -96,7 +96,7 @@ on `mruby-fiber`:
   that (real message windows, pictures, choices) is still unimplemented.
 - Map events (their own trigger/movement/page-selection logic) still do not
   run; only Common Events do. That is `docs/TODO.md`'s next slice.
-- The soak check (`scripts/wolf_interpreter_check.rb`) is the closest
+- The soak check (`scripts/wolf/interpreter_check.rb`) is the closest
   approximation to wine-diffing available for this maker and should be
   extended alongside every newly-implemented command, the same discipline
   `wolf_testbed_check.rb` already established for the data layer.

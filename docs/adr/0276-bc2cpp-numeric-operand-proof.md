@@ -118,7 +118,7 @@ the facts and the arms that lost their send.
 
 ## Consequences
 
-- Measured on the wio closed world (`scripts/bc2cpp_coverage_report.rb`, shipped build):
+- Measured on the wio closed world (`scripts/bc2cpp/coverage_report.rb`, shipped build):
   guarded arithmetic/compare arms that still end in a dynamic send fell from 3,032 to
   **2,862** (`+ - *` 1,801 to 1,671, compare 937 to 912, Float `/` 294 to 279).
   Analysis adds about 6 s to a 60 s bc2cpp run.
@@ -130,7 +130,7 @@ the facts and the arms that lost their send.
   product that leaves the fixnum range wraps instead of becoming a bigint (2^30 on the 32-bit
   targets); and ENTRY_ARG_CALLSITE_PROOF/FIXNUM_RETURN_PROOF do not consider computed-name
   `send` sites (`target.send("#{field}=", v)`).
-- `scripts/bc2cpp_numeric_operand_check.rb` pins the dataflow on hand-built bytecode, the
+- `scripts/bc2cpp/numeric_operand_check.rb` pins the dataflow on hand-built bytecode, the
   generated code of a closed-world fixture (positive and negative cases), and, with a mruby
   build, compiled-vs-interpreter answers including Integer overflow.
 
@@ -152,4 +152,4 @@ Captured locals are not affected: a block's writes already make the local unknow
 reached `old`'s body unseen and a parameter could be proven Integer while `new("str")` passes a
 String. The ALIAS instruction now also poisons the old name (`alias_method`, `define_method` and
 `undef_method` take symbol arguments, which already poison every name they mention).
-`scripts/bc2cpp_entry_arg_alias_check.rb` pins the alias, `alias_method` and no-alias control cases.
+`scripts/bc2cpp/entry_arg_alias_check.rb` pins the alias, `alias_method` and no-alias control cases.

@@ -18,7 +18,7 @@ provable).
 
 ### Measurement
 
-Wio closed world, `scripts/bc2cpp_coverage_report.rb` shipped pass plus `scripts/bc2cpp_dynamic_site_census.rb`, master
+Wio closed world, `scripts/bc2cpp/coverage_report.rb` shipped pass plus `scripts/bc2cpp/dynamic_site_census.rb`, master
 `e1c671e4` (generator identical to `247a34e4`). Only functions whose name starts with `RPG2k` or `Game` are counted as
 "rpg2k". Counting the census sends alone hides the index helpers, so the totals below also give the sites that can reach
 by-name dispatch the way `docs/bc2cpp-dynamic-site-census.md` counts them (`bc2cpp_send` plus callers of
@@ -181,10 +181,10 @@ such a lambda, so no closure outlives its frame.
 
 ## Tests
 
-`scripts/bc2cpp_captured_local_class_check.rb`: generated code (eight positives, nine negatives, nine withdrawal
+`scripts/bc2cpp/captured_local_class_check.rb`: generated code (eight positives, nine negatives, nine withdrawal
 worlds, the class_eval/unrelated-gem controls, both kill switches, the open world); compiled against interpreted on a
 full-core and a core-only mruby, and on a 32-bit `mrb_int` build, including a block that reassigns the local, a
 sibling block that does, a lambda called after the local changed class, a nil-then-Array local and a frozen Array.
-`scripts/bc2cpp_captured_local_class_mutation_check.rb`: eight mutants of the soundness conditions. `scripts/bc2cpp_fixture_runtime.rb` gained `build_gems:` so a fixture can add a
+`scripts/bc2cpp/captured_local_class_mutation_check.rb`: eight mutants of the soundness conditions. `scripts/bc2cpp/fixture_runtime.rb` gained `build_gems:` so a fixture can add a
 gem (its `src/` and `mrblib/`) to the closed-world build. Wired into its own `captured-locals` shard of
 `bc2cpp-checks`.

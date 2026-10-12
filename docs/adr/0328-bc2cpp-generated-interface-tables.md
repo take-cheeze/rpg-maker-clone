@@ -88,8 +88,8 @@ executable bytes 748,216 to 749,384. Tables pay through sharing and receiver
 mix; they are not universally faster. Keep the mode opt-in until target
 benchmarks justify a default threshold. No game-throughput claim is made.
 
-`scripts/bc2cpp_interface_tables_check.rb` compares interpreter results and
+`scripts/bc2cpp/interface_tables_check.rb` compares interpreter results and
 exceptions, repeated hits/misses, native calls and accessors, GC and two
 compiled VMs. It checks open worlds, installers, visibility changes,
 singleton makers, native overrides, rebinding, prepends and argument guards.
-`scripts/bc2cpp_interface_tables_bench.rb` reproduces the timing comparison.
+`scripts/bc2cpp/interface_tables_bench.rb` reproduces the timing comparison.

@@ -10,7 +10,7 @@ Accepted.
 
 ADR 94 builds a Renode platform that boots this repo's real Wio Terminal
 firmware ELFs to their own `setup()`/`loop()` with no board attached, and
-`scripts/wio_renode_boot.bash` is how it is driven. That path is still a
+`scripts/wio/renode_boot.bash` is how it is driven. That path is still a
 two-step, Renode-specific incantation: build the firmware with
 `pio run -e wio`, then hand the ELF's path to the boot script with
 `RENODE_BIN` pointing at a from-source Renode build. Flashing real hardware,
@@ -41,7 +41,7 @@ the installed platform source rather than assumed:
 Add `[env:wio_sim]` to `platformio.ini`: it `extends = env:wio` (one
 definition of how the firmware is built, no duplicated flags or source
 filters), sets `upload_protocol = custom`, and sets `upload_command` to
-`scripts/wio_renode_boot.bash $BUILD_DIR/${PROGNAME}.elf`. So
+`scripts/wio/renode_boot.bash $BUILD_DIR/${PROGNAME}.elf`. So
 `pio run -e wio_sim -t upload` builds the `wio` firmware and boots that
 env's own ELF in the emulator — the same script, platform and fixed
 virtual-time boot the manual invocation uses, now behind the standard upload
@@ -62,7 +62,7 @@ hardware.
   who already types `-t upload` gets a booted firmware by changing only the
   env name, with no separate script invocation and no device discovery.
 - **One env, not a mechanism.** Only `wio` has a `wio_sim` twin today;
-  `wio_walk` and `wio_sd_upload` still use `scripts/wio_renode_boot.bash`
+  `wio_walk` and `wio_sd_upload` still use `scripts/wio/renode_boot.bash`
   directly. Adding a twin for either is the same three lines, and this ADR
   does not claim otherwise — the value here was proving the wiring against
   the real atmelsam action list, which is the part that would be retyped.
@@ -71,5 +71,5 @@ hardware.
   makes the sim path fail on a machine with no board; the comment in
   `platformio.ini` and `app/wio/renode/README.md` both say so.
 - **No CI change.** CI's `wio-renode` job already drives the ELFs through
-  `scripts/wio_renode_boot.bash` and keeps doing so; this ADR changes the
+  `scripts/wio/renode_boot.bash` and keeps doing so; this ADR changes the
   local gesture, not the pipeline.

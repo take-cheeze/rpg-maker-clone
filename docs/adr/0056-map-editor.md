@@ -76,14 +76,14 @@ step before a save actually reflects it.
   looking at the real field map (which updates live) or the chipset editor's
   own view of the tile.
 
-Covered by new checks in `scripts/rpg2k_scene_check.rb`: `Game::Map#set_lower`/
+Covered by new checks in `scripts/rpg2k/scene_check.rb`: `Game::Map#set_lower`/
 `#set_upper` rewriting one cell without disturbing an untouched one and
 bumping `#revision`; `#sync_layers_to_unit` pushing the whole edited array
 (not just the touched cell) to the right chunk ids; and the full Edit-mode
 loop (eyedrop, paint, layer swap, save) through `Scene::MapViewer` itself,
 using a `FakeMapUnit` double that records `#[]=`/`#save_to` calls rather than
 re-proving the real binary writer (already proven in
-`scripts/lcf_text_convert_check.rb`) — the same "test the seam, not what's
+`scripts/lcf/text_convert_check.rb`) — the same "test the seam, not what's
 already tested elsewhere" split that check script already uses.
 
 ## Consequences

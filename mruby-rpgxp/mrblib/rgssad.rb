@@ -31,7 +31,7 @@
 #
 # Implemented with byte-wise arithmetic only — no bignum bitwise operators, no
 # `Integer#chr` / String-ext helpers — so it runs on this trimmed mruby the same
-# as under CRuby (where scripts/rpgxp_testbed_check.rb exercises it against real
+# as under CRuby (where scripts/rpgxp/testbed_check.rb exercises it against real
 # data). Decrypted bytes are assembled by packing bounded chunks with
 # `Array#pack("C*")` (mruby-pack) and joining them, so no single Array grows past
 # mruby's array-length cap on large entries.

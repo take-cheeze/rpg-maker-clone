@@ -85,7 +85,7 @@ conservative: re-audit changed contracts and rerun withdrawal/mutation checks be
 Native setter values (`contents=` / `bitmap=`), dynamic caller completeness and unknown collection elements remain
 independent future proofs; this change does not constrain setter inputs or assume element classes.
 
-`scripts/bc2cpp_native_string_results_check.rb` audits every source pin and the BigInt delegate, verifies nullable
+`scripts/bc2cpp/native_string_results_check.rb` audits every source pin and the BigInt delegate, verifies nullable
 regexp results, and checks generated withdrawal for aliases, Struct replacements, linked foreign/native definitions,
 installers, singleton creation and open worlds. Compiled/interpreted parity runs on full-core, core-only and 32-bit
 mruby for String results, a Ruby return of another class, a String subclass and the kill switch. The C harness supplies a >32-bit

@@ -120,14 +120,14 @@ the register boundary because that is where this device's real boundary is.
   window, mouse-as-touch) is still available by omitting `--frames`, for
   actually looking at a map the way ADR 94's Renode work let you look at a
   simulated LCD.
-- **`scripts/nano7_host_smoke.bash`** exports Nepheshel map 1 with
+- **`scripts/nano7/host_smoke.bash`** exports Nepheshel map 1 with
   `scripts/export_nano7_map.rb --target nano7` into a scratch
   `Apps/Data/RPG2kWalk` tree, runs `nano7_walk_host` headless for 60 simulated
   frames — long enough (`STEP_INTERVAL_MS` = 160 ms, the simulated clock
   advances 20 ms/frame) to hold a synthetic "move down" touch through several
   real steps, not just the first static frame — and saves a BMP.
-  **`scripts/nano7_host_smoke_check.rb`** (plain Ruby, a BMP reader in the
-  style `scripts/mz_frame_check.rb` already uses for PNG, no ImageMagick
+  **`scripts/nano7/host_smoke_check.rb`** (plain Ruby, a BMP reader in the
+  style `scripts/mz/frame_check.rb` already uses for PNG, no ImageMagick
   dependency) asserts the frame is not a flat fill and carries a minimum
   number of distinct colours, the same "did real content actually land"
   signal `mz_frame_check.rb`'s own comment explains was the check that would

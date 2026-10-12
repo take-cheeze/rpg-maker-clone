@@ -12,10 +12,10 @@ The RPG2000 renderer in `mruby-rpg2k` is a re-implementation of an engine whose
 behaviour is only documented by its output. Everything shipped so far was
 verified two ways:
 
-- **Unit checks under CRuby** — `scripts/rpg2k_render_check.rb`,
+- **Unit checks under CRuby** — `scripts/rpg2k/render_check.rb`,
   `rpg2k_logic_check.rb` and `rpg2k_scene_check.rb` load the pure-Ruby sources
   under host Ruby and pin the geometry and logic we ported.
-- **Data checks** — `scripts/lcf_testbed_check.rb` parses real games.
+- **Data checks** — `scripts/lcf/testbed_check.rb` parses real games.
 
 Both have the same blind spot: they never run *the shipped binary* on a real
 game and look at the resulting pixels. That let two whole classes of defect
@@ -47,7 +47,7 @@ Both classes are found immediately by putting the two runtimes side by side.
 
 ## Decision
 
-Add `scripts/compare-nepheshel-wine.bash`: a headless side-by-side harness that
+Add `scripts/compare/nepheshel-wine.bash`: a headless side-by-side harness that
 boots the **genuine RPG_RT.exe** under wine and our engine on the same game,
 drives both with the same key script, and captures/diffs every step.
 
@@ -58,7 +58,7 @@ a debugging round, so they are recorded in the script's header and here:
   Without a **32-bit libGL** wine logs `Failed to load libGL` and every frame is
   black. Mesa's software rasteriser (`LIBGL_ALWAYS_SOFTWARE=1`) is enough; no
   GPU is required. This is why the earlier
-  `scripts/run-nepheshel-easyrpg-wine.bash` concluded RPG_RT "fails under Xvfb"
+  `scripts/run/nepheshel-easyrpg-wine.bash` concluded RPG_RT "fails under Xvfb"
   and fell back to EasyRPG Player — it does not; it just needs GL.
 - RPG_RT asks for a **640x480 16-bit** mode. Xvfb cannot switch modes, so the
   screen has to already be `640x480x16`.
@@ -111,17 +111,17 @@ A follow-up this deliberately leaves open: the two runtimes desynchronise
 during Nepheshel's long timed opening, so only the title screen and windows can
 be compared pixel-for-pixel today. Comparing an arbitrary in-game map wants
 both runtimes resumed from the *same* `Save01.lsd` (which
-`scripts/gen-lcf-save-wine.bash` can already produce and both runtimes can
+`scripts/gen/lcf-save-wine.bash` can already produce and both runtimes can
 load) rather than driven there by counting key presses.
 
 ## Addendum: the save-based comparison
 
 That follow-up is now implemented as
-`scripts/compare-nepheshel-save-wine.bash`. Loading a save is not timed, so it
+`scripts/compare/nepheshel-save-wine.bash`. Loading a save is not timed, so it
 cannot drift: our engine reaches the map with `--rpg2k_continue` (the title
 auto-select of `--rpg2k_new_game`, pointed at entry 2), and RPG_RT with a fixed
 three-key sequence — Down, Return, Return — instead of the ~130 confirmations
-the opening needs. `scripts/gen-rpg2k-save.rb` moves the party in that save to
+the opening needs. `scripts/gen/rpg2k-save.rb` moves the party in that save to
 whichever map the comparison wants.
 
 Two things had to be learned the hard way, and both are worth keeping:
@@ -130,7 +130,7 @@ Two things had to be learned the hard way, and both are worth keeping:
 `Save<N>.lsd` from nothing and it round-trips through our own parser, so it
 looked usable — but RPG_RT silently refused to load it and "Continue" just did
 nothing on the title screen, with no error anywhere.
-`scripts/lcf_save_roundtrip.rb` could never have caught that: it only proves we
+`scripts/lcf/save_roundtrip.rb` could never have caught that: it only proves we
 can re-read our *own* output. So the harness was built to start from a save
 `gen-lcf-save-wine.bash` produced with EasyRPG and *edit* it, which preserves
 every untouched chunk byte-for-byte.
@@ -159,7 +159,7 @@ offered the save, and never reported a problem either. The date now defaults to
 the current time (`State.ole_now`), and a `to_lsd` save written from scratch
 loads in the genuine RPG_RT: it leaves the title, the process stays alive and
 keeps responding to input. Pinned by a check in
-`scripts/rpg2k_save_load_check.rb`, since nothing else about the file-screen
+`scripts/rpg2k/save_load_check.rb`, since nothing else about the file-screen
 metadata has this effect.
 
 The harness still edits a genuine save rather than writing one, and should: a
@@ -211,7 +211,7 @@ The save-based harness above still could not diff a *map*. It resumed the save
 mode — mid-opening, with the demo's choice held in chunk 113 and its backdrop
 picture in chunk 103 — so resuming it put both runtimes back into a **timed**
 cutscene and they drifted apart exactly as the key-driven harness does.
-`scripts/gen-rpg2k-save.rb --clear-scene` drops those two chunks (removing them
+`scripts/gen/rpg2k-save.rb --clear-scene` drops those two chunks (removing them
 outright, not blanking them: `LCF::Array1D#delete`, since an absent chunk and an
 empty one are different files to RPG_RT). Both runtimes then stand on a plain
 map, which does not move until a key is pressed.

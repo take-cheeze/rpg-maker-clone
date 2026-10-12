@@ -7,7 +7,7 @@
 ** them is linked whether or not anything calls it. On wio nothing can call
 ** them except the engine's own gems -- RPG2000/2003 games carry no Ruby and
 ** the build links no compiler/eval -- and those only use Math::PI and
-** Math.sin. scripts/wio_dropped_gems_check.rb fails CI if a wio-linked gem
+** Math.sin. scripts/wio/dropped_gems_check.rb fails CI if a wio-linked gem
 ** starts using any other Math member; add it here (mirroring
 ** 3rd/mruby/mrbgems/mruby-math/src/math.c) when it does. See docs/adr/0204.
 */

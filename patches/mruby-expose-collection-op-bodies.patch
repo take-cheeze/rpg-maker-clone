@@ -11,8 +11,8 @@ The C hunks carry no comments on purpose: bc2cpp treats every identifier of the 
 closed world (outside_world_tokens), so a comment word would poison the proofs of a Ruby method of that name.
 Array#<< needs no patch: its one-operand body is the public mrb_ary_push.
 
-Applied last, after every other mruby patch (cmake/build-mruby.cmake, scripts/maix_mruby_build.bash,
-scripts/wio_bc2cpp_measure.bash).
+Applied last, after every other mruby patch (cmake/build-mruby.cmake, scripts/maix/mruby_build.bash,
+scripts/wio/bc2cpp_measure.bash).
 
 diff --git a/mrbgems/mruby-array-ext/src/array.c b/mrbgems/mruby-array-ext/src/array.c
 --- a/mrbgems/mruby-array-ext/src/array.c

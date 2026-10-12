@@ -96,6 +96,6 @@ pre-existing correctness gap in `trace_new_target`'s hoisted-filter shape,
 not just adds a new skip.
 
 Verified to have **zero measurable effect** on the real project today, not
-assumed: `scripts/bc2cpp_coverage_report.rb`'s full output is byte-identical
+assumed: `scripts/bc2cpp/coverage_report.rb`'s full output is byte-identical
 before and after (confirmed against the same baseline ADR 0191 already
 established). All 22 `scripts/bc2cpp_*_check.rb` static checks pass.

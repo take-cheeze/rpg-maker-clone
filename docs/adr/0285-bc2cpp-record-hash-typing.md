@@ -85,7 +85,7 @@ Consumers (both unguarded):
   takes the existing `CLOSED_WORLD_EXACT_CLASS` route, and a MONO target that embeds ivars drops its
   `MONO_EMBED_GUARD` class check and the `mrb_funcall` else arm.
 
-`scripts/bc2cpp_record_hash_check.rb` pins every accepted shape and every refusal above by reason,
+`scripts/bc2cpp/record_hash_check.rb` pins every accepted shape and every refusal above by reason,
 the generated code, and interpreted-vs-compiled answers on real mruby (key reassigned to another
 class, to nil, deleted).
 
@@ -119,7 +119,7 @@ engine's own Hash records that reuse a schema name (`@ui[:events]`, `cmd[:attack
 
 ## Consequences
 
-Measured on the wio closed world (`scripts/bc2cpp_coverage_report.rb`, shipped build):
+Measured on the wio closed world (`scripts/bc2cpp/coverage_report.rb`, shipped build):
 
 | | cached `bc2cpp_send`/`mrb_funcall_with_block` sites |
 |---|---|

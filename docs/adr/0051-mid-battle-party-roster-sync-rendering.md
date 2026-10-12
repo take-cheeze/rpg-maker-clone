@@ -102,7 +102,7 @@ render-side bookkeeping accumulates across repeated swaps within one fight.
 `Combatant#member`) are untouched — this step only consumes the roster state
 ADR 0050 already keeps correct.
 
-Covered by six new checks in `scripts/rpg2k_scene_check.rb`: an add and a
+Covered by six new checks in `scripts/rpg2k/scene_check.rb`: an add and a
 remove driven through a real `Change Party Member` battle-event page (the
 production path, not a direct method call); the gauge-card status panel
 (`battle_type` 2) picking up an add the same as the plain text rows; a

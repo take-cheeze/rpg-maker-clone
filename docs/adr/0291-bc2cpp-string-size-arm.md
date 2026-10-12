@@ -82,7 +82,7 @@ proof (ADR 0280) names another builtin.
 - The remaining container sends are else arms of switches that already exist.
   A further slice would have to be a new *kind* of arm (Range keys for
   `Array#[]`, `Array#delete`, `String#+`), not a wider class switch.
-- `scripts/bc2cpp_native_core_direct_check.rb` covers the audit (including
+- `scripts/bc2cpp/native_core_direct_check.rb` covers the audit (including
   mutations of the macro, the body and the aspec), every withdrawal reason, and a
   compiled-versus-interpreter comparison on Strings (empty, multibyte, binary,
   subclass, frozen, 300 bytes, singleton `size`) and non-String receivers.

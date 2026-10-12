@@ -9,7 +9,7 @@ Accepted
 ## Context
 
 A ranked analysis of the cached `bc2cpp_send` sites in the wio closed-world report
-(`scripts/bc2cpp_coverage_report.rb`, 10,954 sites before this change) found two
+(`scripts/bc2cpp/coverage_report.rb`, 10,954 sites before this change) found two
 receiver-fact gaps:
 
 - **Constant receivers.** 55 sites had `origin=constant_lookup`: `File.exist?`,
@@ -77,7 +77,7 @@ receiver-fact gaps:
 
 ## Consequences
 
-Measured with `scripts/bc2cpp_coverage_report.rb` (wio closed world, `master` at
+Measured with `scripts/bc2cpp/coverage_report.rb` (wio closed world, `master` at
 6a74f4d2 against this branch):
 
 | | before | after |
@@ -112,7 +112,7 @@ Not converted, with the reason:
   natives, outside the RGSS split.
 
 Not proven by a run: the entry points need the RGSS gem, which the fixture
-harness (`mruby_core`/full-core) does not link. `scripts/bc2cpp_constant_singleton_check.rb`
+harness (`mruby_core`/full-core) does not link. `scripts/bc2cpp/constant_singleton_check.rb`
 instead compiles the generated calls against `include/rgss_native_direct.hxx`
 (so a wrong signature fails) and compares the Ruby-defined singleton fixtures
 interpreted against compiled. The entry points themselves are the ADR 0263 ones,

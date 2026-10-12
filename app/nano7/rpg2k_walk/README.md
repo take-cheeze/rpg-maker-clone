@@ -40,7 +40,7 @@ ruby scripts/export_nano7_map.rb GAME_DIR MAP_ID OUT_DIR
 ```
 
 For example, using the Nepheshel test-bed this repo's own test suite already
-uses (`scripts/download-nepheshel.bash`):
+uses (`scripts/download/nepheshel.bash`):
 
 ```sh
 ruby scripts/export_nano7_map.rb \
@@ -124,7 +124,7 @@ cp /tmp/rpg2k_walk_out/*.bin /tmp/nano7_host_root/Apps/Data/RPG2kWalk/
 
 `nano7_walk_host DATA_ROOT --frames N --screenshot out.bmp` runs headless (no
 display needed at all) for `N` simulated ticks and saves the final frame —
-what `scripts/nano7_host_smoke.bash` / the `nano7_host_smoke` ctest use to
+what `scripts/nano7/host_smoke.bash` / the `nano7_host_smoke` ctest use to
 check a real map actually renders, on every build.
 
 That host build runs natively on your machine's own CPU, so it has nothing
@@ -137,9 +137,9 @@ fabricated one. See `docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md`.
 
 ```sh
 sudo apt-get install -y gcc-arm-none-eabi qemu-system-arm
-scripts/nano7_qemu_build.bash /tmp/rpg2k_walk_out/map.bin \
+scripts/nano7/qemu_build.bash /tmp/rpg2k_walk_out/map.bin \
   /tmp/rpg2k_walk_out/tiles.bin /tmp/nano7_walk_qemu.elf
-scripts/nano7_qemu_run.bash /tmp/nano7_walk_qemu.elf \
+scripts/nano7/qemu_run.bash /tmp/nano7_walk_qemu.elf \
   /tmp/frame.ppm /tmp/uart.log
 grep NANO7-QEMU /tmp/uart.log   # per-frame PMU cycle counts
 ```

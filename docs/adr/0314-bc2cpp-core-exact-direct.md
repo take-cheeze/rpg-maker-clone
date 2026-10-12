@@ -12,8 +12,8 @@ The request was to extend compiled and direct-call support for core Ruby so that
 direct calls. ADR 0264, 0269, 0270, 0271 and 0310 compile mruby's own Ruby, put the block-taking methods behind
 a Fiber guard and give literal-block sends exact-class arms. This ADR first measures what is left, then builds
 the one slice the measurement justifies. Everything below is the wio closed world at master `43031b24`
-(`scripts/bc2cpp_coverage_report.rb`, `scripts/bc2cpp_dynamic_site_census.rb --tsv`, host `mrbc` of mruby 4.0).
-`scripts/bc2cpp_send_root_report.rb` does not exist on master and was not run.
+(`scripts/bc2cpp/coverage_report.rb`, `scripts/bc2cpp/dynamic_site_census.rb --tsv`, host `mrbc` of mruby 4.0).
+`scripts/bc2cpp/send_root_report.rb` does not exist on master and was not run.
 
 ### Every core-source method (220)
 
@@ -133,7 +133,7 @@ and a singleton maker each withdraw it.
 
 ## Verification
 
-`scripts/bc2cpp_core_exact_direct_check.rb` (own `core-exact-direct` shard of `bc2cpp-checks`):
+`scripts/bc2cpp/core_exact_direct_check.rb` (own `core-exact-direct` shard of `bc2cpp-checks`):
 
 - generated code: the positives with zero by-name dispatches, the unproven receivers that keep their send, the
   kill switch, the open world, no core, and the withdrawing worlds above;

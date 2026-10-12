@@ -23,9 +23,9 @@
  *   - `image`   caps .text+.rodata at 500 KiB, standing in for the real
  *               packed-.hbapp ceiling (this build doesn't run mkrelocapp.py,
  *               so .text+.rodata is the closest proxy for that blob size
- *               available here -- see scripts/nano7_qemu_build.bash).
+ *               available here -- see scripts/nano7/qemu_build.bash).
  *   - `blobs`   the two exported map files, embedded as linked binary data
- *               (scripts/nano7_qemu_build.bash's objcopy step) because this
+ *               (scripts/nano7/qemu_build.bash's objcopy step) because this
  *               target has no filesystem at all (docs/adr/0103). On real
  *               hardware these are read from disk at runtime and are NOT
  *               part of the uploaded blob, so they get their own region,
@@ -56,7 +56,7 @@
  *               resident's arena puts it, undocumented here).
  *
  * Total span from ORIGIN(image): 1,844,224 B (~1.76 MiB) -- what
- * scripts/nano7_qemu_run.bash's `-m` is sized against, in place of an
+ * scripts/nano7/qemu_run.bash's `-m` is sized against, in place of an
  * arbitrary 128 MiB that bore no relationship to any real limit.
  */
 ENTRY(_start)

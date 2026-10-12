@@ -35,7 +35,7 @@ as a test dependency only.
 ## Decision
 
 - **`build_config.rb` leaves `mruby-time` out when `conf.name == 'wio'`.**
-- **`scripts/strip_wio_clock.rb` rewrites wio-only build copies of the
+- **`scripts/wio/strip_clock.rb` rewrites wio-only build copies of the
   source.** `build_config.rb`'s `wio_strip_clock` applies it:
   - The bug-report name becomes `bugreport_frame<Graphics.frame_count>.md`.
     That name is unique per F8 press within a session, as the uptime-based
@@ -46,13 +46,13 @@ as a test dependency only.
   that still names `Time`, and every rbfile of mruby-rpg2k, mruby-lcf and
   mruby-rgss passes through it. It runs after `wio_strip_inline_helpers` and
   before `wio_strip_debug_rbfiles`.
-- **CI runs the same check.** `scripts/wio_strip_scripts_check.rb` runs the
+- **CI runs the same check.** `scripts/wio/strip_scripts_check.rb` runs the
   script over every mrblib file, including `game/lsd_io.rb`.
 
 ## Consequences
 
 Measured with a full `wio_rgss_boot` link (the baseline configuration of
-`scripts/wio_bc2cpp_measure.bash`):
+`scripts/wio/bc2cpp_measure.bash`):
 
 - **Flash:** 1,132,068 → 1,116,580 B. The `FLASH` overflow falls from
   624,164 to 608,676 B, which is **−15,488 B**.

@@ -7,7 +7,7 @@
 //
 // VOICEVOX CORE itself is never a build dependency: the library, its ONNX
 // Runtime, the Open JTalk dictionary and Zundamon's voice model are an
-// optional run-time asset (scripts/download-voicevox-zundamon.bash installs
+// optional run-time asset (scripts/download/voicevox-zundamon.bash installs
 // them into assets/voicevox, git-ignored -- see assets/voicevox/README.md),
 // dlopen()'d here the same way SDL_mixer's MIDI patch set is an optional
 // run-time asset rather than a link-time one. With no assets/voicevox
@@ -50,7 +50,7 @@
 
 namespace {
 
-// scripts/download-voicevox-zundamon.bash installs one voice model,
+// scripts/download/voicevox-zundamon.bash installs one voice model,
 // Zundamon's `0.vvm`, which itself carries four styles (see
 // assets/voicevox/models/TERMS.txt and the character/style table at
 // https://github.com/VOICEVOX/voicevox_vvm/blob/main/README.md); --
@@ -173,7 +173,7 @@ void ensure_init() {
   const std::string dir = resolve_voicevox_dir();
   if (dir.empty()) {
     LOG(INFO) << "Tts: no assets/voicevox found; --zundamon_tts stays "
-                 "unavailable (run scripts/download-voicevox-zundamon.bash to "
+                 "unavailable (run scripts/download/voicevox-zundamon.bash to "
                  "install it)";
     return;
   }

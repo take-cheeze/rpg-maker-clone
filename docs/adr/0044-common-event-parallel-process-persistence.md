@@ -113,11 +113,11 @@ Two sub-problems, with different natural solutions:
   `common_event_id`, so neither the teleport-time reuse nor the save-file
   checkpoint ever applies to them; they keep restarting fresh on every page
   reselect, exactly as before.
-- **Regression coverage** lives in `scripts/rpg2k_logic_check.rb` (the plain
+- **Regression coverage** lives in `scripts/rpg2k/logic_check.rb` (the plain
   `Game::Interpreter#resumable_index` / `#start_at` contract, including the
   nested-call-stack and finished-process nil cases, and `Game::State
   #common_event_progress` round-tripping through `#to_h` / `.load`) and
-  `scripts/rpg2k_scene_check.rb` (an end-to-end Transfer Player check proving
+  `scripts/rpg2k/scene_check.rb` (an end-to-end Transfer Player check proving
   both the command index *and* the `wait_timer` countdown survive untouched;
   an end-to-end save/load check built around the TODO's own example -- a
   gate switch turning off mid-run, then a Marshal round trip, then the switch

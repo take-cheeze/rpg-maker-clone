@@ -176,9 +176,9 @@ bytes.
 ### Using it from CI
 
 CI downloads a handful of third-party test-bed archives and assets on every
-run (`scripts/download-nepheshel.bash`, `download-prayforyou.bash`,
+run (`scripts/download/nepheshel.bash`, `download-prayforyou.bash`,
 `download-freepats.bash`, `download-default-font.bash`,
-`scripts/rtp_install.bash`, `rtp_xp_install.bash`) — the ones that are a plain
+`scripts/rtp/install.bash`, `rtp_xp_install.bash`) — the ones that are a plain
 URL fetch rather than a `git clone`. Those are already cached across runs by
 an `actions/cache` step keyed on the download scripts, so this rarely matters;
 it's a fallback for when that cache misses (a new runner, an evicted cache, a

@@ -13,7 +13,7 @@ on the index and, as its else, a by-name send. The tag test is on the index regi
 runs for every key that is not a fixnum (a Range, a String, a Float, nil, a bignum).
 
 Measured on master `67084574` (wio closed world, `3rd/mruby` at the pinned commit, `SKIP_UNSUPPORTED=1`,
-`scripts/bc2cpp_dynamic_site_census.rb` with the exact SiteOriginTable), the census's `numeric_tag_guard` shape holds
+`scripts/bc2cpp/dynamic_site_census.rb` with the exact SiteOriginTable), the census's `numeric_tag_guard` shape holds
 141 by-name sends: `[]` 106, `inspect` 25, `[]=` 5, and five others (`push` 2, `unshift` 1, `sort` 1, `div` 1).
 
 - The receiver origins of the 141 (exact): constant 32, direct call result 25, captured upvar 24, parameter 19, literal
@@ -82,12 +82,12 @@ Kill switch: `BC2CPP_INTEGER_TAG_ELSE=0` gives a `shipped.cxx`, a stderr, and an
 
 ## Checks
 
-- `scripts/bc2cpp_integer_tag_else_check.rb`: the emitter in process (the direct text, each refusal reason counted, the
+- `scripts/bc2cpp/integer_tag_else_check.rb`: the emitter in process (the direct text, each refusal reason counted, the
   kill switch counts nothing); generated fixtures (the exact literal receiver emits the direct calls and the prototype, and a subclass's own `[]` does not block them;
   the kill switch and the non-exact and Object-definer fixtures are byte-identical to the reference, which is the
   origin/master tool when `BC2CPP_BASE_TOOL` is set, else the kill switch; a prepended module refuses with
   `ancestor_definer`); and a mutant that drops the ancestor rule, which the refused fixture then exposes (`MUTANT=1`).
-- `scripts/bc2cpp_integer_tag_else_run_check.rb`: on full-core mruby built from this tree's `3rd/mruby` at 64 bits and at 32 bits (the int32 width build),
+- `scripts/bc2cpp/integer_tag_else_run_check.rb`: on full-core mruby built from this tree's `3rd/mruby` at 64 bits and at 32 bits (the int32 width build),
   the compiled `get` / `put` over 26 keys (fixnums and the 31-bit Fixnum and 32-bit `mrb_int` boundaries, bignums, out-of-range counts, Float, nil, String, Ranges,
   reversed and out-of-bounds Ranges, NaN) answers as the interpreter does: value, class, exception class and message.
 - Existing checks rerun against this change, all PASS: `bc2cpp_getidx_integer_arm_check`, `bc2cpp_index_closed_check`

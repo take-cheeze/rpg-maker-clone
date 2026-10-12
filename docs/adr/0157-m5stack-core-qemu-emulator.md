@@ -5,7 +5,7 @@ Date: 2026-09-14
 ## Status
 
 Accepted -- the port (`app/m5stack`, P1 HAL bring-up) and the QEMU boot
-script both work end to end: `scripts/m5stack_qemu_boot.bash` boots the real
+script both work end to end: `scripts/m5stack/qemu_boot.bash` boots the real
 firmware under a real ESP32 machine and reaches `setup()`/`loop()`,
 verified by grepping the real `m5stack: setup complete` and `Keys: ...`
 lines out of the real UART log. Getting there needed the port to build
@@ -15,7 +15,7 @@ initially-wrong-then-corrected investigation.
 
 A rendered display frame is also now reachable, not just the UART log: a
 downstream QEMU patch (`app/m5stack/qemu/patches/m5stack-display.patch`,
-built by `scripts/m5stack_qemu_build.bash`) adds the ILI9341 device
+built by `scripts/m5stack/qemu_build.bash`) adds the ILI9341 device
 upstream `espressif/qemu` lacks and fixes a real upstream SPI-controller bug
 that otherwise corrupted every frame -- see "Status, display support"
 below.
@@ -109,9 +109,9 @@ Use QEMU, not Renode, for this port's emulator. Concretely:
   rather than sharing the root file the way Wio/Maix do -- summary: its
   build mode (below) needs the project root's own `CMakeLists.txt`, which
   would collide with the repo's real desktop CMake build if it lived there.
-- `scripts/m5stack_qemu_boot.bash` (repo root): fetches Espressif's
+- `scripts/m5stack/qemu_boot.bash` (repo root): fetches Espressif's
   prebuilt `qemu-xtensa` release (pinned by hash the same way
-  `scripts/wio_renode_build.bash` pins `RENODE_REF`), merges the firmware's
+  `scripts/wio/renode_build.bash` pins `RENODE_REF`), merges the firmware's
   `bootloader.bin`/`partitions.bin`/`firmware.bin` into one flash image with
   `esptool.py merge_bin`, writes the default eFuse image real hardware
   would already carry (copied from `esp-idf`'s own
@@ -196,7 +196,7 @@ and fixed, not just documented from PlatformIO's own docs:
   checked directly against `~/.platformio/platforms/espressif32/builder/frameworks/espidf.py`
   before landing on the right mechanism).
 
-`scripts/m5stack_qemu_boot.bash` asserts the real, now-true bar: it exits 0
+`scripts/m5stack/qemu_boot.bash` asserts the real, now-true bar: it exits 0
 once the log contains both `m5stack: setup complete` and a `Keys: ...` line
 -- the firmware's own display+button HAL actually ran, not just "the CPU is
 doing something."
@@ -209,8 +209,8 @@ out of reach: `espressif/qemu` genuinely models no SPI TFT panel (checked
 directly against `hw/display`). A follow-up session closed that gap with a
 downstream QEMU patch rather than accepting the gap as permanent --
 `app/m5stack/qemu/patches/m5stack-display.patch`, built into a real binary
-by `scripts/m5stack_qemu_build.bash` the same way
-`scripts/wio_renode_build.bash` builds Renode from source with this repo's
+by `scripts/m5stack/qemu_build.bash` the same way
+`scripts/wio/renode_build.bash` builds Renode from source with this repo's
 two new peripherals. The patch:
 
 1. Adds `hw/display/esp32_ili9341.c`, a new SSI-peripheral device modelled
@@ -243,8 +243,8 @@ topology to fix that generically was judged out of scope for a downstream
 addition, so `esp32_ili9341.c` instead registers a plain libc `atexit()`
 hook: when `ESP32_ILI9341_DUMP_PATH` is set, the framebuffer is written out
 as a PPM on process exit, which QEMU's own timeout-then-SIGTERM shutdown
-(exactly what `scripts/m5stack_qemu_boot.bash` already does) still runs
-normally. `scripts/m5stack_qemu_boot.bash`'s own `M5STACK_DISPLAY_DUMP` env
+(exactly what `scripts/m5stack/qemu_boot.bash` already does) still runs
+normally. `scripts/m5stack/qemu_boot.bash`'s own `M5STACK_DISPLAY_DUMP` env
 var wraps this.
 
 **The first real frame this produced was uniformly black**, tracked down
@@ -407,7 +407,7 @@ value otherwise (default `0xff`, nothing pressed, matching real
 hardware's own all-pulled-up reset state) -- confirmed directly, not just
 by construction, that a file rewritten after QEMU has already started
 boots takes effect on the very next read, not just at device-reset time.
-`scripts/m5stack_qemu_boot.bash`'s own `M5STACK_GAMEPAD_STATE` (a 2-hex-
+`scripts/m5stack/qemu_boot.bash`'s own `M5STACK_GAMEPAD_STATE` (a 2-hex-
 digit byte) wraps this for the common "hold this combination for the
 whole boot" case a CI check needs.
 

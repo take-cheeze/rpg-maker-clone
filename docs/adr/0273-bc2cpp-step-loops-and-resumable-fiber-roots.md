@@ -112,6 +112,6 @@ that builds the fiber (`PPU#run`, which stays interpreted because it builds a Pr
   nested/other inlined loops, in rescue/ensure and in non-inlined blocks stay interpreted;
   `Method#arity` and friends read as for every compiled method; nothing here is exercised by a
   32-bit `mrb_int` CI build.
-- Verification: `scripts/bc2cpp_step_inline_check.rb` and `scripts/bc2cpp_resumable_check.rb`
+- Verification: `scripts/bc2cpp/step_inline_check.rb` and `scripts/bc2cpp/resumable_check.rb`
   compile fixtures, link them into a full-core mruby and require the compiled run to print what
   the interpreted run prints, including an incremental-GC-stress pass.

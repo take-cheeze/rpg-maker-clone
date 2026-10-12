@@ -105,7 +105,7 @@ def main():
         with open(loader_path, "w") as out:
             out.write("// No MIDI patch set was packaged into this page; a "
                       ".mid will not play.\n"
-                      "// Run scripts/download-freepats.bash and rebuild. See "
+                      "// Run scripts/download/freepats.bash and rebuild. See "
                       "ADR 0026 / 0031.\n")
         print(f"timidity: no patches in {args.patch_dir}; wrote an empty "
               f"{loader_path}")

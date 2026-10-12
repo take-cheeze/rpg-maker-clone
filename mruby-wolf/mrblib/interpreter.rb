@@ -8,7 +8,7 @@
 # byte, an int32 command id, N more int32 args, an indent byte, a string
 # array, an optional move-route) is proven -- the whole editor-bundled sample
 # game's 27,356 Common Event commands parse with nothing left over
-# (scripts/wolf_testbed_check.rb). What is reconstructed here, layered on top
+# (scripts/wolf/testbed_check.rb). What is reconstructed here, layered on top
 # of that proven framing, is each command's *argument layout*, cross-checked
 # across three independent readers (wolftrans, WolfTL, the wolfrpg-map-parser
 # crate) wherever they overlap:
@@ -395,7 +395,7 @@ module Wolf
       # and those are not part of this construct's scope. Scanning past
       # BranchEnd in search of an unrelated marker skipped that Wait
       # entirely, spinning the Fiber forever with no yield (found via
-      # scripts/wolf_interpreter_check.rb hanging on the real sample game).
+      # scripts/wolf/interpreter_check.rb hanging on the real sample game).
       def exec_variable_condition(cmd)
         case_count = cmd.arg(0) & 0x0f
         conditions = Array.new(case_count) do |i|
@@ -528,7 +528,7 @@ module Wolf
       # #exec_wait -- so a soak check with no real player supplying input
       # spins here until its own dispatched-command safety net catches it
       # (already an accepted, documented outcome category: see
-      # scripts/wolf_interpreter_check.rb's own "suspected infinite loop (or
+      # scripts/wolf/interpreter_check.rb's own "suspected infinite loop (or
       # a real input-wait loop this soak check cannot satisfy)" note).
       def exec_choices(cmd)
         options = cmd.arg(0)
@@ -778,7 +778,7 @@ module Wolf
 
     # Every Run this interpreter starts is built through here rather than a
     # bare `Run.new` at each call site, so a caller that needs a safety net
-    # against a not-yet-discovered infinite loop (scripts/wolf_interpreter_check.rb's
+    # against a not-yet-discovered infinite loop (scripts/wolf/interpreter_check.rb's
     # step-bounded subclass, the same soak check that already caught two real
     # hangs in Common Events) can install one for map events and confirm/
     # touch triggers too, by overriding just this one method instead of
@@ -823,7 +823,7 @@ module Wolf
     # show/move/erase a picture sprite -- Interpreter itself has no
     # rendering code of its own, the same separation #current_map's own
     # doc comment describes for map-event lookups. nil in contexts with no
-    # real scene (scripts/wolf_interpreter_check.rb's soak check), which
+    # real scene (scripts/wolf/interpreter_check.rb's soak check), which
     # #exec_picture must tolerate.
     attr_accessor :current_scene
 

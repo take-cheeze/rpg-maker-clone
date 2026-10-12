@@ -40,7 +40,7 @@
 # so the unused accessors simply read back nil. Everything here is deliberately
 # behaviour-free: these are attribute holders that mirror the editor's data
 # model 1:1, so the runtime and the host-side check
-# (scripts/rpgvx_testbed_check.rb, which loads this exact file under CRuby)
+# (scripts/rpgvx/testbed_check.rb, which loads this exact file under CRuby)
 # read the same fields.
 #
 # Field names and their nesting follow the RGSS2 / RGSS3 references (the VX and
@@ -401,7 +401,7 @@ module RPG
     # -- present in that game's editor-written data but undocumented by any
     # RGSS2 reference; kept as an opaque accessor rather than dropped so a real
     # game's database round-trips exactly, the same way an unknown field would
-    # surface via the audit in scripts/rpgvx_testbed_check.rb if this were
+    # surface via the audit in scripts/rpgvx/testbed_check.rb if this were
     # missing.
     attr_accessor :_
     # (Ace)

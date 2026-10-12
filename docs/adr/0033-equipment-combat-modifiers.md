@@ -108,11 +108,11 @@ done:
   the to-hit formula grows a separate evasion term, since RPG2000's is expressed
   purely in agility.
 
-Covered by `scripts/rpg2k_logic_check.rb` (a 二刀流 weapon swings twice and skips
+Covered by `scripts/rpg2k/logic_check.rb` (a 二刀流 weapon swings twice and skips
 the second swing on a felled target; a 必中 weapon drops the evasion term but
 still suffers its wielder's blindness; 強力防御 halves what an ordinary guard
 leaves; MP消費半分 halves a cost rounding up, and a percentage cost too) and by
-`scripts/rpg2k_testbed_logic_check.rb`, which asserts against the **real** item
+`scripts/rpg2k/testbed_logic_check.rb`, which asserts against the **real** item
 and actor tables that every 二刀流 weapon in the game grants two strikes, every
 必中 weapon hits at its own rate against an unhittable target, and every
 MP消費半分 item halves a real skill's cost from the slot its own type names.
@@ -186,11 +186,11 @@ a seeded fight diverges where a crit lands on one and not the other. That is the
 expected cost of the representation change, and it is bounded to 0.3% of swings
 in a game the feature does not otherwise touch.
 
-Covered by `scripts/rpg2k_logic_check.rb` (the row rate alone in basis points;
+Covered by `scripts/rpg2k/logic_check.rb` (the row rate alone in basis points;
 a weapon adding its percentage; the best of two wielded weapons rather than their
 sum, and an armour contributing nothing; a weapon arming an actor whose own rate
 is off; a 100% weapon critting on every seed; the roll read against the scale
 with a fixed RNG, which is what distinguishes a probability from a denominator)
-and by `scripts/rpg2k_testbed_logic_check.rb`, which asserts against the **real**
+and by `scripts/rpg2k/testbed_logic_check.rb`, which asserts against the **real**
 item table that each of the 69 weapons adds exactly its own rate and each of the
 6 non-weapons adds nothing.

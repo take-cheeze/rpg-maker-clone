@@ -48,7 +48,7 @@ The real project's own 3 compiled gems gain 7 embedded ivars (all
 frame/counter fixnum fields: `Game::Picture#@frames`,
 `Game::Screen#@frames`/`@flash_frames`, `Game::Timer#@frames`,
 `RPG2k::Scene::Map#@inn_choice`/`@player_route_timer`,
-`RPG2k::Scene::Order#@counter`), `scripts/bc2cpp_coverage_report.rb`'s own
+`RPG2k::Scene::Order#@counter`), `scripts/bc2cpp/coverage_report.rb`'s own
 dynamic-dispatch count drops by 15 sites, and `#error` stays at 0 (no
 coverage regression). The standalone Optcarrot bc2cpp probe
 (`tools/optcarrot_probe/`) gains 6 more embedded ivars (`APU::DMC#@dma_

@@ -118,10 +118,10 @@ now closed:
   and `reflect_magic` — no state in either test bed sets any of them, so there is
   nothing to measure an implementation against.
 
-Covered by `scripts/rpg2k_logic_check.rb` (a blinding state scales accuracy and
+Covered by `scripts/rpg2k/logic_check.rb` (a blinding state scales accuracy and
 the worst of several wins; a blow shakes off a state that allows it and leaves a
 0% one, and a killing blow shakes off nothing; a sealing state blocks by
-threshold) and by `scripts/rpg2k_testbed_logic_check.rb`, which asserts the same
+threshold) and by `scripts/rpg2k/testbed_logic_check.rb`, which asserts the same
 three against the **real** 状態 tables: every blinding state scales accuracy by
 exactly its own ratio, the game's most-releasable state does come off within 200
 blows, and every sealing state seals some magic while leaving rate-0 skills
@@ -167,11 +167,11 @@ confirmed against genuine RPG_RT under wine — so there is nothing to pin
 would put invented text in the battle log, which is the thing this ADR set out to
 stop.
 
-Covered by `scripts/rpg2k_logic_check.rb` (an already-carried state reports
+Covered by `scripts/rpg2k/logic_check.rb` (an already-carried state reports
 rather than lands, does so at 0% accuracy, does so for an immune target, does not
-stack, and a clear target reports nothing), by `scripts/rpg2k_scene_check.rb`
+stack, and a clear target reports nothing), by `scripts/rpg2k/scene_check.rb`
 (the sentence reaches the action banner for an ally and an enemy target alike,
 and a state with no sentence still gets announced) and by
-`scripts/rpg2k_testbed_logic_check.rb`, which composes every real
+`scripts/rpg2k/testbed_logic_check.rb`, which composes every real
 `message_already` in both games after two different battler names and drives a
 real state through a 0%-accuracy skill.

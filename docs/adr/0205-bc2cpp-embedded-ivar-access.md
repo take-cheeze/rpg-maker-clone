@@ -67,7 +67,7 @@ The 66 sites go to zero. Coverage is unchanged: 2361 entry points, 0 `#error`,
 100% of methods compiled. The same 176 ivars in 34 classes stay embedded. Only
 those sites changed in the generated code.
 
-`scripts/bc2cpp_embedded_ivar_access_check.rb` runs in the CI `bc2cpp` job and
+`scripts/bc2cpp/embedded_ivar_access_check.rb` runs in the CI `bc2cpp` job and
 fails on the previous generator. It has three parts:
 
 - It checks the subclass gate and the unknown-self `#error`.

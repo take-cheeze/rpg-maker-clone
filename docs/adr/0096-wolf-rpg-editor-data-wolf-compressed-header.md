@@ -12,7 +12,7 @@ ADR 0093 shipped `Wolf::DataWolf`, the `Data.wolf` packed-release reader, but
 could not test it against a real released game -- no freely-redistributable
 one was known at the time, so it was validated only by a synthetic-fixture
 round trip and by re-packing the (loose-tree) bundled sample game with its
-own `.pack` and reading that back (`scripts/wolf_data_wolf_check.rb`). That
+own `.pack` and reading that back (`scripts/wolf/data_wolf_check.rb`). That
 ADR's own "Scope" section flagged this explicitly: DXA's header-table
 compression was left unimplemented because "there is no `Data.wolf` fixture
 in this repo to confirm real releases actually exercise that path", with a
@@ -22,7 +22,7 @@ This session found and downloaded 「或る魔女について」("About a Certai
 Witch") v1.03 by Ryuu, a short freeware WOLF RPG Editor game hosted on
 [freem.ne.jp](https://www.freem.ne.jp/) (a well-known Japanese freeware
 distribution site; the actual file is served from `fgamearchives.com`, the
-same host `scripts/download-prayforyou.bash`/`download-killer-knights.bash`
+same host `scripts/download/prayforyou.bash`/`download-killer-knights.bash`
 already use for other engines' real test fixtures) -- the first real,
 genuinely released `Data.wolf` this reader has ever been pointed at.
 
