@@ -69,7 +69,24 @@ with `--bc2cpp` the generated C++ of the wio closed world names no `Tts`.
 
 ## Consequences
 
-MEASURED
+Measured (host `mrbc` without `-g`; arm-none-eabi 14.2.1 from PlatformIO; bc2cpp full mode, i.e. every method, over
+the wio closed world for `mruby-rpg2k-compiled`, same commit before and after):
+
+| | before | after |
+|---|---|---|
+| `bc2cpp_send(M` sites | 1,183 | 1,157 (-26) |
+| generated C++ names `Tts` | yes (symbol table, two `POLY_DIAG` lines) | no |
+| `Scene::Map#speak_message` compiled | 5 by-name sends | gone (empty method) |
+| `tts.cxx` object, Cortex-M4 `-Os` | 252 B text + 12 B bss, 9 symbols | `tts_off.cxx`: 2 B |
+| `env:wio_rgss_boot` link, FLASH overflow | 515,704 (image 1,023,608) | 515,496 (image 1,023,400): -208 B |
+
+The 26 is not all `speak_message`: the other 21 are fewer by-name sends in `Interpreter#do_*` and `Scene::Map#perform_*`,
+most likely from the native `stop` registration on `RGSS::Tts` no longer sharing a name with `Interpreter#stop` (not
+isolated further; each run took about 30 minutes on a loaded machine). In the real, hot-only wio build
+`speak_message` is not in `hot_methods.txt`, so only the second effect applies there. Ruby bytecode is roughly
+neutral on the limited builds: `map.rb` 176,337 -> 176,143 B plus the 274 B stand-in compiled as its own file (about
++80 B including a second file header); the desktop build is unchanged apart from the file split (404 B file header
+included). `wio_rgss_boot` still does not fit the board either way.
 
 Not done, deliberately: the Ruby call sites (`speak_message(plain)` in `open_message`, once in
 `append_choice_lines`) stay in `map.rb`, calling the empty stand-in. Removing them would need a per-build rewrite
