@@ -45,6 +45,17 @@ commit (workflow-level `concurrency`, keyed on the PR number). Master pushes,
 merge-queue runs, manual dispatches and `/preview` comments use a per-run group
 and are never cancelled.
 
+### Repeated bytecode dataflow queries
+
+bc2cpp's `BytecodeIR::Program` reuses reaching-definition and write-dominance
+answers for the same instruction/register query. Each body keeps at most 1,024
+answers per query type, including refusals. Query options and opaque registers
+are part of the key; mutable opaque sets and refusal diagnostics bypass reuse.
+Returned definition arrays and register strings remain private to each caller.
+The existing dataflow check compares answers with an independent forward
+fixpoint and covers mutation of caller-owned state. See
+[ADR 0409](adr/0409-bc2cpp-dataflow-query-cache.md) for performance measurements.
+
 ### Mutation checks run off pull requests
 
 `scripts/ci/timed_checks.rb` drops every `*_mutation_check.rb` command and strips

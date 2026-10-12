@@ -1716,6 +1716,9 @@
   **Cloudflare Pages** preview URL back on it. See
   [`docs/deploy.md`](docs/deploy.md) for the one-time repo setup (Pages source +
   Cloudflare secrets).
+- bc2cpp reuses repeated bytecode dataflow queries during analysis and code
+  generation; bounded caches also reduce repeated work in fixture tests. See
+  [ADR 0409](docs/adr/0409-bc2cpp-dataflow-query-cache.md).
 - CI also runs the width-sensitive bc2cpp checks on a 32-bit-`mrb_int` and a
   no-bigint mruby (the Emscripten/Wio/PSP widths) and listens for merge-queue
   runs; [`docs/ci.md`](docs/ci.md) lists the repository settings the owner has
