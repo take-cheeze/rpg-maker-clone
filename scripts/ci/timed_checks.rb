@@ -14,6 +14,9 @@
 # aborts the step under `set -e` with its own status. An EXIT trap prints the table on success and on
 # failure alike (the command that failed is listed as FAILED with the time it ran).
 #
+# Commands between `# ci:parallel begin [N]` and `# ci:parallel end` run at the same time, at most N at a time
+# (docs/ci.md, "Parallel groups"); everything else runs in order as before.
+#
 # Comment lines and blank lines are dropped; a `\` continuation is joined. Lines that only set shell
 # variables (`width=...`, `export A=b`) are passed through untimed, since later commands rely on them.
 require 'shellwords'
@@ -50,6 +53,61 @@ PRELUDE = <<~'BASH'
     rm -f "$__ci_rows"
     return "$status"
   }
+  # A `# ci:parallel begin [N]` ... `# ci:parallel end` group: each command runs in its own subshell (so it
+  # sees the shell's variables, and its own `cd` or `set` stays in it), at most N at a time (default
+  # CI_PARALLEL_JOBS, then 3), with stdout and stderr in a log. __ci_par_end replays the logs in input order,
+  # records one timing row per command, and fails with the first failed command's status.
+  __ci_par_dir=
+  __ci_par_n=0
+  __ci_par_live=0
+  __ci_par_max=3
+  __ci_par_labels=()
+  __ci_par_begin() {
+    __ci_par_max="${1:-${CI_PARALLEL_JOBS:-3}}"
+    __ci_par_dir="$(mktemp -d)"
+    __ci_par_n=0
+    __ci_par_live=0
+    __ci_par_labels=()
+  }
+  __ci_par_run() {
+    local i=$__ci_par_n
+    __ci_par_n=$((i + 1))
+    __ci_par_labels[$i]="$1"
+    if [ "$__ci_par_live" -ge "$__ci_par_max" ]; then
+      wait -n || true
+      __ci_par_live=$((__ci_par_live - 1))
+    fi
+    __ci_par_live=$((__ci_par_live + 1))
+    (
+      local_start="$(__ci_now)"
+      set +e
+      ( set -e; eval "$2" ) > "$__ci_par_dir/$i.log" 2>&1
+      rc=$?
+      secs="$(awk -v a="$local_start" -v b="$(__ci_now)" 'BEGIN { printf "%.1f", b - a }')"
+      printf '%s %s\n' "$rc" "$secs" > "$__ci_par_dir/$i.rc"
+    ) &
+  }
+  __ci_par_end() {
+    local i rc secs failed=0 first_rc=0
+    wait
+    for ((i = 0; i < __ci_par_n; i++)); do
+      read -r rc secs < "$__ci_par_dir/$i.rc"
+      if [ "$rc" = 0 ]; then
+        printf '::group::%s (%ss)\n' "${__ci_par_labels[$i]}" "$secs"
+        cat "$__ci_par_dir/$i.log"
+        printf '::endgroup::\n'
+        printf '%s\t%s\t%s\n' "$secs" ok "${__ci_par_labels[$i]}" >> "$__ci_rows"
+      else
+        printf '== FAILED (exit %s, %ss): %s\n' "$rc" "$secs" "${__ci_par_labels[$i]}"
+        cat "$__ci_par_dir/$i.log"
+        printf '%s\t%s\t%s\n' "$secs" FAILED "${__ci_par_labels[$i]}" >> "$__ci_rows"
+        failed=$((failed + 1))
+        [ "$first_rc" = 0 ] && first_rc=$rc
+      fi
+    done
+    rm -rf "$__ci_par_dir"
+    [ "$failed" = 0 ] || return "$first_rc"
+  }
   trap __ci_table EXIT
 BASH
 
@@ -66,10 +124,17 @@ def without_mutants(line)
   line.gsub(MUTANT_SWITCH, '')
 end
 
-# Joins `\` continuations and drops comments and blanks.
+# Opt-in concurrency (docs/ci.md, "Parallel groups"): the commands between these two comment lines run
+# at the same time. They are comments, so a block that is not run through this script just runs them in order.
+PARALLEL_BEGIN = /\A#\s*ci:parallel\s+begin(?:\s+(\d+))?\z/
+PARALLEL_END = /\A#\s*ci:parallel\s+end\z/
+
+# Joins `\` continuations and drops comments and blanks (the two parallel markers stay).
 def commands(text)
   joined = text.gsub(/\\\n/, ' ')
-  joined.lines.map(&:strip).reject { |line| line.empty? || line.start_with?('#') }
+  joined.lines.map(&:strip).reject do |line|
+    line.empty? || (line.start_with?('#') && !PARALLEL_BEGIN.match?(line) && !PARALLEL_END.match?(line))
+  end
 end
 
 # The command as a reader wants to see it: without a trailing `# note`.
@@ -79,7 +144,21 @@ end
 
 puts PRELUDE
 skip_mutants = ENV['CI_SKIP_MUTANTS'] == '1'
+in_group = false
 commands($stdin.read).each do |line|
+  if (begin_marker = PARALLEL_BEGIN.match(line))
+    abort 'timed_checks: nested "ci:parallel begin"' if in_group
+
+    in_group = true
+    puts "__ci_par_begin#{begin_marker[1] ? " #{begin_marker[1]}" : ''}"
+    next
+  elsif PARALLEL_END.match?(line)
+    abort 'timed_checks: "ci:parallel end" without a begin' unless in_group
+
+    in_group = false
+    puts '__ci_par_end'
+    next
+  end
   if skip_mutants
     stripped = without_mutants(line)
     puts "echo #{Shellwords.escape("skipping mutants: #{label(line)}")}" if stripped.nil? || stripped != line
@@ -88,8 +167,13 @@ commands($stdin.read).each do |line|
     line = stripped
   end
   if VARIABLE_ONLY.match?(line)
+    abort "timed_checks: a variable assignment inside a ci:parallel group would not reach the later commands: #{line}" if in_group
+
     puts line
+  elsif in_group
+    puts "__ci_par_run #{Shellwords.escape(label(line))} #{Shellwords.escape(line)}"
   else
     puts "__ci_begin #{Shellwords.escape(label(line))}", line, '__ci_end'
   end
 end
+abort 'timed_checks: "ci:parallel begin" without an end' if in_group

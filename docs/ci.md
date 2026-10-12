@@ -1,8 +1,11 @@
 # Continuous integration
 
-[`.github/workflows/build.yml`](../.github/workflows/build.yml) is the one CI
+[`.github/workflows/build.yml`](../.github/workflows/build.yml) is the CI
 workflow. It runs on pull requests to `master`, pushes to `master`, merge-queue
 runs, manual dispatch and (for the Cloudflare preview only) `/preview` comments.
+The long bc2cpp jobs are in their own workflow,
+[`.github/workflows/bc2cpp-nightly.yml`](../.github/workflows/bc2cpp-nightly.yml),
+which runs once a day and on demand ("Nightly bc2cpp" below).
 Deployment is covered in [deploy.md](deploy.md).
 
 ## Native SDL probes
@@ -15,10 +18,25 @@ continue to select their backend through SDL's usual configuration.
 
 ## bc2cpp gate
 
-The status check `bc2cpp` is the aggregate of `bc2cpp-build`, every
-`bc2cpp-checks (<shard>)` and every `bc2cpp-width (<variant>)` job. Require
-`bc2cpp` rather than the individual shards, so adding a shard needs no settings
-change.
+The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` (skipped on purpose for
+a docs-only change). Every `bc2cpp-checks (<shard>)` and `bc2cpp-width (<variant>)` job is in
+`bc2cpp-nightly.yml` and is not part of this check. Require `bc2cpp` and nothing
+from the nightly workflow: those jobs do not run on a pull request.
+
+### Nightly bc2cpp
+
+A pull request or a push runs only `bc2cpp-build`. The long jobs, the `bc2cpp-checks` shard matrix and the
+`bc2cpp-width` build, are in `.github/workflows/bc2cpp-nightly.yml`, which runs on a daily schedule
+(cron `23 17 * * *`, UTC, on the default branch) and on **Run workflow** (`workflow_dispatch`, pick the
+branch). Nightly and manual runs are not pull requests, so they run the mutation checks and the
+optcarrot benchmark too, and the nightly run (default branch) is the only one allowed to write the
+sccache.
+
+What this gives up: a pull request, a push to `master` and a merge-queue run are no longer checked by
+the long shards before merge. A regression shows up in the next nightly run, as a failed run in the
+Actions tab (GitHub also emails a failed scheduled run). To check a branch earlier, run the nightly
+workflow on it. Nothing in that workflow is a required status check, so a red nightly run does not
+block a merge.
 
 ### Superseded runs
 
@@ -29,13 +47,33 @@ and are never cancelled.
 
 ### Mutation checks run off pull requests
 
-On `pull_request` runs the `bc2cpp-checks` job sets `CI_SKIP_MUTANTS=1`, and
-`scripts/ci/timed_checks.rb` then drops every `*_mutation_check.rb` command and
-strips `*_MUTANTS=1` switches, so each shard keeps its fixture checks but not the
-mutant rebuilds. Master pushes, merge-queue runs and manual dispatch run them
-all, so a mutation regression blocks the merge queue rather than the PR. Timing
-estimates in the shard table include the mutants and apply to those runs. To run
-them on a PR, use `workflow_dispatch` on its branch.
+`scripts/ci/timed_checks.rb` drops every `*_mutation_check.rb` command and strips
+`*_MUTANTS=1` switches when `CI_SKIP_MUTANTS=1`, so a run keeps each shard's fixture
+checks but not the mutant rebuilds. The shard jobs ran with that set on pull
+requests; now that they run only in `bc2cpp-nightly.yml` ("Nightly bc2cpp" above),
+nothing sets it and every nightly or manual run includes the mutants. The timing
+estimates in the shard table include them.
+
+### Device jobs run on a pull request only for their own files
+
+`android` (with `android-smoke`), `maix` (with `maix-smoke`) and `nano7-qemu` build or emulate one
+device target each. On a `pull_request` run they are skipped unless the `changes` job's filter for
+that device matched; a push to `master`, a merge-queue run and a manual dispatch always run them.
+The smoke jobs need their build job, so they are skipped with it. `wasm` is not gated and still runs
+on every pull request, and `psp` keeps its own filter (it runs only when `app/psp/**` or the workflow
+changed, and not on other pushes).
+
+| Filter | Files that count as related |
+| --- | --- |
+| `android` | `app/android/**`, `scripts/android_smoke_check.bash`, `CMakeLists.txt`, `cmake/**`, `build_config.rb`, the workflow |
+| `maix` | `app/maix/**`, `app/shared/**`, `scripts/maix/**`, `scripts/gen/maix-hello-game.rb`, `build_config.rb`, the workflow |
+| `nano7` | `app/nano7/**`, `app/shared/**`, `scripts/nano7/**`, `scripts/export_nano7_map*.rb`, `scripts/stage_nano7_walk_app.bash`, `scripts/download/nepheshel.bash`, the workflow |
+
+`build_config.rb` holds each device's cross-build definition, so a change to it runs the Android and
+Maix jobs. Shared engine code (`src/`, the `mruby-*` gems) is not in any list: a pull request that
+changes only that skips these jobs, and the push to `master` after the merge runs them. A device
+regression from shared code therefore shows up on `master`, not on the pull request. To check a branch
+earlier, use `workflow_dispatch` on it, or add the path to the filter.
 
 ### Splitting long shards
 
@@ -52,10 +90,9 @@ sets the workflow's wall clock. Add new 32-bit legs to whichever is shorter.
 
 ### Check shards
 
-`bc2cpp-checks` is a matrix; each shard is its own job with a 45 minute
-timeout, and the aggregate gates on the matrix as a whole
-(`needs: bc2cpp-checks`), so renaming or adding a shard touches neither the
-aggregate nor branch protection. Every check is listed in exactly one shard.
+`bc2cpp-checks` (in `bc2cpp-nightly.yml`) is a matrix; each shard is its own job with a 45 minute
+timeout, and no other job or setting names a shard, so renaming or adding one touches
+neither the `bc2cpp` check nor branch protection. Every check is listed in exactly one shard.
 Keep each shard under about 25 minutes so one more check does not reach the
 timeout; raise the timeout only as a last resort.
 
@@ -149,7 +186,7 @@ command that failed is marked `FAILED`, with the time it ran before failing;
 commands after it never ran and are not listed. Lines that only set variables
 (`width=...`, `export ...`) are not timed, comments are dropped. Use the table
 to decide where a new check goes: put it in the shard with the most slack, and
-keep each shard's total under the budget above. `ruby scripts/ci/helpers_check.rb`
+keep each shard's total under the budget above (commands in a `ci:parallel` group overlap, so their sum is more than the wall time). `ruby scripts/ci/helpers_check.rb`
 (in `ruby-checks`) covers the wrapper.
 
 ### Compiler cache (sccache)
@@ -232,18 +269,48 @@ works, so running it beside a mutant would attribute a broken path to that
 mutant. Its mutant directories carry an index, because two mutants may edit the
 same generator file and would otherwise share — and delete — one copy.
 
+### Parallel groups
+
+A shard can run independent checks at the same time. Put the commands between two
+comment lines in the `checks:` block:
+
+```
+# ci:parallel begin 3
+MRBC="$mrbc" ruby scripts/bc2cpp/a_check.rb
+MRBC="$mrbc" ruby scripts/bc2cpp/b_check.rb
+# ci:parallel end
+```
+
+`scripts/ci/timed_checks.rb` runs them at most N at a time (without a number, `CI_PARALLEL_JOBS`,
+then 3). The markers are comments, so a block that is not run through the script runs the same
+commands in order. Each command runs in a subshell of the step, so it sees the step's variables
+(`$mrbc`, `$core`) but cannot set one for later commands; assigning a variable inside a group is
+refused when the script is generated. Output goes to a log per command and is printed in input
+order after the group, so a failing command's output is shown in full and the others are folded
+(`::group::`). The step fails with the first failed command's status, after the rest of the group
+has finished; the commands after a failed group do not run.
+
+What may go in a group: commands that share no build state. Anything that passes
+`BC2CPP_FULL_BUILD_DIR` (or builds the full-core mruby) stays outside, because two of them would
+build the same directory at once. The mutant pool already uses the cores, so a group is for
+shards made of single-process scripts. A group adds CPU and memory load, so keep N at 3 on the
+4-vCPU runner: `embedded_ivar_access_check` alone uses about 2.5 cores.
+
+Measured on a 4-core machine for the `registrations` shard (the one shard that uses it so
+far): its four scripts took 211 s in sequence and 118 s through a group, the longest single
+script. The timing table's `total` is the sum of the command times, so for a group it is more than the
+wall time of the step.
+
 ### Width builds (ADR 0300)
 
-The Emscripten, Wio and PSP targets use a 32-bit `mrb_int`; Wio and PSP also
-have no mruby-bigint. `bc2cpp-width` re-runs the compiled-versus-interpreted
+The Emscripten, Wio and PSP targets use a 32-bit `mrb_int`. Every shipped target
+links mruby-bigint (`build_config.rb`), so there is no no-bigint variant. `bc2cpp-width` re-runs the compiled-versus-interpreted
 checks on a libmruby built by `scripts/bc2cpp/width_build.rb`:
 
 | Variant | Build | Checks |
 | --- | --- | --- |
 | `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `call_results` |
-| `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow` |
 | `int32` | full-core, `-DMRB_32BIT -DMRB_INT32` (31-bit Fixnums) | `numeric_slow`, `index_closed`, `fixnum_overflow`, `step_inline`, `lcf_row_flow`, `tuple_return`, `zero_direct` |
-| `nobigint` | full-core without mruby-bigint / mruby-rational | `numeric_slow`, `index_closed`, `getidx_integer_arm`, `tuple_return`, `zero_direct` |
 
 The 32-bit build is the 64-bit host with the targets' arithmetic defines, so it
 does not exercise 32-bit pointers. To run a variant locally, after the mruby
@@ -373,7 +440,7 @@ covers a closed and an open world. See ADR 0358 and
 ### The zero? helper through compiled core
 
 The `core-flow` shard also runs `bc2cpp_zero_direct_check.rb` and its mutation check (ADR 0374); the `int32`
-and `nobigint` width legs run the same check against their own libmruby. A closed world that compiles
+width legs run the same check against their own libmruby. A closed world that compiles
 mruby's own Ruby has `bc2cpp_slow_zero` call the compiled `Numeric#zero?` for every Numeric that is not a
 Float, raise the `File.zero?` argument error for those class objects, and keep the NoMethodError proof for
 the rest. The check covers the generated code, twelve negative worlds (reopened, aliased, included,

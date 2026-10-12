@@ -169,5 +169,70 @@ Dir.mktmpdir do |dir|
   check.call('CI_SKIP_MUTANTS strips the *_MUTANTS=1 switch but still runs the check', table.include?('run-switch') && !table.include?('CSEND_MUTANTS'))
 end
 
+# -- parallel groups --------------------------------------------------------------------------------
+puts '-- parallel groups'
+run_checks = lambda do |dir, text, env = {}|
+  generated, gen_status = Open3.capture2(env, RbConfig.ruby, File.join(__dir__, 'timed_checks.rb'), stdin_data: text)
+  script = File.join(dir, "g#{rand(1_000_000)}.sh")
+  File.write(script, generated)
+  out, status = Open3.capture2e('bash', '-eo', 'pipefail', '-c', ". #{script}")
+  [out, status, gen_status]
+end
+
+Dir.mktmpdir do |dir|
+  # Every job logs start and end around a short sleep, so overlap shows in the order of the log, not in wall time.
+  trace = File.join(dir, 'trace')
+  job = ->(id) { %(echo "start #{id}" >> #{trace}; sleep 0.4; echo "end #{id}" >> #{trace}) }
+  body = (1..3).map { |i| job.call(i) }.join("\n")
+
+  File.write(trace, '')
+  out, status, = run_checks.call(dir, "who=shell-var\n# ci:parallel begin 3\n#{body}\necho \"sees $who\"\n# ci:parallel end\necho after\n")
+  events = File.readlines(trace, chomp: true)
+  check.call('a group runs its commands at the same time (all started before the first ended)',
+             events.first(3).all? { |e| e.start_with?('start') })
+  check.call('a command in a group sees the shell variables set before it', out.include?('sees shell-var'))
+  check.call('the command after the group runs once the group is done', status.success? && out.include?('after'))
+
+  File.write(trace, '')
+  run_checks.call(dir, "# ci:parallel begin 1\n#{body}\n# ci:parallel end\n")
+  events = File.readlines(trace, chomp: true)
+  check.call('a group of width 1 never overlaps two commands',
+             events.each_slice(2).all? { |s, e| s.start_with?('start') && e == s.sub('start', 'end') })
+
+  File.write(trace, '')
+  run_checks.call(dir, "# ci:parallel begin 2\n#{body}\n# ci:parallel end\n")
+  events = File.readlines(trace, chomp: true)
+  live = 0
+  widest = events.map { |e| live += e.start_with?('start') ? 1 : -1 }.max
+  check.call('a group never runs more commands than its width (2)', widest == 2)
+
+  out, = run_checks.call(dir, "# ci:parallel begin\necho one\necho two\necho three\n# ci:parallel end\n", { 'CI_PARALLEL_JOBS' => '1' })
+  check.call('CI_PARALLEL_JOBS sets the width when the marker has none', out.scan('::group::').size == 3)
+
+  out, status, = run_checks.call(dir, "# ci:parallel begin\necho ok-one\nruby -e 'warn \"boom\"; exit 7'\necho ok-two\n# ci:parallel end\necho never\n")
+  check.call('a failing command in a group fails the step with its own status', status.exitstatus == 7)
+  check.call('the other commands of the group are still reported, and the failure output is shown',
+             out.include?('ok-one') && out.include?('ok-two') && out.include?('boom') && out.include?('FAILED (exit 7'))
+  check.call('commands after a failed group do not run', !out.include?('never'))
+  table = out[/== check timings.*\z/m].to_s
+  check.call('the table lists every command of the group, the failed one marked',
+             table.include?("FAILED  ruby -e 'warn") && table.include?('echo ok-one') && table.include?('echo ok-two'))
+
+  out, = run_checks.call(dir, "# ci:parallel begin\necho run-fixture\nruby x_mutation_check.rb\n# ci:parallel end\n", { 'CI_SKIP_MUTANTS' => '1' })
+  check.call('CI_SKIP_MUTANTS still drops mutation checks inside a group',
+             out.include?('skipping mutants: ruby x_mutation_check.rb') && out.include?('run-fixture'))
+
+  malformed = {
+    'a nested begin' => "# ci:parallel begin\n# ci:parallel begin\n",
+    'an end with no begin' => "# ci:parallel end\n",
+    'a begin with no end' => "# ci:parallel begin\necho a\n",
+    'a variable assignment inside a group' => "# ci:parallel begin\nwidth=1\n# ci:parallel end\n"
+  }
+  malformed.each do |what, text|
+    _out, _status, gen_status = run_checks.call(dir, text)
+    check.call("#{what} is refused when the script is generated", !gen_status.success?)
+  end
+end
+
 puts(failures.empty? ? 'ci helpers check OK' : "FAILED: #{failures.size}")
 exit(failures.empty? ? 0 : 1)
