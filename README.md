@@ -1738,6 +1738,9 @@
 - bc2cpp initializes argument registers directly and removes unreferenced
   nil-only register declarations from ordinary compiled methods and blocks
   (see [generated register declarations](docs/bc2cpp-register-output.md)).
+  A liveness pass over the emitted instruction texts also drops dead register
+  copies and constant loads and propagates plain copies (`BC2CPP_REGISTER_FLOW=0`
+  turns it off; see [the same page](docs/bc2cpp-register-output.md)).
 - bc2cpp binary decoding shares source-file lookups between filename and line
   metadata and avoids per-instruction enumerator allocations. The binary-loader
   check compares source locations and instructions with mrbc (see
