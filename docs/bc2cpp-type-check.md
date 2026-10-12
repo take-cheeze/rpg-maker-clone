@@ -51,3 +51,30 @@ the reason buckets of what is untyped:
 
 Note: with guarded hints the by-name line stays as the else arm, so the count of `bc2cpp_send` lines does not fall;
 the ranking is where a type fact acts, and it is exact only for the lines counted.
+
+## Signature files (RBS)
+
+Put `.rbs` files under `sig/bc2cpp/` (or point `BC2CPP_SIG_DIRS` / `--sig DIR` at other directories). They feed the same
+hints as the comments and are checked the same way (ADR 0413):
+
+```rbs
+module Game
+  class Actor
+    @items: Array[Game::Item]          # ivar element class (guarded hint)
+    @hp: Integer                       # checked against the inference, not forced
+    def initialize: (Integer hp, Symbol kind) -> void
+    def target: (Game::Actor other) -> Game::Actor
+    def items: () -> Array[Game::Item]
+  end
+end
+```
+
+Supported: classes/modules; `def` with required positional parameters and one overload; `@ivar: T`; `attr_reader` /
+`attr_accessor name: T`; types `Integer`, `Symbol`, `Array`, `Hash`, `Array[C]`, `Hash[K, C]` and program classes.
+Accepted without a hint (TC1005 note): optional / rest / keyword / block parameters, `T?`, unions, `untyped`, `void`,
+`bool`, `self`, singleton methods, constants, aliases, mixins, visibility, other generics, a class the program does not
+define. Errors (TC1002): parse errors, overloaded `def`, other declaration kinds. A comment wins over a signature
+(TC1006); an unknown method is TC1003; a wrong parameter count TC1004.
+
+Loop: write the signature, run `type_check.rb` (contradictions are reported at the signature's line), fix them, then
+enable the strict tier when it is available so a wrong signature fails loudly at run time instead of falling back.

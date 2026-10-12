@@ -251,6 +251,12 @@ jobs:
             checks: |
               MRBC="$mrbc" ruby scripts/bc2cpp/type_check_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/type_check_mutation_check.rb
+          - shard: rbs-signatures
+            # ADR 0413: the RBS subset (used, noted, error), contradictions located in the .rbs file, a signature
+            # compiling to the same C++ as the equivalent comment, then the mutants.
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp/rbs_signatures_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/rbs_signatures_mutation_check.rb
           - shard: entry-specialize
             # ADR 0380: BC2CPP_SPECIALIZE. Generated code (gate off byte-identical, the generic body untouched, the
             # identity clone, the refused shapes and worlds), a full-core run of every guard hit and miss compared with
