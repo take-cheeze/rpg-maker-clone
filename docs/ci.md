@@ -59,6 +59,17 @@ For a local comparison, run the same generator or check with
 `RUBY_YJIT_ENABLE=0` and `RUBY_YJIT_ENABLE=1`. The environment switch is documented
 in [Ruby's YJIT manual](https://docs.ruby-lang.org/en/3.4/yjit/yjit_md.html).
 
+### Repeated bytecode dataflow queries
+
+bc2cpp's `BytecodeIR::Program` reuses reaching-definition and write-dominance
+answers for the same instruction/register query. Each body keeps at most 1,024
+answers per query type, including refusals. Query options and opaque registers
+are part of the key; mutable opaque sets and refusal diagnostics bypass reuse.
+Returned definition arrays and register strings remain private to each caller.
+The existing dataflow check compares answers with an independent forward
+fixpoint and covers mutation of caller-owned state. See
+[ADR 0409](adr/0409-bc2cpp-dataflow-query-cache.md) for performance measurements.
+
 ### Mutation checks run off pull requests
 
 `scripts/ci/timed_checks.rb` drops every `*_mutation_check.rb` command and strips
