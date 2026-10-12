@@ -27,6 +27,8 @@ MUTANTS = [
   ['a nilable type loses its ?', 'type_check_rbs.rb', 'nilable && t != \'untyped\' ? "#{t}?" : t', 't', /nilable return stays nilable/, false],
   ['optional parameters are dropped', 'type_check_rbs.rb', "positional.concat(Array.new(m['opt'].to_i, '?untyped'))", 'nil', /optional, rest, keyword/, false],
   ['a constant is not written', 'type_check_rbs.rb', "line = \"\#{name}: \#{rbs_type(c['type'], declared)}\"", "next", /ivars and constants/, false],
+  ['a union return is not parenthesised', 'type_check_rbs.rb', "ret = \"(\#{ret})\" if ret.include?(' | ')", 'nil',
+   /union return is parenthesised/, false],
   ['the round trip emits parameter types as untyped', 'type_check_rbs.rb', "positional = m['params'].map { |p| rbs_type(p['type'], declared) }", "positional = m['params'].map { 'untyped' }", /typed parameters of the fixture|typed parameters, void/, true]
 ].freeze
 

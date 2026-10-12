@@ -55,6 +55,7 @@ FACTS = {
     mth('Game::Actor', 'mix', [prm(1, 'a', nil), prm(2, 'b', 'Gone::Class'), prm(3, 'c', 'Array')], 'Array', opt: 1, rest: true, key: 1),
     mth('Game::Actor', 'hit?', [], 'bool'),
     mth('Game::Actor', 'sum', [prm(1, 'x', 'Integer | Float')], 'Integer'),
+    mth('Game::Actor', 'pick', [], 'Integer | Float'),
     mth('Game::Actor.singleton', 'build', [], 'Game::Actor'),
     mth('Game::Base', 'name', [], 'String'),
     mth('Array', 'size', [], 'Integer'),
@@ -86,6 +87,7 @@ Dir.mktmpdir do |dir|
              actor.include?('def mix: (untyped, untyped, Array[untyped], ?untyped, *untyped, **untyped) ?{ (*untyped) -> untyped } -> Array[untyped]'))
   check.call('bool and a union are kept', actor.include?('def hit?: () ?{ (*untyped) -> untyped } -> bool') &&
              actor.include?('def sum: (Integer | Float) ?{ (*untyped) -> untyped } -> Integer'))
+  check.call('a union return is parenthesised', actor.include?('def pick: () ?{ (*untyped) -> untyped } -> (Integer | Float)'))
   check.call('a singleton method is def self.', actor.include?('def self.build: () ?{ (*untyped) -> untyped } -> Game::Actor'))
   check.call('ivars and constants', actor.include?("  @hp: Integer\n") && actor.include?("  @items: Array[untyped]\n") && actor.include?("  @owner: untyped\n") &&
              actor.include?("  MAX: Integer\n") && actor.include?("  TABLE: untyped\n"))
@@ -99,7 +101,7 @@ Dir.mktmpdir do |dir|
   rescue RBS::ParsingError
     false
   end)
-  check.call('the counts', out[:files].size == 4 && out[:methods] == 8 && out[:skipped].empty?)
+  check.call('the counts', out[:files].size == 4 && out[:methods] == 9 && out[:skipped].empty?)
 end
 
 # ------------------------------------------------------------------------------------------------ 2. round trip

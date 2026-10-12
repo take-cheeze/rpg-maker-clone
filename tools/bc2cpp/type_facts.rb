@@ -451,8 +451,9 @@ module TypeFacts
 
   # Every class / module the program defines: kind and the resolved superclass (nil when it is Object or unresolved).
   def class_rows(ctx)
-    owners = ctx.registry.values.flatten.map(&:owner).reject { |o| o.start_with?('<') || o.end_with?('.singleton') }.uniq
+    owners = ctx.registry.values.flatten.map { |d| d.owner.delete_suffix('.singleton') }.reject { |o| o.start_with?('<') }.uniq
     owners |= Array(ctx.superclass_of&.keys)
+    owners |= Array(ctx.modules).to_a
     modules = ctx.modules || Set.new
     owners.sort.map do |o|
       sup = ctx.superclass_of && ctx.superclass_of[o]
@@ -542,7 +543,7 @@ module TypeFacts
       ignored << ret unless ret.nil? || known.call(ret.sub(/<.*>\z/, ''))
       { 'owner' => d.owner, 'name' => d.name, 'file' => file, 'line' => aline, 'col' => acol,
         'source' => declared_source(ctx, d), 'tokens' => tokens, 'return_token' => ret, 'ignored' => ignored,
-        'arity_mismatch' => (m.nil? || tokens.size == mand || (tokens.empty? && mand.zero?) ? nil : "lists #{tokens.size} parameter(s), method takes #{mand}"),
+        'arity_mismatch' => (m.nil? || tokens.size <= mand ? nil : "lists #{tokens.size} parameter(s), method takes #{mand}"),
         'args' => Array(ann&.args).map { |t| t && INT_TYPES.fetch(t, t.to_s) },
         'class_args' => Array(cann&.args),
         'return' => ann&.ret && INT_TYPES.fetch(ann.ret, ann.ret.to_s),

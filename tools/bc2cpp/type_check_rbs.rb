@@ -73,6 +73,7 @@ module TypeCheckRbs
     ret = rbs_type(m['return']['type'], declared)
     ret = 'self' if m['return']['type'] == 'self'
     ret = 'void' if m['name'] == 'initialize'
+    ret = "(#{ret})" if ret.include?(' | ') # an unparenthesised union reads as an overload separator
     "def #{singleton ? 'self.' : ''}#{m['name']}: (#{positional.join(', ')}) ?{ (*untyped) -> untyped } -> #{ret}"
   end
 
