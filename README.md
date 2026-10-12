@@ -1719,6 +1719,10 @@
 - bc2cpp CI enables CRuby's YJIT for host analysis and code generation,
   including nightly fixture and mutation checks. See [the CI guide](docs/ci.md)
   for verification and local comparisons.
+- Manual bc2cpp nightly runs can compare decoded-tree reuse for repeated worlds,
+  restoring private objects before each analysis. It defaults off because cold
+  population can slow a parallel build. See
+  [ADR 0411](docs/adr/0411-bc2cpp-decoded-tree-cache.md).
 - bc2cpp test builders run mruby prerequisite tasks concurrently with bounded
   Rake workers, reducing cold fixture and width-build setup time. See
   [the CI guide](docs/ci.md).
