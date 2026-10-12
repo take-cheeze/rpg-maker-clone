@@ -2265,7 +2265,7 @@ class CodeGen
   # already `bc2cpp_nomethod` (a proven-dead arm, NOMETHOD_REVIEWED) is left alone: it has no send to force.
   # `hinted: false` keeps the base (MONO_EMBED_GUARD without a hint naming the owner).
   # `listed:` (the candidate-set families) is the classes the chain or table names; see
-  # ClosedWorld#answered_outside? for why a known class outside it keeps the dispatch (ADR 0426).
+  # ClosedWorld#answered_outside? for why a known class outside it keeps the dispatch (ADR 0428).
   def strict_hint_wrap(family, d, recv, name, argv, owner, hinted: true, listed: nil)
     base = yield
     return base unless hinted && strict_hint_fallback(family, d, recv, name, argv, owner)

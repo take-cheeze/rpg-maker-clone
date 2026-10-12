@@ -41,7 +41,7 @@ end
 full = results.select { |_, kind| kind == :full }
 full.each { |gem_name, _, err, status| check.call("#{gem_name}: the full codegen runs", status.success? || (puts(err[-1500..]) && false)) }
 # A hot-only build forces sites the full build turns into another form (more callees compile there), so the
-# list is the union of both runs (ADR 0426).
+# list is the union of both runs (ADR 0428).
 hot_keys = results.select { |_, kind| kind == :hot }.flat_map { |_, _, err, _| StrictHints.parse_listing(err) }
 keys = (full.flat_map { |_, _, err, _| StrictHints.parse_listing(err) } + hot_keys).to_set
 unreviewed = (keys - STRICT_HINTS_REVIEWED).sort

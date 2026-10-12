@@ -16,7 +16,7 @@ root = File.expand_path('../..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
 ENV[StrictHints::ENV_NAME] = 'all'
 # The full run and the hot-only run: a hot-only build forces sites the full build turns into another form
-# (ADR 0426), and both must be listed.
+# (ADR 0428), and both must be listed.
 sites = BC2CPP_COMPILED_GEMS.keys.product([nil, BC2CPP_HOT_METHODS_PATH]).map do |gem_name, hot|
   Thread.new do
     _out, err, status = NomethodReviewedProbe.run(gem_name, root, mrbc, hot_methods: hot, allow: true)

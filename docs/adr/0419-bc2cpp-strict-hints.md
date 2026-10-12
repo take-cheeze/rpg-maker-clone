@@ -149,4 +149,4 @@ again. `strict_hints_mutation_check.rb` kills 16 mutants of the tier's condition
 
 ## Addendum
 
-The verify run was done on a sealed desktop host and changed the candidate-set families: see ADR 0426.
+The verify run was done on a sealed desktop host and changed the candidate-set families: see ADR 0428.

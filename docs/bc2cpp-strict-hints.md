@@ -16,7 +16,7 @@ with the variable unset, empty or `0` the generated code is byte-identical.
 | --- | --- |
 | unset, empty, `0` | none |
 | `1` | `typed`, `element`, `ivar_accessor`, `mono_embed` (a receiver hint: layout, annotation, element) |
-| `all` | those four plus `poly_small_n`, `poly_table`, `interface_table` (the candidate set of a name; forced only where no known class outside the set answers the name, ADR 0426) |
+| `all` | those four plus `poly_small_n`, `poly_table`, `interface_table` (the candidate set of a name; forced only where no known class outside the set answers the name, ADR 0428) |
 | `typed,ivar_accessor` | the listed ones (an unknown name aborts the run) |
 
 `BC2CPP_STRICT_HINTS_PROVEN=1` restricts the tier to sites whose hint class has no
@@ -38,7 +38,7 @@ tier: reaching a forced site prints
 bc2cpp: NOMETHOD_VERIFY: hint violation reached: <Class>#<name> at <Owner#method (FAMILY)>
 ```
 
-and aborts. `-DBC2CPP_HINT_VIOLATION_LOG` (ADR 0426) is the survey mode: each distinct violation is
+and aborts. `-DBC2CPP_HINT_VIOLATION_LOG` (ADR 0428) is the survey mode: each distinct violation is
 printed once as `bc2cpp: HINT_VIOLATION_LOG: <Class>#<name> at <site>` and the by-name send runs, so
 one workload run lists every wrong hint.
 
@@ -56,7 +56,7 @@ ENGINE=build-strict/rpg_maker_clone scripts/bc2cpp/strict_hints_verify.bash
 
 (`cp932_table`/`jis0208_table` as for any build without nix, see `scripts/wio/bc2cpp_measure.bash`.)
 `BC2CPP_HOT_ONLY=0` compiles every method; leave it out for the shipped hot set, which also needs
-`BC2CPP_KEEP_HAND_REGISTRATIONS` (the sealed host defines it, ADR 0426). The script runs boot,
+`BC2CPP_KEEP_HAND_REGISTRATIONS` (the sealed host defines it, ADR 0428). The script runs boot,
 map previews, battles played to the end, the editors and animations on the repo's test beds
 (`scripts/download/nepheshel.bash`, `mtf-meido-action.bash`) and fails on any violation or abort.
 mruby's `rake test` does not test the compiled gems (they are initialised by the dispatch, not by

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Run the real RPG2000/2003 workloads against a strict-hint verify engine and fail on any violation
-# (docs/bc2cpp-strict-hints.md, ADR 0426). The engine is the sealed desktop host built with
+# (docs/bc2cpp-strict-hints.md, ADR 0428). The engine is the sealed desktop host built with
 # RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1 BC2CPP_STRICT_HINTS=all BC2CPP_NOMETHOD_VERIFY=1
 # BC2CPP_HINT_VIOLATION_LOG=1: a wrong hint prints `bc2cpp: HINT_VIOLATION_LOG: <Class>#<name> at <site>`
 # and the run goes on, a dead by-name arm that is reached aborts with `NOMETHOD_VERIFY`.
@@ -14,7 +14,7 @@
 # Usage: ENGINE=build-strict/rpg_maker_clone scripts/bc2cpp/strict_hints_verify.bash [server_num] [outdir]
 #   RPG2K_VERIFY_QUICK=1  one map, one troop and the editors per game (a few minutes)
 #   RPG2K_VERIFY_ALLOW_ABORT=<regex>  runs whose log matches are reported but do not fail the check
-#                          (the known game bug of ADR 0426: `NilClass#evasion_up`)
+#                          (the known game bug of ADR 0428: `NilClass#evasion_up`)
 
 set -u -o pipefail
 cd "$(dirname "$0")/../.."

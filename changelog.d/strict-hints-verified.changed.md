@@ -3,4 +3,4 @@
   `-DBC2CPP_HINT_VIOLATION_LOG`). The candidate-set families (`poly_small_n`, `poly_table`,
   `interface_table`) no longer force a site where a known class outside the set answers the name
   (10 violations on boot and battle), and a hot-only build reads the owner-class cache for
-  direct-constructed listed owners instead of unset hand-wired accessors (ADR 0426).
+  direct-constructed listed owners instead of unset hand-wired accessors (ADR 0428).

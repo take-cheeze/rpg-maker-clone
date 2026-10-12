@@ -1,4 +1,4 @@
-# 0426. Strict hints, verified on a sealed desktop host: the candidate-set families had no hint to force
+# 0428. Strict hints, verified on a sealed desktop host: the candidate-set families had no hint to force
 
 Date: 2026-10-12
 

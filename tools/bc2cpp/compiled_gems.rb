@@ -401,7 +401,7 @@ def bc2cpp_c_call_args(text)
   args
 end
 
-# RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1 (test-only, ADR 0426): build the desktop `host` engine as the
+# RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1 (test-only, ADR 0428): build the desktop `host` engine as the
 # RPG2000/2003-only world the wio/maix/psp builds ship (build_config.rb's single_format_only: no XP/VX/
 # Wolf/MV gems), with src/ as its native host, so the closed-world tiers (NOMETHOD_REVIEWED, guard
 # violations, BC2CPP_STRICT_HINTS) can be verified against the real engine on a machine with a display.
