@@ -316,9 +316,12 @@ the builder's saved log for `Total threads in play`.
 ### Scan cache (ADR 0415)
 
 Every closed-world generator run is a new process that scans the same mruby and gem C sources. With
-`BC2CPP_SCAN_CACHE_DIR` set, three of those scans (`NativeExpressionDevirt.analyze`,
-`analyze_exact_class_expressions` and `outside_world_tokens`) are stored under a digest of the scanner sources and
-of the files they read, and loaded by the next process. The nightly workflow sets it per job to
+`BC2CPP_SCAN_CACHE_DIR` set, the native-source scans are stored under a digest of the scanner sources and of the
+files they read, and loaded by the next process: `NativeExpressionDevirt.analyze`,
+`analyze_exact_class_expressions`, `outside_world_tokens`, the facts of `ClosedWorld#scan_native`
+(`closed_world.native`), the class registrations (`native_expression_devirt.class_registrations`, under
+`CallFacts::Answers#native_scan`) and the per-file registrations of `NativeDirect` (`native_direct.file_registrations`).
+The last three return plain data, and the instance state they used to fill is rebuilt by the caller from it. The nightly workflow sets it per job to
 `$RUNNER_TEMP/bc2cpp-scan-cache`, so the first check of a job fills it and the rest of the job (a `ci:parallel`
 group included) reads it. `numeric_slow` takes 316 s with it against 398 s without. Without the variable nothing
 is read or written. `scripts/bc2cpp/scan_cache_check.rb` (in `ruby-checks`) covers it; the entries are Marshal

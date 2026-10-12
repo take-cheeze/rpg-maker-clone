@@ -166,10 +166,10 @@ those 1076 make the same 1189 as the serial run.
 Ranked by what they would save on the critical path. The first item is partly done (ADR 0415); the rest are not.
 
 1. **More of the native-source scans in the disk cache (ADR 0415).** The cache is in for the three pure scans
-   (`numeric_slow` 398 s to 316 s). `ClosedWorld#scan_native`, `CallFacts::Answers#native_scan` and `NativeDirect.*`
-   are about 20% of a call more but fill instance state while they scan; making them return a value first would let
-   them use it. A warm generator process (or batching fixtures into one) would remove the repeated work altogether,
-   at the price of resetting the generator's global state between calls.
+   (`numeric_slow` 398 s to 316 s), and since then for the stateful ones too (`ClosedWorld#scan_native`,
+   `NativeDirect.file_registrations`, the class registrations behind `CallFacts::Answers#native_scan`), which return
+   plain facts that the caller replays. A warm generator process (or batching fixtures into one) would remove the
+   repeated work altogether, at the price of resetting the generator's global state between calls.
 2. **`coverage` (3 commands, 22.5 min).** The two bash reports append to `$GITHUB_STEP_SUMMARY` with `tee -a`, so
    they cannot share a group without interleaving the summary. Giving each its own summary file would allow it.
    Done: each report writes its own file inside a group and the files are appended in order after it. On a quiet
