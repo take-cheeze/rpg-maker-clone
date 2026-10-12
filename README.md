@@ -1437,6 +1437,8 @@
   [`docs/adr/0240-bc2cpp-to-i-type-dispatch.md`](docs/adr/0240-bc2cpp-to-i-type-dispatch.md).
   Compiled `module_function` bodies also resolve their bare self-calls against
   the same module's emitted singleton copies.
+  [Symbol-cache scanning](docs/bc2cpp-symbol-scanning.md) uses byte offsets and preserves
+  Unicode text and slot order while avoiding repeated suffix scans.
   The generator is `tools/bc2cpp/bc2cpp.rb`, which loads its part files in
   order; `ruby scripts/bc2cpp/split.rb --verify REF` proves that layout is a
   mechanical split of REF's single-file `bc2cpp.rb`. Statically named ivars
@@ -1463,6 +1465,8 @@
   call-site proofs refuse method names a computed-name `send` could reach and ivars a
   foreign write could store a non-typed value into; see
   [`docs/adr/0279-bc2cpp-overflow-exact-fixnum-tier.md`](docs/adr/0279-bc2cpp-overflow-exact-fixnum-tier.md).
+  [Return-hint probes](docs/bc2cpp-return-probes.md) skip embedding checks when a missing
+  outside-method scan already forces the Fixnum proof to stay empty.
   The else of the guarded numeric arms (`+ - * / % & | ^ << >> < <= > >= -@`) is one typed
   helper per operator that calls mruby's own bigint/numeric C function for a bigint, heap
   Integer or Float operand and dispatches by name only for the classes it does not own,
@@ -1729,6 +1733,8 @@
 - bc2cpp reuses repeated bytecode dataflow queries during analysis and code
   generation; bounded caches also reduce repeated work in fixture tests. See
   [ADR 0409](docs/adr/0409-bc2cpp-dataflow-query-cache.md).
+  Its independent test oracle shares immutable definition sets and avoids duplicate
+  queued instructions; see [the CI guide](docs/ci.md).
 - CI also runs the width-sensitive bc2cpp checks on a 32-bit-`mrb_int` and a
   no-bigint mruby (the Emscripten/Wio/PSP widths) and listens for merge-queue
   runs; [`docs/ci.md`](docs/ci.md) lists the repository settings the owner has

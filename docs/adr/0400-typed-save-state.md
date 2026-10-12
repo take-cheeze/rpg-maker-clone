@@ -85,13 +85,34 @@ setters here (they came later, as a separate layer: docs/adr/0407). Round-trip t
   CRuby script that loads `lcf_file.rb` and reads a save must also load
   `save_typed.rb` and `save_typed_accessors.rb` (21 scripts were updated).
   `scripts/rpg2k_save_load_check.rb` never loaded `lcf_file.rb` at all; it now does.
-- **Flash on wio is a cost this change has not measured on a link.** The generated
+- **Flash on wio, measured on a real `env:wio_rgss_boot` link.** The generated
   file compiles to about 28.6 KB of bytecode with the host `mrbc` (no `-g`), and
-  `save_typed.rb` to about 2.4 KB. Both ship on every target. ADR 0128 once
-  excluded `from_lsd` on wio for the flash budget, and ADR 0109 measured the link.
-  A `env:wio_rgss_boot` link has to be run before this is considered safe. If it
-  overflows, the fallback is to swap in a smaller generated file on wio only, the
-  way ADR 0109 handles the schema blob, at the cost of the read-time check there.
+  `save_typed.rb` to about 2.4 KB. Both ship on every target. The link was run
+  with `scripts/wio/bc2cpp_measure.bash`'s baseline half (arm-none-eabi 14.2.1
+  from PlatformIO, `MRUBY_TARGET=wio` rake, no `RPGMAKER_BC2CPP`), at the commit
+  before #2122 (9ff193b7) and at #2122 (4747bbbd); current master (239309d4) links
+  to the identical overflow as #2122:
+
+  | | flash image | over the 507,904-byte FLASH region | static RAM |
+  |---|---|---|---|
+  | before #2122 | 993,784 | 485,880 | 21,516 |
+  | #2122 and master | 1,023,608 | 515,704 | 21,516 |
+  | delta | +29,824 | +29,824 | 0 |
+
+  `wio_rgss_boot` does not fit with or without the typed-save files. It
+  already overflowed by 485,880 bytes (195.7% of the region) before this change,
+  so there was no headroom to spend and none was lost: the files add 29,824 bytes
+  (5.9% of the region, 3.0% of the image) to an image that was already about twice
+  the board. Static RAM (`.data` + `.bss`) is unchanged; the typed tree lives on
+  the mruby heap at run time, which a link does not measure. The 29,824-byte flash
+  delta is the most a wio-only smaller file could recover, and it would leave the
+  image 485,880 bytes over. For that reason the fallback is **not** implemented:
+  a second generated file, plus losing the read-time check and the typed frame
+  reader on wio, buys under 6% of the region on a link that cannot succeed either
+  way. ADR 0152's `wio-bc2cpp` job is still `if: false`, so no CI log carries this
+  number; the figures above come from a local run. When the overflow itself is
+  brought under the region, this file is one of the candidates to swap (ADR 0109
+  does it for the schema blob) and the delta above is its budget.
 - No genuine RPG_RT or EasyRPG `.lsd` is in the repository (nor reachable from
   `scripts/download/*`, which fetch games, not saves), so the read-time check was first
   exercised only on saves this engine writes. `scripts/rpg2k/lsd_adversarial_check.rb`
