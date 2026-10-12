@@ -87,3 +87,20 @@ IR-only invocation without `MRUBY_BUILD` reports the native half as skipped.
 The ordinary runner passes its selected compiler path explicitly to the IR
 initializer proof, so `OPTCARROT_IR_LUT=1` works with the default probe compiler
 when `MRBC` is unset. The check covers this path in an isolated subprocess.
+
+The full release preset was then compared in three alternating pairs on the
+Ryzen AI MAX+ 395 host, without concurrent compiler jobs. Both binaries used
+static CPU dispatch, the synchronous PPU, bytecode IR method inlining and a
+16,384-pointer gray stack. Only table initialization differed. Whole-process
+wall time includes startup; each process retained the complete table.
+
+| Workload | Factored Ruby LUT | Native IR LUT | Factored / native wall FPS |
+| --- | ---: | ---: | ---: |
+| 180 frames, cold | 0.9508 s | 0.8478 s | 189.32 / 212.32 |
+| 1,800 continuous frames | 7.1957 s | 7.0762 s | 250.15 / 254.37 |
+
+All twelve checksums matched (`59662` at 180 frames, `60838` at 1,800).
+Cold wall time improved by 12.1% as a ratio, saving about 103 ms. The longer
+run still includes one initialization; its 1.7% difference does not establish
+faster steady emulation. The advertised full-preset runner also passed with
+`MRBC` unset and installed 356 compiled methods.
