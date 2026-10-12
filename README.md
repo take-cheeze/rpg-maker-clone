@@ -1723,6 +1723,9 @@
 - bc2cpp CI enables CRuby's YJIT for host analysis and code generation,
   including nightly fixture and mutation checks. See [the CI guide](docs/ci.md)
   for verification and local comparisons.
+- bc2cpp initializes argument registers directly and removes unreferenced
+  nil-only register declarations from ordinary compiled methods and blocks
+  (see [generated register declarations](docs/bc2cpp-register-output.md)).
 - bc2cpp binary decoding shares source-file lookups between filename and line
   metadata and avoids per-instruction enumerator allocations. The binary-loader
   check compares source locations and instructions with mrbc (see
