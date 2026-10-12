@@ -182,6 +182,7 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 | `strict-hints` | `strict_hints_check` (BC2CPP_STRICT_HINTS: default output byte-identical, forced sites, negatives, a deliberately violated fixture on real mruby in default, strict, verify and dispatch builds), its mutation check (16 mutants) and `strict_hints_reviewed_check` (STRICT_HINTS_REVIEWED over the real wio closed world, hot-only gate and full equality) (ADR 0419; how to run the verify build over the real workloads: `docs/bc2cpp-strict-hints.md`) | est. 15 min |
 | `ext-prefix` | `ext_prefix` (decoder cases, folded listing, generated code with the kill switch, full-core and core-only runs) and its mutation check, 8 mutants plus a control (ADR 0320); the 32-bit run is in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 12 min |
 | `native-singleton` | `native_singleton` (ADR 0416: generated code for the base world and seventeen withdrawal worlds, the kill switch, then the interpreted-versus-compiled runs, including a `private`, a redefinition and a prepend executed after compilation) and its mutation check, 17 mutants plus a control, mutants stop at the first matching FAIL line | est. 25 min (not measured; a 4-core box shared with other jobs took longer) |
+| `rpg2k-singleton-owners` | `rpg2k_singleton_owners` (ADR 0426: the real `Game::CommonEvent` module and `Game::MoveRoute.from_page` / `.same_route?` sliced out of `mruby-rpg2k/mrblib/game.rb` into a fixture: generated code for the base world and three withdrawal worlds, the owners, `register.cxx` and hot-only wiring, then the interpreted-versus-compiled run) and its mutation check, 11 mutants plus a control | est. 6 min (measured about 2 min for the mutation check and 50 s for the check on a shared 4-core box) |
 | `integer-constants` | `integer_constants` (unit cases for the native-definition scan and the jump onto a SETCONST, generated code, full-core and core-only runs) and its mutation check, 8 mutants plus a control (ADR 0324); the 32-bit run is in `bc2cpp-width (int32-a)` or `(int32-b)` | est. 8 min |
 
 Shards no longer share `BC2CPP_FULL_BUILD_DIR`, so each one that needs the
@@ -333,9 +334,13 @@ dumps, so point the variable only at a directory you own.
 With `BC2CPP_WARM_GENERATOR=1` the fixture checks (`Bc2cppFixtureRuntime.generate`) send their generator runs to one
 warm server per check process. The server requires `bc2cpp.rb` once, warms the ADR 0415 scans in memory, and forks a
 child per run, so no generator state carries from one run to the next. A run whose load-time environment differs
-(the `BC2CPP_*_REPORT` switches, `MRBC`) runs as a subprocess. Off by default and not in CI;
-`scripts/bc2cpp/warm_generator_check.rb` checks that its output equals the subprocess's, byte for byte, including
-the report written from an `at_exit` hook.
+(the `BC2CPP_*_REPORT` switches, `MRBC`) runs as a subprocess. `scripts/bc2cpp/warm_generator_check.rb` checks that its
+output equals the subprocess's, byte for byte, including the report written from an `at_exit` hook.
+
+The nightly `bc2cpp-checks (fast)` shard sets it (ADR 0416). Its three checks that run a mutant copy of the tool
+(`tuple_return_mutation_check`, `integer_tag_else_check`, `block_direct_mutation_check`) are opted out with
+`BC2CPP_WARM_GENERATOR=0`: the server loads the copy itself, which prints a constant warning and a load-error backtrace
+differently from a subprocess. Every other shard, and the PR gate, runs without it.
 
 ### Mutant pool
 
@@ -376,7 +381,8 @@ Used by `bc2cpp_unlisted_class_call_check` (`UCC_MUTANTS`),
 `bc2cpp_frozen_tables_mutation_check`,
 `bc2cpp_call_results_mutation_check`, `bc2cpp_class_pools_mutation_check`,
 `bc2cpp_tuple_return_mutation_check` (always, no flag needed).
-`ci_helpers_check.rb` covers the pool itself.
+`ci_helpers_check.rb` covers the pool itself. `frozen_slot_check.rb` (ADR 0425) runs its host section in `build.yml` and
+its MRBC section in the `core-tables` shard of `bc2cpp-nightly.yml`.
 
 Two of these keep their `MUTANTS` as a Hash and pass `MUTANTS.to_a`, because the
 pool indexes its items and needs a sequence; declaration order is preserved, so
