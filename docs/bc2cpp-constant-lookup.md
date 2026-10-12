@@ -21,5 +21,7 @@ containing `include/` and `lib/libmruby_core.a` to run the behavioral checks.
 A full RPG2k source sample decreased from 19,695,404 to 17,099,986 bytes
 (13.2%), and from 386,389 to 336,973 lines (12.8%). It contains 4,874
 lookup calls sharing 92 owner helpers. This is a source-size measurement;
-optimized binary size and runtime performance depend on the C++ compiler's
-inlining decisions.
+GCC 15.2 at `-O0` also reduced the object from 12,834,984 to 10,416,752
+bytes (18.8%), with its text section decreasing from 9,583,112 to 7,576,386
+bytes (20.9%). Optimized binary size and runtime performance depend on the
+C++ compiler's inlining decisions.
