@@ -68,7 +68,7 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   # level further out, for the three always-active gems (mruby-marshal/
   # mruby-onig-regexp/mruby-stringio) that live outside mruby_root
   # entirely -- see that helper's own comment.
-  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"] + core_native_srcs("#{dir}/../3rd/mruby") +
+  native_srcs = bc2cpp_rgss_native_srcs("#{dir}/..", build.name) + core_native_srcs("#{dir}/../3rd/mruby") +
                 external_gem_native_srcs("#{dir}/..")
 
   # INTEGER_CONSTANT_PROOF: the Ruby-side twin of native_srcs above --

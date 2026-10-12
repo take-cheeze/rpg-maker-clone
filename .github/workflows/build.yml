@@ -1110,6 +1110,11 @@ jobs:
           - name: wio strip scripts still apply
             run: ruby scripts/wio/strip_scripts_check.rb
 
+          # ADR 0417: RGSS::Tts (its native registration, its one Ruby call site) exists
+          # only in the desktop build; every limited target's gem config must drop it.
+          - name: RGSS::Tts only in the build that can back it
+            run: ruby scripts/tts_limited_check.rb
+
           # ADR 0217: the compact CP932 tables (and wio's scan encoder) must
           # agree with ADR 0111's pair tables on every 16-bit input.
           - name: CP932 table lookups match the reference
