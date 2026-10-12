@@ -104,6 +104,20 @@ Ruby version: with the fixes in, Ruby 4.0.7 built here with YJIT takes 3.2 s for
 does not repay JIT warm-up. Before the scan fixes the gap was the same size (5.3 s against 5.6 s), so a newer Ruby is
 a small, separate gain, not a substitute for the fixes.
 
+The fixture regime is not the only one. StackProf over the whole-engine pass (557,517 samples) found a second bug
+that only shows on a program that size: `CodeGen#numeric_aliased_names` walked every instruction of every irep on
+every call, from the per-name numeric dataflow, and was 34.7% of the pass (its sibling `aliased_operand_name_set`
+already memoized). It is now computed once and frozen (`@ireps` is fixed at construction and nothing edits an irep's
+instructions). The first generator pass over the engine goes from 500-528 s to 326 s (-38%) with byte-identical C++
+and diagnostics; `bc2cpp-build` runs this generator over the compiled gems, so its generation share shrinks too (not
+measured separately). What the profile shows after that is flat: GC 12%, `Prism.parse` 10%, `String#scan` 8%, and the
+recursive return-class dataflow (`NumericFlow.transfer`, 68% inclusive) that is the analysis itself.
+
+Looked at and not worth changing: GC settings (`RUBY_GC_HEAP_INIT_SLOTS`, malloc limits, growth factor) change nothing
+measurable; the C++ compiler is 2% of a fixture check (5.7 s of 246 s in `class_narrowing`, whose 49 generator calls
+are 96% of it). Two more regexes are built inside loops (`CoreMixins.definers_in`'s `stop` search, and
+`RecordHash#reason` per foreign source and name); neither shows in a profile, so they were left alone.
+
 Whole-output caching does not help: none of the 79 calls in `numeric_slow` repeats an earlier one (the digest is
 argv, the `BC2CPP_`/`NIS_` environment and the fixture text). What repeats is the native-source world.
 
