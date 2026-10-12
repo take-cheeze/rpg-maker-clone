@@ -1,0 +1,1 @@
+- The nightly `bc2cpp-checks (coverage)` shard runs its two job-summary reports and the rescue shadow check three at a time. Each report writes its own summary file and the files are appended in their original order, so the job summary is unchanged. On a quiet 4-core machine the checks step drops from about 17 to about 11 minutes. See `docs/ci.md`.

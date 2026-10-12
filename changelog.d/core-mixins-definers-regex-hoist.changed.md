@@ -1,0 +1,1 @@
+- `CoreMixins.definers_in` builds its per-name regexes once per source (and skips sources that do not contain the name) instead of once per line, which cuts a closed-world bc2cpp run by about 18% (7.9 s to 6.5 s per call in `numeric_slow`). The generated C++ is byte-identical.
