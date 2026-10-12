@@ -129,6 +129,9 @@ The root scheme of ADR 0273 is unchanged: the roots and yielding helpers are fou
 - Name resolution ignores classes: a definition anywhere with a yielding name makes every call of that name
   may-yield (`Yielder#<<` is why the yielder is isolated). New engine code that defines a method named like a
   yielding one loses the proof for its callers, visibly, in the build table.
+- A literal Proc call follows its own block instead of every escaped block when a straight-line
+  chain of literal creation and register copies dominates the call. Unknown receivers, assignments
+  after the call and assignments skipped by a branch retain the conservative escaped-block edges.
 - Verification: `scripts/bc2cpp_yield_reach_check.rb` (analysis unit checks, fast) and
   `scripts/bc2cpp_yield_free_check.rb` (generated code, and a fixture compiled with the compiled core against
   the interpreter, default and incremental-GC-stress runs) are wired into `.github/workflows/build.yml`.
