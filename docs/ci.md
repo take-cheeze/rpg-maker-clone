@@ -321,6 +321,15 @@ group included) reads it. `numeric_slow` takes 316 s with it against 398 s witho
 is read or written. `scripts/bc2cpp/scan_cache_check.rb` (in `ruby-checks`) covers it; the entries are Marshal
 dumps, so point the variable only at a directory you own.
 
+### Warm generator (ADR 0416, opt-in)
+
+With `BC2CPP_WARM_GENERATOR=1` the fixture checks (`Bc2cppFixtureRuntime.generate`) send their generator runs to one
+warm server per check process. The server requires `bc2cpp.rb` once, warms the ADR 0415 scans in memory, and forks a
+child per run, so no generator state carries from one run to the next. A run whose load-time environment differs
+(the `BC2CPP_*_REPORT` switches, `MRBC`) runs as a subprocess. Off by default and not in CI;
+`scripts/bc2cpp/warm_generator_check.rb` checks that its output equals the subprocess's, byte for byte, including
+the report written from an `at_exit` hook.
+
 ### Mutant pool
 
 The mutation checks run one subprocess per mutant, each independent. Through
