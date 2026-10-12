@@ -334,9 +334,13 @@ dumps, so point the variable only at a directory you own.
 With `BC2CPP_WARM_GENERATOR=1` the fixture checks (`Bc2cppFixtureRuntime.generate`) send their generator runs to one
 warm server per check process. The server requires `bc2cpp.rb` once, warms the ADR 0415 scans in memory, and forks a
 child per run, so no generator state carries from one run to the next. A run whose load-time environment differs
-(the `BC2CPP_*_REPORT` switches, `MRBC`) runs as a subprocess. Off by default and not in CI;
-`scripts/bc2cpp/warm_generator_check.rb` checks that its output equals the subprocess's, byte for byte, including
-the report written from an `at_exit` hook.
+(the `BC2CPP_*_REPORT` switches, `MRBC`) runs as a subprocess. `scripts/bc2cpp/warm_generator_check.rb` checks that its
+output equals the subprocess's, byte for byte, including the report written from an `at_exit` hook.
+
+The nightly `bc2cpp-checks (fast)` shard sets it (ADR 0416). Its three checks that run a mutant copy of the tool
+(`tuple_return_mutation_check`, `integer_tag_else_check`, `block_direct_mutation_check`) are opted out with
+`BC2CPP_WARM_GENERATOR=0`: the server loads the copy itself, which prints a constant warning and a load-error backtrace
+differently from a subprocess. Every other shard, and the PR gate, runs without it.
 
 ### Mutant pool
 
@@ -377,7 +381,8 @@ Used by `bc2cpp_unlisted_class_call_check` (`UCC_MUTANTS`),
 `bc2cpp_frozen_tables_mutation_check`,
 `bc2cpp_call_results_mutation_check`, `bc2cpp_class_pools_mutation_check`,
 `bc2cpp_tuple_return_mutation_check` (always, no flag needed).
-`ci_helpers_check.rb` covers the pool itself.
+`ci_helpers_check.rb` covers the pool itself. `frozen_slot_check.rb` (ADR 0425) runs its host section in `build.yml` and
+its MRBC section in the `core-tables` shard of `bc2cpp-nightly.yml`.
 
 Two of these keep their `MUTANTS` as a Hash and pass `MUTANTS.to_a`, because the
 pool indexes its items and needs a sequence; declaration order is preserved, so

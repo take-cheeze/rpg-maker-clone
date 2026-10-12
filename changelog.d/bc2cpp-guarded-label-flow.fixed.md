@@ -1,0 +1,1 @@
+- **bc2cpp**: a guarded inline block loop (ADR 0420) no longer jumps back to the top of the method when REGISTER_FLOW is on. The label that ends the guarded region is now part of its instruction, so the loop runs once and the else path is the send, not a repeat of the loop.

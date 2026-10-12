@@ -1,0 +1,1 @@
+- **bc2cpp nightly**: the `yield_free_check` root-context assertions scan the BLOCK_CORE_DIRECT arms, not the whole body. ADR 0420 keeps the root-context test in the guarded inline loop, so the whole-body scan no longer matched.
