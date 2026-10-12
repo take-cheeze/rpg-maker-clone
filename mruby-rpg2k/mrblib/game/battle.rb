@@ -2154,9 +2154,15 @@ module Game
         roll += 9999 if preemptive_boost?(b)
         [b, roll]
       end
-      rolled.each_with_index
-            .sort_by { |(b, roll), i| [-roll, b.actor ? 0 : 1, b.actor ? b.actor.id : i] }
-            .map { |(b, _roll), _i| b }
+      # The sort keys go into a literal Array first (rather than chaining the blockless
+      # `each_with_index` Enumerator into `sort_by`/`map`): the keyed order is identical
+      # (Array#sort_by also breaks key ties by position), and the returned value is then
+      # plainly a fresh Array, which keeps @queue's class provable.
+      keyed = []
+      rolled.each_with_index do |(b, roll), i|
+        keyed << [[-roll, b.actor ? 0 : 1, b.actor ? b.actor.id : i], b]
+      end
+      keyed.sort_by { |key, _b| key }.map { |_key, b| b }
     end
 
     # Whether `b`'s action this round earns the `preemptive` weapon's

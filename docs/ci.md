@@ -155,7 +155,7 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 | `full-core-numeric` | `numeric_slow` (ADR 0292, 454 s in a recent run), `index_closed` (ADR 0365, about 2 min): split from `core-mrbtest`, whose checks plus setup had reached its 45 minute timeout | est. 10 min |
 | `numeric-direct` | `eqq_direct` (ADR 0293) and `tuple_return` (ADR 0311), moved out of `full-core-numeric` so `numeric_slow` runs alone there | see the timing table |
 | `core-flow` | `exact_receiver_flow` (ADR 0301) | see the timing table |
-| `core-flow-mutants` | `loop_flow_position` with `LFP_MUTANTS=1` (ADR 0398, four mutants), `exact_receiver_flow_mutation_check` (ADR 0301, five mutants) and `computed_send` with `CSEND_MUTANTS=1` (ADR 0303), moved out of `core-flow` | see the timing table |
+| `core-flow-mutants` | `loop_flow_position` with `LFP_MUTANTS=1` (ADR 0398, four mutants), `exact_receiver_flow_mutation_check` (ADR 0301, eight mutants) and `computed_send` with `CSEND_MUTANTS=1` (ADR 0303), moved out of `core-flow` | see the timing table |
 | `core-tables` | `frozen_tables` and its mutation check (ADR 0306) | see the timing table |
 | `call-results` | `call_results` and its mutation check (ADR 0309; its 32-bit leg runs in `bc2cpp-width (int32-a)` or `(int32-b)`) | see the timing table |
 | `native-wrappers` | `exact_native_wrappers` (ADR 0307) and its eight mutants | 5 min |
