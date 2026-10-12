@@ -11,6 +11,11 @@ on:
   schedule:
     - cron: '23 17 * * *'
   workflow_dispatch:
+    inputs:
+      decoded_tree_cache:
+        description: Compare generation with the job-local decoded tree cache
+        type: boolean
+        default: false
 
 jobs:
   bc2cpp-checks:
@@ -446,6 +451,7 @@ jobs:
               ruby scripts/bc2cpp/origin_enter_mutation_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/fallback_bodies_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/operand_schema_check.rb
+              ruby scripts/bc2cpp/decoded_cache_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/binary_loader_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/closed_world_check.rb
               # ADR 0369: identity arms for module singleton definers, generated code and compiled-vs-interpreted runs.
@@ -536,6 +542,10 @@ jobs:
 
       - name: Verify host Ruby JIT
         run: ruby -e 'abort "YJIT is unavailable or disabled" unless RubyVM::YJIT.enabled?; puts RUBY_DESCRIPTION'
+
+      - name: Enable decoded tree cache for comparison
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.decoded_tree_cache }}
+        run: echo "BC2CPP_IREP_CACHE_DIR=$RUNNER_TEMP/bc2cpp-decoded-trees" >> "$GITHUB_ENV"
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11
@@ -670,6 +680,10 @@ jobs:
 
       - name: Verify host Ruby JIT
         run: ruby -e 'abort "YJIT is unavailable or disabled" unless RubyVM::YJIT.enabled?; puts RUBY_DESCRIPTION'
+
+      - name: Enable decoded tree cache for comparison
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.decoded_tree_cache }}
+        run: echo "BC2CPP_IREP_CACHE_DIR=$RUNNER_TEMP/bc2cpp-decoded-trees" >> "$GITHUB_ENV"
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11

@@ -227,6 +227,26 @@ to decide where a new check goes: put it in the shard with the most slack, and
 keep each shard's total under the budget above (commands in a `ci:parallel` group overlap, so their sum is more than the wall time). `ruby scripts/ci/helpers_check.rb`
 (in `ruby-checks`) covers the wrapper.
 
+### Decoded tree cache
+
+Manual nightly runs offer a `decoded_tree_cache` comparison input, off by
+default. Enabling it sets `BC2CPP_IREP_CACHE_DIR` under `runner.temp`.
+Repeated repository-source worlds reuse their initial
+decoded RITE tree; every caller restores private objects before analysis.
+Temporary fixture compilations bypass it. Canonical filenames let the three
+engine gems share one world rather than treating their `gem/..` roots as
+separate inputs.
+
+The key includes exact bytecode, decoder code, Ruby/Marshal identity and
+EXT-prefix mode. Locks prevent duplicate concurrent decoding, and checksummed
+snapshots are published atomically. Corruption is logged before rebuilding;
+decoder errors still fail. The first cache fill adds serialization work, and
+later identical worlds avoid decoding. A local three-process comparison took
+14.06 seconds uncached, 15.11 seconds cold and 12.96 seconds warm, so regular
+host builds and scheduled checks keep it disabled. Set the variable for local
+comparisons, or unset it to disable reuse.
+See [ADR 0411](adr/0411-bc2cpp-decoded-tree-cache.md) for measurements and checks.
+
 ### Compiler cache (sccache)
 
 `scripts/bc2cpp/cxx.rb` is where the checks start the C++ compiler
