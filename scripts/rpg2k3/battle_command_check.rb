@@ -39,6 +39,8 @@ mrblib = File.expand_path('../../mruby-lcf/mrblib', __dir__)
 load File.join(mrblib, 'lcf.rb')
 load File.join(mrblib, 'schema.rb')
 load File.join(mrblib, 'lcf_file.rb')
+load File.join(mrblib, 'save_typed.rb')
+load File.join(mrblib, 'save_typed_accessors.rb')
 
 $errors = 0
 def fail(msg)

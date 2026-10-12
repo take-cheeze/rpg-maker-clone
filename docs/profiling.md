@@ -282,7 +282,8 @@ The flash-limited builds (psp, wio, maix) compile only the methods
 bytecode (ADR 0214). Regenerate the list after a change moves hot code
 around. A method the list does not name is interpreted: always correct, but
 slower. `scripts/bc2cpp/hot_only_check.rb` fails when the list names a method
-that no longer exists.
+that no longer exists. It is not run in CI, so run it by hand after editing the
+list.
 
 ```sh
 # 1. A full-compile desktop build (no BC2CPP_HOT_ONLY). The mruby gems build
