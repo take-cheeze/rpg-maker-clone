@@ -309,6 +309,12 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # Opt-in (docs/bc2cpp-nomethod-verify.md, ADR 0275): a dead bc2cpp_nomethod site aborts
   # without dispatching. Off unless BC2CPP_NOMETHOD_VERIFY=1, so no shipped build changes.
   conf.cxx.defines << 'BC2CPP_NOMETHOD_VERIFY' if ENV['BC2CPP_NOMETHOD_VERIFY'] == '1'
+  # Test-only (ADR 0421): the sealed desktop host keeps the hand-written registrations of a hot-only build
+  # (register.cxx drops them there as duplicates of the generated ones; singleton methods such as
+  # Game.clamp are not duplicated, and their bytecode def is stripped, so they would be undefined).
+  conf.cxx.defines << 'BC2CPP_KEEP_HAND_REGISTRATIONS' if conf.name == 'host' && ENV['RPGMAKER_BC2CPP_CLOSED_WORLD_HOST'] == '1'
+  # Opt-in (ADR 0421): the strict-hint survey mode, each distinct violation logged once and dispatched.
+  conf.cxx.defines << 'BC2CPP_HINT_VIOLATION_LOG' if ENV['BC2CPP_HINT_VIOLATION_LOG'] == '1'
 
   # A cross build's bootstrap host build exists only to produce `mrbc`, and the
   # AOT-compiled gems below are target-only. Compiling ~1,500 generated methods
@@ -319,6 +325,10 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # under test there), and the cross target itself is never skipped.
   bc2cpp = ENV['RPGMAKER_BC2CPP'] &&
            !(ENV['MRUBY_BC2CPP_SKIP_HOST'] && conf.name == 'host')
+
+  # RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1 (test-only, ADR 0421, tools/bc2cpp/compiled_gems.rb): the desktop
+  # engine as the same RPG2k-only world, to verify the closed-world tiers on real workloads.
+  sealed_host = conf.name == 'host' && ENV['RPGMAKER_BC2CPP_CLOSED_WORLD_HOST'] == '1'
 
   conf.gem core: 'mruby-array-ext'
   conf.gem core: 'mruby-hash-ext'
@@ -432,7 +442,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # produces), so nothing a shipped game runs needs this -- it can go again
   # once the smoke grows past string eval, same as everything else this
   # slice carries only for the link proof.
-  conf.gem core: 'mruby-compiler' if conf.name == 'maix'
+  conf.gem core: 'mruby-compiler' if conf.name == 'maix' || sealed_host
 
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
   conf.gem "#{MRUBY_ROOT}/../mruby-marshal"
@@ -453,7 +463,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # shape tags, mruby-rpgxp's Dir.glob fallback, mruby-mvjs's JSON/HTML
   # scanning), so nothing left needs it once they're gone. See docs/adr/
   # 0098-rpg2k-single-format-trim.md.
-  single_format_only = %w[psp wio maix].include?(conf.name)
+  single_format_only = %w[psp wio maix].include?(conf.name) || sealed_host
 
   conf.gem "#{MRUBY_ROOT}/../mruby-onig-regexp" do
     bundle_onigmo
@@ -476,6 +486,8 @@ def rpg_maker_gems(conf, include_mvjs: true)
   closed_world = proc do
     if single_format_only
       enable_bc2cpp_closed_world
+      # The sealed desktop host compiles the shipped hot set too (BC2CPP_HOT_ONLY=0 compiles every method,
+      # which does not link: the hand-written direct-construct accessors cover only some owners).
       enable_bc2cpp_hot_only
     end
   end
@@ -695,6 +707,19 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         emit_call.call(mvjs)
         after_maker['mruby-mvjs'].each(&emit_call)
         f.puts '}'
+      end
+      # The sealed desktop host (sealed_host above) still links src/main.cxx, which names every maker's
+      # init (--script brings them all up); the makers it dropped are no-ops, as only an RPG2k game is
+      # meant to run on it.
+      if conf.name == 'host' && ENV['RPGMAKER_BC2CPP_CLOSED_WORLD_HOST'] == '1'
+        { 'rpgxp' => rpgxp, 'rpgvx' => rpgvx, 'wolf' => wolf, 'mvjs' => mvjs }.each do |maker, gem|
+          next if gem
+
+          f.puts
+          f.puts "void rpg_maker_init_#{maker}_gem(mrb_state *mrb) {"
+          f.puts '  (void)mrb;'
+          f.puts '}'
+        end
       end
     end
   end
