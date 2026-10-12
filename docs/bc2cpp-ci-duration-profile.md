@@ -80,6 +80,30 @@ is byte-identical) and took a one-method call from 7.8 s to 5.5 s and the calls 
 6.5 s (the check from about 630 s to 576 s). After that fix `String#scan` is 61% self time: the regexes over the native
 sources, which only a cache of their results across processes would remove.
 
+Three more exact changes remove most of the repeated scanning (the generated C++ is byte-identical):
+
+* `NativeExpressionDevirt.class_variable_map` ran twice for every native source (once from each ROM scan); it is now
+  computed once per source string.
+* The `(\w+)\s*=\s*...` patterns in it, and in `native_class_module_names`, gain a `(?<!\w)` guard. A match cannot
+  start in the middle of a word, because the match that starts at the word's first character is found first and
+  has the same tail, so the guard only skips starts that never win (Onigmo otherwise retries every position of
+  every word). The patterns give identical matches over all 82 native sources.
+* `rom_entries` returns early when the source has no `MRB_MT_ENTRY`, and the `boot_defclass` scan only runs for
+  a source that contains the word.
+
+Together with the `definers_in` change, a one-method closed-world call goes from 7.8 s to 3.45 s (-56%) and
+`numeric_slow` from about 630 s to 398 s (same 329 passing checks).
+
+Checked for identity on the whole engine: the first generator pass of `coverage_report.rb` (all compiled gems, the
+closed world the build uses) produced the same 21,620,134 bytes (445,323 lines) of C++ and the same diagnostics with the
+committed tool and with this change. That pass is not faster (528 s against 514 s): its time is in compiling the methods,
+so these changes help the fixture-based checks, which pay the closed-world setup on every call, not the engine build.
+
+Ruby version: with the fixes in, Ruby 4.0.7 built here with YJIT takes 3.2 s for the same call against 3.45 s on
+3.3.6 (-6%). Running it with `--yjit` is slower (3.6 to 3.9 s): the process lives about three seconds, which
+does not repay JIT warm-up. Before the scan fixes the gap was the same size (5.3 s against 5.6 s), so a newer Ruby is
+a small, separate gain, not a substitute for the fixes.
+
 Whole-output caching does not help: none of the 79 calls in `numeric_slow` repeats an earlier one (the digest is
 argv, the `BC2CPP_`/`NIS_` environment and the fixture text). What repeats is the native-source world.
 
@@ -138,10 +162,11 @@ Ranked by what they would save on the critical path. Nothing in this list is imp
 
 ## 5. Method notes
 
-* Ruby version: the generator needs Prism, so 3.1 and 3.2 cannot run it (they fail at load). This sandbox's 3.3.6 has no
-  YJIT and could not be rebuilt or upgraded (the proxy blocks `cache.ruby-lang.org` and GitHub tarballs), so a newer
-  Ruby or YJIT is untested here. The profile says why it is unlikely to be the fix: the time is in `String#scan`, the
-  Onigmo regex engine in C, which YJIT does not compile; the Ruby-level `definers_in` cost was fixed in the source.
+* Ruby version: the generator needs Prism, so 3.1 and 3.2 cannot run it (they fail at load). 4.0.7 was built with
+  `RUBY_CONFIGURE_OPTS=--enable-yjit` for the comparison above.
+* The mruby submodule must have its patch chain applied for every measurement (`cmake --build <dir> --target
+  mruby_host_mrbc` does it). Restoring `3rd/mruby` to clean, as a clean `git status` needs, unapplies it; checks such as
+  `index_closed` and `integer_constants` then fail, and generator timings change.
 * Local setup for these runs: `libsdl2-dev`, `libsdl2-mixer-dev` and `gperf` from apt, `gem install rake`, and
   `LANG=C.UTF-8`. Without the UTF-8 locale `fixture_runtime.rb` fails with `invalid byte sequence in US-ASCII`.
 * The per-shard checks were run through `scripts/ci/timed_checks.rb` exactly as the workflow's step does.
