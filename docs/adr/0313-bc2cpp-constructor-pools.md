@@ -132,3 +132,6 @@ kill switches and the open world; the fixture on real mruby, interpreted and com
 32-bit `mrb_int` builds (nil, Hash and splat arguments included, zero dispatches on the proven methods).
 `scripts/bc2cpp/constructor_pools_mutation_check.rb`: an unmutated control and 13 mutants of the soundness conditions,
 each killed. New `constructor-pools` shard in `bc2cpp-checks`; the 32-bit run is in `bc2cpp-width (int32)`.
+
+The refusal `initialize defined outside a class` lists the module or singleton owners that trigger it.
+This is diagnostic only: constructor candidates and generated runtime code are unchanged.
