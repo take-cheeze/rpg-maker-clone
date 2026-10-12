@@ -1,0 +1,1 @@
+- **bc2cpp nightly**: the checks step resolves `MRBC` to an absolute path. Checks that run the generator from a fixture directory (`type_check_check`, `rbs_signatures_check`, `emit_rbs_check`) failed with exit status 2 on the relative path the workflow passed in.
