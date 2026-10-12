@@ -1,4 +1,4 @@
-# 0422. bc2cpp compiles Game::CommonEvent.singleton and Game::MoveRoute.singleton; a keyword `new` in a class method
+# 0426. bc2cpp compiles Game::CommonEvent.singleton and Game::MoveRoute.singleton; a keyword `new` in a class method
 
 Date: 2026-10-12
 

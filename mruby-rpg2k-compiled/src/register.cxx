@@ -6160,7 +6160,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                           Game__Backdrop_singleton_name_for,
                           MRB_ARGS_REQ(2) | MRB_ARGS_OPT(1));
 
-  // Game::CommonEvent.singleton and Game::MoveRoute.singleton (docs/adr/0422):
+  // Game::CommonEvent.singleton and Game::MoveRoute.singleton (docs/adr/0426):
   // the singleton methods whose call sites in Scene::Map#initialize,
   // #build_event and #rebuild_events_preserving_positions are bound by
   // CLOSED_WORLD_CONSTANT_OBJECT / MONO once their owners are emitted. Like
