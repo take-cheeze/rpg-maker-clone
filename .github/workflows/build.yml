@@ -52,6 +52,10 @@ jobs:
       # markdown cannot, so a PR that touches only those skips the bc2cpp jobs
       # (the aggregate `bc2cpp` job accepts that skip, see there).
       code: ${{ steps.filter.outputs.code }}
+      # Files the optcarrot-benchmark shard reads. A pull request that touches none of them
+      # skips that shard (see the gate step of `bc2cpp-checks`); master, the merge queue and
+      # manual runs always run it.
+      optcarrot: ${{ steps.filter.outputs.optcarrot }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,6 +74,12 @@ jobs:
               - '!docs/**'
               - '!changelog.d/**'
               - '!**/*.md'
+              - '.github/**'
+            optcarrot:
+              - 'tools/optcarrot_probe/**'
+              - 'scripts/optcarrot/**'
+              - 'scripts/bc2cpp/optcarrot_*'
+              - '3rd/optcarrot'
               - '.github/**'
 
   # This workflow contains a single job called "build"
@@ -1449,8 +1459,26 @@ jobs:
             && 'READ_WRITE' || 'READ_ONLY' }}
 
     steps:
+      # optcarrot-benchmark is the slowest benchmark shard and reads nothing but optcarrot files, so a
+      # pull request that changes none of them skips it (docs/ci.md, "Optcarrot benchmark off pull requests").
+      # Every later step is gated on this one, so a skipped shard ends in seconds and still reports success.
+      - name: Gate ${{ matrix.shard }}
+        id: gate
+        env:
+          SHARD: ${{ matrix.shard }}
+          EVENT: ${{ github.event_name }}
+          OPTCARROT: ${{ needs.changes.outputs.optcarrot }}
+        run: |
+          run=true
+          if [ "$SHARD" = optcarrot-benchmark ] && [ "$EVENT" = pull_request ] && [ "$OPTCARROT" != true ]; then
+            run=false
+            echo "optcarrot-benchmark skipped: a pull request with no optcarrot-related change (master, the merge queue and manual runs run it)" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
       - run: git config --global submodule.fetchJobs 4
+        if: steps.gate.outputs.run == 'true'
       - uses: actions/checkout@v7
+        if: steps.gate.outputs.run == 'true'
         with:
           # Same submodule set as `bc2cpp-build`, which keeps 3rd/optcarrot
           # for the Optcarrot shards.
@@ -1459,21 +1487,26 @@ jobs:
           persist-credentials: false
 
       - name: Init submodules
+        if: steps.gate.outputs.run == 'true'
         env:
           SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer
         run: ./scripts/checkout-submodules.bash
 
       - uses: nixbuild/nix-quick-install-action@v35
+        if: steps.gate.outputs.run == 'true'
       - name: Restore and cache Nix store
+        if: steps.gate.outputs.run == 'true'
         uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
       - name: Set up development environment
+        if: steps.gate.outputs.run == 'true'
         run: ./scripts/nix/develop-export-env.bash
 
       - name: Run sccache-cache
+        if: steps.gate.outputs.run == 'true'
         uses: mozilla-actions/sccache-action@v0.0.11
 
       # The dev shell's launcher is nixpkgs' sccache 0.15.0, whose GHA backend
@@ -1481,19 +1514,23 @@ jobs:
       # ignored and every pull request minted sccache blobs. Compile through
       # the action's own sccache instead.
       - name: Use the sccache from sccache-action
+        if: steps.gate.outputs.run == 'true'
         run: |
           echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
           echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
 
       - name: Configure host build
+        if: steps.gate.outputs.run == 'true'
         run: cmake -S . -B build-bc2cpp -GNinja
 
       # The same patched sources, build_config.rb and rake rule as the full
       # build's own bootstrap mrbc -- only the gems are left out (ADR 0228).
       - name: Build host bootstrap mrbc
+        if: steps.gate.outputs.run == 'true'
         run: cmake --build build-bc2cpp --target mruby_host_mrbc
 
       - name: Run ${{ matrix.shard }} checks
+        if: steps.gate.outputs.run == 'true'
         run: |
           mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
           test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }

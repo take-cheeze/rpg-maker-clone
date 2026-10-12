@@ -37,6 +37,20 @@ all, so a mutation regression blocks the merge queue rather than the PR. Timing
 estimates in the shard table include the mutants and apply to those runs. To run
 them on a PR, use `workflow_dispatch` on its branch.
 
+### Optcarrot benchmark off pull requests
+
+The `optcarrot-benchmark` shard (three `compiled_run.rb` benchmark runs plus four optcarrot checks)
+reads only optcarrot files. On `pull_request` runs the first step of `bc2cpp-checks` (the gate step)
+skips every later step of that shard unless the `changes` job's `optcarrot` filter matched:
+`tools/optcarrot_probe/**`, `scripts/optcarrot/**`, `scripts/bc2cpp/optcarrot_*`, the `3rd/optcarrot`
+pointer, or `.github/**`. A skipped shard ends in seconds and still reports success, so the aggregate
+`bc2cpp` job and any required check keep working. Master pushes, merge-queue runs and manual dispatch
+always run it, the same split as the mutation checks above.
+
+A change to the compiler (`tools/bc2cpp/**`) does not match the filter, so a pull request that only
+changes codegen does not run the benchmark; the merge queue and master do. Add the path to the
+`optcarrot` filter if a codegen change should run it before merge.
+
 ### Splitting long shards
 
 `hot-only` ran its two ~15 minute reviewed-set checks back to back, so
