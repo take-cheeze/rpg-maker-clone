@@ -61,3 +61,4 @@ immediate.
   worlds (a redefined `Array#freeze`, a `const_missing`).
 * Not done: a Symbol literal in a register (`LOADSYM` outside a table) is still OTHER in the numeric flow. Giving it
   the bit would widen the numeric flow's view of every Symbol and needs its own audit; it is left to a follow-up.
+  Follow-up: ADR 0428 gives it the bit after the audit.
