@@ -95,6 +95,8 @@ CHECKS = [
   # The host-only hand-built shapes of the register flow pass (ADR 0415).
   { name: 'bc2cpp-register-flow', command: %w[scripts/bc2cpp/register_flow_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp/core_mixins_check.rb] },
+  # LEXICAL_CONST (ADR 0423): the fixtures need the host mrbc and skip without MRBC; no mrblib lines.
+  { name: 'bc2cpp-lexical-const', command: %w[scripts/bc2cpp/lexical_const_check.rb] },
   { name: 'bc2cpp-typed-reflection', command: %w[scripts/bc2cpp/typed_reflection_check.rb] },
   # Reads every schema field through the real LCF reader (ADR 0285).
   { name: 'bc2cpp-lcf-schema-oracle', command: %w[scripts/bc2cpp/lcf_schema_oracle_check.rb] },
@@ -103,13 +105,17 @@ CHECKS = [
   { name: 'bc2cpp-lcf-row-flow', command: %w[scripts/bc2cpp/lcf_row_flow_check.rb] },
   # ADR 0276: NumericFlow on hand-built bytecode; the fixture sections skip here.
   { name: 'bc2cpp-numeric-operand', command: %w[scripts/bc2cpp/numeric_operand_check.rb] },
+  # ADR 0424: the Symbol class bit of frozen tables (the model half; the fixture half needs mrbc).
+  { name: 'bc2cpp-symbol-class', command: %w[scripts/bc2cpp/symbol_class_check.rb] },
   # ADR 0302: the RGSS native result facts against the native sources, and the ClosedWorld questions;
   # the generated-code section skips here.
   { name: 'bc2cpp-native-result-facts', command: %w[scripts/bc2cpp/native_result_facts_check.rb] },
   # ADR 0311: the AREF transfer and the tuple shape on hand-built bytecode; the fixture sections skip here.
   { name: 'bc2cpp-tuple-return', command: %w[scripts/bc2cpp/tuple_return_check.rb] },
   # ADR 0416: the class-object resolver on hand-built bytecode; the fixture section skips here.
-  { name: 'bc2cpp-class-object-args', command: %w[scripts/bc2cpp/class_object_args_check.rb] }
+  { name: 'bc2cpp-class-object-args', command: %w[scripts/bc2cpp/class_object_args_check.rb] },
+  # ADR 0425: the frozen-table slot class on hand-built bytecode; the compiled section needs mrbc and skips here.
+  { name: 'bc2cpp-frozen-slot', command: %w[scripts/bc2cpp/frozen_slot_check.rb] }
 ].freeze
 
 # `needs:` predicates. A downloaded RPG2000/2003 game is the only prerequisite

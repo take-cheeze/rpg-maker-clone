@@ -1,0 +1,1 @@
+- **bc2cpp nightly**: the `user_receiver_unions_mutation_check` "outside lookup ignored" mutant matches the current `closed_world_exact_target(name, receiver_class, accessor: ...)` call (ADR 0378), so it is killed again instead of reporting its site as gone.

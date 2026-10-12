@@ -30,7 +30,7 @@ optimization, except for the narrow fixnum/symbol check of RBS_SEED_CONTRADICTIO
   declared class return against a closed inferred class set; in this mode they are reported with the annotation's
   file:line instead of aborting. A declared superclass or an incomplete inferred set is an absent fact,
   not a contradiction (same rule as RBS_SEED_CONTRADICTION). Annotation tokens bc2cpp ignores and annotations with
-  the wrong parameter count are warnings (TC1004): previously silent.
+  the wrong parameter count are warnings (TC1004): previously silent. **Amended by ADR 0426: now errors.**
 * Reasons: parameters: `poly:N`, `dynamic-name`, `never-called`, `packed-caller`, or the receiver-proof `why`
   (`no_candidate:<rule>`, `dropped:<kinds>`); returns: the producers of the unresolved return sites
   (`send_result:<name>(native|ruby|mixed|unregistered)`, `ivar:@x`, `param`, ...); ivars: `any` / `opaque` plus the

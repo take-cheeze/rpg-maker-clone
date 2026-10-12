@@ -1,0 +1,1 @@
+- **bc2cpp nightly**: `core_ruby_results_check` accepts the guarded run-time-class inline of ADR 0420 for a map over a union or unproven receiver (every "Array receiver for inlined #map" must open under a GUARDED_BLOCK_INLINE guard), and the two `core_ruby_results_mutation_check` mutants that rewrote code moved by ADR 0416/0420 match the current text.

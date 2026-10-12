@@ -6160,6 +6160,36 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                           Game__Backdrop_singleton_name_for,
                           MRB_ARGS_REQ(2) | MRB_ARGS_OPT(1));
 
+  // Game::CommonEvent.singleton and Game::MoveRoute.singleton (docs/adr/0426):
+  // the singleton methods whose call sites in Scene::Map#initialize,
+  // #build_event and #rebuild_events_preserving_positions are bound by
+  // CLOSED_WORLD_CONSTANT_OBJECT / MONO once their owners are emitted. Like
+  // every call in this guarded region they exist only in a full build: a
+  // hot-only build (wio, psp, maix) lists none of these methods in
+  // tools/bc2cpp/hot_methods.txt, so it compiles none of them and emits no
+  // code for these owners at all.
+  //
+  // MoveRoute.from_page is further conditional inside a full build: its bare
+  // `new(..., repeat:, skippable:)` is compiled only when the closed world
+  // proves Game::MoveRoute has no descendants (KEYWORD_IMPLICIT_NEW), and the
+  // desktop build is not a closed world. There the generator refuses the
+  // method (it stays bytecode) and defines BC2CPP_SKIPPED_<entry>, so the
+  // registration follows what was emitted.
+  RClass* common_event = mrb_module_get_under(M, game, "CommonEvent");
+
+  mrb_define_class_method(M, common_event, "load",
+                          Game__CommonEvent_singleton_load, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, common_event, "eligible",
+                          Game__CommonEvent_singleton_eligible,
+                          MRB_ARGS_REQ(2));
+#ifndef BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page
+  mrb_define_class_method(M, move_route, "from_page",
+                          Game__MoveRoute_singleton_from_page, MRB_ARGS_REQ(1));
+#endif
+  mrb_define_class_method(M, move_route, "same_route?",
+                          Game__MoveRoute_singleton_same_route$3f,
+                          MRB_ARGS_REQ(2));
+
   // RPG2k::Scene::Map::LRUBitmapCache (mruby-rpg2k/mrblib/scene/map.rb) --
   // a small per-category tile-bitmap LRU cache nested inside RPG2k::
   // Scene::Map, explicitly out of scope when that class was first added

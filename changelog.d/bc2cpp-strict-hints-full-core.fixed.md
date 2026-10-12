@@ -1,0 +1,1 @@
+- **bc2cpp nightly**: the `strict-hints` shard runs the fixture checks against a full-core libmruby (`BC2CPP_FULL_BUILD_DIR`); a core-only library has no `Array#each`, so the interpreted side of `total` raised where the compiled side answered.
