@@ -101,7 +101,7 @@ Not converted, with the reason: `min`, `sort`, `uniq`, `cover?` (Ruby in mruby),
 
 Adding a row means writing the audited body next to it; a mruby upgrade that
 changes a body disables the row and fails
-`scripts/bc2cpp_native_core_direct_check.rb`, which also compiles every
+`scripts/bc2cpp/native_core_direct_check.rb`, which also compiles every
 emitted arm against the core library and compares it with ordinary dispatch on
 edge inputs (subclasses, frozen and recursive arrays, non-String separators,
 `MRB_INT_MIN`/`MAX`). `Array#compact` is a gem method and is not in that

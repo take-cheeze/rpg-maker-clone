@@ -54,5 +54,5 @@ Unresolved compact definitions keep the refusal, so the rule stays fail-closed.
 - Follow-up: resolving a compact outer against a module declared in another file needs a
   whole-closed-world constant table, which build_registry does not have yet. Until then such a class
   is refused, as before.
-- Covered by `scripts/bc2cpp_compact_class_check.rb`: three fixtures that must generate (top-level
+- Covered by `scripts/bc2cpp/compact_class_check.rb`: three fixtures that must generate (top-level
   and namespaced compact classes, with qualified owners) and one that must still be refused.

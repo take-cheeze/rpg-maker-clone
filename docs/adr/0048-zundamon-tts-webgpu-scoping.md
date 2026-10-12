@@ -99,7 +99,7 @@ it's actionable as a future contribution, in three parts:
    correctly-built `libvoicevox_onnxruntime.so` would make WebGPU "just
    work" through the mode this repo already passes.
 3. **This repo**: once (1) and (2) ship a release, update
-   `scripts/download-voicevox-zundamon.bash` to fetch the WebGPU-enabled
+   `scripts/download/voicevox-zundamon.bash` to fetch the WebGPU-enabled
    ONNX Runtime build, and change `init_opts.acceleration_mode` in
    `src/voicevox_tts.cxx:244` from `VOICEVOX_ACCELERATION_MODE_CPU` to
    `VOICEVOX_ACCELERATION_MODE_GPU` (or `AUTO`, to fail soft to CPU on

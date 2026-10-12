@@ -53,7 +53,7 @@ Several sites with the same called name inside one method share a key.
   not, so those sites keep their dispatch and are not dead fallbacks. The
   proof did not change, so the build must not fail over it. An unreviewed
   site still fails a hot-only build.
-- `scripts/bc2cpp_nomethod_reviewed_check.rb` (CI `bc2cpp` job) reproduces
+- `scripts/bc2cpp/nomethod_reviewed_check.rb` (CI `bc2cpp` job) reproduces
   the wio codegen of all three gems twice:
   - With every method compiled, the sites must equal `NOMETHOD_REVIEWED` in
     both directions. This catches any stale entry the per-gem build cannot
@@ -65,7 +65,7 @@ Several sites with the same called name inside one method share a key.
   fixture's unreviewed site.
   `tools/bc2cpp/nomethod_reviewed_probe.rb` holds the run itself, including
   the wio gem list (no mruby-time since ADR 0221).
-- `scripts/bc2cpp_nomethod_reviewed_update.rb [--write]` regenerates the
+- `scripts/bc2cpp/nomethod_reviewed_update.rb [--write]` regenerates the
   list and prints the added and removed keys. Running `--write` does not
   count as a review.
 - `BC2CPP_NOMETHOD_UNREVIEWED=allow` turns the abort into a warning. Only
@@ -106,7 +106,7 @@ write methods. Selective module-function body emission increases the current
 full Wio run to 3,070 sites across 2,213 unique keys (LCF 23/14, RGSS 1/1,
 RPG2K 3,046/2,198 sites/keys). The hot-only list still compiles 426 of these
 sites. The review set is regenerated with
-`MRBC=... ruby scripts/bc2cpp_nomethod_reviewed_update.rb --write`.
+`MRBC=... ruby scripts/bc2cpp/nomethod_reviewed_update.rb --write`.
 
 Every site was reviewed. For each one, the guard chain was read to confirm
 that the enclosing class is in it, and the Ruby source was read to confirm
@@ -136,4 +136,4 @@ The CI check costs one wio codegen run per gem, about 80 s each on the dev
 container. The follow-up from ADR 0210 is implemented by ADR 0229: replacing
 `RGSS::ErrorReport::Tee#method_missing` with explicit delegation lets
 non-`self` receivers convert. The current reviewed set is regenerated with
-`MRBC=... ruby scripts/bc2cpp_nomethod_reviewed_update.rb --write`.
+`MRBC=... ruby scripts/bc2cpp/nomethod_reviewed_update.rb --write`.

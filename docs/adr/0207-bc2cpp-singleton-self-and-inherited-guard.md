@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-docs/adr/0200 traced the RPG2000 map scene (`scripts/rpg2k_scene_check.rb`,
+docs/adr/0200 traced the RPG2000 map scene (`scripts/rpg2k/scene_check.rb`,
 52,309 `Scene::Map#update` frames) and listed the dynamic calls that were left.
 Three of the causes looked fixable. We measured again on master at 3399f0c1,
 using the same method: a CRuby `TracePoint` over the check, joined by
@@ -74,7 +74,7 @@ keyword call has no `mrb_funcall` form to fall back to.
 
 - Traced calls per frame: implicit self 2.07 -> 0.00 and inherited guard
   1.26 -> 0.00. Marked dynamic calls go from 39.4 to 36.0 per frame.
-- `scripts/bc2cpp_coverage_report.rb`: POLY-marked sites 3,232 -> 3,196. No
+- `scripts/bc2cpp/coverage_report.rb`: POLY-marked sites 3,232 -> 3,196. No
   other line changes.
 - In the generated rpg2k gem, 40 sites become LEXICAL_SELF (36 POLY and 4
   POLY_SMALL_N, including 3 `clamp` sites). 233 POLY_SMALL_N chains gain
@@ -84,10 +84,10 @@ keyword call has no `mrb_funcall` form to fall back to.
 - Explicit `Game.clamp(...)` calls (about 0.4 per frame) are still dynamic.
   A guard on the receiver's identity would cover them and is left as a
   follow-up.
-- `scripts/bc2cpp_inherited_self_devirt_check.rb` (bc2cpp CI job) checks each
+- `scripts/bc2cpp/inherited_self_devirt_check.rb` (bc2cpp CI job) checks each
   refusal on fixtures. It also compiles a fixture against real mruby and
   checks that each call returns the interpreter's answer and that the
   devirtualized calls reach neither `mrb_funcall` nor `mrb_funcall_id`. It
   fails on the previous generator.
-  `scripts/bc2cpp_embedded_ivar_access_check.rb` now reads the owner off the
+  `scripts/bc2cpp/embedded_ivar_access_check.rb` now reads the owner off the
   first compare of a hoisted guard.

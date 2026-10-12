@@ -13,7 +13,7 @@ and escaping compiled closures are separate work; native Fiber APIs already
 execute in C.
 
 Set `BC2CPP_ENUMERATOR_WRAPPERS=0` to disable this admission. Run
-`scripts/bc2cpp_enumerator_wrappers_check.rb` with `MRBC` and a full-core mruby
+`scripts/bc2cpp/enumerator_wrappers_check.rb` with `MRBC` and a full-core mruby
 build for generated-code and runtime comparisons. The companion mutation check
 verifies seven withdrawn proof conditions and an unchanged control.
 

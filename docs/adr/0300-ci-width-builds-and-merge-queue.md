@@ -21,7 +21,7 @@ Two gaps let a red build reach `master`.
 ## Decision
 
 - A new `bc2cpp-width` matrix job (`int32`, `nobigint`) builds one extra full-core libmruby with
-  `scripts/bc2cpp_width_build.rb` and runs the checks whose 32-bit / no-bigint legs already exist:
+  `scripts/bc2cpp/width_build.rb` and runs the checks whose 32-bit / no-bigint legs already exist:
   `int32` runs `bc2cpp_numeric_slow_check`, `bc2cpp_fixnum_overflow_check`, `bc2cpp_step_inline_check`
   and `bc2cpp_lcf_row_flow_check`; `nobigint` runs
   `bc2cpp_numeric_slow_check`. The `int32` build is the 64-bit host with the targets' defines (their

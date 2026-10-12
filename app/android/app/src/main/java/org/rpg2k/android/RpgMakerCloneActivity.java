@@ -38,7 +38,7 @@ public class RpgMakerCloneActivity extends SDLActivity {
         args.add(gameDir);
         // CI hook: `adb shell am start ... --es rpg2k_extra_args "..."` lets
         // the android-smoke CI job (.github/workflows/build.yml) pass the
-        // same self-driving flags scripts/rpg2k_boot_check.bash uses on
+        // same self-driving flags scripts/rpg2k/boot_check.bash uses on
         // desktop (--test_play --rpg2k_new_game --timeout_ms=..., see
         // src/main.cxx) without any touch-input automation. Absent from every
         // real launch, so getStringExtra returns null and ordinary installs

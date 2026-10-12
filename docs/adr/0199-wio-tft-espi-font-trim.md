@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-A fresh `scripts/wio_bc2cpp_measure.bash` run at 5d879a5 put
+A fresh `scripts/wio/bc2cpp_measure.bash` run at 5d879a5 put
 `libSeeed_Arduino_LCD.a(TFT_eSPI.cpp.o)` at 20,934 bytes of the
 `wio_rgss_boot` image. docs/adr/0141 had flagged exactly this object for a
 "per-function audit for board-specific dead paths" and left it, because
@@ -103,7 +103,7 @@ the library does not build at all, because its `#ifdef` nesting around
   removed, `wio_rgss_boot` (baseline) links to exactly the pre-change
   overflow, 684,008 bytes.
 - **Real relinks.** All used the same `libmruby.a` pair from one
-  `scripts/wio_bc2cpp_measure.bash /tmp/wio-flash-hunt` run, and each
+  `scripts/wio/bc2cpp_measure.bash /tmp/wio-flash-hunt` run, and each
   `pio run -e wio_rgss_boot` was serialized with `flock` against the other
   builds sharing this checkout:
 

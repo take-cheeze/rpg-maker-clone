@@ -47,7 +47,7 @@ A singleton definer no longer refuses when it can be armed (SINGLETON_ARMS):
   bodies 2,286 to 2,205 (-81: `width` 47, `height` 33, `transition` 1);
   `bc2cpp_nomethod` sites 4,460 to 4,541 (+81); `closed_world_kept:
   singleton_definer` 91 to 10. No helper gained a caller.
-- `scripts/bc2cpp_singleton_arms_check.rb` (ruby-checks): generated code for the
+- `scripts/bc2cpp/singleton_arms_check.rb` (ruby-checks): generated code for the
   positive world, four withdrawals (a class object definer, a `clone`, a mixin
   on the singleton class, a runtime definer) and the switch, then the world on
   real mruby, interpreted against compiled, on the full-core and core-only

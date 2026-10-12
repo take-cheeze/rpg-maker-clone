@@ -51,7 +51,7 @@ class RPG2k
     # full period of 0.654s land squarely on the 40-frame (20 on + 20 off)
     # cycle this engine already coded, at RPG_RT's confirmed 60fps (ADR 0021),
     # and it starts in the "on" phase the instant the window pauses, exactly
-    # as coded here. See scripts/rpg2k_scene_check.rb's "pause arrow blinks
+    # as coded here. See scripts/rpg2k/scene_check.rb's "pause arrow blinks
     # on a 20-frame-on/20-frame-off cycle" check.
     # Re-confirmed once more on the *map* message window (cycle #257, a
     # synthetic autostart Show Message spliced onto a scratch Map0012, burst
@@ -600,7 +600,7 @@ class RPG2k
   # some other way -- the project's own Game.ini `[Game] Test=1`, or an
   # explicit --test_play -- since a RPG_RT.exe launched by the real editor
   # always carries the TestPlay word too; TEST_PLAY only exists when this is
-  # the native binary (see scripts/rpg2k_scene_check.rb, which loads this file
+  # the native binary (see scripts/rpg2k/scene_check.rb, which loads this file
   # under plain CRuby and never defines it).
   def initialize args
     @test_play = args.include?('TestPlay') || native_test_play?
@@ -641,7 +641,7 @@ class RPG2k
   # capture has directly probed (see e.g. mruby-lcf/mrblib/schema.rb's own
   # System#equipment_setting comment). Guarded with respond_to? so a
   # bare/synthetic database missing the field -- or the whole System table,
-  # as scripts/rpg2k_scene_check.rb's fixtures do -- answers true, the
+  # as scripts/rpg2k/scene_check.rb's fixtures do -- answers true, the
   # harmless default every real project's database also reads back until
   # this box is unchecked.
   def show_title?
@@ -652,7 +652,7 @@ class RPG2k
   # Split out of #initialize so #show_title?'s branch can be exercised
   # directly (RPG2k.allocate, with #start_new_game/#push_title_screen
   # stubbed) without a real RPG_RT.ldb/.lmt -- see
-  # scripts/rpg2k_scene_check.rb.
+  # scripts/rpg2k/scene_check.rb.
   def boot_title_or_new_game
     if show_title?
       push_title_screen
@@ -844,7 +844,7 @@ class RPG2k
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [scene]
     # A machine-readable marker so a headless run (see --rpg2k_new_game and
-    # scripts/compare-nepheshel-wine.bash) can assert the map scene was really
+    # scripts/compare/nepheshel-wine.bash) can assert the map scene was really
     # reached, not just the title.
     $stderr.puts "[RPG2k-MAP] map=#{state.map_id} x=#{state.x} y=#{state.y}"
     # --rpg2k_battle: jump straight from New Game into a fight against the

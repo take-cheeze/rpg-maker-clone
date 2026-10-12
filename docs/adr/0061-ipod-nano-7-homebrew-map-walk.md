@@ -60,13 +60,13 @@ Maker 2000/2003 map data, not synthetic test data.
 The pieces:
 
 - **Host-side exporter** (`scripts/export_nano7_map.rb`): plain CRuby,
-  loaded the same way `scripts/lcf_save_check.rb`/`lcf_testbed_check.rb`
+  loaded the same way `scripts/lcf/save_check.rb`/`lcf_testbed_check.rb`
   already load `mruby-lcf/mrblib/{lcf,schema}.rb` under CRuby with no mruby
   build. It also loads `mruby-rpg2k/mrblib/game.rb` for `Game::ChipsetLayout`
   (the tile-id → chipset source-rect geometry, including the autotile
-  quarter-tile assembly — the exact module `scripts/rpg2k_render_check.rb`
+  quarter-tile assembly — the exact module `scripts/rpg2k/render_check.rb`
   already exercises standalone) and `Game::ChipSet` (passability), and
-  `scripts/rgss_cruby_compat.rb` for `RGSS::Bitmap`'s pure-Ruby PNG decoder.
+  `scripts/rgss/cruby_compat.rb` for `RGSS::Bitmap`'s pure-Ruby PNG decoder.
   All LCF parsing and chipset compositing happens once, on the host, using
   the same logic the real engine uses — not a reimplementation of it.
 - **Output format**: `map.bin` (dimensions, start position, backdrop colour,

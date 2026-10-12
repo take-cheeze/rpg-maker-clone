@@ -16,7 +16,7 @@ construction, so they cannot catch a field whose declared type does not match
 what a real engine actually writes — exactly the kind of surprise ADR 0002's
 policy of "document only what the source spells out" is meant to surface.
 
-`scripts/lcf_testbed_check.rb` already runs the parser over genuine editor
+`scripts/lcf/testbed_check.rb` already runs the parser over genuine editor
 output for the database and maps; the save schema had no equivalent because a
 save is produced by *playing* a game, not by shipping one.
 
@@ -30,10 +30,10 @@ Generate a real save and validate the schema against it.
   fails under Xvfb with `DDERR_UNSUPPORTED`, and it runs unthrottled), so the
   save was written by **EasyRPG Player** (a 64-bit PE) under wine, which renders
   through SDL, is frame-limited, and emits byte-compatible `LcfSaveData`.
-  `scripts/run-nepheshel-easyrpg-wine.bash` captures that setup. Nepheshel saves
+  `scripts/run/nepheshel-easyrpg-wine.bash` captures that setup. Nepheshel saves
   only at "Gates": the hero starts with a Gate Crystal, and inserting it at the
   town-entrance Gate (map 12) unlocks `SAVE`, writing `Save01.lsd`.
-- **Add `scripts/lcf_save_check.rb`.** Mirroring the test-bed checker, it loads
+- **Add `scripts/lcf/save_check.rb`.** Mirroring the test-bed checker, it loads
   the mruby/CRuby-common parser over a `Save<N>.lsd`, verifies the header, lists
   every top-level chunk (flagging documented vs. undocumented ones), recursively
   reads every declared field of the documented sections, and prints a summary.

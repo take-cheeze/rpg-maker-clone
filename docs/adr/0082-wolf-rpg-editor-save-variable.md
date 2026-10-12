@@ -95,8 +95,8 @@ source" reasoning `BanInput`(126) is already documented under.
   declared -- `Array#none?` is otherwise silently missing from the per-gem
   test build even though `build_config.rb`'s shared list already carries
   it, the exact trap `AGENTS.md`'s own "mruby stdlib methods live in core
-  `*-ext` mrbgems" section describes), `scripts/wolf_testbed_check.rb`,
-  `scripts/wolf_interpreter_check.rb` (which needed `save_data.rb` added to
+  `*-ext` mrbgems" section describes), `scripts/wolf/testbed_check.rb`,
+  `scripts/wolf/interpreter_check.rb` (which needed `save_data.rb` added to
   its own `load` list -- it hit a real `NameError: uninitialized constant
   Wolf::SaveData` on this exact sample game's own real 221/222 calls before
   that fix), and the compiled binary against the real sample game.

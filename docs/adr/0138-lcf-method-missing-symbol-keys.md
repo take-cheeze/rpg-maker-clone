@@ -71,7 +71,7 @@ migration below did not reach, with a comment explaining why.
 correction from the static-scoping estimate above): temporarily logged
 every real `method_missing` invocation's `caller_locations` inside all
 three `method_missing` bodies, then ran every CRuby-executable test script
-this repo ships (13 of `scripts/*.rb`; the 3 that need an unavailable
+this repo ships (13 of `scripts/**/*.rb`; the 3 that need an unavailable
 downloaded test-bed or a built native binary were confirmed to fail only
 for that unrelated reason and excluded). This found **158 real call
 sites** in the shipped engine -- an order of magnitude fewer than the
@@ -99,7 +99,7 @@ already shaped like a setter) with no ambiguity to resolve.
 Verified against the same 13 test scripts after the rewrite (all still
 passing), then re-instrumented and re-ran to confirm the fix: hits in
 shipped engine code dropped to zero. The 145 remaining hits all land in
-`scripts/rpg2k_logic_check.rb` alone, a CRuby-only dev/test harness never
+`scripts/rpg2k/logic_check.rb` alone, a CRuby-only dev/test harness never
 shipped to any real target, so no known call site was left un-migrated
 inside the actual engine.
 

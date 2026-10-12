@@ -47,7 +47,7 @@ mode changes nothing there.
 
 ## Checking the helper itself
 
-`scripts/bc2cpp_nomethod_verify_check.rb` builds the emitted helper against a real
+`scripts/bc2cpp/nomethod_verify_check.rb` builds the emitted helper against a real
 mruby core in both modes and asserts normal mode dispatches then raises, and
 verify mode aborts naming the site without running the method.
 
@@ -61,5 +61,5 @@ stable class constant (`Klass.new`'s identity test, `is_a?(Klass)`'s class test,
 `-DBC2CPP_NOMETHOD_VERIFY` it prints `bc2cpp: NOMETHOD_VERIFY: guard violation
 reached: ...` and aborts. To restore the old dispatch for debugging, generate with
 `BC2CPP_GUARD_VIOLATION=0`, or compile with `-DBC2CPP_GUARD_VIOLATION_DISPATCH`.
-`scripts/bc2cpp_guard_violation_check.rb` builds the helper both ways against a real
+`scripts/bc2cpp/guard_violation_check.rb` builds the helper both ways against a real
 mruby.

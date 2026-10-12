@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-"Could we unroll proc call?" The census (`scripts/bc2cpp_dynamic_site_census.rb`, wio closed-world measurement at
+"Could we unroll proc call?" The census (`scripts/bc2cpp/dynamic_site_census.rb`, wio closed-world measurement at
 `38f7267a`) counted 28 generated core-body sites that still dispatch `"call"` by name through
 `mrb_funcall_argv`. All 28 are emitted by `compile_dynamic_splat_send` (CORE_PROC_CALL) and all 28 sit in the
 `Enumerable` block bodies of mruby's own `enum.rb`:
@@ -59,7 +59,7 @@ wrong and it raises `RuntimeError: closed-world proof violated` (ADR 0262); unde
 - Not closed, by construction: `call` on a receiver that is not a block (a stored callable, a `Method`) in any core
   or engine body. The census has none with a runtime-sized splat; fixed-arity ones are `dynamic_dispatch_line`
   sites with their own tiers.
-- `scripts/bc2cpp_block_param_call_splat_check.rb` (build.yml) checks the taken forms and every withdrawal: a
+- `scripts/bc2cpp/block_param_call_splat_check.rb` (build.yml) checks the taken forms and every withdrawal: a
   block rewritten to nil, replaced on one path, a plain parameter, a block rewritten from a nested block, open
   world, outside-core Ruby, and a Ruby `call` on any class / NilClass, `method_missing` on NilClass, a singleton
   `call`, a dynamic installer.

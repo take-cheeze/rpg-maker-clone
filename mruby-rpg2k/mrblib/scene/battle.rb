@@ -264,7 +264,7 @@ class RPG2k
         # --rpg2k_battle boot-drive marker (Scene::Map#headless_battle): fired
         # once, here, when the headless fight's whole UI -- backdrop, troop
         # sprites, actor sprites, the status panel -- is actually up, so
-        # scripts/rpg2k_boot_check.bash can assert the battle path was really
+        # scripts/rpg2k/boot_check.bash can assert the battle path was really
         # reached rather than merely armed. A real encounter never sets
         # `headless`, so this line never appears for ordinary play.
         $stderr.puts "[RPG2k-BATTLE] troop=#{@req.troop_id}" if @req.headless
@@ -1993,7 +1993,7 @@ class RPG2k
       # to reveal the 9th skill alone in a fifth, partial row, then blocked
       # there with no wrap and no phantom cell to its right either. Since
       # nothing needed fixing, this comment and the matching
-      # `scripts/rpg2k_scene_check.rb` checks were updated to record the
+      # `scripts/rpg2k/scene_check.rb` checks were updated to record the
       # re-verification, mirroring cycle #133's own precedent for
       # `#drive_battle_item`. `#drive_battle_ally_target` remains the one
       # battle cursor still unverified against genuine RPG_RT -- still

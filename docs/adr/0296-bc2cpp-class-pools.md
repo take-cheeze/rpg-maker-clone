@@ -15,7 +15,7 @@ proofs", ADR 0210). The request behind this ADR: find which of those hints can b
 whole-program proof, so the guard disappears (the proof shows it always holds) or its else becomes a trap
 (the closed world asserts the class set), and say exactly what blocks the rest.
 
-Measured on the wio closed world (`scripts/bc2cpp_guard_hint_report.rb`, a per-site TSV of
+Measured on the wio closed world (`scripts/bc2cpp/guard_hint_report.rb`, a per-site TSV of
 `BC2CPP_GUARD_HINT_REPORT`), master `f70fef67`, 7,361 explicit-receiver sends that chose one of the
 families:
 
@@ -121,8 +121,8 @@ off; `=strict` also withdraws the pools whenever any Ruby in the build can reach
 
 ## Consequences
 
-Measured on the wio closed world, three gems, shipped codegen (`scripts/bc2cpp_coverage_report.rb` and
-`scripts/bc2cpp_dynamic_site_census.rb`; `BC2CPP_CLASS_POOLS=0` is the "before", same master `f70fef67`):
+Measured on the wio closed world, three gems, shipped codegen (`scripts/bc2cpp/coverage_report.rb` and
+`scripts/bc2cpp/dynamic_site_census.rb`; `BC2CPP_CLASS_POOLS=0` is the "before", same master `f70fef67`):
 
 | | before | after |
 | --- | ---: | ---: |
@@ -159,7 +159,7 @@ off, since every proof needs the closed world.
 Residual risk, stated plainly:
 
 - A pooled class is an *unchecked* direct call. A writer the scan cannot see turns it into a crash or a wrong
-  answer, not a logged violation: `scripts/bc2cpp_class_pools_check.rb` pins this (an `@box` written from C++
+  answer, not a logged violation: `scripts/bc2cpp/class_pools_check.rb` pins this (an `@box` written from C++
   behind the analysis' back makes the compiled exact read crash where the interpreter answers; the kill switch
   restores agreement). The invisible writers are `Marshal.load` of hostile bytes, native code that builds the
   ivar name at run time, and a helper-function native definition the registration scan does not model. The first
@@ -176,9 +176,9 @@ Residual risk, stated plainly:
 
 ## Tests
 
-`scripts/bc2cpp_class_pools_check.rb` (generated code: positives, a negative world per withdrawal condition, kill switch, strict
+`scripts/bc2cpp/class_pools_check.rb` (generated code: positives, a negative world per withdrawal condition, kill switch, strict
 Marshal, open world; behaviour on real mruby, interpreted against compiled including nil receivers, in a
 full-core, core-only and 32-bit `mrb_int` build, and the documented outside-writer failure),
-`scripts/bc2cpp_class_pools_mutation_check.rb` (seven mutants of the soundness conditions, each must be caught),
-`scripts/bc2cpp_guard_hint_report.rb` (the per-family census above) and the updated
-`scripts/bc2cpp_return_class_check.rb`, `scripts/bc2cpp_nomethod_reviewed_check.rb`.
+`scripts/bc2cpp/class_pools_mutation_check.rb` (seven mutants of the soundness conditions, each must be caught),
+`scripts/bc2cpp/guard_hint_report.rb` (the per-family census above) and the updated
+`scripts/bc2cpp/return_class_check.rb`, `scripts/bc2cpp/nomethod_reviewed_check.rb`.

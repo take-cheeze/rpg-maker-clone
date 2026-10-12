@@ -80,7 +80,7 @@ the next gap `docs/TODO.md` named after the interpreter's initial slice.
 - **`Interpreter#run_class`**: every `Run.new` call site (Common Event
   calls, map-event auto/parallel pages, Confirm/Touch triggers) now goes
   through this one factory method instead of a bare `Run.new`, so
-  `scripts/wolf_interpreter_check.rb`'s soak check can install a
+  `scripts/wolf/interpreter_check.rb`'s soak check can install a
   step-bounded subclass for all of them by overriding just this method.
 - **A third real bug**, found by that extended soak check once it started
   exercising Confirm triggers against every real map: the sample game's
@@ -124,7 +124,7 @@ the next gap `docs/TODO.md` named after the interpreter's initial slice.
   per-event self-variable banks (keyed by event id alone, not
   `(map_id, event_id)`) are both known to need reconsideration once one
   is implemented, since different maps reuse small event ids.
-- `scripts/wolf_interpreter_check.rb` now also drives every real map's
+- `scripts/wolf/interpreter_check.rb` now also drives every real map's
   events (not just Common Events), for every map the project's own
   `MapTree` lists -- the same "must survive real data" bar the Common
   Event soak check already held itself to, extended to catch page-

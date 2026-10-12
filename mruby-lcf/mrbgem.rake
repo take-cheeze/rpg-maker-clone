@@ -69,11 +69,11 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   # keeps the blob is also the one target that was never going to exercise
   # this failure mode. Every other target (host/desktop, wasm, psp,
   # android) goes back to `schema.rb`'s plain Hash literals -- the same
-  # form the CRuby `scripts/*_check.rb` scripts already trust, and the one
+  # form the CRuby `scripts/**/*_check.rb` scripts already trust, and the one
   # this ADR's own comparison script verified against byte-for-byte.
   #
   # schema.rb itself is untouched and stays the single source of truth
-  # (every scripts/*_check.rb script `load`s it directly under CRuby, with
+  # (every scripts/**/*_check.rb script `load`s it directly under CRuby, with
   # no dependency on this generator or its output); only wio's own build
   # copy is swapped for the generated one.
   if spec.build.name == 'wio'

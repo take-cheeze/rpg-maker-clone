@@ -39,8 +39,8 @@ Two constraints make this more than a one-line change:
    and a custom dispose path, so a mistake risks a crash on map load, not just a
    cosmetic glitch. That raises the bar for landing it blind.
 
-   **Partly lifted since.** `scripts/native-build-without-nix.bash` builds the
-   engine on a plain box and runs `scripts/rpgxp_boot_check.bash` under Xvfb, so
+   **Partly lifted since.** `scripts/native/build-without-nix.bash` builds the
+   engine on a plain box and runs `scripts/rpgxp/boot_check.bash` under Xvfb, so
    crash-on-map-load — the failure this called out as worse than cosmetic — is now
    catchable before review rather than after. What that still does *not* give is
    the cosmetic half: the XP test bed ships no image assets, so its tilesets load

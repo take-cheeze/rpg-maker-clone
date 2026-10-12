@@ -75,14 +75,14 @@ compiled without them keep the layout the analysis declared, as before.
 ## Consequences
 
 - Compiled `+ - *` agree with the interpreter on every input; the new
-  `scripts/bc2cpp_fixnum_overflow_check.rb` compares them over a boundary matrix
+  `scripts/bc2cpp/fixnum_overflow_check.rb` compares them over a boundary matrix
   (Fixnum and `mrb_int` extremes, `fact(25)`, negative shift counts, `-MIN`, `%`/`<<` edges,
   Range#each at the top of both ranges) against a 64-bit and a 32-bit-`mrb_int` build, and pins the
   generated tier. `-DMRB_32BIT -DMRB_INT32` on a 64-bit host has the 32-bit targets' arithmetic
   (31-bit Fixnums, 32-bit `mrb_int`); pass such a build through `BC2CPP_MRUBY_FULL32`,
   `BC2CPP_MRBC32` and (via `BC2CPP_CXXFLAGS`, set by the script) its flags. `MRB_INT32` alone
   keeps 32-bit Fixnums, a different regime.
-- Cost, measured on the wio closed world with `scripts/bc2cpp_coverage_report.rb`: proven
+- Cost, measured on the wio closed world with `scripts/bc2cpp/coverage_report.rb`: proven
   Fixnum-returning methods 78 to 31 (source 4 retired, computed names refused); guarded arithmetic
   and compare arms that keep a dynamic send 2,862 to 2,919 (the arms the Fixnum proof used to cover
   now go to the numeric proof: 170 to 353 arms lost their send that way); typed slots `mrb_int`
@@ -92,7 +92,7 @@ compiled without them keep the layout the analysis declared, as before.
   source spells. A micro benchmark of `while` loops with `+= 1`, `& 7`, `*` and an ivar counter
   (200M iterations, `-O2`, a loaded host) is within noise (0.72/1.02/0.60 s before, 0.78/0.79/0.67 s
   after for the three loops).
-- `scripts/bc2cpp_computed_send_proof_check.rb` and `scripts/bc2cpp_foreign_ivar_write_check.rb`
+- `scripts/bc2cpp/computed_send_proof_check.rb` and `scripts/bc2cpp/foreign_ivar_write_check.rb`
   fail on the pre-change tree (garbage instead of `"abab"`, TypeError instead of the stored
   String). The diagnostic prints `== typed slots demoted to boxed slots ==` and the coverage report
   counts them.
@@ -105,5 +105,5 @@ compiled without them keep the layout the analysis declared, as before.
 - Consequence for ADR 0273: the Integer#step/upto/downto inline needs both bounds proven Fixnum, so
   every counter value lies between two Fixnums and needs no FIXABLE boxing. A bound computed by
   arithmetic (`n.upto(n + 2)`) is no longer a proven Fixnum, so that loop keeps its call until a
-  range proof or a run-time fixnum guard covers it (`scripts/bc2cpp_step_inline_check.rb` pins
+  range proof or a run-time fixnum guard covers it (`scripts/bc2cpp/step_inline_check.rb` pins
   `upto_dynamic` / `downto_dynamic` as kept).

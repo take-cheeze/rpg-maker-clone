@@ -50,7 +50,7 @@ mruby-rpg2k. So mruby-exit, mruby-sprintf, mruby-math and mruby-time stay.
   'wio'`, and the same for `mruby-random`, with a comment giving the reason.
   Only Wio changes. PSP and maix are also `single_format_only` and could
   follow, but they were not measured here, so they keep both gems.
-- **`scripts/wio_dropped_gems_check.rb`**, a new check wired into CI's
+- **`scripts/wio/dropped_gems_check.rb`**, a new check wired into CI's
   `ruby-checks` job. Nothing else would catch a regression: CI never runs a
   Wio build, so a future `rand(3)` or `Integer(x)` in mruby-rpg2k would pass
   every host check and raise `NoMethodError` only on the board. The check
@@ -66,7 +66,7 @@ mruby-rpg2k. So mruby-exit, mruby-sprintf, mruby-math and mruby-time stay.
 
 Real cross-builds, not only relinks: two fresh `MRUBY_TARGET=wio rake` runs
 from the same tree, one with each `build_config.rb` (same recipe as
-`scripts/wio_bc2cpp_measure.bash`). Each `pio run -e wio_rgss_boot` was
+`scripts/wio/bc2cpp_measure.bash`). Each `pio run -e wio_rgss_boot` was
 serialized with `flock`. The measurements are on top of docs/adr/0201:
 
 | build | before | after | delta |

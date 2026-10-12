@@ -9,7 +9,7 @@ Accepted
 ## Context
 
 The project has a lot of tests — the mruby gem suites run by `mruby_test`, the
-`scripts/*_check.rb` harnesses in the `ruby-checks` CI job, the native smoke
+`scripts/**/*_check.rb` harnesses in the `ruby-checks` CI job, the native smoke
 tests that boot the binary on real games — and no way to say what they leave
 untouched. "Is this path tested?" has been answered by reading the checks.
 
@@ -21,7 +21,7 @@ Measuring it has one obstacle: the shipped runtime is **mruby**, which has no
 coverage support at all — no `Coverage` module, no profiler hook to build one
 from. What makes the problem tractable is a property the project already relies
 on: that Ruby is written in the mruby/CRuby common subset, and the check
-harnesses `load` those very files under CRuby (`scripts/rpg2k_logic_check.rb`
+harnesses `load` those very files under CRuby (`scripts/rpg2k/logic_check.rb`
 and friends). Under CRuby the stdlib `Coverage` module applies.
 
 Three shapes were considered:
@@ -37,13 +37,13 @@ Three shapes were considered:
 
 ## Decision
 
-Take (1). `scripts/coverage_report.rb` runs the host-side checks with CRuby's
+Take (1). `scripts/coverage/report.rb` runs the host-side checks with CRuby's
 `Coverage` stdlib enabled and reports line coverage of `mruby-*/mrblib` per gem
 and per file, writing `coverage/lcov.info` (standard interchange, feeds
 `genhtml` and the coverage services) and `coverage/coverage.json`.
 
 Coverage must be started before the sources are loaded, so
-`scripts/coverage_hook.rb` is injected into each check process through
+`scripts/coverage/hook.rb` is injected into each check process through
 `RUBYOPT=-r<hook>` rather than required by the harnesses. The harnesses are not
 touched, a harness that spawns `ruby` is measured too, and each process writes
 its own result for the reporter to merge — which is also what lets the checks
@@ -79,7 +79,7 @@ coverage is left unmeasured (option 2).
   extra runner). The alternative — measuring the existing group in place —
   would have cost the per-check step granularity that job's log is built
   around.
-- The check list in `scripts/coverage_report.rb` duplicates the one in
+- The check list in `scripts/coverage/report.rb` duplicates the one in
   `.github/workflows/build.yml`; a check added to CI and not to the reporter is
   simply unmeasured, which is a silent, low-cost drift. `--list` prints what
   the reporter believes.

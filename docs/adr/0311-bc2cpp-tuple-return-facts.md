@@ -100,7 +100,7 @@ instruction after the call up to the AREF has the previous instruction as its on
 
 ## Consequences
 
-Measured on the wio closed world (`scripts/bc2cpp_coverage_report.rb` shipped pass, `scripts/bc2cpp_dynamic_site_census.rb`
+Measured on the wio closed world (`scripts/bc2cpp/coverage_report.rb` shipped pass, `scripts/bc2cpp/dynamic_site_census.rb`
 for the totals), base `2b317417`, engine owners (`RPG2k*`, `Game*`), mruby patch chain applied:
 
 | | master | this change | delta |
@@ -129,14 +129,14 @@ What would unlock more, in order: the native-written ivars (`@width @height @x @
 
 ### Checks
 
-`scripts/bc2cpp_tuple_return_check.rb`: the AREF transfer and `tuple_shape` on hand-built bytecode (host only);
+`scripts/bc2cpp/tuple_return_check.rb`: the AREF transfer and `tuple_shape` on hand-built bytecode (host only);
 generated code of a closed-world fixture with positive cases (Integer, Float, Integer-or-Float, ternary tails, one
 position unknown while another proves, a nil position narrowed by `||`, overflow past the fixnum range) and negative
 worlds (a second definition with another length / a String / a non-literal, a name a native defines, a name core
 `mrblib` defines, a stored-and-mutated Array, a block `return`, a rescue clause, an index past the length, a copy
 mutated first, a branch join before the destructure, a reopened `Integer#+`, `method_missing`, the kill switch);
 then compiled against interpreted on full-core, core-only, 32-bit `mrb_int` and no-bigint builds (values,
-exceptions, and no dynamic dispatch in the proven methods). `scripts/bc2cpp_tuple_return_mutation_check.rb` breaks
+exceptions, and no dynamic dispatch in the proven methods). `scripts/bc2cpp/tuple_return_mutation_check.rb` breaks
 ten soundness conditions in a copy of the generator, one at a time; each must fail a named check.
 
 Not run here: the CI shards themselves (locally on 4 cores the check takes about 30 s per build set and the mutants

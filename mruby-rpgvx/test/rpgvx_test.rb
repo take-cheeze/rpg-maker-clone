@@ -2,7 +2,7 @@
 # game on disk: edition detection, the per-edition file mapping and the
 # RGSS2/RGSS3 schema's Marshal round-trip (the real games load the same classes
 # through mruby-marshal). The on-disk and encrypted-archive paths — which need a
-# project tree — are driven by scripts/rpgvx_testbed_check.rb.
+# project tree — are driven by scripts/rpgvx/testbed_check.rb.
 
 # The boot shell reads GAME_DIR when a game is constructed; nothing tested here
 # does, but define a stand-in so the constant is never missing.

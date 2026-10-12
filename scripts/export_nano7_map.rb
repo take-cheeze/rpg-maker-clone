@@ -11,12 +11,12 @@
 # pure-Ruby sources the rest of this repo already loads under plain CRuby:
 #
 #   * mruby-lcf/mrblib/{lcf,schema}.rb   -- the LCF/BER map+database reader,
-#     same loading pattern as scripts/lcf_save_check.rb / lcf_testbed_check.rb.
+#     same loading pattern as scripts/lcf/save_check.rb / lcf_testbed_check.rb.
 #   * mruby-rpg2k/mrblib/game.rb         -- Game::ChipsetLayout (tile-id ->
 #     chipset source-rect geometry, including the autotile quarter-tile
 #     assembly) and Game::ChipSet (passability), the same pure-geometry module
-#     scripts/rpg2k_render_check.rb already exercises standalone.
-#   * scripts/rgss_cruby_compat.rb       -- RGSS::Bitmap's PNG decoder, to
+#     scripts/rpg2k/render_check.rb already exercises standalone.
+#   * scripts/rgss/cruby_compat.rb       -- RGSS::Bitmap's PNG decoder, to
 #     read the chipset PNG without a native build. It is loaded with RPG
 #     Maker's "palette index 0 is transparent" flag, the same way
 #     Scene::Map#load_chipset_graphic does (`Bitmap.new "ChipSet/#{name}",
@@ -126,8 +126,8 @@
 require 'stringio'
 
 module LCF
-  # uni-algo stand-in, same shim scripts/lcf_save_check.rb and
-  # scripts/lcf_testbed_check.rb use to load the schema under plain CRuby.
+  # uni-algo stand-in, same shim scripts/lcf/save_check.rb and
+  # scripts/lcf/testbed_check.rb use to load the schema under plain CRuby.
   def cp932_to_utf8(s)
     s.dup.force_encoding('Windows-31J')
      .encode('UTF-8', invalid: :replace, undef: :replace, replace: "\u{FFFD}")
@@ -148,7 +148,7 @@ load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now 
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'legacy_lsd.rb')
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
-load File.join(ROOT, 'scripts/rgss_cruby_compat.rb')
+load File.join(ROOT, 'scripts/rgss/cruby_compat.rb')
 
 # The devices that run this export, and the buffers each one can afford.
 # Mirrored in that target's firmware, where the same numbers size the static

@@ -11,7 +11,7 @@
  * a genuine (if approximate -- see docs/adr/0103) CPU cost signal the host
  * build cannot give at all. Framebuffer pixels land in real, guest-visible
  * RAM that a real PL110 CLCD controller model scans out, verified pixel-
- * correct against QEMU's own `screendump` (see scripts/nano7_qemu_run.bash).
+ * correct against QEMU's own `screendump` (see scripts/nano7/qemu_run.bash).
  *
  * hb_raw_fb(), the hb_raw_ pixel primitives and hb_draw_str are
  * app/nano7/shim_common/hb_fb_ops.c, shared with app/nano7/host. This file
@@ -141,7 +141,7 @@ static inline uint32_t pmu_ccnt(void) {
 /* rpg2k_walk.c only ever reads two fixed paths (MAP_DATA_DIR "/map.bin" and
  * ".../tiles.bin"); this target has no filesystem at all, so hb_fs_read
  * just matches the path suffix and copies from one of two blobs linked
- * into the image (scripts/nano7_qemu_build.bash's objcopy step). */
+ * into the image (scripts/nano7/qemu_build.bash's objcopy step). */
 extern const uint8_t _binary_map_bin_start[];
 extern const uint8_t _binary_map_bin_end[];
 extern const uint8_t _binary_tiles_bin_start[];

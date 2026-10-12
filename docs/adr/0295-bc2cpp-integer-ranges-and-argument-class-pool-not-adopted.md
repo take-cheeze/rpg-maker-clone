@@ -29,7 +29,7 @@ the branch and resolving the five conflicts, with the range emitters also wrappe
 "operand proven Fixnum" arms that master now emits through `fixnum_exact_tier`; the pooling one by
 applying its patch and re-hooking `codegen_send.rb` after `exact_flow_user_class`). Both ran
 against the wio closed world (`wio_gen`-style `bc2cpp.rb` runs of the four compiled gems, as
-`scripts/wio_bc2cpp_measure.bash` builds them) and against optcarrot through
+`scripts/wio/bc2cpp_measure.bash` builds them) and against optcarrot through
 `tools/optcarrot_probe/compiled_run.rb 180`. The ported range analysis reports its own census with
 `BC2CPP_RANGE_COVERAGE=1`. Numbers are generated-C++ bytes and site counts from the generator;
 no ARM link was produced, so flash/RAM deltas are not measured.

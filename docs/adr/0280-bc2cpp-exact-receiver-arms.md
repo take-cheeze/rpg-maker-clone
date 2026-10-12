@@ -86,14 +86,14 @@ and audit burden for no removed site, so it is left out until a consumer needs i
 
 ## Consequences
 
-- Wio closed-world report (`scripts/bc2cpp_coverage_report.rb`): cached dispatch sites 10954 to 10940.
+- Wio closed-world report (`scripts/bc2cpp/coverage_report.rb`): cached dispatch sites 10954 to 10940.
   NATIVE_CORE_DIRECT 72 to 65 with 7 `NATIVE_CORE_EXACT` (`compact` 5, `join` 2); NATIVE_DIRECT
   552 to 546 with 6 `NATIVE_DIRECT_EXACT`; 13 BLOCK_CORE_DIRECT sites are narrowed to their proven class
   (`each` 6, `map` 3, `any?` 2, `flat_map`, `each_with_index`) and keep their else. Far fewer than the
   ~90 first estimated: most receivers of these arms are parameters, ivars, `GETIDX` results or
   `implicit self`, whose class only a guarded fact names.
 - The unguarded proofs are a superset of nothing that existed before: no guarded arm changed.
-- `scripts/bc2cpp_exact_receiver_check.rb` checks the generated code (every proof and every reason it
+- `scripts/bc2cpp/exact_receiver_check.rb` checks the generated code (every proof and every reason it
   is withheld, including each singleton-making construct, a Ruby override and the open world), then
   compiles a fixture with the compiled core into a full-core mruby and requires the interpreter's
   output for the same driver: literal, rest, alias and splat receivers, loop/branch/rescue/or-assign

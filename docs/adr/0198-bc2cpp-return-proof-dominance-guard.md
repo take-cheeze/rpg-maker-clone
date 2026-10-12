@@ -61,7 +61,7 @@ nested block writes also causes a refusal.
 
 ## Consequences
 
-Measured with `scripts/bc2cpp_coverage_report.rb` (whole program) before and
+Measured with `scripts/bc2cpp/coverage_report.rb` (whole program) before and
 after:
 
 - ARRAY_RETURN_PROOF 113 -> 131 (+18, none lost).
@@ -75,7 +75,7 @@ after:
 Everything else in the report is unchanged. The check against a join-free
 walk is gone. A join is now accepted when control cannot reach it
 without passing the write, as in a loop between the write and the RETURN, or
-a RETURN on a loop-exit label. `scripts/bc2cpp_return_join_check.rb` checks
+a RETURN on a loop-exit label. `scripts/bc2cpp/return_join_check.rb` checks
 the accepted shapes and every refused one: the nil local, the optional and
 reassigned arguments, the `||` join, a write inside the loop body, block
 writes at depth 1 and 2, and the `.dup` join.

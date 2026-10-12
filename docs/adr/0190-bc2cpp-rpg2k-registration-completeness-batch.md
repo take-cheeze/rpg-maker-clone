@@ -93,11 +93,11 @@ carry zero embedding risk by construction).
 
 ## What was verified
 
-- `scripts/bc2cpp_wired_embedding_check.rb`: **PASS**, every one of the 35
+- `scripts/bc2cpp/wired_embedding_check.rb`: **PASS**, every one of the 35
   new owners at 100% (e.g. `RPG2k::Scene::Map: 408/408`, `Game::Battle:
   141/141`, `Game::Actor: 124/124`, `Game::Party: 128/128`) -- all 402
   previously-missing methods now installed.
-- `scripts/bc2cpp_coverage_report.rb`: method-level coverage unchanged at
+- `scripts/bc2cpp/coverage_report.rb`: method-level coverage unchanged at
   100.0%, 0 `#error`. Compiled entry points 2320 -> 2343 (+23 synthesized
   `ATTR_STRUCT_DEVIRT` accessor overrides, 27 -> 50, exactly matching the
   attr-collision classes named above). Classes needing
@@ -183,7 +183,7 @@ check.rb` fails any owner short of 100%, and there is no way to close the
 remaining gap without a real mruby API this project does not have --
 dropped both rather than leave a permanently-red check.
 
-`scripts/bc2cpp_wired_embedding_check.rb`: PASS, all newly-wired owners at
+`scripts/bc2cpp/wired_embedding_check.rb`: PASS, all newly-wired owners at
 100% (`RGSS.singleton` 12/12, `RGSS::ErrorReport.singleton` 9/9,
 `RGSS::Input.singleton` 12/12, `RGSS::Bitmap` 4/4, `RGSS::ErrorReport::Tee`
 7/7, `Array` 3/3, plus the four LCF classes). Coverage report unchanged at

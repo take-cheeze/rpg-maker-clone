@@ -99,7 +99,7 @@ was measuring the cost of. This applies to every target that shares
 `src/main.cxx` (desktop, Android, Emscripten); `app/psp/main.cxx` and the Wio
 Terminal port have their own entry points and are untouched by this ADR.
 
-Verified end to end on a native Linux build (`scripts/native-build-without-nix.bash`):
+Verified end to end on a native Linux build (`scripts/native/build-without-nix.bash`):
 the full CTest suite (`mruby_test` included, which runs every gem's own
 `rake test` specs unaffected by this change) passes; RPG Maker MV and MZ
 sample projects boot to their title screens; a real RPG2000/2003 project

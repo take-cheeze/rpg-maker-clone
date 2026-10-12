@@ -47,9 +47,9 @@ is the public `mrb_ary_push`.
 
 How every target applies it: `cmake/build-mruby.cmake` (`rpg2k_mruby_patch`, after `mruby-no-irep-debug`) serves the
 native, Emscripten, PSP (`app/psp/CMakeLists.txt` includes the same file), Android and Wio (cmake) builds and
-`mruby_host_mrbc`; `scripts/maix_mruby_build.bash` and `scripts/wio_bc2cpp_measure.bash` keep their own copies of the
+`mruby_host_mrbc`; `scripts/maix/mruby_build.bash` and `scripts/wio/bc2cpp_measure.bash` keep their own copies of the
 list and gained the entry. PlatformIO links the libmruby those produce, and the nix flake builds through cmake, so
-neither has a list. The width builds of `scripts/bc2cpp_width_build.rb` use the patched tree.
+neither has a list. The width builds of `scripts/bc2cpp/width_build.rb` use the patched tree.
 
 ### The helpers
 
@@ -91,7 +91,7 @@ patch is outside this family.
 ### Soundness
 
 * The else is the proven NoMethodError of ADR 0360 (`bc2cpp_nomethod_named` dispatches by name first).
-* The patch is part of the proof: bodies are pinned by digest in `scripts/bc2cpp_numeric_slow_check.rb`
+* The patch is part of the proof: bodies are pinned by digest in `scripts/bc2cpp/numeric_slow_check.rb`
   (`MIRRORED_BODIES`: the numeric and object.c bodies, `mrb_ary_push_m`, and the wrappers and `_impl` bodies of the three
   patched gems), so an mruby bump or an edit of the patch fails the check until the arms are re-derived.
 * A world where the helper would call an export that is not linked cannot be generated (gem and source proofs above).
@@ -103,7 +103,7 @@ mruby-array-ext keeps `- & |` by name; a build that links mruby-set (not in any 
 scanned sources) would add `Set#- & | <<` definers the scan cannot see, so the ADR 0360 assumption that the scanned
 gems are the build's gems applies unchanged.
 
-Equivalence is `scripts/bc2cpp_numeric_slow_check.rb` with `scripts/bc2cpp_collection_ops_matrix.rb`: every helper
+Equivalence is `scripts/bc2cpp/numeric_slow_check.rb` with `scripts/bc2cpp/collection_ops_matrix.rb`: every helper
 called directly against the real operator over fresh receivers and operands (empty, frozen, subclass, shared copy,
 UTF-8, 70,000 elements, nested, elements with a logging `hash`/`eql?`/`==`, one whose `hash` raises, wrong operand
 types, closed and read-only streams), comparing result or error class and message, result class, frozen-ness and

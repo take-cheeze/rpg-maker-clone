@@ -66,12 +66,12 @@ same pair of slots and the opposite rule, and it wants its own change — the
 menu's candidate list for slot 1 has to change with it, which this does not
 touch.
 
-Covered by `scripts/rpg2k_logic_check.rb` (a two-handed weapon empties the shield
+Covered by `scripts/rpg2k/logic_check.rb` (a two-handed weapon empties the shield
 hand and a shield knocks the two-handed weapon off, a one-handed pair lives
 together, the other three slots are untouched, a shield carrying the flag does
 not claim a hand, the emptied hand returns to the bag rather than vanishing, and
 a bulk equip restores a saved pair as-is) and by
-`scripts/rpg2k_testbed_logic_check.rb`, which equips **every** real two-handed
+`scripts/rpg2k/testbed_logic_check.rb`, which equips **every** real two-handed
 weapon in both games over a real shield and asserts the hand empties, and asserts
 that no non-weapon in either game carries the flag.
 
@@ -121,7 +121,7 @@ implementation's candidate-list window (which only builds the candidate list)
 settles that, and it would need its own row-label window's own source — not
 checked here, so the label stays "Shield" regardless.
 
-Covered by `scripts/rpg2k_logic_check.rb`: a double-hand actor's shield slot
+Covered by `scripts/rpg2k/logic_check.rb`: a double-hand actor's shield slot
 offers the two held weapons and not the shield (with the ordinary weapon slot
 listing the same two, and an ordinary actor still offered the shield);
 equipping a second weapon from the bag lands it in slot 1, both weapons then

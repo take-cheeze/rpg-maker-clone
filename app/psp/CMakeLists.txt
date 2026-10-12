@@ -50,7 +50,7 @@ set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 # create_pbp_file's POST_BUILD chain runs "$ENV{PSPDEV}/bin/psp-fixup-imports"
 # over the freshly linked ELF (see $PSPDEV/psp/share/CreatePBP.cmake). That tool
-# has to be the JAL-relocation-aware build scripts/build_psp_fixup_imports.bash
+# has to be the JAL-relocation-aware build scripts/build/psp_fixup_imports.bash
 # produces, not pspdev's stock one: the stock tool assumes every call site
 # referencing a given PSP module is already physically contiguous in the linked
 # binary's import metadata, which main.cxx's own ordinary control flow does not
@@ -100,7 +100,7 @@ if(NOT FIXUP_IMPORTS_PATCHED)
       "against it produces an EBOOT whose PSP imports resolve to the wrong "
       "modules -- it will boot far enough to look fine and then hang. Install "
       "the patched build over it first:\n"
-      "    bash ${REPO_ROOT_ABS}/scripts/build_psp_fixup_imports.bash\n"
+      "    bash ${REPO_ROOT_ABS}/scripts/build/psp_fixup_imports.bash\n"
       "then force a relink (rm ${CMAKE_CURRENT_BINARY_DIR}/rpg2k_psp), since "
       "replacing the tool does not by itself make anything rebuild. See "
       "patches/psp-fixup-imports-jal-relocation-aware.patch.")

@@ -82,7 +82,7 @@ The Fixnum proof and return analysis refuse on two exception-flow sets:
 end address included). `tools/bc2cpp/fixnum_barrier_shadow.rb` re-derives both
 from handler edges (edge targets; edge sources plus the instruction at each
 range end) and re-runs every barrier consumer with them swapped in.
-`scripts/bc2cpp_barrier_shadow_report.rb` runs it on the real closed-world wio
+`scripts/bc2cpp/barrier_shadow_report.rb` runs it on the real closed-world wio
 build: 2405 irep contexts and 157431 queries, zero differences, generated
 output unchanged.
 
@@ -108,7 +108,7 @@ nested blocks): the SET of writes that can supply a register at an
 instruction, through joins and loops, with `MOVE` sources followed. Any state
 it cannot account for returns nil rather than a partial set: an op outside the
 audited write list (the Fixnum proof's `FIXNUM_PROOF_STEP_OVER_OPS`, kept equal
-by `scripts/bc2cpp_bytecode_ir_dataflow_check.rb`), a register a callee frame
+by `scripts/bc2cpp/bytecode_ir_dataflow_check.rb`), a register a callee frame
 above a call may overwrite, a register a nested block writes with `SETUPVAR`
 (`Irep#tree` gives the walk the children), any handler target or protected
 instruction (RESCUE_SUPPORT compiles that range apart), an unreachable join, or

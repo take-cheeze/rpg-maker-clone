@@ -6,7 +6,7 @@ same lines, so every pull request collided.
 
 Instead, each change gets its own file in this directory. Two branches never
 touch the same file, so the fragments merge cleanly. The fragments are folded
-into `CHANGELOG.md` at release time by `scripts/build_changelog.rb`.
+into `CHANGELOG.md` at release time by `scripts/build/changelog.rb`.
 
 ## Adding an entry
 
@@ -29,15 +29,15 @@ spaces, like the rest of `CHANGELOG.md`:
 ```markdown
 - **Control Variables** now supports random integers, actor stats and game
   quantities as operand sources. Covered by new checks in
-  `scripts/rpg2k_logic_check.rb`.
+  `scripts/rpg2k/logic_check.rb`.
 ```
 
 ## Handy commands
 
 ```bash
-ruby scripts/build_changelog.rb list        # list pending fragments
-ruby scripts/build_changelog.rb preview     # preview the merged Unreleased section
-ruby scripts/build_changelog.rb release 1.2.0   # fold fragments into CHANGELOG.md
+ruby scripts/build/changelog.rb list        # list pending fragments
+ruby scripts/build/changelog.rb preview     # preview the merged Unreleased section
+ruby scripts/build/changelog.rb release 1.2.0   # fold fragments into CHANGELOG.md
 ```
 
 `release` renames `## [Unreleased]` to the given version (dated today unless a

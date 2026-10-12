@@ -10,5 +10,5 @@ Keyword and block parameters remain unsupported. Invalid arity produces no
 result proof; runtime argument errors remain unchanged. Set
 `BC2CPP_CONTEXT_ARGUMENT_SHAPES=0` to disable expanded signature binding.
 
-Run `ruby scripts/bc2cpp_context_arguments_check.rb` for the binding checks.
+Run `ruby scripts/bc2cpp/context_arguments_check.rb` for the binding checks.
 See ADR 0355 for the soundness boundary.

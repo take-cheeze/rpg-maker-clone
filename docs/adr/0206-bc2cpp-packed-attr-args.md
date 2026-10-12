@@ -44,5 +44,5 @@ with no `#error`.
 
 With this change a real `RPGMAKER_BC2CPP=1` build runs
 `--rpg2k_battle_troop=1 --rpg2k_battle_play` to the same result as the
-interpreted build. `scripts/bc2cpp_packed_attr_args_check.rb` checks the packed
+interpreted build. `scripts/bc2cpp/packed_attr_args_check.rb` checks the packed
 reader and module function and the refused splat.

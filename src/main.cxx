@@ -99,7 +99,7 @@ DEFINE_bool(
     "Continue so the game resumes from the save in the game directory without "
     "input, and log the map it reaches as [RPG2k-MAP]. Lets both this engine "
     "and a genuine RPG_RT.exe be brought to the same in-game map from the same "
-    "Save<N>.lsd (see scripts/compare-nepheshel-save-wine.bash) instead of "
+    "Save<N>.lsd (see scripts/compare/nepheshel-save-wine.bash) instead of "
     "being driven there by counting key presses");
 DEFINE_int32(
     rpg2k_preview_map,
@@ -184,7 +184,7 @@ DEFINE_bool(
     "game's own title screen once a second, so a headless run gets into the "
     "game without a keyboard, and log each scene the game reaches as "
     "[RPGXP-HOST-SCENE]. A game shows its own title screen, so this is how a "
-    "headless run gets past it. Used by scripts/rpgxp_boot_check.bash");
+    "headless run gets past it. Used by scripts/rpgxp/boot_check.bash");
 DEFINE_bool(
     rgss_host_move_test,
     false,
@@ -196,7 +196,7 @@ DEFINE_bool(
     "Input.dir4 "
     "and steps across its own passability is being played, not just drawn. "
     "Used "
-    "by scripts/rpgxp_boot_check.bash");
+    "by scripts/rpgxp/boot_check.bash");
 DEFINE_bool(
     rgss_host_menu_test,
     false,
@@ -205,7 +205,7 @@ DEFINE_bool(
     "cancel key and log which scene the game went to as [RPGXP-HOST-MENU] "
     "(implies --rgss_host_new_game). The rung above walking: a game's own menu "
     "is the first thing it draws out of its own Window classes, its own "
-    "windowskin and its own font. Used by scripts/rpgxp_boot_check.bash");
+    "windowskin and its own font. Used by scripts/rpgxp/boot_check.bash");
 DEFINE_bool(
     rgss_host_battle_test,
     false,
@@ -222,7 +222,7 @@ DEFINE_bool(
     "entirely with a custom one, e.g. a custom battle system) -- distinct "
     "from called=true reached=false, where the battle really was requested "
     "but the game's own engine never brought Scene_Battle up. Used by "
-    "scripts/rpgxp_boot_check.bash");
+    "scripts/rpgxp/boot_check.bash");
 DEFINE_bool(
     rgss_host_save_test,
     false,
@@ -234,7 +234,7 @@ DEFINE_bool(
     "slot "
     "from File#mtime -- and where its own save_data writes a real file. Used "
     "by "
-    "scripts/rpgxp_boot_check.bash");
+    "scripts/rpgxp/boot_check.bash");
 DEFINE_int64(
     rgss_random_seed,
     0,
@@ -246,7 +246,7 @@ DEFINE_int64(
     "and the action order of a battle -- so without this a check that gets as "
     "far as a fight is a different fight on every run. 0 leaves the clock seed "
     "alone, which is what a player wants. Used by "
-    "scripts/rpgxp_boot_check.bash");
+    "scripts/rpgxp/boot_check.bash");
 DEFINE_bool(
     mv_new_game,
     false,
@@ -277,7 +277,7 @@ DEFINE_int32(
     "steps well past 180 frames) needs a larger one-off value here to get the "
     "probe past it at all instead of reporting blocked=true. Left as a "
     "per-run override rather than a bigger default so every other check keeps "
-    "its short safety cap. Used by scripts/mz_boot_check.bash's "
+    "its short safety cap. Used by scripts/mz/boot_check.bash's "
     "MZ_MOVE_SETTLE_MAX_FRAMES");
 DEFINE_bool(
     mv_message_test,
@@ -474,7 +474,7 @@ DEFINE_bool(
     "voice as each Show Text/Show Choices page opens, via a bundled offline "
     "VOICEVOX CORE synthesis stack (RGSS::Tts, src/voicevox_tts.cxx). Off by "
     "default: the stack is ~90 MiB and not committed, so run "
-    "scripts/download-voicevox-zundamon.bash first -- with no assets/voicevox "
+    "scripts/download/voicevox-zundamon.bash first -- with no assets/voicevox "
     "installed this flag logs why and the game runs silently, same as "
     "--zundamon_tts on a build with no VOICEVOX CORE backend at all (see "
     "RGSS::Tts.available?)");
@@ -612,7 +612,7 @@ fs::path reg2path(std::string r) {
 // Used for both RPG2000 and RPG2003 projects (see the dispatch in main()
 // below) under the shared assumption that both editions register their RTP
 // under this one legacy key. That holds for a 2000 RTP install, but the
-// genuine RPG2003 RTP installer (scripts/rtp_2003_install.bash, extracted and
+// genuine RPG2003 RTP installer (scripts/rtp/2003_install.bash, extracted and
 // inspected directly since no real 2003 project/RTP was available when this
 // function was first wired up) actually writes its own separate
 // Software\Enterbrain\RPG2003\RuntimePackagePath key, pointing at its own
@@ -863,7 +863,7 @@ void init_default_font(const std::string& launch_dir) {
     LOG(INFO)
         << "Text: no default font installed; a project that ships none of "
            "its own draws with the built-in shinonome bitmap font at its "
-           "fixed 12px. Run scripts/download-default-font.bash to add one.";
+           "fixed 12px. Run scripts/download/default-font.bash to add one.";
   } else {
     LOG(INFO) << "Text: default font from '" << path << "'";
   }
@@ -1486,7 +1486,7 @@ int main(int argc, char** argv) {
   // about it because Game.exe is launched from the game's folder, so that
   // directory *is* the game's. This engine is launched from anywhere with
   // --game_dir pointing elsewhere, so without this every game's saves land in
-  // one shared place; scripts/rpgxp_boot_check.bash caught the consequence when
+  // one shared place; scripts/rpgxp/boot_check.bash caught the consequence when
   // Pray for You's own title screen offered Continue on the strength of the
   // editor test bed's save file, read it as its own and died on the mismatch
   // (docs/rpgxp-rgss-api-gap.md, gap 0j). Two games overwriting each other's
@@ -1716,7 +1716,7 @@ int main(int argc, char** argv) {
   // Software\ASCII\RPG2000\RuntimePackagePath. Only the RPG2000 key was wired
   // up before, so an XP project could never find its RTP art and every asset
   // fell back to a placeholder (found while bringing up
-  // scripts/compare-rpgxp-wine.bash, which needs both runtimes to draw the same
+  // scripts/compare/rpgxp-wine.bash, which needs both runtimes to draw the same
   // pictures to be worth anything) -- and a VX project still resolved the
   // RPG2000 path, which can never hold its assets.
   const fs::path game_dir = FLAGS_game_dir;

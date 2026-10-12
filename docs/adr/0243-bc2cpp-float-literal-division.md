@@ -31,9 +31,9 @@ overridden Float#`/`, or prepended module keeps ordinary dispatch.
 
 ## Coverage
 
-`scripts/bc2cpp_division_fastpath_check.rb` checks Integer/Integer division,
+`scripts/bc2cpp/division_fastpath_check.rb` checks Integer/Integer division,
 all mixed numeric opcode arms, fallback dispatch, and the Float-literal direct
 path including its Complex fallback. It runs in the bc2cpp CI check shard.
-These generator checks are separate from `scripts/coverage_report.rb`, whose
+These generator checks are separate from `scripts/coverage/report.rb`, whose
 line totals intentionally measure mrblib Ruby sources rather than the bc2cpp
 generator itself.

@@ -13,7 +13,7 @@ as a `long long` counter loop when both bounds are proven Fixnums, so every coun
 them needs no boxing. ADR 0279 retired "an ADD/SUB/MUL result is a proven Fixnum" (a result can be
 a bignum, and under word boxing one past `MRB_FIXNUM_MAX` is a heap Integer), so a bound such as
 `n + 2` or `(n * 2)` is an Integer the proof no longer calls a Fixnum and the loop went back to a
-block call (`scripts/bc2cpp_step_inline_check.rb` pinned `upto_dynamic` / `downto_dynamic` as kept;
+block call (`scripts/bc2cpp/step_inline_check.rb` pinned `upto_dynamic` / `downto_dynamic` as kept;
 the pin was vacuous for `upto`: `upto` was not in `BLOCK_FALLBACK_UPVAR_SAFE_METHODS`, so that site
 was a `#error` and, under `SKIP_UNSUPPORTED`, the whole method was dropped).
 
@@ -74,7 +74,7 @@ that work should be argued on that benefit, not on this one.
 - Cost: one integer tag test per inlined loop entry on the guarded sites, and the block body is
   compiled twice (inlined, and as the fallback cfunc), so a guarded site roughly doubles that
   block's generated code. The fixture has 27 guarded sites; the game has one.
-- `scripts/bc2cpp_step_inline_check.rb` now pins the guard (`STEP_LOOP_GUARD`, `BLOCK_FALLBACK`,
+- `scripts/bc2cpp/step_inline_check.rb` now pins the guard (`STEP_LOOP_GUARD`, `BLOCK_FALLBACK`,
   the test in front of the loop and not in it), keeps Float-tainted bounds, unknown operands and a
   flat loop un-guarded, and compares compiled with interpreted results for bounds at, just inside
   and just past `MRB_FIXNUM_MAX` / `MRB_FIXNUM_MIN` (inlined and fallback branch, positive and

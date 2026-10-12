@@ -76,19 +76,19 @@ interpreted fallback left to read the plain iv_tbl, the hazard
 
 The eligible set is checked in as `tools/bc2cpp/static_dispatch_unregistered.rb`
 (179 names today). `bc2cpp.rb`'s `emit_owner_registrations` skips them for
-wired owners; `scripts/bc2cpp_prune_static_dispatch_registrations.rb` removed
+wired owners; `scripts/bc2cpp/prune_static_dispatch_registrations.rb` removed
 the 144 hand-written `register.cxx` lines for the rest. The bytecode `def`s are
 untouched: `strip_wio_bc2cpp_stubs.rb` still strips them on wio/host, and
 nothing dispatches to one either way.
-`scripts/bc2cpp_static_dispatch_check.rb` (now in the bc2cpp CI job, next to
+`scripts/bc2cpp/static_dispatch_check.rb` (now in the bc2cpp CI job, next to
 the never-called check docs/adr/0193 left as a follow-up) re-proves every
 listed name on every run: a later change that adds any dynamic reference to
 one fails CI instead of shipping a `NoMethodError`.
-`scripts/bc2cpp_wired_embedding_check.rb` exempts listed names.
+`scripts/bc2cpp/wired_embedding_check.rb` exempts listed names.
 
 ## Measurement
 
-A/B with `scripts/wio_bc2cpp_measure.bash`, `flock`-serialized, each side in
+A/B with `scripts/wio/bc2cpp_measure.bash`, `flock`-serialized, each side in
 its own clean worktree. "Without" is master at 8284f44; "with" is this
 change on top of it, with the 175-name list that base produced:
 
@@ -135,7 +135,7 @@ absolute bc2cpp figures include it; their deltas do not.
   and unregistering its methods pull against each other; a guard that fell
   back to the `_impl` for a subclass could win both back.
 - Runtime evidence is the real `RPGMAKER_BC2CPP=1` SDL desktop binary
-  running `scripts/rpg2k_boot_check.bash` against both test-bed games. Both
+  running `scripts/rpg2k/boot_check.bash` against both test-bed games. Both
   boot to the map with every listed registration gone. The battle runs
   failed identically with and without this change, on a clean baseline.
   That exposed four bugs that predate this change:

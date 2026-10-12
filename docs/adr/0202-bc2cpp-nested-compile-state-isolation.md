@@ -57,7 +57,7 @@ state. They are memo caches of pure functions (`@clean_cache`,
 constructor, or `compile_all`'s owner filters. A probe can add accumulator
 entries for a method this gem does not emit. That only adds unused helpers,
 and it already happened before this change.
-`scripts/bc2cpp_nested_compile_state_check.rb` fails when a new ivar is written
+`scripts/bc2cpp/nested_compile_state_check.rb` fails when a new ivar is written
 outside the constructor without being classified. It also compiles three
 fixture methods with the callee probed first and not probed first, and requires
 identical code with no `#error` and a `break` that still throws. The old code
@@ -77,8 +77,8 @@ embedded. Lifting the cap is left to a separate change.
 
 The static evidence is good. Since the IVAR_ACCESS helper (#1896/#1897),
 accessor devirtualization calls the synthesized struct accessor, and without
-the cap `scripts/bc2cpp_embedded_ivar_access_check.rb` finds 0 iv_tbl accesses
-to the 193 embedded ivars. `scripts/bc2cpp_wired_embedding_check.rb` also
+the cap `scripts/bc2cpp/embedded_ivar_access_check.rb` finds 0 iv_tbl accesses
+to the 193 embedded ivars. `scripts/bc2cpp/wired_embedding_check.rb` also
 reports all 73 `Game::State` entry points installed, and `#initialize`
 allocates the struct. What is not covered is the type of values written from
 outside compiled code. `IvarLayout` proves only `SETIV` sites, and callers set
@@ -89,7 +89,7 @@ stored. That needs a real save/load run before the cap is lifted.
 
 ## Consequences
 
-`scripts/bc2cpp_coverage_report.rb`: POLY sites go from 3245 to 3232. Compiled
+`scripts/bc2cpp/coverage_report.rb`: POLY sites go from 3245 to 3232. Compiled
 entry points (2369), embeddings and every other count are unchanged. Without
 the cap the fix would also give 2404 entry points, 112 synthesized accessors,
 72 Fixnum-returning methods and 3229 POLY sites. In the

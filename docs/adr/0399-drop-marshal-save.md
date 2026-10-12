@@ -45,7 +45,7 @@ by-name sends strict vs 2,372 default, and 222 NOMETHOD_REVIEWED violations).
 
 ## Checks
 
-- `scripts/rpg2k_lsd_authoritative_check.rb`: 19 checks pass under CRuby. The save
+- `scripts/rpg2k/lsd_authoritative_check.rb`: 19 checks pass under CRuby. The save
   policy checks now cover the `.lsd`-only default, the unread `.mrb`, the failed-write
   failure, and the unreadable `.lsd`. The field-by-field Marshal-vs-LSD comparison is
   unchanged.

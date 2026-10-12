@@ -11,7 +11,7 @@ Accepted
 The request: give the roughly 96 by-name sends whose receiver is an `attr_reader` result (`actors`, `teleport_targets`,
 `items`, `charset_name`, `level`, ...) a proven return class from the closed-world ivar types, and restore the
 RETURN_CLASS_TABLE entry of `skill_stat_mod_keys`. Measured on master `2c239f5f` (wio closed world,
-`scripts/bc2cpp_send_root_report.rb`), the sites are 27 `actors`, 14+4 `teleport_targets`, 9 `items`, 5 `seg_lines`,
+`scripts/bc2cpp/send_root_report.rb`), the sites are 27 `actors`, 14+4 `teleport_targets`, 9 `items`, 5 `seg_lines`,
 5 `charset_name`, 4 `screen`, 4 `level` and about 25 more names, each `candidate_dropped:<owner>[attr]`.
 
 The reader itself is already modelled (ADR 0309). What drops these names is the slot's pool, and the pool's blocker is
@@ -62,7 +62,7 @@ a pool; ADR 0377 admits a sound, small change on its checks. Remove it if a late
 
 ## Measurement
 
-Same base, kill switches off against on, `SKIP_UNSUPPORTED=1`, `/*SO:*/` stripped (`scripts/bc2cpp_coverage_report.rb`):
+Same base, kill switches off against on, `SKIP_UNSUPPORTED=1`, `/*SO:*/` stripped (`scripts/bc2cpp/coverage_report.rb`):
 `bc2cpp_send(` 2,086 to 2,082, `mrb_funcall*` 416 to 415, `CLOSED_WORLD_NATIVE_EXACT` arms 218 to 226. Six functions
 change by-name counts (`Party#automatic_battle_placement?`, `ItemMenu#build_item_window`, `#item_col_x`, `#item_row_count`,
 `#leave_target_mode`, `#move_item_cursor`); `build_item_window` gains sends because an `each_with_index` over a now-proven
@@ -70,7 +70,7 @@ Array inlines as a loop (its block body leaves a separate cfunc). The scoped rul
 
 ## Checks
 
-`scripts/bc2cpp_call_results_check.rb` (section 1b: two classes with a reader of one name, an inherited reader, a writer,
+`scripts/bc2cpp/call_results_check.rb` (section 1b: two classes with a reader of one name, an inherited reader, a writer,
 a store of a second class, a store from a subclass, `instance_variable_set`, `define_method`, a singleton reader, an
-override, an unassigned slot, both kill switches, the open world) and `scripts/bc2cpp_core_ruby_results_check.rb`
+override, an unassigned slot, both kill switches, the open world) and `scripts/bc2cpp/core_ruby_results_check.rb`
 (`keys.select`, `@sl = @sl.select`, a `keys` override, a store of another class, the kill switch).

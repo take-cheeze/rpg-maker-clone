@@ -6,7 +6,7 @@ world, use the existing census command:
 
 ```sh
 BC2CPP_NATIVE_SETTER_REPORT=/tmp/setters.json MRBC=/path/to/mrbc \
-  ruby scripts/bc2cpp_coverage_report.rb
+  ruby scripts/bc2cpp/coverage_report.rb
 ```
 
 The command performs diagnostic and shipped passes; the final JSON describes the

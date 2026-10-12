@@ -3,7 +3,7 @@
 #
 # Written in the mruby/CRuby common subset -- no String#unpack directives beyond
 # what both provide, no encodings API, integers assembled byte by byte -- so the
-# exact same source is loaded under CRuby by scripts/wolf_testbed_check.rb and
+# exact same source is loaded under CRuby by scripts/wolf/testbed_check.rb and
 # driven over a real game, the way mruby-lcf's parser is. Two portability rules
 # shape the code (see AGENTS.md):
 #
@@ -21,7 +21,7 @@
 # wolfrpg-map-parser crate (Rust, G1org1owo) -- plus the MIT-licensed Kaitai
 # Struct descriptions in djytw/wolf-rpg-formats, and then checked byte-for-byte
 # against the sample game the official editor package ships
-# (scripts/download-wolfrpg-sample.bash). See
+# (scripts/download/wolfrpg-sample.bash). See
 # docs/adr/0064-wolf-rpg-editor-data-layer.md.
 module Wolf
   # Every WOLF RPG Editor version this layer knows how to read, by the marker
@@ -77,7 +77,7 @@ module Wolf
   class Error < StandardError; end
 
   # Transcode a Shift_JIS (Windows-31J) byte string to UTF-8. mruby-lcf's native
-  # decoder in the game build; scripts/wolf_testbed_check.rb swaps in CRuby's.
+  # decoder in the game build; scripts/wolf/testbed_check.rb swaps in CRuby's.
   def self.sjis_to_utf8(s)
     LCF.cp932_to_utf8(s)
   end
@@ -241,7 +241,7 @@ module Wolf
   # match copy exhausted LVGL's heap outright (`NoMemoryError`) on the same
   # file. `Wolf::LZ4.decompress(src, dst_size)` is the one native method this
   # gem defines; everything else here and in data.rb stays in the
-  # mruby/CRuby common subset. scripts/wolf_testbed_check.rb supplies an
+  # mruby/CRuby common subset. scripts/wolf/testbed_check.rb supplies an
   # equivalent pure-Ruby stand-in for the CRuby host check, the same way it
   # stands in for LCF.cp932_to_utf8.
   module LZ4

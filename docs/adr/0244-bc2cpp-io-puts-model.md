@@ -30,6 +30,6 @@ idempotently by the host and cross-platform mruby build scripts.
 Generated explicit-receiver `puts` calls avoid VM-frame argument extraction
 when lookup reaches the original native method. Reassignment of `$stdout`, a
 subclass override, a prepend or any custom receiver keeps normal dispatch.
-`scripts/bc2cpp_io_puts_model_check.rb` checks generated calls for zero and one
+`scripts/bc2cpp/io_puts_model_check.rb` checks generated calls for zero and one
 argument, including the fallback. The helper preserves the original native
 body's output conversion, array recursion, write preparation and return value.

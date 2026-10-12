@@ -48,7 +48,7 @@ RGSS"); or an owner in `BC2CPP_WIRED_EMBEDDINGS`, where a hand
 no-op**, not merely a risk -- verified directly this session by removing
 `RGSS::ErrorReport.singleton#installed?`'s own hand registration (the one
 entry with genuinely zero call evidence found anywhere) and re-running
-`scripts/bc2cpp_wired_embedding_check.rb`, which still reported it
+`scripts/bc2cpp/wired_embedding_check.rb`, which still reported it
 installed. The edit was reverted.
 
 ### Two real gaps in bc2cpp.rb's own reachability scan, found by this audit
@@ -77,7 +77,7 @@ Neither gap affects docs/adr/0193's own two real prunings
 2003-internal classes under namespaces no other shipped maker engine in
 this tree references, and docs/adr/0194's own def-deletion tier already
 runs a separate, genuinely whole-repository text search
-(`scripts/bc2cpp_def_deletion_safety_check.rb`) before deleting anything
+(`scripts/bc2cpp/def_deletion_safety_check.rb`) before deleting anything
 outright, which is not scoped to `closed_world_mrblib_srcs` at all and
 would catch either gap if it were ever live for a real candidate. Fixing
 either gap in bc2cpp.rb's own scan is real, separate follow-up work,

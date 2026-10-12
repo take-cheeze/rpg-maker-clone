@@ -13,7 +13,7 @@ The request: remove by-name `bc2cpp_send` sites from the compiled rpg2k gem, sta
 RGSS `Bitmap`/`Sprite`/`Window`/`Viewport` receivers held in ivars, arguments or call results), with a
 proof, not a relocation. ADR 0210 (hints are not proofs) and ADR 0290 (a violated proof is an error) apply.
 
-Measured first (`scripts/bc2cpp_coverage_report.rb`, `scripts/bc2cpp_dynamic_site_census.rb`, wio closed world,
+Measured first (`scripts/bc2cpp/coverage_report.rb`, `scripts/bc2cpp/dynamic_site_census.rb`, wio closed world,
 master `247a34e4`; re-measured unchanged on `359b9abd`), then each site's receiver by a temporary hook in `compile_send`
 (not committed) that printed the class set of the exact-class flow, the producer of the receiver register and, for
 an `@ivar`, the pool state. The 463 rpg2k sites (`RPG2k_*`/`Game_*` functions) group by root cause as:
@@ -102,7 +102,7 @@ for nil. Counting that helper call as a by-name-capable site, the net on "sites 
 -98, not -179. The other 78 `EXACT_NATIVE_WRAPPER` sites had no send (a class test with a `bc2cpp_nomethod` else)
 and lost the class test; they account for the 44 fewer nomethod sites together with eight reviewed fallbacks
 (`dispose`) that became unreachable. `NOMETHOD_REVIEWED` lost those eight keys and gained none
-(`scripts/bc2cpp_nomethod_reviewed_update.rb`).
+(`scripts/bc2cpp/nomethod_reviewed_update.rb`).
 
 A first version that left `EXACT_NATIVE_WRAPPER` out of NILABLE_RECEIVER's exact marks added two NOMETHOD keys
 (`DebugMenu#refresh_editor -> width`, `Map#draw_parallax -> height`) and extra sites of a third: the nil test was
@@ -135,10 +135,10 @@ and the CI shards were not run where this was written.
 
 ## Tests
 
-`scripts/bc2cpp_exact_native_wrappers_check.rb` (generated code for every wrapper and arity, equality of the
+`scripts/bc2cpp/exact_native_wrappers_check.rb` (generated code for every wrapper and arity, equality of the
 unguarded call with the guarded arm's call, every withdrawal above, kill switches, `Marshal` strict, open world;
 behaviour on real mruby with stand-in bodies: compiled against interpreted answers and recorded calls, nil
 receivers, zero dispatches on the exact methods, on full-core, core-only and 32-bit `mrb_int` builds),
-`scripts/bc2cpp_exact_native_wrappers_mutation_check.rb` (eight mutants, each killed), the `native-wrappers` shard
-of `bc2cpp-checks`, and the updated `NOMETHOD_REVIEWED` list. `scripts/bc2cpp_fixture_runtime.rb` gained
+`scripts/bc2cpp/exact_native_wrappers_mutation_check.rb` (eight mutants, each killed), the `native-wrappers` shard
+of `bc2cpp-checks`, and the updated `NOMETHOD_REVIEWED` list. `scripts/bc2cpp/fixture_runtime.rb` gained
 `-I include` so a fixture can include `rgss_construct.hxx`.

@@ -1,5 +1,5 @@
 // The bundled default UI font: the font used when a project ships none of its
-// own. Downloaded into assets/fonts by scripts/download-default-font.bash (see
+// own. Downloaded into assets/fonts by scripts/download/default-font.bash (see
 // that directory's README.md), so it is normal for it to be absent.
 //
 // The lookup lives in mruby-rgss because that is where text is rasterised, but

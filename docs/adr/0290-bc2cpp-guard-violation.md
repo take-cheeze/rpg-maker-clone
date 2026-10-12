@@ -79,7 +79,7 @@ name and site.
 Reviewed list: a site is marked `/* CLOSED_WORLD guard-violation: name */` and listed
 on stderr (`GUARD_VIOLATION_SITE Owner#method -> name`), but it is deliberately NOT
 held to `NOMETHOD_REVIEWED`. A first version did and failed
-`scripts/bc2cpp_nomethod_reviewed_check.rb`: which of these sites exist depends on
+`scripts/bc2cpp/nomethod_reviewed_check.rb`: which of these sites exist depends on
 which callees compile (an initializer that compiles gives an unguarded direct
 construct; one that does not leaves the guarded `mrb_obj_new` arm), so the hot-only
 build, which is the one that ships, has sites a full build lacks and the list's
@@ -122,7 +122,7 @@ Residual risk:
   guards whose class comes from a ClassLayout, annotation or element hint are the
   largest remaining group and would need a proof that the hint is exact.
 
-`scripts/bc2cpp_guard_violation_check.rb` (CI `bc2cpp-checks`, fast shard) covers the
+`scripts/bc2cpp/guard_violation_check.rb` (CI `bc2cpp-checks`, fast shard) covers the
 gate, the generated code (converted, not converted, kill switch one for one, open
 world) and, against a real mruby, the in-set program (compiled equals interpreted, no
 log), a program with constants rebound from outside the analysed world (logged

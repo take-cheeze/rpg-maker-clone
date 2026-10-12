@@ -82,7 +82,7 @@ The 54 removed sends are Range 23 (7 bodies: `begin`, `end`, `exclude_end?` in `
 `find`, `rfind`, `keep_if`, `bsearch_index`, ...) and String 1. Each costs one pointer compare and a cold violation call
 and loses a tag chain; the net size change is +87 bytes per removed send.
 
-`scripts/bc2cpp_core_self_exact_check.rb` covers it: generated code (bare and explicit self, a MOVE copy, all four
+`scripts/bc2cpp/core_self_exact_check.rb` covers it: generated code (bare and explicit self, a MOVE copy, all four
 owners; refusals for a parameter, a block, a module owner, a subclass of each owner in the program, which withdraws only
 that owner, a singleton maker, the three kill switches and the open world), and on real mruby an honouring fixture that
 answers what the interpreter answers (also under `-DBC2CPP_NOMETHOD_VERIFY`) against late `Array` and `String`

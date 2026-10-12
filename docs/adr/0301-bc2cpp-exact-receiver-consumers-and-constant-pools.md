@@ -14,8 +14,8 @@ fresh receivers for `max`, `min`, `to_f`, `abs` and the like; (c) give the `core
 exact receiver. ADR 0295 is the guard rail: a prototype that adds a domain (ranges, an argument-class pool of
 its own) has to beat tens of sites, or it is not adopted.
 
-Before building anything, the population was measured. `scripts/bc2cpp_dynamic_site_census.rb` on the wio
-closed world (`scripts/bc2cpp_coverage_report.rb`, shipped pass, master `c7ff3846`) counts 3,294
+Before building anything, the population was measured. `scripts/bc2cpp/dynamic_site_census.rb` on the wio
+closed world (`scripts/bc2cpp/coverage_report.rb`, shipped pass, master `c7ff3846`) counts 3,294
 `bc2cpp_send` sites in generated bodies. A temporary hook at the three places that build a by-name
 fallback (the registered-expression chain, the POLY chain tail, `guarded_fallback_line`) printed, for each
 site, the receiver's class set in the exact-class flow (ADR 0289, 0296) and the instruction that produced
@@ -93,7 +93,7 @@ the register. Findings (sites with a flow context, i.e. the final pass):
 
 ## Consequences
 
-Measured on the wio closed world, shipped pass of `scripts/bc2cpp_coverage_report.rb`, same machine and
+Measured on the wio closed world, shipped pass of `scripts/bc2cpp/coverage_report.rb`, same machine and
 mruby, master `c7ff3846` against this branch:
 
 | | before | after |
@@ -149,19 +149,19 @@ ADR 0302's neighbour), the `singleton_definer` names `width`/`height` (167; ADR 
 The arms are unchecked: a wrong exact class is a crash or a wrong answer, not a logged violation (ADR 0296's
 residual list applies, and it adds one writer the scan cannot see: a constant defined from C by a helper that
 takes the name as a literal outside the registration forms `scan_native` reads). The 32-bit case needs no
-integer constant or mask (`scripts/bc2cpp_exact_receiver_flow_check.rb` ran on a `-DMRB_32BIT -DMRB_INT32`
+integer constant or mask (`scripts/bc2cpp/exact_receiver_flow_check.rb` ran on a `-DMRB_32BIT -DMRB_INT32`
 build). Firmware smoke runs (psp, wio, maix) and CI were not run here.
 
 ## Tests
 
-`scripts/bc2cpp_exact_receiver_flow_check.rb` (generated code: literal, register copy, return class and
+`scripts/bc2cpp/exact_receiver_flow_check.rb` (generated code: literal, register copy, return class and
 argument pool reach `size`, `join` (a POLY chain), `str.size`, `Hash#size`; frozen Array/Hash/String
 constants; every withdrawal above; behaviour on real mruby against the interpreter on a full-core and a
 core-only build, FrozenError from a frozen constant, an overriding `freeze`, zero dynamic dispatches in the
-exact methods), `scripts/bc2cpp_exact_receiver_flow_mutation_check.rb` (five mutants of the conditions
-above, each must be killed), and the updated `scripts/bc2cpp_nested_compile_state_check.rb`
+exact methods), `scripts/bc2cpp/exact_receiver_flow_mutation_check.rb` (five mutants of the conditions
+above, each must be killed), and the updated `scripts/bc2cpp/nested_compile_state_check.rb`
 (`@class_const_pools`, `@kernel_freeze_only` are whole-program state) and
-`scripts/bc2cpp_nomethod_reviewed_check.rb` (34 reviewed keys the branch removed because their fallback
+`scripts/bc2cpp/nomethod_reviewed_check.rb` (34 reviewed keys the branch removed because their fallback
 became unreachable: the `x=`/`y=`/`z=`/`visible=` of exact native sprites; 36 added that the unmodified
 master already produces, so its list was stale after ADR 0297's `no_target` arms: `Map#close_shop -> gold`,
 `ItemMenu#refresh_target_cursor -> contents` and the like; I read the generated code of `close_shop`: the

@@ -731,7 +731,7 @@ int main(void) {
     // auto_select? (mruby-rpg2k/mrblib/scene/title.rb) reads it to
     // auto-pick "New Game" with no input needed, the same mechanism
     // src/main.cxx's own --rpg2k_new_game already drives on desktop for
-    // scripts/compare-nepheshel-wine.bash -- this just gives the PSP target
+    // scripts/compare/nepheshel-wine.bash -- this just gives the PSP target
     // a way to opt in without a command line. A real release's own game
     // folder never carries this file (nothing in the editor or this
     // codebase's own packaging ever writes it), so every real player still

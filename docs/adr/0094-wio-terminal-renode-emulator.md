@@ -67,7 +67,7 @@ supported-boards list itself says it is incomplete):
 | GPIO PORT (5-way switch, buttons, LCD D/C) | `GPIOPort.SAMD21_GPIO` (`src/.../Peripherals/GPIOPort/SAMD21_GPIO.cs`) | **Confirmed reusable as-is in P3**, for the LCD's D/C output pin specifically (PORTC.6) — instantiated directly at PORTC's SAMD51 base address with no changes needed. The 5-way switch/buttons (input pins, not yet exercised by any firmware's boot path up to `loop()`) remain unverified. |
 | Clock tree (GCLK/OSCCTRL/MCLK) | Only the 3 stubs already in `atsamd51g19a.repl` (`gclk_phctrl1`, `pac_intflag`, `pac_status`) going in | **Confirmed in P1**: Arduino's `startup.c`/`wiring.c` need 9 register stubs total (the 3 above plus 6 more — see `app/wio/renode/wio_terminal.repl`), not an unbounded set. All 9 map to registers this repo's own read of the SAMD51 CMSIS headers named exactly, addressed from `startup.c`'s actual poll sites rather than guessed. |
 | ILI9341/ST7789 SPI TFT display | Nothing upstream (confirmed: no `ILI9341`/`ST7789`/generic SPI-command-stream-to-framebuffer peripheral anywhere in `renode`/`renode-infrastructure`) | **Done in P3** — `Video.ILI9341_SPI` (`app/wio/renode/peripherals/Video/ILI9341_SPI.cs`), scoped to exactly `CASET`/`PASET`/`RAMWR` as planned. Verified correct directly, not just "it compiles": `app/wio/renode/lcd_smoke_test.resc` drives the registers by hand and the resulting PNG's pixels are exactly right (red/blue rows land in and stay bounded to the CASET/PASET window; ImageMagick-checked, see `app/wio/renode/README.md`). |
-| SD card over SPI | **Wrong going in, corrected in P4**: this ADR originally said nothing upstream speaks SD's SPI-mode wire protocol, based on the class list and `SDCardExtensions.cs` alone. `SD.SDCard` itself, read directly, already has a `spiMode` constructor flag and a full `Transmit()`/SPI state machine (`WaitingForCommand`/`WaitingForArgBytes`/single- and multi-block read and write, R1 generation, the same command-byte bit-pattern check independently arrived at while first drafting a from-scratch replacement) — it is a general SD-over-SPI implementation, not SDIO-only. | **Nothing to write.** `SD.SDCard @ sercom6_spi` with `spiMode: true` is the whole of P4's peripheral half; `scripts/wio_renode_sdcard.bash` builds the FAT-formatted card image (`mkfs.vfat`/`mtools`) a real firmware's FAT driver needs to find files on. |
+| SD card over SPI | **Wrong going in, corrected in P4**: this ADR originally said nothing upstream speaks SD's SPI-mode wire protocol, based on the class list and `SDCardExtensions.cs` alone. `SD.SDCard` itself, read directly, already has a `spiMode` constructor flag and a full `Transmit()`/SPI state machine (`WaitingForCommand`/`WaitingForArgBytes`/single- and multi-block read and write, R1 generation, the same command-byte bit-pattern check independently arrived at while first drafting a from-scratch replacement) — it is a general SD-over-SPI implementation, not SDIO-only. | **Nothing to write.** `SD.SDCard @ sercom6_spi` with `spiMode: true` is the whole of P4's peripheral half; `scripts/wio/renode_sdcard.bash` builds the FAT-formatted card image (`mkfs.vfat`/`mtools`) a real firmware's FAT driver needs to find files on. |
 | DMA controller (DMAC) | Not checked yet | **Found in P2, not anticipated going in**: `wio`'s LVGL flush path uses `SPIClass::transfer`'s DMA-driven bulk mode (`Adafruit_ZeroDMA`), which spins forever on a "job done" flag nothing sets once a DMAC exists to set it. **Corrected in P4**: `wio_walk`'s tile rendering (`pushImage()`) goes through that exact same DMA-driven bulk path, not the single-byte blocking one this ADR originally assumed — disassembly confirms both firmwares' bulk transfers land in the same `SPIClass::transfer(const void*, void*, size_t, bool)` overload. Only `fillScreen`/`fillCircle` (scalar single-pixel calls) avoid DMA. Scope and upstream availability still unassessed — a P3-adjacent gap, smaller than the ILI9341 peripheral itself but not yet sized. |
 
 The peripheral picture changed in both directions once actually checked
@@ -134,7 +134,7 @@ should not promise more certainty than that.
   device, which turned out to be necessary before any real peripheral could
   receive anything at all (register stubs have no bus underneath them to
   attach a device to). Building either meant building Renode from source
-  (`scripts/wio_renode_build.bash`, pinned commit
+  (`scripts/wio/renode_build.bash`, pinned commit
   `ab721d88e135a1bcb8ed2ecc5a38f51cbe61fdd2`) since release binaries are
   precompiled — this repo's own nix devshell already had every prerequisite
   (cmake, gcc/g++) except the .NET 8 **SDK** (the portable release only
@@ -149,7 +149,7 @@ should not promise more certainty than that.
   itself, not just the class list, which is exactly the mistake that missed
   `SAM_SPI`'s SPI mode... in the other direction: this ADR said *nothing*
   spoke SPI-mode SD, and something did). P4's actual new code is
-  `scripts/wio_renode_sdcard.bash`, which builds a real FAT16-formatted disk
+  `scripts/wio/renode_sdcard.bash`, which builds a real FAT16-formatted disk
   image (`mkfs.vfat`/`mtools`) holding a real Nepheshel export and a `.repl`
   snippet wiring it onto `sercom6_spi`, layered onto the base platform with
   a second `LoadPlatformDescription` call (`.repl` files do not support
@@ -194,7 +194,7 @@ should not promise more certainty than that.
      Fixed via `app/wio/renode/patches/sdcard-acmd42.patch`, a small patch
      against upstream `SD.SDCard` adding a benign R1-ready response for
      `ACMD42` — mirroring how the same file already handles `CMD59`.
-     Applied automatically by `scripts/wio_renode_build.bash`.
+     Applied automatically by `scripts/wio/renode_build.bash`.
 
   With both fixed, all three firmware ELFs reach `loop()` reliably, in a
   small fraction of the wall-clock time the (wrong) delay-cost theory had
@@ -227,7 +227,7 @@ should not promise more certainty than that.
   asserts each reaches both `setup()` and `loop()`, re-runs
   `app/wio/renode/lcd_smoke_test.resc` and checks its output pixels with
   ImageMagick, and smoke-tests the SD card image tooling
-  (`scripts/wio_renode_sdcard.bash`) — a plain shell job, not a Robot
+  (`scripts/wio/renode_sdcard.bash`) — a plain shell job, not a Robot
   Framework test as originally sketched, since this repo's existing CI has
   no other Robot Framework jobs to fit alongside. Using `machine
   EnableProfiler` (or instruction-count tracing) around a real `draw_map()`
@@ -259,7 +259,7 @@ on earlier ones being perfect, only booted.
 - **One new C# peripheral landed in P3, none needed in P4.**
   `SAMD51_SERCOM_SPI` and `ILI9341_SPI` (`app/wio/renode/peripherals/`) are
   new code in Renode's own codebase — a different language and build
-  system than this repo's C++, built via `scripts/wio_renode_build.bash`
+  system than this repo's C++, built via `scripts/wio/renode_build.bash`
   against a pinned upstream commit rather than vendored into a fork.
   Whether they eventually go upstream (contributed to `renode/renode`) is
   still an open question; for now they live in this repo and get copied in

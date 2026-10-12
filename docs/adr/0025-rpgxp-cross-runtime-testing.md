@@ -20,8 +20,8 @@ pays for itself (see Consequences).
 
 The RPG Maker XP runtime (`mruby-rpgxp`) had two kinds of coverage:
 
-- **Data-layer checks under CRuby** — `scripts/rpgxp_testbed_check.rb` and
-  `scripts/rpgxp_script_host_check.rb` load the very same `mrblib/*.rb` sources
+- **Data-layer checks under CRuby** — `scripts/rpgxp/testbed_check.rb` and
+  `scripts/rpgxp/script_host_check.rb` load the very same `mrblib/*.rb` sources
   under CRuby and drive them over a real project's `Data/*.rxdata`.
 - **Unit tests** — `mruby-rpgxp/test`, run by the per-gem `rake test`.
 
@@ -58,7 +58,7 @@ marker so the three checks assert the same thing.
   mirroring `--rpg2k_new_game` / `[RPG2k-MAP]`, down to reading the flag's
   constant through its own `rescue` (`Module#const_get` is not in this mruby
   build's gem set).
-- **Native: `scripts/rpgxp_boot_check.bash`.** Boots the built binary on the XP
+- **Native: `scripts/rpgxp/boot_check.bash`.** Boots the built binary on the XP
   test bed under Xvfb and fails unless `[RPGXP-MAP]` shows up. This is the guard
   against mruby/CRuby divergence in the XP runtime, and it runs in CI as a
   blocking check.
@@ -72,7 +72,7 @@ marker so the three checks assert the same thing.
   It ran in the `wasm` CI job, uploading those frames — non-blocking, the way the
   MV/MZ smokes were staged, since it was the repo's first check to drive a real
   browser and a flake there would block the page deployment.
-- **Reference: `scripts/compare-rpgxp-wine.bash`.** Boots the project's own
+- **Reference: `scripts/compare/rpgxp-wine.bash`.** Boots the project's own
   `Game.exe`/`RGSS104E.dll` under wine and our engine on two Xvfb displays at
   640x480, feeds both the same key script, and writes per-step ref/ours/diff/cmp
   frames plus a differing-pixel count — the XP counterpart of
@@ -80,7 +80,7 @@ marker so the three checks assert the same thing.
   with the RPG2000 script: an editor-made XP project keeps its graphics in the
   **RTP**, and our engine resolves the RTP through the *wine prefix's* registry
   (`xp_rtp_path()` reads `Software\Enterbrain\RGSS\RTP\Standard`), so
-  `scripts/rtp_xp_install.bash` into that prefix feeds the reference and the
+  `scripts/rtp/xp_install.bash` into that prefix feeds the reference and the
   clone the same assets.
 
 ### Driving a browser without adding a dependency

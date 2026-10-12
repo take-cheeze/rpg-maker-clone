@@ -16,7 +16,7 @@ Native methods remain unknown to this effect analysis.
 
 Normal returns clear register provenance. Exceptions retain the existing ivar
 widening. Set `BC2CPP_READONLY_CALL_EFFECTS=0` to disable the extension. Run
-`scripts/bc2cpp_readonly_call_effects_check.rb` with `MRBC` and a full-core mruby
+`scripts/bc2cpp/readonly_call_effects_check.rb` with `MRBC` and a full-core mruby
 build for generated-code checks and interpreter parity; its mutation check
 covers thirteen conditions plus an unchanged control. See ADR 0356.
 

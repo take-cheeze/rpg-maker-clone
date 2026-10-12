@@ -22,7 +22,7 @@
 #
 # Deliberately free of load-time RGSS references so the pure logic here (edition
 # detection, path mapping) can be loaded and exercised under CRuby by
-# scripts/rpgvx_testbed_check.rb.
+# scripts/rpgvx/testbed_check.rb.
 class RPGVX
   # RPG Maker VX and VX Ace both render at 544x416 with 32px tiles. src/main.cxx
   # sizes the window to match when a VX project is detected and the size was not
@@ -180,7 +180,7 @@ class RPGVX
   private
 
   # Log the detected edition and a one-line summary of the loaded database. The
-  # `[RGSS2-DB]` marker is what scripts/rpgvx_testbed_check.rb looks for when it
+  # `[RGSS2-DB]` marker is what scripts/rpgvx/testbed_check.rb looks for when it
   # is pointed at a real project through the built binary.
   def report_database
     unless @db

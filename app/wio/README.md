@@ -37,7 +37,7 @@ pio run -e wio            # compile the bring-up firmware
 pio run -e wio -t upload  # flash a connected Wio Terminal
 pio run -e wio_sim -t upload  # ...or boot it in the Renode emulator instead
                               # (docs/adr/0094; needs a Renode built by
-                              # scripts/wio_renode_build.bash -- see
+                              # scripts/wio/renode_build.bash -- see
                               # app/wio/renode/README.md)
 ```
 
@@ -88,11 +88,11 @@ firmware above is still untried on a board.
 `pio run -e wio_sd_upload -t upload` flashes a throwaway loader that writes
 files to the microSD card over the same USB-CDC serial connection used to
 flash the board, for a dev machine with a Wio Terminal but no way to pull the
-card out and mount it directly. Drive it with `scripts/wio_sd_upload.py`:
+card out and mount it directly. Drive it with `scripts/wio/sd_upload.py`:
 
 ```sh
 pio run -e wio_sd_upload -t upload
-scripts/wio_sd_upload.py \
+scripts/wio/sd_upload.py \
   /tmp/rpg2k_walk_out/map.bin:/RPG2kWalk/map.bin \
   /tmp/rpg2k_walk_out/tiles.bin:/RPG2kWalk/tiles.bin
 pio run -e wio_walk -t upload   # reflash the firmware you actually want running
@@ -106,14 +106,14 @@ See `app/wio/src/sd_upload_main.cxx` for the (tiny) serial protocol.
 and without `RPGMAKER_BC2CPP=1` it exceeds the board's 507,904-byte FLASH
 region — which is why no default `pio run` builds it (it needs the two ARM
 cross-builds the environment's own comment in `platformio.ini` describes).
-`scripts/wio_bc2cpp_measure.bash` produces both configurations and
-`scripts/wio_overflow_report.rb` turns their linker maps into the A/B overflow
+`scripts/wio/bc2cpp_measure.bash` produces both configurations and
+`scripts/wio/overflow_report.rb` turns their linker maps into the A/B overflow
 statistics (`ld` writes a complete `firmware.map` even when it refuses to emit
 the ELF):
 
 ```sh
-scripts/wio_bc2cpp_measure.bash /tmp/wio-bc2cpp
-ruby scripts/wio_overflow_report.rb \
+scripts/wio/bc2cpp_measure.bash /tmp/wio-bc2cpp
+ruby scripts/wio/overflow_report.rb \
   baseline:/tmp/wio-bc2cpp/baseline/firmware.map \
   bc2cpp:/tmp/wio-bc2cpp/bc2cpp/firmware.map
 ```

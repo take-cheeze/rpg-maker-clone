@@ -108,7 +108,7 @@ Landed in `mruby-rpg2k/mrblib/game.rb`:
   wine — so vanilla skills are untouched by rows; the earlier
   `Party#skill_to_hit` row penalty is removed to match.
 
-Verification: `scripts/rpg2k3_battle_row_check.rb` (13 checks) exercises the
+Verification: `scripts/rpg2k3/battle_row_check.rb` (13 checks) exercises the
 row model, `#row_adjusted?` (front-row ally attacker adjusted, back-row / enemy
 attacker not, back-row defender adjusted), the flat 25 hit reduction in
 `Battle#to_hit`, the 125/75 damage adjustments in `Battle#deal_attack` in the
@@ -176,7 +176,7 @@ once a 2003 project reaches a fight.
   against a reference implementation's RPG2003 port once that source was
   reachable, not independently confirmed against genuine RPG_RT under wine.
 
-Verification: `scripts/rpg2k3_battle_gauge_check.rb` (14 checks) exercises the
+Verification: `scripts/rpg2k3/battle_gauge_check.rb` (14 checks) exercises the
 inert turn-based path, the real relative fill curve, full/ready selection,
 ordering, that a dead battler neither charges nor becomes ready, and that a
 do-nothing-restricted ally never charges; wired into the
@@ -204,7 +204,7 @@ is reached the moment a 2003 project opens a fight.
   matter for correctness. `battle_rpg2k3.rb` sorts after `battle.rb` in the
   mrblib glob, so its superclass is defined before it is parsed.
 
-Verification: `scripts/rpg2k_scene_check.rb` adds checks that `battle_scene_class`
+Verification: `scripts/rpg2k/scene_check.rb` adds checks that `battle_scene_class`
 returns `RPG2k3::Scene::Battle` for a 2003 database, `RPG2k::Scene::Battle` for
 an RPG2000 database, and the 2000 scene for a database that implements no
 `#rpg2003?` at all (a bare fixture) — keeping the gauge engine dark for every
@@ -232,7 +232,7 @@ reached the map, and no 2003 fight could be driven from real data.
   `[RPG2k-BATTLE] troop=<id>` once the fight's whole UI — backdrop, troop
   sprites, actor sprites, the status panel — is actually on screen. A real
   encounter never sets the marker, so the line never appears for ordinary play.
-- `scripts/rpg2k_boot_check.bash` now runs a battle pass (mtf-meido-action,
+- `scripts/rpg2k/boot_check.bash` now runs a battle pass (mtf-meido-action,
   troop 14, a single Behemoth) alongside the map boot, asserting the marker
   appears and that no `[RPG2k] battle failed` line does.
 - **Latent native-only bug this exposed and fixed:** the fight's backdrop is
@@ -297,7 +297,7 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
   (`#can_leave_front_row?`, ported from a reference implementation's
   row-selection guard, not independently confirmed against genuine RPG_RT
   under wine) with the reference implementation's own Buzzer SE.
-  `scripts/rpg2k3_battle_row_check.rb` and
+  `scripts/rpg2k3/battle_row_check.rb` and
   `rpg2k_scene_check.rb` stay green. The automatic-placement `row_x_offset`
   landed the same day too (ADR 0054's own follow-up note). Still open: the
   pincer-surround grid tables, which need the battle conditions this runtime

@@ -24,7 +24,7 @@ picture:
 - **Non-leader name and title overrides** already round-trip. Chunk 108
   (`SAVE_PARTY_ACTOR`) field 1 is the name, field 2 the title
   (`save-actor-name-override`, and the title check in
-  `scripts/rpg2k_logic_check.rb`).
+  `scripts/rpg2k/logic_check.rb`).
 - **`save_count`** was written to the `.lsd` (system chunk 101 field 131) by
   `export_lsd`'s own argument. The only real bug was `to_lsd`'s default of `1`
   for a caller that omits it.
@@ -101,7 +101,7 @@ order for saves and loads. `src/main.cxx` reads it (mruby has no `ENV` for the R
 side, the same reason `RGSS_SCRIPT_HOST` is read there) and exposes the constant
 `RPG2K_SAVE_MARSHAL_FIRST`. Unset, empty or `0` keeps the new default. The
 Marshal-first path is still built and tested
-(`scripts/rpg2k_lsd_authoritative_check.rb`, the kill-switch checks).
+(`scripts/rpg2k/lsd_authoritative_check.rb`, the kill-switch checks).
 
 ### 4. Wio: `from_lsd` is not restored
 
@@ -127,7 +127,7 @@ save". Restoring it is not a free change:
   The CP932 table that a `MRUBY_TARGET=wio` build needs is not available either
   (docs/adr/0128).
 - The "no PC" premise is weaker than 0128 said: the project already ships
-  `scripts/wio_sd_upload.py` already puts files on the wio's SD card from a PC, so
+  `scripts/wio/sd_upload.py` already puts files on the wio's SD card from a PC, so
   a PC-side exchange path exists, even if no save-file workflow uses it yet.
 
 Because the margin is unknown and the reason (flash) was a hard budget, the
@@ -146,14 +146,14 @@ for about +28.5 KB.
 - The LSD round trip is now field-for-field equal to the Marshal round trip for
   every `to_h` key the audit covers.
 - `Game::State#to_lsd` now defaults `save_count` to the state's own counter.
-- The `scripts/rpg2k_logic_check.rb` flash case now asserts the exact peak
+- The `scripts/rpg2k/logic_check.rb` flash case now asserts the exact peak
   duration and power (it used to assert the lossy `total == frames`).
 - wio: +1,003 bytes from this PR without restoring `from_lsd` (main.rb and the
   schema blob), and +29,515 bytes if it is restored.
 
 ### Verification
 
-- `ruby scripts/rpg2k_lsd_authoritative_check.rb`: 24 checks pass. They cover
+- `ruby scripts/rpg2k/lsd_authoritative_check.rb`: 24 checks pass. They cover
   Marshal-vs-LSD equality field by field for five populated states; dropping each
   of the six chunk-200 record kinds is caught (and dropping the version record
   removes the marker); a `.lsd` without chunk 200 loads with the old defaults; an
@@ -164,8 +164,8 @@ for about +28.5 KB.
 - Run against origin/master's own `mruby-rpg2k/` and `mruby-lcf/`, the same
   script fails its Marshal-vs-LSD checks and then aborts at load (its mutation
   table names the new constants), so it detects the old behaviour.
-- `ruby scripts/rpg2k_logic_check.rb` (1201 checks), `ruby scripts/rpg2k_scene_check.rb`
-  (1062 checks) and `ruby scripts/bc2cpp_lcf_schema_oracle_check.rb` (5415 reads
+- `ruby scripts/rpg2k/logic_check.rb` (1201 checks), `ruby scripts/rpg2k/scene_check.rb`
+  (1062 checks) and `ruby scripts/bc2cpp/lcf_schema_oracle_check.rb` (5415 reads
   inside the oracle) all pass.
 - The field audit: a populated `Game::State` (party with overrides, timers, all
   switches and variables, pictures moving and erased, flash, weather, vehicles

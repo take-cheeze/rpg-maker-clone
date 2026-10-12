@@ -1,7 +1,7 @@
 // Hand-written stand-in for the config.h that pspsdk's own `./bootstrap &&
 // ./configure` would normally autoconf-generate. Building the patched
 // psp-fixup-imports (see psp-fixup-imports-jal-relocation-aware.patch and
-// scripts/build_psp_fixup_imports.bash) needs *a* config.h to exist --
+// scripts/build/psp_fixup_imports.bash) needs *a* config.h to exist --
 // tools/types.h includes it unconditionally, not guarded by HAVE_CONFIG_H --
 // but grep across tools/psp-fixup-imports.c, tools/types.h, and everything
 // else that file pulls in shows only these three HAVE_* macros are ever

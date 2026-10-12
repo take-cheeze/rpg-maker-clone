@@ -86,7 +86,7 @@ compiled and interpreted `#dispose` read/write the identical ordinary
 make impossible by construction. Adding `RPG2k::Window` to
 `BC2CPP_WIRED_EMBEDDINGS` makes bc2cpp.rb's own generated
 `bc2cpp_register_owner_methods` install every one of its 35 compiled entry
-points unconditionally (verified: `scripts/bc2cpp_wired_embedding_check.rb`
+points unconditionally (verified: `scripts/bc2cpp/wired_embedding_check.rb`
 now reports `RPG2k::Window: 35/35`) -- `#dispose` included -- with zero ivar-
 embedding side effect (confirmed: the regenerated `.cpp` gains zero new
 `_ivars` struct fields; `RPG2k::Window` is not `MRB_SET_INSTANCE_TT`, since
@@ -99,7 +99,7 @@ interpreted), independent of the ivar-embedding gap above.
 ## A much larger, related gap found but not attempted here
 
 Auditing every `mruby-rpg2k-compiled` owner's own registration the same way
-`scripts/bc2cpp_wired_embedding_check.rb` already does for wired owners
+`scripts/bc2cpp/wired_embedding_check.rb` already does for wired owners
 (reusing its exact methodology, not a new one) found **402 of 2141**
 compiled, `#error`-free entry points across the whole gem are never
 installed by any mechanism -- neither the hand `register.cxx` nor

@@ -19,14 +19,18 @@
       - any-glob-to-any-file:
           - "mruby-rpg2k/**"
           - "mruby-lcf/**"
-          - "scripts/rpg2k*"
-          - "scripts/lcf_*"
-          - "scripts/gen-rpg2k-save.rb"
-          - "scripts/gen-lcf-save-wine.bash"
+          - "scripts/rpg2k*/**"
+          - "scripts/lcf/**"
+          - "scripts/gen/rpg2k-save.rb"
+          - "scripts/gen/lcf-save-wine.bash"
           - "scripts/*nepheshel*"
-          - "scripts/download-prayforyou.bash"
-          - "scripts/download-killer-knights.bash"
-          - "scripts/rtp_install.bash"
+          - "scripts/compare/nepheshel-save-wine.bash"
+          - "scripts/compare/nepheshel-wine.bash"
+          - "scripts/download/nepheshel.bash"
+          - "scripts/run/nepheshel-easyrpg-wine.bash"
+          - "scripts/download/prayforyou.bash"
+          - "scripts/download/killer-knights.bash"
+          - "scripts/rtp/install.bash"
           - "scripts/analyze_game.rb"
           - "docs/rpg2000-sample-analysis.md"
 
@@ -40,11 +44,11 @@
   - changed-files:
       - any-glob-to-any-file:
           - "mruby-rpgxp/**"
-          - "scripts/rpgxp*"
-          - "scripts/compare-rpgxp-wine.bash"
-          - "scripts/download-opengame-xp.bash"
-          - "scripts/rtp_xp_install.bash"
-          - "scripts/rgssad_asset_check.bash"
+          - "scripts/rpgxp/**"
+          - "scripts/compare/rpgxp-wine.bash"
+          - "scripts/download/opengame-xp.bash"
+          - "scripts/rtp/xp_install.bash"
+          - "scripts/rgssad/asset_check.bash"
           - "docs/rpgxp-rgss-api-gap.md"
 
 # VX and VX Ace share one data layer (mruby-rpgvx serves RGSS2 and RGSS3, see
@@ -53,14 +57,14 @@
   - changed-files:
       - any-glob-to-any-file:
           - "mruby-rpgvx/**"
-          - "scripts/rpgvx*"
+          - "scripts/rpgvx/**"
           - "docs/rpgvx-rgss-api-gap.md"
 
 "engine:vxace":
   - changed-files:
       - any-glob-to-any-file:
           - "mruby-rpgvx/**"
-          - "scripts/rpgvx*"
+          - "scripts/rpgvx/**"
           - "docs/rpgvx-rgss-api-gap.md"
           - "**/*vxace*"
           - "**/*rgss3*"
@@ -72,6 +76,9 @@
           - "mruby-mvjs/test/mv_test.rb"
           - "data/mv-sample/**"
           - "scripts/*mv*"
+          - "scripts/download/mv-corescript.bash"
+          - "scripts/gen/mv-sample.py"
+          - "scripts/mv/testbed_check.rb"
 
 "engine:mz":
   - changed-files:
@@ -80,12 +87,23 @@
           - "mruby-mvjs/test/mz_test.rb"
           - "data/mz-sample/**"
           - "scripts/*mz*"
+          - "scripts/download/mz-corescript.bash"
+          - "scripts/gen/mz-encrypted.py"
+          - "scripts/gen/mz-sample.py"
+          - "scripts/mz/boot_check.bash"
+          - "scripts/mz/encrypted_check.bash"
+          - "scripts/mz/frame_check.rb"
+          - "scripts/mz/testbed_check.rb"
 
 "engine:wolf":
   - changed-files:
       - any-glob-to-any-file:
           - "mruby-wolf/**"
           - "scripts/*wolf*"
+          - "scripts/download/wolfrpg-sample.bash"
+          - "scripts/wolf/data_wolf_check.rb"
+          - "scripts/wolf/interpreter_check.rb"
+          - "scripts/wolf/testbed_check.rb"
           - "docs/adr/0064-wolf-rpg-editor-data-layer.md"
 
 # --- platform --------------------------------------------------------------
@@ -100,6 +118,7 @@
           - "scripts/cors-proxy/**"
           - "cmake/emscripten-probe-cache.cmake"
           - "scripts/*emscripten*"
+          - "scripts/gen/emscripten_probe_cache.rb"
           - "scripts/serve.py"
           - "docs/deploy.md"
           - "docs/cors-proxy.md"
@@ -121,6 +140,13 @@
       - any-glob-to-any-file:
           - "scripts/setup.iss"
           - "scripts/*wine*"
+          - "scripts/compare/nepheshel-save-wine.bash"
+          - "scripts/compare/nepheshel-wine.bash"
+          - "scripts/compare/rpgxp-wine.bash"
+          - "scripts/gen/lcf-save-wine.bash"
+          - "scripts/run/nepheshel-easyrpg-wine.bash"
+          - "scripts/run/rpg2k-rpgrt-wine.bash"
+          - "scripts/run/rpg2k-wine.bash"
 
 "platform:psp":
   - changed-files:
@@ -170,7 +196,7 @@
           - "app/m5stack/**"
           - "mruby-rgss/src/m5stack.cxx"
           - "include/m5stack.hxx"
-          - "scripts/m5stack_qemu_*.bash"
+          - "scripts/m5stack/qemu_*.bash"
 
 # --- component -------------------------------------------------------------
 
@@ -191,8 +217,13 @@
           - "mruby-mvjs/src/mvcanvas.cxx"
           - "assets/fonts/**"
           - "scripts/*font*"
+          - "scripts/download/default-font.bash"
+          - "scripts/gen/sample-font.py"
           - "scripts/*render*"
+          - "scripts/rpg2k/render_check.rb"
           - "scripts/*frame_check*"
+          - "scripts/bc2cpp/optional_block_frame_check.rb"
+          - "scripts/mz/frame_check.rb"
 
 "component:audio":
   - changed-files:
@@ -202,7 +233,7 @@
           - "src/sdl_audio.cxx"
           - "assets/timidity/**"
           - "scripts/*timidity*"
-          - "scripts/download-freepats.bash"
+          - "scripts/download/freepats.bash"
           - "scripts/quiet_alsa.bash"
           - "mruby-mvjs/test/audio_test.rb"
 
@@ -241,8 +272,15 @@
           - "mruby-rpgvx/mrblib/*data*.rb"
           - "data/**"
           - "scripts/*testbed*"
-          - "scripts/gen-mv-sample.py"
-          - "scripts/gen-mz-sample.py"
+          - "scripts/lcf/testbed_check.rb"
+          - "scripts/mv/testbed_check.rb"
+          - "scripts/mz/testbed_check.rb"
+          - "scripts/rpg2k/testbed_logic_check.rb"
+          - "scripts/rpgvx/testbed_check.rb"
+          - "scripts/rpgxp/testbed_check.rb"
+          - "scripts/wolf/testbed_check.rb"
+          - "scripts/gen/mv-sample.py"
+          - "scripts/gen/mz-sample.py"
           - "scripts/analyze_game.rb"
 
 "component:save":
@@ -255,14 +293,15 @@
   - changed-files:
       - any-glob-to-any-file:
           - "mruby-rpg2k/mrblib/interpreter.rb"
-          - "scripts/rpg2k_command_soak.rb"
-          - "scripts/rpg2k_logic_check.rb"
+          - "scripts/rpg2k/command_soak.rb"
+          - "scripts/rpg2k/logic_check.rb"
 
 "component:scenes":
   - changed-files:
       - any-glob-to-any-file:
           - "mruby-rpg2k/mrblib/main.rb"
           - "scripts/*scene*"
+          - "scripts/rpg2k/scene_check.rb"
           - "scripts/*menu*"
 
 "component:battle":
@@ -283,7 +322,7 @@
           - "3rd/**"
           - "scripts/Dockerfile"
           - "scripts/setup.iss"
-          - "scripts/nix-develop.bash"
+          - "scripts/nix/develop.bash"
 
 "component:ci":
   - changed-files:

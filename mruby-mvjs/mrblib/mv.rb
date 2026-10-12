@@ -246,7 +246,7 @@ class MV
     # default — sized for an ordinary game's opening dialogue, not a
     # multi-hundred-frame scripted intro — stays the one every other run gets,
     # and only a deliberate per-invocation ask pays for anything larger. See
-    # scripts/mz_boot_check.bash's MZ_MOVE_SETTLE_MAX_FRAMES and the
+    # scripts/mz/boot_check.bash's MZ_MOVE_SETTLE_MAX_FRAMES and the
     # EgoicAnswers entry in docs/TODO.md.
     def move_settle_max_frames
       v = begin

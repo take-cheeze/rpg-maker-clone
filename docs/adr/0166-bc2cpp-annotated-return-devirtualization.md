@@ -32,5 +32,5 @@ Annotated result chains can now devirtualize calls such as `@roster[id].stat`
 without special casing the polymorphic `[]` method name. Nil results and
 unexpected receiver classes continue through the runtime fallback. Return
 annotations remain useful only when the exact receiver definition is known.
-The synthetic check in `scripts/bc2cpp_retclass_devirtualization_check.rb`
+The synthetic check in `scripts/bc2cpp/retclass_devirtualization_check.rb`
 covers both `GETIDX` and `GETIDX0` and verifies the generated guard/fallback.

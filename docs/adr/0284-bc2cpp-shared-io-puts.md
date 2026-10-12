@@ -28,7 +28,7 @@ drop guard and fallback. That proof does not hold:
   evaluate a project's own scripts in the same VM (ADR 0017, 0023, 0030), and a
   script may do `$stdout = File.open(...)` or redefine `IO#puts`. The closed-world
   contract (ADR 0210) covers only psp/wio/maix builds, which admit no such gem.
-- **Tests reassign both** (`scripts/*_check.rb`, `mruby-rgss/test/test.rb`).
+- **Tests reassign both** (`scripts/**/*_check.rb`, `mruby-rgss/test/test.rb`).
 - **A `$stdout`/`$stderr` write hook does not help.** An epoch bumped by a
   patched `mrb_gv_set` (`variable.c`) would only prove *identity*; the guard also
   has to prove that `IO#puts` still resolves to the C body (a Ruby override, a
@@ -57,7 +57,7 @@ Keep the runtime check and move the fallback out of line.
   per-site dispatch, which passes the block.
 
 No proof about `$stdout`, `$stderr`, `STDOUT` or `IO#puts` is assumed, so the
-behaviour is the same in open and closed worlds. `scripts/bc2cpp_io_puts_model_check.rb`
+behaviour is the same in open and closed worlds. `scripts/bc2cpp/io_puts_model_check.rb`
 compares compiled and interpreted runs against a full mruby with mruby-io,
 mruby-stringio and mruby-eval: a plain `$stdout`/`$stderr`, `nil`, symbols,
 integers, nested and empty arrays, an object with `to_s`, frozen strings, zero to

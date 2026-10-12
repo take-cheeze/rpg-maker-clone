@@ -76,7 +76,7 @@ Not closed, and why:
 
 ## Consequences
 
-Measured with `scripts/bc2cpp_dynamic_site_census.rb` on the wio closed world (shipped pass, base `9361f234`).
+Measured with `scripts/bc2cpp/dynamic_site_census.rb` on the wio closed world (shipped pass, base `9361f234`).
 The census scans text, so the `#if` arm kept for Complex/Rational builds is stripped from both runs (as ADR 0360
 counted `/`):
 
@@ -89,7 +89,7 @@ counted `/`):
 The four removals are `^` (4 callers), `>>` (17, two calls) and `round` (5). A build that links Complex or Rational
 is unchanged.
 
-`scripts/bc2cpp_numeric_slow_check.rb` runs each closed helper directly against the real method over every member
+`scripts/bc2cpp/numeric_slow_check.rb` runs each closed helper directly against the real method over every member
 class pair: Fixnum, heap Integer, bigint, negative and oversized shift counts, `MRB_INT_MIN`, Float (NaN, +-Infinity,
 -0.0, 1.0e19), nil, true, false, String (frozen and not), Symbol, Array, Hash, Range, a user object, a class, a bare
 `Numeric`; value, Float bits, `Integer#hash`, exception class and message must agree, compiled and interpreted. It

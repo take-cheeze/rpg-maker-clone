@@ -3,8 +3,8 @@
 # through mruby-marshal), the encrypted RGSSAD archive, the script host that runs
 # a game's own scripts, and the RGSS standard library the player supplies
 # (RPG::Sprite / RPG::Weather / RPG::Cache, Errno). The data layer is also
-# smoke-tested against real projects by scripts/rpgxp_testbed_check.rb, and the
-# host against them by scripts/rpgxp_script_host_check.rb.
+# smoke-tested against real projects by scripts/rpgxp/testbed_check.rb, and the
+# host against them by scripts/rpgxp/script_host_check.rb.
 #
 # This gem no longer carries a reimplementation of RMXP's default engine (ADR
 # 0030), so the tests that covered its title/map/interpreter went with it: what a
@@ -353,7 +353,7 @@ end
 # catch the library being dropped from the gem's rbfiles, or a native base class
 # losing a method it is built on. Sprite/Viewport instances need a live display
 # the headless test binary lacks (see mruby-rgss's own tests), so the behaviour
-# of the effects is checked against fakes in scripts/rpgxp_script_host_check.rb
+# of the effects is checked against fakes in scripts/rpgxp/script_host_check.rb
 # and what is pinned here is the shape a game's scripts subclass.
 assert "RPG::Sprite is the native Sprite plus the RGSS effect surface" do
   assert_equal RGSS::Sprite, RPG::Sprite.superclass

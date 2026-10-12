@@ -13,7 +13,7 @@
 // real, full header ships inside the downloaded archive at
 // assets/voicevox/core/include/voicevox_core.h for reference; these
 // declarations are trimmed to (and must stay binary-compatible with) VOICEVOX
-// CORE 0.17.x's C API, which is what scripts/download-voicevox-zundamon.bash
+// CORE 0.17.x's C API, which is what scripts/download/voicevox-zundamon.bash
 // pins (0.16.x's `voicevox_synthesizer_load_voice_model` took two arguments,
 // not three, and could not read the newer `vvm_format_version=2` files
 // voicevox_vvm now ships -- see that script's version-pinning note).

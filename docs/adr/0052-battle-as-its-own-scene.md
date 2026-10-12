@@ -101,11 +101,11 @@ in line with that, without changing any observable behaviour.
 
 `mruby-rpg2k/mrblib/scene/map.rb` shrank from ~10,600 to ~7,700 lines;
 `mruby-rpg2k/mrblib/scene/battle.rb` is a new ~3,000-line file. No mechanic
-changed — `scripts/rpg2k_scene_check.rb`'s 628 checks (rewritten to reach the
+changed — `scripts/rpg2k/scene_check.rb`'s 628 checks (rewritten to reach the
 fight's state via `scene.instance_variable_get(:@battle)`/`.ui` and the
 `battle_ui(scene)`/`fake_battle(scene, ui)` helpers that back it, and to send
 battle-only methods to that object instead of the map scene) and
-`scripts/rpg2k_logic_check.rb`'s 907 all still pass unchanged in what they
+`scripts/rpg2k/logic_check.rb`'s 907 all still pass unchanged in what they
 assert. `Interpreter#battle_screen` — the hook `Change Party Member` battle
 events use to push a roster change onto the render layer (ADR 0050/0051) —
 now naturally resolves to the `Scene::Battle` instance instead of the whole

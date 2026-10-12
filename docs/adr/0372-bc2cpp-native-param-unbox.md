@@ -11,7 +11,7 @@ Accepted
 The native direct arms (ADR 0253, 0263, 0281, 0358) call an RGSS native's frame-independent entry point
 (`rgss::rect_x_set_direct`, ...). For an `:int` argument they tested `mrb_integer_p` and kept the by-name
 `bc2cpp_send` as the else, because a Float, a nil or a String "may not be an Integer". That is the wrong
-question. Every such binding is, by construction of `scripts/native_binding_split.rb`,
+question. Every such binding is, by construction of `scripts/native/binding_split.rb`,
 
 ```cpp
 T a; ...; mrb_get_args(M, "<fmt>", &a, ...); return entry(M, self, a, ...);
@@ -59,7 +59,7 @@ dispatched test): its first argument keeps the `mrb_integer_p` test, which is wh
 branch, and the second is converted as `"ii"` does. `Rect.new`, `Color.new` and `Tone.new` keep their
 unconditional unboxing, now sequenced.
 
-**Audit** (`scripts/bc2cpp_native_param_audit.rb`, run by `scripts/bc2cpp_native_param_unbox_check.rb`):
+**Audit** (`scripts/bc2cpp/native_param_audit.rb`, run by `scripts/bc2cpp/native_param_unbox_check.rb`):
 
 - the `case 'i'`/`'f'`/`'b'` arms of `mrb_get_args` and the `mrb_as_int`/`mrb_as_float` macros are pinned by a
   digest of their squashed text, so an mruby that changes them fails the check;

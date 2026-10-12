@@ -22,7 +22,7 @@ is not a proof.
 
 ## Method
 
-Wio closed world, master `43031b24` (ADRs 0307-0312 merged), shipped pass of `scripts/bc2cpp_coverage_report.rb`, all three
+Wio closed world, master `43031b24` (ADRs 0307-0312 merged), shipped pass of `scripts/bc2cpp/coverage_report.rb`, all three
 compiled gems, `3rd/*` populated. New, output-neutral tooling (`shipped.cxx` is byte-identical with it on):
 
 - `BC2CPP_ITAB_REPORT=<tsv>` (`tools/bc2cpp/interface_table_report.rb`): one row per explicit-receiver send that has a guard
@@ -30,7 +30,7 @@ compiled gems, `3rd/*` populated. New, output-neutral tooling (`shipped.cxx` is 
   first), the receiver's proven instance classes (`CodeGen#receiver_instances`) or the flow mask that fell short, its
   origin, the chain's listed classes, what each cell of a proven set would be, and the native registration facts of the
   name. `<tsv>.names` holds one row per method name (Ruby instance owners, singleton owners, native, outside name).
-- `scripts/bc2cpp_interface_table_report.rb <tsv> [owner-regexp]` aggregates it.
+- `scripts/bc2cpp/interface_table_report.rb <tsv> [owner-regexp]` aggregates it.
 - An unsound oracle (not in the tree): `refusal` told to ignore `dynamic_install`, `unknown_definer`, `core_or_native` and to
   require only the listed classes that are in `S`, whenever `S` is proven. It is an upper bound for any per-class proof.
 
@@ -161,6 +161,6 @@ declared interface), not removal. Not worth a reader plus a parser subset now; t
 
 ## Consequences
 
-`BC2CPP_ITAB_REPORT` and `scripts/bc2cpp_interface_table_report.rb` are the reproducible census for the next attempt; they change
+`BC2CPP_ITAB_REPORT` and `scripts/bc2cpp/interface_table_report.rb` are the reproducible census for the next attempt; they change
 no generated code. Not run: the firmware smokes, the optcarrot (open-world) comparison, a 32-bit `mrb_int` or core-only run
 (nothing in generated code changed).

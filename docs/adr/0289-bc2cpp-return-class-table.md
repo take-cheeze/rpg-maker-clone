@@ -23,7 +23,7 @@ run-time class test. Three facts were already computed and each stops short of i
   measured a receiver-sensitive return table for core methods and left it out: 8 of 158 `send_result`
   receivers, none of which removed a site.
 
-Measured on the wio closed world before this change (`scripts/bc2cpp_coverage_report.rb`): 492 `TYPED`
+Measured on the wio closed world before this change (`scripts/bc2cpp/coverage_report.rb`): 492 `TYPED`
 arms (each a guard, a direct call and a fallback block that repeats the native-direct arms), 10,597
 cached dispatch sites, 2,919 guarded arithmetic arms ending in a send.
 
@@ -93,7 +93,7 @@ flow state, or nil when the set is empty, mixed, or contains nil.
 
 ## Consequences
 
-Measured on the wio closed world (`scripts/bc2cpp_coverage_report.rb`, the shipped build), `master` at
+Measured on the wio closed world (`scripts/bc2cpp/coverage_report.rb`, the shipped build), `master` at
 `fa5ced1f` against this branch:
 
 | | before | after |
@@ -129,7 +129,7 @@ would put a scan-based claim behind an unchecked direct call, which ADR 0276 did
 numbers. A method with `ensure` has no exact return (the exceptional path joins the normal one); there
 are two in the engine.
 
-Checked by `scripts/bc2cpp_return_class_check.rb`: generated code for thirteen exact shapes (local, call,
+Checked by `scripts/bc2cpp/return_class_check.rb`: generated code for thirteen exact shapes (local, call,
 chain, forward, recursion, rescue, block `return`, ivar slot, subclass result, inherited target, copy,
 and the two that only `EXACT_TYPED` can take), eleven guarded ones (two classes, nil, parameter, ivar on
 entry, slot after a call, yield, reassignment, branch join, captured write, ensure, two classes behind an
@@ -137,9 +137,9 @@ entry, slot after a call, yield, reassignment, branch join, captured write, ensu
 prepended module, `method_missing`, singleton `make_box`, redefined `new`, `singleton_class`,
 `instance_eval`, a def on an object, the open world); and, with a full-core mruby, the compiled fixture
 answers what the interpreter answers for every method, including the receivers a wrong proof would
-mis-dispatch. `scripts/bc2cpp_numeric_operand_check.rb` covers handler edges, `EXCEPT`/`RESCUE`/`RAISEIF`
+mis-dispatch. `scripts/bc2cpp/numeric_operand_check.rb` covers handler edges, `EXCEPT`/`RESCUE`/`RAISEIF`
 and Range on hand-built bytecode, and `rescue`/block-`return` methods against the interpreter.
-`scripts/bc2cpp_include_ancestor_check.rb` now expects the guard-free call for a fresh receiver.
+`scripts/bc2cpp/include_ancestor_check.rb` now expects the guard-free call for a fresh receiver.
 
 Residual risk: the table and the class bits trust the closed-world scan (`name_fully_visible?`,
 `stable_standard_constructor_class?`, `exact_instances_singleton_free?`) as ADR 0280 and 0258 do; a

@@ -67,7 +67,7 @@ Nothing extra crosses the call boundary: the parent already has the block in
 either case. A nested body whose levels are all 1 still reads the *method's*
 block, which is why the level set is matched exactly rather than by "is not 1" —
 `t_bg_in_blk2` and `t_bg_yield_in_blk2` in
-`scripts/bc2cpp_proc_call_block_given_check.rb` are that case, and passing the
+`scripts/bc2cpp/proc_call_block_given_check.rb` are that case, and passing the
 parent's block there answers a different question.
 
 `BC2CPP_OPT_BLOCK_FRAME=0` restores the previous behaviour.
@@ -88,7 +88,7 @@ unconditionally, so `t_bg_in_blk2` answered `[true, true]` instead of
 `[true, false]` — which is what the exact level-set match above exists to
 prevent.
 
-`scripts/bc2cpp_optional_block_frame_check.rb` covers both halves: the
+`scripts/bc2cpp/optional_block_frame_check.rb` covers both halves: the
 optional-arg-and-block wrapper, the kill switch, and a `yield` two block levels
 deep (`nest=[10, 20, 30]`, and a LocalJumpError-free return), with
 compiled-vs-interpreted parity across two VMs.

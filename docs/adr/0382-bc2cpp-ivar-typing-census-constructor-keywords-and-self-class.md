@@ -174,8 +174,8 @@ Effect: `Interpreter#@map_info` (`RPG2k::Scene::Map`), `@battle_screen`, `Scene:
 
 ## Checks
 
-`scripts/bc2cpp_ivar_typing_check.rb` (every positive loses its guard; negatives: a second class at one keyword site, `**opts`,
+`scripts/bc2cpp/ivar_typing_check.rb` (every positive loses its guard; negatives: a second class at one keyword site, `**opts`,
 a splat, too few positionals, a keyword `super` with too few, a bare `super`, a post-mandatory parameter, a `new` on an unknown
 receiver, a packed-kdict `new`, an explicit `initialize` call; self from a block, a module method, a class pair, a second
 site; an UnboundMethod bind and a `define_method` from a Method object; both kill switches; the two diagnostics) and
-`scripts/bc2cpp_ivar_typing_mutation_check.rb` (nine mutants of the conditions above).
+`scripts/bc2cpp/ivar_typing_mutation_check.rb` (nine mutants of the conditions above).

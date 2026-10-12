@@ -10,7 +10,7 @@ Accepted
 
 After ADRs 0254 to 0256 the shipped wio build's `POLY_DIAG` sites still excluded
 definitions for three reasons that a proof can remove. Measured with
-`scripts/bc2cpp_coverage_report.rb` on `master`:
+`scripts/bc2cpp/coverage_report.rb` on `master`:
 
 - `singleton_owner` (319): a definition on `X.singleton` was never a candidate.
   98 of them sat at dispatching sites. The dispatching ones were an
@@ -117,11 +117,11 @@ added to `NOMETHOD_REVIEWED`, `RPG2k::Scene::Map#drive_text_message -> advance`:
 the receiver is always the `Game::TextReveal` that `MessageState#reveal` holds,
 and the chain now lists it, so the else is dead.
 
-`scripts/bc2cpp_singleton_arity_check.rb` (bc2cpp-checks `fast` shard) pins every
+`scripts/bc2cpp/singleton_arity_check.rb` (bc2cpp-checks `fast` shard) pins every
 resolution and every refusal (singleton prepend, unresolved superclass, private
 singleton method, rest parameter, `clone`) and compiles the fixture against the
 real mruby core, comparing each result and each `ArgumentError` message with the
-interpreter's. `scripts/bc2cpp_closed_world_check.rb` now expects the CwPuppy arm
+interpreter's. `scripts/bc2cpp/closed_world_check.rb` now expects the CwPuppy arm
 to be a direct call.
 
 Not covered: sends whose receiver class is unknown (a chain fallback for a

@@ -43,7 +43,7 @@ Options for the instrument data, which every synth needs:
   cost of ~32 MiB in the repository, permanently and for every clone.
 - **Download it with a script** — the repository stays small and nothing here
   redistributes GPL sample data; the cost is a setup step, which this repository
-  already has seven of (`scripts/download-*.bash`, `scripts/rtp_install.bash`)
+  already has seven of (`scripts/download-*.bash`, `scripts/rtp/install.bash`)
   and a CI barrier that waits on them.
 - **Depend on a system/nix package** — smallest of all, but MIDI then works only
   where someone installed the right package, which is the status quo ADR 0006
@@ -52,7 +52,7 @@ Options for the instrument data, which every synth needs:
 ## Decision
 
 Drive **SDL_mixer's built-in TiMidity**, and install the **FreePats General MIDI
-patch set** into `assets/timidity/` with `scripts/download-freepats.bash`
+patch set** into `assets/timidity/` with `scripts/download/freepats.bash`
 (config plus 128 `.pat` files, ~32 MiB, git-ignored).
 
 The script fetches the version-pinned `freepats` npm tarball — immutable and

@@ -31,22 +31,22 @@
   water and terrain autotiles assembled from quarter-tiles, and animated tiles —
   falling back to colour blocks only when the chipset image is missing
 - Rendering is checked against the **genuine RPG Maker 2000 runtime**:
-  `scripts/compare-nepheshel-wine.bash` boots the real `RPG_RT.exe` under wine
+  `scripts/compare/nepheshel-wine.bash` boots the real `RPG_RT.exe` under wine
   and this engine on the same game, drives both headlessly with the same key
   script and diffs the frames. Windows, the selection cursor, window text and
   the message panel now land on RPG_RT's pixels; the residual difference is the
   font (RPG_RT uses Windows' MS Gothic, we use Shinonome, with matching
   metrics). See `docs/adr/0021-nepheshel-render-parity-under-wine.md`
 - An **in-game map** is diffed the same way, by resuming both runtimes from one
-  save (`scripts/compare-nepheshel-save-wine.bash`, with
-  `scripts/gen-rpg2k-save.rb --clear-scene --map <id>` placing the party and the
+  save (`scripts/compare/nepheshel-save-wine.bash`, with
+  `scripts/gen/rpg2k-save.rb --clear-scene --map <id>` placing the party and the
   camera). Nepheshel's town, an interior and an open-water map now render
   **pixel-identical** to RPG_RT — tile layers, autotiles, upper/lower layering
   and event sprites all on its exact pixels
 - Native LSD fields for weather, hero boarding, camera pan and encounter
   accumulation are exposed by the save schema. Genuine `RPG_RT.exe` captures
   also verify active flash, fractional picture transparency and common-event
-  cursors. `scripts/lcf_native_schema_probe.rb` prepares isolated probe games;
+  cursors. `scripts/lcf/native_schema_probe.rb` prepares isolated probe games;
   [ADR 0400](docs/adr/0400-native-lsd-extension-field-slots.md) records the
   commands, wire values and remaining compatibility limits. New saves use these
   native fields without extension chunk 200; existing extended saves still load
@@ -328,7 +328,7 @@
   asks for load with no loose files present. Loose files, when present, shadow
   the archive (as in RGSS)
 - The window is sized to XP's native 640×480 automatically
-- **CI plays both beds, headlessly**: `scripts/rpgxp_boot_check.bash` boots the
+- **CI plays both beds, headlessly**: `scripts/rpgxp/boot_check.bash` boots the
   editor-shaped OpenGame test bed and the *released* **Pray for You**
   (`Game.ini` + `Game.rgssad`, nothing loose — 69 maps, 1107 event pages, 15,797
   event commands), taps the confirm key on each game's own title screen, and logs
@@ -342,12 +342,12 @@
   of its own `Sprite_Battler`s on top of `RPG::Sprite`, and to open its own save
   screen (`[RPGXP-HOST-SAVE]`), the one place a game reads a file's timestamp
   back and writes a file of its own.
-  `scripts/rpgxp_script_host_check.rb` covers the same ground under CRuby —
+  `scripts/rpgxp/script_host_check.rb` covers the same ground under CRuby —
   every section of both bundles evaluates, and the RGSS standard library behaves
-- `scripts/compare-rpgxp-wine.bash` diffs our frames against the **genuine RGSS
+- `scripts/compare/rpgxp-wine.bash` diffs our frames against the **genuine RGSS
   runtime**, booting the project's own `Game.exe`/`RGSS104E.dll` under wine on
   the same key script (install the RTP into that prefix with
-  `scripts/rtp_xp_install.bash` so both runtimes read the same assets). It found
+  `scripts/rtp/xp_install.bash` so both runtimes read the same assets). It found
   four bugs that had kept an XP project from drawing its RTP art at all: the XP
   RTP registry key was never read, `.jpg` was missing from the asset search,
   truecolour images came out with red and blue exchanged, and an RGBA image
@@ -384,7 +384,7 @@
   tone/flash and scene transitions — is measured against the stock VX Ace script
   set in
   [`docs/rpgvx-rgss-api-gap.md`](docs/rpgvx-rgss-api-gap.md)
-- Have a VX / VX Ace project? `ruby scripts/rpgvx_testbed_check.rb path/to/Game`
+- Have a VX / VX Ace project? `ruby scripts/rpgvx/testbed_check.rb path/to/Game`
   loads its whole database and reports any field the schema is missing — the
   editors are commercial and no open-source test bed exists, so that check is
   how the schema gets validated against genuine editor output
@@ -470,7 +470,7 @@
   things that needs — `Blob`, `URL.createObjectURL`/`revokeObjectURL` and an
   `arraybuffer` XHR — so real games boot; before, the first encrypted asset
   threw and the boot died in `Scene_Boot` with a black screen. `MZ_MODE` has no
-  `encrypted` mode: `scripts/mz_encrypted_check.bash` *derives* an encrypted
+  `encrypted` mode: `scripts/mz/encrypted_check.bash` *derives* an encrypted
   copy of the bed and runs `play` against it, so the plain bed stays the single
   source of truth for what the bed contains
 - MZ **buys things**: `shop` mode opens a shop with a Shop Processing command,
@@ -525,9 +525,9 @@
   `mruby-mvjs/test/gl_test.rb`
 - The MZ engine is not redistributable (unlike MV's MIT corescript), so
   `data/mz-sample` commits only an authored database and art —
-  `scripts/gen-mz-sample.py` writes both — and
-  `scripts/download-mz-corescript.bash` fetches the engine at build time.
-  `scripts/mz_boot_check.bash` boots that bed headlessly and asserts what the
+  `scripts/gen/mz-sample.py` writes both — and
+  `scripts/download/mz-corescript.bash` fetches the engine at build time.
+  `scripts/mz/boot_check.bash` boots that bed headlessly and asserts what the
   requested `MZ_MODE` claims — `play` (the default: the map is reached and a held
   key moves the player), `message`, `message_play`, `transfer`, `common`,
   `encounter`, `shop`, `equip`, `menu`, `menu_play`, `animation`, `save`,
@@ -537,10 +537,10 @@
   host instead of the time every run takes — a cut-off run reports nothing at
   all, which had made a battle that was still swinging look like one that never
   landed a hit; `ruby
-  scripts/mz_testbed_check.rb path/to/Game` validates any MZ project's
+  scripts/mz/testbed_check.rb path/to/Game` validates any MZ project's
   boot-critical data and system art without a build
 - Those assertions all read the engine's **log**, which is how the empty frames
-  above went unnoticed for a milestone. `scripts/mz_frame_check.rb` reads the
+  above went unnoticed for a milestone. `scripts/mz/frame_check.rb` reads the
   **captured PNGs** instead: that each frame kept its art (a map frame that lost
   its tiles is 99.5% a single colour; a message window whose contents never
   uploaded has 18 distinct colours in its band where text puts 105), and that
@@ -840,12 +840,12 @@
   [`docs/adr/0095-wolf-rpg-editor-pro-protected.md`](docs/adr/0095-wolf-rpg-editor-pro-protected.md)
   and
   [`docs/adr/0098-wolf-rpg-editor-remove-pro-protected-decryption.md`](docs/adr/0098-wolf-rpg-editor-remove-pro-protected-decryption.md)
-- `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
-  whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
+- `ruby scripts/wolf/testbed_check.rb path/to/Project` validates any project's
+  whole database and every map, and `ruby scripts/wolf/interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
   and, for every real map, every event's active page — against a project's
   real data (nothing raises or hangs across a bounded run of frames) —
-  `scripts/download-wolfrpg-sample.bash` fetches the editor's own official
+  `scripts/download/wolfrpg-sample.bash` fetches the editor's own official
   sample game (SmokingWOLF's freely redistributable GitHub release) as the
   test bed CI runs both against
 
@@ -920,7 +920,7 @@
 
 ### Editing project data as text
 
-- `scripts/lcf_text_convert.rb` converts a project's `.ldb` (database),
+- `scripts/lcf/text_convert.rb` converts a project's `.ldb` (database),
   `.lmu` (map unit) or `.lsd` (save) between the original binary format and a
   human-editable YAML text form, schema-checked against `mruby-lcf/mrblib/
   schema.rb` in both directions — the map itself stays a visual, in-engine
@@ -929,10 +929,10 @@
   event pages, system settings — round-trips through text:
 
   ```sh
-  ruby scripts/lcf_text_convert.rb to_text   RPG_RT.ldb database.yml
+  ruby scripts/lcf/text_convert.rb to_text   RPG_RT.ldb database.yml
   # edit database.yml in any text editor
-  ruby scripts/lcf_text_convert.rb check     database.yml   # validate without writing
-  ruby scripts/lcf_text_convert.rb to_binary database.yml   RPG_RT.ldb
+  ruby scripts/lcf/text_convert.rb check     database.yml   # validate without writing
+  ruby scripts/lcf/text_convert.rb to_binary database.yml   RPG_RT.ldb
   ```
 
   An unedited file round-trips byte-exact; an edited one is validated first
@@ -1004,13 +1004,13 @@
   never-reset allocation counts, so diffing two samples' values by their
   timestamps gives a real per-second (or per-frame, dividing by the frame
   count over the same span) allocation *rate* — exactly what
-  `scripts/rpg2k_alloc_regression_check.rb` checks
+  `scripts/rpg2k/alloc_regression_check.rb` checks
 - [`docs/profiling.md`](docs/profiling.md) records a measured baseline for the
   RPG2000 map scene — what the sections above currently say, which one is the
   bottleneck, and why moving audio to another thread does not help the frame
   rate (SDL_mixer already mixes on its own thread; only asset load blocks the
   game loop)
-- `scripts/rpg2k_alloc_regression_check.rb` boots the engine against a real
+- `scripts/rpg2k/alloc_regression_check.rb` boots the engine against a real
   game, samples `mruby_type_allocs` at two points in a steady window and fails
   if the measured per-second Array/Proc/env allocation rate exceeds a ceiling
   set from the RPG2000 map scene's own measured baseline — a regression guard
@@ -1135,7 +1135,7 @@
   NoMethodError for nil), and `Array` natives such as `__svalue` on a `*rest` parameter. See
   [`docs/adr/0274-bc2cpp-direct-kernel-and-parameter-natives.md`](docs/adr/0274-bc2cpp-direct-kernel-and-parameter-natives.md).
   Those entry points are no longer written by hand: clang tooling
-  (`scripts/native_binding_split.rb report|write|check`) classifies every RGSS
+  (`scripts/native/binding_split.rb report|write|check`) classifies every RGSS
   native binding, splits the frame-independent ones into a body plus an
   `mrb_get_args` wrapper, and generates the compiler's table; see
   [`docs/adr/0263-native-binding-split-tooling.md`](docs/adr/0263-native-binding-split-tooling.md).
@@ -1176,89 +1176,89 @@
   `return`s) and a flow over ivar slots extend that proof, and a class-guarded `TYPED` call whose
   receiver is proven exactly its guard class becomes a guard-free direct call; see
   [`docs/adr/0289-bc2cpp-return-class-table.md`](docs/adr/0289-bc2cpp-return-class-table.md) and
-  `scripts/bc2cpp_return_class_check.rb`.
+  `scripts/bc2cpp/return_class_check.rb`.
   Class pools carry the same exact classes across methods: an ivar every writer of the closed world
   gives one class, and an argument every visible call site passes one class to. A receiver proven
   nil-or-one-class (`@ui = nil` then `@ui = {}`) takes one `nil?` test and the exact path, and
   `x[i]`/`x[i] = v` on an exact Array or Hash drops its class test. `BC2CPP_CLASS_POOLS=0` turns
   them off; see
   [`docs/adr/0296-bc2cpp-class-pools.md`](docs/adr/0296-bc2cpp-class-pools.md),
-  `scripts/bc2cpp_class_pools_check.rb` and `scripts/bc2cpp_guard_hint_report.rb`.
+  `scripts/bc2cpp/class_pools_check.rb` and `scripts/bc2cpp/guard_hint_report.rb`.
   The same exact-receiver proof now reaches every arm wrapper of a send (the registered-expression chains
   of `size`/`empty?`/`first`, the tail of a POLY chain, the `core_or_native` fallbacks), and constants
   join the pools (`LIST = [...].freeze` is exactly an Array wherever it is read, unless a `const_missing`
   or a Ruby `freeze` on instances exists): 176 fewer by-name-reachable sites on the wio build; see
   [`docs/adr/0301-bc2cpp-exact-receiver-consumers-and-constant-pools.md`](docs/adr/0301-bc2cpp-exact-receiver-consumers-and-constant-pools.md)
-  and `scripts/bc2cpp_exact_receiver_flow_check.rb`.
+  and `scripts/bc2cpp/exact_receiver_flow_check.rb`.
   A local a block only reads or mutates (`h = {}; 3.times { |i| h[i] = h.size }`) keeps the exact class
   its method gave it inside the block, so the block's `h[i] = v` and `h.size` need no class test;
   `BC2CPP_CAPTURED_LOCAL_CLASS=0` turns it off (see
   [`docs/adr/0308-bc2cpp-captured-local-classes.md`](docs/adr/0308-bc2cpp-captured-local-classes.md) and
-  `scripts/bc2cpp_captured_local_class_check.rb`).
+  `scripts/bc2cpp/captured_local_class_check.rb`).
   The arguments of an `initialize` are joined over every `Klass.new`, `super(...)`, implicit-self `new` and
   `self.class.new` of the closed world (`BC2CPP_CONSTRUCTOR_POOLS=0` turns it off; 25 fewer index-helper callers on
   the wio build, see
   [`docs/adr/0313-bc2cpp-constructor-pools.md`](docs/adr/0313-bc2cpp-constructor-pools.md) and
-  `scripts/bc2cpp_constructor_pools_check.rb`).
+  `scripts/bc2cpp/constructor_pools_check.rb`).
   The arguments of every call of a setter (`x=`) are joined into a class pool for the ivar an `attr_writer` or an audited
   native writes and for the parameter of a setter with several definitions; a receiver those pools prove nil or one
   class takes a class test whose else is `bc2cpp_guard_violation` (`BC2CPP_SETTER_POOLS=0` turns it off; 11 fewer
   by-name sends on the wio build, 27 before the singleton-definer arms, see
   [`docs/adr/0370-bc2cpp-setter-pools-checked-receivers.md`](docs/adr/0370-bc2cpp-setter-pools-checked-receivers.md) and
-  `scripts/bc2cpp_setter_pools_check.rb`).
+  `scripts/bc2cpp/setter_pools_check.rb`).
   `BC2CPP_SPECIALIZE=<file>` (lines `Owner#name param=Class`, off by default) compiles a second body of a hot
   method under the assumption that its listed parameters are exactly those classes and puts one entry check in front of
   the unchanged original, so the by-name sends on those parameters resolve statically and any other argument runs the
   generic body (see
   [`docs/adr/0380-bc2cpp-entry-guarded-specialization.md`](docs/adr/0380-bc2cpp-entry-guarded-specialization.md) and
-  `scripts/bc2cpp_entry_specialize_check.rb`).
+  `scripts/bc2cpp/entry_specialize_check.rb`).
   `BC2CPP_SITE_PROFILE=DIR` builds count how often each remaining by-name `bc2cpp_send` and
-  `mrb_funcall*` site runs, and `scripts/bc2cpp_dynamic_site_census.rb --rank` ranks the sites by
+  `mrb_funcall*` site runs, and `scripts/bc2cpp/dynamic_site_census.rb --rank` ranks the sites by
   executed hits with the reason each was kept dynamic; off by default and byte-identical when unset
   (see
   [`docs/adr/0298-bc2cpp-executed-site-profile.md`](docs/adr/0298-bc2cpp-executed-site-profile.md),
   [`docs/bc2cpp-dynamic-site-census.md`](docs/bc2cpp-dynamic-site-census.md) and
-  `scripts/bc2cpp_site_profile_check.rb`).
+  `scripts/bc2cpp/site_profile_check.rb`).
   A computed-name `__send__` whose name is provably one of a finite Symbol set (a frozen constant table,
   a `case` or `?:` over Symbol literals) becomes direct per-name arms with a logged violation arm instead
   of a by-name lookup; `BC2CPP_COMPUTED_SEND=0` turns it off (see
   [`docs/adr/0303-bc2cpp-computed-send-expansion.md`](docs/adr/0303-bc2cpp-computed-send-expansion.md) and
-  `scripts/bc2cpp_computed_send_check.rb`).
+  `scripts/bc2cpp/computed_send_check.rb`).
   An `attr_reader` returns the class set of the ivar slot it reads (the class pools), so `holder.thing.tag`
   is an exact call when every definition of `thing` is modelled, and an Array the flow proves exact takes
   `push`/`<<` and the TYPED call of a core class's body with no class test; `BC2CPP_RETURN_ACCESSORS=0` and
   `BC2CPP_EXACT_CORE_ARMS=0` turn them off (63 fewer rpg2k by-name sites, all removals). With
   `BC2CPP_SEND_ROOT_REPORT=FILE` a build also tags every by-name line, and
-  `scripts/bc2cpp_send_root_report.rb` ranks which producer left each receiver unproven. See
+  `scripts/bc2cpp/send_root_report.rb` ranks which producer left each receiver unproven. See
   [`docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md`](docs/adr/0309-bc2cpp-accessor-result-classes-and-exact-core-arms.md)
-  and `scripts/bc2cpp_call_results_check.rb`.
+  and `scripts/bc2cpp/call_results_check.rb`.
   A by-name send whose receiver is not proven exact gets, ahead of its by-name else, one exact-class arm per Ruby
   definition of the name, when the native owner map (`tools/bc2cpp/native_owner_map.rb`) proves that no native
   registration lands on that class; core forwarders are trusted by default, `BC2CPP_NATIVE_OWNER_MAP=strict` refuses
   them and `BC2CPP_NATIVE_OWNER_MAP=0` turns the arms off. See
   [`docs/adr/0397-bc2cpp-native-owner-map.md`](docs/adr/0397-bc2cpp-native-owner-map.md) and
-  `scripts/bc2cpp_native_owner_map_check.rb`.
+  `scripts/bc2cpp/native_owner_map_check.rb`.
   After `x.m` returned normally, `x` is an instance of a class that answers `m`: a later `x.n` on the same value
   (a copy of the register, a local, no rewrite and no handler edge between) is judged against those declared
   classes, which drops 63 by-name else arms of the wio build; `BC2CPP_CALL_FACTS=0` turns it off. Provable errors
   (no class answers, nil receiver, wrong argument count) were measured at 0 engine hits and are not a build error;
   `BC2CPP_REFINE_REPORT=FILE` and `BC2CPP_PROVABLE_ERROR_REPORT=FILE` write the reports that
-  `scripts/bc2cpp_refine_report.rb` aggregates. See
+  `scripts/bc2cpp/refine_report.rb` aggregates. See
   [`docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md`](docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md)
-  and `scripts/bc2cpp_call_facts_check.rb`.
+  and `scripts/bc2cpp/call_facts_check.rb`.
   `BC2CPP_BLOCK_SEND_REPORT=FILE` writes one row per block send (what keeps its dynamic `mrb_funcall_with_block`: an
-  unproven receiver, no compiled callee, no direct entry) for `scripts/bc2cpp_block_send_report.rb`; the four levers it
+  unproven receiver, no compiled callee, no direct entry) for `scripts/bc2cpp/block_send_report.rb`; the four levers it
   measured (SENDB call facts, `Array.new { }`, break/return direct entries, `delete`) reach 29 engine sends in all, below
   the cutoff, so none was built. See
   [`docs/adr/0325-bc2cpp-block-send-measurement.md`](docs/adr/0325-bc2cpp-block-send-measurement.md).
   `BC2CPP_DEAD_ARM_REPORT=FILE` writes one row per `bc2cpp_nomethod` / `bc2cpp_nil_receiver` arm (shape of its send, whether
-  its method can be called, rescue / probe / branch guards, receiver origin) for `scripts/bc2cpp_dead_arm_report.rb`: no
+  its method can be called, rescue / probe / branch guards, receiver origin) for `scripts/bc2cpp/dead_arm_report.rb`: no
   send is a sole arm, 822 nil paths are live and unguarded (scene-lifecycle ivars and database chunks, none a bug when read),
   and making the provable errors compile errors would remove nothing. See
   [`docs/adr/0330-bc2cpp-dead-arm-measurement.md`](docs/adr/0330-bc2cpp-dead-arm-measurement.md).
   `BC2CPP_RECEIVER_PROOF_REPORT=FILE` writes one row per engine send whose unproven receiver keeps a by-name line (where
   the receiver comes from, and what the line becomes when the receiver is forced to a class set, by a forked recompile
-  that leaves the output byte-identical) for `scripts/bc2cpp_receiver_proof_report.rb`; 1,783 sends are unproven, the best
+  that leaves the output byte-identical) for `scripts/bc2cpp/receiver_proof_report.rb`; 1,783 sends are unproven, the best
   sound slice measured (an audited native result class plus dropping the placeholder of a native no linked source defines)
   removes 22 by-name sends against the cutoff of 30, so none was built. Floor probes include every answering class,
   including sets larger than 40 classes. See
@@ -1328,15 +1328,15 @@
   build, all removals); `BC2CPP_NUMERIC_CONSTANTS=0` turns it off and `BC2CPP_NUMERIC_CONSTANTS_REPORT=FILE` /
   `BC2CPP_NATIVE_INT_ARGS=FILE` write why a constant or an argument is unproven. See
   [`docs/adr/0318-bc2cpp-numeric-constant-ranges-and-native-int-arguments.md`](docs/adr/0318-bc2cpp-numeric-constant-ranges-and-native-int-arguments.md)
-  and `scripts/bc2cpp_numeric_constants_check.rb`.
+  and `scripts/bc2cpp/numeric_constants_check.rb`.
   A proven receiver set is judged per class (ADR 0323): a `def`/`alias_method` directly in `class << <constant>`
   lands on that object, so it is no unknown definer or installed name for instances; a name natives or outside Ruby
   also spell is resolved per class along its lookup path; and a flow-proven exact `Hash` calls the compiled
   `Hash#delete` instead of a chain over user classes. 50 fewer by-name sends in the wio engine gems (`update` on
   `RPG2k::Window`/`Game::Interpreter`, `delete`); `BC2CPP_NATIVE_CLASS_ARMS=0` turns it off and
-  `BC2CPP_NATIVE_ARMS_REPORT=FILE` (`scripts/bc2cpp_native_arms_report.rb`) measures the levers. See
+  `BC2CPP_NATIVE_ARMS_REPORT=FILE` (`scripts/bc2cpp/native_arms_report.rb`) measures the levers. See
   [`docs/adr/0323-bc2cpp-native-class-arms.md`](docs/adr/0323-bc2cpp-native-class-arms.md) and
-  `scripts/bc2cpp_native_class_arms_check.rb`.
+  `scripts/bc2cpp/native_class_arms_check.rb`.
   A compiled block without `break`/`return` also has a direct entry, and yields from compiled code
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
@@ -1385,7 +1385,7 @@
   chain; and a send whose receiver is proven to hold only instances (and `nil`) ignores a `def self.x` definer
   of the same name. See
   [`docs/adr/0302-bc2cpp-native-result-facts.md`](docs/adr/0302-bc2cpp-native-result-facts.md) and
-  `scripts/bc2cpp_native_result_facts_check.rb`.
+  `scripts/bc2cpp/native_result_facts_check.rb`.
   A record-like Hash held in an ivar (`Scene::Battle#@ui`: Symbol-literal keys, read and written
   only as `h[:key]`) gives each key a whole-program class: a key that only ever holds fresh
   instances of one class makes `@ui[:battle].step_action` an unguarded exact-class call, and a
@@ -1428,7 +1428,7 @@
   Compiled `module_function` bodies also resolve their bare self-calls against
   the same module's emitted singleton copies.
   The generator is `tools/bc2cpp/bc2cpp.rb`, which loads its part files in
-  order; `ruby scripts/bc2cpp_split.rb --verify REF` proves that layout is a
+  order; `ruby scripts/bc2cpp/split.rb --verify REF` proves that layout is a
   mechanical split of REF's single-file `bc2cpp.rb`. Statically named ivars
   on RData-backed classes use GC-traced `mrb_value` slots, while dynamic names
   retain the normal ivar table; see
@@ -1447,7 +1447,7 @@
   arms call mruby's own overflow-aware numeric helpers instead of a dynamic
   send (bigints included); see
   [`docs/adr/0276-bc2cpp-numeric-operand-proof.md`](docs/adr/0276-bc2cpp-numeric-operand-proof.md)
-  and `scripts/bc2cpp_numeric_operand_check.rb`.
+  and `scripts/bc2cpp/numeric_operand_check.rb`.
   The Fixnum tier of those arms is overflow-exact (a result past the Fixnum range is a
   bignum, as in the interpreter, on the 64-bit and the 32-bit `mrb_int` targets), and the
   call-site proofs refuse method names a computed-name `send` could reach and ivars a
@@ -1458,7 +1458,7 @@
   Integer or Float operand and dispatches by name only for the classes it does not own,
   where each site used to carry its own send; see
   [`docs/adr/0292-bc2cpp-numeric-slow-path-helpers.md`](docs/adr/0292-bc2cpp-numeric-slow-path-helpers.md)
-  and `scripts/bc2cpp_numeric_slow_check.rb`.
+  and `scripts/bc2cpp/numeric_slow_check.rb`.
   In a closed world where only core classes answer an operator, the helper's by-name else is a
   proven NoMethodError instead (`/ + * < <= > >= ^ >> round % -@`; ADR 0360-0364 and
   [`docs/adr/0367-bc2cpp-expose-misc-core-bodies.md`](docs/adr/0367-bc2cpp-expose-misc-core-bodies.md),
@@ -1478,7 +1478,7 @@
   narrowed test checks its claim at run time and raises a guard violation when the closed world was wrong.
   `BC2CPP_CLASS_NARROWING=0` turns it off (byte-identical to the tree without it); see
   [`docs/adr/0375-bc2cpp-class-narrowing.md`](docs/adr/0375-bc2cpp-class-narrowing.md) and
-  `scripts/bc2cpp_class_narrowing_check.rb`.
+  `scripts/bc2cpp/class_narrowing_check.rb`.
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
@@ -1563,12 +1563,12 @@
 
 - The supported build is the Nix flake (`nix develop`), which pins every
   dependency. On a plain Debian/Ubuntu box that has a C++ toolchain but no Nix —
-  an agent container, a bare CI image — `scripts/native-build-without-nix.bash`
+  an agent container, a bare CI image — `scripts/native/build-without-nix.bash`
   gets to the same place:
 
   ```sh
-  scripts/native-build-without-nix.bash            # -> ./build/rpg_maker_clone
-  VERIFY=0 scripts/native-build-without-nix.bash   # build only, skip the checks
+  scripts/native/build-without-nix.bash            # -> ./build/rpg_maker_clone
+  VERIFY=0 scripts/native/build-without-nix.bash   # build only, skip the checks
   ```
 
   It installs the SDL2 headers, initialises the `3rd/` submodules (empty in a
@@ -1590,20 +1590,20 @@
   `clang-format --dry-run --Werror <file>` run **from inside the repository** —
   clang-format finds `.clang-format` by walking up from the file's own directory,
   so checking a copy under `/tmp` quietly falls back to LLVM defaults and invents
-  a diff of hundreds of unrelated lines. `scripts/native-build-without-nix.bash`
+  a diff of hundreds of unrelated lines. `scripts/native/build-without-nix.bash`
   notes the smaller traps as well, including why a line-length grep is not a
   substitute.
 
 ### Code coverage
 
 - Nearly all of the runtime is Ruby (`mruby-*/mrblib`, ~39k lines against ~3k
-  lines of C++ glue), and the `scripts/*_check.rb` harnesses load those exact
-  sources under CRuby. `scripts/coverage_report.rb` runs the harnesses with
+  lines of C++ glue), and the `scripts/**/*_check.rb` harnesses load those exact
+  sources under CRuby. `scripts/coverage/report.rb` runs the harnesses with
   CRuby's `Coverage` stdlib switched on and reports what they reached:
 
   ```sh
-  ruby scripts/coverage_report.rb              # -> coverage/lcov.info + .json
-  ruby scripts/coverage_report.rb --per-file   # every file, not just the tail
+  ruby scripts/coverage/report.rb              # -> coverage/lcov.info + .json
+  ruby scripts/coverage/report.rb --per-file   # every file, not just the tail
   genhtml coverage/lcov.info -o coverage/html  # browsable per-line report
   ```
 
@@ -1623,7 +1623,7 @@
   they reach counts as uncovered here (which is why the MV/MZ runtime files read
   0%). The RGSS runtime no longer does: the `rgss-cruby-test` check runs the
   real mruby-rgss test suite under CRuby through a compatibility layer
-  (`scripts/rgss_cruby_compat.rb` + `scripts/rgss_cruby_test_check.rb`), lifting
+  (`scripts/rgss/cruby_compat.rb` + `scripts/rgss/cruby_test_check.rb`), lifting
   `mruby-rgss` to ~52%. `docs/coverage.md` and
   `docs/adr/0049-ruby-line-coverage-from-the-host-side-checks.md` cover the
   details and the trade-off.
@@ -1636,7 +1636,7 @@
   time.
 
   ```sh
-  ./scripts/download-freepats.bash                  # MIDI instruments, once
+  ./scripts/download/freepats.bash                  # MIDI instruments, once
   emcmake cmake -S . -B wasm-build -GNinja
   cmake --build wasm-build
   python3 scripts/serve.py wasm-build --port 8000   # then open localhost:8000
@@ -1879,7 +1879,7 @@ part that explains it). Nothing else is collected.
   redistribute, so a project can easily ship none — and then every window drew
   with the built-in 12px **shinonome** bitmap font whatever size it asked for
   (MV/MZ, whose text is all TrueType, drew nothing at all). Run
-  `./scripts/download-default-font.bash` to install
+  `./scripts/download/default-font.bash` to install
   [M PLUS 1p](assets/fonts/README.md) into `assets/fonts/` (~1.7 MiB,
   git-ignored, SIL Open Font License); the engine finds it at startup and the
   XP/VX/MV/MZ runtimes fall back to it. A font the project *does* ship still
@@ -1904,7 +1904,7 @@ part that explains it). Nothing else is collected.
 - **MIDI plays once you fetch the instruments.** RPG2000 projects ship most of
   their music as `.mid`, which carries note events but no audio, so SDL_mixer's
   built-in TiMidity synthesiser needs a patch set to make any sound. Run
-  `./scripts/download-freepats.bash` to install
+  `./scripts/download/freepats.bash` to install
   [FreePats](assets/timidity/README.md) into `assets/timidity/` (~32 MiB,
   git-ignored); the engine finds it at startup. Without it, MIDI loads and plays
   silence — `RGSS::Audio.midi_available?` and a startup warning report that.
@@ -1917,7 +1917,7 @@ part that explains it). Nothing else is collected.
   `-sSDL2_MIXER_FORMATS=ogg,mid` to get the TiMidity decoder, and the page
   carries the patch set as ~32 MiB of packaged data. That happens on its own:
   `-DWASM_MIDI_PATCHES` defaults to `AUTO`, which packages the patches whenever
-  `scripts/download-freepats.bash` has already run — so download first, then
+  `scripts/download/freepats.bash` has already run — so download first, then
   configure. Pass `ON` to require them regardless (what CI does, because its
   download runs alongside the configure), or `OFF` for a slimmer page whose
   `.mid` playback is silent. A page without them says so in its on-screen log
@@ -1956,7 +1956,7 @@ part that explains it). Nothing else is collected.
   than committed:
 
   ```sh
-  ./scripts/download-voicevox-zundamon.bash
+  ./scripts/download/voicevox-zundamon.bash
   ./rpg_maker_clone --zundamon_tts --game_dir path/to/game
   ```
 
@@ -1980,3 +1980,6 @@ See [`docs/TODO.md`](docs/TODO.md) for the detailed, per-maker TODO list.
 Receiver flow also models [readonly Ruby call effects](docs/bc2cpp-readonly-call-effects.md) for proven zero-argument getter bodies.
 
 Receiver analysis positional binding is described in [call-context arguments](docs/bc2cpp-context-arguments.md).
+
+Repository utilities are grouped by purpose under `scripts/`; see the
+[script directory guide](docs/scripts.md) for locations and example commands.

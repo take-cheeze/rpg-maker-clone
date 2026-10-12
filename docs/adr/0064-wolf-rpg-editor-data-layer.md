@@ -35,7 +35,7 @@ closest thing to a published spec. None of the three is byte-identical to
 what a current editor writes (their comments disagree on several "unknown"
 fields), so the true test is the fourth source: the sample game the editor's
 own official package bundles, fetched by
-`scripts/download-wolfrpg-sample.bash` from SmokingWOLF's own GitHub release
+`scripts/download/wolfrpg-sample.bash` from SmokingWOLF's own GitHub release
 (`smokingwolf/tool_wolf_rpg_editor`) — a genuine, freely redistributable
 `Data/` tree straight from the tool's author, the same role Nepheshel/OpenGame
 play for the LCF/XP layers.
@@ -104,7 +104,7 @@ and resize it *after* `WolfRPG#initialize` has read `Game.dat` (gated on
 `--width`/`--height` not being given explicitly, matching how every other
 override already takes precedence).
 
-`scripts/wolf_testbed_check.rb` loads this exact `mrblib` source under CRuby
+`scripts/wolf/testbed_check.rb` loads this exact `mrblib` source under CRuby
 (the LCF-side pattern) and parses every `BasicData` file plus every `.mps`
 under `MapData` in the fetched sample game — it currently reads all 4 sample
 maps, 36 events and 27,356 event commands (the entire bundled "RPG Basic

@@ -149,7 +149,7 @@ log2(19) compares on every call where the memo costs one.
 - The table's slot list must stay in step with OWNER_CLASS_CACHE: rows index
   `bc2cpp_owner_class_slots`, so that cache and the tables are emitted by
   the same run and reset together.
-- `scripts/bc2cpp_poly_table_check.rb` (bc2cpp CI job) pins the shape on a
+- `scripts/bc2cpp/poly_table_check.rb` (bc2cpp CI job) pins the shape on a
   fixture: a 17-definition name gets one shared table (including an
   INHERITED_GUARD subclass row), a 16-definition name stays a POLY_SMALL_N
   chain, and a world with no name past the cap emits nothing of the tier. It

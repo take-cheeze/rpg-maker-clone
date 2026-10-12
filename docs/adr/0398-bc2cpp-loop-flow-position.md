@@ -69,7 +69,7 @@ tail is reachable only when `respond_to?` answers true for a class outside the c
 
 ## Measurement (upvar version: rules 4 and 5 on)
 
-wio closed world, shipped pass (`scripts/bc2cpp_coverage_report.rb`, `SKIP_UNSUPPORTED=1`, `MRBC` the CI-matching
+wio closed world, shipped pass (`scripts/bc2cpp/coverage_report.rb`, `SKIP_UNSUPPORTED=1`, `MRBC` the CI-matching
 mrbc), `origin/master` `c4180c74` (narrowed) against the same tree with `2f5b8a1` reverted (rule 5 restored). Live
 (non-comment) counts in `shipped.cxx`:
 
@@ -104,7 +104,7 @@ are unchanged.
 
 ## Measurement (first version)
 
-wio closed world, shipped pass (`BC2CPP_COVERAGE_KEEP_DIR`, `scripts/bc2cpp_coverage_report.rb`), `origin/master`
+wio closed world, shipped pass (`BC2CPP_COVERAGE_KEEP_DIR`, `scripts/bc2cpp/coverage_report.rb`), `origin/master`
 `11fd1034` against the same tree with the change. Counts are `CLOSED_WORLD kept:` markers in `shipped.cxx`.
 
 | `kept` reason | master | flow on | flow off |
@@ -143,7 +143,7 @@ largest trust extension in this change and is the first thing to re-check if a r
 
 ## Checks
 
-`scripts/bc2cpp_loop_flow_position_check.rb` (MRBC) generates four worlds through the closed-world generator:
+`scripts/bc2cpp/loop_flow_position_check.rb` (MRBC) generates four worlds through the closed-world generator:
 
 * positive: a receiver the block defines in an inlined `each` is accepted (`local`), and its `wait` send becomes the
   proven nomethod tail;

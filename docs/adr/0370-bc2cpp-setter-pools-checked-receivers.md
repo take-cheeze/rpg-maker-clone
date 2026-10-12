@@ -10,7 +10,7 @@ Accepted
 
 The by-name `bc2cpp_send` sites that remain in generated method bodies are mostly sends whose receiver class set is
 unproven (ADR 0331, 0341). Wio closed world, branch base `8ab8aa75`, shipped pass of
-`scripts/bc2cpp_coverage_report.rb`: 2,286 `bc2cpp_send` sites in bodies, of which 814 are `core_tag_chain_else` on a
+`scripts/bc2cpp/coverage_report.rb`: 2,286 `bc2cpp_send` sites in bodies, of which 814 are `core_tag_chain_else` on a
 receiver that is not an ivar, 215 the same on an ivar, 206 `rgss_native_exact_class_else`. The request was to type
 more of those receivers soundly: every new proof runtime-checked (`bc2cpp_guard_violation`, never a guard-free arm),
 a kill switch, a negative-world check. Three pieces were proposed; each was measured before building (the
@@ -58,7 +58,7 @@ Three consumers join the sites into pools:
 * an ivar group the numeric proof refuses only because an `attr_writer` writes it (`NumericIvarGroup#checked`);
 * an ivar only an audited native writes (`NativeIvarScopes::STORES`: `@contents` of `RGSS::Window`, written by
   `window_init` with a 1x1 `RGSS::Bitmap` and by `window_set_contents` with its one argument unchanged; the digest-pinned
-  `lib.cxx` is re-read by `scripts/bc2cpp_setter_pools_check.rb`, which fails when the stores differ);
+  `lib.cxx` is re-read by `scripts/bc2cpp/setter_pools_check.rb`, which fails when the stores differ);
 * the parameter of a Ruby setter definition whose name has several definitions.
 
 ### CHECKED provenance and CHECKED_POOL_EXACT: a proof that is a test, not a promise
@@ -100,8 +100,8 @@ earlier output byte for byte: `shipped.cxx` of the shipped pass is `cmp`-identic
 
 ## Measured
 
-Wio closed world, shipped pass of `scripts/bc2cpp_coverage_report.rb`, `BC2CPP_SETTER_POOLS=0` against the default on the
-same tree, counted by `scripts/bc2cpp_dynamic_site_census.rb`. Two trees, because master moved under the branch:
+Wio closed world, shipped pass of `scripts/bc2cpp/coverage_report.rb`, `BC2CPP_SETTER_POOLS=0` against the default on the
+same tree, counted by `scripts/bc2cpp/dynamic_site_census.rb`. Two trees, because master moved under the branch:
 
 | Measure | Branch point `8ab8aa75`, off (= base) | on | Delta | master `16e2bc43`, off (= master) | on | Delta |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -144,7 +144,7 @@ of the setters a pool depends on are refused (10 poisoned by a Symbol, 6 called 
 
 ## Checks
 
-* `scripts/bc2cpp_setter_pools_check.rb` (CI shard `setter-pools`): the native store audit; generated code for the
+* `scripts/bc2cpp/setter_pools_check.rb` (CI shard `setter-pools`): the native store audit; generated code for the
   positives (`attr_accessor`, `attr_writer`, a setter with two definitions, an accessor call result, a name a native
   only registers) and the negative worlds (two classes, a parameter site, `send(:x=)`, `alias_method`, a String
   spelling, a native `mrb_funcall`, `MRB_SYM_E`, foreign Ruby, a runtime `define_method`, `super`, two arguments,
@@ -153,9 +153,9 @@ of the setters a pool depends on are refused (10 poisoned by a Symbol, 6 called 
   (identical answers, nil receivers raising the interpreter's NoMethodError), and the two failure modes as
   **loud**: a setter called from outside the closed world and a composed name `send("#{stem}=")` each end in
   `BC2cppGuardViolation` where the interpreter answers, and the kill switch makes the outside call match again.
-* `scripts/bc2cpp_setter_pools_mutation_check.rb`: eleven mutants, one per admission rule, the provenance bit, the
+* `scripts/bc2cpp/setter_pools_mutation_check.rb`: eleven mutants, one per admission rule, the provenance bit, the
   class test, the nil arm, the mixed-set decoder and the alias rule.
-* `scripts/bc2cpp_aliased_names_check.rb`: the operand set and the computed-operand fallback.
+* `scripts/bc2cpp/aliased_names_check.rb`: the operand set and the computed-operand fallback.
 * Not run: a 32-bit `mrb_int` leg (nothing here touches an integer constant or a codec; the new Ruby is host-side tooling),
   and no `-DMRB_NO_GEMS` core-only leg, because the fixture needs `send` and `alias_method`.
 
@@ -170,7 +170,7 @@ of the setters a pool depends on are refused (10 poisoned by a Symbol, 6 called 
   by the return table, and the writer-only slice is built; element/tuple-slot typing and argument Integer-ness are not
   provable from the closed world's own data and are not built (see the Context).
 * New `CodeGen` ivars (`@setter_*`, `@checked_pool_override`, `@aliased_operand_names`, `@rc_*_alias_names`) are
-  classified in `scripts/bc2cpp_nested_compile_state_check.rb`.
+  classified in `scripts/bc2cpp/nested_compile_state_check.rb`.
 
 ## Triggers to revisit
 

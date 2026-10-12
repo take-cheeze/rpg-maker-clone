@@ -28,7 +28,7 @@
 #
 # ~~~
 #   emcmake cmake -S . -B /tmp/wasm-probe -GNinja
-#   scripts/gen_emscripten_probe_cache.rb /tmp/wasm-probe/CMakeCache.txt \
+#   scripts/gen/emscripten_probe_cache.rb /tmp/wasm-probe/CMakeCache.txt \
 #     > cmake/emscripten-probe-cache.cmake
 # ~~~
 

@@ -93,5 +93,5 @@ consumer of a hint still checks the receiver's class at runtime.
 Resolving the scope-dependent `Window` would take a per-site lexical proof.
 A measurement that mapped it to `RPG2k::Window` turned 85 setup-time calls
 (`windowskin=`, `contents=`, `z=`) into TYPED calls. That is left for later
-work. `scripts/bc2cpp_unique_class_names_check.rb` covers every admitted and
+work. `scripts/bc2cpp/unique_class_names_check.rb` covers every admitted and
 refused shape, and mutating any single guard makes the check fail.

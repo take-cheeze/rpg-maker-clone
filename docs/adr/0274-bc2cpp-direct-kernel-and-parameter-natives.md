@@ -69,7 +69,7 @@ Not added: `cover?` (`mrb_get_arg1`, static `r_less`), `read` (`mrb_get_args`), 
 
 ## Consequences
 
-Measured on the wio whole-program report (`scripts/bc2cpp_coverage_report.rb`): cached sites
+Measured on the wio whole-program report (`scripts/bc2cpp/coverage_report.rb`): cached sites
 fall from 10,956 to 10,775. KERNEL_DIRECT removes 70 (`raise` 69, `__id__` 1; the two bare
 `raise` sites stay), BLOCK_PARAM_CALL 63 of the 77 `call` sites and NATIVE_CORE_DIRECT_REST 48
 (all `__svalue`). The `call` sites that stay are not a `&blk` (`ifnone&.call`, `pattern.call`,
@@ -85,6 +85,6 @@ The direct calls allocate in the enclosing function's GC arena without the save/
 BLOCK_PARAM_CALL carry no NOMETHOD_REVIEWED marker: calling a nil block is an ordinary user
 error, not a dead branch (ADR 0226).
 
-`scripts/bc2cpp_direct_natives_check.rb` re-proves each claim (audit mutations, withdrawal
+`scripts/bc2cpp/direct_natives_check.rb` re-proves each claim (audit mutations, withdrawal
 reasons, and a compiled-versus-interpreted run of every form). Any mruby upgrade that changes
 one of the audited bodies disables its row.

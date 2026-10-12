@@ -97,7 +97,7 @@ with its receiver register holding whatever that path left). Reaching them means
 extending inline passes to rescue try bodies, which is a separate change with
 its own register-capture obligations.
 
-`scripts/bc2cpp_profiler_section_check.rb` covers the codegen shape (primitives
+`scripts/bc2cpp/profiler_section_check.rb` covers the codegen shape (primitives
 inlined, static literal name, no RProc, refusal of a computed name and of
 `break`) and, against real `libmruby_core.a` with recording stubs, the semantics
 that matter: the body's value is what the method returns, `next` works, `frame`

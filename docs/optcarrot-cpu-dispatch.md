@@ -21,7 +21,7 @@ outside the probe contract. The build rejects incomplete opcode tables,
 unrecognized argument shapes, changed upstream wrapper bodies and a missing or
 duplicated dispatch site.
 
-Run `ruby scripts/optcarrot_cpu_dispatch_check.rb` to compare all 256 opcodes
+Run `ruby scripts/optcarrot/cpu_dispatch_check.rb` to compare all 256 opcodes
 against the upstream wrapper bodies. The check observes addressing flags, method
 call order and accumulator/no-op state. Frame checksum comparisons in the
 compiled probe cover actual CPU and peripheral execution.

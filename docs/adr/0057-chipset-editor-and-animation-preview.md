@@ -15,7 +15,7 @@ convert.md` and `docs/adr/0056-map-editor.md` set out:
   lower`/`passable_data_upper`, chunks 4/5 on the database's `chipset`
   Array2D) are the same kind of problem the map itself is: 162 (lower) / 144
   (upper) cells of spatial data, where "which cell am I even looking at" is
-  most of the difficulty. `scripts/lcf_text_convert.rb` can already edit
+  most of the difficulty. `scripts/lcf/text_convert.rb` can already edit
   these fields as raw byte arrays, but picking out entry 87 of 162 by
   counting through a YAML list is exactly the friction a grid and a cursor
   exist to remove — the same argument that kept the map itself out of the
@@ -85,7 +85,7 @@ to be small once done, because the substrate already existed:
   the Variable page's own digit editor is, since firing an animation is a
   single action rather than something with its own multi-step UI.
 
-Covered by new checks in `scripts/rpg2k_scene_check.rb`: the chipset
+Covered by new checks in `scripts/rpg2k/scene_check.rb`: the chipset
 toggle's flag-preservation (an upper cell's star/counter bits survive a
 passability toggle) and its save+rebuild call, both via a `FakeChipsetRow`
 double that answers the same integer-chunk-id `#[]`/`#[]=` protocol a real

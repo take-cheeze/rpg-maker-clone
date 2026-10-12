@@ -1195,7 +1195,7 @@ module LCF
       # save/map all rendered identically too -- so the null result likely
       # traces to this specific save's own leader (database actor 15,
       # "デモ用", a demo/placeholder actor from Nepheshel's scripted opening;
-      # see `scripts/gen-rpg2k-save.rb`'s own header) rather than to this
+      # see `scripts/gen/rpg2k-save.rb`'s own header) rather than to this
       # field's meaning being wrong. Left open: repeat this probe against a
       # save whose leader is an ordinary, non-placeholder actor.
       22 => { name: :direction, type: :int },
@@ -1254,7 +1254,7 @@ module LCF
       # `.encode_move_commands`'s exact byte format is exercised across the
       # full test-bed corpus of real editor-authored maps (116076 real move
       # commands parsed with every `command_id` landing in its valid 0..41
-      # range, `scripts/lcf_testbed_check.rb`). On the
+      # range, `scripts/lcf/testbed_check.rb`). On the
       # hero's own record this is a live Set Move Route (11330) targeting
       # the player, not a database page property -- see Game::State
       # #player_route's own citation in game.rb. Confirmed present with
@@ -1725,7 +1725,7 @@ module LCF
     # The running map's saved event state (chunk 111). Field 11 is each map
     # event's live position (a SAVE_MOVABLE) -- confirmed against a real save:
     # all 21 saved entries matched map 12's 21 defined events, id for id and at
-    # in-bounds tiles (scripts/lcf_save_check.rb re-checks this). Fields 21/22 are
+    # in-bounds tiles (scripts/lcf/save_check.rb re-checks this). Fields 21/22 are
     # the chipset replacement tables.
     #
     # Fields 1/2 are the **camera scroll**, in 1/16 pixel: the top-left corner of
@@ -1974,7 +1974,7 @@ module LCF
     # `Scene::Map#new_parallel`/`#record_parallel_progress`); verified by a
     # from-scratch round trip (encode a captured snapshot, decode it back,
     # confirm a fresh interpreter resumes and finishes identically -- see
-    # `scripts/rpg2k_logic_check.rb`). Native command/cursor/wait bytes are
+    # `scripts/rpg2k/logic_check.rb`). Native command/cursor/wait bytes are
     # also covered by the RPG_RT capture in ADR 0400.
     SAVE_COMMON_EVENT = lazy { {
       1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },

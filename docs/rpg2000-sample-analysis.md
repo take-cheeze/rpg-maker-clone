@@ -14,7 +14,7 @@ events and `Map*.lmu` event pages.
 ## Method and data fidelity
 
 * The parser is the project's own `mruby-lcf/mrblib/{lcf,schema}.rb}`, run under
-  CRuby (same approach as `scripts/lcf_testbed_check.rb`), so "does this game
+  CRuby (same approach as `scripts/lcf/testbed_check.rb`), so "does this game
   parse?" is answered by the exact code the runtime uses.
 * Outbound access to Google Drive is blocked by this environment's egress
   policy, so the binary files were retrieved through the Drive integration,
@@ -50,7 +50,7 @@ The figures further down were gathered from **databases and common events only**
 reliably in that pass. A later run against a complete game locally settles the
 coverage question outright.
 
-**Nepheshel** (`scripts/download-nepheshel.bash`), analysed whole:
+**Nepheshel** (`scripts/download/nepheshel.bash`), analysed whole:
 
 | | |
 | --- | --- |
@@ -74,7 +74,7 @@ to a handler.
 Reproduce with:
 
 ```bash
-./scripts/download-nepheshel.bash          # needs `unar`; outside the nix
+./scripts/download/nepheshel.bash          # needs `unar`; outside the nix
                                            # shell, extract with python zipfile
 ruby scripts/analyze_game.rb <game-dir>            # map + common events
 ruby scripts/analyze_game.rb --troops <game-dir>   # battle-event pages
@@ -273,7 +273,7 @@ Ordered by real-world frequency across the analysed games:
    top/middle/bottom position, continue-events) and the FaceSet selection on a
    saved `Game::MessageConfig`, and `Scene::Map` positions the window, draws it
    transparent and blits the face beside the text. Covered by
-   `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
+   `scripts/rpg2k/logic_check.rb` and `scripts/rpg2k/scene_check.rb`.
 2. **Pictures — `ShowPicture`/`MovePicture`/`ErasePicture` (11110/11120/11130)**
    — the biggest single gap in Sample2 and pervasive in RPG2000 cutscenes and
    custom menus.
@@ -290,13 +290,13 @@ Ordered by real-world frequency across the analysed games:
 5. ✅ **`ProceedWithMovement` (11340)** — *implemented.* Pairs with the existing
    Move Event support so a forced route can be awaited: the interpreter pauses
    until every forced route in progress finishes. Covered by
-   `scripts/rpg2k_logic_check.rb` and `scripts/rpg2k_scene_check.rb`.
+   `scripts/rpg2k/logic_check.rb` and `scripts/rpg2k/scene_check.rb`.
 6. Lower priority: ✅ BGM memorize/replay (`MemorizeBGM`/`PlayMemorizedBGM`,
    *implemented* — stash the current BGM and restore it, minus seek-to-position),
    ✅ `MemorizeLocation`/`RecallToLocation`
    (*implemented* — store the player position into three variables and teleport
-   back to it; covered by `scripts/rpg2k_logic_check.rb` and
-   `scripts/rpg2k_scene_check.rb`), ✅ `ChangeMainMenuAccess` (11960) and
+   back to it; covered by `scripts/rpg2k/logic_check.rb` and
+   `scripts/rpg2k/scene_check.rb`), ✅ `ChangeMainMenuAccess` (11960) and
    `ChangeSaveAccess` (11930) (*implemented* — gate opening the menu and saving;
    covered by the same two harnesses), the teleport/escape access toggles,
    `PlayerVisibility`.
@@ -312,7 +312,7 @@ Ordered by real-world frequency across the analysed games:
 
 * **Sample3** — best **event-interpreter** regression target: pure switch/
   variable/branch/call logic, ~99 % already runnable, minimal art/battle
-  dependencies. Good for `scripts/rpg2k_logic_check.rb`-style coverage.
+  dependencies. Good for `scripts/rpg2k/logic_check.rb`-style coverage.
 * **Sample2** — best **feature-driver**: small, but exercises pictures, screen
   effects, faces, and battle entry — a compact checklist for the presentation
   gaps above.

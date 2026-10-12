@@ -35,7 +35,7 @@ Removed: `parse_c_dump`, `parse_disasm_blocks`, `merge!`, `run_mrbc_text`,
 `BC2CPP_TEXT_LOADER`. `run_mrbc` only runs `mrbc -g`; `compile_ireps` is the
 entry point for tools and checks.
 
-`scripts/bc2cpp_binary_loader_check.rb` keeps the independent evidence: it
+`scripts/bc2cpp/binary_loader_check.rb` keeps the independent evidence: it
 parses `mrbc -v` (headers, file, catch handlers, every instruction) and the
 `-B -S` C source (labels, reps, nlocals/nregs, pool, exact symbol and local
 names, including the operator table) inside the script only, and compares both

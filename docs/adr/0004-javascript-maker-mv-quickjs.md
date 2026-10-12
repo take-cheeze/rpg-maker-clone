@@ -189,12 +189,12 @@ JavaScript loads and interprets the JSON.
     - **M6.3c — PIXI v5 boots to a frame (reaches Scene_Boot).** `data/mz-sample`
       commits a minimal authored database and fetches the rmmz engine (community
       mirror `stak/rmmz-corescript`, CI-only fixture) via
-      `scripts/download-mz-corescript.bash`. The one host global MZ's boot needs
+      `scripts/download/mz-corescript.bash`. The one host global MZ's boot needs
       beyond MV's — `indexedDB` (the `SceneManager.checkBrowser` guard after
       `Utils.canUseWebGL`) — is added to `MZ::HOST_GLOBALS_JS`, and `MZ#boot_probe`
       drives `SceneManager.run(Scene_Boot)` plus a few frames past the old WebGL
       wall: `Graphics` builds the PIXI renderer on the surfaceless-EGL backend and
-      the scene runs. `scripts/mz_boot_check.bash` asserts the `[MZ-BOOT]` marker
+      the scene runs. `scripts/mz/boot_check.bash` asserts the `[MZ-BOOT]` marker
       in CI. The gap set was found by booting PIXI v5.2.4 + rmmz under Node
       against the wrapper's method surface — the single wrapper fix it required
       was the enum statics (above); VAO/instancing are feature-detected and fall
@@ -238,9 +238,9 @@ JavaScript loads and interprets the JSON.
          `flags[0]` lacks `0x10` ("no effect on passage") makes every cell
          passable, because `Game_Map.checkPassage` lets the first non-"no effect"
          tile from the top layer down decide and the empty upper layers answer
-         first. `scripts/gen-mz-sample.py` authors both (plus a windowskin, icon
+         first. `scripts/gen/mz-sample.py` authors both (plus a windowskin, icon
          sheet, tileset, party sprite, a walled room and real terms), and
-         `scripts/mz_testbed_check.rb` is the blocking CRuby guard for them.
+         `scripts/mz/testbed_check.rb` is the blocking CRuby guard for them.
       Two further gaps showed up only once the real engine ran in CI, both of
       them invisible to the Node harness because it stubbed every method PIXI
       asked for:
@@ -290,7 +290,7 @@ JavaScript loads and interprets the JSON.
     - **M6.3d — the rest of the in-game paths (landed).** Booting and walking is
       not playing, so the four paths the MV side already proves are now driven on
       MZ too, each behind its own launcher flag and each asserted by
-      `scripts/mz_boot_check.bash` under an `MZ_MODE`
+      `scripts/mz/boot_check.bash` under an `MZ_MODE`
       (`play`/`message`/`menu`/`save`/`battle`): a message queued through
       `$gameMessage` must open `Window_Message` (`--mz_message_test`),
       `Scene_Map`'s own `callMenu` must reach `Scene_Menu` (`--mz_menu_test`), a
@@ -406,10 +406,10 @@ JavaScript loads and interprets the JSON.
       stencil worked where nothing was drawn and was absent where everything is.
     - **M6.3g — the smokes now read the frames (landed).** M6.3e and M6.3f were
       both found by a human looking at pictures, because every automated
-      assertion in `scripts/mz_boot_check.bash` reads the engine's *log*:
+      assertion in `scripts/mz/boot_check.bash` reads the engine's *log*:
       `Scene_Map` was reached, `$gameMessage` is busy with `Window_Message`
       open, the save chain settled. A frame can be empty while all of that is
-      true. `scripts/mz_frame_check.rb` closes that gap by decoding the captured
+      true. `scripts/mz/frame_check.rb` closes that gap by decoding the captured
       PNGs — a small pure-Ruby reader for the subset `stb_image_write` emits
       (8-bit RGB/RGBA, non-interlaced, all five row filters).
 
@@ -1096,7 +1096,7 @@ JavaScript loads and interprets the JSON.
       `Window_ShopNumber` draws a multiplication sign (U+00D7) between the item
       and the quantity — the only character outside ASCII either engine draws,
       and the first time anything had asked the bed's font for a codepoint above
-      126. The font is ours (`scripts/gen-sample-font.py`), and its cmap format-4
+      126. The font is ours (`scripts/gen/sample-font.py`), and its cmap format-4
       header was wrong: `entrySelector` was written as 0 where the spec requires
       `floor(log2(segCount))` = 1. stb_truetype drives its binary search from
       those three fields rather than from `segCount`, so the search never
@@ -1229,7 +1229,7 @@ JavaScript loads and interprets the JSON.
       entirely from encrypted assets.
 
     - **M6.3r (cont.) — what the bed had been getting away with.** Deriving an
-      encrypted copy of our own bed (`scripts/gen-mz-encrypted.py`) to guard the
+      encrypted copy of our own bed (`scripts/gen/mz-encrypted.py`) to guard the
       fix immediately failed differently: the map was reached but *nothing
       responded* — no movement, no menu, and `[MZ-MSG] busy=true
       window_open=false`. The frozen-battle signature of M6.3i, and again
@@ -1246,7 +1246,7 @@ JavaScript loads and interprets the JSON.
       this was the bed being unfaithful rather than the host being wrong, and
       the bed now authors both.
 
-      `scripts/mz_testbed_check.rb` learned the format too, since it is offered
+      `scripts/mz/testbed_check.rb` learned the format too, since it is offered
       as a way to validate *any* project and reported all ten of a real game's
       assets as missing. A PNG's dimensions survive encryption untouched — only
       the first 16 bytes are XORed, and IHDR's size fields sit past them — so it

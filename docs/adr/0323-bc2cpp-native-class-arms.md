@@ -21,7 +21,7 @@ upper bound) and build the sound slice when it clears 30 removed by-name sends i
 ## Measurement
 
 `BC2CPP_NATIVE_ARMS_REPORT=<tsv>` (`tools/bc2cpp/native_arms_report.rb`, aggregated by
-`scripts/bc2cpp_native_arms_report.rb`) writes one row per explicit-receiver send whose final code still reaches a
+`scripts/bc2cpp/native_arms_report.rb`) writes one row per explicit-receiver send whose final code still reaches a
 by-name call: the set `S` (proven by the exact-class flow, or bounded by call facts, whatever its members), what each
 cell of `S` would be, the whole-name gates that fail today, and the gates re-judged against `S`. It changes no
 generated code. Wio closed world, `origin/master` `7818f0f5`, `3rd/*` populated, engine gems (rpg2k, lcf, rgss).
@@ -115,7 +115,7 @@ A hint is not a proof (ADR 0210, 0290). Every lift needs a proven `S` and a proo
   site; the instance variant leaves out the installs and unknown definers only a class object sees (nil is an
   instance of a non-Module class), so the `class << Graphics` probe does not make `update` answerable on nil. The
   fixture gives NilClass a native `na_zork` in one world: a possibly nil receiver must keep its else there;
-* the withdrawal worlds of `scripts/bc2cpp_native_class_arms_check.rb`: a singleton on an instance, `class << obj`, a
+* the withdrawal worlds of `scripts/bc2cpp/native_class_arms_check.rb`: a singleton on an instance, `class << obj`, a
   constant that is not a class, an instance-level alias (`alias_method` and the `alias` keyword), a computed
   definition, a nested def, an install on another class from the body, a method_missing class in the set, an outside
   Ruby source reopening or subclassing a class of the set, an outside native defining the name on a class of the

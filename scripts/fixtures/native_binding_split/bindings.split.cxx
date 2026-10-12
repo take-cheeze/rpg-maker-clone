@@ -1,6 +1,6 @@
-// Fixture for scripts/native_binding_split_check.rb: one binding per outcome
+// Fixture for scripts/native/binding_split_check.rb: one binding per outcome
 // of the classification (ADR 0263). The facts next to it were produced with
-//   scripts/native_binding_facts.py --config host|wio \
+//   scripts/native/binding_facts.py --config host|wio \
 //     scripts/fixtures/native_binding_split/bindings.cxx
 // and only change when this file does.
 #include <mruby.h>

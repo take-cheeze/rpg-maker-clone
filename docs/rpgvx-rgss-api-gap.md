@@ -324,7 +324,7 @@ share one `bmp_decode_into`, so a packed asset goes through the same stb, XYZ an
 tolerant-PNG path a loose one does — the fallbacks that a real RPG Maker project
 needs are not something the archive path can quietly lack.
 
-Verified end to end in the real binary by `scripts/rgssad_asset_check.bash`: the
+Verified end to end in the real binary by `scripts/rgssad/asset_check.bash`: the
 XP test bed is packed twice, differing only in whether its title graphic is
 inside `Game.rgssad`, and the engine must find it in the first and report the
 miss in the second. The A/B is the point — a single run would pass just as well
@@ -357,7 +357,7 @@ a position for music that was not playing. Fixed while building the probe.
 ### 7. The RGSS3 `BaseItem` superclass chain, and what a real game's own community scripts need ✅ (mostly)
 
 Everything above was measured against the synthetic test bed
-(`scripts/rpgvx_testbed_check.rb`) and small hand-authored projects. Neither
+(`scripts/rpgvx/testbed_check.rb`) and small hand-authored projects. Neither
 ever *reopens* a stock `RPG::` class the way a real VX Ace project does, so
 this whole class of gap was invisible until a real, large freeware VX Ace
 release (a ~60-hour RPG, 468 maps, 930 skills, 610 enemies) was booted through
@@ -657,7 +657,7 @@ way, one at a time, each hidden behind the identical crash until fixed:
   `mrb_obj_as_string` can run arbitrary Ruby (`#to_s`) and potentially grow
   the VM's value stack, which would leave the first `argv` pointer
   dangling, and the second `mrb_get_args` call read through it. Caught by
-  `scripts/rpgxp_boot_check.bash`, which every windowed screen a real
+  `scripts/rpgxp/boot_check.bash`, which every windowed screen a real
   project draws exercises directly.
 
 - **Fixed: `RPG::EventCommand` had no `#initialize` at all.** A real
@@ -676,7 +676,7 @@ way, one at a time, each hidden behind the identical crash until fixed:
   constructor to both makers' `EventCommand`; Marshal deserialization of
   existing `Data/*.rvdata(2)` — which allocates and restores instance
   variables directly, never calling `#initialize` — is unaffected, confirmed
-  by `scripts/rpgxp_testbed_check.rb`/`rpgvx_testbed_check.rb` re-parsing
+  by `scripts/rpgxp/testbed_check.rb`/`rpgvx_testbed_check.rb` re-parsing
   real event-command data (15,797 XP event commands) cleanly afterward.
 
 - **Fixed: `Sprite` had no `#width` / `#height`.** A real gap in

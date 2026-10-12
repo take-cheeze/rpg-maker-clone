@@ -79,6 +79,6 @@ separate decision.
   already rescues.
 - A private method called through an inlined block body now raises like the interpreter; before, the
   unchecked by-name call (CHECKED_SEND needs `idx`) answered.
-- `scripts/bc2cpp_unlisted_class_call_check.rb` gains an inlined `each` fixture (positive, protected stays
-  by name, kill switch, interpreted-vs-compiled, mutant); `scripts/bc2cpp_receiver_typing_check.rb` pins the
+- `scripts/bc2cpp/unlisted_class_call_check.rb` gains an inlined `each` fixture (positive, protected stays
+  by name, kill switch, interpreted-vs-compiled, mutant); `scripts/bc2cpp/receiver_typing_check.rb` pins the
   keywordless fallback (closed, kill switch, method_missing refusal).

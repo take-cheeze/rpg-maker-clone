@@ -127,5 +127,5 @@ The glue's EXCEPT stand-in also does what vm.c's `OP_EXCEPT` does to
 bare `raise` and `$!` see it. A function with a catch handler owns a
 `Bc2cppErrinfoScope` that clears `$!` when it returns, standing in for cipop
 when a direct `_impl` call pushed no callinfo; an `ensure` guard publishes the
-in-flight exception the same way. `scripts/bc2cpp_rescue_errinfo_check.rb`
+in-flight exception the same way. `scripts/bc2cpp/rescue_errinfo_check.rb`
 compares 47 scenarios with the interpreter.

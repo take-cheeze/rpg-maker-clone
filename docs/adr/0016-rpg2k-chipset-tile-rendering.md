@@ -70,9 +70,9 @@ Passability and terrain lookup are unchanged — they keep using the existing
   RPG_RT.exe under wine confirmed this geometry pixel-identical on real maps —
   autotiles, chipset layering and animated water included.
 - The geometry is exercised without any native build or real image by
-  `scripts/rpg2k_render_check.rb` (run in CI next to the logic/scene checks),
+  `scripts/rpg2k/render_check.rb` (run in CI next to the logic/scene checks),
   which sweeps every water and terrain combination and asserts every quad lands
-  inside the 480×256 grid; `scripts/rpg2k_scene_check.rb` now exercises the blit
+  inside the 480×256 grid; `scripts/rpg2k/scene_check.rb` now exercises the blit
   wiring through its RGSS stubs.
 - The scene redraws every visible tile every frame (as the placeholder did),
   now at up to four blits per autotile. This is acceptable at RPG2000's small

@@ -80,8 +80,8 @@ uint32_t hb_time_uptime_ms(void) {
 /* ---- the harness ---- */
 
 /* A minimal, self-written 24bpp BMP writer for the headless screenshot,
- * rather than SDL_SaveBMP: this repo's own scripts/nano7_host_smoke_check.rb
- * (a plain-Ruby reader, no ImageMagick, matching scripts/mz_frame_check.rb's
+ * rather than SDL_SaveBMP: this repo's own scripts/nano7/host_smoke_check.rb
+ * (a plain-Ruby reader, no ImageMagick, matching scripts/mz/frame_check.rb's
  * own PNG reader) needs to know exactly what's on disk, and SDL_SaveBMP's
  * output bit depth depends on the surface format passed to it in ways this
  * file would rather not have to keep in sync with a second, independent
