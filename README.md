@@ -1356,10 +1356,12 @@
   ([`docs/adr/0287-bc2cpp-step-loop-fixnum-guard.md`](docs/adr/0287-bc2cpp-step-loop-fixnum-guard.md)).
   A method that a `Fiber.new { root; :done }` block calls and that reaches
   `Fiber.yield` (through `while` loops, those inlined loops and tiny yielding helpers expanded at
-  their call sites) is compiled as a resumable step function over a GC-marked heap frame, driven
-  by a few lines of bytecode so `Fiber.yield` never has a compiled frame beneath it; a root that
-  does not qualify stays interpreted and bc2cpp logs why. See
-  [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md).
+  their call sites) is compiled as a resumable step function over a GC-marked heap frame
+  with slots only for actual register identifiers (diagnostic and literal text cannot inflate
+  the frame), driven by a few lines of bytecode so `Fiber.yield` never has a compiled frame
+  beneath it; a root that does not qualify stays interpreted and bc2cpp logs why. See
+  [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md)
+  and [`docs/adr/0414-bc2cpp-compact-resumable-registers.md`](docs/adr/0414-bc2cpp-compact-resumable-registers.md).
   Every explicit-receiver `puts` (`$stderr.puts`, `io.puts`) is one call to a shared helper that
   runs mruby-io's `IO#puts` body while the receiver still resolves to it and dispatches by name
   otherwise, so a redirected `$stdout`/`$stderr` or an `IO#puts` override behaves as in the
