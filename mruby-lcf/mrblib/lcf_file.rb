@@ -128,5 +128,18 @@ module LCF
   class SaveData < File
     def header; "LcfSaveData" end
     def schema; LCF::Schema::SAVE_DATA end
+
+    # A save read from a stream is checked field by field against its schema
+    # types before it is returned (docs/adr/0400): a field whose bytes do not
+    # decode as its declared type raises LCF::SaveTypeError, naming the field.
+    # A save built from scratch (no stream) has nothing to check yet.
+    def initialize io = nil
+      super
+      SaveTyped::Save.new(@root, 'Save').check! unless io.nil?
+    end
+
+    # The typed view of this save: one accessor per saved field, each
+    # returning the field's value as its declared class (save_typed_accessors.rb).
+    def typed; SaveTyped::Save.new(@root, 'Save') end
   end
 end

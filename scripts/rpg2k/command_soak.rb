@@ -65,6 +65,8 @@ root = File.expand_path('../..', __dir__)
 load File.join(root, 'mruby-lcf/mrblib/lcf.rb')
 load File.join(root, 'mruby-lcf/mrblib/schema.rb')
 load File.join(root, 'mruby-lcf/mrblib/lcf_file.rb')
+load File.join(root, 'mruby-lcf/mrblib/save_typed.rb')
+load File.join(root, 'mruby-lcf/mrblib/save_typed_accessors.rb')
 load File.join(root, 'mruby-rpg2k/mrblib/game.rb')
 load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
 load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
