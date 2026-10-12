@@ -45,6 +45,20 @@ commit (workflow-level `concurrency`, keyed on the PR number). Master pushes,
 merge-queue runs, manual dispatches and `/preview` comments use a per-run group
 and are never cancelled.
 
+### Host Ruby uses YJIT for bc2cpp
+
+`bc2cpp-build` and both nightly job families set `RUBY_YJIT_ENABLE=1` for the
+Nix-provided CRuby. Rake, the check harnesses and their Ruby code-generation
+subprocesses inherit it, including mutant generators. A step after the Nix
+environment export verifies `RubyVM::YJIT.enabled?` and logs `RUBY_DESCRIPTION`,
+so losing JIT support fails visibly instead of silently restoring slower runs.
+This accelerates host analysis; the generated C++ and target mruby VM are unchanged.
+See [ADR 0408](adr/0408-bc2cpp-ci-yjit.md) for measurements and the memory tradeoff.
+
+For a local comparison, run the same generator or check with
+`RUBY_YJIT_ENABLE=0` and `RUBY_YJIT_ENABLE=1`. The environment switch is documented
+in [Ruby's YJIT manual](https://docs.ruby-lang.org/en/3.4/yjit/yjit_md.html).
+
 ### Repeated bytecode dataflow queries
 
 bc2cpp's `BytecodeIR::Program` reuses reaching-definition and write-dominance
