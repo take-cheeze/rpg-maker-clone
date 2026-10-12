@@ -24,6 +24,18 @@ Strict sealed-world mode currently rejects this combination: without the
 Fiber roots, its registry exposes unmodeled computed Config accessors and
 unreviewed NoMethodError fallbacks. The benchmark does not bypass that gate.
 
+Further compiler-only checks found that replacing the computed Config readers
+with literal declarations still leaves 57 unreviewed fallback sites, including
+PPU-to-CPU clock calls and NES-to-PPU frame calls. These are live methods with
+unresolved receiver proofs; adding them to a dead-branch allowlist would not
+establish that proof. The sealed host's unused socket Ruby also disables
+`POOL_SELF_CLASS` by spelling `bind`. Removing that gem re-enables the analysis
+but exposes 101 sites instead of clearing the gate. Constructor inference is
+independently refused because `Optcarrot::CodeOptimizationHelper`, a module
+used by upstream's host-side generators, defines `initialize`. The constructor
+diagnostic now names such owners. These checks make no native FPS claim, and
+neither experimental rewrite is enabled.
+
 Validation compares full pixel and audio arrays, RAM and captured CPU/PPU
 registers at 1, 2, 30, 60, 180, 181 and 360 frames. AST checks cover Unicode
 byte offsets, neighboring definitions, duplicate entries and source drift.
