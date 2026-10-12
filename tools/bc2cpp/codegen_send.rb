@@ -1398,6 +1398,12 @@ class CodeGen
         exact_via_flow = true
       end
       # EXACT_CORE_ARMS (ADR 0309): a core class the flow proves exact; only the TYPED guard below uses it.
+      # EXACT_FLOW_RESULT_CLASS: when the receiver trace names no class at all (a call result such as
+      # `h.keys`, `x.to_s`, `r.to_a`), the flow's proof supplies the class; the TYPED lookup below still decides
+      # whether any direct target exists, so a class without one changes nothing.
+      if known_class.nil? && exact_class.nil? && exact_flow_result_class_enabled?
+        known_class = exact_core_arm_class(irep, proof_idx, proof_reg, self_implicit)
+      end
       exact_core_typed = exact_class.nil? && !known_class.nil? &&
                          exact_core_arm_class(irep, proof_idx, proof_reg, self_implicit) == known_class
       if exact_class
@@ -1716,9 +1722,21 @@ class CodeGen
         constant_code = constant_object_send_code(name, n, d, recv, argv, constant_owner) if constant_owner
         return constant_code if constant_code
 
+        constant_object_debug(name, n, owner_def&.owner, constant_owner) if constant_owner
+
         native_code = constant_owner && native_exact_direct_code(name, d, recv, argv, "#{constant_owner}.singleton",
                                                                       int_site: [irep, new_proof_idx, owner_def, trace_reg_offset])
         return native_code if native_code
+      end
+
+      # NATIVE_SINGLETON_CALL (ADR 0418): `File.exist?` and the other native singleton functions of a stable
+      # constant, called through a per-site method cache instead of a by-name send.
+      if !self_implicit && irep && constant_site_idx && @closed_world &&
+         %w[SEND0 SEND].include?(irep.instructions[constant_site_idx].op)
+        singleton_code = native_singleton_call_code(name, n, d, recv, argv, irep, constant_site_idx,
+                                                    unshift_proof_reg(trace_receiver_reg || d, trace_reg_offset),
+                                                    owner_def&.owner, constant_owner)
+        return singleton_code if singleton_code
       end
 
       if self_implicit && %w[SEND0 SEND SSEND0 SSEND].include?(insn.op)
@@ -1787,6 +1805,8 @@ class CodeGen
       line = with_exact_core_site(exact_site) { native_direct_dynamic_line(d, recv, name, argv) }
       # CORE_EXACT_DIRECT: no dispatch is left, so the site is not a dynamic one to diagnose.
       return "  #{line}" if line.start_with?(CORE_EXACT_DIRECT_NOTE)
+      # TO_ENUM_DIRECT (ADR 0418): the Enumerator is built in place, the checked arm's else is a guard violation.
+      return "  #{line}" if line.include?(TO_ENUM_DIRECT_NOTE)
 
       "#{diag}#{note}#{miss}  #{line}"
     end
@@ -2015,32 +2035,38 @@ class CodeGen
 
   # The uncached GETCONST lookup: resolve the owner's lexical scope chain, probe
   # each scope innermost-first, fall back to Object. `d` is the destination
-  # register number (a string). Used inline, and as the slow path of a
+  # register number (a string). Used at ordinary sites and as the slow path of a
   # CONST_SITE_CACHE helper (which passes d = "0").
   def const_lookup_block(d, name, owner_path)
     if owner_path == ['Object']
       "  r#{d} = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, \"#{name}\"));\n"
     else
       @const_lookup_helper_used = true
-      out = String.new
-      out << "  {\n"
-      scope_vars = []
+      @const_scope_helpers ||= {}
+      slot = (@const_scope_helpers[owner_path] ||= { index: @const_scope_helpers.size })
+      "  r#{d} = bc2cpp_const_scope_#{slot[:index]}(M, mrb_intern_cstr(M, \"#{name}\"));\n"
+    end
+  end
+
+  # Resolve the complete owner path before probing, just as the inline lookup
+  # did. Scope values remain on the mruby arena; no constant values are cached.
+  def emit_const_scope_helpers
+    out = String.new
+    (@const_scope_helpers || {}).each do |owner_path, slot|
+      out << "static mrb_value bc2cpp_const_scope_#{slot[:index]}(mrb_state* M, mrb_sym name) {\n"
       current = 'mrb_obj_value(M->object_class)'
       owner_path.each_with_index do |seg, i|
-        out << "    mrb_value scope#{i} = mrb_const_get(M, #{current}, mrb_intern_cstr(M, \"#{seg}\"));\n"
-        scope_vars << "scope#{i}"
+        out << "  mrb_value scope#{i} = mrb_const_get(M, #{current}, mrb_intern_cstr(M, \"#{seg}\"));\n"
         current = "scope#{i}"
       end
-      out << "    mrb_bool ok = FALSE;\n"
-      out << "    mrb_value r#{d}_tmp = mrb_nil_value();\n"
-      scope_vars.reverse_each do |sv|
-        out << "    if (!ok) r#{d}_tmp = bc2cpp_const_try(M, #{sv}, mrb_intern_cstr(M, \"#{name}\"), &ok);\n"
+      out << "  mrb_bool ok = FALSE;\n  mrb_value result = mrb_nil_value();\n"
+      (owner_path.size - 1).downto(0) do |i|
+        out << "  if (!ok) result = bc2cpp_const_try(M, scope#{i}, name, &ok);\n"
       end
-      out << "    if (!ok) r#{d}_tmp = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, \"#{name}\"));\n"
-      out << "    r#{d} = r#{d}_tmp;\n"
-      out << "  }\n"
-      out
+      out << "  if (!ok) result = mrb_const_get(M, mrb_obj_value(M->object_class), name);\n"
+      out << "  return result;\n}\n"
     end
+    out
   end
 
   # File-scope state and helpers for CONST_SITE_CACHE. Each helper returns the

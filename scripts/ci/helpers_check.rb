@@ -114,6 +114,16 @@ t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 early = Bc2cppMutantPool.run({}, [RbConfig.ruby, '-e', '$stdout.sync = true; puts "  FAIL caught"; sleep 60'], stop_on: /^\s+FAIL /)
 check.call('the first matching line stops the child at once', early.stopped && !early.success && early.out.include?('FAIL caught') &&
                                                            Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0 < 30)
+Dir.mktmpdir do |dir|
+  marker = File.join(dir, 'continued')
+  child = 'puts "  FAIL buffered"; sleep 0.5; File.write(ARGV.fetch(0), "continued"); exit 1'
+  caught = Bc2cppMutantPool.run({}, [RbConfig.ruby, '-e', child, marker], stop_on: /^\s+FAIL /)
+  check.call('a buffered Ruby failure stops before subsequent work runs',
+             caught.stopped && !caught.success && caught.out.include?('FAIL buffered') && !File.exist?(marker))
+  control = Bc2cppMutantPool.run({}, [RbConfig.ruby, '-e', child, marker])
+  check.call('a run without stop_on still completes and reports its exit status',
+             !control.stopped && !control.success && File.read(marker) == 'continued')
+end
 check.call('BC2CPP_JOBS bounds the pool', begin
   saved = ENV.fetch('BC2CPP_JOBS', nil)
   ENV['BC2CPP_JOBS'] = '2'

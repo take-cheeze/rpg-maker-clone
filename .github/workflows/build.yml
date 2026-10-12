@@ -1100,10 +1100,20 @@ jobs:
           - name: CI helpers
             run: ruby scripts/ci/helpers_check.rb
 
+          # ADR 0415: the disk memo of the generator's native-source scans (keys, invalidation,
+          # failure reporting, concurrent writers); the real-scanner half skips without 3rd/mruby.
+          - name: bc2cpp scan cache
+            run: ruby scripts/bc2cpp/scan_cache_check.rb
+
           # The wio-only mrblib rewrites only run in a wio build, which CI
           # doesn't do; a source edit must not silently break them.
           - name: wio strip scripts still apply
             run: ruby scripts/wio/strip_scripts_check.rb
+
+          # ADR 0417: RGSS::Tts (its native registration, its one Ruby call site) exists
+          # only in the desktop build; every limited target's gem config must drop it.
+          - name: RGSS::Tts only in the build that can back it
+            run: ruby scripts/tts_limited_check.rb
 
           # ADR 0217: the compact CP932 tables (and wio's scan encoder) must
           # agree with ADR 0111's pair tables on every 16-bit input.

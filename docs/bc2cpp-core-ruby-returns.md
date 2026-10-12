@@ -140,3 +140,14 @@ exclusions. Set `BC2CPP_CORE_RUBY_POSITIONAL_RESULTS=0` to disable calls with
 positional arguments. Generated, mutation and runtime parity checks exercise
 memo classes, wrong arity, optional/rest/keyword shapes, replacements and the
 switch.
+
+## Symbol block arguments (ADR 0407)
+
+`x.reject(&:dead?)` compiles to `LOADSYM R(a+1) :dead?` and a plain `SENDB`. The
+block is a Symbol that the VM converts with `to_proc`, and calling that proc only
+sends the method to the element. It has no `break` that could replace the callee's
+result, so it states the same fact as a literal block without `break`: the core
+Array/Hash/String/Range bodies are specialized for it exactly as for a literal
+block, and `list.reject(&:dead?).map { ... }` keeps an exact Array result. A block
+held in a local, a forwarded `&block` or a block chosen at run time still has no
+proof. `BC2CPP_CORE_RUBY_SYMBOL_BLOCKS=0` withdraws the Symbol case.
