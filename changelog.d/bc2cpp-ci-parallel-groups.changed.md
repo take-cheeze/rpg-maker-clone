@@ -1,0 +1,1 @@
+- The bc2cpp width legs (`int32-a`, `int32-b`) run their independent checks three at a time, and the `call-facts` shard is split into `call-facts` (grouped) and two sequential mutation shards. `int32-a` drops from about 46 to 18 minutes and `call-facts` from about 64 minutes (past its 45 minute timeout) to about 19 on the longest runner. See `docs/bc2cpp-ci-duration-profile.md`.
