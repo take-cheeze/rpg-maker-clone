@@ -264,7 +264,7 @@ later identical worlds avoid decoding. A local three-process comparison took
 14.06 seconds uncached, 15.11 seconds cold and 12.96 seconds warm, so regular
 host builds and scheduled checks keep it disabled. Set the variable for local
 comparisons, or unset it to disable reuse.
-See [ADR 0419](adr/0419-bc2cpp-decoded-tree-cache.md) for measurements and checks.
+See [ADR 0411](adr/0411-bc2cpp-decoded-tree-cache.md) for measurements and checks.
 
 ### Compiler cache (sccache)
 
