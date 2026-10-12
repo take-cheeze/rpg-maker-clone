@@ -6,7 +6,7 @@ require_relative 'source_text'
 require_relative 'const_site_cache'
 require_relative 'integer_constants'
 
-# ENUMERATOR_MODEL (docs/adr/0416): what the compiler may assume about mruby's Enumerator machinery,
+# ENUMERATOR_MODEL (docs/adr/0418): what the compiler may assume about mruby's Enumerator machinery,
 # proven from the bytecode of the program rather than from names.
 #
 # TO_ENUM_DIRECT: mruby-enumerator defines `Kernel#to_enum(meth = :each, *args, **kwd)` as

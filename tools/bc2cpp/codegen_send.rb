@@ -1711,9 +1711,21 @@ class CodeGen
         constant_code = constant_object_send_code(name, n, d, recv, argv, constant_owner) if constant_owner
         return constant_code if constant_code
 
+        constant_object_debug(name, n, owner_def&.owner, constant_owner) if constant_owner
+
         native_code = constant_owner && native_exact_direct_code(name, d, recv, argv, "#{constant_owner}.singleton",
                                                                       int_site: [irep, new_proof_idx, owner_def, trace_reg_offset])
         return native_code if native_code
+      end
+
+      # NATIVE_SINGLETON_CALL (ADR 0418): `File.exist?` and the other native singleton functions of a stable
+      # constant, called through a per-site method cache instead of a by-name send.
+      if !self_implicit && irep && constant_site_idx && @closed_world &&
+         %w[SEND0 SEND].include?(irep.instructions[constant_site_idx].op)
+        singleton_code = native_singleton_call_code(name, n, d, recv, argv, irep, constant_site_idx,
+                                                    unshift_proof_reg(trace_receiver_reg || d, trace_reg_offset),
+                                                    owner_def&.owner, constant_owner)
+        return singleton_code if singleton_code
       end
 
       if self_implicit && %w[SEND0 SEND SSEND0 SSEND].include?(insn.op)
@@ -1782,7 +1794,7 @@ class CodeGen
       line = with_exact_core_site(exact_site) { native_direct_dynamic_line(d, recv, name, argv) }
       # CORE_EXACT_DIRECT: no dispatch is left, so the site is not a dynamic one to diagnose.
       return "  #{line}" if line.start_with?(CORE_EXACT_DIRECT_NOTE)
-      # TO_ENUM_DIRECT (ADR 0416): the Enumerator is built in place, the checked arm's else is a guard violation.
+      # TO_ENUM_DIRECT (ADR 0418): the Enumerator is built in place, the checked arm's else is a guard violation.
       return "  #{line}" if line.include?(TO_ENUM_DIRECT_NOTE)
 
       "#{diag}#{note}#{miss}  #{line}"

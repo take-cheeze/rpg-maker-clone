@@ -2,7 +2,7 @@
 # encoding: UTF-8
 # frozen_string_literal: true
 
-# ENUMERATOR_MODEL (docs/adr/0416):
+# ENUMERATOR_MODEL (docs/adr/0418):
 #
 # 1. The proofs, without generating code (needs MRBC): EnumeratorModel.analyze admits Kernel#to_enum only when it is the
 #    program's one to_enum, enum_for is only its alias, the body is exactly `Enumerator.new self, meth, *args, **kwd` and
@@ -87,6 +87,14 @@ if ENV['MRBC'] && PHASE != 'behavior'
              model_for.call(enumerator_text: real.sub('Enumerator.new self, meth, *args, **kwd', '[1].each { }; Enumerator.new self, meth, *args, **kwd')).to_enum_direct == false)
   check.call('NEG: Kernel#to_enum building another class',
              model_for.call(enumerator_text: real.sub('Enumerator.new self, meth, *args, **kwd', 'Array.new self, meth, *args, **kwd')).to_enum_direct == false)
+  # Worlds only one gate refuses (the alias and body checks pass): the definition is on another owner / in another file
+  # while the Kernel alias stays in mruby-enumerator's source.
+  def_text = real[/^  def to_enum\(meth=:each.*?^  end\n/m]
+  without_def = real.sub(def_text) { '' }
+  check.call('NEG: to_enum defined on another owner, while the Kernel alias stays in mruby-enumerator (owner gate alone)',
+             model_for.call(enumerator_text: without_def, extra: "class Foo\n#{def_text}end\n").to_enum_direct == false)
+  check.call('NEG: Kernel#to_enum defined outside mruby-enumerator, alias inside it (source gate alone)',
+             model_for.call(enumerator_text: without_def, extra: "module Kernel\n#{def_text}end\n").to_enum_direct == false)
   check.call('NEG: a to_enum that is not from mruby-enumerator', model_for.call(enumerator_path: 'other/enumerator.rb').to_enum_direct == false)
   check.call('NEG: BC2CPP_ENUMERATOR_MODEL=0', begin
     saved = ENV.fetch('BC2CPP_ENUMERATOR_MODEL', nil)
@@ -242,7 +250,7 @@ if ENV['MRBC'] && !%w[unit behavior].include?(PHASE)
   end
 
   {
-    'redef' => ['a project Array#to_enum', "class Array\n def to_enum(*a); :mine; end\nend\n"],
+    'redef' => ['a project Enumerator#initialize (the model refuses, the lookup of to_enum is unchanged)', "class Enumerator\n def initialize(*a, **k); end\nend\n"],
     'nested' => ['a nested class Enumerator', "module Kernel\n class Enumerator; end\nend\n"]
   }.each do |key, (name, extra)|
     Dir.mktmpdir do |dir|

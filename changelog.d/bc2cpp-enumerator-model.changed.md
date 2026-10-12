@@ -1,4 +1,4 @@
-- **bc2cpp** (ADR 0416): `Enumerator` is modelled from the program's own bytecode. `Kernel#to_enum` is proven the
+- **bc2cpp** (ADR 0418): `Enumerator` is modelled from the program's own bytecode. `Kernel#to_enum` is proven the
   one `to_enum`/`enum_for` (exact body `Enumerator.new self, meth, *args, **kwd`, intact construction chain, stable
   `Enumerator` constant), so a `to_enum(:x)` on an Array, Hash, Range or String the exact-class flow proves in a
   compiled mruby core body builds the Enumerator in place instead of looking `to_enum` up by name: on the wio

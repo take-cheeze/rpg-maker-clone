@@ -1,4 +1,4 @@
-# 0416. bc2cpp: Enumerator model, measured
+# 0418. bc2cpp: Enumerator model, measured
 
 Date: 2026-10-12
 
@@ -50,7 +50,7 @@ Enumerator: `proven_array_source_scan` asked a plain trace for the receiver's cl
    `mrb_obj_new(M, mrb_class_get(M, "Enumerator"), ...)`: Class#new, then `initialize`. A runtime installer naming
    any involved method (`devirt_blocked_name?`, `symbol_installed_names`) withdraws it per body. The model, the
    constant and the helper are computed and printed in the diagnostic
-   (`== enumerator model (ADR 0416) ==`); `BC2CPP_ENUMERATOR_MODEL=0` restores the previous output byte for byte.
+   (`== enumerator model (ADR 0418) ==`); `BC2CPP_ENUMERATOR_MODEL=0` restores the previous output byte for byte.
 2. **CHAINED_IVAR_RECEIVER.** ClassLayout hands `proven_array_source_scan` the class it has proven so far, so
    `@q = @q.reject { }` / `select` is an Array store when the receiver traces to Array through the ivar table. The
    fixed point already poisons any disagreeing store, and a later poison of the receiver ivar re-runs the dependent
@@ -94,4 +94,4 @@ assignment, `const_set`, alias, body and construction-chain refusals), the gener
 comparing the compiled core's blockless iterators with the interpreter (next/peek/rewind/size on an array
 enumerator, `with_index`, `with_object`, `each_slice`/`each_cons`, lazy, a user `each` + Enumerable, a redefined
 `map`, Hash and Range sources, `break`/`next`/exceptions, a Fiber, GC) and asserting that the direct core iterators
-make no dispatch. `enumerator_model_mutation_check.rb` removes one condition at a time (20 mutants and a control; the owner and source gates of `analyze` and the code generator's model test back up the alias, body and registry checks that refuse the same worlds, so they have none).
+make no dispatch. `enumerator_model_mutation_check.rb` removes one condition at a time (23 mutants and a control; each gate has a world only it refuses).

@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Mutation check of scripts/bc2cpp/enumerator_model_check.rb (docs/adr/0416): each mutant removes one soundness condition of
+# Mutation check of scripts/bc2cpp/enumerator_model_check.rb (docs/adr/0418): each mutant removes one soundness condition of
 # the Enumerator model from a copy of tools/bc2cpp and the check must report a FAIL; the control must pass. Each mutant
 # runs only the phase / generated worlds it can change (EM_PHASE, EM_GEN), so the full-core fixture is not rebuilt for it.
 
@@ -18,6 +18,8 @@ MUTANTS = [
   ['control', nil, nil, nil, { 'EM_PHASE' => 'unit' }],
   # EnumeratorModel.analyze
   ['switch ignored', 'enumerator_model.rb', "if ENV['BC2CPP_ENUMERATOR_MODEL'] == '0'\n", "if false\n", { 'EM_PHASE' => 'unit' }],
+  ['owner gate omitted', 'enumerator_model.rb', "unless definition.owner == 'Kernel' && definition.irep", 'unless definition.irep', { 'EM_PHASE' => 'unit' }],
+  ['source gate omitted', 'enumerator_model.rb', 'unless body && body.file.to_s.end_with?(FILE_SUFFIX)', 'unless body', { 'EM_PHASE' => 'unit' }],
   ['uniqueness omitted', 'enumerator_model.rb', 'unless to_enum_defs.size == 1', 'unless true', { 'EM_PHASE' => 'unit' }],
   ['body gate omitted', 'enumerator_model.rb', 'unless to_enum_body?(body, ireps)', 'unless true', { 'EM_PHASE' => 'unit' }],
   ['enum_for gate omitted', 'enumerator_model.rb', 'unless enum_for.empty?', 'unless true', { 'EM_PHASE' => 'unit' }],
@@ -38,6 +40,7 @@ MUTANTS = [
   ['arguments dropped', 'codegen_core_exact_direct.rb', 'vector = [recv, meth, *argv.drop(1)]', 'vector = [recv, meth]', { 'EM_PHASE' => 'positive' }],
   ['default method name dropped', 'codegen_core_exact_direct.rb', %q{meth = argv.empty? ? 'mrb_symbol_value(mrb_intern_lit(M, "each"))' : argv.first}, 'meth = argv.first || "mrb_nil_value()"', { 'EM_PHASE' => 'positive' }],
   ['helper builds another class', 'codegen_core_exact_direct.rb', 'mrb_class_get(M, "Enumerator")', 'mrb_class_get(M, "Array")', { 'EM_PHASE' => 'positive' }],
+  ['model ignored', 'codegen_core_exact_direct.rb', 'return nil unless model&.to_enum_direct && ', 'return nil unless ', { 'EM_PHASE' => 'generated', 'EM_GEN' => 'redef' }],
   ['constant stability ignored', 'codegen_core_exact_direct.rb', 'return nil unless model.constant_stable', 'nil', { 'EM_PHASE' => 'generated', 'EM_GEN' => 'nested' }],
   ['installer names ignored', 'codegen_core_exact_direct.rb', 'return nil unless installed && (EnumeratorModel::NAMES + EnumeratorModel::CONSTRUCTION_NAMES).none? { |n| installed.include?(n) }', 'nil', { 'EM_PHASE' => 'generated', 'EM_GEN' => 'installer' }]
 ].freeze

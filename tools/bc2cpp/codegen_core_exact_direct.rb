@@ -50,7 +50,7 @@ module CoreExactDirect
   TO_ENUM_DIRECT_NOTE = '// TO_ENUM_DIRECT :'
   TO_ENUM_DIRECT_CLASSES = %w[Array Hash Range String].freeze
 
-  # TO_ENUM_DIRECT (ADR 0416): `to_enum(:meth, *args)` / `enum_for` on a receiver proven exactly an Array, Hash, Range or
+  # TO_ENUM_DIRECT (ADR 0418): `to_enum(:meth, *args)` / `enum_for` on a receiver proven exactly an Array, Hash, Range or
   # String builds the Enumerator the way Kernel#to_enum's body does, `Enumerator.new self, meth, *args`, without looking
   # the name up. EnumeratorModel proves Kernel#to_enum is the program's only to_enum/enum_for and that nothing replaces
   # the construction chain; the constant must be stable and no runtime installer may name the involved methods.
