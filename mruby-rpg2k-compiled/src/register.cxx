@@ -6176,8 +6176,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                           Game__CommonEvent_singleton_eligible,
                           MRB_ARGS_REQ(2));
   mrb_define_class_method(M, move_route, "from_page",
-                          Game__MoveRoute_singleton_from_page,
-                          MRB_ARGS_REQ(1));
+                          Game__MoveRoute_singleton_from_page, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, move_route, "same_route?",
                           Game__MoveRoute_singleton_same_route$3f,
                           MRB_ARGS_REQ(2));
