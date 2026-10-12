@@ -1441,6 +1441,8 @@
   the same module's emitted singleton copies.
   [Symbol-cache scanning](docs/bc2cpp-symbol-scanning.md) uses byte offsets and preserves
   Unicode text and slot order while avoiding repeated suffix scans.
+  [Lexical constant lookup](docs/bc2cpp-constant-lookup.md) shares one uncached
+  scope helper per owner to reduce generated source size.
   The generator is `tools/bc2cpp/bc2cpp.rb`, which loads its part files in
   order; `ruby scripts/bc2cpp/split.rb --verify REF` proves that layout is a
   mechanical split of REF's single-file `bc2cpp.rb`. Statically named ivars
