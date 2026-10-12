@@ -255,6 +255,11 @@ check 'a physical skill is not harder to land on a back-row defender' do
       'vanilla RPG_RT skills are not row-adjusted; the hits should match'
 end
 
+check 'a physical skill asked for with no target (the AI readiness probe) does not touch the target' do
+  hit = party.skill_to_hit(sk, src, nil)
+  eq hit, 90, 'with no target there is no agility or evasion term: the caster-side hit rate is returned'
+end
+
 # -- from_actor defaults to the front row ------------------------------------
 actor = Object.new
 def actor.name; 'A'; end
