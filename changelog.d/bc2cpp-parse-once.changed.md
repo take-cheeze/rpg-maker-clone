@@ -1,0 +1,1 @@
+- **bc2cpp** parses each foreign Ruby file once per process: the foreign method-name scan and `ForeignDefiners` share one Prism tree per exact file text, instead of re-parsing the same mrblib file for every method name. The generated C++ is unchanged. See `docs/adr/0416-bc2cpp-ruby-parse-cache.md`.
