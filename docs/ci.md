@@ -316,7 +316,13 @@ knowing:
   (for the checks with an expected label, the first line matching it). Every
   check prints `FAIL` only together with a nonzero exit, so the verdict is the
   same; the run just does not finish the checks after the one that fails. A
-  mutant that survives runs to the end, as before.
+  mutant that survives runs to the end, as before. Ruby children with a
+  stop matcher preload `scripts/bc2cpp/unbuffered_stdout.rb`, so a failure is
+  visible through the pipe before subsequent work starts. Controls without a
+  matcher keep their normal buffering, and Ruby subprocesses do not inherit
+  the preload. A local one-second delayed-work reproduction stops in about
+  0.04 seconds instead of 1.03 seconds; this is a latency check, not a measured
+  nightly-workflow speedup.
 - With `BC2CPP_FULL_BUILD_DIR` set, the pool builds the shared full-core mruby
   once before it starts, so the concurrent mutants do not race to build it.
 
