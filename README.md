@@ -1090,8 +1090,10 @@
   `OPTCARROT_STATIC_PPU=1` compiles an upstream-generated synchronous PPU core
   in the ordinary host. Its state comparison accepts additional ROMs and frame
   counts. The original Fiber path lowers yielding helpers through checked
-  bytecode IR regions while retaining persistent resume state. See
-  [PPU core](docs/optcarrot-ppu-core.md).
+  bytecode IR regions while retaining persistent resume state.
+  `BC2CPP_IR_INLINE=1 BC2CPP_IR_RESUMABLE_INLINE=1` also expands yield-free
+  helpers from the original Fiber PPU bytecode while preserving the caller's
+  persistent frame. See [PPU core](docs/optcarrot-ppu-core.md).
   `BC2CPP_IR_INLINE=1` expands eligible method bodies after bytecode decoding,
   avoiding source inlining's bytecode jump limit. See
   [method inlining](docs/bc2cpp-method-inlining.md).

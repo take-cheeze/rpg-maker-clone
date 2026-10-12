@@ -87,3 +87,26 @@ replace the synchronous source generator or specialize clock branches. Run
 `ruby scripts/bc2cpp/bytecode_ir_check.rb` and
 `ruby scripts/bc2cpp/resumable_check.rb` for region refusals and native
 yield/resume comparisons, including GC pressure. See ADR 0421.
+
+An independent bytecode IR optimization applies to the original Fiber PPU:
+
+```bash
+OPTCARROT_STATIC_DISPATCH=1 BC2CPP_IR_INLINE=1 BC2CPP_IR_RESUMABLE_INLINE=1 ruby tools/optcarrot_probe/compiled_run.rb 180
+```
+
+Yield-free same-owner helper bodies lower into separate local scopes inside
+the resumable step function, including calls inside flat step loops. The caller
+retains its persistent frame; proved non-suspending helpers use C++ locals.
+Explicit helper exits preserve each call's return value, and the normal per-yield states
+remain unchanged. Bodies that can suspend, have exception handlers or nested
+blocks, exceed the bounded expansion budget, or use unsupported instructions
+retain their ordinary call boundaries. The probe reports how many helper IR
+regions were expanded and gives this build a separate binary target. Set
+`BC2CPP_IR_RESUMABLE_INLINE=0` for a paired baseline; both modes retain the
+original Fiber PPU and must produce identical checksums.
+
+Run `scripts/bc2cpp/resumable_check.rb` with both IR flags enabled for native
+comparisons covering arguments, nested helpers, GC inside a helper, caller
+values retained across later yields, indirect suspension and Fiber reentry.
+The default run verifies the opt-out. This optimization does not replace the
+synchronous source generator. See ADR 0424.
