@@ -1087,6 +1087,12 @@
   Native probe builds use a 16,384-pointer GC gray stack to reduce heap rescans;
   `OPTCARROT_GRAY_STACK_SIZE=1024` restores the upstream capacity. See
   [GC measurements](docs/optcarrot-gc.md).
+  `OPTCARROT_STATIC_PPU=1` compiles an upstream-generated synchronous PPU core
+  in the ordinary host. Its state comparison accepts additional ROMs and frame
+  counts. See [PPU core](docs/optcarrot-ppu-core.md).
+  `BC2CPP_IR_INLINE=1` expands eligible method bodies after bytecode decoding,
+  avoiding source inlining's bytecode jump limit. See
+  [method inlining](docs/bc2cpp-method-inlining.md).
   `OPTCARROT_STATIC_DISPATCH=1` exposes all CPU opcode calls to bc2cpp;
   `OPTCARROT_CLOSED_WORLD=1` uses a sealed benchmark executable with a validated
   source manifest. See [CPU dispatch](docs/optcarrot-cpu-dispatch.md) and
@@ -1202,7 +1208,8 @@
   `self.class.new` of the closed world (`BC2CPP_CONSTRUCTOR_POOLS=0` turns it off; 25 fewer index-helper callers on
   the wio build, see
   [`docs/adr/0313-bc2cpp-constructor-pools.md`](docs/adr/0313-bc2cpp-constructor-pools.md) and
-  `scripts/bc2cpp/constructor_pools_check.rb`).
+  `scripts/bc2cpp/constructor_pools_check.rb`). When a module or singleton defines `initialize`,
+  the refusal diagnostic names its owner so the unavailable constructor proof can be traced.
   The arguments of every call of a setter (`x=`) are joined into a class pool for the ivar an `attr_writer` or an audited
   native writes and for the parameter of a setter with several definitions; a receiver those pools prove nil or one
   class takes a class test whose else is `bc2cpp_guard_violation` (`BC2CPP_SETTER_POOLS=0` turns it off; 11 fewer
