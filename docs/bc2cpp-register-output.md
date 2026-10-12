@@ -42,7 +42,12 @@ instruction, not from the opcode: only a text of the exact shape
 `  rD = <expression>;` is a definition, and any other text reads every register
 it names. A method is left untouched when it has an exception handler, a
 `goto` the IR does not explain (an inlined block loop that jumps between
-instruction texts), a reference alias, or is resumable. `r0`, registers a
+instruction texts), a reference alias, or is resumable. The one generated `goto`
+the IR does not explain on its own is the optional-argument `switch` that
+replaces ENTER's jump table (`RegisterFlow.dispatch_text`): its default-value
+targets become successors of the switch's text, and only when that text is
+exactly the switch over the table's targets with every other table entry empty.
+`BC2CPP_REGISTER_FLOW_GOTO=0` turns this model off and refuses such methods again. `r0`, registers a
 nested block reaches by upvar, registers whose address is taken (`&rN`) and
 registers redeclared inside a text are never removed or substituted. Window
 consumers (`SEND`, `ARRAY`, `ADD`, ...) keep the copies that feed them.
@@ -72,3 +77,21 @@ stores: compiling the whole output with `g++ -O1 -c` gives the same `.text` (6,1
 bytes off, 6,142,782 on), so the gain is source size and parse time, not code size.
 `scripts/bc2cpp/register_flow_check.rb` holds hand-built soundness shapes and a
 compiled-versus-interpreted run with the pass on, off and in window mode.
+
+Optional-argument switch model (`BC2CPP_REGISTER_FLOW_GOTO`), same tree, shipped
+build (`coverage_report.rb`, `SKIP_UNSUPPORTED=1`):
+
+| | goto model off | goto model on |
+| --- | ---: | ---: |
+| `refused goto` methods | 285 | 0 |
+| `refused handlers` methods | 429 | 429 |
+| lines | 367,719 | 367,648 (-71) |
+| bytes | 18,989,327 | 18,988,221 (-1,106) |
+| copies propagated | 1,311 | 1,467 (+156) |
+| `MOVE` dropped | 1,432 | 1,603 (+171) |
+| `LOADNIL` dropped | 0 | 9 |
+
+The goto-off build is byte-identical to the same tree before the change. With
+the model on, 39 emitted method functions differ; every one has the optional-
+argument switch in its goto-off text, and the 246 other newly accepted methods
+keep their text (the copy and write counts above come from those 39).
