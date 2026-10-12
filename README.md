@@ -1087,6 +1087,8 @@
   Native probe builds use a 16,384-pointer GC gray stack to reduce heap rescans;
   `OPTCARROT_GRAY_STACK_SIZE=1024` restores the upstream capacity. See
   [GC measurements](docs/optcarrot-gc.md).
+  `OPTCARROT_STATIC_PPU=1` compiles an upstream-generated synchronous PPU core
+  in the ordinary host. See [PPU core](docs/optcarrot-ppu-core.md).
   `OPTCARROT_STATIC_DISPATCH=1` exposes all CPU opcode calls to bc2cpp;
   `OPTCARROT_CLOSED_WORLD=1` uses a sealed benchmark executable with a validated
   source manifest. See [CPU dispatch](docs/optcarrot-cpu-dispatch.md) and
