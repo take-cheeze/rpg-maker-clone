@@ -524,6 +524,7 @@ jobs:
               ruby scripts/bc2cpp/insn_operands_check.rb
               ruby scripts/bc2cpp/irep_scans_check.rb
               ruby scripts/bc2cpp/bytecode_ir_check.rb
+              BC2CPP_CPU_IR_NATIVE=1 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_cpu_dispatch_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_dataflow_check.rb
               ruby scripts/bc2cpp/origin_multiwrite_check.rb
               ruby scripts/bc2cpp/site_origin_exceptions_check.rb
