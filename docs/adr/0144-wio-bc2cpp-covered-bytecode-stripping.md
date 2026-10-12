@@ -34,7 +34,7 @@ wio-only, build-time source rewriters (`build_config.rb`'s
 `wio_strip_inline_helpers`/`wio_strip_debug_rbfiles`) that rewrite a
 build-time copy of a gem's `.rb` files before `mrbc` ever sees them,
 **never** touching the checked-in source — real CRuby-based regression
-scripts (`scripts/rpg2k_render_check.rb` and friends) call many of the same
+scripts (`scripts/rpg2k/render_check.rb` and friends) call many of the same
 methods directly by name for genuine test coverage that has nothing to do
 with wio, so the checked-in definitions have to survive untouched on every
 other target. This ADR generalizes that mechanism to bc2cpp's own real

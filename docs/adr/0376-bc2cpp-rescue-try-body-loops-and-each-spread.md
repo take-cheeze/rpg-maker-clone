@@ -77,8 +77,8 @@ for a spread block (the elements are the row's, not the row). A block wider than
 
 ## Consequences
 
-Measured on master `d7212a1c`, the wio closed-world shipped pass of `scripts/bc2cpp_coverage_report.rb`, before being the
-same tree with both switches off (byte-identical output), after with the change; `scripts/bc2cpp_rescue_inline_census.rb`
+Measured on master `d7212a1c`, the wio closed-world shipped pass of `scripts/bc2cpp/coverage_report.rb`, before being the
+same tree with both switches off (byte-identical output), after with the change; `scripts/bc2cpp/rescue_inline_census.rb`
 counts them (docs/bc2cpp-dynamic-site-census.md has the per-method table):
 
 | Measure | Hot-only before | Hot-only after | Full before | Full after |
@@ -99,11 +99,11 @@ and `#run_battle_events`, `Scene::Map#draw_captured_transition`, `RGSS.windowski
 `#start_new_game` (the New Game site of #1909). The `NOMETHOD` listing is identical in both worlds, so
 `NOMETHOD_REVIEWED` is unchanged. The generated C++ of both worlds passes `g++ -fsyntax-only`.
 
-- `scripts/bc2cpp_rescue_inline_block_check.rb` (build.yml, `core-mrbtest` shard with the full-core build) holds the shape of
+- `scripts/bc2cpp/rescue_inline_block_check.rb` (build.yml, `core-mrbtest` shard with the full-core build) holds the shape of
   the generated code and compares compiled and interpreted runs on real mruby: a raise inside the block reaching the handler,
   a handler that continues, an unmatched raise unwinding through a caller's `ensure`, `next`/`break`/`return`, captured locals
   written and read after the range, arity 2/4/5 over short, long, empty, `nil`, non-Array and `to_ary` rows, a Hash and a
-  `times`, nesting, and a rescue inside a block. `scripts/bc2cpp_rescue_inline_block_mutation_check.rb` (build.yml, `fast`) breaks
+  `times`, nesting, and a rescue inside a block. `scripts/bc2cpp/rescue_inline_block_mutation_check.rb` (build.yml, `fast`) breaks
   the passes, the kill switches, the range filter, each layer of the `return` refusal and the spread (binding, index, length
   test, `to_ary`, non-Array element, arity gate) one at a time.
 - Refusals that remain by design: a `return` from the method through a protected block (a method-return protocol for try bodies

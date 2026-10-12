@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-`scripts/bc2cpp_dynamic_site_census.rb` (docs/bc2cpp-dynamic-site-census.md) counts the by-name dispatch
+`scripts/bc2cpp/dynamic_site_census.rb` (docs/bc2cpp-dynamic-site-census.md) counts the by-name dispatch
 left in generated C++ and says why each `bc2cpp_send` site stayed dynamic. Every one of those counts is a
 static count: a site reached once at start-up weighs the same as one inside the optcarrot CPU loop. The
 proofs of ADR 0289, 0295, 0296 and 0297 each removed a few hundred sites, and nothing said whether the
@@ -35,13 +35,13 @@ Add an opt-in executed-count profile (`SITE_PROFILE`), kept entirely out of code
   census and the profile name a site and its reason from one implementation. The census output is unchanged
   except that the `--tsv` function column now follows non-`static` bodies instead of keeping the previous
   static function's name.
-- `scripts/bc2cpp_dynamic_site_census.rb --rank SITES_DIR --workload NAME=HITS_DIR ...`
+- `scripts/bc2cpp/dynamic_site_census.rb --rank SITES_DIR --workload NAME=HITS_DIR ...`
   (`tools/bc2cpp/site_rank.rb`) joins the two and prints the hottest sites, hits per reason category with the
   proof lever that category points at, and hits per method name. A hit file from another build is refused.
 - `tools/optcarrot_probe/compiled_run.rb` passes the switch to the pass whose C++ it builds and, in this mode,
   runs only the compiled binary against CRuby (checksum still compared), not the 60 s interpreter run. The game
   builds pick the switch up from the environment through their `mrbgem.rake` `sh env, cmd` calls.
-- `scripts/bc2cpp_site_profile_check.rb` instruments a miniature of the generated shape, builds and runs it with
+- `scripts/bc2cpp/site_profile_check.rb` instruments a miniature of the generated shape, builds and runs it with
   g++, ranks the dump, and (with `MRBC`) proves bc2cpp's output with the switch equals the plain output once the
   counters are peeled off. It runs in the `fast` shard of the `bc2cpp-checks` job.
 

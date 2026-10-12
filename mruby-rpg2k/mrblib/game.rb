@@ -438,7 +438,7 @@ module Game
   # rect to `Bitmap#blend_text`, which fills the message glyphs from it so the
   # text takes the windowskin's own colour and shading. Pure geometry (ported
   # from a reference implementation's system-colour layout), exercised by
-  # scripts/rpg2k_render_check.rb.
+  # scripts/rpg2k/render_check.rb.
   module MessagePalette
     COUNT = 20   # colour indices 0..19
     CELL = 16    # swatch size in pixels
@@ -469,7 +469,7 @@ module Game
   end
 
   # Geometry of the selection cursor RPG2000 draws inside a window, ported from
-  # a genuine RPG_RT frame (see scripts/compare-nepheshel-wine.bash and ADR
+  # a genuine RPG_RT frame (see scripts/compare/nepheshel-wine.bash and ADR
   # 0021). The cursor art is a 32x32 block of the System windowskin with 8px
   # corners; RPG_RT draws it around the selected row four pixels wider on each
   # side than the window's content area, but exactly the row's height — it is
@@ -952,7 +952,7 @@ module Game
   # whole chip, for the non-autotile blocks) as blit rectangles.
   #
   # Pure geometry with no rendering dependency, so it is exercised directly by
-  # scripts/rpg2k_render_check.rb under CRuby.
+  # scripts/rpg2k/render_check.rb under CRuby.
   module ChipsetLayout
     TS = 16      # tile size in pixels
     HTS = 8      # quarter (8x8) size
@@ -1275,7 +1275,7 @@ module Game
   # page's static graphic fields and the character's live movement state.
   #
   # Pure geometry / selection logic with no rendering dependency (like
-  # ChipsetLayout), so it is exercised directly by scripts/rpg2k_render_check.rb.
+  # ChipsetLayout), so it is exercised directly by scripts/rpg2k/render_check.rb.
   # The owning Scene::Map keeps a per-event walk `phase` counter and a `moving`
   # flag and asks #frame for the (direction, column) to blit.
   module EventGraphic
@@ -1397,7 +1397,7 @@ module Game
   #     when it is larger.
   #
   # Pure integer geometry with no rendering dependency, so it is exercised
-  # directly by scripts/rpg2k_render_check.rb. The exact scroll *rate* mirrors
+  # directly by scripts/rpg2k/render_check.rb. The exact scroll *rate* mirrors
   # a reference implementation's formulae but has not been visually diffed
   # against RPG_RT under wine — that native comparison is the remaining validation.
   module Parallax
@@ -1726,7 +1726,7 @@ module Game
     # the save-restore entry point (`State.from_lsd`), which `RPG2k` only ever
     # calls as `Game::State.from_lsd(@db, ...)`. `LCF::Database` is a `LCF::File`
     # subclass and is not itself subclassed (grepped). The CRuby-only check
-    # harnesses (scripts/rpg2k_logic_check.rb's own `FakeActorDB`) hand in a
+    # harnesses (scripts/rpg2k/logic_check.rb's own `FakeActorDB`) hand in a
     # stub instead, but they are not part of `closed_world_mrblib_srcs` and
     # never run compiled code at all -- and compile_send guards every
     # annotation-derived direct call with a real `mrb_obj_class` check that
@@ -5310,7 +5310,7 @@ module Game
     # item's name/description and its held count (1 -> 0 both runs) stayed
     # exactly the same, ruling out "the edit was silently ignored" as an
     # alternative explanation. See the matching regression check in
-    # scripts/rpg2k_logic_check.rb ("a seed permanently raises the target
+    # scripts/rpg2k/logic_check.rb ("a seed permanently raises the target
     # stats (points2 set, not points1)...") for the full write-up.
     def seed_boosts(it)
       [it[:max_hp_points] || 0, it[:max_sp_points] || 0,
@@ -6331,7 +6331,7 @@ module Game
   # this build (mruby-random, added for the RGSS script host — a game's own
   # scripts call it), but it is unseeded: move routes and autonomous movement
   # are diffed frame by frame against the genuine runtime
-  # (scripts/compare-nepheshel-wine.bash), which needs the same rolls every run,
+  # (scripts/compare/nepheshel-wine.bash), which needs the same rolls every run,
   # so they keep this one. This is a small LCG (multiplier 75, modulus the prime 65537)
   # whose arithmetic stays within a signed 32-bit `mrb_int` — no value ever
   # reaches 2**31 — so it never has to promote to a bigint on this target. The
@@ -6611,7 +6611,7 @@ module Game
     # genuine RPG_RT under wine (the orthogonal Direction-Fix case
     # `#last_move_direction` was introduced for is the one covered by an
     # actual check -- see `changelog.d/move-route-forward-uses-last-moved-
-    # direction.fixed.md` and `scripts/rpg2k_logic_check.rb`); storing the
+    # direction.fixed.md` and `scripts/rpg2k/logic_check.rb`); storing the
     # full pair is still the strictly more information-preserving choice
     # either way, since it never discards data the vertical-only alternative
     # would have.
@@ -7873,7 +7873,7 @@ module Game
     # when that first paint lands after frame 0 (the frame counter has
     # already advanced once before the very first #update/render pass in
     # some call orders -- see the vertical-division capture test's own "frame
-    # 1 is the first rendered frame" note in scripts/rpg2k_scene_check.rb):
+    # 1 is the first rendered frame" note in scripts/rpg2k/scene_check.rb):
     # #new_block_rects alone would only punch the delta since frame 0 and
     # silently leave frame 0's own blocks unrevealed forever in that case.
     def revealed_block_rects
@@ -9046,7 +9046,7 @@ module Game
     # contrast: identical setup, south side silent across 6 boots, west side
     # fired the NPC's greeting on the very first try every time it was
     # retried). A second, independent hazard surfaced along the way and was
-    # also worked around: `scripts/gen-rpg2k-save.rb`'s own "keeps the old
+    # also worked around: `scripts/gen/rpg2k-save.rb`'s own "keeps the old
     # map event states" warning is not just about the *foreground* event
     # (chunk 113, `--clear-scene`'s job) -- chunk 111 (`SAVE_MAP_EVENT` field
     # 11) independently carries a per-event-id position snapshot from

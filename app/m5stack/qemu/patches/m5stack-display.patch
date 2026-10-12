@@ -102,7 +102,7 @@ index 0000000..bb9b9f7
 + * only need). Instead this keeps a plain libc atexit() hook: when
 + * ESP32_ILI9341_DUMP_PATH is set in the environment this process inherits,
 + * the current framebuffer is written there as a PPM on exit -- exactly the
-+ * "flash it and see it run" moment scripts/m5stack_qemu_boot.bash's own
++ * "flash it and see it run" moment scripts/m5stack/qemu_boot.bash's own
 + * timeout-then-SIGTERM shutdown already produces (QEMU's own shutdown path
 + * calls exit(), which still runs libc atexit hooks normally). One instance
 + * is all this machine ever creates, so a single static pointer is enough. */

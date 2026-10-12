@@ -149,7 +149,7 @@ census.
 One premise carries over from the existing generator. An unguarded MONO
 direct call assumes its receiver is the owner's instance, just as it already
 assumes a method and not `method_missing` answers it. LEXICAL_SELF relies on
-that assumption already; the `self` rule and CLOSED_WORLD_SELF rely on it too. `scripts/bc2cpp_closed_world_check.rb` covers the
+that assumption already; the `self` rule and CLOSED_WORLD_SELF rely on it too. `scripts/bc2cpp/closed_world_check.rb` covers the
 build check and the generated code. It also compiles fixtures against the real
 mruby core and checks the raised `NoMethodError` against the interpreter's.
 

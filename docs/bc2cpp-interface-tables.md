@@ -27,8 +27,8 @@ benchmark results and safety conditions.
 To validate and benchmark with a patched host mruby build:
 
 ```sh
-MRBC=<host-mrbc> BC2CPP_MRUBY_CORE=<core-build> ruby scripts/bc2cpp_interface_tables_check.rb
-MRBC=<host-mrbc> BC2CPP_MRUBY_CORE=<core-build> ruby scripts/bc2cpp_interface_tables_bench.rb
+MRBC=<host-mrbc> BC2CPP_MRUBY_CORE=<core-build> ruby scripts/bc2cpp/interface_tables_check.rb
+MRBC=<host-mrbc> BC2CPP_MRUBY_CORE=<core-build> ruby scripts/bc2cpp/interface_tables_bench.rb
 ```
 
 The check requires `lib/libmruby_core.a` and matching headers. For a 32-bit

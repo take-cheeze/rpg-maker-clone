@@ -46,12 +46,12 @@ binary mode, so both give the same order today, and byte length is what
 the lookup compares.
 
 The patch is applied to every build (`cmake/build-mruby.cmake`,
-`scripts/maix_mruby_build.bash`, `scripts/wio_bc2cpp_measure.bash`).
+`scripts/maix/mruby_build.bash`, `scripts/wio/bc2cpp_measure.bash`).
 
 ## Consequences
 
 Measured with a full `wio_rgss_boot` link (the baseline configuration of
-`scripts/wio_bc2cpp_measure.bash`), on top of ADR 0224's patch:
+`scripts/wio/bc2cpp_measure.bash`), on top of ADR 0224's patch:
 
 - **Flash: −18,384 B.** The wio build has 4,714 presyms. Before the patch,
   `presym_name_table` was 18,856 B and `presym_length_table` 9,428 B.

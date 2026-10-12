@@ -70,7 +70,7 @@ with the browser/emscripten frame loop. Keeping the built-in flow as the default
 means the change lands the whole host without regressing the verified boot.
 
 Because the host plumbing is written in the mruby/CRuby common subset, a new
-host-side harness (`scripts/rpgxp_script_host_check.rb`, run in CI) loads the
+host-side harness (`scripts/rpgxp/script_host_check.rb`, run in CI) loads the
 exact sources under CRuby and drives them against the real
 `data/OpenGame.exe/Testbed/XP` project: it decodes all 90 sections, installs and
 round-trips the Kernel built-ins, and evaluates a load-safe logic subset

@@ -581,7 +581,7 @@ target_compile_definitions(
 # MIDI instruments for SDL_mixer's built-in TiMidity synthesiser. A .mid holds
 # note events only, so without a GUS patch set MIDI music loads and then plays
 # silence. The patches are ~32 MiB of samples, so they are downloaded by
-# scripts/download-freepats.bash rather than committed.
+# scripts/download/freepats.bash rather than committed.
 #
 # The path is baked in unconditionally and probed at run time (sdl_audio.cxx),
 # never tested here: the download is independent of the configure, so a
@@ -596,7 +596,7 @@ target_compile_definitions(
 # src/voicevox_tts.cxx): a full offline VOICEVOX CORE synthesis stack -- the
 # CORE C API library, its ONNX Runtime, the Open JTalk dictionary and Zundamon's
 # voice model -- dlopen()'d at run time, never a link-time dependency. ~90 MiB,
-# so it is downloaded by scripts/download-voicevox-zundamon.bash rather than
+# so it is downloaded by scripts/download/voicevox-zundamon.bash rather than
 # committed, the same reasoning as the MIDI patch set above; the path is baked
 # in unconditionally and probed at run time for the same reason (a
 # configure-time EXISTS check would race the download).
@@ -606,7 +606,7 @@ target_compile_definitions(
 
 # The default UI font, used when a project ships no font of its own -- otherwise
 # its windows draw with the fixed 12px shinonome bitmap font whatever size they
-# asked for. ~1.7 MiB, so it is downloaded by scripts/download-default-font.bash
+# asked for. ~1.7 MiB, so it is downloaded by scripts/download/default-font.bash
 # rather than committed.
 #
 # Both paths are baked in unconditionally and probed at run time (src/main.cxx,
@@ -744,7 +744,7 @@ if(EMSCRIPTEN)
   # Three settings, because the two callers want opposite things:
   #
   # * AUTO (the default) packages the patches once
-  #   scripts/download-freepats.bash has installed them. This is the local flow
+  #   scripts/download/freepats.bash has installed them. This is the local flow
   #   -- fetch, configure, and the page plays MIDI -- and skipping the download
   #   still gives a page ~32 MiB lighter, with the configure saying so instead
   #   of leaving it to be found as silence.
@@ -771,7 +771,7 @@ if(EMSCRIPTEN)
       message(
         STATUS
           "MIDI: ${TIMIDITY_ASSET_DIR} is empty, so this page will not play "
-          ".mid BGM/ME at all. Run scripts/download-freepats.bash and "
+          ".mid BGM/ME at all. Run scripts/download/freepats.bash and "
           "re-configure, or pass -DWASM_MIDI_PATCHES=ON to package it "
           "regardless (the build then requires the directory to exist).")
     endif()
@@ -822,7 +822,7 @@ if(EMSCRIPTEN)
   # Off by default, like the patch set: emcc fails the link when the preloaded
   # directory is missing, and it is missing until the download has been run.
   # Turn on with -DWASM_DEFAULT_FONT=ON, having run
-  # scripts/download-default-font.bash. Adds ~1.7 MiB to index.data.
+  # scripts/download/default-font.bash. Adds ~1.7 MiB to index.data.
   option(WASM_DEFAULT_FONT "Preload the default UI font into the wasm build"
          OFF)
   if(WASM_DEFAULT_FONT)
@@ -941,15 +941,15 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
                             ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/host/include)
   target_link_libraries(nano7_walk_host PRIVATE SDL2::SDL2)
 
-  # scripts/nano7_host_smoke.bash exports a real Nepheshel map, runs
+  # scripts/nano7/host_smoke.bash exports a real Nepheshel map, runs
   # nano7_walk_host headless against it and saves a BMP;
-  # scripts/nano7_host_smoke_check.rb (a plain-Ruby BMP reader, no ImageMagick)
+  # scripts/nano7/host_smoke_check.rb (a plain-Ruby BMP reader, no ImageMagick)
   # asserts the frame actually carries real map content rather than a blank/flat
   # fill. Needs no display -- see docs/adr/0102 -- so unlike
   # exe_open/render_probe below this needs no xvfb-run/--server-num.
   add_test(
     NAME nano7_host_smoke
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/nano7_host_smoke.bash
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/nano7/host_smoke.bash
             $<TARGET_FILE:nano7_walk_host>
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 

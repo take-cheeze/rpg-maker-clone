@@ -70,7 +70,7 @@ silently drop all of that.
 ## Consequences
 
 - **The save loop is closed at the runtime layer.** `Game::State` reads *and*
-  writes genuine `.lsd`. `scripts/rpg2k_save_load_check.rb` now also asserts
+  writes genuine `.lsd`. `scripts/rpg2k/save_load_check.rb` now also asserts
   `state -> to_lsd -> from_lsd` preserves every modelled field (position, gold,
   items, roster, per-actor level/exp/HP/MP/equipment/skills, switches, variables)
   against the real Nepheshel (2000) and mtf-meido-action (2003) saves.

@@ -32,7 +32,7 @@ class body, which can replace a target after the source definition is scanned.
 
 ## Proofs and measurement
 
-`scripts/bc2cpp_return_class_check.rb` covers two classes whose `handoff`
+`scripts/bc2cpp/return_class_check.rb` covers two classes whose `handoff`
 definitions return different classes, a subclass inheriting that method,
 guard-free dispatch through each resulting class, and a runtime `define_method`
 withdrawal. Its compiled-versus-interpreted runtime fixture checks the results

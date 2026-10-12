@@ -1,5 +1,5 @@
 # The MZ engine core scripts and libraries are fetched by
-# scripts/download-mz-corescript.bash (community mirror stak/rmmz-corescript;
+# scripts/download/mz-corescript.bash (community mirror stak/rmmz-corescript;
 # rmmz is © Gotcha Gotcha Games / KADOKAWA), not committed. Only our authored
 # project files (data/, index.html, js/plugins.js) live in git.
 /js/rmmz_core.js

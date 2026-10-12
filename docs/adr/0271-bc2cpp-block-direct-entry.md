@@ -61,7 +61,7 @@ does; every other value takes `mrb_yield_argv`.
   what a direct call to a compiled method already does.
 - Code size: a block with an entry has the entry instead of the wrapper (same shape), plus one
   shared inline thunk. 403 block bodies of the wio closed-world build get an entry, and 52 keep the wrapper (they break or return, or are not plain blocks).
-- `scripts/bc2cpp_block_core_direct_check.rb` now also covers the entry's argument binding:
+- `scripts/bc2cpp/block_core_direct_check.rb` now also covers the entry's argument binding:
   zero-parameter, rest and multi-parameter blocks yielded to by interpreted iterators with too
   many, too few and spread arguments, and a strict copy.
 - Not done: the fixed cost per call. A callee taking a callback instead of a proc would remove

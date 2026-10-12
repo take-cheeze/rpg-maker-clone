@@ -77,7 +77,7 @@ Fixnum tier's inline `mrb_num_*` on overflow (ADR 0279) is unchanged.
   String#+ or an Array#&. What changes for numbers is that a bigint operand, a Float against a
   bigint and a bigint compare/shift/modulo now call the C function directly, with no lookup
   and no method frame, and with an exact (not accumulating) arena footprint.
-- Behaviour. `scripts/bc2cpp_numeric_slow_check.rb` runs 22,005 operator/operand answers
+- Behaviour. `scripts/bc2cpp/numeric_slow_check.rb` runs 22,005 operator/operand answers
   (Fixnum and mrb_int edges, heap Integers, bigints, Float -0.0/NaN/Infinity, nil, String,
   Array, user classes, negative and oversized shift counts, floor division and modulo signs)
   through compiled and interpreted mruby and requires identical values, Integer#hash

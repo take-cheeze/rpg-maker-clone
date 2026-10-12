@@ -4,9 +4,9 @@
 #
 # The full file formats (Game.dat, the databases, CommonEvent.dat, .mps) are
 # validated against a real project instead of synthetic fixtures here --
-# scripts/wolf_testbed_check.rb drives this exact mrblib source under CRuby
-# over the sample game scripts/download-wolfrpg-sample.bash fetches, the way
-# scripts/lcf_testbed_check.rb does for the LCF (RPG2000/2003) layer.
+# scripts/wolf/testbed_check.rb drives this exact mrblib source under CRuby
+# over the sample game scripts/download/wolfrpg-sample.bash fetches, the way
+# scripts/lcf/testbed_check.rb does for the LCF (RPG2000/2003) layer.
 
 # ---- Reader -----------------------------------------------------------------
 
@@ -158,8 +158,8 @@ end
 # own fixture builder). The much stronger cross-check for everything *except*
 # the compressed-header path below -- .pack applied to a real, 660-file
 # project and read back through the *whole* Wolf::Project pipeline -- is
-# scripts/wolf_data_wolf_check.rb, run separately against the downloaded
-# sample game the way scripts/wolf_testbed_check.rb already is (`.pack` never
+# scripts/wolf/data_wolf_check.rb, run separately against the downloaded
+# sample game the way scripts/wolf/testbed_check.rb already is (`.pack` never
 # writes a compressed table, so that round trip alone could never exercise
 # `.huffman_decode`/`.dxa_lz_decode`).
 #
@@ -392,7 +392,7 @@ assert "Wolf::Page::Condition#enabled? is bit 0 of the operator byte alone" do
   # "変数呼び出し値" widget always stores *some* value): 1,000,000 --
   # map-event self-variable 0 of event 0 -- is what the sample game's own
   # untouched condition slots carry, confirmed by dumping real Page bytes
-  # (scripts/wolf_interpreter_check.rb's own soak target). Trusting
+  # (scripts/wolf/interpreter_check.rb's own soak target). Trusting
   # variable/value non-zero-ness as "enabled" (an earlier, unvalidated
   # version of this method did) would treat every one of those as a real
   # condition instead of a blank row.

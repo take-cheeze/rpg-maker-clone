@@ -31,7 +31,7 @@ Argument masks belong to the local analysis and its cache key. They do not
 narrow the method's global argument pools or change emitted method bodies.
 
 Set `BC2CPP_CALL_CONTEXT_RESULTS=0` to disable this extension. Run
-`scripts/bc2cpp_call_context_results_check.rb` with `MRBC` and a full-core mruby
+`scripts/bc2cpp/call_context_results_check.rb` with `MRBC` and a full-core mruby
 build for generated-code and runtime parity checks. Its mutation check verifies
 the withdrawn conditions and an unchanged control: captured writes, nested
 nonlocal returns, later parent stores, capture context, positional argument

@@ -58,7 +58,7 @@ instruction passed from `closed_world_site`) resolves the arm from the exact cla
    stored; this already affected every listed class, and the new arms would have spread it.
 
 Everything else is withdrawn by the existing registry and closed-world facts, each pinned by a negative
-world in `scripts/bc2cpp_unlisted_class_call_check.rb`: alias/alias_method/undef/remove_method (the name
+world in `scripts/bc2cpp/unlisted_class_call_check.rb`: alias/alias_method/undef/remove_method (the name
 is in `symbol_installed_names`, so no unlisted arm is built), a computed `define_method` (global
 refusal), a literal `define_method` next to the attr (two definitions on the owner), `method_missing`,
 singleton definers (`def self.x`, `def obj.x`, `class << obj`, `define_singleton_method`), a prepended or
@@ -68,7 +68,7 @@ subclass override (the guard is `mrb_obj_class ==` the exact class, so the subcl
 ## Consequences
 
 - Measured on the wio closed world, full output: `bc2cpp_send` sites 5,081 -> 3,918 (-1,163); the
-  "known-class arm still by name" category of `scripts/bc2cpp_dynamic_site_census.rb` 1,198 -> 35;
+  "known-class arm still by name" category of `scripts/bc2cpp/dynamic_site_census.rb` 1,198 -> 35;
   `bc2cpp_nomethod` sites 4,562 -> 4,648 (+86, the `no_target` arms).
 - Residual 35: 30 private explicit-receiver arms inside inlined block bodies, whose site instruction
   the code generator does not carry (`idx` is nil there), and 5 of a name mentioned by `private :x`.
@@ -79,7 +79,7 @@ subclass override (the guard is `mrb_obj_class ==` the exact class, so the subcl
   superseded by ADR 0299, which checks the by-name call).
 - POLY and the other listed arms still call a private candidate through an explicit receiver
   (`@state.party` with `Interpreter#party` listed); only unlisted arms raise.
-- `scripts/bc2cpp_unlisted_class_call_check.rb` pins the generated code, 29 negative worlds and 3
+- `scripts/bc2cpp/unlisted_class_call_check.rb` pins the generated code, 29 negative worlds and 3
   controls, the chain proof against the real native sources, and runs interpreted vs compiled on real
   mruby (64-bit full-core and core-only, and 32-bit `mrb_int` full-core): values, exception classes and
   messages (private `NoMethodError` text, `FrozenError`, `ArgumentError`), no dynamic dispatch in the

@@ -22,7 +22,7 @@ constant name is admitted as an Integer, and every consumer then omits the tag t
    holds `c`. `X = c && 1` likewise binds `c` (nil, false, a Float) on the short-circuit path. `IntegerConstantRanges`
    already withdrew these (ADR 0318).
 
-### Reproductions (compiled against interpreted, `scripts/bc2cpp_integer_constants_check.rb`, master `7818f0f5`)
+### Reproductions (compiled against interpreted, `scripts/bc2cpp/integer_constants_check.rb`, master `7818f0f5`)
 
 A Float constant defined natively (`mrb_define_const(M, c, "NATF", mrb_float_value(M, 2.5))`) while `IcOther::NATF = 1`
 exists in Ruby, then `IcNat::NATF + 1`: interpreted 3.5, compiled `-4607182418800017406` (the Float's bits read as an
@@ -44,7 +44,7 @@ differ; after the fix both agree, on the 64-bit builds and on the 32-bit `mrb_in
 
 ## Consequences
 
-Shipped wio/rpg2k output (`scripts/bc2cpp_coverage_report.rb`, shipped pass, `3rd/*` populated, master against the
+Shipped wio/rpg2k output (`scripts/bc2cpp/coverage_report.rb`, shipped pass, `3rd/*` populated, master against the
 fix): **not byte-identical, by one real finding.** With digit-masked lines (symbol indices are renumbered) the diff is
 28 lines: the symbol table gains `Variables`, `MAX`, `MIN`, and two constant reads that were inlined as `999999` and
 `-999999` become `GETCONST` lookups. The census counts are equal: `bc2cpp_send` 2,538, `bc2cpp_slow_*` 3,343,
@@ -71,13 +71,13 @@ own `mrb_const_set` names are lowercase `_zobjs`/`_game_start` literals.
 
 ## Tests
 
-`scripts/bc2cpp_integer_constants_check.rb`: unit cases (the scan reads each native form, including a call split over
+`scripts/bc2cpp/integer_constants_check.rb`: unit cases (the scan reads each native form, including a call split over
 several lines, `mrb_define_const_id(MRB_SYM)`, `mrb_define_global_const`, `mrb_const_set`; the admitted set keeps the
 sound constants `PLAIN`, `SUM = PLAIN + 1`, `IFY = 100 if cond` and withdraws `ORC`, `ORM` (scoped), `ANDN`, `ANDF`,
 the five native names, a ternary with a Float arm and `1 + (c || 2)`), the diagnostic's constant list, and the fixture on
 real mruby compiled against interpreted (values and exceptions, with pinned results on the full-core build; a core-only
 mruby raises the base class, so there the interpreter's own line is the pin). It fails on master (49 failing checks across the 64-bit, core-only and 32-bit builds) and passes
-after. `scripts/bc2cpp_integer_constants_mutation_check.rb`: an unmutated control and eight mutants (no native poison,
+after. `scripts/bc2cpp/integer_constants_mutation_check.rb`: an unmutated control and eight mutants (no native poison,
 a window of 20 characters, the lazy window, no `mrb_define_global_const`, no quoted name, no `MRB_SYM` name, no
 `mrb_const_set`, no jump-onto-SETCONST guard), each killed; the copy lives inside the repository so the closed world is
 not empty. New `integer-constants` shard in `bc2cpp-checks`; the 32-bit run is in `bc2cpp-width (int32)`. One mutant was

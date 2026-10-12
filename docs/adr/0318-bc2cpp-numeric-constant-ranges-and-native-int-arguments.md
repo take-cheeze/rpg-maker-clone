@@ -101,7 +101,7 @@ clean `origin/master` build; the exact-flow arm keeps the Fixnum proof it alread
 
 ## Consequences
 
-Same tree, kill switch against default (`scripts/bc2cpp_coverage_report.rb`, shipped pass, `3rd/*` populated):
+Same tree, kill switch against default (`scripts/bc2cpp/coverage_report.rb`, shipped pass, `3rd/*` populated):
 
 | | before | after | |
 | --- | ---: | ---: | --- |
@@ -144,7 +144,7 @@ without block direct entry (ADR 0271; the fixture has no block).
 
 ## Tests
 
-`scripts/bc2cpp_numeric_constants_check.rb`: generated code for nine positives (literal, `+ - * /` of constants, a
+`scripts/bc2cpp/numeric_constants_check.rb`: generated code for nine positives (literal, `+ - * /` of constants, a
 local copy, a hull of two definitions, a self-aliased constant, a name not yet assigned) and eight negatives (a
 parameter, a constant above 32 bits, a Float, an arithmetic join, an overflowing product, a divisor interval holding 0,
 `X = c && 1`, a use in a rescue range), fifteen withdrawal worlds (a reopened String constant, a reassignment out of
@@ -152,6 +152,6 @@ range, const_set, remove_const, a native or foreign definition, a build gem call
 const_missing, a module named like the constant, a redefined `Integer#*`, the open world, the kill switch); the fixture
 on real mruby, interpreted and compiled, against a stand-in for `rgss::bitmap_new_direct` that records the constructor
 arguments (full-core, core-only and 32-bit `mrb_int` builds), with every proven constant's value inside its interval
-and zero dispatches on the proven methods. `scripts/bc2cpp_numeric_constants_mutation_check.rb`: an unmutated control
+and zero dispatches on the proven methods. `scripts/bc2cpp/numeric_constants_mutation_check.rb`: an unmutated control
 and fifteen mutants of the soundness conditions (the copy lives inside the repository so the closed world is not
 empty), each killed. New `numeric-constants` shard in `bc2cpp-checks`; the 32-bit run is in `bc2cpp-width (int32)`.

@@ -7,7 +7,7 @@
 # newlib _open/_read/... behind GAME_DIR=/game. Regenerated every build
 # into the environment's own build tree (never checked in); the game
 # sources themselves live in data/maix-hello (see its README and
-# scripts/gen-maix-hello-game.rb).
+# scripts/gen/maix-hello-game.rb).
 import os
 
 Import("env")  # noqa: F821  (injected by PlatformIO/SCons)

@@ -57,8 +57,8 @@ generated file's symbol-table literal as dynamic when all of these hold:
     string.
 
 Every other rule of docs/adr/0203 is unchanged, including the fixed-point
-iteration. `scripts/bc2cpp_embed_guard_exemption_check.rb` (bc2cpp CI job)
-pins each condition on a fixture, and `scripts/bc2cpp_static_dispatch_check.rb`
+iteration. `scripts/bc2cpp/embed_guard_exemption_check.rb` (bc2cpp CI job)
+pins each condition on a fixture, and `scripts/bc2cpp/static_dispatch_check.rb`
 re-proves the whole list on every run.
 
 ## Result
@@ -72,7 +72,7 @@ does need them.
 
 ## Measurement
 
-A/B with `scripts/wio_bc2cpp_measure.bash`, `flock`-serialized, each side in
+A/B with `scripts/wio/bc2cpp_measure.bash`, `flock`-serialized, each side in
 its own clean worktree. "Without" is docs/adr/0203's head (d4579258), and
 "with" is this change on top of it:
 

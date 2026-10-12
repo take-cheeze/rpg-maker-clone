@@ -17,7 +17,7 @@
 #
 # The classes are plain attribute holders. They are deliberately behaviour-free:
 # they mirror the editor's data model 1:1 so the runtime (RPGXP scenes) and the
-# host-side test-bed check (scripts/rpgxp_testbed_check.rb, which loads this exact
+# host-side test-bed check (scripts/rpgxp/testbed_check.rb, which loads this exact
 # file under CRuby over a real game) read the same fields. Field names and their
 # nesting follow the RPGXP RGSS reference:
 # https://www.rpgmaker.fixato.org/Manual/RPGXP/ .

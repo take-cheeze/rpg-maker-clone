@@ -112,7 +112,7 @@ measured and not adopted. It saves 17 to 64 bytes per gem, because the helper
 exists once per file. It would also mark a hot path cold: LCF's `#[]`
 receivers reach their impls through that tail.
 
-`scripts/bc2cpp_outlined_index_check.rb` covers the codegen: a generic site
+`scripts/bc2cpp/outlined_index_check.rb` covers the codegen: a generic site
 calls the helper, a Struct-literal site keeps its branches, and an unused
 helper is not emitted. It also runs a fixture on real mruby, first as
 bytecode and then compiled, and checks that results, receivers and raised

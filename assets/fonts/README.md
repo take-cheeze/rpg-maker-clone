@@ -5,7 +5,7 @@ none. It is empty in a fresh checkout — everything except this README is
 downloaded:
 
 ```sh
-./scripts/download-default-font.bash
+./scripts/download/default-font.bash
 ```
 
 ## Why it is needed
@@ -44,7 +44,7 @@ with real glyphs rather than blanks.
   `.woff` files MZ projects normally ship.
 - **RPG2000 / 2003** — deliberately **not** affected. Its text keeps rendering
   with shinonome, whose metrics match RPG_RT's MS Gothic; the render-parity
-  comparisons (`scripts/compare-nepheshel-wine.bash`) are checked against those
+  comparisons (`scripts/compare/nepheshel-wine.bash`) are checked against those
   exact pixels, so swapping the face there would be a regression, not a fix.
 
 ## Where the engine looks

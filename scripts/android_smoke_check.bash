@@ -7,7 +7,7 @@
 # external-files game directory), launch it with the rpg2k_extra_args
 # intent-extra hook
 # (RpgMakerCloneActivity#getArguments) so it self-drives to New Game and
-# exits cleanly via --timeout_ms -- the same flags scripts/rpg2k_boot_check.bash
+# exits cleanly via --timeout_ms -- the same flags scripts/rpg2k/boot_check.bash
 # uses on desktop -- with no touch-input automation needed, and assert it
 # reached the map scene with no native crash.
 #

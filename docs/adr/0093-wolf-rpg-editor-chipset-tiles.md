@@ -102,8 +102,8 @@ mrblib call sites.
 
 - Verified by `cmake --build build` (clean build, no warnings from the new
   code), `ctest -R mruby_test` (0 crashes -- comfortably under the
-  documented pre-existing baseline), `ruby scripts/wolf_testbed_check.rb`
-  and `ruby scripts/wolf_interpreter_check.rb` (both pass unchanged, since
+  documented pre-existing baseline), `ruby scripts/wolf/testbed_check.rb`
+  and `ruby scripts/wolf/interpreter_check.rb` (both pass unchanged, since
   neither touches rendering), and the compiled binary booted headless
   against the real sample game for 3 seconds with no crash and no
   `[Wolf] tileset image failed to load`/`Picture(150)` load-failure lines

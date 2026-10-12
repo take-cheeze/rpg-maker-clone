@@ -3748,7 +3748,7 @@ module Game
     # genuine RPG_RT.exe's own observed behavior on both available binaries,
     # so the gate is not shown wrong by this evidence, even though its exact
     # mechanism (exe build vs. database format) is still not pinned down.
-    # `scripts/lcf_testbed_check.rb`'s own byte-exact round-trip and this
+    # `scripts/lcf/testbed_check.rb`'s own byte-exact round-trip and this
     # cycle's `git diff`/`md5sum` confirm the splice and its restoration
     # touched only this one command's own parameter list.
     def do_teleport(cmd)
@@ -4300,7 +4300,7 @@ module Game
     # established discipline. Booted genuine RPG_RT.exe under wine (the
     # June-2003-PE-timestamped `Nepheshel206Rbeta` binary cycle #181 first
     # identified) from a save spliced onto the tile beside the trap
-    # (`scripts/gen-rpg2k-save.rb --map 325 --at 9,4 --facing left`), stepped
+    # (`scripts/gen/rpg2k-save.rb --map 325 --at 9,4 --facing left`), stepped
     # onto it, and timed the Erase Screen blackout (mean pixel brightness
     # dropping to ~0 on a 0.25s-interval screenshot series) against an
     # identical run on the untouched original map. Both landed the blackout at

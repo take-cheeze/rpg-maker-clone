@@ -117,14 +117,14 @@ arm following that class's own method chain, and `bc2cpp_guard_violation` as the
 ### Worlds this applies to
 
 The closed form needs compiled core Ruby, so it exists only where core is compiled: the wio closed-world census
-(`scripts/bc2cpp_coverage_report.rb`, shipped pass), and a closed build with `BC2CPP_HOT_ONLY=0`. **The three shipped
+(`scripts/bc2cpp/coverage_report.rb`, shipped pass), and a closed build with `BC2CPP_HOT_ONLY=0`. **The three shipped
 firmware closed worlds (wio, psp, maix) are hot-only (ADR 0214) and hold no core Ruby, so `zero?` stays the by-name helper
 there byte for byte**; the check's "no core compile" world asserts it. The scan change (`class_registered_only?`) is world-wide
 and is exercised by the shipped passes too (the one site above).
 
 ## Consequences
 
-Measured on the wio closed world (`BC2CPP_COVERAGE_KEEP_DIR`, `scripts/bc2cpp_dynamic_site_census.rb`, shipped pass), base
+Measured on the wio closed world (`BC2CPP_COVERAGE_KEEP_DIR`, `scripts/bc2cpp/dynamic_site_census.rb`, shipped pass), base
 `38f7267a` (master after ADR 0371, the `#if` arm kept for Complex/Rational builds not counted in either run):
 
 | Measure | Before | After | Delta |
@@ -146,7 +146,7 @@ The 33 callers are the `INTEGER_UNARY :zero?` sites. The generated method bodies
 `start` site of the scan change. Core compile counts do not move (215 / 190 / 25). The firmware size budgets were not rebuilt and
 cannot move: the three builds are hot-only and the generated helper is byte-identical there.
 
-Verification, `scripts/bc2cpp_zero_direct_check.rb` (core-flow shard, and the `int32` and `nobigint` width legs):
+Verification, `scripts/bc2cpp/zero_direct_check.rb` (core-flow shard, and the `int32` and `nobigint` width legs):
 
 * generated code: the closed form has the Float arm, the `kind_of Numeric` test in front of the compiled call, the File arm,
   no by-name text, a proof-violation else, and the by-name copy under the Complex/Rational `#if` is unchanged; negative worlds

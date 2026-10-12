@@ -115,9 +115,9 @@ into a boot sequence — not proven or disproven by this ADR either way.
 The round-trip above ran on the x86-64 host. `app/wio/src/mruby_sd_smoke_main.cxx`
 (a scratch smoke test, not part of the shipped firmware) reruns the same
 check on the Wio's own Cortex-M4, under Renode built from source with this
-project's own SAMD51/ILI9341 peripherals (`scripts/wio_renode_build.bash`):
+project's own SAMD51/ILI9341 peripherals (`scripts/wio/renode_build.bash`):
 reads a plain RITE binary off an emulated SD card
-(`scripts/wio_renode_sdcard.bash`), loads it with `mrb_load_irep_buf`,
+(`scripts/wio/renode_sdcard.bash`), loads it with `mrb_load_irep_buf`,
 and checks the resulting `LCF::Schema` constants through mruby's C API,
 reporting pass/fail as a magic value in a fixed global Renode reads back
 with `sysbus ReadDoubleWord` (no UART model needed). It passed — `0xC0FFEE42`

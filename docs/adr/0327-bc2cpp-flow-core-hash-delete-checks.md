@@ -22,7 +22,7 @@ name, because otherwise the poly path yields the same direct call.
 
 ## Decision
 
-No generator change. `scripts/bc2cpp_core_exact_direct_check.rb` gains:
+No generator change. `scripts/bc2cpp/core_exact_direct_check.rb` gains:
 
 - fixtures for pooled Hash `delete` and `fetch` and a Hash-or-nil receiver,
   with runtime comparison against interpreted mruby (absent keys included);

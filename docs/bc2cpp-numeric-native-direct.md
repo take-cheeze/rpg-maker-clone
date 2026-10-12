@@ -12,8 +12,8 @@ makers, open worlds, mixed Integer/Float facts, unknown receivers, nonzero
 arities and blocks retain the previous dispatch paths.
 
 `BC2CPP_NUMERIC_NATIVE_DIRECT=0` disables the numeric proof route. The focused
-runtime parity check is `scripts/bc2cpp_numeric_native_direct_check.rb`, and
-`scripts/bc2cpp_numeric_native_direct_mutation_check.rb` checks nine proof
+runtime parity check is `scripts/bc2cpp/numeric_native_direct_check.rb`, and
+`scripts/bc2cpp/numeric_native_direct_mutation_check.rb` checks nine proof
 mutants and their control. See [ADR 0357](adr/0357-bc2cpp-numeric-native-conversions.md).
 
 The width shards also run the parity fixture on 32-bit `mrb_int` and no-bigint

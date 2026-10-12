@@ -25,9 +25,9 @@ more than its own 45-byte size, once its call site's own `OP_SEND` and
 symbol were counted too.
 
 **The naive "669 candidates" estimate does not survive contact with
-`scripts/*.rb`.** Attempting this as a general, automatic transform (delete
+`scripts/**/*.rb`.** Attempting this as a general, automatic transform (delete
 each single-mrblib-caller method, inline its body) found the real blocker
-immediately: `scripts/rpg2k_render_check.rb`'s own CRuby-based regression
+immediately: `scripts/rpg2k/render_check.rb`'s own CRuby-based regression
 checks call several of these exact methods directly, by name, to test the
 formulas they implement --
 
@@ -238,7 +238,7 @@ partially-automated batch with unverified edge cases in it.
 
 - A real, if modest, ~1,369-byte flash win for wio, at zero behavioural
   change everywhere else and zero loss of test coverage anywhere --
-  `scripts/rpg2k_render_check.rb` and friends keep exercising the full,
+  `scripts/rpg2k/render_check.rb` and friends keep exercising the full,
   original definitions on every target.
 - This is deliberately not a general inliner and not something to extend
   mechanically. Two pools were explored: the 2-3-caller pool (395

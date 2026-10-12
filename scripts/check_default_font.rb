@@ -16,12 +16,12 @@ dir = ARGV[0] || File.expand_path('../assets/fonts', __dir__)
 
 fonts = Dir.glob(File.join(dir, '*.{ttf,otf,ttc,TTF,OTF,TTC}')).sort
 
-# The font is downloaded, not committed (scripts/download-default-font.bash), so
+# The font is downloaded, not committed (scripts/download/default-font.bash), so
 # its absence is a normal state for a fresh checkout rather than a failure.
 # Report it and pass; games that ship their own font are unaffected either way.
 if fonts.empty?
   puts "default font: none in #{dir} — skipping " \
-       '(run scripts/download-default-font.bash to install it)'
+       '(run scripts/download/default-font.bash to install it)'
   exit 0
 end
 
@@ -129,5 +129,5 @@ if errors.empty?
 end
 
 errors.each { |e| warn "default font: #{e}" }
-warn 'default font: re-run scripts/download-default-font.bash --force to reinstall'
+warn 'default font: re-run scripts/download/default-font.bash --force to reinstall'
 exit 1

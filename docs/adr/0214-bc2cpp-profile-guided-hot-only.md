@@ -114,7 +114,7 @@ separate build directory.
 
 ### The profile
 
-`scripts/bc2cpp_hot_profile.rb` regenerates `tools/bc2cpp/hot_methods.txt`
+`scripts/bc2cpp/hot_profile.rb` regenerates `tools/bc2cpp/hot_methods.txt`
 (procedure in docs/profiling.md). It works in two steps.
 
 `record` runs fixed-frame scenarios under callgrind on a full-compile desktop
@@ -235,7 +235,7 @@ Other consequences:
   master. #1911 fixed the `Game::Picture#zoom` direct call, which made the
   full compile skip battle-animation cells. #1909 fixed the kk1.12 New Game
   crash in `RPG2k#start_new_game`'s rescue path.
-- `scripts/bc2cpp_hot_only_check.rb` covers the mechanism. It runs on a fixture
+- `scripts/bc2cpp/hot_only_check.rb` covers the mechanism. It runs on a fixture
   world and against the real mruby core, and checks that the checked-in list
   names only existing methods. It was in the CI `bc2cpp` job until the HOT_ONLY
   checks were dropped from CI; run it by hand after changing the hot-only path.

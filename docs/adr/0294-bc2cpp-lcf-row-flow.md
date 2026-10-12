@@ -84,7 +84,7 @@ rows (`tbl[i] = other`) cannot change the class (invariant above).
 
 ## Consequences
 
-Measured on the wio closed world (`scripts/bc2cpp_coverage_report.rb`, shipped build; "master" is the same tree run with
+Measured on the wio closed world (`scripts/bc2cpp/coverage_report.rb`, shipped build; "master" is the same tree run with
 `BC2CPP_LCF_ROW_FLOW=0`, which switched the proof off at the time of measurement; the kill switch has since been retired,
 so that column now needs a checkout before the switch was removed):
 
@@ -114,7 +114,7 @@ What blocks the rest (of ~2,900 `[]` sites whose receiver is not proven, from a 
 - **Block parameters** of `Array2D#each`/`map` are not typed; a typed `each` would need its yield modelled.
 - A typed `Array2D#each` or `size` on a proven table is possible (the exact receiver is known) but not done.
 
-Residual risk: the model of `mruby-lcf` is pinned by `scripts/bc2cpp_lcf_row_flow_check.rb` (every field
+Residual risk: the model of `mruby-lcf` is pinned by `scripts/bc2cpp/lcf_row_flow_check.rb` (every field
 of every DATABASE, MAP_UNIT and SAVE_DATA position read through the real reader, plus the `Array2D#[]=`
 invariant) and by the gate's definition counts, not by reading bytecode: an edit that changes what `[]`
 returns without changing those would need the check to catch it. `Marshal.load` of hostile data, as for every

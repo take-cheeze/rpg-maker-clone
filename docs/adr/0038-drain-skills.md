@@ -58,11 +58,11 @@ drain against, and which of `affect_hp` / `affect_sp` the single flag governs
 would be a guess. The stat drains some reference implementations also support
 are RPG2003.
 
-Covered by `scripts/rpg2k_logic_check.rb` (the drain line's three differences
+Covered by `scripts/rpg2k/logic_check.rb` (the drain line's three differences
 from the recovery line, nil when either the term or the pool name is blank, the
 clamp deals *and* returns only what the target had, the caster stopping at full,
 and a skill without the flag draining nothing) by
-`scripts/rpg2k_scene_check.rb` (the drain line following the damage line for an
+`scripts/rpg2k/scene_check.rb` (the drain line following the damage line for an
 enemy and for a party member, and no line at all when nothing was drained) and by
-`scripts/rpg2k_testbed_logic_check.rb`, which drives a **real** 吸収 skill from
+`scripts/rpg2k/testbed_logic_check.rb`, which drives a **real** 吸収 skill from
 each game through a target that cannot pay the full amount.

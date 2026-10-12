@@ -33,7 +33,7 @@ engineer from WolfDec's own behaviour.
 
 No `Data.wolf` fixture exists anywhere in this repo or its `data/`
 directories to test against (the bundled sample game, downloaded by
-`scripts/download-wolfrpg-sample.bash`, is a loose tree -- released games are
+`scripts/download/wolfrpg-sample.bash`, is a loose tree -- released games are
 not freely redistributable the way SmokingWOLF's own sample project is, so
 there is no first-party packed fixture available the way ADR 0027's *Pray for
 You* is for RPG Maker XP). This reader is therefore validated the way
@@ -106,7 +106,7 @@ stronger check this ended up affording).
   loose editor project already was -- closing the gap `docs/TODO.md`'s
   "Packed releases" bullet named.
 - **Real-data verification, despite no real `Data.wolf` fixture existing**:
-  `scripts/wolf_data_wolf_check.rb` packs the *entire* downloaded sample
+  `scripts/wolf/data_wolf_check.rb` packs the *entire* downloaded sample
   game's `Data/` tree (660 files, ~9 MB, real nested directories) with
   `Wolf::DataWolf.pack`, points a second `Wolf::Project` at the packed copy,
   and asserts the game title, tile size, map tree, tileset count, all three
@@ -116,7 +116,7 @@ stronger check this ended up affording).
   still fundamentally a round-trip (this reader's own `.pack` built the
   fixture `Wolf::DataWolf` then read back), not proof of byte-for-byte
   compatibility with a real DxLib-built `Data.wolf` the way
-  `scripts/wolf_testbed_check.rb`'s genuine editor output is for the loose-
+  `scripts/wolf/testbed_check.rb`'s genuine editor output is for the loose-
   tree side -- but it is a much stronger one than a hand-built unit fixture:
   real file names, real nested directory depth, a real project several times
   the size any synthetic test would use, read back through the entire

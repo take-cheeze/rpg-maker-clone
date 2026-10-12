@@ -55,7 +55,7 @@ rewritten and nothing is emitted for the registration itself.
 ## Consequences
 
 - Calls to a recognized method are MONO/POLY like a `def`'s, its body is compiled, and a call from one
-  define_method body to another is direct. `scripts/bc2cpp_define_method_sites_check.rb` pins the generated code, each
+  define_method body to another is direct. `scripts/bc2cpp/define_method_sites_check.rb` pins the generated code, each
   negative (shape rejections and settle withdrawals, mutation-checked), and runs interpreted vs compiled on real mruby
   with the VM's argument-count check (strict arity), `next`, ivars, inheritance and override.
 - Measured on this tree: the engine's literal class-body sites are zero (the two `define_method` uses in

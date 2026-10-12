@@ -15,7 +15,7 @@ Array and String bodies are `static` in mruby, so a direct class-tag switch need
 `bc2cpp_slow_add_f` and `bc2cpp_slow_mul_f` have 712 and 442 generated callers, `bc2cpp_slow_sub_f` 471.
 
 Every definition of `+` and `*` in the scanned native sources, counted by
-`scripts/bc2cpp_numeric_slow_check.rb`: `array.c` 2 (`mrb_ary_plus`, `mrb_ary_times`), `string.c` 2
+`scripts/bc2cpp/numeric_slow_check.rb`: `array.c` 2 (`mrb_ary_plus`, `mrb_ary_times`), `string.c` 2
 (`mrb_str_plus_m`, `mrb_str_times`), `numeric.c` 4 (`int_add`, `int_mul`, `flo_add`, `flo_mul`), `time.c` 1
 (`time_plus`). `-` adds `ary_sub` (mruby-array-ext) and `time_minus`.
 
@@ -54,7 +54,7 @@ is unchanged.
 Soundness:
 
 * Same as ADR 0360 for the else: `members` bounds the receiver classes and `bc2cpp_nomethod` is the proven-dead arm.
-* The arms are only as good as the mruby tree they mirror. `scripts/bc2cpp_numeric_slow_check.rb` pins a digest of
+* The arms are only as good as the mruby tree they mirror. `scripts/bc2cpp/numeric_slow_check.rb` pins a digest of
   each mirrored body (`mrb_ary_plus`, `mrb_ary_times`, `mrb_str_plus_m`, `mrb_str_times`, `int_add`, `int_mul`,
   `flo_add`, `flo_mul`, `mrb_num_add`, `mrb_num_mul`) and counts the native `+`/`*` definitions (a second definer of
   `String#+` in some gem's C would not change `members`), so an mruby bump that edits one fails the check until the
@@ -65,7 +65,7 @@ Soundness:
 
 ## Consequences
 
-Measured with `scripts/bc2cpp_dynamic_site_census.rb` on the wio closed world (shipped pass), master `9361f234`.
+Measured with `scripts/bc2cpp/dynamic_site_census.rb` on the wio closed world (shipped pass), master `9361f234`.
 The census now skips the `#if defined(MRB_USE_COMPLEX)` by-name copy of a helper written twice (wio never defines
 them), which ADR 0360's numbers still counted textually:
 
@@ -76,7 +76,7 @@ them), which ADR 0360's numbers still counted textually:
 | `bc2cpp_send` call sites in generated bodies | 2,321 | 2,321 |
 | sites that can reach by-name dispatch (bodies + helper callers + 417 block + 30 funcall sites) | 8,277 | 7,123 (-13.9%) |
 
-Equivalence is `scripts/bc2cpp_numeric_slow_check.rb`: the closed helper against the real method for every pair of
+Equivalence is `scripts/bc2cpp/numeric_slow_check.rb`: the closed helper against the real method for every pair of
 about 60 values (Fixnum and heap Integer edges, bigints, Float mixes, NaN and infinities, empty, frozen, UTF-8 and
 subclass String and Array, a 131072-element Array, Hash, Range, Class, an object answering every implicit
 conversion, a user class with no operator), error class and message, result class and frozen-ness, on mrb_int 64,

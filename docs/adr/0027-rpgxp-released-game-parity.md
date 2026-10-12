@@ -12,7 +12,7 @@ stays a manual/dev script, as in ADR 0021 / 0025.
 effects (transitions, flash, shake), Scroll Map and Show Animation landed** —
 leaving the map scene with a handler for every event command a real XP game uses
 except `355` (script) — and
-`scripts/compare-rpgxp-wine.bash` grew a `STEPS_SPEC` override so a game's
+`scripts/compare/rpgxp-wine.bash` grew a `STEPS_SPEC` override so a game's
 opening cutscene can be driven instead of only its start map. See the follow-ups
 below for what that closed and what it did not.
 
@@ -36,7 +36,7 @@ Three things a real released game has that the bed does not:
    15,797 event commands and 103 script sections, and it is Japanese
    (`RGSS103J.dll`), so it exercises the CP932 text path too.
 
-`scripts/download-prayforyou.bash` already existed in the tree but nothing used
+`scripts/download/prayforyou.bash` already existed in the tree but nothing used
 it.
 
 ## Decision

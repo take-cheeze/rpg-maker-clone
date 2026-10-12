@@ -57,13 +57,13 @@ direct call off for that name automatically.
 That agreement is also the useful negative result. The scan is not a licence to
 add sites; it is a check that the allowlist has not rotted.
 
-`scripts/bc2cpp_super_direct_check.rb` pins both directions in a closed world
+`scripts/bc2cpp/super_direct_check.rb` pins both directions in a closed world
 (the scan refuses everything without one, which is the sound default): an
 admission when no block-carrying caller exists, and a refusal for each way a
 caller can appear -- same name, through a subclass, with an unproven receiver --
 plus the per-name property and the kill switch.
 
-`scripts/bc2cpp_fixture_runtime.rb` grows `skip_unsupported: false`, so a check
+`scripts/bc2cpp/fixture_runtime.rb` grows `skip_unsupported: false`, so a check
 can assert on a refusal: `SKIP_UNSUPPORTED` drops a `#error`ed method whole, and
 an absent body is indistinguishable from one that was never compiled.
 

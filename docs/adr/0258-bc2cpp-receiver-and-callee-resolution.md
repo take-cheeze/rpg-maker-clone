@@ -9,7 +9,7 @@ Accepted
 ## Context
 
 After ADR 0254-0256 the shipped wio closed-world build (all three compiled
-gems, `SKIP_UNSUPPORTED=1`, `scripts/bc2cpp_coverage_report.rb`) still had 467
+gems, `SKIP_UNSUPPORTED=1`, `scripts/bc2cpp/coverage_report.rb`) still had 467
 generic dispatch sites: 283 `dynamic_single_registered_definition`, 109
 `dynamic_no_complete_candidate_set`, 74 `dynamic_no_registered_definition` and
 1 runtime-definition guard. Reading every site's enclosing method, name and
@@ -84,7 +84,7 @@ public `attr_*` definition with the right arity compiles to `mrb_iv_get` /
 IVAR_ACCESSOR_DEVIRT lowering), under the constant-object path's existing
 mixin, blocked-name and identity conditions.
 
-`scripts/bc2cpp_receiver_typing_check.rb` pins each rule and each refusal on
+`scripts/bc2cpp/receiver_typing_check.rb` pins each rule and each refusal on
 fixtures (prepend onto the singleton, duplicate definition, outside definer,
 `define_singleton_method`, required keyword, explicit receiver to a private
 method, embedding owner, two definitions, ivar state in a copy, second accessor

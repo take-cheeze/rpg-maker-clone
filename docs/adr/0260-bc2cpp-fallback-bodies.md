@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-The whole-program coverage report (`scripts/bc2cpp_coverage_report.rb`, wio
+The whole-program coverage report (`scripts/bc2cpp/coverage_report.rb`, wio
 closed world) listed four methods still on the interpreter, six `#error`
 markers:
 
@@ -114,9 +114,9 @@ both paths compiled, which is a separate design; nothing here is guessed.
   messages (`load_title_picture`, `play_battle_bgm`, ...).
 - Dynamic dispatch sites go up (10185 to 10254) purely because five more method
   bodies are compiled and their calls are counted.
-- `scripts/bc2cpp_fallback_bodies_check.rb` pins all of the above: hand-built
+- `scripts/bc2cpp/fallback_bodies_check.rb` pins all of the above: hand-built
   ireps under plain CRuby (run in `ruby-checks`, and listed in
-  `scripts/coverage_report.rb`), and a compiled-versus-interpreted comparison of a
+  `scripts/coverage/report.rb`), and a compiled-versus-interpreted comparison of a
   fixture against a real core (`bc2cpp-checks`, fast shard). The comparison fails
   with the alias code disabled.
 

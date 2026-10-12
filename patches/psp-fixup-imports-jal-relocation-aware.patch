@@ -62,7 +62,7 @@ Pinned against pspdev/pspsdk commit 314b2083f2e1eaf145fc5de342736336fe1f0148
 prebuilt psp-fixup-imports binary was itself built from at the time this
 was written (verified by disassembling and comparing object files
 between the container's shipped binary and a from-scratch rebuild of
-this exact commit). scripts/build_psp_fixup_imports.bash fetches
+this exact commit). scripts/build/psp_fixup_imports.bash fetches
 pspsdk at this pin, applies this patch, and builds a replacement native
 tool; see that script and app/psp/README.md for how it's wired into the
 `psp` CI job and local reproduction. Not upstreamed to

@@ -69,11 +69,11 @@ about whether a skill can whiff for nothing, it is visible in the battle log
 rather than in the formula, and folding it in here would have hidden this change
 inside it.
 
-Covered by `scripts/rpg2k_logic_check.rb` (a physical skill blunted by armour and
+Covered by `scripts/rpg2k/logic_check.rb` (a physical skill blunted by armour and
 scaled by its own rate; a magical one blunted by spirit and **indifferent to
 armour**, shown by doubling each stat in turn; a skill with both rates taking
 both halves; 防御無視 skipping the whole term; and a statless target absorbing
-nothing) and by `scripts/rpg2k_testbed_logic_check.rb`, which computes the term
+nothing) and by `scripts/rpg2k/testbed_logic_check.rb`, which computes the term
 for **every** enemy-scope skill in both games against a real target, checks each
 of the 222 purely magical ones reads the same through no armour and through 999,
 and checks every real 防御無視 skill is blunted by nothing at all.

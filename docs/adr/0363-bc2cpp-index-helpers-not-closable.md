@@ -64,7 +64,7 @@ The three helpers keep their shape and their by-name tail (ADR 0216). What would
 * `[]=` first: no class-level native, one fewer member set than `[]`. It needs exact mirrors of Array (range
   splice, `aget_index`'s TypeError text, frozen check), Hash, String, Struct and Table (an exported rgss entry),
   plus direct arms for the six registry classes and their subclasses, checked against the real method over a
-  matrix at mrb_int 64, int32 and no-bigint (the shape of `scripts/bc2cpp_numeric_slow_check.rb`).
+  matrix at mrb_int 64, int32 and no-bigint (the shape of `scripts/bc2cpp/numeric_slow_check.rb`).
 * `[]` then needs `Answers` to scan class-method registrations (`mrb_define_class_method*`, the `.singleton`
   forms) so a Class-object receiver is a member, plus a body for `Array.[]`, `Hash.[]` and Struct classes, and a
   decision for Proc#[] and Method#[] (an exact call needs a VM entry point, not a name).

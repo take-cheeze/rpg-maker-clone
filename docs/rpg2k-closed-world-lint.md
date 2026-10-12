@@ -17,11 +17,11 @@ it might reach is visible to that analysis, so these constructs are linted:
 | `Dynamic/RescueModifier` | `expr rescue value` |
 
 ```sh
-ruby scripts/rpg2k_closed_world_lint.rb                       # check
-ruby scripts/rpg2k_closed_world_lint.rb --regenerate-baseline # after fixing offences
+ruby scripts/rpg2k/closed_world_lint.rb                       # check
+ruby scripts/rpg2k/closed_world_lint.rb --regenerate-baseline # after fixing offences
 ```
 
-Existing offences are listed in `scripts/rpg2k_closed_world_lint_baseline.txt`.
+Existing offences are listed in `scripts/rpg2k/closed_world_lint_baseline.txt`.
 The baseline only shrinks: fixing an offence requires regenerating it, and
 regenerating refuses new entries unless given `--accept-new`. Prefer explicit
 code: a real method instead of `method_missing`, a `case` or direct call instead
@@ -43,8 +43,8 @@ The wio build's unreachable-method strip (ADR 0218) relies on the same
 property: a method counts as reachable only when some literal spells its name.
 A computed `send`, `respond_to?`, `method` or `to_sym` in the wio build's
 mrblib therefore also has to be listed, with where its names come from, in
-`WioUnreachable::REVIEWED` (`scripts/wio_unreachable_methods.rb`), or the wio
-build and `scripts/wio_strip_scripts_check.rb` fail.
+`WioUnreachable::REVIEWED` (`scripts/wio/unreachable_methods.rb`), or the wio
+build and `scripts/wio/strip_scripts_check.rb` fail.
 
 The bc2cpp closed-world dispatch analysis also recognizes calls to
 `Exception#message` whose receiver traces to a rescued exception register. The

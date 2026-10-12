@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-`scripts/rpg2k_field_audit.rb` ranks the database fields the real games set that
+`scripts/rpg2k/field_audit.rb` ranks the database fields the real games set that
 the runtime never reads, and `animation_id` sat at the top of it by a wide
 margin. The full picture is stronger than the audit's own count:
 
@@ -77,12 +77,12 @@ Deliberately not in this change:
   cell record. The map path has always had this limit and this change does not
   widen it.
 
-Covered by `scripts/rpg2k_scene_check.rb` (a skill that names an animation arms
+Covered by `scripts/rpg2k/scene_check.rb` (a skill that names an animation arms
 the player and centres it on the enemy sprite; one that names none arms nothing;
 an action on a party member centres on the screen; the round is held until the
 animation finishes and no interpreter is resumed; an item resolves its id the
 same way a skill does, and a plain attack resolves none; and a battle animation
 draws from its own pixel with the camera 500 tiles away) and by
-`scripts/rpg2k_testbed_logic_check.rb`, which asserts against the **real** tables
+`scripts/rpg2k/testbed_logic_check.rb`, which asserts against the **real** tables
 that every animation id every skill and item names is a row the database really
 has, and that the animation table carries drawable frames at all.

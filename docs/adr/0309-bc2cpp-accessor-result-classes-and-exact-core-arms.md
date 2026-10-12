@@ -27,7 +27,7 @@ and why that name has no class (`candidate_dropped:<definitions whose result is 
 `foreign_spelling`, `not_fully_visible`, `aliased`, `no_definition`, `unusable_def`), for an ivar the state of
 its class pool (`pooled`, or `failed`/`structural:<cause>` with the stores the flow cannot name), and the
 class set the exact-class flow proves for the receiver. It also writes a `/*SR:<irep>:<site>*/` tag on
-every by-name line of the C++ so `scripts/bc2cpp_send_root_report.rb` can join a *shipped* site (the
+every by-name line of the C++ so `scripts/bc2cpp/send_root_report.rb` can join a *shipped* site (the
 census's `--tsv`) to its row. Without the tag join the first version of the report counted 7,254 rpg2k
 "sites" against the census's 2,182: it counted every compile of a guarded arm whose comment names a
 `mrb_funcall` fallback, and arms that are later replaced. With it, 1,994 of the
@@ -150,7 +150,7 @@ no helper gained a caller. Across all gems `bc2cpp_slow_lshift` callers went 282
 `core_tag_chain_else` went 908 to 860 (704 to 670 and 204 to 190), `core_or_native` 255 to 239 and
 `singleton_definer` 101 to 100; `receiver_class_unresolved` rose by 2 as sites changed category. 36
 `NOMETHOD_REVIEWED` keys went with their fallbacks (regenerated with
-`scripts/bc2cpp_nomethod_reviewed_update.rb`, removals only, none added).
+`scripts/bc2cpp/nomethod_reviewed_update.rb`, removals only, none added).
 
 That is small, and it should not be oversold. Of the categories the request names, `core_or_native` moved by
 16, `singleton_definer` by 1 and `other:no_guard_nearby` by 0; the 330 sites it counted under a call-result
@@ -178,17 +178,17 @@ origin are mostly the other roots of the tables above, and the accessor rule rem
 
 A class that defines a name twice (`attr_reader :thing` then `define_method(:thing) { ... }`) gets one C++
 symbol (`CrHolder_thing_impl`) for both, so a compiled call picks one body and the interpreter the last
-definition. It reproduces with both features off. `scripts/bc2cpp_call_results_check.rb` keeps that world in
+definition. It reproduces with both features off. `scripts/bc2cpp/call_results_check.rb` keeps that world in
 the generated-code half only.
 
 ## Checks
 
-`scripts/bc2cpp_call_results_check.rb`: generated code for every positive, negative and withdrawal above, the
+`scripts/bc2cpp/call_results_check.rb`: generated code for every positive, negative and withdrawal above, the
 kill switches and the open world; then a compiled fixture against the interpreter in 11 worlds on a
 full-core build, a core-only build and (`BC2CPP_MRUBY_FULL32`, run in `bc2cpp-width (int32)`) a 32-bit
 `mrb_int` build, with zero dispatches asserted on the exact methods. The driver passes arguments from Ruby:
 a parameter pool trusts that every call site is visible, which a C++ caller of the harness is not.
-`scripts/bc2cpp_call_results_mutation_check.rb`: six mutants (nil dropped from a reader, a missing pool read
+`scripts/bc2cpp/call_results_mutation_check.rb`: six mutants (nil dropped from a reader, a missing pool read
 as empty, the two kill switches ignored, the push arm for any exact core class, the Integer-path push for a
 Ruby `Array#<<`), all killed. Two conditions have no mutant: the equality of the TYPED trace and the flow
 (they are the same data in every world found) and `exact_instances_singleton_free?` (it is inside

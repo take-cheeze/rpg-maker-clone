@@ -28,5 +28,5 @@ keeps the ordinary constant lookup.
 Constant expressions involving `+` and `-` can now feed the existing GETCONST
 and GETMCNST literal substitution. The proof does not extend to multiplication,
 division, user-defined calls, or values outside the target Fixnum range.
-`scripts/bc2cpp_integer_const_inline_check.rb` checks in-range chains and the
+`scripts/bc2cpp/integer_const_inline_check.rb` checks in-range chains and the
 overflow boundary.

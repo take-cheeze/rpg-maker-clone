@@ -20,7 +20,7 @@ latent bug (the engine would raise `NoMethodError`, `ArgumentError` or `TypeErro
 
 ## Decision
 
-A measurement only. No generated code changes (`shipped.cxx` and its stderr of the `scripts/bc2cpp_coverage_report.rb`
+A measurement only. No generated code changes (`shipped.cxx` and its stderr of the `scripts/bc2cpp/coverage_report.rb`
 shipped pass are byte-identical with the report on and off, both compared with `cmp`).
 
 * `BC2CPP_DEAD_ARM_REPORT=<tsv>` (`tools/bc2cpp/dead_arm_report.rb`, columns in `dead_arm_report_columns.rb`) writes one
@@ -29,10 +29,10 @@ shipped pass are byte-identical with the report on and off, both compared with `
   sets it, which methods set it and which reset it to nil) and a call path from an entry. Other rows: `partial_miss`
   (a send whose proven receiver class set holds a non-nil class that does not answer the name), `const_unresolved`
   (a constant nothing defines), `arity_all` / `arity_some` (a plain call every / some Ruby definition of the name rejects).
-* `scripts/bc2cpp_dead_arm_report.rb da.tsv [--lcov coverage/lcov.info] [--list]` prints the tables below; `--lcov`
-  (from `scripts/coverage_report.rb`) adds whether a passing CRuby check ran the site's line, `--list` every REACHABLE
+* `scripts/bc2cpp/dead_arm_report.rb da.tsv [--lcov coverage/lcov.info] [--list]` prints the tables below; `--lcov`
+  (from `scripts/coverage/report.rb`) adds whether a passing CRuby check ran the site's line, `--list` every REACHABLE
   site with `file:line`.
-* `scripts/bc2cpp_dead_arm_report_check.rb` (generated code only, about 15 s, `call-facts` shard): the report changes
+* `scripts/bc2cpp/dead_arm_report_check.rb` (generated code only, about 15 s, `call-facts` shard): the report changes
   no output, and a fixture with a chain else, a nil path, a rescue, an uncalled method, a store before the read, an exact
   receiver that lacks the name, undefined and rescued constants and a wrong argument count gets the rows it should.
 * One hook line in `tools/bc2cpp/bc2cpp.rb`; `provable_error_report.rb` writes at exit only when its own variable is set,
@@ -50,7 +50,7 @@ those two probes.
 ## Measured
 
 Master `49f39416`, wio closed world, `3rd/*` populated, host `mrbc` of mruby 4.0, shipped pass of
-`scripts/bc2cpp_coverage_report.rb`. 5,335 arm rows (4,457 `nomethod`, 878 `nil_receiver`; the shipped C++ has 4,441 and
+`scripts/bc2cpp/coverage_report.rb`. 5,335 arm rows (4,457 `nomethod`, 878 `nil_receiver`; the shipped C++ has 4,441 and
 879: the 17 differences are not reconciled, the rows are the last compile of each send, shipped or not).
 
 | Class | Arms | Meaning |
@@ -96,7 +96,7 @@ nothing calls. By receiver origin:
 The largest clusters are `Scene::Battle#@ui` 379 (set in `start`, `dispose` sets it nil), `Scene::Map#@name_ui` 47,
 `Scene::Map#@shop` 16, `Window#@skin_bmp` / `@cursor_bmp` 30 (set in `allocate_skin`, the last line of `initialize`),
 `DebugMenu#@editor` 17, `RPG2k#@scenes` 14, and the `Scene::Map` sprite and layer ivars set in `setup_sprites`.
-688 of the 822 lines were executed by a passing `scripts/coverage_report.rb` check (CRuby harnesses, 94% of the rpg2k
+688 of the 822 lines were executed by a passing `scripts/coverage/report.rb` check (CRuby harnesses, 94% of the rpg2k
 Ruby), 52 were not, 82 have no line data. Executing a line without a `NoMethodError` shows that nil did not reach it on that
 run, not that it cannot.
 
@@ -142,5 +142,5 @@ non-empty class and cannot be errors: the proof is "nil or K", not "nil".
   `build_*` method that sets the ivar"; that is a by-name call-graph property per class, not per name. It would remove
   `nil_receiver` arms and their `mrb_iv_get` + nil test, not a dispatch.
 * Not run: no generated code changed, so no mutation check, no full-core / core-only / 32-bit `mrb_int` build, `mruby_test`,
-  psp or wio smoke run. `scripts/coverage_report.rb` was run once for the coverage column; `pre-commit` and
-  `scripts/bc2cpp_dead_arm_report_check.rb` are in the pull request.
+  psp or wio smoke run. `scripts/coverage/report.rb` was run once for the coverage column; `pre-commit` and
+  `scripts/bc2cpp/dead_arm_report_check.rb` are in the pull request.

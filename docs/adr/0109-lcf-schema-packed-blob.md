@@ -30,7 +30,7 @@ shrink the file.
 
 **`gen_schema_blob.rb`** (new, checked in): a CRuby generator that `load`s
 the real `mrblib/schema.rb` -- unchanged, and staying the single source of
-truth every `scripts/*_check.rb` script still `load`s directly -- walks
+truth every `scripts/**/*_check.rb` script still `load`s directly -- walks
 every constant, and serializes the *resolved field data* (not the Ruby
 source) into a compact packed binary blob:
 
@@ -70,7 +70,7 @@ than one place, expected to be the *same* Hash object -- schema.rb's own
 **Wired into `mruby-lcf/mrbgem.rake`**: `schema.rb` is dropped from
 `spec.rbfiles` for the actual mruby build; the generated blob (built into
 `build_dir` via a `file` task, the same pattern `cp932.cc`/`shinonome.cxx`
-already use) takes its place. `scripts/*_check.rb` are untouched -- they
+already use) takes its place. `scripts/**/*_check.rb` are untouched -- they
 `load` `mrblib/schema.rb` by path directly, never through `spec.rbfiles`.
 
 ### What was measured

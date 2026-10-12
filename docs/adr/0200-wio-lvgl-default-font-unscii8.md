@@ -54,7 +54,7 @@ as drafted and reverted, and both screens still call `lv_label_create`.
 ## What was verified
 
 Real relinks, `flock`-serialized, on top of docs/adr/0199, using the same
-`libmruby.a` pair (`scripts/wio_bc2cpp_measure.bash`):
+`libmruby.a` pair (`scripts/wio/bc2cpp_measure.bash`):
 
 | build | before | after | delta |
 | --- | ---: | ---: | ---: |

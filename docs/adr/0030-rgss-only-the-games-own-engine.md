@@ -60,14 +60,14 @@ does not run.
 - **A failure inside a game's scripts ends the run**, reported with the section
   and line it came from. There is nothing to fall back to, which is the point:
   the report is the bug list for the class library.
-- **The checks now measure the real thing.** `scripts/rpgxp_boot_check.bash`
+- **The checks now measure the real thing.** `scripts/rpgxp/boot_check.bash`
   taps confirm on each game's own title screen and asserts it reaches a second
   scene, then walks the party on the editor bed's map
-  (`--rgss_host_move_test`, `[RPGXP-HOST-MOVE]`). `scripts/rgssad_asset_check.bash`
+  (`--rgss_host_move_test`, `[RPGXP-HOST-MOVE]`). `scripts/rgssad/asset_check.bash`
   keeps its A/B — the same project packed with and without its title graphic —
   but the graphic is now loaded by the game's own `Scene_Title` through
   `RPG::Cache`, whose "did not load" line is what the two runs differ by.
-  `scripts/compare-rpgxp-wine.bash` drives both runtimes with the same keys, so
+  `scripts/compare/rpgxp-wine.bash` drives both runtimes with the same keys, so
   it now diffs the game's own engine against the genuine one — which is what a
   render comparison should have been measuring all along.
 

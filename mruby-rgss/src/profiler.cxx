@@ -412,7 +412,7 @@ void report(uint64_t now) {
       // type were allocated between two points in the run": a script sampling
       // this series at two timestamps and dividing the delta by the elapsed
       // frame count gets a real per-frame allocation rate. See
-      // scripts/rpg2k_alloc_regression_check.rb.
+      // scripts/rpg2k/alloc_regression_check.rb.
       trace_counter("mruby_type_allocs", now, alloc_args);
     }
     std::fflush(g_trace_file);

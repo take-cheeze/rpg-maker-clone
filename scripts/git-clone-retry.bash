@@ -13,14 +13,14 @@
 # with it *before the compiler has run at all*, which reads like a build
 # failure and is not one. Two different hosts have done it:
 #
-#   * github.com/aphadeon/OpenGame.exe   (scripts/download-opengame-xp.bash)
-#   * github.com/rpgtkoolmv/corescript   (scripts/download-mv-corescript.bash)
+#   * github.com/aphadeon/OpenGame.exe   (scripts/download/opengame-xp.bash)
+#   * github.com/rpgtkoolmv/corescript   (scripts/download/mv-corescript.bash)
 #
 # `wget` already retries on its own (20 attempts by default), so the archive
 # downloads never needed this; `git clone` does not retry at all, which is why
 # only the clones have been seen to fail.
 #
-# This is the same shape as scripts/nix-develop.bash, which retries the SQLite
+# This is the same shape as scripts/nix/develop.bash, which retries the SQLite
 # lock contention that job parallelism provokes: recover from a known transient
 # failure at the point it happens rather than weakening the CI gate around it.
 # Every caller clones into a directory it has just checked does not exist, so a

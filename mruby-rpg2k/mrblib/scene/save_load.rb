@@ -40,7 +40,7 @@ class RPG2k
       # (file label, leader name, level+HP) -- confirmed against genuine
       # RPG_RT under wine, which draws File 1/2/3 as three separate boxes
       # stacked below the header, not rows inside one shared list window
-      # (scripts/rpg2k_scene_check.rb's fixtures aside, a real screenshot
+      # (scripts/rpg2k/scene_check.rb's fixtures aside, a real screenshot
       # showed each box's own purple border independently). An empty slot's
       # box shows only the label line, the other two blank -- no "No Data"
       # placeholder text at all, the same class of gap the Item/Skill empty-

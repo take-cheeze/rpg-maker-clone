@@ -615,7 +615,7 @@ module RGSS
     # Maker XP RTP genuinely mixes them: its windowskins and charsets are .png
     # while its title backgrounds are .jpg, so a png-only search left every XP
     # title screen on the fallback background (found by
-    # scripts/compare-rpgxp-wine.bash). stb decodes JPEG, so both spellings of
+    # scripts/compare/rpgxp-wine.bash). stb decodes JPEG, so both spellings of
     # the extension are just more candidates. This is the RGSS (XP/VX/VX Ace)
     # order and stays the default; RPG Maker 2000/2003 uses its own, below.
     EXTENSIONS = [:png, :jpg, :jpeg, :xyz, :bmp].freeze
@@ -1437,7 +1437,7 @@ module RGSS
       end
 
       # Reverses RPG Maker MV/MZ's own asset-encryption scheme (see
-      # scripts/gen-mz-encrypted.py's `encrypt`, the reference this mirrors,
+      # scripts/gen/mz-encrypted.py's `encrypt`, the reference this mirrors,
       # and ADR 0004 M6.3r): a fixed 16-byte "RPGMV" header the real file never
       # had, then the file's own first 16 bytes XORed with the 16-byte key,
       # then the rest of the file verbatim. Unauthenticated obfuscation, not

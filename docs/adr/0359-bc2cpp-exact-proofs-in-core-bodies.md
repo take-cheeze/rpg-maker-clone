@@ -53,7 +53,7 @@ The proof is made for core bodies and **checked**, never trusted.
 3. `BC2CPP_CORE_BODY_EXACT=0` and `BC2CPP_GUARD_VIOLATION=0` (ADR 0290: every guard keeps its dispatch)
    each restore the old output byte for byte; the closed-world flag still withdraws the proof when
    the program makes singletons.
-4. The grep is replaced by `scripts/bc2cpp_core_singleton_audit.rb`: it parses every Ruby source compiled into
+4. The grep is replaced by `scripts/bc2cpp/core_singleton_audit.rb`: it parses every Ruby source compiled into
    the VM but outside the closed world (`foreign_mrblib_srcs`) and the C sources of the external gems, finds
    each `instance_eval`, `instance_exec`, `singleton_class`, `define_singleton_method`, `extend` (also as a
    symbol), `class << expr` other than `class << self` in a class body, and `def expr.name`, and fails on any
@@ -73,7 +73,7 @@ sites (35 `CLOSED_WORLD_NATIVE_EXACT` arms in `Array#dig`, `Hash#dig`, `Struct#d
 so on, and 3 `BLOCK_CORE_DIRECT` arms), each listed as `GUARD_VIOLATION_SITE` and counted under the
 `CORE_BODY_EXACT` family. The engine's own unguarded arms (ADR 0280) are untouched.
 
-`scripts/bc2cpp_core_body_exact_check.rb` covers it: generated code (every proven core-body site is wrapped,
+`scripts/bc2cpp/core_body_exact_check.rb` covers it: generated code (every proven core-body site is wrapped,
 an engine site is not, a parameter, both kill switches, a singleton-making engine and the open world leave
 the tag chain, and no compiled core body keeps an `unguarded proof` arm), and on real mruby an honouring
 fixture that answers what the interpreter answers and reaches no violation site (also under

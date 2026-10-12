@@ -114,7 +114,7 @@ native host code.
 - **`app/nano7/qemu/nano7_qemu_shim.c`** — the bare-metal platform half:
   - `hb_fs_read` matches the path suffix ("map.bin" / "tiles.bin" — the only
     two paths `rpg2k_walk.c` ever reads) against two binary blobs **linked
-    directly into the image** (`scripts/nano7_qemu_build.bash`'s
+    directly into the image** (`scripts/nano7/qemu_build.bash`'s
     `arm-none-eabi-objcopy -I binary` step, producing
     `_binary_map_bin_start`/`_end` symbols this file declares `extern`).
     There is no SD card or filesystem here at all — a deliberately skipped
@@ -143,13 +143,13 @@ native host code.
   reproduce the same rendering. `app/nano7/host/nano7_host_shim.c` now holds
   only what is genuinely host-specific: `hb_fs_read` over `stdio`,
   `hb_time_uptime_ms` over `SDL_GetTicks`, and the SDL window/BMP harness.
-- **`scripts/nano7_qemu_build.bash`** — stages an exported map as
+- **`scripts/nano7/qemu_build.bash`** — stages an exported map as
   `map.bin`/`tiles.bin` (fixed names, since `objcopy`'s generated symbol
   names are derived from the exact filename given), cross-compiles every
   source above with `-mcpu=cortex-a8` (linking `libgcc` for the software
   divide routines this core has no hardware instruction for — the same
   reason NanoApps' own `sdk/hb_app.mk` links it), and links the flat image.
-- **`scripts/nano7_qemu_run.bash`** — boots the image with its UART
+- **`scripts/nano7/qemu_run.bash`** — boots the image with its UART
   redirected to a log file and a QMP control socket, waits for the shim's
   own `"NANO7-QEMU done"` marker to appear in that log, issues a
   `screendump` (QEMU's monitor command that reads the *real* PL110-addressed
@@ -157,7 +157,7 @@ native host code.
   no `Xvfb`, needed at all; this runs entirely headless because the guest
   itself never needs a real display attached, only the address range a real
   one would scan out from.
-- **`scripts/nano7_qemu_smoke_check.rb`** — a plain-Ruby PPM reader (QEMU's
+- **`scripts/nano7/qemu_smoke_check.rb`** — a plain-Ruby PPM reader (QEMU's
   `screendump` format), the same non-flat-fill census check as
   `nano7_host_smoke_check.rb`'s BMP reader, plus (informational, not
   asserted on) a print of the UART log's per-frame cycle counts: min / max /

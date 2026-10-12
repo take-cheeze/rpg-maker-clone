@@ -58,10 +58,10 @@ is standing regardless of what else it does — which is what this implements, b
 without data behind it that is a consequence of the rule rather than a
 measurement.
 
-Covered by `scripts/rpg2k_logic_check.rb` (a revive is inert on a standing ally
+Covered by `scripts/rpg2k/logic_check.rb` (a revive is inert on a standing ally
 — menu gate, no HP, nothing spent — works fully on a fallen one, leaves an
 ordinary medicine untouched, and an all-party revive skips the members still
-standing) and by `scripts/rpg2k_testbed_logic_check.rb`, which drives **every**
+standing) and by `scripts/rpg2k/testbed_logic_check.rb`, which drives **every**
 real 蘇生専用 item in both games at a standing party leader and then at a fallen
 one, first asserting that each really does restore HP when it works — the
 property that makes "not even the HP" a different answer from "cures nothing".

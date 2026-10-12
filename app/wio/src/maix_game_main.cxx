@@ -116,7 +116,7 @@ void setup(void) {
   rgss_set_display(g_mrb, disp);
 #ifdef MAIX_WITH_SD
   // Game data lives on the card under /sd/<game> (pushed with
-  // scripts/maix_sd_upload.py); the SD layer strips the /sd prefix, so the
+  // scripts/maix/sd_upload.py); the SD layer strips the /sd prefix, so the
   // card holds /maixgame/... (8.3-safe). Without the flag, embedded data.
   mrb_const_set(g_mrb, mrb_obj_value(g_mrb->object_class),
                 mrb_intern_lit(g_mrb, "GAME_DIR"),

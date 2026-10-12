@@ -100,7 +100,7 @@ inline the `@chipset.graphic`, `.animation_type` and `.animation_speed` reads as
 guarded `mrb_iv_get`s. The bare RGSS class names in the `Bitmap` and `Sprite`
 hints are not registry owners, so those hints are not consumed yet.
 
-`scripts/bc2cpp_nilable_retclass_check.rb` covers each accepted and refused
+`scripts/bc2cpp/nilable_retclass_check.rb` covers each accepted and refused
 shape. Mutation-testing each guard makes the check fail, including the
 writer's `dominated:` exemption. The one exception is the `ensure` refusal,
 which the catch-target barrier already enforces.

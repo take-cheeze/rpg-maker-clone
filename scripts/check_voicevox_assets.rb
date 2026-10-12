@@ -17,7 +17,7 @@ dir = ARGV[0] || File.expand_path('../assets/voicevox', __dir__)
 
 unless Dir.exist?(dir)
   puts "voicevox: none in #{dir} -- skipping " \
-       '(run scripts/download-voicevox-zundamon.bash to install it, or pass ' \
+       '(run scripts/download/voicevox-zundamon.bash to install it, or pass ' \
        '--zundamon_tts to a build without it and RGSS::Tts.available? just ' \
        'reports false)'
   exit 0
@@ -60,5 +60,5 @@ if errors.empty?
 end
 
 errors.each { |e| warn "voicevox: #{e}" }
-warn 'voicevox: re-run scripts/download-voicevox-zundamon.bash --force to reinstall'
+warn 'voicevox: re-run scripts/download/voicevox-zundamon.bash --force to reinstall'
 exit 1

@@ -58,7 +58,7 @@ purpose. The database also already carries the vocabulary such a screen needs
   default now matters for exactly one caller: the `--rpg2k_continue` headless
   flag (Scene::Title's `auto_select?` path has no input loop to drive a second
   screen, so it keeps resuming slot 1 directly -- see
-  `scripts/compare-nepheshel-wine.bash`, which watches stderr for the
+  `scripts/compare/nepheshel-wine.bash`, which watches stderr for the
   `[RPG2k-MAP]` marker only `continue_game` emits).
 - **RPG2003's Open Save Menu (11910) and Open Load Menu (5001) event
   commands** (`Scene::Map#perform_event_save` / `#perform_event_load`) now
@@ -92,7 +92,7 @@ purpose. The database also already carries the vocabulary such a screen needs
   `drive_parallel_wait` has no branch for `:save_menu`/`:load_menu`/`:menu`
   and silently resumes them all the same as before, a pre-existing gap this
   ADR does not close (Open Main Menu has always had it too).
-- `scripts/rpg2k_scene_check.rb`'s `TitleParent` fixture gained
+- `scripts/rpg2k/scene_check.rb`'s `TitleParent` fixture gained
   `any_save_exists?`, `load_save_state` and `push`; its Continue checks now
   assert that the selection key opens `Scene::SaveLoad` in `:load` mode
   (available) or nothing at all (unavailable) rather than calling
@@ -109,7 +109,7 @@ purpose. The database also already carries the vocabulary such a screen needs
   `close_message` pairing and would have given a false pass against the
   pre-fix code).
 - The Open Save Menu `save_access` fix was found and confirmed against real
-  data: `scripts/native-build-without-nix.bash` built the native binary in
+  data: `scripts/native/build-without-nix.bash` built the native binary in
   this container (no Nix needed, per its own header), and a temporary debug
   hook in `start_new_game` reproduced Nepheshel's own Crystal Gate command
   list against the real database under `xvfb-run` -- the picker never opened,

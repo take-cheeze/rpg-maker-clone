@@ -19,10 +19,10 @@ build mode for flash-limited targets depends on there being fewer.
 
 ## Decision
 
-`scripts/rpg2k_closed_world_lint.rb` is a RuboCop-style checker built on
+`scripts/rpg2k/closed_world_lint.rb` is a RuboCop-style checker built on
 CRuby's bundled Prism, so it adds no gem. It has one cop per construct, runs
 over those three gems' mrblib, and keeps existing offences in
-`scripts/rpg2k_closed_world_lint_baseline.txt`:
+`scripts/rpg2k/closed_world_lint_baseline.txt`:
 
 - An offence not in the baseline fails.
 - A baseline entry that no longer occurs also fails, so the baseline only
@@ -31,7 +31,7 @@ over those three gems' mrblib, and keeps existing offences in
 - A genuinely data-driven use can be allowed in place with
   `# rpg2k-lint:allow Cop/Name -- reason`, where the reason is required.
 
-`scripts/rpg2k_closed_world_lint_check.rb` tests every cop, the look-alikes it
+`scripts/rpg2k/closed_world_lint_check.rb` tests every cop, the look-alikes it
 must ignore, and the allow-comment rules. Both run in the CI `ruby-checks`
 job.
 

@@ -73,12 +73,12 @@ its superclass for this `super` proof.
 - `super` soundness no longer rests on a hand-written "no intervening include"
   claim: it is re-derived every run, so a future `include` added to a
   `SUPER_TARGETS` class is caught automatically (the `super` declines).
-- Real-project output is unchanged (proven: `scripts/bc2cpp_coverage_check.bash`
+- Real-project output is unchanged (proven: `scripts/bc2cpp/coverage_check.bash`
   regenerates `docs/bc2cpp_coverage.txt` byte-identically), because none of the
   compiled `super` owners has a plain `include`.
 - General `super`/zsuper compilation for classes that include modules remains
   unsupported. The method-target lookup described above is not enough to prove
   where a `super` call resumes in the full ancestor chain.
-- Covered by `scripts/bc2cpp_include_ancestor_check.rb` (drives real
+- Covered by `scripts/bc2cpp/include_ancestor_check.rb` (drives real
   `build_registry` resolution and `CodeGen` ancestor dispatch over synthetic
   closed worlds), wired into the build job alongside coverage freshness.

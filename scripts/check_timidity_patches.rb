@@ -15,12 +15,12 @@ require 'set'
 dir = ARGV[0] || File.expand_path('../assets/timidity', __dir__)
 cfg = File.join(dir, 'timidity.cfg')
 
-# The patch set is downloaded, not committed (scripts/download-freepats.bash),
+# The patch set is downloaded, not committed (scripts/download/freepats.bash),
 # so its absence is a normal state for a fresh checkout rather than a failure.
 # Report it and pass; there is nothing to be inconsistent with.
 unless File.file?(cfg)
   puts "timidity: no patch set in #{dir} — skipping " \
-       '(run scripts/download-freepats.bash to install it)'
+       '(run scripts/download/freepats.bash to install it)'
   exit 0
 end
 

@@ -95,9 +95,9 @@ compiling lambda-building core methods, replacing the allowlist, container eleme
 
 ## Measurements
 
-Wio closed world, master `43031b24`, `scripts/bc2cpp_coverage_report.rb` shipped pass with
+Wio closed world, master `43031b24`, `scripts/bc2cpp/coverage_report.rb` shipped pass with
 `BC2CPP_ESCAPE_REPORT=<tsv>` (`tools/bc2cpp/escape_report.rb`, output byte-identical with it on) aggregated by
-`scripts/bc2cpp_escape_report.rb`. "Sites" are creation instructions in every irep of the closed world (5,839 +
+`scripts/bc2cpp/escape_report.rb`. "Sites" are creation instructions in every irep of the closed world (5,839 +
 601 `new` sends); the second pass restricts them to methods that ship.
 
 **Per creation kind** (every irep of the closed world / methods that ship, "confined" = non-escaping by the
@@ -179,7 +179,7 @@ exactness is `exact_instances_singleton_free?`. (d) Hostile `Marshal.load` data 
 are outside the model, as for every proof here. (e) A native method is trusted only through a table that names the
 source files; adding a native `each` (or a fifth block taker) fails the check until it is audited.
 
-**Tests.** `scripts/bc2cpp_escape_analysis_check.rb`: hand-built bytecode for each escape route and the handler
+**Tests.** `scripts/bc2cpp/escape_analysis_check.rb`: hand-built bytecode for each escape route and the handler
 and loop shapes; 19 confined and 41 escaping fixtures through mrbc; callee summaries; class sharpening; world facts;
 the native manifest; generated code with 12 proven methods, 5 unproven, 12 withdrawal worlds (subclass override,
 prepend, alias, define_method direct and through `send`, `method_missing`, an outside Ruby gem, a native, binding,
@@ -187,5 +187,5 @@ ObjectSpace, a computed define_method, open world) and the kill switch; then the
 interpreter on full-core, core-only and 32-bit `mrb_int` builds (`BC2CPP_BLOCK_DIRECT_ENTRY=0` on the last: ADR 0271
 keeps a block's entry as an address in a 32-bit slot, which this 64-bit host truncates), including GC stress,
 `break`/`return`/`next`/`raise` through the callee, a stashed block called after its frame returned, lambda arity
-strictness and a Fiber, and the compiled `Array#combination`. `scripts/bc2cpp_escape_analysis_mutation_check.rb`: an
+strictness and a Fiber, and the compiled `Array#combination`. `scripts/bc2cpp/escape_analysis_mutation_check.rb`: an
 unmutated control and 18 mutants inside the repository, all killed. CI shard `escape-analysis`.

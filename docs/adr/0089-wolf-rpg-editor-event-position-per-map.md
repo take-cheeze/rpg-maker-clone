@@ -39,7 +39,7 @@ introduced by this pass.
 - `Wolf::Interpreter#event_position` now keys `@event_positions` by
   `[current_map_id, event.id]` instead of `event.id` alone. `current_map_
   id` is `nil` in a context with no real map load at all (this method's
-  own test suite, `scripts/wolf_interpreter_check.rb`'s own map-event pass
+  own test suite, `scripts/wolf/interpreter_check.rb`'s own map-event pass
   before any Teleport/Load ever runs), where every event on that one
   implicit map still keys uniquely off its own id, unchanged from before.
 - Nothing else changes: `Teleport`(130)/`SaveLoad`(220)'s own Load already

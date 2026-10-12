@@ -110,7 +110,7 @@
 #     archive) was wrong, discovered by pointing this reader at a real,
 #     freely-distributable released game's own `Data.wolf` rather than only
 #     this repo's own round-trip fixture (`.pack` always writes an
-#     uncompressed table, so `scripts/wolf_data_wolf_check.rb`'s round trip
+#     uncompressed table, so `scripts/wolf/data_wolf_check.rb`'s round trip
 #     alone could never have exercised this path). A compressed **file
 #     entry** (`PressDataSize`/`HuffPressDataSize` not the "uncompressed"
 #     sentinel) is still refused with a clear error rather than mis-parsed:

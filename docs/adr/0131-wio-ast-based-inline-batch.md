@@ -19,7 +19,7 @@ of the first three are the same underlying problem: **text/token scanning
 does not know where one Ruby construct ends and another begins.**
 
 `RubyVM::AbstractSyntaxTree` (stdlib since Ruby 2.6, present in every
-CRuby this project runs `scripts/*.rb`'s regression checks with) gives real
+CRuby this project runs `scripts/**/*.rb`'s regression checks with) gives real
 per-node `first_lineno`/`first_column`/`last_lineno`/`last_column`, and real
 node types (`CALL`/`FCALL`/`VCALL` vs `LIT` holding a `Symbol`; `RESCUE`/
 `ENSURE`/`WHILE`/`UNTIL`/`FOR`/`ITER`/`RETURN` by type, not by grepping for
@@ -140,7 +140,7 @@ It does **not** touch:
 
 - **strip_wio_inline_helpers.rb now folds 124 methods total** (18 from ADR
   129 + 106 from this ADR) into their call sites, wio-only, with every
-  checked-in definition still intact for `scripts/*.rb`'s own regression
+  checked-in definition still intact for `scripts/**/*.rb`'s own regression
   coverage — same guarantee ADR 129 established.
 - **The AST-based generator itself is scratch, not committed** (it lived
   under `/tmp` for this session) — the entries it produced are committed,

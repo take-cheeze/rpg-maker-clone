@@ -10,7 +10,7 @@ Accepted
 
 ADR 0270 gives a literal-block send an arm per exact core class (`Array_each_impl`, `Hash_each_impl`, ...) in
 front of its `mrb_funcall_with_block`. At master `247a34e4` the wio closed world has 476 literal-block sends
-(`scripts/bc2cpp_coverage_report.rb`): 370 direct, 77
+(`scripts/bc2cpp/coverage_report.rb`): 370 direct, 77
 dynamic only, 29 `&expr`. For the engine proper (`Game::*`, `RPG2k::*`, which is 356 of them) that is 277
 direct, 68 dynamic only and 11 `&expr`. A debug trace of why the 68 stayed dynamic (temporary, not
 committed) sorted them by cause:
@@ -57,7 +57,7 @@ All three parts are behind `BC2CPP_BLOCK_ARM_REACH=0`, which returns the earlier
 
 ## Consequences
 
-Measured on the wio closed world with `scripts/bc2cpp_coverage_report.rb`, shipped pass, before and after this
+Measured on the wio closed world with `scripts/bc2cpp/coverage_report.rb`, shipped pass, before and after this
 change on the same tree (host `mrbc` from a full-core mruby 4.0 build):
 
 | | Before | After | Delta |
@@ -90,7 +90,7 @@ reach by-name dispatch is not lower for them. 38 rpg2k and 8 other sends are sti
 
 ## Verification
 
-`scripts/bc2cpp_block_arm_reach_check.rb` (its own `block-arm-reach` shard of `bc2cpp-checks`): generated code
+`scripts/bc2cpp/block_arm_reach_check.rb` (its own `block-arm-reach` shard of `bc2cpp-checks`): generated code
 for the nested, re-counted and proven cases with the kill switch as the control; every arm chain names one
 receiver register in its tests, calls and else; worlds that withdraw the arms (open world, no core, a Ruby
 `Array#each`/`Range#map`, a prepend, a dynamic installer); unit cases of `direct_block_code?`; the driver

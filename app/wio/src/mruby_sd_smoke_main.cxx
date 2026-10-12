@@ -13,7 +13,7 @@
 // a fixed global (g_result) rather than Serial output, read back with
 // Renode's `sysbus ReadDoubleWord` after RunFor -- an earlier attempt hooked
 // two parameterless test_pass()/test_fail() functions by PC address, mirroring
-// how scripts/wio_renode_boot.bash hooks setup()/loop(), but the compiler
+// how scripts/wio/renode_boot.bash hooks setup()/loop(), but the compiler
 // folded their identical bodies into one address (both were just a nop), so
 // they were not in fact distinguishable that way.
 //

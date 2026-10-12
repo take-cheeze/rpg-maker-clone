@@ -37,7 +37,7 @@ data the game itself defines rather than guessing.
   choice's option strings verbatim inside this blob (the SAVE / enter-gate /
   remove-crystal / do-nothing menu), which is how it was identified. Added
   `SAVE_FOREGROUND_EVENT`, likewise an opaque blob.
-- `scripts/lcf_save_check.rb` now reports these as documented and prints the
+- `scripts/lcf/save_check.rb` now reports these as documented and prints the
   inventory (gold + item id×count); `mruby-lcf/test/lcf_test.rb` locks in the
   three decoders.
 

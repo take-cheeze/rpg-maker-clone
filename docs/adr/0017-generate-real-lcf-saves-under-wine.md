@@ -11,7 +11,7 @@ Accepted
 ADR 0009-0014 built and validated the `LcfSaveData` schema
 (`mruby-lcf/mrblib/schema.rb` `SAVE_DATA`) against a genuine RPG Maker **2000**
 save -- one produced by playing Nepheshel to an in-game save point (a "Gate")
-under EasyRPG Player and running `scripts/lcf_save_check.rb` over the result.
+under EasyRPG Player and running `scripts/lcf/save_check.rb` over the result.
 Synthetic blobs cannot catch a mistyped field, so validation has always insisted
 on real editor/runtime output.
 
@@ -41,10 +41,10 @@ Two further frictions made even the 2000 case hard to reproduce in CI:
   gating *and* the 2003 games' menu-disabled intro. Boot the game, start a New
   Game, then F9 -> Save -> a file slot writes a byte-real `Save<N>.lsd` with no
   playthrough, for either edition.
-- **`scripts/gen-lcf-save-wine.bash`** encodes this headlessly: Xvfb +
+- **`scripts/gen/lcf-save-wine.bash`** encodes this headlessly: Xvfb +
   `matchbox-window-manager` (so the SDL window gets X input focus) + wine running
   `Player.exe --test-play`, driven with held decision keys / tapped cursor moves,
-  then F9 -> Save -> slot, then `scripts/lcf_save_check.rb` over the output. It
+  then F9 -> Save -> slot, then `scripts/lcf/save_check.rb` over the output. It
   defaults to the **mtf-meido-action** RPG2003 test-bed (already in the download
   set, ships EasyRPG Player.exe) and takes any game dir + slot as arguments.
 
@@ -53,7 +53,7 @@ Two further frictions made even the 2000 case hard to reproduce in CI:
 - **Save-level RPG2003 validation is now real, closing the ADR 0013 follow-up.**
   A genuine mtf-meido-action `Save01.lsd` parses cleanly through `SAVE_DATA` and
   round-trips into the runtime via `Game::State.from_lsd`
-  (`scripts/rpg2k_save_load_check.rb`). The 2003 save exercises the same id-driven
+  (`scripts/rpg2k/save_load_check.rb`). The 2003 save exercises the same id-driven
   chunk layout as 2000 -- title, system, hero/vehicles, party actors (108),
   inventory (109), map events (111), foreground/common-event exec state
   (113/114) -- and the cross-checks hold: the `SAVE_TITLE` hero HP equals party

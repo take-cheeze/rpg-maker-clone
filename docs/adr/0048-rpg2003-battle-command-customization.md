@@ -105,11 +105,11 @@ Row and -1 empty slot are caller-handled sentinels and correctly name no entry),
 and an RPG2000 database (Nepheshel) never carries the list at all.
 
 Covered by `mruby-lcf/test/lcf_test.rb` (chunk 29 decode), new
-`scripts/rpg2k_logic_check.rb` checks (`battle_command_row` resolving a real
+`scripts/rpg2k/logic_check.rb` checks (`battle_command_row` resolving a real
 entry, an undefined id, and a database with no chunk 29 at all), new
-`scripts/rpg2k_scene_check.rb` checks (a skill-only customized list; a
+`scripts/rpg2k/scene_check.rb` checks (a skill-only customized list; a
 shortened, reordered Item/Defense list drawing and dispatching in its own
 order; Row alone falling back to the fixed four), `scripts/rpg2k3_battle_
 command_check.rb` (the chunk's top-level decode against mtf), and — since the
 cross-reference was what the synthetic test could not express — the new
-`check_battlecommands` pass in `scripts/lcf_testbed_check.rb` described above.
+`check_battlecommands` pass in `scripts/lcf/testbed_check.rb` described above.

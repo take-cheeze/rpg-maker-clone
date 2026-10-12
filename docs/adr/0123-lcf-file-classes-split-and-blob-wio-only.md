@@ -67,7 +67,7 @@ verbatim. `schema.rb` keeps only `module LCF; module Schema; ...; end; end`
 -- the pure data the blob generator reads. Both files are plain Ruby,
 loaded together by every consumer: the default `spec.rbfiles` glob picks up
 `lcf_file.rb` automatically for every mruby build target, and every
-`scripts/*_check.rb`/`scripts/*.rb` that used to `load .../schema.rb`
+`scripts/**/*_check.rb`/`scripts/**/*.rb` that used to `load .../schema.rb`
 directly under CRuby now also `load`s `.../lcf_file.rb` right after it (15
 call sites: `analyze_game.rb`, `export_nano7_map.rb`, `lcf_save_check.rb`,
 `lcf_save_roundtrip.rb`, `lcf_schema_coverage.rb`, `lcf_testbed_check.rb`,
@@ -80,7 +80,7 @@ call sites: `analyze_game.rb`, `export_nano7_map.rb`, `lcf_save_check.rb`,
 **Scope the schema-blob swap to wio only** (`mruby-lcf/mrbgem.rake`, guarded
 by `spec.build.name == 'wio'`): every other target (host/desktop, wasm,
 psp, android) goes back to `schema.rb`'s plain Hash literals -- the same
-form the CRuby `scripts/*_check.rb` scripts already trust, and the one ADR
+form the CRuby `scripts/**/*_check.rb` scripts already trust, and the one ADR
 109's own comparison script verified byte-for-byte against the blob. This
 sidesteps the mrbtest bug entirely rather than chasing its root cause
 further: wio is cross-compiled and never runs through `rake test` (the host

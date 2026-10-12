@@ -413,7 +413,7 @@ the interpreter-linking slice, in this order:
      any other way). `patches/psp-fixup-imports-jal-relocation-aware.patch`
      (pinned against a specific pspsdk commit, matching what
      `pspdev/pspdev:latest`'s own prebuilt tool was built from) carries the
-     fix; `scripts/build_psp_fixup_imports.bash` fetches pspsdk at that
+     fix; `scripts/build/psp_fixup_imports.bash` fetches pspsdk at that
      pin, applies it, and drops the rebuilt tool in place of the
      toolchain's own copy — wired into the `psp` CI job
      (`.github/workflows/build.yml`) ahead of `psp-cmake`/`cmake --build`.
@@ -1396,8 +1396,8 @@ the interpreter-linking slice, in this order:
   `#each`, an empty writable-from-scratch table, editing one row without
   disturbing siblings, a nested `Array2D`-inside-`Array1D` field (the actor
   parameter-table shape), and a real-`File` multi-row round-trip all pass;
-  `scripts/rpg2k_logic_check.rb` (1140 checks) and
-  `scripts/rpg2k_scene_check.rb` (929 checks) -- both of which exercise
+  `scripts/rpg2k/logic_check.rb` (1140 checks) and
+  `scripts/rpg2k/scene_check.rb` (929 checks) -- both of which exercise
   `LCF::Database`/`LCF::MapTree`/`LCF::MapUnit` through real
   Scene::Map/battle/event-command paths against synthetic RPG2000 fixtures
   -- still pass unchanged. Real arena-usage impact on Nepheshel, measured
@@ -1562,12 +1562,12 @@ the interpreter-linking slice, in this order:
     cross-build (no `psp-gcc` toolchain in this pass); the reasoning is the
     same PT_LOAD-resident-code argument as the rest of P6, not a new one.
 - **P3 — done (the tool; the deployment step itself is still per-release).**
-  `scripts/rgssad_unpack.rb` unpacks a `Game.rgssad`/`.rgss2a`/`.rgss3a`
+  `scripts/rgssad/unpack.rb` unpacks a `Game.rgssad`/`.rgss2a`/`.rgss3a`
   (desktop-side, reusing the existing `RPGXP::RGSSAD` reader rather than
   reimplementing the format) into a loose file tree in place beside it,
   exactly where the loose-file-first loaders already look. Verified against
   real Marshal-encoded `.rxdata` (the `OpenGame.exe` XP test-bed
-  `scripts/download-opengame-xp.bash` already fetches for CI): packed both as
+  `scripts/download/opengame-xp.bash` already fetches for CI): packed both as
   v1 and v3 archives, unpacked, diffed byte-for-byte against the originals —
   exact match both ways. What's still a per-release step, not something this
   tool can do for you: excluding the packed archive from a given PSP
@@ -1607,10 +1607,10 @@ the interpreter-linking slice, in this order:
   the old in-memory path (including out-of-insertion-order re-reads, to
   exercise real seeks), an over-`MRB_ARY_LENGTH_MAX` entry, bad-header/
   version rejection via both entry points, and a truncated-file case; then
-  `scripts/rpgxp_testbed_check.rb` against the real `OpenGame.exe` XP
+  `scripts/rpgxp/testbed_check.rb` against the real `OpenGame.exe` XP
   test-bed's actual `Data/*.rxdata` packed both as v1 and v3 and read back
   through the full `RGSSData` loader (System/Actors/Maps) and a packed
-  `Graphics/` asset, all passing; then `scripts/rpgvx_testbed_check.rb`'s
+  `Graphics/` asset, all passing; then `scripts/rpgvx/testbed_check.rb`'s
   generated VX and VX Ace projects the same way, including the script host
   actually running the packed project's bundled scripts for real frames.
   Both CRuby harnesses needed a `require "stringio"` added (`StringIO` is a
@@ -1750,10 +1750,10 @@ the interpreter-linking slice, in this order:
   transition arrives via a fade far too often (it's how most Transfer
   Player/Teleport commands read as a scene change at all) for laziness to
   plausibly pay off there, unlike the other three's genuinely occasional
-  use. Verified locally: `scripts/rpg2k_scene_check.rb` (929 checks,
+  use. Verified locally: `scripts/rpg2k/scene_check.rb` (929 checks,
   including four tests updated to grab `@picture_bmp`/`@weather_bmp` after
   the first draw that now creates them rather than before) and
-  `scripts/rpg2k_logic_check.rb` (1145 checks) both pass.
+  `scripts/rpg2k/logic_check.rb` (1145 checks) both pass.
 
   **Validated (2026-08-26, [#1389](https://github.com/take-cheeze/rpg-maker-clone/pull/1389)),
   same Nepheshel run.** `bmp_blank` against the #1385 baseline above:
@@ -1795,7 +1795,7 @@ the interpreter-linking slice, in this order:
   lands, this revision ships small, self-contained changes alongside the ADR
   update: P1a (stripping mrbc's `-g` for the `psp` cross-build), half of P1
   (the bring-up EBOOT's heartbeat now reports real device memory numbers),
-  the tool half of P3 (`scripts/rgssad_unpack.rb`), the P2 allocator
+  the tool half of P3 (`scripts/rgssad/unpack.rb`), the P2 allocator
   split plus P2a's LVGL pool cut (4 MB to 256 KB, with a marker-writing
   assert handler replacing LVGL's silent-halt default) plus P6's reductions
   (draw buffers sized to the canvas, the LVGL widget/theme/example trim, the

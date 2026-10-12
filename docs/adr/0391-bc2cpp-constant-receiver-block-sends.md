@@ -9,7 +9,7 @@ Accepted
 ## Context
 
 Classifying the 51 block sends that still ended in a by-name `mrb_funcall_with_block` with no class guard
-(`BLOCK_FALLBACK ... dynamic dispatch`, measured with `scripts/bc2cpp_block_send_report.rb` on master `5ddf1d98`):
+(`BLOCK_FALLBACK ... dynamic dispatch`, measured with `scripts/bc2cpp/block_send_report.rb` on master `5ddf1d98`):
 
 | callee | sites | what keeps it dynamic |
 | --- | ---: | --- |
@@ -42,7 +42,7 @@ bodies compiled once for every receiver class; no sound direct call exists for t
 2. **Profiler pass in rescue try bodies** (`rescue_try_pass?`). ADR 0376 excluded it believing a raise skips an end call
    the block call would make. `prof_section`/`prof_frame` call `profiler_section_end`/`profiler_frame_end` after
    `mrb_yield_argv` returns with no unwinding guard, so a raise skips the end call there exactly as in the inlined code; the
-   behavioural half of `scripts/bc2cpp_profiler_scope_check.rb` records begin/end sequences of the natives and of the
+   behavioural half of `scripts/bc2cpp/profiler_scope_check.rb` records begin/end sequences of the natives and of the
    inlined code for returning and raising bodies and requires them equal. `BC2CPP_RESCUE_PROFILER_INLINE=0` restores the
    exclusion.
 3. **Profiler name lookup scoped to the module** (`profiler_name_unshadowed?`): both callers prove the receiver is the

@@ -195,7 +195,7 @@ reading them.
   guard.
 - **A real end-to-end round trip against a genuine 660-file project**:
   `scripts/wolf_pro_protected_check.rb` (new, mirroring
-  `scripts/wolf_data_wolf_check.rb`'s own "no real fixture exists, so build
+  `scripts/wolf/data_wolf_check.rb`'s own "no real fixture exists, so build
   a synthetic one from this reader's own inverse function" approach) copies
   the downloaded sample game's `Data/BasicData` tree, Pro-protects
   `Game.dat`/`TileSetData.dat`/`CommonEvent.dat`/all three `*DataBase.dat`

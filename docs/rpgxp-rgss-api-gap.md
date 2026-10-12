@@ -14,7 +14,7 @@ and did not get, and what a boot check reports is what goes in it.
 
 The "needed" column is derived from the real `data/OpenGame.exe/Testbed/XP`
 scripts (all 90 sections), by counting method/`.new`/constant usage — see the
-analysis approach in `scripts/rpgxp_script_host_check.rb`. Frequencies are
+analysis approach in `scripts/rpgxp/script_host_check.rb`. Frequencies are
 approximate call counts across the bundle.
 
 **One test bed, but measured against the other.** Deriving the list from a single
@@ -196,7 +196,7 @@ is unchanged.
 `--rgss_host_new_game` then makes a headless run *play*: it taps confirm through
 the same buffer the SDL backend feeds, and every scene the game reaches is logged
 as `[RPGXP-HOST-SCENE]` (read from the game's own `$scene` global). Reaching a
-second scene is what `scripts/rpgxp_boot_check.bash` now asserts — the proof that
+second scene is what `scripts/rpgxp/boot_check.bash` now asserts — the proof that
 a game's engine took a keypress and acted on it, rather than merely drawing.
 
 `--rgss_host_move_test` and `--rgss_host_menu_test` are the two rungs above that,
@@ -368,7 +368,7 @@ keep answering `nil` — the stock scripts test for exactly that
 
 **This gap was invisible for a long time**, for two compounding reasons: the
 switch that turns the host on could not work in a built engine (see the note at
-the end of this document), and `scripts/rpgxp_script_host_check.rb` *stubbed*
+the end of this document), and `scripts/rpgxp/script_host_check.rb` *stubbed*
 `RPG::Sprite` with an empty class and evaluated only a hand-picked logic subset,
 so it stayed green throughout. That harness now loads the real
 `rgss_library.rb`, evaluates **every** section except `Main`, and drives the
@@ -626,12 +626,12 @@ driver ends the game on (see item 3 above / ADR 0023).
   wired too — it raises a `SystemExit` the driver ends the game on. The remaining
   step is to boot a real project under the **web** build and confirm it end to
   end; the native beds are booted under the host by
-  `scripts/rpgxp_boot_check.bash` in CI, which taps confirm on each game's own
+  `scripts/rpgxp/boot_check.bash` in CI, which taps confirm on each game's own
   title screen, asserts it reaches a second scene, and walks the party on the
   editor bed's map.
 - None of the native items above can be built or run in the current CI sandbox;
   each is verified by `mruby-rgss/test` (compiled and run in CI) plus the
-  host-side `scripts/rpgxp_script_host_check.rb`. The Ruby half (gap 0) is
+  host-side `scripts/rpgxp/script_host_check.rb`. The Ruby half (gap 0) is
   verified for real by that harness — it loads `rgss_library.rb` itself rather
   than stubbing it, which is the mistake that let gap 0 hide.
 

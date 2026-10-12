@@ -18,7 +18,7 @@ for a class nothing subclasses.
 
 Measured on the shipped wio closed-world build (all three compiled gems,
 `SKIP_UNSUPPORTED=1`) with `BC2CPP_CHA_REPORT`
-(`scripts/bc2cpp_cha_self_report.rb`) on the parent commit: 3954 self-receiver
+(`scripts/bc2cpp/cha_self_report.rb`) on the parent commit: 3954 self-receiver
 sends, 676 of them still dispatching. 3303 were eligible under the rules
 below (3274 with one resolution, 29 with overriders), 469 of them dispatching:
 232 of 275 MONO_EMBED_GUARD, 194 of 219 INHERITED_GUARD, 43 of 97 POLY_SMALL_N.
@@ -92,7 +92,7 @@ Soundness of dropping the class compare:
 
 - Shipped build: self-receiver `bc2cpp_send` sites 688 to 213, all
   `bc2cpp_send`/`mrb_funcall_with_block` sites 11044 to 10569
-  (`scripts/bc2cpp_coverage_report.rb`), `bc2cpp_nomethod(M, self` 331 to 4,
+  (`scripts/bc2cpp/coverage_report.rb`), `bc2cpp_nomethod(M, self` 331 to 4,
   INHERITED_GUARD markers 268 to 51, CLOSED_WORLD_SELF ("guards dropped") 691
   to 1211. Every eligible dispatching site was converted (469 to 0).
 - Generated code changes only by removing guard chains and their fallbacks and
@@ -104,7 +104,7 @@ Soundness of dropping the class compare:
   earlier, which reorders when the cycle-guarded probe answers are memoized.
   The chosen candidates are unchanged.
 - `BC2CPP_CHA_REPORT=<path>` writes one row per self-receiver send (construct,
-  plan or refusal); `scripts/bc2cpp_cha_self_report.rb` aggregates it.
+  plan or refusal); `scripts/bc2cpp/cha_self_report.rb` aggregates it.
 - Not covered: keyword/splat sends on self (compile_keyword_send keeps
   LEXICAL_SELF_KEYWORD only for an exact class), module methods and singleton
   methods (self is any includer), and opaque hierarchies, which another change

@@ -79,12 +79,12 @@ replacing them, as the other 32-bit-aware checks do.
 
 ## Consequences
 
-- `scripts/bc2cpp_checked_send_check.rb` (CI `bc2cpp-checks`, fast shard) pins the slot table, which
+- `scripts/bc2cpp/checked_send_check.rb` (CI `bc2cpp-checks`, fast shard) pins the slot table, which
   sites are marked, and runs a fixture interpreted against compiled on a 64-bit full-core build (closed and
   open world), a core-only build and, with `BC2CPP_MRUBY_FULL32`/`BC2CPP_MRBC32`, a 32-bit `mrb_int`
   build: private and protected explicit sends, attr_reader arguments with and without `self`, a
   `method_missing` receiver, and the implicit and `self.` private sends that must still answer.
-- `scripts/bc2cpp_embedded_frozen_check.rb` (same shard) pins the test in the open world and in every
+- `scripts/bc2cpp/embedded_frozen_check.rb` (same shard) pins the test in the open world and in every
   closed world that has a route to a frozen user object, its absence in the worlds that do not, the order
   (test before store), the outside-source scans on `ClosedWorld` itself, and runs FrozenError and
   value-preservation for a boxed and a typed Fixnum slot against the interpreter on the same builds.

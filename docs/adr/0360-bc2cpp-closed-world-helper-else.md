@@ -9,7 +9,7 @@ Accepted
 ## Context
 
 The shared helpers (`bc2cpp_slow_*` ADR 0292, `bc2cpp_getidx`/`getidx0`/`setidx` ADR 0216, `bc2cpp_eqq` ADR 0293)
-hold 24 by-name calls that about 5,800 generated sites reach (`scripts/bc2cpp_dynamic_site_census.rb`, the
+hold 24 by-name calls that about 5,800 generated sites reach (`scripts/bc2cpp/dynamic_site_census.rb`, the
 "by-name calls held inside shared helpers" table). A call site cannot prove anything about the else of a helper
 shared by hundreds of sites, so the proof has to be about the world: which classes can answer the operator at
 all. `CallFacts::Answers#members(name)` (ADR 0317/0323) already computes that from the registry, the outside Ruby
@@ -71,6 +71,6 @@ Measured with the census script on the wio closed world (shipped pass), base `0a
 
 All 272 are removals. The other helpers need a body per static core method (`Array#+`, `String#*`, `Array#&`,
 `Hash#<` ...) or a Comparable includer analysis before their else can go; that is follow-up work and the table
-above says where each one stands. `scripts/bc2cpp_numeric_slow_check.rb` runs the closed helper against
+above says where each one stands. `scripts/bc2cpp/numeric_slow_check.rb` runs the closed helper against
 `Integer#/`/`Float#/` over a matrix of numeric, nil, true, String, Symbol, Array, Hash, Range, class and user
 operands on both receiver and operand side, compiled and interpreted.

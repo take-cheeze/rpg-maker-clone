@@ -33,7 +33,7 @@ outer array annotation follows the existing class-annotation checks.
 `Game::Battle#initialize` can state that both incoming collections contain
 `Game::Battle::Combatant`. This resolves the `@allies` and `@enemies` element
 layouts and enables guarded calls from their inlined loops. The focused check in
-`scripts/bc2cpp_retclass_devirtualization_check.rb` covers typed argument
+`scripts/bc2cpp/retclass_devirtualization_check.rb` covers typed argument
 parsing, Struct element recognition, and the generated guard/fallback. The
 whole-program report should show the two new element hints; its static
 `mrb_funcall` count still includes the fallback by design.

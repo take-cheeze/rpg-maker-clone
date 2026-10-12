@@ -19,7 +19,7 @@ input and embedded runtime use the same generator.
 
 `OptcarrotPPULUT.transform` requires the exact original generator, including
 its bounds, and rejects missing, duplicated or changed generators. It leaves
-the upstream submodule untouched. Run `ruby scripts/optcarrot_ppu_lut_check.rb`
+the upstream submodule untouched. Run `ruby scripts/optcarrot/ppu_lut_check.rb`
 to compare all 2,097,152 pixel values and dimensions against upstream, verify row
 independence and mutation isolation, and check source drift and bundle modes.
 The Optcarrot CI shard runs this check.

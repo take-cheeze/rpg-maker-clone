@@ -57,9 +57,9 @@ computed installer still withdraws the closed-world proofs.
 - Loops outside the shapes above (a branch before the loop, a computed name, a container from a call or another scope,
   `each_with_index`) are unchanged. The jump-target and handler rules overlap with the branch rule; the check pins them
   with a retry negative.
-- `scripts/bc2cpp_loop_installers_check.rb` compares the registered names with what CRuby installs for each positive world,
+- `scripts/bc2cpp/loop_installers_check.rb` compares the registered names with what CRuby installs for each positive world,
   pins each negative world (and the closed-world withdrawal), and runs interpreted vs compiled on a full-core, a core-only
-  (core-sourced polyfill iterators) and a 32-bit `mrb_int` build. `scripts/bc2cpp_loop_installers_mutation_check.rb`
+  (core-sourced polyfill iterators) and a 32-bit `mrb_int` build. `scripts/bc2cpp/loop_installers_mutation_check.rb`
   breaks each soundness condition and requires the check to fail.
 - Residual risks: the class body is assumed to run once (a second run re-installs the same names); user redefinition of
   `Hash#each` etc. outside the compiled sources is out of scope, as for every closed-world proof.

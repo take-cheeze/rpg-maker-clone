@@ -148,7 +148,7 @@ dynamic send or guard/`MONO_EMBED_GUARD` comment replaced by a guarded direct
 call, `CLOSED_WORLD_SELF`, a `bc2cpp_nomethod` terminal, a direct
 `bc2cpp_direct_alloc` construct, or a stable-class constant cache.
 
-Fixtures in `scripts/bc2cpp_closed_world_check.rb` cover a Ruby file that only
+Fixtures in `scripts/bc2cpp/closed_world_check.rb` cover a Ruby file that only
 mentions a class (not opaque), reopens, subclasses, rebinds, aliases, copies or
 `class_eval`s it (opaque), a namespace collision (not opaque), and native
 files that define-only or instantiate (not opaque) versus subclass, `class_new`,

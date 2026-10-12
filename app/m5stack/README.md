@@ -71,26 +71,26 @@ fork** is the real fit: the same binary `idf.py qemu` uses, with a real,
 actively-maintained ESP32 machine model (`hw/xtensa/esp32.c`) -- genuine
 GPIO, SPI, UART, RTC, timer and eFuse peripherals, not stubs.
 
-`scripts/m5stack_qemu_boot.bash` (repo root) fetches Espressif's prebuilt
+`scripts/m5stack/qemu_boot.bash` (repo root) fetches Espressif's prebuilt
 `qemu-xtensa` release, merges the firmware's `bootloader.bin`/
 `partitions.bin`/`firmware.bin` into one flash image with `esptool.py
 merge_bin`, and boots it:
 
 ```sh
 cd app/m5stack && pio run -e m5stack
-cd .. && ../../scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
-# (from the repo root: scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack)
+cd .. && ../../scripts/m5stack/qemu_boot.bash app/m5stack/.pio/build/m5stack
+# (from the repo root: scripts/m5stack/qemu_boot.bash app/m5stack/.pio/build/m5stack)
 ```
 
 For a rendered display frame, build a display-capable QEMU first
-(`scripts/m5stack_qemu_build.bash`, see "Emulation: display support" below)
+(`scripts/m5stack/qemu_build.bash`, see "Emulation: display support" below)
 and point the boot script at it:
 
 ```sh
-scripts/m5stack_qemu_build.bash /tmp/m5stack-qemu-build   # one-time, a few minutes
+scripts/m5stack/qemu_build.bash /tmp/m5stack-qemu-build   # one-time, a few minutes
 M5STACK_QEMU_BIN=/tmp/m5stack-qemu-build/build/qemu-system-xtensa \
 M5STACK_DISPLAY_DUMP=/tmp/m5stack_display.ppm \
-  scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
+  scripts/m5stack/qemu_boot.bash app/m5stack/.pio/build/m5stack
 ```
 
 **Reaches `setup()` and `loop()` for real** -- verified by grepping the real
@@ -111,7 +111,7 @@ it wasn't -- both paths use the same 4.4.7).
 Upstream `espressif/qemu` models no SPI TFT panel at all (checked directly
 against `hw/display`) -- so this fork carries its own downstream addition,
 `app/m5stack/qemu/patches/m5stack-display.patch`
-(`scripts/m5stack_qemu_build.bash` builds a QEMU binary with it applied; see
+(`scripts/m5stack/qemu_build.bash` builds a QEMU binary with it applied; see
 that script's own header comment for the full rationale). It adds a new
 `hw/display/esp32_ili9341.c` device modelled on this repo's own Renode
 peripheral (`app/wio/renode/peripherals/Video/ILI9341_SPI.cs`), wired onto
@@ -126,7 +126,7 @@ for the full trace that pinned it down (a raw-byte capture, then a
 standalone `fillScreen()`/`fillRect()` test firmware whose output was a
 checkerboard of correct and byte-swapped colors until the fix landed).
 
-`M5STACK_DISPLAY_DUMP=<path> scripts/m5stack_qemu_boot.bash ...` (with a
+`M5STACK_DISPLAY_DUMP=<path> scripts/m5stack/qemu_boot.bash ...` (with a
 `M5STACK_QEMU_BIN` built as above) writes the ILI9341 framebuffer out as a
 PPM on exit -- QEMU's own `screendump`/monitor commands cannot reach this
 device (it lives inside the ESP32 SoC's own private bus, never attached to
@@ -162,20 +162,20 @@ Emulated the same way the display is: `espressif/qemu` has a real,
 register-accurate ESP32 I2C controller (`hw/i2c/esp32_i2c.c`) already
 wired to a `tmp105` sensor for this exact machine
 (`esp32_machine_init_i2c()`), so `app/m5stack/qemu/patches/
-m5stack-gamepad.patch` (also applied by `scripts/m5stack_qemu_build.bash`)
+m5stack-gamepad.patch` (also applied by `scripts/m5stack/qemu_build.bash`)
 just attaches one more device to that same bus:
 `hw/i2c/esp32_faces_gamepad.c` models the Gamepad Face's own protocol
 above. Unlike the display (an *output* observability problem, solved with
 an `atexit()` dump), simulating a button press is an *input* problem: this
 device re-reads a single raw byte from `ESP32_FACES_GAMEPAD_STATE_PATH`
 (env var) on every I2C read, if set, so state can change while QEMU runs.
-`scripts/m5stack_qemu_boot.bash`'s own `M5STACK_GAMEPAD_STATE` env var
+`scripts/m5stack/qemu_boot.bash`'s own `M5STACK_GAMEPAD_STATE` env var
 wraps this for one fixed combination held for a whole boot:
 
 ```sh
 M5STACK_QEMU_BIN=/tmp/m5stack-qemu-build/build/qemu-system-xtensa \
 M5STACK_GAMEPAD_STATE=7e \
-  scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
+  scripts/m5stack/qemu_boot.bash app/m5stack/.pio/build/m5stack
 # 0x7e = Up + Start held (active low, bit0 and bit7 clear)
 ```
 

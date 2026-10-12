@@ -16,11 +16,11 @@ The game the Maix Amigo port boots to its title screen (see
 ## Regenerating
 
 ```sh
-ruby scripts/gen-maix-hello-game.rb [OUT_DIR]
+ruby scripts/gen/maix-hello-game.rb [OUT_DIR]
 ```
 
 Built with the project's own LCF reader/writer sources (loaded the way
-`scripts/lcf_testbed_check.rb` loads them), so the output is parseable by
+`scripts/lcf/testbed_check.rb` loads them), so the output is parseable by
 the firmware's identical reader by construction; the title picture is a
 minimal stdlib-only PNG. The title scene degrades gracefully without
 anything else (nil picture/skin/music/se all have blank fallbacks), so

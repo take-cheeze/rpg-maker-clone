@@ -56,10 +56,10 @@ An open world keeps every send.
 - Measured on the wio closed world, all four compiled gems, full (not hot-only) output: by-name `===`
   577 -> 2 (the default arm of each of the two files that emit the helper; lcf and rgss need none),
   `is_a?` 46 -> 0, `kind_of?` 9 -> 0. The rpg2k gem's output shrinks by about 660 KB.
-- `scripts/bc2cpp_eqq_direct_check.rb` pins the generated code, 18 negative worlds, and runs
+- `scripts/bc2cpp/eqq_direct_check.rb` pins the generated code, 18 negative worlds, and runs
   interpreted vs compiled on real mruby (64-bit, and 32-bit `mrb_int`): case/when over every pattern
   and value kind, `is_a?`/`kind_of?` with classes, modules, singleton classes and non-class arguments
-  (TypeError text compared), plus the dispatch count. `scripts/bc2cpp_eqq_integer_check.rb` now checks
+  (TypeError text compared), plus the dispatch count. `scripts/bc2cpp/eqq_integer_check.rb` now checks
   the helper's Integer arm against `mrb_equal`.
 - Residual: `Proc#===`, `Regexp#===`, `Set#===`, bigint and plain-object receivers of an unproven
   `===` still dispatch by name, as before. `instance_of?`, `nil?`, `respond_to?` have no by-name sends in

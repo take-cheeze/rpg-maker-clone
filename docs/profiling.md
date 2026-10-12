@@ -9,7 +9,7 @@ baseline supports.
 ## Reproducing the baseline
 
 ```sh
-scripts/native-build-without-nix.bash    # or: nix develop, cmake --build build
+scripts/native/build-without-nix.bash    # or: nix develop, cmake --build build
 
 SDL_AUDIODRIVER=dummy \
   ./scripts/quiet_alsa.bash xvfb-run -a ./build/rpg_maker_clone \
@@ -194,7 +194,7 @@ Skipping the blank upper chip was diffed the same way and came out identical
 over the *whole* frame, which is the direct evidence that the chip it stopped
 drawing really was fully transparent rather than merely assumed to be.
 
-`scripts/rpg2k_scene_check.rb` covers the behaviour directly: a frame that
+`scripts/rpg2k/scene_check.rb` covers the behaviour directly: a frame that
 changed nothing must not re-blit a single tile; a tile crossing, a Tile
 Substitution and an animation step the visible tiles follow must each rebuild;
 and a map whose upper layer is entirely the blank id must cost exactly its
@@ -217,7 +217,7 @@ swaps in `mruby-rpg2k-compiled`/`mruby-lcf-compiled`/`mruby-rgss-compiled`,
 see `docs/adr/0139`) -- against the identical Nepheshel New Game repro:
 
 ```sh
-scripts/native-build-without-nix.bash build            # interpreted
+scripts/native/build-without-nix.bash build            # interpreted
 RPGMAKER_BC2CPP=1 cp932_table=... jis0208_table=... \
   cmake -S . -B build-bc2cpp -G Ninja -DCMAKE_BUILD_TYPE=Release && \
   cmake --build build-bc2cpp -j"$(nproc)"               # compiled
@@ -281,7 +281,7 @@ The flash-limited builds (psp, wio, maix) compile only the methods
 `tools/bc2cpp/hot_methods.txt` lists to C++, and every other method runs as
 bytecode (ADR 0214). Regenerate the list after a change moves hot code
 around. A method the list does not name is interpreted: always correct, but
-slower. `scripts/bc2cpp_hot_only_check.rb` fails when the list names a method
+slower. `scripts/bc2cpp/hot_only_check.rb` fails when the list names a method
 that no longer exists. It is not run in CI, so run it by hand after editing the
 list.
 
@@ -295,14 +295,14 @@ RPGMAKER_BC2CPP=1 cp932_table=... jis0208_table=... \
 # 2. Record every scenario under callgrind (Nepheshel first; each further
 #    RPG2000/2003 game gets a boot run and a walk/menu run). This takes about
 #    an hour on 4 cores.
-ruby scripts/bc2cpp_hot_profile.rb record --binary build-full/rpg_maker_clone \
+ruby scripts/bc2cpp/hot_profile.rb record --binary build-full/rpg_maker_clone \
   --out /tmp/hot --game data/Nepheshel206beta/Nepheshel206Rbeta \
   --game <other game> ...
 
 # 3. Select the list: 98% of compiled-code Ir (ADR 0214 has the tradeoff
 #    table), then the classes' #initialize and the keyword/super callees
 #    those methods need.
-ruby scripts/bc2cpp_hot_profile.rb select --gen-dir build-full/mruby/host/mrbgems \
+ruby scripts/bc2cpp/hot_profile.rb select --gen-dir build-full/mruby/host/mrbgems \
   --threshold 0.98 --report /tmp/hot/callgrind.*.out > tools/bc2cpp/hot_methods.txt
 ```
 
@@ -332,7 +332,7 @@ passes, so it reports each pass separately:
 
 ```sh
 BC2CPP_PROFILE_TIMINGS=1 MRBC=build/mruby/host/mrbc/bin/mrbc \
-  ruby scripts/bc2cpp_coverage_report.rb
+  ruby scripts/bc2cpp/coverage_report.rb
 ```
 
 `BC2CPP_COVERAGE_KEEP_DIR=dir` keeps the shipped pass's generated C++
@@ -610,7 +610,7 @@ building the starting roster) at ~230ms, and `map.transition.common_events`
 -> `#equip_bonus` -> the *first* `db.item[id]` lookup, which one-time-decodes
 Nepheshel's whole 1200-row, 48KB item table -- and that first decode alone,
 under plain CRuby (a `mruby-lcf/mrblib/lcf.rb` + `schema.rb` load, the same
-"exact sources under CRuby" trick `scripts/lcf_testbed_check.rb` already uses)
+"exact sources under CRuby" trick `scripts/lcf/testbed_check.rb` already uses)
 took 37ms against mruby's ~220ms for the identical bytes. A 6x gap that size
 on a byte-scanning loop is not "mruby is slower," it's a missing native
 method.
@@ -702,7 +702,7 @@ were allocated between two points"):
 | `Proc` | ~1650 |
 | `env` | ~985 |
 
-`scripts/rpg2k_alloc_regression_check.rb` automates exactly this measurement
+`scripts/rpg2k/alloc_regression_check.rb` automates exactly this measurement
 (via the profiler trace's `mruby_type_allocs` counter series, see
 [README.md](../README.md#profiling)) and fails if any of the three exceeds a
 ceiling set from this table — the standing regression guard for the fixes

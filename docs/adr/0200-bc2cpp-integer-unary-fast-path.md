@@ -10,7 +10,7 @@ Accepted
 
 About 3,370 call sites in the generated C++ are `// POLY` dynamic dispatch. To
 see which ones run every frame on the RPG2000 map scene, the map-scene check
-(`scripts/rpg2k_scene_check.rb`, 52,309 `Scene::Map#update` frames over 1,062
+(`scripts/rpg2k/scene_check.rb`, 52,309 `Scene::Map#update` frames over 1,062
 scenarios) was run under a CRuby `TracePoint`. Each executed send was matched
 to its generated site through a line-annotated copy of the generator. About 34
 dynamic calls per frame are left. Grouped by cause (calls per frame):
@@ -69,7 +69,7 @@ Like TO_I_TYPE_TAG_DISPATCH, this trusts the pinned mruby sources for what the
 replaced bodies do, and trusts that nothing outside the scanned sources reopens
 Integer's ancestry. That includes a user RGSS script loaded at runtime.
 
-`scripts/bc2cpp_runtime_devirt_check.rb` covers the emitted shape and checks
+`scripts/bc2cpp/runtime_devirt_check.rb` covers the emitted shape and checks
 that a reopened `Integer#zero?` or an unresolved include into Integer keeps the
 dispatch. It also runs the emitted code against a real mruby core on Integer,
 `MRB_INT_MIN` and Float receivers and compares each result with the replaced

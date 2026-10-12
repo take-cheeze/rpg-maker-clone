@@ -12,7 +12,7 @@ The request was "compile all core methods too for a closed world". ADR 0264 comp
 lifted the block exclusion behind a Fiber guard, ADR 0350 admitted the Enumerator wrappers. Three facts of the
 current tree differ from the premise of the request and shape what can be done:
 
-1. **Almost everything already compiles.** In the wio closed-world measurement (`scripts/bc2cpp_coverage_report.rb`:
+1. **Almost everything already compiles.** In the wio closed-world measurement (`scripts/bc2cpp/coverage_report.rb`:
    all three engine gems, `core_gems: :canonical`, `SKIP_UNSUPPORTED=1`) 215 core-source bytecode methods are in the
    world and 190 compile clean (170 of them hidden definitions, see below); 5 more are shadowed by a later
    definition of the same owner and name, so they are not methods the interpreter ends with. 25 stay interpreted.
@@ -120,7 +120,7 @@ by-name call byte for byte; the Complex/Rational `#if` arm is untouched. A per-g
 
 ## Consequences
 
-Measured with `scripts/bc2cpp_coverage_report.rb` (`BC2CPP_COVERAGE_KEEP_DIR`) and `scripts/bc2cpp_dynamic_site_census.rb`
+Measured with `scripts/bc2cpp/coverage_report.rb` (`BC2CPP_COVERAGE_KEEP_DIR`) and `scripts/bc2cpp/dynamic_site_census.rb`
 on the wio closed world, the same tree with `BC2CPP_CORE_COMPILED_CMP=0` as the base:
 
 | Measure | Before | After | Delta |
@@ -140,14 +140,14 @@ methods' own POLY sites, as before. The census has no size or time gate in `docs
 budgets were not rebuilt, and cannot move: those builds are hot-only (Context point 2), the generated code for them is
 byte-identical.
 
-Verification, `scripts/bc2cpp_core_compiled_cmp_check.rb`: generated code for all four helpers (exact-class test, proof
+Verification, `scripts/bc2cpp/core_compiled_cmp_check.rb`: generated code for all four helpers (exact-class test, proof
 violation arm, no by-name call, `_impl` declared before use, Complex/Rational arm unchanged); NEG worlds for
 `Hash#<` and `#<=` reopened, a module prepended to Hash (with and without a comparison name), a user `==` that may
 yield, a computed `define_method`, an alias, an outside Ruby `Hash#<`, a build without mruby-hash-ext, `method_missing`,
 a singleton method, an open world, no core compile, and the kill switch; then 5,760 helper-versus-operator cases
 (subsets, NaN and user `==` values, default procs, Hash subclasses as operands, non-Hash operands, nested hashes, a
 full GC in the last round) on a full-core libmruby, all equal in value, exception class and message. The mutation check
-(`scripts/bc2cpp_core_compiled_cmp_mutation_check.rb`) breaks the kill switch, the yield-free proof, the exact-class
+(`scripts/bc2cpp/core_compiled_cmp_mutation_check.rb`) breaks the kill switch, the yield-free proof, the exact-class
 test and the foreign-definer requirement; the lookup-chain walk is defense in depth that no negative world isolates
 (every one is stopped earlier by `numeric_slow_cmp_proof`), so it has no mutant.
 

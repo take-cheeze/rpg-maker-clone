@@ -7,7 +7,7 @@
 // small status screen that echoes the pressed keys, and -- on a fresh press
 // of the Face's Start button specifically (see below for why that one) --
 // tries to play a WAV file off the microSD card. All of it is echoed over
-// Serial too, since the QEMU smoke test (scripts/m5stack_qemu_boot.bash) has
+// Serial too, since the QEMU smoke test (scripts/m5stack/qemu_boot.bash) has
 // no display to read (see app/m5stack/README.md, "What the emulator can and
 // cannot show"). Arduino owns the event loop, so loop() pumps LVGL once per
 // iteration.
@@ -96,7 +96,7 @@ void setup(void) {
   // boot -- see its own doc comment in m5stack.hxx for why (a real
   // shared-VSPI-bus hazard on top of a QEMU-only display-model gap).
   build_ui();
-  // The one fixed marker scripts/m5stack_qemu_boot.bash waits for -- printed
+  // The one fixed marker scripts/m5stack/qemu_boot.bash waits for -- printed
   // once setup() has run every HAL init call above without hanging.
   Serial.println("m5stack: setup complete");
 }

@@ -98,7 +98,7 @@ into an **opt-out**.
   title screen (it picks New Game without input and logs `[RPGXP-MAP]`); the
   game's own scripts show their own title and cannot be driven that way. Making
   it select the built-in flow keeps the headless render checks —
-  `scripts/rpgxp_boot_check.bash`, `scripts/rgssad_asset_check.bash` and the wine
+  `scripts/rpgxp/boot_check.bash`, `scripts/rgssad/asset_check.bash` and the wine
   comparison of [ADR 0025](0025-rpgxp-cross-runtime-testing.md) — measuring the
   reimplementation they were written to measure.
 - **`ScriptHost.run` logs `[RPGXP-SCRIPTS] running N script sections`**, the
@@ -110,7 +110,7 @@ into an **opt-out**.
   code at zero) and once with `--rpgxp_new_game` (the built-in flow into the
   map). Both beds are covered — the editor-shaped OpenGame test bed and the
   released *Pray for You*.
-- **`scripts/rpgxp_script_host_check.rb` stops stubbing our own Ruby.** It used
+- **`scripts/rpgxp/script_host_check.rb` stops stubbing our own Ruby.** It used
   to define an empty `RPG::Sprite` and evaluate a hand-picked "logic subset" of
   the bundle, which is why it stayed green while no game could boot. It now
   loads the real `rgss_library.rb`, evaluates **every** section but `Main`

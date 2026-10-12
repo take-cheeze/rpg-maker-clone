@@ -80,7 +80,7 @@ module Game
       # written only when there was a leader to name, which left an entirely
       # empty party -- kk1.12's own genuine starting state, all five members
       # joining later through Change Party Member events, confirmed via a
-      # genuine wine-driven capture (scripts/gen-lcf-save-wine.bash) taken
+      # genuine wine-driven capture (scripts/gen/lcf-save-wine.bash) taken
       # right after New Game -- with no chunk 100 at all rather than merely a
       # zero timestamp. That is the exact same failure mode ADR 0021 already
       # fixed for a *populated* party (a zero OLE date reads as an empty file
@@ -1018,7 +1018,7 @@ module Game
     # alike.
     #
     # The third case is real, not defensive-programming boilerplate: a
-    # genuine kk1.12 save (scripts/gen-lcf-save-wine.bash, EasyRPG Player's
+    # genuine kk1.12 save (scripts/gen/lcf-save-wine.bash, EasyRPG Player's
     # F9 debug-menu Save) carries a chunk 113 whose own field 1 does not
     # decode as this schema's SAVE_EVENT_EXEC_STATE at all -- `stack`'s own
     # bytes are a single 0x01, which Array2D#initialize reads as "1 row" and
