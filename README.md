@@ -1725,6 +1725,10 @@
 - bc2cpp CI enables CRuby's YJIT for host analysis and code generation,
   including nightly fixture and mutation checks. See [the CI guide](docs/ci.md)
   for verification and local comparisons.
+- bc2cpp binary decoding shares source-file lookups between filename and line
+  metadata and avoids per-instruction enumerator allocations. The binary-loader
+  check compares source locations and instructions with mrbc (see
+  [CI documentation](docs/ci.md)).
 - Manual bc2cpp nightly runs can compare decoded-tree reuse for repeated worlds,
   restoring private objects before each analysis. It defaults off because cold
   population can slow a parallel build. See
