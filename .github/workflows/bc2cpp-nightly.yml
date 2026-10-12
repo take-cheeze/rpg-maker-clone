@@ -63,6 +63,10 @@ jobs:
               # Literal-block arms into the compiled core (docs/adr/0270): a closed-world fixture compiled
               # with the core, against the interpreter; two more mruby builds.
               BC2CPP_BLOCK_DIRECT_DIR="$RUNNER_TEMP/bc2cpp-block-direct" MRBC="$mrbc" ruby scripts/bc2cpp/block_core_direct_check.rb
+              # Guarded block loops (docs/adr/0420): an unproven Array/Hash receiver runs the block body inline behind
+              # an exact-class test, the arms above as its else; against the interpreter (break/next with a value,
+              # return, raise, mutation during each, destructuring, closures, nested blocks, subclasses, Fibers).
+              BC2CPP_GUARDED_INLINE_DIR="$RUNNER_TEMP/bc2cpp-guarded-inline" MRBC="$mrbc" ruby scripts/bc2cpp/guarded_block_inline_check.rb
               # Yield-free proof (docs/adr/0283): blocks and core iterator bodies that cannot suspend a
               # Fiber stay compiled under one, and every method a Fiber reaches that may yield is refused;
               # compiled against the interpreter on the interpreted mruby build of the check above.
@@ -503,6 +507,7 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp/rescue_live_in_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/rescue_inline_block_mutation_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/block_direct_mutation_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/guarded_block_inline_mutation_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/return_join_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/nested_compile_state_check.rb
               ruby scripts/bc2cpp/insn_operands_check.rb
