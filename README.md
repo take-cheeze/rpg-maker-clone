@@ -1719,6 +1719,9 @@
 - bc2cpp CI enables CRuby's YJIT for host analysis and code generation,
   including nightly fixture and mutation checks. See [the CI guide](docs/ci.md)
   for verification and local comparisons.
+- bc2cpp test builders run mruby prerequisite tasks concurrently with bounded
+  Rake workers, reducing cold fixture and width-build setup time. See
+  [the CI guide](docs/ci.md).
 - bc2cpp reuses repeated bytecode dataflow queries during analysis and code
   generation; bounded caches also reduce repeated work in fixture tests. See
   [ADR 0409](docs/adr/0409-bc2cpp-dataflow-query-cache.md).
