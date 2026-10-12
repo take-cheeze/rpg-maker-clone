@@ -37,3 +37,44 @@ All ten runs returned checksum `59662`. The static whole-process improvement
 was 2.22x; the interpreter improvement was 1.23x. Optcarrot's emulation-only
 reported FPS stayed similar (roughly 194–201 static, 26–27 interpreted): this
 change reduces table initialization, rather than making steady emulation faster.
+
+## Bytecode IR lowering
+
+The ordinary compiled probe accepts `OPTCARROT_IR_LUT=1`. It extracts the
+original generator into `PPU.__bc2cpp_tile_lut` and retains it as the
+interpreter and runtime guard fallback. This extraction is a source scaffold,
+not the optimization: `BytecodeIR::TileLUT` recognizes the complete decoded
+method tree against the canonical generator, including register operands,
+child indices, symbols, pools, control flow and absence of catch handlers.
+Any generator drift refuses native lowering.
+
+The compiled gem installs this one helper before the class assigns `TILE_LUT`.
+Native C++ builds ordinary mruby Arrays, extracts base colors once and creates
+independent rows for the remaining attributes. Runtime guards preserve dynamic
+Ruby behavior by declining installation or calling the original helper if
+core methods change. Integer bit indexing must be either the unchanged
+bootstrap implementation or the exact decoded probe shim, whose shifts and
+mask operators are guarded too. No arithmetic exceeds 65,535.
+
+This opt-in ordinary-host path has a distinct `irlut` build target. Sealed
+mode is refused until it has a matching bootstrap protocol. The existing
+source optimization stays the default. No steady-emulation improvement is
+claimed: this migration targets initialization.
+
+`MRBC=/path/to/mrbc ruby scripts/optcarrot/ppu_ir_lut_check.rb` checks decoded
+refusal cases. Add `MRUBY_BUILD=/path/to/compatible/mruby/build` to compile
+the emitted native builder and compare all 2,097,152 pixels with upstream,
+check every row identity and mutation isolation, and test changed core
+method fallback both during installation and on subsequent calls.
+
+The bootstrap method snapshots belong to the probe's single mruby VM per
+process. Embedding this helper in a process with multiple independent VMs
+requires per-VM storage before this protocol can be reused.
+
+Local initializer-only comparison used one compatible optimized native mruby
+host with a 16,384-pointer gray stack and three alternating fresh-process
+pairs. Both paths retained all four final tables and validated their shape
+and final row. Median generation time was 110.37 ms for the previous factored
+Ruby algorithm and 21.54 ms for native IR lowering (5.12x, about 88.83 ms saved).
+Other agent builds ran on the shared host, so these are indicative startup
+measurements, not a controlled whole-emulator FPS comparison.

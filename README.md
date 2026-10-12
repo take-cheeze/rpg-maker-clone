@@ -1083,7 +1083,9 @@
   build, with separate build directories for each mode.
   The mruby bundles factor PPU tile-table construction into fixed pixel rows
   to reduce startup; `OPTCARROT_ORIGINAL_LUT=1` restores
-  upstream construction. See [tile-table startup](docs/optcarrot-ppu-lut.md).
+  upstream construction. `OPTCARROT_IR_LUT=1` instead extracts the original
+  initializer and lowers its exact decoded bytecode tree to guarded native
+  array construction in the compiled probe. See [tile-table startup](docs/optcarrot-ppu-lut.md).
   Native probe builds use a 16,384-pointer GC gray stack to reduce heap rescans;
   `OPTCARROT_GRAY_STACK_SIZE=1024` restores the upstream capacity. See
   [GC measurements](docs/optcarrot-gc.md).
