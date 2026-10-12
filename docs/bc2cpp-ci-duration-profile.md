@@ -72,6 +72,14 @@ Sampled by the first-level call under the generator's main script, the largest i
 `SourceText.read` in the process was tried and gave no change (8.0 s against 7.2 s, byte-identical output): the files
 are in the page cache and the cost is the scanning, so only caching scan results across processes would help.
 
+A StackProf run (wall mode, 1 ms, through `RUBYOPT=-r` so the generator child is profiled) is more exact than the sampler
+above: of 8070 samples `String#scan` was 42% self time and `CoreMixins.definers_in` 22%, GC 8%. `definers_in` built
+three regexes by interpolating the method name inside its per-line loop, for every line of every core Ruby source and
+every name; building them once and returning early when the source does not contain the name is exact (the generated C++
+is byte-identical) and took a one-method call from 7.8 s to 5.5 s and the calls inside `numeric_slow` from 7.9 s to
+6.5 s (the check from about 630 s to 576 s). After that fix `String#scan` is 61% self time: the regexes over the native
+sources, which only a cache of their results across processes would remove.
+
 Whole-output caching does not help: none of the 79 calls in `numeric_slow` repeats an earlier one (the digest is
 argv, the `BC2CPP_`/`NIS_` environment and the fixture text). What repeats is the native-source world.
 
@@ -130,6 +138,10 @@ Ranked by what they would save on the critical path. Nothing in this list is imp
 
 ## 5. Method notes
 
+* Ruby version: the generator needs Prism, so 3.1 and 3.2 cannot run it (they fail at load). This sandbox's 3.3.6 has no
+  YJIT and could not be rebuilt or upgraded (the proxy blocks `cache.ruby-lang.org` and GitHub tarballs), so a newer
+  Ruby or YJIT is untested here. The profile says why it is unlikely to be the fix: the time is in `String#scan`, the
+  Onigmo regex engine in C, which YJIT does not compile; the Ruby-level `definers_in` cost was fixed in the source.
 * Local setup for these runs: `libsdl2-dev`, `libsdl2-mixer-dev` and `gperf` from apt, `gem install rake`, and
   `LANG=C.UTF-8`. Without the UTF-8 locale `fixture_runtime.rb` fails with `invalid byte sequence in US-ASCII`.
 * The per-shard checks were run through `scripts/ci/timed_checks.rb` exactly as the workflow's step does.
