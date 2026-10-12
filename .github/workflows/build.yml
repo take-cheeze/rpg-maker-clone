@@ -48,6 +48,10 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       psp: ${{ steps.filter.outputs.psp }}
+      # Anything that can change a compiled result. Docs, changelog fragments and
+      # markdown cannot, so a PR that touches only those skips the bc2cpp jobs
+      # (the aggregate `bc2cpp` job accepts that skip, see there).
+      code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -61,6 +65,12 @@ jobs:
             psp:
               - 'app/psp/**'
               - '.github/workflows/build.yml'
+            code:
+              - '**'
+              - '!docs/**'
+              - '!changelog.d/**'
+              - '!**/*.md'
+              - '.github/**'
 
   # This workflow contains a single job called "build"
   build:
@@ -877,7 +887,8 @@ jobs:
   # check reads, so the shards start at once instead of waiting on the full
   # build; `bc2cpp` aggregates both and keeps the old status-check name.
   bc2cpp-build:
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
@@ -950,7 +961,8 @@ jobs:
         run: sccache --show-stats
 
   bc2cpp-checks:
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
+    needs: changes
     name: bc2cpp-checks (${{ matrix.shard }})
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -1506,7 +1518,8 @@ jobs:
   # with cmake, as in `bc2cpp-checks`; that step also applies the mruby patch
   # chain the extra libmruby builds from. Gated by `bc2cpp`.
   bc2cpp-width:
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
+    needs: changes
     name: bc2cpp-width (${{ matrix.variant }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -1644,17 +1657,20 @@ jobs:
   # still gates on all of them.
   bc2cpp:
     if: ${{ always() && github.event_name != 'issue_comment' }}
-    needs: [bc2cpp-build, bc2cpp-checks, bc2cpp-width]
+    needs: [changes, bc2cpp-build, bc2cpp-checks, bc2cpp-width]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every bc2cpp job to succeed
         env:
+          CODE: ${{ needs.changes.outputs.code }}
           BUILD: ${{ needs.bc2cpp-build.result }}
           CHECKS: ${{ needs.bc2cpp-checks.result }}
           WIDTH: ${{ needs.bc2cpp-width.result }}
         run: |
-          echo "bc2cpp-build: $BUILD, bc2cpp-checks: $CHECKS, bc2cpp-width: $WIDTH"
-          test "$BUILD" = success && test "$CHECKS" = success && test "$WIDTH" = success
+          echo "code: $CODE, bc2cpp-build: $BUILD, bc2cpp-checks: $CHECKS, bc2cpp-width: $WIDTH"
+          # Without code changes the three jobs are skipped on purpose; anything else must succeed.
+          ok() { [ "$1" = success ] || { [ "$CODE" != true ] && [ "$1" = skipped ]; }; }
+          ok "$BUILD" && ok "$CHECKS" && ok "$WIDTH"
 
   # Ruby-only checks split out of `build`: none of the nine steps below ever
   # touches the compiled engine binary (they load the mruby-*/mrblib sources
