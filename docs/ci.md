@@ -70,6 +70,15 @@ The existing dataflow check compares answers with an independent forward
 fixpoint and covers mutation of caller-owned state. See
 [ADR 0409](adr/0409-bc2cpp-dataflow-query-cache.md) for performance measurements.
 
+The independent forward oracle in `bytecode_ir_dataflow_check.rb` shares
+frozen definition sets between states, copying only sets that grow at a join.
+It also keeps each pending instruction in the work queue once. A local
+CRuby 3.4.9/YJIT straight-line benchmark with 4,096 instructions and 130
+registers fell from 0.59 seconds to 0.09 seconds for the forward oracle alone;
+all instruction/register states matched the earlier oracle. Backward-query
+cost and the optional whole-tree check's total duration are separate costs.
+
+
 ### Mutation checks run off pull requests
 
 `scripts/ci/timed_checks.rb` drops every `*_mutation_check.rb` command and strips
