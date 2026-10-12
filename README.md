@@ -1212,6 +1212,11 @@
   [`docs/adr/0313-bc2cpp-constructor-pools.md`](docs/adr/0313-bc2cpp-constructor-pools.md) and
   `scripts/bc2cpp/constructor_pools_check.rb`). When a module or singleton defines `initialize`,
   the refusal diagnostic names its owner so the unavailable constructor proof can be traced.
+  A `klass.new` whose receiver is a parameter every caller fills with class constants (the typed save records'
+  generic `table`/`rows` helpers) no longer withdraws every two-argument constructor from those pools;
+  `BC2CPP_CLASS_OBJECT_ARGS=0` turns it off (see
+  [`docs/adr/0416-bc2cpp-class-object-arguments.md`](docs/adr/0416-bc2cpp-class-object-arguments.md) and
+  `scripts/bc2cpp/class_object_args_check.rb`).
   The arguments of every call of a setter (`x=`) are joined into a class pool for the ivar an `attr_writer` or an audited
   native writes and for the parameter of a setter with several definitions; a receiver those pools prove nil or one
   class takes a class test whose else is `bc2cpp_guard_violation` (`BC2CPP_SETTER_POOLS=0` turns it off; 11 fewer
