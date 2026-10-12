@@ -427,8 +427,8 @@ jobs:
             # mutants (16), and STRICT_HINTS_REVIEWED over the real wio closed world (hot-only passes the gate,
             # the full run equals the list; est. 15 min like the NOMETHOD_REVIEWED check).
             checks: |
-              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_check.rb
-              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_mutation_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_mutation_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/strict_hints_reviewed_check.rb
           - shard: coverage
             # Split from fast: the three slowest checks there (~10, ~5 and ~0.2 min).
