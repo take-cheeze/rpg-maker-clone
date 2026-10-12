@@ -1,4 +1,4 @@
-# 0421. bc2cpp: a Symbol element of a frozen literal carries the Symbol class bit
+# 0424. bc2cpp: a Symbol element of a frozen literal carries the Symbol class bit
 
 Date: 2026-10-12
 

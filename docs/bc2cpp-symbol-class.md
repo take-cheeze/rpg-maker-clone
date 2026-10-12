@@ -1,4 +1,4 @@
-# bc2cpp: the Symbol class bit of frozen tables (ADR 0421)
+# bc2cpp: the Symbol class bit of frozen tables (ADR 0424)
 
 A `LOADSYM` element of a frozen literal Array or Hash (`[:a, :b].freeze`) is a Symbol. Its slot is now the Symbol
 class bit (`CodeGen#frozen_symbol_bit`, the same `numeric_class_bit('Symbol')` the exact-class run gives LOADSYM

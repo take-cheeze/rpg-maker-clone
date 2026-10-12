@@ -1271,7 +1271,7 @@ jobs:
           - name: bc2cpp LCF row flow check (host)
             run: ruby scripts/bc2cpp/lcf_row_flow_check.rb
 
-          # ADR 0421: the Symbol class bit of frozen tables (host model; the generated-code half needs MRBC, see bc2cpp-nightly).
+          # ADR 0424: the Symbol class bit of frozen tables (host model; the generated-code half needs MRBC, see bc2cpp-nightly).
           - name: bc2cpp symbol class check (host)
             run: ruby scripts/bc2cpp/symbol_class_check.rb
 
