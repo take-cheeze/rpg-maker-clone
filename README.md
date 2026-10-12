@@ -1725,6 +1725,8 @@
 - bc2cpp reuses repeated bytecode dataflow queries during analysis and code
   generation; bounded caches also reduce repeated work in fixture tests. See
   [ADR 0409](docs/adr/0409-bc2cpp-dataflow-query-cache.md).
+  Its independent test oracle shares immutable definition sets and avoids duplicate
+  queued instructions; see [the CI guide](docs/ci.md).
 - CI also runs the width-sensitive bc2cpp checks on a 32-bit-`mrb_int` and a
   no-bigint mruby (the Emscripten/Wio/PSP widths) and listens for merge-queue
   runs; [`docs/ci.md`](docs/ci.md) lists the repository settings the owner has
