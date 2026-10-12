@@ -75,7 +75,17 @@ module LCF
       return nil if r.nil?
       child = klass.new(r, "#{@path}.#{name}")
       child.check!
-      child
+      child.save_link(self, id)
+    end
+
+    # Remember the record and field this one was read from, so a typed write into
+    # it (save_typed_setters.rb) reaches the owner: an Array1D stores a nested
+    # table as the bytes it had when assigned, so an edit to the child alone would
+    # never be written out. Returns self.
+    def save_link owner, id
+      @owner = owner
+      @owner_id = id
+      self
     end
 
     # A nested Array2D field: the table, with every row checked as +klass+.
