@@ -38,3 +38,23 @@ All six runs returned checksum `59662`, a 1.84x compiled speedup. This does not
 imply the same benefit in the interpreter: the full runner's static interpreted
 bundle took 21.50 s, so specialization remains opt-in. Whole-process wall timing
 uses a monotonic clock and includes startup; the shim's printed FPS is separate.
+
+## Decoded bytecode dispatch experiment
+
+Run `BC2CPP_IR_CPU_DISPATCH=1 ruby tools/optcarrot_probe/compiled_run.rb FRAMES ROM`
+with the probe's usual build settings to optimize CPU dispatch after bytecode
+decoding. This mode takes precedence over `OPTCARROT_STATIC_DISPATCH=1` and
+preserves upstream CPU source and wrapper arithmetic. It inserts guarded literal
+calls into the decoded instruction graph before compiler analyses, including the
+computed sends inside instruction wrappers. Unmatched names and argument counts
+retain the original dynamic operation.
+
+The fixed probe acknowledges its native core with
+`BC2CPP_OPTCARROT_FIXED_CORE=1` for the compiler. Other compiler hosts must not
+claim that contract unless their native core preserves Array length, Symbol and
+Integer equality and Kernel send, and benchmark method definitions remain fixed
+without instance singleton replacements. Ruby replacements withdraw the optimization.
+The splat coercion and Array copy remain intact. Large rewritten wrappers may
+exceed method inlining's size limit; this experimental mode has no established
+speedup over static source dispatch. See
+[ADR 0422](adr/0422-optcarrot-cpu-dispatch-ir.md).
