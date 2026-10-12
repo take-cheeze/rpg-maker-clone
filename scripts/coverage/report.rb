@@ -81,6 +81,8 @@ CHECKS = [
   { name: 'ci-helpers', command: %w[scripts/ci/helpers_check.rb] },
   # The generator's scan cache (ADR 0415): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-scan-cache', command: %w[scripts/bc2cpp/scan_cache_check.rb] },
+  # The generator's Prism parse memo (ADR 0416): no mrblib lines, listed to mirror `ruby-checks`.
+  { name: 'bc2cpp-ruby-parse-cache', command: %w[scripts/bc2cpp/ruby_parse_cache_check.rb] },
   # No CRuby-side lines of mrblib, but every scripts/**/*_check.rb rides here.
   { name: 'native-binding-split', command: %w[scripts/native/binding_split_check.rb] },
   # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under CRuby
