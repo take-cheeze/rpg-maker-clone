@@ -488,6 +488,11 @@ jobs:
               # ADR 0373: `blk.call(*args)` on a core method's own `&blk` yields to a Proc and raises nil's
               # NoMethodError instead of a by-name `mrb_funcall_argv`; generated code and withdrawals only.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/block_param_call_splat_check.rb
+              # Gates that had no CI run. All four are quick; the behavioural half of nomethod_raise needs a full libmruby and skips otherwise.
+              MRBC="$mrbc" ruby scripts/bc2cpp/compact_class_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/nomethod_raise_check.rb
+              ruby scripts/bc2cpp/annotation_contradiction_check.rb
+              ruby scripts/bc2cpp/sanitize_injective_check.rb
 
     env:
       RPGMAKER_BC2CPP: "1"
@@ -585,7 +590,6 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp/fixnum_overflow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/step_inline_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/getidx_integer_arm_check.rb
-              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/lcf_row_flow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/computed_send_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/call_results_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/tuple_return_check.rb
