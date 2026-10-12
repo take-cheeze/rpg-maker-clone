@@ -428,7 +428,9 @@ jobs:
               ruby scripts/optcarrot/ppu_core_check.rb
               ruby scripts/bc2cpp/optcarrot_world_check.rb
               ruby scripts/optcarrot/onig_aliases_check.rb
-              MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              OPTCARROT_DEBUG=0 OPTCARROT_GRAY_STACK_SIZE=16384 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              # Reuse the ordinary probe host built above, including its ABI flags and regexp gem.
+              MRUBY_BUILD="$PWD/3rd/mruby/build/optcarrotinterpretedreleasegray16384" MRBC="$mrbc" ruby scripts/optcarrot/ppu_ir_lut_check.rb
               OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               BC2CPP_IR_INLINE=1 OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
