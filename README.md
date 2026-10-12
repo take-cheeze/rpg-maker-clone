@@ -1716,6 +1716,9 @@
   **Cloudflare Pages** preview URL back on it. See
   [`docs/deploy.md`](docs/deploy.md) for the one-time repo setup (Pages source +
   Cloudflare secrets).
+- bc2cpp CI enables CRuby's YJIT for host analysis and code generation,
+  including nightly fixture and mutation checks. See [the CI guide](docs/ci.md)
+  for verification and local comparisons.
 - bc2cpp test builders run mruby prerequisite tasks concurrently with bounded
   Rake workers, reducing cold fixture and width-build setup time. See
   [the CI guide](docs/ci.md).

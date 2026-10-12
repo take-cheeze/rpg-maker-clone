@@ -503,6 +503,7 @@ jobs:
 
     env:
       RPGMAKER_BC2CPP: "1"
+      RUBY_YJIT_ENABLE: "1"
       SCCACHE_GHA_ENABLED: "true"
       ACTIONS_CACHE_SERVICE_V2: "on"
       SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'schedule' && 'READ_WRITE' || 'READ_ONLY' }}
@@ -531,6 +532,9 @@ jobs:
 
       - name: Set up development environment
         run: ./scripts/nix/develop-export-env.bash
+
+      - name: Verify host Ruby JIT
+        run: ruby -e 'abort "YJIT is unavailable or disabled" unless RubyVM::YJIT.enabled?; puts RUBY_DESCRIPTION'
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11
@@ -635,6 +639,7 @@ jobs:
 
     env:
       RPGMAKER_BC2CPP: "1"
+      RUBY_YJIT_ENABLE: "1"
       SCCACHE_GHA_ENABLED: "true"
       ACTIONS_CACHE_SERVICE_V2: "on"
       SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'schedule' && 'READ_WRITE' || 'READ_ONLY' }}
@@ -661,6 +666,9 @@ jobs:
 
       - name: Set up development environment
         run: ./scripts/nix/develop-export-env.bash
+
+      - name: Verify host Ruby JIT
+        run: ruby -e 'abort "YJIT is unavailable or disabled" unless RubyVM::YJIT.enabled?; puts RUBY_DESCRIPTION'
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11
