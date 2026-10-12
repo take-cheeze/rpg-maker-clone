@@ -1179,6 +1179,7 @@ jobs:
             # the interpreter, then the mutants (the entry check removed, weakened class tests, ...).
             checks: |
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/entry_specialize_check.rb
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/method_inline_check.rb
               BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/entry_specialize_mutation_check.rb
           - shard: call-facts
             # ADR 0317: generated code with the withdrawal worlds, the full-core and core-only runs, then ten
@@ -1282,6 +1283,7 @@ jobs:
               MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              BC2CPP_IR_INLINE=1 OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
               OPTCARROT_CLOSED_WORLD=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
           - shard: coverage
             # Split from fast: the three slowest checks there (~10, ~5 and ~0.2 min).
