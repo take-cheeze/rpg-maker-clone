@@ -1090,6 +1090,9 @@
   `OPTCARROT_STATIC_PPU=1` compiles an upstream-generated synchronous PPU core
   in the ordinary host. Its state comparison accepts additional ROMs and frame
   counts. See [PPU core](docs/optcarrot-ppu-core.md).
+  `BC2CPP_IR_INLINE=1` expands eligible method bodies after bytecode decoding,
+  avoiding source inlining's bytecode jump limit. See
+  [method inlining](docs/bc2cpp-method-inlining.md).
   `OPTCARROT_STATIC_DISPATCH=1` exposes all CPU opcode calls to bc2cpp;
   `OPTCARROT_CLOSED_WORLD=1` uses a sealed benchmark executable with a validated
   source manifest. See [CPU dispatch](docs/optcarrot-cpu-dispatch.md) and
