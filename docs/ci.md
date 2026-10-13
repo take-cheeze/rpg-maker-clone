@@ -111,8 +111,8 @@ earlier, use `workflow_dispatch` on it, or add the path to the filter.
 
 ### Splitting long shards
 
-`hot-only` ran its two ~15 minute reviewed-set checks back to back, so
-`hot-proven-miss` now runs `bc2cpp_proven_miss_check`. `coverage` takes the three
+The hot-only shards (`hot-only`, `hot-proven-miss`) are off the nightly for now, so
+hot-only runs by hand only. `coverage` takes the three
 slowest checks out of `fast` (`bc2cpp_coverage_check`, the optcarrot coverage
 check and `rescue_shadow`). Timings come from the "Check timings" job summary.
 
@@ -199,7 +199,6 @@ clock of the whole job, setup included):
 | `core-mutants` | 16 min | 14 min |
 | `core-mrbtest` | 14.5 min | 12.5 min |
 | `optcarrot-benchmark` | 6.5 min | 3.8 min |
-| `hot-only` | 6 min | 4 min |
 | the other shards | 3-5 min | 1-2 min |
 
 The Optcarrot runner now defaults to the toolchain's optimized release build
