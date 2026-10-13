@@ -20,6 +20,9 @@ end
 ROOT = File.expand_path('../..', __dir__)
 MRUBY = File.join(ROOT, '3rd/mruby')
 PROBE_MRBC = ENV['MRBC'] || File.join(MRUBY, 'bin/mrbc')
+# Unset, the run builds in 3rd/mruby as it always has. Set, it builds in a copy of the patched tree under this
+# directory and writes nothing else under 3rd/mruby, so runs in a `ci:parallel` group do not interfere (docs/ci.md).
+WORK_DIR = ENV['OPTCARROT_WORK_DIR'].to_s.empty? ? nil : File.expand_path(ENV.fetch('OPTCARROT_WORK_DIR'))
 FRAMES = Integer(ARGV.fetch(0, '180'))
 ROM = ARGV.fetch(1, File.join(ROOT, '3rd/optcarrot/examples/Lan_Master.nes'))
 GRAY_STACK_SIZE = Integer(ENV.fetch('OPTCARROT_GRAY_STACK_SIZE', '16384'), 10)
@@ -126,6 +129,7 @@ abort "#{PROBE_MRBC} is missing -- build the optcarrot probe mrbc first" unless 
 abort "#{ROM} is missing -- initialize the optcarrot submodule first" unless File.file?(ROM)
 
 require File.join(ROOT, 'tools/bc2cpp/compiled_gems')
+require_relative 'mruby_tree'
 require_relative 'sealed_build'
 
 # The bundle prepends this shim, so bc2cpp must see it: it is the only `[]` definer on the numbers optcarrot
@@ -554,18 +558,14 @@ Dir.mktmpdir('optcarrot-bc2cpp-') do |temp|
   # uses, so the probe's mruby is the mruby bc2cpp is written against.
   # mruby-rdata-ivar-slots.patch is required, not optional: without it the
   # interpreted PPU reads embedded ivars out of an empty iv_tbl and crashes.
-  %w[
-    mruby-colon3-assign-setmcnst.patch
-    mruby-dollar-bang-scoped.patch
-    mruby-defined-keyword.patch
-    mruby-module-function-scope.patch
-    mruby-parser-dump-back-nth-ref.patch
-    mruby-nomemoryerror-reentrant-alloc.patch
-    mruby-gc-type-live-counts.patch
-    mruby-rdata-ivar-slots.patch
-  ].each do |patch|
-    path = File.join(ROOT, 'patches', patch)
-    system(File.join(ROOT, 'scripts/apply_mruby_patch.bash'), MRUBY, path, exception: true)
+  # The sources are read from MRUBY in both modes; the build is written to
+  # build_root, which is MRUBY or, with OPTCARROT_WORK_DIR, a copy of it.
+  if WORK_DIR
+    OptcarrotMRubyTree.check_patches!(MRUBY)
+    build_root = OptcarrotMRubyTree.copy_tree(MRUBY, File.join(WORK_DIR, 'mruby'))
+  else
+    OptcarrotMRubyTree::PATCHES.each { |patch| OptcarrotMRubyTree.apply_patch(MRUBY, patch) }
+    build_root = MRUBY
   end
   # nix's dev shell exports LD=ld, and mruby's Linker takes its command
   # straight from the environment (build/command.rb:193, `ENV['LD'] || 'ld'`).
@@ -581,9 +581,9 @@ Dir.mktmpdir('optcarrot-bc2cpp-') do |temp|
   # which is what adds libc: LD=CC, the same `cc` the compile half already uses.
   # Temporary gem paths can leave stale objects in a kept build directory.
   # Always rebuild generated code so timings and counters describe this run.
-  FileUtils.rm_rf(File.join(MRUBY, "build/#{compiled_target}/mrbgems/optcarrot-compiled"))
+  FileUtils.rm_rf(File.join(build_root, "build/#{compiled_target}/mrbgems/optcarrot-compiled"))
   if sealed
-    gems_dir = File.join(MRUBY, "build/#{compiled_target}/mrbgems")
+    gems_dir = File.join(build_root, "build/#{compiled_target}/mrbgems")
     FileUtils.rm_rf(File.join(gems_dir, 'optcarrot-benchmark'))
     FileUtils.rm_rf(File.join(gems_dir, 'mruby-onig-regexp/src'))
     FileUtils.rm_f(Dir[File.join(gems_dir, 'mruby-onig-regexp/gem_init.{c,pi,o}')])
@@ -591,11 +591,11 @@ Dir.mktmpdir('optcarrot-bc2cpp-') do |temp|
   rake_env = ENV.to_h.merge('MRUBY_CONFIG' => config)
   rake_env['LD'] = rake_env['CC'] || 'cc'
   tasks = sealed ? %w[verify_optcarrot_world link_optcarrot] : []
-  output, status = Open3.capture2e(rake_env, 'rake', *tasks, "-j#{Etc.nprocessors}", chdir: MRUBY)
+  output, status = Open3.capture2e(rake_env, 'rake', *tasks, "-j#{Etc.nprocessors}", chdir: build_root)
   raise "mruby build failed (#{status.exitstatus}):\n#{output[-6000..] || output}" unless status.success?
 
   if sealed
-    compiled_binary = File.join(MRUBY, "build/#{compiled_target}/bin/optcarrot")
+    compiled_binary = File.join(build_root, "build/#{compiled_target}/bin/optcarrot")
   end
 
   bundle = File.join(temp, 'optcarrot.rb')
@@ -611,8 +611,8 @@ Dir.mktmpdir('optcarrot-bc2cpp-') do |temp|
   raise 'optcarrot runner insertion point not found' unless source.sub!(/^nes = Optcarrot::NES\.new\(/, "OptcarrotProbe.install!\nnes = Optcarrot::NES.new(")
   File.write(compiled_bundle, source)
 
-  interpreted_binary = File.join(MRUBY, "build/#{interpreted_target}/bin/mruby")
-  compiled_binary ||= File.join(MRUBY, "build/#{compiled_target}/bin/mruby")
+  interpreted_binary = File.join(build_root, "build/#{interpreted_target}/bin/mruby")
+  compiled_binary ||= File.join(build_root, "build/#{compiled_target}/bin/mruby")
   compiled_entries = section_lines(diagnostics, 'compiled entry points').join("\n")
   cpu_run_mode = compiled_entries.include?('(Optcarrot::CPU#run,') ? 'compiled' : 'interpreted'
   ppu_loop_mode = compiled_entries.include?('(Optcarrot::PPU#main_loop,') ? 'compiled' : 'interpreted'

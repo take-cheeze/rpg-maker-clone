@@ -423,19 +423,25 @@ jobs:
               # visible to reflection, dup and Marshal, and refuse another class.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/typed_reflection_check.rb
           - shard: optcarrot-benchmark
+            # The five compiled runs differ only in their environment. Each builds in its own copy of the patched
+            # 3rd/mruby (OPTCARROT_WORK_DIR) and writes its own job-summary file, so they run as a group; the files
+            # are appended in order after it (docs/ci.md, "Parallel groups").
             checks: |
               ruby scripts/optcarrot/cpu_dispatch_check.rb
               ruby scripts/optcarrot/ppu_lut_check.rb
               ruby scripts/optcarrot/ppu_core_check.rb
               ruby scripts/bc2cpp/optcarrot_world_check.rb
               ruby scripts/optcarrot/onig_aliases_check.rb
-              OPTCARROT_DEBUG=0 OPTCARROT_GRAY_STACK_SIZE=16384 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
-              # Reuse the ordinary probe host built above, including its ABI flags and regexp gem.
-              MRUBY_BUILD="$PWD/3rd/mruby/build/optcarrotinterpretedreleasegray16384" MRBC="$mrbc" ruby scripts/optcarrot/ppu_ir_lut_check.rb
-              OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
-              OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
-              BC2CPP_IR_INLINE=1 OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
-              OPTCARROT_CLOSED_WORLD=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              # ci:parallel begin 3
+              GITHUB_STEP_SUMMARY="$RUNNER_TEMP/optcarrot-1.md" OPTCARROT_WORK_DIR="$RUNNER_TEMP/optcarrot-1" OPTCARROT_DEBUG=0 OPTCARROT_GRAY_STACK_SIZE=16384 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              GITHUB_STEP_SUMMARY="$RUNNER_TEMP/optcarrot-2.md" OPTCARROT_WORK_DIR="$RUNNER_TEMP/optcarrot-2" OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              GITHUB_STEP_SUMMARY="$RUNNER_TEMP/optcarrot-3.md" OPTCARROT_WORK_DIR="$RUNNER_TEMP/optcarrot-3" OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              GITHUB_STEP_SUMMARY="$RUNNER_TEMP/optcarrot-4.md" OPTCARROT_WORK_DIR="$RUNNER_TEMP/optcarrot-4" BC2CPP_IR_INLINE=1 OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              GITHUB_STEP_SUMMARY="$RUNNER_TEMP/optcarrot-5.md" OPTCARROT_WORK_DIR="$RUNNER_TEMP/optcarrot-5" OPTCARROT_CLOSED_WORLD=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              # ci:parallel end
+              cat "$RUNNER_TEMP/optcarrot-1.md" "$RUNNER_TEMP/optcarrot-2.md" "$RUNNER_TEMP/optcarrot-3.md" "$RUNNER_TEMP/optcarrot-4.md" "$RUNNER_TEMP/optcarrot-5.md" >> "$GITHUB_STEP_SUMMARY"
+              # Reuse the ordinary probe host that the first run above built in its own copy, including its ABI flags and regexp gem.
+              MRUBY_BUILD="$RUNNER_TEMP/optcarrot-1/mruby/build/optcarrotinterpretedreleasegray16384" MRBC="$mrbc" ruby scripts/optcarrot/ppu_ir_lut_check.rb
           - shard: strict-hints
             # BC2CPP_STRICT_HINTS (docs/adr/0419): the forced-hint tier. The generated-code and run checks, the
             # mutants (16), and STRICT_HINTS_REVIEWED over the real wio closed world (hot-only passes the gate,

@@ -1327,6 +1327,14 @@ these.
   part of the project's real build.
 - `compiled_run.rb` -- builds an isolated bc2cpp-enabled mruby and runs the
   headless checksum benchmark; build artifacts stay in a temporary directory.
+  With `OPTCARROT_WORK_DIR=<dir>` it builds in a copy of the patched
+  `3rd/mruby` made under `<dir>` and writes nothing else under `3rd/mruby`
+  (the patches must already be applied), so runs can share one checkout. The
+  nightly `optcarrot-benchmark` shard runs its five compiled runs this way as
+  a `ci:parallel` group (docs/ci.md, "Parallel groups").
+- `mruby_tree.rb` -- the probe's mruby patch list, the in-place apply and
+  read-only check, and the digest-verified copy of `3rd/mruby` that
+  `compiled_run.rb` and `build_bundle.rb` share.
 - `../../patches/mruby-module-function-scope.patch`,
   `../../patches/mruby-parser-dump-back-nth-ref.patch` -- see points 4 and 5
   above; both *are* part of the project's real build.

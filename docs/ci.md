@@ -211,8 +211,11 @@ gem is rebuilt on every invocation to prevent stale compiler output from
 affecting measurements. Historical timings above predate this default change.
 
 The Optcarrot shard also checks all 256 specialized opcode arms and strict-world
-source validation, then runs the combined `OPTCARROT_STATIC_DISPATCH=1`
-`OPTCARROT_CLOSED_WORLD=1` experiment against the same checksum benchmark.
+source validation, then runs the five compiled checksum benchmarks (the default,
+`OPTCARROT_STATIC_DISPATCH=1`, static PPU, IR inlining, and the combined
+`OPTCARROT_STATIC_DISPATCH=1` `OPTCARROT_CLOSED_WORLD=1` experiment) against the same
+checksum. They form a `ci:parallel` group of three, each in its own work directory (see
+"Parallel groups").
 
 `bc2cpp-width (int32-a)` or `(int32-b)` took 9 min. `core-flow` was the long pole of the whole
 workflow; its mutation checks now run in `core-flow-mutants`.
@@ -424,6 +427,11 @@ empty, so one can delete the directory under another. The mutant pool already us
 group is for shards made of single-process scripts. A group adds CPU and memory load, so keep N at 3
 on the 4-vCPU runner: `embedded_ivar_access_check` alone uses about 2.5 cores.
 
+A command that builds in, or patches, the shared `3rd/mruby` checkout joins a group only when it builds in a
+copy of that tree. The optcarrot probe's `compiled_run.rb` with `OPTCARROT_WORK_DIR` set copies the tree
+(digest-checked against it) and only checks that the patches are already applied, so no two runs write
+`3rd/mruby` or a build directory.
+
 A command that appends to the job summary (`$GITHUB_STEP_SUMMARY`) shares that file with the other
 commands, so it joins a group only with a file of its own. Prefix it with `GITHUB_STEP_SUMMARY=<file>`
 and add a line after `# ci:parallel end` that appends the files to the summary in input order. The
@@ -432,8 +440,10 @@ the appending line does not run, so the summaries of that shard are missing and 
 output is in the log.
 
 Groups in use: `registrations`, both width legs, `call-facts` (its first command builds the
-full core, the rest of the non-mutation checks run as a group) and `coverage` (the two job-summary
-reports, each with its own file, and the rescue shadow check; see the summary rule above). The ten `call-facts` mutation checks are not in
+full core, the rest of the non-mutation checks run as a group), `coverage` (the two job-summary
+reports, each with its own file, and the rescue shadow check; see the summary rule above) and
+`optcarrot-benchmark` (the five compiled runs, each with its own `OPTCARROT_WORK_DIR` and summary
+file, appended in order; see the copy rule above). The ten `call-facts` mutation checks are not in
 a group: they are split over the shards `call-facts-mutants-a` and `call-facts-mutants-b` and run in sequence,
 because each already runs a four-wide mutant pool and `call_facts_mutation` is the only one of them that uses
 `.mutants/`. Measured on a 4-core machine for the `registrations` shard:

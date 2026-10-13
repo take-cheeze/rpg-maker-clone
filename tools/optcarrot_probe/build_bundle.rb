@@ -28,6 +28,7 @@
 require 'fileutils'
 require 'open3'
 require_relative 'cpu_dispatch'
+require_relative 'mruby_tree'
 require_relative 'ppu_lut'
 
 ROOT = File.expand_path('../..', __dir__)
@@ -35,7 +36,6 @@ PROBE_DIR = __dir__
 OPTCARROT_DIR = File.join(ROOT, '3rd/optcarrot')
 MRUBY_DIR = File.join(ROOT, '3rd/mruby')
 MODFUNC_PATCH = File.join(ROOT, 'patches/mruby-module-function-scope.patch')
-APPLY_SCRIPT = File.join(ROOT, 'scripts/apply_mruby_patch.bash')
 
 out_file = ARGV[0] or abort "usage: #{$PROGRAM_NAME} OUT_FILE"
 
@@ -47,7 +47,13 @@ unless Dir.exist?(File.join(MRUBY_DIR, 'include'))
   abort "#{MRUBY_DIR} is empty -- run `git submodule update --init 3rd/mruby` first"
 end
 
-system(APPLY_SCRIPT, MRUBY_DIR, MODFUNC_PATCH, exception: true)
+# A run with OPTCARROT_WORK_DIR set shares 3rd/mruby with runs beside it, so it only checks the patch (compiled_run.rb
+# has checked them all already); the serial path applies it in place, idempotently.
+if ENV['OPTCARROT_WORK_DIR'].to_s.empty?
+  OptcarrotMRubyTree.apply_patch(MRUBY_DIR, MODFUNC_PATCH)
+else
+  OptcarrotMRubyTree.check_patches!(MRUBY_DIR, [MODFUNC_PATCH])
+end
 
 # Real require_relative order from 3rd/optcarrot/lib/optcarrot.rb, with
 # opt.rb spliced in where cpu.rb's and ppu.rb's own require_relative "opt"
