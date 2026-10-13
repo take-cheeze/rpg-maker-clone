@@ -58,3 +58,31 @@ The splat coercion and Array copy remain intact. Large rewritten wrappers may
 exceed method inlining's size limit; this experimental mode has no established
 speedup over static source dispatch. See
 [ADR 0422](adr/0422-optcarrot-cpu-dispatch-ir.md).
+
+The guarded IR pass groups outer dispatch arms by argument count. It reads the
+copied Array's length once and compares each distinct arity once; after a
+matching group exhausts its Symbol names, it goes directly to the original
+splat fallback. Nested fixed-argument wrappers also include guarded literal
+calls to `store_mem` and `store_zpg`. Common load/store and addressing names
+are tried earlier without changing fallback behavior or hiding calls from
+compiler analyses.
+
+A paired measurement on 2026-10-13 used Lan_Master, release `-O3`, a 16384-entry
+mruby gray stack, synchronous PPU, `BC2CPP_IR_CPU_DISPATCH=1` and
+`BC2CPP_IR_INLINE=1`. Both binaries came from compiler revision `8beff37c`, with
+only this guard factoring/storage-arm change applied to the second binary.
+Three pairs alternated execution order on a quiet host; wall time includes
+startup and shutdown.
+
+| Frames | Original CPU IR median wall FPS | Factored CPU IR median wall FPS | Change |
+| --- | ---: | ---: | ---: |
+| 180 | 144.19 | 148.69 | +3.1% |
+| 1800 | 64.79 | 66.20 | +2.2% |
+
+All runs returned checksums 59662 and 60838 respectively. Complete final
+pixels, audio, RAM and CPU/PPU registers matched at 2, 180 and 1800 frames.
+These measurements compare two experimental CPU IR implementations; they do
+not establish a speedup over source-specialized CPU dispatch, which remains
+the faster preset. The IR path still copies the splat Array per opcode and
+retains large wrapper graphs. Allocation/GC and later game workload may
+contribute to the lower long-run throughput, but were not profiled here.
