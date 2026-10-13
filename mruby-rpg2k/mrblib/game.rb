@@ -3914,7 +3914,7 @@ module Game
     # `db` is the running `LCF::Database`: new games pass `RPG2k#@db`, and
     # both save-restore paths pass that same database to `Party.new`. This
     # lets bc2cpp trace the database-backed calls made through `@db`.
-    # bc2cpp: (LCF::Database, , )
+    # bc2cpp: (LCF::Database)
     def initialize(db, ids = nil, roster = nil)
       @db = db
       @roster = roster || Actors.new(db)
