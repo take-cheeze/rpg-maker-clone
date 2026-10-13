@@ -7,15 +7,16 @@ build: the else arm of a guarded hint site, which dispatched by name, becomes
 [RPG2k] hint violation: <Class>#<name> at <Owner#method (FAMILY)>
 ```
 
-on `$stderr` followed by a raised `BC2cppHintViolation` (a `NoMethodError`). Default off:
-with the variable unset, empty or `0` the generated code is byte-identical.
+on `$stderr` followed by a raised `BC2cppHintViolation` (a `NoMethodError`). Default on (ADR 0438):
+with the variable unset or empty the receiver-hint families are forced; `0` is the byte-identical
+baseline with the tier off.
 
 ## Switch
 
 | `BC2CPP_STRICT_HINTS` | forced families |
 | --- | --- |
-| unset, empty, `0` | none |
-| `1` | `typed`, `element`, `ivar_accessor`, `mono_embed` (a receiver hint: layout, annotation, element) |
+| unset, empty, `1` | `typed`, `element`, `ivar_accessor`, `mono_embed` (a receiver hint: layout, annotation, element) |
+| `0` | none (the byte-identical baseline) |
 | `all` | those four plus `poly_small_n`, `poly_table`, `interface_table` (the candidate set of a name; forced only where no known class outside the set answers the name, ADR 0428) |
 | `typed,ivar_accessor` | the listed ones (an unknown name aborts the run) |
 

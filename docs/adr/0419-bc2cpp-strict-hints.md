@@ -24,7 +24,7 @@ hint then costs a loud failure, never speed, and the by-name sites disappear fro
 
 ## Decision
 
-`BC2CPP_STRICT_HINTS` (default off; unset, empty and `0` emit byte-identical code, checked)
+`BC2CPP_STRICT_HINTS` (default on since ADR 0438: unset or empty select `1`; `0` emits byte-identical code, checked)
 selects the families whose else arm becomes `bc2cpp_hint_violation`:
 
 | family (`STRICT_HINT` marker, site tag) | the hint | forced when |
