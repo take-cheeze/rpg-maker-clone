@@ -11030,7 +11030,7 @@ class RPG2k
       # one always draws its standing pose 1, since it snaps tile to tile
       # rather than sliding (see the "Vehicle move-routes" note in
       # docs/TODO.md) and so has no in-tile progress to animate against.
-      # bc2cpp: (nil, Game::Vehicle)
+      # bc2cpp: (, Game::Vehicle)
       def draw_vehicle_frame(type, v, charset, index, ridden)
         pat = ridden ? player_walk_pattern : 1
         frame = [index, v.direction, charset.object_id, pat]
