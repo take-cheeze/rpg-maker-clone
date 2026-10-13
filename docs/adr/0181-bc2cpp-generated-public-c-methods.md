@@ -33,8 +33,8 @@ unrecognized owners keep ordinary Ruby dispatch.
 The generator can use the existing core implementations for Array `clear` and
 `pop`, Hash `clear`, `keys`, and `values`, and String `intern`/`to_sym`, while
 preserving each C function's allocation, mutation, frozen checks, and GC
-behavior. The dedicated Optcarrot frame-buffer `Array#clear` path remains
-separate because it intentionally retains backing capacity. In the existing
+behavior. Array capacity and sharing follow the upstream core implementation;
+application-specific capacity-retention policies are not compiler proofs. In the existing
 compiled RPG2k artifact, dynamic `clear`, `pop`, `keys`, and `values` sends
 numbered 32, 17, 19, and 2 respectively; these are static send-site counts,
 not runtime fast-path counts or FPS measurements.
