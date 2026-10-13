@@ -27,7 +27,7 @@ Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, 
 | TC1001 | error | a declared type disagrees with the inferred one (fixnum/symbol argument or return, class argument, class return) |
 | TC1002 | error | a signature file could not be used |
 | TC1003 | error | a signature names a method or ivar class the program lacks (a stale signature) |
-| TC1005 | error | an index (`x[i]`, `x[i] = v`) on a receiver that may be nil, with no nil check before it (ADR 0439) |
+| TC1005 | warning | an index (`x[i]`, `x[i] = v`) on a receiver that may be nil, with no nil check before it (ADR 0439) |
 | TC1004 | error | an annotation token bc2cpp ignores (unknown class), a signature or annotation with more tokens than the method has parameters (fewer is fine: a prefix) |
 | TC2001-3 | info (`--all`) | untyped parameter / return / ivar, with the reason |
 | TC3001 | info | `suggestion #N`: a signature on this declaration would act on N by-name send lines |
