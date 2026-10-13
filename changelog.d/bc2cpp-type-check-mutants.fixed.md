@@ -1,0 +1,1 @@
+- **CI**: the bc2cpp type check mutation check again expects the error severity of annotation diagnostics (ADR 0412), so the nightly `bc2cpp-checks (type-check)` shard passes; its "warnings do not fail" case now carries a real warning.
