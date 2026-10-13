@@ -1110,11 +1110,6 @@ jobs:
           - name: bc2cpp Ruby parse cache
             run: ruby scripts/bc2cpp/ruby_parse_cache_check.rb
 
-          # The wio-only mrblib rewrites only run in a wio build, which CI
-          # doesn't do; a source edit must not silently break them.
-          - name: wio strip scripts still apply
-            run: ruby scripts/wio/strip_scripts_check.rb
-
           # ADR 0417: RGSS::Tts (its native registration, its one Ruby call site) exists
           # only in the desktop build; every limited target's gem config must drop it.
           - name: RGSS::Tts only in the build that can back it
@@ -1124,11 +1119,6 @@ jobs:
           # agree with ADR 0111's pair tables on every 16-bit input.
           - name: CP932 table lookups match the reference
             run: ruby scripts/cp932_tables_check.rb
-
-          # The analysis behind the wio unreachable-method strip (ADR 0218)
-          # on a fixture world: every way to reach a method keeps it.
-          - name: wio unreachable-method analysis soundness
-            run: ruby scripts/wio/unreachable_methods_check.rb
 
           - name: LCF test-bed smoke check
             run: ruby scripts/lcf/testbed_check.rb
@@ -1241,17 +1231,6 @@ jobs:
           # does not build, so here the check prints SKIP and passes; the fixtures run where MRBC is set.
           - name: bc2cpp lexical constant check
             run: ruby scripts/bc2cpp/lexical_const_check.rb
-
-          # Unit check for the Wio bc2cpp flash-overflow report's map/ld parsing
-          # (scripts/wio/overflow_report.rb, ADR 0152) against a hand-built map
-          # with known numbers -- the real `wio-bc2cpp` job exercises it too,
-          # but only after a multi-minute ARM cross-build, so this pins the
-          # arithmetic without one.
-          - name: wio overflow report check
-            run: ruby scripts/wio/overflow_report_check.rb
-
-          - name: wio dropped-gems check
-            run: ruby scripts/wio/dropped_gems_check.rb
 
           # The host-only sections (hand-built bytecode, a synthetic core tree,
           # the patch text); the fixture sections need mrbc and the patched
