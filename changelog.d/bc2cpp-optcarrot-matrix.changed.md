@@ -1,0 +1,1 @@
+- **CI:** the nightly Optcarrot benchmark is no longer one `bc2cpp-checks` job. Each of its five `compiled_run.rb 180` commands runs in its own job, and the quick Optcarrot scripts run in a sixth, so the runs go out to separate runners at once. Every command keeps its environment settings and its pass/fail. See `docs/ci.md`, "Optcarrot benchmark jobs".

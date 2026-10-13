@@ -210,9 +210,42 @@ debug and profiling builds use separate target directories, and the generated
 gem is rebuilt on every invocation to prevent stale compiler output from
 affecting measurements. Historical timings above predate this default change.
 
-The Optcarrot shard also checks all 256 specialized opcode arms and strict-world
-source validation, then runs the combined `OPTCARROT_STATIC_DISPATCH=1`
-`OPTCARROT_CLOSED_WORLD=1` experiment against the same checksum benchmark.
+The Optcarrot checks also check all 256 specialized opcode arms and strict-world
+source validation, then run the combined `OPTCARROT_STATIC_DISPATCH=1`
+`OPTCARROT_CLOSED_WORLD=1` experiment against the same checksum benchmark. They are
+no longer one job; see "Optcarrot benchmark jobs" below.
+
+### Optcarrot benchmark jobs
+
+The Optcarrot checks are six `bc2cpp-checks` jobs. `optcarrot-benchmark-checks` runs the
+five quick scripts (`cpu_dispatch_check`, `ppu_lut_check`, `ppu_core_check`,
+`optcarrot_world_check`, `onig_aliases_check`). Each `tools/optcarrot_probe/compiled_run.rb 180`
+command has a job of its own, so GitHub runs the five benchmarks on five runners at once:
+
+| Job | Command (env settings as before) |
+| --- | --- |
+| `optcarrot-benchmark-default` | `OPTCARROT_DEBUG=0 OPTCARROT_GRAY_STACK_SIZE=16384 ... compiled_run.rb 180`, then `ppu_ir_lut_check` |
+| `optcarrot-benchmark-static-dispatch` | `OPTCARROT_STATIC_DISPATCH=1 ... compiled_run.rb 180` |
+| `optcarrot-benchmark-static-ppu` | `OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 ... compiled_run.rb 180` |
+| `optcarrot-benchmark-ir-inline` | `BC2CPP_IR_INLINE=1 OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 ... compiled_run.rb 180` |
+| `optcarrot-benchmark-closed-world` | `OPTCARROT_CLOSED_WORLD=1 OPTCARROT_STATIC_DISPATCH=1 ... compiled_run.rb 180` |
+
+`ppu_ir_lut_check` reads the libmruby that the default run builds, so it stays in that
+job and runs after the run. Each job is a fresh checkout with the same setup steps as the
+other shards, so the mruby tree and the build directories a run writes
+(`3rd/mruby/build/<target>`) belong to that job alone. The commands, their environment and
+their pass/fail are unchanged. One behaviour differs: a failing Optcarrot command used to
+stop the commands after it in the shard; now each job runs its own command, so a failure
+in one does not skip the others (`fail-fast: false` already keeps the matrix going). Each
+job has its own "Check timings" summary.
+
+The estimated critical path is one job's setup plus the longest command. The setup of the
+old optcarrot job in run 38240433646 was 158 s (job start to the checks step), and its
+longest command was 511 s, so the estimate is about 11 to 13 minutes, against the 1930 s
+(32 minutes) the single job took in that run. This is an estimate from one run's timings;
+the split has not been run, so it is not a measured speedup. The five benchmarks now share
+the nightly's runner pool: the nightly ran 40 jobs with at most 23 at once, and the
+Optcarrot split adds five jobs (48 `bc2cpp-checks` entries, 50 jobs in all).
 
 `bc2cpp-width (int32-a)` or `(int32-b)` took 9 min. `core-flow` was the long pole of the whole
 workflow; its mutation checks now run in `core-flow-mutants`.
