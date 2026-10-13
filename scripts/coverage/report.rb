@@ -105,6 +105,8 @@ CHECKS = [
   { name: 'bc2cpp-lcf-row-flow', command: %w[scripts/bc2cpp/lcf_row_flow_check.rb] },
   # ADR 0276: NumericFlow on hand-built bytecode; the fixture sections skip here.
   { name: 'bc2cpp-numeric-operand', command: %w[scripts/bc2cpp/numeric_operand_check.rb] },
+  # ADR 0431: the Integer bit-operator result class on hand-built bytecode; no mrblib lines.
+  { name: 'bc2cpp-bitop-results', command: %w[scripts/bc2cpp/bitop_results_check.rb] },
   # ADR 0424: the Symbol class bit of frozen tables (the model half; the fixture half needs mrbc).
   { name: 'bc2cpp-symbol-class', command: %w[scripts/bc2cpp/symbol_class_check.rb] },
   # ADR 0429: the Symbol bit of a LOADSYM register and the Symbol class chain (the model half; the fixture half needs mrbc).
