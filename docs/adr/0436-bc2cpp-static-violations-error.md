@@ -1,4 +1,4 @@
-# 0426. bc2cpp type check: annotation and signature violations are errors
+# 0436. bc2cpp type check: annotation and signature violations are errors
 
 Date: 2026-10-12
 
