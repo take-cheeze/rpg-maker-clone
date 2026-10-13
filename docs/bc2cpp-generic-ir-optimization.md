@@ -46,6 +46,23 @@ The native LUT saved about 103 ms per process; this did not establish a
 steady-emulation improvement. The general resumable-helper inliner showed
 no measurable speedup in its previous paired comparison.
 
+The upstream-only generic build was measured on the same local machine with
+three sequential runs per workload, release `-O3`, a 16,384-pointer GC gray
+stack, and both general inliners enabled (355 installed methods, 27 resumable
+helper expansions):
+
+| Workload | Median process time | Wall FPS |
+| --- | ---: | ---: |
+| 180 cold frames | 2.4920 s | 72.23 |
+| 1,800 frames | 33.4057 s | 53.88 |
+
+All six checksums matched `59662` / `60838`. Full pixels/audio/RAM/CPU/PPU
+register states also matched interpreted mruby at 2, 180 and 1,800 frames. These measurements establish a
+new baseline, not a controlled A/B of one optimization: removing the
+specializations also restores original CPU dispatch, Fiber PPU and startup.
+The longer workload is slower than upstream CRuby in the previous local
+measurement. Allocation/GC profiling is needed to explain the gap.
+
 Compare the general path with upstream CPU dispatch, Fiber PPU, and initializer
 unchanged in both sides. Require pixels/audio/RAM/register equivalence and
 checksum agreement, alternate repeated runs, and report startup separately
