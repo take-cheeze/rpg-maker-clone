@@ -1,0 +1,1 @@
+- The bc2cpp escape-analysis mutation check (`scripts/bc2cpp/escape_analysis_mutation_check.rb`) now builds its scratch generator with `Bc2cppMutantPool.copy_generator`, so the `rgss_tts_config` sibling that `compiled_gems.rb` requires is present. Before, the unmutated control and all 18 mutants failed to load and were reported as not killed.
