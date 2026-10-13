@@ -80,3 +80,17 @@ resolved reads, the refused shadow, superclass, mixin, compact, singleton, priva
 lists it (which skips there, since that job has no mrbc).
 
 Census: see `docs/bc2cpp-constant-lookup.md`.
+
+## Amendment: block-form evals
+
+The whole-world refusal applies to a string `class_eval` / `module_eval` / `instance_eval` only, as the Decision
+states. The first implementation refused every send of those names, including the block form that mruby-enumerator
+uses, which made the core-exact-direct withdrawal worlds fail on master. The block form keeps lexical constant lookup
+on this mruby: a read and a `CONST = ...` in a block both reach the lexical definition, checked against the full-core
+build (`Foo.class_eval { BAR }` reads the top-level `BAR`; `Foo.class_eval { X = 1 }` in `class Lex` defines `Lex::X`).
+An argument count that is unknown (a splat) or non-zero, or any keyword argument, is refused as a possible string.
+
+The same change moved the lexical expectations that ADR 0423's rule resolves: a scoped read `K::NAME` (and a bare read
+whose lexical chain holds the only definition) stays exact when another scope binds the same name, and the
+diagnostics name pools by their qualified key (`NUMCONST EcTables::IDX`, `CLASSCONST ErHolder::LABEL`).
+`scripts/bc2cpp/frozen_tables_check.rb` and `scripts/bc2cpp/exact_receiver_flow_check.rb` carry those expectations.
