@@ -87,3 +87,43 @@ replace the synchronous source generator or specialize clock branches. Run
 `ruby scripts/bc2cpp/bytecode_ir_check.rb` and
 `ruby scripts/bc2cpp/resumable_check.rb` for region refusals and native
 yield/resume comparisons, including GC pressure. See ADR 0421.
+
+An independent bytecode IR optimization applies to the original Fiber PPU:
+
+```bash
+OPTCARROT_STATIC_DISPATCH=1 BC2CPP_IR_INLINE=1 BC2CPP_IR_RESUMABLE_INLINE=1 ruby tools/optcarrot_probe/compiled_run.rb 180
+```
+
+Yield-free same-owner helper bodies lower into separate local scopes inside
+the resumable step function, including calls inside flat step loops. The caller
+retains its persistent frame; proved non-suspending helpers use C++ locals.
+Explicit helper exits preserve each call's return value, and the normal per-yield states
+remain unchanged. Bodies that can suspend, have exception handlers or nested
+blocks, exceed the bounded expansion budget, or use unsupported instructions
+retain their ordinary call boundaries. The probe reports how many helper IR
+regions were expanded and gives this build a separate binary target. Set
+`BC2CPP_IR_RESUMABLE_INLINE=0` for a paired baseline; both modes retain the
+original Fiber PPU and must produce identical checksums.
+
+Run `scripts/bc2cpp/resumable_check.rb` with both IR flags enabled for native
+comparisons covering arguments, nested helpers, GC inside a helper, caller
+values retained across later yields, indirect suspension and Fiber reentry.
+The default run verifies the opt-out. This optimization does not replace the
+synchronous source generator. See ADR 0430.
+
+Three alternating release pairs used matching compiler revisions, the original
+Fiber PPU, static CPU dispatch, ordinary IR inlining and the 16,384-pointer gray
+stack. The optimized build expanded 27 PPU helper regions; both installed 355
+methods. Full pixels, audio, RAM and CPU/PPU register snapshots matched at 2,
+180 and 1,800 frames. All twelve timing checksums also matched.
+
+| Workload | Ordinary helper calls | Transient IR helper regions |
+| --- | ---: | ---: |
+| 180 frames, cold | 1.1510 s (156.39 FPS) | 1.1535 s (156.05 FPS) |
+| 1,800 continuous frames | 9.6371 s (186.78 FPS) | 9.5811 s (187.87 FPS) |
+
+The 0.6% continuous difference is within run-to-run noise; no runtime speedup
+is claimed, and the mode remains opt-in. The existing synchronous source preset
+remains the faster PPU experiment. A first version retained helper temporaries
+in the heap frame and regressed; non-suspension proofs now allow those values
+in local scopes without extending their lifetime across yields.
