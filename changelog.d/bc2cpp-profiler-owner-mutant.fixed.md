@@ -1,0 +1,1 @@
+- The bc2cpp profiler scope check (`scripts/bc2cpp/profiler_scope_check.rb`) has a case for a top-level `module Profiler` with a Ruby `frame`. The owner test in `codegen_profiler_results.rb` matches the last name segment, so the call must be kept; a mutant that matched only `RGSS::Profiler` passed the check, and `block_direct_mutation_check.rb` reported it as not killed.
