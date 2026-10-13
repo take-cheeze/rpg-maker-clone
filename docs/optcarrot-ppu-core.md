@@ -1,5 +1,11 @@
 # Optcarrot synchronous PPU core
 
+> Historical measurements and implementation notes follow. Workload-specific
+> CPU/source dispatch, synchronous PPU, and LUT optimizations have been removed.
+> Current builds use upstream Ruby and general IR passes; see
+> [generic IR optimization](bc2cpp-generic-ir-optimization.md).
+
+
 `OPTCARROT_STATIC_PPU=1` generates upstream's synchronous PPU core on the host
 with clock specialization, fast paths and batched pixels. An ordinary
 `PPU#run` replaces the Fiber entry, giving bc2cpp the full loop as compiler

@@ -1,5 +1,11 @@
 # Optcarrot PPU table startup
 
+> Historical measurements and implementation notes follow. Workload-specific
+> CPU/source dispatch, synchronous PPU, and LUT optimizations have been removed.
+> Current builds use upstream Ruby and general IR passes; see
+> [generic IR optimization](bc2cpp-generic-ir-optimization.md).
+
+
 The mruby probe bundles construct the same upstream `PPU::TILE_LUT` using eight
 fixed pixel expressions for each pattern, then build independent rows for the
 three nonzero attributes from those base colors. This avoids repeated bit

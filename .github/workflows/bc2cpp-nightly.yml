@@ -422,34 +422,21 @@ jobs:
               # The same descriptor through the C ivar API: typed slots are
               # visible to reflection, dup and Marshal, and refuse another class.
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/typed_reflection_check.rb
-          # Optcarrot: one job per compiled run, so the five benchmarks run on five runners at once (docs/ci.md,
-          # "Optcarrot benchmark jobs"). Each job is a fresh checkout, so the mruby tree and build directories the
-          # runs write are private to it. The quick checks have their own job; ppu_ir_lut_check stays with the
-          # default run because it reads the libmruby that run builds.
+          # Independent hosts keep benchmark builds isolated while using upstream Ruby.
           - shard: optcarrot-benchmark-checks
             checks: |
-              ruby scripts/optcarrot/cpu_dispatch_check.rb
-              ruby scripts/optcarrot/ppu_lut_check.rb
-              ruby scripts/optcarrot/ppu_core_check.rb
               ruby scripts/bc2cpp/optcarrot_world_check.rb
               ruby scripts/optcarrot/onig_aliases_check.rb
+              ruby scripts/optcarrot/upstream_bundle_check.rb
           - shard: optcarrot-benchmark-default
             checks: |
               OPTCARROT_DEBUG=0 OPTCARROT_GRAY_STACK_SIZE=16384 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
-              # Reuse the ordinary probe host built above, including its ABI flags and regexp gem.
-              MRUBY_BUILD="$PWD/3rd/mruby/build/optcarrotinterpretedreleasegray16384" MRBC="$mrbc" ruby scripts/optcarrot/ppu_ir_lut_check.rb
-          - shard: optcarrot-benchmark-static-dispatch
-            checks: |
-              OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
-          - shard: optcarrot-benchmark-static-ppu
-            checks: |
-              OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
           - shard: optcarrot-benchmark-ir-inline
             checks: |
-              BC2CPP_IR_INLINE=1 OPTCARROT_STATIC_PPU=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              BC2CPP_IR_INLINE=1 BC2CPP_IR_RESUMABLE_INLINE=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
           - shard: optcarrot-benchmark-closed-world
             checks: |
-              OPTCARROT_CLOSED_WORLD=1 OPTCARROT_STATIC_DISPATCH=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+              OPTCARROT_CLOSED_WORLD=1 MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
           - shard: strict-hints
             # BC2CPP_STRICT_HINTS (docs/adr/0419): the forced-hint tier. The generated-code and run checks, the
             # mutants (16), and STRICT_HINTS_REVIEWED over the real wio closed world (hot-only passes the gate,
@@ -558,7 +545,6 @@ jobs:
               ruby scripts/bc2cpp/insn_operands_check.rb
               ruby scripts/bc2cpp/irep_scans_check.rb
               ruby scripts/bc2cpp/bytecode_ir_check.rb
-              BC2CPP_CPU_IR_NATIVE=1 BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_cpu_dispatch_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_dataflow_check.rb
               ruby scripts/bc2cpp/origin_multiwrite_check.rb
               ruby scripts/bc2cpp/site_origin_exceptions_check.rb
