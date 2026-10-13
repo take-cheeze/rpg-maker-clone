@@ -1,0 +1,13 @@
+diff --git a/src/vm.c b/src/vm.c
+index 96d9266..1c3c24d 100644
+--- a/src/vm.c
++++ b/src/vm.c
+@@ -1695,7 +1695,7 @@ mrb_vm_exec(mrb_state *mrb, const struct RProc *begin_proc, const mrb_code *iseq
+   const struct mrb_irep_catch_handler *ch;
+ 
+ #ifndef MRB_USE_VM_SWITCH_DISPATCH
+-  static const void * const optable[] = {
++  static void * const optable[] = {
+ #define OPCODE(x,_) &&L_OP_ ## x,
+ #include <mruby/ops.h>
+ #undef OPCODE
