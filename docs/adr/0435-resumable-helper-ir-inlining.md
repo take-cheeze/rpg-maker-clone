@@ -1,4 +1,4 @@
-# 0430. Yield-free helper IR inlining in resumable frames
+# 0435. Yield-free helper IR inlining in resumable frames
 
 Date: 2026-10-13
 
