@@ -1081,30 +1081,15 @@
   The [Optcarrot benchmark](tools/optcarrot_probe/README.md) measures optimized
   mruby and bc2cpp builds by default; `OPTCARROT_DEBUG=1` selects the diagnostic
   build, with separate build directories for each mode.
-  The mruby bundles factor PPU tile-table construction into fixed pixel rows
-  to reduce startup; `OPTCARROT_ORIGINAL_LUT=1` restores
-  upstream construction. `OPTCARROT_IR_LUT=1` instead extracts the original
-  initializer and lowers its exact decoded bytecode tree to guarded native
-  array construction in the compiled probe. See [tile-table startup](docs/optcarrot-ppu-lut.md).
-  Native probe builds use a 16,384-pointer GC gray stack to reduce heap rescans;
-  `OPTCARROT_GRAY_STACK_SIZE=1024` restores the upstream capacity. See
-  [GC measurements](docs/optcarrot-gc.md).
-  `OPTCARROT_STATIC_PPU=1` compiles an upstream-generated synchronous PPU core
-  in the ordinary host. Its state comparison accepts additional ROMs and frame
-  counts. The original Fiber path lowers yielding helpers through checked
-  bytecode IR regions while retaining persistent resume state.
-  `BC2CPP_IR_INLINE=1 BC2CPP_IR_RESUMABLE_INLINE=1` also expands yield-free
-  helpers from the original Fiber PPU bytecode while preserving the caller's
-  persistent frame. See [PPU core](docs/optcarrot-ppu-core.md).
-  `BC2CPP_IR_INLINE=1` expands eligible method bodies after bytecode decoding,
-  avoiding source inlining's bytecode jump limit. See
-  [method inlining](docs/bc2cpp-method-inlining.md).
-  `BC2CPP_IR_CPU_DISPATCH=1` experiments with guarded CPU dispatch and nested
-  wrapper calls in decoded bytecode, preserving source and dynamic fallback.
-  `OPTCARROT_STATIC_DISPATCH=1` exposes all CPU opcode calls to bc2cpp;
-  `OPTCARROT_CLOSED_WORLD=1` uses a sealed benchmark executable with a validated
-  source manifest. See [CPU dispatch](docs/optcarrot-cpu-dispatch.md) and
-  [ADR 0403](docs/adr/0403-optcarrot-sealed-world.md).
+  Benchmark bundles retain upstream CPU dispatch, Fiber PPU, and table
+  initialization; workload-specific source rewrites and compiler matchers have
+  been removed. `BC2CPP_IR_INLINE=1 BC2CPP_IR_RESUMABLE_INLINE=1` enables the
+  general decoded-IR method and non-suspending resumable-helper inliners.
+  Native probe builds use a 16,384-pointer GC gray stack;
+  `OPTCARROT_GRAY_STACK_SIZE=1024` restores the upstream capacity.
+  `OPTCARROT_CLOSED_WORLD=1` selects the validated sealed benchmark host.
+  See [generic IR optimization](docs/bc2cpp-generic-ir-optimization.md) for
+  the replacement strategy and measured performance limitations.
   Optional [compact C++ output](docs/bc2cpp-compact-output.md) removes generated
   line comments with `BC2CPP_COMPACT_OUTPUT=1`; diagnostic output stays the default.
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
