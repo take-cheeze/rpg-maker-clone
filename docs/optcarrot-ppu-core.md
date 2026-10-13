@@ -109,7 +109,7 @@ Run `scripts/bc2cpp/resumable_check.rb` with both IR flags enabled for native
 comparisons covering arguments, nested helpers, GC inside a helper, caller
 values retained across later yields, indirect suspension and Fiber reentry.
 The default run verifies the opt-out. This optimization does not replace the
-synchronous source generator. See ADR 0430.
+synchronous source generator. See ADR 0435.
 
 Three alternating release pairs used matching compiler revisions, the original
 Fiber PPU, static CPU dispatch, ordinary IR inlining and the 16,384-pointer gray
