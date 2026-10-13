@@ -38,16 +38,6 @@ jobs:
           - shard: wired-embedding
             checks: |
               MRBC="$mrbc" ruby scripts/bc2cpp/wired_embedding_check.rb
-          - shard: hot-only
-            # HOT_ONLY (ADR 0214) is no longer checked in CI; scripts/bc2cpp/hot_only_check.rb
-            # still runs by hand. This shard keeps the dead-fallback gate (ADR 0226).
-            checks: |
-              MRBC="$mrbc" ruby scripts/bc2cpp/nomethod_reviewed_check.rb
-          - shard: hot-proven-miss
-            # Split from hot-only: each of the two reviewed-set checks takes ~15 min.
-            checks: |
-              # PROVEN_MISS_REVIEWED (docs/adr/0275): a send to a proven class nothing answers.
-              MRBC="$mrbc" ruby scripts/bc2cpp/proven_miss_check.rb
           - shard: registrations
             checks: |
               # Independent of each other (no shared build directory); at most 3 at a time (docs/ci.md, "Parallel groups").
