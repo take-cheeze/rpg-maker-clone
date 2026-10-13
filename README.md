@@ -1083,15 +1083,19 @@
   build, with separate build directories for each mode.
   The mruby bundles factor PPU tile-table construction into fixed pixel rows
   to reduce startup; `OPTCARROT_ORIGINAL_LUT=1` restores
-  upstream construction. See [tile-table startup](docs/optcarrot-ppu-lut.md).
+  upstream construction. `OPTCARROT_IR_LUT=1` instead extracts the original
+  initializer and lowers its exact decoded bytecode tree to guarded native
+  array construction in the compiled probe. See [tile-table startup](docs/optcarrot-ppu-lut.md).
   Native probe builds use a 16,384-pointer GC gray stack to reduce heap rescans;
   `OPTCARROT_GRAY_STACK_SIZE=1024` restores the upstream capacity. See
   [GC measurements](docs/optcarrot-gc.md).
   `OPTCARROT_STATIC_PPU=1` compiles an upstream-generated synchronous PPU core
   in the ordinary host. Its state comparison accepts additional ROMs and frame
   counts. The original Fiber path lowers yielding helpers through checked
-  bytecode IR regions while retaining persistent resume state. See
-  [PPU core](docs/optcarrot-ppu-core.md).
+  bytecode IR regions while retaining persistent resume state.
+  `BC2CPP_IR_INLINE=1 BC2CPP_IR_RESUMABLE_INLINE=1` also expands yield-free
+  helpers from the original Fiber PPU bytecode while preserving the caller's
+  persistent frame. See [PPU core](docs/optcarrot-ppu-core.md).
   `BC2CPP_IR_INLINE=1` expands eligible method bodies after bytecode decoding,
   avoiding source inlining's bytecode jump limit. See
   [method inlining](docs/bc2cpp-method-inlining.md).

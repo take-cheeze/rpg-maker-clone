@@ -151,7 +151,7 @@ timeout (a run of the old single `core-mrbtest` shard took about 43 minutes):
 
 | Shard | Checks | Approx. |
 | --- | --- | --- |
-| `core-mrbtest` | block/yield-free/exact-receiver (+ `core_body_exact` and `core_singleton_audit`, ADR 0359, about 1 min)/return-class, `step_inline`, `define_method_sites`, `resumable`, `io_puts_model`, `fixnum_overflow`, `loop_flow_position` (ADR 0398), mruby's own suites | about 25 min |
+| `core-mrbtest` | block/yield-free/exact-receiver (+ `core_body_exact` and `core_singleton_audit`, ADR 0359, about 1 min)/return-class, `step_inline`, `define_method_sites`, `resumable` (with helper IR inlining disabled and enabled), `io_puts_model`, `fixnum_overflow`, `loop_flow_position` (ADR 0398), mruby's own suites | about 25 min |
 | `full-core-numeric` | `numeric_slow` (ADR 0292, 454 s in a recent run), `index_closed` (ADR 0365, about 2 min): split from `core-mrbtest`, whose checks plus setup had reached its 45 minute timeout | est. 10 min |
 | `numeric-direct` | `eqq_direct` (ADR 0293) and `tuple_return` (ADR 0311), moved out of `full-core-numeric` so `numeric_slow` runs alone there | see the timing table |
 | `core-flow` | `exact_receiver_flow` (ADR 0301) | see the timing table |
