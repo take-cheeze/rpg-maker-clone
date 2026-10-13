@@ -64,6 +64,9 @@ class RPG2k
         @backdrop_cache = map.backdrop_cache
         @battlecharset_cache = map.battlecharset_cache
         @system2_cache = map.system2_cache
+        # Filled by #start: a hash from the first moment, so every method can index it.
+        @ui = {}
+        @disposed = false
       end
 
       # `ui` is the fight's whole live state: phase, the Game::Battle model,
@@ -155,7 +158,7 @@ class RPG2k
         # sleep skip) in battle.
         situations = LCF.field?(db, :situation) ? db[:situation] : nil
         properties = LCF.field?(db, :property) ? db[:property] : nil
-        @ui = { phase: :command, troop: troop,
+        @ui.update({ phase: :command, troop: troop,
                        # Whether the Battle/Auto Battle/Escape options window
                        # has already shown its once-per-battle automatic
                        # appearance (see #enter_command_phase) -- distinct
@@ -243,7 +246,7 @@ class RPG2k
                        # only (drives a levitating enemy's bob, #flying_offset),
                        # never read for any combat/save-affecting purpose, so
                        # it needs no seeding beyond starting at 0 every fight.
-                       frame: 0 }
+                       frame: 0 })
         @ui[:events].battle = @ui[:battle]
         # Lets a Change Party Member command run from a battle event page
         # (Interpreter#do_change_party) reach back into this screen the
@@ -834,7 +837,7 @@ class RPG2k
       # (ADR 0050) already reads correctly from the live party on its own
       # schedule; this only updates what's drawn.
       def on_battle_party_changed(actor, added)
-        return unless @ui
+        return if @disposed
         added ? add_battle_actor_sprite(actor) : remove_battle_actor_sprite(actor)
         refresh_battle_status
       end
@@ -2894,7 +2897,7 @@ class RPG2k
       end
 
       def close_battle_event_window
-        return unless @ui && @ui[:event_win]
+        return if @disposed || !@ui[:event_win]
         @ui[:event_win].dispose
         @ui[:event_win] = nil
       end
@@ -3033,8 +3036,8 @@ class RPG2k
       # the outcome to whichever interpreter actually opened this fight
       # (`@owner` -- the foreground by default, or a Parallel
       # Process's own interpreter, see Scene::Map#drive_battle), captured before
-      # #dispose clears @ui out from under it (via Scene::Map#close_battle,
-      # which drops the map's own @battle reference too).
+      # #dispose marks the battle @disposed and frees its sprites (via
+      # Scene::Map#close_battle, which drops the map's own @battle reference too).
       #
       # A random encounter's wipe with an active RPG2003 Death Handler
       # (`@req[:random]` and `!@req[:defeat_game_over]`, see Interpreter
@@ -4189,7 +4192,7 @@ class RPG2k
       # builds (see its `desc:` note) -- called by every `close_battle_*`
       # method so the banner never outlives the list it belongs to.
       def close_battle_list_desc
-        return unless @ui && @ui[:desc_win]
+        return if @disposed || !@ui[:desc_win]
         @ui[:desc_win].dispose
         @ui[:desc_win] = nil
       end
@@ -4217,7 +4220,7 @@ class RPG2k
       # is open over the list.
       # bc2cpp: (fixnum, fixnum, fixnum)
       def refresh_battle_list_arrows(scroll, row_count, rows)
-        return unless @ui
+        return if @disposed
         @ui[:list_up_arrow] ||=
           build_list_arrow_sprite(windowskin, LIST_UP_ARROW_SRC_Y,
                                   (SCREEN_W - LIST_ARROW_W) / 2, BATTLE_PANEL_Y,
@@ -4249,7 +4252,7 @@ class RPG2k
       end
 
       def close_battle_list_arrows
-        return unless @ui
+        return if @disposed
         [@ui[:list_up_arrow], @ui[:list_down_arrow]].each { |s| s.dispose if s }
         @ui[:list_up_arrow] = nil
         @ui[:list_down_arrow] = nil
@@ -4827,7 +4830,7 @@ class RPG2k
       end
 
       def dispose
-        return unless @ui
+        return if @disposed
         [@ui[:status_win], @ui[:cmd_win],
          @ui[:target_win], @ui[:skill_win],
          @ui[:item_win], @ui[:ally_win],
@@ -4837,7 +4840,7 @@ class RPG2k
         dispose_battle_sprite(@ui[:back_sprite])
         (@ui[:enemy_sprites] || []).each { |s| dispose_battle_sprite(s) }
         (@ui[:actor_sprites] || []).each { |s| dispose_battle_sprite(s) }
-        @ui = nil
+        @disposed = true
       end
 
       # Dispose a battle sprite. Its bitmap (the backdrop or a battler, see
