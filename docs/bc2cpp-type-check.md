@@ -27,6 +27,9 @@ Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, 
 | TC1001 | error | a declared type disagrees with the inferred one (fixnum/symbol argument or return, class argument, class return) |
 | TC1002 | error | a signature file could not be used |
 | TC1003 | error | a signature names a method or ivar class the program lacks (a stale signature) |
+| TC1007 | error | an inferred IR return or ivar store is disjoint from its RBS nominal contract |
+| TC1008 | warning | an inferred IR may-set partly overlaps its RBS contract; path refinement is unresolved |
+| TC2004 | info | (`--all`) an IR query is unknown, with its refusal or producer reason |
 | TC1005 | warning | an index (`x[i]`, `x[i] = v`) on a receiver that may be nil, with no nil check before it (ADR 0439) |
 | TC1004 | error | an annotation token bc2cpp ignores (unknown class), a signature or annotation with more tokens than the method has parameters (fewer is fine: a prefix) |
 | TC2001-3 | info (`--all`) | untyped parameter / return / ivar, with the reason |
@@ -83,10 +86,20 @@ unions, `bool`, `nil` and literal classes. These appear in the report with sourc
 `signature` and are available to [IR contract queries](bc2cpp-ir-types.md#rbs-argument-contracts).
 They give no new optimization hint or exact-class proof; existing TC1005 notes
 still describe that limitation. A union containing `untyped` stays unknown.
-The existing contradiction checks do not gain validation of these richer forms.
+[IR feedback](bc2cpp-ir-feedback.md) also checks inferred returns and ivar stores
+against these nominal bounds, distinguishing disjoint from partly overlapping sets.
 
 Loop: write the signature, run `type_check.rb` (contradictions are reported at the signature's line), fix them, then
 enable the strict tier when it is available so a wrong signature fails loudly at run time instead of falling back.
+
+## IR feedback loop
+
+`--emit-rbs-suggestions DIR` writes candidate RBS using independently inferred
+IR returns at every modeled exit. It can replace a contradicted return in the
+candidate copy; authored signature files stay separate. JSON includes
+`ir_feedback` and `rbs_suggestions`; text summarizes provenance and unknown
+reasons. Review the output, then pass it back with `--sig DIR`. See the
+[feedback workflow and limitations](bc2cpp-ir-feedback.md).
 
 ## RBS output and Steep
 

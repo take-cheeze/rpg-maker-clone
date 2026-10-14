@@ -25,9 +25,9 @@ first refusal cause or the unknown producer opcode.
 These are value classes, not exact method identities, finite literal values,
 container element types or machine representations. `:Integer` includes
 big integers on 32-bit targets and cannot justify unchecked native arithmetic.
-Arguments, self, ivars, constants, calls and overloaded arithmetic remain
-unknown. Exception-flow propagation and trusted call summaries are future
-extensions. This first layer is available for analyses; generated code does
+The inference-only query leaves arguments, self, ivars, constants, calls and
+overloaded arithmetic unknown. Exception-flow propagation and trusted call
+summaries are future extensions. This first layer is available for analyses; generated code does
 not yet consume it. See [ADR 0440](adr/0440-bc2cpp-ir-value-types.md).
 
 Run `ruby scripts/bc2cpp/bytecode_ir_check.rb` for the type-query regression
@@ -39,8 +39,8 @@ The RBS loader retains nominal value-class bounds for `T?`, unions, `bool`,
 `nil`, literal types, named classes and the outer classes of Array/Hash
 parameters. A union containing `untyped` or any unsupported member remains
 unknown. Generic element types and literal values are not inferred from this
-projection. Return and ivar types retain the same parsed metadata, but only
-required positional argument contracts seed IR queries in this tier.
+projection. Required arguments, ivar reads and implicit self-call return contracts seed
+IR queries; inherited contracts use the program hierarchy.
 
 After `RbsSignatures.apply` has matched definitions and checked required arity:
 
@@ -62,6 +62,7 @@ nominal bounds, including subclasses. It cannot justify an exact receiver
 class, method identity or unchecked native representation. Any union that
 uses a declaration remains marked declared, even when other definitions are
 inferred literals. Runtime dispatch still uses the existing proofs and guards.
-The type-check report presents these argument bounds with source `signature`;
-its existing contradiction checks and optimization hints are unchanged.
+The type-check report presents these bounds with source `signature`.
+[IR feedback](bc2cpp-ir-feedback.md) adds return/ivar compatibility diagnostics
+and reviewable inferred RBS suggestions; optimization hints are unchanged.
 See [ADR 0441](adr/0441-bc2cpp-ir-rbs-contracts.md).

@@ -1101,6 +1101,9 @@
   to union literal and ENTER-created types conservatively across those paths.
   Declaration-aware queries also track required RBS arguments, including nullable,
   union and boolean types, while marking their reliance on signature contracts.
+  [IR feedback](docs/bc2cpp-ir-feedback.md) extends contracts to ivars and implicit
+  self-call returns, reports unknown reasons and mismatches, and exports reviewable
+  inferred return candidates with `type_check.rb --emit-rbs-suggestions DIR`.
   See
   [`docs/adr/0236-bc2cpp-bytecode-ir.md`](docs/adr/0236-bc2cpp-bytecode-ir.md),
   [`docs/adr/0249-bc2cpp-binary-loader.md`](docs/adr/0249-bc2cpp-binary-loader.md)
