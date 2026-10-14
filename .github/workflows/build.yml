@@ -1268,6 +1268,11 @@ jobs:
           - name: bc2cpp frozen-table slot class check (host)
             run: ruby scripts/bc2cpp/frozen_slot_check.rb
 
+          - name: bc2cpp IR annotation coverage checks (host)
+            run: |
+              ruby scripts/bc2cpp/ir_argument_types_check.rb
+              ruby scripts/bc2cpp/ir_ivar_types_check.rb
+
           - name: RPG2k game-logic checks
             run: |
               ruby scripts/rpg2k/logic_check.rb

@@ -1110,6 +1110,11 @@
   [Receiver source proofs](docs/bc2cpp-ir-source-types.md) also feed independently
   proven ivar reads, constants and incoming arguments into IR feedback.
   `BC2CPP_IR_SOURCE_TYPES=0` disables this source bridge for comparison.
+  Reporting also joins [receiver-specific caller arguments](docs/bc2cpp-ir-arguments.md),
+  retains [nullable ivar unions](docs/bc2cpp-ir-ivars.md), and propagates
+  [container elements](docs/bc2cpp-ir-elements.md) with contract provenance.
+  [RBS self returns and mixin lookup](docs/bc2cpp-ir-rbs-features.md) extend nominal
+  call chains while refusing unsigned overrides and unknown lookup paths.
   See
   [`docs/adr/0236-bc2cpp-bytecode-ir.md`](docs/adr/0236-bc2cpp-bytecode-ir.md),
   [`docs/adr/0249-bc2cpp-binary-loader.md`](docs/adr/0249-bc2cpp-binary-loader.md)
