@@ -100,6 +100,10 @@ candidate copy; authored signature files stay separate. JSON includes
 `ir_feedback` and `rbs_suggestions`; text summarizes provenance and unknown
 reasons. Review the output, then pass it back with `--sig DIR`. See the
 [feedback workflow and limitations](bc2cpp-ir-feedback.md).
+[Call-result propagation](bc2cpp-ir-call-results.md) supplies audited result
+proofs and typed-receiver RBS chains. Complete contract-assisted returns are
+reported with source `derived:contracts` and their dependencies; independent
+RBS suggestions continue to exclude them.
 
 ## RBS output and Steep
 
