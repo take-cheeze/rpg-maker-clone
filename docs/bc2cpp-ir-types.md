@@ -32,3 +32,36 @@ not yet consume it. See [ADR 0440](adr/0440-bc2cpp-ir-value-types.md).
 
 Run `ruby scripts/bc2cpp/bytecode_ir_check.rb` for the type-query regression
 checks, alongside the existing reaching-definitions checks.
+
+## RBS argument contracts
+
+The RBS loader retains nominal value-class bounds for `T?`, unions, `bool`,
+`nil`, literal types, named classes and the outer classes of Array/Hash
+parameters. A union containing `untyped` or any unsupported member remains
+unknown. Generic element types and literal values are not inferred from this
+projection. Return and ivar types retain the same parsed metadata, but only
+required positional argument contracts seed IR queries in this tier.
+
+After `RbsSignatures.apply` has matched definitions and checked required arity:
+
+```ruby
+analysis = RbsSignatures.ir_types(applied_signatures, irep)
+fact = analysis.fact_at(return_index, '2')
+# fact.classes is a frozen Set; fact.declared? records reliance on a contract.
+# analysis.at(return_index, '2') still answers only from inferred definitions.
+```
+
+Contracts apply to entry values and the first argument rebound by ENTER,
+then follow the shared MOVE, branch and loop analysis. They do not override
+later writes or bypass handler, closure or clobber refusals. Comment-owned
+parameter slots are excluded from RBS seeds. The low-level `declared_args:`
+constructor option accepts required parameter registers only.
+
+A declared fact is conditional on callers honoring the signature and names
+nominal bounds, including subclasses. It cannot justify an exact receiver
+class, method identity or unchecked native representation. Any union that
+uses a declaration remains marked declared, even when other definitions are
+inferred literals. Runtime dispatch still uses the existing proofs and guards.
+The type-check report presents these argument bounds with source `signature`;
+its existing contradiction checks and optimization hints are unchanged.
+See [ADR 0441](adr/0441-bc2cpp-ir-rbs-contracts.md).

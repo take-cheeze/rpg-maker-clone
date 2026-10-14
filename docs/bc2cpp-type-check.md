@@ -78,6 +78,13 @@ Accepted without a hint (TC1005 note): optional / rest / keyword / block paramet
 define. Errors (TC1002): parse errors, overloaded `def`, other declaration kinds. A comment wins over a signature
 (TC1006); an unknown method is TC1003; a wrong parameter count TC1004. Both are errors (see ADR 0436): a stale or mis-sized annotation fails the check and the build, the same as a contradiction.
 
+Required argument declarations also retain nominal bounds for nullable types,
+unions, `bool`, `nil` and literal classes. These appear in the report with source
+`signature` and are available to [IR contract queries](bc2cpp-ir-types.md#rbs-argument-contracts).
+They give no new optimization hint or exact-class proof; existing TC1005 notes
+still describe that limitation. A union containing `untyped` stays unknown.
+The existing contradiction checks do not gain validation of these richer forms.
+
 Loop: write the signature, run `type_check.rb` (contradictions are reported at the signature's line), fix them, then
 enable the strict tier when it is available so a wrong signature fails loudly at run time instead of falling back.
 
