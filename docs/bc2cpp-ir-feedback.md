@@ -4,8 +4,10 @@ The type-check workflow now connects RBS contracts, bytecode IR facts and
 reviewable RBS suggestions. It retains nominal contracts for required
 arguments, ivars and method returns, including nullable and union types.
 Ivar reads and implicit calls on `self` use the applicable owner/ancestor
-contract. A dynamic call on an arbitrary receiver does not inherit a return
-contract merely because its method name matches.
+contract. An ordinary explicit receiver with known nominal bounds can also use its
+return contracts. An unknown receiver does not inherit a return contract
+merely because its method name matches; an existing complete compiler proof
+can independently establish its result. See [call-result propagation](bc2cpp-ir-call-results.md).
 
 ```sh
 ruby scripts/bc2cpp/type_check.rb --files game.rb --sig sig/bc2cpp \
@@ -54,6 +56,9 @@ an independently inferred answer. Contract-assisted or unknown exits cannot
 produce an independent suggestion. New union-return facts also improve normal
 `--emit-rbs` output when the existing return analysis has no answer.
 
+Complete contract-assisted return bounds appear with source `derived:contracts`
+and retain their dependency list. They are not independent RBS suggestions.
+
 ## Boundaries
 
 Facts remain nominal when declared; they cannot prove exact dispatch or
@@ -63,7 +68,7 @@ barriers, frame clobbers and traversal budgets still refuse queries.
 
 Shared IREPs with ambiguous owners get no owner-specific contracts. Cyclic
 hierarchies supply no inherited contracts. Optional/rest/keyword/block
-contracts, arbitrary receiver call summaries, module mixin contract lookup, constants
+contracts, unknown receiver contract lookup, module mixin contract lookup, constants
 and nonlocal-return inference remain follow-up work. Inferred ivar types
 continue to come from the existing whole-program layout analysis; observing
 one store does not establish the complete type of an ivar.

@@ -26,8 +26,9 @@ These are value classes, not exact method identities, finite literal values,
 container element types or machine representations. `:Integer` includes
 big integers on 32-bit targets and cannot justify unchecked native arithmetic.
 The inference-only query leaves arguments, self, ivars, constants, calls and
-overloaded arithmetic unknown. Exception-flow propagation and trusted call
-summaries are future extensions. This first layer is available for analyses; generated code does
+overloaded arithmetic unknown unless an independently audited call fact is
+supplied. [Call-result propagation](bc2cpp-ir-call-results.md) connects the
+compiler's settled proofs and nominal receiver contracts to this layer. This first layer is available for analyses; generated code does
 not yet consume it. See [ADR 0440](adr/0440-bc2cpp-ir-value-types.md).
 
 Run `ruby scripts/bc2cpp/bytecode_ir_check.rb` for the type-query regression
@@ -52,7 +53,8 @@ fact = analysis.fact_at(return_index, '2')
 ```
 
 Contracts apply to entry values and the first argument rebound by ENTER,
-then follow the shared MOVE, branch and loop analysis. They do not override
+then follow the shared MOVE, branch and loop analysis. Ordinary explicit
+receiver calls also resolve return contracts through known nominal bounds. They do not override
 later writes or bypass handler, closure or clobber refusals. Comment-owned
 parameter slots are excluded from RBS seeds. The low-level `declared_args:`
 constructor option accepts required parameter registers only.
