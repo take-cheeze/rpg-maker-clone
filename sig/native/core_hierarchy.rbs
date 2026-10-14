@@ -1,0 +1,66 @@
+# The core class hierarchy mruby declares outside the program, read by tools/bc2cpp/core_hierarchy_sigs.rb
+# (call_facts.rb CORE_SUPER / CORE_MIXINS). A class with no superclass line is BasicObject only.
+class BasicObject
+end
+
+class Object < BasicObject
+  include Kernel
+end
+
+class Module < Object
+end
+
+class Class < Module
+end
+
+class NilClass < Object
+end
+
+class TrueClass < Object
+end
+
+class FalseClass < Object
+end
+
+class Numeric < Object
+  include Comparable
+end
+
+class Integer < Numeric
+end
+
+class Float < Numeric
+end
+
+class String < Object
+  include Comparable
+end
+
+class Symbol < Object
+  include Comparable
+end
+
+class Array < Object
+  include Enumerable
+end
+
+class Hash < Object
+  include Enumerable
+end
+
+class Range < Object
+  include Enumerable
+end
+
+class Proc < Object
+end
+
+class Exception < Object
+end
+
+class StandardError < Exception
+end
+
+class Struct < Object
+  include Enumerable
+end
