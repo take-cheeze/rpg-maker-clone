@@ -1,0 +1,13 @@
+# Result classes of built-in methods, read by tools/bc2cpp/native_core_result_sigs.rb (not by rbs_signatures.rb:
+# these methods are native, so the program does not define them). A return names the class a call on an exact
+# receiver of that class yields. Only Array and String are accepted. Each entry still needs the closed-world pins in
+# NativeClassResults.core_result_pinned? and codegen_native_results.rb before codegen trusts it.
+class Array
+  def to_a: () -> Array[untyped]
+  def compact: () -> Array[untyped]
+  def join: (?String sep) -> String
+end
+
+class String
+  def bytes: () -> Array[Integer]
+end
