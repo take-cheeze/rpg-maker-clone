@@ -1118,6 +1118,10 @@
   [Call-graph propagation](docs/bc2cpp-ir-call-graph.md) carries complete independent
   argument summaries through receiver-specific forwarding chains; disable it with
   `BC2CPP_IR_CALL_GRAPH_TYPES=0` for comparison.
+  [Contextual result summaries](docs/bc2cpp-ir-context-results.md) specialize
+  callee returns by arguments, solve bounded recursive contexts, preserve ivars
+  across read-only calls, and report frozen builder elements and audited native
+  direct-form results. RBS feedback retains optional and keyword contracts.
   See
   [`docs/adr/0236-bc2cpp-bytecode-ir.md`](docs/adr/0236-bc2cpp-bytecode-ir.md),
   [`docs/adr/0249-bc2cpp-binary-loader.md`](docs/adr/0249-bc2cpp-binary-loader.md)

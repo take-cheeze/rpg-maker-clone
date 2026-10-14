@@ -537,6 +537,7 @@ jobs:
               ruby scripts/bc2cpp/bytecode_ir_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/ir_argument_types_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/ir_ivar_types_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/ir_context_results_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_dataflow_check.rb
               ruby scripts/bc2cpp/origin_multiwrite_check.rb
               ruby scripts/bc2cpp/site_origin_exceptions_check.rb
