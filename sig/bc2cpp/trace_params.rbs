@@ -79,20 +79,20 @@ module Game
 end
 module Game
   class Switches
-    def []: (Integer id) -> untyped
+    def []: (Integer id) -> bool
     def []=: (Integer id, untyped v) -> untyped
   end
 end
 module Game
   class Variables
-    def []: (Integer id) -> untyped
+    def []: (Integer id) -> Integer
     def []=: (Integer id, Integer v) -> untyped
   end
 end
 module LCF
   class Array1D
     def field?: (Symbol sym) -> untyped
-    def key?: (Integer idx) -> untyped
+    def key?: (Integer idx) -> bool
     def []=: (Integer idx, untyped value) -> untyped
     def int16_values: (Integer idx) -> untyped
   end
@@ -108,7 +108,7 @@ end
 module LCF
   class EventCommand
     def initialize: (untyped code, untyped indent, String string, untyped parameters) -> untyped
-    def param: (Integer i) -> untyped
+    def param: (Integer i) -> Integer
   end
 end
 module LCF
