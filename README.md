@@ -1115,6 +1115,9 @@
   [container elements](docs/bc2cpp-ir-elements.md) with contract provenance.
   [RBS self returns and mixin lookup](docs/bc2cpp-ir-rbs-features.md) extend nominal
   call chains while refusing unsigned overrides and unknown lookup paths.
+  [Call-graph propagation](docs/bc2cpp-ir-call-graph.md) carries complete independent
+  argument summaries through receiver-specific forwarding chains; disable it with
+  `BC2CPP_IR_CALL_GRAPH_TYPES=0` for comparison.
   See
   [`docs/adr/0236-bc2cpp-bytecode-ir.md`](docs/adr/0236-bc2cpp-bytecode-ir.md),
   [`docs/adr/0249-bc2cpp-binary-loader.md`](docs/adr/0249-bc2cpp-binary-loader.md)
