@@ -1124,6 +1124,8 @@
   direct-form results. RBS feedback retains optional and keyword contracts.
   [Generic iterator block feedback](docs/bc2cpp-ir-block-types.md) carries Array
   element bounds through literal block bodies and reports conditional map results.
+  It also analyzes bounded custom yield protocols, stable immediate captures,
+  and method-generic RBS callback contracts while retaining their provenance.
   See
   [`docs/adr/0236-bc2cpp-bytecode-ir.md`](docs/adr/0236-bc2cpp-bytecode-ir.md),
   [`docs/adr/0249-bc2cpp-binary-loader.md`](docs/adr/0249-bc2cpp-binary-loader.md)

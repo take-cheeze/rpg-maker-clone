@@ -55,6 +55,10 @@ SOURCE_GLOBS = ['mruby-*/mrblib/**/*.rb'].freeze
 # themselves skip.
 CHECKS = [
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
+  { name: 'bc2cpp-ir-yields', command: %w[scripts/bc2cpp/ir_yield_types_check.rb] },
+  { name: 'bc2cpp-ir-captures', command: %w[scripts/bc2cpp/ir_block_captures_check.rb] },
+  { name: 'bc2cpp-ir-rbs-blocks', command: %w[scripts/bc2cpp/ir_rbs_block_types_check.rb] },
+  { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },
   { name: 'bc2cpp-ir-ivars', command: %w[scripts/bc2cpp/ir_ivar_types_check.rb] },
   { name: 'lcf-testbed',        command: %w[scripts/lcf/testbed_check.rb] },
