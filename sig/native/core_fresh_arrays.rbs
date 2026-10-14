@@ -1,0 +1,24 @@
+# Core methods that return a fresh Array whenever they return, read by NativeCoreResultSigs.fresh_array_names
+# (class_layout.rb CORE_ARRAY_RETURN_METHODS). Only the method names matter there: core_array_return? still requires
+# every definition of the name to be mruby core or a vetted override. Verified against 3rd/mruby:
+#   - keys/values: mrb_hash_keys/mrb_hash_values (src/hash.c);
+#   - compact: ary_compact (mruby-array-ext), a dup;
+#   - flatten: ary_flatten -> flatten_internal, a new Array;
+#   - split: String#split (src/string.c);
+#   - uniq: Array#uniq (dup / __uniq) and Enumerable#uniq (hash.values).
+# Not here: to_a/dup (receiver-dependent, see core_results.rbs), to_h (Hash), blockless sort_by
+# (CORE_ARRAY_CHAIN_NEEDS_BLOCK) and argless first/last (CORE_ARRAY_CHAIN_NEEDS_ARG).
+class Hash
+  def keys: () -> Array[untyped]
+  def values: () -> Array[untyped]
+end
+
+class String
+  def split: (*untyped args) -> Array[String]
+end
+
+class Array
+  def compact: () -> Array[untyped]
+  def flatten: (?Integer depth) -> Array[untyped]
+  def uniq: () -> Array[untyped]
+end

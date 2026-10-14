@@ -1,0 +1,31 @@
+# RGSS native result kinds, read by NativeResultFacts (native_result_facts.rb) through NativeCoreResultSigs. Each
+# method names the kind a call on that exact receiver returns: Integer is mrb_fixnum_value, Float is mrb_float_value,
+# RGSS::Rect is an mrb_obj_new of that constant. A method is listed only when every return path has that kind; see
+# NATIVE_RESULT_FACTS for what is left out and the callee and delegation audit in native_result_facts_check.rb.
+class RGSS::Bitmap
+  def width: () -> Integer
+  def height: () -> Integer
+  def rect: () -> RGSS::Rect
+  def text_size: () -> RGSS::Rect
+end
+
+class RGSS::Rect
+  def x: () -> Integer
+  def y: () -> Integer
+  def width: () -> Integer
+  def height: () -> Integer
+end
+
+class RGSS::Color
+  def red: () -> Float
+  def green: () -> Float
+  def blue: () -> Float
+  def alpha: () -> Float
+end
+
+class RGSS::Tone
+  def red: () -> Float
+  def green: () -> Float
+  def blue: () -> Float
+  def gray: () -> Float
+end
