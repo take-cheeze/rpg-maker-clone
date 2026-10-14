@@ -1122,6 +1122,8 @@
   callee returns by arguments, solve bounded recursive contexts, preserve ivars
   across read-only calls, and report frozen builder elements and audited native
   direct-form results. RBS feedback retains optional and keyword contracts.
+  [Generic iterator block feedback](docs/bc2cpp-ir-block-types.md) carries Array
+  element bounds through literal block bodies and reports conditional map results.
   See
   [`docs/adr/0236-bc2cpp-bytecode-ir.md`](docs/adr/0236-bc2cpp-bytecode-ir.md),
   [`docs/adr/0249-bc2cpp-binary-loader.md`](docs/adr/0249-bc2cpp-binary-loader.md)
