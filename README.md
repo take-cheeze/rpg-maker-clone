@@ -1097,6 +1097,8 @@
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
   per-pass text scraping, including a reaching-definitions query
   (`BytecodeIR.reaching_definitions`) that answers through joins and loops.
+  [IR value-class inference](docs/bc2cpp-ir-types.md) builds on these definitions
+  to union literal and ENTER-created types conservatively across those paths.
   See
   [`docs/adr/0236-bc2cpp-bytecode-ir.md`](docs/adr/0236-bc2cpp-bytecode-ir.md),
   [`docs/adr/0249-bc2cpp-binary-loader.md`](docs/adr/0249-bc2cpp-binary-loader.md)
