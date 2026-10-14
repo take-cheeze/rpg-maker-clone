@@ -1273,6 +1273,10 @@ jobs:
               ruby scripts/bc2cpp/ir_argument_types_check.rb
               ruby scripts/bc2cpp/ir_ivar_types_check.rb
               ruby scripts/bc2cpp/ir_context_results_check.rb
+              ruby scripts/bc2cpp/ir_yield_types_check.rb
+              ruby scripts/bc2cpp/ir_block_captures_check.rb
+              ruby scripts/bc2cpp/ir_rbs_block_types_check.rb
+              ruby scripts/bc2cpp/ir_block_protocols_check.rb
 
           - name: RPG2k game-logic checks
             run: |
