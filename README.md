@@ -1107,6 +1107,9 @@
   [Call-result propagation](docs/bc2cpp-ir-call-results.md) supplies audited compiler
   results and ordinary typed-receiver RBS return bounds through joins and call chains.
   `BC2CPP_IR_CALL_RESULTS=0` disables that reporting extension for comparison.
+  [Receiver source proofs](docs/bc2cpp-ir-source-types.md) also feed independently
+  proven ivar reads, constants and incoming arguments into IR feedback.
+  `BC2CPP_IR_SOURCE_TYPES=0` disables this source bridge for comparison.
   See
   [`docs/adr/0236-bc2cpp-bytecode-ir.md`](docs/adr/0236-bc2cpp-bytecode-ir.md),
   [`docs/adr/0249-bc2cpp-binary-loader.md`](docs/adr/0249-bc2cpp-binary-loader.md)
