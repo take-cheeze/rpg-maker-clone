@@ -208,3 +208,21 @@ Two notes for the next step:
 
 Next: model unknown-receiver mutators (`replace`, `concat`, `push`, `[]=`) as writes that make a container's contents
 `TOP`, then recheck `_p_c`'s and `@wrk`'s types.
+
+## In-place mutators (spike, measured)
+
+`scratchpad/sealed-repro/receiver_mut.rb` treats a send of a mutating core name (`replace`, `concat`, `push`, `<<`,
+`[]=`, `slice!`, `shift`, `clear`, `update`, and so on, from `MUTATORS`) as making its receiver's contents `TOP`. A
+`call` on a `Method` value bound to a mutator (`@ram.method(:[]=)`) does the same to the containers that were bound.
+A receiver of unknown type makes every container `TOP`.
+
+- The earlier `ROM#peek_6000` finding is real. `@wrk.replace(sav.bytes)` and `buf.slice!` (`rom.rb`) mutate arrays that
+  the spike had typed from construction alone. Those earlier element types were therefore unsound, and the earlier
+  `TOP` counts (49 ivars) were optimistic.
+- Sound measurement: `TOP` ivars 64 of 197. `CPU#_pc`, `data`, `_p_c` and `APU#fixed` are `TOP`. `fixed` is now `TOP`
+  because `rom.rb:242`'s `slice!` has an unknown receiver (the ROM byte buffer comes from `zip_extract`), which makes every
+  container `TOP`.
+- Removing `<<` from `MUTATORS` did not change the result. The unknown-receiver case is what dominates.
+
+Remaining gap: a receiver of unknown type should poison only the containers it can be, but the spike has no receiver
+flow for `TOP` values. Until it does, the sound model cannot separate the memory cycle from unrelated containers.
