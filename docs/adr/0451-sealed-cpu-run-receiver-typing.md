@@ -36,6 +36,11 @@ Measurements from the sealed build's dump (scratchpad spike, not committed):
 - ARRAY literal sites that escape analysis proves closed: 218 of 288. `@sp_ram` escapes through
   `sprite_dma`. `@store` is written with Method objects (`cpu.rb:121`), so its element type is not `NilClass`.
 - Instance variables with a type from their writes: 32 of 197.
+- The CPU address registers are untyped: `@_pc`, `@addr`, `@data`, `@_a`, `@_x`, `@_y` are all `TOP`. Every write to
+  `@_pc` is either an arithmetic result on `@_pc` itself (`@_pc += 1`) or a result of `peek16`, `fetch` or `&`.
+  `peek16` returns `fetch` results, and `fetch` returns `Method#[]` results. Two things are missing: the return
+  types of Ruby methods, and a finite universe for the Method objects in `@fetch`. Even an optimistic
+  (bottom-start) fixpoint leaves the register cycle at `TOP` until both exist.
 
 Earlier element-type claims were unsound: an element type taken from a literal alone ignores later writes
 (`@store[a] = poke || @poke_nop`) and escapes. Element types are trusted only for sites the escape analysis
@@ -54,6 +59,26 @@ would stay refused. Pursue the following only if the sealed build becomes a prio
 - Integer typing of the CPU address registers, so the array index in `@fetch[addr]` is provably an Integer.
   This needs the writes of `@_pc`, `@addr` and `@data`, which depend on memory reads and ALU results.
 - Each step carries a soundness condition, and the wiring into yield_reach.rb is a separate change.
+
+Design sketch for that work, in dependency order:
+
+1. **Return types.** A Ruby method's return type is the join of the types of its `RETURN` operands. A call to a
+   name whose definitions are all Ruby methods, with a matching arity, takes that join. A name that a native
+   also registers stays `TOP`, because the native's return is not modeled.
+2. **Method values.** `method(:x)` with a literal symbol is `[:Method, {x}]`. A `[]` or `call` on a Method value
+   resolves to the joined return types of the names in its set, and to `TOP` if any name is native. Unions of
+   Method values join by taking the union of their name sets.
+3. **Hash flow.** `@peeks[peek] ||= peek` needs the value type of a hash. A hash is closed the same way an array
+   is (no escape, all writes known), and its value type is the join of its stored values. Without this, the
+   parameter `peek` loses its Method type on the `||=` rebind.
+4. **Optimistic fixpoint.** Start every ivar and parameter at bottom and join upward until stable. The cycle
+   `@_pc` -> `peek16` -> `fetch` -> `@fetch` -> `add_mappings` resolves only with steps 1 to 3 in place.
+5. **Soundness.** Each rule depends on a closed-world assumption (no reopened core methods, no `send` with a
+   computed name on the path, no escapes). A rule is turned on only with the check that establishes its
+   assumption, and the rule's result is replaced by `TOP` when the check fails.
+
+A prototype with the optimistic fixpoint and the Integer rules (no closedness gating) still leaves the register
+cycle at `TOP`, which confirms that return types and the Method universe are the missing pieces.
 
 The default bc2cpp build is the performance path for now.
 
