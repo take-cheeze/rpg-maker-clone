@@ -794,7 +794,6 @@ module Game
     # trace. `has_table` guards the diagnostic the same way `db_item` /
     # `db_enemy_group` do, so a bare test fixture with no chipset table at all
     # (rather than a real dangling id) stays quiet.
-
     def initialize(db, id)
       has_table = LCF.field?(db, :chipset)
       c = has_table ? db[:chipset][id] : nil
@@ -820,7 +819,6 @@ module Game
     # Passage byte for an upper-layer tile id, or nil when there is none to
     # read: no table on this chipset, no id given, the id is 0 (RPG2000's "no
     # upper tile here" sentinel), or it falls outside the table.
-
     def upper_flags(upper_tile_id)
       return nil if @passable_upper.nil? || upper_tile_id.nil? || upper_tile_id == 0
       idx = upper_tile_id - ChipsetLayout::BLOCK_F
@@ -1862,7 +1860,6 @@ module Game
     # (mruby-rpg2k/mrblib/game.rb) -- both real paths here return an Array
     # literal (`[]` on the one early-out, a freshly-built `out` otherwise,
     # never nil), so the claim is a plain read of the body, not an inference.
-
     def learn_table
       a = curve_row
       return [] unless LCF.field?(a, :skills) && a[:skills]
@@ -1955,7 +1952,6 @@ module Game
     end
 
     # Whether the actor knows `skill_id`.
-
     def knows_skill?(skill_id)
       return false if skill_id.nil? || skill_id == 0
       @skills.include?(skill_id)
@@ -1980,7 +1976,6 @@ module Game
     # different order than real RPG_RT, drifting every roll for the rest of
     # a seeded fight, and could pick a different skill outright on a
     # near-tie.
-
     def learn_skill(skill_id)
       return if skill_id.nil? || skill_id == 0 || @skills.include?(skill_id)
       @skills.push(skill_id)
@@ -2009,7 +2004,6 @@ module Game
     def dead?; @hp <= 0 || @states.include?(DEATH_STATE); end
 
     # Whether `state_id` is currently afflicting the actor.
-
     def state?(state_id)
       return false if state_id.nil? || state_id == 0
       @states.include?(state_id)
@@ -2169,7 +2163,6 @@ module Game
     end
 
     # Whether `item_id` occupies any equipment slot.
-
     def equipped?(item_id)
       return false if item_id.nil? || item_id == 0
       @equipment.include?(item_id)
@@ -2226,7 +2219,6 @@ module Game
     # Returns the item id it displaced, or nil -- the equip menu swaps through
     # the bag, so what the other hand was holding has to go back there rather
     # than vanish.
-
     def free_two_handed_slot(slot)
       return nil unless slot == WEAPON_SLOT || slot == SHIELD_SLOT
       other = slot == WEAPON_SLOT ? SHIELD_SLOT : WEAPON_SLOT
@@ -2240,7 +2232,6 @@ module Game
     # Is `item_id` a two-handed weapon? The flag only means anything on a weapon
     # (type 1): RPG_RT tests the type alongside it, so a shield that happens to
     # carry the bit does not claim the other hand.
-
     def two_handed?(item_id)
       return false if item_id.nil? || item_id == 0 || !LCF.field?(@db, :item)
       it = @db[:item][item_id]
@@ -2254,7 +2245,6 @@ module Game
     # Clear an equipment slot: 0..4 empties that one slot, EQUIP_ORDER.size (5)
     # strips every slot, any other value is a no-op. Drives the Change Equipment
     # command's remove operation.
-
     def unequip(slot)
       if slot == EQUIP_ORDER.size
         old_equipment = @equipment
@@ -2286,7 +2276,6 @@ module Game
     # only offers a single `status` hash (the test fixtures, or a database
     # without a curve) is treated as level-independent. With a class set the
     # class row's curve wins.
-
     def base_stats(level)
       a = curve_row
       curve = a.respond_to?(:int16_values) ? a.int16_values(31) : nil
@@ -2387,7 +2376,6 @@ module Game
     # cursed_armor_state_ids(eq[i])` (both mruby-rpg2k/mrblib/game.rb) --
     # every one of the five early-outs returns the `[]` literal and the one
     # remaining path returns a freshly-built `ids` Array, never nil.
-
     def cursed_armor_state_ids(item_id)
       return [] unless rpg2003?
       return [] if item_id.nil? || item_id == 0 || !LCF.field?(@db, :item)
@@ -2465,7 +2453,6 @@ module Game
     # states/#knock_out!/#full_heal (all mruby-rpg2k/mrblib/game.rb) -- the
     # one early-out returns `[]`, the remaining path returns `out.uniq`
     # (Array#uniq's own fresh-Array result), never nil.
-
     def permanent_states
       return [] unless rpg2003?
       out = []
@@ -2545,7 +2532,6 @@ module Game
     # each { ... }` (mruby-rpg2k/mrblib/game.rb) -- both the early `return
     # ids` (still the `[]` this same local was just assigned) and the
     # trailing `ids.uniq` are Arrays, never nil.
-
     def defensive_attribute_ids
       ids = []
       return ids unless LCF.field?(@db, :item)
@@ -2583,7 +2569,6 @@ module Game
     # reads it through a receiver, `caster.weapon_attributes`), but the body
     # still returns Array on every real path -- `[]` on the one early-out,
     # `ids.uniq` otherwise, never nil -- so the claim holds regardless.
-
     def weapon_attributes
       return [] unless LCF.field?(@db, :item)
       ids = []
@@ -2981,7 +2966,6 @@ module Game
     # RPG_RT under wine) which does not consult the flag either, so only the
     # equip menu gates on this -- Game
     # ::Party's #equip_from_bag / #unequip_to_bag stay unguarded on purpose.
-
     def slot_cursed?(slot)
       return false unless slot >= 0 && slot < EQUIP_ORDER.size && LCF.field?(@db, :item)
       item_id = @equipment[slot]
@@ -3030,7 +3014,6 @@ module Game
     # own curve (#calc_exp) — a direct port of a reference implementation's
     # own EXP-curve calculation for the previous level, NOT independently
     # confirmed against genuine RPG_RT under wine.
-
     def exp_for_level(level)
       return 0 if level <= 1
       calc_exp(level - 1)
@@ -3058,7 +3041,6 @@ module Game
     end
 
     # Add `delta` EXP (negative removes it); the Change EXP command's effect.
-
     def gain_exp(delta)
       set_exp(@exp + delta)
     end
@@ -3087,7 +3069,6 @@ module Game
     # on a level down that leaves EXP at/above the next threshold it drops to the
     # level's base. Current HP/MP are not refilled (set_level only re-clamps
     # them), matching RPG_RT.
-
     def change_level_by(delta)
       new_level = Game.clamp(@level + delta, 1, max_level)
       old = @level
@@ -3153,7 +3134,6 @@ module Game
     # weapon bonus as a parameter rather than always `#weapon_crit_bonus`'s
     # merged max -- shared with `#weapon_roll_data`, which needs the same
     # composition for one specific weapon's own `critical_hit` bonus.
-
     def weapon_crit_chance(bonus)
       pct = bonus
       if LCF.field?(@db_row, :has_critical_rate) && @db_row[:has_critical_rate]
@@ -3228,7 +3208,6 @@ module Game
     end
 
     # Apply a MP (SP) change, clamped to [0, max_mp]. Returns the new MP.
-
     def change_mp(delta)
       @mp = Game.clamp(@mp + delta, 0, @max_mp)
     end
@@ -3308,7 +3287,6 @@ module Game
     # why the two ceilings aren't perfectly split by edition here). `@base`
     # (read by #recompute_stats and everything else) stays the clamped,
     # display/effective value throughout.
-
     def change_param(type, delta)
       return unless type >= 0 && type < STAT_NAMES.size
       limit = base_param_limit(type)
@@ -3322,7 +3300,6 @@ module Game
     # RPG2000's clamp ceiling for a base parameter: HP/MP go to 9999, the four
     # battle stats to 999. Shared by #change_param and #restore_base, which
     # both need to re-derive the clamped @base from an unclamped total.
-
     def base_param_limit(type)
       (type == PARAM_MAX_HP || type == PARAM_MAX_MP) ? 9999 : 999
     end
@@ -3380,7 +3357,6 @@ module Game
     # test fixture (or any RPG2000 database, which carries no job table at
     # all) stays quiet -- this only fires for a genuine dangling id in a
     # database that does have one.
-
     def change_class(class_id, new_level, skill_mode, param_mode)
       if class_id > 0 && class_row_for(class_id).nil?
         if LCF.field?(@db, :job) && @db[:job]
@@ -3493,7 +3469,6 @@ module Game
     # 0`, `add` false), which has no table lookup of its own and still
     # clears the list even without one; #do_change_battle_commands now
     # carries the real RPG2k3-commands gate itself instead.
-
     def change_battle_commands(add, id)
       cmds = battle_commands
       if add
@@ -3555,7 +3530,6 @@ module Game
     # Combatant.from_actor when a fight starts and written by the in-battle
     # Row command / a restored save.
     def battle_row; @row; end
-
     def battle_row=(row); @row = row == ROW_BACK ? ROW_BACK : ROW_FRONT; end
 
     # This actor's RPG2003 active-time (gauge) battle charge (0..
@@ -3701,7 +3675,6 @@ module Game
     # is copied in from the class row only inside its change-class routine,
     # from the actor's own database row at plain construction and every other
     # time (NOT independently confirmed against genuine RPG_RT under wine).
-
     def class_battle_commands
       row = @class_changed && @class_id > 0 && @class_row ? @class_row : @db_row
       list = LCF.field?(row, :battle_commands) ? row[:battle_commands] : nil
@@ -3782,7 +3755,6 @@ module Game
     # Point the actor at class `id` (0 = none), resolving its database row. A
     # database with no class table (every RPG2000 game) or an unknown id leaves
     # the actor class-less, so the actor row keeps supplying the curves.
-
     def set_class_id(id)
       @class_id = id && id > 0 ? id : 0
       @class_row = @class_id > 0 ? class_row_for(@class_id) : nil
@@ -3869,7 +3841,6 @@ module Game
     # as a side effect of asking. Logs and dedupes through the exact same
     # `@missing` table and message #[] uses, so an id already reported by one
     # path doesn't double-report through the other.
-
     def known_invalid?(id)
       return false if id.nil? || id <= 0 || @all[id]
       return false if @db[:player][id]
@@ -6214,7 +6185,6 @@ module Game
       @substitutions = [{}, {}]
     end
 
-
     def in_bounds?(x, y)
       x >= 0 && y >= 0 && x < @width && y < @height
     end
@@ -6237,7 +6207,6 @@ module Game
     # (a no-op for most of them) -- reverting a specific earlier
     # substitution means substituting *from* its current (already-rewritten)
     # id, not its original one.
-
     def substitute_tile(layer, old_id, new_id)
       idx = layer == 0 ? 0 : 1
       rebuilt = {}
@@ -6304,7 +6273,6 @@ module Game
     # a nil or non-numeric `y` could never have reached the MUL below in the
     # first place.
 
-
     def set_tile(layer, x, y, tile_id)
       return unless in_bounds?(x, y)
       layer[y * @width + x] = tile_id
@@ -6317,7 +6285,6 @@ module Game
     # `@state.x/@state.y`, `tx/ty`, `@x/@y` -- grepped, all of them), so the
     # `y` that reaches the MUL below is a Fixnum wherever the already-
     # annotated `x` is.
-
 
     def tile(layer, index, x, y)
       return nil unless in_bounds?(x, y)
@@ -7697,7 +7664,6 @@ module Game
 
     # `erase` says which way the mask runs: true when black is arriving (Erase
     # Screen), false when it is leaving (Show Screen).
-
     def initialize(style, frames, width, height, erase)
       @style = style
       @frames = frames
@@ -7938,7 +7904,6 @@ module Game
     # that slide together (combine, a Show) or apart (division, an Erase).
     # `top_h` / `left_w` is the first piece's share of the axis (integer half,
     # remainder to the second piece so an odd dimension still tiles exactly).
-
     def half(total)
       h = total / 2
       [h, total - h]
@@ -8154,7 +8119,6 @@ module Game
     # formula. A negative `frame`
     # (#new_block_rects asking for the count *before* frame 0) is nothing
     # revealed yet.
-
     def block_count_through(frame)
       return 0 if frame < 0
       total = block_order.size
@@ -8176,7 +8140,6 @@ module Game
     # (three `block_shuffle_rank(i, total)` sites in one `case`): `total` is
     # `cols * (@height / BLOCK_SIZE)` and `i` walks `(0...total).to_a`, so
     # both are Fixnum by construction, with no other caller anywhere.
-
     def block_shuffle_rank(index, total)
       (index * BLOCK_SHUFFLE_STRIDE) % total
     end
@@ -8414,7 +8377,6 @@ module Game
     # `current` are each [red, green, blue, sat], `frames` the frames still
     # left. Unlike #tint_to, `current` need not equal `finish` -- a save made
     # mid-transition resumes interpolating from exactly where it left off.
-
     def restore_tint(finish, current, frames)
       @tr, @tg, @tb, @tsat = finish
       @r, @g, @b, @sat = current
@@ -8469,7 +8431,6 @@ module Game
     # shape) — ported from a reference implementation, NOT
     # independently confirmed against genuine RPG_RT under wine: it always
     # clears any in-progress strobe.
-
     def flash(r, g, b, power, frames)
       @flash_continuous = false
       @flash_r = r
@@ -8534,7 +8495,6 @@ module Game
     # carries NO fixnum hint for `cur`/`step`: `@pan_step` comes from
     # `pan_step_for`, whose `(2 << ...) / 16.0` makes it a Float, and
     # `@pan_x`/`@pan_y` inherit that -- hence #pan_offset's own `.round`.)
-
     def pan(direction, distance, speed)
       dx, dy = PAN_DELTA[direction] || [0, 0]
       d = distance * Game::TILE
@@ -8696,7 +8656,6 @@ module Game
     end
 
     # Move `cur` toward `target` by at most `step` (never overshooting).
-
     def approach(cur, target, step)
       return target if (target - cur).abs <= step
       cur < target ? cur + step : cur - step
@@ -9620,7 +9579,6 @@ module Game
     # variables[cmd.param(2)])` -- both sides of that ternary are Fixnum
     # (`LCF::EventCommand#param` is `@parameters[i] || 0`, `Game::Variables#[]`
     # is `@data[id] || 0`), so `seconds` never arrives as anything else.
-
     def set(seconds)
       @frames = seconds * FPS + (FPS - 1)
     end
@@ -9722,7 +9680,6 @@ module Game
     # supplies a Fixnum -- `Interpreter`'s own `[cmd.param(0), ...]` /
     # `[variables[cmd.param(0)], ...]`, Scene::MapViewer's `[@map.id, ...]`,
     # and the Teleport-skill menus' `[target[:map_id], ...]`.
-
     def map_id=(id)
       @battle_background = nil if id != @map_id
       @map_id = id
@@ -10332,7 +10289,6 @@ module Game
 
     # Change Screen Transitions: set slot `which` (0..5) to transition setting
     # `style`. An out-of-range slot is ignored.
-
     def set_screen_transition(which, style)
       return unless which >= 0 && which < SCREEN_TRANSITION_SLOTS
       @screen_transitions[which] = style

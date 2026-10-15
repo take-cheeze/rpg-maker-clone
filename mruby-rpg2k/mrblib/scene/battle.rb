@@ -447,7 +447,6 @@ class RPG2k
       # wing battlers at x=80 and x=240) draw over member 4 (the full-screen
       # 320x160 body at x=160) in the reference frame, exactly as this
       # ordering predicts.
-
       def battler_z(i)
         100 + (@ui[:troop].members.size - 1 - i)
       end
@@ -608,7 +607,6 @@ class RPG2k
       # troop_size-1 span) and the animation overlay's z 150, so an actor
       # sprite never fights either for draw order; still well below every UI
       # window (z >= 300).
-
       def actor_sprite_z(i)
         200 + i
       end
@@ -802,7 +800,6 @@ class RPG2k
       # shape this used to compute) gives 43.95 -> 43 there, which would have
       # put the last member 2px high -- ruled out by the middle member too
       # (int(22.5) = 22 lands on 134; sin gives 21).
-
       def battle_grid_position(i, party_size)
         row = GRID_TABLE_0[party_size - 1]
         return nil unless row && row[i]
@@ -1841,7 +1838,6 @@ class RPG2k
       # behaviour, unchanged), blocked at either end with no wrap at all once
       # `foes_count` overflows it -- see #drive_battle_target's own comment
       # for the cycle #131 evidence behind the split.
-
       def move_battle_target_cursor(delta, foes_count)
         if foes_count > BATTLE_VISIBLE_ROWS
           target = @ui[:target_i] + delta
@@ -1944,7 +1940,6 @@ class RPG2k
       # is, not where the window is scrolled to: the only index the last
       # full row's second column can reach downward is the partial row's
       # lone cell, which is the same cell either way.)
-
       def move_battle_list_index(index, delta, size)
         target = index + delta
         return nil if target.negative?
@@ -2042,7 +2037,6 @@ class RPG2k
       # own skill eligibility, see `Game::Battle#skill_ready?`). Shared by
       # #confirm_battle_skill's buzz-and-stay gate and #draw_battle_skill's
       # row colour (see its own comment) so both agree by construction.
-
       def battle_skill_unavailable?(cost, sk)
         current_actor.mp < cost ||
           !@state.party.weapon_attribute_ready?(current_actor_row, sk)
@@ -3007,7 +3001,6 @@ class RPG2k
         end
       end
 
-
       def enter_battle_result(result)
         @ui[:result] = result
         @map.play_victory_bgm if result == :victory
@@ -3052,7 +3045,6 @@ class RPG2k
       # `@battle.finish_battle(:abort)`) or `@ui[:result]`, which nothing
       # but #enter_battle_result ever writes -- and that method's own
       # `# bc2cpp: (Symbol)` annotation already certifies its argument.
-
       def finish_battle(result)
         # Persist the party's post-battle HP (and any knock-outs) before leaving
         # the fight, so damage taken sticks and a downed member stays down.
@@ -3452,7 +3444,6 @@ class RPG2k
       # tally; this screen has no per-page window, only one flat line list
       # for the whole result, so they are appended to that list instead, in
       # the same after-the-tally order the real sequence uses.
-
       def battle_result_lines(result, troop)
         return [term(:escape_success)] if result == :escape
         return [term(:defeat)] unless result == :victory
@@ -3494,7 +3485,6 @@ class RPG2k
       # right before `#gain_exp`, so a skill already known (an earlier
       # explicit Change Skill teach) is told apart from one this exact gain
       # just taught. Returns [] when the level did not rise.
-
       def battle_level_up_lines(actor, before_level, before_skills)
         return [] if actor.level <= before_level
         lines = []
@@ -3804,7 +3794,6 @@ class RPG2k
       # #draw_battle_gauge_panel's own
       # `allies.each_with_index { |ally, i| draw_battle_gauge_card(...) }`,
       # so it is always a Fixnum.
-
       def draw_battle_gauge_card(c, system2, ally, i)
         draw_battle_gauge_face(c, ally.actor, i)
         x = 32 + i * 80
@@ -3840,7 +3829,6 @@ class RPG2k
       # `i` is #draw_battle_gauge_card's own already-Fixnum column index,
       # forwarded unchanged from its single `draw_battle_gauge_face(c,
       # ally.actor, i)` call -- the only caller this method has.
-
       def draw_battle_gauge_face(c, actor, i)
         return unless actor && actor.respond_to?(:faceset_name)
         face = @map.load_face_bitmap(actor.faceset_name)
@@ -3861,7 +3849,6 @@ class RPG2k
       # confirmed against genuine RPG_RT under wine, including its
       # `max == 0` no-draw guard (a stat with no pool at all, e.g. an actor
       # with 0 max SP, draws no fill for that row).
-
       def draw_gauge_system2(c, system2, x, y, cur, max, which)
         return if max == 0
         gauge_x = cur == max ? 16 : 0
@@ -3879,7 +3866,6 @@ class RPG2k
       # its own `handle_zero` carry, so 100 draws all three digits ("100")
       # while 7 draws only the ones cell (three blank cells then "7") and 42
       # draws the tens+ones cells ("42", blank above).
-
       def draw_number_system2(c, system2, x, y, value)
         handle_zero = false
         if value >= 1000
@@ -4218,7 +4204,6 @@ class RPG2k
       # taken with the last row on screen, while both showed together
       # mid-list. They also stay up, unchanged, while the enemy-target cursor
       # is open over the list.
-
       def refresh_battle_list_arrows(scroll, row_count, rows)
         return if @disposed
         @ui[:list_up_arrow] ||=
@@ -4780,7 +4765,6 @@ class RPG2k
       # only partly fits), so the SP run -- 54px wide from x=198 inside a
       # 228px contents bitmap -- truncates at the panel edge the way RPG_RT's
       # own does instead of bleeding past it.
-
       def draw_battle_stat_segment(c, x, y, w, label, cur, max, can_knockout)
         pieces = [[label, STAT_LABEL_W, 0, STAT_LABEL_COLOR],
                   [cur.to_s, STAT_FIELD_W, 2, value_font_color(cur, max, can_knockout)],

@@ -750,7 +750,6 @@ module Game
     # reads it through a receiver, `@state.party.battle_items`), but the
     # body still returns Array on every real path -- a `select.map` chain,
     # never nil.
-
     def battle_items
       @items.keys.select do |id|
         it = db_item(id)
@@ -1387,7 +1386,6 @@ module Game
     # A freshly instantiated Game::Enemy for `id` — what a transformation turns
     # into, read through the same constructor a troop member is built with (so it
     # decodes its stats, ranks and its own action pattern). nil when unknown.
-
     def enemy(id)
       return nil unless @db && LCF.field?(@db, :enemy) && id && id > 0
       return nil unless @db[:enemy][id]
@@ -1452,7 +1450,6 @@ module Game
       sw = @state && @state.respond_to?(:switches) ? @state.switches : nil
       sw ? sw[id] : false
     end
-
 
     def set_switch(id, on)
       sw = @state && @state.respond_to?(:switches) ? @state.switches : nil
@@ -1743,7 +1740,6 @@ module Game
     # ever initialized to `[]` (interpreter.rb's own #initialize/#start_at)
     # or `push`ed onto (never reassigned to anything else), so the returned
     # value is always Array, never nil.
-
     def take_revealed_monsters
       ids = @revealed_monsters
       @revealed_monsters = []
@@ -1757,7 +1753,6 @@ module Game
     # Same shape and same evidence as #take_revealed_monsters above:
     # `@fled_monsters` is only ever `[]`, `push`ed, or `concat`ed, never
     # reassigned to anything else.
-
     def take_fled_monsters
       ids = @fled_monsters
       @fled_monsters = []
@@ -1777,7 +1772,6 @@ module Game
     # Same shape and same evidence as #take_revealed_monsters above:
     # `@monster_kills` is only ever `[]` or `push`ed, never reassigned to
     # anything else.
-
     def take_monster_kills
       ids = @monster_kills
       @monster_kills = []

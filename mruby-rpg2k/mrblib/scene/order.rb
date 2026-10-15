@@ -130,7 +130,6 @@ class RPG2k
         end
       end
 
-
       def move_cursor(delta)
         @cursor_index += delta
         @cursor_index %= @names.size

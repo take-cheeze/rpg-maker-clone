@@ -244,7 +244,6 @@ class RPG2k
       # column for +-1), ignored if that cell is off the grid -- confirmed
       # against genuine RPG_RT under wine, which leaves the cursor put
       # rather than wrapping (see the COLUMN_MAX comment above).
-
       def move_item_cursor(delta)
         return if items.empty?
         target = @item_index + delta
@@ -410,7 +409,6 @@ class RPG2k
       end
 
       # Ask which party member the pending item is used on.
-
       def prompt_item_target(id)
         @pending_item = id
         enter_target_confirm(nil)
@@ -575,7 +573,6 @@ class RPG2k
       # Move the teleport-target cursor by `delta` grid cells, ignored if that
       # cell is off the grid -- mirrors #move_item_cursor exactly (see its
       # own comment).
-
       def move_teleport_cursor(delta)
         targets = teleport_targets
         return if targets.empty?
@@ -854,7 +851,6 @@ class RPG2k
       # Content x of column `col`'s cell -- 0 and 160 (measured).
       # Both callers (#draw_item_rows, #update_item_cursor) pass an
       # `... % COLUMN_MAX`, so `col` is always a Fixnum.
-
       def item_col_x(col)
         col * (item_col_w + COLUMN_GAP)
       end

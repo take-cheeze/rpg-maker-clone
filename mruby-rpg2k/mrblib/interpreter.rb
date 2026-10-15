@@ -992,7 +992,6 @@ module Game
     # trusts its caller to be resuming the right process rather than validating
     # it. An out-of-range index (a stale save against edited event data) falls
     # back to the top, same as #start alone.
-
     def start_at(commands, index)
       start(commands)
       @index = index if index && index > 0 && index < @list.size
@@ -1152,7 +1151,6 @@ module Game
     # event processing" mode abandons the rest of the event; otherwise, when
     # the command carries [Victory] / [Escape] / [Defeat] handler branches,
     # jump into the matching one. A game-over on defeat is the scene's concern.
-
     def resume_battle(result)
       if result == :escape && @battle_escape_aborts
         @index = @list.size
@@ -1471,7 +1469,6 @@ module Game
     # this command list — nil when there is none (a common event, a battle page).
     # Every other reference, including the hero and the vehicle slots, passes
     # through untouched for the caller to recognise.
-
     def character_ref(ref)
       return @event_id if ref == 0 || ref == CHAR_THIS_EVENT
       ref
@@ -1480,7 +1477,6 @@ module Game
     # -- flow helpers ---------------------------------------------------------
 
     # Move @index to the first command at `indent` whose code is in `codes`.
-
     def skip_to(codes, indent)
       while @index < @list.size
         c = @list[@index]
@@ -1638,7 +1634,6 @@ module Game
       @wait_kind = :choice
       @waiting = true
     end
-
 
     def find_choice_option(index)
       i = @index
@@ -2097,7 +2092,6 @@ module Game
     # id at or before `src` only sees it once. A source outside `a..b`
     # entirely skips this split and degenerates to the ordinary single
     # up-front read every other operand type already uses.
-
     def do_control_vars_range_variable(cmd, a, b, op)
       src = cmd.param(5)
       unless src >= a && src <= b
@@ -2197,7 +2191,6 @@ module Game
     # ridden one's position live every step, and an unridden one simply sits
     # wherever it was last placed), so this needs no scene hook and works the
     # same whether or not the vehicle's own map is the one currently loaded.
-
     def vehicle_operand(ref, attr)
       v = @state.vehicle(Vehicle::TYPES[ref - CHAR_BOAT])
       return 0 unless v
@@ -2215,7 +2208,6 @@ module Game
     # because it owns the camera. Without that hook (a headless interpreter, or a
     # battle page) there is no view to measure against, so it reads 0. `ref` has
     # already been through #character_ref, so "this event" arrives as a real id.
-
     def screen_operand(ref, attr)
       if ref.nil?
         $stderr.puts '[RPG2k] Control Variables: "this event" has no map ' \
@@ -2381,7 +2373,6 @@ module Game
     # leaves the value unchanged on a zero divisor; its modulo differs from
     # that -- zeroing the result instead -- so a modulo by zero zeroes the
     # variable instead.
-
     def trunc_div(n, d)
       q = n.abs / d.abs
       (n < 0) == (d < 0) ? q : -q
@@ -2392,7 +2383,6 @@ module Game
     # and #apply's own annotation already certifies `cur` and `val` as
     # Fixnum. The missing second token here was an oversight, not a real
     # difference between the two siblings.
-
 
     def trunc_mod(n, d)
       n - d * trunc_div(n, d)
@@ -2592,7 +2582,6 @@ module Game
     # scene-level fixtures exercise only the level line, never the skill
     # table) -- `actor.respond_to?(:learn_table)` guards the same stub case
     # for the skill lookup below.
-
     def queue_level_up_messages(actor, old_level, new_level, before_skills)
       return unless new_level > old_level
       ((old_level + 1)..new_level).each do |lv|
@@ -2807,7 +2796,6 @@ module Game
     # Simulated Attack's own real clamp is `std::max(0, result)`, applied
     # both before and after the variance call, so this can land on a
     # genuine 0 the way #varied's callers never do.
-
     def simulated_attack_variance(base, var)
       return base unless var && var > 0 && base > 0
       adj = var * base / 10
@@ -3680,7 +3668,6 @@ module Game
     # `LCF::EventCommand#param` is `@parameters[i] || 0` over a decoded
     # integer list, and `Game::Variables#[]` is `@data[id] || 0` over a
     # min/max-clamped integer store, so neither can hand back anything else.
-
     def compare(a, b, op)
       case op
       when 0 then a == b
@@ -3761,7 +3748,6 @@ module Game
 
     # The numpad facing a Teleport's 1-based direction argument names, or 0 for
     # "keep the current facing" (which is what an out-of-range value means too).
-
     def teleport_facing(param)
       return 0 unless param && param >= 1 && param <= FACING_NUMPAD.size
       FACING_NUMPAD[param - 1]
