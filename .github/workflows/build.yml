@@ -1117,6 +1117,11 @@ jobs:
           - name: bc2cpp Ruby parse cache
             run: ruby scripts/bc2cpp/ruby_parse_cache_check.rb
 
+          # An outside Ruby `@name` in an instance method of `class C` poisons only C's family; blocks, modules,
+          # class bodies and strings stay global (tools/bc2cpp/outside_ruby_ivar_scopes.rb).
+          - name: bc2cpp outside Ruby ivar scopes
+            run: ruby scripts/bc2cpp/outside_ruby_ivar_scopes_check.rb
+
           # ADR 0417: RGSS::Tts (its native registration, its one Ruby call site) exists
           # only in the desktop build; every limited target's gem config must drop it.
           - name: RGSS::Tts only in the build that can back it
