@@ -991,6 +991,13 @@ jobs:
         if: always()
         run: sccache --show-stats
 
+      # TYPE_CHECK (docs/adr/0412): a declared type the analysis contradicts (TC1001, TC1007) or a signature or
+      # annotation bc2cpp cannot use (TC1002, TC1004) is an error, and only errors set the exit status. Running it
+      # here makes those violations fail the job instead of waiting for someone to run the check by hand.
+      - name: Type check (declared-type violations fail the job)
+        timeout-minutes: 30
+        run: MRBC=build-bc2cpp/mruby/host/mrbc/bin/mrbc ruby scripts/bc2cpp/type_check.rb
+
 
 
   # The `bc2cpp` status check: success when `bc2cpp-build` succeeded. It keeps the name the old one-job
