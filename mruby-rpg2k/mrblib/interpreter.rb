@@ -2680,7 +2680,6 @@ module Game
     # (#do_change_exp, #do_change_level, #do_change_hp,
     # #do_simulated_attack, #do_change_equipment,
     # #do_change_battle_commands) devirtualize its per-actor calls.
-    # bc2cpp: () -> Array<Game::Actor>
     def stat_targets(cmd)
       case cmd.param(0)
       when 0 then party.actors
