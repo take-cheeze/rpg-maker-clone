@@ -162,7 +162,7 @@ module LCF
     attr_reader :command_id, :parameter_string,
                 :parameter_a, :parameter_b, :parameter_c
 
-    # bc2cpp: (fixnum, , fixnum, fixnum, fixnum)
+
     def initialize(command_id, string, a, b, c)
       @command_id = command_id
       @parameter_string = string
