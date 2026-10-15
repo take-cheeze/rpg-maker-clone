@@ -1,0 +1,15 @@
+# Built-in predicates, declared from the standard RBS core (rbs gem core/array.rbs, hash.rbs, enumerable.rbs). mruby
+# defines these in Ruby (3rd/mruby/mrblib/enum.rb and mruby-enum-ext), and both forms return only true or false.
+# Declarations only: the program does not define them, so rbs_signatures.rb gives them no hint and core_results.rbs
+# still holds the result kinds NativeCoreResultSigs reads.
+class Array
+  def any?: () -> bool | (untyped) -> bool | () { (untyped) -> untyped } -> bool
+end
+
+class Hash
+  def any?: () -> bool | (untyped) -> bool | () { (untyped) -> untyped } -> bool
+end
+
+module Enumerable
+  def any?: () -> bool | (untyped) -> bool | () { (untyped) -> untyped } -> bool
+end
