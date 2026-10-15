@@ -1,0 +1,33 @@
+# Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
+# CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
+# from the method body; the method's own positionals are declared too so the required count matches.
+# A send reaches a declaration through an exact receiver (its own or an inherited declaration) or as an
+# implicit-self call in the declaring class, provided every descendant override declares the same class.
+module Game
+  class Actors
+    # `all.each(&blk)`: `all` maps @all's values, each built by `Actor.new(@db, id)`.
+    def each: () { (Game::Actor) -> void } -> untyped
+  end
+  class Party
+    # `@actors.each(&blk)`: every member comes from `@roster[i]` (Game::Actors#[] -> Game::Actor).
+    def each: () { (Game::Actor) -> void } -> untyped
+  end
+  class Battle
+    # `yield t` for each of `targets`, always @enemies or @allies (Array[Game::Battle::Combatant]).
+    def auto_battle_best_target: (untyped targets) { (Game::Battle::Combatant) -> untyped } -> untyped
+  end
+end
+module LCF
+  class Array2D
+    # `yield i, v unless v.nil?`: i is a `times` index, v is `self[i]` (an Array1D once non-nil).
+    def each: () { (Integer, LCF::Array1D) -> void } -> untyped
+  end
+end
+class RPG2k
+  module Scene
+    class MapViewer
+      # `yield id, ev[:name], x, y`: id is an LCF::Array2D#each index.
+      def each_event_position: () { (Integer, untyped, untyped, untyped) -> void } -> untyped
+    end
+  end
+end
