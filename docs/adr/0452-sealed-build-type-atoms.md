@@ -66,3 +66,35 @@ receiver can be a `CPU`.
 - The sealed build stays at about 13 fps until the analysis carries through to `CPU#run` and a yield-analysis
   change consumes it. This ADR does not promise that outcome.
 - Promotion into `tools/bc2cpp` needs its own ADR, tests, and a soundness review of each atom rule.
+
+## Spike result (measured, not yet promoted)
+
+`scratchpad/sealed-repro/receiver_spike.rb` implements the atoms and dispatch rules above on the optcarrot dump
+(`out4/yield.dump`). What it shows:
+
+- Receivers resolve. `@cpu` is `[:Obj "CPU"]`, and the `fetch` sites in `CPU` dispatch to `CPU#fetch` only.
+- `SSEND`/`SSEND0` take self from R0, not from R(A). R(A) is the result slot. Treating R(A) as the receiver made
+  every self-call look like a call on an `Integer`. Self in a method of class `K` is typed `[:Obj K]`.
+- Constants take the join of their `SETCONST` values, and comparison opcodes (`EQ`, `LT`, ...) and `ADDILV`/`SUBILV`
+  are typed. `CLK_*` stays `TOP` because it is set through `(1..8).map { ... }` destructuring, which needs `map`
+  modeled.
+- `[]` and `call` dispatch per receiver atom. A `Method` atom calls its targets, an `Array` atom indexes, and a
+  `nil` atom contributes nothing, because `nil[...]` raises. This is needed because `@fetch` holds both `@ram`
+  (an Array, from `add_mappings(0x0000..0x07ff, @ram, ...)`) and `Method` objects.
+
+What it does not show: `CPU#_pc`, `CPU#fetch` and `CPU#peek16` stay `TOP`, so `CPU#run` is still not proved
+yield-free. The remaining `TOP` sources sit inside the memory cycle (`_pc` → `peek16` → `fetch` → `@fetch` → `data`
+→ `_pc`). Most `TOP`-producing rules inside `CPU` methods are bitwise sends (`&`, `|`, `<<`, `^`, `>>`) whose operands
+are themselves in that cycle, plus unmodeled `RANGE_INC`, `BLOCK`, `each`/`times`. The spike did not isolate a single
+non-cyclic root, so the cycle is not yet shown to close under an optimistic fixpoint. Next step: model `Range` and
+block arguments, then rerun to see whether the cycle resolves.
+
+Two premises are still unchecked and must be before promotion:
+
+- No program class has a subclass whose override could shadow a method in `Obj C` dispatch. The spike assumes
+  this; bc2cpp's `superclass_of` must confirm it.
+- A native method with the same name on a program class (for example a `Struct`-derived class) is not dispatched by
+  name. The spike dispatches program-class receivers past the native gate only when every atom is a program class.
+
+Status stays Proposed. The atoms are a sound design for dispatch, but the measured result does not yet reach
+`CPU#run`.
