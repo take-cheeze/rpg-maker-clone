@@ -98,3 +98,21 @@ Two premises are still unchecked and must be before promotion:
 
 Status stays Proposed. The atoms are a sound design for dispatch, but the measured result does not yet reach
 `CPU#run`.
+
+## Core signatures and Range (spike, measured)
+
+- **Core RBS import.** The `rbs` gem ships CRuby 3.4 core signatures (`core/*.rbs`), and they load with
+  `RBS::EnvironmentLoader`. The spike reads return types from them for Integer, Float, String, Symbol, nil, bool,
+  Range, Enumerator, Array, Hash, Kernel and BasicObject. A call falls back to them only when no program method of
+  that name can run on the receivers (no Object, Kernel or constructed-class method of that name). A return maps to
+  an atom when it is a plain class (`Integer`, `Symbol`, `String`, `Float`, `Range`, `Enumerator`), `bool`, `nil`,
+  `self`, or a union or optional of those. `Array`/`Hash` returns and type variables stay `TOP`, because a container
+  needs an allocation key the core signature does not give.
+- **Caveat.** These are CRuby signatures, and mruby differs (a method may be missing, or behave differently). A
+  promoted version must intersect with mruby's own method list and check each entry it relies on.
+- **Range.** `RANGE_INC`/`RANGE_EXC` produce `[:Obj, 'Range']`. `Integer#step` and similar produce
+  `[:Obj, 'Enumerator']`. `add_mappings` now gets a `Range`/`Integer` first argument at every call site.
+
+Effect on the same dump: `TOP` returns 261 → 245 of 369, `TOP` ivars 80 → 75 of 197, methods with a `TOP` parameter
+68 → 63 of 229. `CPU#_pc`, `CPU#data` and `CPU#fetch` remain `TOP`. The memory cycle still does not close, because
+its values pass through `Array` returns and block-taking methods, which this typing does not reach.
