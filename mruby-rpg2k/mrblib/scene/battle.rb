@@ -4116,7 +4116,6 @@ class RPG2k
       # this is a list RPG_RT draws scroll arrows on. See
       # Scene::Base#sticky_list_top for the measurement behind "sticky", and
       # #refresh_battle_list_arrows for the arrows.
-      # bc2cpp: (, fixnum, , , )
       def battle_list_window(x, w, labels, sel, z, column_max: 1, idxs: nil, desc: nil,
                              scroll_key: nil)
         # All five measured off genuine RPG_RT captures this cycle (see the

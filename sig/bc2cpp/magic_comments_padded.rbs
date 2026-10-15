@@ -1,0 +1,32 @@
+# Hints moved from skipped `# bc2cpp:` comments (arity-padded or optional/keyword-only defs; see the PR body).
+class LCF::Tree
+  def initialize: (Integer, untyped) -> untyped
+end
+module LCF
+  def unpack_int32: (untyped) -> Array
+end
+class Game::Actor
+  def set_level: (Integer, ?preserve_mod: untyped) -> untyped
+  def add_state: (Integer, ?allow_battle_states: untyped) -> untyped
+  def equip_item: (Integer, ?untyped) -> untyped
+  def normalize_equipment: (untyped) -> Array
+  def change_hp: (Integer, ?untyped) -> untyped
+end
+class Game::Party
+  def item_state_ids: (untyped) -> Array
+  def skill_state_ids: (untyped) -> Array
+  def battle_skills: (untyped, untyped) -> Array
+end
+class Game::Troop
+  def drops: (untyped) -> Array
+end
+class RPG2k::Scene::Base
+  def build_list_arrow_sprite: (untyped, Integer, untyped, untyped, ?untyped) -> untyped
+  def draw_system_text: (untyped, Integer, Integer, untyped, untyped, untyped, untyped, ?untyped, ?untyped) -> untyped
+end
+class RPG2k::Scene::Battle
+  def battle_list_window: (untyped, Integer, untyped, untyped, untyped, ?column_max: untyped, ?idxs: untyped, ?desc: untyped, ?scroll_key: untyped) -> untyped
+end
+class RPG2k::Scene::StatusMenu
+  def slot_labels: (untyped) -> Array
+end

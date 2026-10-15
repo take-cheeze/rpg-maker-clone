@@ -1835,7 +1835,6 @@ module Game
     # reference implementation's separate mod field does. #change_class passes `preserve_mod: false`,
     # matching its own explicit mod-zeroing before it reapplies
     # the class's own curve.
-    # bc2cpp: (fixnum)
     def set_level(level, preserve_mod: true)
       mod = preserve_mod && @base_raw ? Array.new(@base_raw.size) { |i| @base_raw[i] - base_stats(@level)[i] } : nil
       @level = level && level >= 1 ? level : 1
@@ -2079,7 +2078,6 @@ module Game
     # Change Condition -- ported from its
     # source, NOT independently confirmed against genuine RPG_RT under wine
     # -- neither of which this restriction ever applies to.
-    # bc2cpp: (fixnum)
     def add_state(state_id, allow_battle_states: true)
       return if state_id.nil? || state_id == 0 || @states.include?(state_id)
       return if !allow_battle_states && !state_persists_type?(state_id)
@@ -2187,7 +2185,6 @@ module Game
     # dual-wield redirect below, `Party#equip_item_from_bag` also passes an
     # explicit shield-slot for a 二刀流 actor's second weapon, the same way
     # the equip menu does.
-    # bc2cpp: (fixnum)
     def equip_item(item_id, slot = nil)
       return if item_id.nil? || item_id == 0 || !LCF.field?(@db, :item)
       it = @db[:item][item_id]
@@ -2992,7 +2989,6 @@ module Game
 
     # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
     # five-slot array of integer item ids.
-    # bc2cpp: () -> Array
     def normalize_equipment(spec)
       ids =
         if spec.is_a?(Hash) then EQUIP_ORDER.map { |k| spec[k] }
@@ -3110,7 +3106,6 @@ module Game
     # own change-HP routine (NOT independently confirmed against genuine
     # RPG_RT under wine). Returns the
     # new HP.
-    # bc2cpp: (fixnum)
     def change_hp(delta, allow_death = true)
       return @hp if dead?
       floor = allow_death ? 0 : 1
@@ -4760,7 +4755,6 @@ module Game
     # Self-called bare at #item_cured_states' own `item_state_ids(it)`
     # (mruby-rpg2k/mrblib/game.rb) -- the one early-out returns `[]`, the
     # remaining path returns a freshly-built `out` Array, never nil.
-    # bc2cpp: () -> Array
     def item_state_ids(it)
       set = it[:state_set]
       return [] unless set
@@ -6031,7 +6025,6 @@ module Game
     # `skill_state_ids(sk)` (mruby-rpg2k/mrblib/game.rb) -- the one
     # early-out returns `[]`, the remaining path returns a freshly-built
     # `out` Array, never nil.
-    # bc2cpp: () -> Array
     def skill_state_ids(sk)
       set = LCF.field?(sk, :state_effects) ? sk[:state_effects] : nil
       return [] unless set

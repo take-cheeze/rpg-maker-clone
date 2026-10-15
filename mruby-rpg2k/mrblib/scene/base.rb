@@ -116,7 +116,6 @@ class RPG2k
       # plain triangle when the project has no windowskin). Starts hidden --
       # every caller sets `visible` from its own blink/hidden-row state right
       # after building it.
-      # bc2cpp: (, fixnum, , )
       def build_list_arrow_sprite(skin, src_y, x, y, z = 450)
         sprite = Sprite.new
         sprite.z = z
@@ -153,7 +152,6 @@ class RPG2k
       # the text carries the windowskin's own gradient. Falls back to the flat
       # font colour when there is no windowskin (or the colour index is out of
       # range), which is all `draw_text` can do.
-      # bc2cpp: (, fixnum, fixnum, , , , )
       def draw_system_text(bmp, x, y, w, h, text, skin, idx = 0, align = 0)
         unless skin && Game::MessagePalette.valid?(idx)
           bmp.draw_text x, y, w, h, text, align
