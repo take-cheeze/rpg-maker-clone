@@ -126,7 +126,6 @@ class RPG2k
         8 => [:wait, :wait]
       }.freeze
 
-      # bc2cpp: (, Game::State)
       def initialize parent, state
         super parent
         @state = state
@@ -357,7 +356,6 @@ class RPG2k
       # literals, never anything else). This is what lets
       # `@commands.each_with_index { |(key, label), i| ... }` devirtualize
       # its own per-row element access.
-      # bc2cpp: () -> Array<Array>
       def build_commands
         keys = if db.rpg2003?
                  ids = db[:system][:menu_commands] || []

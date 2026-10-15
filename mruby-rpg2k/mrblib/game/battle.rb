@@ -555,7 +555,6 @@ module Game
     # its own, unchanged from before this parameter existed.
     # Both collections contain only Combatants built by #from_actor/#from_enemy;
     # the later live-party rejoin path adds another #from_actor result.
-    # bc2cpp: (Array<Game::Battle::Combatant>, Array<Game::Battle::Combatant>)
     def initialize(allies, enemies, rng = nil, states = nil, variance = false,
                    criticals = false, accuracy = false, first_strike = false,
                    attributes = nil, ai = nil, rpg2003: false, party: nil,
@@ -1553,7 +1552,6 @@ module Game
     # care is needed in that method). Returns the `{atk:, def:, spi:, agi:}`
     # deltas actually applied -- possibly smaller than `amount` once clamped,
     # or absent for a stat already pinned at its cap -- for the log entry.
-    # bc2cpp: (, Array)
     def apply_stat_mods(target, keys, amount)
       return {} unless keys && !keys.empty? && amount != 0
       applied = {}

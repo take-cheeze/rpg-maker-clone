@@ -574,7 +574,6 @@ module LCF
                   :exp_default
 
   class Array1D
-    # bc2cpp: (, Hash)
     def initialize s, schema
       s = StringIO.new s if s.is_a? String
 
