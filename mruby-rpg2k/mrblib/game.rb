@@ -8373,7 +8373,6 @@ module Game
 
     # Begin a tint transition to the target channels over `frames` frames
     # (frames <= 0 applies it immediately). Values are clamped to 0..200.
-    # bc2cpp: (, , , , fixnum)
     def tint_to(r, g, b, sat, frames)
       @tr = Game.clamp(r, 0, 200)
       @tg = Game.clamp(g, 0, 200)
@@ -8407,7 +8406,6 @@ module Game
 
     # Begin a timed shake of the given power and speed for `frames` frames
     # (frames <= 0 stops the shake immediately). Power/speed clamp to sane ranges.
-    # bc2cpp: (, , fixnum)
     def shake(power, speed, frames)
       @shake_power = Game.clamp(power, 0, 9)
       @shake_speed = Game.clamp(speed, 1, 9)
@@ -10227,7 +10225,6 @@ module Game
     # outside 1..MAX_PICTURE_ID does nothing -- #move_picture/#erase_picture
     # need no matching guard of their own, since neither can ever find such an
     # id shown in the first place.
-    # bc2cpp: (fixnum, )
     def show_picture(id, opts)
       @pictures[id] = Picture.new(id, opts) if id && id > 0 && id <= MAX_PICTURE_ID
     end

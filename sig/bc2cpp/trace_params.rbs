@@ -33,7 +33,7 @@ module Game
     def do_conditional: (LCF::EventCommand cmd) -> untyped
     def eval_condition: (LCF::EventCommand cmd) -> untyped
     def range: (LCF::EventCommand cmd) -> Range[untyped]
-    def apply: (Integer op, untyped cur, untyped val) -> untyped
+    def apply: (Integer op, Integer cur, Integer val) -> untyped
     def operand_value: (LCF::EventCommand cmd) -> untyped
     def do_control_vars: (LCF::EventCommand cmd) -> untyped
     def do_erase_screen: (LCF::EventCommand cmd) -> (TrueClass | nil)
@@ -92,15 +92,15 @@ end
 module Game
   class Screen
     def fade_to: (untyped target, Integer style, untyped frames, untyped erase) -> (Game::Transition | nil)
-    def tint_to: (Integer r, Integer g, Integer b, Integer sat, untyped frames) -> untyped
+    def tint_to: (Integer r, Integer g, Integer b, Integer sat, Integer frames) -> untyped
     def pan_step_for: (Integer speed) -> untyped
-    def shake: (Integer power, Integer speed, untyped frames) -> untyped
+    def shake: (Integer power, Integer speed, Integer frames) -> untyped
   end
 end
 module Game
   class State
     def se_chunk: (Hash se) -> LCF::Array1D
-    def show_picture: (untyped id, Hash opts) -> (Game::Picture | nil)
+    def show_picture: (Integer id, Hash opts) -> (Game::Picture | nil)
     def boarded?: () -> bool
     def pictures_moving?: () -> bool
   end
@@ -127,7 +127,7 @@ module LCF
 end
 module LCF
   class Array2D
-    def initialize: (String s, untyped schema) -> untyped
+    def initialize: (String s, Hash schema) -> untyped
     def []=: (Integer idx, LCF::Array1D entry) -> (LCF::Array1D | String | nil)
     def same_schema?: (Hash other) -> bool
     def []: (Integer idx) -> untyped
@@ -140,7 +140,7 @@ module LCF
 end
 module LCF
   class EventCommand
-    def initialize: (untyped code, untyped indent, String string, untyped parameters) -> untyped
+    def initialize: (Integer code, Integer indent, String string, untyped parameters) -> untyped
     def param: (Integer i) -> untyped
   end
 end

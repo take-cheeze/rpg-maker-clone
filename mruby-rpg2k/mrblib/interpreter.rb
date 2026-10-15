@@ -2353,7 +2353,6 @@ module Game
       else 0
       end
     end
-    # bc2cpp: (, fixnum, fixnum)
 
     def apply(op, cur, val)
       case op
