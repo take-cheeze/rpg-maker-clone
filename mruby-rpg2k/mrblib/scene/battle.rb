@@ -48,7 +48,6 @@ class RPG2k
       # opening one can immediately finish it again -- an empty or all-KO'd
       # party settles to a defeat on the spot -- and that has to be able to
       # reach back through the map.
-      # bc2cpp: (RPG2k::Scene::Map, Hash, Game::Interpreter)
       def initialize(map, req, owner)
         super map.parent
         @map = map

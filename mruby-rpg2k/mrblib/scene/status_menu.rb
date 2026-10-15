@@ -112,7 +112,6 @@ class RPG2k
       # from there once inside, confirmed under wine: RIGHT walked
       # ユーティル -> とんま and LEFT wrapped back past the leader to
       # エマワトソン, each redrawing the whole screen for the new actor.
-      # bc2cpp: (, Game::State)
       def initialize parent, state, actor_index = 0
         super parent
         @state = state

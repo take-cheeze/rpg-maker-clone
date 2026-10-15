@@ -1,0 +1,100 @@
+# Hints moved from `# bc2cpp:` comments (same effect as the comments; see the PR body).
+class Game::Actor
+  def initialize: (LCF::Database, Integer) -> untyped
+  def set_charset: (String, Integer) -> untyped
+end
+class Game::Actors
+  def initialize: (LCF::Database) -> untyped
+  def []: (Integer) -> Game::Actor
+  def existing: (Integer) -> Game::Actor
+end
+class Game::Battle
+  def initialize: (Array[Game::Battle::Combatant], Array[Game::Battle::Combatant]) -> untyped
+  def apply_stat_mods: (untyped, Array, untyped) -> untyped
+end
+class Game::EnemyAi
+  def initialize: (LCF::Database, Game::State) -> untyped
+end
+class Game::Interpreter
+  def initialize: (Game::State) -> untyped
+end
+class Game::Map
+  def initialize: (Integer, LCF::MapUnit) -> untyped
+end
+class Game::Party
+  def initialize: (LCF::Database) -> untyped
+  def promote_to_leader: (Game::Actor) -> untyped
+  def skill_targets: (untyped, untyped, untyped) -> Array[Game::Actor]
+end
+class Game::Shop
+  def initialize: (LCF::Database, Game::Party, untyped, untyped, untyped) -> untyped
+end
+class Game::State
+  def initialize: (Game::Party, Integer, Integer, Integer) -> untyped
+  def set_parallax: (Hash) -> untyped
+  def set_system_graphic: (String, untyped) -> untyped
+end
+class Game::Troop
+  def live_members: () -> Array[Game::Enemy]
+end
+class LCF::Array1D
+  def initialize: (untyped, Hash) -> untyped
+end
+class RGSS::Bitmap::LoadError
+  def initialize: (String, String) -> untyped
+end
+class RPG2k::Scene::Base
+  def initialize: (RPG2k) -> untyped
+end
+class RPG2k::Scene::Battle
+  def initialize: (RPG2k::Scene::Map, Hash, Game::Interpreter) -> untyped
+end
+class RPG2k::Scene::ChipsetEditor
+  def initialize: (untyped, Game::State) -> untyped
+end
+class RPG2k::Scene::DebugMenu
+  def initialize: (untyped, Game::State) -> untyped
+end
+class RPG2k::Scene::EquipMenu
+  def initialize: (untyped, Game::State) -> untyped
+end
+class RPG2k::Scene::ItemMenu
+  def initialize: (untyped, Game::State) -> untyped
+end
+class RPG2k::Scene::Map
+  def initialize: (untyped, Game::State) -> untyped
+  def ids_touch?: (Array, Hash) -> untyped
+  def draw_vehicle_frame: (untyped, Game::Vehicle, untyped, untyped, untyped) -> untyped
+  def vehicle_charset: (Game::Vehicle) -> untyped
+  def vehicle_charset_index: (Game::Vehicle) -> untyped
+  def pictures_signature: (Hash[untyped, Game::Picture], Integer, Integer) -> untyped
+  def toned?: (Game::Picture) -> untyped
+  def toned_picture_src: (Game::Picture, untyped) -> untyped
+  def draw_picture: (Game::Picture, Integer, Integer) -> untyped
+end
+class RPG2k::Scene::MapViewer
+  def initialize: (untyped, Game::State) -> untyped
+end
+class RPG2k::Scene::MapWorld
+  def initialize: (RPG2k::Scene::Map, Game::Rng) -> untyped
+  def play_sound: (String, untyped, untyped, untyped) -> untyped
+end
+class RPG2k::Scene::Menu
+  def initialize: (untyped, Game::State) -> untyped
+  def build_commands: () -> Array[Array]
+end
+class RPG2k::Scene::Order
+  def initialize: (untyped, Game::State) -> untyped
+end
+class RPG2k::Scene::SaveLoad
+  def initialize: (untyped, Game::State, Symbol) -> untyped
+end
+class RPG2k::Scene::SkillMenu
+  def initialize: (untyped, Game::State) -> untyped
+end
+class RPG2k::Scene::StatusMenu
+  def initialize: (untyped, Game::State) -> untyped
+end
+class RPG2k::Scene::VehicleWorld
+  def initialize: (RPG2k::Scene::Map, Game::Rng, Symbol) -> untyped
+end

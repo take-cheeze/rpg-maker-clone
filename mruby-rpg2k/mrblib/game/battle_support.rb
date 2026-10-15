@@ -1312,7 +1312,6 @@ module Game
     # Self-called bare at #total_exp/#total_gold/#drops' own `live_members`
     # (all just above, mruby-rpg2k/mrblib/game/battle_support.rb) --
     # `Array#reject` always returns a fresh Array, never nil.
-    # bc2cpp: () -> Array<Game::Enemy>
     def live_members; @members.reject(&:hidden) end
 
     def member(db, m)
@@ -1371,7 +1370,6 @@ module Game
     # for the full trace). The "check harnesses hand in a stub" note above
     # is about the CRuby-only scripts/, which are outside
     # `closed_world_mrblib_srcs` and never execute compiled code.
-    # bc2cpp: (LCF::Database, Game::State)
     def initialize(db, state)
       @db = db
       @state = state

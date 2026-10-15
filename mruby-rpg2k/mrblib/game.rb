@@ -1731,7 +1731,6 @@ module Game
     # never run compiled code at all -- and compile_send guards every
     # annotation-derived direct call with a real `mrb_obj_class` check that
     # falls back to `mrb_funcall` regardless.
-    # bc2cpp: (LCF::Database, fixnum)
     def initialize(db, id)
       @db = db
       @id = id
@@ -1875,7 +1874,6 @@ module Game
     # while restoring a saved override (Game::State.from_lsd) -- both are a
     # real, persisted "changed" event, not the actor's own untouched database
     # default set at #initialize -- see @sprite_changed's own comment there.
-    # bc2cpp: (String, fixnum)
     def set_charset(name, index)
       @charset_name = name
       @charset_index = index
@@ -3807,7 +3805,6 @@ module Game
     # Same single-object `LCF::Database` chain as `Actor#initialize` above --
     # see its own comment for the full trace. The only `Actors.new` site in
     # the closed world is `Party#initialize`'s own `Actors.new(db)`.
-    # bc2cpp: (LCF::Database)
     def initialize(db)
       @db = db
       @all = {}
@@ -3834,7 +3831,6 @@ module Game
     # inferred: `#[]` cannot return a fresh `.new` on every path (the
     # cache hit and the nil miss are both real), so no inference rule in
     # bc2cpp.rb could establish this honestly.
-    # bc2cpp: (fixnum) -> Game::Actor
     def [](id)
       return nil if id.nil? || id <= 0
       a = @all[id]
@@ -3852,7 +3848,6 @@ module Game
     # creating one. Read paths (a `\N[n]` message code) use this so merely
     # naming an actor does not enrol them in the roster the save writes out.
     # The non-nil result is always an actor already constructed by #[].
-    # bc2cpp: (fixnum) -> Game::Actor
     def existing(id); id.nil? ? nil : @all[id]; end
 
     # Whether `id` is a genuinely dangling reference -- a positive id with no
@@ -3909,7 +3904,6 @@ module Game
     # `db` is the running `LCF::Database`: new games pass `RPG2k#@db`, and
     # both save-restore paths pass that same database to `Party.new`. This
     # lets bc2cpp trace the database-backed calls made through `@db`.
-    # bc2cpp: (LCF::Database)
     def initialize(db, ids = nil, roster = nil)
       @db = db
       @roster = roster || Actors.new(db)
@@ -4284,7 +4278,6 @@ module Game
     # (mruby-rpg2k/mrblib/game/lsd_io.rb), which passes
     # `party.roster.all.find { |a| a.name == nm }` -- an element of
     # `Game::Actors#all`, i.e. a real Game::Actor.
-    # bc2cpp: (Game::Actor)
     def promote_to_leader(actor)
       return unless actor && @actors.first != actor
       @actors.delete(actor)
@@ -6003,7 +5996,6 @@ module Game
     # `[caster]`, or `[target].compact`, never nil.
     # Real field-skill callers pass Game::Actor values for caster and target;
     # bc2cpp still guards each element and keeps Ruby dispatch as fallback.
-    # bc2cpp: () -> Array<Game::Actor>
     def skill_targets(sk, caster, target)
       case sk[:scope]
       when 4 then @actors
@@ -6176,7 +6168,6 @@ module Game
     # `LCF::MapUnit.new(File.open(map_path(id)))`. `LCF::MapUnit` is a
     # `LCF::File` subclass but is not itself subclassed by anything
     # (grepped), so the class-exact `mrb_obj_class` guard holds.
-    # bc2cpp: (fixnum, LCF::MapUnit)
     def initialize(id, unit)
       @revision = 0
       @id = id
@@ -8966,7 +8957,6 @@ module Game
     # Array (an `Array` token in *argument* position is a codegen landmine,
     # see Annotations' own comment) and `allow_buy`/`allow_sell` are plain
     # booleans, which have no registry class to name.
-    # bc2cpp: (LCF::Database, Game::Party, , , )
     def initialize(db, party, goods, allow_buy, allow_sell)
       @db = db
       @party = party
@@ -10097,7 +10087,6 @@ module Game
     # `Game::Party` is never subclassed anywhere (grepped), so the
     # `mrb_obj_class` guard compile_send emits around every resulting
     # direct call is exact rather than "kind_of".
-    # bc2cpp: (Game::Party, fixnum, fixnum, fixnum)
     def initialize(party, map_id, x, y)
       @party = party
       @map_id = map_id
@@ -10208,7 +10197,6 @@ module Game
     # carries :name, :loop_x, :loop_y, :auto_x, :sx, :auto_y, :sy (see the
     # interpreter). An empty name leaves the backdrop blank. Scene::Map rebuilds
     # its parallax sprite from this override.
-    # bc2cpp: (Hash)
     def set_parallax(opts)
       @parallax = opts
     end
@@ -10383,7 +10371,6 @@ module Game
     # Change System Graphics: override the windowskin graphic (System/<name>) and
     # font id. Scene::Map reloads the windowskin so windows created afterwards use
     # the new skin.
-    # bc2cpp: (String, )
     def set_system_graphic(name, font)
       @system_graphic = name
       @font_id = font || 0

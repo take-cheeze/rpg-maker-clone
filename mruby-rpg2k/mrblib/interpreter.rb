@@ -342,7 +342,6 @@ module Game
       end
     end
 
-    # bc2cpp: (Game::State)
     def initialize(state)
       @state = state
       @list = []
