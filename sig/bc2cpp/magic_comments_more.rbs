@@ -19,6 +19,7 @@ class Game::EnemyAi
 end
 class Game::Interpreter
   def initialize: (Game::State) -> untyped
+  def stat_targets: (untyped) -> Array[Game::Actor]
 end
 class Game::Map
   def initialize: (Integer, LCF::MapUnit) -> untyped
