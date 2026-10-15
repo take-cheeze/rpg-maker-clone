@@ -7685,8 +7685,8 @@ module Game
     def initialize(style, frames, width, height, erase)
       @style = style
       @frames = frames
-      @width = width
-      @height = height
+      @screen_w = width
+      @screen_h = height
       @erase = erase
       @frame = 0
     end
@@ -7732,7 +7732,7 @@ module Game
       when BORDER_TO_CENTER_IN  then around(border_to_center_rect)
       when CENTER_TO_BORDER_IN  then clip([center_to_border_rect])
       when CENTER_TO_BORDER_OUT then around(center_to_border_rect)
-      else [[0, 0, @width, @height]] # the cuts show the live screen for their one frame
+      else [[0, 0, @screen_w, @screen_h]] # the cuts show the live screen for their one frame
       end
     end
 
@@ -7803,7 +7803,7 @@ module Game
       when SCROLL_UP_IN, SCROLL_DOWN_IN, SCROLL_LEFT_IN, SCROLL_RIGHT_IN,
            SCROLL_UP_OUT, SCROLL_DOWN_OUT, SCROLL_LEFT_OUT, SCROLL_RIGHT_OUT
         ox, oy = scroll_offset
-        [[ox, oy, 0, 0, @width, @height]]
+        [[ox, oy, 0, 0, @screen_w, @screen_h]]
       when VERTICAL_COMBINE, VERTICAL_DIVISION
         vertical_split_ops(@style == VERTICAL_COMBINE)
       when HORIZONTAL_COMBINE, HORIZONTAL_DIVISION
@@ -7907,14 +7907,14 @@ module Game
     def scroll_offset
       p, d = frame_ratio
       case @style
-      when SCROLL_UP_IN    then [0, @height - @height * p / d]
-      when SCROLL_DOWN_IN  then [0, -(@height - @height * p / d)]
-      when SCROLL_LEFT_IN  then [@width - @width * p / d, 0]
-      when SCROLL_RIGHT_IN then [-(@width - @width * p / d), 0]
-      when SCROLL_UP_OUT   then [0, -(@height * p / d)]
-      when SCROLL_DOWN_OUT then [0, @height * p / d]
-      when SCROLL_LEFT_OUT then [-(@width * p / d), 0]
-      when SCROLL_RIGHT_OUT then [@width * p / d, 0]
+      when SCROLL_UP_IN    then [0, @screen_h - @screen_h * p / d]
+      when SCROLL_DOWN_IN  then [0, -(@screen_h - @screen_h * p / d)]
+      when SCROLL_LEFT_IN  then [@screen_w - @screen_w * p / d, 0]
+      when SCROLL_RIGHT_IN then [-(@screen_w - @screen_w * p / d), 0]
+      when SCROLL_UP_OUT   then [0, -(@screen_h * p / d)]
+      when SCROLL_DOWN_OUT then [0, @screen_h * p / d]
+      when SCROLL_LEFT_OUT then [-(@screen_w * p / d), 0]
+      when SCROLL_RIGHT_OUT then [@screen_w * p / d, 0]
       end
     end
 
@@ -7930,32 +7930,32 @@ module Game
 
     # Vertical split: a top piece and a bottom piece, sliding along y.
     def vertical_split_ops(combine)
-      top_h, bottom_h = half(@height)
+      top_h, bottom_h = half(@screen_h)
       p, d = frame_ratio
       if combine
         top_dy = -top_h + top_h * p / d
-        bottom_dy = @height - bottom_h * p / d
+        bottom_dy = @screen_h - bottom_h * p / d
       else
         top_dy = -(top_h * p / d)
         bottom_dy = top_h + bottom_h * p / d
       end
-      [[0, top_dy, 0, 0, @width, top_h],
-       [0, bottom_dy, 0, top_h, @width, bottom_h]]
+      [[0, top_dy, 0, 0, @screen_w, top_h],
+       [0, bottom_dy, 0, top_h, @screen_w, bottom_h]]
     end
 
     # Horizontal split: a left piece and a right piece, sliding along x.
     def horizontal_split_ops(combine)
-      left_w, right_w = half(@width)
+      left_w, right_w = half(@screen_w)
       p, d = frame_ratio
       if combine
         left_dx = -left_w + left_w * p / d
-        right_dx = @width - right_w * p / d
+        right_dx = @screen_w - right_w * p / d
       else
         left_dx = -(left_w * p / d)
         right_dx = left_w + right_w * p / d
       end
-      [[left_dx, 0, 0, 0, left_w, @height],
-       [right_dx, 0, left_w, 0, right_w, @height]]
+      [[left_dx, 0, 0, 0, left_w, @screen_h],
+       [right_dx, 0, left_w, 0, right_w, @screen_h]]
     end
 
     # Cross split: both axes at once, four quadrants each sliding diagonally
@@ -7964,14 +7964,14 @@ module Game
     # the vertical/horizontal pair rather than confirmed against RPG_RT, since
     # neither test bed exercises this specific style.
     def cross_split_ops(combine)
-      top_h, bottom_h = half(@height)
-      left_w, right_w = half(@width)
+      top_h, bottom_h = half(@screen_h)
+      left_w, right_w = half(@screen_w)
       p, d = frame_ratio
       if combine
         top_dy = -top_h + top_h * p / d
-        bottom_dy = @height - bottom_h * p / d
+        bottom_dy = @screen_h - bottom_h * p / d
         left_dx = -left_w + left_w * p / d
-        right_dx = @width - right_w * p / d
+        right_dx = @screen_w - right_w * p / d
       else
         top_dy = -(top_h * p / d)
         bottom_dy = top_h + bottom_h * p / d
@@ -8012,13 +8012,13 @@ module Game
     def zoom_rect
       p, d = frame_ratio
       if @style == ZOOM_OUT
-        sw = @width * p / d
-        sh = @height * p / d
+        sw = @screen_w * p / d
+        sh = @screen_h * p / d
       else
-        sw = @width - @width * p / d
-        sh = @height - @height * p / d
+        sw = @screen_w - @screen_w * p / d
+        sh = @screen_h - @screen_h * p / d
       end
-      [0, 0, @width, @height, (@width - sw) / 2, (@height - sh) / 2, sw, sh]
+      [0, 0, @screen_w, @screen_h, (@screen_w - sw) / 2, (@screen_h - sh) / 2, sw, sh]
     end
 
     # Blinds: 8-pixel bands, each closing (or opening) from its top edge by one
@@ -8030,13 +8030,13 @@ module Game
       shut = BLIND_BAND if shut > BLIND_BAND
       open_h = BLIND_BAND - shut
       rects = []
-      bands = @height / BLIND_BAND
+      bands = @screen_h / BLIND_BAND
       bands.times do |i|
         # Closing shows the bottom of each band, opening the top of it.
         if @style == BLIND_CLOSE
-          rects.push [0, i * BLIND_BAND + shut, @width, open_h] if open_h > 0
+          rects.push [0, i * BLIND_BAND + shut, @screen_w, open_h] if open_h > 0
         elsif shut > 0
-          rects.push [0, i * BLIND_BAND + open_h, @width, shut]
+          rects.push [0, i * BLIND_BAND + open_h, @screen_w, shut]
         end
       end
       rects
@@ -8052,13 +8052,13 @@ module Game
       rects = []
       if @erase
         (span - (@frame + 1)).times do |i|
-          rects.push [0, i * STRIPE_PITCH + STRIPE_H, @width, STRIPE_H]
-          rects.push [0, @height - i * STRIPE_PITCH, @width, STRIPE_H]
+          rects.push [0, i * STRIPE_PITCH + STRIPE_H, @screen_w, STRIPE_H]
+          rects.push [0, @screen_h - i * STRIPE_PITCH, @screen_w, STRIPE_H]
         end
       else
         (@frame + 1).times do |i|
-          rects.push [0, i * STRIPE_PITCH, @width, STRIPE_H]
-          rects.push [0, @height - STRIPE_H - i * STRIPE_PITCH, @width, STRIPE_H]
+          rects.push [0, i * STRIPE_PITCH, @screen_w, STRIPE_H]
+          rects.push [0, @screen_h - STRIPE_H - i * STRIPE_PITCH, @screen_w, STRIPE_H]
         end
       end
       clip(rects)
@@ -8073,13 +8073,13 @@ module Game
       rects = []
       if @erase
         (span - (@frame + 1)).times do |i|
-          rects.push [i * STRIPE_COL_PITCH + STRIPE_W, 0, STRIPE_W, @height]
-          rects.push [@width - i * STRIPE_COL_PITCH, 0, STRIPE_W, @height]
+          rects.push [i * STRIPE_COL_PITCH + STRIPE_W, 0, STRIPE_W, @screen_h]
+          rects.push [@screen_w - i * STRIPE_COL_PITCH, 0, STRIPE_W, @screen_h]
         end
       else
         (@frame + 1).times do |i|
-          rects.push [i * STRIPE_COL_PITCH, 0, STRIPE_W, @height]
-          rects.push [@width - STRIPE_W - i * STRIPE_COL_PITCH, 0, STRIPE_W, @height]
+          rects.push [i * STRIPE_COL_PITCH, 0, STRIPE_W, @screen_h]
+          rects.push [@screen_w - STRIPE_W - i * STRIPE_COL_PITCH, 0, STRIPE_W, @screen_h]
         end
       end
       clip(rects)
@@ -8090,8 +8090,8 @@ module Game
     def border_to_center_rect
       p = span <= 0 ? 1 : @frame
       d = span <= 0 ? 1 : span
-      [(@width / 2) * p / d, (@height / 2) * p / d,
-       @width - @width * p / d, @height - @height * p / d]
+      [(@screen_w / 2) * p / d, (@screen_h / 2) * p / d,
+       @screen_w - @screen_w * p / d, @screen_h - @screen_h * p / d]
     end
 
     # Centre to border: a window growing out of the middle onto which the
@@ -8099,18 +8099,18 @@ module Game
     def center_to_border_rect
       p = span <= 0 ? 1 : @frame
       d = span <= 0 ? 1 : span
-      [@width / 2 - (@width / 2) * p / d, @height / 2 - (@height / 2) * p / d,
-       @width * p / d, @height * p / d]
+      [@screen_w / 2 - (@screen_w / 2) * p / d, @screen_h / 2 - (@screen_h / 2) * p / d,
+       @screen_w * p / d, @screen_h * p / d]
     end
 
     # The four bands of screen left outside `rect` — the live scene when the
     # arriving screen is the one inside the window rather than around it.
     def around(rect)
       x, y, w, h = rect
-      clip([[0, 0, @width, y],                              # above
-            [0, y + h, @width, @height - (y + h)],          # below
+      clip([[0, 0, @screen_w, y],                              # above
+            [0, y + h, @screen_w, @screen_h - (y + h)],          # below
             [0, y, x, h],                                   # left
-            [x + w, y, @width - (x + w), h]])               # right
+            [x + w, y, @screen_w - (x + w), h]])               # right
     end
 
     # Drop rectangles that fell off the screen (the stripe marches overrun by a
@@ -8118,11 +8118,11 @@ module Game
     def clip(rects)
       out = []
       rects.each do |x, y, w, h|
-        next if w <= 0 || h <= 0 || x >= @width || y >= @height
+        next if w <= 0 || h <= 0 || x >= @screen_w || y >= @screen_h
         x2 = x < 0 ? 0 : x
         y2 = y < 0 ? 0 : y
-        w2 = x + w > @width ? @width - x2 : w - (x2 - x)
-        h2 = y + h > @height ? @height - y2 : h - (y2 - y)
+        w2 = x + w > @screen_w ? @screen_w - x2 : w - (x2 - x)
+        h2 = y + h > @screen_h ? @screen_h - y2 : h - (y2 - y)
         out.push [x2, y2, w2, h2] if w2 > 0 && h2 > 0
       end
       out
@@ -8130,7 +8130,7 @@ module Game
 
     # This instance's block grid, in columns -- see .block_grid.
     def block_grid_cols
-      @width / BLOCK_SIZE
+      @screen_w / BLOCK_SIZE
     end
 
     # How many blocks are revealed by (and including) `frame`, clamped to the
@@ -8158,7 +8158,7 @@ module Game
 
     # Both arguments come from #compute_block_order's own single call shape
     # (three `block_shuffle_rank(i, total)` sites in one `case`): `total` is
-    # `cols * (@height / BLOCK_SIZE)` and `i` walks `(0...total).to_a`, so
+    # `cols * (@screen_h / BLOCK_SIZE)` and `i` walks `(0...total).to_a`, so
     # both are Fixnum by construction, with no other caller anywhere.
 
     def block_shuffle_rank(index, total)
@@ -8168,7 +8168,7 @@ module Game
     # The reveal order for this transition's block grid: `order[k]` is the
     # block index (row-major, matching #new_block_rects's own `i % cols` /
     # `i / cols`) revealed at cumulative position `k`. Memoized -- @style /
-    # @width / @height never change after #initialize, so this is the same
+    # @screen_w / @screen_h never change after #initialize, so this is the same
     # array on every call, computed once regardless of how many frames are
     # drawn.
     #
@@ -8193,7 +8193,7 @@ module Game
     # within it) rather than an unmatchable RNG trace.
     def compute_block_order
       cols = block_grid_cols
-      total = cols * (@height / BLOCK_SIZE)
+      total = cols * (@screen_h / BLOCK_SIZE)
       indices = (0...total).to_a
       case @style
       when RANDOM_BLOCKS_DOWN

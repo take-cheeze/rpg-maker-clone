@@ -43,8 +43,8 @@ assert "Game::Transition.new survives real GC pressure, independently, field-for
     assert_true t.is_a?(Game::Transition), "transition #{i} must be a real Game::Transition after GC"
     assert_equal i % 22, t.style
     assert_equal 10 + i, t.frames
-    assert_equal 320, t.instance_variable_get(:@width)
-    assert_equal 240, t.instance_variable_get(:@height)
+    assert_equal 320, t.instance_variable_get(:@screen_w)
+    assert_equal 240, t.instance_variable_get(:@screen_h)
     assert_equal i.even?, t.instance_variable_get(:@erase)
     assert_equal 0, t.frame
   end
