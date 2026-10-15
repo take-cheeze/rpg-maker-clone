@@ -388,7 +388,6 @@ module Game
       flag_of(b, :dual_attack?) ? 2 : 1
     end
 
-    # bc2cpp: () -> Game::Battle::Combatant
     def self.from_actor(a)
       c = Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
                     nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a),
@@ -440,7 +439,6 @@ module Game
 
     # Enemies have no source actor (that field stays nil), so the post-battle
     # write-back skips them; they carry no status set into this simple sim.
-    # bc2cpp: () -> Game::Battle::Combatant
     def self.from_enemy(e)
       c = Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
                         nil, false, e.sp, e.max_sp, e.spi, nil, nil, [], nil,
