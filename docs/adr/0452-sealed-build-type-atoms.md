@@ -178,3 +178,33 @@ Measured: `TOP` ivars 49 of 197 (was 67). `APU#freq`, `timer` and `fixed` are no
 `Integer ∪ NilClass` (the `AREF` past the end of a fresh `map` array reads nil). The fixpoint converges in 8 rounds.
 `CPU#_pc` and `CPU#data` are still `TOP`. Their remaining writers are `&`, `|` and `>>` on operands in the memory cycle
 (`_pc` → `peek16` → `fetch` → `@fetch` → `data` → `_pc`), so the cycle still has no isolated non-cyclic root.
+
+## Ablation of the memory cycle (spike, measured)
+
+The spike pins a chosen set of values to `Integer` after each round (`scratchpad/sealed-repro/ablate_run.rb`, with
+`ABLATE` for ivars and `ABLATE_RET` for method returns). If `CPU#_pc` becomes `Integer`, the pinned set cuts every
+`TOP` path into it. Results:
+
+- Pinning any single ivar (`_a`, `_x`, `_y`, `_p_nz`, `addr`, `data`) does not resolve `_pc`.
+- Pinning all 14 CPU register and data ivars does not resolve `_pc`.
+- Pinning only `fetch`'s return, or only `peek16`'s, does not resolve `_pc`. Pinning the PPU/APU read handlers does not
+  either.
+- Pinning `fetch` and `peek16` together with the 14 register ivars resolves `_pc`. So does pinning them with the six
+  flag ivars `_p_nz, _p_c, _p_v, _p_d, _p_i, _p_b`.
+- Pinning `fetch` and `peek16` with `_p_c` alone resolves `_pc`. Pinning `_p_c` alone, or with either return alone,
+  does not.
+
+So the cycle closes only when the memory read values and the carry flag are both non-`TOP`. `_p_c` is written by
+`& >> SUB` on `data`, and `data` comes from `fetch`. The read side is `fetch` → `@fetch[addr]` → `peek16`, plus
+`ROM#peek_6000` → `@wrk[addr - 0x6000]`. That index is `TOP` because `addr` is in the cycle.
+
+Two notes for the next step:
+
+- `ROM#peek_6000` reads `@wrk`, which is written by `@wrk.replace(sav.bytes)`. The spike does not model `replace` as a
+  mutation of its receiver's contents. If it is not, the spike's element types for `@wrk` are unsound, not just
+  imprecise. That has to be checked before any result is trusted.
+- An attempt to type an `Array` read with an unknown index as "element, nil, or unknown slice" made `TOP` ivars rise
+  from 49 to 79 (the extra atoms reached dispatch and overflowed). It was reverted and is not in the spike.
+
+Next: model unknown-receiver mutators (`replace`, `concat`, `push`, `[]=`) as writes that make a container's contents
+`TOP`, then recheck `_p_c`'s and `@wrk`'s types.
