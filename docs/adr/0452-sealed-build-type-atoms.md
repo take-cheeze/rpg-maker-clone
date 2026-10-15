@@ -154,3 +154,27 @@ Measured: the CLK constants set by `(1..8).map { |i| i * RP2A03_CC }` are now `I
 62 of 95 linked consumers. `TOP` ivars 68 of 197 (was 70). Counts of `TOP` returns and parameters are not comparable
 with the previous section, because blocks now carry returns and parameters too. `CPU#_pc` is still `TOP`. The APU
 ivars `freq` and `timer` are still `TOP` through a different source, which I did not trace.
+
+## Tracing the remaining TOP (spike, measured)
+
+Tracing the APU `freq` ivar found four precision gaps in the spike, all fixed in `scratchpad/sealed-repro/receiver_slot4.rb`:
+
+1. **Scoped constants.** `GETMCNST` (`CPU::CLK_1`) was `TOP`. It now takes the join of every `SETCONST` of that simple
+   name, which covers the scoped one.
+2. **Local loops.** A loop counter whose reaching writes include its own update re-entered the same query until the
+   depth limit, which gave `TOP`. A re-entered query now returns its current approximation, and the query repeats
+   until it stops changing (at most 8 rounds, then `TOP`).
+3. **Literal array slots.** `AREF` with a literal index reads that slot of an ARRAY literal, not the join of all slots.
+   Without this, `rate, fixed = r, f` made `fixed` as imprecise as `rate`. A SETIDX with an unknown index writes every
+   slot.
+4. **Nil operands.** A `nil` operand of an arithmetic operation raises before any value is made, so it contributes
+   nothing. `@wave_length` is `nil` until `reset`, so `@wave_length + 1` was `TOP`.
+
+A fifth fix matters for soundness of the fixpoint. A modeled `map`'s result now starts at `BOT` and is filled in each
+round from the block's returns. Starting at the default `TOP` let one early `TOP` stick in the cycle `freq → update_settings
+→ freq`, because `TOP` absorbs. An unmodeled `map` keeps the default `TOP`.
+
+Measured: `TOP` ivars 49 of 197 (was 67). `APU#freq`, `timer` and `fixed` are now `Integer`. `CLK_1` is
+`Integer ∪ NilClass` (the `AREF` past the end of a fresh `map` array reads nil). The fixpoint converges in 8 rounds.
+`CPU#_pc` and `CPU#data` are still `TOP`. Their remaining writers are `&`, `|` and `>>` on operands in the memory cycle
+(`_pc` → `peek16` → `fetch` → `@fetch` → `data` → `_pc`), so the cycle still has no isolated non-cyclic root.
