@@ -1,0 +1,1 @@
+- **bc2cpp** resolves `send(*TABLE[i])` on a constant dispatch table to the finite set of names the table holds, when every stored value is provably literal (`tools/bc2cpp/symbol_flow.rb`). Such a send no longer makes the closed-world analysis assume any method may run there.
