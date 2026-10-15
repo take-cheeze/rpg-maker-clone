@@ -138,3 +138,19 @@ of 197. `CPU#_pc` still does not close. The `TOP` writes into `_pc`, `data`, `_a
 `&`/`|`/`>>` and `ADDI`/`ADD` on operands that are themselves in the memory cycle. Several APU ivars (`freq`,
 `timer`, `frame_counter`) are `TOP` through `MUL`/`ADD` on constants set by `(1..8).map { ... }`, which needs
 `Array#map` on a literal Range. That is a separate, non-cyclic source. The cycle itself still has no isolated root.
+
+## Range and map (spike, measured)
+
+- **Range literals.** `RANGE_INC`/`RANGE_EXC` produce `[:Range, 'Integer']` when both ends are Integer, and
+  `[:Obj, 'Range']` otherwise. Only the first has an element type.
+- **map.** `Array#map` and `Range#map` always build a new Array. Its elements are the join of the return types of
+  the modeled block (`MAP_ELEMS`), and stay `TOP` when the block is not modeled.
+- **Block escape check, tightened.** A block is modeled only when no read of its register is reached by the BLOCK
+  op's value. An earlier version counted every instruction mentioning the register, which hid most blocks. Reads
+  are: any SEND, arithmetic and comparison (which read `R[A]`), GETIDX/SETIDX, SETIV, SETUPVAR, SETCONST, RETURN, and
+  any instruction that reads a source operand. A pure overwrite of the register is not a read.
+
+Measured: the CLK constants set by `(1..8).map { |i| i * RP2A03_CC }` are now `Integer`. Modeled blocks go from 8 to
+62 of 95 linked consumers. `TOP` ivars 68 of 197 (was 70). Counts of `TOP` returns and parameters are not comparable
+with the previous section, because blocks now carry returns and parameters too. `CPU#_pc` is still `TOP`. The APU
+ivars `freq` and `timer` are still `TOP` through a different source, which I did not trace.
