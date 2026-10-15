@@ -343,7 +343,6 @@ class RPG2k
         @equip_window.contents = c
       end
 
-      # bc2cpp: () -> Array
       def slot_labels(a)
         second = if a.respond_to?(:double_hand?) && a.double_hand?
                    term(:weapon)

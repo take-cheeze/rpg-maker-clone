@@ -296,7 +296,6 @@ module Game
     # (actor, current_actor)`), but the body still returns Array on every
     # real path -- `[]` on the one early-out, a `select.map` chain
     # otherwise (both Array-producing), never nil.
-    # bc2cpp: () -> Array
     def battle_skills(actor, caster)
       return [] unless actor && caster
       actor.skills.sort.select { |sid| battle_skill?(db_skill(sid)) }
@@ -1297,7 +1296,6 @@ module Game
     # with_object always returns its own memo argument, so this is `[]` (a
     # fresh Array) on every real path, never nil -- MONO-safe (this and the
     # `#drops` below are each the whole program's own single def).
-    # bc2cpp: () -> Array
     def drops(rng)
       live_members.each_with_object([]) do |e, out|
         next unless e.drop_id && e.drop_id > 0

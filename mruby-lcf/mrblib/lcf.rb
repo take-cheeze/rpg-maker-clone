@@ -107,7 +107,6 @@ module LCF
   end
 
   class Tree
-    # bc2cpp: (fixnum)
     def initialize(selected_id, maps)
       @selected_id = selected_id
       @maps = maps
@@ -349,7 +348,6 @@ module LCF
   # Self-called bare at #to_rb's own `:int32_array` arm, `unpack_int32(d)`
   # (mruby-lcf/mrblib/lcf.rb) -- the loop always returns `out`, a freshly
   # built Array, never nil.
-  # bc2cpp: () -> Array
   def unpack_int32 d
     bytes = d.bytes
     out = []
