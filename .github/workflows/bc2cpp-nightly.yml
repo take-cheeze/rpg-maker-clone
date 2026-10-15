@@ -468,6 +468,7 @@ jobs:
               # SITE_PROFILE (docs/adr/0298): executed-count counters are off by default and rank what ran.
               MRBC="$mrbc" ruby scripts/bc2cpp/site_profile_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/retclass_devirtualization_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp/element_layout_soundness_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp/hash_each_value_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/module_body_ivar_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/range_each_arity_check.rb
