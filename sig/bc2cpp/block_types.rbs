@@ -1,6 +1,8 @@
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
 # from the method body; the method's own positionals are declared too so the required count matches.
+# A send reaches a declaration through an exact receiver (its own or an inherited declaration) or as an
+# implicit-self call in the declaring class, provided every descendant override declares the same class.
 module Game
   class Actors
     # `all.each(&blk)`: `all` maps @all's values, each built by `Actor.new(@db, id)`.
