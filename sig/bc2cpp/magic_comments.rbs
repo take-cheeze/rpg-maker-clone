@@ -1,0 +1,154 @@
+# Return and parameter hints moved from `# bc2cpp:` comments (codegen-equivalent tokens only).
+module LCF
+  class EventCommand
+  end
+  class MoveCommand
+    def initialize: (Integer, untyped, Integer, Integer, Integer) -> untyped
+  end
+end
+module Game
+  class ChipSet
+    def initialize: (untyped, Integer) -> untyped
+    def upper_flags: (Integer) -> untyped
+  end
+  class Actor
+    def learn_table: () -> Array
+    def knows_skill?: (Integer) -> untyped
+    def learn_skill: (Integer) -> untyped
+    def state?: (Integer) -> untyped
+    def equipped?: (Integer) -> untyped
+    def free_two_handed_slot: (Integer) -> untyped
+    def two_handed?: (Integer) -> untyped
+    def unequip: (Integer) -> untyped
+    def base_stats: (Integer) -> Array
+    def cursed_armor_state_ids: (Integer) -> Array
+    def permanent_states: () -> Array
+    def defensive_attribute_ids: () -> Array
+    def weapon_attributes: () -> Array
+    def slot_cursed?: (Integer) -> untyped
+    def exp_for_level: (Integer) -> untyped
+    def gain_exp: (Integer) -> untyped
+    def change_level_by: (Integer) -> untyped
+    def weapon_crit_chance: (Integer) -> untyped
+    def change_mp: (Integer) -> untyped
+    def change_param: (Integer, Integer) -> untyped
+    def base_param_limit: (Integer) -> untyped
+    def change_class: (Integer, untyped, untyped, untyped) -> untyped
+    def change_battle_commands: (untyped, Integer) -> untyped
+    def battle_row=: (Integer) -> untyped
+    def class_battle_commands: () -> Array
+    def set_class_id: (Integer) -> untyped
+  end
+  class Actors
+    def known_invalid?: (Integer) -> untyped
+  end
+  class Map
+    def in_bounds?: (Integer, Integer) -> untyped
+    def substitute_tile: (Integer, untyped, untyped) -> untyped
+    def set_tile: (untyped, Integer, Integer, untyped) -> untyped
+    def tile: (untyped, untyped, Integer, Integer) -> untyped
+  end
+  class Transition
+    def initialize: (Integer, Integer, Integer, Integer, untyped) -> untyped
+    def half: (Integer) -> untyped
+    def block_count_through: (Integer) -> untyped
+    def block_shuffle_rank: (Integer, Integer) -> untyped
+  end
+  class Screen
+    def restore_tint: (untyped, untyped, Integer) -> untyped
+    def flash: (Integer, Integer, Integer, Integer, Integer) -> untyped
+    def pan: (Integer, Integer, Integer) -> untyped
+    def approach: (untyped, Integer, untyped) -> untyped
+  end
+  class Timer
+    def set: (Integer) -> untyped
+  end
+  class State
+    def map_id=: (Integer) -> untyped
+    def set_screen_transition: (Integer, untyped) -> untyped
+  end
+  class Battle
+    def all_combatants: () -> Array
+  end
+  class Party
+    def battle_items: () -> Array
+  end
+  class EnemyAi
+    def enemy: (Integer) -> untyped
+    def set_switch: (Integer, untyped) -> untyped
+  end
+  class Interpreter
+    def take_revealed_monsters: () -> Array
+    def take_fled_monsters: () -> Array
+    def take_monster_kills: () -> Array
+    def start_at: (untyped, Integer) -> untyped
+    def resume_battle: (Symbol) -> untyped
+    def character_ref: (Integer) -> untyped
+    def skip_to: (untyped, Integer) -> untyped
+    def find_choice_option: (Integer) -> untyped
+    def do_control_vars_range_variable: (untyped, Integer, Integer, untyped) -> untyped
+    def vehicle_operand: (Integer, untyped) -> untyped
+    def screen_operand: (untyped, Integer) -> untyped
+    def trunc_div: (Integer, Integer) -> untyped
+    def trunc_mod: (Integer, Integer) -> untyped
+    def queue_level_up_messages: (untyped, Integer, Integer, untyped) -> untyped
+    def simulated_attack_variance: (untyped, Integer) -> untyped
+    def compare: (Integer, Integer, Integer) -> untyped
+    def teleport_facing: (Integer) -> untyped
+  end
+end
+class RPG2k
+  module Scene
+    class Base
+      def clip_text_to_width: (untyped, untyped, Integer) -> untyped
+      def value_font_color: (Integer, Integer, untyped) -> untyped
+      def draw_stat_segment: (untyped, Integer, untyped, Integer, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+      def sticky_list_top: (untyped, Integer, Integer, Integer) -> untyped
+    end
+    class Battle
+      def battler_z: (Integer) -> untyped
+      def actor_sprite_z: (Integer) -> untyped
+      def battle_grid_position: (untyped, Integer) -> untyped
+      def move_battle_target_cursor: (untyped, Integer) -> untyped
+      def move_battle_list_index: (Integer, Integer, Integer) -> untyped
+      def battle_skill_unavailable?: (Integer, untyped) -> untyped
+      def enter_battle_result: (Symbol) -> untyped
+      def finish_battle: (Symbol) -> untyped
+      def battle_result_lines: (Symbol, untyped) -> untyped
+      def battle_level_up_lines: (untyped, Integer, untyped) -> untyped
+      def draw_battle_gauge_card: (untyped, untyped, untyped, Integer) -> untyped
+      def draw_battle_gauge_face: (untyped, untyped, Integer) -> untyped
+      def draw_gauge_system2: (untyped, untyped, untyped, untyped, Integer, Integer, untyped) -> untyped
+      def draw_number_system2: (untyped, untyped, untyped, untyped, Integer) -> untyped
+      def refresh_battle_list_arrows: (Integer, Integer, Integer) -> untyped
+      def draw_battle_stat_segment: (untyped, Integer, untyped, Integer, untyped, untyped, untyped, untyped) -> untyped
+    end
+    class ItemMenu
+      def move_item_cursor: (Integer) -> untyped
+      def prompt_item_target: (Integer) -> untyped
+      def move_teleport_cursor: (Integer) -> untyped
+      def item_col_x: (Integer) -> untyped
+    end
+    class Map
+      class LRUBitmapCache
+        def initialize: (Integer) -> untyped
+      end
+    end
+    class Menu
+      def wait_term_for: (Symbol, untyped) -> untyped
+      def enter_actor_selection: (Symbol) -> untyped
+    end
+    class Order
+      def move_cursor: (Integer) -> untyped
+    end
+    class SaveLoad
+      def move_selection: (Integer) -> untyped
+      def build_arrow_sprite: (Integer) -> untyped
+      def draw_slot_label: (untyped, Integer, untyped) -> untyped
+      def draw_slot_faces: (untyped, Integer, untyped) -> untyped
+    end
+    class Title
+      def move_selection: (Integer) -> untyped
+    end
+  end
+end

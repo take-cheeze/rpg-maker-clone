@@ -185,7 +185,7 @@ class RPG2k
       # gap -- an oversized name or a 3-digit HP/MP pair drawing unclipped
       # straight into its neighbour's column, rather than the neighbour's own
       # text simply overlapping it.
-      # bc2cpp: (, , fixnum)
+
       def clip_text_to_width(c, text, w)
         return '' if w <= 0
         return text if c.text_size(text).width <= w
@@ -276,7 +276,7 @@ class RPG2k
       # of `max`, else the ordinary default (0). These are `\c[n]`-style
       # system-palette indices, the same ones #state_display already returns
       # for a status condition's own name.
-      # bc2cpp: (fixnum, fixnum, )
+
       def value_font_color(have, max, can_knockout)
         return 5 if can_knockout && have == 0
         return 4 if max && max > 0 && have <= max / 4
@@ -297,7 +297,7 @@ class RPG2k
       # panel's `#draw_battle_stat_segment` (Scene::Battle) stays a separate,
       # not-shared implementation since its fixed-width columns need the
       # `#clip_text_to_width` treatment this flowing-text version does not.
-      # bc2cpp: (, fixnum, , fixnum, , , , , , )
+
       def draw_stat_segment(c, x, y, w, h, label, cur, max, can_knockout, skin)
         draw_system_text c, x, y, w - x, h, label, skin
         x += c.text_size(label).width
