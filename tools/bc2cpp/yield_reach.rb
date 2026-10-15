@@ -484,11 +484,71 @@ class YieldReach
       @reasons[:dispatch_table] += 1
       return nil
     end
+    (@param_sends ||= Set.new) << node.label if @sound && dest && node.kind == :method && param_name_reg?(node, idx, dest.to_i + 1)
     node.unknown_call = true
     node.fwd_any = true if forward
     node.any_lit << lit_block if lit_block
     @reasons[:dynamic_send] += 1
     nil
+  end
+
+  # Whether the name register of the send at idx holds only the method's entry value (a parameter,
+  # or an uninitialized local): no instruction before idx writes it on any path.
+  # A name register may be a MOVE of a parameter (`send(mode, ...)` moves mode into the send's register).
+  def param_name_reg?(node, idx, reg, depth = 0)
+    return false if depth > 8
+
+    irep = node.irep
+    @preds ||= {}
+    preds = (@preds[irep.label] ||= SymbolFlow.predecessors(irep))
+    writes, entry = SymbolFlow.reaching_writes(irep, preds, idx, reg.to_s)
+    return entry if writes.empty?
+    return false if entry
+
+    writes.all? do |w|
+      insn = irep.instructions[w]
+      insn.op == 'MOVE' && param_name_reg?(node, w, insn.regs[1], depth + 1)
+    end
+  end
+
+  # Sends whose name is a method parameter (`send(mode, ...)` in CPU#r_op) take names from the call
+  # sites of that method. When the method is only called through a verified dispatch table and no
+  # unknown dynamic send reachable from a Fiber can name it, the parameter names are the table's
+  # universe (SymbolFlow), so those sends are resolved to that universe.
+  def resolve_param_sends
+    return if @param_sends.nil? || @param_sends.empty?
+
+    universe = dispatch_universes.values.reduce(Set.new, :|)
+    return if universe.empty?
+
+    literal_named = Set.new
+    @ireps.each_value do |irep|
+      irep.instructions.each { |insn| literal_named << insn.sym if insn.op =~ /SEND/ && insn.sym }
+    end
+    pending = @param_sends.select do |label|
+      n = @nodes[label]
+      n && universe.include?(n.name) && !literal_named.include?(n.name)
+    end
+    return if pending.empty?
+
+    saved = pending.to_h { |l| [l, @nodes[l].calls.dup] }
+    pending.each do |l|
+      @nodes[l].unknown_call = false
+      @nodes[l].calls.merge(universe)
+    end
+    @fiber_crossable = nil
+    crossable = compute_crossable
+    unresolved = crossable.any? { |l| @nodes[l].unknown_call && !pending.include?(l) }
+    if unresolved
+      pending.each do |l|
+        @nodes[l].unknown_call = true
+        @nodes[l].calls.replace(saved[l])
+      end
+      @reasons[:param_send_kept] += pending.size
+    else
+      @reasons[:param_send_resolved] += pending.size
+    end
+    @fiber_crossable = nil
   end
 
   # The finite name set of a splat send built from a verified dispatch table, or nil.
@@ -1053,6 +1113,7 @@ class YieldReach
     @esc = compute_escaping
     @nodes.each_value { |n| scan_yielder_leaks(n) if yielder_scope?(n) }
     compute_sealing
+    resolve_param_sends
     opaque = opaque_defs
     callable = callable_defs
     loop do
