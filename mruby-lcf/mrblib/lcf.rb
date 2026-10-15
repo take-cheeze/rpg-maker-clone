@@ -121,7 +121,6 @@ module LCF
   class EventCommand
     attr_reader :code, :indent, :string, :parameters
 
-    # bc2cpp: (fixnum, fixnum, , )
     def initialize(code, indent, string, parameters)
       @code = code
       @indent = indent
@@ -763,7 +762,6 @@ module LCF
   end
 
   class Array2D
-    # bc2cpp: (, Hash)
     def initialize s, schema
       s = StringIO.new s if s.is_a? String
 
