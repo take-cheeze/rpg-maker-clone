@@ -116,3 +116,25 @@ Status stays Proposed. The atoms are a sound design for dispatch, but the measur
 Effect on the same dump: `TOP` returns 261 → 245 of 369, `TOP` ivars 80 → 75 of 197, methods with a `TOP` parameter
 68 → 63 of 229. `CPU#_pc`, `CPU#data` and `CPU#fetch` remain `TOP`. The memory cycle still does not close, because
 its values pass through `Array` returns and block-taking methods, which this typing does not reach.
+
+## Container results, block parameters, and bc2cpp's core facts (spike, measured)
+
+- **bc2cpp's core facts.** The spike loads `sig/native/core_fresh_arrays.rbs` and `core_results.rbs` through
+  `NativeCoreResultSigs` (the compiler's own loader, not a copy). `keys`, `values`, `compact`, `flatten`, `uniq`,
+  `split` and `bytes` return a fresh container keyed by their call site, and `to_a` returns self or a copy. Fresh
+  containers have unknown elements (`TOP`) unless an ARRAY/HASH literal built them. Predicates from
+  `core_predicates.rbs` are covered by the RBS import in the previous section.
+- **Block parameters.** A `BLOCK`/`LAMBDA` irep is linked to its consuming `SENDB` through the block register, as
+  `yield_reach.rb` does. A block is modeled only when that register has no other reader (a stored proc could be
+  called later). A modeled block gets the yielded types for `each`, `map`, `select`, `reject`, `any?`, `all?`, `find`,
+  `count`, `each_with_index` and `times`. Any other block, or a block with arity above one over an Array (which
+  auto-splats), gets `TOP`. The earlier spike gave unmodeled block parameters `BOT`, which was unsound. This
+  revealed `TOP` values that had been hidden.
+- **Self in blocks.** A block created in a method has that method's class as self, unless it is passed to
+  `instance_eval`-like sends.
+
+Measured on the same dump: 8 of 13 block consumers are modeled. `TOP` returns stay at 245 of 369, `TOP` ivars at 75
+of 197. `CPU#_pc` still does not close. The `TOP` writes into `_pc`, `data`, `_a` and `_p_nz` are mostly bitwise
+`&`/`|`/`>>` and `ADDI`/`ADD` on operands that are themselves in the memory cycle. Several APU ivars (`freq`,
+`timer`, `frame_counter`) are `TOP` through `MUL`/`ADD` on constants set by `(1..8).map { ... }`, which needs
+`Array#map` on a literal Range. That is a separate, non-cyclic source. The cycle itself still has no isolated root.
