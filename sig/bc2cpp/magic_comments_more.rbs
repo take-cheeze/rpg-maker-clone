@@ -11,6 +11,8 @@ end
 class Game::Battle
   def initialize: (Array[Game::Battle::Combatant], Array[Game::Battle::Combatant]) -> untyped
   def apply_stat_mods: (untyped, Array, untyped) -> untyped
+  def self.from_actor: (untyped) -> Game::Battle::Combatant
+  def self.from_enemy: (untyped) -> Game::Battle::Combatant
 end
 class Game::EnemyAi
   def initialize: (LCF::Database, Game::State) -> untyped
