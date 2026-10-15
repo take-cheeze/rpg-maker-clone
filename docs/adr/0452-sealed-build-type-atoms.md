@@ -226,3 +226,22 @@ A receiver of unknown type makes every container `TOP`.
 
 Remaining gap: a receiver of unknown type should poison only the containers it can be, but the spike has no receiver
 flow for `TOP` values. Until it does, the sound model cannot separate the memory cycle from unrelated containers.
+
+## Escape-based receiver flow (spike, measured)
+
+`scratchpad/sealed-repro/receiver_flow.rb` lets a `TOP` receiver of a mutator touch only containers that escaped. A
+container escapes when its atom is an argument of a send, a stored `SETIDX` value, a returned value, or the receiver of
+a mutator `method` value. A `TOP` escaping value may contain any container, so all containers escape. That rule is
+required for soundness, not a choice.
+
+- Sound result: `TOP` ivars 64 of 197 (unchanged). `_pc`, `data`, `_p_c` are still `TOP`.
+- Of 2,251 escape sites, 735 carry a `TOP` value. Each one makes every container escape.
+- Measurement only, not sound: ignoring the `TOP` escapes gives 55 `TOP` ivars and resolves `APU#fixed` and `freq`.
+  That shows the contamination is the bottleneck, not the mutator model.
+
+Conclusion: escape alone cannot separate the memory cycle, because `TOP` values are everywhere in it. Receiver flow has
+to give `TOP` values a possible-container set (their provenance), so an escape only reaches the containers that can
+produce the value. That is a design change, not a tweak, and it is the next step. It needs: a value lattice with a
+"may-contain these container keys" component beside `TOP`, joined and propagated through the same rules, and a check
+that each opaque source (unknown sends, `GETGV`, ROM reads) either contributes a finite key set or stays `TOP` for every
+container.
