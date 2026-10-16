@@ -1,0 +1,17 @@
+# Block-return declarations of methods mruby's own Ruby defines (BLOCK_RETURNS, docs/adr/0475). Each is checked
+# against the method's bytecode, compiled from the build's own source (an outside Ruby file is compiled for the check):
+# a plain yielder whose every yield passes the declared arguments, and whose every return path, with a block given,
+# returns a yield's value (`-> T`) or self (`-> self`). Array#each's `-> self` is in core_block_params.rbs.
+#
+# Verified against 3rd/mruby/mrbgems/mruby-object-ext/mrblib/object.rb:
+#   - Kernel#tap: `yield self; self` (BLKCALL with one argument, RETSELF);
+#   - Kernel#yield_self: `return to_enum(:yield_self) unless block; block.call(self)` (the to_enum path needs no block);
+#   - Kernel#then: `alias then yield_self`, unconditional in the module body.
+# Left out, as not one of the two shapes: Hash#fetch and Array#fetch with a block return the stored value when the key
+# is present (`V | T`), and Hash#each's block receives one [key, value] Array that core_block_params.rbs's (K, V)
+# shape destructures.
+module Kernel
+  def tap: () { (self) -> void } -> self
+  def yield_self: [T] () { (self) -> T } -> T
+  def then: [T] () { (self) -> T } -> T
+end
