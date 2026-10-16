@@ -1,0 +1,1 @@
+- Engine `each`/`map` arms of exact classes (`Game::Party`, `Game::Actors`, `LCF::Array2D`, the Scene::Battle classes, `Game::State`) now call the compiled method directly instead of a by-name send when no outside or native definer of the name is on the receiver's lookup chain (ADR 0478). This is a build-time proof, not a runtime change.
