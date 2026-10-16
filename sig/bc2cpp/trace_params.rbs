@@ -4,20 +4,40 @@
 # Return bounds also include independent IR source and call-result proofs (ADR 0444).
 module Game
   class Actor
-    def weapon_attack_multiplier: (LCF::Array1D it) -> Integer
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    # `it` is nil for an unarmed actor: #strike_count passes `equipped_weapons.first` of an empty list, and the
+    # body starts `return 1 unless it`. nil is part of the contract (ADR 0456).
+    %a{bc2cpp:hint}
+    def weapon_attack_multiplier: (LCF::Array1D? it) -> Integer
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def total_state_count: () -> Integer
     def faceset_name: () -> String
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def faceset_index: () -> Integer
     def dead?: () -> bool
     def can_act?: () -> bool
     def rpg2003?: () -> bool
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def attack_hit_rate: () -> Integer
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def max_level: () -> Integer
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def atb_gauge: () -> Integer
     def battle_commands_changed?: () -> bool
     def rename_skill?: () -> bool
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def battle_x: () -> Integer
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def battle_y: () -> Integer
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def battler_animation_id: () -> Integer
     def alive?: () -> bool
     def skill_command_name: () -> String
@@ -65,12 +85,29 @@ module Game
     def do_shake_screen: (LCF::EventCommand cmd) -> (Integer | TrueClass | nil)
     def do_flash_sprite: (LCF::EventCommand cmd) -> (TrueClass | nil)
     def do_show_battle_animation: (LCF::EventCommand cmd) -> TrueClass
+    # Fed #execute's `cmd` (ADR 0456): declared so #stat_targets' argument traces to a checked parameter.
+    def do_change_exp: (LCF::EventCommand cmd) -> untyped
+    def do_change_level: (LCF::EventCommand cmd) -> untyped
+    def do_change_hp: (LCF::EventCommand cmd) -> untyped
+    def do_change_mp: (LCF::EventCommand cmd) -> untyped
+    def do_full_heal: (LCF::EventCommand cmd) -> untyped
+    def do_simulated_attack: (LCF::EventCommand cmd) -> untyped
+    def do_change_condition: (LCF::EventCommand cmd) -> untyped
+    def do_change_class: (LCF::EventCommand cmd) -> untyped
+    def do_change_battle_commands: (LCF::EventCommand cmd) -> untyped
+    def do_change_params: (LCF::EventCommand cmd) -> untyped
+    def do_change_skills: (LCF::EventCommand cmd) -> untyped
+    def do_change_equipment: (LCF::EventCommand cmd) -> untyped
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def teleport_transition: (untyped slot) -> Integer
   end
 end
 module Game
   class Party
     def db_enemy_group: (Integer id) -> untyped
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def item_count: (Integer id) -> Integer
     def insert_item_in_bag: (Integer id, Integer count) -> untyped
     def gain_gold: (Integer n) -> (Integer | nil)
@@ -79,6 +116,8 @@ module Game
     def rpg2003?: () -> bool
     def alternate_battle_layout?: () -> bool
     def death_handler?: () -> bool
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a database-row read or `+ 1`.
+    %a{bc2cpp:hint}
     def death_handler_event: () -> Integer
     def gauge_battle_layout?: () -> bool
     def automatic_battle_placement?: () -> bool
@@ -128,7 +167,8 @@ end
 module LCF
   class Array2D
     def initialize: (String s, Hash schema) -> untyped
-    def []=: (Integer idx, LCF::Array1D entry) -> (LCF::Array1D | String | nil)
+    # The body stores nil, bytes or an Array1D (lcf.rb `[]=`), so the entry is declared as that union.
+    def []=: (Integer idx, (LCF::Array1D | String | nil) entry) -> (LCF::Array1D | String | nil)
     def same_schema?: (Hash other) -> bool
     def []: (Integer idx) -> untyped
   end

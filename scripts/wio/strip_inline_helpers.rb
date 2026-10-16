@@ -946,6 +946,9 @@ REWRITES = {
       { first: '    def draw_arrow',
         last: '    end', # def draw_arrow's own `end`
         expect_lines: 9 },
+      { first: '  def self.db_path',
+        last: '  end', # def self.db_path's own `end`
+        expect_lines: 3 },
       { first: '  def db_path',
         last: '  end', # def db_path's own `end`
         expect_lines: 3 },
@@ -970,7 +973,7 @@ REWRITES = {
         draw_arrow_fallback
       end)
 ' }, # draw_arrow
-      { old: '    @db = LCF::Database.new File.open db_path
+      { old: '    @db = LCF::Database.new File.open RPG2k.db_path
 ',
         new: '    @db = LCF::Database.new File.open ("#{GAME_DIR}/RPG_RT.ldb")
 ' }, # db_path
