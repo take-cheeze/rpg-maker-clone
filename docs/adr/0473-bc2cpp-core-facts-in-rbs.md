@@ -56,9 +56,10 @@ The fact files are not program signatures. `RbsSignatures.files_in` skips `CoreF
 `Proc#yield` and `Proc#===` have mrblib bodies, and a signature on one would attach an argument/return hint to it,
 which is a behaviour change this move must not make.
 
-`scripts/bc2cpp/core_facts_rbs_check.rb` (host, about a second, in the build job next to `native_sigs_check.rb`)
-checks the facts against the 3rd/mruby sources the build compiles, and prints SKIP for that part when the submodule
-is not checked out:
+`scripts/bc2cpp/core_facts_rbs_check.rb` (host, about a second) checks the facts against the 3rd/mruby sources the
+build compiles. It runs twice in CI: in ruby-checks next to `native_sigs_check.rb`, which has no submodule and so
+checks only the loaders (the source part prints SKIP), and in bc2cpp-build with `--require-mruby`, where a missing
+tree is a failure:
 
 - class tests: `NativeExpressionDevirt.scan_class_registrations` over `core_native_srcs` (the scan codegen itself
   uses) must find each name on exactly the declared owners, once per owner, with the declared required/optional
