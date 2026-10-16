@@ -27,9 +27,9 @@ Two further problems:
 
 ## Decision
 
-1. **RBS superclass check (TC1009).** `RbsSignatures.load` records each `class C < S`. `apply` (with the build's
+1. **RBS superclass check (TC1016).** `RbsSignatures.load` records each `class C < S`. `apply` (with the build's
    `class_decls`) compares S with the program's superclass of C, read from its CLASS declarations the way
-   ClosedWorld#class_parent reads them. A mismatch is a TC1009 error: `type_check.rb` fails, and the build aborts with
+   ClosedWorld#class_parent reads them. A mismatch is a TC1016 error: `type_check.rb` fails, and the build aborts with
    the other RBS errors. Some classes are not checked: a class the program does not declare, a core class it only
    reopens (listed in `sig/native/core_hierarchy.rbs`), and a superclass the program does not name with certainty.
 
@@ -93,7 +93,7 @@ Two further problems:
 - `scripts/bc2cpp/subtree_dispatch_check.rb` covers four groups of cases:
   - positives: join, full-path superclass, RBS return, RBS parameter, direct, table;
   - negatives: Class.new hierarchy, Object-rooted stores, kill-switch identity, strict family off by default;
-  - the TC1009 error;
+  - the TC1016 error;
   - a full-core run that compares interpreted and compiled results, with zero dispatches at the subtree sites.
 - The table's else arm can repeat arms NATIVE_OWNER_MAP adds for classes the table already covers. This is dead
   weight but correct.
