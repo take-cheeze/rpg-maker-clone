@@ -1,0 +1,27 @@
+# Record types (RBS_RECORD_TYPES, docs/adr/0454): checked at every write of the ivar name in the closed world, so a
+# wrong field is a TC1009 build error at the offending write, never a silent hint.
+module RPG2k
+  module Scene
+    class Battle
+      # Writers (both scene classes; RPG2k3::Scene::Battle reuses the ivar): `@ui = {}` in #initialize, so every key
+      # is optional; `@ui.update({...})` in #start, the only writer of :battle (Game::Battle.new), :troop
+      # (`troop = Game::Troop.new(...)`), :events (Game::Interpreter.new), :allies/:foes (block `map`s) and
+      # :pages_run (`{}`, also reset by `@ui[:pages_run] = {}`); `@ui[:enemy_sprites]`/`[:actor_sprites]` are nil or
+      # `Array.new(n) { }`. The other keys hold method results or arithmetic the checker cannot trace: untyped.
+      @ui: { ?battle: Game::Battle, ?troop: Game::Troop, ?events: Game::Interpreter, ?allies: Array[untyped],
+             ?foes: Array[untyped], ?pages_run: Hash[untyped, untyped], ?enemy_sprites: Array[untyped]?,
+             ?actor_sprites: Array[untyped]?,
+             ?phase: untyped, ?options_shown: untyped, ?opt: untyped, ?actor_i: untyped, ?cmd: untyped,
+             ?target_i: untyped, ?skill_i: untyped, ?item_i: untyped, ?ally_i: untyped, ?pending: untyped,
+             ?skills: untyped, ?items: untyped, ?status_win: untyped, ?cmd_win: untyped, ?target_win: untyped,
+             ?skill_win: untyped, ?item_win: untyped, ?ally_win: untyped, ?action_win: untyped,
+             ?anim_timer: untyped, ?back_sprite: untyped, ?result_win: untyped, ?result: untyped,
+             ?event_win: untyped, ?battler_boundary: untyped, ?event_return_phase: untyped, ?frame: untyped,
+             ?banner_reveal: untyped, ?banner_shown: untyped, ?banner_timer: untyped, ?banner_pending: untyped,
+             ?sprite_names: untyped, ?sprite_hues: untyped, ?event_timer: untyped, ?desc_win: untyped,
+             ?list_up_arrow: untyped, ?list_down_arrow: untyped, ?list_up_shown: untyped,
+             ?list_down_shown: untyped, ?list_arrow_anim: untyped, ?enemy_shake: untyped, ?skill_top: untyped,
+             ?item_top: untyped }
+    end
+  end
+end
