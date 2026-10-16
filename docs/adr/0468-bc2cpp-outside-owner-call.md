@@ -207,6 +207,14 @@ every positional once, in order. At the call site:
   not take (Rect.new, Tone.new(a, b), Color.new) or Bitmap's argument tag test. Proven-Integer Bitmaps and the
   four-argument Rect/Tone/Color keep that path.
 
+### Choosing between variants
+
+CHECKED_POOL_EXACT and NILABLE_RECEIVER keep their guarded variant only when it has fewer runtime dispatches than the
+plain one, and INDEX_CLOSED accepts a chain only when no by-name call is left. The owner call still looks the method
+up at run time, so it counts as a dispatch in both tests. Without that, the plain chain of
+`Game::Interpreter#do_store_terrain_id` (its `BattleRequest` arm had become an owner call) won over the checked pool
+that master chooses, and that chain's dead else, which master never emits, failed the NOMETHOD_REVIEWED gate.
+
 ### Reporting
 
 The closed-world summary prints `OWNER_CALL: N` after the `KEPT` lines. `bc2cpp_owner_call` is counted in
@@ -238,6 +246,9 @@ The closed-world summary prints `OWNER_CALL: N` after the `KEPT` lines. `bc2cpp_
   mismatch worlds, every declared overload's generated path, a reopened Rect). The RGSS natives are not linked into
   the fixture runtime, so the constructors' run happens in the game build; the audit is what ties each declaration
   to the native.
+* The wio analysis of the type check (`scripts/bc2cpp/type_check.rb`, the engine owners) on this branch:
+  `KEPT core_or_native: 2` (the two `members` sites; 135 on master), `KEPT dynamic_install: 34`, `OWNER_CALL: 1132`,
+  NOMETHOD_REVIEWED re-proven in both directions.
 * Bitmap's 39 fallbacks on master: a `mrb_integer_p` tag test with a by-name else. The 2-argument sites now test
   `mrb_string_p` for the file form and end in `bitmap_new_direct`'s conversions; with the Fixnum proof they keep the
   untested entry point. The 13 Rect/Tone fallbacks end in a guard violation. CI's bc2cpp-build measures both.
