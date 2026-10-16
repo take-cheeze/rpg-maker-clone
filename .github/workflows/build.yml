@@ -1001,10 +1001,17 @@ jobs:
           MRBC="$mrbc" ruby scripts/bc2cpp/shared_generation_check.rb
 
       # DEFINE_METHOD_LOOPS (ADR 0469): a class-definition-time define_method (literal, or in a loop over a literal
-      # list) is a compiled definition; refused shapes stay dynamic. Fixtures plus one run on the core-only
-      # build-bc2cpp/mruby/host/mrbc library, interpreted against compiled (seconds).
+      # list) is a compiled definition; refused shapes stay dynamic. Fixtures plus one run on the closed build's
+      # core-only host mrbc library (libmruby_core.a), interpreted against compiled (seconds). A missing mrbc or
+      # library fails the step instead of letting the check skip its run.
       - name: define_method check
-        run: MRBC=build-bc2cpp/mruby/host/mrbc/bin/mrbc ruby scripts/bc2cpp/define_method_check.rb
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          core=$(dirname "$(dirname "$(find build-closed-bc2cpp -path '*/lib/libmruby_core.a' | head -n1)")")
+          [ -f "$core/lib/libmruby_core.a" ] && [ -d "$core/include" ] ||
+            { echo "::error::no libmruby_core.a with include/ in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" BC2CPP_MRUBY_CORE="$core" ruby scripts/bc2cpp/define_method_check.rb
 
 
 
