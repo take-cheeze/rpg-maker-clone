@@ -1019,6 +1019,15 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           env -u LD MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby scripts/bc2cpp/define_method_check.rb
 
+      # BLOCK_SELF_WORLD (ADR 0477): literal blocks at rebinder sites stay interpreted; the world fact (no rebinder gets
+      # any other Proc) and, where it fails, the compiled blocks' entry check. Fixtures, the wio world's analysis, and one
+      # interpreted-vs-compiled run on the full-core libmruby the define_method check builds.
+      - name: block self world check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          env -u LD MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby scripts/bc2cpp/block_self_world_check.rb
+
       # BLOCK_RETURNS (ADR 0475): `[T] ... { ... -> T } -> T` / `{ ... } -> self` declarations, checked against Ruby
       # bodies and native C sources; a false one fails the build (a fixture closed world, seconds).
       - name: Generic block return check
