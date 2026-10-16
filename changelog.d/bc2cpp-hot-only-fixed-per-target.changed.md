@@ -1,0 +1,1 @@
+- **bc2cpp** hot-only mode is now set only by the build definition. The `BC2CPP_HOT_ONLY=1` environment switch, which forced hot-only on a desktop build, is removed. `BC2CPP_HOT_ONLY=0` still turns a flash build off for census and nomethod-verify runs. See ADR 0481.
