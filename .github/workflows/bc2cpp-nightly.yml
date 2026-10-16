@@ -262,6 +262,12 @@ jobs:
             checks: |
               MRBC="$mrbc" ruby scripts/bc2cpp/rbs_signatures_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/rbs_signatures_mutation_check.rb
+          - shard: declared-returns
+            # ADR 0455: RBS return and constant declarations checked on every return path / assignment; checked ones
+            # join the proofs' facts, a nil / wrong-class / unverifiable path or a reassigned constant is a located
+            # TC1010 / TC1011 error and a build abort.
+            checks: |
+              LANG=C.UTF-8 BC2CPP_SIG_DIRS= MRBC="$mrbc" ruby scripts/bc2cpp/declared_return_check.rb
           - shard: emit-rbs
             # ADR 0414: the emitted RBS text, then a round trip (emit, read back as signatures, report nothing; a wrong
             # edit is a located TC1001), then the mutants.
