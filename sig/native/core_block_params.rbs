@@ -1,0 +1,69 @@
+# Block parameter shapes of core Array and Hash iterators (CORE_BLOCK_ELEMENT_HINT), read by CoreBlockParamSigs
+# (tools/bc2cpp/core_block_param_sigs.rb) for CodeGen#block_fallback_element_hints. A block parameter typed `Elem`
+# (Array) or `V` (Hash) receives one element (value) of the receiver; `K` and `untyped` positions get no hint (no
+# key facts exist). The method's own positionals give the argument counts the shape holds for: required ones must
+# be passed, optional ones may be. Only the block's positional count is matched against the literal block, so a
+# block whose arity differs (`each { |a, b| }` destructures an element) gets nothing.
+#
+# Verified against 3rd/mruby:
+#   - Array#each, #sort (mrblib/array.rb), #index/#rindex (src/array.c, mrb_yield of each element);
+#   - Enumerable#collect/map, #detect/find, #find_all/select, #reject, #partition, #each_with_index, #inject/reduce
+#     (mrblib/enum.rb: `self.each {|*val| block.call(*val)}`, so each call gets the element itself; inject calls
+#     `block.call(result, val)`, each_with_index `block.call(val.__svalue, i)`);
+#   - Enumerable#count/any?/all?/none?/flat_map/group_by/min_by/max_by/sum/find_index/filter_map/each_with_object/
+#     take_while/drop_while/filter (mruby-enum-ext), Array#sort_by (mruby-enum-ext, `each_with_index {|e, i|
+#     block.call(e)}`);
+#   - Array#find/uniq/delete_if/reject!/keep_if/select!/reverse_each (mruby-array-ext);
+#   - Hash#each (mrblib/hash.rb, `block.call([keys[i], vals[i]])`, which a two-parameter block destructures),
+#     #each_pair (alias), #each_value (`block.call(v)`), #each_key, #select/#reject (`block.call([k, v])`),
+#     #filter (alias, mruby-hash-ext).
+# A program definition of the name on the receiver's lookup chain voids the shape (block_fallback_element_hints).
+class Array[unchecked out Elem]
+  def each: () { (Elem) -> void } -> untyped
+  def reverse_each: () { (Elem) -> void } -> untyped
+  def map: () { (Elem) -> untyped } -> untyped
+  def collect: () { (Elem) -> untyped } -> untyped
+  def flat_map: () { (Elem) -> untyped } -> untyped
+  def filter_map: () { (Elem) -> untyped } -> untyped
+  def select: () { (Elem) -> untyped } -> untyped
+  def filter: () { (Elem) -> untyped } -> untyped
+  def find_all: () { (Elem) -> untyped } -> untyped
+  def reject: () { (Elem) -> untyped } -> untyped
+  def select!: () { (Elem) -> untyped } -> untyped
+  def reject!: () { (Elem) -> untyped } -> untyped
+  def keep_if: () { (Elem) -> untyped } -> untyped
+  def delete_if: () { (Elem) -> untyped } -> untyped
+  def partition: () { (Elem) -> untyped } -> untyped
+  def group_by: () { (Elem) -> untyped } -> untyped
+  def find: (?untyped ifnone) { (Elem) -> untyped } -> untyped
+  def detect: (?untyped ifnone) { (Elem) -> untyped } -> untyped
+  def find_index: () { (Elem) -> untyped } -> untyped
+  def index: () { (Elem) -> untyped } -> untyped
+  def rindex: () { (Elem) -> untyped } -> untyped
+  def any?: () { (Elem) -> untyped } -> untyped
+  def all?: () { (Elem) -> untyped } -> untyped
+  def none?: () { (Elem) -> untyped } -> untyped
+  def count: () { (Elem) -> untyped } -> untyped
+  def sum: (?untyped init) { (Elem) -> untyped } -> untyped
+  def sort_by: () { (Elem) -> untyped } -> untyped
+  def min_by: () { (Elem) -> untyped } -> untyped
+  def max_by: () { (Elem) -> untyped } -> untyped
+  def uniq: () { (Elem) -> untyped } -> untyped
+  def take_while: () { (Elem) -> untyped } -> untyped
+  def drop_while: () { (Elem) -> untyped } -> untyped
+  def sort: () { (Elem, Elem) -> untyped } -> untyped
+  def each_with_index: () { (Elem, Integer) -> void } -> untyped
+  def each_with_object: (untyped memo) { (Elem, untyped) -> void } -> untyped
+  def inject: (?untyped init) { (untyped, Elem) -> untyped } -> untyped
+  def reduce: (?untyped init) { (untyped, Elem) -> untyped } -> untyped
+end
+
+class Hash[unchecked out K, unchecked out V]
+  def each: () { (K, V) -> void } -> untyped
+  def each_pair: () { (K, V) -> void } -> untyped
+  def each_value: () { (V) -> void } -> untyped
+  def each_key: () { (K) -> void } -> untyped
+  def select: () { (K, V) -> untyped } -> untyped
+  def filter: () { (K, V) -> untyped } -> untyped
+  def reject: () { (K, V) -> untyped } -> untyped
+end
