@@ -713,16 +713,12 @@ def battle_pose(name: 'Idle', battler_name: 'Hero', battler_index: 0,
                 animation_type: animation_type, battle_animation_id: battle_animation_id)
 end
 
-# An event command (the interpreter reads code/param/string/indent/parameters).
-class ECmd
-  attr_reader :code, :indent, :string, :parameters
+# A real LCF::EventCommand built with keyword defaults (the interpreter
+# raises TypeError on anything else).
+class ECmd < LCF::EventCommand
   def initialize(code, params = [], indent: 0, string: '')
-    @code = code
-    @parameters = params
-    @indent = indent
-    @string = string
+    super(code, indent, string, params)
   end
-  def param(i); @parameters[i] || 0; end
 end
 
 # One event page. Defaults: an action-trigger, stationary event with no route.
