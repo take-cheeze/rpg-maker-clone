@@ -1010,6 +1010,15 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/block_iterator_direct_check.rb
 
+      # DEFINE_METHOD_LOOPS (ADR 0469): a class-definition-time define_method (literal, or in a loop over a literal
+      # list) is a compiled definition; refused shapes stay dynamic. Fixtures plus one interpreted-vs-compiled run on a
+      # full-core libmruby the check builds once with rake (the closed build's host libmruby_core.a carries gems).
+      - name: define_method check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          env -u LD MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby scripts/bc2cpp/define_method_check.rb
+
       # BLOCK_RETURNS (ADR 0475): `[T] ... { ... -> T } -> T` / `{ ... } -> self` declarations, checked against Ruby
       # bodies and native C sources; a false one fails the build (a fixture closed world, seconds).
       - name: Generic block return check
