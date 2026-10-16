@@ -1065,3 +1065,54 @@ class LCF::Array1D
   def key?: (untyped) -> bool
   def field?: (untyped) -> bool
 end
+# ---- traced returns, runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): the real-run traces show one class, but the
+# static proof cannot follow some path (an operand read, an ivar), so the compiled body checks each return.
+class Game::Interpreter
+  # Runtime-checked (ADR 0455): operand reads through by-name sends and indexed reads.
+  %a{bc2cpp:hint}
+  def operand_value: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def actor_operand: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def event_operand: (untyped) -> Integer
+end
+class Game::ChipSet
+  # Runtime-checked (ADR 0455): an indexed read of the terrain table.
+  %a{bc2cpp:hint}
+  def terrain: (untyped) -> Integer
+end
+class Game::Screen
+  # Runtime-checked (ADR 0455): the pan step is a by-name send.
+  %a{bc2cpp:hint}
+  def update_pan: () -> Integer
+end
+class Game::State
+  # Runtime-checked (ADR 0455): ivar and by-name reads the static proof cannot follow.
+  %a{bc2cpp:hint}
+  def timer: (?untyped) -> Game::Timer
+  %a{bc2cpp:hint}
+  def timer_seconds: () -> Integer
+  %a{bc2cpp:hint}
+  def timer2_seconds: () -> Integer
+end
+class Game::Party
+  # Runtime-checked (ADR 0455): an empty party returns nil, so the class is optional.
+  %a{bc2cpp:hint}
+  def leader: () -> Game::Actor?
+end
+class RPG2k::Scene::Map
+  # Runtime-checked (ADR 0455): integer arithmetic over by-name sends the static proof cannot follow.
+  %a{bc2cpp:hint}
+  def event_bush_depth: (untyped, ?untyped) -> Integer
+  %a{bc2cpp:hint}
+  def event_jump_offset: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def event_pixel_x: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def event_pixel_y: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def rev: (untyped) -> Integer
+  # Runtime-checked (ADR 0455): an array built by a by-name each.
+  %a{bc2cpp:hint}
+  def patch_anim_cells: (untyped, untyped) -> Array
+end
