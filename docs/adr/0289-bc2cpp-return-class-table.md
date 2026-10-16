@@ -162,3 +162,11 @@ optcarrot are byte-identical before and after (`cmp` of the generated C++ and of
 the diagnostic reason codes of the POLY and CHA paths, the constant-object and keyword
 paths keep their own wording: they differ in order, in the `compiles_clean?` step or in the reason they
 report, so folding them in would not have been identical.
+
+## Addendum (2026-10-16): `Array.new`, `Hash.new`, `String.new` (CORE_NEW_EXACT)
+
+A `new` the flow proves to be a fresh standard construction (`exact_new_class_at`) of a core class with its own bit
+(Array, Hash, String, Range) answered OTHER: only user classes got a bit. `Class#new` allocates from its receiver
+whatever `#initialize` does, so on the proven class object, with the standard `new`/`allocate` lookup up its chain
+(`stable_standard_constructor_class?`, the proof GENERIC_OBJECT_CONSTRUCTION builds by), the result is exactly that
+class: the `ARR`/`HSH`/`STR`/`RNG` bit, as a literal gives. `@picked = Array.new(n)` now pools `Array`.

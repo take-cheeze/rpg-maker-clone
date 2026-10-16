@@ -1572,8 +1572,20 @@ mrb_value bmp_init_copy_native_body(mrb_state* M, V self, mrb_value other) {
 
   const mrb_sym font_iv = mrb_intern_lit(M, "@font");
   const V font = mrb_iv_get(M, self, font_iv);
-  if (!mrb_nil_p(font))
-    mrb_iv_set(M, self, font_iv, mrb_funcall(M, font, "dup", 0));
+  if (!mrb_nil_p(font)) {
+    // Font defines no dup: while Kernel#dup (kernel.c's mrb_obj_dup) answers
+    // it, call that function; a script's own Font#dup is still called (ADR
+    // 0472).
+    struct RClass* fc = mrb_class(M, font);
+    const mrb_method_t dup =
+        mrb_method_search_vm(M, &fc, mrb_intern_lit(M, "dup"));
+    const bool kernel_dup = !MRB_METHOD_UNDEF_P(dup) &&
+                            MRB_METHOD_FUNC_P(dup) &&
+                            MRB_METHOD_FUNC(dup) == mrb_obj_dup;
+    mrb_iv_set(
+        M, self, font_iv,
+        kernel_dup ? mrb_obj_dup(M, font) : mrb_funcall(M, font, "dup", 0));
+  }
   return self;
 }
 
@@ -2950,6 +2962,39 @@ std::string find_font_path(mrb_state* M, const std::string& name) {
 }
 #endif  // !defined(WIO_TERMINAL)
 
+// The attribute `reader` of `obj` without a call frame (ADR 0472): when the
+// method `reader` answers on obj's class with the reader mruby's own
+// `attr_reader`/`attr_accessor` built for it -- a cfunc proc flagged
+// MRB_PROC_NOARG whose one env slot is the ivar's name, the reader's name
+// with an at-sign in front (class.c mod_attr_define; no other proc has that
+// shape) -- calling it is reading that ivar, so the ivar is read. Anything
+// else answering `reader` (a script's override, an alias, a compiled
+// accessor) gives undef and the caller makes the call. RGSS::Font's
+// attributes are such readers (mrblib/lib.rb). The ivar is taken from the
+// proc, so this file spells no ivar name of Font's (bc2cpp counts every ivar
+// name a native source spells as one native code may write).
+static V plain_attr_read(mrb_state* M, V obj, mrb_sym reader) {
+  struct RClass* c = mrb_class(M, obj);
+  const mrb_method_t m = mrb_method_search_vm(M, &c, reader);
+  if (MRB_METHOD_UNDEF_P(m) || !MRB_METHOD_PROC_P(m))
+    return mrb_undef_value();
+  const struct RProc* p = MRB_METHOD_PROC(m);
+  if (!MRB_PROC_CFUNC_P(p) || !MRB_PROC_NOARG_P(p) || !MRB_PROC_ENV_P(p))
+    return mrb_undef_value();
+  const struct REnv* e = MRB_PROC_ENV(p);
+  if (MRB_ENV_LEN(e) != 1 || !mrb_symbol_p(e->stack[0]))
+    return mrb_undef_value();
+  const mrb_sym ivar = mrb_symbol(e->stack[0]);
+  mrb_int reader_len = 0, ivar_len = 0;
+  const char* reader_name = mrb_sym_name_len(M, reader, &reader_len);
+  const char* ivar_name = mrb_sym_name_len(M, ivar, &ivar_len);
+  if (!reader_name || !ivar_name || ivar_len != reader_len + 1 ||
+      ivar_name[0] != '@' ||
+      std::memcmp(ivar_name + 1, reader_name, reader_len) != 0)
+    return mrb_undef_value();
+  return mrb_iv_get(M, obj, ivar);
+}
+
 // RGSS::Font.default_path, or "" when unset: the font to use for a project that
 // ships none of its own. Opt-in per maker rather than automatic, because
 // "wrong" differs by maker — RPG Maker XP/VX projects want a real TrueType face
@@ -2965,8 +3010,11 @@ std::string font_default_path(mrb_state* M) {
   // only the C side.
   if (!mrb_const_defined(M, rgss_mod, font_sym))
     return std::string();
-  const V v =
-      mrb_funcall(M, mrb_const_get(M, rgss_mod, font_sym), "default_path", 0);
+  const V font = mrb_const_get(M, rgss_mod, font_sym);
+  // Font.default_path is a class-level attr_accessor (mrblib/lib.rb).
+  V v = plain_attr_read(M, font, mrb_intern_lit(M, "default_path"));
+  if (mrb_undef_p(v))
+    v = mrb_funcall(M, font, "default_path", 0);
   if (!mrb_string_p(v))
     return std::string();
   return std::string(RSTRING_PTR(v), RSTRING_LEN(v));
@@ -3027,8 +3075,12 @@ FontAttr read_font(mrb_state* M, V self) {
 #endif
   const V fv = mrb_iv_get(M, self, mrb_intern_lit(M, "@font"));
   if (!mrb_nil_p(fv)) {
+    // Each attribute is read through plain_attr_read; only a Font whose
+    // reader was replaced is asked by name.
 #if !defined(WIO_TERMINAL)
-    const V nv = mrb_funcall(M, fv, "name", 0);
+    V nv = plain_attr_read(M, fv, mrb_intern_lit(M, "name"));
+    if (mrb_undef_p(nv))
+      nv = mrb_funcall(M, fv, "name", 0);
     if (mrb_string_p(nv)) {
       name.assign(RSTRING_PTR(nv), RSTRING_LEN(nv));
     } else if (mrb_array_p(nv) && RARRAY_LEN(nv) > 0 &&
@@ -3038,17 +3090,37 @@ FontAttr read_font(mrb_state* M, V self) {
       name.assign(RSTRING_PTR(n0), RSTRING_LEN(n0));
     }
 #endif
-    const V sv = mrb_funcall(M, fv, "size", 0);
+    V sv = plain_attr_read(M, fv, mrb_intern_lit(M, "size"));
+    if (mrb_undef_p(sv))
+      sv = mrb_funcall(M, fv, "size", 0);
     if (mrb_fixnum_p(sv))
       fa.size = static_cast<double>(mrb_fixnum(sv));
     else if (mrb_float_p(sv))
       fa.size = mrb_float(sv);
-    fa.bold = mrb_bool(mrb_funcall(M, fv, "bold", 0));
-    fa.italic = mrb_bool(mrb_funcall(M, fv, "italic", 0));
-    fa.outline = mrb_bool(mrb_funcall(M, fv, "outline", 0));
-    fa.shadow = mrb_bool(mrb_funcall(M, fv, "shadow", 0));
-    color_rgba(M, mrb_funcall(M, fv, "color", 0), fa.color);
-    color_rgba(M, mrb_funcall(M, fv, "out_color", 0), fa.out_color);
+    V bv = plain_attr_read(M, fv, mrb_intern_lit(M, "bold"));
+    if (mrb_undef_p(bv))
+      bv = mrb_funcall(M, fv, "bold", 0);
+    fa.bold = mrb_bool(bv);
+    V iv = plain_attr_read(M, fv, mrb_intern_lit(M, "italic"));
+    if (mrb_undef_p(iv))
+      iv = mrb_funcall(M, fv, "italic", 0);
+    fa.italic = mrb_bool(iv);
+    V ov = plain_attr_read(M, fv, mrb_intern_lit(M, "outline"));
+    if (mrb_undef_p(ov))
+      ov = mrb_funcall(M, fv, "outline", 0);
+    fa.outline = mrb_bool(ov);
+    V shv = plain_attr_read(M, fv, mrb_intern_lit(M, "shadow"));
+    if (mrb_undef_p(shv))
+      shv = mrb_funcall(M, fv, "shadow", 0);
+    fa.shadow = mrb_bool(shv);
+    V cv = plain_attr_read(M, fv, mrb_intern_lit(M, "color"));
+    if (mrb_undef_p(cv))
+      cv = mrb_funcall(M, fv, "color", 0);
+    color_rgba(M, cv, fa.color);
+    V ocv = plain_attr_read(M, fv, mrb_intern_lit(M, "out_color"));
+    if (mrb_undef_p(ocv))
+      ocv = mrb_funcall(M, fv, "out_color", 0);
+    color_rgba(M, ocv, fa.out_color);
   }
 #if defined(WIO_TERMINAL)
   // A default face asks for the renderer this build left out; drawing it in

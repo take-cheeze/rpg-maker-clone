@@ -1000,6 +1000,55 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/shared_generation_check.rb
 
+      # BLOCK_ITERATOR_DIRECT (ADR 0472): the Kernel#loop, String and Integer-literal block arms, each world refusal, and
+      # a fixture run interpreted and compiled over the compiled core (one full-core libmruby build, under a minute; like
+      # the closed build it runs without the dev shell's LD).
+      - name: Block iterator direct check
+        timeout-minutes: 15
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/block_iterator_direct_check.rb
+
+      # DEFINE_METHOD_LOOPS (ADR 0469): a class-definition-time define_method (literal, or in a loop over a literal
+      # list) is a compiled definition; refused shapes stay dynamic. Fixtures plus one interpreted-vs-compiled run on a
+      # full-core libmruby the check builds once with rake (the closed build's host libmruby_core.a carries gems).
+      - name: define_method check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          env -u LD MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby scripts/bc2cpp/define_method_check.rb
+
+      # BLOCK_RETURNS (ADR 0475): `[T] ... { ... -> T } -> T` / `{ ... } -> self` declarations, checked against Ruby
+      # bodies and native C sources; a false one fails the build (a fixture closed world, seconds).
+      - name: Generic block return check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/generic_block_return_check.rb
+
+      # ADR 0468: the owner call (chain elses, bare sends, name owner sets), the leaf-class self.new and the audited
+      # constructor overloads, generated code and the interpreted-versus-compiled runs. The runs link a full-core
+      # libmruby the first check builds once with rake into BC2CPP_FULL_BUILD_DIR (fixture_runtime.rb).
+      - name: Owner call, self.new and constructor overload checks
+        timeout-minutes: 20
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          export MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full"
+          ruby scripts/bc2cpp/outside_owner_call_check.rb
+          ruby scripts/bc2cpp/self_new_leaf_check.rb
+          ruby scripts/bc2cpp/constructor_overloads_check.rb
+
+      # ALIAS_SITES (ADR 0474): a class-body alias with literal names is a definition of the new name; a
+      # method-body one stays dynamic. Fixtures plus interpreted-vs-compiled runs on the full-core libmruby the
+      # define_method check built into BC2CPP_FULL_BUILD_DIR.
+      - name: alias_method check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          env -u LD MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby scripts/bc2cpp/alias_method_check.rb
+
       # ADR 0473: the sig/native core facts against the 3rd/mruby this job checks out (ruby-checks has no submodule
       # and runs only the loader half, so --require-mruby makes a missing tree an error here).
       - name: Core facts RBS check (against 3rd/mruby)
@@ -1273,6 +1322,7 @@ jobs:
               ruby scripts/bc2cpp/core_facts_rbs_check.rb
               ruby scripts/bc2cpp/tuple_return_check.rb
               ruby scripts/bc2cpp/register_flow_check.rb
+              ruby scripts/bc2cpp/foreign_definers_cache_check.rb
               ruby scripts/bc2cpp/class_object_args_check.rb
 
           # ADR 0285: the LCF schema oracle against the real reader (host-only, no mrbc).

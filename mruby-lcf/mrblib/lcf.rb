@@ -308,6 +308,7 @@ module LCF
       dv = s[:default]
       return dv.respond_to?(:call) ? dv.call : dv
     end
+    raise TypeError, "LCF field bytes are #{d.class}, not String" unless d.is_a?(String)
 
     case s[:type]
     when :Array1D ; return Array1D.new d, s
