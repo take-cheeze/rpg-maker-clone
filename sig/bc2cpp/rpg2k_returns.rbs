@@ -1,7 +1,7 @@
 # Return hints for methods whose every return path is an Array, each checked against its body in mruby-rpg2k/mrblib.
 # Left out on purpose: Scene::Battle#battle_ally_targets and Scene::SkillMenu#skills (they depend on @ui[:allies] and
-# caster.skills, untyped), Game::Actor#battle_commands (its setter stores ids.dup of an untyped argument), and
-# Scene::Map#blockers_at (its hash values are not typed).
+# caster.skills, untyped) and Game::Actor#battle_commands (its setter stores ids.dup of an untyped argument).
+# Scene::Map#blockers_at is declared in receiver_returns.rbs.
 module RPG2k
   module Scene
     class SkillMenu
