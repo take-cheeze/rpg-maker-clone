@@ -1000,6 +1000,19 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/shared_generation_check.rb
 
+      # ADR 0468: the owner call (chain elses, bare sends, name owner sets), the leaf-class self.new and the audited
+      # constructor overloads, generated code and the interpreted-versus-compiled runs. The runs link a full-core
+      # libmruby the first check builds once with rake into BC2CPP_FULL_BUILD_DIR (fixture_runtime.rb).
+      - name: Owner call, self.new and constructor overload checks
+        timeout-minutes: 20
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          export MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full"
+          ruby scripts/bc2cpp/outside_owner_call_check.rb
+          ruby scripts/bc2cpp/self_new_leaf_check.rb
+          ruby scripts/bc2cpp/constructor_overloads_check.rb
+
 
 
   # The `bc2cpp` status check: success when `bc2cpp-build` succeeded. It keeps the name the old one-job

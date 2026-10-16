@@ -1,4 +1,4 @@
-# 0468. bc2cpp: the core_or_native else calls the named outside owners
+# 0468. bc2cpp: name owner sets, leaf-class construction and constructor overloads
 
 Date: 2026-10-16
 
@@ -111,6 +111,95 @@ the symbol table.
 Every receiver class in the closed world now has a branch: a Ruby class has its chain arm, and an outside class has
 a listed owner. The final else is a checked error. No allowlist hides a dispatch, and nothing is switched off.
 
+### Bare sends and the name owner set (NAME_OWNER_SET)
+
+The same fact holds for any by-name send, not only a chain's else: the receiver of `x.name(...)` is an instance of
+a class that answers `name`, or the send raises NoMethodError. When the closed world names every such class, the
+send has a known receiver set without any receiver proof:
+
+* the owners are the program's Ruby definitions of `name` (the registry, core Ruby included, modules and
+  `.singleton` owners as well) plus every outside owner above;
+* the set is unknown when a definer is unknown or dynamic (`ClosedWorld#exact_arm_refusal`: an unknown definer, a
+  dynamic install, a singleton maker anywhere), when any method_missing class exists (its hook would answer instead),
+  or when an outside owner cannot be named;
+* at most 16 owners (`NAME_OWNER_SET_MAX`). `to_s`, `[]`, `to_i`, `to_f` and `update` have an unnameable owner in
+  wio anyway; the bound keeps a list that is no real fact from becoming one.
+
+`CodeGen#dynamic_dispatch_line` (the one place a by-name call is spelled) emits the owner call over that set instead
+of `mrb_funcall`. Every by-name site of such a name therefore becomes the checked call, wherever it is emitted: a
+chain's else (whatever its kept reason was), a bare send with no chain (`pack` has one owner, `Array`; `push` has
+`Array`, `RPG2k` and `RGSS::ErrorReport.singleton`, since `RPG2k#push` is the scene stack), and the else of the
+registered-expression and NATIVE_OWNER_MAP arms (`empty?` after the Array/Hash/String tag arms and the
+`Game::MoveRoute` arm). A guard chain whose else became the owner call is no longer counted as kept. Block sends keep
+their `mrb_funcall_with_block`. With a single owner the call is one lookup, one pointer compare against the cached
+owner, and the frame call; a receiver the flow already proves (FLOW_CORE_DIRECT, the native exact paths) never
+reaches this line.
+
+Using the call as a type fact afterwards (after `x.push(v)` returns, `x` is one of the owners) is not built: the
+flow facts have no per-register refinement on a call's success to attach it to, and the narrowed set would only
+replace another owner call.
+
+### `new` on `self` (SELF_NEW_LEAF)
+
+In a singleton method of class C, `self` is C or any class that inherits the method; in an instance method of C,
+`self.class` is one of the same classes. `ClosedWorld#known_subclasses(C)` lists them when the closed world sees
+all of them: the declared subclasses (matched by last path segment, as the hierarchy is), and no `Class.new(C)`, no
+outside Ruby subclass and no outside native source spelling the name. Then `new(...)`, `self.new(...)` and
+`self.class.new(...)` (with Kernel#class the only `class` and no singleton maker) construct directly:
+
+* a leaf C: `bc2cpp_direct_alloc` of the receiver plus C's compiled initialize, no guard;
+* known subclasses: one exact-class arm per class, each with the initialize that class's declared superclass chain
+  reaches, and a guard violation for any other receiver;
+* unknown subclasses: only exactly C constructs directly; any other class takes Class#new by name.
+
+This fixes a wrong construction on master: the implicit-self `new` in a class method of a class with a stable
+constant was compiled as an unguarded allocation of that class, so `Kid.make` with `make` inherited from `Base`
+returned a Base built by Base#initialize. The keyword construct path (`new(a, k: v)` in a class method, ADR 0426) of
+a leaf class now ends its class test in a guard violation instead of a by-name send.
+
+### `Klass.new` in a protected range (NEW_IDENTITY)
+
+`new_receiver_constant_proven?` read the receiver register's reaching definitions with the plain walk, which
+refuses any query inside a begin/rescue body. It now retries with the handler-aware walk (the mode CONSTRUCTOR_POOLS
+already uses), so `Rect.new(...)` and `Tone.new(...)` in a rescue body (all 13 such fallbacks on master sit in
+`_rescue_try` functions) end their class test in a guard violation, not a by-name `new`.
+
+### Constructor overloads (OVERLOADED_CONSTRUCT)
+
+`sig/native/rgss_constructors.rbs` declares each accepted form of `RGSS::Bitmap`, `Rect`, `Color` and
+`Tone#initialize` in RBS overload syntax, annotated with its direct path:
+
+| Class | Overloads | Direct path |
+| --- | --- | --- |
+| Bitmap | `(String filename, ?untyped transparent)` | allocation + the compiled `RGSS::Bitmap#initialize` |
+| Bitmap | `(Integer \| Float w, Integer \| Float h)`, the `else` | `rgss::bitmap_new_direct(int, int)` |
+| Rect | `()` | `rgss::rect_new_direct(0, 0, 0, 0)` |
+| Rect | `(Integer \| Float x4)`, the `else` | `rgss::rect_new_direct(int x4)` |
+| Color | `(?Integer \| Float x4)`, the `else` | `rgss::color_new_direct`, defaults 0, 0, 0, 255 |
+| Tone | `(?Integer \| Float x4)`, the `else` | `rgss::tone_new_direct`, defaults 0, 0, 0, 0 |
+
+`Integer | Float` is a positional `mrb_get_args` "i"/"f" converts (`mrb_as_int`/`mrb_as_float`: no `to_int` call, the
+same TypeError for anything else). Bitmap's String form has no C++ constructor: its loader is the Ruby
+`Bitmap#initialize` (search roots, extensions, the asset archive), whose compiled body is the direct path; a second
+C++ copy of that search would be one more implementation to keep equal.
+
+`NativeConstructorSigs` audits the file when it is loaded and refuses it on any disagreement: a C initialize's
+forms are its `mrb_get_args` formats (the last one the `else`) plus an empty form for an `if (mrb_get_argc(M) ==
+0)` branch that reads nothing; its optional defaults are the initial values of the variables the format fills;
+the empty Rect's literals are the field initializers of `struct Rect`; Bitmap's Ruby initialize must be the
+`kind_of? String` split between `_init_file` ("z|b") and `_init_size` ("ii", the `else`). A direct path must convert
+every positional once, in order. At the call site:
+
+* the program's initialize must be the audited one (no Ruby `initialize` on a C-initialized class; Bitmap's from
+  the audited file), and `new` must be Class#new (`native_constructor_safe`);
+* overloads are filtered by argument count, then by the classes the flow proves (a Fixnum proof is Integer, an
+  exact String flow is String); one left is called with no test, otherwise each gets its class test in declared
+  order and the `else` form is the last branch, which raises in its own conversion exactly as the native does; a
+  count only the compiled initialize can take (Bitmap with one non-String argument) ends there;
+* it runs only where the entry-point path of codegen_send.rb would leave a by-name `new`: a count that path does
+  not take (Rect.new, Tone.new(a, b), Color.new) or Bitmap's argument tag test. Proven-Integer Bitmaps and the
+  four-argument Rect/Tone/Color keep that path.
+
 ### Reporting
 
 The closed-world summary prints `OWNER_CALL: N` after the `KEPT` lines. `bc2cpp_owner_call` is counted in
@@ -133,12 +222,18 @@ The closed-world summary prints `OWNER_CALL: N` after the `KEPT` lines. `bc2cpp_
   remains a C call with a pushed frame, at the cost `bc2cpp_send` already paid.
 * `NativeOwnerMap`'s fixes also give ADR 0397 (NATIVE_OWNER_MAP arms) answers where it had refused for an unknown
   owner. Those arms only precede a by-name else, so no site loses a fallback because of them.
-* Checks: `scripts/bc2cpp/outside_owner_call_check.rb` (new; generated code, three withdrawal worlds and the
-  compiled-versus-interpreted run with a rogue C definition behind the closed world's back). These checks now
-  expect an owner-call else where they expected `kept: core_or_native`: `closed_world_check.rb` (`x.size`, with
-  Array/String/nil receivers added to its run), `native_class_arms_check.rb` (an owner-call else counts as live, and
-  `@mixed.count` must be one), `interface_tables_check.rb` (a table miss) and `native_direct_check.rb` (a program
-  subclass of an RGSS class).
+* Checks (all fixtures, seconds to tens of seconds; in the bc2cpp-build job of build.yml):
+  `scripts/bc2cpp/outside_owner_call_check.rb` (chain elses, bare `pack`, two-owner `push`, the `empty?` arms, an
+  unnameable native or outside Ruby owner, a method_missing class, the owner map switched off, and the
+  compiled-versus-interpreted run with a rogue C definition behind the closed world's back),
+  `scripts/bc2cpp/self_new_leaf_check.rb` (a leaf, an inherited class method called through a subclass, and
+  `Class.new(C)`, interpreted against compiled), `scripts/bc2cpp/constructor_overloads_check.rb` (the audit and seven
+  mismatch worlds, every declared overload's generated path, a reopened Rect). The RGSS natives are not linked into
+  the fixture runtime, so the constructors' run happens in the game build; the audit is what ties each declaration
+  to the native.
+* Bitmap's 39 fallbacks on master: a `mrb_integer_p` tag test with a by-name else. The 2-argument sites now test
+  `mrb_string_p` for the file form and end in `bitmap_new_direct`'s conversions; with the Fixnum proof they keep the
+  untested entry point. The 13 Rect/Tone fallbacks end in a guard violation. CI's bc2cpp-build measures both.
 * Not covered: the diagnostic reports `interface_table_report.rb` and `native_arms_report.rb` still count the
   whole-name `core_or_native` gate. Block sends (BLOCK_FALLBACK) do not reach `guarded_fallback_line` and are
   unchanged. A class collected and its address reused while it sits in a site's owner cache would skip the name
