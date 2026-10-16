@@ -1000,7 +1000,7 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/shared_generation_check.rb
 
-      # BLOCK_RETURNS (ADR 0472): `[T] ... { ... -> T } -> T` / `{ ... } -> self` declarations, checked against Ruby
+      # BLOCK_RETURNS (ADR 0475): `[T] ... { ... -> T } -> T` / `{ ... } -> self` declarations, checked against Ruby
       # bodies and native C sources; a false one fails the build (a fixture closed world, seconds).
       - name: Generic block return check
         run: |

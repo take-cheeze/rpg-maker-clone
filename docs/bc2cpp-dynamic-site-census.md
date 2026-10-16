@@ -985,7 +985,7 @@ require proofs for their other writers; the earlier seventeen-site
 counterfactual is not a measured saving from this change.
 
 See [ADR 0344](adr/0344-bc2cpp-profiler-block-results.md). The result proof is now the checked declaration of
-[ADR 0472](adr/0472-bc2cpp-generic-block-returns.md) ([Block return declarations](bc2cpp-block-returns.md)), which
+[ADR 0475](adr/0475-bc2cpp-generic-block-returns.md) ([Block return declarations](bc2cpp-block-returns.md)), which
 removed the `BC2CPP_PROFILER_RESULTS` switch.
 
 ### The Fixnum proof on a native arm's Integer argument (ADR 0358)

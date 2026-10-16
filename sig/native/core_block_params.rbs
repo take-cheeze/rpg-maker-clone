@@ -18,7 +18,7 @@
 #     #each_pair (alias), #each_value (`block.call(v)`), #each_key, #select/#reject (`block.call([k, v])`),
 #     #filter (alias, mruby-hash-ext).
 # A program definition of the name on the receiver's lookup chain voids the shape (block_fallback_element_hints).
-# Array#each's `-> self` is a block-return declaration (BLOCK_RETURNS, docs/adr/0472), checked against mrblib/array.rb's
+# Array#each's `-> self` is a block-return declaration (BLOCK_RETURNS, docs/adr/0475), checked against mrblib/array.rb's
 # body (`return to_enum(:each) unless block`, `yield self[idx]` in a loop, then `self`).
 class Array[unchecked out Elem]
   def each: () { (Elem) -> void } -> self

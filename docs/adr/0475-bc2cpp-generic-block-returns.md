@@ -1,4 +1,4 @@
-# 0472. Checked RBS declarations for methods that return their block's value
+# 0475. Checked RBS declarations for methods that return their block's value
 
 Date: 2026-10-16
 

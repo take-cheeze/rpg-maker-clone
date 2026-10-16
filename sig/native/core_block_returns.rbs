@@ -1,4 +1,4 @@
-# Block-return declarations of methods mruby's own Ruby defines (BLOCK_RETURNS, docs/adr/0472). Each is checked
+# Block-return declarations of methods mruby's own Ruby defines (BLOCK_RETURNS, docs/adr/0475). Each is checked
 # against the method's bytecode, compiled from the build's own source (an outside Ruby file is compiled for the check):
 # a plain yielder whose every yield passes the declared arguments, and whose every return path, with a block given,
 # returns a yield's value (`-> T`) or self (`-> self`). Array#each's `-> self` is in core_block_params.rbs.

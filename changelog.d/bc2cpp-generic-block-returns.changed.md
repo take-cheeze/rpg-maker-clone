@@ -1,4 +1,4 @@
-- **bc2cpp** (ADR 0472): RBS declarations `[T] (...) { (...) -> T } -> T` and `{ ... } -> self` are now checked and
+- **bc2cpp** (ADR 0475): RBS declarations `[T] (...) { (...) -> T } -> T` and `{ ... } -> self` are now checked and
   used. A call with a literal block keeps the class of its block's value, or of its receiver, and the block keeps the
   caller's self. Each declaration is checked against what defines it: the bytecode of a Ruby definition, or a scan
   of a native's C function. A native the scan cannot verify must be listed, with its file's SHA-256, in

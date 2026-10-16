@@ -2,7 +2,7 @@
 
 bc2cpp can keep the class of a call that returns its block's value, or its receiver, when an RBS declaration says
 so and the build checks that the declaration is true (BLOCK_RETURNS,
-[ADR 0472](adr/0472-bc2cpp-generic-block-returns.md)). It replaces the Profiler-only proof of
+[ADR 0475](adr/0475-bc2cpp-generic-block-returns.md)). It replaces the Profiler-only proof of
 [ADR 0344](adr/0344-bc2cpp-profiler-block-results.md).
 
 ```rbs
