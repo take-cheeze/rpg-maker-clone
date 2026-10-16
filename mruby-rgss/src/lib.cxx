@@ -1575,7 +1575,7 @@ mrb_value bmp_init_copy_native_body(mrb_state* M, V self, mrb_value other) {
   if (!mrb_nil_p(font)) {
     // Font defines no dup: while Kernel#dup (kernel.c's mrb_obj_dup) answers
     // it, call that function; a script's own Font#dup is still called (ADR
-    // 0470).
+    // 0472).
     struct RClass* fc = mrb_class(M, font);
     const mrb_method_t dup =
         mrb_method_search_vm(M, &fc, mrb_intern_lit(M, "dup"));
@@ -2962,7 +2962,7 @@ std::string find_font_path(mrb_state* M, const std::string& name) {
 }
 #endif  // !defined(WIO_TERMINAL)
 
-// The attribute `reader` of `obj` without a call frame (ADR 0470): when the
+// The attribute `reader` of `obj` without a call frame (ADR 0472): when the
 // method `reader` answers on obj's class with the reader mruby's own
 // `attr_reader`/`attr_accessor` built for it -- a cfunc proc flagged
 // MRB_PROC_NOARG whose one env slot is the ivar's name, the reader's name

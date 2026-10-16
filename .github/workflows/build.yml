@@ -1000,7 +1000,7 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/shared_generation_check.rb
 
-      # BLOCK_ITERATOR_DIRECT (ADR 0470): the Kernel#loop, String and Integer-literal block arms, each world refusal, and
+      # BLOCK_ITERATOR_DIRECT (ADR 0472): the Kernel#loop, String and Integer-literal block arms, each world refusal, and
       # a fixture run interpreted and compiled over the compiled core (one full-core libmruby build, under a minute; like
       # the closed build it runs without the dev shell's LD).
       - name: Block iterator direct check

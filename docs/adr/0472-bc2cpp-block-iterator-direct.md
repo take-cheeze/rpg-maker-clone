@@ -1,4 +1,4 @@
-# 0470. bc2cpp: block iterators call the compiled body directly, and RGSS::Font is read without a call
+# 0472. bc2cpp: block iterators call the compiled body directly, and RGSS::Font is read without a call
 
 Date: 2026-10-16
 
@@ -52,6 +52,13 @@ same switch (`BC2CPP_BLOCK_CORE_DIRECT=0` turns them off with the rest):
   separate table so `RECEIVERS`, which also feeds the block-less exact-receiver and result proofs, is unchanged.
 * **Integer literal receivers.** When every dominating writer of the receiver register is a `LOADI*` (through MOVEs),
   the Integer arm is the only arm and has no class test; with a yield-free block it is the whole site, no `else`.
+* **`n.times { }` on an unproven receiver** (a fix to ADR 0147). The inlined loop counts in an `mrb_int` and its
+  tripwire raised TypeError for any other receiver, where the interpreter runs Integer#times for a bignum, raises
+  NoMethodError for a Float or nil, and calls a user class's own `times`. Now a receiver that is an Integer literal or
+  that FIXNUM_OPERAND_PROOF proves keeps the plain loop; any other is a GUARDED_BLOCK_INLINE site (ADR 0420, test
+  `mrb_integer_p`, which a bignum fails): the loop runs for a Fixnum at the root context, and every other receiver
+  takes the site's own send, whose BLOCK_CORE_DIRECT Integer arm calls the compiled Integer#times and whose else is the
+  dispatch the bytecode has. Without the guarded pass (a rescue try body, a resumable method) the site is not inlined.
 * `each_line` joins the hand-vetted list of synchronous block methods (`BLOCK_FALLBACK_UPVAR_SAFE_METHODS`):
   String#each_line and the IO/StringIO `each` it aliases only `block.call` while they run. Before, a method with
   `s.each_line { |l| captured << l }` was left interpreted whole.
@@ -75,7 +82,7 @@ Check: `scripts/bc2cpp/block_iterator_direct_check.rb` (CI: `bc2cpp-build` in bu
 check). It asserts the generated arms and each world refusal (a program `def loop`, a BasicObject subclass, a dynamic
 installer, a program String#each_char, the switch), then runs a fixture interpreted and compiled over the compiled core
 on a full-core mruby and compares the output: each with break/next/return, each over an array grown and shrunk during
-the iteration, map/select/reject/any?/all?/reduce, Integer#times (variable, literal, nested, nested break), Hash#each and
+the iteration, map/select/reject/any?/all?/reduce, Integer#times (variable, literal, nested, nested break, a bignum, a negative bignum, Float/nil/String/Symbol receivers, a user class's own `times`), Hash#each and
 each_key, String#each_char/each_line, Kernel#loop (break, break with a value, return, next, StopIteration, raise),
 user Enumerable, Range, Hash and nil receivers, the same calls inside a Fiber (the arms' `else`), and GC stress.
 
@@ -93,5 +100,6 @@ user Enumerable, Range, Hash and nil receivers, the same calls inside a Fiber (t
   that stayed a proc, the `&blk` sites, the two `#ifdef MRB_UTF8_STRING` helper sends, and the other native calls into
   Ruby (`Input.press`/`release` from the input bridges, `RGSS.warn_stub`, and the Bitmap `blt`/`stretch_blt`/`clear`
   calls of the window skin, which go to whatever the script installed).
-* Seen while testing, unchanged: an inlined `n.times { }` (ADR 0147) raises TypeError for a receiver that is not a
-  Fixnum, where the interpreter raises NoMethodError for a Float and runs the loop for a bignum.
+* The `times` loop of ADR 0147 now inlines bare only a receiver proven Fixnum, so an unproven `n.times { }` site keeps
+  its send text (as the else of the guarded loop) where it had none; the send is the one the bytecode has, with its
+  Integer arm in front.
