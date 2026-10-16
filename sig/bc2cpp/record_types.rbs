@@ -23,5 +23,17 @@ module RPG2k
              ?list_down_shown: untyped, ?list_arrow_anim: untyped, ?enemy_shake: untyped, ?skill_top: untyped,
              ?item_top: untyped }
     end
+
+    class Map
+      # The Enter Hero Name widget (scene/map.rb #drive_name_input .. #close_name_input). Writers: the two literals
+      # in #drive_name_input (ASCII grid: :win nil; kana grid: :page, no :win), `= nil` in #initialize and
+      # #close_name_input, and key stores in the handlers and in #draw_kana_face / #draw_kana_name_field /
+      # #draw_kana_grid, which receive the Hash as `ui` (the interprocedural scan follows it). `@name_ui.nil?` gates
+      # #drive_parallel_wait. Only :kana is a literal everywhere it is written; the rest hold method results,
+      # arithmetic or window objects and stay untyped (no receiver hint: nothing this record names is forced).
+      @name_ui: { name: untyped, sel: untyped, kana: bool, actor_id: untyped, background: untyped,
+                  interp: untyped, ?win: untyped, ?page: untyped, ?face_win: untyped, ?name_win: untyped,
+                  ?grid_win: untyped }?
+    end
   end
 end
