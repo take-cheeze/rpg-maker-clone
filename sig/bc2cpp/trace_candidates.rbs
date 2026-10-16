@@ -1,0 +1,22 @@
+# Promoted from scripts/bc2cpp/trace_sig.rb candidates of the Nepheshel LCF load and the game-logic and rpg2k
+# runs (BC2CPP_TRACE_TYPES). Each run alone saw one class where a union is declared; the constructor parameters
+# are the database and map-unit ones, which are real parsed game data. Returns are untyped, as Ruby discards
+# an initialize's value.
+
+# LCF::Array2D#read_row_bytes is called with a File in the load and a StringIO in the game run: both declared.
+class LCF::Array2D
+  def read_row_bytes: (File | StringIO) -> String
+end
+
+class Game::Actor
+  def initialize: (LCF::Database, Integer) -> untyped
+end
+class Game::Actors
+  def initialize: (LCF::Database) -> untyped
+end
+class Game::ChipSet
+  def initialize: (LCF::Database, Integer) -> untyped
+end
+class Game::Map
+  def initialize: (Integer, LCF::MapUnit) -> untyped
+end
