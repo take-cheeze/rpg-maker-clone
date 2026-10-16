@@ -53,6 +53,10 @@ module NeverCalledRegistrations
     # target's "never called" verdict unsound for the others.
     native_srcs = Dir["#{repo_root}/mruby-rgss/src/*.cxx"] + core_native_srcs("#{repo_root}/3rd/mruby") +
                   external_gem_native_srcs(repo_root)
+    # The Ruby half of the same outside world, as every *-compiled mrbgem.rake passes it (foreign_mrblib_srcs is
+    # target-independent too). Without it the analyses that need both halves (INTEGER_CONSTANT_PROOF, the
+    # RBS_CHECKED_PARAMS caller scan, ADR 0456) see a different program than the build compiles.
+    foreign_ruby_srcs = foreign_mrblib_srcs(repo_root)
 
     bc2cpp = File.expand_path('bc2cpp.rb', __dir__)
     Dir.mktmpdir('bc2cpp_never_called_probe') do |tmp|
@@ -63,6 +67,7 @@ module NeverCalledRegistrations
         'ONLY_OWNERS' => this_gem[:owners].join(','),
         'OTHER_OWNERS' => other_gems.values.flat_map { |g| g[:owners] }.join(','),
         'NATIVE_SRCS' => Shellwords.join(native_srcs),
+        'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_ruby_srcs),
         'SKIP_UNSUPPORTED' => '1',
         'BC2CPP_HOT_METHODS' => hot_methods,
       }
