@@ -1010,9 +1010,6 @@ class Game::Interpreter
   def take_parallax_request: () -> bool
   def take_vehicle_toggle_request: () -> bool
 end
-class Game::Party
-  def leader: () -> Game::Actor
-end
 class Game::Screen
   def tint: () -> Array
   def flash_color: () -> Array
@@ -1021,8 +1018,4 @@ end
 class Game::Timer
   def drawn?: () -> bool
   def tick: () -> bool
-end
-class Game::State
-  def timer_seconds: () -> Integer
-  def timer2_seconds: () -> Integer
 end
