@@ -1,0 +1,1 @@
+- **bc2cpp** `BC2CPP_NOMETHOD_VERIFY` builds compile again: the owner-call violation message wrote a raw newline into the generated C++ string. The verify build now runs the New Game, map/menu and save/load workloads to the end.
