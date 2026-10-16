@@ -7899,12 +7899,14 @@ class RPG2k
         inner_w = NAME_GRID_W - Window::BORDER * 2
         inner_h = NAME_GRID_H - Window::BORDER * 2
         c = Bitmap.new(inner_w, inner_h)
-        rows = name_kana_rows(ui[:page])
+        # Read before the loop: the blocks never see `ui`, so the record type's scan can follow it here.
+        page = ui[:page]
+        rows = name_kana_rows(page)
         rows.each_with_index do |row_cells, r|
           row_cells.each_with_index do |cell, ci|
             next if cell.nil?
             x, y, w, h = kana_cell_rect(rows, r, ci)
-            draw_system_text c, x, y, w, h, kana_cell_label(cell, ui[:page]), @windowskin
+            draw_system_text c, x, y, w, h, kana_cell_label(cell, page), @windowskin
           end
         end
         win.contents = c

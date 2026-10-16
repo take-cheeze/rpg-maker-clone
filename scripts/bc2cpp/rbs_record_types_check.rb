@@ -9,6 +9,10 @@
 #    `store`, delete of an optional key, call-site pooled keys, an attr_reader) and one located TC1009 error per
 #    refused shape (computed key, non-literal update, wrong value class, undeclared key, omitted required key,
 #    delete of a required key, clear, replace, escape, outside spelling, reflection).
+# 2b. Nil tests (`nil?`, `!`, `== nil`, `!= nil`) on a `{ ... }?` record, and the interprocedural scan: a callee
+#    that only reads or writes declared keys is accepted (recursion included); a callee that stores the Hash,
+#    writes an undeclared key or a wrong class, a recursive pair that misbehaves, a POLY name with one bad
+#    definition, a native callee and BC2CPP_RECORD_TYPE_INTERPROC=0 are each a located TC1009.
 # 3. Generated code: a literal-key read of a verified key is a guarded TYPED call; without the declaration (or
 #    with a refused one) the send keeps its by-name dispatch.
 #
@@ -37,6 +41,8 @@ WIO_GEMS = NomethodReviewedProbe.wio_gems(ROOT)
 OUTSIDE_NATIVE, OUTSIDE_RUBY = bc2cpp_closed_world_outside_srcs('wio', WIO_GEMS, ROOT)
 OUTSIDE_TOKENS = outside_world_tokens(OUTSIDE_NATIVE + OUTSIDE_RUBY)
 OUTSIDE_IVARS = outside_ivar_names(OUTSIDE_NATIVE + OUTSIDE_RUBY)
+NATIVE_NAMES = extract_native_method_sources(OUTSIDE_NATIVE).keys.to_set
+HIDDEN_NAMES = foreign_method_names(OUTSIDE_RUBY)
 
 def load_sig(dir, rbs)
   path = File.join(dir, 'rt.rbs')
@@ -70,11 +76,19 @@ def checked(source, rbs, foreign: nil)
     RecordHash.table = rh.table
     RecordHash.readers = rh.readers
     result = nil
+    # The callee world the driver installs for ESCAPE_ANALYSIS (bc2cpp.rb), over this fixture.
+    escape_world = EscapeAnalysis::World.new(ireps: ireps, defs: registry.transform_values(&:dup),
+                                             native_names: NATIVE_NAMES, superclass_of: superclass_of,
+                                             included: included, prepended: prepended, unknown_mixins: unknown,
+                                             modules: modules, invisible: lambda { |name|
+                                               HIDDEN_NAMES.include?(name) || world.unknown_definer?(name)
+                                             })
     if rbs
       result = RbsRecordTypes.check(load_sig(dir, rbs), ireps, registry,
                                     closed_world: world, native_paths: OUTSIDE_NATIVE, foreign_paths: ruby_paths,
                                     outside_ivars: outside, superclass_of: superclass_of,
-                                    container_constants: containers, display_root: dir)
+                                    container_constants: containers, display_root: dir,
+                                    escape_world: escape_world)
       RbsRecordTypes.install(result)
     end
     gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new, nil, nil, nil,
@@ -216,7 +230,8 @@ REFUSED = [
   ['delete of a required key', "#{HEAD}  def m; @rx.delete(:a); nil; end\nend\n", 3, /delete of required key/],
   ['clear', "#{HEAD}  def m; @rx.clear; nil; end\nend\n", 3, /operand of SEND/],
   ['replace', "#{HEAD}  def m; @rx.replace({ a: 2 }); nil; end\nend\n", 3, /operand of SEND/],
-  ['an escape', "#{HEAD}  def m; take(@rx); nil; end\n  def take(h); h; end\nend\n", 3, /operand of SSEND/],
+  ['an escape (a callee that returns it)', "#{HEAD}  def m; rt_take(@rx); nil; end\n  def rt_take(h); h; end\nend\n", 3,
+   /may keep argument 1/],
   ['a nil store into a non-nilable record', "#{HEAD}  def m; @rx = nil; end\nend\n", 3, /nil is stored/],
   ['an attr_writer (reported at the declaration)',
    "class RtX\n  attr_writer :rx\n  def initialize; @rx = { a: 1 }; nil; end\nend\n", 2,
@@ -246,6 +261,121 @@ checked(BAD_HINT, RBS_X) do |result, registry, gen|
   go = gen.compile_method(registry.fetch('go').find { |d| d.owner == 'RtX' }.irep).fetch(:code)
   check.call('a refused declaration gives no hint to the generated code',
              !result.verified.key?('rx') && !go.match?(/TYPED[A-Z_]* :succ -> Integer/))
+end
+
+# ---------------------------------------------------------------------------
+puts '-- nil tests on a nilable record'
+NIL_SRC = <<~'RUBY'
+  class RtEng
+    def rt_go(n); n + 1; end
+  end
+  class RtEng2
+    def rt_go(n); n - 1; end
+  end
+  class RtN
+    def initialize; @rn = nil; end
+    def open; @rn = { eng: RtEng.new, n: 1 }; draw; nil; end
+    def draw; nil; end
+    def close; @rn = nil; end
+    def a; @rn.nil? || @rn[:n]; end
+    def b; return 0 if @rn == nil; @rn[:n]; end
+    def c; !@rn; end
+    def d; @rn != nil && @rn.key?(:n); end
+    def go; @rn[:eng].rt_go(1) unless @rn.nil?; end
+  end
+RUBY
+NIL_RBS = "class RtN\n  @rn: { eng: RtEng, n: Integer }?\nend\n"
+checked(NIL_SRC, NIL_RBS) do |result, registry, gen|
+  check.call('nil?, !, == nil, != nil and a self send after the store are accepted on a `{ ... }?` record',
+             errors(result).empty? && result.verified.key?('rn'))
+  go = gen.compile_method(registry.fetch('go').find { |d| d.owner == 'RtN' }.irep).fetch(:code)
+  check.call('a key read after a nil test is a guarded TYPED call', go.match?(/TYPED[A-Z_]* :rt_go -> RtEng#rt_go/))
+end
+checked(NIL_SRC, NIL_RBS.sub('}?', '}')) do |result, _registry, _gen|
+  check.call('the same code against a non-nilable record is refused (nil stores)',
+             errors(result).any? { |d| d.message.match?(/nil is stored/) })
+end
+checked("#{HEAD}  def m; @rx.nil?; end\n  def n; RtX.new.nil?; end\nend\nclass Hash\n  def nil?; true; end\nend\n",
+        RBS_X) do |result, _registry, _gen|
+  check.call('nil? is an escape once the program defines it where a Hash reaches it',
+             errors(result).any? { |d| d.line == 3 && d.message.match?(/nil\? may be redefined/) })
+end
+
+puts '-- interprocedural scan'
+INTER_OK = <<~'RUBY'
+  class RtX
+    def initialize; @rx = { a: 1 }; nil; end
+    def m; look(@rx); put(@rx, 2); ping(@rx, 3); nil; end
+    def look(h); h[:a] + (h.key?(:b) ? 1 : 0); end
+    def put(h, v); h[:b] = 4; h.nil? ? v : look(h); end
+    def ping(h, n); n > 0 ? pong(h, n - 1) : h[:a]; end
+    def pong(h, n); ping(h, n); end
+  end
+RUBY
+checked(INTER_OK, RBS_X) do |result, _registry, _gen|
+  check.call('a non-capturing callee that reads, writes declared keys and recurses is accepted',
+             errors(result).empty? && result.verified.key?('rx'))
+  check.call("the callee's write joins the record's stores", result.verified['rx']&.key?('b'))
+end
+begin
+  ENV['BC2CPP_RECORD_TYPE_INTERPROC'] = '0'
+  checked(INTER_OK, RBS_X) do |result, _registry, _gen|
+    check.call('BC2CPP_RECORD_TYPE_INTERPROC=0: passing the record is an escape again',
+               errors(result).any? { |d| d.line == 3 && d.message.match?(/operand of SSEND/) } &&
+               !result.verified.key?('rx'))
+  end
+ensure
+  ENV.delete('BC2CPP_RECORD_TYPE_INTERPROC')
+end
+INTER_BAD = [
+  ['a callee that stores the Hash into an ivar', "  def m; keep(@rx); end\n  def keep(h); @kept = h; nil; end\n", 3,
+   /may keep argument 1/],
+  ['a callee that returns the Hash', "  def m; give(@rx); nil; end\n  def give(h); h; end\n", 3,
+   /may keep argument 1/],
+  ['a callee that writes an undeclared key', "  def m; put(@rx); end\n  def put(h); h[:zz] = 1; nil; end\n", 4,
+   /key :zz is not declared/],
+  ['a callee that writes the wrong class', "  def m; put(@rx); end\n  def put(h); h[:a] = 'x'; nil; end\n", 4,
+   /value of :a is String, declared Integer/],
+  ['a callee that clears the Hash', "  def m; wipe(@rx); end\n  def wipe(h); h.clear; nil; end\n", 3,
+   /may keep argument 1/],
+  ['a recursive pair whose second frame writes an undeclared key',
+   "  def m; ping(@rx, 3); end\n  def ping(h, n); n > 0 ? pong(h, n - 1) : nil; end\n" \
+   "  def pong(h, n); h[:zz] = 1 if n == 1; ping(h, n); end\n", 5, /key :zz is not declared/],
+  ['a recursive pair that returns the Hash',
+   "  def m; ping(@rx, 3); nil; end\n  def ping(h, n); n > 0 ? pong(h, n - 1) : h; end\n" \
+   "  def pong(h, n); ping(h, n); end\n", 3, /may keep argument 1/],
+  ['a callee that hands the Hash to a block',
+   "  def m; each_k(@rx); end\n  def each_k(h); twice { h[:a] }; end\n  def twice; yield; yield; nil; end\n",
+   4, /captured by a block inside a callee/],
+  ['a call that also passes a block', "  def m; with(@rx) { 1 }; end\n  def with(h); h[:a]; end\n", 3,
+   /with a block/],
+  ['a splat', "  def m; look(*@rx); end\n  def look(h); h[:a]; end\n", 3, /operand of/],
+  ['a keyword argument', "  def m; look(h: @rx); end\n  def look(h:); h[:a]; end\n", 3, /operand of|stored/],
+  ['a native callee', "  def m; [1].push(@rx); nil; end\n", 3, /native definition/],
+  ['a name with no definition', "  def m; nowhere_rt(@rx); end\n", 3, /no definition/]
+].freeze
+INTER_BAD.each do |what, body, line, reason|
+  checked("#{HEAD}#{body}end\n", RBS_X) do |result, _registry, _gen|
+    located = errors(result).any? { |d| d.code == 'TC1009' && d.line == line && d.message.match?(reason) }
+    check.call("#{what} is a TC1009 error at line #{line} (#{reason.source})", located && !result.verified.key?('rx'))
+  end
+end
+POLY_BAD = <<~'RUBY'
+  class RtX
+    def initialize; @rx = { a: 1 }; nil; end
+    def m; RtP.new.look(@rx); end
+  end
+  class RtP
+    def look(h); h[:a]; end
+  end
+  class RtQ
+    def look(h); h[:zz] = 1; nil; end
+  end
+RUBY
+checked(POLY_BAD, RBS_X) do |result, _registry, _gen|
+  check.call('a POLY name with one bad definition is a TC1009 error in that definition',
+             errors(result).any? { |d| d.line == 9 && d.message.match?(/key :zz is not declared/) } &&
+             !result.verified.key?('rx'))
 end
 
 if failures.empty?
