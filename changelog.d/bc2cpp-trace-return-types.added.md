@@ -1,0 +1,1 @@
+- `BC2CPP_TRACE_PARAMS=1` now also records the classes each traced `return` hands back, next to the parameter classes. `scripts/bc2cpp/param_trace_report.rb` reports them in a new section (d), with the static return fact bc2cpp proved for the method and any return that contradicts it. Checked by `scripts/bc2cpp/param_trace_return_check.rb`.
