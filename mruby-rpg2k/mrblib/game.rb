@@ -6737,7 +6737,10 @@ module Game
     FACE_DIR = { FACE_UP => 8, FACE_RIGHT => 6, FACE_DOWN => 2, FACE_LEFT => 4 }.freeze
 
     def initialize(commands, repeat: true, skippable: false)
-      @commands = commands || []
+      list = commands || []
+      raise TypeError, "move route commands are #{list.class}, not Array" unless list.is_a?(Array)
+
+      @commands = list
       @repeat = repeat ? true : false
       @skippable = skippable ? true : false
       @index = 0
@@ -9403,6 +9406,7 @@ module Game
     # re-equipped the cursed item, instead of the state persisting (as worn)
     # the whole time the way real RPG_RT's own exemption guarantees.
     def self.prune(ids, table, keep: [])
+      raise TypeError, "state ids are #{ids.class}, not Array" unless ids.nil? || ids.is_a?(Array)
       return ids if ids.nil? || ids.size <= 1
       sig = significant(ids, table)
       return ids if sig.nil?

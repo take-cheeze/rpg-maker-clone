@@ -491,7 +491,10 @@ module Game
     attr_reader :call_frame_event_id
 
     def start(commands)
-      @list = commands || []
+      list = commands || []
+      raise TypeError, "event command list is #{list.class}, not Array" unless list.is_a?(Array)
+
+      @list = list
       @index = 0
       @running = true
       @call_stack = []
@@ -789,7 +792,10 @@ module Game
     # (see #event_id's own comment), so there is nothing to unwind.
     def return_from_call
       return false if @call_stack.empty?
-      @list, @index, @call_frame_event_id = @call_stack.pop
+      list, @index, @call_frame_event_id = @call_stack.pop
+      raise TypeError, "call stack list is #{list.class}, not Array" unless list.is_a?(Array)
+
+      @list = list
       true
     end
 
@@ -978,8 +984,10 @@ module Game
       start(innermost[:commands] || [])
       idx = innermost[:current_command]
       @index = idx if idx && idx >= 0 && idx <= @list.size
-      @call_stack = frames[0...-1].map do |f|
-        [f[:commands] || [], f[:current_command] || 0, f[:event_id] || 0]
+      # Pushed into a literal so @call_stack is provably an Array (a `map` result on an untyped receiver is not).
+      @call_stack = []
+      frames[0...-1].each do |f|
+        @call_stack << [f[:commands] || [], f[:current_command] || 0, f[:event_id] || 0]
       end
       outer = frames.first
       @event_id = outer[:event_id] if outer[:event_id] && outer[:event_id] != 0
@@ -1415,6 +1423,8 @@ module Game
       cmds, target_event_id = resolve_call(cmd)
       return if cmds.nil? || cmds.empty?
       return if @call_stack.size >= MAX_CALL_DEPTH
+      raise TypeError, "called event's command list is #{cmds.class}, not Array" unless cmds.is_a?(Array)
+
       @call_stack.push [@list, @index, @call_frame_event_id || @event_id || 0]
       @list = cmds
       @index = 0
@@ -3340,6 +3350,8 @@ module Game
       $stderr.puts "[RPG2k] Call Common Event: common event #{id} not found" if cmds.nil?
       return if cmds.nil? || cmds.empty?
       return if @call_stack.size >= MAX_CALL_DEPTH
+      raise TypeError, "common event #{id}'s command list is #{cmds.class}, not Array" unless cmds.is_a?(Array)
+
       @call_stack.push [@list, @index, 0]
       @list = cmds
       @index = 0
