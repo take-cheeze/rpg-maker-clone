@@ -362,3 +362,17 @@ the read path `fetch` → `@fetch[addr]` → `peek16`. Two options follow from t
 
 Neither has been built. The next design step is option 1, with the index type carried as a separate component
 (`Integer`-only flow), not as a rule.
+
+## Integer-index typing (option 1): attempted, not measured
+
+`scratchpad/sealed-repro/intidx.rb` adds a separate integer-only analysis: greatest fixpoint over ivars, constants,
+returns and parameters, where a fact falls when any writer is not an integer expression. An unknown array index
+that is an integer expression reads one element, as an `Integer` index does.
+
+The first version recomputed the integer check on every call and did not finish in 15 minutes. A memoized version
+(per round, with an in-progress query assumed true) runs at about 90 seconds per round, against about 15 seconds
+for the converged provenance spike. Round 3 did not finish in several minutes. The recursion over reaching writes is
+unbounded in practice, so the check is not usable as written. No consumer count is reported.
+
+Next: bound the integer check (a fixed depth per query and a per-round cache keyed by the write, not the register),
+then rerun and check convergence before measuring.
