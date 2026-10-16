@@ -15,7 +15,7 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # unsupported).
 #
 # This whole gem only exists in the build when RPGMAKER_BC2CPP is set on a
-# closed-world build (psp/wio/maix, see build_config.rb; docs/adr/0466) -- it is
+# closed-world build (psp/wio/maix/closed, see build_config.rb; docs/adr/0466) -- it is
 # never part of the default build, and never of a desktop build.
 # Disabled, its one visible effect is that this directory exists on disk;
 # nothing in the default build tree references it.

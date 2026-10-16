@@ -11,7 +11,7 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # is -- nothing to compile or override for those.
 #
 # This whole gem only exists in the build when RPGMAKER_BC2CPP is set on a
-# closed-world build (psp/wio/maix, see build_config.rb; docs/adr/0466) -- it is
+# closed-world build (psp/wio/maix/closed, see build_config.rb; docs/adr/0466) -- it is
 # never part of the default build, and never of a desktop build.
 MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   spec.license = 'MIT'

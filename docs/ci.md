@@ -16,11 +16,21 @@ continue to select their backend through SDL's usual configuration.
 
 ## bc2cpp gate
 
-bc2cpp compiles closed-world programs only (ADR 0466), so `bc2cpp-build` builds a closed-world
-target: the `maix` mruby cross library with `RPGMAKER_BC2CPP=1`
-(`scripts/maix/mruby_build.bash`, Kendryte toolchain from PlatformIO as in the `maix` job). The
-four `*-compiled` gems are generated in the closed world and compiled into its `libmruby.a`, and
-the job then runs the type check (`scripts/bc2cpp/type_check.rb`) with that build's host `mrbc`.
+bc2cpp compiles closed-world programs only (ADR 0466), so `bc2cpp-build` builds a closed world:
+`build_config.rb`'s `closed` build (`MRUBY_TARGET=closed`, `scripts/bc2cpp/closed_build.bash`)
+with `RPGMAKER_BC2CPP=1`. It is the maix closed world compiled by the runner's own compiler:
+`single_format_only` (RPG2000/2003 only), maix's gem set (no `mruby-dir`, `mruby-compiler`,
+maix's mruby-io HAL) and maix's host sources as bc2cpp's native input. The four `*-compiled`
+gems are generated in that closed world and compiled into its `libmruby.a`, and the job then
+runs the type check (`scripts/bc2cpp/type_check.rb`) with that build's host `mrbc`.
+
+The build is native because bc2cpp's generated C++ lowers block `break`, non-local `return`
+and `raise` with real C++ throw/catch, which needs mruby's C++-exception mode
+(`MRB_USE_CXX_EXCEPTION`). The `maix` cross library is compiled with `-fno-exceptions` (the
+Kendryte link drops `.eh_frame`, so nothing can unwind on the device), so the generated code
+does not compile there. The job covers generation and compilation of the generated code with
+exceptions; it does not cover the RISC-V cross-compile, which the `maix` job builds without
+bc2cpp. It needs no PlatformIO or cross toolchain.
 The desktop `host` build loads Ruby at runtime and never carries the compiled gems.
 
 The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` (skipped on purpose for

@@ -342,8 +342,9 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # only real caller (rgss_library.rb's Dir.glob patch) and it is already
   # excluded from wio's/maix's own single_format_only gem set below, so unlike the
   # desktop/android history above, there is no live NameError risk to guard
-  # against by keeping it.
-  conf.gem core: 'mruby-dir' unless %w[wio maix].include?(conf.name)
+  # against by keeping it. The native `closed` bc2cpp build (below) leaves it
+  # out too: its gem set is maix's.
+  conf.gem core: 'mruby-dir' unless %w[wio maix closed].include?(conf.name)
   conf.gem core: 'mruby-numeric-ext'
   # Range#cover? lives here, not in core Range. Five call sites in mruby-rpg2k
   # (Game::Shop#equip?, the special-item checks in game.rb / item_menu.rb)
@@ -426,8 +427,8 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # game loading uses precompiled bytecode (the mrbc this same build already
   # produces), so nothing a shipped game runs needs this -- it can go again
   # once the smoke grows past string eval, same as everything else this
-  # slice carries only for the link proof.
-  conf.gem core: 'mruby-compiler' if conf.name == 'maix'
+  # slice carries only for the link proof. `closed` carries maix's gem set.
+  conf.gem core: 'mruby-compiler' if %w[maix closed].include?(conf.name)
 
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
   conf.gem "#{MRUBY_ROOT}/../mruby-marshal"
@@ -448,7 +449,8 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # shape tags, mruby-rpgxp's Dir.glob fallback, mruby-mvjs's JSON/HTML
   # scanning), so nothing left needs it once they're gone. See docs/adr/
   # 0098-rpg2k-single-format-trim.md.
-  single_format_only = %w[psp wio maix].include?(conf.name)
+  # `closed` is the native bc2cpp build of maix's closed world (its stanza below).
+  single_format_only = %w[psp wio maix closed].include?(conf.name)
   # docs/adr/0466: bc2cpp compiles closed-world programs only. RPGMAKER_BC2CPP=1
   # adds the compiled gems to the single-format builds, whose only Ruby is the
   # closed world; every other build (desktop, wasm, android, and the bootstrap
@@ -708,7 +710,9 @@ wio = ENV['MRUBY_TARGET'] == 'wio'
 maix = ENV['MRUBY_TARGET'] == 'maix'
 psp = ENV['MRUBY_TARGET'] == 'psp'
 android = ENV['MRUBY_TARGET'] == 'android'
-cross = emscripten || wio || maix || psp || android
+# Not a device: the maix closed world built natively for bc2cpp (its stanza below).
+closed = ENV['MRUBY_TARGET'] == 'closed'
+cross = emscripten || wio || maix || psp || android || closed
 
 if wio
   # docs/adr/0112: wio's own RAM/flash margin (ADR 107/111) is tight enough
@@ -1260,6 +1264,56 @@ if maix
     # would churn the wio build for no behavioural gain. Added before
     # rpg_maker_gems (which pulls in mruby-io itself) so mruby-io's own
     # "no HAL specified" auto-selection never fires here.
+    conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
+
+    rpg_maker_gems(conf)
+  end
+end
+
+if closed
+  # `closed`: the maix closed world compiled natively, for CI's `bc2cpp-build`
+  # job (scripts/bc2cpp/closed_build.bash, docs/ci.md). bc2cpp compiles
+  # closed-world builds only (docs/adr/0466), and every closed-world device
+  # target is a cross build, so this is the one a plain host compiler can build.
+  #
+  # Why not the maix cross library itself: bc2cpp's generated C++ lowers block
+  # `break`, non-local `return` and `raise` with real C++ throw/catch, which
+  # needs MRB_USE_CXX_EXCEPTION. The maix stanza above compiles with
+  # -fno-exceptions because the Kendryte link drops .eh_frame, so nothing could
+  # unwind on the device; enabling exceptions there would build firmware code
+  # that cannot unwind. Here the host compiler unwinds normally.
+  #
+  # The closed world is maix's: rpg_maker_gems with single_format_only
+  # (RPG2000/2003 only, no mruby-dir, mruby-compiler for the smoke probe, no
+  # mvjs) plus maix's mruby-io HAL, so bc2cpp sees the same gem list, native
+  # sources (tools/bc2cpp/compiled_gems.rb maps `closed` to maix's host
+  # sources) and foreign Ruby. What it checks: the generation of the compiled
+  # gems and the compilation of the generated code, with exceptions. What it
+  # does not: the RISC-V cross-compile and the device's -fno-exceptions
+  # configuration (the `maix` job builds that, without bc2cpp).
+  MRuby::CrossBuild.new('closed') do |conf|
+    toolchain :gcc
+
+    # enable_debug's -O0 stays: this build is compiled to be checked, never run
+    # for speed, and the generated files are large.
+    enable_debug
+    # The C++ exception mode the generated code assumes (load_gems.rb would also
+    # turn it on for the gems' .cxx sources; this says so outright).
+    enable_cxx_exception
+
+    # maix's Ruby-visible settings: bytecode without mrbc's `-g` tables, the
+    # same string cap and heap/khash sizes, C++17.
+    conf.mrbc.compile_options =
+      conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' }.join(' ')
+    [conf.cc, conf.cxx].each do |t|
+      t.defines << 'MRB_STR_LENGTH_MAX=0'
+      t.defines << 'MRB_HEAP_PAGE_SIZE=256'
+      t.defines << 'KHASH_INITIAL_SIZE=16'
+    end
+    conf.cxx.flags << '-std=gnu++17'
+
+    # maix's mruby-io HAL (plain POSIX file calls, ENOSYS for the rest), so the
+    # gem list matches maix's; see the maix stanza.
     conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
     rpg_maker_gems(conf)
