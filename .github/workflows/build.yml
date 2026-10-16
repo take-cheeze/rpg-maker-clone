@@ -1112,6 +1112,10 @@ jobs:
           - name: bc2cpp scan cache
             run: ruby scripts/bc2cpp/scan_cache_check.rb
 
+          # ADR 0465: the whole-program fixed points run under a hard round limit; reaching it is a located error.
+          - name: bc2cpp fixpoint bounds
+            run: ruby scripts/bc2cpp/fixpoint_check.rb
+
           # ADR 0416: the per-process Prism parse memo of the foreign-Ruby name scans (exact bytes per path,
           # one tree shared by every reader); the real-file half skips without 3rd/mruby.
           - name: bc2cpp Ruby parse cache
