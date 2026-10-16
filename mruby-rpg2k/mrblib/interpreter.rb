@@ -979,7 +979,10 @@ module Game
     # instead, so the caller is expected to check first, same as every
     # existing #resumable_index/#start_at call site already does.
     def restore_call_stack(frames)
-      return if frames.nil? || frames.empty?
+      return if frames.nil?
+      raise TypeError, "saved call stack is #{frames.class}, not Array" unless frames.is_a?(Array)
+      return if frames.empty?
+
       innermost = frames.last
       start(innermost[:commands] || [])
       idx = innermost[:current_command]

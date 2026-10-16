@@ -3942,11 +3942,17 @@ module Game
     # restoring one that is not in the party enrols them there.
     def load_state(data)
       @revision += 1
-      @items = data[:items] || {}
+      items = data[:items] || {}
+      raise TypeError, "saved items are #{items.class}, not Hash" unless items.is_a?(Hash)
+
+      @items = items
       # A save written before 使用回数 was modelled carries no tally at all, so
       # every held item simply starts its uses over -- the same answer this
       # runtime gave for the whole of that save's life.
-      @item_usage = data[:item_usage] || {}
+      usage = data[:item_usage] || {}
+      raise TypeError, "saved item usage is #{usage.class}, not Hash" unless usage.is_a?(Hash)
+
+      @item_usage = usage
       @gold = data[:gold] || 0
       exp = data[:exp] || {}
       hp = data[:hp] || {}
