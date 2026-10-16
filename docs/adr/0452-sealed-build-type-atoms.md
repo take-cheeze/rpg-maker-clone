@@ -245,3 +245,13 @@ produce the value. That is a design change, not a tweak, and it is the next step
 "may-contain these container keys" component beside `TOP`, joined and propagated through the same rules, and a check
 that each opaque source (unknown sends, `GETGV`, ROM reads) either contributes a finite key set or stays `TOP` for every
 container.
+
+## String#bytes element type (spike, measured)
+
+`scratchpad/sealed-repro/receiver_bytes.rb` types the elements of a `String#bytes` result as `Integer`, taking the
+signature from the compiler's own `sig/native/core_results.rbs` (`def bytes: () -> Array[Integer]`). Only three
+`bytes` sites exist in the dump, and none of them feeds the memory cycle: the ROM buffer's receiver is a `TOP`
+value from `zip_extract`, and `File.binread(...).bytes` is typed only where the receiver is a known `String`. The sound
+count is unchanged: `TOP` ivars 64 of 197.
+
+The next step is the provenance lattice described above. It is a design change, not a tweak, and I have not built it.
