@@ -1,0 +1,1 @@
+- **bc2cpp** hints are judged at run time only. A runtime-checked declaration (`%a{bc2cpp:hint}` in `sig/bc2cpp/declarations.rbs`) or a forced strict hint no longer fails the build for being unlisted in the Ruby review lists; a wrong value raises `BC2cppHintViolation` when it runs. See ADR 0455.
