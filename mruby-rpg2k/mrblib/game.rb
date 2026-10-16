@@ -3908,7 +3908,15 @@ module Game
       @db = db
       @roster = Actors.new(db)
       ids ||= db[:system][:party] || []
-      @actors = ids.reject { |i| i.nil? || i <= 0 }.map { |i| @roster[i] }.compact
+      # Built by `<<` into a literal so @actors is provably an Array (bc2cpp's class pools): the result of a
+      # `map` on an untyped receiver has no class the compiler can name.
+      @actors = []
+      ids.each do |i|
+        next if i.nil? || i <= 0
+
+        a = @roster[i]
+        @actors << a if a
+      end
       @items = {}  # item id => count
       # 使用回数 bookkeeping: item id => how many uses the *current* copy has
       # already spent (see #consume_item_use). One tally per id, not per copy,
@@ -4024,7 +4032,9 @@ module Game
     # changed. This unconditional-refresh behavior is NOT independently
     # confirmed against genuine RPG_RT under wine.
     def reorder(new_order)
-      @actors = new_order.map { |i| @actors[i] }
+      old = @actors
+      @actors = []
+      new_order.each { |i| @actors << old[i] }
       @revision += 1
       @leader_graphic_dirty = true
     end
