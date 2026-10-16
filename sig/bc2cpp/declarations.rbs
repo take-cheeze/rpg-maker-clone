@@ -1116,3 +1116,32 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def patch_anim_cells: (untyped, untyped) -> Array
 end
+# ---- profile-derived return types (third round): unknowns the real-run traces (New Game, map/menu, save/load) show with one class.
+# Parameters stay untyped (a parameter type would make every caller owe a proof, TC1013).
+class Game::Interpreter
+  def take_battle_animation_request: () -> nil
+  def take_movie_request: () -> nil
+  def take_tileset_request: () -> nil
+  def update: () -> nil
+  def compare: (untyped, untyped, untyped) -> bool
+  def actor_condition: (untyped) -> bool
+  def step_cost: (untyped) -> Integer
+  def skip_to: (untyped, untyped) -> nil
+end
+class Game::State
+end
+class RPG2k::Scene::Map
+  def draw_timer: () -> nil
+  def draw_weather: () -> nil
+  def draw_player_frame: () -> nil
+  def render: () -> nil
+  def update_screen_overlay: () -> nil
+  def update_sprite_flashes: () -> nil
+  def watch_bgm_loop: () -> nil
+  def step_parallels: () -> nil
+  def animate_events: () -> nil
+  def event_sliding?: (untyped) -> bool
+  def tile_cache_valid?: (untyped, untyped, untyped, untyped) -> bool
+  def set_map_layers_visible: (untyped) -> bool
+  def store_event_draw_sig: (untyped, untyped, untyped) -> bool
+end
