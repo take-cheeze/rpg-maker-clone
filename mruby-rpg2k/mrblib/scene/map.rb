@@ -11123,6 +11123,9 @@ class RPG2k
         # by an erase, so relying on emptiness here would be wrong too).
         pics.keys.sort.each do |id|
           p = pics[id]
+          # Checked before `#shown?`: a missing entry (nil) is a TypeError naming the id, not a NoMethodError on
+          # `shown?`. Also the checked fact for `draw_picture(Game::Picture, ...)` (IS_A_GUARD, ADR 0456).
+          raise TypeError, "picture #{id} is #{p.class}, not Game::Picture" unless p.is_a?(Game::Picture)
           draw_picture p, cam_x, cam_y if p.shown?
         end
       end

@@ -305,6 +305,94 @@ Their cases, for a fixture build:
   `attr_reader :h`; a computed `instance_variable_get`; a HASH literal passed to a call before the store; the
   method reassigning the captured parameter; a nested block SETUPVAR of it.
 
+### Proving more parameters (fourth step): checked runtime guards (IS_A_GUARD)
+
+The third step left two spots where no static fact gives the argument's class: `Game::Interpreter#update`'s
+`cmd = @list[@index]; execute cmd` (about 60 errors follow from it through the `do_*` methods) and
+`Scene::Map#draw_pictures`' `p = pics[id]; draw_picture p, ...` (and `toned?` / `toned_picture_src`). Both now
+check the value at run time, and the checker narrows on the check.
+
+**Engine.** Each spot raises a TypeError naming the bad entry before the call. Valid data behaves as before.
+* `interpreter.rb`: `raise TypeError, "event command #{@index - 1} is #{cmd.class}, not LCF::EventCommand"
+  unless cmd.is_a?(LCF::EventCommand)`, between `@index += 1` and `execute cmd`. It is the only path to the call.
+* `scene/map.rb`: `raise TypeError, "picture #{id} is #{p.class}, not Game::Picture" unless
+  p.is_a?(Game::Picture)`, before `draw_picture p, cam_x, cam_y if p.shown?`. A nil entry used to raise
+  NoMethodError on `shown?`; it now raises this TypeError.
+
+**Rule (NIL_NARROWING, `nil_narrowing.rb`).** The state also holds class facts, pairs `[register, K]`. They are
+dropped, copied by MOVE and met exactly like the non-nil facts. Two edges are new:
+* the truthy edge of `JMPIF t` (its jump) or `JMPNOT t` (its fall-through) adds `[b, K]` and b's non-nil fact,
+  when all of these hold:
+  * the instruction before the test is `SEND t :is_a? n=1` (or `:kind_of?`);
+  * that SEND is the test's only predecessor, handler edges included, and its edge into the test is not a
+    handler edge. So t is that call's own result;
+  * the receiver t was copied from b (`copy_source`, as for a call nil cannot answer), and neither the SEND nor
+    the test may write b;
+  * `CodeGen#is_a_guard_class` names K for that SEND (below).
+
+  `raise ... unless x.is_a?(K)` is `JMPIF` over the raise, and `if x.is_a?(K)` is `JMPNOT` into the else arm.
+* the normal edge out of a `raise` SSEND proves everything (no value takes it), when `CodeGen#raise_never_returns?`
+  holds: Kernel's native raise (kernel.c `mrb_f_raise`, which ends in `mrb_exc_raise` whatever it is given) is
+  the only definition (`class_test_name_safe?('raise')`). mrbc lays the raise's fall-through into the guarded
+  code, so without this the join after the guard would drop the fact. This is CLASS_NARROWING's
+  `class_narrowing_noreturn_call?` rule.
+
+Exception edges add nothing, a JMPUW edge proves nothing, and an op `may_write?` cannot model drops the fact. These
+are the existing edge rules.
+
+**`CodeGen#is_a_guard_class`.** It answers K only when a true answer makes the receiver an instance of exactly K:
+* `class_test_name_safe?` holds for the name (CLASS_NARROWING's audited test). There is no Ruby, foreign Ruby or
+  computed definition, alias or undef of `is_a?` / `kind_of?` anywhere, and its native registrations are Kernel's
+  alone. No declared, dynamic or foreign subclass of BasicObject exists, so no receiver lacks Kernel's method and
+  method_missing never sees the call. Every receiver then runs `mrb_obj_is_kind_of`, which is true exactly when K
+  is in the receiver's class chain. A singleton class or an extended module cannot add a class to it.
+* the argument is a straight-line `GETCONST` / `GETMCNST` chain that no branch bypasses
+  (`straight_line_constant_name`), spelling `K` or `Root::K`. `ClosedWorld#is_a_guard_constant?` must prove that
+  the spelling names exactly the declared class K wherever it is evaluated:
+  * the root is bound once. The closed world declares exactly one class or module of that simple name, at top
+    level. No bytecode SETCONST writes the name, and there is no dynamic constant mutation. No foreign Ruby
+    source spells it. No native binds it except by a top-level `mrb_define_class` / `mrb_define_module`, which
+    reopens that same constant. A nested define, const_set, const_remove, global or class const, or a binder whose
+    name is not spelled out refuses. GETCONST then finds that one binding from any scope, so const_missing is
+    never asked;
+  * `Root::K` is found in Root's own constant table, where its declaration put it, before any ancestor or Object;
+  * K is a declared class that is not opaque (not rebound, not dynamically subclassed, no outside file
+    reopening it). It has no declared, unresolved (`wild`) or foreign Ruby subclass, and no SETCONST of its
+    simple name.
+
+  The constant tables of the code generator (ConstructClassNames, StableClassConstants) are built after this check
+  runs, so it does not use `constant_object_owner`. It uses its own stricter rule instead.
+
+**Use (`rbs_param_check.rb`).** `trace` first asks `NilNarrowing.instance_of?(irep, idx, reg, C)`. When every path
+to the call site proves the argument an instance of exactly C, and nothing in `superclass_of` inherits from C (the
+`self` rule's check), the argument is proven. The declared class is an exact-class fact: `Klass.new` must be
+exactly C, and `self` needs a class nothing inherits from. So a K strictly below C is not accepted, and K must be
+C. Since K has no subclass, "an instance of K" is "exactly a K".
+
+**Soundness.** At the call, the argument register holds the value that a completed, true `is_a?(K)` was sent to.
+No write to the register or its copies happened on any path in between. The test ran Kernel's
+`mrb_obj_is_kind_of` against the one class object K's spelling can denote. That class has no subclass, so the
+value's class is K.
+
+**Checks.** The host part of `scripts/bc2cpp/join_dominance_check.rb` (no mrbc) holds the IS_A_GUARD cases. They run
+on a real ClosedWorld and CodeGen; only the native registration scan is stubbed:
+* `raise ... unless x.is_a?(K)` proves the argument copy at the call and the local after the guard;
+* `if x.is_a?(K)` proves the taken arm;
+* negatives:
+  * before the test;
+  * a guard on another register;
+  * a program defining `is_a?` in Ruby;
+  * a K that is a call result, not a constant;
+  * a K with a subclass;
+  * a Ruby `raise` (it may return);
+  * after the `if`'s join;
+  * a test that another edge also reaches.
+
+**Expected.** The `execute` error at interpreter.rb:724 and the `draw_picture` error at map.rb:11126 are proven. The
+errors that only followed from those parameters then clear: the `do_*` methods, `play_audio`, `range`,
+`operand_value`, `stat_targets`, `picture_coord`, `picture_name`, `eval_condition`, `toned?` and
+`toned_picture_src`.
+
 ## Consequences
 
 The measurement is the shipped wio pass, against master f256da4f. Comment lines are excluded.
