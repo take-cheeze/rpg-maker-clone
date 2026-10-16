@@ -45,8 +45,15 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   # libgles2-mesa-dev / libegl1-mesa-dev on apt and by the `libglvnd` (headers +
   # dispatch) buildInput in flake.nix. (mvgl used OSMesa until Mesa dropped that
   # frontend; EGL surfaceless is its supported replacement.)
+  #
+  # The script-driven embedded ports (scripts/wio, scripts/maix, the psp
+  # pipeline) run this rake only to build mrbc plus their cross lib: no CMake
+  # project builds Effekseer under PROJECT_BUILD_DIR for them, and their host
+  # sub-build never renders. They are excluded by target, like emscripten, not
+  # by whether the machine's compiler happens to see EGL headers (CI's
+  # bc2cpp-build job builds maix inside the nix dev shell, which has them).
   have_egl = false
-  if ENV["MRUBY_TARGET"] != "emscripten"
+  unless %w[emscripten wio maix psp].include?(ENV["MRUBY_TARGET"])
     have_egl =
       begin
         system("echo '#include <EGL/egl.h>' | #{cc.command} -E -x c - " \
