@@ -452,10 +452,20 @@ if $PROGRAM_NAME == __FILE__
                     end
   # RBS_CHECKED_PARAMS (docs/adr/0456): a class parameter type is kept only when every caller is proven to pass it.
   if sig_applied
-    param_outside = (outside_world_tokens(native_paths + foreign_ruby_srcs) if native_paths && foreign_ruby_srcs)
+    param_outside = if native_paths && foreign_ruby_srcs
+                      RbsParamCheck.outside_call_names(native_paths, foreign_ruby_srcs, ireps.values.to_set(&:file))
+                    end
+    # The `new` / `super` sites of each initialize (CONSTRUCTOR_POOLS, ADR 0313), from a CodeGen built only that far.
+    param_constructors = if closed_world
+                           CodeGen.new(ireps, registry, {}, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new,
+                                       foreign_methods, (outside_world_tokens(native_paths + foreign_ruby_srcs) if param_outside),
+                                       native_name_sources, included_modules, prepended_modules, unknown_mixins,
+                                       analysis_only: :constructor_sites, closed_world: closed_world,
+                                       outside_ivar_names: (outside_ivar_names(native_paths + foreign_ruby_srcs) if param_outside))
+                         end
     param_diags, = RbsParamCheck.check(sig_loaded, ireps, registry, sig_class_annotations,
                                        comment_class_args: sig_comment_class_args, call_sites: call_sites,
-                                       outside_tokens: param_outside,
+                                       outside_names: param_outside, constructor_entries: param_constructors,
                                        superclass_of: superclass_of, display_root: sig_root, applied: sig_applied)
     sig_applied.diagnostics.concat(param_diags)
     param_diags.each { |d| warn "  #{d.file}:#{d.line}:#{d.col}: #{d.severity}: #{d.message} [#{d.code}]" }

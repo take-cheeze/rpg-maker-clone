@@ -53,7 +53,7 @@ parameter that reached ClassAnnotations from a signature (a `# bc2cpp:` comment 
 here) is either verified or removed. Removal covers the ClassAnnotations seed and its IR argument contract.
 
 * Refused, TC1014 at the signature:
-  * a POLY name, including every `initialize`;
+  * a POLY name, including every `initialize` (superseded by "Proving more parameters" below);
   * a name in DynamicNames.universe (a computed send, ADR 0279);
   * a name an outside-world (native or foreign Ruby) source spells;
   * a packed (`f(*a)`, `f(*a, &b)`) or keyword caller.
@@ -94,6 +94,80 @@ TC1013 and TC1014 are new codes. The record-types branch (ADR 0454) owns TC1009.
   * `Scene::Battle@map`;
   * `MapWorld` / `VehicleWorld` `@scene` / `@rng`.
 
+### Proving more parameters (RBS_CHECKED_PARAMS, second step)
+
+The first step refused every `initialize`, every POLY name and every name an outside source spells, and accepted
+only four kinds of writer. The checker now proves more, by these rules (`rbs_param_check.rb`):
+
+* **`initialize` through its constructor entries.** An initialize is entered by `Klass.new` and by `super`, not by a
+  SEND of its name. CONSTRUCTOR_POOLS (ADR 0313) already enumerates those entries in the closed world and refuses a
+  body anything else may enter: an unresolved `new` its arity admits, a Symbol, String, alias or `send` naming `new`
+  or `initialize`, a Ruby `new` or `allocate`, a mixin on Class, a class an outside source spells, a bare `super`, a
+  splat or short keyword `new`. A CodeGen built with `analysis_only: :constructor_sites` answers
+  `constructor_entry_sites`. Each entry is checked like a call site (argument k is register receiver + k); a
+  refused body is TC1014 naming the pool's reason. Only mandatory positions are entry facts, so a declaration on an
+  optional position is refused. A `new` whose receiver traces to one class whose initialize is another body is not
+  an entry of this one (the pool keys constants by their last segment).
+* **POLY names.** A definition is checked against every call site of its name whose argument count it can take.
+  A site of another count raises ArgumentError before any body that cannot take it runs, so it cannot reach this
+  one. Every other site may reach it and must pass its declaration, which is what each definition's own check
+  requires. No receiver class is assumed.
+* **Names an outside source can call.** The token scan is replaced by the names outside code can call a method by:
+  in a native source with comments dropped, every string literal, every MRB_SYM-family token and the hooks the VM
+  calls implicitly (ClosedWorld::IMPLICIT_HOOKS); in a foreign Ruby source the closed world does not compile, every
+  code token and every string or symbol whose whole content is a name (Prism lexer; comments and prose strings are
+  not names; a source Prism cannot lex is read bluntly). A C identifier that shares the name is no call: a native
+  reaches a Ruby method only through a Symbol.
+* **Operators and aliases are refused.** An operator (`[]=`, `+`, ...) is called by VM instructions (SETIDX, ADD, ...)
+  and natives that the call-site index does not list. Both names of a keyword `alias` are refused (`alias_method`
+  spells Symbols, which DynamicNames already refuses).
+* **Exception edges.** The reaching definitions include handler edges (`through_handlers`), so an argument read
+  inside a `begin`/`rescue` range is traced on every path, normal or handler. A query that runs out of states is
+  retried once with sixteen times the bound; the bound limits work, never the answer.
+* **Ivars (GETIV).** `@x` read in a method of class K (blocks included) is `C` when every SETIV that can write the
+  slot stores a value proven `C`, and no read can see it unassigned. NUMERIC_IVAR_PROOF's group (ADR 0276) holds
+  every SETIV of the name in K's class family and fails when anything else may write it (an outside source spelling
+  it, a Symbol or String naming it, a self-rebinding block, an attr_writer, a wild family, reflection).
+  INIT_ASSIGNED (`numeric_ivar_assured?`, ADR 0261) proves that every constructor of K and its descendants assigns
+  it before it is read, `self` escapes or the frame exits, and that nothing calls `allocate`. A store in a method of
+  a class W is kept only when W is K, an ancestor or a descendant of K: in a tree of classes no other object is an
+  instance of both. A store in a module's method is always kept. A store that reads the slot back is assumed `C`
+  while it is being proven (induction over the stores executed); an answer reached under such an assumption is not
+  cached.
+* **attr_reader calls.** A call whose every definition is either a declared `-> C` or an attr_reader is `C` when the
+  ivar rule proves each reader's slot `C` for the reader's class.
+* The diagnostic now says why a reaching-definitions query failed, and a parameter of a method with no signature
+  is no longer called a block parameter.
+
+**Direct construction of an inherited initialize (INHERITED_DIRECT_CONSTRUCT, `codegen_send.rb`).** The direct
+construct arm (`bc2cpp_direct_alloc` + `<Owner>_initialize_impl`) required the class's own initialize. It now takes
+the initialize the superclass chain resolves to (`direct_construct_init_def`) when every class the lookup passes is
+a declared class with no unresolved mixin, no included module defining initialize, nothing prepended
+(`numeric_init_definition`), no outside source spelling it, and no unregistered DEF installs an initialize. The
+other conditions of the arm are unchanged (stable constant, standard constructor lookup, no singleton `new` or
+`allocate` on the chain, the arity check, a clean compile), as is the class-identity guard of an unstable constant.
+A chain that reaches Object without a Ruby initialize, and a native initialize, keep `mrb_obj_new`: a native body
+reads its arguments from a VM frame and cannot be called bare, and which native initialize Object resolves to is not
+a fact the closed world records. This is a closed-world arm only.
+
+**Declarations.** `Game::Interpreter#do_change_exp`, `do_change_level`, `do_change_hp`, `do_change_mp`,
+`do_full_heal`, `do_simulated_attack`, `do_change_condition`, `do_change_class`, `do_change_battle_commands`,
+`do_change_params`, `do_change_skills` and `do_change_equipment` declare `(LCF::EventCommand cmd)`: each is fed
+`#execute`'s `cmd`, and their `#stat_targets(cmd)` calls trace to it.
+
+**Still unproven (errors, not holes).**
+* `LCF::Array2D#[]=(Integer, LCF::Array1D)`: an operator, called by every SETIDX; its body accepts nil, a String
+  and any Array1D, so the declaration is narrower than the method's own contract.
+* `Scene::SaveLoad#initialize` position 2 `Game::State`: `Scene::Title` (title.rb:183) and `Scene::Map` (map.rb:4746)
+  pass `nil`. The declaration is false.
+* `Game::Interpreter#execute`: `cmd = @list[@index]` needs an element proof of `@list`, which no checked fact gives
+  before ClassLayout; the `do_*` methods it feeds follow.
+* `Game::State#vehicle` is `@vehicles[type]`, a Hash read that answers nil for a key it lacks, so it cannot be
+  declared `-> Game::Vehicle` and pass DECLARED_RETURN_CHECK.
+* `Game::Party#promote_to_leader`: the argument is `Enumerable#find`'s result, nil when nothing matches.
+* Readers of `RPG2k@db` and `Scene::Map@rng`: INIT_ASSIGNED does not prove that every constructor assigns the slot
+  before `self` escapes.
+
 ## Consequences
 
 The measurement is the shipped wio pass, against master f256da4f. Comment lines are excluded.
@@ -116,7 +190,8 @@ The measurement is the shipped wio pass, against master f256da4f. Comment lines 
   battle_encounter_lines. The second is a new forced site, audited and listed.
 * Where a declaration could not be proven, the system no longer depends on an unchecked claim. A wrong
   parameter class is now a build error at the caller, not a strict-hint abort at run time.
-* Follow-ups that would let more declarations pass:
+* Follow-ups that would let more declarations pass (the first three are done, see "Proving more parameters"):
   * constructor-site checking for `initialize` (the allocated class of each `.new`);
   * arity-disambiguated POLY names (`execute` has 1 and 3 parameters);
-  * accepting ivars whose every writer is checked.
+  * accepting ivars whose every writer is checked;
+  * element proofs (`@list[@index]`) and nil narrowing (`return unless state`) before ClassLayout.

@@ -1000,15 +1000,115 @@ else
     out, _e, st = param_run.call('[1].each { |x| u.pc_relay(x) }')
     check.call('a block argument is unproven', st.exitstatus == 1 && out.include?('R1 is a block parameter or upvar'))
     out, _e, st = param_run.call('', "class PcB\n  def pc_measure(o)\n    o\n  end\nend\n")
-    check.call('a POLY name refuses the declaration (TC1014 at the signature)', st.exitstatus == 1 &&
-               out.include?('sig/param.rbs:2:3: error: PcUse#pc_measure: parameter type(s) 1 (PcA) refused, ' \
-                            'not trusted: pc_measure has 2 definitions (POLY)'))
+    check.call("a POLY name is checked at every site its arity admits (exit #{st.exitstatus})",
+               st.success? && !out.include?('TC101'))
+    out, _e, st = param_run.call('PcB.new.pc_measure(PcB.new)', "class PcB\n  def pc_measure(o)\n    o\n  end\nend\n")
+    check.call('a POLY site that may reach the declared body must pass it (TC1013)', st.exitstatus == 1 &&
+               out.include?('PcUse#pc_measure parameter 1: argument not proven PcA (`new` of PcB)'))
+    out, _e, st = param_run.call('PcB.new.pc_measure(PcB.new, 1)', "class PcB\n  def pc_measure(o, n)\n    o\n  end\nend\n")
+    check.call("a POLY site of an arity the declared body cannot take is not its caller (exit #{st.exitstatus})",
+               st.success? && !out.include?('TC101'))
     out, _e, st = param_run.call("pa = [PcA.new]\n    u.pc_measure(*pa)")
     check.call('a splat caller refuses the declaration', st.exitstatus == 1 &&
                out.include?('refused, not trusted: a packed (splat) or keyword caller at param.rb:34'))
     out, _e, st = param_run.call("blk = proc {}\n    pa = [PcA.new]\n    u.pc_measure(*pa, &blk)")
     check.call('a block-pass splat caller refuses the declaration', st.exitstatus == 1 &&
                out.include?('a packed (splat) or keyword caller at param.rb:35'))
+
+    puts '== constructor, ivar, reader and handler proofs of class parameters (ADR 0456)'
+    ctor_src = <<~RUBY
+      class CkA
+        def ck_size
+          1
+        end
+      end
+
+      class CkB
+        def ck_size
+          2
+        end
+      end
+
+      class CkBase
+        def initialize(a)
+          @a = a
+        end
+      end
+
+      class CkSub < CkBase
+      end
+
+      class CkHolder
+        attr_reader :held
+
+        def initialize
+          @held = CkA.new
+        end
+
+        def ck_use(o)
+          o.ck_size
+        end
+
+        def ck_ivar
+          ck_use(@held)
+        end
+
+        def ck_guarded
+          begin
+            ck_use(CkA.new)
+          rescue StandardError
+            nil
+          end
+        end
+      end
+
+      class CkMain
+        def go
+          CkBase.new(CkA.new)
+          CkSub.new(CkA.new)
+          h = CkHolder.new
+          h.ck_ivar
+          h.ck_guarded
+          h.ck_use(h.held)
+          # EXTRA
+        end
+      end
+    RUBY
+    ctor_sig = "class CkBase\n  def initialize: (CkA a) -> void\nend\n" \
+               "class CkHolder\n  def ck_use: (CkA o) -> untyped\nend\n"
+    File.write(File.join(dir, 'sig/ctor.rbs'), ctor_sig)
+    ctor_run = lambda do |extra, more = ''|
+      File.write(File.join(dir, 'ctor.rb'), ctor_src.sub('# EXTRA', extra) + more)
+      type_check.call(dir, '--files', 'ctor.rb', '--sig', 'sig/ctor.rbs', '--no-sends', '-q')
+    end
+    out, _e, st = ctor_run.call('')
+    check.call("`new` of the class and of a subclass inheriting its initialize, an ivar every store proves, an " \
+               "attr_reader of it and a call in a rescue range prove every site (exit #{st.exitstatus})",
+               st.success? && !out.include?('TC101'))
+    out, _e, st = ctor_run.call('CkSub.new(CkB.new)')
+    check.call('a subclass `new` passing another class is TC1013 at its line', st.exitstatus == 1 &&
+               out.include?('CkBase#initialize parameter 1: argument not proven CkA (`new` of CkB)'))
+    out, _e, st = ctor_run.call('CkBase.send(:new, CkB.new)')
+    check.call('a computed `new` refuses the initialize declaration (TC1014)', st.exitstatus == 1 &&
+               out.include?('CkBase#initialize: parameter type(s) 1 (CkA) refused') &&
+               out.include?('CONSTRUCTOR_POOLS'))
+    out, _e, st = ctor_run.call('', "class CkHolder\n  def reset\n    @held = CkB.new\n  end\nend\n")
+    check.call('a second store of another class withdraws the ivar proof', st.exitstatus == 1 &&
+               out.include?('CkHolder#ck_use parameter 1: argument not proven CkA (@held = (`new` of CkB)'))
+    out, _e, st = ctor_run.call('', "class CkHolder\n  def initialize\n    ck_use(@held)\n    @held = CkA.new\n  end\nend\n")
+    check.call('a read before the constructor assigns the slot is unproven', st.exitstatus == 1 &&
+               out.include?('may be read before a constructor of CkHolder assigns it'))
+    out, _e, st = ctor_run.call('', "class CkHolder\n  alias ck_alias ck_use\nend\n")
+    check.call('an aliased name refuses the declaration', st.exitstatus == 1 &&
+               out.include?('ck_use is named by an `alias`'))
+    File.write(File.join(dir, 'sig/ctor_op.rbs'), "class CkHolder\n  def +: (CkA o) -> untyped\nend\n")
+    File.write(File.join(dir, 'ctor.rb'), ctor_src + "class CkHolder\n  def +(o)\n    o\n  end\nend\n")
+    out, _e, st = type_check.call(dir, '--files', 'ctor.rb', '--sig', 'sig/ctor_op.rbs', '--no-sends', '-q')
+    check.call('an operator name refuses the declaration (OP_ADD calls it without a SEND)', st.exitstatus == 1 &&
+               out.include?('+ is an operator'))
+    ctor_code = gen.call(ctor_src, File.join(dir, 'sig/ctor.rbs'))
+    check.call('`CkSub.new` calls the inherited initialize directly (INHERITED_DIRECT_CONSTRUCT)',
+               ctor_code.include?('CkBase_initialize_impl(M, ') && ctor_code.include?('(inherited from CkBase'))
 
     puts '== the comment wins over a signature'
     File.write(File.join(dir, 'both.rb'), commented)

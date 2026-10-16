@@ -237,6 +237,10 @@ class CodeGen
     # and otherwise falls back to the `#error`-free BLOCK_FALLBACK, so
     # compiles_clean? answers are unchanged.
     @array_return_names = Set.new
+    # RBS_CHECKED_PARAMS (ADR 0456): `analysis_only == :constructor_sites` builds just the tables
+    # constructor_pool_candidates reads (CONSTRUCTOR_POOLS, ADR 0313); none of them is a layout or a proof table.
+    return if analysis_only == :constructor_sites
+
     # ARRAY_RETURN_IVAR_HINT: `analysis_only` builds just enough to answer
     # array_return_names so the driver can feed it into a second ClassLayout pass
     # (see the driver's stratification comment). Exact, not approximate:

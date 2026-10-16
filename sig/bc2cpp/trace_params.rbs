@@ -83,6 +83,19 @@ module Game
     def do_shake_screen: (LCF::EventCommand cmd) -> (Integer | TrueClass | nil)
     def do_flash_sprite: (LCF::EventCommand cmd) -> (TrueClass | nil)
     def do_show_battle_animation: (LCF::EventCommand cmd) -> TrueClass
+    # Fed #execute's `cmd` (ADR 0456): declared so #stat_targets' argument traces to a checked parameter.
+    def do_change_exp: (LCF::EventCommand cmd) -> untyped
+    def do_change_level: (LCF::EventCommand cmd) -> untyped
+    def do_change_hp: (LCF::EventCommand cmd) -> untyped
+    def do_change_mp: (LCF::EventCommand cmd) -> untyped
+    def do_full_heal: (LCF::EventCommand cmd) -> untyped
+    def do_simulated_attack: (LCF::EventCommand cmd) -> untyped
+    def do_change_condition: (LCF::EventCommand cmd) -> untyped
+    def do_change_class: (LCF::EventCommand cmd) -> untyped
+    def do_change_battle_commands: (LCF::EventCommand cmd) -> untyped
+    def do_change_params: (LCF::EventCommand cmd) -> untyped
+    def do_change_skills: (LCF::EventCommand cmd) -> untyped
+    def do_change_equipment: (LCF::EventCommand cmd) -> untyped
     # Unchecked (ADR 0455): a database-row read or `+ 1`; Integer, but no Fixnum proof.
     %a{bc2cpp:hint}
     def teleport_transition: (untyped slot) -> Integer
