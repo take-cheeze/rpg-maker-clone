@@ -5626,6 +5626,7 @@ module Game
     # from some other `db_skill` call with no menu behind it.
     def field_skills(caster, _state = nil)
       return [] unless caster
+      raise TypeError, "skill caster is #{caster.class}, not Game::Actor" unless caster.is_a?(Game::Actor)
       caster.skills.select do |sid|
         sk = db_skill(sid)
         if sk.nil?
