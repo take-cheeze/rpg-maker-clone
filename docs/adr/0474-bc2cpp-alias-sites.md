@@ -52,9 +52,9 @@ refuses (`RUBY_DYNAMIC`).
      answers `old` first.
    - In every other case (a native, core Ruby, inherited, attr_* or installer `old`), `new` is a definition
      with no body the compiler knows (`irep: nil`), dispatched by name like a Struct member. Its visibility is
-     mruby's private-by-name rule. A direct native call through the owner-call mechanism (ADR 0468) is not
-     on master, so a call to such an alias stays a send. The name is now a known method of that class instead
-     of one installed at run time.
+     mruby's private-by-name rule. The name is now a known method of that class instead of one installed at
+     run time, so a call to it can be an owner call (ADR 0468): a lookup on the proven owner instead of a
+     by-name dispatch.
 
    `AliasSites.settle`, run by `bc2cpp.rb` after `DefineMethodSites.settle`, keeps the definitions only in a
    closed world.

@@ -1031,10 +1031,13 @@ jobs:
           ruby scripts/bc2cpp/constructor_overloads_check.rb
 
       # ALIAS_SITES (ADR 0474): a class-body alias with literal names is a definition of the new name; a
-      # method-body one stays dynamic. Fixtures plus runs on the core-only build-bc2cpp/mruby/host/mrbc
-      # library, interpreted against compiled (seconds).
+      # method-body one stays dynamic. Fixtures plus interpreted-vs-compiled runs on the full-core libmruby the
+      # define_method check built into BC2CPP_FULL_BUILD_DIR.
       - name: alias_method check
-        run: MRBC=build-bc2cpp/mruby/host/mrbc/bin/mrbc ruby scripts/bc2cpp/alias_method_check.rb
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          env -u LD MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby scripts/bc2cpp/alias_method_check.rb
 
 
 
