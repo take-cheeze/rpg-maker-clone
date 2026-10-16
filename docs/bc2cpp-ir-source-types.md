@@ -21,6 +21,6 @@ The measured engine report resolves 1,654 previously unknown IR observations
 (unknown: 12,250 to 10,596), with the original signatures held fixed. These
 are repeated register queries, not newly typed declarations; the overall typed
 return count stays at 891 because older return analysis already covers them.
-The existing `sig/bc2cpp/trace_params.rbs` now replaces 27 `untyped` returns
+The existing trace-derived section of `sig/bc2cpp/declarations.rbs` now replaces 27 `untyped` returns
 with independently inferred bounds. Parameter contracts are retained; generic
 container elements remain `untyped` and constructor returns remain unchanged.
