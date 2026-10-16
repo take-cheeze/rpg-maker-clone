@@ -431,3 +431,32 @@ bound-store writes, plus 1,210 array-literal elements. The memory reads that fee
 `peek_ram`, `fetch` and `peek16` have `TOP` returns, and `read_write` and several device peeks have unknown parts. This
 is one cycle (`ram` ↔ `data` ↔ `fetch`/`peek16`), and this round did not find its entry point. The same blocked cycle is
 what keeps `CPU#_pc` unknown.
+
+## Method objects as `[:Meth, names, bound, labels]` (spike, measured)
+
+`scratchpad/sealed-repro/meth5.rb` gives a `method(:x)` value its own labels and bound containers, instead of a name:
+
+- `names`: the method names (unchanged, so the mutator rules still read them).
+- `bound`: the receiver's allocation keys (empty for a non-container receiver).
+- `labels`: the methods the receiver's dispatch reaches for that name, from `targets`.
+
+A `call` through such a value joins the returns of its labels, and is `TOP` when a name has no label (a native, such as
+`[]=`). A store through a bound value touches only its bound keys, not every method's containers. Parameter flow for
+the call goes to the labels, not to every method of that name.
+
+Other changes in the same spike:
+
+- `drop` is removed from the mutators (it returns a new array).
+- `clear`, `fill(v)` and `replace(x)` on a typed container now have their contents modeled, instead of becoming `TOP`
+  for good.
+- A store (`<<`, `[]=`, `push`, …) into an unknown container joins its value into every container, instead of clearing them.
+- `Hash#each_value` yields the hash's stored values to its block.
+
+Measured: the run converges (11 rounds), and the consumer-level unknowns stay at 69 of 197. `_pc`, `data`, `fixed` and
+`freq` are still unknown.
+
+The remaining blocker is one self-sustaining `TOP`. `uniq!` (`ppu.rb:219`) runs on a block parameter from
+`entries.each_value`. In an early round that parameter is `TOP`, the call clears every container (sticky), and the
+hash's values then stay `TOP`, so the parameter stays `TOP`. Mutation as currently modeled is not monotone across rounds.
+The next step is to make the sticky clear depend only on the final receiver fact (no clear from a receiver that was
+`TOP` only before the first typed round), and then rerun.
