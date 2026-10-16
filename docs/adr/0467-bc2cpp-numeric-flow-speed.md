@@ -66,3 +66,32 @@ Measured:
 Not done, and left for later: the flow still copies the whole state per visited instruction, and bignum class masks
 still allocate on every union. Sharing unchanged edge states, and a nil-free fast path in the join, were measured at
 about 7% fewer allocations and no clear time win, so they were left out.
+
+## Follow-up: the bytecode facts live on BytecodeIR::Program
+
+Date: 2026-10-16
+
+`NumericFlow::Plan` was a second per-irep cache next to `BytecodeIR.for`. Its analysis-independent part has moved
+onto `BytecodeIR::Program` (BYTECODE_IR_FACTS), each built lazily on first use and kept frozen:
+
+* `Program#successor_lists`: each instruction's normal-flow successors. The Program's edges already carry OP_ENTER's
+  jumps into its optional-argument JMP table, so `NumericFlow.enter_edges` merged nothing new; it is gone.
+* `Program#raise_targets` (instruction index => the distinct handler targets it may raise into, in handler order) and
+  `Program#rescue_only_targets` (rescue targets no ensure shares), both from `Program#handler_edges`.
+* `Program#decoded` and `BytecodeIR.decode`: per instruction its op, conditional-branch kind (`COND_IF`, `COND_NOT`,
+  `COND_NIL`), leading register and resolved branch target index (`Decoded`).
+
+NumericFlow keeps what is its own: `SUPPORTED_OPS`, the step, call and silent kinds, the arithmetic symbols and which
+operands an op's rule reads. `NumericFlow.table(program)` derives the supported verdict and the `Step` table from
+`Program#decoded` once per Program and keeps it in the Program's one analysis slot, `Program#numeric_flow_table`.
+A Program whose irep no longer has the instruction list it was built from (`Program#built_from?`) still makes
+`NumericFlow.states` raise.
+
+Other passes now read the same facts instead of rebuilding them: the call-facts flow (`CallFacts::Flow.states`) uses
+`successor_lists` and `raise_targets` in place of its own ENTER edges and handler grouping; `successors_of`, the
+origin walk's reachability (`origin_reachable`, `origin_closure_reach`) use `raise_targets`; and the record-hash
+alias scan takes its branch kind and target from `decoded`. Each is a behaviour-identical substitution: on all 5,019
+ireps of the engine's mrblib sources the successor lists, raise and rescue-only targets, steps, `successors_of`
+answers and reachability sets are equal to master's, and `NumericFlow.states` returns the same states and writes and
+asks a logging oracle the same questions in the same order. The record-hash alias scan keeps its own handler-target
+lists, because its depth-first work stack would visit duplicate targets in another order.
