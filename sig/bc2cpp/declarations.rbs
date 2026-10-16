@@ -801,9 +801,6 @@ end
 class Game::Actors
   def initialize: (LCF::Database) -> untyped
 end
-class Game::ChipSet
-  def initialize: (LCF::Database, Integer) -> untyped
-end
 class Game::Map
   def initialize: (Integer, LCF::MapUnit) -> untyped
 end
