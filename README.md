@@ -1020,7 +1020,10 @@
 
 ### Performance
 
-- The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) generates
+- The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) is closed-world
+  only: it compiles the RPG2000/2003-only psp/wio/maix builds, whose only Ruby
+  is the engine's own, and every other build (desktop, wasm, Android) stays the
+  plain mruby build ([ADR 0466](docs/adr/0466-bc2cpp-closed-world-only.md)). It generates
   guarded native call paths from recognized mruby core C methods. It uses
   exact built-in class checks and keeps ordinary Ruby dispatch for subclasses,
   overrides and C bodies the generator cannot prove safe. Single-argument
@@ -1070,9 +1073,9 @@
   Fixed positional core calls also preserve memo classes through
   `each_with_object` and Array results through `drop`; see
   [ADR 0349](docs/adr/0349-bc2cpp-core-positional-results.md).
-  Audited Profiler blocks also retain their result classes; captured slots use a
-  separate helper frame and nonlocal returns keep the method-return fallback. See
-  [Profiler block results](docs/bc2cpp-profiler-results.md).
+  Calls that return their block's value or their receiver (`RGSS::Profiler.section`, `tap`, `then`) retain their
+  result classes through checked RBS declarations; captured slots use a separate helper frame and nonlocal returns
+  keep the method-return fallback. See [Block return declarations](docs/bc2cpp-block-returns.md).
   A shared escape analysis (`tools/bc2cpp/escape_analysis.rb`) answers whether the value a creation site makes
   leaves its frame, with callee summaries over a closed world; its first consumer lets a literal block that captures
   locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything
@@ -1087,7 +1090,7 @@
   general decoded-IR method and non-suspending resumable-helper inliners.
   Native probe builds use a 16,384-pointer GC gray stack;
   `OPTCARROT_GRAY_STACK_SIZE=1024` restores the upstream capacity.
-  `OPTCARROT_CLOSED_WORLD=1` selects the validated sealed benchmark host.
+  The benchmark always runs on the validated sealed host (bc2cpp is closed-world only, ADR 0466).
   See [generic IR optimization](docs/bc2cpp-generic-ir-optimization.md) for
   the replacement strategy and measured performance limitations.
   Generated C++ is [compact](docs/bc2cpp-compact-output.md) by default: its
