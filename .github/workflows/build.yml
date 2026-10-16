@@ -977,8 +977,11 @@ jobs:
             ls build-closed-bc2cpp/closed/mrbgems/$gem/*_gen.cpp
           done
           ls -l build-closed-bc2cpp/closed/lib/libmruby.a
-          # Compiled with the exception mode the generated code needs.
-          grep -q MRB_USE_CXX_EXCEPTION build-closed-bc2cpp/closed/lib/libmruby.flags.mak
+          # Compiled with the exception mode the generated code needs: mruby's core
+          # is built through its error-cxx.cxx wrapper only under MRB_USE_CXX_EXCEPTION,
+          # and the generated code throws.
+          ar t build-closed-bc2cpp/closed/lib/libmruby.a | grep -qx 'error-cxx.o'
+          nm build-closed-bc2cpp/closed/lib/libmruby.a 2>/dev/null | grep -q ' U __cxa_throw$'
 
       # TYPE_CHECK (docs/adr/0412): a declared type the analysis contradicts (TC1001, TC1007) or a signature or
       # annotation bc2cpp cannot use (TC1002, TC1004) is an error, and only errors set the exit status. Running it
