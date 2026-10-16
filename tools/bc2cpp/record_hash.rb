@@ -474,7 +474,9 @@ module RecordHash
     end
 
     # Forward walk over every path from +start+ where register +reg+ holds the Hash.
-    def alias_scan(irep, start, reg)
+    # With +from_entry+ the register holds the Hash on entry to instruction +start+ (a parameter) rather than
+    # after it.
+    def alias_scan(irep, start, reg, from_entry: false)
       prog = BytecodeIR.for(irep)
       @site = " [#{irep.file.to_s.sub(%r{.*/(mruby-)}, '\\1')} irep #{irep.label} insn #{start}]"
       return fail!('unresolved control flow') unless prog.resolved?
@@ -484,7 +486,7 @@ module RecordHash
       handler_targets = Hash.new { |h, k| h[k] = [] }
       prog.handler_edges.each { |e| handler_targets[e.src] << e.target } if prog.handlers?
       seen = Set.new
-      work = prog.instruction_at(start).successors.map { |s| [s, Set[reg]] }
+      work = from_entry ? [[start, Set[reg]]] : prog.instruction_at(start).successors.map { |s| [s, Set[reg]] }
       until work.empty?
         k, state = work.pop
         next unless seen.add?([k, state])
