@@ -250,7 +250,7 @@ module Game
     def known_invalid?: (Integer) -> untyped
   end
   class Map
-    def in_bounds?: (Integer, Integer) -> untyped
+    def in_bounds?: (Integer, Integer) -> bool
     def substitute_tile: (Integer, untyped, untyped) -> untyped
     def set_tile: (untyped, Integer, Integer, untyped) -> untyped
     def tile: (untyped, untyped, Integer, Integer) -> untyped
@@ -1000,4 +1000,23 @@ module LCF
     def build_root: (untyped io, Hash root_schema) -> untyped
     def []=: (Integer idx, untyped value) -> untyped
   end
+end
+
+# ---- real-play types (BC2CPP_TRACE_TYPES on the Nepheshel New Game and map/menu runs): single-class returns
+class Game::Interpreter
+  def running?: () -> bool
+  def waiting?: () -> bool
+  def finished?: () -> bool
+  def take_halt_movement_request: () -> bool
+  def take_parallax_request: () -> bool
+  def take_vehicle_toggle_request: () -> bool
+end
+class Game::Screen
+  def tint: () -> Array
+  def flash_color: () -> Array
+  def pan_offset: () -> Array
+end
+class Game::Timer
+  def drawn?: () -> bool
+  def tick: () -> bool
 end
