@@ -1,0 +1,1 @@
+- `scripts/bc2cpp/trace_sig.rb` writes RBS candidates from `BC2CPP_TRACE_TYPES` dumps: the classes observed for each method's parameters and returns, as unions, with unreached and overflowed sites left out. The output is for review and is not loaded by bc2cpp. Checked by `scripts/bc2cpp/trace_sig_check.rb`.
