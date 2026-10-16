@@ -394,3 +394,20 @@ So the index refinement cannot apply until container element types are part of t
 to key element integer-ness by allocation (`ARRAY`/`HASH` literal keys and `SETIDX` writes, and `[]=` through a bound
 `Method`), and to treat a mutator with a non-integer or unknown store as making the contents non-integer. That is the
 remaining gap between the integer analysis and the memory cycle.
+
+## Element integer typing (spike, measured): blocked by unknown receivers
+
+`scratchpad/sealed-repro/intidx5.rb` extends the integer analysis with element facts per container allocation, and types
+reads on `Method` values as calls to their targets. The integer facts mean "Integer or nil", so out-of-range reads and nil
+receivers stay sound. The run converges in 10 rounds.
+
+- Array-literal writes alone are integer-or-nil for 167 of 288 literals, so the literal check itself works.
+- After the round, no element fact is true (0 of 2220). Counting what clears them: 19 `SETIDX` sites have an unknown
+  receiver (raw `TOP`), and each one clears every container. They sit in the blocks of two `map` calls whose receiver is a
+  captured variable (`sprite_dma`'s `sp_ram`) that the provenance analysis cannot type. The sound rule for an unknown
+  receiver is "may be any container", so one such write clears every element fact.
+- Consumer-level unknowns: 70 of 197, unchanged.
+
+So the element integer analysis needs the captured variables typed first. The remaining gap is upvalue typing for captured
+arrays in blocks (here `sp_ram` in `sprite_dma`), or else an escape-based bound for an unknown receiver (only containers that
+escape to unknown code can be it). Neither is built.
