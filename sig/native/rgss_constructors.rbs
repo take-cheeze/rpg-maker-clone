@@ -11,11 +11,12 @@
 #        overloads do not match, so it is the call site's final branch and raises what the native raises.
 #
 # Types: `Integer | Float` is a numeric argument mrb_get_args "i" or "f" converts, `String` one "z"/"s"/"S" reads,
-# `untyped` one "o"/"b" takes as it is. Every declaration is audited against the C sources (and, for Bitmap, the Ruby
+# `boolish` one "b" reads by truthiness only (mrb_test: any object; nil and false are false). Nothing is `untyped`.
+# Every declaration is audited against the C sources (and, for Bitmap, the Ruby
 # initialize that splits on `kind_of? String`) when it is loaded: a declared form the source does not accept, or an
 # accepted form left undeclared, refuses the whole file (NativeConstructorSigs.audit).
 class RGSS::Bitmap
-  def initialize: %a{bc2cpp:compiled} (String filename, ?untyped transparent) -> void
+  def initialize: %a{bc2cpp:compiled} (String filename, ?boolish transparent) -> void
                 | %a{bc2cpp:direct rgss::bitmap_new_direct int int} %a{bc2cpp:else} (Integer | Float width, Integer | Float height) -> void
 end
 

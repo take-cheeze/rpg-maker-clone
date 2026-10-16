@@ -150,7 +150,12 @@ outside Ruby subclass and no outside native source spelling the name. Then `new(
 * a leaf C: `bc2cpp_direct_alloc` of the receiver plus C's compiled initialize, no guard;
 * known subclasses: one exact-class arm per class, each with the initialize that class's declared superclass chain
   reaches, and a guard violation for any other receiver;
-* unknown subclasses: only exactly C constructs directly; any other class takes Class#new by name.
+* unknown subclasses (a `Class.new(C)`, whose results are anonymous, or an unseen subclass): exactly C constructs
+  directly and any other class takes the owner call over the definers of `new` (Class#new plus every named
+  `def self.new`; `standard_constructor_lookup?` has excluded unknown ones), so it gets allocation plus the dispatched
+  initialize, and an unlisted `new` raises. No by-name `new` is left. A class of a known set whose initialize is not
+  one direct call is built by `mrb_obj_new` on the class its arm proved, one with its own `def self.new` through the
+  owner call.
 
 This fixes a wrong construction on master: the implicit-self `new` in a class method of a class with a stable
 constant was compiled as an unguarded allocation of that class, so `Kid.make` with `make` inherited from `Base`
@@ -171,7 +176,7 @@ already uses), so `Rect.new(...)` and `Tone.new(...)` in a rescue body (all 13 s
 
 | Class | Overloads | Direct path |
 | --- | --- | --- |
-| Bitmap | `(String filename, ?untyped transparent)` | allocation + the compiled `RGSS::Bitmap#initialize` |
+| Bitmap | `(String filename, ?boolish transparent)` | allocation + the compiled `RGSS::Bitmap#initialize` |
 | Bitmap | `(Integer \| Float w, Integer \| Float h)`, the `else` | `rgss::bitmap_new_direct(int, int)` |
 | Rect | `()` | `rgss::rect_new_direct(0, 0, 0, 0)` |
 | Rect | `(Integer \| Float x4)`, the `else` | `rgss::rect_new_direct(int x4)` |
@@ -179,7 +184,9 @@ already uses), so `Rect.new(...)` and `Tone.new(...)` in a rescue body (all 13 s
 | Tone | `(?Integer \| Float x4)`, the `else` | `rgss::tone_new_direct`, defaults 0, 0, 0, 0 |
 
 `Integer | Float` is a positional `mrb_get_args` "i"/"f" converts (`mrb_as_int`/`mrb_as_float`: no `to_int` call, the
-same TypeError for anything else). Bitmap's String form has no C++ constructor: its loader is the Ruby
+same TypeError for anything else); `boolish` one "b" reads by truthiness only (`transparent` reaches `_init_file`'s and
+`_init_memory`'s "b"), which the audit derives from the format. No form is `untyped`: an "o" positional has no
+declarable type here and is not modelled. Bitmap's String form has no C++ constructor: its loader is the Ruby
 `Bitmap#initialize` (search roots, extensions, the asset archive), whose compiled body is the direct path; a second
 C++ copy of that search would be one more implementation to keep equal.
 
