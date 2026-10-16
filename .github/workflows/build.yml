@@ -998,6 +998,10 @@ jobs:
         timeout-minutes: 30
         run: MRBC=build-bc2cpp/mruby/host/mrbc/bin/mrbc ruby scripts/bc2cpp/type_check.rb
 
+      # SHARED_GENERATION (ADR 0464): one analysis forked per unit equals separate runs (a fixture, seconds).
+      - name: Shared generation check
+        run: MRBC=build-bc2cpp/mruby/host/mrbc/bin/mrbc ruby scripts/bc2cpp/shared_generation_check.rb
+
 
 
   # The `bc2cpp` status check: success when `bc2cpp-build` succeeded. It keeps the name the old one-job

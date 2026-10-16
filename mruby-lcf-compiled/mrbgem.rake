@@ -29,7 +29,6 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   # build_config.rb turns on BC2CPP_HOT_ONLY (docs/adr/0214) for the same builds.
   extend Bc2cppHotOnlyOption
 
-  bc2cpp = "#{dir}/../tools/bc2cpp/bc2cpp.rb"
   # STALE_REQUIRE_RELATIVE_DEPS: bc2cpp.rb require_relative's several sibling
   # files (native_expression_devirt.rb, symbol_cache.rb, const_site_cache.rb,
   # ...) that change its own generated output just as much as bc2cpp.rb itself
@@ -104,17 +103,13 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   # exists to poison.
   foreign_ruby_srcs = foreign_mrblib_srcs("#{dir}/..")
 
-  this_gem = BC2CPP_COMPILED_GEMS.fetch('mruby-lcf-compiled')
   other_gems = BC2CPP_COMPILED_GEMS.reject { |name, _| name == 'mruby-lcf-compiled' }
-  target_owners = this_gem[:owners]
   # Every *other* bc2cpp-generated gem's own target classes -- a
   # devirtualized call site here can reference one of these as a real,
   # externally-linked _impl (see bc2cpp.rb's own compile_send/
   # emit_decls_header comments), resolved by the linker once this gem's
   # own object file and the other gem's are both part of the same final
   # binary (already true -- both are ordinary mrbgems in the same build).
-  other_owners = other_gems.values.flat_map { |g| g[:owners] }
-  other_decls_headers = other_gems.map { |name, g| "#{spec.build.build_dir}/mrbgems/#{name}/#{g[:out_symbol]}_decls.h" }
   other_generated = other_gems.map { |name, g| "#{spec.build.build_dir}/mrbgems/#{name}/#{g[:out_symbol]}_gen.cpp" }
 
   generated = "#{build_dir}/lcf_compiled_gen.cpp"
@@ -124,27 +119,9 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
                      BC2CPP_HOT_METHODS_PATH, BC2CPP_CORE_REFUSED_PATH] do |t|
-    FileUtils.mkdir_p build_dir, verbose: true
-    env = {
-      'MRBC' => spec.build.mrbcfile.to_s,
-      'OUT_SYMBOL' => 'lcf_compiled',
-      'OUT_DIR' => build_dir,
-      'ONLY_OWNERS' => target_owners.join(','),
-      'OTHER_OWNERS' => other_owners.join(','),
-      'OTHER_DECLS_HEADER' => Shellwords.join(other_decls_headers),
-      'NATIVE_SRCS' => Shellwords.join(native_srcs),
-      'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_ruby_srcs),
-      # See bc2cpp.rb's own comment: a `#error` this C++ toolchain actually
-      # compiles halts the whole build. Any LCF::File-family method bc2cpp
-      # can't safely compile is simply never emitted here -- it keeps
-      # running on the ordinary interpreted bytecode path, which mruby-lcf
-      # (this gem's own dependency) already loads first.
-      'SKIP_UNSUPPORTED' => '1',
-    }.merge(bc2cpp_closed_world_env(spec, "#{dir}/..")).merge(bc2cpp_hot_only_env(spec))
-    closed_world_srcs = bc2cpp_closed_world_srcs(spec, "#{dir}/..")
-    cmd ="#{RbConfig.ruby.shellescape} #{bc2cpp.shellescape} " \
-          "#{closed_world_srcs.map(&:shellescape).join(' ')} > #{generated.shellescape}"
-    sh env, cmd
+    # SHARED_GENERATION (ADR 0464): with every other compiled gem of this build that is out of date, in one
+    # bc2cpp.rb analysis (tools/bc2cpp/compiled_gems.rb bc2cpp_compiled_gem_job holds this gem's environment).
+    Bc2cppCompiledGemGeneration.generate(spec, "#{dir}/..")
   end
 
   # register.cxx #includes the generated file directly -- so it's the only
