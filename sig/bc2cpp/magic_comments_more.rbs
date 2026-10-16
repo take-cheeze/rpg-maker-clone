@@ -5,7 +5,11 @@ class Game::Actor
 end
 class Game::Actors
   def initialize: (LCF::Database) -> untyped
+  # Unchecked (ADR 0455): an `@all` Hash read, and the miss and rescue arms return nil.
+  %a{bc2cpp:hint}
   def []: (Integer) -> Game::Actor
+  # Unchecked (ADR 0455): an `@all` Hash read.
+  %a{bc2cpp:hint}
   def existing: (Integer) -> Game::Actor
 end
 class Game::Battle
@@ -19,6 +23,8 @@ class Game::EnemyAi
 end
 class Game::Interpreter
   def initialize: (Game::State) -> untyped
+  # Unchecked (ADR 0455): `party.actors` is an attr_reader read.
+  %a{bc2cpp:hint}
   def stat_targets: (untyped) -> Array[Game::Actor]
 end
 class Game::Map

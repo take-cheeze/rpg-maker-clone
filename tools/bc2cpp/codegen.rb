@@ -281,6 +281,8 @@ class CodeGen
       compute_fixnum_return_names
       break if @entry_arg_fixnum == before_args && @fixnum_return_names == before_rets
     end
+    # DECLARED_RETURN_CHECK (ADR 0455): every seeded declaration against the final sets.
+    check_declared_returns
     # NUMERIC_OPERAND_PROOF reads the sets above; drop flows memoized by the
     # compile probes that ran with weaker facts.
     reset_numeric_flow!

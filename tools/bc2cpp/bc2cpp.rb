@@ -54,6 +54,8 @@ require_relative 'dynamic_names'
 require_relative 'ivar_layout'
 require_relative 'annotations'
 require_relative 'rbs_signatures'
+require_relative 'declared_returns'
+require_relative 'declared_constants'
 require_relative 'class_layout'
 require_relative 'element_layouts'
 require_relative 'record_hash'
@@ -413,6 +415,12 @@ if $PROGRAM_NAME == __FILE__
                                       sig_element_annotations, class_decls: class_decls)
     # RBS_BLOCK_PARAM_HINT: the declared block types, read by block_fallback_rbs_param_class.
     CodeGen.rbs_block_signatures = sig_applied.ir_block_signatures
+    # DECLARED_RETURN_CHECK (ADR 0455): return declarations every body is checked against.
+    CodeGen.declared_returns = DeclaredReturns.from_signatures(sig_loaded, ireps, registry)
+    # Without the outside-source picture the proofs the check leans on (INTEGER_CONSTANT_PROOF, ...) prove nothing,
+    # so every declaration keeps its pre-0455 role: an unchecked guarded hint, no fact.
+    CodeGen.declared_returns.each { |e| e.hint = true } unless ENV['NATIVE_SRCS'] && ENV['FOREIGN_RUBY_SRCS']
+    CodeGen.declared_return_root = sig_root
     warn '== signature files (RBS_SIGNATURES) =='
     sig_loaded.files.each { |f| warn "  SIG_FILE #{f}" }
     sig_applied.diagnostics.each { |d| warn "  #{d.file}:#{d.line}:#{d.col}: #{d.severity}: #{d.message} [#{d.code}]" }
@@ -479,6 +487,22 @@ if $PROGRAM_NAME == __FILE__
     else
       Set.new
     end
+  # DECLARED_CONSTANT_CHECK (ADR 0455): RBS constant declarations, checked at every assignment, add the facts the two
+  # constant proofs give (INTEGER_CONSTANT_PROOF, CONST_CONTAINER).
+  if sig_loaded
+    outside_bound = if ENV['NATIVE_SRCS'] && foreign_ruby_srcs
+                      IntegerConstants.native_defined_const_names(native_paths) |
+                        IntegerConstants.foreign_const_names(foreign_ruby_srcs)
+                    end
+    declared_constants = DeclaredConstants.check(
+      DeclaredConstants.load(sig_loaded.files, sig_root, registry.values.flatten.map(&:owner).to_set),
+      ireps, registry, constant_assignment_sites, integer_constants, outside_bound, container_constants, sig_root
+    )
+    integer_constants |= declared_constants.integer_names
+    declared_constants.containers.each { |name, klass| container_constants[name] ||= klass }
+    DeclaredConstants.report(declared_constants, sig_applied,
+                             abort_on_error: !ENV['BC2CPP_TYPE_FACTS'].to_s.then { |v| !v.empty? })
+  end
   warn "== integer-valued constants proven (INTEGER_CONSTANT_PROOF) =="
   if integer_constants.empty?
     warn '  (none)'
@@ -1032,6 +1056,9 @@ if $PROGRAM_NAME == __FILE__
                     closed_world: closed_world, outside_ivar_names: outside_ivars,
                     native_ivar_scopes: native_ivar_scopes,
                     nil_operator_names: nil_operators, outside_const_names: outside_consts)
+  # DECLARED_RETURN_CHECK (ADR 0455): a declaration with an unproven path aborts like RBS_SEED_CONTRADICTION; the
+  # type check reports it (TC1010) with the signature diagnostics.
+  DeclaredReturns.report(gen, sig_applied, abort_on_error: !ENV['BC2CPP_TYPE_FACTS'].to_s.then { |v| !v.empty? })
   warn '== typed slots demoted to boxed slots (foreign writers, ADR 0279) =='
   if gen.typed_demotions.empty?
     warn '  (none)'

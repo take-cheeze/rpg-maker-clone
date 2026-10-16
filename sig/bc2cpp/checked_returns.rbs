@@ -1,0 +1,20 @@
+# Return types the DECLARED_RETURN_CHECK (docs/adr/0455) proves on every return path; each adds the fact the return
+# proofs produce, where inference alone is silent.
+module Game
+  class Battle
+    # Every arm is `[b]`, `[]`, `[x[i]]` or an Array#reject of @allies / @enemies (both Array on every writer).
+    def enemy_skill_targets: (untyped b, untyped sk) -> Array
+  end
+end
+module RPG2k
+  module Scene
+    # POLY: both definitions are `@mode == :target ? SCREEN_W - TARGET_W : SCREEN_W`, so both are declared; the
+    # MONO-only FIXNUM_RETURN_PROOF cannot name a POLY result.
+    class SkillMenu
+      def left_panel_w: () -> Integer
+    end
+    class ItemMenu
+      def left_panel_w: () -> Integer
+    end
+  end
+end
