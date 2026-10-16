@@ -135,3 +135,15 @@ each killed. New `constructor-pools` shard in `bc2cpp-checks`; the 32-bit run is
 
 The refusal `initialize defined outside a class` lists the module or singleton owners that trigger it.
 This is diagnostic only: constructor candidates and generated runtime code are unchanged.
+
+## Addendum (2026-10-16): a proven constant builds its own class only (CONSTRUCTOR_EXACT_CONSTANT)
+
+`constructor_named_classes` mapped the constant of a `new` site to every declared class with that last segment
+(`ClosedWorld#classes_named`), so `Game::Map.new(id, LCF::MapUnit.new(...))` was also an entry of
+`RPG2k::Scene::Map#initialize`. Its second argument's pool became `LCF::MapUnit|Game::State`, and that union spread
+through every `@state` the scenes, the Interpreter and EnemyAi store from it, so `@state.party` and everything read
+from it lost its exact class.
+
+When the compiler already proves the receiver register is one stable class constant (`constant_object_owner`, the
+proof CLOSED_WORLD_CONSTANT_OBJECT calls a singleton method by), and that class is among the same-named candidates,
+the site enters that class's initialize alone. Any other site keeps the over-approximation by name.

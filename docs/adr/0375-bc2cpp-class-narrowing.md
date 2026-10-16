@@ -127,3 +127,17 @@ Not built:
   includers of the module, which `CallFacts` bounds only through `members`.
 * Narrowing the globals and the elements of containers: nothing proves a global or a slot of a container unwritten.
 * The else edge of `respond_to?` (the classes that definitely respond): visibility is not modelled.
+
+## Addendum (2026-10-16): the class pools narrow too (POOL_NARROWING)
+
+`class_narrowing_enabled?` required `@native_results_ready`, which is set only after the return-class and class-pool
+fixpoint (ADR 0289, 0296). So a store dominated by `raise TypeError, ... unless x.is_a?(Array)` was narrowed in the
+code of its own method but joined `OTHER` into its ivar or argument pool, and every other method still saw the ivar
+unproven: an `is_a?` guard at the point a value enters an ivar proved nothing outside that method.
+
+The fixpoint now runs with narrowing on (`@rc_narrowing`). Every answer narrowing needs (`class_test_for`, the
+partitions, `class_test_positive`, `class_narrowing_noreturn_call?`) reads closed-world tables only, never a flow, so
+nothing recurses into a flow still being built, which is what `@native_results_ready` guards against. `narrow` is
+monotone in its input mask (a passing bit stays, and OTHER only adds the exact positive set), so the fixpoint still
+only grows. The claim each pool fact rests on is the one the narrowed site already makes, and the run-time guard
+above still checks it at the test.
