@@ -132,21 +132,13 @@ module RGSS
     Graphics.update
     cleared = frame_mean
 
-    # rpg2k-lint:allow Dynamic/GlobalVariableReassignment -- probe resets this capture once per probe invocation
-    $rgss_probe_mid = nil
-    class << Graphics
-      alias_method :_probe_update, :update
-      def update
-        _probe_update
-        # rpg2k-lint:allow Dynamic/GlobalVariableReassignment -- transition probe captures one frame through a temporary hook
-        $rgss_probe_mid = RGSS.frame_mean if $rgss_probe_mid.nil?
-      end
+    mid = nil
+    Graphics.transition_frame_hook = -> { mid ||= frame_mean }
+    begin
+      Graphics.transition(4)
+    ensure
+      Graphics.transition_frame_hook = nil
     end
-    Graphics.transition(4)
-    class << Graphics
-      alias_method :update, :_probe_update
-    end
-    mid = $rgss_probe_mid
     after = frame_mean
 
     # The transition-*graphic* form: a still that gives way in the shape of a
@@ -1557,6 +1549,9 @@ module RGSS
     class << self
       attr_accessor :frame_count, :frame_rate
       attr_reader :width, :height, :brightness
+      # Called after each frame #transition draws; nil except while RGSS.effect_probe samples a frame from
+      # inside the dissolve (transition blocks until it is done, so the probe cannot look in between).
+      attr_writer :transition_frame_hook
 
       # RGSS2+. Also what the boot shells call to declare the screen size.
       def resize_screen(width, height)
@@ -1681,6 +1676,7 @@ module RGSS
           end
           sprite.opacity = 255 - (255 * (i + 1) / duration) if map.nil?
           update
+          @transition_frame_hook&.call
         end
         map.dispose if map
         sprite.dispose

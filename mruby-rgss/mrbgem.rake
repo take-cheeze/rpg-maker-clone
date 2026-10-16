@@ -211,10 +211,10 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # body) leaves nothing referencing it by name and raises nothing. Every
   # `alias_method`/explicit-name `private`/`public` statement found
   # anywhere in the gem (`array_sort.rb`'s own `alias_method
-  # :_rgss_native_sort, :sort`/`:_rgss_native_sort!, :sort!`, `lib.rb`'s
-  # own `alias_method :_probe_update, :update`/`:update, :_probe_update`
-  # and `:_rgss1_initialize, :initialize`) references a name (`sort`/
-  # `sort!`/`update`/`initialize` on RGSS::Sprite, an existing, already-
+  # :_rgss_native_sort, :sort`/`:_rgss_native_sort!, :sort!` and `lib.rb`'s
+  # own `alias_method :_rgss1_initialize, :initialize`; the effect probe's
+  # former `:_probe_update` pair is now a hook, ADR 0474) references a name (`sort`/
+  # `sort!`/`initialize` on RGSS::Sprite, an existing, already-
   # regression-checked owner) that is not one of this round's own 34
   # registered names, so none of them are a hazard for this round's new
   # owners either.
