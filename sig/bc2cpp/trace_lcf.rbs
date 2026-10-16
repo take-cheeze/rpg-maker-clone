@@ -1,0 +1,6 @@
+# Promoted from scripts/bc2cpp/trace_sig.rb candidates. Read off the Nepheshel LCF load and the game-logic
+# workload (BC2CPP_TRACE_TYPES): LCF::Array2D#read_row_bytes is called with a File in the load and a StringIO
+# in the game run, so both are declared. Each run alone saw one class; the union is what both observed.
+class LCF::Array2D
+  def read_row_bytes: (File | StringIO) -> String
+end
