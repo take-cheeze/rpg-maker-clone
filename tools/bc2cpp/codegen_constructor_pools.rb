@@ -208,6 +208,33 @@ class CodeGen
     end
   end
 
+  # UNPASSED_OPTIONAL_PROOF: irep label => the optional-parameter registers of an initialize that no site entering it
+  # passes. Every entering site's positional count is below the position, so ENTER always runs that parameter's default
+  # code. Only for an initialize this analysis pools (status :ok): the same complete enumeration of `new` and `super`
+  # sites ENTRY_ARG_CALLSITE_PROOF trusts. A keyword call into an initialize without keyword parameters hands its
+  # keywords over as one more trailing positional (vm.c OP_ENTER), so it counts one more.
+  def constructor_unpassed_optionals
+    return @constructor_unpassed_optionals if defined?(@constructor_unpassed_optionals)
+
+    @constructor_unpassed_optionals = {}
+    constructor_pool_candidates
+    (@registry['initialize'] || []).each do |d|
+      next unless d.irep && @constructor_pool_status[d.irep] == :ok
+
+      sites, = @constructor_pool_candidates[[d.irep, 1]]
+      next if sites.nil? || sites.empty?
+
+      fields = @ireps[d.irep].enter.enter_fields
+      keyword_params = fields[4].to_i.positive? || fields[5].to_i.positive?
+      passed = sites.map do |(caller_irep, idx, _recv, argc, _owner)|
+        argc + (!keyword_params && constructor_keyword_argc(caller_irep.instructions[idx]) ? 1 : 0)
+      end.max
+      unpassed = ((passed + 1)..(fields[0].to_i + fields[1].to_i)).to_set
+      @constructor_unpassed_optionals[d.irep] = unpassed.freeze unless unpassed.empty?
+    end
+    @constructor_unpassed_optionals
+  end
+
   # [:ok, sites], or [why D is not a candidate, nil].
   def constructor_pool_status(d, found)
     broken = found[:broken]

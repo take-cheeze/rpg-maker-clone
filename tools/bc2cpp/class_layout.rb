@@ -121,6 +121,37 @@ end
 # it only feeds compile_send's devirtualization, which guards every use with a
 # runtime mrb_obj_class check.
 # A fixed point, because one ivar's class can depend on another's.
+# UNPASSED_OPTIONAL_PROOF: the class every non-nil definition of `reg` reaching `idx` holds, given `unpassed`, the
+# optional-parameter registers no caller passes (CodeGen#constructor_unpassed_optionals). A definition is dropped when
+# it can only hold nil (LOADNIL, or a MOVE of a register whose own reaching definitions all can) or cannot happen at
+# all (the argument-passed entry of an unpassed parameter); the block traces each remaining one, which must all agree.
+# BytecodeIR.reaching_definitions already looks through MOVEs, so `roster || X.new` reaches as the parameter's entry,
+# its LOADNIL default and the `new`.
+# nil when nothing is left, any remaining one is untraced, or two disagree.
+def nil_pruned_definition_class(irep, idx, reg, unpassed)
+  defs = BytecodeIR.reaching_definitions(irep, idx, reg.to_s)
+  return nil if defs.nil? || defs.empty?
+
+  classes = defs.reject { |d| nil_only_definition?(irep, d, unpassed, 0) }.map do |d|
+    d.entry? ? nil : yield(d.index + 1, d.reg)
+  end
+  classes.first if classes.first && classes.uniq.size == 1
+end
+
+def nil_only_definition?(irep, definition, unpassed, depth)
+  return unpassed.include?(definition.reg.to_i) if definition.entry?
+  return false if depth > 8
+
+  insn = irep.instructions[definition.index]
+  case insn.op
+  when 'LOADNIL' then true
+  when 'MOVE'
+    sources = BytecodeIR.reaching_definitions(irep, definition.index, insn.regs[1].to_s)
+    sources.nil? || sources.empty? ? false : sources.all? { |d| nil_only_definition?(irep, d, unpassed, depth + 1) }
+  else false
+  end
+end
+
 class ClassLayout
   UNKNOWN = :unknown
 
@@ -133,7 +164,7 @@ class ClassLayout
   # the stratification.
   def self.analyze(ireps, registry, class_annotations = {}, container_constants = {}, annotated_array_return = nil,
                     poison_reason: nil, array_ret_proof: nil, ret_class_proof: nil, module_body_ivar_labels: {},
-                    store_log: nil)
+                    store_log: nil, unpassed_params: {})
     methods_of = Hash.new { |h, k| h[k] = [] }
     registry.each_value { |defs| defs.each { |d| methods_of[d.owner] << d.irep if d.irep } }
     module_body_ivar_labels.each do |owner, labels|
@@ -184,6 +215,20 @@ class ClassLayout
             end
             found ||= proven_array_source_scan(irep, idx, src_reg, registry, annotated_array_return,
                                                array_ret_proof, receiver_class: receiver_class)
+
+            # UNPASSED_OPTIONAL_PROOF: `@roster = roster || Actors.new(db)` where no caller passes `roster`. The
+            # value's reaching definitions are the `roster` arm (nil: only the default code ever writes it) and the
+            # `new`; the nil arm is dropped like a NIL_TOLERANT_JOIN write and the rest must agree.
+            if found.nil? && (unpassed = unpassed_params[label])
+              # Each definition is walked from itself, as trace_new_target_reaching does: none of them dominates the join.
+              found = nil_pruned_definition_class(irep, idx, src_reg, unpassed) do |def_idx, def_reg|
+                trace_new_target_walk(irep, def_idx, def_reg, known_so_far, mand, arg_classes, owner: owner,
+                                                                                               class_layout: classes, registry: registry,
+                                                                                               container_constants: container_constants,
+                                                                                               ret_class_proof: ret_class_proof,
+                                                                                               dominated: nil)
+              end
+            end
 
             # NIL_TOLERANT_JOIN: `@x = nil` (LOADNIL Rn; SETIV @x Rn) is evidence of
             # nothing, so it is skipped rather than joined. Poisoning on it would kill

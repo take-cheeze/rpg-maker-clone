@@ -630,12 +630,27 @@ if $PROGRAM_NAME == __FILE__
   class_poison_reason = {}
   # IVAR_POISON_CAUSES: the stores ClassLayout read, kept to classify the unresolved ones after the fixed point.
   ivar_store_log = {}
+  # UNPASSED_OPTIONAL_PROOF: optional initialize parameters no `new`/`super` site passes (CONSTRUCTOR_POOLS' complete
+  # site enumeration, so closed-world only), read by the final ClassLayout pass below.
+  unpassed_params = {}
+  if closed_world && native_paths && foreign_ruby_srcs && foreign_methods
+    ctor_probe = CodeGen.new(ireps, registry, ivar_layout, class_layout_probe, class_annotations, annotations,
+                             superclass_of, {}, {}, container_constants, {}, Set.new, foreign_methods,
+                             outside_world_tokens(native_paths + foreign_ruby_srcs), native_name_sources,
+                             included_modules, prepended_modules, unknown_mixins, analysis_only: true,
+                             closed_world: closed_world)
+    unpassed_params = profile_call.call('constructor_unpassed_optionals') { ctor_probe.constructor_unpassed_optionals }
+    warn "== optional initialize parameters no caller passes (UNPASSED_OPTIONAL_PROOF): #{unpassed_params.size} =="
+    registry['initialize']&.each do |d|
+      warn "  UNPASSED #{d.owner}#initialize registers #{unpassed_params[d.irep].to_a.sort.join(', ')}" if unpassed_params[d.irep]
+    end
+  end
   class_layout_raw = profile_call.call('ClassLayout.analyze final') do
     ClassLayout.analyze(ireps, registry, class_annotations, container_constants,
                         annotated_array_return, poison_reason: class_poison_reason, store_log: ivar_store_log,
                         array_ret_proof: ->(n) { array_return_probe.include?(n) },
                         ret_class_proof: ->(n, o) { return_names_probe.class_return_for_self_call(n, o) },
-                        module_body_ivar_labels: module_body_ivar_labels)
+                        module_body_ivar_labels: module_body_ivar_labels, unpassed_params: unpassed_params)
   end
   class_layout = ClassLayout.known(class_layout_raw)
   # RBS_SIGNATURES: a declared ivar class fills an ivar the analysis left unknown (guarded hint, like CLASS_HINT); an

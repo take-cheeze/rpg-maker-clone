@@ -228,6 +228,8 @@ jobs:
             checks: |
               BC2CPP_MRUBY_CORE="$core" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/constructor_pools_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/constructor_pools_mutation_check.rb
+              # UNPASSED_OPTIONAL_PROOF: `@x = param || Klass.new` with an optional parameter no new/super passes.
+              MRBC="$mrbc" ruby scripts/bc2cpp/unpassed_optional_check.rb
           - shard: class-object-args
             # ADR 0416: the class-object resolver on hand-built bytecode, then the generated code of a closed-world
             # fixture with its withdrawal worlds and the kill switch, then seventeen host-only mutants.
