@@ -1086,8 +1086,7 @@
   build, with separate build directories for each mode.
   Benchmark bundles retain upstream CPU dispatch, Fiber PPU, and table
   initialization; workload-specific source rewrites and compiler matchers have
-  been removed. `BC2CPP_IR_INLINE=1 BC2CPP_IR_RESUMABLE_INLINE=1` enables the
-  general decoded-IR method and non-suspending resumable-helper inliners.
+  been removed.
   Native probe builds use a 16,384-pointer GC gray stack;
   `OPTCARROT_GRAY_STACK_SIZE=1024` restores the upstream capacity.
   The benchmark always runs on the validated sealed host (bc2cpp is closed-world only, ADR 0466).
