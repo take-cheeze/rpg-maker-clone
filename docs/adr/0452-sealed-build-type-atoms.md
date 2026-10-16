@@ -328,3 +328,37 @@ rounds, so its numbers are a fixpoint.
 
 Next step: find which rules return `[:Unk, {}]` on operands that are scalars (arithmetic, comparison and sends on
 `Integer`), and give them scalar results, so provenance is only attached where a container can flow.
+
+## Next step toward avoiding the interpreter (spike, measured, not resolved)
+
+Four changes were tried on the converged provenance spike. Each run converged, and the consumer-level unknown count
+(`TOP` or an `[:Unk, _]` part) is the measure. Scratch scripts are in `scratchpad/sealed-repro/`.
+
+- Unknown sources by producing rule (`unksrc.rb`): most counts are propagation through `MOVE`, `GETIDX`, `GETIV`, not
+  sources. The give-up counts on known operands are dominated by top-level and class-body constructs (`TDEF`, `STRCAT`,
+  `BLOCK`, `GETGV`, `OCLASS`, `EXEC`), which are not on the `CPU` path.
+- Core guard relaxed for core receivers (`guard.rb`): unchanged, 74. A core receiver cannot be an instance of a program
+  class, so only `Object`/`Kernel`/`BasicObject` methods of the same name should block a core signature. It did not move
+  the `CPU` chain.
+- Stores as joins (`join.rb`): a `[]=`, `<<`, `push`, or `call` through bound store methods joins the argument into the
+  contents instead of making them unknown. Unchanged, 74. The RAM contents are not the blocker.
+- Unknown results stay `BOT` while operands are `BOT` (`bot.rb`): converges in 10 rounds, 70 consumer-level unknowns.
+  This removes a non-monotone source at round 3, where `peek16` gained an unknown part from operands that were not yet
+  known.
+
+The origin trace (`origin.rb`) shows `CPU#_pc` stuck at a self-sustaining `TOP`: `_pc = (_pc - 1) & 0xffff` keeps the
+`TOP` it received from `peek16` at round 3. The `TOP` enters through `@fetch[addr][addr]` (`fetch`, `peek16`), where the
+index `addr` is consumer-`TOP` because it is in the same cycle. The first `TOP` is therefore a cycle entered at round 3,
+not a missing rule elsewhere.
+
+So avoiding the interpreter for `CPU#run` still needs the address value (`_pc`, `addr`) to be typed as `Integer` in
+the read path `fetch` → `@fetch[addr]` → `peek16`. Two options follow from this:
+
+1. Type array indices from the index's own flow when the index is an `Integer` by construction (`_pc` is only
+   `Integer` arithmetic and literal stores, and `addr` is only that value). This is a sound refinement, but it needs the
+   index's type without the consumer `TOP`, which is the provenance problem again.
+2. Keep the index `TOP` and accept an unknown element. Then `_pc` is unknown by design, and `CPU#run` cannot be proved
+   yield-free without a stronger premise about the address, for example from the `Optcarrot` source.
+
+Neither has been built. The next design step is option 1, with the index type carried as a separate component
+(`Integer`-only flow), not as a rule.
