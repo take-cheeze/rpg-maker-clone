@@ -5,8 +5,10 @@
 module Game
   class Actor
     # Unchecked (ADR 0455): a database-row read or `+ 1`; Integer, but no Fixnum proof.
+    # `it` is nil for an unarmed actor: #strike_count passes `equipped_weapons.first` of an empty list, and the
+    # body starts `return 1 unless it`. nil is part of the contract (ADR 0456).
     %a{bc2cpp:hint}
-    def weapon_attack_multiplier: (LCF::Array1D it) -> Integer
+    def weapon_attack_multiplier: (LCF::Array1D? it) -> Integer
     # Unchecked (ADR 0455): a database-row read or `+ 1`; Integer, but no Fixnum proof.
     %a{bc2cpp:hint}
     def total_state_count: () -> Integer

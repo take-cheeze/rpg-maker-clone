@@ -5,6 +5,12 @@ module Game
     # Every arm is `[b]`, `[]`, `[x[i]]` or an Array#reject of @allies / @enemies (both Array on every writer).
     def enemy_skill_targets: (untyped b, untyped sk) -> Array
   end
+  class State
+    # `@vehicles[type]`. @vehicles is only ever stored the `{ boat: Vehicle.new(:boat), ... }` literal and is only
+    # read as `@vehicles[k]` (SEALED_HASH_IVAR, ADR 0456), so this is a Vehicle, or nil for a type it lacks. The
+    # callers' NIL_NARROWING (draw_vehicles' `v.placed?`) proves the non-nil arguments they pass on.
+    def vehicle: (untyped type) -> Game::Vehicle?
+  end
 end
 module RPG2k
   module Scene
