@@ -4,7 +4,7 @@ Date: 2026-09-30
 
 ## Status
 
-Accepted
+Accepted. Amended by [ADR 0469](0469-bc2cpp-define-method-loops.md): a `return` in the block itself is admitted, and a class-body loop over a literal container can install definitions too.
 
 ## Context
 
