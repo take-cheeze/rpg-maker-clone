@@ -3313,8 +3313,10 @@ class ShopStubActor
 end
 
 # A party the shop can charge and stock: gold plus an item-count bag, with the
-# leader Scene::Map reads while rendering.
-class ShopStubParty
+# leader Scene::Map reads while rendering. A Game::Party, because
+# Scene::Map#open_shop checks that it is one; it replaces #initialize and every
+# method the shop calls.
+class ShopStubParty < Game::Party
   attr_accessor :actors
   attr_reader :gold, :items
   attr_accessor :leader

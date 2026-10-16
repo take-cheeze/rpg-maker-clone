@@ -550,9 +550,18 @@ class RPG2k
           @world = MapWorld.new(self, @rng)
           # One VehicleWorld per type, wrapping #vehicle_passable? instead of the
           # hero's own on-foot #char_passable? -- see #force_vehicle_route.
-          @vehicle_worlds = Game::Vehicle::TYPES.each_with_object({}) do |type, h|
-            h[type] = VehicleWorld.new(self, @rng, type)
+          # A plain loop, not each_with_object: no block of its own, so `self`
+          # here is this section block's, which is this scene's (BLOCK_SELF,
+          # ADR 0456), with no uncompiled core iterator in between.
+          types = Game::Vehicle::TYPES
+          worlds = {}
+          i = 0
+          while i < types.size
+            type = types[i]
+            worlds[type] = VehicleWorld.new(self, @rng, type)
+            i += 1
           end
+          @vehicle_worlds = worlds
         end
         # Erased events, and the state revision the active pages were chosen at.
         @erased_events = {}
@@ -2331,6 +2340,10 @@ class RPG2k
       def step_parallel(p)
         return if p[:gate_switch] && !@state.switches[p[:gate_switch]]
         it = p[:interp]
+        # Every @parallels record carries the Game::Interpreter its event's page
+        # built; the check is what proves #drive_parallel_wait's typed parameter
+        # (IS_A_GUARD, ADR 0456) for a value read out of a Hash record.
+        raise TypeError, "parallel process interpreter is #{it.class}, not Game::Interpreter" unless it.is_a?(Game::Interpreter)
         # Ported from a reference implementation's model, NOT independently
         # confirmed against genuine RPG_RT under wine: each Parallel Process
         # is its own interpreter there, so it gets its own frame-shared step
@@ -6269,7 +6282,11 @@ class RPG2k
       end
 
       def open_shop(req, it = @interpreter)
-        model = Game::Shop.new(db, @state.party, req.goods,
+        # `party` is POLY (Game::State's attr_reader, Game::Interpreter#party), so
+        # the check is what proves Game::Shop's typed parameter (IS_A_GUARD, ADR 0456).
+        party = @state.party
+        raise TypeError, "shop party is #{party.class}, not Game::Party" unless party.is_a?(Game::Party)
+        model = Game::Shop.new(db, party, req.goods,
                                req.allow_buy, req.allow_sell)
         has_menu = req.allow_buy && req.allow_sell
         screen = has_menu ? :command : (req.allow_buy ? :buy : :sell)
