@@ -1,1 +1,1 @@
-- **bc2cpp type trace** (`BC2CPP_TRACE_TYPES=1`) now also records the element types of Array values and Hash keys/values, one level deep and sampled up to 8 per container. The report (`scripts/bc2cpp/param_trace_report.rb`) gets a section (e) that lists them.
+- **bc2cpp type trace** (`BC2CPP_TRACE_TYPES=1`) now also records the element types of Array values and Hash keys/values, one level deep and sampled up to 8 per container. The report (`scripts/bc2cpp/trace_types.rb`) gets a section (e) that lists them.
