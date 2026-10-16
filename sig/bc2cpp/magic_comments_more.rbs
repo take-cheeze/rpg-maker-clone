@@ -53,6 +53,11 @@ end
 class RGSS::Bitmap::LoadError
   def initialize: (String, String) -> untyped
 end
+class RPG2k
+  # Both are called only from #start_new_game with its new Game::State.
+  def open_map_editor: (Game::State) -> untyped
+  def open_chipset_editor: (Game::State) -> untyped
+end
 class RPG2k::Scene::Base
   def initialize: (RPG2k) -> untyped
 end
@@ -60,19 +65,28 @@ class RPG2k::Scene::Battle
   def initialize: (RPG2k::Scene::Map, Hash, Game::Interpreter) -> untyped
 end
 class RPG2k::Scene::ChipsetEditor
-  def initialize: (untyped, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State) -> untyped
 end
 class RPG2k::Scene::DebugMenu
-  def initialize: (untyped, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State) -> untyped
 end
 class RPG2k::Scene::EquipMenu
-  def initialize: (untyped, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State) -> untyped
+end
+class RPG2k::Scene::GameOver
+  # RPG2k#show_game_over passes `self`; the state may be nil (`show_game_over(state = nil)`).
+  def initialize: (RPG2k, ?untyped) -> untyped
 end
 class RPG2k::Scene::ItemMenu
-  def initialize: (untyped, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State) -> untyped
 end
 class RPG2k::Scene::Map
-  def initialize: (untyped, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State) -> untyped
+  # #update passes @interpreter, #drive_parallel_wait its own `it` (the Parallel Process's interpreter).
+  def drive_battle: (Game::Interpreter) -> untyped
+  # #step_parallel's `p[:interp]`: the Game::Interpreter.new of #new_parallel, the one writer of :interp in the
+  # @parallels records. No rule proves an element of an Array ivar's Hash records yet (TC1013 at #step_parallel).
+  def drive_parallel_wait: (untyped, Game::Interpreter) -> untyped
   def ids_touch?: (Array, Hash) -> untyped
   def draw_vehicle_frame: (untyped, Game::Vehicle, untyped, untyped, untyped) -> untyped
   def vehicle_charset: (Game::Vehicle) -> untyped
@@ -83,28 +97,31 @@ class RPG2k::Scene::Map
   def draw_picture: (Game::Picture, Integer, Integer) -> untyped
 end
 class RPG2k::Scene::MapViewer
-  def initialize: (untyped, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State) -> untyped
 end
 class RPG2k::Scene::MapWorld
   def initialize: (RPG2k::Scene::Map, Game::Rng) -> untyped
   def play_sound: (String, untyped, untyped, untyped) -> untyped
 end
 class RPG2k::Scene::Menu
-  def initialize: (untyped, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State) -> untyped
   def build_commands: () -> Array[Array]
 end
 class RPG2k::Scene::Order
-  def initialize: (untyped, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State) -> untyped
 end
 class RPG2k::Scene::SaveLoad
   # title.rb and scene/map.rb open the load screen with no game state (`SaveLoad.new(parent, nil, :load)`).
-  def initialize: (untyped, Game::State?, Symbol) -> untyped
+  def initialize: (RPG2k, Game::State?, Symbol) -> untyped
 end
 class RPG2k::Scene::SkillMenu
-  def initialize: (untyped, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State) -> untyped
 end
 class RPG2k::Scene::StatusMenu
-  def initialize: (untyped, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State) -> untyped
+end
+class RPG2k::Scene::Title
+  def initialize: (RPG2k) -> untyped
 end
 class RPG2k::Scene::VehicleWorld
   def initialize: (RPG2k::Scene::Map, Game::Rng, Symbol) -> untyped

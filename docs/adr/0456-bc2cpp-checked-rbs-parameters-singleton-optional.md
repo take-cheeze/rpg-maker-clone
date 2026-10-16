@@ -393,6 +393,112 @@ errors that only followed from those parameters then clear: the `do_*` methods, 
 `operand_value`, `stat_targets`, `picture_coord`, `picture_name`, `eval_condition`, `toned?` and
 `toned_picture_src`.
 
+### Proving more parameters (fifth step): constructor-site chains, block self, Profiler.section values
+
+After the third step, the maix closed-world build reported 106 TC1013 errors. 68 of them belong to the
+`execute` / `draw_picture` chains above. The other 38 come from nine roots; every other error in that set
+follows from one of the roots.
+
+**Reading a chained reason.** A reason such as `parameter 2 of RPG2k::Scene::Map#initialize is declared
+Game::State`, or `@state = (parameter 2 of ...) at map.rb:458`, means that parameter was already dropped in an
+earlier round of the fixed point. entry_why answers nil for a declared parameter while `kept?` holds. ivar_why
+traces each SETIV into that same entry_why, and its cache lives for one round only. So ivar-store chains already
+take part in the co-inductive fixed point: every declaration is assumed first, and one that fails is removed
+until nothing changes. The chained errors were refusals that cascaded from the roots, not chains left
+unresolved. The fixed point needed no change. Fixing the roots removes the cascades.
+
+**Roots and fixes.**
+* **`RGSS::Profiler.section(...) { ... }`'s value.** This root covers `state` in RPG2k#start_new_game, which
+  flows to Scene::Map, MapViewer and ChipsetEditor. writer_why sent the SENDB to returns_why, and that rejected
+  the native `section`. PROFILER_RESULTS (`codegen_profiler_results.rb`) already pins the native: profiler.cxx,
+  SHA-pinned, returns `mrb_yield_argv`'s value. It also pins the literal block, whose exits are plain returns.
+  block_value_why now traces every RETURN of the block with the same rules, and any other exit refuses.
+  profiler_result_body needs ClosedWorld#stable_constant_identity?, which reads UniqueClassNames and
+  ConstructClassNames. bc2cpp.rb now builds both tables before RBS_CHECKED_PARAMS rather than after it. Their
+  inputs (ireps, the native and foreign sources) are already final at that point. new_why's trace_new_target
+  reads them too, so the parameter check now sees the same tables as codegen.
+* **BLOCK_SELF (`codegen_block_self.rb`, `block_self.rb`).** This root covers `MapWorld.new(self, @rng)` and
+  `VehicleWorld.new(self, @rng, type)`. They run inside `RGSS::Profiler.section { }` and
+  `TYPES.each_with_object({}) { }` in Scene::Map#initialize. `self` in a block is the creating method's self
+  unless something runs the block under another self: instance_eval/exec, class_eval/exec, module_eval/exec,
+  define_method, Class.new / Module.new / Struct.new / Data.define (mruby's mrb_yield_with_class callers). The
+  rule walks the nesting chain from the block up to the method, and each level must pass:
+  * the BLOCK is the instruction right before the SENDB/SSENDB that takes it (plain fixed argc, block register
+    dest + n + 1), so that call is the only code the Proc reaches. A LAMBDA refuses;
+  * the call is either the pinned `RGSS::Profiler.section/frame` (mrb_yield_argv keeps the Proc's self) or a name
+    whose every definition only calls the Proc. That means the registry's definitions plus the interpreted core
+    bodies the registry drops (`CodeGen.block_self_bodies`). A native refuses, and an attr accessor ignores the
+    block. The name also needs no definition out of sight: nothing the closed world cannot place
+    (`unknown_def?`), and nothing in an outside Ruby source the build does not compile
+    (`CodeGen.block_self_unread_names`). Every method_missing must be mruby's native one (it raises) or a plain
+    yielder.
+
+  A plain yielder (BlockSelf.plain_yielder_why) lets the Proc-holding registers be read only as a copy (MOVE), a
+  truth test, the receiver of `call`, or the block a BLKCALL (`yield`) runs. The arguments of that call must not
+  hold the Proc. The Proc-holding registers are:
+  * the block slot from ENTER;
+  * every copy of it (reaching definitions follow MOVEs, handler edges included);
+  * a nested block's GETUPVAR of a captured slot that may hold it;
+  * a BLKPUSH.
+
+  Anything else that reads one refuses: an argument, a return, a store, or an operator's register window (taken
+  as the lowest listed register up to nregs). SUPER and ARGARY refuse, because they pass the frame's block on.
+  Proc#call and BLKCALL run the Proc under the self it closed over. The world-wide preconditions are:
+  * `captured_local_writers_absent?` (no binding or eval can read a local);
+  * no Ruby `call` on Proc's lookup path (Proc, Object, Kernel, BasicObject and their mixins);
+  * no unresolved mixin there.
+
+  mruby-enum-ext's `each_with_object(obj, &block)` passes: it copies `block` to a local, tests it, and calls it
+  from a nested `each` block. The LOADSELF is then the method's self, and the existing rule applies: the owner is
+  the declared class and nothing inherits from it.
+* **INIT_ASSIGNED for `RPG2k@db`** (GETIV, and the `RPG2k#db` reader for `Game::Shop` / `Game::EnemyAi`). The
+  rule is intraprocedural: an ivar read may be seen before it is assigned once `self` is exposed (a self call, a
+  block, LOADSELF), even when the callee never reads it. RPG2k#initialize called `native_test_play?` and then
+  `db_path` (both self calls) before `@db = ...`. Neither reads @db, so no unassigned read was possible. This was
+  a missing proof, not a nil hazard. The fix:
+  * `@db` is now assigned first in #initialize, before any call on self;
+  * its path comes from a class method `RPG2k.db_path`. The instance `#db_path` delegates to it, because
+    Scene::ChipsetEditor uses it.
+
+  The order change has no effect: the two moved lines only read `args` and `TEST_PLAY`.
+  `scripts/wio/strip_inline_helpers.rb` now inlines the new line and deletes both definitions.
+* **INIT_ASSIGNED for `Scene::Map@rng`.** `@rng = Game::Rng.new(0x2000)` came after several Profiler blocks and
+  self calls in Scene::Map#initialize. None of those calls read @rng (its only readers are the world adapters, the
+  encounter methods and the `rng` reader Scene::Battle uses), and Map has no subclass. The fix moves it to directly after `@state = state`.
+  `@interpreter = Game::Interpreter.new(@state)` moves with it, for the `drive_battle(@interpreter)` below.
+  Interpreter#initialize only stores ivars and builds its own Rng, and nothing earlier in the constructor reads
+  @interpreter. Neither move changes behaviour.
+* **Missing declarations, now checked.**
+  * `RPG2k#load_save_state: (?untyped slot) -> Game::State?`. The `?` is the true contract. A missing file
+    (`return nil unless File.exist?`) and the rescue both return nil. #continue_game's `return unless state` is
+    the NIL_NARROWING that proves `Scene::Map.new(self, state, ...)`.
+  * `Game::State.from_lsd: (LCF::Database db, untyped save) -> Game::State`. Its one return path is `state`.
+    `state = new(party, ...)` (an implicit-self `new`, which trace_new_target does not resolve) is now
+    `Game::State.new(party, ...)`. That is the same call, since nothing subclasses Game::State, and
+    DECLARED_RETURN_CHECK can prove it.
+  * `RPG2k#open_map_editor` / `#open_chipset_editor: (Game::State)`. Their one caller passes start_new_game's
+    `state`.
+  * Scene::Title, GameOver and every scene that declared `untyped` now declare `RPG2k` as parameter 1. Each scene
+    passes it to `Scene::Base#initialize: (RPG2k)`. Every constructor site passes RPG2k's own `self` or a
+    scene's `@parent`, which Base#initialize stores from that checked parameter. GameOver's optional state stays
+    `?untyped`.
+  * `Scene::Map#drive_battle: (Game::Interpreter)`. Its optional parameter `it = @interpreter` became a
+    mandatory one, and #update's call passes `@interpreter` explicitly. An optional position is not a checked
+    class parameter. `Scene::Map#drive_parallel_wait: (untyped, Game::Interpreter)` is declared too.
+
+  No declaration was false; each one above replaced `untyped` or nothing.
+
+**Still unproven (errors, not holes).** `drive_parallel_wait`'s `it` is `p[:interp]` in #step_parallel. The
+`p` comes from the `@parallels` Array of Hash records that #new_parallel builds with
+`interp: Game::Interpreter.new(...)`. No rule proves an element of an Array ivar's Hash records yet. That GETIDX
+is now the one root of this chain: `drive_parallel_wait` (2 sites), `drive_battle` (1 site) and
+`Scene::Battle#initialize` parameter 3 (2 sites).
+
+**Checks.** `join_dominance_check.rb`'s host part has a BLOCK_SELF section built from mrbc's own bytecode:
+* positive: mruby-enum-ext's `each_with_object`; `yield x` (BLKPUSH + BLKCALL);
+* negative: returning the block; `instance_exec(&b)`; `@b = b`; the block as an argument; a nested block that
+  stores the captured block; a zsuper.
+
 ## Consequences
 
 The measurement is the shipped wio pass, against master f256da4f. Comment lines are excluded.

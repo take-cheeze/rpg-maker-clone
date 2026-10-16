@@ -456,6 +456,15 @@ class RPG2k
       def initialize parent, state, apply_access: true
         super parent
         @state = state
+        # Deterministic RNG (Kernel#rand exists but is unseeded, and these runs
+        # are diffed against the genuine runtime), and the foreground event
+        # interpreter. Both are built here, before the first block or call on
+        # `self` below, so no method can read either unassigned (bc2cpp's
+        # INIT_ASSIGNED rule, docs/adr/0456: MapWorld/VehicleWorld's checked
+        # Game::Rng and drive_battle's Game::Interpreter rest on it). Neither
+        # constructor reads anything the steps below set up.
+        @rng = Game::Rng.new(0x2000)
+        @interpreter = Game::Interpreter.new(@state)
         # Named graphics loaded and memoized on demand -- see #cached_bitmap.
         # One cache per graphic category (rather than a single cache keyed by
         # a [kind, name] tuple) so each material's entries stay a plain
@@ -516,7 +525,6 @@ class RPG2k
           @charset = load_charset
           @windowskin = load_windowskin
         end
-        @interpreter = Game::Interpreter.new(@state)
         # Whether the last message window shown on this map visit resolved to
         # the top position -- what #draw_timer's own bottom-edge-avoidance
         # reads, sticky until #open_message next changes it or this map visit
@@ -536,10 +544,8 @@ class RPG2k
         @auto_once = {}
         @auto_once_common = {}
         RGSS::Profiler.section("map.transition.common_events") { @common = Game::CommonEvent.load(@db) }
-        # Deterministic RNG (Kernel#rand exists but is unseeded, and these runs
-        # are diffed against the genuine runtime) and the adapter that lets move
-        # routes / autonomous movement query the map.
-        @rng = Game::Rng.new(0x2000)
+        # The adapter that lets move routes / autonomous movement query the map
+        # (@rng is built at the top of #initialize).
         RGSS::Profiler.section("map.transition.world") do
           @world = MapWorld.new(self, @rng)
           # One VehicleWorld per type, wrapping #vehicle_passable? instead of the
@@ -5612,7 +5618,7 @@ class RPG2k
           when :inn then drive_inn
           when :shop then drive_shop
           when :battle
-            drive_battle
+            drive_battle(@interpreter)
             # yado.tk 09_bug/016_ikinari_end + 017_heiretu_totyu_end/hei_mukou:
             # a Battle "Lose: Branch" handler's own recovery (a Full Heal right
             # after the encounter) races a still-running Parallel Process's own
@@ -7101,7 +7107,7 @@ class RPG2k
       #
       # Drive the turn-based battle screen the map shows during a :battle wait.
       # `it` is whichever interpreter actually raised the wait -- the
-      # foreground event by default, or a Parallel Process's own interpreter
+      # foreground @interpreter (#update passes it), or a Parallel Process's own interpreter
       # when #drive_parallel_wait dispatches here (see there and
       # #step_battle_owner_parallel, which keeps calling back in on every
       # later frame since a battle a Parallel Process opened stops the
@@ -7111,7 +7117,7 @@ class RPG2k
       # same real frame, one from each of two independent interpreters), this
       # one simply waits its turn and tries again next frame, the same
       # block-and-retry shape already used for :message/:choice/:number above.
-      def drive_battle(it = @interpreter)
+      def drive_battle(it)
         req = it.battle_request
         return it.resume_battle(:victory) unless req
         if @battle.nil?
