@@ -309,7 +309,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
 // BC2CPP_HOT_ONLY_STUBS is defined by the generated file this register.cxx
 // #includes, and only on the hot-only path, so this guard selects between the
 // two builds with no second flag and the two cannot drift.
-#if !defined(BC2CPP_HOT_ONLY_STUBS) || defined(BC2CPP_KEEP_HAND_REGISTRATIONS)
+#if !defined(BC2CPP_HOT_ONLY_STUBS)
   mrb_define_method(M, sprite, "opacity", RGSS__Sprite_opacity,
                     MRB_ARGS_NONE());
   mrb_define_method(M, sprite, "zoom_x", RGSS__Sprite_zoom_x, MRB_ARGS_NONE());

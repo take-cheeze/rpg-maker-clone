@@ -16,8 +16,8 @@ full sealed build (30 forced sites) and 78 on the hot-only build (36 sites), on 
 
 - Unset or empty `BC2CPP_STRICT_HINTS` selects `1`: the receiver-hint families `typed`, `element`, `ivar_accessor`,
   `mono_embed`. `0` selects no family and is the byte-identical baseline. `1`, `all` and comma lists are unchanged.
-- The reviewed gate (`STRICT_HINTS_REVIEWED`) still aborts a build on an unreviewed forced site, unless
-  `BC2CPP_STRICT_HINTS_UNREVIEWED=allow`.
+- The reviewed gate (`STRICT_HINTS_REVIEWED`) still aborts a build on an unreviewed forced site. There is no
+  switch that relaxes it.
 - The stale-entry rule is no longer applied by the build gate. `STRICT_HINTS_REVIEWED` is the union of the full and
   hot-only runs, so one run cannot prove an entry stale. `strict_hints_reviewed_check` still holds the union exact
   over both runs.

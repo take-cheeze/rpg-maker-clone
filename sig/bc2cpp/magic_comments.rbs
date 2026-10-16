@@ -36,6 +36,9 @@ module Game
     def change_class: (Integer, untyped, untyped, untyped) -> untyped
     def change_battle_commands: (untyped, Integer) -> untyped
     def battle_row=: (Integer) -> untyped
+    # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): the `list.dup` arm is an Array only under its
+    # `is_a?(Array)` test.
+    %a{bc2cpp:hint}
     def class_battle_commands: () -> Array
     def set_class_id: (Integer) -> untyped
   end

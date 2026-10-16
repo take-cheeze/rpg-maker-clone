@@ -721,6 +721,9 @@ module Game
         break if @frame_steps >= MAX_STEPS
         cmd = @list[@index]
         @index += 1
+        # A hard error naming the bad entry, not a NoMethodError deep inside a `do_*` handler. It is also the
+        # checked fact bc2cpp's RBS_CHECKED_PARAMS proves `execute(LCF::EventCommand)` from (IS_A_GUARD, ADR 0456).
+        raise TypeError, "event command #{@index - 1} is #{cmd.class}, not LCF::EventCommand" unless cmd.is_a?(LCF::EventCommand)
         execute cmd
         @frame_steps += step_cost(cmd.code)
       end
