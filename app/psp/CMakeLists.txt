@@ -201,10 +201,10 @@ rpg2k_add_mruby(
   mruby-rpgxp
   mruby-rpgvx
   mruby-wolf
-  # Same RPGMAKER_BC2CPP=1-only compiled gems as the root CMakeLists.txt
-  # (build_config.rb gates all three on that one env var, independent of target)
-  # -- see that file's own comment on this same GEMS addition for the real,
-  # confirmed stale-rebuild gap this closes.
+  # The RPGMAKER_BC2CPP=1-only compiled gems (build_config.rb adds them to the
+  # closed-world psp/wio/maix builds, docs/adr/0466). Listed so an edit to one
+  # (its hand-written src/register.cxx) re-runs rake on a plain incremental
+  # `cmake --build`.
   mruby-lcf-compiled
   mruby-rpg2k-compiled
   mruby-rgss-compiled

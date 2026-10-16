@@ -1,1 +1,0 @@
-- The nightly `bc2cpp-checks (fast)` shard runs its fixture generators through the warm generator (`BC2CPP_WARM_GENERATOR=1`, ADR 0416), except the three checks that load a mutant copy of the tool. Its output is compared with the subprocess run; the server exits with its check.

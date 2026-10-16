@@ -52,8 +52,8 @@ regenerating, to tell a wrong hint from another bug.
 
 Review gates, mirroring `NOMETHOD_REVIEWED`: every forced site is marked, printed on stderr as
 `STRICT_HINT_SITE Owner#method -> name (FAMILY)` with per-family counts, and must be listed
-in `tools/bc2cpp/strict_hints_reviewed.rb` or the generator aborts
-(`BC2CPP_STRICT_HINTS_UNREVIEWED=allow` for fixtures and measurement). As with ADR 0290's
+in `tools/bc2cpp/strict_hints_reviewed.rb` or the generator aborts (no switch; fixture programs
+are outside the reviewed scope, `tools/bc2cpp/review_scope.rb`). As with ADR 0290's
 sites, which of these exist depends on which callees compile, so a hot-only run is held to
 "every site is listed" only, and `strict_hints_reviewed_check.rb` proves exact equality over
 the full (not hot-only) run. The existing NOMETHOD, PROVEN_MISS and guard-violation gates are

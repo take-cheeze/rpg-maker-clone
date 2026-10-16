@@ -1279,7 +1279,7 @@ module Game
       end
       party.load_state(items: items, item_usage: usage, gold: inv[:gold],
                        hp: hp, mp: mp)
-      state = new(party, hero[:map_id], hero[:x], hero[:y])
+      state = Game::State.new(party, hero[:map_id], hero[:x], hero[:y])
       # liblcf's own 0..3 (up/right/down/left) convention on the wire; see
       # #to_lsd's own citation for why this needs the same conversion
       # EventGraphic::LCF_DIR_TO_NUMPAD already applies to the identically-

@@ -72,8 +72,8 @@ entry a read-and-judged decision, not a bulk regeneration of ADR 0226's
 `scripts/bc2cpp/proven_miss_update.rb [--write]` regenerates it;
 `scripts/bc2cpp/proven_miss_check.rb` (CI `bc2cpp-checks`, hot-only shard) has
 fixtures for every case above and re-proves the list over the wio run of all
-gems. `BC2CPP_NOMETHOD_UNREVIEWED=allow` (fixtures only) also turns this abort
-into a warning.
+gems. No switch turns this abort into a warning; it has the same scope as
+ADR 0226's list (`tools/bc2cpp/review_scope.rb`).
 
 ### Outside `def` behind a modifier
 
