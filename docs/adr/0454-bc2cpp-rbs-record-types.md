@@ -61,7 +61,7 @@ of a required key, `clear`, `replace`, any escape of the Hash. The closed-world 
 declaration with a TC1009 at the .rbs line: a global or literal reflection (RecordHash::Poison), an attr_writer, an
 accessor installed outside the registry, and an ivar name a native or foreign source spells (`outside_ivar_names`,
 which covers the native and outside-Ruby ivar scopes). Two declarations of one ivar name must agree, since the
-scan is name-wide. A compile without the closed world or the native/foreign source lists checks nothing: every declaration gets a TC1009 warning and adds no fact, as RECORD_HASH_PROOF proves nothing there. TC1009 errors abort the build like RBS_SEED_CONTRADICTION; under the type check
+scan is name-wide. TC1009 errors abort the build like RBS_SEED_CONTRADICTION; under the type check
 (BC2CPP_TYPE_FACTS) they join the signature diagnostics, so `scripts/bc2cpp/type_check.rb` exits 1 on them.
 
 **Consumers.** A verified name joins RecordHash.table (and its attr_reader RecordHash.readers) in the shape
