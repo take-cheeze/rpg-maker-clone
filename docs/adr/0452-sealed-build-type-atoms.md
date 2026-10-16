@@ -411,3 +411,23 @@ receivers stay sound. The run converges in 10 rounds.
 So the element integer analysis needs the captured variables typed first. The remaining gap is upvalue typing for captured
 arrays in blocks (here `sp_ram` in `sprite_dma`), or else an escape-based bound for an unknown receiver (only containers that
 escape to unknown code can be it). Neither is built.
+
+## Captured receivers and reopened core classes (spike, measured)
+
+Tracing the unknown `SETIDX` receivers found the cause: the blocks read `@lut_update`, set from `{}.compare_by_identity`.
+Optcarrot reopens `Hash` and defines `compare_by_identity` to return an `IdentityHashShim`, so the call is not the core
+`self` return. Two rules were wrong for that case:
+
+1. `core_call` used the core signature even when the program defines a method of that name on the same core class.
+   It now uses the returns of such reopened methods.
+2. Dispatch looked up targets only for `Object`/`Kernel`/`BasicObject` methods on a core receiver, so the reopened
+   method was never reached. Targets now include the methods the program defines on that receiver's core class.
+
+`scratchpad/sealed-repro/intidx8.rb` carries both fixes, with the integer-or-nil element analysis. Measured: `@lut_update`
+resolves to `[:Obj, IdentityHashShim]`, and the consumer-level unknowns drop from 70 to 69 of 197.
+
+The element facts are still all false. The clears are stores whose value is not integer-or-nil: 549 `SETIDX` and 248
+bound-store writes, plus 1,210 array-literal elements. The memory reads that feed them are not integer either:
+`peek_ram`, `fetch` and `peek16` have `TOP` returns, and `read_write` and several device peeks have unknown parts. This
+is one cycle (`ram` ↔ `data` ↔ `fetch`/`peek16`), and this round did not find its entry point. The same blocked cycle is
+what keeps `CPU#_pc` unknown.
