@@ -1000,6 +1000,16 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/shared_generation_check.rb
 
+      # BLOCK_ITERATOR_DIRECT (ADR 0470): the Kernel#loop, String and Integer-literal block arms, each world refusal, and
+      # a fixture run interpreted and compiled over the compiled core (one full-core libmruby build, under a minute; like
+      # the closed build it runs without the dev shell's LD).
+      - name: Block iterator direct check
+        timeout-minutes: 15
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/block_iterator_direct_check.rb
+
 
 
   # The `bc2cpp` status check: success when `bc2cpp-build` succeeded. It keeps the name the old one-job
