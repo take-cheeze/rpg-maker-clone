@@ -1,0 +1,16 @@
+# Block-return declarations of RGSS natives (BLOCK_RETURNS, docs/adr/0475). Each is checked against the C function
+# every registration of the name points at (BlockReturns.native_function_why): the block is read only by
+# mrb_get_args, mrb_nil_p and a yield, every yield passes the declared arguments, and every return is a yield's value.
+# A call `RGSS::Profiler.section("name") { ... }` then has the class of the block's value, and the block runs under
+# the caller's self.
+#
+# mruby-rgss/src/profiler.cxx: prof_section and prof_frame `return mrb_yield_argv(M, blk, 0, nullptr)` with profiling
+# off and `return ret` (`const mrb_value ret = mrb_yield_argv(...)`) with it on; prof_stub_yield, both names in the
+# builds that compile the profiler out, returns mrb_yield_argv's value too. Each answers nil without a block, which a
+# literal block never takes.
+module RGSS
+  module Profiler
+    def self.section: [T] (String name) { () -> T } -> T
+    def self.frame: [T] () { () -> T } -> T
+  end
+end

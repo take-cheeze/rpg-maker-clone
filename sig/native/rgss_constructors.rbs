@@ -1,0 +1,34 @@
+# Constructor overloads of the RGSS native classes, read by NativeConstructorSigs (tools/bc2cpp/native_constructor_sigs.rb)
+# for OVERLOADED_CONSTRUCT (docs/adr/0468). Each overload of `initialize` is one accepted form of `Klass.new`, in RBS's
+# own overload syntax, and its annotation names the direct path a call site takes for it:
+#
+#   %a{bc2cpp:direct <function> <arg>...}  a rgss_construct.hxx entry point taking the class pointer, then one
+#        argument per <arg>: `int` / `float` convert the next positional with mrb_as_int / mrb_as_float (what
+#        mrb_get_args "i" / "f" do, raising the same TypeError), `int=K` / `float=K` take K when that positional is
+#        absent, a bare number is passed as it is;
+#   %a{bc2cpp:compiled}  allocation plus the compiled Ruby `initialize` of the class;
+#   %a{bc2cpp:else}      (with either) the form the class's own initialize takes for every argument the other
+#        overloads do not match, so it is the call site's final branch and raises what the native raises.
+#
+# Types: `Integer | Float` is a numeric argument mrb_get_args "i" or "f" converts, `String` one "z"/"s"/"S" reads,
+# `boolish` one "b" reads by truthiness only (mrb_test: any object; nil and false are false). Nothing is `untyped`.
+# Every declaration is audited against the C sources (and, for Bitmap, the Ruby
+# initialize that splits on `kind_of? String`) when it is loaded: a declared form the source does not accept, or an
+# accepted form left undeclared, refuses the whole file (NativeConstructorSigs.audit).
+class RGSS::Bitmap
+  def initialize: %a{bc2cpp:compiled} (String filename, ?boolish transparent) -> void
+                | %a{bc2cpp:direct rgss::bitmap_new_direct int int} %a{bc2cpp:else} (Integer | Float width, Integer | Float height) -> void
+end
+
+class RGSS::Rect
+  def initialize: %a{bc2cpp:direct rgss::rect_new_direct 0 0 0 0} () -> void
+                | %a{bc2cpp:direct rgss::rect_new_direct int int int int} %a{bc2cpp:else} (Integer | Float x, Integer | Float y, Integer | Float width, Integer | Float height) -> void
+end
+
+class RGSS::Color
+  def initialize: %a{bc2cpp:direct rgss::color_new_direct float=0 float=0 float=0 float=255} %a{bc2cpp:else} (?Integer | Float red, ?Integer | Float green, ?Integer | Float blue, ?Integer | Float alpha) -> void
+end
+
+class RGSS::Tone
+  def initialize: %a{bc2cpp:direct rgss::tone_new_direct float=0 float=0 float=0 float=0} %a{bc2cpp:else} (?Integer | Float red, ?Integer | Float green, ?Integer | Float blue, ?Integer | Float gray) -> void
+end

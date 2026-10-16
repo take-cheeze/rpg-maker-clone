@@ -1,0 +1,28 @@
+# The classes mruby's own natives register each class-test name on, read by CoreFactSigs.class_test_owners
+# (codegen_class_narrowing.rb CLASS_TEST_NATIVE_OWNERS). CodeGen#class_test_native_owners? accepts a name only when
+# every native registration the build compiles lands on one of these owners. The positional parameters are the
+# registration's arity. scripts/bc2cpp/core_facts_rbs_check.rb scans 3rd/mruby's sources (the scan codegen uses,
+# NativeExpressionDevirt.scan_class_registrations) and requires each name's owners and arity to be exactly these:
+#   - Kernel: src/kernel.c kernel_rom_entries;
+#   - NilClass#nil?: src/object.c nil_rom_entries (mrb_true);
+#   - BasicObject#!: src/class.c bob_rom_entries (mrb_bob_not).
+module Kernel
+  def is_a?: (Module klass) -> bool
+  def kind_of?: (Module klass) -> bool
+  def instance_of?: (Module klass) -> bool
+  def nil?: () -> bool
+end
+
+class NilClass
+  def nil?: () -> true
+end
+
+class BasicObject
+  def !: () -> bool
+end
+
+module Kernel
+  def raise: (?untyped exception, ?String message) -> bot
+  def respond_to?: (Symbol name, ?bool include_all) -> bool
+  def class: () -> untyped
+end
