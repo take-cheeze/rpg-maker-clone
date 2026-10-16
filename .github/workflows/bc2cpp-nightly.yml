@@ -385,6 +385,9 @@ jobs:
               # ADR 0384: native arms emitted ahead of the else cover their class of a proven set, then the mutants.
               MRBC="$mrbc" ruby scripts/bc2cpp/native_arm_cover_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/native_arm_cover_mutation_check.rb
+              # ADR 0468: the core_or_native else checked against the named outside owners, its withdrawal worlds and
+              # the interpreted-versus-compiled run (a rogue C definition included).
+              BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/outside_owner_call_check.rb
           - shard: native-singleton
             # ADR 0416: generated code for the base world and the seventeen withdrawal worlds, the kill switch, the
             # interpreted-versus-compiled runs (a runtime private, redefinition and prepend after
