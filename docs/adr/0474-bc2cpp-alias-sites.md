@@ -94,8 +94,8 @@ the body's own `self`.
   - The interpreted and compiled answers on real mruby, for an alias of a Ruby method, an inherited method
     redefined after the alias, a core method, a private alias, `__send__`, strict arity, and a refused
     method-body alias.
-- Many existing fixture checks used a class-body alias as their "dynamic installer" world. Where a world's
-  point is the withdrawal, it now spells the alias in a method body, which stays one.
+- A fixture that needs a dynamic installer must now spell its alias in a method body (or under a condition):
+  a class-body alias is a definition, which is the precise answer for a proof about either name.
 - Pre-existing and unchanged: two engine `def`s of one name on one owner emit two C++ bodies of one symbol.
   Owner registration also replaces a method that a later alias or define_method on that owner replaced in the
   interpreter. Settle withdraws an alias that collides with a `def`, so neither gets worse here.
