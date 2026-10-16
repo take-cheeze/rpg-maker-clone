@@ -28741,7 +28741,7 @@ check 'Game::Party#equip_candidates lists the bag in its stored order, not by ' 
     177 => OpenStruct.new(name: 'Buckler', type: 2)
   }
   db = OpenStruct.new(rpg2003?: false, system: OpenStruct.new(party: []), item: rows)
-  party = Game::Party.new(db, [], {})
+  party = Game::Party.new(db, [])
   party.instance_variable_set(:@items, { 30 => 3, 27 => 5, 29 => 7, 28 => 9,
                                          26 => 4, 66 => 2, 177 => 6 })
   eq [[30, 3], [27, 5], [29, 7], [28, 9], [26, 4], [66, 2]],
