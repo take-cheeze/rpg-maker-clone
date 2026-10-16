@@ -1262,6 +1262,7 @@ jobs:
               ruby scripts/bc2cpp/typed_reflection_check.rb
               ruby scripts/bc2cpp/numeric_operand_check.rb
               ruby scripts/bc2cpp/bitop_results_check.rb
+              ruby scripts/bc2cpp/numeric_flow_speed_check.rb
               ruby scripts/bc2cpp/native_result_facts_check.rb
               ruby scripts/bc2cpp/native_sigs_check.rb
               ruby scripts/bc2cpp/tuple_return_check.rb
