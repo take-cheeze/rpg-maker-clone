@@ -18,7 +18,7 @@ class Game::Party
   def battle_skills: (untyped, untyped) -> Array
 end
 class Game::Troop
-  # Unchecked (ADR 0455): each_with_object answers its memo, which no tracer models.
+  # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): each_with_object answers its memo, which no tracer models.
   %a{bc2cpp:hint}
   def drops: (untyped) -> Array
 end

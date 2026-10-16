@@ -181,6 +181,9 @@ Hash and can return nil).
   parameter count is not the definition's are not checked, so they prove nothing. This is sound because DECLARED_RETURN_CHECK verifies every return path of each
   entry and aborts the build (or reports TC1010 to the type check) when one fails. A `-> C` entry is checked with
   no nil path, so it proves "exactly C". A `-> C?` entry proves "C or nil".
+  Since ADR 0455's DECLARED_RETURN_GUARD, a `%a{bc2cpp:hint}` declaration is an entry too: its compiled body checks
+  every returned value and raises on a mismatch, so it proves the same. `Actors#[]` and `#existing` are now
+  declared `-> Game::Actor?`, which is what they return.
 * **NIL_NARROWING (`nil_narrowing.rb`).** When a reaching definition of the argument is only "C or nil", the
   argument register must also be proven non-nil at the call. This is a forward must-analysis over the irep's
   normal and handler edges. The state is the set of registers that cannot be nil on entry to an instruction. The
