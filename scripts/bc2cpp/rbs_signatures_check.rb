@@ -85,6 +85,9 @@ Dir.mktmpdir do |dir|
   check.call('a constant is noted', notes.any? { |m| m.include?('A_CONSTANT') })
   check.call('alias / visibility are noted', notes.count { |m| m.start_with?('Alias') || m.start_with?('Private') } == 2)
   check.call('Integer? gives a type of kind other', loaded.methods[['Game::Actor', 'maybe']].args[0].kind == :other)
+  check.call('T? keeps T as its optional type (ADR 0456)',
+             loaded.methods[['Game::Actor', 'maybe']].args[0].optional&.then { |t| [t.kind, t.cls] } ==
+               [:class, 'Game::Item'])
 end
 
 puts '== loader: errors are located'
@@ -408,12 +411,17 @@ else
         @h[k] = v
       end
 
-      def run(k)
-        use(@h[k])
+      # PICK
+      def tc_pick
+        @h[1]
+      end
+
+      def tc_run
+        tc_use(tc_pick)
       end
 
       # COMMENT
-      def use(o)
+      def tc_use(o)
         o.size
       end
     end
@@ -423,11 +431,12 @@ else
         u = TcUse.new
         u.put(1, TcA.new)
         u.put(2, TcB.new)
-        u.run(1)
+        u.tc_run
       end
     end
   RUBY
-  USE_SIG = "class TcUse\n  def use: (TcA o) -> untyped\nend\n"
+  # A class parameter is a checked call-site fact (ADR 0456): the one caller passes #tc_pick's declared return.
+  USE_SIG = "class TcUse\n  def tc_pick: () -> TcA\n  def tc_use: (TcA o) -> untyped\nend\n"
 
   Dir.mktmpdir do |dir|
     FileUtils.mkdir_p(File.join(dir, 'sig'))
@@ -438,7 +447,9 @@ else
     lines = out.lines.map(&:chomp)
     check.call("exit status 1 (#{st.exitstatus}) #{err.lines.first&.strip}", st.exitstatus == 1)
     check.call('fixnum/symbol argument', lines.include?('sig/contra.rbs:3:3: error: TcSym#take parameter 1: declared Symbol, inferred Integer (signature) [TC1001]'))
-    check.call('class argument', lines.include?('sig/contra.rbs:4:3: error: TcSym#pick parameter 1: declared TcOther, inferred TcSym (signature) [TC1001]'))
+    # A class parameter is a checked call-site fact (ADR 0456): `pick` is refused at the signature before the
+    # contradiction check reads it.
+    check.call('class argument', lines.any? { |l| l.start_with?('sig/contra.rbs:4:3: error: TcSym#pick') })
     check.call('class return', lines.include?('sig/contra.rbs:5:3: error: TcSym#make return type: declared TcOther, inferred TcSym (signature) [TC1001]'))
     check.call('ivar class', lines.include?('sig/contra.rbs:2:3: error: TcSym@tag ivar: declared TcOther, inferred TcSym (signature) [TC1001]'))
     check.call('a method the program lacks is a TC1003 error', lines.include?('sig/contra.rbs:6:3: error: TcSym#ghost: no such method in the program [TC1003]'))
@@ -447,8 +458,8 @@ else
 
     puts '== a signature has the effect of the comment'
     File.write(File.join(dir, 'sig/use.rbs'), USE_SIG)
-    plain = USE.sub("      # COMMENT\n", '')
-    commented = USE.sub('# COMMENT', '# bc2cpp: (TcA)')
+    plain = USE.sub("      # COMMENT\n", '').sub("      # PICK\n", '')
+    commented = USE.sub('# COMMENT', '# bc2cpp: (TcA)').sub('# PICK', '# bc2cpp: () -> TcA')
     c_plain = gen.call(plain, '')
     c_sig = gen.call(plain, File.join(dir, 'sig/use.rbs'))
     c_comment = gen.call(commented, '')
@@ -460,10 +471,11 @@ else
     File.write(File.join(dir, 'use.rb'), plain)
     before = JSON.parse(type_check.call(dir, '--files', 'use.rb', '--format', 'json', '--sig', File.join(dir, 'nosuch')).first)
     after = JSON.parse(type_check.call(dir, '--files', 'use.rb', '--format', 'json', '--sig', File.join(dir, 'sig/use.rbs')).first)
-    check.call('before: the parameter is ranked', before['suggestions'].any? { |s| s['target'].start_with?('TcUse#use parameter 1') })
-    up = after['methods'].find { |m| m['name'] == 'use' }
+    check.call('before: the parameter is ranked',
+               before['suggestions'].any? { |s| s['target'].start_with?('TcUse#tc_use parameter 1') })
+    up = after['methods'].find { |m| m['name'] == 'tc_use' }
     check.call('after: typed from the signature and no longer ranked', up['params'][0]['type'] == 'TcA' && up['params'][0]['source'] == 'signature' &&
-               after['suggestions'].none? { |s| s['target'].start_with?('TcUse#use parameter 1') })
+               after['suggestions'].none? { |s| s['target'].start_with?('TcUse#tc_use parameter 1') })
 
     puts '== rich argument declarations appear in type facts'
     rich_source = <<~RUBY
@@ -595,6 +607,7 @@ else
                text_out.include?('[TC2004]') && text_out.include?('unknown:ENTER') && text_out.include?('Feedback#produce -> String | Symbol'))
 
     puts '== report propagation of explicit receiver contracts'
+    # `sig_chain`: a class parameter is checked (ADR 0456), and `chain` is a word the outside-world sources spell.
     File.write(File.join(dir, 'call-chain.rb'), <<~RUBY)
       class SigRoot
         def child
@@ -613,7 +626,7 @@ else
         end
       end
       class SigUse
-        def chain(root)
+        def sig_chain(root)
           root.child.finish
         end
       end
@@ -626,17 +639,17 @@ else
         def finish: () -> Symbol
       end
       class SigUse
-        def chain: (SigRoot root) -> untyped
+        def sig_chain: (SigRoot root) -> untyped
       end
     RBS
     chain_out, chain_err, chain_status = type_check.call(dir, '--files', 'call-chain.rb', '--sig', 'sig/call-chain.rbs', '--format', 'json', '--no-sends')
     check.call("explicit receiver fixture checks successfully #{chain_err.lines.first&.strip}", chain_status.success?)
     chain_report = JSON.parse(chain_out)
-    chain_return = chain_report['methods'].find { |method| method['name'] == 'chain' }['return']
+    chain_return = chain_report['methods'].find { |method| method['name'] == 'sig_chain' }['return']
     check.call('complete contract-assisted returns are reported with derived provenance', chain_return['type'] == 'Symbol' &&
                chain_return['source'] == 'derived:contracts' && chain_return['contracts'].include?('call-result:SigLeaf#finish'))
     check.call('derived returns are excluded from independent RBS suggestions',
-               chain_report['rbs_suggestions'].none? { |suggestion| suggestion['method'] == 'chain' })
+               chain_report['rbs_suggestions'].none? { |suggestion| suggestion['method'] == 'sig_chain' })
 
     puts '== audited builtin call result and override withdrawal'
     builtin_source = "class IrBuiltinCall\n  def run\n    [].size\n  end\nend\n"
@@ -833,11 +846,177 @@ else
     check.call('an override declaring a different class also withdraws it',
                hint_fn.call(gen.call(overriding, File.join(dir, 'sig/block-param-both.rbs')), 'BkBag_total') == [false, false])
 
+    puts '== a `def self.` return types its constant-receiver call (ADR 0456)'
+    singleton_src = <<~RUBY
+      class SgRes
+        def initialize
+          @v = 1
+        end
+
+        def sg_size
+          @v
+        end
+      end
+
+      class SgOther
+        def sg_size
+          2
+        end
+      end
+
+      class SgMaker
+        def self.sg_make(flag)
+          flag ? SgRes.new : $sg_glob
+        end
+      end
+
+      class SgUser
+        def go(flag)
+          r = SgMaker.sg_make(flag)
+          r.sg_size
+        end
+      end
+    RUBY
+    File.write(File.join(dir, 'singleton.rb'), singleton_src)
+    File.write(File.join(dir, 'sig/singleton.rbs'), "class SgMaker\n  def self.sg_make: (untyped flag) -> SgRes\nend\n")
+    sg_out, _e, sg_st = type_check.call(dir, '--files', 'singleton.rb', '--sig', 'sig/singleton.rbs', '--no-sends',
+                                        '-q')
+    check.call("the singleton signature matches its definition (no TC1003, exit #{sg_st.exitstatus})",
+               sg_st.success? && !sg_out.include?('TC1003'))
+    sg_typed = 'TYPED :sg_size -> SgRes#sg_size'
+    sg_code = gen.call(singleton_src, File.join(dir, 'sig/singleton.rbs'))
+    check.call('the declared singleton return gives the receiver class', sg_code.include?(sg_typed))
+    check.call('without the signature the receiver stays untyped', !gen.call(singleton_src, '').include?(sg_typed))
+
+    puts '== a `T?` ivar feeds the nil-tolerant class fact (ADR 0456)'
+    optional_src = <<~RUBY
+      class OpRes
+        def op_size
+          1
+        end
+      end
+
+      class OpOther
+        def op_size
+          2
+        end
+      end
+
+      class OpHolder
+        def initialize
+          @item = nil
+          @count = nil
+        end
+
+        def fill(list)
+          @item = list[0]
+          @count = list[1]
+        end
+
+        def peek
+          it = @item
+          it ? it.op_size : 0
+        end
+      end
+
+      class OpMain
+        def go(list)
+          h = OpHolder.new
+          h.fill(list)
+          h.peek
+        end
+      end
+    RUBY
+    File.write(File.join(dir, 'sig/optional.rbs'), "class OpHolder\n  @item: OpRes?\nend\n")
+    File.write(File.join(dir, 'sig/optional_int.rbs'), "class OpHolder\n  @count: Integer?\nend\n")
+    op_plain = gen.call(optional_src, '')
+    op_typed = gen.call(optional_src, File.join(dir, 'sig/optional.rbs'))
+    check.call('`@item: OpRes?` types the receiver behind its nil arm',
+               [op_typed, op_plain].map { |c| c.include?('TYPED :op_size -> OpRes#op_size') } == [true, false])
+    check.call('`@count: Integer?` embeds nothing (an embedding is exact): byte-identical',
+               gen.call(optional_src, File.join(dir, 'sig/optional_int.rbs')) == op_plain)
+
+    puts '== class parameters are checked at every call site (ADR 0456)'
+    param_src = <<~RUBY
+      class PcA
+        def pc_size
+          1
+        end
+      end
+
+      class PcB
+        def pc_size
+          2
+        end
+      end
+
+      class PcUse
+        def pc_measure(o)
+          o.pc_size
+        end
+
+        def pc_relay(o)
+          pc_measure(o)
+        end
+
+        def pc_fresh
+          PcA.new
+        end
+      end
+
+      class PcMain
+        def go
+          u = PcUse.new
+          u.pc_measure(PcA.new)
+          u.pc_relay(PcA.new)
+          u.pc_measure(u.pc_fresh)
+          # EXTRA
+        end
+      end
+    RUBY
+    param_sig = "class PcUse\n  def pc_measure: (PcA o) -> untyped\n  def pc_relay: (PcA o) -> untyped\n" \
+                "  def pc_fresh: () -> PcA\nend\n"
+    File.write(File.join(dir, 'sig/param.rbs'), param_sig)
+    param_run = lambda do |extra, more = ''|
+      File.write(File.join(dir, 'param.rb'), param_src.sub('# EXTRA', extra) + more)
+      type_check.call(dir, '--files', 'param.rb', '--sig', 'sig/param.rbs', '--no-sends', '-q')
+    end
+    out, _e, st = param_run.call('')
+    check.call("new, a declared return and a declared caller parameter prove every site (exit #{st.exitstatus})",
+               st.success? && !out.include?('TC103'))
+    check.call('the proven parameter still feeds the body',
+               gen.call(param_src, File.join(dir, 'sig/param.rbs')).include?('pc_size -> PcA#pc_size'))
+    out, _e, st = param_run.call('u.pc_measure(PcB.new)')
+    check.call("a wrong-class caller is TC1013 at its own line (exit #{st.exitstatus})", st.exitstatus == 1 &&
+               out.include?('param.rb:33:1: error: PcUse#pc_measure parameter 1: argument not proven PcA ' \
+                            '(`new` of PcB); declared at sig/param.rbs:2 [TC1013]'))
+    raised = begin
+      gen.call(param_src.sub('# EXTRA', 'u.pc_measure(PcB.new)'), File.join(dir, 'sig/param.rbs'))
+      false
+    rescue RuntimeError => e
+      e.message.include?('RBS_CHECKED_PARAMS')
+    end
+    check.call('an unproven parameter fails a build', raised)
+    out, _e, st = param_run.call('[1].each { |x| u.pc_relay(x) }')
+    check.call('a block argument is unproven', st.exitstatus == 1 && out.include?('R1 is a block parameter or upvar'))
+    out, _e, st = param_run.call('', "class PcB\n  def pc_measure(o)\n    o\n  end\nend\n")
+    check.call('a POLY name refuses the declaration (TC1014 at the signature)', st.exitstatus == 1 &&
+               out.include?('sig/param.rbs:2:3: error: PcUse#pc_measure: parameter type(s) 1 (PcA) refused, ' \
+                            'not trusted: pc_measure has 2 definitions (POLY)'))
+    out, _e, st = param_run.call("pa = [PcA.new]\n    u.pc_measure(*pa)")
+    check.call('a splat caller refuses the declaration', st.exitstatus == 1 &&
+               out.include?('refused, not trusted: a packed (splat) or keyword caller at param.rb:34'))
+    out, _e, st = param_run.call("blk = proc {}\n    pa = [PcA.new]\n    u.pc_measure(*pa, &blk)")
+    check.call('a block-pass splat caller refuses the declaration', st.exitstatus == 1 &&
+               out.include?('a packed (splat) or keyword caller at param.rb:35'))
+
     puts '== the comment wins over a signature'
     File.write(File.join(dir, 'both.rb'), commented)
-    File.write(File.join(dir, 'sig/both.rbs'), "class TcUse\n  def use: (TcB o) -> untyped\nend\n")
+    File.write(File.join(dir, 'sig/both.rbs'), "class TcUse\n  def tc_use: (TcB o) -> untyped\nend\n")
     out, _e, _s = type_check.call(dir, '--files', 'both.rb', '--sig', 'sig/both.rbs', '--no-sends', '-q')
-    check.call('TC1006 names the slot and the comment is used', out.include?('warning: TcUse#use parameter 1: the `# bc2cpp:` comment wins over signature type TcB [TC1006]'))
+    check.call('TC1006 names the slot and the comment is used',
+               out.include?('warning: TcUse#tc_use parameter 1: the `# bc2cpp:` comment wins over signature type TcB ' \
+                            '[TC1006]'))
 
     puts '== an unusable signature file fails a build'
     File.write(File.join(dir, 'sig/bad.rbs'), "class TcUse\n  def put: (Integer a) -> void | (String a) -> void\nend\n")
