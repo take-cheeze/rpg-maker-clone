@@ -155,3 +155,14 @@ arguments (full-core, core-only and 32-bit `mrb_int` builds), with every proven 
 and zero dispatches on the proven methods. `scripts/bc2cpp/numeric_constants_mutation_check.rb`: an unmutated control
 and fifteen mutants of the soundness conditions (the copy lives inside the repository so the closed world is not
 empty), each killed. New `numeric-constants` shard in `bc2cpp-checks`; the 32-bit run is in `bc2cpp-width (int32)`.
+
+## Addendum (2026-10-16): the other argument shapes of `Bitmap.new` (NATIVE_CONSTRUCT_SHAPE)
+
+A `Bitmap.new` site whose class is proven (no class guard: a stable standard constructor class, or the guarded form
+whose else is the NEW_IDENTITY violation) kept a by-name `new` as the else of its argument tag test: the file-load
+form `Bitmap.new("Picture/#{name}", true)` (every such site, since its first argument is a String) and any argument
+the Fixnum proof does not reach. That else now calls `mrb_obj_new` on the proven class. `native_constructor_safe`
+already proves the site's `new` is `Class#new` (standard constructor lookup, an exact constructor chain), and
+`mrb_obj_new` is what `Class#new` does for a positional call without a block (`mrb_instance_new`, class.c): allocate,
+then the dispatched `#initialize`, which keeps the native body's own argument handling and errors. A class that is
+not proven keeps the dispatching else.

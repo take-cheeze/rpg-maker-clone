@@ -19,7 +19,12 @@ module Game
     # HP is authoritative and restored separately, so this assigns without the
     # HP-coupling side effects.
     def states=(ids)
-      @states = (ids || []).reject { |s| s.nil? || s == 0 }.uniq
+      list = ids || []
+      raise TypeError, "state ids are #{list.class}, not Array" unless list.is_a?(Array)
+
+      kept = []
+      list.each { |s| kept << s unless s.nil? || s == 0 || kept.include?(s) }
+      @states = kept
     end
 
     # Whether any equipped item guards against critical hits (the armour
