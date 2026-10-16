@@ -47,13 +47,15 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   # frontend; EGL surfaceless is its supported replacement.)
   #
   # The script-driven embedded ports (scripts/wio, scripts/maix, the psp
-  # pipeline) run this rake only to build mrbc plus their cross lib: no CMake
-  # project builds Effekseer under PROJECT_BUILD_DIR for them, and their host
-  # sub-build never renders. They are excluded by target, like emscripten, not
-  # by whether the machine's compiler happens to see EGL headers (CI's
-  # bc2cpp-build job builds maix inside the nix dev shell, which has them).
+  # pipeline) and the native bc2cpp `closed` build (scripts/bc2cpp/
+  # closed_build.bash) run this rake only to build mrbc plus their target lib:
+  # no CMake project builds Effekseer under PROJECT_BUILD_DIR for them, and
+  # their host sub-build never renders. They are excluded by target, like
+  # emscripten, not by whether the machine's compiler happens to see EGL
+  # headers (CI's bc2cpp-build job builds `closed` inside the nix dev shell,
+  # which has them).
   have_egl = false
-  unless %w[emscripten wio maix psp].include?(ENV["MRUBY_TARGET"])
+  unless %w[emscripten wio maix psp closed].include?(ENV["MRUBY_TARGET"])
     have_egl =
       begin
         system("echo '#include <EGL/egl.h>' | #{cc.command} -E -x c - " \
