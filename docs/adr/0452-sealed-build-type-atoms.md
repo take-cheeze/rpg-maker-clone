@@ -311,3 +311,20 @@ the same slot flips. The fallback is correct, but the reset and restore make the
 
 Next step: make the mutator reset monotone (widen to `TOP` slots instead of emptying them), so the sequence of
 approximations only grows. Then rerun and check convergence before reading any count.
+
+## Monotone mutation: converged result (spike, measured)
+
+`scratchpad/sealed-repro/receiver_mono.rb` makes mutation sticky. A mutated container's slots stay `TOP` for the rest of
+the run (`st[:mut]` only grows), and the array-literal pass no longer re-creates its slots. The run converges in 10
+rounds, so its numbers are a fixpoint.
+
+- Counting an ivar as unknown to consumers when it is `TOP` or carries an `[:Unk, _]` part: 74 of 197 (38 `TOP`, 36 with
+  an unknown part). Before wiring provenance the same count was 64.
+- So the wiring is converged but currently less precise than the non-provenance model. The unknown parts are mostly
+  `[:Unk, {}]`: a rule gave up on operands that carry no containers, which the old model also reported as `TOP`.
+  Provenance does not separate them, so the escape gain does not appear yet.
+- `CPU#_pc`, `_p_c`, `APU#fixed` and `freq` are unknown to consumers. `APU#fixed` and `freq` were `Integer` in the
+  unsound escape-ignoring measurement, so that result depended on an unsound assumption.
+
+Next step: find which rules return `[:Unk, {}]` on operands that are scalars (arithmetic, comparison and sends on
+`Integer`), and give them scalar results, so provenance is only attached where a container can flow.
