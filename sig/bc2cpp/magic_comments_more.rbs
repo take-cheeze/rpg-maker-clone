@@ -5,12 +5,13 @@ class Game::Actor
 end
 class Game::Actors
   def initialize: (LCF::Database) -> untyped
-  # Unchecked (ADR 0455): an `@all` Hash read, and the miss and rescue arms return nil.
+  # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): an `@all` Hash read the static check cannot follow. A
+  # non-positive id, the miss and the rescue arm return nil, so the declaration is `Game::Actor?`.
   %a{bc2cpp:hint}
-  def []: (Integer) -> Game::Actor
-  # Unchecked (ADR 0455): an `@all` Hash read.
+  def []: (Integer) -> Game::Actor?
+  # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): an `@all` Hash read; a nil id or an absent actor is nil.
   %a{bc2cpp:hint}
-  def existing: (Integer) -> Game::Actor
+  def existing: (Integer) -> Game::Actor?
 end
 class Game::Battle
   def initialize: (Array[Game::Battle::Combatant], Array[Game::Battle::Combatant]) -> untyped
@@ -23,7 +24,8 @@ class Game::EnemyAi
 end
 class Game::Interpreter
   def initialize: (Game::State) -> untyped
-  # Unchecked (ADR 0455): `party.actors` is an attr_reader read.
+  # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): `party.actors` is an attr_reader read. The Array is checked;
+  # the element class stays the guarded seed it was.
   %a{bc2cpp:hint}
   def stat_targets: (untyped) -> Array[Game::Actor]
 end
