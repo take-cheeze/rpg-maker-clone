@@ -417,9 +417,6 @@ if $PROGRAM_NAME == __FILE__
     CodeGen.rbs_block_signatures = sig_applied.ir_block_signatures
     # DECLARED_RETURN_CHECK (ADR 0455): return declarations every body is checked against.
     CodeGen.declared_returns = DeclaredReturns.from_signatures(sig_loaded, ireps, registry)
-    # Without the outside-source picture the proofs the check leans on (INTEGER_CONSTANT_PROOF, ...) prove nothing,
-    # so every declaration keeps its pre-0455 role: an unchecked guarded hint, no fact.
-    CodeGen.declared_returns.each { |e| e.hint = true } unless ENV['NATIVE_SRCS'] && ENV['FOREIGN_RUBY_SRCS']
     CodeGen.declared_return_root = sig_root
     warn '== signature files (RBS_SIGNATURES) =='
     sig_loaded.files.each { |f| warn "  SIG_FILE #{f}" }

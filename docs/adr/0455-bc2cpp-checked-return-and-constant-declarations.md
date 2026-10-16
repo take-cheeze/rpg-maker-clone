@@ -70,8 +70,6 @@ ARRAY_RETURN_PROOF are MONO-only, so this is new.
 
 `%a{bc2cpp:hint}` on a method declaration marks a reviewed type that the checker cannot prove. It keeps exactly the
 pre-0455 role: a guarded seed and an IR contract. It is listed as `unchecked hint` and never joins a proof's facts.
-A compile without `NATIVE_SRCS` and `FOREIGN_RUBY_SRCS` treats every return declaration this way, because
-the proofs the check relies on (INTEGER_CONSTANT_PROOF among them) prove nothing there.
 Nineteen existing declarations carry it, each with a comment saying why it cannot be checked:
 
 - 12 Integer returns read database rows (Integer, but not a proven Fixnum);
