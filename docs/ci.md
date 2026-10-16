@@ -332,19 +332,22 @@ main host build. Existing artifact checks and error handling still apply.
 comparison. For a local concurrency check, add `RAKEOPT=--job-stats` and inspect
 the builder's saved log for `Total threads in play`.
 
-### Scan cache (ADR 0415)
+### Scan cache (ADRs 0415, 0462)
 
-Every closed-world generator run is a new process that scans the same mruby and gem C sources. With
-`BC2CPP_SCAN_CACHE_DIR` set, the native-source scans are stored under a digest of the scanner sources and of the
-files they read, and loaded by the next process: `NativeExpressionDevirt.analyze`,
-`analyze_exact_class_expressions`, `outside_world_tokens`, the facts of `ClosedWorld#scan_native`
-(`closed_world.native`), the class registrations (`native_expression_devirt.class_registrations`, under
-`CallFacts::Answers#native_scan`) and the per-file registrations of `NativeDirect` (`native_direct.file_registrations`).
-The last three return plain data, and the instance state they used to fill is rebuilt by the caller from it. The nightly workflow sets it per job to
-`$RUNNER_TEMP/bc2cpp-scan-cache`, so the first check of a job fills it and the rest of the job (a `ci:parallel`
-group included) reads it. `numeric_slow` takes 316 s with it against 398 s without. Without the variable nothing
-is read or written. `scripts/bc2cpp/scan_cache_check.rb` (in `ruby-checks`) covers it; the entries are Marshal
-dumps, so point the variable only at a directory you own.
+Every closed-world generator run is a new process that scans the same mruby and gem C sources. The native-source
+scans are stored under a digest of the scanner sources, the Ruby version and the files they read, and loaded by the
+next process: `NativeExpressionDevirt.analyze`, `analyze_exact_class_expressions`, `outside_world_tokens`, the facts
+of `ClosedWorld#scan_native` (`closed_world.native`), the class registrations
+(`native_expression_devirt.class_registrations`, under `CallFacts::Answers#native_scan`) and the per-file
+registrations of `NativeDirect` (`native_direct.file_registrations`). The last three return plain data, and the
+instance state they used to fill is rebuilt by the caller from it. The cache is always on, with no environment
+switch: entries live in the checkout's git-ignored `build/bc2cpp-cache`, so the first generator run of a job fills it
+and every later run of that job (a `ci:parallel` group included) reads it. A checkout that is not cleaned keeps it
+between runs; that is safe because every key holds the content digests. Any cache fault (an unreadable entry, an
+entry stored under another key, a value or directory that cannot be stored, a cached scan that reads `ENV`) stops the
+run with a `ScanCache::Error`; it is never recomputed past. `scripts/bc2cpp/scan_cache_check.rb` (in `ruby-checks`)
+covers it; a check that needs its own directory sets `ScanCache.directory_override` from Ruby. The entries are
+Marshal dumps, so the checkout must be a directory only you write.
 
 ### Warm generator (ADR 0416, opt-in)
 
