@@ -460,3 +460,19 @@ The remaining blocker is one self-sustaining `TOP`. `uniq!` (`ppu.rb:219`) runs 
 hash's values then stay `TOP`, so the parameter stays `TOP`. Mutation as currently modeled is not monotone across rounds.
 The next step is to make the sticky clear depend only on the final receiver fact (no clear from a receiver that was
 `TOP` only before the first typed round), and then rerun.
+
+## Deferred unknown-receiver clears (spike, not converged)
+
+`scratchpad/sealed-repro/fix2.rb` tries the fix for the sticky `TOP` from the previous section. It has three parts:
+
+- Clears from an unknown receiver are deferred during the iteration. After convergence, if one is still pending, it is
+  applied and the iteration runs again. Clears only grow, so the last pass is a fixpoint.
+- Array slots (`elem_at`) grow by joining with the previous round, instead of being recomputed. This removes the
+  `pulse_0` flip between `{Pulse}` and `{Pulse, nil}`.
+
+The run still does not converge: it reaches the 60-round cap. The rounds that remain change parameters, return facts
+and upvalues, and the parameter values come from call sites that are still recomputed each round. So the first pass is
+not monotone, and the deferred pass cannot finish. No consumer count is reported from it.
+
+Next: make parameters, returns and upvalues grow with the previous round as well, the way the element contents now do,
+then rerun and check convergence before reading any count.
