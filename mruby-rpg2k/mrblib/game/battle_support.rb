@@ -22,7 +22,9 @@ module Game
       list = ids || []
       raise TypeError, "state ids are #{list.class}, not Array" unless list.is_a?(Array)
 
-      @states = list.reject { |s| s.nil? || s == 0 }.uniq
+      kept = []
+      list.each { |s| kept << s unless s.nil? || s == 0 || kept.include?(s) }
+      @states = kept
     end
 
     # Whether any equipped item guards against critical hits (the armour

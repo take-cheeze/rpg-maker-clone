@@ -2139,7 +2139,9 @@ module Game
     def clear_states
       perm = permanent_states
       revive = @hp <= 0 && @states.include?(DEATH_STATE) && !perm.include?(DEATH_STATE)
-      @states = @states.select { |s| perm.include?(s) }
+      kept = []
+      @states.each { |s| kept << s if perm.include?(s) }
+      @states = kept
       @hp = 1 if revive && @hp <= 0
     end
 
