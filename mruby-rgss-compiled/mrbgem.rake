@@ -23,7 +23,6 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   # build_config.rb turns on BC2CPP_HOT_ONLY (docs/adr/0214) for the same builds.
   extend Bc2cppHotOnlyOption
 
-  bc2cpp = "#{dir}/../tools/bc2cpp/bc2cpp.rb"
   # STALE_REQUIRE_RELATIVE_DEPS: bc2cpp.rb require_relative's several sibling
   # files (native_expression_devirt.rb, symbol_cache.rb, const_site_cache.rb,
   # ...) that change its own generated output just as much as bc2cpp.rb itself
@@ -79,14 +78,10 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   # exists to poison.
   foreign_ruby_srcs = foreign_mrblib_srcs("#{dir}/..")
 
-  this_gem = BC2CPP_COMPILED_GEMS.fetch('mruby-rgss-compiled')
   other_gems = BC2CPP_COMPILED_GEMS.reject { |name, _| name == 'mruby-rgss-compiled' }
-  target_owners = this_gem[:owners]
   # See mruby-lcf-compiled/mrbgem.rake's own comment on OTHER_OWNERS/
   # OTHER_DECLS_HEADER -- cross-gem devirtualization, the other half of
   # this same mechanism.
-  other_owners = other_gems.values.flat_map { |g| g[:owners] }
-  other_decls_headers = other_gems.map { |name, g| "#{spec.build.build_dir}/mrbgems/#{name}/#{g[:out_symbol]}_decls.h" }
   other_generated = other_gems.map { |name, g| "#{spec.build.build_dir}/mrbgems/#{name}/#{g[:out_symbol]}_gen.cpp" }
 
   generated = "#{build_dir}/rgss_compiled_gen.cpp"
@@ -96,22 +91,9 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
                      BC2CPP_HOT_METHODS_PATH, BC2CPP_CORE_REFUSED_PATH] do |t|
-    FileUtils.mkdir_p build_dir, verbose: true
-    env = {
-      'MRBC' => spec.build.mrbcfile.to_s,
-      'OUT_SYMBOL' => 'rgss_compiled',
-      'OUT_DIR' => build_dir,
-      'ONLY_OWNERS' => target_owners.join(','),
-      'OTHER_OWNERS' => other_owners.join(','),
-      'OTHER_DECLS_HEADER' => Shellwords.join(other_decls_headers),
-      'NATIVE_SRCS' => Shellwords.join(native_srcs),
-      'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_ruby_srcs),
-      'SKIP_UNSUPPORTED' => '1',
-    }.merge(bc2cpp_closed_world_env(spec, "#{dir}/..")).merge(bc2cpp_hot_only_env(spec))
-    closed_world_srcs = bc2cpp_closed_world_srcs(spec, "#{dir}/..")
-    cmd ="#{RbConfig.ruby.shellescape} #{bc2cpp.shellescape} " \
-          "#{closed_world_srcs.map(&:shellescape).join(' ')} > #{generated.shellescape}"
-    sh env, cmd
+    # SHARED_GENERATION (ADR 0464): with every other compiled gem of this build that is out of date, in one
+    # bc2cpp.rb analysis (tools/bc2cpp/compiled_gems.rb bc2cpp_compiled_gem_job holds this gem's environment).
+    Bc2cppCompiledGemGeneration.generate(spec, "#{dir}/..")
   end
 
   # register.cxx #includes the generated file directly, mirroring the
