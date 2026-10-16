@@ -376,3 +376,21 @@ unbounded in practice, so the check is not usable as written. No consumer count 
 
 Next: bound the integer check (a fixed depth per query and a per-round cache keyed by the write, not the register),
 then rerun and check convergence before measuring.
+
+## Integer-index typing: bounded and measured (spike)
+
+`scratchpad/sealed-repro/intidx3.rb` bounds the integer check. Its memo is keyed by the writing instruction, the recursion
+has a depth cap (`INT_DEPTH`), and a write in progress is assumed integer (greatest fixpoint). The integer facts are
+updated at the start of each main round, not inside the per-query loop. The first attempt had put that update inside
+the per-query loop by mistake, which is why it was slow.
+
+- Converges in 10 rounds, at about one second per round.
+- Consumer-level unknowns: 70 of 197, the same as without the refinement. `CPU#_pc`, `addr`, `data` and `fixed` stay unknown.
+- Cause, from the integer facts after convergence: `peek16`, `fetch`, `peek_ram` and `read_write` are all not
+  integer, and so is every ivar on the path (`_pc`, `addr`, `data`). The integer analysis does not model the
+  element type of a container (`GETIDX`), so a memory read is never an integer for it, however its writes are typed.
+
+So the index refinement cannot apply until container element types are part of the integer analysis. The next step is
+to key element integer-ness by allocation (`ARRAY`/`HASH` literal keys and `SETIDX` writes, and `[]=` through a bound
+`Method`), and to treat a mutator with a non-integer or unknown store as making the contents non-integer. That is the
+remaining gap between the integer analysis and the memory cycle.
