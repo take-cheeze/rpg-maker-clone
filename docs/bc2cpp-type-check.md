@@ -29,6 +29,7 @@ Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, 
 | TC1003 | error | a signature names a method or ivar class the program lacks (a stale signature) |
 | TC1007 | error | an inferred IR return or ivar store is disjoint from its RBS nominal contract |
 | TC1008 | warning | an inferred IR may-set partly overlaps its RBS contract; path refinement is unresolved |
+| TC1009 | error | an RBS `class C < S` names a superclass the program does not give C (ADR 0453) |
 | TC2004 | info | (`--all`) an IR query is unknown, with its refusal or producer reason |
 | TC1005 | warning | an index (`x[i]`, `x[i] = v`) on a receiver that may be nil, with no nil check before it (ADR 0439) |
 | TC1004 | error | an annotation token bc2cpp ignores (unknown class), a signature or annotation with more tokens than the method has parameters (fewer is fine: a prefix) |
