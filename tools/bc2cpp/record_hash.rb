@@ -64,12 +64,8 @@ module RecordHash
 
   module_function
 
-  def analyze(ireps, registry, native_paths:, foreign_paths:, closed_world:, trusted: nil, outside_tokens: nil)
+  def analyze(ireps, registry, native_paths:, foreign_paths:, closed_world:, outside_tokens:, trusted: nil)
     result = Result.new(slots: {}, refused: {}, global_refusal: nil, readers: Set.new)
-    unless closed_world && native_paths && foreign_paths && outside_tokens
-      result.global_refusal = 'needs a closed world with native and foreign sources'
-      return result
-    end
     if closed_world.global_refusal
       result.global_refusal = "closed world refusal #{closed_world.global_refusal}"
       return result

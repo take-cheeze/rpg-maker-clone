@@ -27,6 +27,7 @@ require_relative 'cxx'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/nomethod_reviewed'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 MRUBY = File.join(ROOT, '3rd/mruby')
@@ -154,7 +155,7 @@ gems = NomethodReviewedProbe.wio_gems(ROOT)
 native_srcs = Dir[File.join(ROOT, 'mruby-rgss/src/*.cxx')] + core_native_srcs(MRUBY) + external_gem_native_srcs(ROOT)
 core_srcs = core_compiled_mrblib_srcs(ROOT)
 
-generate = lambda do |source, name, closed: true, core: true, owners: ['ExFx'], extra_env: {}|
+generate = lambda do |source, name, core: true, owners: ['ExFx'], extra_env: {}|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
@@ -162,13 +163,12 @@ generate = lambda do |source, name, closed: true, core: true, owners: ['ExFx'], 
             'NATIVE_SRCS' => Shellwords.join(native_srcs),
             'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)),
             'ONLY_OWNERS' => (BC2CPP_CORE_OWNERS + owners).join(',') }.merge(extra_env)
-    if closed
-      env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
-                 NomethodReviewed::ALLOW_ENV => 'allow')
-    end
+    env.merge!('BC2CPP_BUILD_NAME' => 'wio',
+               'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
+               NomethodReviewed::ALLOW_ENV => 'allow')
+
     srcs = (core ? core_srcs : []) + [path]
-    out, err, status = Open3.capture3(env, RbConfig.ruby, File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb'), *srcs)
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb'), *srcs)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
     out
   end
@@ -275,8 +275,6 @@ check.call('a Ruby Array#join or #compact withdraws the exact call as well',
              body_of.call(override, 'str_bytes').include?('NATIVE_CORE_EXACT'))
 range_override = generate.call("#{FIXTURE}\nclass Enumerable\nend\nmodule Enumerable\n  def map(&b); 1; end\nend\n", 'ex_range_override')
 check.call('a Ruby Enumerable#map withdraws the Range arm', !body_of.call(range_override, 'range_map').include?('Enumerable_collect_impl'))
-open_code = generate.call(FIXTURE, 'ex_open', closed: false)
-check.call('without the closed world nothing is proven, core bodies included', !core_exact.call(open_code) && !open_code.include?('NATIVE_CORE_EXACT') && !open_code.match?(/proven (?:Array|Hash|Range|String) receiver/))
 
 rg = generate.call(RG_FIXTURE, 'ex_rgss', core: false, owners: ['RGSS::ExRg'])
 rgfn = ->(name) { body_of.call(rg, name, 'RGSS__ExRg') }
@@ -330,7 +328,7 @@ GEM_RAKE = <<~'RAKE'
         env = { 'MRBC' => spec.build.mrbcfile.to_s, 'OUT_SYMBOL' => 'ex', 'OUT_DIR' => build_dir,
                 'ONLY_OWNERS' => (BC2CPP_CORE_OWNERS + ['ExFx']).join(','), 'NATIVE_SRCS' => Shellwords.join(native),
                 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)), 'SKIP_UNSUPPORTED' => '1',
-                'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+                'BC2CPP_BUILD_NAME' => 'wio',
                 'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
                 NomethodReviewed::ALLOW_ENV => 'allow' }
         cmd = "#{RbConfig.ruby.shellescape} #{ROOT}/tools/bc2cpp/bc2cpp.rb #{srcs.map(&:shellescape).join(' ')} " \

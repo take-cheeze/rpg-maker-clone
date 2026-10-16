@@ -10,7 +10,7 @@
 #
 # 1. the audit: every row verifies against the mruby sources, and a changed body, header,
 #    registration or a second spelling of the name drops the row;
-# 2. generated code: what is taken and every reason it is withheld (open world, a Ruby
+# 2. generated code: what is taken and every reason it is withheld (a Ruby
 #    definition, a BasicObject class, a dynamic installer, a rewritten parameter, ...);
 # 3. behaviour: the fixture compiled against real mruby prints what the interpreter prints
 #    (results, exception classes and messages), and the KERNEL_DIRECT sites make no dispatch.
@@ -133,9 +133,9 @@ KERNEL_WORLD = <<~'RUBY'
   end
 RUBY
 
-generate = lambda do |source, closed: true, path: 'fixture.rb', extra: nil|
+generate = lambda do |source, path: 'fixture.rb', extra: nil|
   Dir.mktmpdir do |dir|
-    runtime.generate(source, dir, closed: closed, path: path, extra: extra ? [['engine.rb', extra]] : []).first
+    runtime.generate(source, dir, path: path, extra: extra ? [['engine.rb', extra]] : []).first
   end
 end
 body_of = lambda do |code, klass, fn|
@@ -156,7 +156,6 @@ check.call('the helpers are defined once each',
            %w[bc2cpp_raise1 bc2cpp_raise2].all? { |helper| closed.scan(/^static inline mrb_value #{helper}\(/).size == 1 })
 check.call('the internal.h declaration is extern "C"', closed.include?('extern "C" mrb_value mrb_make_exception(mrb_state*, mrb_value, mrb_value);'))
 
-check.call('without the closed world no site is taken', !generate.call(KERNEL_WORLD, closed: false).include?('KERNEL_DIRECT'))
 {
   'a Ruby raise on the class' => "#{KERNEL_WORLD}\nclass KdFx\n  def raise(*a); 1; end\nend\n",
   'a Ruby raise on Object' => "#{KERNEL_WORLD}\nclass Object\n  def raise(*a); 1; end\nend\n",
@@ -356,8 +355,6 @@ check.call('call1 makes no cached send at all', sends.call(dn.call(core_closed, 
 end
 check.call('the same fixture outside mruby\'s own Ruby is untouched',
            !generate.call(CORE_WORLD.sub('DnCore', 'DnUser')).include?('BLOCK_PARAM_CALL'))
-check.call('without the closed world no core proof is taken (no program facts)',
-           !generate.call(CORE_WORLD, closed: false, path: CORE_PATH).include?('BLOCK_PARAM_CALL'))
 {
   'a Ruby call on any class' => "class DnOther\n  def call(x); x; end\nend\n",
   'a Ruby call on NilClass' => "class NilClass\n  def call(*); 1; end\nend\n",

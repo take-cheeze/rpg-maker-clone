@@ -170,7 +170,6 @@ if ENV['MRBC']
       ['foreign Ruby name spelling', SOURCE, { foreign: [['outside.rb', '@contents = 1']] }, {}],
       ['reflection', SOURCE + "class NiScene; def poke(v); instance_variable_set(:@contents, v); end; end\n", {}, {}],
       ['shared mixin family', SOURCE + "module NiShared; def value; @contents; end; end\nclass NiScene; include NiShared; end\nclass RGSS::Window; include NiShared; end\n", {}, {}],
-      ['open world', SOURCE, { closed: false }, {}],
       ['kill switch', SOURCE, {}, { 'BC2CPP_NATIVE_IVAR_SCOPES' => '0' }]
     ]
     scenarios.each do |name, source, options, env|

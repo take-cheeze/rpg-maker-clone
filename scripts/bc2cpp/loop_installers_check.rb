@@ -272,12 +272,6 @@ Dir.mktmpdir do |dir|
                                                                               !probe.include?('CLOSED_WORLD nomethod'))
   check.call('and the registered call still works as a guarded direct call', probe.include?('LpBox_lp_one_impl(M, '))
 end
-Dir.mktmpdir do |dir|
-  code, err = runtime.generate("#{BOX}#{USE}", dir, closed: false)
-  probe = body_of.call(code, 'LpUse_probe')
-  check.call('open world: the registered call is a guarded direct call', err.include?('== loop installers (1 of 1 registered') &&
-                                                                         probe.include?('LpBox_lp_one_impl(M, '))
-end
 
 # -- 3. behaviour on real mruby -------------------------------------------------------------------
 

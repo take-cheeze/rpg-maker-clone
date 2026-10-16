@@ -8,6 +8,7 @@ require 'tmpdir'
 require_relative '../../tools/bc2cpp/bc2cpp'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative 'cxx'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
@@ -62,7 +63,7 @@ Dir.mktmpdir do |dir|
   File.write(source, SOURCE)
   env = { 'MRBC' => MRBC_ENV, 'OUT_SYMBOL' => 'hash_each_value', 'OUT_DIR' => dir,
           'SKIP_UNSUPPORTED' => '1', 'BC2CPP_SELF_REGISTERING' => '1' }
-  _out, err, status = Open3.capture3(env, "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
+  _out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
                                           "#{source.shellescape} > #{generated.shellescape}")
   abort "bc2cpp.rb failed:\n#{err[-3000..]}" unless status.success?
 
@@ -96,7 +97,7 @@ else
     File.write(source, SOURCE)
     env = { 'MRBC' => MRBC_ENV, 'OUT_SYMBOL' => 'hash_each_value', 'OUT_DIR' => dir,
             'SKIP_UNSUPPORTED' => '1', 'BC2CPP_SELF_REGISTERING' => '1' }
-    _out, err, status = Open3.capture3(env, "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
+    _out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
                                             "#{source.shellescape} > #{generated.shellescape}")
     abort "bc2cpp.rb failed:\n#{err[-3000..]}" unless status.success?
     File.write(File.join(dir, 'main.cpp'), <<~CPP)

@@ -11,6 +11,7 @@ require 'set'
 require 'tmpdir'
 require_relative '../../tools/bc2cpp/irep'
 require_relative '../../tools/bc2cpp/bytecode_ir'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 def insn(addr, op, args)
   Insn.new(lineno: 1, addr: addr, op: op, args: args, raw: "#{op} #{args}")
@@ -502,7 +503,7 @@ def generate_cpp(source, name)
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
     env = { 'MRBC' => ENV.fetch('MRBC'), 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1' }
-    out, err, status = Open3.capture3(env, RbConfig.ruby, File.expand_path('../../tools/bc2cpp/bc2cpp.rb', __dir__), path)
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, File.expand_path('../../tools/bc2cpp/bc2cpp.rb', __dir__), path)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
     out
   end

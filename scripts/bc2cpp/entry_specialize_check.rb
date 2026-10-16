@@ -13,7 +13,7 @@
 #    * an identity clone (a plan line with no parameter) reproduces the generic body, which is what shows the
 #      clone path misses no label-keyed table;
 #    * negatives: blocks, rescue, optional/keyword/block parameters, a class with no exact test, a parameter
-#      that is not positional, an unknown class, a world with a singleton maker and the open world all keep
+#      that is not positional, an unknown class, and a world with a singleton maker all keep
 #      the generic body only, and say why on stderr.
 # 2. Behaviour on real mruby: every call, guard hit or guard miss, answers what the interpreter answers; a hit
 #    makes fewer dynamic dispatches than a miss of the same method.
@@ -258,10 +258,6 @@ if ENV['MRBC']
       code, err = generate.call(SOURCE + singleton, d, plan: plan)
       check.call('NEG a singleton maker in the world: no specialization anywhere, the guard cannot trust the class',
                  !code.include?('_spec_impl') && err.include?('stays generic: no exact-class world'))
-    end
-    Dir.mktmpdir do |d|
-      code, err = generate.call(SOURCE, d, plan: plan, closed: false)
-      check.call('NEG the open world: no specialization', !code.include?('_spec_impl') && err.include?('stays generic: no exact-class world'))
     end
     Dir.mktmpdir do |d|
       code, = generate.call(SOURCE, d, plan: plan, env: { 'BC2CPP_CLASS_POOLS' => '0' })

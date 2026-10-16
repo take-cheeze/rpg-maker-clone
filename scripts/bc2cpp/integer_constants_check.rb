@@ -188,7 +188,7 @@ else
     ENV['BC2CPP_CXXFLAGS'] = flags
     begin
       Dir.mktmpdir do |dir|
-        code, gen_err = runtime.generate(HOLDER, dir, closed: true, only_owners: OWNERS, native: [['ic_native.cxx', NATIVE_TEXT]])
+        code, gen_err = runtime.generate(HOLDER, dir, only_owners: OWNERS, native: [['ic_native.cxx', NATIVE_TEXT]])
         registered = runtime.registrations(gen_err, OWNERS)
         check.call("#{label}: the harness registers the fixture's own classes (#{registered.size} entry points)",
                    registered.any? { |l| l.include?('"nat_f"') } && registered.any? { |l| l.include?('"plain"') })

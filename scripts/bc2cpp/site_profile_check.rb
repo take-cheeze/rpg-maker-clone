@@ -18,6 +18,7 @@ require 'stringio'
 require 'tmpdir'
 require_relative '../../tools/bc2cpp/site_rank'
 require_relative 'cxx'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 root = File.expand_path('../..', __dir__)
 failures = []
@@ -139,7 +140,7 @@ else
     File.write(path, WORLD)
     run = lambda do |extra|
       env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => 'sp', 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1' }.merge(extra)
-      Open3.capture3(env, RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
+      Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
     end
     plain, _e, st = run.call({})
     check.call('bc2cpp runs without the switch and emits no SITE_PROFILE code', st.success? && !plain.include?('SITE_PROFILE'))

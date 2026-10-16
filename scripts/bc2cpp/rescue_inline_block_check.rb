@@ -362,7 +362,7 @@ unless Bc2cppFixtureRuntime.mrbc && system(Bc2cppFixtureRuntime.mrbc, '--version
   exit 0
 end
 
-# The generated code of the fixture's methods, in-process (the open world: the proofs the check needs are
+# The generated code of the fixture's methods, in-process (no closed world: the proofs the check needs are
 # all local to a method), with the given environment switches set around the generation.
 def generate_fixture(env = {})
   saved = env.keys.to_h { |k| [k, ENV.fetch(k, nil)] }

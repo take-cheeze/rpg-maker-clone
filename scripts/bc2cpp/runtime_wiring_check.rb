@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
-# Check the runtime wiring bc2cpp emits for the desktop RPGMAKER_BC2CPP build:
+# Check the runtime wiring bc2cpp emits for an RPGMAKER_BC2CPP build:
 #
 #   INSTANCE_TT_SETUP  every embedding class gets MRB_TT_DATA from the emitted
 #                      setup function (it used to be a hand-kept list that

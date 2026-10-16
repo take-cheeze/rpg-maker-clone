@@ -148,7 +148,6 @@ module RbsParamCheck
     if ctx[:dynamic].include?(name)
       return "#{name} is a name a computed send can reach (a Symbol or String literal of it)"
     end
-    return 'no outside-world scan (NATIVE_SRCS / FOREIGN_RUBY_SRCS unset): callers not all visible' unless ctx[:outside]
     if ctx[:outside].include?(name)
       return "#{name} is spelled by an outside-world (native or foreign Ruby) source, which may call it"
     end

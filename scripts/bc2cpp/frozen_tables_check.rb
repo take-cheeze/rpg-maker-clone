@@ -12,7 +12,7 @@
 #    later, a grown or computed literal, a copy, a second constant of the same name, a subclass
 #    argument, reflection on the holder) keeps them. One hostile world per soundness condition
 #    (a redefined `[]`/`first`/`size`/`freeze`, an installer, a singleton maker, a native or foreign
-#    definition, the open world, the kill switch) proves nothing; Marshal and send leave it alone.
+#    definition, the kill switch) proves nothing; Marshal and send leave it alone.
 # 3. Behaviour (BC2CPP_MRUBY_FULL / BC2CPP_MRUBY_CORE, g++): the fixture runs on real mruby,
 #    interpreted and compiled, and answers alike, including every attempt to change a frozen table
 #    (FrozenError, contents unchanged) and a Float/bignum slot. The run repeats on the core-only
@@ -234,11 +234,11 @@ kept = lambda do |code, fn|
 end
 indexed_exact = ->(code, fn) { body_of.call(code, 'EcUse', fn).include?('INDEX_EXACT') }
 
-generate = lambda do |source, dir, closed: true, env: {}, **options|
+generate = lambda do |source, dir, env: {}, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options)
+    runtime.generate(source, dir, only_owners: OWNERS, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
@@ -258,7 +258,6 @@ BASE = 'base'.freeze
 SWITCH = {
   'switch' => 'the kill switch (BC2CPP_FROZEN_TABLES=0)',
   'class_pools_switch' => 'BC2CPP_CLASS_POOLS=0 withdraws the table proofs as well',
-  'open_world' => 'the open world proves nothing',
   'no_frozen_literal' => 'a world with no frozen literal'
 }.freeze
 
@@ -401,12 +400,6 @@ if ENV['MRBC'] && (run_world.call(BASE) || VARIANTS.any? { |w, _| run_world.call
         pools_code, = generate.call(FIXTURE, pools_dir, env: { 'BC2CPP_CLASS_POOLS' => '0' })
         check.call('BC2CPP_CLASS_POOLS=0 withdraws the table proofs as well (they share the exact-class gates)',
                    %w[lit_idx hash_lit ends].none? { |fn| numeric_proof.call(pools_code, fn) })
-      end
-    end
-    if run_world.call('open_world')
-      Dir.mktmpdir do |open_dir|
-        open_code, open_err = generate.call(FIXTURE, open_dir, closed: false)
-        check.call('the open world proves nothing', !open_err.include?('FROZENTABLE') && !indexed_exact.call(open_code, 'lit_idx'))
       end
     end
     if run_world.call('no_frozen_literal')

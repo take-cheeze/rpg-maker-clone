@@ -8,7 +8,7 @@
 #
 # 1. With MRBC: the generated code. The three helpers hold no by-name call and name each arm; a singleton
 #    `def self.[]`, a method_missing class, a module definer, an uncovered subclass, a build that links
-#    mruby-method, an open world and BC2CPP_INDEX_HELPER_CLOSED=0 each keep the by-name helper (and the world
+#    mruby-method and BC2CPP_INDEX_HELPER_CLOSED=0 each keep the by-name helper (and the world
 #    that stays closed is shown to stay closed).
 # 2. The generator reads the mruby sources it is built from: a tree whose wrappers no longer call the exported
 #    bodies refuses the closed form (a scratch copy of the sources, host only).
@@ -29,6 +29,7 @@
 require 'fileutils'
 require 'tmpdir'
 require_relative 'fixture_runtime'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 runtime = Bc2cppFixtureRuntime
 failures = []
@@ -229,8 +230,6 @@ def generated_checks(check, runtime)
   check.call('BC2CPP_INDEX_HELPER_CLOSED=0 keeps the by-name helpers byte for byte',
              %w[bc2cpp_getidx bc2cpp_getidx0 bc2cpp_setidx].all? { |h| open?(off, h) } && !off.include?('INDEX_CLOSED') &&
              off.include?('r0 = bc2cpp_send(M, recv, ') && !off.include?('extern "C" __attribute__'))
-  open_world, = generate(runtime, FIXTURE, closed: false)
-  check.call('NEG: an open world keeps the by-name helpers', %w[bc2cpp_getidx bc2cpp_getidx0 bc2cpp_setidx].all? { |h| open?(open_world, h) })
 end
 
 # The sources the generator trusts: the wrappers must still call the exported bodies, the registrations must be the ones scanned.
@@ -270,10 +269,10 @@ def source_audit_checks(check, runtime)
         File.write(source, FIXTURE)
         env = { 'MRBC' => runtime.mrbc, 'OUT_SYMBOL' => 'fixture', 'OUT_DIR' => gen_dir, 'BC2CPP_SELF_REGISTERING' => '1', 'SKIP_UNSUPPORTED' => '1',
                 'ONLY_OWNERS' => OWNERS.join(','), 'NATIVE_SRCS' => Shellwords.join(natives),
-                'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(root)), 'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+                'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(root)), 'BC2CPP_BUILD_NAME' => 'wio',
                 'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(root).map { |n, d| "#{n}=#{d}" }),
                 NomethodReviewed::ALLOW_ENV => 'allow' }
-        out, e, status = Open3.capture3(env, RbConfig.ruby, Bc2cppFixtureRuntime::BC2CPP, source)
+        out, e, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, Bc2cppFixtureRuntime::BC2CPP, source)
         raise "bc2cpp.rb failed:\n#{e[-2000..]}" unless status.success?
 
         [out, e]
@@ -572,7 +571,7 @@ def runtime_checks(check, runtime, builds)
     ENV['BC2CPP_CXXFLAGS'] = flags
     begin
       Dir.mktmpdir do |dir|
-        _code, err = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS)
+        _code, err = runtime.generate(FIXTURE, dir, only_owners: OWNERS)
         source = "$bigint = #{bigint}\n#{index_driver(width)}\n#{DISPATCH_DRIVER}\nputs 'end dispatch'\n"
         scenario = SCENARIO.sub('__SOURCE__') { source }
         built, output = runtime.run(dir, err, OWNERS, scenario, build: build, full: true)

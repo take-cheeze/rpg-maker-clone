@@ -41,12 +41,12 @@ body = ->(code, fn) { code[/^mrb_value ItProbe_#{fn}_impl\(mrb_state\* M.*?(?=^(
 saved = ENV['BC2CPP_INTERFACE_TABLES']
 begin
   Dir.mktmpdir do |dir|
-    generate = lambda do |source = SOURCE, closed = true, enabled = '1'|
+    generate = lambda do |source = SOURCE, enabled = '1'|
       ENV['BC2CPP_INTERFACE_TABLES'] = enabled
-      runtime.generate(source, dir, closed: closed, only_owners: OWNERS)
+      runtime.generate(source, dir, only_owners: OWNERS)
     end
-    off, = generate.call(SOURCE, true, '0')
-    default, = generate.call(SOURCE, true, nil)
+    off, = generate.call(SOURCE, '0')
+    default, = generate.call(SOURCE, nil)
     check.call('disabled and default output are byte-identical and contain no interface tables',
                off == default && !off.include?('INTERFACE_TABLE'))
     code, err = generate.call
@@ -72,8 +72,6 @@ begin
                code.match?(/return It0_join_impl\(M, recv, mrb_nil_value\(\), 0\);/) &&
                code.match?(/return It0_join_impl\(M, recv, arg0, 1\);/))
     check.call('table misses retain the checked fallback', go.include?('CLOSED_WORLD kept: core_or_native'))
-    open_code, = generate.call(SOURCE, false)
-    check.call('an open world does not use interface tables', !open_code.include?('INTERFACE_TABLE'))
     singleton, = generate.call("#{SOURCE}\nclass ItProbe; def single(o); def o.join; 88; end; end; end\n")
     check.call('singleton makers withdraw the table proof', !singleton.include?('INTERFACE_TABLE'))
     installer, = generate.call("#{SOURCE}\nclass It0; alias_method :join, :initialize; end\n")

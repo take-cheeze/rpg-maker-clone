@@ -8,7 +8,7 @@
 #    closed helpers (an exact-Hash test in front, the by-name proof violation behind it, no by-name call of the
 #    operator); the `#if` arm kept for Complex/Rational builds is unchanged; and each NEG world below (Hash#<
 #    reopened or prepended, a Hash `<` installer, a user `==` that may yield, a `==` computed installer,
-#    method_missing, a singleton, a build without mruby-hash-ext, an open world, no core compile, the kill
+#    method_missing, a singleton, a build without mruby-hash-ext, no core compile, the kill
 #    switch BC2CPP_CORE_COMPILED_CMP=0) keeps the by-name Hash arm of the operator it touches.
 # 2. With a full-core libmruby (BC2CPP_MRUBY_FULL): each compiled helper is run against the interpreted operator
 #    over Hash receivers and operands (subsets, NaN and user `==` values, default procs, subclasses, non-Hash
@@ -62,7 +62,7 @@ end
 
 def generate(runtime, extra: '', **opts)
   Dir.mktmpdir do |dir|
-    code, err = runtime.generate("#{FIXTURE}#{extra}", dir, closed: true, only_owners: OWNERS, core: true, **opts)
+    code, err = runtime.generate("#{FIXTURE}#{extra}", dir, only_owners: OWNERS, core: true, **opts)
     return [code, err]
   end
 end
@@ -122,11 +122,7 @@ check.call('NEG: a method_missing class turns the closed helpers off', compiled_
 c, = generate(runtime, extra: "class CcS\n  def self.run\n    h = {}\n    def h.<(o) = true\n    h\n  end\nend\n")
 check.call('NEG: a singleton method on an object (singleton-free instances unproven) keeps every by-name Hash arm', compiled_ops(c).empty?)
 Dir.mktmpdir do |dir|
-  c, = runtime.generate(FIXTURE, dir, closed: false, only_owners: OWNERS, core: true)
-  check.call('NEG: an open world keeps the by-name helpers', compiled_ops(c).empty?)
-end
-Dir.mktmpdir do |dir|
-  c, = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS, core: false)
+  c, = runtime.generate(FIXTURE, dir, only_owners: OWNERS, core: false)
   check.call('NEG: no core compile in the run: no compiled Hash body to call', compiled_ops(c).empty? &&
              closed_form(c, 'lt')&.include?('bc2cpp_send('))
 end
@@ -213,7 +209,7 @@ elsif full && runtime.compiler?
     }
   CPP
   Dir.mktmpdir do |dir|
-    code, err = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS, core: true)
+    code, err = runtime.generate(FIXTURE, dir, only_owners: OWNERS, core: true)
     built, output = runtime.run(dir, err, OWNERS, SCENARIO.sub('__SOURCE__', RUN_DRIVER), build: full, full: true, vms: [true])
     check.call('the run builds', built)
     summary = output.to_s[/summary (\d+) cases, (\d+) mismatches, (\d+) Hash receivers, (\d+) exceptions, (\d+) true/, 0]

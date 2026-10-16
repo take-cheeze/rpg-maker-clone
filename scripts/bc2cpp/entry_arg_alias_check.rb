@@ -64,7 +64,7 @@ end
 
 puts '-- generated code (closed world)'
 code = nil
-Dir.mktmpdir { |dir| code, = runtime.generate(fixture, dir, closed: true) }
+Dir.mktmpdir { |dir| code, = runtime.generate(fixture, dir) }
 proven = lambda do |m|
   c = chunk_of.call(code, m)
   !c.empty? && !c.match?(retained_tag)
@@ -84,7 +84,7 @@ if (full.nil? && core.nil?) || !runtime.compiler?
 else
   puts '-- fixture on real mruby, interpreted and compiled'
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(fixture, dir, closed: true, only_owners: %w[EaBox])
+    _code, err = runtime.generate(fixture, dir, only_owners: %w[EaBox])
     body = <<~CPP
       static int scenario(mrb_state* M) {
         mrb_value box = mrb_obj_new(M, mrb_class_get(M, "EaBox"), 0, nullptr);

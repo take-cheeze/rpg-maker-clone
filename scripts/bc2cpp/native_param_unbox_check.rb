@@ -341,11 +341,11 @@ STANDIN = <<~'CPP'
   }
 CPP
 
-generate = lambda do |source, dir, closed: true, env: {}, only: OWNERS, **options|
+generate = lambda do |source, dir, env: {}, only: OWNERS, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(source, dir, closed: closed, only_owners: only, **options)
+    runtime.generate(source, dir, only_owners: only, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end

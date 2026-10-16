@@ -23,6 +23,7 @@ require 'set'
 require 'shellwords'
 require 'tmpdir'
 require_relative 'compiled_gems'
+require_relative 'wio_world_env'
 
 module NeverCalledRegistrations
   SAFE_UNREGISTER_OWNER_RE = /\A(?:Game|RPG2k3?|LCF)(?:::|\z)/
@@ -67,7 +68,7 @@ module NeverCalledRegistrations
         'BC2CPP_HOT_METHODS' => hot_methods,
       }
       cmd = [RbConfig.ruby, bc2cpp, *closed_world_srcs]
-      out, err, status = Open3.capture3(env, *cmd)
+      out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), *cmd)
       unless status.success?
         warn err
         raise "never_called_registrations: #{gem_name}'s own bc2cpp.rb run failed (see stderr above)"

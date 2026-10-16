@@ -17,6 +17,7 @@ require 'tmpdir'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/nomethod_reviewed'
 require_relative '../../tools/bc2cpp/bc2cpp'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 root = File.expand_path('../..', __dir__)
 failures = []
@@ -86,10 +87,10 @@ generate = lambda do |source, name, ruby_srcs|
     ruby_srcs.each_with_index { |text, i| File.write(File.join(gem_dir, 'mrblib', "outside#{i}.rb"), text) }
     gems = wio_gems.merge('cw-outside' => gem_dir)
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
-                        'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+                        'BC2CPP_BUILD_NAME' => 'wio',
             'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
             NomethodReviewed::ALLOW_ENV => 'allow' }
-    out, err, status = Open3.capture3(env, RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
     [out, err]
   end

@@ -62,8 +62,6 @@ class CodeGen
   end
 
   def compute_declared_return_refusal(name)
-    return ['info', 'the build has no outside-world scan, so no return fact is proven'] unless @foreign_method_names
-
     installed = symbol_installed_names
     return ['error', 'the program installs or renames methods with computed names'] if installed.nil?
     if installed.include?(name) || numeric_aliased_names.include?(name)
@@ -112,13 +110,9 @@ class CodeGen
   def check_declared_returns
     @declared_return_diagnostics = []
     @declared_return_report = []
-    # Without the outside-world scan no return proof runs and no declaration is seeded: the declarations stay the
-    # guarded hints they were, and the proofs they would join do not exist to be checked against.
-    unless @foreign_method_names
-      @declared_return_report = declared_return_entries.map do |e|
-        "  DECLARED_RET #{e.key} -> #{e.text}: not checked (no outside-world scan)"
-      end
-      return @declared_return_diagnostics
+    # The proofs run on the closed world's outside-source scan, a required bc2cpp input (ADR 0461).
+    if @foreign_method_names.nil? && !declared_return_entries.empty?
+      raise 'DECLARED_RETURN_CHECK: no outside-source scan; bc2cpp compiles closed-world programs only (ADR 0461)'
     end
     declared_return_hints.each do |entry|
       @declared_return_report << "  DECLARED_RET #{entry.key} -> #{entry.text}: " \

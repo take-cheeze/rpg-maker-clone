@@ -147,8 +147,8 @@ EXACT_TAG = /(?:EXACT_TYPED|CLOSED_WORLD_EXACT_CLASS) :\w+[?!]? /
 exact = ->(code, fn) { body_of.call(code, fn).match?(EXACT_TAG) }
 guarded = ->(code, fn) { body = body_of.call(code, fn); !body.empty? && !body.match?(EXACT_TAG) }
 
-generate = lambda do |source, dir, closed: true|
-  runtime.generate(source, dir, closed: closed, only_owners: OWNERS)
+generate = lambda do |source, dir|
+  runtime.generate(source, dir, only_owners: OWNERS)
 end
 
 Dir.mktmpdir do |dir|
@@ -296,13 +296,6 @@ Dir.mktmpdir do |dir|
     mcode, merr = generate.call(CLASSES + FX_OPEN + extra, d)
     check.call("#{what} withdraws the table and the flow", TABLE_ONLY.none? { |fn| exact.call(mcode, fn) } && !merr.include?('RETCLASS '))
   end
-
-  # Nothing is proven without the closed world.
-  d = File.join(dir, 'open')
-  Dir.mkdir(d)
-  ocode, oerr = generate.call(CLASSES + FX_OPEN, d, closed: false)
-  check.call('without the closed world no name and no send is exact',
-             TABLE_ONLY.none? { |fn| exact.call(ocode, fn) } && !oerr.include?('RETCLASS '))
 end
 
 # -- behaviour -------------------------------------------------------------------------------------
@@ -328,7 +321,7 @@ else
     end
   RUBY
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(CLASSES + FX_OPEN + driver, dir, closed: true, only_owners: OWNERS)
+    _code, err = runtime.generate(CLASSES + FX_OPEN + driver, dir, only_owners: OWNERS)
     body = <<~CPP
       static int scenario(mrb_state* M) {
         mrb_value fx = mrb_obj_new(M, mrb_class_get(M, "RcFx"), 0, nullptr);

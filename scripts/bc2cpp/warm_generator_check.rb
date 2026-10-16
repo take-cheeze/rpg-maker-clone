@@ -14,6 +14,7 @@
 require 'tmpdir'
 require 'fileutils'
 require_relative 'fixture_runtime'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 failures = []
 check = lambda do |what, condition|
@@ -42,7 +43,7 @@ def generate_once(source, dir)
   FileUtils.rm_rf(dir)
   FileUtils.mkdir_p(dir)
   name = source[/class (\w+)/, 1]
-  code, err = Bc2cppFixtureRuntime.generate(source, dir, closed: true, only_owners: [name])
+  code, err = Bc2cppFixtureRuntime.generate(source, dir, only_owners: [name])
   [code, err, nil]
 rescue RuntimeError => e
   [nil, nil, e.message]
@@ -106,7 +107,7 @@ Dir.mktmpdir('bc2cpp-warm-check') do |base|
     FileUtils.mkdir_p(dir)
     File.write(File.join(dir, 'fixture.rb'), FIXTURES['one-method'])
     argv = [File.join(dir, 'fixture.rb')]
-    changes = { 'OUT_DIR' => dir, 'OUT_SYMBOL' => 'fixture', 'BC2CPP_ESCAPE_REPORT' => File.join(dir, 'escape.txt') }
+    changes = bc2cpp_wio_world_env('OUT_DIR' => dir, 'OUT_SYMBOL' => 'fixture', 'BC2CPP_ESCAPE_REPORT' => File.join(dir, 'escape.txt'))
     gated = client.run(argv, changes)
     expected = Open3.capture3(changes, RbConfig.ruby, Bc2cppFixtureRuntime::BC2CPP, *argv)
     check.call('a request with a differing load-time gate runs as a subprocess', client.fallbacks == 1)

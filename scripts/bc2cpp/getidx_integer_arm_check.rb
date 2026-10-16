@@ -163,7 +163,7 @@ end
 def generated_checks(check, runtime)
   puts '-- generated code (closed world)'
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(SHIM + CLASSES, dir, closed: true, only_owners: %w[AtProbe Integer])
+    code, = runtime.generate(SHIM + CLASSES, dir, only_owners: %w[AtProbe Integer])
     getidx = function_text(code, 'bc2cpp_getidx').to_s
     arm = getidx.index(/bc2cpp_owner_class_\d+\(M\) == mrb_obj_class\(M, recv\)/)
     check.call('with Integer#[] defined, the helper has an Integer arm that calls its compiled body',
@@ -174,7 +174,7 @@ def generated_checks(check, runtime)
   end
 
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(CLASSES, dir, closed: true, only_owners: %w[AtProbe])
+    code, = runtime.generate(CLASSES, dir, only_owners: %w[AtProbe])
     getidx = function_text(code, 'bc2cpp_getidx').to_s
     check.call('without a definer the helper invents no Integer arm (core has no Integer#[])',
                !getidx.empty? && !getidx.include?('Integer') && !getidx.include?('POLY_SMALL_N') &&
@@ -212,7 +212,7 @@ builds.each do |label, build, mrbc, flags, width, full|
   ENV['BC2CPP_CXXFLAGS'] = flags
   begin
     Dir.mktmpdir do |dir|
-      _code, err = runtime.generate(SHIM + CLASSES + driver(width), dir, closed: true, only_owners: %w[AtProbe Integer])
+      _code, err = runtime.generate(SHIM + CLASSES + driver(width), dir, only_owners: %w[AtProbe Integer])
       # Only AtProbe is registered: Integer#[] stays the interpreter's shim, so the compiled body is reached
       # through the helper's arm and nowhere else.
       built, output = runtime.run(dir, err, %w[AtProbe], SCENARIO, build: build, full: full)

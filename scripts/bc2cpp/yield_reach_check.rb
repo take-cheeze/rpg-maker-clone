@@ -61,7 +61,7 @@ RUBY
 check.call('no Fiber.yield anywhere: every method is yield-free',
            plain.method_labels.all? { |l| plain.yield_free?(l) })
 check.call('and so is every block', plain.block_labels.all? { |l| plain.yield_free?(l) })
-check.call('a world that is not closed proves nothing',
+check.call('a world the proof does not cover (a global refusal) proves nothing',
            analyse('class P; def f(a); a.each { |x| x }; end; end', sound: false).then { |r| r.block_labels.none? { |l| r.yield_free?(l) } })
 
 # -- Fiber.yield and its callers, by name, whatever the receiver -----------------------------------
@@ -102,10 +102,11 @@ check.call('Helper#step is refused: it is reachable from a Fiber and yields (exp
            unsafe.include?(%w[Helper step]))
 check.call('Helper#quiet is not refused: it cannot yield', !unsafe.include?(%w[Helper quiet]))
 
-# Outside a closed world nothing is proved yield-free, but the refusal under a Fiber stays best effort:
+# Where the proof does not cover the world (a global refusal) nothing is proved yield-free, but the refusal
+# under a Fiber stays best effort:
 # it follows every call edge by name (explicit receivers included) and does not treat unknown code
 # as yielding, so a program with computed sends and eval keeps its compiled methods.
-open_world = analyse(<<~RUBY, sound: false)
+unsound = analyse(<<~RUBY, sound: false)
   class Helper
     def step; Fiber.yield 1; end
     def relay; step; end
@@ -118,8 +119,8 @@ open_world = analyse(<<~RUBY, sound: false)
     def other; @h.quiet; end
   end
 RUBY
-open_unsafe = open_world.fiber_unsafe(open_world.method_labels).map { |l| open_world.nodes[l] }.to_set { |n| [n.klass, n.name] }
-check.call('an open world still refuses what a Fiber reaches across classes and may yield',
+open_unsafe = unsound.fiber_unsafe(unsound.method_labels).map { |l| unsound.nodes[l] }.to_set { |n| [n.klass, n.name] }
+check.call('an unsound world still refuses what a Fiber reaches across classes and may yield',
            open_unsafe.include?(%w[Helper relay]) && open_unsafe.include?(%w[Helper step]))
 check.call('and does not refuse what cannot yield, computed sends or eval included',
            !open_unsafe.include?(%w[Helper quiet]) && !open_unsafe.include?(%w[Runner dyn]) && !open_unsafe.include?(%w[Runner other]))

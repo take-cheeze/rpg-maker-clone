@@ -25,6 +25,7 @@ require 'tmpdir'
 require_relative 'fixture_runtime'
 require_relative '../../tools/bc2cpp/nomethod_reviewed'
 require_relative 'cxx'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 MRBC_PATH = Bc2cppFixtureRuntime.mrbc
@@ -205,7 +206,7 @@ owners = BC2CPP_CORE_OWNERS + %w[YfHelper YfRunner YfPpu YfCpu YfSys]
 env = lambda do |dir, name|
   { 'MRBC' => MRBC_PATH, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
     'NATIVE_SRCS' => Shellwords.join(native_srcs), 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)),
-    'ONLY_OWNERS' => owners.join(','), 'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+    'ONLY_OWNERS' => owners.join(','), 'BC2CPP_BUILD_NAME' => 'wio',
     'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }), NomethodReviewed::ALLOW_ENV => 'allow',
     # The repo's sig/bc2cpp signatures describe RPG engine classes; this fixture program has none of them.
     'BC2CPP_SIG_DIRS' => '' }
@@ -216,7 +217,7 @@ FileUtils.mkdir_p(work)
 fixture_path = File.join(work, 'fixture.rb')
 File.write(fixture_path, FIXTURE)
 File.write(File.join(work, 'driver.rb'), DRIVER)
-out, err, status = Open3.capture3(env.call(work, 'yf'), RbConfig.ruby, File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb'), *core_srcs, fixture_path)
+out, err, status = Open3.capture3(bc2cpp_wio_world_env(env.call(work, 'yf')), RbConfig.ruby, File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb'), *core_srcs, fixture_path)
 abort "bc2cpp.rb failed:\n#{err[-3000..] || err}" unless status.success?
 File.write(File.join(work, 'yf_gen.cpp'), out)
 File.write(File.join(work, 'yf.err'), err)

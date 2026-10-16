@@ -6,7 +6,7 @@
 # the inline Array#min/#max (ADR 0261) is such a send.
 #
 #   1. generated code: the positives, the sites that must keep their by-name send, the kill switch
-#      (BC2CPP_CORE_EXTEND=0), and the worlds that withdraw the proof (open world, no core, a Ruby
+#      (BC2CPP_CORE_EXTEND=0), and the worlds that withdraw the proof (no core, a Ruby
 #      override of the name or of `each`, a prepend, a dynamic installer, a singleton maker, a
 #      comparator that yields to a Fiber);
 #   2. behaviour: the fixture compiled over the compiled core against the interpreter on a full-core, a
@@ -33,6 +33,7 @@ require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/nomethod_reviewed'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
 require_relative 'mutant_pool'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 MRUBY = File.join(ROOT, '3rd/mruby')
 MRBC_PATH = ENV['MRBC'] || 'mrbc'
@@ -244,7 +245,7 @@ gems = NomethodReviewedProbe.wio_gems(ROOT)
 native_srcs = core_native_srcs(MRUBY) + external_gem_native_srcs(ROOT)
 core_srcs = core_compiled_mrblib_srcs(ROOT)
 
-generate = lambda do |source, name, closed: true, core: true, extra_env: {}|
+generate = lambda do |source, name, core: true, extra_env: {}|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
@@ -252,13 +253,12 @@ generate = lambda do |source, name, closed: true, core: true, extra_env: {}|
             'NATIVE_SRCS' => Shellwords.join(native_srcs),
             'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)),
             'ONLY_OWNERS' => OWNERS.join(',') }
-    if closed
-      env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
-                 NomethodReviewed::ALLOW_ENV => 'allow')
-    end
+    env.merge!('BC2CPP_BUILD_NAME' => 'wio',
+               'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
+               NomethodReviewed::ALLOW_ENV => 'allow')
+
     srcs = (core ? core_srcs : []) + [path]
-    out, err, status = Open3.capture3(env.merge(extra_env), RbConfig.ruby, File.join(TOOL_DIR, 'bc2cpp.rb'), *srcs)
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env.merge(extra_env)), RbConfig.ruby, File.join(TOOL_DIR, 'bc2cpp.rb'), *srcs)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
     out
   end
@@ -341,8 +341,6 @@ if run_generated
              %w[unknown_max unknown_min unknown_uniq unknown_to_a].all? { |fn| mask.call(nb.call(fn)) == mask.call(ob.call(fn)) })
 
   puts ' 4. worlds that withdraw the proof'
-  open_code = generate.call(FIXTURE, 'cx_open', closed: false)
-  check.call('without the closed world nothing is direct', !open_code.include?('CORE_EXACT_DIRECT'))
   nocore = generate.call(FIXTURE, 'cx_nocore', core: false)
   check.call('without the compiled core nothing is direct', !nocore.include?('CORE_EXACT_DIRECT'))
   no_pools = generate.call(FIXTURE, 'cx_no_pools', extra_env: { 'BC2CPP_CLASS_POOLS' => '0' })
@@ -414,7 +412,7 @@ if MODE != 'generated'
             env = { 'MRBC' => spec.build.mrbcfile.to_s, 'OUT_SYMBOL' => 'cx', 'OUT_DIR' => build_dir,
                     'ONLY_OWNERS' => ENV.fetch('BC2CPP_CX_OWNERS'), 'NATIVE_SRCS' => Shellwords.join(native),
                     'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)), 'SKIP_UNSUPPORTED' => '1',
-                    'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+                    'BC2CPP_BUILD_NAME' => 'wio',
                     'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
                     NomethodReviewed::ALLOW_ENV => 'allow' }
             cmd = "#{RbConfig.ruby.shellescape} #{ROOT}/tools/bc2cpp/bc2cpp.rb #{srcs.map(&:shellescape).join(' ')} " \

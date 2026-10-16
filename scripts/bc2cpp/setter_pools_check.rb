@@ -9,7 +9,7 @@
 # 0. Audit (no MRBC): every native store of a scoped slot (NativeIvarScopes::STORES) is the one the table says.
 # 1. Generated code (needs MRBC): the positive shapes get the checked arm; every withdrawal condition (a second
 #    class, a parameter, send(:x=), an alias, a computed name, a native call, a super, a runtime installer,
-#    reflection, a singleton, a foreign source, the open world, both kill switches) keeps the old guard or send,
+#    reflection, a singleton, a foreign source, both kill switches) keeps the old guard or send,
 #    and a setter a native only registers is still admitted.
 # 2. Behaviour on real mruby: compiled answers equal interpreted ones; a setter call from outside the closed
 #    world (the writer the scan cannot see) is a loud guard violation in the compiled run, never a silent
@@ -184,7 +184,7 @@ by_name = ->(code, owner, fn) { body_of.call(code, owner, fn).include?('bc2cpp_s
 
 # The closed world's own outside sources are the build's gems' src/ and mrblib/, so the fixture's native and foreign
 # sources also live in a gem the build lists (the NATIVE_SRCS list alone feeds the older, blunter scans).
-generate = lambda do |source, dir, closed: true, env: {}, native: NATIVE, foreign: [], **options|
+generate = lambda do |source, dir, env: {}, native: NATIVE, foreign: [], **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
@@ -192,7 +192,7 @@ generate = lambda do |source, dir, closed: true, env: {}, native: NATIVE, foreig
     FileUtils.mkdir_p([File.join(gem_dir, 'src'), File.join(gem_dir, 'mrblib')])
     native.each { |name, text| File.write(File.join(gem_dir, 'src', name), text) }
     foreign.each { |name, text| File.write(File.join(gem_dir, 'mrblib', name), text) }
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, native: native, foreign: foreign,
+    runtime.generate(source, dir, only_owners: OWNERS, native: native, foreign: foreign,
                                   build_gems: [['sp-fake', gem_dir]], **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
@@ -282,11 +282,6 @@ if ENV['MRBC']
       check.call("#{switch}=#{value}: no checked pool and no checked arm",
                  !off_code.include?('CHECKED_POOL_EXACT') && !off_err.include?('CHECKED|'))
     end
-
-    d = File.join(dir, 'open')
-    Dir.mkdir(d)
-    open_code, = generate.call(CLASSES + HOST, d, closed: false)
-    check.call('the open world proves nothing', !open_code.include?('CHECKED_POOL_EXACT'))
   end
 else
   puts '-- SKIP generated code: set MRBC'

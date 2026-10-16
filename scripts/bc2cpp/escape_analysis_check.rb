@@ -9,7 +9,7 @@
 #   1. unit      the analysis on mrbc-compiled fixtures (each escape route a negative, each confined shape a
 #                positive) and on hand-built bytecode, the callee summaries, the audited native tables;
 #   2. generated the consumer's output, the worlds that withdraw it, the kill switch (BC2CPP_ESCAPE_ANALYSIS=0
-#                must give the earlier output), the open world;
+#                must give the earlier output);
 #   3. run       the compiled fixture against the interpreter on a full-core, a core-only and a 32-bit mrb_int
 #                build (BC2CPP_BLOCK_DIRECT_ENTRY=0 on the last: ADR 0271 keeps a block's entry as an address
 #                in a 32-bit slot, which this 64-bit host truncates).
@@ -39,6 +39,7 @@ require File.join(TOOL_DIR, 'compiled_gems')
 require File.join(TOOL_DIR, 'nomethod_reviewed')
 require File.join(TOOL_DIR, 'nomethod_reviewed_probe')
 require_relative 'escape_fixture'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 failures = []
 check = lambda do |what, condition|
@@ -297,7 +298,7 @@ gems = NomethodReviewedProbe.wio_gems(ROOT)
 native_srcs = core_native_srcs(MRUBY) + external_gem_native_srcs(ROOT)
 core_srcs = core_compiled_mrblib_srcs(ROOT)
 
-generate = lambda do |source, name, closed: true, core: false, extra_env: {}, outside_gem: nil, native: nil, owners: OWNERS|
+generate = lambda do |source, name, core: false, extra_env: {}, outside_gem: nil, native: nil, owners: OWNERS|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
@@ -316,13 +317,12 @@ generate = lambda do |source, name, closed: true, core: false, extra_env: {}, ou
     env = { 'MRBC' => MRBC_PATH, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
             'NATIVE_SRCS' => Shellwords.join(natives), 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreigns),
             'ONLY_OWNERS' => owners.join(',') }
-    if closed
-      env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(build_gems.map { |n, d| "#{n}=#{d}" }),
-                 NomethodReviewed::ALLOW_ENV => 'allow')
-    end
+    env.merge!('BC2CPP_BUILD_NAME' => 'wio',
+               'BC2CPP_BUILD_GEMS' => Shellwords.join(build_gems.map { |n, d| "#{n}=#{d}" }),
+               NomethodReviewed::ALLOW_ENV => 'allow')
+
     srcs = (core ? core_srcs : []) + [path]
-    out, err, status = Open3.capture3(env.merge(extra_env), RbConfig.ruby, File.join(TOOL_DIR, 'bc2cpp.rb'), *srcs)
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env.merge(extra_env)), RbConfig.ruby, File.join(TOOL_DIR, 'bc2cpp.rb'), *srcs)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
     out
   end
@@ -390,9 +390,6 @@ if run_generated && have_mrbc
   withdrawn.call('ObjectSpace in the program', "#{program}\nclass EaFx\n  def scan; ObjectSpace; end\nend\n", %w[p_sum p_walk])
   withdrawn.call('a computed define_method', "#{program}\nclass EaFx\n  def make(n); self.class.define_method(n) { 1 }; end\nend\n", %w[p_sum p_walk])
   withdrawn.call('define_method reached through send', "#{program}\nclass EaFx\n  def make; self.class.send(:define_method, :spin) { |n, &b| @kept = b }; end\nend\n", %w[p_sum p_nested])
-  open_code = generate.call(program, 'ea_open', closed: false)
-  check.call('without the closed world the proof is not offered',
-             PROVEN.none? { |m| compiled.call(open_code, m) })
   untouched.call('and the closed-world run of the same program', new_code, PROVEN)
 end
 
@@ -431,7 +428,7 @@ if run_behaviour
             env = { 'MRBC' => spec.build.mrbcfile.to_s, 'OUT_SYMBOL' => 'ea', 'OUT_DIR' => build_dir,
                     'ONLY_OWNERS' => (BC2CPP_CORE_OWNERS + %w[EaFx EaSink EaOther]).join(','),
                     'NATIVE_SRCS' => Shellwords.join(native), 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)),
-                    'SKIP_UNSUPPORTED' => '1', 'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+                    'SKIP_UNSUPPORTED' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
                     'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
                     NomethodReviewed::ALLOW_ENV => 'allow' }
             cmd = "#{RbConfig.ruby.shellescape} #{ROOT}/tools/bc2cpp/bc2cpp.rb #{srcs.map(&:shellescape).join(' ')} " \

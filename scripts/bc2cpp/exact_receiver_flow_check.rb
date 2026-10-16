@@ -17,7 +17,7 @@
 #
 # 1. Generated code (needs MRBC): positives lose their guard and dispatch; each withdrawal (a second
 #    class under the same constant name, a user `freeze`, a const_missing, an outside definition of
-#    the name, a computed const_set, the kill switch, the open world) keeps the guard.
+#    the name, a computed const_set, the kill switch) keeps the guard.
 # 2. Behaviour on real mruby: compiled answers equal interpreted ones, including FrozenError on a
 #    frozen constant and a user `freeze` that answers something else. Run it on a full-core and a
 #    core-only mruby, and with BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32" on a 32-bit mrb_int build.
@@ -152,11 +152,11 @@ guarded = lambda do |code, owner, fn|
   !body.empty? && (body.include?('bc2cpp_send(') || body.include?('switch (mrb_type('))
 end
 
-generate = lambda do |source, dir, closed: true, env: {}, **options|
+generate = lambda do |source, dir, env: {}, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options)
+    runtime.generate(source, dir, only_owners: OWNERS, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
@@ -243,10 +243,6 @@ if ENV['MRBC']
                    unguarded.call(off_code, 'ErHolder', 'lit_size'))
     end
 
-    Dir.mktmpdir do |open_dir|
-      open_code, = generate.call(CLASSES + HOLDER, open_dir, closed: false)
-      check.call('the open world proves nothing about a constant', guarded.call(open_code, 'ErHolder', 'const_list'))
-    end
 
     # EXACT_FLOW_RESULT_CLASS: the typed call carries no class test and no fallback when the flow names the class.
     flow_generate = lambda do |source, d, env: {}, **options|
@@ -286,11 +282,6 @@ if ENV['MRBC']
       acode, = flow_generate.call(FLOW_SOURCE, flow_arms, env: { 'BC2CPP_EXACT_CORE_ARMS' => '0' })
       check.call('the exact-core-arms switch (BC2CPP_EXACT_CORE_ARMS=0) also withdraws it',
                  FLOW_POSITIVE.keys.none? { |fn| body_of.call(acode, 'ErFlow', fn).include?('EXACT_TYPED :er_total') })
-    end
-    Dir.mktmpdir do |flow_open|
-      pcode, = flow_generate.call(FLOW_SOURCE, flow_open, closed: false)
-      check.call('the open world proves no flow class',
-                 FLOW_POSITIVE.keys.none? { |fn| body_of.call(pcode, 'ErFlow', fn).include?('EXACT_TYPED :er_total') })
     end
   end
 else

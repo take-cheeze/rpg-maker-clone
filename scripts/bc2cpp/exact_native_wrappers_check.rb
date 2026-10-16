@@ -10,7 +10,7 @@
 # 1. Generated code (needs MRBC): positives lose their class test and their dispatch; the call
 #    text equals the one of the guarded arm; every withdrawal condition (a second class, a
 #    parameter, an attr_writer, reflection, a subclass, a singleton maker, a Ruby override or
-#    define_method of the name, the kill switches, the open world) keeps the guard.
+#    define_method of the name, the kill switches) keeps the guard.
 # 2. Behaviour on real mruby with a stand-in for the rgss:: bodies (the real ones need SDL): compiled
 #    answers and the calls the bodies receive equal the interpreter's, with zero dispatches on the
 #    exact methods. Run it on a full-core and a core-only mruby, and with BC2CPP_CXXFLAGS="-DMRB_32BIT
@@ -156,11 +156,11 @@ wrapper_call = lambda do |code, owner, fn|
   live_of.call(code, owner, fn).gsub(/\s+/, ' ')[/rgss::(?!native_)\w+\(M, [^;]*\);/].to_s.gsub(/\br\d+\b/, 'R')
 end
 
-generate = lambda do |source, dir, closed: true, env: {}, **options|
+generate = lambda do |source, dir, env: {}, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options)
+    runtime.generate(source, dir, only_owners: OWNERS, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
@@ -269,11 +269,6 @@ if ENV['MRBC']
         check.call('a world that can reach Marshal: the default models hostile bytes as outside, =strict withdraws the pools',
                    exact.call(default_code, 'ExHost', 'clear_it') && !exact.call(strict_code, 'ExHost', 'clear_it'))
       end
-    end
-    Dir.mktmpdir do |open_dir|
-      open_code, = generate.call(CLASSES + HOST, open_dir, closed: false)
-      check.call('the open world proves nothing: no unguarded wrapper call',
-                 !open_code.include?('EXACT_NATIVE_WRAPPER'))
     end
     check.call('stderr names no failed pool for the exact ivars', err.include?('CLASSIVAR ExHost#@bmp (RGSS::Bitmap)'))
   end

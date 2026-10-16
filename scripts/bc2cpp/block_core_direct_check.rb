@@ -5,7 +5,7 @@
 # (Array#each, Hash#select, Integer#times, Enumerable#collect, ...) gets exact-builtin-class
 # arms that call the compiled core body directly, in front of the block-carrying dynamic send.
 #
-#   - generated code: the arms, and every reason they are withheld (open world, a Ruby
+#   - generated code: the arms, and every reason they are withheld (a Ruby
 #     override or prepend on the class, a dynamic installer, no compiled core, arity);
 #   - behaviour: a fixture compiled together with the compiled core, linked into a full-core
 #     mruby, prints what the interpreted build prints for the same driver (results, break,
@@ -24,6 +24,7 @@ require_relative 'cxx'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/nomethod_reviewed'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 MRUBY = File.join(ROOT, '3rd/mruby')
@@ -157,7 +158,7 @@ gems = NomethodReviewedProbe.wio_gems(ROOT)
 native_srcs = core_native_srcs(MRUBY) + external_gem_native_srcs(ROOT)
 core_srcs = core_compiled_mrblib_srcs(ROOT)
 
-generate = lambda do |source, name, closed: true, core: true, hot: nil|
+generate = lambda do |source, name, core: true, hot: nil|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
@@ -165,13 +166,12 @@ generate = lambda do |source, name, closed: true, core: true, hot: nil|
             'NATIVE_SRCS' => Shellwords.join(native_srcs),
             'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)),
             'ONLY_OWNERS' => (BC2CPP_CORE_OWNERS + ['BdFx']).join(',') }
-    if closed
-      env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
-                 NomethodReviewed::ALLOW_ENV => 'allow')
-    end
+    env.merge!('BC2CPP_BUILD_NAME' => 'wio',
+               'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
+               NomethodReviewed::ALLOW_ENV => 'allow')
+
     srcs = (core ? core_srcs : []) + [path]
-    out, err, status = Open3.capture3(env, RbConfig.ruby, File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb'), *srcs)
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb'), *srcs)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
     out
   end
@@ -213,8 +213,6 @@ check.call('a rest parameter is an Array, so its each is the inlined loop, not a
 check.call('an optional-block core method (find) gets arms',
            arm.call('find_sum').include?('BLOCK_CORE_DIRECT :find'))
 
-open_code = generate.call(FIXTURE, 'bd_open', closed: false)
-check.call('without the closed world no arm is emitted', !open_code.include?('BLOCK_CORE_DIRECT'))
 nocore = generate.call(FIXTURE, 'bd_nocore', core: false)
 check.call('without the compiled core no arm is emitted', !nocore.include?('BLOCK_CORE_DIRECT'))
 
@@ -263,7 +261,7 @@ GEM_RAKE = <<~'RAKE'
         env = { 'MRBC' => spec.build.mrbcfile.to_s, 'OUT_SYMBOL' => 'bd', 'OUT_DIR' => build_dir,
                 'ONLY_OWNERS' => (BC2CPP_CORE_OWNERS + ['BdFx']).join(','), 'NATIVE_SRCS' => Shellwords.join(native),
                 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)), 'SKIP_UNSUPPORTED' => '1',
-                'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+                'BC2CPP_BUILD_NAME' => 'wio',
                 'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
                 NomethodReviewed::ALLOW_ENV => 'allow' }
         cmd = "#{RbConfig.ruby.shellescape} #{ROOT}/tools/bc2cpp/bc2cpp.rb #{srcs.map(&:shellescape).join(' ')} " \

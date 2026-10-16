@@ -159,11 +159,11 @@ expanded = ->(body) { body.include?('// COMPUTED_SEND :') }
 # 0394) calls the exposed Array body in its else, which is not an arm of the expansion.
 arms_of = ->(body) { body.scan(/^\s*r\d+ = (?!mrb_ary_aget1_impl\(|mrb_ary_aset2_impl\()\w+_impl\(M, /).size }
 
-generate = lambda do |source, closed: true, env: {}, **options|
+generate = lambda do |source, env: {}, **options|
   saved = env.map { |k, _| [k, ENV[k]] }
   env.each { |k, v| ENV[k] = v }
   begin
-    Dir.mktmpdir { |dir| runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options).first }
+    Dir.mktmpdir { |dir| runtime.generate(source, dir, only_owners: OWNERS, **options).first }
   ensure
     saved.each { |k, v| ENV[k] = v }
   end
@@ -178,27 +178,19 @@ NOT_EXPANDED = %w[by_param by_unfrozen by_duped by_mixed by_bad by_wide by_opnam
 # The original computed call is still there: a by-name send, or the direct call of a user-defined `send`.
 original_call = ->(code, body, name) { sends_of.call(code, body, name) == 1 || body.include?("_#{name}_impl(M") }
 
-[%w[send closed], %w[__send__ closed], %w[__send__ open]].each do |send_name, kind|
-  closed = kind == 'closed'
+%w[send __send__].each do |send_name|
   if send_name == 'send'
     code = generate.call(world('send') + PUBLIC_SEND)
     check.call("NEG: send and public_send (mruby-metaprog) are never expanded: a harness or build without the gem answers NoMethodError", !code.include?('// COMPUTED_SEND :'))
     next
   end
-  label = "#{send_name}, #{kind} world"
-  code = generate.call(world(send_name) + (send_name == 'send' ? PUBLIC_SEND : ''), closed: closed)
-  # An open world proves no arm direct (every guard chain keeps its by-name else), so nothing expands.
+  label = send_name
+  code = generate.call(world(send_name) + (send_name == 'send' ? PUBLIC_SEND : ''))
   SITES.each do |fn|
     body = body_of.call(code, "CsCpu_#{fn}")
-    check.call("#{label}: #{fn} #{closed ? 'is expanded into direct arms' : 'keeps its computed send'}", expanded.call(body) == closed)
-    next unless closed
-
+    check.call("#{label}: #{fn} is expanded into direct arms", expanded.call(body))
     check.call("#{label}: #{fn} has no by-name #{send_name}, only the two violation arms",
                sends_of.call(code, body, send_name).zero? && body.scan('bc2cpp_guard_violation(').size == 2)
-  end
-  unless closed
-    check.call("NEG: #{label}: nothing in the module is expanded", !code.include?('// COMPUTED_SEND :'))
-    next
   end
   body = body_of.call(code, 'CsCpu_by_index')
   check.call("#{label}: by_index is three direct calls over imm/zpg/abs", arms_of.call(body) == 3 && body.include?('over imm/zpg/abs'))
@@ -427,9 +419,9 @@ builds.clear if ENV['CSEND_GENERATED_ONLY']
 puts '== behaviour: SKIP, set BC2CPP_MRUBY_FULL / BC2CPP_FULL_BUILD_DIR / BC2CPP_MRUBY_CORE and have g++' if builds.empty?
 
 values = ->(sections, name) { sections.fetch(name, []).reject { |l| l.start_with?('  ') }.map { |l| l.gsub(/0x\h+/, '0xADDR') } }
-run_world = lambda do |source, build, full_flag, closed|
+run_world = lambda do |source, build, full_flag|
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(source, dir, closed: closed, only_owners: OWNERS)
+    _code, err = runtime.generate(source, dir, only_owners: OWNERS)
     built, output = runtime.run(dir, err, OWNERS, SCENARIO, build: build, full: full_flag)
     puts output unless built
     built ? runtime.sections(output) : nil
@@ -437,15 +429,13 @@ run_world = lambda do |source, build, full_flag, closed|
 end
 
 builds.each do |label, build, full_flag, mrbc, flags, send_name|
-  [true, false].each do |closed|
-    next unless closed || label == builds.first.first
-
-    puts "== behaviour on real mruby (#{label}, #{closed ? 'closed' : 'open'} world, #{send_name}), interpreted and compiled"
+  begin
+    puts "== behaviour on real mruby (#{label}, #{send_name}), interpreted and compiled"
     saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
     ENV['MRBC'] = mrbc
     ENV['BC2CPP_CXXFLAGS'] = [saved.last, flags].compact.reject(&:empty?).join(' ')
     begin
-      sections = run_world.call(world(send_name) + (send_name == 'send' ? PUBLIC_SEND : ''), build, full_flag, closed)
+      sections = run_world.call(world(send_name) + (send_name == 'send' ? PUBLIC_SEND : ''), build, full_flag)
       check.call('the fixture compiles and runs against real mruby', !sections.nil?)
       next unless sections
 
@@ -467,12 +457,8 @@ builds.each do |label, build, full_flag, mrbc, flags, send_name|
       end
       per = sections.fetch('compiled', []).each_cons(2).select { |_, n| n.include?('dispatches=') }
                     .to_h { |l, n| [l[/\A\S+/], n[/dispatches=(\d+)/, 1].to_i] }
-if closed
-  silent = (NO_DISPATCH - NO_DISPATCH_DROP).select { |k| per.key?(k) }
-  check.call("the expanded sites make no dynamic dispatch (#{silent.size} calls)", silent.size > 15 && silent.all? { |k| per[k].zero? })
-else
-  check.call('the open world dispatches by name (nothing is expanded there)', per['by_case(0)'].to_i.positive?)
-end
+      silent = (NO_DISPATCH - NO_DISPATCH_DROP).select { |k| per.key?(k) }
+      check.call("the expanded sites make no dynamic dispatch (#{silent.size} calls)", silent.size > 15 && silent.all? { |k| per[k].zero? })
       check.call('the sites with no proof still dispatch by name', per['by_param(imm)'].to_i.positive? && per['by_unfrozen(0)'].to_i.positive?)
     ensure
       ENV['MRBC'], ENV['BC2CPP_CXXFLAGS'] = saved

@@ -16,6 +16,7 @@ require 'tmpdir'
 root = File.expand_path('../..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 $failures = 0
 def check(name, cond)
@@ -74,8 +75,8 @@ def compile(root, mrbc, gems_env, source)
     path = File.join(dir, 'cc_fixture.rb')
     File.write(path, source)
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => 'cc_fixture', 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
-            'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio', 'BC2CPP_BUILD_GEMS' => gems_env }
-    out, err, status = Open3.capture3(env, RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
+            'BC2CPP_BUILD_NAME' => 'wio', 'BC2CPP_BUILD_GEMS' => gems_env }
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
     [out, err, status]
   end
 end

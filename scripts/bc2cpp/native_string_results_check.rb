@@ -86,7 +86,6 @@ if ENV['MRBC']
       ['Struct inspect alias replacement', SOURCE + "class Struct; def alternative; NsOther.new; end; alias inspect alternative; end\n", {}, {}, false, nil],
       ['Struct prepend', SOURCE + "module NsInspect; def inspect; NsOther.new; end; end\nclass Struct; prepend NsInspect; end\n", {}, {}, false, nil],
       ['dynamic installer', SOURCE + "class NsOwn; define_method(:to_s) { NsOther.new }; end\n", {}, {}, false, nil],
-      ['open world', SOURCE, { closed: false }, {}, false, nil],
       ['linked foreign to_s', SOURCE, { build_gems: [['string-result-gem', foreign]] }, {}, false, nil],
       ['linked foreign alias', SOURCE, { build_gems: [['string-result-gem', foreign]] }, {}, false, nil],
       ['linked foreign inspect', SOURCE, { build_gems: [['string-result-gem', foreign]] }, {}, false, nil],

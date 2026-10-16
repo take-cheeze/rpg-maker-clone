@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Shared by the bc2cpp checks that compile a fixture with bc2cpp.rb and run it
-# against a real mruby: generation (open or closed world), the C++ driver that
+# against a real mruby: generation (in the wio closed world: bc2cpp is closed-world only, ADR 0461), the C++ driver that
 # registers the compiled methods over the interpreted ones, and the run.
 #
 # Two mruby builds are used, both optional (a check prints SKIP without them):
@@ -20,6 +20,7 @@ require 'tmpdir'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
 require_relative '../../tools/bc2cpp/warm_generator'
+require_relative '../../tools/bc2cpp/wio_world_env'
 require_relative 'cxx'
 
 module Bc2cppFixtureRuntime
@@ -96,8 +97,8 @@ module Bc2cppFixtureRuntime
     host
   end
 
-  # Runs bc2cpp.rb over `source`. `closed` is the wio closed world with the
-  # real core sources (what the model checks need); `only_owners` limits what
+  # Runs bc2cpp.rb over `source` in the wio closed world with the real core
+  # sources (bc2cpp is closed-world only, ADR 0461); `only_owners` limits what
   # is compiled. Returns [code, stderr, dir-relative bytecode path].
   # `path` places the fixture below `dir`: a path under 3rd/mruby/mrblib/ makes bc2cpp treat
   # it as mruby's own Ruby (CoreDefs.core_source?), so a check can exercise the core-only proofs.
@@ -109,7 +110,7 @@ module Bc2cppFixtureRuntime
   # `skip_unsupported: false` drops SKIP_UNSUPPORTED, so a method the compiler
   # refuses keeps its `#error` in the output instead of being dropped whole --
   # what a check that asserts on a refusal needs.
-  def generate(source, dir, closed: true, only_owners: nil, hot_methods: nil, path: 'fixture.rb', extra: [],
+  def generate(source, dir, only_owners: nil, hot_methods: nil, path: 'fixture.rb', extra: [],
                native: [], foreign: [], build_gems: [], drop_gems: [], core: false, skip_unsupported: true)
     src = File.join(dir, path)
     FileUtils.mkdir_p(File.dirname(src))
@@ -122,19 +123,17 @@ module Bc2cppFixtureRuntime
     env['SKIP_UNSUPPORTED'] = '1' if skip_unsupported
     only_owners = BC2CPP_CORE_OWNERS + only_owners if core && only_owners
     env['ONLY_OWNERS'] = only_owners.join(',') if only_owners
-    if closed
-      # `native`/`foreign` are [name, text] pairs of outside sources the closed world must scan.
-      write_outside = lambda do |pairs|
-        pairs.map { |name, text| File.join(dir, name).tap { |file| File.write(file, text) } }
-      end
-      natives = closed_world_native_srcs + write_outside.call(native)
-      env.merge!('NATIVE_SRCS' => Shellwords.join(natives),
-                 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT) + write_outside.call(foreign)),
-                 'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).merge(build_gems.to_h).except(*drop_gems).map { |n, d| "#{n}=#{d}" }),
-                 NomethodReviewed::ALLOW_ENV => 'allow')
-      env['BC2CPP_COLLECTION_EXPORTS'] = '1' if Bc2cppFixtureRuntime.collection_exports_linked
+    # `native`/`foreign` are [name, text] pairs of outside sources the closed world must scan.
+    write_outside = lambda do |pairs|
+      pairs.map { |name, text| File.join(dir, name).tap { |file| File.write(file, text) } }
     end
+    natives = closed_world_native_srcs + write_outside.call(native)
+    env = bc2cpp_wio_world_env(env.merge(
+      'NATIVE_SRCS' => Shellwords.join(natives),
+      'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT) + write_outside.call(foreign)),
+      'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).merge(build_gems.to_h).except(*drop_gems).map { |n, d| "#{n}=#{d}" })
+    ), ROOT)
+    env['BC2CPP_COLLECTION_EXPORTS'] = '1' if Bc2cppFixtureRuntime.collection_exports_linked
     core_srcs = core ? core_compiled_mrblib_srcs(ROOT) : []
     code, err, status = generator_run(env, [*core_srcs, src, *extra_srcs])
     raise "bc2cpp.rb failed:\n#{(err[-3000..] || err)}" unless status.success?

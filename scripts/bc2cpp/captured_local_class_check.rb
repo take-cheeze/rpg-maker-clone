@@ -9,7 +9,7 @@
 # 1. Generated code (needs MRBC): the positives lose their guard and dispatch; each negative keeps it (an argument, a
 #    join of two classes, a store after the block exists, a store inside a block); each withdrawal (binding,
 #    local_variable_set, eval, a string instance_eval, outside Ruby or native naming one, a singleton maker, the kill
-#    switch, the open world) keeps the guard of an otherwise exact read.
+#    switch) keeps the guard of an otherwise exact read.
 # 2. Behaviour on real mruby: compiled answers equal interpreted ones, including a block that outlives a reassignment
 #    of the local, a nil-then-array local and a frozen Array. Run it on a full-core and a core-only mruby, and with
 #    BC2CPP_CXXFLAGS="-DMRB_32BIT -DMRB_INT32" on a 32-bit mrb_int build.
@@ -106,11 +106,11 @@ guarded = lambda do |code, owner, fn|
   !body.empty? && (body.include?('bc2cpp_send(') || body.include?('bc2cpp_getidx(') || body.include?('bc2cpp_setidx(') || body.include?('->c == M->') || body.include?('switch (mrb_type('))
 end
 
-generate = lambda do |source, dir, closed: true, env: {}, **options|
+generate = lambda do |source, dir, env: {}, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options)
+    runtime.generate(source, dir, only_owners: OWNERS, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
@@ -185,10 +185,6 @@ if ENV['MRBC']
                  unguarded.call(pool_code, 'CaHolder', 'cap_hash'))
     end
 
-    Dir.mktmpdir do |open_dir|
-      open_code, = generate.call(HOLDER, open_dir, closed: false)
-      check.call('the open world proves nothing about a captured local', guarded.call(open_code, 'CaHolder', 'cap_hash'))
-    end
   end
 else
   puts '-- SKIP generated code: set MRBC'

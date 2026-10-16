@@ -99,8 +99,7 @@ worlds = [
   ['lexical shadow', SOURCE.sub('class PfRunner', 'class PfRunner; module RGSS; module Profiler; end; end'), {}, false],
   ['installer', SOURCE + "module RGSS::Profiler; define_singleton_method(:section) { |name, &block| \"different\" }; end\n", {}, false],
   ['native replacement', SOURCE, {}, false],
-  ['foreign replacement', SOURCE, {}, false],
-  ['open world', SOURCE, {}, false]
+  ['foreign replacement', SOURCE, {}, false]
 ]
 worlds.select! { |name, _| name == ENV['PFR_CASE'] } if ENV['PFR_CASE']
 abort "unknown PFR_CASE: #{ENV['PFR_CASE']}" if worlds.empty?
@@ -115,7 +114,7 @@ if ENV['MRBC']
         FileUtils.mkdir_p(File.join(dir, 'pf-foreign/mrblib')) unless linked.empty?
         foreign = linked.empty? ? [] : [['pf-foreign/mrblib/outside.rb', 'module RGSS::Profiler; def self.section(name, &block); "different"; end; end']]
         code, err = Bc2cppFixtureRuntime.generate(source, dir, only_owners: OWNERS, native: native,
-                                                foreign: foreign, build_gems: linked, closed: name != 'open world')
+                                                foreign: foreign, build_gems: linked)
         %w[direct next_value nested loaded read].each do |method|
           check.call("#{name}: #{method} result", exact.call(code, method) == proven)
         end

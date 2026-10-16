@@ -47,7 +47,6 @@ Dir.mktmpdir do |dir|
     check.call('unknown input remains unknown', unknown && unknown['blockers'].include?('input_unresolved'))
     check.call('nil is a supplied value, not a missing input', nil_value && nil_value['input'] == 'NIL' && !nil_value['blockers'].include?('input_unresolved'))
     check.call('method capture is a mention, not a named setter call', report['mentions'].any? { |row| row['setter'] == 'contents=' && row['opcode'] == 'LOADSYM' } && report['contracts']['contents=']['named_calls'] == 1)
-    closed_sites = report['sites']
     bitmap_flag = ENV['BC2CPP_NATIVE_BITMAP_IVAR_SCOPE']
     begin
       ENV['BC2CPP_NATIVE_BITMAP_IVAR_SCOPE'] = '0'
@@ -57,10 +56,6 @@ Dir.mktmpdir do |dir|
     ensure
       ENV['BC2CPP_NATIVE_BITMAP_IVAR_SCOPE'] = bitmap_flag
     end
-    Bc2cppFixtureRuntime.generate(source, dir, only_owners: %w[NsBox NsRunner], closed: false)
-    open_report = JSON.parse(File.read(path))
-    check.call('open-world report claims no caller proof', !open_report['closed_world'] && open_report['contracts'].values.all? { |contract| contract['caller_completeness'] == 'not_proven' })
-    check.call('open-world report still enumerates named calls', open_report['sites'].size == closed_sites.size)
   ensure
     ENV['BC2CPP_NATIVE_SETTER_REPORT'] = saved
   end

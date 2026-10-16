@@ -93,7 +93,7 @@ widths.each do |label, prebuilt, mrbc, flags|
     check.call("#{label}: the fixture-runtime core is built", build.is_a?(String))
     puts "-- #{label}"
     Dir.mktmpdir do |dir|
-      _code, err = runtime.generate(SOURCE, dir, closed: true, only_owners: %w[Probe])
+      _code, err = runtime.generate(SOURCE, dir, only_owners: %w[Probe])
       check.call('the positive fixture emits the direct calls',
                  err[/integer-tag else.*?direct (\d+)/, 1].to_i.positive?)
       built, output = runtime.run(dir, err, %w[Probe], SCENARIO, build: build, full: true)

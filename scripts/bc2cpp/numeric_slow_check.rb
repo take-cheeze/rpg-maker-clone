@@ -332,7 +332,7 @@ end
 def generated_checks(check, runtime)
   puts '-- generated code (closed world)'
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE, dir, closed: true, only_owners: %w[NsOpen NsProven NsBox NsCmp])
+    code, = runtime.generate(FIXTURE, dir, only_owners: %w[NsOpen NsProven NsBox NsCmp])
     chunk = lambda do |owner_method|
       code[/^\/\/ #{Regexp.escape(owner_method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
     end
@@ -370,7 +370,7 @@ def generated_checks(check, runtime)
   end
 
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(REDEFINED, dir, closed: true, only_owners: %w[NsRe])
+    code, = runtime.generate(REDEFINED, dir, only_owners: %w[NsRe])
     chunk = lambda do |owner_method|
       code[/^\/\/ #{Regexp.escape(owner_method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
     end
@@ -383,7 +383,7 @@ def generated_checks(check, runtime)
   end
 
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(REDEFINED_CMP, dir, closed: true, only_owners: %w[NsReCmp])
+    code, = runtime.generate(REDEFINED_CMP, dir, only_owners: %w[NsReCmp])
     lt = code[/^\/\/ NsReCmp#lt \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
     check.call('NEG: Integer#< redefined keeps the by-name call', lt.include?('bc2cpp_send(') && !lt.include?('bc2cpp_slow_lt'))
   end
@@ -393,7 +393,7 @@ end
 def closed_div_generated_checks(check, runtime)
   puts '-- generated code (closed world, only Integer and Float answer `/`)'
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE_DIV, dir, closed: true, only_owners: %w[NsDiv NsDivBox])
+    code, = runtime.generate(FIXTURE_DIV, dir, only_owners: %w[NsDiv NsDivBox])
     call = code[/^\/\/ NsDiv#div \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
     helper = code[/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(?:.*?^\}\n){2}\n*#endif\n/m].to_s
     check.call('NsDiv#div calls bc2cpp_slow_div and has no by-name call of its own',
@@ -408,7 +408,7 @@ def closed_div_generated_checks(check, runtime)
   end
   Dir.mktmpdir do |dir|
     source = "#{FIXTURE_DIV}class NsDivBox\n  def /(o) = :divbox\nend\n"
-    code, = runtime.generate(source, dir, closed: true, only_owners: %w[NsDiv NsDivBox])
+    code, = runtime.generate(source, dir, only_owners: %w[NsDiv NsDivBox])
     helper = code[/^static mrb_value bc2cpp_slow_div\(mrb_state\* M.*?^\}\n/m].to_s
     check.call('NEG: a user class answering `/` keeps the by-name call in the helper', helper.include?('bc2cpp_send('))
   end
@@ -479,7 +479,7 @@ def closed_arith_generated_checks(check, runtime)
   puts '-- generated code (closed world, only Integer, Float, Array and String answer `+` and `*`) --'
   fixture_owners = %w[NsArith NsArithBox NsArithConv NsArithStr NsArithAry]
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE_ARITH, dir, closed: true, only_owners: fixture_owners)
+    code, = runtime.generate(FIXTURE_ARITH, dir, only_owners: fixture_owners)
     call = code[/^\/\/ NsArith#add \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
     check.call('NsArith#add calls bc2cpp_slow_add_f and has no by-name call of its own',
                call.include?('bc2cpp_slow_add_f(M, ') && !call.include?('bc2cpp_send(') && !call.include?('mrb_funcall('))
@@ -511,32 +511,32 @@ def closed_arith_generated_checks(check, runtime)
   end
   Dir.mktmpdir do |dir|
     source = "#{FIXTURE_ARITH}class NsArithBox\n  def +(o) = :box_add\nend\n"
-    code, = runtime.generate(source, dir, closed: true, only_owners: fixture_owners)
+    code, = runtime.generate(source, dir, only_owners: fixture_owners)
     check.call('NEG: a user class answering `+` keeps the by-name helper for `+`', helper_pair(code, 'add').nil? &&
                code[/^static mrb_value bc2cpp_slow_add_f\(mrb_state\* M.*?^\}\n/m].to_s.include?('bc2cpp_send('))
     check.call('...and `*` stays closed', !helper_pair(code, 'mul').nil?)
   end
   Dir.mktmpdir do |dir|
     source = "#{FIXTURE_ARITH}class NsArithBox\n  def -(o) = :box_sub\nend\n"
-    code, = runtime.generate(source, dir, closed: true, only_owners: fixture_owners)
+    code, = runtime.generate(source, dir, only_owners: fixture_owners)
     check.call('NEG: a user class answering `-` keeps the by-name helper for `-`', helper_pair(code, 'sub').nil? &&
                code[/^static mrb_value bc2cpp_slow_sub_f\(mrb_state\* M.*?^\}\n/m].to_s.include?('bc2cpp_send('))
     check.call('...and `+` `*` stay closed', !helper_pair(code, 'add').nil? && !helper_pair(code, 'mul').nil?)
   end
   Dir.mktmpdir do |dir|
     source = "#{FIXTURE_ARITH}class NsArithBox\n  def *(o) = :box_mul\nend\n"
-    code, = runtime.generate(source, dir, closed: true, only_owners: fixture_owners)
+    code, = runtime.generate(source, dir, only_owners: fixture_owners)
     check.call('NEG: a user class answering `*` keeps the by-name helper for `*`', helper_pair(code, 'mul').nil?)
     check.call('...and `+` stays closed', !helper_pair(code, 'add').nil?)
   end
   Dir.mktmpdir do |dir|
     source = "#{FIXTURE_ARITH}class Integer\n  def +(o) = :int_plus\nend\n"
-    code, = runtime.generate(source, dir, closed: true, only_owners: fixture_owners)
+    code, = runtime.generate(source, dir, only_owners: fixture_owners)
     check.call('NEG: Integer#+ redefined in Ruby leaves no helper for `+`', !code.include?('bc2cpp_slow_add'))
   end
   Dir.mktmpdir do |dir|
     time = File.join(Bc2cppFixtureRuntime::ROOT, '3rd/mruby/mrbgems/mruby-time')
-    code, = runtime.generate(FIXTURE_ARITH, dir, closed: true, only_owners: fixture_owners, build_gems: { 'mruby-time' => time })
+    code, = runtime.generate(FIXTURE_ARITH, dir, only_owners: fixture_owners, build_gems: { 'mruby-time' => time })
     check.call('NEG: a build that links mruby-time keeps `+` by name (Time#+ is static in mruby-time)',
                helper_pair(code, 'add').nil? && code[/^static mrb_value bc2cpp_slow_add_f\(mrb_state\* M.*?^\}\n/m].to_s.include?('bc2cpp_send('))
     check.call('...and `*`, which Time does not answer, stays closed', !helper_pair(code, 'mul').nil?)
@@ -546,7 +546,7 @@ def closed_arith_generated_checks(check, runtime)
     saved = ENV['BC2CPP_NUMERIC_SLOW_CLOSED']
     ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = '0'
     begin
-      code, = runtime.generate(FIXTURE_ARITH, dir, closed: true, only_owners: fixture_owners)
+      code, = runtime.generate(FIXTURE_ARITH, dir, only_owners: fixture_owners)
     ensure
       ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = saved
     end
@@ -757,7 +757,7 @@ end
 def closed_cmp_generated_checks(check, runtime)
   puts '-- generated code (closed world, comparison operators answered by numbers, Comparable and Hash)'
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE_CMP, dir, closed: true, only_owners: CMP_OWNERS)
+    code, = runtime.generate(FIXTURE_CMP, dir, only_owners: CMP_OWNERS)
     CMP_NAMES.each do |name, op|
       call = code[/^\/\/ NsCmpOpen##{name} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
       check.call("NsCmpOpen##{name} calls bc2cpp_slow_#{name} and has no by-name call of its own",
@@ -774,7 +774,7 @@ def closed_cmp_generated_checks(check, runtime)
   end
   CMP_WORLDS.each do |what, extra, owners, closed|
     Dir.mktmpdir do |dir|
-      code, = runtime.generate("#{FIXTURE_CMP}#{extra}", dir, closed: true, only_owners: CMP_OWNERS + owners)
+      code, = runtime.generate("#{FIXTURE_CMP}#{extra}", dir, only_owners: CMP_OWNERS + owners)
       forms = CMP_NAMES.keys.select { |name| cmp_helper_forms(code, name) }
       check.call("#{closed == ALL ? 'POS' : 'NEG'}: #{what}: the closed form stays on [#{closed.join(' ')}]", forms == closed)
     end
@@ -783,16 +783,12 @@ def closed_cmp_generated_checks(check, runtime)
     saved = ENV['BC2CPP_NUMERIC_SLOW_CLOSED']
     ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = '0'
     begin
-      code, = runtime.generate(FIXTURE_CMP, dir, closed: true, only_owners: CMP_OWNERS)
+      code, = runtime.generate(FIXTURE_CMP, dir, only_owners: CMP_OWNERS)
     ensure
       ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = saved
     end
     check.call('BC2CPP_NUMERIC_SLOW_CLOSED=0 keeps the by-name helpers',
                CMP_NAMES.keys.none? { |name| cmp_helper_forms(code, name) } && code.include?('bc2cpp_slow_lt('))
-  end
-  Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE_CMP, dir, closed: false, only_owners: CMP_OWNERS)
-    check.call('NEG: an open world keeps the by-name helpers', CMP_NAMES.keys.none? { |name| cmp_helper_forms(code, name) })
   end
 end
 
@@ -1047,7 +1043,7 @@ MISC_WORLDS = [
 def closed_misc_generated_checks(check, runtime)
   puts '-- generated code (closed world, `%` and `-@` answered by Integer, Float, String and Numeric only)'
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS)
+    code, = runtime.generate(FIXTURE_MISC, dir, only_owners: MISC_OWNERS)
     { 'mod' => ['NsMisc#mod', '%'], 'neg' => ['NsMisc#neg', '-@'] }.each do |key, (method, op)|
       call = code[/^\/\/ #{Regexp.escape(method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
       check.call("#{method} calls bc2cpp_slow_#{key} and has no by-name call of its own",
@@ -1073,7 +1069,7 @@ def closed_misc_generated_checks(check, runtime)
   end
   MISC_WORLDS.each do |what, extra, owners, closed|
     Dir.mktmpdir do |dir|
-      code, = runtime.generate("#{FIXTURE_MISC}#{extra}", dir, closed: true, only_owners: MISC_OWNERS + owners)
+      code, = runtime.generate("#{FIXTURE_MISC}#{extra}", dir, only_owners: MISC_OWNERS + owners)
       forms = %w[mod neg].select { |key| helper_pair(code, key) }
       check.call("NEG: #{what}: the closed form stays on [#{closed.join(' ')}]", forms == closed)
     end
@@ -1082,25 +1078,21 @@ def closed_misc_generated_checks(check, runtime)
     saved = ENV['BC2CPP_NUMERIC_SLOW_CLOSED']
     ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = '0'
     begin
-      code, = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS)
+      code, = runtime.generate(FIXTURE_MISC, dir, only_owners: MISC_OWNERS)
     ensure
       ENV['BC2CPP_NUMERIC_SLOW_CLOSED'] = saved
     end
     check.call('BC2CPP_NUMERIC_SLOW_CLOSED=0 keeps the by-name helpers', %w[mod neg].none? { |key| helper_pair(code, key) } && code.include?('bc2cpp_slow_mod('))
   end
-  Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE_MISC, dir, closed: false, only_owners: MISC_OWNERS)
-    check.call('NEG: an open world keeps the by-name helpers', %w[mod neg].none? { |key| helper_pair(code, key) })
-  end
   # A build without the gem a String arm links against has no String arm: `-@` keeps the by-name helper when the scanned
   # natives still list string-ext's body (the exported function is not linked), `%` closes without the arm when sprintf's
   # Ruby is absent (there is no String#% to mirror).
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS, drop_gems: %w[mruby-string-ext])
+    code, = runtime.generate(FIXTURE_MISC, dir, only_owners: MISC_OWNERS, drop_gems: %w[mruby-string-ext])
     check.call('NEG: a build without mruby-string-ext keeps the by-name `neg` helper', helper_pair(code, 'neg').nil?)
   end
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS, drop_gems: %w[mruby-sprintf])
+    code, = runtime.generate(FIXTURE_MISC, dir, only_owners: MISC_OWNERS, drop_gems: %w[mruby-sprintf])
     _, mod = helper_pair(code, 'mod').to_a
     check.call('a build without mruby-sprintf closes `%` for Integer and Float only: no String arm, no formatter',
                mod && mod.include?('mrb_int_mod_impl(') && !mod.include?('mrb_str_format_impl') && !mod.include?('mrb_string_p(a)'))
@@ -1259,7 +1251,7 @@ end
 def closed_bits_generated_checks(check, runtime)
   puts '-- generated code (closed world, `^` `>>` `round` answered by core classes only)'
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE_BITS, dir, closed: true, only_owners: BITS_OWNERS)
+    code, = runtime.generate(FIXTURE_BITS, dir, only_owners: BITS_OWNERS)
     blocks = code.scan(/^#if defined\(MRB_USE_COMPLEX\) \|\| defined\(MRB_USE_RATIONAL\)\n(?:.*?^\}\n){2}\n*#endif\n/m)
     { 'xor' => ['NsBits#xor', '^'], 'rshift' => ['NsBits#rsh', '>>'], 'round' => ['NsBits#rnd', 'round'] }.each do |key, (method, op)|
       call = code[/^\/\/ #{Regexp.escape(method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
@@ -1276,7 +1268,7 @@ def closed_bits_generated_checks(check, runtime)
   end
   Dir.mktmpdir do |dir|
     source = "#{FIXTURE_BITS}class NsBitsBox\n  def ^(o) = :x\n  def >>(o) = :y\n  def round = :z\nend\n"
-    code, = runtime.generate(source, dir, closed: true, only_owners: BITS_OWNERS)
+    code, = runtime.generate(source, dir, only_owners: BITS_OWNERS)
     { 'xor' => '^', 'rshift' => '>>', 'round' => 'round' }.each do |key, op|
       helper = code[/^static mrb_value bc2cpp_slow_#{key}\(mrb_state\* M.*?^\}\n/m].to_s
       # A user definition of the name also takes the site off the helper, so for `^` and `round` there may be none.
@@ -1287,7 +1279,7 @@ def closed_bits_generated_checks(check, runtime)
   end
   Dir.mktmpdir do |dir|
     # The main fixture's NsBox defines `>>`: that helper stays open while `^` and `round` close.
-    code, = runtime.generate(FIXTURE, dir, closed: true, only_owners: %w[NsOpen NsProven NsBox NsCmp])
+    code, = runtime.generate(FIXTURE, dir, only_owners: %w[NsOpen NsProven NsBox NsCmp])
     shift = code[/^static mrb_value bc2cpp_slow_rshift\(mrb_state\* M.*?^\}\n/m].to_s
     check.call('NEG: NsBox#>> keeps the `>>` helper open', !shift.empty? && shift.include?('bc2cpp_send('))
   end
@@ -1302,7 +1294,7 @@ def closed_collection_generated_checks(check, runtime)
   fixture = Bc2cppCollectionOpsMatrix::FIXTURE.gsub('\\#', '#')
   gen = lambda do |source = fixture, **options|
     Dir.mktmpdir do |dir|
-      code, = runtime.generate(source, dir, closed: true, only_owners: owners, **options)
+      code, = runtime.generate(source, dir, only_owners: owners, **options)
       code
     end
   end
@@ -1371,10 +1363,6 @@ def closed_collection_generated_checks(check, runtime)
   end
   check.call('without BC2CPP_COLLECTION_EXPORTS=1 (a harness over a libmruby that lacks the exported bodies) `- & | <<` stay by name',
              forms.call(unlinked).empty? && !unlinked.include?('mrb_ary_ext_sub_impl'))
-  Dir.mktmpdir do |dir|
-    check.call('NEG: an open world keeps the by-name helpers',
-               forms.call(runtime.generate(fixture, dir, closed: false, only_owners: owners).first).empty?)
-  end
 
   # The proof reads the scanned sources: a wrapper that no longer calls the export, or an export that went static.
   real = File.join(Bc2cppFixtureRuntime::ROOT, '3rd/mruby/mrbgems/mruby-array-ext/src/array.c')
@@ -1796,7 +1784,7 @@ builds.each do |label, build, mrbc, flags, width, bigint|
   begin
     Dir.mktmpdir do |dir|
       fixture = bigint ? FIXTURE + FIXTURE_BIG : FIXTURE
-      _code, err = runtime.generate(fixture, dir, closed: true, only_owners: %w[NsOpen NsBox NsCmp NsProven NsBig])
+      _code, err = runtime.generate(fixture, dir, only_owners: %w[NsOpen NsBox NsCmp NsProven NsBig])
       source = "$bigint = #{bigint}\n#{driver(width)}"
       if bigint
         source += <<~RUBY
@@ -1900,7 +1888,7 @@ CLOSED_RUNS.each do |name, fixture, owners, driver_name, specs|
     ENV['BC2CPP_CXXFLAGS'] = flags
     begin
       Dir.mktmpdir do |dir|
-        _code, err = runtime.generate(fixture, dir, closed: true, only_owners: owners)
+        _code, err = runtime.generate(fixture, dir, only_owners: owners)
         source = "$bigint = #{bigint}\n#{send(driver_name, width)}"
         built, output = runtime.run(dir, err, owners, closed_scenario(specs, source), build: build, full: true)
         check.call("the closed #{name} fixture compiles and runs against real mruby", built)
@@ -1946,7 +1934,7 @@ builds.product([false, true]).each do |(label, build, mrbc, flags, width, bigint
   begin
     Dir.mktmpdir do |dir|
       owners = Bc2cppCollectionOpsMatrix::OWNERS
-      _code, err = runtime.generate(Bc2cppCollectionOpsMatrix::FIXTURE.gsub('\\#', '#'), dir, closed: true, only_owners: owners,
+      _code, err = runtime.generate(Bc2cppCollectionOpsMatrix::FIXTURE.gsub('\\#', '#'), dir, only_owners: owners,
                                                                                                drop_gems: %w[mruby-enumerator])
       consts = "FM = #{WIDTHS.fetch(width)[:fmax]}\nIM = $bigint ? FM * 2 + 1 : FM"
       source = "$bigint = #{bigint}\n#{Bc2cppCollectionOpsMatrix.driver(consts)}"
@@ -2012,7 +2000,7 @@ builds.product([false, true]).each do |(label, build, mrbc, flags, width, bigint
   begin
     Dir.mktmpdir do |dir|
       owners = %w[NsArith NsArithBox NsArithConv NsArithStr NsArithAry]
-      _code, err = runtime.generate(FIXTURE_ARITH, dir, closed: true, only_owners: owners)
+      _code, err = runtime.generate(FIXTURE_ARITH, dir, only_owners: owners)
       source = "$bigint = #{bigint}\n#{arith_driver(width)}"
       # Dispatch counts and arena depths (two-space lines, which the comparison skips), then a GC-pressure loop.
       source += <<~RUBY
@@ -2095,7 +2083,7 @@ builds.product([false, true]).each do |(label, build, mrbc, flags, width, bigint
   ENV['BC2CPP_CXXFLAGS'] = legacy ? "#{flags} -DMRB_USE_COMPLEX -DMRB_USE_RATIONAL" : flags
   begin
     Dir.mktmpdir do |dir|
-      _code, err = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS)
+      _code, err = runtime.generate(FIXTURE_MISC, dir, only_owners: MISC_OWNERS)
       source = "$bigint = #{bigint}\n#{misc_driver(width)}"
       # Dispatch counts and arena depths (two-space lines, which the comparison skips), then a GC-pressure loop.
       source += <<~RUBY
@@ -2180,7 +2168,7 @@ if core_build && runtime.compiler? && !ONLY_CMP
     # A gem-free libmruby has no exported collection bodies either (ADR 0366), so those helpers stay by name here.
     runtime.collection_exports_linked = false
     begin
-      _code, err = runtime.generate(FIXTURE_MISC, dir, closed: true, only_owners: MISC_OWNERS)
+      _code, err = runtime.generate(FIXTURE_MISC, dir, only_owners: MISC_OWNERS)
     ensure
       runtime.collection_exports_linked = true
     end
@@ -2229,7 +2217,7 @@ builds.each do |label, build, mrbc, flags, width, bigint|
   ENV['BC2CPP_CXXFLAGS'] = flags
   begin
     Dir.mktmpdir do |dir|
-      _code, err = runtime.generate(FIXTURE_CMP, dir, closed: true, only_owners: CMP_OWNERS)
+      _code, err = runtime.generate(FIXTURE_CMP, dir, only_owners: CMP_OWNERS)
       source = "$bigint = #{bigint}\n#{cmp_driver(width)}"
       scenario = CMP_SCENARIO.sub('__SOURCE__') { source }
       built, output = runtime.run(dir, err, CMP_OWNERS, scenario, build: build, full: true)

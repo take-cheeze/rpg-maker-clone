@@ -167,7 +167,7 @@ else
     end
   RUBY
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(scenario_world, dir, closed: true, only_owners: %w[DmFx DmSub DmUp DmTwice])
+    _code, err = runtime.generate(scenario_world, dir, only_owners: %w[DmFx DmSub DmUp DmTwice])
     body = <<~CPP
       static mrb_value num(int n) { return mrb_fixnum_value(n); }
       static mrb_value inst(mrb_state* M, const char* cls) { return mrb_obj_new(M, mrb_class_get(M, cls), 0, nullptr); }

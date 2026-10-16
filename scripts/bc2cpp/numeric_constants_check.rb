@@ -9,7 +9,7 @@
 #    Float constant, an arithmetic join, a constant that is not assigned yet, an interval that overflows); every
 #    withdrawal world (a reopened constant bound to a String, a reassignment out of range, const_set, remove_const, a
 #    native or foreign Ruby definition, const_missing, a module named like the constant, a same-named constant of
-#    another class out of range, a redefined Integer#*, the open world, the kill switch) keeps the tests it must.
+#    another class out of range, a redefined Integer#*, the kill switch) keeps the tests it must.
 #    The diagnostic lists the intervals. NC_GENERATED_ONLY=1 stops here (what the mutation check runs).
 # 2. Behaviour on real mruby: the fixture runs interpreted and compiled against a stand-in for rgss::bitmap_new_direct
 #    (the real one needs SDL) and must record the same constructor arguments and raise alike, while the proven methods
@@ -211,10 +211,6 @@ if ENV['MRBC']
       stay.each { |owner, fn| check.call("#{what}: #{owner}##{fn} stays proven", proven.call(vcode, owner, fn)) }
     end
 
-    Dir.mktmpdir do |open_dir|
-      open_code, = generate.call(HOLDER, open_dir, closed: false)
-      check.call('the open world proves nothing', POSITIVES.all? { |owner, fn| unproven.call(open_code, owner, fn) })
-    end
     Dir.mktmpdir do |off_dir|
       off_code, off_err = generate.call(HOLDER, off_dir, env: { 'BC2CPP_NUMERIC_CONSTANTS' => '0' })
       check.call('the kill switch (BC2CPP_NUMERIC_CONSTANTS=0): the old tag test on every positive',
@@ -315,7 +311,7 @@ else
         # A core-only mruby has no bigint: its 32-bit Integer cannot hold a 3_000_000_000 literal at all, so the constants that
         # sit above the Fixnum range take the widest value it can.
         source = with_gems ? HOLDER : HOLDER.gsub('3_000_000_000', '2_000_000_000')
-        code, gen_err = runtime.generate(source, dir, closed: true, only_owners: OWNERS)
+        code, gen_err = runtime.generate(source, dir, only_owners: OWNERS)
         registered = runtime.registrations(gen_err, OWNERS)
         check.call("#{label}: the harness registers the fixture's own classes (#{registered.size} entry points)",
                    registered.any? { |l| l.include?('"lit"') } && registered.any? { |l| l.include?('"shadow_ok"') })

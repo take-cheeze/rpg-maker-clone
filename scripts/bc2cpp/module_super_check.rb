@@ -26,6 +26,7 @@
 # would mask what is being measured here.
 require 'tmpdir'
 require_relative 'fixture_runtime'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 runtime = Bc2cppFixtureRuntime
 # The fixture's `Ms#pick` iterates a literal Array with a block, so the
@@ -111,7 +112,7 @@ generate_all = lambda do |source, owners|
     env = { 'MRBC' => runtime.mrbc, 'OUT_SYMBOL' => 'fixture', 'OUT_DIR' => dir,
             'ONLY_OWNERS' => owners.join(',') }
     cmd = [RbConfig.ruby, File.join(File.expand_path('../..', __dir__), 'tools/bc2cpp/bc2cpp.rb'), src].shelljoin
-    out, err, status = Open3.capture3(env, cmd)
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), cmd)
     raise "bc2cpp.rb failed: #{err[-2000..]}" unless status.success?
 
     out
@@ -142,7 +143,7 @@ begin
 
   ENV['BC2CPP_MODULE_SUPER'] = nil
   Dir.mktmpdir do |dir|
-    code, err = runtime.generate(BASE, dir, closed: false, only_owners: OWNERS)
+    code, err = runtime.generate(BASE, dir, only_owners: OWNERS)
     all = generate_all.call(BASE, OWNERS)
     hst = body.call(code, 'Hst_pick')
     check.call('a super through an included module no longer emits #error',

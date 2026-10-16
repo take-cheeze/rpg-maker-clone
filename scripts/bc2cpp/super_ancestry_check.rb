@@ -100,7 +100,7 @@ SCENARIO = <<~CPP
 CPP
 
 Dir.mktmpdir do |dir|
-  code, err = runtime.generate(SRC, dir, closed: false, only_owners: OWNERS)
+  code, err = runtime.generate(SRC, dir, only_owners: OWNERS)
   built, output = runtime.run(dir, err, OWNERS, SCENARIO, build: full, full: true, vms: [false])
   check.call('the fixture builds against a full mruby', built)
   next unless built

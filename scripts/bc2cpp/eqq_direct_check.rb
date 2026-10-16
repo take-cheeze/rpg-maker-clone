@@ -9,7 +9,7 @@
 #
 # 1. With MRBC: generated code. The positive closed world has no by-name `===` or `is_a?` send
 #    outside bc2cpp_eqq's default arm; each negative world (a Ruby `===` anywhere a receiver can
-#    reach, an installer, a prepend, an `extend`, a BasicObject subclass, an open world) keeps the
+#    reach, an installer, a prepend, an `extend`, a BasicObject subclass) keeps the
 #    dispatch.
 # 2. With MRBC, rake and g++: the same fixtures on real mruby, interpreted and compiled, must
 #    answer alike -- case/when over every kind of pattern and value, is_a?/kind_of? with classes,
@@ -191,15 +191,6 @@ IS_A_NEGATIVES.each do |what, (extra, names)|
   end
 end
 
-puts '-- generated code, open world'
-Dir.mktmpdir do |dir|
-  code, = runtime.generate(WORLD, dir, closed: false)
-  sw = body_of.call(code, 'EqFx_sw')
-  isa = body_of.call(code, 'EqFx_isa')
-  check.call('an open world has no EQQ_DIRECT arm and keeps the TypeError dispatch',
-             !sw.empty? && !sw.include?('EQQ_DIRECT') && !isa.include?('mrb_raisef') && sends_of.call(code, 'is_a?', isa) == 1)
-end
-
 full = runtime.full_or_build
 if full.nil? || !runtime.compiler?
   puts '  SKIP run: needs rake, g++ and 3rd/mruby (or BC2CPP_MRUBY_FULL)'
@@ -256,7 +247,7 @@ else
     }
   CPP
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(WORLD, dir, closed: true, only_owners: %w[EqFx])
+    _code, err = runtime.generate(WORLD, dir, only_owners: %w[EqFx])
     built, output = runtime.run(dir, err, %w[EqFx], scenario, build: full, full: true, exact_arity: true)
     check.call('the fixture compiles and runs against real mruby', built)
     puts output unless built
@@ -293,7 +284,7 @@ else
                  'a Symbol-named define_method of === on Integer'].include?(what)
 
     Dir.mktmpdir do |dir|
-      _code, err = runtime.generate(WORLD + extra, dir, closed: true, only_owners: %w[EqFx])
+      _code, err = runtime.generate(WORLD + extra, dir, only_owners: %w[EqFx])
       built, output = runtime.run(dir, err, %w[EqFx], scenario, build: full, full: true, exact_arity: true)
       sections = built ? runtime.sections(output) : {}
       values = ->(name) { sections.fetch(name, []).reject { |l| l.start_with?('  ') || l.start_with?('counts') }.map { |l| l.gsub(/0x\h+/, '0xADDR') } }

@@ -136,7 +136,7 @@ end
 
 def layout_of(runtime, source, owners)
   Dir.mktmpdir do |dir|
-    code, = runtime.generate(source, dir, closed: true, only_owners: owners)
+    code, = runtime.generate(source, dir, only_owners: owners)
     yield code
   end
 end
@@ -174,7 +174,7 @@ if ENV['MRBC'] && build && runtime.compiler?
   puts '-- fixture on real mruby, interpreted and compiled'
   Dir.mktmpdir do |dir|
     owners = %w[FwBox FwDriver FwDyn FwDynDriver FwTyped FwTypedDriver]
-    _code, err = runtime.generate([FOREIGN, DYNAMIC, TYPED].join("\n"), dir, closed: true, only_owners: owners)
+    _code, err = runtime.generate([FOREIGN, DYNAMIC, TYPED].join("\n"), dir, only_owners: owners)
     body = <<~CPP
       static void reads(mrb_state* M, const char* tag, mrb_value obj, std::initializer_list<const char*> names) {
         for (const char* r : names) {

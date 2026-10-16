@@ -9,7 +9,7 @@
 #    `Numeric_zero$3f_impl` call, the File arm, no by-name call), the `#if` arm kept for Complex/Rational builds is
 #    unchanged, and each NEG world (a reopened Numeric/Integer/Float#zero?, a module, a prepend, a singleton or class-level
 #    definer, a computed installer, method_missing, a `==` that may yield, a build without mruby-numeric-ext or
-#    mruby-io, an open world, no core compile, the kill switches) keeps the by-name helper.
+#    mruby-io, no core compile, the kill switches) keeps the by-name helper.
 # 2. With a full-core libmruby (BC2CPP_MRUBY_FULL, and BC2CPP_MRUBY_FULL32 + BC2CPP_MRBC32 and BC2CPP_MRUBY_NOBIGINT
 #    for the other widths): the helper is called directly against the real `zero?` over Integer, bigint, Float,
 #    Numeric.new and subclasses (with and without their own `==` / `zero?`, a `==` that raises or logs), class
@@ -74,7 +74,7 @@ end
 
 def generate(runtime, extra: '', **opts)
   Dir.mktmpdir do |dir|
-    code, err = runtime.generate("#{FIXTURE}#{extra}", dir, closed: true, only_owners: OWNERS, core: true, **opts)
+    code, err = runtime.generate("#{FIXTURE}#{extra}", dir, only_owners: OWNERS, core: true, **opts)
     return [code, err]
   end
 end
@@ -122,11 +122,7 @@ check.call('NEG: a build without mruby-numeric-ext has no Numeric#zero? to call'
 c, = generate(runtime, drop_gems: %w[mruby-io])
 check.call('NEG: a build without mruby-io (the File natives are spelled in the scanned sources) keeps the by-name helper', !direct?(c))
 Dir.mktmpdir do |dir|
-  c, = runtime.generate(FIXTURE, dir, closed: false, only_owners: OWNERS, core: true)
-  check.call('NEG: an open world keeps the by-name helper', !direct?(c))
-end
-Dir.mktmpdir do |dir|
-  c, = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS, core: false)
+  c, = runtime.generate(FIXTURE, dir, only_owners: OWNERS, core: false)
   check.call('NEG: no core compile in the run (every shipped firmware build): no compiled body to call', !direct?(c) && by_name_form(c)&.include?('bc2cpp_send('))
 end
 %w[BC2CPP_CORE_COMPILED_ZERO BC2CPP_NUMERIC_SLOW_CLOSED].each do |var|
@@ -278,7 +274,7 @@ else
       ENV['BC2CPP_CXXFLAGS'] = flags
       begin
         Dir.mktmpdir do |dir|
-          code, err = runtime.generate("#{FIXTURE}#{program}", dir, closed: true, only_owners: OWNERS, core: true)
+          code, err = runtime.generate("#{FIXTURE}#{program}", dir, only_owners: OWNERS, core: true)
           check.call("#{world}: the closed form is #{closed ? 'on' : 'off'}", direct?(code) == closed)
           source = DRIVER.sub("puts 'end'\n", "$closed = #{closed}\n#{driver_extra}puts 'end'\n")
           # A world without the helper has no site to call it from: the compiled call site stands in.

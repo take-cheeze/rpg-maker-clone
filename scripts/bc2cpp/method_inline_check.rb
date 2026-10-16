@@ -55,7 +55,7 @@ generate = lambda do |text, dir, flag|
   previous = ENV['BC2CPP_IR_INLINE']
   begin
     flag ? ENV['BC2CPP_IR_INLINE'] = flag : ENV.delete('BC2CPP_IR_INLINE')
-    runtime.generate(text, dir, closed: false, only_owners: ['IrInline'])
+    runtime.generate(text, dir, only_owners: ['IrInline'])
   ensure
     previous ? ENV['BC2CPP_IR_INLINE'] = previous : ENV.delete('BC2CPP_IR_INLINE')
   end

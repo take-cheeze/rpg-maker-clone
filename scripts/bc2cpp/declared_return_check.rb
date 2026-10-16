@@ -170,7 +170,7 @@ def Bc2cppFixtureRuntime.full_stderr_of_last_failure(source, dir, owners)
           'SKIP_UNSUPPORTED' => '1', 'ONLY_OWNERS' => owners.join(','),
           'NATIVE_SRCS' => Shellwords.join(closed_world_native_srcs),
           'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)),
-          'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+          'BC2CPP_BUILD_NAME' => 'wio',
           'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).map { |n, d| "#{n}=#{d}" }),
           NomethodReviewed::ALLOW_ENV => 'allow' }
   _code, err, = generator_run(env, [src])

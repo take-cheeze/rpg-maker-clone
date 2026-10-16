@@ -170,10 +170,10 @@ end
 
 if ENV['MRBC']
   puts '== generated code'
-  [true, false].each do |closed|
-    world = closed ? 'closed world' : 'open world'
+  begin
+    world = 'closed world'
     Dir.mktmpdir do |dir|
-      code, = runtime.generate(FIXTURE, dir, closed: closed, only_owners: OWNERS)
+      code, = runtime.generate(FIXTURE, dir, only_owners: OWNERS)
       marked = ->(text) { SymbolCache.send_indices(text).size }
       %w[CsUser#explicit_private CsUser#explicit_protected CsUser#reader_args CsSelf#other_secret].each do |m|
         text = chunk.call(code, m)
@@ -256,16 +256,14 @@ puts '-- SKIP run: set MRBC, BC2CPP_MRUBY_FULL (or BC2CPP_MRUBY_CORE) and have g
 values = ->(sections, name) { sections.fetch(name, []).reject { |l| l.start_with?('  ') } }
 
 builds.each do |label, build, full_flag, mrbc, flags|
-  [true, false].each do |closed|
-    next unless closed || label == builds.first.first
-
-    puts "== fixture on real mruby (#{label}, #{closed ? 'closed' : 'open'} world), interpreted and compiled"
+  begin
+    puts "== fixture on real mruby (#{label}), interpreted and compiled"
     saved = ENV.values_at('MRBC', 'BC2CPP_CXXFLAGS')
     ENV['MRBC'] = mrbc
     ENV['BC2CPP_CXXFLAGS'] = [saved.last, flags].compact.reject(&:empty?).join(' ')
     begin
       Dir.mktmpdir do |dir|
-        _code, err = runtime.generate(FIXTURE, dir, closed: closed, only_owners: OWNERS)
+        _code, err = runtime.generate(FIXTURE, dir, only_owners: OWNERS)
         built, output = runtime.run(dir, err, OWNERS, BODY, build: build, full: full_flag)
         check.call('the fixture compiles and runs against real mruby', built)
         next unless built

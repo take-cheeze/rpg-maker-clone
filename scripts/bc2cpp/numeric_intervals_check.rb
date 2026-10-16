@@ -131,10 +131,6 @@ if ENV['MRBC']
       check.call("NEG #{what}: no operand is vouched for by an interval", none_proven.call(vcode))
     end
 
-    Dir.mktmpdir do |open_dir|
-      open_code, = generate.call(HOLDER, open_dir, closed: false)
-      check.call('the open world proves nothing', none_proven.call(open_code))
-    end
     { 'BC2CPP_NUMERIC_INTERVALS' => 'the interval operands kill switch', 'BC2CPP_NUMERIC_CONSTANTS' => 'the constant ranges kill switch' }.each do |var, what|
       Dir.mktmpdir do |off_dir|
         off_code, = generate.call(HOLDER, off_dir, env: { var => '0' })
@@ -200,7 +196,7 @@ else
       Dir.mktmpdir do |dir|
         # A core-only mruby has no bigint: its 32-bit Integer cannot hold a 3_000_000_000 literal at all.
         source = with_gems ? HOLDER : HOLDER.gsub('3_000_000_000', '2_000_000_000')
-        code, gen_err = runtime.generate(source, dir, closed: true, only_owners: OWNERS)
+        code, gen_err = runtime.generate(source, dir, only_owners: OWNERS)
         registered = runtime.registrations(gen_err, OWNERS)
         check.call("#{label}: the harness registers the fixture's own class (#{registered.size} entry points)",
                    registered.any? { |l| l.include?('"add_c"') } && registered.any? { |l| l.include?('"idx_param"') })

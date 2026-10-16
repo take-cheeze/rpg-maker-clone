@@ -63,9 +63,8 @@ RUBY
 OWNERS = %w[Base Leaf Probe].freeze
 body = ->(code, fn) { code[/^mrb_value #{fn}_impl\(mrb_state\* M.*?(?=^\}$)/m].to_s }
 
-# Bc2cppFixtureRuntime#generate builds the closed world (BC2CPP_CLOSED_WORLD=1,
-# the wio gem set, the native sources) the proof needs: without it call_facts is
-# off and every question is open, which refuses everything. BC2CPP_MODULE_SUPER=0
+# Bc2cppFixtureRuntime#generate builds the closed world (the wio gem set, the
+# native sources) the proof needs. BC2CPP_MODULE_SUPER=0
 # isolates this path from ADR 0329's (which resolves a super THROUGH a module).
 #
 # generate_all drops SKIP_UNSUPPORTED, so a refusal shows as a `#error` inside the
@@ -75,7 +74,7 @@ generate_all = lambda do |source, owners = OWNERS, extra = {}|
     saved = extra.to_h { |k, _v| [k, ENV[k]] }
     (extra.merge('BC2CPP_MODULE_SUPER' => '0')).each { |k, v| ENV[k] = v }
     begin
-      code, = runtime.generate(source, dir, closed: true, only_owners: owners,
+      code, = runtime.generate(source, dir, only_owners: owners,
                                          skip_unsupported: false)
     ensure
       saved.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }

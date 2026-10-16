@@ -8,7 +8,7 @@
 #
 # 1. Generated code (needs MRBC): bare and explicit `self` sends in the four owners are checked sites with no
 #    bc2cpp_send; each refusal (a block, a parameter, a module owner, a subclass anywhere in the program --
-#    per owner --, a singleton maker, both kill switches, the open world) keeps the tag chain and its send.
+#    per owner --, a singleton maker, both kill switches) keeps the tag chain and its send.
 # 2. Behaviour on real mruby (needs MRBC, BC2CPP_MRUBY_CORE and g++): an honouring program answers what the
 #    interpreter answers and reaches no violation site (also under -DBC2CPP_NOMETHOD_VERIFY); an instance of a
 #    subclass the analysis did not see (made by the driver) reaches the compiled body, which logs
@@ -68,11 +68,11 @@ KLASS = { 'Array' => 'array', 'Hash' => 'hash', 'String' => 'string', 'Range' =>
 chunk = lambda do |code, owner_method|
   code[/^\/\/ #{Regexp.escape(owner_method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
 end
-generate = lambda do |dir, engine: ENGINE_FIXTURE, closed: true, env: {}|
+generate = lambda do |dir, engine: ENGINE_FIXTURE, env: {}|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(CORE_FIXTURE, dir, closed: closed, only_owners: OWNERS, path: CORE_PATH, core: true,
+    runtime.generate(CORE_FIXTURE, dir, only_owners: OWNERS, path: CORE_PATH, core: true,
                                         extra: [['gvs_engine.rb', engine]])
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
@@ -146,10 +146,6 @@ if ENV['MRBC']
                PROVEN.none? { |m| checked.call(chunk.call(code, m)) })
   end
 
-  Dir.mktmpdir do |dir|
-    code, = generate.call(dir, closed: false)
-    check.call('the open world proves nothing on self', !code.include?('CORE_BODY_EXACT'))
-  end
 else
   puts '-- SKIP generated code: set MRBC'
 end
@@ -225,7 +221,7 @@ if ENV['MRBC'] && build && runtime.compiler?
   CPP
 
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(CORE_FIXTURE, dir, closed: true, only_owners: BC2CPP_CORE_OWNERS + OWNERS, path: CORE_PATH,
+    _code, err = runtime.generate(CORE_FIXTURE, dir, only_owners: BC2CPP_CORE_OWNERS + OWNERS, path: CORE_PATH,
                                                      extra: [['gvs_engine.rb', ENGINE_FIXTURE]])
     outputs = lambda do |flags = ''|
       saved = ENV.fetch('BC2CPP_CXXFLAGS', nil)

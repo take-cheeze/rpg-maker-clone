@@ -8,7 +8,7 @@
 #     changed registration, body or spelling drops the row;
 #   - ForeignDefiners: outside Ruby definitions are attributed to their class;
 #   - generated code: the arms and their argument guards, and every reason they
-#     are withheld (open world, Ruby override, prepend, installer, arity, block);
+#     are withheld (Ruby override, prepend, installer, arity, block);
 #   - behaviour: each emitted arm, compiled against a real libmruby, agrees with
 #     the interpreter on results, exceptions and receiver state.
 require 'fileutils'
@@ -22,6 +22,7 @@ require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
 require_relative '../../tools/bc2cpp/native_core_direct'
 require_relative '../../tools/bc2cpp/foreign_definers'
 require_relative 'cxx'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 root = File.expand_path('../..', __dir__)
 failures = []
@@ -173,19 +174,18 @@ end
 
 mrbc = ENV['MRBC'] || 'mrbc'
 gems = NomethodReviewedProbe.wio_gems(root)
-generate = lambda do |source, name, closed|
+generate = lambda do |source, name|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
             'NATIVE_SRCS' => Shellwords.join(native_srcs) }
-    if closed
-      env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
-                 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(root)),
-                 NomethodReviewed::ALLOW_ENV => 'allow')
-    end
-    out, err, status = Open3.capture3(env, RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
+    env.merge!('BC2CPP_BUILD_NAME' => 'wio',
+               'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
+               'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(root)),
+               NomethodReviewed::ALLOW_ENV => 'allow')
+
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
     out
   end
@@ -221,16 +221,14 @@ INTEGER_OVERRIDE = "#{WORLD}\nclass Integer\n  def inspect; 'i'; end\nend\n"
 STRING_OVERRIDE = "#{WORLD}\nclass String\n  def size; 1; end\nend\n"
 STRING_PREPEND = "#{WORLD}\nmodule CdStrShadow\n  def length; 1; end\nend\nclass String\n  prepend CdStrShadow\nend\n"
 
-open_code = generate.call(WORLD, 'cd_open', false)
-closed_code = generate.call(WORLD, 'cd_closed', true)
-override_code = generate.call(OVERRIDE, 'cd_override', true)
-prepend_code = generate.call(PREPEND, 'cd_prepend', true)
-installer_code = generate.call(INSTALLER, 'cd_installer', true)
-integer_code = generate.call(INTEGER_OVERRIDE, 'cd_integer', true)
-string_override_code = generate.call(STRING_OVERRIDE, 'cd_string_override', true)
-string_prepend_code = generate.call(STRING_PREPEND, 'cd_string_prepend', true)
+closed_code = generate.call(WORLD, 'cd_closed')
+override_code = generate.call(OVERRIDE, 'cd_override')
+prepend_code = generate.call(PREPEND, 'cd_prepend')
+installer_code = generate.call(INSTALLER, 'cd_installer')
+integer_code = generate.call(INTEGER_OVERRIDE, 'cd_integer')
+string_override_code = generate.call(STRING_OVERRIDE, 'cd_string_override')
+string_prepend_code = generate.call(STRING_PREPEND, 'cd_string_prepend')
 
-check.call('without the closed world no arm is emitted', !open_code.include?('NATIVE_CORE_DIRECT'))
 
 arm = lambda do |code, fn|
   body_of.call(code, "CdCaller_#{fn}")
@@ -293,8 +291,8 @@ check.call('a prepend on String withdraws both String arms and leaves Array alon
            !arm.call(string_prepend_code, 'size0').include?('bc2cpp_str_size(') &&
              !arm.call(string_prepend_code, 'length0').include?('bc2cpp_str_length(') &&
              arm.call(string_prepend_code, 'join0').include?('NATIVE_CORE_DIRECT'))
-check.call('a dynamic installer and an open world withdraw the String arms',
-           !arm.call(installer_code, 'size0').include?('bc2cpp_str_size(') && !open_code.include?('bc2cpp_str_size('))
+check.call('a dynamic installer withdraws the String arms',
+           !arm.call(installer_code, 'size0').include?('bc2cpp_str_size('))
 check.call('a Ruby Integer#inspect leaves the String size arm alone', arm.call(integer_code, 'size0').include?('bc2cpp_str_size('))
 
 # -- the bucket -------------------------------------------------------------------
@@ -307,7 +305,7 @@ NATIVE_BUCKET = <<~'RUBY'
     def set_z(w, v); w.z = v; end
   end
 RUBY
-bucket_code = generate.call(NATIVE_BUCKET, 'cd_bucket', true)
+bucket_code = generate.call(NATIVE_BUCKET, 'cd_bucket')
 diag = bucket_code[/POLY_DIAG[^\n]*name="z="[^\n]*/].to_s
 check.call('a chain whose native definition is fully covered by RGSS arms reports native_direct, not native_or_uncompiled',
            diag.include?('native_direct=') && !diag.include?('native_or_uncompiled'))

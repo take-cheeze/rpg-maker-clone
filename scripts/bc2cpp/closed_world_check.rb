@@ -22,6 +22,7 @@ require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/nomethod_reviewed'
 require_relative '../../tools/bc2cpp/bc2cpp'
 require_relative 'cxx'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 root = File.expand_path('../..', __dir__)
 failures = []
@@ -67,34 +68,31 @@ Dir.mktmpdir do |dir|
 end
 
 config = File.read(File.join(root, 'build_config.rb'), encoding: 'UTF-8')
-check.call('build_config.rb enables the mode for single-format builds only',
-           config.match?(/closed_world = proc do\n\s+if single_format_only\n\s+enable_bc2cpp_closed_world\n/) &&
+check.call('build_config.rb adds the compiled gems to single-format (closed-world) builds only (ADR 0461)',
+           config.include?("bc2cpp = ENV['RPGMAKER_BC2CPP'] && single_format_only") &&
+             config.include?("single_format_only = %w[psp wio maix].include?(conf.name)\n") &&
              BC2CPP_COMPILED_GEMS.keys.all? { |g| config.include?("#{g}\", &closed_world if bc2cpp") })
-check.call('every compiled gem passes the mode through the checked env',
+check.call('every compiled gem passes the build through the checked env',
            BC2CPP_COMPILED_GEMS.keys.all? do |g|
-             rake = File.read(File.join(root, g, 'mrbgem.rake'))
-             rake.include?('extend Bc2cppClosedWorldOption') && rake.include?('.merge(bc2cpp_closed_world_env(spec, ')
+             File.read(File.join(root, g, 'mrbgem.rake')).include?('.merge(bc2cpp_closed_world_env(spec, ')
            end)
-spec = Struct.new(:name, :build) { include Bc2cppClosedWorldOption }
+spec = Struct.new(:name, :build)
 build = Struct.new(:name, :gems)
 gem_list = ->(gems) { gems.map { |n, d| Struct.new(:name, :dir).new(n, d) } }
-open_spec = spec.new('mruby-rpg2k-compiled', build.new('host', gem_list.call(wio_gems)))
-check.call('a gem the build did not opt in passes no switch', bc2cpp_closed_world_env(open_spec, root) == {})
-wio_spec = spec.new('mruby-rpg2k-compiled', build.new('wio', gem_list.call(wio_gems)))
-wio_spec.enable_bc2cpp_closed_world
-env = bc2cpp_closed_world_env(wio_spec, root)
-check.call('an opted-in wio build passes the switch and its gem list',
-           env['BC2CPP_CLOSED_WORLD'] == '1' && env['BC2CPP_BUILD_NAME'] == 'wio' &&
-             Shellwords.split(env['BC2CPP_BUILD_GEMS']).include?("mruby-rpg2k=#{File.expand_path(root)}/mruby-rpg2k"))
-bad_spec = spec.new('mruby-rpg2k-compiled', build.new('wio', gem_list.call(wio_gems.merge('mruby-eval' => 'x'))))
-bad_spec.enable_bc2cpp_closed_world
-raised = begin
-  bc2cpp_closed_world_env(bad_spec, root)
+env_raises = lambda do |s, text|
+  bc2cpp_closed_world_env(s, root)
   false
 rescue RuntimeError => e
-  e.message.include?('mruby-eval')
+  e.message.include?(text)
 end
-check.call('an opted-in build that is not closed fails loudly', raised)
+check.call('a desktop build is not a closed world: bc2cpp refuses it',
+           env_raises.call(spec.new('mruby-rpg2k-compiled', build.new('host', gem_list.call(wio_gems))), "'host'"))
+env = bc2cpp_closed_world_env(spec.new('mruby-rpg2k-compiled', build.new('wio', gem_list.call(wio_gems))), root)
+check.call('a wio build passes its name and gem list',
+           !env.key?('BC2CPP_CLOSED_WORLD') && env['BC2CPP_BUILD_NAME'] == 'wio' &&
+             Shellwords.split(env['BC2CPP_BUILD_GEMS']).include?("mruby-rpg2k=#{File.expand_path(root)}/mruby-rpg2k"))
+bad_spec = spec.new('mruby-rpg2k-compiled', build.new('wio', gem_list.call(wio_gems.merge('mruby-eval' => 'x'))))
+check.call('a build that is not closed fails loudly', env_raises.call(bad_spec, 'mruby-eval'))
 
 # -- generated code -------------------------------------------------------------
 
@@ -314,7 +312,7 @@ CONSTANT_OBJECT_WORLD = <<~'RUBY'
 RUBY
 
 mrbc = ENV['MRBC'] || 'mrbc'
-generate = lambda do |source, name, closed, only_owners = nil, outside_srcs = nil|
+generate = lambda do |source, name, only_owners = nil, outside_srcs = nil|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
@@ -326,13 +324,12 @@ generate = lambda do |source, name, closed, only_owners = nil, outside_srcs = ni
       env['NATIVE_SRCS'] = Shellwords.join(outside_srcs[0])
       env['FOREIGN_RUBY_SRCS'] = Shellwords.join(outside_srcs[1])
     end
-    if closed
-      env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(wio_gems.map { |n, d| "#{n}=#{d}" }),
-                 # The fixtures' dead sites are the point; NOMETHOD_REVIEWED gates real gems.
-                 NomethodReviewed::ALLOW_ENV => 'allow')
-    end
-    out, err, status = Open3.capture3(env, RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
+    env.merge!('BC2CPP_BUILD_NAME' => 'wio',
+               'BC2CPP_BUILD_GEMS' => Shellwords.join(wio_gems.map { |n, d| "#{n}=#{d}" }),
+               # The fixtures' dead sites are the point; NOMETHOD_REVIEWED gates real gems.
+               NomethodReviewed::ALLOW_ENV => 'allow')
+
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
     [out, err]
   end
@@ -342,19 +339,14 @@ body_of = lambda do |code, fn|
   code[/^mrb_value #{fn}_impl\(mrb_state\* M.*?(?=^(?:static )?mrb_value \w+\(mrb_state\* M|\z)/m].to_s
 end
 
-open_code, = generate.call(WORLD, 'cw_open', false)
-closed_code, closed_err = generate.call(WORLD, 'cw_closed', true)
-ghost_code, ghost_err = generate.call(GHOST_WORLD, 'cw_ghost', true)
-inherit_code, = generate.call(INHERIT_WORLD, 'cw_inherit', true)
-exact_construct_code, = generate.call(EXACT_CONSTRUCT_WORLD, 'cw_exact_construct', true)
-constant_object_code, = generate.call(CONSTANT_OBJECT_WORLD, 'cw_constant_object', true)
-selective_constant_object_code, = generate.call(CONSTANT_OBJECT_WORLD, 'cw_constant_object_selective', true,
+closed_code, closed_err = generate.call(WORLD, 'cw_closed')
+ghost_code, ghost_err = generate.call(GHOST_WORLD, 'cw_ghost')
+inherit_code, = generate.call(INHERIT_WORLD, 'cw_inherit')
+exact_construct_code, = generate.call(EXACT_CONSTRUCT_WORLD, 'cw_exact_construct')
+constant_object_code, = generate.call(CONSTANT_OBJECT_WORLD, 'cw_constant_object')
+selective_constant_object_code, = generate.call(CONSTANT_OBJECT_WORLD, 'cw_constant_object_selective',
                                                  %w[CwStableCaller CwModuleFunction.singleton])
 
-check.call('without the switch no fallback changes: no bc2cpp_nomethod, ancestry-aware owner lookup',
-           !open_code.include?('bc2cpp_nomethod') && !open_code.include?('CLOSED_WORLD') &&
-             body_of.call(open_code, 'CwCaller_talk').include?('bc2cpp_send(') &&
-             open_code.include?('if (!mrb_const_defined(M, v, s)) return nullptr;'))
 talk = body_of.call(closed_code, 'CwCaller_talk')
 check.call('a complete chain (every definer, no subclass, no method_missing) ends in bc2cpp_nomethod',
            talk.include?('POLY_SMALL_N :cw_speak') && talk.match?(/\} else \{\n\s+r\d+ = bc2cpp_nomethod\(M, r\d+, \d+\);/) &&
@@ -392,7 +384,7 @@ check.call('a class constant rebound in the closed world keeps guarded dynamic d
            !rebound_call.include?('CLOSED_WORLD_EXACT_CLASS') && rebound_call.include?('mrb_obj_class(M,') &&
              rebound_call.include?('mrb_funcall'))
 
-singleton_code, = generate.call(SINGLETON_WORLD, 'cw_singleton', true)
+singleton_code, = generate.call(SINGLETON_WORLD, 'cw_singleton')
 singleton_self = body_of.call(singleton_code, 'CwBase_run')
 singleton_other = body_of.call(singleton_code, 'CwBase_outside')
 check.call('a self call in an instance method ignores a .singleton definer: class hierarchy analysis resolves it',
@@ -403,8 +395,8 @@ check.call('a non-self receiver may be the module object: it gets an identity ar
              singleton_other.include?('MRB_TT_MODULE && mrb_class_ptr(') && singleton_other.include?('bc2cpp_nomethod(') &&
              !singleton_other.include?('kept: singleton_definer'))
 respond_outside = bc2cpp_closed_world_outside_srcs('wio', wio_gems, root)
-respond_code, = generate.call(RESPOND_WORLD, 'cw_respond', true, nil, respond_outside)
-respond_hook_code, = generate.call(RESPOND_HOOK_WORLD, 'cw_respond_hook', true, nil, respond_outside)
+respond_code, = generate.call(RESPOND_WORLD, 'cw_respond', nil, respond_outside)
+respond_hook_code, = generate.call(RESPOND_HOOK_WORLD, 'cw_respond_hook', nil, respond_outside)
 respond_probe = body_of.call(respond_code, 'CwResponder_probe')
 respond_hook_probe = body_of.call(respond_hook_code, 'CwResponder_probe')
 check.call('respond_to? with no respond_to_missing? anywhere: hits answer directly and a miss is false, no send',

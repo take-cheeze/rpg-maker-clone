@@ -36,6 +36,7 @@ require_relative '../../tools/bc2cpp/bc2cpp'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/never_called_registrations'
 require_relative 'cxx'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
@@ -148,29 +149,6 @@ end
 unguarded = call_sends.reject { |i| core_lines[[i - 4, 0].max..i].join.include?('} else {') }
 check.call("every `call` dispatch of a core body sits in the else arm of the Proc check (#{call_sends.size} sites, #{unguarded.size} unguarded)",
            unguarded.empty?)
-
-# Open-world gems load after the compiled core and are not in its world: they must not redefine a compiled
-# method, and (a compiled core name with no native definition is a static call target) must not define the
-# same name on any class either.
-open_world_defs = Hash.new { |h, k| h[k] = [] }
-%w[mruby-rpgxp mruby-rpgvx mruby-wolf mruby-mvjs].each do |gem_name|
-  files = Dir[File.join(ROOT, gem_name, 'mrblib/**/*.rb')].sort
-  next if files.empty?
-
-  gem_registry, gem_ireps = world_registry(files)
-  gem_registry.values.flatten.each do |d|
-    next unless d.irep && !CoreDefs.core_source?(gem_ireps.fetch(d.irep).file)
-
-    open_world_defs["#{d.owner}##{d.name}"] << gem_name
-    open_world_defs["##{d.name}"] << gem_name
-  end
-end
-# Only a registry definition (no HIDDEN entry: a name natives share) is a static call target.
-hidden = runs.find { |name, _, _| name == 'mruby-core-compiled' }[2].scan(/^  HIDDEN (\S+)/).flatten.to_set
-clash = core_keys.select do |k|
-  open_world_defs.key?(k) || (!hidden.include?(k) && open_world_defs.key?("##{k.split('#', 2).last}"))
-end
-check.call("no open-world gem defines a compiled core method's name (#{clash.first(3).join(', ')})", clash.empty?)
 
 # A hot-only build's world has no core Ruby, so it compiles none.
 hot_world = closed_world_mrblib_srcs(ROOT, core_gems: nil)
@@ -445,7 +423,7 @@ else
     native_srcs = core_native_srcs("#{ROOT}/3rd/mruby") + external_gem_native_srcs(ROOT)
     env = { 'MRBC' => MRBC_ENV, 'OUT_SYMBOL' => 'core_probe', 'OUT_DIR' => dir, 'ONLY_OWNERS' => only,
             'NATIVE_SRCS' => Shellwords.join(native_srcs), 'SKIP_UNSUPPORTED' => '1' }
-    _out, err, status = Open3.capture3(env, "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
+    _out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
                                             "#{[*core_files, probe].map(&:shellescape).join(' ')} > #{generated.shellescape}")
     abort "bc2cpp.rb failed:\n#{err[-3000..]}" unless status.success?
     compiled = err[/== core-source compiled entry points \((\d+)\)/, 1].to_i

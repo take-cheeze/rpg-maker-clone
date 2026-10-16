@@ -68,8 +68,7 @@ if ENV['MRBC']
     ['unlinked native', SOURCE, {}, { native: [['outside.c', 'void init(mrb_state* mrb) { mrb_define_method(mrb, klass, "compact", unknown, MRB_ARGS_NONE()); mrb_define_method(mrb, klass, "flatten", unknown, MRB_ARGS_NONE()); mrb_define_method(mrb, klass, "__uniq", unknown, MRB_ARGS_NONE()); mrb_define_method(mrb, klass, "join", unknown, MRB_ARGS_NONE()); }']] }, true, false],
     ['singleton installer', SOURCE + "class NatOther; def install; define_singleton_method(:compact) { self }; end; end\n", {}, {}, false, false],
     ['alias replacement', SOURCE + "class NatOther; alias __uniq size; alias join size; end\n", {}, {}, false, false],
-    ['method missing', SOURCE + "class NatOther; def method_missing(name); self; end; end\n", {}, {}, false, false],
-    ['open world', SOURCE, {}, { closed: false }, false, false]
+    ['method missing', SOURCE + "class NatOther; def method_missing(name); self; end; end\n", {}, {}, false, false]
   ]
   outside_gem = Dir.mktmpdir('native-array-transform-gem')
   at_exit { FileUtils.remove_entry(outside_gem) }

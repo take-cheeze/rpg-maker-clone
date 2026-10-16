@@ -27,6 +27,7 @@ require 'shellwords'
 require 'tmpdir'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/static_dispatch_unregistered'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 root = File.expand_path('../..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
@@ -66,7 +67,7 @@ BC2CPP_COMPILED_GEMS.each do |name, gem|
     generated_path = File.join(dir, "#{gem[:out_symbol]}_gen.cpp")
     cmd = "#{RbConfig.ruby.shellescape} #{File.join(root, 'tools/bc2cpp/bc2cpp.rb').shellescape} " \
           "#{srcs.map(&:shellescape).join(' ')} > #{generated_path.shellescape}"
-    _out, err, status = Open3.capture3(env, cmd)
+    _out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), cmd)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-2000..]}" unless status.success?
 
     listing = err.split('== compiled entry points ==', 2)[1].to_s.split("\n== ", 2)[0]

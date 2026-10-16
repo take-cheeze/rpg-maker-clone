@@ -186,7 +186,7 @@ else
       'MRBC' => ENV['MRBC'] || 'mrbc', 'OUT_SYMBOL' => 'rescue_shadow', 'OUT_DIR' => dir,
       'ONLY_OWNERS' => owners.join(','), 'NATIVE_SRCS' => Shellwords.join(native_srcs),
       'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(root)),
-      'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+      'BC2CPP_BUILD_NAME' => 'wio',
       'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(root).map { |n, d| "#{n}=#{d}" }),
       NomethodReviewed::ALLOW_ENV => 'allow',
       'BC2CPP_RESCUE_SHADOW_CHILD' => '1', 'BC2CPP_RESCUE_SHADOW_REPORT' => report

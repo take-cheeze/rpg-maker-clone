@@ -12,7 +12,7 @@
 # 1. Generated code (needs MRBC): each positive loses its guard and dispatch; each negative keeps it
 #    (an unknown receiver, a subclass, a second class, a nil path); each way of losing a proof
 #    (writer, second definition, subclass override, store from a subclass, reflection, alias,
-#    `define_method`, a redefined push, a singleton maker, the kill switches, the open world) withdraws it.
+#    `define_method`, a redefined push, a singleton maker, the kill switches) withdraws it.
 # 2. Behaviour on real mruby: the compiled answers equal the interpreted ones in every world, for the
 #    receivers a wrong proof would mis-dispatch. Run on a full-core build, a core-only build and, with
 #    BC2CPP_MRUBY_FULL32 and BC2CPP_MRBC32, a 32-bit mrb_int build.
@@ -344,11 +344,11 @@ typed_guarded = lambda do |code, fn|
   !body.empty? && !body.include?('EXACT_TYPED :cr_has?') && body.match?(/(?:TYPED|POLY_SMALL_N) :cr_has\?/)
 end
 
-generate = lambda do |source, dir, closed: true, env: {}, **options|
+generate = lambda do |source, dir, env: {}, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options)
+    runtime.generate(source, dir, only_owners: OWNERS, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
@@ -449,11 +449,6 @@ if ENV['MRBC']
                  %w[push_local shl_local push_ivar].none? { |fn| exact_push.call(scode, fn) } &&
                    !exact_typed.call(scode, 'typed_has') && ACCESSOR_METHODS.none? { |fn| exact_tag.call(scode, fn) })
     end
-    Dir.mktmpdir do |od|
-      ocode, = generate.call(CLASSES + CORE_RUBY + FIXTURE, od, closed: false)
-      check.call('the open world proves nothing',
-                 %w[push_local push_ivar].none? { |fn| exact_push.call(ocode, fn) } && ACCESSOR_METHODS.none? { |fn| exact_tag.call(ocode, fn) })
-    end
     Dir.mktmpdir do |kd|
       kcode, = generate.call(CLASSES + CORE_RUBY + FIXTURE, kd, env: { 'BC2CPP_EXACT_CORE_ARMS' => '0' })
       check.call('BC2CPP_EXACT_CORE_ARMS=0: the old guarded push and TYPED call, the accessor proof stays',
@@ -519,10 +514,6 @@ if ENV['MRBC']
       kcode, = generate.call(scoped_src, kd, env: { 'BC2CPP_SCOPED_ACCESSOR_RETURNS' => '0' })
       check.call('BC2CPP_SCOPED_ACCESSOR_RETURNS=0: the scoped sends keep their guards, the name-wide accessor proof stays',
                  %w[sc_a sc_b sc_sub sc_ivar].none? { |fn| sc_any_exact.call(kcode, fn) } && ACCESSOR_METHODS.all? { |fn| exact_tag.call(kcode, fn) })
-    end
-    Dir.mktmpdir do |od|
-      ocode, = generate.call(scoped_src, od, closed: false)
-      check.call('scoped: the open world proves nothing', %w[sc_a sc_b sc_sub sc_ivar].none? { |fn| sc_any_exact.call(ocode, fn) })
     end
     Dir.mktmpdir do |pd|
       pcode, = generate.call(scoped_src, pd, env: { 'BC2CPP_CLASS_POOLS' => '0' })

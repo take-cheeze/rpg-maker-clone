@@ -14,8 +14,9 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # they were a real, previously-missed coverage gap rather than genuinely
 # unsupported).
 #
-# This whole gem only exists in the build when RPGMAKER_BC2CPP is set (see
-# build_config.rb) -- it is never part of the default desktop or wio build.
+# This whole gem only exists in the build when RPGMAKER_BC2CPP is set on a
+# closed-world build (psp/wio/maix, see build_config.rb; docs/adr/0461) -- it is
+# never part of the default build, and never of a desktop build.
 # Disabled, its one visible effect is that this directory exists on disk;
 # nothing in the default build tree references it.
 MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
@@ -24,8 +25,6 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   spec.summary = 'Opt-in AOT-compiled C++ replacements for select LCF::File-family bytecode methods'
 
   add_dependency 'mruby-lcf'
-  # build_config.rb turns on BC2CPP_CLOSED_WORLD for single-format builds.
-  extend Bc2cppClosedWorldOption
   # build_config.rb turns on BC2CPP_HOT_ONLY (docs/adr/0214) for the same builds.
   extend Bc2cppHotOnlyOption
 

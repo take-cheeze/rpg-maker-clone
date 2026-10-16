@@ -246,9 +246,9 @@ with_env = lambda do |overrides, &block|
 ensure
   saved.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
 end
-generate = lambda do |dir, strict, closed: true, proven: nil|
+generate = lambda do |dir, strict, proven: nil|
   with_env.call('BC2CPP_STRICT_HINTS' => strict, 'BC2CPP_STRICT_HINTS_PROVEN' => proven, StrictHints::ALLOW_ENV => 'allow') do
-    runtime.generate(FIXTURE, dir, closed: closed, only_owners: OWNERS)
+    runtime.generate(FIXTURE, dir, only_owners: OWNERS)
   end
 end
 
@@ -323,17 +323,12 @@ if ENV['MRBC']
                    !chunk.call(only_code, 'ShHolder#read_size').match?(VIOLATION))
     end
 
-    Dir.mktmpdir do |open_dir|
-      open_code, = generate.call(open_dir, '1', closed: false)
-      check.call('the open world forces nothing (no closed-world facts to rely on)',
-                 !open_code.match?(VIOLATION) && !open_code.include?('STRICT_HINT'))
-    end
 
     Dir.mktmpdir do |gate_dir|
       env = { 'BC2CPP_STRICT_HINTS' => '1', StrictHints::ALLOW_ENV => nil, NomethodReviewed::ALLOW_ENV => nil }
       with_env.call(env) do
         begin
-          runtime.generate(FIXTURE, gate_dir, closed: true, only_owners: OWNERS)
+          runtime.generate(FIXTURE, gate_dir, only_owners: OWNERS)
           check.call('the reviewed gate fails a run with unlisted forced sites', false)
         rescue RuntimeError => e
           check.call('the reviewed gate fails a run with unlisted forced sites',

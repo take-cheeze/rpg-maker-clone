@@ -12,7 +12,7 @@
 #   * negatives keep it: an unproven receiver (a parameter), a set that holds a class without an emitted arm
 #     (Tilemap registers `update` natively and has none), a set with a class the arms do not name (a Ruby class
 #     whose `update` is not the one the chain lists is still judged by the existing gate), a world where a Ruby
-#     override, a subclass or a method_missing class reaches the set, the kill switch and the open world.
+#     override, a subclass or a method_missing class reaches the set, the kill switch.
 #
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp/native_arm_cover_check.rb
 
@@ -82,11 +82,11 @@ live_of = ->(code, fn) { body_of.call(code, fn).lines.reject { |l| l.lstrip.star
 by_name = ->(code, fn) { live_of.call(code, fn).include?('bc2cpp_send(') }
 dead_tail = ->(code, fn) { live_of.call(code, fn).include?('bc2cpp_nomethod') && !by_name.call(code, fn) }
 
-generate = lambda do |source, dir, closed: true, env: {}, **options|
+generate = lambda do |source, dir, env: {}, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options)
+    runtime.generate(source, dir, only_owners: OWNERS, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
@@ -136,10 +136,6 @@ Dir.mktmpdir do |dir|
     arms_code, = generate.call(CLASSES + HOST, arms, env: { 'BC2CPP_NATIVE_CLASS_ARMS' => '0' })
     check.call('BC2CPP_NATIVE_CLASS_ARMS=0: the scoped set is off, so is the cover',
                POSITIVE.all? { |fn| by_name.call(arms_code, fn) })
-  end
-  Dir.mktmpdir do |open_dir|
-    open_code, = generate.call(CLASSES + HOST, open_dir, closed: false)
-    check.call('the open world proves nothing: no dead tail', POSITIVE.none? { |fn| dead_tail.call(open_code, fn) })
   end
 end
 

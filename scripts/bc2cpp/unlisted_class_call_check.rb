@@ -392,11 +392,7 @@ CONTROLS.each do |what, (extra, method, kind, klass)|
   end
 end
 
-puts '-- generated code, open world'
-Dir.mktmpdir do |dir|
-  code, = runtime.generate(WORLD, dir, closed: false, only_owners: OWNERS)
-  check.call('an open world has no UNLISTED_CLASS arm', !code.include?('UNLISTED_CLASS_'))
-end
+puts '-- generated code, native-registered names'
 
 # A native-registered name is judged on the class's own chain: RGSS registers dispose, x, y ... on
 # its classes, so UcScreenKid (no native class in its chain) may call it directly.
@@ -466,7 +462,7 @@ values = lambda do |sections, name|
 end
 run_world = lambda do |source, build, full_flag|
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(source, dir, closed: true, only_owners: OWNERS, native: HARNESS)
+    _code, err = runtime.generate(source, dir, only_owners: OWNERS, native: HARNESS)
     scenario = "static const int STATE_OBJECTS = #{STATE_OBJECTS}, PROTECTED_OBJECT = 11, MIX_OBJECTS = #{MIX_OBJECTS}, LVL_OBJECTS = #{LVL_OBJECTS};\n#{SCENARIO}"
     built, output = runtime.run(dir, err, OWNERS, scenario, build: build, full: full_flag, exact_arity: true)
     puts output unless built

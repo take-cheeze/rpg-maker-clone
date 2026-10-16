@@ -18,6 +18,13 @@ continue to select their backend through SDL's usual configuration.
 
 ## bc2cpp gate
 
+bc2cpp compiles closed-world programs only (ADR 0461), so `bc2cpp-build` builds a closed-world
+target: the `maix` mruby cross library with `RPGMAKER_BC2CPP=1`
+(`scripts/maix/mruby_build.bash`, Kendryte toolchain from PlatformIO as in the `maix` job). The
+four `*-compiled` gems are generated in the closed world and compiled into its `libmruby.a`, and
+the job then runs the type check (`scripts/bc2cpp/type_check.rb`) with that build's host `mrbc`.
+The desktop `host` build loads Ruby at runtime and never carries the compiled gems.
+
 The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` (skipped on purpose for
 a docs-only change). Every `bc2cpp-checks (<shard>)` and `bc2cpp-width (<variant>)` job is in
 `bc2cpp-nightly.yml` and is not part of this check. Require `bc2cpp` and nothing
@@ -542,7 +549,7 @@ The `core-flow` shard also runs `bc2cpp_core_compiled_cmp_check.rb` and its muta
 (ADR 0371). A closed world that compiles mruby's own Ruby puts the compiled `Hash#<`, `<=`, `>`
 and `>=` in the Hash arm of the four comparison helpers; the check covers the generated code, the
 negative worlds (reopened, prepended, aliased, outside or computed definers, a `==` that may
-yield, `method_missing`, a singleton, a build without mruby-hash-ext, an open world, no core
+yield, `method_missing`, a singleton, a build without mruby-hash-ext, no core
 compile, the `BC2CPP_CORE_COMPILED_CMP=0` kill switch), and a run of every helper against the
 interpreted operator on a full-core build. The compiler also prints `== core-source methods left
 interpreted ==` with a reason and the language features per method, which the coverage report's
@@ -592,7 +599,7 @@ its mutation check (control, switch-off control and six mutants covering the
 gate, the kind filter, the proof's register test and the position argument).
 The check pins both emitters' shape for every answer the Fixnum proof can give
 and drives the real proof over its own refusals; the generated-code section
-covers a closed and an open world. See ADR 0358 and
+covers the closed world. See ADR 0358 and
 [bc2cpp-native-int-guards](bc2cpp-native-int-guards.md).
 
 ### The zero? helper through compiled core
@@ -603,7 +610,7 @@ mruby's own Ruby has `bc2cpp_slow_zero` call the compiled `Numeric#zero?` for ev
 Float, raise the `File.zero?` argument error for those class objects, and keep the NoMethodError proof for
 the rest. The check covers the generated code, twelve negative worlds (reopened, aliased, included,
 prepended, singleton or class-level definers, a computed installer, `method_missing`, a `==` that may
-yield, a build without mruby-numeric-ext or mruby-io, an open world, no core compile, both kill switches)
+yield, a build without mruby-numeric-ext or mruby-io, no core compile, both kill switches)
 and a run of the helper against the real `zero?` (values, error class and message, user `==` calls, the
 by-name call count) at every width, in the closed world and in four worlds that must keep the by-name helper.
 

@@ -42,9 +42,9 @@ WORLD = <<~'RUBY'
   end
 RUBY
 
-generate = lambda do |source, closed: true, path: CORE_PATH, extra: nil|
+generate = lambda do |source, path: CORE_PATH, extra: nil|
   Dir.mktmpdir do |dir|
-    runtime.generate(source, dir, closed: closed, path: path, extra: extra ? [['engine.rb', extra]] : []).first
+    runtime.generate(source, dir, path: path, extra: extra ? [['engine.rb', extra]] : []).first
   end
 end
 body_of = lambda do |code, fn|
@@ -81,8 +81,6 @@ end
 
 check.call('the same fixture outside mruby\'s own Ruby is untouched',
            !generate.call(WORLD.sub('DnSplat', 'DnUser'), path: 'fixture.rb').include?('BLOCK_PARAM_CALL_SPLAT'))
-check.call('without the closed world no core proof is taken',
-           !generate.call(WORLD, closed: false).include?('BLOCK_PARAM_CALL_SPLAT'))
 
 {
   'a Ruby call on any class' => "class DnOther\n  def call(x); x; end\nend\n",

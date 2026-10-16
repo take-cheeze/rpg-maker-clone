@@ -25,6 +25,7 @@ require 'tmpdir'
 
 ROOT = File.expand_path('../..', __dir__)
 require File.join(ROOT, 'tools/bc2cpp/compiled_gems')
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 MRBC = ENV.fetch('MRBC')
 CORE = File.expand_path(ENV.fetch('RDATA_SLOT_MRUBY_SRC', File.join(ROOT, '3rd/mruby')))
@@ -251,7 +252,7 @@ Dir.mktmpdir('rdata_slot_native') do |tmp|
     'NATIVE_SRCS' => Shellwords.join(native), 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign),
     'SKIP_UNSUPPORTED' => '1', 'BC2CPP_SELF_REGISTERING' => '1'
   }
-  cpp, diagnostics, status = Open3.capture3(env, RbConfig.ruby, BC2CPP, fixture)
+  cpp, diagnostics, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, BC2CPP, fixture)
   abort "bc2cpp failed:\n#{tail_of(diagnostics)}" unless status.success?
   File.write(File.join(out_dir, 'rdata_slot_gen.cpp'), cpp)
 

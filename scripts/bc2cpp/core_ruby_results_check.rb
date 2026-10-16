@@ -151,8 +151,7 @@ worlds = [
   ['symbol block kill switch', SOURCE, { 'BC2CPP_CORE_RUBY_SYMBOL_BLOCKS' => '0' }, true],
   ['bottom kill switch', SOURCE, { 'BC2CPP_BOTTOM_BLOCK_RECEIVERS' => '0' }, true],
   ['keys override', SOURCE + "class KrOther; def keys; self; end; end\n", {}, true],
-  ['slot store of another class', SOURCE + "class KrRunner; def sl_other; @sl = KrOther.new; end; end\n", {}, true],
-  ['open world', SOURCE, {}, false]
+  ['slot store of another class', SOURCE + "class KrRunner; def sl_other; @sl = KrOther.new; end; end\n", {}, true]
 ]
 worlds.select! { |name, _| name == ENV['KRR_CASE'] } if ENV['KRR_CASE']
 abort "unknown KRR_CASE: #{ENV['KRR_CASE']}" if worlds.empty?
@@ -171,9 +170,9 @@ if ENV['MRBC']
         linked = name == 'foreign filter definition' ? [['kr-foreign', File.join(dir, 'kr-foreign')]] : []
         FileUtils.mkdir_p(File.join(dir, 'kr-foreign/mrblib')) unless linked.empty?
         foreign = linked.empty? ? [] : [['kr-foreign/mrblib/outside.rb', 'module Enumerable; def filter_map(&block); Object.new; end; end']]
-        code, err = runtime.generate(source, dir, extra: inputs, native: native, foreign: foreign, build_gems: linked, only_owners: OWNERS, closed: name != 'open world')
+        code, err = runtime.generate(source, dir, extra: inputs, native: native, foreign: foreign, build_gems: linked, only_owners: OWNERS)
         check.call("#{name}: mapped result", exact_size.call(code, 'mapped') == proven) unless name == 'filter installer' || name == 'filter alias'
-        if ['core bodies', 'kill switch', 'receiver union kill switch', 'Hash map override', 'Array map override', 'Array prepend', 'dynamic installer', 'open world'].include?(name)
+        if ['core bodies', 'kill switch', 'receiver union kill switch', 'Hash map override', 'Array map override', 'Array prepend', 'dynamic installer'].include?(name)
           union_proven = name == 'core bodies'
           check.call("#{name}: every union member returns Array", exact_size.call(code, 'mixed_map') == union_proven)
           check.call("#{name}: reject-map-compact chain", exact_size.call(code, 'reject_map') == union_proven)
@@ -190,7 +189,7 @@ if ENV['MRBC']
             check.call("#{name}: select-map preserves both receiver paths", guarded_map.call(body_of.call(code, 'select_map')))
           end
         end
-        if name.start_with?('positional ') || ['core bodies', 'kill switch', 'open world', 'name kill switch', 'method missing'].include?(name)
+        if name.start_with?('positional ') || ['core bodies', 'kill switch', 'name kill switch', 'method missing'].include?(name)
           positional_proven = ['core bodies', 'name kill switch', 'method missing', 'positional foreign override'].include?(name)
           check.call("#{name}: positional Array memo", exact_size.call(code, 'memo_array') == positional_proven)
           check.call("#{name}: positional Hash memo", body_of.call(code, 'memo_hash').include?('CLOSED_WORLD_NATIVE_EXACT :size -> Hash') == positional_proven)
@@ -201,17 +200,17 @@ if ENV['MRBC']
             check.call("#{name}: #{method} stays unproved", !exact_size.call(code, method))
           end
           check.call("#{name}: positional call arity", exact_size.call(code, 'memo_wrong_arity') == (name == 'positional core arity'))
-          if ['core bodies', 'positional kill switch', 'kill switch', 'open world', 'name kill switch'].include?(name)
+          if ['core bodies', 'positional kill switch', 'kill switch', 'name kill switch'].include?(name)
             check.call("#{name}: positional drop result", exact_size.call(code, 'dropped') == ['core bodies', 'name kill switch'].include?(name))
             check.call("#{name}: unresolved drop result", exact_size.call(code, 'dropped_unknown') == (name == 'core bodies'))
           end
         end
-        if ['core bodies', 'bottom kill switch', 'keys override', 'slot store of another class', 'kill switch', 'open world'].include?(name)
+        if ['core bodies', 'bottom kill switch', 'keys override', 'slot store of another class', 'kill switch'].include?(name)
           # A literal-block send on a not-yet-classed receiver waits for the loop instead of dropping the name.
           check.call("#{name}: keys.select enters the return table", err.include?('RETCLASS keys_sel (Array)') == %w[core\ bodies slot\ store\ of\ another\ class].include?(name))
           check.call("#{name}: @sl = @sl.select enters the return table", err.include?('RETCLASS sl_sel (Array)') == %w[core\ bodies keys\ override].include?(name))
         end
-        if ['core bodies', 'kill switch', 'symbol block kill switch', 'open world'].include?(name)
+        if ['core bodies', 'kill switch', 'symbol block kill switch'].include?(name)
           symbol_proven = name == 'core bodies'
           check.call("#{name}: Symbol block reject result", exact_size.call(code, 'sym_reject') == symbol_proven)
           check.call("#{name}: Symbol block map result", exact_size.call(code, 'sym_map') == symbol_proven)
@@ -219,13 +218,13 @@ if ENV['MRBC']
           check.call("#{name}: a block held in a local stays unproved", !exact_size.call(code, 'proc_block'))
           check.call("#{name}: a Symbol block on an unknown receiver does not pick one class", !exact_size.call(code, 'sym_unknown'))
         end
-        check.call("#{name}: nested sort result", exact_size.call(code, 'sorted') == (name == 'core bodies')) if ['core bodies', 'kill switch', 'nested kill switch', 'nested project override', 'nested core override', 'nested core recursion', 'nested caller break', 'open world'].include?(name)
-        if ['core bodies', 'kill switch', 'nested kill switch', 'super core override', 'super included override', 'native range switch', 'open world'].include?(name)
+        check.call("#{name}: nested sort result", exact_size.call(code, 'sorted') == (name == 'core bodies')) if ['core bodies', 'kill switch', 'nested kill switch', 'nested project override', 'nested core override', 'nested core recursion', 'nested caller break'].include?(name)
+        if ['core bodies', 'kill switch', 'nested kill switch', 'super core override', 'super included override', 'native range switch'].include?(name)
           check.call("#{name}: range helper and super result", exact_size.call(code, 'range_strings') == (name == 'core bodies'))
           check.call("#{name}: range sort result", exact_size.call(code, 'range_sorted') == (name == 'core bodies'))
           check.call("#{name}: aliased super stays unproved", !exact_size.call(code, 'range_entries'))
         end
-        if ['core bodies', 'kill switch', 'name kill switch', 'union kill switch', 'project filter override', 'filter installer', 'filter alias', 'outside filter definition', 'native filter definition', 'foreign filter definition', 'method missing', 'open world'].include?(name)
+        if ['core bodies', 'kill switch', 'name kill switch', 'union kill switch', 'project filter override', 'filter installer', 'filter alias', 'outside filter definition', 'native filter definition', 'foreign filter definition', 'method missing'].include?(name)
           check.call("#{name}: unknown filter result", exact_size.call(code, 'unknown_filter') == ['core bodies', 'union kill switch'].include?(name))
           check.call("#{name}: unknown break stays unproved", !exact_size.call(code, 'unknown_break'))
           check.call("#{name}: reject joins Array and Hash without dispatch", body_of.call(code, 'unknown_reject').include?('NATIVE_EXPRESSION_UNION :size') == ['core bodies', 'project filter override', 'outside filter definition', 'native filter definition', 'foreign filter definition', 'filter alias'].include?(name))

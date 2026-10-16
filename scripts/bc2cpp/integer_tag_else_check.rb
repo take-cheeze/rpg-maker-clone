@@ -111,7 +111,7 @@ def generated(source, dir, tool: nil, env: {})
   prev = Bc2cppFixtureRuntime::BC2CPP
   Bc2cppFixtureRuntime.send(:remove_const, :BC2CPP)
   Bc2cppFixtureRuntime.const_set(:BC2CPP, tool || prev)
-  Bc2cppFixtureRuntime.generate(source, dir, closed: true, only_owners: %w[Probe])
+  Bc2cppFixtureRuntime.generate(source, dir, only_owners: %w[Probe])
 ensure
   Bc2cppFixtureRuntime.send(:remove_const, :BC2CPP) if Bc2cppFixtureRuntime.const_defined?(:BC2CPP, false)
   Bc2cppFixtureRuntime.const_set(:BC2CPP, prev)

@@ -29,7 +29,6 @@ GEMS = 'compiled_gems.rb'
 REGISTER = 'mruby-rpg2k-compiled/src/register.cxx'
 BASE = 'base'
 SUB = 'a subclass inherits the class method'
-OPEN = 'an open world'
 
 # [name, file under tools/bc2cpp (or REGISTER), pattern, replacement, world (RSO_WORLDS), runtime?, FAIL label]
 MUTANTS = [
@@ -44,9 +43,6 @@ MUTANTS = [
   ['a class with descendants is taken for exact (run)', KEYWORD,
    'implicit if implicit && @closed_world&.exact_class?(implicit)', 'implicit', SUB, true,
    /the compiled calls answer what the interpreter answers/],
-  ['an open world is taken for exact', KEYWORD,
-   'implicit if implicit && @closed_world&.exact_class?(implicit)',
-   'implicit if implicit && (@closed_world ? @closed_world.exact_class?(implicit) : true)', OPEN, false, /the compiler refuses/],
   ['Game::CommonEvent.singleton is not an owner', GEMS,
    'Game::CommonEvent.singleton Game::MoveRoute.singleton', 'Game::MoveRoute.singleton', BASE, false,
    /Game::CommonEvent\.singleton is an owner/],

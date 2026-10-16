@@ -23,6 +23,7 @@ require 'shellwords'
 require 'tmpdir'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
 require_relative '../../tools/bc2cpp/closed_world'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 root = File.expand_path('../..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
@@ -144,9 +145,9 @@ generate = lambda do |allow|
     path = File.join(dir, 'pm_fixture.rb')
     File.write(path, WORLD)
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => 'pm_fixture', 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
-            'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio', 'BC2CPP_BUILD_GEMS' => gems_env,
+            'BC2CPP_BUILD_NAME' => 'wio', 'BC2CPP_BUILD_GEMS' => gems_env,
             NomethodReviewed::ALLOW_ENV => (allow ? 'allow' : nil) }
-    Open3.capture3(env, RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
+    Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
   end
 end
 out, err, status = generate.call(true)

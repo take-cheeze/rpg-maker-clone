@@ -196,7 +196,7 @@ generate = lambda do |dir, engine: ENGINE_FIXTURE, core: CORE_FIXTURE, env: {}|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(core, dir, closed: true, only_owners: %w[EmEngine], path: CORE_PATH, core: true,
+    runtime.generate(core, dir, only_owners: %w[EmEngine], path: CORE_PATH, core: true,
                                 extra: [['em_engine.rb', engine]])
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
@@ -392,7 +392,7 @@ if ENV['MRBC'] && %w[all behavior].include?(PHASE)
   if build && runtime.compiler?
     puts '== fixture on real mruby, interpreted and compiled'
     Dir.mktmpdir do |dir|
-      _code, err = runtime.generate(BEHAVIOUR, dir, closed: true, core: true, only_owners: %w[EmColl EmMapper EmFixture])
+      _code, err = runtime.generate(BEHAVIOUR, dir, core: true, only_owners: %w[EmColl EmMapper EmFixture])
       harness = <<~CPP
         static int scenario(mrb_state* M) {
           if (compiled) bc2cpp_register_owner_methods(M);

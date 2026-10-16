@@ -157,7 +157,7 @@ module RbsRecordTypes
 
     known_owners = registry.values.flatten.map(&:owner).to_set
     by_name = loaded.decls.group_by(&:ivar)
-    refusal = world_refusal(closed_world, native_paths, foreign_paths, outside_ivars)
+    refusal = world_refusal(closed_world)
     poison = (RecordHash::Poison.new(ireps, registry, closed_world, native_paths, foreign_paths) unless refusal)
     refusal ||= poison.global && "reflection in the program (#{poison.global})"
     sites = refusal ? {} : collect_sites(ireps, by_name.keys, poison.readers)
@@ -197,10 +197,7 @@ module RbsRecordTypes
     result
   end
 
-  def world_refusal(closed_world, native_paths, foreign_paths, outside_ivars)
-    unless closed_world && native_paths && foreign_paths && outside_ivars
-      return 'needs a closed world with native and foreign sources'
-    end
+  def world_refusal(closed_world)
     return "closed world refusal #{closed_world.global_refusal}" if closed_world.global_refusal
 
     nil
@@ -371,7 +368,7 @@ module RbsRecordTypes
   def drive(files, diagnostics, ireps, registry, display_root:, closed_world:, native_paths:, foreign_paths:,
             superclass_of:, container_constants:)
     loaded = load(files, display_root: display_root)
-    outside = (outside_ivar_names(native_paths + foreign_paths) if native_paths && foreign_paths)
+    outside = outside_ivar_names(native_paths + foreign_paths)
     result = check(loaded, ireps, registry, closed_world: closed_world, native_paths: native_paths,
                                             foreign_paths: foreign_paths, outside_ivars: outside,
                                             superclass_of: superclass_of, container_constants: container_constants,

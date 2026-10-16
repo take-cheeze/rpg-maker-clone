@@ -41,6 +41,7 @@ ROOT = File.expand_path('../..', __dir__)
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/symbol_cache'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
 MRBC = ENV['MRBC'] || 'mrbc'
@@ -72,7 +73,6 @@ env = {
   # The whole-program dispatch count is meaningful only under the same closed
   # world that the wio compiled gems use. `allow` skips the reviewed-site audit
   # failure for this measurement run; it does not alter generated dispatch.
-  'BC2CPP_CLOSED_WORLD' => '1',
   'BC2CPP_BUILD_NAME' => 'wio', 'BC2CPP_COLLECTION_EXPORTS' => '1',
   'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).map { |n, d| "#{n}=#{d}" }),
   NomethodReviewed::ALLOW_ENV => 'allow',
@@ -81,7 +81,7 @@ env['BC2CPP_PROFILE_TIMINGS'] = '1' if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
 cmd = [RbConfig.ruby, BC2CPP, *srcs].shelljoin
 Dir.mktmpdir do |dir|
   env['OUT_DIR'] = dir
-  @stdout, @stderr, status = Open3.capture3(env, cmd)
+  @stdout, @stderr, status = Open3.capture3(bc2cpp_wio_world_env(env), cmd)
   raise "bc2cpp.rb failed (exit #{status.exitstatus}):\n#{@stderr[-4000..]}" unless status.success?
 end
 
@@ -102,7 +102,7 @@ Dir.mktmpdir do |dir|
   # its generated text carries the /*SO:*/ join tags, so it is measured apart from the untagged shipped.cxx.
   shipped_env = env.merge('OUT_SYMBOL' => 'coverage_report_shipped', 'SKIP_UNSUPPORTED' => '1', 'OUT_DIR' => dir,
                           'BC2CPP_SITE_ORIGIN_TABLE' => ENV['BC2CPP_COVERAGE_ORIGIN_TABLE'])
-  @shipped_stdout, @shipped_stderr, shipped_status = Open3.capture3(shipped_env, cmd)
+  @shipped_stdout, @shipped_stderr, shipped_status = Open3.capture3(bc2cpp_wio_world_env(shipped_env), cmd)
   raise "bc2cpp.rb (SKIP_UNSUPPORTED=1) failed (exit #{shipped_status.exitstatus}):\n#{@shipped_stderr[-4000..]}" unless shipped_status.success?
 end
 # BC2CPP_COVERAGE_KEEP_DIR: keep the shipped run's generated C++ (stdout, plus

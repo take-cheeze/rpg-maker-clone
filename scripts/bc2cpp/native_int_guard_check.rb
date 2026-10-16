@@ -39,6 +39,7 @@ ENV['BC2CPP_NATIVE_PARAM_UNBOX'] = '0'
 # answers, so a change to the real proof is measured by the generated-code section below,
 # not here.
 require File.join(ENV['BC2CPP_TOOL'] ? File.dirname(ENV['BC2CPP_TOOL']) : File.join(root, 'tools/bc2cpp'), 'bc2cpp')
+require_relative '../../tools/bc2cpp/wio_world_env'
 cg = CodeGen.allocate
 SPRITE_Z = ['RGSS::Sprite', ['object_z_set_direct', [:int]]].freeze
 SEND = "r3 = bc2cpp_send(M, r2, 1299, 1, r3);\n"
@@ -125,7 +126,7 @@ gems = NomethodReviewedProbe.wio_gems(root)
 rgss_srcs = Dir[File.join(root, 'mruby-rgss/src/*.cxx')]
 native_srcs = rgss_srcs + core_native_srcs(File.join(root, '3rd/mruby')) + external_gem_native_srcs(root)
 bc2cpp_tool = ENV['BC2CPP_TOOL'] || File.join(root, 'tools/bc2cpp/bc2cpp.rb')
-generate = lambda do |source, name, closed|
+generate = lambda do |source, name|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
@@ -133,12 +134,11 @@ generate = lambda do |source, name, closed|
     # proven name outright (scripts/bc2cpp/native_param_unbox_check.rb), so it is off here.
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1',
             'NATIVE_SRCS' => Shellwords.join(native_srcs), 'BC2CPP_NATIVE_PARAM_UNBOX' => '0' }
-    if closed
-      env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
-                 NomethodReviewed::ALLOW_ENV => 'allow')
-    end
-    out, err, status = Open3.capture3(env, RbConfig.ruby, bc2cpp_tool, path)
+    env.merge!('BC2CPP_BUILD_NAME' => 'wio',
+               'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
+               NomethodReviewed::ALLOW_ENV => 'allow')
+
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, bc2cpp_tool, path)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
 
     out
@@ -157,7 +157,7 @@ WORLD = <<~'RUBY'
     def two_args(w, c, t); w.flash(c, t); w.visible; end
   end
 RUBY
-code = generate.call(WORLD, 'ni_closed', true)
+code = generate.call(WORLD, 'ni_closed')
 known = body_of.call(code, 'NiCaller_known')
 check.call('a class-tested arm reaches the entry point', known.include?('rgss::object_z_set_direct('))
 check.call('its :int test is kept: the argument is a parameter',
@@ -166,9 +166,6 @@ untyped = body_of.call(code, 'NiCaller_untyped')
 check.call('an untyped argument is untouched', untyped.include?('rgss::window_contents_set_direct(') && !untyped.include?('mrb_integer_p'))
 two = body_of.call(code, 'NiCaller_two_args')
 check.call('a two-argument entry still guards its :int position', two.include?('mrb_integer_p('))
-open_code = generate.call(WORLD, 'ni_open', false)
-check.call('the open world is byte-identical for this change',
-           body_of.call(open_code, 'NiCaller_known').include?('mrb_integer_p('))
 
 # The real proof, on the engine's own shape: a Sprite the class flow proves exact, with a
 # literal Integer duration. This is `spr.flash(Color.new(...), 20)` in
@@ -204,7 +201,7 @@ CONST_WORLD = <<~'RUBY'
     end
   end
 RUBY
-const_code = generate.call(CONST_WORLD, 'ni_const', true)
+const_code = generate.call(CONST_WORLD, 'ni_const')
 %w[build build_constant_z build_arithmetic].each do |name|
   body = body_of.call(const_code, "NiConst_#{name}")
   check.call("#{name} reaches a native entry point", body.include?('rgss::'))

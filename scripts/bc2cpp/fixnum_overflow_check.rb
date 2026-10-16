@@ -176,7 +176,7 @@ CPP
 
 def generated(dir)
   runtime = Bc2cppFixtureRuntime
-  code, err = runtime.generate(FIXTURE, dir, closed: true, only_owners: %w[OvfProven OvfOpen])
+  code, err = runtime.generate(FIXTURE, dir, only_owners: %w[OvfProven OvfOpen])
   [code, err]
 end
 

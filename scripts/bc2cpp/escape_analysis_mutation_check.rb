@@ -60,13 +60,6 @@ MUTANTS = [
   ['an outside Ruby definer is ignored',
    [['bc2cpp.rb', 'hidden_ruby_names.include?(name) || closed_world.unknown_definer?(name)', 'closed_world.unknown_definer?(name)']],
    /outside Ruby source defining the callee/],
-  ['the open world is trusted',
-   [['bc2cpp.rb', 'if escape_registry && closed_world && closed_world.global_refusal.nil? && closed_world.method_missing_classes.empty?',
-     'if escape_registry && (closed_world.nil? || (closed_world.global_refusal.nil? && closed_world.method_missing_classes.empty?))'],
-    ['bc2cpp.rb', 'hidden_ruby_names.include?(name) || closed_world.unknown_definer?(name)',
-     'hidden_ruby_names.include?(name) || closed_world&.unknown_definer?(name)'],
-    ['bc2cpp.rb', 'foreign_method_names(outside_ruby.reject', 'foreign_method_names(Array(outside_ruby).reject']],
-   /without the closed world the proof is not offered/]
 ].freeze
 
 run_check = lambda do |tool_dir|

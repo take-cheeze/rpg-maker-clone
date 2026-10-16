@@ -28,6 +28,7 @@ require_relative '../../tools/bc2cpp/bc2cpp'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
 require_relative 'cxx'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
@@ -302,7 +303,7 @@ else
   # Compiles `source` with bc2cpp, links it against the real core and runs
   # `cases`; `on_self` calls each method on a new instance of the case's class
   # instead of passing that instance to a Probe.
-  run_fixture = lambda do |source, cases, label, closed: false, on_self: false|
+  run_fixture = lambda do |source, cases, label, on_self: false|
     Dir.mktmpdir do |dir|
       src = File.join(dir, 'fixture.rb')
       File.write(src, source)
@@ -310,12 +311,11 @@ else
       env = { 'MRBC' => MRBC, 'SKIP_UNSUPPORTED' => '1', 'OUT_SYMBOL' => 'fixture',
               'OUT_DIR' => dir, 'BC2CPP_SELF_REGISTERING' => '1',
               'NATIVE_SRCS' => Shellwords.join(core_native_srcs("#{ROOT}/3rd/mruby")) }
-      if closed
-        env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                   'BC2CPP_BUILD_GEMS' => Shellwords.join(WIO_GEMS.map { |n, d| "#{n}=#{d}" }),
-                   NomethodReviewed::ALLOW_ENV => 'allow')
-      end
-      _out, err, status = Open3.capture3(env, "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
+      env.merge!('BC2CPP_BUILD_NAME' => 'wio',
+                 'BC2CPP_BUILD_GEMS' => Shellwords.join(WIO_GEMS.map { |n, d| "#{n}=#{d}" }),
+                 NomethodReviewed::ALLOW_ENV => 'allow')
+
+      _out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
                                               "#{src.shellescape} > #{gen.shellescape}")
       abort "bc2cpp.rb failed:\n#{err[-2000..]}" unless status.success?
 
@@ -387,7 +387,7 @@ else
   end
   run_fixture.call(RUNTIME, CASES, 'INHERITED_GUARD')
   # A subclass that overrides, one that does not, one with a mixin in the way.
-  run_fixture.call(CHA, CHA_CASES, 'CHA_SELF', closed: true, on_self: true)
+  run_fixture.call(CHA, CHA_CASES, 'CHA_SELF', on_self: true)
 end
 
 if failures.empty?

@@ -7,7 +7,7 @@
 # 1. Generated code (MRBC): the shape of a site, and the single fallback in the preamble.
 # 2. Behaviour (MRBC, BC2CPP_MRUBY_FULL with mruby-io/-stringio/-eval, g++): compiled runs
 #    print and return what the interpreter does, through a normal $stdout, a redirect made
-#    by the program, by an interpreted script and by eval, an IO#puts override, a
+#    by the program and by an interpreted script, an IO#puts override, a
 #    user-defined puts and a literal block.
 #
 # Usage: [MRBC=path/to/mrbc BC2CPP_MRUBY_FULL=dir|BC2CPP_FULL_BUILD_DIR=dir] ruby scripts/bc2cpp/io_puts_model_check.rb
@@ -118,16 +118,6 @@ else
         text
       end
 
-      def eval_swap(v)
-        saved = $stdout
-        $eval_target = StringIO.new
-        eval('$stdout = $eval_target')
-        $stdout.puts(v)
-        text = $stdout.string
-        $stdout = saved
-        text
-      end
-
       def override_io_puts
         IO.class_eval do
           def puts(*args)
@@ -140,8 +130,7 @@ else
   RUBY
 
   Dir.mktmpdir do |dir|
-    # eval is only in an open world; a closed one proves it undefined (ADR 0210).
-    code, err = runtime.generate(fixture, dir, closed: false)
+    code, err = runtime.generate(fixture, dir)
     File.write(File.join(dir, 'fixture_gen.cpp'), "#define HAVE_MRUBY_IO_GEM 1\n#{code}")
     body = <<~'CPP'
       static mrb_value str(mrb_state* M, const char* s) { return mrb_str_new_cstr(M, s); }
@@ -187,10 +176,9 @@ else
         call(M, "blocked on stdout", p, "blocked", 2, blocked_out);
         call(M, "sink last", sink, "last");
 
-        // The program reassigns $stdout/$stderr itself, and eval does.
+        // The program reassigns $stdout/$stderr itself.
         a1[0] = str(M, "redirected"); call(M, "swap stdout", p, "swap_stdout", 1, a1);
         a1[0] = str(M, "twice"); call(M, "swap stderr", p, "swap_stderr", 1, a1);
-        a1[0] = str(M, "from eval"); call(M, "eval swap", p, "eval_swap", 1, a1);
         a1[0] = str(M, "back on stdout"); call(M, "stdout restored", p, "out1", 1, a1);
 
         // An interpreted script reassigns $stdout between compiled calls.
@@ -223,7 +211,6 @@ else
                  plain.call(interpreted) == plain.call(compiled))
       check.call('output reaches the real $stdout', compiled.include?('named-obj') && compiled.include?('has newline'))
       check.call('a redirect made by the program is honoured', compiled.include?('swap stdout => "redirected\n"'))
-      check.call('a redirect made by eval is honoured', compiled.include?('eval swap => "from eval\n"'))
       check.call('a redirect made by an interpreted script is honoured',
                  compiled.include?('captured => "captured by script\n\n"') && !compiled.include?('captured by script'))
       check.call('the IO#puts override wins over the C body',

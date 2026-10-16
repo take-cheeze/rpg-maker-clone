@@ -8,7 +8,7 @@
 #
 # 1. Gate logic: the marker and the listing (violation sites are not NOMETHOD_REVIEWED sites).
 # 2. Generated code (needs MRBC): the converted families carry the helper and no dispatch; sites
-#    without the proof, numeric fast paths and the open world keep their dispatch; the kill
+#    without the proof and numeric fast paths keep their dispatch; the kill
 #    switch restores every dispatch one for one.
 # 3. Behaviour on real mruby (needs MRBC, a mruby build and g++): programs inside the closed
 #    set answer what the interpreter answers and log nothing; with a constant rebound behind the
@@ -133,7 +133,7 @@ count = ->(text, needle) { text.scan(needle).size }
 if ENV['MRBC']
   puts '== generated code'
   Dir.mktmpdir do |dir|
-    code, err = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS)
+    code, err = runtime.generate(FIXTURE, dir, only_owners: OWNERS)
     # ADR 0290's families only: CLASS_NARROWING (ADR 0375) has its own check and goes with its own kill switch.
     violation = /\bbc2cpp_guard_violation\(M,(?![^\n]*\(CLASS_NARROWING\))/
     # ADR 0293: an unproven `is_a?` argument raises its TypeError in place and an unproven `===`
@@ -169,7 +169,7 @@ if ENV['MRBC']
     Dir.mktmpdir do |off_dir|
       off_code, off_err = ENV.fetch('BC2CPP_GUARD_VIOLATION', nil).then do |saved|
         ENV['BC2CPP_GUARD_VIOLATION'] = '0'
-        runtime.generate(FIXTURE, off_dir, closed: true, only_owners: OWNERS)
+        runtime.generate(FIXTURE, off_dir, only_owners: OWNERS)
       ensure
         saved ? ENV['BC2CPP_GUARD_VIOLATION'] = saved : ENV.delete('BC2CPP_GUARD_VIOLATION')
       end
@@ -180,11 +180,6 @@ if ENV['MRBC']
                  violations.positive? && count.call(off_code, DISPATCH) == sends + violations)
     end
 
-    Dir.mktmpdir do |open_dir|
-      open_code, = runtime.generate(FIXTURE, open_dir, closed: false, only_owners: OWNERS)
-      check.call('the open world keeps every fallback (no violation site)',
-                 !open_code.match?(violation) && !open_code.include?('guard-violation'))
-    end
   end
 else
   puts '-- SKIP generated code: set MRBC'
@@ -251,7 +246,7 @@ if ENV['MRBC'] && build && runtime.compiler?
   CPP
   # The class the `Range.new` and is_a? guards name when nothing is rebound.
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS)
+    _code, err = runtime.generate(FIXTURE, dir, only_owners: OWNERS)
     full = File.exist?("#{build}/lib/libmruby.a")
     outputs = lambda do |flags = ''|
       # Append to the caller's flags: a 32-bit build passes -DMRB_INT32 here and must keep it.

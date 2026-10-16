@@ -5,6 +5,7 @@ require 'rbconfig'
 require 'tmpdir'
 require_relative '../../tools/bc2cpp/bc2cpp'
 require_relative 'cxx'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
@@ -69,7 +70,7 @@ Dir.mktmpdir do |dir|
 
   env = { 'MRBC' => MRBC_ENV, 'OUT_SYMBOL' => 'forward_yield', 'OUT_DIR' => dir,
           'SKIP_UNSUPPORTED' => '1', 'BC2CPP_SELF_REGISTERING' => '1' }
-  out, err, status = Open3.capture3(env, RbConfig.ruby, BC2CPP, source, chdir: ROOT)
+  out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, BC2CPP, source, chdir: ROOT)
   abort "bc2cpp.rb failed:\n#{err[-3000..] || err}" unless status.success?
 
   run = body_of(out, 'ForwardYieldOwner_run')

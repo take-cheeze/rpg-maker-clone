@@ -9,7 +9,7 @@
 #    rewrite of the register, a branch, a call result, a handler edge, a block that writes the local, an ivar, a
 #    class a native also answers for); each way of losing the proof (a method_missing class, a computed
 #    definition, an instance singleton, a subclass of a core class, a foreign reopen or a foreign definer of the
-#    fact name, an alias, the kill switch, the open world) withdraws it.
+#    fact name, an alias, the kill switch) withdraws it.
 # 2. Behaviour on real mruby: the compiled answers equal the interpreted ones in every world, for the receivers a
 #    wrong proof would mis-dispatch (the class the fact leaves out, a module-provided definition, a singleton,
 #    a method_missing object), and the proven sites make no dynamic dispatch. Run on a full-core build, a
@@ -152,11 +152,11 @@ end
 dead_else = ->(code, fn) { name_else.call(code, fn) == :dead }
 kept_else = ->(code, fn) { name_else.call(code, fn) == :kept }
 
-generate = lambda do |source, dir, closed: true, env: {}, **options|
+generate = lambda do |source, dir, env: {}, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options)
+    runtime.generate(source, dir, only_owners: OWNERS, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
@@ -201,10 +201,6 @@ if ENV['MRBC']
       kcode, = generate.call(CLASSES + FIXTURE, kd, env: { 'BC2CPP_CALL_FACTS' => '0' })
       check.call('NEG kill switch (BC2CPP_CALL_FACTS=0): every site keeps its else',
                  (POSITIVE + NEGATIVE).all? { |fn| kept_else.call(kcode, fn) })
-    end
-    Dir.mktmpdir do |od|
-      ocode, = generate.call(CLASSES + FIXTURE, od, closed: false)
-      check.call('NEG the open world proves nothing', POSITIVE.none? { |fn| body_all.call(ocode, fn).include?('CLOSED_WORLD nomethod') })
     end
   end
 else

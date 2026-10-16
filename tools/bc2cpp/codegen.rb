@@ -94,7 +94,8 @@ class CodeGen
     @native_ivar_scopes = native_ivar_scopes
     @nil_operator_names = nil_operator_names
     @outside_const_names = outside_const_names
-    # CLOSED_WORLD: a ClosedWorld (closed_world.rb) when BC2CPP_CLOSED_WORLD=1.
+    # CLOSED_WORLD: the build's ClosedWorld (closed_world.rb); every bc2cpp run has one (ADR 0461). It is nil only
+    # while a core body compiles (ADR 0264), in the analysis-only probe, and in unit fixtures.
     @closed_world = closed_world
     # ENTRY_ARG_CALLSITE_PROOF: identifier tokens from NATIVE_SRCS and
     # FOREIGN_RUBY_SRCS (outside_world_tokens). nil means the scan did not run;

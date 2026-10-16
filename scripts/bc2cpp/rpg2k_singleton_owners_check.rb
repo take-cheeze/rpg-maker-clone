@@ -201,13 +201,6 @@ WORLDS = {
     bound: { 'RsoCaller#load_all' => LOAD_BOUND, 'RsoCaller#page' => PAGE_BOUND },
     kept: { 'RsoCaller#same' => SAME_BOUND }
   },
-  'an open world' => {
-    # Without the closed world nothing says the class has no descendants.
-    open: true,
-    refused: %w[Game::MoveRoute#clone_with Game::MoveRoute.singleton#from_page],
-    extra: '',
-    kept: { 'Game::MoveRoute.singleton#from_page' => KEYWORD_NEW }
-  },
   'a subclass inherits the class method' => {
     # The guard-miss arm of the construct cannot build a subclass's object, so a descendant refuses the route.
     refused: %w[Game::MoveRoute#clone_with Game::MoveRoute.singleton#from_page],
@@ -238,8 +231,7 @@ puts '-- generated code'
 worlds.each do |name, world|
   Dir.mktmpdir do |dir|
     code, err = runtime.generate(FIXTURE + world[:extra], dir, only_owners: OWNERS, build_gems: TIME_GEM,
-                                                                drop_gems: ENGINE_GEMS, skip_unsupported: false,
-                                                                closed: !world[:open])
+                                                                drop_gems: ENGINE_GEMS, skip_unsupported: false)
     generated[name] = [code, err]
     File.write(File.join(ENV['RSO_DUMP'], "#{name.tr(' ', '_')}.cpp"), code) if ENV['RSO_DUMP']
     File.write(File.join(ENV['RSO_DUMP'], "#{name.tr(' ', '_')}.err"), err) if ENV['RSO_DUMP']
@@ -282,7 +274,7 @@ if selected.nil? || selected.include?('base')
   # RSO_REGISTER names a modified copy (the mutation check).
   register = File.read(ENV.fetch('RSO_REGISTER') { File.join(ROOT, 'mruby-rpg2k-compiled/src/register.cxx') })
   # The hot-only guard is register.cxx's own (ADR 0428 keeps the hand registrations under KEEP_HAND_REGISTRATIONS).
-  guarded = register[%r{^#if !defined\(BC2CPP_HOT_ONLY_STUBS\) \|\| defined\(BC2CPP_KEEP_HAND_REGISTRATIONS\)\n(.*?)^#endif  // BC2CPP_HOT_ONLY_STUBS}m, 1].to_s
+  guarded = register[%r{^#if !defined\(BC2CPP_HOT_ONLY_STUBS\)\n(.*?)^#endif  // BC2CPP_HOT_ONLY_STUBS}m, 1].to_s
   {
     'load' => 'common_event', 'eligible' => 'common_event', 'from_page' => 'move_route', 'same_route?' => 'move_route'
   }.each do |name, klass|
@@ -290,19 +282,10 @@ if selected.nil? || selected.include?('base')
     check.call("register.cxx registers #{klass}.#{name} as #{fn} inside the full-build region",
                guarded.match?(/mrb_define_class_method\(M, #{klass}, "#{Regexp.escape(name)}",\s+#{Regexp.escape(fn)},/))
   end
-  # A world that is not closed (the desktop build) refuses from_page; the shipped pass (SKIP_UNSUPPORTED) then drops it and
+  # A world that refuses from_page (a descendant of the class, say): the shipped pass (SKIP_UNSUPPORTED) then drops it and
   # says so with BC2CPP_SKIPPED_<entry>, which register.cxx's registration of it must be guarded by.
   check.call('register.cxx guards move_route.from_page with BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page',
              guarded.match?(/^#ifndef BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page\n\s*mrb_define_class_method\(M, move_route, "from_page",/))
-  Dir.mktmpdir do |dir|
-    code, = runtime.generate(FIXTURE + WORLDS.fetch('an open world')[:extra], dir, only_owners: OWNERS, build_gems: TIME_GEM,
-                                                                                    drop_gems: ENGINE_GEMS, skip_unsupported: true, closed: false)
-    check.call('an open world, shipped pass: from_page is dropped and BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page says so',
-               code.include?("#define BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page 1\n"))
-    check.call('an open world, shipped pass: same_route? is emitted and not marked skipped',
-               code.match?(/^(?:static )?mrb_value Game__MoveRoute_singleton_same_route\$3f_impl\(mrb_state\* M/) &&
-                 !code.include?('BC2CPP_SKIPPED_Game__MoveRoute_singleton_same_route'))
-  end
   hot_path = wiring.fetch('hot')
   hot = File.readlines(hot_path, chomp: true)
   METHODS.each do |owner, names|

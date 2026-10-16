@@ -189,7 +189,7 @@ if ENV['MRBC']
   else
     puts '-- fixtures on real mruby, interpreted and compiled'
     Dir.mktmpdir do |dir|
-      _code, err = runtime.generate(LOOP_WORLD, dir, closed: true, only_owners: %w[CsCodec.singleton CsLoop])
+      _code, err = runtime.generate(LOOP_WORLD, dir, only_owners: %w[CsCodec.singleton CsLoop])
       body = <<~CPP
         static mrb_value ints(mrb_state* M, std::initializer_list<int> xs) {
           mrb_value list = mrb_ary_new(M);

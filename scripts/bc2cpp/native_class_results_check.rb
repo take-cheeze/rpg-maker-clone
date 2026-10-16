@@ -95,8 +95,7 @@ if ENV['MRBC']
     ['absent definition kill switch', SOURCE, {}, { 'BC2CPP_ABSENT_NATIVE_RETURNS' => '0' }, true, false],
     ['foreign definition', SOURCE, { foreign: [['outside.rb', 'class NcOwn; def keys; other; end; end']] }, {}, false, true],
     ['unlinked native keys', SOURCE, { native: [['outside.c', 'void f(mrb_state* mrb, struct RClass* klass) { mrb_define_method(mrb, klass, "keys", other_body, MRB_ARGS_NONE()); }']] }, {}, true, true],
-    ['alias', SOURCE + "class NcOwn; alias keys parameters; end\n", {}, {}, false, true],
-    ['open world', SOURCE, { closed: false }, {}, false, false]
+    ['alias', SOURCE + "class NcOwn; alias keys parameters; end\n", {}, {}, false, true]
   ]
   outside_gem = Dir.mktmpdir('native-result-gem')
   begin

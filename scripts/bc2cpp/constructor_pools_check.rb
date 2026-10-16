@@ -13,7 +13,7 @@
 #    withdrawal world (a Symbol :new, instance_method(:initialize), a Ruby `def self.new`, a module's initialize, an
 #    explicit initialize call, a forwarded splat `new`, a `new` on a computed receiver, a constant bound to a class, a
 #    native or foreign Ruby source spelling the class, a singleton maker, a dynamic subclass, a Class mixin, a wild
-#    superclass, `allocate` + `send(:initialize)`, the kill switch, the open world) keeps the guards it must.
+#    superclass, `allocate` + `send(:initialize)`, the kill switch) keeps the guards it must.
 #    CP_GENERATED_ONLY=1 stops here (what the mutation check runs).
 # 2. Behaviour on real mruby: the fixture runs interpreted and compiled and must answer alike, nil and Hash arguments
 #    included, while the proven methods make no dynamic dispatch. Run it on a full-core and a core-only mruby, and on a
@@ -240,11 +240,11 @@ kept = lambda do |code, owner, fn|
   !body.empty? && DISPATCH.any? { |d| body.include?(d) }
 end
 
-generate = lambda do |source, dir, closed: true, env: {}, **options|
+generate = lambda do |source, dir, env: {}, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options)
+    runtime.generate(source, dir, only_owners: OWNERS, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
@@ -343,10 +343,6 @@ if ENV['MRBC']
                                                               off_err.lines.grep(/CLASSARG CpHold#initialize/).empty?)
     end
 
-    Dir.mktmpdir do |open_dir|
-      open_code, = generate.call(HOLDER, open_dir, closed: false)
-      check.call('the open world proves nothing about a constructor', POSITIVES.all? { |owner, fn, _| kept.call(open_code, owner, fn) })
-    end
 
     Dir.mktmpdir do |pool_dir|
       pool_code, = generate.call(HOLDER, pool_dir, env: { 'BC2CPP_CLASS_POOLS' => '0' })
@@ -454,7 +450,7 @@ else
     ENV['BC2CPP_CXXFLAGS'] = flags
     begin
       Dir.mktmpdir do |dir|
-        _code, gen_err = runtime.generate(HOLDER, dir, closed: true, only_owners: OWNERS)
+        _code, gen_err = runtime.generate(HOLDER, dir, only_owners: OWNERS)
         built, output = runtime.run(dir, gen_err, OWNERS, scenario, build: build, full: with_gems)
         check.call("#{label}: the fixture compiles and runs against real mruby", built)
         puts output unless built

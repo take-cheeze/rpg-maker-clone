@@ -88,7 +88,7 @@ SCENARIO = <<~CPP
 saved = ENV['BC2CPP_FIBER_BODY_GUARD']
 begin
   Dir.mktmpdir do |dir|
-    code, err = runtime.generate(BASE, dir, closed: true, only_owners: OWNERS)
+    code, err = runtime.generate(BASE, dir, only_owners: OWNERS)
     check.call('a body that suspends the Fiber itself is never admitted (it keeps the #error)',
                entry.call(code, 'FgYielding_each').empty? ||
                  !entry.call(code, 'FgYielding_each').include?('M->c != M->root_c'))

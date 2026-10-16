@@ -89,7 +89,7 @@ OWNERS = %w[CsArg CsSet CsRet].freeze
 if ENV['MRBC']
   puts '-- generated code (closed world)'
   Dir.mktmpdir do |dir|
-    code, err = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS)
+    code, err = runtime.generate(FIXTURE, dir, only_owners: OWNERS)
     chunk = lambda do |owner_method|
       code[/^\/\/ #{Regexp.escape(owner_method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
     end
@@ -116,7 +116,7 @@ build = runtime.full || runtime.core
 if ENV['MRBC'] && build && runtime.compiler?
   puts '-- fixture on real mruby, interpreted and compiled'
   Dir.mktmpdir do |dir|
-    _code, err = runtime.generate(FIXTURE, dir, closed: true, only_owners: OWNERS)
+    _code, err = runtime.generate(FIXTURE, dir, only_owners: OWNERS)
     body = <<~CPP
       static int scenario(mrb_state* M) {
         for (const char* klass : { "CsArg", "CsSet", "CsRet" }) {

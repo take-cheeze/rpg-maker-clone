@@ -312,7 +312,7 @@ if full.nil? || !runtime.compiler?
 else
   Dir.mktmpdir do |dir|
     owners = %w[RhEngine RhOther RhHost RhDelHost]
-    _code, err = runtime.generate(CODE, dir, closed: true, only_owners: owners)
+    _code, err = runtime.generate(CODE, dir, only_owners: owners)
     body = <<~CPP
       static int scenario(mrb_state* M) {
         mrb_value host = mrb_obj_new(M, mrb_class_get(M, "RhHost"), 0, nullptr);

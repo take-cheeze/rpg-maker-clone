@@ -6,7 +6,7 @@
 # dynamic send as its else.
 #
 #   - generated code: the guarded loop, the label after the send, the else path kept, and every reason the loop is
-#     withheld (open world, a Ruby override or prepend, a dynamic installer, the kill switch, a proven receiver);
+#     withheld (a Ruby override or prepend, a dynamic installer, the kill switch, a proven receiver);
 #   - behaviour: the fixture compiled with the compiled core, linked into a full-core mruby, prints what the
 #     interpreted build prints (break/next with a value, return from the method, exceptions, mutation during
 #     iteration, destructuring, captured locals, nested blocks, subclasses, singletons, user receivers, Fibers).
@@ -23,6 +23,7 @@ require_relative 'cxx'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/nomethod_reviewed'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 MRUBY = File.join(ROOT, '3rd/mruby')
@@ -194,7 +195,7 @@ gems = NomethodReviewedProbe.wio_gems(ROOT)
 native_srcs = core_native_srcs(MRUBY) + external_gem_native_srcs(ROOT)
 core_srcs = core_compiled_mrblib_srcs(ROOT)
 
-generate = lambda do |source, name, closed: true, core: true, hot: nil, extra: {}|
+generate = lambda do |source, name, core: true, hot: nil, extra: {}|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
@@ -202,14 +203,13 @@ generate = lambda do |source, name, closed: true, core: true, hot: nil, extra: {
             'NATIVE_SRCS' => Shellwords.join(native_srcs),
             'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)),
             'ONLY_OWNERS' => (BC2CPP_CORE_OWNERS + ['GbFx']).join(',') }
-    if closed
-      env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
-                 NomethodReviewed::ALLOW_ENV => 'allow')
-    end
+    env.merge!('BC2CPP_BUILD_NAME' => 'wio',
+               'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
+               NomethodReviewed::ALLOW_ENV => 'allow')
+
     env.merge!(extra)
     srcs = (core ? core_srcs : []) + [path]
-    out, err, status = Open3.capture3(env, RbConfig.ruby, ENV.fetch('BC2CPP_TOOL') { File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb') }, *srcs)
+    out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, ENV.fetch('BC2CPP_TOOL') { File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb') }, *srcs)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
     out
   end
@@ -268,10 +268,8 @@ check.call('the root-context test is in every guard', closed.scan(/\/\/ GUARDED_
 
 no_core_direct = generate.call(FIXTURE, 'gb_no_core_direct', extra: { 'BC2CPP_BLOCK_CORE_DIRECT' => '0' })
 check.call('BC2CPP_BLOCK_CORE_DIRECT=0 (no arms to fall back on) removes the guarded loops too', !no_core_direct.include?('GUARDED_BLOCK_INLINE'))
-off = generate.call(FIXTURE, 'gb_off', closed: true, extra: { 'BC2CPP_GUARDED_BLOCK_INLINE' => '0' })
+off = generate.call(FIXTURE, 'gb_off', extra: { 'BC2CPP_GUARDED_BLOCK_INLINE' => '0' })
 check.call('BC2CPP_GUARDED_BLOCK_INLINE=0 removes every guarded loop and changes nothing else', !off.include?('GUARDED_BLOCK_INLINE') && off.include?('BLOCK_CORE_DIRECT'))
-open_code = generate.call(FIXTURE, 'gb_open', closed: false)
-check.call('without the closed world no guarded loop is emitted', !open_code.include?('GUARDED_BLOCK_INLINE'))
 nocore = generate.call(FIXTURE, 'gb_nocore', core: false)
 check.call('without the compiled core no guarded loop is emitted', !nocore.include?('GUARDED_BLOCK_INLINE'))
 
@@ -325,7 +323,7 @@ GEM_RAKE = <<~'RAKE'
         env = { 'MRBC' => spec.build.mrbcfile.to_s, 'OUT_SYMBOL' => 'gb', 'OUT_DIR' => build_dir,
                 'ONLY_OWNERS' => (BC2CPP_CORE_OWNERS + ['GbFx']).join(','), 'NATIVE_SRCS' => Shellwords.join(native),
                 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)), 'SKIP_UNSUPPORTED' => '1',
-                'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
+                'BC2CPP_BUILD_NAME' => 'wio',
                 'BC2CPP_BUILD_GEMS' => Shellwords.join(gems.map { |n, d| "#{n}=#{d}" }),
                 NomethodReviewed::ALLOW_ENV => 'allow' }
         cmd = "#{RbConfig.ruby.shellescape} #{ROOT}/tools/bc2cpp/bc2cpp.rb #{srcs.map(&:shellescape).join(' ')} " \

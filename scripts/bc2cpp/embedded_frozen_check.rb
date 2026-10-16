@@ -7,7 +7,7 @@
 # test unless the closed world proves no instance of a user class can ever be frozen
 # (ClosedWorld#user_objects_unfrozen?), in which case the generated hot code is exactly what it was.
 #
-# 1. Generated code (needs MRBC): the test is present in the open world and in every closed world
+# 1. Generated code (needs MRBC): the test is present in every closed world
 #    where a `freeze` can reach a user object (an arbitrary receiver, `&:freeze`, a computed send,
 #    native or foreign code that freezes), and absent where every `freeze` is on a builtin literal.
 # 2. Behaviour on real mruby (needs MRBC, a mruby build and g++): a frozen receiver raises
@@ -186,7 +186,7 @@ if ENV['MRBC']
   puts '== generated code'
   WORLDS.each do |name, world|
     Dir.mktmpdir do |dir|
-      code, = runtime.generate(BASE + world[:extra], dir, closed: true, only_owners: OWNERS)
+      code, = runtime.generate(BASE + world[:extra], dir, only_owners: OWNERS)
       STORES.each do |m|
         text = chunk.call(code, m)
         embedded = text.include?('direct struct field write')
@@ -201,11 +201,6 @@ if ENV['MRBC']
     end
   end
 
-  Dir.mktmpdir do |dir|
-    code, = runtime.generate(BASE, dir, closed: false, only_owners: OWNERS)
-    check.call('NEG: the open world cannot prove it, so both stores test',
-               STORES.all? { |m| chunk.call(code, m).include?(FROZEN_TEST) })
-  end
 else
   puts '-- SKIP generated code: set MRBC'
 end
@@ -302,7 +297,7 @@ builds.each do |label, build, full_flag, mrbc, flags|
   begin
     Dir.mktmpdir do |dir|
       source = BASE + WORLDS.fetch('freeze on an arbitrary receiver')[:extra]
-      _code, err = runtime.generate(source, dir, closed: true, only_owners: OWNERS)
+      _code, err = runtime.generate(source, dir, only_owners: OWNERS)
       built, output = runtime.run(dir, err, OWNERS, BODY, build: build, full: full_flag)
       check.call('the fixture compiles and runs against real mruby', built)
       next unless built

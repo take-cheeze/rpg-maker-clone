@@ -39,6 +39,7 @@ GEM_RAKE = <<~'RAKE'
   require 'shellwords'
   ROOT = ENV.fetch('BC2CPP_ROOT')
   require "#{ROOT}/tools/bc2cpp/compiled_gems"
+  require "#{ROOT}/tools/bc2cpp/wio_world_env"
 
   # The core-only world: mruby core mrblib and the gems this build has, no engine Ruby.
   MRuby::Gem::Specification.new('bc2cpp-core-test') do |spec|
@@ -61,7 +62,8 @@ GEM_RAKE = <<~'RAKE'
               'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(ROOT)), 'SKIP_UNSUPPORTED' => '1' }
       cmd = "#{RbConfig.ruby.shellescape} #{ROOT}/tools/bc2cpp/bc2cpp.rb #{srcs.map(&:shellescape).join(' ')} " \
             "> #{generated.shellescape} 2> #{build_dir}/core_test.diag"
-      sh env, cmd
+      # docs/adr/0461: bc2cpp compiles closed-world programs only; the core is compiled in the wio world.
+      sh bc2cpp_wio_world_env(env, ROOT), cmd
     end
     file "#{dir}/src/register.cxx" => generated
     cxx.include_paths << build_dir

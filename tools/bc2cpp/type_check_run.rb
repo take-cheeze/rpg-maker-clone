@@ -22,7 +22,7 @@ module TypeCheckRun
     env = {
       'MRBC' => mrbc, 'OUT_SYMBOL' => 'type_check', 'OUT_DIR' => workdir, 'SKIP_UNSUPPORTED' => '1',
       'NATIVE_SRCS' => Shellwords.join(natives), 'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_mrblib_srcs(root)),
-      'BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio', 'BC2CPP_COLLECTION_EXPORTS' => '1',
+      'BC2CPP_BUILD_NAME' => 'wio', 'BC2CPP_COLLECTION_EXPORTS' => '1',
       'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(root).map { |n, d| "#{n}=#{d}" }),
       NomethodReviewed::ALLOW_ENV => 'allow',
       'BC2CPP_TYPE_FACTS' => File.join(workdir, 'facts.json'), 'BC2CPP_TYPE_FACTS_ROOT' => display_root, 'BC2CPP_SIG_ROOT' => display_root

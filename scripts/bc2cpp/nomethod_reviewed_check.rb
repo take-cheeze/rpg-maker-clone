@@ -21,6 +21,7 @@ require 'open3'
 require 'shellwords'
 require 'tmpdir'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 root = File.expand_path('../..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
@@ -71,26 +72,23 @@ WORLD = <<~'RUBY'
   end
 RUBY
 gems_env = Shellwords.join(NomethodReviewedProbe.wio_gems(root).map { |n, d| "#{n}=#{d}" })
-generate = lambda do |closed, allow|
+generate = lambda do |allow|
   Dir.mktmpdir do |dir|
     path = File.join(dir, 'cw_gate.rb')
     File.write(path, WORLD)
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => 'cw_gate', 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1' }
-    if closed
-      env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio', 'BC2CPP_BUILD_GEMS' => gems_env,
-                 NomethodReviewed::ALLOW_ENV => (allow ? 'allow' : nil))
-    end
-    Open3.capture3(env, RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
+    env.merge!('BC2CPP_BUILD_NAME' => 'wio', 'BC2CPP_BUILD_GEMS' => gems_env,
+               NomethodReviewed::ALLOW_ENV => (allow ? 'allow' : nil))
+
+    Open3.capture3(bc2cpp_wio_world_env(env), RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
   end
 end
-_out, err, status = generate.call(true, false)
+_out, err, status = generate.call(false)
 check.call('an unreviewed dead fallback aborts the closed-world run and names the site',
            !status.success? && err.include?('unreviewed dead fallback: CwCaller#talk -> cw_speak'))
-out, err, status = generate.call(true, true)
+out, err, status = generate.call(true)
 check.call("#{NomethodReviewed::ALLOW_ENV}=allow (fixtures only) reports it and still generates",
            status.success? && err.include?('ignoring') && out.include?('/* CLOSED_WORLD nomethod: recv.cw_speak */'))
-out, _err, status = generate.call(false, false)
-check.call('without the switch nothing is marked', status.success? && !out.include?('CLOSED_WORLD nomethod'))
 
 # -- the real wio closed world ------------------------------------------------------
 

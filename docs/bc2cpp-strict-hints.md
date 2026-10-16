@@ -43,24 +43,12 @@ and aborts. `-DBC2CPP_HINT_VIOLATION_LOG` (ADR 0428) is the survey mode: each di
 printed once as `bc2cpp: HINT_VIOLATION_LOG: <Class>#<name> at <site>` and the by-name send runs, so
 one workload run lists every wrong hint.
 
-The closed world is only built for wio/maix/psp, none of which runs here. The sealed desktop host
-(`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1`, test-only, RPG2000/2003 games only) is the same world with
-the real engine around it:
-
-```
-RPGMAKER_BC2CPP=1 RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1 BC2CPP_STRICT_HINTS=all \
-  BC2CPP_STRICT_HINTS_UNREVIEWED=allow BC2CPP_NOMETHOD_UNREVIEWED=allow \
-  BC2CPP_NOMETHOD_VERIFY=1 BC2CPP_HINT_VIOLATION_LOG=1 BC2CPP_HOT_ONLY=0 \
-  cmake --build build-strict      # configure once with cmake -S . -B build-strict -GNinja
-ENGINE=build-strict/rpg_maker_clone scripts/bc2cpp/strict_hints_verify.bash
-```
-
-(`cp932_table`/`jis0208_table` as for any build without nix, see `scripts/wio/bc2cpp_measure.bash`.)
-`BC2CPP_HOT_ONLY=0` compiles every method; leave it out for the shipped hot set, which also needs
-`BC2CPP_KEEP_HAND_REGISTRATIONS` (the sealed host defines it, ADR 0428). The script runs boot,
-map previews, battles played to the end, the editors and animations on the repo's test beds
-(`scripts/download/nepheshel.bash`, `mtf-meido-action.bash`) and fails on any violation or abort.
-mruby's `rake test` does not test the compiled gems (they are initialised by the dispatch, not by
+bc2cpp compiles closed-world programs only (ADR 0461), and the closed world is built for
+wio/maix/psp, none of which runs here. The sealed desktop host of ADR 0428
+(`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1`) and `scripts/bc2cpp/strict_hints_verify.bash`, which ran
+the real workloads on it, were removed with every other open-world path: the desktop engine is the
+plain mruby build. A verify run needs a closed-world target that can run the workloads. mruby's
+`rake test` does not test the compiled gems (they are initialised by the dispatch, not by
 `mrb_open`), and the CRuby checks never run compiled code.
 
 A violation is a wrong or incomplete hint: fix the inference or annotation, widen the hint class

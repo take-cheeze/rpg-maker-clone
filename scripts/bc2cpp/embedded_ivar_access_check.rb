@@ -21,6 +21,7 @@ require 'tmpdir'
 require_relative '../../tools/bc2cpp/bc2cpp'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative 'cxx'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 BC2CPP =File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
@@ -33,7 +34,7 @@ end
 
 def run_bc2cpp(env, srcs, out_path)
   cmd = "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} #{srcs.map(&:shellescape).join(' ')} > #{out_path.shellescape}"
-  _out, err, status = Open3.capture3(env.merge('MRBC' => MRBC, 'SKIP_UNSUPPORTED' => '1'), cmd)
+  _out, err, status = Open3.capture3(bc2cpp_wio_world_env(env.merge('MRBC' => MRBC, 'SKIP_UNSUPPORTED' => '1')), cmd)
   abort "bc2cpp.rb failed:\n#{err[-2000..]}" unless status.success?
   err
 end

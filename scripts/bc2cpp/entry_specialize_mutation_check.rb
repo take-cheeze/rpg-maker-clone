@@ -62,7 +62,7 @@ MUTANTS = [
    /NEG SpHost#with_rescue/, false],
   ['a world with singleton makers is trusted', 'codegen_entry_specialize.rb',
    "return entry_specialize_refuse(d, 'no exact-class world (singletons or reflection reachable)') unless @closed_world&.exact_instances_singleton_free?",
-   'nil', /NEG a singleton maker in the world|NEG the open world/, false],
+   'nil', /NEG a singleton maker in the world/, false],
   ['an assumption that changes nothing keeps a duplicate body', 'codegen_entry_specialize.rb',
    "if spec == entry_specialize_compile(label, d, irep, [], tag: 'base')", "if false",
    /NEG SpHost#use_noop/, false],

@@ -25,6 +25,7 @@ require 'tmpdir'
 require_relative '../../tools/bc2cpp/bc2cpp'
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative 'cxx'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
@@ -82,7 +83,7 @@ def generate(source, dir, native: false, rgss: false)
   env = { 'MRBC' => MRBC, 'SKIP_UNSUPPORTED' => '1', 'OUT_SYMBOL' => 'fixture', 'OUT_DIR' => dir,
           'BC2CPP_SELF_REGISTERING' => '1', 'BC2CPP_HOT_METHODS' => nil }
   env['NATIVE_SRCS'] = Shellwords.join(core_native_srcs("#{ROOT}/3rd/mruby") + (rgss ? Dir["#{ROOT}/mruby-rgss/src/*.cxx"] : [])) if native
-  _out, err, status = Open3.capture3(env, "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
+  _out, err, status = Open3.capture3(bc2cpp_wio_world_env(env), "#{RbConfig.ruby.shellescape} #{BC2CPP.shellescape} " \
                                           "#{src.shellescape} > #{gen.shellescape}")
   abort "bc2cpp.rb failed:\n#{err[-2000..] || err}" unless status.success?
   [File.read(gen), err]

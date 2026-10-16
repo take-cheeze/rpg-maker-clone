@@ -15,7 +15,7 @@
 #    receiver, a native class in the set, a core receiver that has no compiled body or another class in its set);
 #    each way of losing the proof (a singleton maker, an install the class-object proof cannot place, a rebound
 #    constant, an instance-level alias, a method_missing class of the set, an outside Ruby or native definer that
-#    reaches a class of the set, a reopened Hash#delete) withdraws it; so do the kill switch and the open world.
+#    reaches a class of the set, a reopened Hash#delete) withdraws it; so do the kill switch.
 # 2. Behaviour on real mruby: compiled answers equal interpreted ones in every world, values and exceptions, for
 #    receivers a wrong proof would mis-dispatch; the proven sites make no dynamic dispatch and a kept else is
 #    shown to dispatch (the compiled bodies ran). Run on a full-core build, a core-only build and, with
@@ -230,11 +230,11 @@ kept_else = ->(code, fn) { name_else.call(code, fn) == :kept }
 core_direct = ->(code, fn) { body_all.call(code, fn).include?('// CORE_EXACT_DIRECT :delete') }
 core_chain = ->(code, fn) { body_all.call(code, fn).match?(/POLY_SMALL_N :delete/) || body_all.call(code, fn).include?('POLY :delete') }
 
-generate = lambda do |source, dir, closed: true, env: {}, **options|
+generate = lambda do |source, dir, env: {}, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options)
+    runtime.generate(source, dir, only_owners: OWNERS, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
@@ -300,11 +300,6 @@ if ENV['MRBC']
       check.call('NEG kill switch (BC2CPP_NATIVE_CLASS_ARMS=0): every positive keeps its else and delete its chain',
                  (POSITIVE + NEGATIVE).all? { |fn| kept_else.call(kcode, fn) } && !core_direct.call(kcore, CORE_DIRECT) &&
                  core_chain.call(kcore, CORE_DIRECT))
-    end
-    Dir.mktmpdir do |od|
-      ocode, = generate.call(CLASSES + FIXTURE, od, closed: false)
-      check.call('NEG the open world proves nothing',
-                 POSITIVE.none? { |fn| body_all.call(ocode, fn).include?('CLOSED_WORLD nomethod') } && !core_direct.call(ocode, CORE_DIRECT))
     end
   end
 else

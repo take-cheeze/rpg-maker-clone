@@ -51,7 +51,7 @@ Per-check time of `int32-a` on CI (seconds, sequential), the 15 commands:
 ## 2. What the generator costs
 
 Every `Bc2cppFixtureRuntime.generate` call runs `tools/bc2cpp/bc2cpp.rb` as a new process, closed world
-(`BC2CPP_CLOSED_WORLD=1`, `NATIVE_SRCS` = the mruby and gem C sources). `numeric_slow` makes 79 such calls,
+(the closed world, `NATIVE_SRCS` = the mruby and gem C sources). `numeric_slow` makes 79 such calls,
 which take 620 s of its 637 s. A call costs about 7.9 s (7.2 s for a one-method fixture).
 
 Phase timings of one closed-world call (`BC2CPP_PROFILE_TIMINGS=1`):

@@ -65,8 +65,6 @@ Dir.mktmpdir('numeric-native') do |dir|
   singleton_source = SOURCE + "class NumericConvert; def singleton_probe; Object.new.singleton_class; end; end"
   singleton_code, = runtime.generate(singleton_source, File.join(dir, 'singleton'), only_owners: %w[NumericConvert])
   check.call('singleton maker withdraws exact world gate', !singleton_code.include?('NUMERIC_NATIVE_EXACT'))
-  open_code, = runtime.generate(SOURCE, File.join(dir, 'open'), only_owners: %w[NumericConvert], closed: false)
-  check.call('open world withdraws proof', !open_code.include?('NUMERIC_NATIVE_EXACT'))
   if ENV['BC2CPP_KEEP_DIR']
     FileUtils.mkdir_p(ENV['BC2CPP_KEEP_DIR'])
     File.write(File.join(ENV['BC2CPP_KEEP_DIR'], 'numeric.cxx'), code)

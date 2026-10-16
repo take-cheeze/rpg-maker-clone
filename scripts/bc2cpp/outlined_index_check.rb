@@ -34,6 +34,7 @@ VARS_INDEX_IMPL = "#{CPP_NAME.call('Vars', '[]')}_impl"
 GRID_INDEX_IMPL = "#{CPP_NAME.call('Grid', '[]')}_impl"
 require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/static_dispatch_registrations'
+require_relative '../../tools/bc2cpp/wio_world_env'
 
 ROOT = File.expand_path('../..', __dir__)
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
@@ -48,9 +49,9 @@ end
 def run_bc2cpp(source, dir)
   src = File.join(dir, 'fixture.rb')
   File.write(src, source)
-  out, err, status = Open3.capture3({ 'MRBC' => MRBC, 'SKIP_UNSUPPORTED' => '1', 'OUT_SYMBOL' => 'fixture',
+  out, err, status = Open3.capture3(bc2cpp_wio_world_env('MRBC' => MRBC, 'SKIP_UNSUPPORTED' => '1', 'OUT_SYMBOL' => 'fixture',
                                       'OUT_DIR' => dir, 'BC2CPP_SELF_REGISTERING' => '1',
-                                      'NATIVE_SRCS' => Shellwords.join(core_native_srcs("#{ROOT}/3rd/mruby")) },
+                                      'NATIVE_SRCS' => Shellwords.join(core_native_srcs("#{ROOT}/3rd/mruby"))),
                                     RbConfig.ruby, BC2CPP, src)
   abort "bc2cpp.rb failed:\n#{err[-2000..]}" unless status.success?
   [out, err]

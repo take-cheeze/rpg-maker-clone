@@ -935,7 +935,6 @@ end
 # resulting receiver fact remains guarded at dispatch; a custom constructor
 # returning another class therefore takes the ordinary fallback.
 def infer_constructed_constant_classes(ireps, assignment_sites, registry, container_constants, closed_world)
-  return {} unless closed_world
 
   known_owners = Set.new(registry.values.flatten.map(&:owner))
   inferred = {}

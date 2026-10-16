@@ -9,7 +9,7 @@
 #
 # 1. Generated code (needs MRBC): every proven core-body site is wrapped in the class test with the
 #    violation as its else, an engine site is not, and each way of losing the proof (a parameter, the
-#    kill switches, a singleton-making engine, the open world) leaves the tag chain with its send.
+#    kill switches, a singleton-making engine) leaves the tag chain with its send.
 # 2. Behaviour on real mruby (needs MRBC, BC2CPP_MRUBY_CORE and g++): an honouring program answers what
 #    the interpreter answers and reaches no violation site (also under -DBC2CPP_NOMETHOD_VERIFY); a
 #    receiver whose class no longer is the proven one (the driver swaps the Array class behind the
@@ -57,11 +57,11 @@ MAKER_FIXTURE = "#{ENGINE_FIXTURE.sub(/^end\n\z/, '')}  def maker(o); o.instance
 chunk = lambda do |code, owner_method|
   code[/^\/\/ #{Regexp.escape(owner_method)} \(compiled from.*?(?=^\/\/ \S+#\S+ \(compiled from|\z)/m].to_s
 end
-generate = lambda do |dir, engine: ENGINE_FIXTURE, closed: true, env: {}|
+generate = lambda do |dir, engine: ENGINE_FIXTURE, env: {}|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
-    runtime.generate(CORE_FIXTURE, dir, closed: closed, only_owners: OWNERS, path: CORE_PATH, core: true,
+    runtime.generate(CORE_FIXTURE, dir, only_owners: OWNERS, path: CORE_PATH, core: true,
                                         extra: [['gvc_engine.rb', engine]])
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
@@ -119,10 +119,6 @@ if ENV['MRBC']
     check.call('a singleton-making engine (instance_eval) withdraws every core-body proof', !core.match?(CHECKED) && core.include?('bc2cpp_send('))
   end
 
-  Dir.mktmpdir do |dir|
-    code, = generate.call(dir, closed: false)
-    check.call('the open world proves nothing in a core body', !code.match?(CHECKED) && !code.include?('CORE_BODY_EXACT'))
-  end
 else
   puts '-- SKIP generated code: set MRBC'
 end
@@ -207,7 +203,7 @@ if ENV['MRBC'] && build && runtime.compiler?
   Dir.mktmpdir do |dir|
     # The core owners are named without the core Ruby itself (a core-only mruby has no mrblib to run it): the
     # fixture file is core Ruby by its path, and that is what makes its bodies compile as core bodies.
-    _code, err = runtime.generate(CORE_FIXTURE, dir, closed: true, only_owners: BC2CPP_CORE_OWNERS + OWNERS, path: CORE_PATH,
+    _code, err = runtime.generate(CORE_FIXTURE, dir, only_owners: BC2CPP_CORE_OWNERS + OWNERS, path: CORE_PATH,
                                                      extra: [['gvc_engine.rb', ENGINE_FIXTURE]])
     outputs = lambda do |flags = ''|
       saved = ENV.fetch('BC2CPP_CXXFLAGS', nil)

@@ -799,7 +799,7 @@ class CodeGen
   #
   # The scan is over every compiled irep's instructions, so a caller added later
   # is covered without touching a list. Anything it cannot read stays a refusal:
-  # an open world, a dynamic send whose receiver class is unproven, or a name
+  # a body compiled without the world (ADR 0264), a dynamic send whose receiver class is unproven, or a name
   # something installs at runtime all leave the question open, and an open
   # question must keep the `#error` rather than assume the safe answer.
   def super_direct_call_allowed?(owner_def)

@@ -208,12 +208,12 @@ end
 dispatches = ->(code, fn) { body_all.call(code, fn).scan(DISPATCH).size }
 work = ->(code, fn) { body_all.call(code, fn).scan(WORK).size }
 
-generate = lambda do |source, dir, closed: true, env: {}, **options|
+generate = lambda do |source, dir, env: {}, **options|
   saved = env.to_h { |k, _| [k, ENV.fetch(k, nil)] }
   env.each { |k, v| ENV[k] = v }
   begin
     FileUtils.mkdir_p(dir)
-    runtime.generate(source, dir, closed: closed, only_owners: OWNERS, **options)
+    runtime.generate(source, dir, only_owners: OWNERS, **options)
   ensure
     saved.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
@@ -344,8 +344,6 @@ if ENV['MRBC']
       end
     end
 
-    ocode, = generate.call(CLASSES + FIXTURE, File.join(dir, 'open'), closed: false)
-    check.call('NEG the open world proves nothing', !ocode.include?('CLASS_NARROWING'))
   end
 else
   puts '-- SKIP generated code: set MRBC'
