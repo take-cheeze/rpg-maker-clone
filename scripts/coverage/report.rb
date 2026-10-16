@@ -99,6 +99,7 @@ CHECKS = [
   # The host-only sections of the bc2cpp soundness checks (ADR 0261); the fixture
   # sections need mrbc and skip here.
   { name: 'bc2cpp-join-dominance', command: %w[scripts/bc2cpp/join_dominance_check.rb] },
+  { name: 'bc2cpp-declared-return-guard', command: %w[scripts/bc2cpp/declared_return_guard_check.rb] },
   # The host-only hand-built shapes of the register flow pass (ADR 0415).
   { name: 'bc2cpp-register-flow', command: %w[scripts/bc2cpp/register_flow_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp/core_mixins_check.rb] },

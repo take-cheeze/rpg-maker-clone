@@ -1264,6 +1264,7 @@ jobs:
           - name: bc2cpp join dominance, core mixins, typed reflection, numeric operand and class object argument checks
             run: |
               ruby scripts/bc2cpp/join_dominance_check.rb
+              ruby scripts/bc2cpp/declared_return_guard_check.rb
               ruby scripts/bc2cpp/core_mixins_check.rb
               ruby scripts/bc2cpp/typed_reflection_check.rb
               ruby scripts/bc2cpp/numeric_operand_check.rb
