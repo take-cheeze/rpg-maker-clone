@@ -1,0 +1,1 @@
+- `scripts/rpg2k/game_run/run.sh` runs the real RPG2000 runtime headless on a project (a New Game, or a map and menu) against a closed-world build, and can write a `BC2CPP_TRACE_TYPES` dump of the run. The LVGL display is stubbed, so rendering is not exercised. See `scripts/rpg2k/game_run/README.md`.
