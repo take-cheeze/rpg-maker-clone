@@ -120,3 +120,29 @@ invariant) and by the gate's definition counts, not by reading bytecode: an edit
 returns without changing those would need the check to catch it. `Marshal.load` of hostile data, as for every
 ivar fact, is outside the model. Mutation of the schema constants themselves is not modelled (the engine
 only reads them).
+
+## Addendum (2026-10-16): the exact-class flow reads LCF rows too (EXACT_LCF_ROWS)
+
+The kinds above lived in `NumericFlow`'s numeric run only. The exact-class run of ADR 0289 (`ExactOracle`), which
+decides the class tests of the core arms (`empty?`, `size`, `to_s`, `[]`, ...), had no `index_mask`, so every
+`GETIDX` result was `OTHER` there and a `row[:name].empty?` kept its Array/Hash/String chain and its by-name else,
+even when the numeric run knew the field was a String.
+
+`ExactOracle#index_mask` (`CodeGen#exact_lcf_index_mask`, `codegen_lcf_rows.rb`) now applies the same model. That
+run names a file object by its class bit (`LCF::Database.new`, a class pool of ADR 0296, a class test), so a
+receiver bit of an LCF file class K reads as FILE(K) for the transfer. Both say "exactly an instance of K", and the
+model's facts hold for every such instance when:
+
+- the `setup_lcf_rows` gate holds (it is what builds the model);
+- K has no subclass, no outside file touches it and its constant is stable;
+- nothing in the program calls or names `allocate` (`numeric_allocate_free?`), so every instance ran K#initialize.
+
+A receiver mask carrying `CHECKED` (a pool only checked at run time) proves nothing. The table and row kinds a read
+produces ride through the exact-class flow and its class pools like any other bit; consumers that enumerate class
+bits already refuse a mask with bits they cannot name, and `return_class_of_mask` answers no class for a kind. A
+field class (`STR`, `INT`, `ARR`, `HSH`, nil) is an ordinary exact fact: a `:string` field with a default is exactly
+a String, and an ivar every store of which is such a read pools `String` (or `String|nil`, NILABLE_RECEIVER).
+
+`scripts/bc2cpp/lcf_row_flow_check.rb` adds the positive cases (`name_blank?`, an ivar pooled from a field read).
+The withdrawal cases are the existing ones: a mixed receiver (`mixed_name`) has a foreign bit, so the read is
+`OTHER`, and a program that calls `LCF::Database.allocate` keeps the class bit a class bit.
