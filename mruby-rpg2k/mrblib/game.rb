@@ -2139,7 +2139,9 @@ module Game
     def clear_states
       perm = permanent_states
       revive = @hp <= 0 && @states.include?(DEATH_STATE) && !perm.include?(DEATH_STATE)
-      @states = @states.select { |s| perm.include?(s) }
+      kept = []
+      @states.each { |s| kept << s if perm.include?(s) }
+      @states = kept
       @hp = 1 if revive && @hp <= 0
     end
 
@@ -2431,7 +2433,7 @@ module Game
           # state already does here -- this was the one state-infliction
           # call site in this file that missed pairing #add_state with the
           # prune pass every other one already does.
-          @states = Game::States.prune(@states, state_table, keep: permanent_states)
+          prune_states!
         else
           remove_state(id)
         end
@@ -3210,7 +3212,16 @@ module Game
     # non-death state, the identical rule from the other direction).
     def knock_out!
       add_state(DEATH_STATE)
-      @states = Game::States.prune(@states, state_table, keep: permanent_states)
+      prune_states!
+    end
+
+    # Game::States.prune over this actor's states, keeping its permanent ones. The result is checked to be an Array
+    # before it is stored, so bc2cpp proves @states one (the prune result alone does not reach the class pools).
+    def prune_states!
+      kept = Game::States.prune(@states, state_table, keep: permanent_states)
+      raise TypeError, "pruned states are #{kept.class}, not Array" unless kept.is_a?(Array)
+
+      @states = kept
     end
 
     # The database's state (`situation`) table, for Game::States lookups.
@@ -3908,7 +3919,15 @@ module Game
       @db = db
       @roster = Actors.new(db)
       ids ||= db[:system][:party] || []
-      @actors = ids.reject { |i| i.nil? || i <= 0 }.map { |i| @roster[i] }.compact
+      # Built by `<<` into a literal so @actors is provably an Array (bc2cpp's class pools): the result of a
+      # `map` on an untyped receiver has no class the compiler can name.
+      @actors = []
+      ids.each do |i|
+        next if i.nil? || i <= 0
+
+        a = @roster[i]
+        @actors << a if a
+      end
       @items = {}  # item id => count
       # 使用回数 bookkeeping: item id => how many uses the *current* copy has
       # already spent (see #consume_item_use). One tally per id, not per copy,
@@ -3934,11 +3953,17 @@ module Game
     # restoring one that is not in the party enrols them there.
     def load_state(data)
       @revision += 1
-      @items = data[:items] || {}
+      items = data[:items] || {}
+      raise TypeError, "saved items are #{items.class}, not Hash" unless items.is_a?(Hash)
+
+      @items = items
       # A save written before 使用回数 was modelled carries no tally at all, so
       # every held item simply starts its uses over -- the same answer this
       # runtime gave for the whole of that save's life.
-      @item_usage = data[:item_usage] || {}
+      usage = data[:item_usage] || {}
+      raise TypeError, "saved item usage is #{usage.class}, not Hash" unless usage.is_a?(Hash)
+
+      @item_usage = usage
       @gold = data[:gold] || 0
       exp = data[:exp] || {}
       hp = data[:hp] || {}
@@ -4024,7 +4049,9 @@ module Game
     # changed. This unconditional-refresh behavior is NOT independently
     # confirmed against genuine RPG_RT under wine.
     def reorder(new_order)
-      @actors = new_order.map { |i| @actors[i] }
+      old = @actors
+      @actors = []
+      new_order.each { |i| @actors << old[i] }
       @revision += 1
       @leader_graphic_dirty = true
     end
@@ -5601,6 +5628,7 @@ module Game
     # from some other `db_skill` call with no menu behind it.
     def field_skills(caster, _state = nil)
       return [] unless caster
+      raise TypeError, "skill caster is #{caster.class}, not Game::Actor" unless caster.is_a?(Game::Actor)
       caster.skills.select do |sid|
         sk = db_skill(sid)
         if sk.nil?
@@ -6727,7 +6755,10 @@ module Game
     FACE_DIR = { FACE_UP => 8, FACE_RIGHT => 6, FACE_DOWN => 2, FACE_LEFT => 4 }.freeze
 
     def initialize(commands, repeat: true, skippable: false)
-      @commands = commands || []
+      list = commands || []
+      raise TypeError, "move route commands are #{list.class}, not Array" unless list.is_a?(Array)
+
+      @commands = list
       @repeat = repeat ? true : false
       @skippable = skippable ? true : false
       @index = 0
@@ -9393,6 +9424,7 @@ module Game
     # re-equipped the cursed item, instead of the state persisting (as worn)
     # the whole time the way real RPG_RT's own exemption guarantees.
     def self.prune(ids, table, keep: [])
+      raise TypeError, "state ids are #{ids.class}, not Array" unless ids.nil? || ids.is_a?(Array)
       return ids if ids.nil? || ids.size <= 1
       sig = significant(ids, table)
       return ids if sig.nil?
