@@ -1,4 +1,4 @@
-# Types that prove the receiver of a block send (BC2CPP_BLOCK_RECV_SURVEY=1 lists the unproven ones). Each was
+# Types that prove the receiver of a block send. Each was
 # checked against every return path / every writer in mruby-rpg2k/mrblib; parameters are left untyped where the
 # method's own required count is all the declaration needs.
 class RPG2k

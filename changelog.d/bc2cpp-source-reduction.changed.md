@@ -1,0 +1,1 @@
+- **bc2cpp** source reduced by about 0.2% (195 lines, 7.6 KB) with no change to the generated output (ADR 0480): unreferenced methods and constants removed, identical copies merged, and the shipped C++ and stderr verified byte-identical against origin/master.
