@@ -1,0 +1,1 @@
+- **bc2cpp** declares return types for 21 more methods that the real-run traces (New Game, map/menu, save/load) show with one class: map scene and interpreter request takes, predicates and `nil`-returning draw and update steps. Ten candidates whose bodies do not prove the declared class were left out.
