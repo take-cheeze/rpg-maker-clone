@@ -56,6 +56,7 @@ require_relative 'annotations'
 require_relative 'rbs_signatures'
 require_relative 'declared_returns'
 require_relative 'declared_constants'
+require_relative 'rbs_param_check'
 require_relative 'class_layout'
 require_relative 'element_layouts'
 require_relative 'record_hash'
@@ -411,6 +412,7 @@ if $PROGRAM_NAME == __FILE__
     sig_owners = registry.values.flatten.map(&:owner).uniq
     sig_class_annotations = ClassAnnotations.extract(ireps, registry, sig_owners)
     sig_element_annotations = ElementAnnotations.extract(ireps, registry, sig_owners)
+    sig_comment_class_args = sig_class_annotations.transform_values { |ann| ann.args.dup } # RBS_CHECKED_PARAMS
     sig_applied = RbsSignatures.apply(sig_loaded, ireps, registry, annotations, sig_class_annotations,
                                       sig_element_annotations, class_decls: class_decls)
     # RBS_BLOCK_PARAM_HINT: the declared block types, read by block_fallback_rbs_param_class.
@@ -448,6 +450,19 @@ if $PROGRAM_NAME == __FILE__
   foreign_methods = if foreign_ruby_srcs
                       profile_call.call('foreign_method_names') { foreign_method_names(foreign_ruby_srcs) }
                     end
+  # RBS_CHECKED_PARAMS (docs/adr/0456): a class parameter type is kept only when every caller is proven to pass it.
+  if sig_applied
+    param_outside = (outside_world_tokens(native_paths + foreign_ruby_srcs) if native_paths && foreign_ruby_srcs)
+    param_diags, = RbsParamCheck.check(sig_loaded, ireps, registry, sig_class_annotations,
+                                       comment_class_args: sig_comment_class_args, call_sites: call_sites,
+                                       outside_tokens: param_outside,
+                                       superclass_of: superclass_of, display_root: sig_root, applied: sig_applied)
+    sig_applied.diagnostics.concat(param_diags)
+    param_diags.each { |d| warn "  #{d.file}:#{d.line}:#{d.col}: #{d.severity}: #{d.message} [#{d.code}]" }
+    if param_diags.any? { |d| d.severity == 'error' } && ENV['BC2CPP_TYPE_FACTS'].to_s.empty?
+      abort "\n[bc2cpp] RBS_CHECKED_PARAMS: #{param_diags.size} unproven parameter type(s) (see above)."
+    end
+  end
 
   # UNIQUE_CLASS_NAME: set before the first ClassLayout pass, since every
   # trace_new_target caller reads it.
