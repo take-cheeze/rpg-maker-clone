@@ -286,8 +286,9 @@ that no longer exists. It is not run in CI, so run it by hand after editing the
 list.
 
 ```sh
-# 1. A full-compile desktop build (no BC2CPP_HOT_ONLY). The mruby gems build
-#    with -g, which the attribution below needs.
+# 1. A full-compile build (BC2CPP_HOT_ONLY=0 turns the closed-world build's
+#    hot-only mode off). The mruby gems build with -g, which the attribution
+#    below needs.
 RPGMAKER_BC2CPP=1 cp932_table=... jis0208_table=... \
   cmake -S . -B build-full -G Ninja -DCMAKE_BUILD_TYPE=Release && \
   cmake --build build-full -j"$(nproc)"
@@ -318,8 +319,9 @@ struct-field accessor counts for its class's `#initialize`, since the
 accessor exists only while that constructor compiles. That keeps record
 classes such as `RPG2k::Scene::Map::MapEventState` embedded.
 
-To check a new list, build with `BC2CPP_HOT_ONLY=1` in a fresh build
-directory and compare the two builds' Ir under callgrind. The engine-binary
+To check a new list, build the closed-world target (hot-only by
+`build_config.rb`, the same as the flash builds) in a fresh build directory and
+compare its Ir under callgrind with the `BC2CPP_HOT_ONLY=0` build. The engine-binary
 Ir is the stable figure: SDL's software blit under xvfb swings from run to
 run. Also confirm that bc2cpp's `== hot-only: listed but not compiled ==`
 section is empty.

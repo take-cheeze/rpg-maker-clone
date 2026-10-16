@@ -475,7 +475,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # there is, so the compiled gems may replace a proven-dead by-name fallback
   # with a raise (tools/bc2cpp/compiled_gems.rb re-checks the real gem list).
   # ADR 0214: the same builds compile only tools/bc2cpp/hot_methods.txt to C++;
-  # BC2CPP_HOT_ONLY=1/0 overrides it for a whole build.
+  # BC2CPP_HOT_ONLY=0 turns it off for a whole build; nothing turns it on for a build that did not opt in.
   closed_world = proc { enable_bc2cpp_hot_only }
   conf.gem "#{MRUBY_ROOT}/../../mruby-lcf-compiled", &closed_world if bc2cpp
   # mruby-rgss owns the shared RGSS namespace (Bitmap, Sprite, Viewport, Window,
