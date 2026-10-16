@@ -262,6 +262,9 @@ jobs:
             checks: |
               MRBC="$mrbc" ruby scripts/bc2cpp/rbs_signatures_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp/rbs_signatures_mutation_check.rb
+              # ADR 0454: RBS record types on ivars, checked at every write (located TC1009 errors) and feeding
+              # the RECORD_HASH_PROOF table and a guarded receiver hint.
+              MRBC="$mrbc" ruby scripts/bc2cpp/rbs_record_types_check.rb
           - shard: emit-rbs
             # ADR 0414: the emitted RBS text, then a round trip (emit, read back as signatures, report nothing; a wrong
             # edit is a located TC1001), then the mutants.
