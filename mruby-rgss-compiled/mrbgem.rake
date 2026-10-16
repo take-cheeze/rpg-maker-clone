@@ -10,16 +10,15 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # invisible to bc2cpp the same way every other native method in that file
 # is -- nothing to compile or override for those.
 #
-# This whole gem only exists in the build when RPGMAKER_BC2CPP is set (see
-# build_config.rb) -- it is never part of the default desktop or wio build.
+# This whole gem only exists in the build when RPGMAKER_BC2CPP is set on a
+# closed-world build (psp/wio/maix, see build_config.rb; docs/adr/0466) -- it is
+# never part of the default build, and never of a desktop build.
 MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   spec.license = 'MIT'
   spec.author = 'take-cheeze'
   spec.summary = 'Opt-in AOT-compiled C++ replacements for RGSS::Sprite bytecode methods'
 
   add_dependency 'mruby-rgss'
-  # build_config.rb turns on BC2CPP_CLOSED_WORLD for single-format builds.
-  extend Bc2cppClosedWorldOption
   # build_config.rb turns on BC2CPP_HOT_ONLY (docs/adr/0214) for the same builds.
   extend Bc2cppHotOnlyOption
 

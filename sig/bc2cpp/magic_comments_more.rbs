@@ -5,7 +5,11 @@ class Game::Actor
 end
 class Game::Actors
   def initialize: (LCF::Database) -> untyped
+  # Unchecked (ADR 0455): an `@all` Hash read, and the miss and rescue arms return nil.
+  %a{bc2cpp:hint}
   def []: (Integer) -> Game::Actor
+  # Unchecked (ADR 0455): an `@all` Hash read.
+  %a{bc2cpp:hint}
   def existing: (Integer) -> Game::Actor
 end
 class Game::Battle
@@ -19,6 +23,8 @@ class Game::EnemyAi
 end
 class Game::Interpreter
   def initialize: (Game::State) -> untyped
+  # Unchecked (ADR 0455): `party.actors` is an attr_reader read.
+  %a{bc2cpp:hint}
   def stat_targets: (untyped) -> Array[Game::Actor]
 end
 class Game::Map
@@ -26,7 +32,8 @@ class Game::Map
 end
 class Game::Party
   def initialize: (LCF::Database) -> untyped
-  def promote_to_leader: (Game::Actor) -> untyped
+  # The body starts `return unless actor`: nil is part of its contract.
+  def promote_to_leader: (Game::Actor?) -> untyped
   def skill_targets: (untyped, untyped, untyped) -> Array[Game::Actor]
 end
 class Game::Shop
@@ -90,7 +97,8 @@ class RPG2k::Scene::Order
   def initialize: (untyped, Game::State) -> untyped
 end
 class RPG2k::Scene::SaveLoad
-  def initialize: (untyped, Game::State, Symbol) -> untyped
+  # title.rb and scene/map.rb open the load screen with no game state (`SaveLoad.new(parent, nil, :load)`).
+  def initialize: (untyped, Game::State?, Symbol) -> untyped
 end
 class RPG2k::Scene::SkillMenu
   def initialize: (untyped, Game::State) -> untyped
