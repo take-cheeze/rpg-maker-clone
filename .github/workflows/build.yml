@@ -1002,6 +1002,12 @@ jobs:
       - name: Shared generation check
         run: MRBC=build-bc2cpp/mruby/host/mrbc/bin/mrbc ruby scripts/bc2cpp/shared_generation_check.rb
 
+      # ALIAS_SITES (ADR 0474): a class-body alias with literal names is a definition of the new name; a
+      # method-body one stays dynamic. Fixtures plus runs on the core-only build-bc2cpp/mruby/host/mrbc
+      # library, interpreted against compiled (seconds).
+      - name: alias_method check
+        run: MRBC=build-bc2cpp/mruby/host/mrbc/bin/mrbc ruby scripts/bc2cpp/alias_method_check.rb
+
 
 
   # The `bc2cpp` status check: success when `bc2cpp-build` succeeded. It keeps the name the old one-job
