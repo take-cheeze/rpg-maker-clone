@@ -67,6 +67,7 @@ module TraceTypes
     symbols = {}
     fn_entries = Hash.new(0)
     ids = {}     # [sym, id] => key
+    elems = {}   # [:param | :return, site, role] => { calls:, overflow:, classes: } for array elements and hash keys/values
 
     argv.each do |path|
       File.foreach(path) do |raw|
@@ -94,6 +95,23 @@ module TraceTypes
         when 'RETURN_CLASS'
           rets[[f[1], f[2].to_i]] or next
           rets[[f[1], f[2].to_i]][:classes][f[3]] += f[4].to_i
+        when 'PARAM_ELEM_SITE'
+          # Element rows: role is array (Array elements), key or value (Hash entries), sampled up to 8 per container.
+          key = ids[[f[1], f[2].to_i]] or next
+          e = elems[[:param, key, f[3]]] ||= { calls: 0, overflow: 0, classes: Hash.new(0) }
+          e[:calls] += f[4].to_i
+          e[:overflow] += f[5].to_i
+        when 'PARAM_ELEM_CLASS'
+          key = ids[[f[1], f[2].to_i]] or next
+          elems[[:param, key, f[3]]] ||= { calls: 0, overflow: 0, classes: Hash.new(0) }
+          elems[[:param, key, f[3]]][:classes][f[4]] += f[5].to_i
+        when 'RETURN_ELEM_SITE'
+          e = elems[[:return, [f[1], f[2].to_i], f[3]]] ||= { calls: 0, overflow: 0, classes: Hash.new(0) }
+          e[:calls] += f[4].to_i
+          e[:overflow] += f[5].to_i
+        when 'RETURN_ELEM_CLASS'
+          elems[[:return, [f[1], f[2].to_i], f[3]]] ||= { calls: 0, overflow: 0, classes: Hash.new(0) }
+          elems[[:return, [f[1], f[2].to_i], f[3]]][:classes][f[4]] += f[5].to_i
         end
       end
     end
@@ -192,6 +210,19 @@ module TraceTypes
       puts "  CONTRADICTION #{r[:method]} [#{r[:fn]}] return #{r[:static]}  observed #{r[:classes].sort_by { |c, n| [-n, c] }.map { |c, n| "#{c} #{n}" }.join(', ')}  (outside the fact: #{bad.map(&:first).join(', ')})"
     end
     puts '  (none)' if ret_contradictions.empty?
+    puts ''
+
+    elem_rows = elems.select { |_, e| e[:calls].positive? }
+    puts "== (e) container elements: #{elem_rows.size} traced slots saw Array elements or Hash keys/values =="
+    elem_rows.sort_by { |(kind, site, role), e| [-e[:calls], kind.to_s, role, site.to_s] }.first(options[:top]).each do |(kind, site, role), e|
+      where = if kind == :param
+                label(params[site]) + " [#{params[site][:fn]}]" if params[site]
+              else
+                "#{site[0]} return #{site[1]}"
+              end
+      puts format('  %9d %-5s %-70s  %s', e[:calls], role, where || site.inspect, histogram(e))
+    end
+    puts '  (none)' if elem_rows.empty?
     puts ''
 
     unless options[:else_files].empty?
