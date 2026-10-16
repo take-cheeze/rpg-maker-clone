@@ -61,16 +61,24 @@ Several sites with the same called name inside one method share a key.
   - As the real hot-only build, with the gate enforced, bc2cpp.rb must
     succeed.
 
-  It also tests the gate logic, and confirms that bc2cpp.rb aborts on a
-  fixture's unreviewed site.
+  It also tests the gate logic and its scope, and confirms that bc2cpp.rb
+  aborts on an unreviewed site in an engine-owner method.
   `tools/bc2cpp/nomethod_reviewed_probe.rb` holds the run itself, including
   the wio gem list (no mruby-time since ADR 0221).
 - `scripts/bc2cpp/nomethod_reviewed_update.rb [--write]` regenerates the
   list and prints the added and removed keys. Running `--write` does not
   count as a review.
-- `BC2CPP_NOMETHOD_UNREVIEWED=allow` turns the abort into a warning. Only
-  fixture worlds use it (`bc2cpp_closed_world_check.rb`, this check's own
-  fixture), because their dead sites are the point of the test.
+- There is no switch that turns the abort into a warning. The list reviews
+  the engine: on an engine closed-world build a site is judged when its
+  compiled owner is an owner of `BC2CPP_COMPILED_GEMS` (core included, and the
+  module of each `X.singleton` owner), matched exactly
+  (`tools/bc2cpp/review_scope.rb`). A fixture world's dead sites (the point of
+  `bc2cpp_closed_world_check.rb` and this check's fixtures) are listed but are
+  not that program; the check judges them through the `scope:` argument of
+  `NomethodReviewed.violations`. Any other closed-world build (optcarrot-probe)
+  is judged on every owner. The update scripts read the listings of a run that
+  fails only on a reviewed list (`NomethodReviewedProbe.review_abort?`); every
+  listing is printed before the abort.
 
 A reviewed site still emits the runtime `bc2cpp_nomethod`. Replacing it with
 something the C++ compiler would reject cannot work, because the compiler

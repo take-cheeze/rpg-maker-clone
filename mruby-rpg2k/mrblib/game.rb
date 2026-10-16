@@ -10203,7 +10203,7 @@ module Game
     # on a map change, alongside erase_all_pictures.
     def clear_parallax; @parallax = nil; end
 
-    attr_reader :pictures, :vehicles
+    attr_reader :pictures
     # The vehicle the party is currently riding (:boat / :ship / :airship), or
     # nil when on foot. Set by boarding on the map and persisted in the save.
     attr_accessor :boarded

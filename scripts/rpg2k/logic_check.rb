@@ -184,17 +184,12 @@ def mc(id, str: '', a: 0, b: 0, c: 0)
   FakeMoveCommand.new(id, str, a, b, c)
 end
 
-# A stand-in for an LCF event command: the interpreter only calls #code,
-# #string, #indent, #param(i) and #parameters.
-class FakeCmd
-  attr_reader :code, :indent, :string, :parameters
+# A real LCF::EventCommand built with keyword defaults (the interpreter
+# raises TypeError on anything else).
+class FakeCmd < LCF::EventCommand
   def initialize(code, params = [], indent: 0, string: '')
-    @code = code
-    @parameters = params
-    @indent = indent
-    @string = string
+    super(code, indent, string, params)
   end
-  def param(i); @parameters[i] || 0; end
 end
 
 R = Game::MoveRoute

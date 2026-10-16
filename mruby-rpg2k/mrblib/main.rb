@@ -603,9 +603,6 @@ class RPG2k
   # the native binary (see scripts/rpg2k/scene_check.rb, which loads this file
   # under plain CRuby and never defines it).
   def initialize args
-    @test_play = args.include?('TestPlay') || native_test_play?
-    @hide_title = args.include?('HideTitle')
-
     # An RPG2000/2003 project's graphics are resolved in RPG_RT.exe's own
     # order, which is not RGSS's: .bmp first, then .png, then .xyz, with no
     # JPEG candidate at all (measured under wine, see
@@ -614,7 +611,14 @@ class RPG2k
     # installed per runtime rather than changed globally.
     RGSS::Bitmap.extensions = RGSS::Bitmap::RPG2K_EXTENSIONS
 
-    @db = LCF::Database.new File.open db_path
+    # @db first, before any call on `self` (#native_test_play?, the instance
+    # #db_path): nothing can then read it unassigned, which bc2cpp's
+    # INIT_ASSIGNED rule needs to prove `RPG2k#db` an LCF::Database for the
+    # checked `Game::Party.new(@db)` / `Game::Shop.new(db, ...)` parameters
+    # (docs/adr/0456). Neither call reads @db, so the order changes nothing.
+    @db = LCF::Database.new File.open RPG2k.db_path
+    @test_play = args.include?('TestPlay') || native_test_play?
+    @hide_title = args.include?('HideTitle')
     @map_tree = LCF::MapTree.new File.open "#{GAME_DIR}/RPG_RT.lmt"
     # Put the game's own name on the window (and on the browser tab in the web
     # build), the way RPG_RT.exe titles its own.
@@ -801,9 +805,14 @@ class RPG2k
 
   # RPG_RT.ldb -- shared by #initialize's own @db load and
   # Scene::ChipsetEditor's save-back-to-disk action, the database's
-  # counterpart to #map_path above.
-  def db_path
+  # counterpart to #map_path above. A class method so #initialize can name it
+  # without a call on `self` before @db is assigned (see there).
+  def self.db_path
     "#{GAME_DIR}/RPG_RT.ldb"
+  end
+
+  def db_path
+    RPG2k.db_path
   end
 
   # Load one map (.lmu) by id.

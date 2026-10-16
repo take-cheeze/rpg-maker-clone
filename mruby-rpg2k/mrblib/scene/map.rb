@@ -456,6 +456,15 @@ class RPG2k
       def initialize parent, state, apply_access: true
         super parent
         @state = state
+        # Deterministic RNG (Kernel#rand exists but is unseeded, and these runs
+        # are diffed against the genuine runtime), and the foreground event
+        # interpreter. Both are built here, before the first block or call on
+        # `self` below, so no method can read either unassigned (bc2cpp's
+        # INIT_ASSIGNED rule, docs/adr/0456: MapWorld/VehicleWorld's checked
+        # Game::Rng and drive_battle's Game::Interpreter rest on it). Neither
+        # constructor reads anything the steps below set up.
+        @rng = Game::Rng.new(0x2000)
+        @interpreter = Game::Interpreter.new(@state)
         # Named graphics loaded and memoized on demand -- see #cached_bitmap.
         # One cache per graphic category (rather than a single cache keyed by
         # a [kind, name] tuple) so each material's entries stay a plain
@@ -516,7 +525,6 @@ class RPG2k
           @charset = load_charset
           @windowskin = load_windowskin
         end
-        @interpreter = Game::Interpreter.new(@state)
         # Whether the last message window shown on this map visit resolved to
         # the top position -- what #draw_timer's own bottom-edge-avoidance
         # reads, sticky until #open_message next changes it or this map visit
@@ -536,17 +544,24 @@ class RPG2k
         @auto_once = {}
         @auto_once_common = {}
         RGSS::Profiler.section("map.transition.common_events") { @common = Game::CommonEvent.load(@db) }
-        # Deterministic RNG (Kernel#rand exists but is unseeded, and these runs
-        # are diffed against the genuine runtime) and the adapter that lets move
-        # routes / autonomous movement query the map.
-        @rng = Game::Rng.new(0x2000)
+        # The adapter that lets move routes / autonomous movement query the map
+        # (@rng is built at the top of #initialize).
         RGSS::Profiler.section("map.transition.world") do
           @world = MapWorld.new(self, @rng)
           # One VehicleWorld per type, wrapping #vehicle_passable? instead of the
           # hero's own on-foot #char_passable? -- see #force_vehicle_route.
-          @vehicle_worlds = Game::Vehicle::TYPES.each_with_object({}) do |type, h|
-            h[type] = VehicleWorld.new(self, @rng, type)
+          # A plain loop, not each_with_object: no block of its own, so `self`
+          # here is this section block's, which is this scene's (BLOCK_SELF,
+          # ADR 0456), with no uncompiled core iterator in between.
+          types = Game::Vehicle::TYPES
+          worlds = {}
+          i = 0
+          while i < types.size
+            type = types[i]
+            worlds[type] = VehicleWorld.new(self, @rng, type)
+            i += 1
           end
+          @vehicle_worlds = worlds
         end
         # Erased events, and the state revision the active pages were chosen at.
         @erased_events = {}
@@ -2325,6 +2340,10 @@ class RPG2k
       def step_parallel(p)
         return if p[:gate_switch] && !@state.switches[p[:gate_switch]]
         it = p[:interp]
+        # Every @parallels record carries the Game::Interpreter its event's page
+        # built; the check is what proves #drive_parallel_wait's typed parameter
+        # (IS_A_GUARD, ADR 0456) for a value read out of a Hash record.
+        raise TypeError, "parallel process interpreter is #{it.class}, not Game::Interpreter" unless it.is_a?(Game::Interpreter)
         # Ported from a reference implementation's model, NOT independently
         # confirmed against genuine RPG_RT under wine: each Parallel Process
         # is its own interpreter there, so it gets its own frame-shared step
@@ -5612,7 +5631,7 @@ class RPG2k
           when :inn then drive_inn
           when :shop then drive_shop
           when :battle
-            drive_battle
+            drive_battle(@interpreter)
             # yado.tk 09_bug/016_ikinari_end + 017_heiretu_totyu_end/hei_mukou:
             # a Battle "Lose: Branch" handler's own recovery (a Full Heal right
             # after the encounter) races a still-running Parallel Process's own
@@ -6263,7 +6282,11 @@ class RPG2k
       end
 
       def open_shop(req, it = @interpreter)
-        model = Game::Shop.new(db, @state.party, req.goods,
+        # `party` is POLY (Game::State's attr_reader, Game::Interpreter#party), so
+        # the check is what proves Game::Shop's typed parameter (IS_A_GUARD, ADR 0456).
+        party = @state.party
+        raise TypeError, "shop party is #{party.class}, not Game::Party" unless party.is_a?(Game::Party)
+        model = Game::Shop.new(db, party, req.goods,
                                req.allow_buy, req.allow_sell)
         has_menu = req.allow_buy && req.allow_sell
         screen = has_menu ? :command : (req.allow_buy ? :buy : :sell)
@@ -7101,7 +7124,7 @@ class RPG2k
       #
       # Drive the turn-based battle screen the map shows during a :battle wait.
       # `it` is whichever interpreter actually raised the wait -- the
-      # foreground event by default, or a Parallel Process's own interpreter
+      # foreground @interpreter (#update passes it), or a Parallel Process's own interpreter
       # when #drive_parallel_wait dispatches here (see there and
       # #step_battle_owner_parallel, which keeps calling back in on every
       # later frame since a battle a Parallel Process opened stops the
@@ -7111,7 +7134,7 @@ class RPG2k
       # same real frame, one from each of two independent interpreters), this
       # one simply waits its turn and tries again next frame, the same
       # block-and-retry shape already used for :message/:choice/:number above.
-      def drive_battle(it = @interpreter)
+      def drive_battle(it)
         req = it.battle_request
         return it.resume_battle(:victory) unless req
         if @battle.nil?
@@ -7899,12 +7922,14 @@ class RPG2k
         inner_w = NAME_GRID_W - Window::BORDER * 2
         inner_h = NAME_GRID_H - Window::BORDER * 2
         c = Bitmap.new(inner_w, inner_h)
-        rows = name_kana_rows(ui[:page])
+        # Read before the loop: the blocks never see `ui`, so the record type's scan can follow it here.
+        page = ui[:page]
+        rows = name_kana_rows(page)
         rows.each_with_index do |row_cells, r|
           row_cells.each_with_index do |cell, ci|
             next if cell.nil?
             x, y, w, h = kana_cell_rect(rows, r, ci)
-            draw_system_text c, x, y, w, h, kana_cell_label(cell, ui[:page]), @windowskin
+            draw_system_text c, x, y, w, h, kana_cell_label(cell, page), @windowskin
           end
         end
         win.contents = c
@@ -11121,6 +11146,9 @@ class RPG2k
         # by an erase, so relying on emptiness here would be wrong too).
         pics.keys.sort.each do |id|
           p = pics[id]
+          # Checked before `#shown?`: a missing entry (nil) is a TypeError naming the id, not a NoMethodError on
+          # `shown?`. Also the checked fact for `draw_picture(Game::Picture, ...)` (IS_A_GUARD, ADR 0456).
+          raise TypeError, "picture #{id} is #{p.class}, not Game::Picture" unless p.is_a?(Game::Picture)
           draw_picture p, cam_x, cam_y if p.shown?
         end
       end

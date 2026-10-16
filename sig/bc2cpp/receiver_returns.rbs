@@ -7,6 +7,8 @@ class RPG2k
       # `@event_tiles_by_pos[[x, y]] || NO_BLOCKERS`: @event_tiles_by_pos is only ever `{}` (three writers),
       # its values only come from `(@event_tiles_by_pos[[x, y]] ||= []) << e` (#index_event_tile; the other
       # access deletes), and NO_BLOCKERS is `[].freeze`. Never nil. Element left untyped.
+      # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): a Hash read joined with `||`.
+      %a{bc2cpp:hint}
       def blockers_at: (untyped x, untyped y) -> Array
       # The one writer is `@common = Game::CommonEvent.load(@db)` (#initialize's transition block), whose return
       # paths are `list` (only CommonEventRecord.new pushed), `list` early when there is no table, and `[]` in
@@ -16,6 +18,8 @@ class RPG2k
     class EquipMenu
       # `return @candidates if @candidates` (the only non-nil writer is the line below), else
       # `@candidates = real + [[0, 0]]`, an Array#+ result. Never nil.
+      # Runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): the cached `@candidates` read.
+      %a{bc2cpp:hint}
       def candidates: () -> Array
     end
   end
