@@ -1020,3 +1020,48 @@ class Game::Timer
   def drawn?: () -> bool
   def tick: () -> bool
 end
+# ---- profile-derived return types (second round): unknowns the real-play dumps show as one class.
+# Parameters stay untyped: a parameter type would make every caller owe a proof (TC1013).
+class Game::Interpreter
+  def reset_frame_steps: () -> Integer
+  def reset_waits: () -> bool
+  def party: () -> Game::Party
+  def start: (untyped) -> bool
+  def eval_condition: (untyped) -> bool
+  def take_actor_graphic_changed: () -> bool
+  def take_erase_request: () -> bool
+  def take_location_requests: () -> Array
+  def take_move_route_requests: () -> Array
+  def take_sprite_flash_requests: () -> Array
+  def take_system_graphic_changed: () -> bool
+  def take_tiles_changed: () -> bool
+end
+class Game::Map
+  def substitution_snapshot: () -> Array
+end
+class Game::State
+  def tick_timer: () -> bool
+end
+class Game::Actor
+  def state?: (untyped) -> bool
+end
+class Game::ChipSet
+end
+class Game::Screen
+end
+class RPG2k::Scene::Map
+  def apply_player_visibility: () -> Integer
+  def camera_position: () -> Array
+  def events_dirty?: () -> bool
+  def events_move_during_message?: () -> bool
+  def pages_changed?: () -> bool
+  def parallels_paused?: () -> bool
+  def player_draw_charset: () -> Array
+  def player_pixel: () -> Array
+  def player_translucent?: () -> bool
+  def record_tile_substitutions: () -> Array
+end
+class LCF::Array1D
+  def key?: (untyped) -> bool
+  def field?: (untyped) -> bool
+end

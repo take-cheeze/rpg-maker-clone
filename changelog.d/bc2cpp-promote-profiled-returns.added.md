@@ -1,0 +1,1 @@
+- **bc2cpp** declares return types for 27 more methods that the real-play profile runs show as one class (interpreter request takes and predicates, map scene predicates, `Game::Map#substitution_snapshot`, `LCF::Array1D#field?`/`#key?`). The closed-world declared-type check passes on all of them. Ten Integer and Hash candidates that the bodies do not prove were left out.
