@@ -1,0 +1,1 @@
+- **bc2cpp** declares 15 traced returns as runtime-checked (`%a{bc2cpp:hint}`): operand reads, timer and actor accessors, and map integer and array helpers that the real-run traces show with one class but the static proof cannot follow. Each is read against its body and listed in `DECLARED_RETURN_GUARDS_REVIEWED`. A value of another type raises at run time. See ADR 0455.
