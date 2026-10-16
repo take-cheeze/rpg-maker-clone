@@ -2431,7 +2431,7 @@ module Game
           # state already does here -- this was the one state-infliction
           # call site in this file that missed pairing #add_state with the
           # prune pass every other one already does.
-          @states = Game::States.prune(@states, state_table, keep: permanent_states)
+          prune_states!
         else
           remove_state(id)
         end
@@ -3210,7 +3210,16 @@ module Game
     # non-death state, the identical rule from the other direction).
     def knock_out!
       add_state(DEATH_STATE)
-      @states = Game::States.prune(@states, state_table, keep: permanent_states)
+      prune_states!
+    end
+
+    # Game::States.prune over this actor's states, keeping its permanent ones. The result is checked to be an Array
+    # before it is stored, so bc2cpp proves @states one (the prune result alone does not reach the class pools).
+    def prune_states!
+      kept = Game::States.prune(@states, state_table, keep: permanent_states)
+      raise TypeError, "pruned states are #{kept.class}, not Array" unless kept.is_a?(Array)
+
+      @states = kept
     end
 
     # The database's state (`situation`) table, for Game::States lookups.

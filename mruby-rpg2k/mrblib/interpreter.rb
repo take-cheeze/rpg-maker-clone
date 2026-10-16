@@ -1426,12 +1426,18 @@ module Game
       cmds, target_event_id = resolve_call(cmd)
       return if cmds.nil? || cmds.empty?
       return if @call_stack.size >= MAX_CALL_DEPTH
-      raise TypeError, "called event's command list is #{cmds.class}, not Array" unless cmds.is_a?(Array)
+      enter_called_list(cmds, @call_frame_event_id || @event_id || 0)
+      @call_frame_event_id = target_event_id
+    end
 
-      @call_stack.push [@list, @index, @call_frame_event_id || @event_id || 0]
+    # Push the running list (with +frame_event_id+ as its frame's identity) and continue at the top of +cmds+.
+    # The Array check sits here, outside #do_call_common_event's `rescue`, so bc2cpp proves @list an Array from it.
+    def enter_called_list(cmds, frame_event_id)
+      raise TypeError, "called command list is #{cmds.class}, not Array" unless cmds.is_a?(Array)
+
+      @call_stack.push [@list, @index, frame_event_id]
       @list = cmds
       @index = 0
-      @call_frame_event_id = target_event_id
     end
 
     # Resolves a Call Event's target, returning `[commands, event_id]` (both
@@ -3353,11 +3359,7 @@ module Game
       $stderr.puts "[RPG2k] Call Common Event: common event #{id} not found" if cmds.nil?
       return if cmds.nil? || cmds.empty?
       return if @call_stack.size >= MAX_CALL_DEPTH
-      raise TypeError, "common event #{id}'s command list is #{cmds.class}, not Array" unless cmds.is_a?(Array)
-
-      @call_stack.push [@list, @index, 0]
-      @list = cmds
-      @index = 0
+      enter_called_list(cmds, 0)
     rescue StandardError => e
       $stderr.puts "[RPG2k] Call Common Event #{id} failed: #{e.message}"
     end
