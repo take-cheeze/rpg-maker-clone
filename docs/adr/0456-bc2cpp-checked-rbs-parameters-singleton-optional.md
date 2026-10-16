@@ -80,14 +80,10 @@ TC1013 and TC1014 are new codes. The record-types branch (ADR 0454) owns TC1009.
   * `Combatant @actions: Array[Game::EnemyAction]?`;
   * the checked parameters `Game::Enemy#reseed_rewards(Game::Enemy)` and
     `Scene::Battle#battle_encounter_lines(Game::Troop, untyped)`.
-* The existing parameter declarations the check cannot prove are now `untyped`:
-  * every `initialize` (POLY);
-  * Interpreter#execute (POLY) and the 33 `do_*` / helper methods whose only caller passes execute's `cmd`;
-  * #range (an outside-world name);
-  * the Vehicle / Picture helpers (arguments from `@vehicles[type]` and elements);
-  * `promote_to_leader`;
-  * `weapon_attack_multiplier`;
-  * `LCF::Array2D#[]=` (POLY).
+* The existing parameter declarations keep their types. Those the check cannot prove yet (every `initialize`,
+  which is POLY; Interpreter#execute and the `do_*` methods fed its `cmd`; #range; the Vehicle / Picture helpers;
+  `promote_to_leader`; `weapon_attack_multiplier`; `LCF::Array2D#[]=`) are TC1013 / TC1014 errors, to be resolved
+  by making the code or the checker prove them, not by untyping the declaration.
 * The ivars those `initialize` parameters fed are declared `T?` in `sig/bc2cpp/nilable_ivars.rbs`, each checked
   against every writer and construction site:
   * `@state` of the Interpreter, EnemyAi and eleven scenes;
