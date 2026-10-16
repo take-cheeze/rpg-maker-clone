@@ -62,7 +62,7 @@ name (`ClosedWorld#answered_outside?`), so on the wio world `all` forces what `1
 silently to tell a wrong hint from another bug.
 
 To compare the hints with what ran, generate with `BC2CPP_TRACE_TYPES=1` as well and feed the
-dumps to `scripts/bc2cpp/param_trace_report.rb` (ADR 0298): its second ranking lists a
+dumps to `scripts/bc2cpp/trace_types.rb report` (ADR 0298): its second ranking lists a
 static fact the run contradicts.
 
 ## Checks

@@ -1,0 +1,1 @@
+- The traced-type tools are one script, `scripts/bc2cpp/trace_types.rb` (`report` for the profile, `candidates` for the RBS candidates). The trace-derived declarations in `sig/bc2cpp/declarations.rbs` sit under one section. The loader result and both tools' output are unchanged.
