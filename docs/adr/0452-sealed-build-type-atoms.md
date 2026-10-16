@@ -476,3 +476,20 @@ not monotone, and the deferred pass cannot finish. No consumer count is reported
 
 Next: make parameters, returns and upvalues grow with the previous round as well, the way the element contents now do,
 then rerun and check convergence before reading any count.
+
+## Monotone facts: converges, count unchanged (spike, measured)
+
+`scratchpad/sealed-repro/mono2.rb` makes every fact grow across rounds: ivars, constants, upvalues, parameters, block
+parameters and array-literal slots are joined with the previous round (`grow`), and the integer facts only fall. With
+the deferred unknown-receiver clears of the previous section, the run now converges in 16 rounds.
+
+- Consumer-level unknowns: 70 of 197 (was 69 with the earlier, non-monotone run). `_pc`, `data`, `fixed`, `freq` and
+  `pulse_0` are unknown.
+- Remaining cause: the array `ppu.rb:219` iterates (`entries.each_value { |a| a.uniq! }`) is pending. The hash's values
+  are `TOP` because a `SETIDX` whose receiver is unknown writes its value into every container, and that value is `TOP`.
+  The pending `uniq!` then clears every container, so the hash stays `TOP`. This is a self-consistent `TOP`, and the
+  monotone iteration cannot leave it.
+
+So the open point is the one from earlier: an unknown receiver must be bounded to the containers that can be it (the
+containers that escape to code the analysis does not follow). Until that is built, an unknown store or clear reaches
+every container, and the memory cycle stays `TOP`.
