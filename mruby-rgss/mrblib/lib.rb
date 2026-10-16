@@ -419,17 +419,22 @@ module RGSS
   # mruby-rgss/test/test.rb uses on a bare Tilemap.allocate, just against a
   # real, refreshed Tilemap here since the thing under test is allocation
   # timing itself, not the z arithmetic.
+  class Tilemap
+    # Probe-only reader: the above canvas, or nil while it is unallocated.
+    attr_reader :_tm_above_obj
+  end
+
   def self.tilemap_above_layer_probe
     xp = Tilemap.new
     xp.tileset = Bitmap.new(32, 32)
     xp.map_data = Table.new(1, 1, 1)
-    xp_above = xp.instance_variable_get(:@_tm_above_obj)
+    xp_above = xp._tm_above_obj
     xp.dispose
 
     vx = Tilemap.new
     vx.bitmaps[0] = Bitmap.new(32, 32)
     vx.map_data = Table.new(1, 1, 1)
-    vx_above = vx.instance_variable_get(:@_tm_above_obj)
+    vx_above = vx._tm_above_obj
     vx.dispose
 
     $stderr.puts "[RGSS-PROBE] tilemap above layer xp_allocated=" \
@@ -470,6 +475,17 @@ module RGSS
              [1, 1].pack("v2") + [rate, rate * 2].pack("V2") +
              [2, 16].pack("v2") + ["data"].pack("a4") + [data.bytesize].pack("V")
     header + data
+  end
+
+  # Probe-only stand-in for RGSS.asset_archive: a read over a fixed entry table.
+  class ProbeArchive
+    def initialize(entries)
+      @entries = entries
+    end
+
+    def read(name)
+      @entries[name]
+    end
   end
 
   # Prove audio packed into an encrypted archive actually reaches the mixer.
@@ -540,12 +556,8 @@ module RGSS
     Graphics.update
     File.delete(path) if File.exist?(path)
 
-    archive = Object.new
     entries = { "Audio/BGM/Probe.wav" => wav, "Audio/SE/Beep.wav" => wav }
-    archive.instance_variable_set(:@entries, entries)
-    def archive.read(name)
-      @entries[name]
-    end
+    archive = ProbeArchive.new(entries)
     previous = asset_archive
     self.asset_archive = archive
     begin
