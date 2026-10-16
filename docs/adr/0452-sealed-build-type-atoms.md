@@ -290,3 +290,24 @@ that rule ignored (unsoundly) gave 55 `TOP` ivars and resolved `APU#fixed` and `
 
 This section is design and a checked prototype. The analysis is not wired to it yet, so the sound result above still
 stands.
+
+## Wiring the provenance lattice (spike, not converged)
+
+`scratchpad/sealed-repro/receiver_prov.rb` wires the provenance lattice into the spike:
+
+- `rt` is now the consumer view of `rtp`, the raw query. Consumers keep their `TOP` checks. A value with an `[:Unk, KS]`
+  atom reads as `TOP` to them.
+- A rule that gives up (`TOP`) yields `[:Unk, KS]`, where `KS` is the reachable containers of its operand registers.
+- State writes (ivars, constants, parameters, returns, upvalues, array elements) keep the raw value. Escape and
+  mutation use `reach_keys` and `direct_keys` over raw values. A `TOP` receiver touches every container.
+- Queries are cached per round, and a result is cached only when it read no in-progress query. This makes the run
+  about 2.5 minutes.
+
+**The run does not converge.** It reached the 60-round cap (`rounds=61`), so its numbers are not a fixpoint and I do not
+report them as a result. The instrumented run shows the cause: `pulse_0` alternates between `{Pulse}` and
+`{Pulse, NilClass}` every round. The `nil` comes from `aref_value`'s fallback to the elements plus `NilClass` when a
+slot is missing. Mutators reset `elem_at` to empty, and the array-literal loop restores it on a different schedule, so
+the same slot flips. The fallback is correct, but the reset and restore make the update non-monotone.
+
+Next step: make the mutator reset monotone (widen to `TOP` slots instead of emptying them), so the sequence of
+approximations only grows. Then rerun and check convergence before reading any count.
