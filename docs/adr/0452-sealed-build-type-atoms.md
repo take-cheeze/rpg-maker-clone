@@ -255,3 +255,38 @@ value from `zip_extract`, and `File.binread(...).bytes` is typed only where the 
 count is unchanged: `TOP` ivars 64 of 197.
 
 The next step is the provenance lattice described above. It is a design change, not a tweak, and I have not built it.
+
+## Provenance value lattice (design, prototype checked)
+
+The sound count stays at 64 `TOP` ivars because a `TOP` value might contain any container, so every escape poisons every
+container. This section redesigns the value lattice so a `TOP` value carries the containers it may hold. The prototype is
+`scratchpad/sealed-repro/lattice_prov.rb`, and its property checks pass.
+
+**Values.** A value is a set of atoms, as before, plus one new atom `[:Unk, KS]`. `KS` is the set of container keys the
+unknown value may contain, or `:any`. `TOP` is `Set[[:Unk, :any]]`.
+
+**Consumers.** Anything that dispatches, does arithmetic, or types a value calls `consumer_view`, which turns any `Unk`
+part into `TOP`. So no existing type rule can see the new atom and read it as a type. Only escape and mutation read `KS`.
+
+**Join.** Union of atoms. `Unk` atoms merge their key sets, and `:any` absorbs. This is commutative and idempotent,
+and checked.
+
+**Reachability.** The keys reachable from a value follow container elements transitively (`reach_keys`). A key whose
+contents are not recorded has unknown contents, so reaching it yields `:any`. The checks confirm this.
+
+**Soundness obligations before wiring.** These must hold in the analysis itself, and the prototype does not discharge them:
+
+1. Every rule that currently returns `TOP` must return `Unk` with a `KS` covering every container that can reach its
+   result. Opaque sends use the reachable keys of their operands, with `:any` when an operand is `TOP`.
+2. Ivars, globals (`GETGV`), constants and returns carry `Unk` sets through the same joins. A global read with no known
+   writers is `Unk(:any)`.
+3. A mutator with a `TOP` receiver touches exactly the containers in the receiver's `KS`. A `Method` value bound to a
+   mutator touches its bound keys.
+4. Core signatures may narrow `KS` only when the result cannot hold a container the signature does not declare.
+
+**What wiring would change.** Escape sites with `TOP` values would stop poisoning every container. The measurement with
+that rule ignored (unsoundly) gave 55 `TOP` ivars and resolved `APU#fixed` and `freq`. The honest expectation is between
+55 and 64, and the memory-cycle question reduces to whether `data`'s provenance includes the RAM container.
+
+This section is design and a checked prototype. The analysis is not wired to it yet, so the sound result above still
+stands.
