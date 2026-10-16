@@ -4,7 +4,8 @@ Date: 2026-10-04
 
 ## Status
 
-Accepted
+Accepted; the result proof is superseded by [ADR 0472](0472-bc2cpp-generic-block-returns.md) (checked RBS block
+return declarations). The helper-frame repairs stay.
 
 ## Context
 
