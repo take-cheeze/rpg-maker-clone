@@ -140,3 +140,5 @@ class compares and their branches minus one guard.
   interpreted against compiled with a counter that shows a hit entering the specialized body and a miss not) and
   `scripts/bc2cpp/entry_specialize_mutation_check.rb` (16 mutants, among them the removed entry check, a guard that accepts a
   subclass or a Float, an assumption registered under the original label, and admitted blocks or rescue ranges).
+
+> Note: the trace flag is now `BC2CPP_TRACE_TYPES` (it covers parameters and returns); the old name `BC2CPP_TRACE_PARAMS` above is the same switch.

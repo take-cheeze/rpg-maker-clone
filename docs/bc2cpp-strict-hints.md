@@ -61,7 +61,7 @@ name (`ClosedWorld#answered_outside?`), so on the wio world `all` forces what `1
 `-DBC2CPP_HINT_VIOLATION_DISPATCH` (compile time, no regeneration) restores the by-name send
 silently to tell a wrong hint from another bug.
 
-To compare the hints with what ran, generate with `BC2CPP_TRACE_PARAMS=1` as well and feed the
+To compare the hints with what ran, generate with `BC2CPP_TRACE_TYPES=1` as well and feed the
 dumps to `scripts/bc2cpp/param_trace_report.rb` (ADR 0298): its second ranking lists a
 static fact the run contradicts.
 
