@@ -1,0 +1,1 @@
+- `BC2CPP_TRACE_TYPES=1` no longer places a parameter hit in the function after a short one. The register-line search stops at the closing brace, so a body with no `r0` line of its own is not instrumented. Such a build failed to compile. Checked by `scripts/bc2cpp/param_trace_return_check.rb`.
