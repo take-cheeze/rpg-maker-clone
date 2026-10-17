@@ -1,3 +1,4 @@
+# bc2cpp-native: built-in or RGSS methods, not program signatures (tools/bc2cpp/native_sigs.rb).
 # Kernel methods that read the CALLING frame, read by CoreFactSigs.frame_readers (tools/bc2cpp/core_fact_sigs.rb).
 # The return type says what is read: a bool answers whether the caller was passed a block
 # (codegen_arg_shapes.rb BLOCK_GIVEN_NAMES), a Binding captures the caller's whole frame (FRAME_READING_NAMES).

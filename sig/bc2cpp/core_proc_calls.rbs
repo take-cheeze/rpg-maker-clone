@@ -1,3 +1,4 @@
+# bc2cpp-native: built-in or RGSS methods, not program signatures (tools/bc2cpp/native_sigs.rb).
 # The Proc methods that run the proc with their arguments, read by CoreFactSigs.proc_call_names
 # (codegen_block_fallback.rb PROC_CALL_NAMES). bc2cpp_cfunc_proc_call_p (bc2cpp.rb) spells the same set; scripts/
 # bc2cpp/core_facts_rbs_check.rb fails when the two differ. Checked against 3rd/mruby:

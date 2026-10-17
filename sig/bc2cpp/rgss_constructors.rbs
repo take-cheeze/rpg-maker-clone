@@ -1,3 +1,4 @@
+# bc2cpp-native: built-in or RGSS methods, not program signatures (tools/bc2cpp/native_sigs.rb).
 # Constructor overloads of the RGSS native classes, read by NativeConstructorSigs (tools/bc2cpp/native_constructor_sigs.rb)
 # for OVERLOADED_CONSTRUCT (docs/adr/0468). Each overload of `initialize` is one accepted form of `Klass.new`, in RBS's
 # own overload syntax, and its annotation names the direct path a call site takes for it:

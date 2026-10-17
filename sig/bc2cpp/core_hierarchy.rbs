@@ -1,3 +1,4 @@
+# bc2cpp-native: built-in or RGSS methods, not program signatures (tools/bc2cpp/native_sigs.rb).
 # The core class hierarchy mruby declares outside the program, read by tools/bc2cpp/core_hierarchy_sigs.rb
 # (call_facts.rb CORE_SUPER / CORE_MIXINS). A class with no superclass line is BasicObject only.
 class BasicObject

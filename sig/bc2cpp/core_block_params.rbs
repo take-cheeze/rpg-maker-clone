@@ -1,3 +1,4 @@
+# bc2cpp-native: built-in or RGSS methods, not program signatures (tools/bc2cpp/native_sigs.rb).
 # Block parameter shapes of core Array and Hash iterators (CORE_BLOCK_ELEMENT_HINT), read by CoreBlockParamSigs
 # (tools/bc2cpp/core_block_param_sigs.rb) for CodeGen#block_fallback_element_hints. A block parameter typed `Elem`
 # (Array) or `V` (Hash) receives one element (value) of the receiver; `K` and `untyped` positions get no hint (no

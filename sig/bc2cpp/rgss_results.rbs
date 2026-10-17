@@ -1,3 +1,4 @@
+# bc2cpp-native: built-in or RGSS methods, not program signatures (tools/bc2cpp/native_sigs.rb).
 # RGSS native result kinds, read by NativeResultFacts (native_result_facts.rb) through NativeCoreResultSigs. Each
 # method names the kind a call on that exact receiver returns: Integer is mrb_fixnum_value, Float is mrb_float_value,
 # RGSS::Rect is an mrb_obj_new of that constant. A method is listed only when every return path has that kind; see
