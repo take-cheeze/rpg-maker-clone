@@ -1,0 +1,1 @@
+- **bc2cpp** types the parameters of native methods from their `mrb_get_args` format string. A class type is declared only where mruby checks the argument (`S`, `z`, `A`, `H`, ...) and an argument mruby coerces or does not check stays untyped, so a call with the wrong argument count or class is reported at compile time instead of at run time.
