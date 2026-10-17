@@ -993,17 +993,17 @@ end
 
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_mvjs
-class MV < Object
+class MV
 end
 
 # bc2cpp-native: base_mvjs
-class MV::Effekseer < Object
+class MV::Effekseer
   def self.available?: (*untyped) -> untyped
   def self.smoke_test: (*untyped) -> untyped
 end
 
 # bc2cpp-native: base_mvjs
-class MV::Font < Object
+class MV::Font
   def self.pick: (*untyped) -> untyped
   def self.preferred_filename=: (*untyped) -> untyped
   def self.smoke_test: (*untyped) -> untyped
@@ -1011,13 +1011,13 @@ class MV::Font < Object
 end
 
 # bc2cpp-native: base_mvjs
-class MV::GL < Object
+class MV::GL
   def self.available?: (*untyped) -> untyped
   def self.smoke_test: (*untyped) -> untyped
 end
 
 # bc2cpp-native: base_mvjs
-class MV::JS < Object
+class MV::JS
   def self.base_dir=: (*untyped) -> untyped
   def self.eval: (*untyped) -> untyped
   def self.eval_file: (*untyped) -> untyped
@@ -1329,7 +1329,7 @@ module RGSS
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Bitmap < Object
+class RGSS::Bitmap
   def _init_file: (*untyped) -> untyped
   def _init_memory: (*untyped) -> untyped
   def _init_size: (*untyped) -> untyped
@@ -1365,7 +1365,7 @@ class RGSS::Bitmap < Object
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Color < Object
+class RGSS::Color
   def _dump: (*untyped) -> untyped
   def alpha: (*untyped) -> untyped
   def alpha=: (*untyped) -> untyped
@@ -1401,7 +1401,7 @@ module RGSS::Input
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Plane < Object
+class RGSS::Plane
   def bitmap=: (*untyped) -> untyped
   def blend_type=: (*untyped) -> untyped
   def color=: (*untyped) -> untyped
@@ -1420,7 +1420,7 @@ class RGSS::Plane < Object
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Sprite < Object
+class RGSS::Sprite
   def angle=: (*untyped) -> untyped
   def bitmap=: (*untyped) -> untyped
   def blend_type=: (*untyped) -> untyped
@@ -1445,7 +1445,7 @@ class RGSS::Sprite < Object
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Table < Object
+class RGSS::Table
   def _dump: (*untyped) -> untyped
   def dim: (*untyped) -> untyped
   def initialize: (*untyped) -> untyped
@@ -1458,7 +1458,7 @@ class RGSS::Table < Object
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Tilemap < Object
+class RGSS::Tilemap
   def bitmaps: (*untyped) -> untyped
   def dispose: (*untyped) -> untyped
   def disposed?: (*untyped) -> untyped
@@ -1478,7 +1478,7 @@ class RGSS::Tilemap < Object
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Tone < Object
+class RGSS::Tone
   def _dump: (*untyped) -> untyped
   def blue: (*untyped) -> untyped
   def blue=: (*untyped) -> untyped
@@ -1496,7 +1496,7 @@ class RGSS::Tone < Object
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Viewport < Object
+class RGSS::Viewport
   def color: (*untyped) -> untyped
   def color=: (*untyped) -> untyped
   def dispose: (*untyped) -> untyped
@@ -1518,7 +1518,7 @@ class RGSS::Viewport < Object
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Window < Object
+class RGSS::Window
   def active=: (*untyped) -> untyped
   def back_opacity=: (*untyped) -> untyped
   def contents=: (*untyped) -> untyped
