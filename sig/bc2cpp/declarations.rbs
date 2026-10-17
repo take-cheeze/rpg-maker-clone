@@ -53,7 +53,7 @@ class LCF::Array2D
 end
 
 # bc2cpp-native: base_lcf
-class LCF::Database
+class LCF::Database < LCF::File
   def header: () -> untyped
   def maker: () -> untyped
   def rpg2003?: () -> untyped
@@ -87,13 +87,13 @@ class LCF::File
 end
 
 # bc2cpp-native: base_lcf
-class LCF::MapTree
+class LCF::MapTree < LCF::File
   def header: () -> untyped
   def schema: () -> untyped
 end
 
 # bc2cpp-native: base_lcf
-class LCF::MapUnit
+class LCF::MapUnit < LCF::File
   def header: () -> untyped
   def schema: () -> untyped
   def terminate_root?: () -> untyped
@@ -110,7 +110,7 @@ class LCF::MoveCommand
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveData
+class LCF::SaveData < LCF::File
   def header: () -> untyped
   def initialize: (?untyped) -> untyped
   def schema: () -> untyped
@@ -118,7 +118,7 @@ class LCF::SaveData
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTypeError
+class LCF::SaveTypeError < StandardError
 end
 
 # bc2cpp-native: base_lcf
@@ -129,7 +129,7 @@ module LCF::SaveTyped
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::Bgm
+class LCF::SaveTyped::Bgm < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_balance: () -> untyped
   def save_balance=: (untyped) -> untyped
@@ -144,14 +144,14 @@ class LCF::SaveTyped::Bgm
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::CommonEvent
+class LCF::SaveTyped::CommonEvent < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_execution_state: () -> untyped
   def save_execution_state=: (untyped) -> untyped
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::EventExecFrame
+class LCF::SaveTyped::EventExecFrame < LCF::SaveTyped::Record
   def check!: () -> untyped
   def frame: () -> untyped
   def save_command_size: () -> untyped
@@ -171,7 +171,7 @@ class LCF::SaveTyped::EventExecFrame
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::EventExecState
+class LCF::SaveTyped::EventExecState < LCF::SaveTyped::Record
   def check!: () -> untyped
   def frames: () -> untyped
   def save_abort_on_escape: () -> untyped
@@ -221,7 +221,7 @@ class LCF::SaveTyped::EventExecState
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::Inventory
+class LCF::SaveTyped::Inventory < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_battles: () -> untyped
   def save_battles=: (untyped) -> untyped
@@ -268,7 +268,7 @@ class LCF::SaveTyped::Inventory
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::MapEvent
+class LCF::SaveTyped::MapEvent < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_chip_replacement_lower: () -> untyped
   def save_chip_replacement_lower=: (untyped) -> untyped
@@ -299,7 +299,7 @@ class LCF::SaveTyped::MapEvent
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::Movable
+class LCF::SaveTyped::Movable < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_animation_type: () -> untyped
   def save_animation_type=: (untyped) -> untyped
@@ -348,7 +348,7 @@ class LCF::SaveTyped::Movable
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::MoveRoute
+class LCF::SaveTyped::MoveRoute < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_command_size: () -> untyped
   def save_command_size=: (untyped) -> untyped
@@ -361,7 +361,7 @@ class LCF::SaveTyped::MoveRoute
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::PartyActor
+class LCF::SaveTyped::PartyActor < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_actor_name: () -> untyped
   def save_actor_name=: (untyped) -> untyped
@@ -422,7 +422,7 @@ class LCF::SaveTyped::PartyActor
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::PartyLocation
+class LCF::SaveTyped::PartyLocation < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_aboard: () -> untyped
   def save_aboard=: (untyped) -> untyped
@@ -493,7 +493,7 @@ class LCF::SaveTyped::PartyLocation
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::Picture
+class LCF::SaveTyped::Picture < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_bot_transparency: () -> untyped
   def save_bot_transparency=: (untyped) -> untyped
@@ -558,7 +558,7 @@ class LCF::SaveTyped::Record
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::Save
+class LCF::SaveTyped::Save < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_actors: () -> untyped
   def save_actors=: (untyped) -> untyped
@@ -593,7 +593,7 @@ class LCF::SaveTyped::Save
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::Screen
+class LCF::SaveTyped::Screen < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_pan_x: () -> untyped
   def save_pan_x=: (untyped) -> untyped
@@ -624,7 +624,7 @@ class LCF::SaveTyped::Screen
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::Se
+class LCF::SaveTyped::Se < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_balance: () -> untyped
   def save_balance=: (untyped) -> untyped
@@ -637,7 +637,7 @@ class LCF::SaveTyped::Se
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::System
+class LCF::SaveTyped::System < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_airship_bgm: () -> untyped
   def save_airship_bgm=: (untyped) -> untyped
@@ -754,7 +754,7 @@ class LCF::SaveTyped::System
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::Target
+class LCF::SaveTyped::Target < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_map_id: () -> untyped
   def save_map_id=: (untyped) -> untyped
@@ -769,7 +769,7 @@ class LCF::SaveTyped::Target
 end
 
 # bc2cpp-native: base_lcf
-class LCF::SaveTyped::Title
+class LCF::SaveTyped::Title < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_face1_index: () -> untyped
   def save_face1_index=: (untyped) -> untyped
@@ -993,17 +993,17 @@ end
 
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_mvjs
-class MV
+class MV < Object
 end
 
 # bc2cpp-native: base_mvjs
-class MV::Effekseer
+class MV::Effekseer < Object
   def self.available?: (*untyped) -> untyped
   def self.smoke_test: (*untyped) -> untyped
 end
 
 # bc2cpp-native: base_mvjs
-class MV::Font
+class MV::Font < Object
   def self.pick: (*untyped) -> untyped
   def self.preferred_filename=: (*untyped) -> untyped
   def self.smoke_test: (*untyped) -> untyped
@@ -1011,13 +1011,13 @@ class MV::Font
 end
 
 # bc2cpp-native: base_mvjs
-class MV::GL
+class MV::GL < Object
   def self.available?: (*untyped) -> untyped
   def self.smoke_test: (*untyped) -> untyped
 end
 
 # bc2cpp-native: base_mvjs
-class MV::JS
+class MV::JS < Object
   def self.base_dir=: (*untyped) -> untyped
   def self.eval: (*untyped) -> untyped
   def self.eval_file: (*untyped) -> untyped
@@ -1098,7 +1098,7 @@ class RGSS::Bitmap
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Bitmap::LoadError
+class RGSS::Bitmap::LoadError < RuntimeError
   def path: () -> untyped
   def reason: () -> untyped
   def initialize: (untyped, untyped) -> untyped
@@ -1224,7 +1224,7 @@ class RGSS::Plane
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::RGSSError
+class RGSS::RGSSError < StandardError
 end
 
 # bc2cpp-native: base_rgss
@@ -1267,7 +1267,7 @@ class RGSS::Tilemap
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Timeout
+class RGSS::Timeout < StandardError
 end
 
 # bc2cpp-native: base_rgss
@@ -1329,7 +1329,7 @@ module RGSS
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Bitmap
+class RGSS::Bitmap < Object
   def _init_file: (*untyped) -> untyped
   def _init_memory: (*untyped) -> untyped
   def _init_size: (*untyped) -> untyped
@@ -1365,7 +1365,7 @@ class RGSS::Bitmap
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Color
+class RGSS::Color < Object
   def _dump: (*untyped) -> untyped
   def alpha: (*untyped) -> untyped
   def alpha=: (*untyped) -> untyped
@@ -1401,7 +1401,7 @@ module RGSS::Input
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Plane
+class RGSS::Plane < Object
   def bitmap=: (*untyped) -> untyped
   def blend_type=: (*untyped) -> untyped
   def color=: (*untyped) -> untyped
@@ -1420,7 +1420,7 @@ class RGSS::Plane
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Sprite
+class RGSS::Sprite < Object
   def angle=: (*untyped) -> untyped
   def bitmap=: (*untyped) -> untyped
   def blend_type=: (*untyped) -> untyped
@@ -1445,7 +1445,7 @@ class RGSS::Sprite
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Table
+class RGSS::Table < Object
   def _dump: (*untyped) -> untyped
   def dim: (*untyped) -> untyped
   def initialize: (*untyped) -> untyped
@@ -1458,7 +1458,7 @@ class RGSS::Table
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Tilemap
+class RGSS::Tilemap < Object
   def bitmaps: (*untyped) -> untyped
   def dispose: (*untyped) -> untyped
   def disposed?: (*untyped) -> untyped
@@ -1478,7 +1478,7 @@ class RGSS::Tilemap
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Tone
+class RGSS::Tone < Object
   def _dump: (*untyped) -> untyped
   def blue: (*untyped) -> untyped
   def blue=: (*untyped) -> untyped
@@ -1496,7 +1496,7 @@ class RGSS::Tone
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Viewport
+class RGSS::Viewport < Object
   def color: (*untyped) -> untyped
   def color=: (*untyped) -> untyped
   def dispose: (*untyped) -> untyped
@@ -1518,7 +1518,7 @@ class RGSS::Viewport
 end
 
 # bc2cpp-native: base_rgss
-class RGSS::Window
+class RGSS::Window < Object
   def active=: (*untyped) -> untyped
   def back_opacity=: (*untyped) -> untyped
   def contents=: (*untyped) -> untyped
@@ -3486,7 +3486,7 @@ class RPG2k::Scene::Base
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::Battle
+class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def ui: () -> untyped
   def owner: () -> untyped
   def map: () -> untyped
@@ -3667,7 +3667,7 @@ class RPG2k::Scene::Battle
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::ChipsetEditor
+class RPG2k::Scene::ChipsetEditor < RPG2k::Scene::Base
   def cell_color: (untyped) -> untyped
   def cell_color_for: (untyped) -> untyped
   def cell_count: () -> untyped
@@ -3691,7 +3691,7 @@ class RPG2k::Scene::ChipsetEditor
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::DebugMenu
+class RPG2k::Scene::DebugMenu < RPG2k::Scene::Base
   def activate_row: () -> untyped
   def animation_name: (untyped) -> untyped
   def build_editor_window: () -> untyped
@@ -3734,7 +3734,7 @@ class RPG2k::Scene::DebugMenu
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::EquipMenu
+class RPG2k::Scene::EquipMenu < RPG2k::Scene::Base
   def actor: () -> untyped
   def apply_choice: () -> untyped
   def base_stat: (untyped, untyped) -> untyped
@@ -3783,7 +3783,7 @@ class RPG2k::Scene::EventResolver
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::GameOver
+class RPG2k::Scene::GameOver < RPG2k::Scene::Base
   def database_gameover_bgm: () -> untyped
   def dispose: () -> untyped
   def gameover_bgm_override: () -> untyped
@@ -3794,7 +3794,7 @@ class RPG2k::Scene::GameOver
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::ItemMenu
+class RPG2k::Scene::ItemMenu < RPG2k::Scene::Base
   def apply_escape_item: (untyped) -> untyped
   def apply_item: (untyped, untyped) -> untyped
   def apply_special_switch_item: (untyped) -> untyped
@@ -3845,7 +3845,7 @@ class RPG2k::Scene::ItemMenu
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::Map
+class RPG2k::Scene::Map < RPG2k::Scene::Base
   def state: () -> untyped
   def events: () -> untyped
   def interpreter: () -> untyped
@@ -4445,7 +4445,7 @@ class RPG2k::Scene::Map::ShopState
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::MapViewer
+class RPG2k::Scene::MapViewer < RPG2k::Scene::Base
   def build_chipset: () -> untyped
   def center_on_player: () -> untyped
   def clamp: (untyped, untyped, untyped) -> untyped
@@ -4503,7 +4503,7 @@ class RPG2k::Scene::MapWorld
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::Menu
+class RPG2k::Scene::Menu < RPG2k::Scene::Base
   def build_commands: () -> untyped
   def build_end_game_confirm_windows: () -> untyped
   def build_gold_window: () -> untyped
@@ -4542,7 +4542,7 @@ class RPG2k::Scene::Menu
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::Order
+class RPG2k::Scene::Order < RPG2k::Scene::Base
   def build_windows: () -> untyped
   def confirm_order: () -> untyped
   def dispose: () -> untyped
@@ -4562,7 +4562,7 @@ class RPG2k::Scene::Order
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::SaveLoad
+class RPG2k::Scene::SaveLoad < RPG2k::Scene::Base
   def build_arrow_sprite: (untyped) -> untyped
   def build_arrow_sprites: () -> untyped
   def build_face_cell: (untyped, untyped) -> untyped
@@ -4588,7 +4588,7 @@ class RPG2k::Scene::SaveLoad
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::SkillMenu
+class RPG2k::Scene::SkillMenu < RPG2k::Scene::Base
   def apply_escape_skill: (untyped) -> untyped
   def apply_skill: (untyped, untyped) -> untyped
   def apply_switch_skill: (untyped) -> untyped
@@ -4638,7 +4638,7 @@ class RPG2k::Scene::SkillMenu
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::StatusMenu
+class RPG2k::Scene::StatusMenu < RPG2k::Scene::Base
   def build_windows: () -> untyped
   def dispose: () -> untyped
   def draw_actor_face: (untyped, untyped) -> untyped
@@ -4663,7 +4663,7 @@ class RPG2k::Scene::StatusMenu
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k::Scene::Title
+class RPG2k::Scene::Title < RPG2k::Scene::Base
   def auto_continue?: () -> untyped
   def auto_new_game?: () -> untyped
   def auto_select?: () -> untyped
@@ -4756,7 +4756,7 @@ module RPG2k3::Scene
 end
 
 # bc2cpp-native: base_rpg2k
-class RPG2k3::Scene::Battle
+class RPG2k3::Scene::Battle < RPG2k::Scene::Battle
   def active_atb?: () -> untyped
   def advance_actor: () -> untyped
   def atb_accumulating?: () -> untyped
@@ -4960,7 +4960,7 @@ module RPG::AudioPlayback::ClassMethods
 end
 
 # bc2cpp-native: base_rpgvx
-class RPG::BGM
+class RPG::BGM < RPG::AudioFile
   def pos: () -> untyped
   def pos=: (untyped) -> untyped
   def replay: () -> untyped
@@ -4971,7 +4971,7 @@ class RPG::BGM
 end
 
 # bc2cpp-native: base_rpgvx
-class RPG::BGS
+class RPG::BGS < RPG::AudioFile
   def pos: () -> untyped
   def pos=: (untyped) -> untyped
   def self.fade_audio: (untyped) -> untyped
@@ -5141,7 +5141,7 @@ class RPG::Enemy::DropItem
 end
 
 # bc2cpp-native: base_rpgvx
-class RPG::EquipItem
+class RPG::EquipItem < RPG::BaseItem
 end
 
 # bc2cpp-native: base_rpgvx
@@ -5276,7 +5276,7 @@ class RPG::Item
 end
 
 # bc2cpp-native: base_rpgvx
-class RPG::ME
+class RPG::ME < RPG::AudioFile
   def self.fade_audio: (untyped) -> untyped
   def self.play_audio: (untyped, untyped, untyped) -> untyped
   def self.stop_audio: () -> untyped
@@ -5381,7 +5381,7 @@ class RPG::MoveRoute
 end
 
 # bc2cpp-native: base_rpgvx
-class RPG::SE
+class RPG::SE < RPG::AudioFile
   def play: (?untyped, ?untyped) -> untyped
   def self.fade_audio: (untyped) -> untyped
   def self.play_audio: (untyped, untyped, untyped) -> untyped
@@ -5755,7 +5755,7 @@ class RPG::Troop::Page::Condition
 end
 
 # bc2cpp-native: base_rpgvx
-class RPG::UsableItem
+class RPG::UsableItem < RPG::BaseItem
   def battle_ok?: () -> untyped
   def menu_ok?: () -> untyped
 end
@@ -5926,23 +5926,23 @@ module Errno
 end
 
 # bc2cpp-native: base_rpgxp
-class Errno::EACCES
+class Errno::EACCES < SystemCallError
 end
 
 # bc2cpp-native: base_rpgxp
-class Errno::EEXIST
+class Errno::EEXIST < SystemCallError
 end
 
 # bc2cpp-native: base_rpgxp
-class Errno::EINVAL
+class Errno::EINVAL < SystemCallError
 end
 
 # bc2cpp-native: base_rpgxp
-class Errno::EISDIR
+class Errno::EISDIR < SystemCallError
 end
 
 # bc2cpp-native: base_rpgxp
-class Errno::ENOENT
+class Errno::ENOENT < SystemCallError
   def initialize: (?untyped) -> untyped
 end
 
@@ -5971,7 +5971,7 @@ module RPG
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::Actor
+class RPG::Actor < RPG::BaseItem
   def id: () -> untyped
   def id=: (untyped) -> untyped
   def name: () -> untyped
@@ -6063,7 +6063,7 @@ class RPG::Animation::Timing
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::Armor
+class RPG::Armor < RPG::EquipItem
   def id: () -> untyped
   def id=: (untyped) -> untyped
   def name: () -> untyped
@@ -6136,7 +6136,7 @@ module RPG::Cache
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::Class
+class RPG::Class < RPG::BaseItem
   def id: () -> untyped
   def id=: (untyped) -> untyped
   def name: () -> untyped
@@ -6178,7 +6178,7 @@ class RPG::CommonEvent
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::Enemy
+class RPG::Enemy < RPG::BaseItem
   def id: () -> untyped
   def id=: (untyped) -> untyped
   def name: () -> untyped
@@ -6254,7 +6254,7 @@ class RPG::Enemy::Action
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::EquipItem
+class RPG::EquipItem < RPG::BaseItem
 end
 
 # bc2cpp-native: base_rpgxp
@@ -6353,7 +6353,7 @@ class RPG::EventCommand
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::Item
+class RPG::Item < RPG::UsableItem
   def id: () -> untyped
   def id=: (untyped) -> untyped
   def name: () -> untyped
@@ -6467,7 +6467,7 @@ class RPG::MoveRoute
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::Skill
+class RPG::Skill < RPG::UsableItem
   def id: () -> untyped
   def id=: (untyped) -> untyped
   def name: () -> untyped
@@ -6521,7 +6521,7 @@ class RPG::Skill
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::Sprite
+class RPG::Sprite < RGSS::Sprite
   def _rgss_release: (untyped) -> untyped
   def _rgss_retain: (untyped) -> untyped
   def _rgss_shift_animation_sprites: (untyped, untyped) -> untyped
@@ -6553,7 +6553,7 @@ class RPG::Sprite
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::State
+class RPG::State < RPG::BaseItem
   def id: () -> untyped
   def id=: (untyped) -> untyped
   def name: () -> untyped
@@ -6849,11 +6849,11 @@ class RPG::Troop::Page::Condition
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::UsableItem
+class RPG::UsableItem < RPG::BaseItem
 end
 
 # bc2cpp-native: base_rpgxp
-class RPG::Weapon
+class RPG::Weapon < RPG::EquipItem
   def id: () -> untyped
   def id=: (untyped) -> untyped
   def name: () -> untyped
@@ -7017,7 +7017,7 @@ end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_rpgxp
-class SystemCallError
+class SystemCallError < StandardError
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -7222,7 +7222,7 @@ class Wolf::Database
 end
 
 # bc2cpp-native: base_wolf
-class Wolf::Error
+class Wolf::Error < StandardError
 end
 
 # bc2cpp-native: base_wolf
@@ -7613,7 +7613,7 @@ class Wolf::VarStore
 end
 
 # bc2cpp-native: base_wolf
-class Wolf::VarStore::UnsupportedRef
+class Wolf::VarStore::UnsupportedRef < StandardError
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
