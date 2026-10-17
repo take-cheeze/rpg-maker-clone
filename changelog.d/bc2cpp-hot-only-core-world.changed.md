@@ -1,0 +1,1 @@
+- **bc2cpp** a hot-only build (the closed native build and the flash builds) keeps mruby's core Ruby in its closed world, as the interpreter does. Core methods stay uncompiled unless the hot list names them; proofs about `Array#each` and other core Ruby methods now see their definitions. See ADR 0484.
