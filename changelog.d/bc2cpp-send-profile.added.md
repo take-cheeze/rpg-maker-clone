@@ -1,0 +1,1 @@
+- bc2cpp: `scripts/bc2cpp/send_profile.rb` writes the single-class send profile from the receiver-trace dumps, keyed by unit, method, send name and per-method ordinal, for a later guarded-send pass.
