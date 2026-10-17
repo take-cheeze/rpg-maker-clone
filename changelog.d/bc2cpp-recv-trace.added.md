@@ -1,0 +1,1 @@
+- **bc2cpp** `BC2CPP_TRACE_RECV=1` records the receiver class of every by-name send and block call in the generated methods. `scripts/bc2cpp/recv_trace_report.rb` reports single-class sites by kind, which are the candidates for direct native calls. See the profiling doc.

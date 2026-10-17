@@ -724,3 +724,16 @@ the script saying why), or while investigating whether a change regressed one.
   about anything cheap.
 - One game, one scene. The RPG XP / VX / MV runtimes have their own scene
   code and are not covered by this baseline.
+
+## Receiver classes of by-name sends and block calls (BC2CPP_TRACE_RECV)
+
+Build the closed world with `BC2CPP_TRACE_RECV=1`, run a workload with
+`BC2CPP_TRACE_RECV_OUT=<file>`, then read the dump with
+`ruby scripts/bc2cpp/recv_trace_report.rb <file>`. Every `bc2cpp_send` and
+`mrb_funcall_with_block` in a generated method body whose receiver is a bare C
+identifier records its receiver's class (and kind of Array/Hash/String/Range).
+The report ranks sites by calls and counts single-class sites by kind: those are
+the candidates for a direct native call. Receivers that are not a bare identifier
+are counted as skipped. The flag cannot be combined with `BC2CPP_TRACE_ELSE=1`.
+`scripts/bc2cpp/recv_trace_check.rb` checks the rewrite and the report without
+an mruby build.
