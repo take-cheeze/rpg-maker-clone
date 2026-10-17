@@ -104,6 +104,14 @@ class CodeGen
              "  }\n"
     end
 
+    # NATIVE_READ_CHAIN (ADR 0482): a one-argument `read` by name tries the native IO#read and StringIO#read bodies
+    # through their guarded direct entries (bc2cpp_native_read1), then dispatches by name. A literal block keeps the
+    # per-site dispatch, the one that carries it.
+    if name == 'read' && n == 1 && !self_implicit && !@call_block_expr
+      return "  // NATIVE_READ_CHAIN: shared bc2cpp_native_read1; exact core IO#read / StringIO#read bodies, else dispatch by name.\n" \
+             "  r#{d} = bc2cpp_native_read1(M, #{recv}, mrb_intern_lit(M, \"read\"), #{argv[0]});\n"
+    end
+
     implicit_new_target = name == 'new' && self_implicit ? implicit_singleton_self_class(owner_def) : nil
     new_target = if implicit_new_target
                    implicit_new_target

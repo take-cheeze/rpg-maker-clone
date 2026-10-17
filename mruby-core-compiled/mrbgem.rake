@@ -67,6 +67,8 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   # a cycle).
   file "#{dir}/src/register.cxx" => [generated, *other_generated]
   cxx.include_paths << build_dir
+  # NATIVE_READ_CHAIN (ADR 0482): the generated code calls the guarded native read entries (bc2cpp_native_read1).
+  cxx.defines << "BC2CPP_NATIVE_IO_DIRECT"
   # include/rgss_construct.hxx for bc2cpp's own emitted NATIVE_CONSTRUCT_TARGETS decls.
   cxx.include_paths << "#{dir}/../include"
 end

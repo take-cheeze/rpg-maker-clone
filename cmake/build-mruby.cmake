@@ -265,6 +265,12 @@ function(rpg2k_add_mruby)
   # bypasses IO#puts' VM-frame argument extraction.
   set(mruby_io_direct_puts_patch
       "${ARG_REPO_ROOT}/patches/mruby-io-direct-puts.patch")
+  # IO#read(len) and StringIO#read(len) split into an argument parser and a body, with a guarded direct entry
+  # (mrb_io_read_direct, mrb_stringio_read_direct) for the receiver union sends bc2cpp emits (ADR 0482).
+  set(mruby_io_direct_read_patch
+      "${ARG_REPO_ROOT}/patches/mruby-io-direct-read.patch")
+  set(mruby_stringio_direct_read_patch
+      "${ARG_REPO_ROOT}/patches/mruby-stringio-direct-read.patch")
 
   # File#size past mrb_int answers a Float upstream (an error under
   # MRB_NO_FLOAT); CRuby answers an Integer. With mruby-bigint linked (core gem
@@ -385,9 +391,12 @@ function(rpg2k_add_mruby)
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_rdata_ivar_slots_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_maxpathlen_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_direct_puts_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_direct_read_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_file_size_bigint_patch}")
   rpg2k_mruby_patch("${mruby_stringio_prefix}"
                     "${mruby_stringio_getbyte_patch}")
+  rpg2k_mruby_patch("${mruby_stringio_prefix}"
+                    "${mruby_stringio_direct_read_patch}")
   rpg2k_mruby_patch("${mruby_marshal_prefix}" "${mruby_marshal_onigmo_patch}")
   rpg2k_mruby_patch("${mruby_onig_regexp_prefix}"
                     "${mruby_onig_regexp_no_chdir_patch}")

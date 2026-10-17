@@ -1,0 +1,1 @@
+- **bc2cpp** one-argument `read` calls in the generated code go straight to the native `IO#read` and `StringIO#read` bodies when the receiver's `read` is not overridden, instead of a by-name dispatch per call. See ADR 0482.

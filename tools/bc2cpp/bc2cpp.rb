@@ -1371,6 +1371,11 @@ if $PROGRAM_NAME == __FILE__
   puts '#ifdef HAVE_MRUBY_IO_GEM'
   puts 'extern "C" mrb_bool mrb_io_puts_direct(mrb_state*, mrb_value, mrb_int, const mrb_value*, mrb_value*);'
   puts '#endif'
+  # NATIVE_READ_CHAIN (ADR 0482): the guarded direct IO#read(len) / StringIO#read(len) entries of the patched gems.
+  puts '#ifdef BC2CPP_NATIVE_IO_DIRECT'
+  puts 'extern "C" mrb_bool mrb_io_read_direct(mrb_state*, mrb_value, mrb_value, mrb_value*);'
+  puts 'extern "C" mrb_bool mrb_stringio_read_direct(mrb_state*, mrb_value, mrb_value, mrb_value*);'
+  puts '#endif'
   # mrb_proc_new_cfunc for BLOCK_CFUNC_FALLBACK_SUPPORT; this header has a
   # C-linkage guard, so a plain #include is fine.
   puts '#include <mruby/proc.h>'
@@ -1624,6 +1629,24 @@ if $PROGRAM_NAME == __FILE__
       return bc2cpp_funcall_argv(M, recv, mid, argc, argv);
     }
   IO_PUTS
+  # NATIVE_READ_CHAIN (ADR 0482): one shared body for every one-argument `read` by name. Each native class with a
+  # guarded direct read entry is one more step of the chain; a receiver none of them matches (a Ruby override, a
+  # class without that read) takes the by-name dispatch. Each step checks that method lookup still resolves to the
+  # core body, so no receiver class needs to be known at the site.
+  puts <<~'NATIVE_READ'
+    #ifdef BC2CPP_NATIVE_IO_DIRECT
+    static inline mrb_value bc2cpp_native_read1(mrb_state* M, mrb_value recv, mrb_sym mid, mrb_value len) {
+      mrb_value result;
+      if (mrb_io_read_direct(M, recv, len, &result)) return result;
+      if (mrb_stringio_read_direct(M, recv, len, &result)) return result;
+      return bc2cpp_funcall_argv(M, recv, mid, 1, &len);
+    }
+    #else
+    static inline mrb_value bc2cpp_native_read1(mrb_state* M, mrb_value recv, mrb_sym mid, mrb_value len) {
+      return bc2cpp_funcall_argv(M, recv, mid, 1, &len);
+    }
+    #endif
+  NATIVE_READ
   # ENSURE_RAII_SUPPORT: the runtime guard for a recognized `ensure`
   # (recognize_ensure_region / emit_ensure_guard_open). A C++ destructor runs on
   # every exit:
