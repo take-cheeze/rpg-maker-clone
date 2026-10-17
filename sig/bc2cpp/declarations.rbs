@@ -1168,8 +1168,6 @@ class Game::Actor
   def class_changed?: () -> untyped
   def class_name: () -> untyped
   %a{bc2cpp:hint}
-  def curve_row: () -> LCF::Array1D
-  %a{bc2cpp:hint}
   def db_exp_param: (untyped) -> Integer
   %a{bc2cpp:hint}
   def display_max_hp: () -> Integer
@@ -1263,11 +1261,7 @@ class Game::MoveRoute
 end
 
 class Game::Party
-  %a{bc2cpp:hint}
-  def add_actor: (untyped) -> Integer
   def apply_actor_meta: (untyped, untyped) -> untyped
-  %a{bc2cpp:hint}
-  def db_item: (untyped) -> LCF::Array1D
   %a{bc2cpp:hint}
   def effective_agi: (untyped) -> Integer
   %a{bc2cpp:hint}
@@ -1376,8 +1370,6 @@ end
 
 class Game::Vehicle
   def initialize: (untyped) -> untyped
-  %a{bc2cpp:hint}
-  def load_movable: (untyped) -> Integer
   def placed?: () -> untyped
 end
 
@@ -1492,8 +1484,6 @@ class RPG2k::Scene::Base
   def play_system_se: (untyped) -> untyped
   %a{bc2cpp:hint}
   def state_display: (untyped) -> Array
-  %a{bc2cpp:hint}
-  def state_table: () -> LCF::Array2D
   def system_se: (untyped) -> untyped
   def term: (untyped) -> untyped
 end
@@ -1542,8 +1532,6 @@ class RPG2k::Scene::EquipMenu
 end
 
 class RPG2k::Scene::EventResolver
-  %a{bc2cpp:hint}
-  def common_event_commands: (untyped) -> Array
   def initialize: (untyped, untyped) -> untyped
 end
 
@@ -1613,8 +1601,6 @@ class RPG2k::Scene::Map
   def close_message: () -> untyped
   %a{bc2cpp:hint}
   def constrained_scale: (untyped) -> Integer
-  %a{bc2cpp:hint}
-  def deindex_event_tile: (untyped, untyped, untyped) -> Array
   def dispose_parallax: () -> untyped
   def draw_event_charset: (untyped, untyped, untyped, untyped, untyped) -> untyped
   def draw_event_tile: (untyped, untyped, untyped, untyped, untyped) -> untyped
@@ -1628,8 +1614,6 @@ class RPG2k::Scene::Map
   def draw_parallax: (untyped, untyped) -> untyped
   def draw_pictures: (untyped, untyped) -> untyped
   def draw_transition_mask: (untyped) -> untyped
-  %a{bc2cpp:hint}
-  def draw_vehicles: (untyped, untyped, untyped, untyped) -> Array
   def drive_autostart_cascade: () -> untyped
   def drive_message_pause: (untyped, untyped, untyped, untyped) -> untyped
   %a{bc2cpp:hint}
