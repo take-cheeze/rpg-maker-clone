@@ -1865,8 +1865,6 @@ class Game::Actor
   %a{bc2cpp:hint}
   def cursed_armor_state_ids: (untyped) -> Array
   %a{bc2cpp:hint}
-  def curve_row: () -> LCF::Array1D
-  %a{bc2cpp:hint}
   def dead?: () -> bool
   %a{bc2cpp:hint}
   def equipped?: (untyped) -> bool
@@ -1888,8 +1886,6 @@ class Game::Actors
   def each: () -> Array
 end
 class Game::ChipSet
-  %a{bc2cpp:hint}
-  def upper_flags: (untyped) -> Integer
 end
 class Game::Interpreter
   %a{bc2cpp:hint}
@@ -1901,11 +1897,7 @@ class Game::Interpreter
   %a{bc2cpp:hint}
   def decode_move_route: (untyped, untyped) -> Array
   %a{bc2cpp:hint}
-  def do_call_event: (untyped) -> Integer
-  %a{bc2cpp:hint}
   def do_change_gold: (untyped) -> nil
-  %a{bc2cpp:hint}
-  def do_change_items: (untyped) -> Integer
   %a{bc2cpp:hint}
   def do_conditional: (untyped) -> (Integer | nil)
   %a{bc2cpp:hint}
@@ -1913,11 +1905,7 @@ class Game::Interpreter
   %a{bc2cpp:hint}
   def do_control_vars: (untyped) -> Integer
   %a{bc2cpp:hint}
-  def do_erase_screen: (untyped) -> bool
-  %a{bc2cpp:hint}
   def do_fadeout_bgm: (untyped) -> nil
-  %a{bc2cpp:hint}
-  def do_move_event: (untyped) -> Array
   %a{bc2cpp:hint}
   def do_proceed_with_movement: (untyped) -> bool
   %a{bc2cpp:hint}
@@ -1928,8 +1916,6 @@ class Game::Interpreter
   def do_wait: (untyped) -> bool
   %a{bc2cpp:hint}
   def execute: (untyped) -> (Array | Integer | bool | nil)
-  %a{bc2cpp:hint}
-  def find_choice_option: (untyped) -> Integer
   %a{bc2cpp:hint}
   def play_audio: (untyped, untyped) -> nil
   %a{bc2cpp:hint}
@@ -1951,13 +1937,9 @@ class Game::Map
 end
 class Game::Party
   %a{bc2cpp:hint}
-  def add_actor: (untyped) -> Integer
-  %a{bc2cpp:hint}
   def all_dead?: () -> bool
   %a{bc2cpp:hint}
   def any_alive?: () -> bool
-  %a{bc2cpp:hint}
-  def db_item: (untyped) -> LCF::Array1D
   %a{bc2cpp:hint}
   def gain_gold: (untyped) -> nil
   %a{bc2cpp:hint}
@@ -1992,8 +1974,6 @@ class Game::TextReveal
   def pending_pause: () -> (Game::Message::PauseMarker | nil)
 end
 class Game::Vehicle
-  %a{bc2cpp:hint}
-  def load_movable: (untyped) -> Integer
 end
 class LCF::Array1D
   %a{bc2cpp:hint}
@@ -2032,8 +2012,6 @@ class RPG2k::Scene::Base
   def advance_list_arrow_anim: (untyped) -> Integer
   %a{bc2cpp:hint}
   def clip_text_to_width: (untyped, untyped, untyped) -> String
-  %a{bc2cpp:hint}
-  def state_table: () -> LCF::Array2D
 end
 class RPG2k::Scene::EquipMenu
   %a{bc2cpp:hint}
@@ -2044,8 +2022,6 @@ class RPG2k::Scene::EquipMenu
   def update_slots: () -> (RGSS::Bitmap | nil)
 end
 class RPG2k::Scene::EventResolver
-  %a{bc2cpp:hint}
-  def common_event_commands: (untyped) -> Array
 end
 class RPG2k::Scene::ItemMenu
   %a{bc2cpp:hint}
@@ -2069,13 +2045,9 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def apply_sprite_flash_requests: (untyped, untyped) -> nil
   %a{bc2cpp:hint}
-  def deindex_event_tile: (untyped, untyped, untyped) -> Array
-  %a{bc2cpp:hint}
   def draw_event: (untyped, untyped, untyped) -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
   def draw_tile: (untyped, untyped, untyped, untyped, untyped, untyped) -> (RGSS::Bitmap | nil)
-  %a{bc2cpp:hint}
-  def draw_vehicles: (untyped, untyped, untyped, untyped) -> Array
   %a{bc2cpp:hint}
   def drive_message: () -> (bool | nil)
   %a{bc2cpp:hint}
