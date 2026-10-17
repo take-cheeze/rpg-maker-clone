@@ -1,3 +1,4 @@
+# bc2cpp-native: built-in or RGSS methods, not program signatures (tools/bc2cpp/native_sigs.rb).
 # Result classes of built-in methods, read by tools/bc2cpp/native_core_result_sigs.rb (not by rbs_signatures.rb:
 # these methods are native, so the program does not define them). A return names the class a call on an exact
 # receiver of that class yields. Only Array and String are accepted. Each entry still needs the closed-world pins in

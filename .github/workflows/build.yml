@@ -1064,7 +1064,7 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           env -u LD MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby scripts/bc2cpp/alias_method_check.rb
 
-      # ADR 0473: the sig/native core facts against the 3rd/mruby this job checks out (ruby-checks has no submodule
+      # ADR 0473: the sig/bc2cpp core facts against the 3rd/mruby this job checks out (ruby-checks has no submodule
       # and runs only the loader half, so --require-mruby makes a missing tree an error here).
       - name: Core facts RBS check (against 3rd/mruby)
         run: ruby scripts/bc2cpp/core_facts_rbs_check.rb --require-mruby

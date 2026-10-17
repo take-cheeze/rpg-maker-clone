@@ -2,6 +2,6 @@
   (core, native, mrblib and program definitions) become a call checked against
   that list, with an owner-violation error for an unseen definer. RGSS
   constructors pick their declared overload at the call site
-  (`sig/native/rgss_constructors.rbs`, audited against the C source), and
+  (`sig/bc2cpp/rgss_constructors.rbs`, audited against the C source), and
   `new` on a class method's `self` constructs directly when the class has no
   unknown subclass (ADR 0468).

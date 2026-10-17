@@ -1,3 +1,4 @@
+# bc2cpp-native: built-in or RGSS methods, not program signatures (tools/bc2cpp/native_sigs.rb).
 # The classes mruby's own natives register each class-test name on, read by CoreFactSigs.class_test_owners
 # (codegen_class_narrowing.rb CLASS_TEST_NATIVE_OWNERS). CodeGen#class_test_native_owners? accepts a name only when
 # every native registration the build compiles lands on one of these owners. The positional parameters are the

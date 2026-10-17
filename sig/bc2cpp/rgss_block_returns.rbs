@@ -1,3 +1,4 @@
+# bc2cpp-native: built-in or RGSS methods, not program signatures (tools/bc2cpp/native_sigs.rb).
 # Block-return declarations of RGSS natives (BLOCK_RETURNS, docs/adr/0475). Each is checked against the C function
 # every registration of the name points at (BlockReturns.native_function_why): the block is read only by
 # mrb_get_args, mrb_nil_p and a yield, every yield passes the declared arguments, and every return is a yield's value.

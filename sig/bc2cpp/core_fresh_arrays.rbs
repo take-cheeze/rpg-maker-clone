@@ -1,3 +1,4 @@
+# bc2cpp-native: built-in or RGSS methods, not program signatures (tools/bc2cpp/native_sigs.rb).
 # Core methods that return a fresh Array whenever they return, read by NativeCoreResultSigs.fresh_array_names
 # (class_layout.rb CORE_ARRAY_RETURN_METHODS). Only the method names matter there: core_array_return? still requires
 # every definition of the name to be mruby core or a vetted override. Verified against 3rd/mruby:
