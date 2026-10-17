@@ -1,0 +1,1 @@
+- **bc2cpp** `BC2CPP_FAIL_FAST_TYPE=1` makes every unproven receiver fallback raise a `TypeError` at the call instead of dispatching by name, so a wrong receiver type is reported where it arrives. Off by default.
