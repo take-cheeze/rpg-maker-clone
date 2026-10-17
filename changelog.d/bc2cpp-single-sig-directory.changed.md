@@ -1,1 +1,2 @@
-- **bc2cpp** signatures are in one directory, `sig/bc2cpp/`. The built-in and RGSS declarations that were in `sig/native/` moved there; a file declares native methods by its first line `# bc2cpp-native:` (ADR 0486). The loaded declarations are unchanged.
+- **bc2cpp** signatures are in one file, `sig/bc2cpp/declarations.rbs`. The built-in and RGSS declarations that were in `sig/native/` and the other `sig/bc2cpp` files now sit in it, each native table under `# bc2cpp-native: <table>` markers (ADR 0486). The loaded declarations are unchanged.
+- **bc2cpp** signatures now include the generated base stubs for every gem (`base_<gem>` native tables), committed in `sig/bc2cpp/declarations.rbs`. They are untyped and produce no hints.

@@ -16,9 +16,9 @@ module Kernel
 end
 ```
 
-Native methods and program methods are both declared in `sig/bc2cpp`. A file of native declarations
-(`rgss_block_returns.rbs`, `core_block_returns.rbs`, and the other fact tables) starts with the marker line
-`# bc2cpp-native:`; `tools/bc2cpp/native_sigs.rb` reads that marker, so the file's place does not decide its kind.
+Native methods and program methods are both declared in `sig/bc2cpp/declarations.rbs`. Each native table (for example
+`rgss_block_returns`, `core_block_returns`) is a group of declarations, each preceded by the marker line
+`# bc2cpp-native: <table>`; `tools/bc2cpp/native_sigs.rb` reads the marker, so a declaration's place does not decide its kind.
 
 How a declaration is checked:
 

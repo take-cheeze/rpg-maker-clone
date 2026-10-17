@@ -63,8 +63,8 @@ the ranking is where a type fact acts, and it is exact only for the lines counte
 ## Signature files (RBS)
 
 Put `.rbs` files under `sig/bc2cpp/` (or point `BC2CPP_SIG_DIRS` / `--sig DIR` at other directories). They feed the same
-hints as the comments and are checked the same way (ADR 0413). A file whose first line is `# bc2cpp-native:` declares
-built-in or RGSS methods instead of the program's (ADR 0486); it is not a program hint.
+hints as the comments and are checked the same way (ADR 0413). A declaration preceded by `# bc2cpp-native: <table>`
+declares built-in or RGSS methods instead of the program's (ADR 0486); it is not a program hint.
 
 ```rbs
 module Game
