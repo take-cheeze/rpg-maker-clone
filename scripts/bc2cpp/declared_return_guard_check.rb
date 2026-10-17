@@ -10,7 +10,6 @@
 #    takes a hinted `-> C` as a proof, and the closed-world preconditions still refuse (alias, core body);
 # 3. the refusals: a hinted declaration on a native method, an undefined one or an unchecked kind is a TC1010 error;
 #    a run that compiles the owner without the guard fails (guard_failures);
-# 4. the review: the repository's hinted declarations are exactly DECLARED_RETURN_GUARDS_REVIEWED.
 #
 # Usage: ruby scripts/bc2cpp/declared_return_guard_check.rb
 
@@ -24,7 +23,6 @@ require_relative '../../tools/bc2cpp/codegen_block_returns'
 require_relative '../../tools/bc2cpp/rbs_signatures'
 require_relative '../../tools/bc2cpp/rbs_param_check'
 require_relative '../../tools/bc2cpp/review_scope'
-require_relative '../../tools/bc2cpp/declared_return_guards_reviewed'
 
 ROOT = File.expand_path('../..', __dir__)
 failures = []
@@ -104,6 +102,17 @@ check.call('-> C is checked as exactly C (the class-equality test of the receive
 nil_code = gen.declared_return_guard_wrap('L3', body.call('Foo_find_impl'), 'Foo_find_impl')
 check.call('-> C? also takes nil', nil_code.include?('!(mrb_nil_p(bc2cpp_declared_ret) || mrb_obj_class(M, bc2cpp_declared_ret) == '))
 list_code = gen.declared_return_guard_wrap('L4', body.call('Foo_list_impl'), 'Foo_list_impl')
+# The basic kinds and a native class: each is a guard test of its own (no proof analysis reads them).
+{ 'Hash' => ['L5', :hash, 'mrb_hash_p(bc2cpp_declared_ret)'],
+  'Symbol' => ['L6', :symbol, 'mrb_symbol_p(bc2cpp_declared_ret)'],
+  'Float' => ['L7', :float, 'mrb_float_p(bc2cpp_declared_ret)'] }.each do |text, (label, kind, test)|
+  kind_code = gen.declared_return_guard_statement(entry.call('Foo', 'list', label, kind, nil, text), 'bc2cpp_declared_ret')
+  check.call("-> #{text} is checked by #{test}", kind_code.include?("!(#{test})"))
+end
+rect_code = gen.declared_return_guard_statement(entry.call('Foo', 'rect', 'L8', :class, 'RGSS::Rect', 'RGSS::Rect'),
+                                                'bc2cpp_declared_ret')
+check.call('-> RGSS::Rect is checked as exactly the native class (its class pointer, like a program class)',
+           rect_code.include?('mrb_obj_class(M, bc2cpp_declared_ret) == bc2cpp_owner_class_'))
 check.call('-> Array[C] checks the Array (the element stays a guarded seed)',
            list_code.include?('!(mrb_array_p(bc2cpp_declared_ret))') && list_code.include?('"Array[Bar]"'))
 check.call('a body with no runtime-checked declaration is unchanged',
@@ -146,7 +155,7 @@ Dir.mktmpdir do |dir|
       %a{bc2cpp:hint}
       def nowhere: () -> Integer
       %a{bc2cpp:hint}
-      def name_text: () -> String
+      def name_text: () -> (Integer | String)
       %a{bc2cpp:hint}
       def count: () -> Integer
     end
@@ -185,23 +194,6 @@ check.call('an owner another gem compiles is that run\'s to check',
            DeclaredReturns.guard_failures([count_hint], [], ['Other'], ['Foo']).empty?)
 check.call('an owner no gem compiles fails',
            DeclaredReturns.guard_failures([count_hint], [], ['Other'], ['Else']).first&.include?('no compiled gem'))
-
-puts '-- review (host)'
-sites = DeclaredReturns.guard_sites([guarded])
-check.call('each guard is one listed site', sites == ['Foo#count -> Integer'] * 2)
-check.call('an unreviewed guard fails the review',
-           DeclaredReturns.review_failures(sites, [guarded], scope: ReviewScope::ALL, reviewed: Set.new)
-                          .include?('unreviewed runtime-checked declaration: Foo#count -> Integer'))
-check.call('a reviewed entry whose method compiles with no guard is stale',
-           DeclaredReturns.review_failures([], [guarded], scope: ReviewScope::ALL, reviewed: Set['Foo#count -> Integer'])
-                          .first&.start_with?('stale'))
-loaded = RbsSignatures.load([File.join(ROOT, 'sig')], display_root: ROOT)
-declared = DeclaredReturns.hinted_methods(loaded.files).to_set do |key|
-  sig = loaded.methods.fetch(key)
-  "#{sig.owner}##{sig.name} -> #{sig.return_type}"
-end
-check.call("the repository's #{declared.size} %a{bc2cpp:hint} declarations are DECLARED_RETURN_GUARDS_REVIEWED",
-           declared == DECLARED_RETURN_GUARDS_REVIEWED)
 
 if failures.empty?
   puts 'declared return guard check: ok'

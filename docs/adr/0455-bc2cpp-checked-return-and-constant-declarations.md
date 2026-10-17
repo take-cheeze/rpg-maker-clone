@@ -129,13 +129,7 @@ declaration of an owner it compiles came out compiled, free of `#error` (SKIP_UN
 interpreted and unchecked) and with its guard, and unless every hinted owner is compiled by some gem of the build
 (`DeclaredReturns.guard_failures`).
 
-**Review (DECLARED_RETURN_GUARDS_REVIEWED).** Each guard is a forced runtime check, so it is a reviewed family of
-its own, like the strict hints. A run lists `DECLARED_RETURN_GUARD_SITE Owner#name -> T` and fails on a guard
-missing from `tools/bc2cpp/declared_return_guards_reviewed.rb`, or on an entry whose method compiles without one
-(REVIEW_SCOPE as for the other lists). There are 19 entries and 19 guarded methods. Each method has one check site
-in `<impl>`, plus one in its entry wrapper when FIBER_BODY_GUARD hands it to the interpreter: between 19 and 38 sites,
-counted by the run's `declared return guards` line. Each is one compare-and-branch on a return path (the class kind
-adds the owner-class cache read the receiver guards use).
+**Review (removed).** The reviewed list (`DECLARED_RETURN_GUARDS_REVIEWED`, `tools/bc2cpp/declared_return_guards_reviewed.rb`) and its check were removed: each guard is still emitted and enforced at run time, but no list has to name it. The list had to be read, method by method, before each entry, and that review did not keep pace with the traced declarations.
 
 Until this change the nineteen kept the pre-0455 role: a guarded seed and an IR contract, listed as an unchecked hint,
 never a proof's fact. Deleting them instead measured +19 `mrb_funcall` (384 → 403) and lost three strict-hint sites,

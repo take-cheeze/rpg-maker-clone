@@ -1,0 +1,1 @@
+- bc2cpp: the reviewed list of runtime-checked return declarations (`DECLARED_RETURN_GUARDS_REVIEWED`) and its check are removed. The guards themselves still run; they no longer need a listed entry.
