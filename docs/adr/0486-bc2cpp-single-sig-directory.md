@@ -34,4 +34,8 @@ file order, so a native declaration of a method the program also declares wins.
   `native_sigs_check.rb` still check the native tables against their sources.
 - The loaded declarations were compared against the layout before this change (`HEAD`): the same 988 methods with the
   same native flags, argument and return types, the same ivars and supers, and the same diagnostics.
+- The base stubs from `scripts/bc2cpp/base_rbs*.rb` are committed as one native table per gem (`base_<gem>`), at the top of
+  the file so that every program and native declaration after them still wins where both declare a method. Their
+  superclasses are left out: the hierarchy is read from `core_hierarchy`, and a stub's superclass could otherwise trigger
+  TC1016. The stubs are a snapshot; regenerating them means rerunning the generators and replacing those blocks.
 - The historical ADRs that name `sig/native/` keep their text; they describe the layout at the time.
