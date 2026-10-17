@@ -1,0 +1,1 @@
+- bc2cpp: a type-check run stops after the type facts are written; the C++ text is produced only by a real build.

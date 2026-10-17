@@ -1277,6 +1277,13 @@ if $PROGRAM_NAME == __FILE__
     require_relative 'type_facts'
     TypeFacts.append_nilable_index(type_facts_path, gen.unguarded_index_sites, ENV['BC2CPP_TYPE_FACTS_ROOT'])
   end
+  # ANALYSIS_ONLY: a type-check run reads the facts file, not the C++. Once the facts are written, stop here so the
+  # C++ text (the emit and symbol rewrite below) is produced only by a real build.
+  if type_facts_path
+    warn ''
+    warn '== analysis only: type facts written; C++ is not emitted for a type-check run =='
+    exit 0
+  end
 
   # SKIP_UNSUPPORTED=1 drops methods containing `#error` from the output; they
   # stay interpreted. CLI exploration keeps the markers visible; real builds
