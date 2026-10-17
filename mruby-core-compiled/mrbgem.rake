@@ -67,8 +67,6 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   # a cycle).
   file "#{dir}/src/register.cxx" => [generated, *other_generated]
   cxx.include_paths << build_dir
-  # FAIL_FAST_TYPE (see symbol_cache.rb NOMETHOD): BC2CPP_FAIL_FAST_TYPE=1 turns each unproven receiver fallback into a TypeError.
-  cxx.defines << "BC2CPP_FAIL_FAST_TYPE" if ENV['BC2CPP_FAIL_FAST_TYPE'] == '1'
   # include/rgss_construct.hxx for bc2cpp's own emitted NATIVE_CONSTRUCT_TARGETS decls.
   cxx.include_paths << "#{dir}/../include"
 end

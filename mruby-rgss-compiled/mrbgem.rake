@@ -104,8 +104,6 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   # not a cycle: neither gem's own codegen step waits on the other's.
   file "#{dir}/src/register.cxx" => [generated, *other_generated]
   cxx.include_paths << build_dir
-  # FAIL_FAST_TYPE (see symbol_cache.rb NOMETHOD): BC2CPP_FAIL_FAST_TYPE=1 turns each unproven receiver fallback into a TypeError.
-  cxx.defines << "BC2CPP_FAIL_FAST_TYPE" if ENV['BC2CPP_FAIL_FAST_TYPE'] == '1'
   # include/rgss_construct.hxx for bc2cpp's own emitted
   # `#include "rgss_construct.hxx"` (NATIVE_CONSTRUCT_TARGETS decls) --
   # the same wiring mruby-mvjs already uses for rgss_bitmap.hxx.
