@@ -1,0 +1,1 @@
+- bc2cpp: the direct `read` forms (`mrb_io_read_direct`, `mrb_stringio_read_direct`) are now mruby patches (`patches/mruby-io-read-direct.patch`, `patches/mruby-stringio-read-direct.patch`), so a libmruby built from the committed submodules links them.
