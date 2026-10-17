@@ -1401,8 +1401,6 @@ class LCF
   def encode_event_commands: (untyped) -> untyped
   def pack_int16: (untyped) -> untyped
   def pack_int32: (untyped) -> untyped
-  %a{bc2cpp:hint}
-  def parse_event_commands: (untyped) -> Array
   def unpack_double: (untyped) -> untyped
   def write_ber: (untyped) -> untyped
 end
