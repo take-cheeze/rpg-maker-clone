@@ -1,1 +1,1 @@
-- **bc2cpp** `BC2CPP_FAIL_FAST_TYPE=1` makes every unproven receiver fallback raise a `TypeError` at the call instead of dispatching by name, so a wrong receiver type is reported where it arrives. Off by default.
+- **bc2cpp** `BC2CPP_FAIL_FAST_TYPE` (a compile-time switch in `tools/bc2cpp/compiled_gems.rb`, off in every shipped build) makes each unproven receiver fallback raise a `TypeError` at the call instead of dispatching by name, so a wrong receiver type is reported where it arrives.
