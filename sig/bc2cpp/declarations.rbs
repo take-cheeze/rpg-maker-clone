@@ -7695,6 +7695,534 @@ module Wolf::LZ4
   def self.decompress: (String, untyped) -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_array-ext
+class Array
+  def __repeated_combination: (untyped, untyped) -> untyped
+  def bsearch: () -> untyped
+  def bsearch_index: () -> untyped
+  def combination: (untyped) -> untyped
+  def delete_if: () -> untyped
+  def dig: (untyped, *untyped) -> untyped
+  def fetch: (untyped, ?untyped) -> untyped
+  def fetch_values: (*untyped) -> untyped
+  def fill: (?untyped, ?untyped, ?untyped) -> untyped
+  def find: (?untyped) -> untyped
+  def keep_if: () -> untyped
+  def permutation: (?untyped) -> untyped
+  def product: (*untyped) -> untyped
+  def reject!: () -> untyped
+  def repeated_combination: (untyped) -> untyped
+  def repeated_permutation: (untyped) -> untyped
+  def reverse_each: () -> untyped
+  def rfind: (?untyped) -> untyped
+  def select!: () -> untyped
+  def to_h: () -> untyped
+  def transpose: () -> untyped
+  def uniq: () -> untyped
+  def uniq!: () -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_dir
+class Dir
+  def chdir: (untyped) -> untyped
+  def each: () -> untyped
+  def each_child: () -> untyped
+  def foreach: (untyped) -> untyped
+  def open: (untyped) -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_dir
+class Dir
+  def close: (*untyped) -> untyped
+  def initialize: (String) -> untyped
+  def read: (*untyped) -> untyped
+  def rewind: (*untyped) -> untyped
+  def seek: (untyped) -> untyped
+  def tell: (*untyped) -> untyped
+  def self._chdir: (String) -> untyped
+  def self.children: (String) -> untyped
+  def self.chroot: (String) -> untyped
+  def self.delete: (String) -> untyped
+  def self.empty?: (String) -> untyped
+  def self.entries: (String) -> untyped
+  def self.exist?: (String) -> untyped
+  def self.getwd: (*untyped) -> untyped
+  def self.mkdir: (String, ?untyped) -> untyped
+end
+
+# bc2cpp-native: base_dir
+class IOError < StandardError
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_enum-ext
+class Array
+  def sort_by: () -> untyped
+  def sort_by!: () -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_enum-ext
+module Enumerable
+  def all?: (?untyped) -> untyped
+  def any?: (?untyped) -> untyped
+  def count: (?untyped) -> untyped
+  def cycle: (?untyped) -> untyped
+  def drop: (untyped) -> untyped
+  def drop_while: () -> untyped
+  def each_cons: (untyped) -> untyped
+  def each_entry: (*untyped) -> untyped
+  def each_slice: (untyped) -> untyped
+  def each_with_object: (untyped) -> untyped
+  def filter_map: () -> untyped
+  def find_index: (?untyped) -> untyped
+  def first: (*untyped) -> untyped
+  def flat_map: () -> untyped
+  def grep_v: (untyped) -> untyped
+  def group_by: () -> untyped
+  def max_by: () -> untyped
+  def min_by: () -> untyped
+  def minmax: () -> untyped
+  def minmax_by: () -> untyped
+  def none?: (?untyped) -> untyped
+  def one?: (?untyped) -> untyped
+  def reverse_each: () -> untyped
+  def sort_by: () -> untyped
+  def sum: (?untyped) -> untyped
+  def take: (untyped) -> untyped
+  def take_while: () -> untyped
+  def tally: () -> untyped
+  def to_h: () -> untyped
+  def uniq: () -> untyped
+  def zip: (*untyped) -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_exit
+class Kernel
+  def exit: (*untyped) -> untyped
+  def exit!: (*untyped) -> untyped
+end
+
+# bc2cpp-native: base_exit
+class SystemExit < Exception
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_fiber
+class Fiber
+  def alive?: (*untyped) -> untyped
+  def initialize: (*untyped) -> untyped
+  def resume: (*untyped) -> untyped
+  def to_s: (*untyped) -> untyped
+  def transfer: (*untyped) -> untyped
+  def self.current: (*untyped) -> untyped
+  def self.yield: (*untyped) -> untyped
+end
+
+# bc2cpp-native: base_fiber
+class FiberError < StandardError
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_hash-ext
+class Hash
+  def <: (untyped) -> untyped
+  def <=: (untyped) -> untyped
+  def >: (untyped) -> untyped
+  def >=: (untyped) -> untyped
+  def compact: () -> untyped
+  def compact!: () -> untyped
+  def delete_if: () -> untyped
+  def dig: (untyped, *untyped) -> untyped
+  def fetch: (untyped, ?untyped) -> untyped
+  def fetch_values: (*untyped) -> untyped
+  def flatten: (?untyped) -> untyped
+  def invert: () -> untyped
+  def keep_if: () -> untyped
+  def merge!: (*untyped) -> untyped
+  def to_h: () -> untyped
+  def to_proc: () -> untyped
+  def transform_keys: () -> untyped
+  def transform_keys!: () -> untyped
+  def transform_values: () -> untyped
+  def transform_values!: () -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_io
+class EOFError < IOError
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_io
+class File < IO
+  def path: () -> untyped
+  def path=: (untyped) -> untyped
+  def atime: () -> untyped
+  def ctime: () -> untyped
+  def initialize: (untyped, ?untyped, ?untyped) -> untyped
+  def inspect: () -> untyped
+  def mtime: () -> untyped
+  def self.foreach: (untyped) -> untyped
+end
+
+# bc2cpp-native: base_io
+module File::Constants
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_io
+class IO
+  def each: () -> untyped
+  def each_byte: () -> untyped
+  def each_char: () -> untyped
+  def hash: () -> untyped
+  def pos=: (untyped) -> untyped
+  def printf: (*untyped) -> untyped
+  def rewind: () -> untyped
+  def self.open: (*untyped) -> untyped
+  def self.pipe: () -> untyped
+  def self.popen: (untyped, ?untyped, **untyped) -> untyped
+  def self.read: (untyped, ?untyped, ?untyped, ?mode: untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_io
+class IOError < StandardError
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_io
+module Kernel
+  def gets: () -> untyped
+  def open: (untyped, *untyped) -> untyped
+  def p: (*untyped) -> untyped
+  def print: () -> untyped
+  def printf: () -> untyped
+  def putc: (untyped) -> untyped
+  def puts: () -> untyped
+  def readline: () -> untyped
+  def readlines: () -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_io
+class File
+  def self.absolute_path: (String, ?String) -> untyped
+  def self.absolute_path?: (*untyped) -> untyped
+  def self.basename: (String, ?String) -> untyped
+  def self.chmod: (untyped, *untyped) -> untyped
+  def self.delete: (*untyped) -> untyped
+  def self.dirname: (String, ?untyped) -> untyped
+  def self.expand_path: (String, ?String) -> untyped
+  def self.extname: (String) -> untyped
+  def self.join: (*untyped) -> untyped
+  def self.path: (String) -> untyped
+  def self.readlink: (String) -> untyped
+  def self.realpath: (String, ?String) -> untyped
+  def self.rename: (String, String) -> untyped
+  def self.symlink: (String, String) -> untyped
+  def self.umask: (?untyped) -> untyped
+  def self.unlink: (*untyped) -> untyped
+end
+
+# bc2cpp-native: base_io
+module File::Constants
+end
+
+# bc2cpp-native: base_io
+module FileTest
+  def self.directory?: (*untyped) -> untyped
+  def self.exist?: (*untyped) -> untyped
+  def self.exists?: (*untyped) -> untyped
+  def self.file?: (*untyped) -> untyped
+  def self.pipe?: (*untyped) -> untyped
+  def self.size: (*untyped) -> untyped
+  def self.size?: (*untyped) -> untyped
+  def self.socket?: (*untyped) -> untyped
+  def self.symlink?: (*untyped) -> untyped
+  def self.zero?: (*untyped) -> untyped
+end
+
+# bc2cpp-native: base_io
+class IO
+  def self._pipe: (*untyped) -> untyped
+  def self._popen: (*untyped) -> untyped
+  def self._sysclose: (untyped) -> untyped
+  def self.for_fd: (*untyped) -> untyped
+  def self.select: (*untyped) -> untyped
+  def self.sysopen: (String, ?untyped, ?untyped) -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_marshal
+module Marshal
+  def dump: (*untyped) -> untyped
+  def load: (*untyped) -> untyped
+  def restore: (*untyped) -> untyped
+  def self.dump: (*untyped) -> untyped
+  def self.load: (*untyped) -> untyped
+  def self.restore: (*untyped) -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_math
+module Math
+  def acos: (*untyped) -> untyped
+  def acosh: (*untyped) -> untyped
+  def asin: (*untyped) -> untyped
+  def asinh: (*untyped) -> untyped
+  def atan: (*untyped) -> untyped
+  def atan2: (untyped, untyped) -> untyped
+  def atanh: (*untyped) -> untyped
+  def cbrt: (*untyped) -> untyped
+  def cos: (*untyped) -> untyped
+  def cosh: (*untyped) -> untyped
+  def erf: (*untyped) -> untyped
+  def erfc: (*untyped) -> untyped
+  def exp: (*untyped) -> untyped
+  def expm1: (*untyped) -> untyped
+  def frexp: (*untyped) -> untyped
+  def hypot: (untyped, untyped) -> untyped
+  def ldexp: (untyped, untyped) -> untyped
+  def log: (untyped, ?untyped) -> untyped
+  def log10: (*untyped) -> untyped
+  def log1p: (*untyped) -> untyped
+  def log2: (*untyped) -> untyped
+  def sin: (*untyped) -> untyped
+  def sinh: (*untyped) -> untyped
+  def sqrt: (*untyped) -> untyped
+  def tan: (*untyped) -> untyped
+  def tanh: (*untyped) -> untyped
+  def self.acos: (*untyped) -> untyped
+  def self.acosh: (*untyped) -> untyped
+  def self.asin: (*untyped) -> untyped
+  def self.asinh: (*untyped) -> untyped
+  def self.atan: (*untyped) -> untyped
+  def self.atan2: (untyped, untyped) -> untyped
+  def self.atanh: (*untyped) -> untyped
+  def self.cbrt: (*untyped) -> untyped
+  def self.cos: (*untyped) -> untyped
+  def self.cosh: (*untyped) -> untyped
+  def self.erf: (*untyped) -> untyped
+  def self.erfc: (*untyped) -> untyped
+  def self.exp: (*untyped) -> untyped
+  def self.expm1: (*untyped) -> untyped
+  def self.frexp: (*untyped) -> untyped
+  def self.hypot: (untyped, untyped) -> untyped
+  def self.ldexp: (untyped, untyped) -> untyped
+  def self.log: (untyped, ?untyped) -> untyped
+  def self.log10: (*untyped) -> untyped
+  def self.log1p: (*untyped) -> untyped
+  def self.log2: (*untyped) -> untyped
+  def self.sin: (*untyped) -> untyped
+  def self.sinh: (*untyped) -> untyped
+  def self.sqrt: (*untyped) -> untyped
+  def self.tan: (*untyped) -> untyped
+  def self.tanh: (*untyped) -> untyped
+end
+
+# bc2cpp-native: base_math
+class Math::DomainError < StandardError
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_math-wio
+module Math
+  def sin: (*untyped) -> untyped
+  def self.sin: (*untyped) -> untyped
+end
+
+# bc2cpp-native: base_math-wio
+class Math::DomainError < StandardError
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_numeric-ext
+class Integer
+  def allbits?: (untyped) -> untyped
+  def anybits?: (untyped) -> untyped
+  def ceildiv: (untyped) -> untyped
+  def integer?: () -> untyped
+  def nobits?: (untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_numeric-ext
+class Numeric
+  def integer?: () -> untyped
+  def negative?: () -> untyped
+  def nonzero?: () -> untyped
+  def positive?: () -> untyped
+  def zero?: () -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_numeric-ext
+class Float
+  def remainder: (untyped) -> untyped
+end
+
+# bc2cpp-native: base_numeric-ext
+class Integer
+  def self.sqrt: (*untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_onig-regexp
+module Kernel
+  def =~: (untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_onig-regexp
+class OnigMatchData
+  def named_captures: (?symbolize_names: untyped) -> untyped
+  def names: () -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_onig-regexp
+class OnigRegexp
+  def source: () -> untyped
+  def ===: (untyped) -> untyped
+  def =~: (untyped) -> untyped
+  def initialize_copy: (untyped) -> untyped
+  def self.compile: (*untyped) -> untyped
+  def self.last_match: () -> untyped
+  def self.last_match=: (untyped) -> untyped
+  def self.preserving_last_match: () -> untyped
+  def self.regexp_arg?: (untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_onig-regexp
+class String
+  def =~: (untyped) -> untyped
+  def []: (*untyped) -> untyped
+  def []=: (*untyped) -> untyped
+  def index: (untyped, ?untyped) -> untyped
+  def match: (untyped, ?untyped) -> untyped
+  def slice!: (*untyped) -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_random
+class Array
+  def sample: (*untyped) -> untyped
+  def shuffle: (*untyped) -> untyped
+  def shuffle!: (*untyped) -> untyped
+end
+
+# bc2cpp-native: base_random
+class Kernel
+  def rand: (*untyped) -> untyped
+  def srand: (*untyped) -> untyped
+end
+
+# bc2cpp-native: base_random
+class Random
+  def self.bytes: (*untyped) -> untyped
+  def self.rand: (*untyped) -> untyped
+  def self.srand: (*untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_range-ext
+class Range
+  def first: (*untyped) -> untyped
+  def last: (*untyped) -> untyped
+  def max: () -> untyped
+  def min: () -> untyped
+  def overlap?: (untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_sprintf
+class String
+  def %: (untyped) -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_sprintf
+class Kernel
+  def format: (*untyped) -> untyped
+  def sprintf: (*untyped) -> untyped
+  def self.format: (*untyped) -> untyped
+  def self.sprintf: (*untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_stringio
+class StringIO
+  def string: () -> untyped
+  def string=: (untyped) -> untyped
+  def each: (*untyped) -> untyped
+  def fileno: () -> untyped
+  def flush: () -> untyped
+  def fsync: () -> untyped
+  def open: (?untyped, ?untyped) -> untyped
+  def print: (*untyped) -> untyped
+  def puts: (*untyped) -> untyped
+  def read_nonblock: (*untyped) -> untyped
+  def readchar: () -> untyped
+  def sync: () -> untyped
+  def sync=: (untyped) -> untyped
+  def sysread: (*untyped) -> untyped
+  def tty?: () -> untyped
+  def ungetc: (untyped) -> untyped
+  def write_nonblock: (*untyped) -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_stringio
+class EOFError
+end
+
+# bc2cpp-native: base_stringio
+class IO
+end
+
+# bc2cpp-native: base_stringio
+class IOError < StandardError
+end
+
+# bc2cpp-native: base_stringio
+class StringIO
+  def close: (*untyped) -> untyped
+  def closed?: (*untyped) -> untyped
+  def eof?: (*untyped) -> untyped
+  def getc: (*untyped) -> untyped
+  def gets: (*untyped) -> untyped
+  def initialize: (?String, ?String) -> untyped
+  def initialize_copy: (untyped) -> untyped
+  def lineno: (*untyped) -> untyped
+  def lineno=: (untyped) -> untyped
+  def pos: (*untyped) -> untyped
+  def pos=: (untyped) -> untyped
+  def read: (?untyped, ?untyped) -> untyped
+  def reopen: (*untyped) -> untyped
+  def rewind: (*untyped) -> untyped
+  def seek: (untyped, ?untyped) -> untyped
+  def size: (*untyped) -> untyped
+  def write: (untyped) -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_time
+class Time
+  def self.at: (untyped, ?untyped) -> untyped
+  def self.gm: (untyped, ?untyped, ?untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> untyped
+  def self.local: (untyped, ?untyped, ?untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> untyped
+  def self.mktime: (untyped, ?untyped, ?untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> untyped
+  def self.now: (*untyped) -> untyped
+  def self.utc: (untyped, ?untyped, ?untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
