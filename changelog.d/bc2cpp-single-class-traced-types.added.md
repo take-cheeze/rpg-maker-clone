@@ -1,0 +1,1 @@
+- bc2cpp: 454 more single-class traced parameter and return types in `sig/bc2cpp/declarations.rbs`, from the type traces of the 13 headless game runs. Methods whose traced types name more than one class stay undeclared.
