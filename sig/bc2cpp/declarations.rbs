@@ -794,7 +794,7 @@ end
 
 # LCF::Array2D#read_row_bytes is called with a File in the load and a StringIO in the game run: both declared.
 class LCF::Array2D
-  def read_row_bytes: (File | StringIO) -> String
+  def read_row_bytes: (File | StringIO) -> untyped
 end
 
 class Game::Actor
@@ -1004,12 +1004,12 @@ end
 
 # ---- real-play types (BC2CPP_TRACE_TYPES on the Nepheshel New Game and map/menu runs): single-class returns
 class Game::Interpreter
-  def running?: () -> bool
-  def waiting?: () -> bool
-  def finished?: () -> bool
-  def take_halt_movement_request: () -> bool
-  def take_parallax_request: () -> bool
-  def take_vehicle_toggle_request: () -> bool
+  def running?: () -> untyped
+  def waiting?: () -> untyped
+  def finished?: () -> untyped
+  def take_halt_movement_request: () -> untyped
+  def take_parallax_request: () -> untyped
+  def take_vehicle_toggle_request: () -> untyped
 end
 class Game::Screen
   def tint: () -> Array
@@ -1017,33 +1017,33 @@ class Game::Screen
   def pan_offset: () -> Array
 end
 class Game::Timer
-  def drawn?: () -> bool
-  def tick: () -> bool
+  def drawn?: () -> untyped
+  def tick: () -> untyped
 end
 # ---- profile-derived return types (second round): unknowns the real-play dumps show as one class.
 # Parameters stay untyped: a parameter type would make every caller owe a proof (TC1013).
 class Game::Interpreter
   def reset_frame_steps: () -> Integer
-  def reset_waits: () -> bool
+  def reset_waits: () -> untyped
   def party: () -> Game::Party
-  def start: (untyped) -> bool
-  def eval_condition: (untyped) -> bool
-  def take_actor_graphic_changed: () -> bool
-  def take_erase_request: () -> bool
+  def start: (untyped) -> untyped
+  def eval_condition: (untyped) -> untyped
+  def take_actor_graphic_changed: () -> untyped
+  def take_erase_request: () -> untyped
   def take_location_requests: () -> Array
   def take_move_route_requests: () -> Array
   def take_sprite_flash_requests: () -> Array
-  def take_system_graphic_changed: () -> bool
-  def take_tiles_changed: () -> bool
+  def take_system_graphic_changed: () -> untyped
+  def take_tiles_changed: () -> untyped
 end
 class Game::Map
   def substitution_snapshot: () -> Array
 end
 class Game::State
-  def tick_timer: () -> bool
+  def tick_timer: () -> untyped
 end
 class Game::Actor
-  def state?: (untyped) -> bool
+  def state?: (untyped) -> untyped
 end
 class Game::ChipSet
 end
@@ -1052,18 +1052,18 @@ end
 class RPG2k::Scene::Map
   def apply_player_visibility: () -> Integer
   def camera_position: () -> Array
-  def events_dirty?: () -> bool
-  def events_move_during_message?: () -> bool
-  def pages_changed?: () -> bool
-  def parallels_paused?: () -> bool
+  def events_dirty?: () -> untyped
+  def events_move_during_message?: () -> untyped
+  def pages_changed?: () -> untyped
+  def parallels_paused?: () -> untyped
   def player_draw_charset: () -> Array
   def player_pixel: () -> Array
-  def player_translucent?: () -> bool
+  def player_translucent?: () -> untyped
   def record_tile_substitutions: () -> Array
 end
 class LCF::Array1D
-  def key?: (untyped) -> bool
-  def field?: (untyped) -> bool
+  def key?: (untyped) -> untyped
+  def field?: (untyped) -> untyped
 end
 # ---- traced returns, runtime-checked (ADR 0455, DECLARED_RETURN_GUARD): the real-run traces show one class, but the
 # static proof cannot follow some path (an operand read, an ivar), so the compiled body checks each return.
@@ -1119,636 +1119,820 @@ end
 # ---- profile-derived return types (third round): unknowns the real-run traces (New Game, map/menu, save/load) show with one class.
 # Parameters stay untyped (a parameter type would make every caller owe a proof, TC1013).
 class Game::Interpreter
-  def take_battle_animation_request: () -> nil
-  def take_movie_request: () -> nil
-  def take_tileset_request: () -> nil
-  def update: () -> nil
-  def compare: (untyped, untyped, untyped) -> bool
-  def actor_condition: (untyped) -> bool
+  def take_battle_animation_request: () -> untyped
+  def take_movie_request: () -> untyped
+  def take_tileset_request: () -> untyped
+  def update: () -> untyped
+  def compare: (untyped, untyped, untyped) -> untyped
+  def actor_condition: (untyped) -> untyped
   def step_cost: (untyped) -> Integer
-  def skip_to: (untyped, untyped) -> nil
+  def skip_to: (untyped, untyped) -> untyped
 end
 class Game::State
 end
 class RPG2k::Scene::Map
-  def draw_timer: () -> nil
-  def draw_weather: () -> nil
-  def draw_player_frame: () -> nil
-  def render: () -> nil
-  def update_screen_overlay: () -> nil
-  def update_sprite_flashes: () -> nil
-  def watch_bgm_loop: () -> nil
-  def step_parallels: () -> nil
-  def animate_events: () -> nil
-  def event_sliding?: (untyped) -> bool
-  def tile_cache_valid?: (untyped, untyped, untyped, untyped) -> bool
-  def set_map_layers_visible: (untyped) -> bool
-  def store_event_draw_sig: (untyped, untyped, untyped) -> bool
+  def draw_timer: () -> untyped
+  def draw_weather: () -> untyped
+  def draw_player_frame: () -> untyped
+  def render: () -> untyped
+  def update_screen_overlay: () -> untyped
+  def update_sprite_flashes: () -> untyped
+  def watch_bgm_loop: () -> untyped
+  def step_parallels: () -> untyped
+  def animate_events: () -> untyped
+  def event_sliding?: (untyped) -> untyped
+  def tile_cache_valid?: (untyped, untyped, untyped, untyped) -> untyped
+  def set_map_layers_visible: (untyped) -> untyped
+  def store_event_draw_sig: (untyped, untyped, untyped) -> untyped
 end
 
 # ---- single-class traced types (trace_types.rb candidates over the 13 workloads, BC2CPP_TRACE_TYPES)
 # Only methods whose traced parameters and returns each name one class (no union), and that the sections above do not
 # already declare. Candidates stay reviewable; the loader applies them as the other trace-derived sections do.
 class Array
+  %a{bc2cpp:hint}
   def delete_if: () -> Array
+  %a{bc2cpp:hint}
   def each: () -> Array
-  def each_index: () -> Array
+  %a{bc2cpp:hint}
   def sort: () -> Array
-  def sort!: () -> Array
+  %a{bc2cpp:hint}
   def uniq: () -> Array
 end
 
 class Enumerable
-  def any?: () -> bool
-  def collect: () -> Array
-  def each_with_index: () -> Array
 end
 
 class Game::Actor
-  def adjust_equipment_states: (Integer, bool) -> Array
+  %a{bc2cpp:hint}
+  def adjust_equipment_states: (untyped, untyped) -> Array
+  %a{bc2cpp:hint}
   def battle_row: () -> Integer
-  def calc_exp: (Integer) -> Integer
-  def class_changed?: () -> bool
-  def class_name: () -> String
+  %a{bc2cpp:hint}
+  def calc_exp: (untyped) -> Integer
+  def class_changed?: () -> untyped
+  def class_name: () -> untyped
+  %a{bc2cpp:hint}
   def curve_row: () -> LCF::Array1D
-  def db_exp_param: (Symbol) -> Integer
+  %a{bc2cpp:hint}
+  def db_exp_param: (untyped) -> Integer
+  %a{bc2cpp:hint}
   def display_max_hp: () -> Integer
+  %a{bc2cpp:hint}
   def display_max_mp: () -> Integer
-  def double_hand?: () -> bool
-  def equip: (Array) -> nil
-  def equip_bonus: (Integer) -> Integer
-  def equipment_fixed?: () -> bool
+  def double_hand?: () -> untyped
+  def equip: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def equip_bonus: (untyped) -> Integer
+  def equipment_fixed?: () -> untyped
+  %a{bc2cpp:hint}
   def exp_max: () -> Integer
-  def force_ai?: () -> bool
+  def force_ai?: () -> untyped
+  %a{bc2cpp:hint}
   def learn_level_skills: () -> Array
+  %a{bc2cpp:hint}
   def max_hp_cap: () -> Integer
-  def name_changed?: () -> bool
-  def next_level_exp: () -> nil
-  def recompute_stats: () -> nil
-  def sprite_changed?: () -> bool
-  def state_cursed?: () -> bool
-  def strong_defence?: () -> bool
-  def title_changed?: () -> bool
+  def name_changed?: () -> untyped
+  def next_level_exp: () -> untyped
+  def recompute_stats: () -> untyped
+  def sprite_changed?: () -> untyped
+  def state_cursed?: () -> untyped
+  def strong_defence?: () -> untyped
+  def title_changed?: () -> untyped
 end
 
 class Game::Actors
+  %a{bc2cpp:hint}
   def all: () -> Array
 end
 
 class Game::Character
-  def face: (Integer) -> Integer
-  def move: (Integer) -> bool
-  def set_graphic: (String, Integer) -> Integer
+  %a{bc2cpp:hint}
+  def face: (untyped) -> Integer
+  def move: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def set_graphic: (untyped, untyped) -> Integer
 end
 
 class Game::ChipSet
-  def elevated?: (Integer) -> bool
-  def passable?: (Integer, Integer) -> bool
-  def passable_tile?: (Integer, Integer, Integer) -> bool
+  def elevated?: (untyped) -> untyped
+  def passable?: (untyped, untyped) -> untyped
+  def passable_tile?: (untyped, untyped, untyped) -> untyped
 end
 
 class Game::Interpreter
-  def block_pending_screen_command: () -> bool
-  def block_pending_teleport_command: () -> bool
-  def check_game_over: () -> bool
-  def choose: (Integer) -> bool
+  def block_pending_screen_command: () -> untyped
+  def block_pending_teleport_command: () -> untyped
+  def check_game_over: () -> untyped
+  def choose: (untyped) -> untyped
+  %a{bc2cpp:hint}
   def consume: () -> Integer
-  def do_change_actor_sprite: (LCF::EventCommand) -> bool
-  def do_change_party: (LCF::EventCommand) -> bool
-  def do_show_screen: (LCF::EventCommand) -> bool
-  def do_teleport: (LCF::EventCommand) -> bool
-  def enter_called_list: (Array, Integer) -> Integer
-  def identity_target: (LCF::EventCommand) -> Game::Actor
-  def message_window_blocks_command?: () -> bool
-  def random_operand: (LCF::EventCommand) -> Integer
-  def resolve_call: (LCF::EventCommand) -> Array
-  def resumable_index: () -> nil
-  def resume: () -> bool
-  def return_from_call: () -> bool
-  def show_next_pending_message: () -> bool
+  def do_change_actor_sprite: (untyped) -> untyped
+  def do_change_party: (untyped) -> untyped
+  def do_show_screen: (untyped) -> untyped
+  def do_teleport: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def enter_called_list: (untyped, untyped) -> Integer
+  %a{bc2cpp:hint}
+  def identity_target: (untyped) -> Game::Actor
+  def message_window_blocks_command?: () -> untyped
+  %a{bc2cpp:hint}
+  def random_operand: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def resolve_call: (untyped) -> Array
+  def resumable_index: () -> untyped
+  def resume: () -> untyped
+  def return_from_call: () -> untyped
+  def show_next_pending_message: () -> untyped
+  %a{bc2cpp:hint}
   def switches: () -> Game::Switches
+  %a{bc2cpp:hint}
   def variables: () -> Game::Variables
 end
 
 class Game::MessageConfig
-  def clear_face: () -> bool
-  def face?: () -> bool
+  def clear_face: () -> untyped
+  def face?: () -> untyped
 end
 
 class Game::MoveRoute
-  def advance_cursor: () -> bool
-  def do_move: (Game::Character, RPG2k::Scene::MapWorld, Integer) -> Array
-  def done?: () -> bool
-  def empty?: () -> bool
-  def execute: (Game::MoveCommand, Game::Character, RPG2k::Scene::MapWorld) -> Array
-  def initialize: (Array) -> untyped
-  def step: (Game::Character, RPG2k::Scene::MapWorld) -> Symbol
+  def advance_cursor: () -> untyped
+  %a{bc2cpp:hint}
+  def do_move: (untyped, untyped, untyped) -> Array
+  def done?: () -> untyped
+  def empty?: () -> untyped
+  %a{bc2cpp:hint}
+  def execute: (untyped, untyped, untyped) -> Array
+  def initialize: (untyped) -> untyped
+  def step: (untyped, untyped) -> untyped
 end
 
 class Game::Party
-  def add_actor: (Integer) -> Integer
-  def apply_actor_meta: (Game::Actor, nil) -> nil
-  def db_item: (Integer) -> LCF::Array1D
-  def effective_agi: (Game::Actor) -> Integer
-  def effective_atk: (Game::Actor) -> Integer
-  def effective_def: (Game::Actor) -> Integer
-  def effective_int: (Game::Actor) -> Integer
-  def equip_candidates: (Integer) -> Array
+  %a{bc2cpp:hint}
+  def add_actor: (untyped) -> Integer
+  def apply_actor_meta: (untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def db_item: (untyped) -> LCF::Array1D
+  %a{bc2cpp:hint}
+  def effective_agi: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def effective_atk: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def effective_def: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def effective_int: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def equip_candidates: (untyped) -> Array
+  %a{bc2cpp:hint}
   def field_items: () -> Array
-  def field_skills: (Game::Actor) -> Array
-  def gain_item: (Integer) -> Integer
-  def include_actor?: (Integer) -> bool
-  def load_state: (Hash) -> Array
-  def modified_stat: (Integer, Game::Actor, Symbol) -> Integer
-  def remove_actor: (Integer) -> nil
-  def stat_mode: (Game::Actor, Symbol) -> Symbol
-  def take_leader_graphic_dirty: () -> bool
+  %a{bc2cpp:hint}
+  def field_skills: (untyped) -> Array
+  %a{bc2cpp:hint}
+  def gain_item: (untyped) -> Integer
+  def include_actor?: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def load_state: (untyped) -> Array
+  %a{bc2cpp:hint}
+  def modified_stat: (untyped, untyped, untyped) -> Integer
+  def remove_actor: (untyped) -> untyped
+  def stat_mode: (untyped, untyped) -> untyped
+  def take_leader_graphic_dirty: () -> untyped
 end
 
 class Game::Rng
+  %a{bc2cpp:hint}
   def next_int: () -> Integer
-  def random: (Integer) -> Integer
+  %a{bc2cpp:hint}
+  def random: (untyped) -> Integer
 end
 
 class Game::Screen
-  def busy?: () -> bool
-  def erase: (Integer) -> Game::Transition
+  def busy?: () -> untyped
+  %a{bc2cpp:hint}
+  def erase: (untyped) -> Game::Transition
+  %a{bc2cpp:hint}
   def fade_level: () -> Integer
-  def fading?: () -> bool
-  def flashing?: () -> bool
-  def load_h: (Hash) -> bool
-  def pan_clear: () -> bool
-  def pan_locked?: () -> bool
+  def fading?: () -> untyped
+  def flashing?: () -> untyped
+  def load_h: (untyped) -> untyped
+  def pan_clear: () -> untyped
+  def pan_locked?: () -> untyped
+  %a{bc2cpp:hint}
   def pan_save_data: () -> Array
-  def panning?: () -> bool
+  def panning?: () -> untyped
+  %a{bc2cpp:hint}
   def shake_offset: () -> Integer
-  def shaking?: () -> bool
+  def shaking?: () -> untyped
+  %a{bc2cpp:hint}
   def tint_save_data: () -> Array
-  def tinting?: () -> bool
-  def update: () -> nil
-  def update_flash: () -> nil
+  def tinting?: () -> untyped
+  def update: () -> untyped
+  def update_flash: () -> untyped
 end
 
 class Game::State
-  def bgm_chunk: (Hash) -> LCF::Array1D
-  def clear_parallax: () -> nil
-  def erase_all_pictures: () -> Hash
-  def seed_screen_transitions: (LCF::Database) -> Array
-  def seed_vehicle_positions: (LCF::MapTree) -> Array
-  def update_pictures: () -> Hash
+  %a{bc2cpp:hint}
+  def bgm_chunk: (untyped) -> LCF::Array1D
+  def clear_parallax: () -> untyped
+  def erase_all_pictures: () -> untyped
+  %a{bc2cpp:hint}
+  def seed_screen_transitions: (untyped) -> Array
+  %a{bc2cpp:hint}
+  def seed_vehicle_positions: (untyped) -> Array
+  def update_pictures: () -> untyped
 end
 
 class Game::Switches
-  def clear_dirty: () -> Hash
-  def replace: (Hash) -> nil
-  def to_h: () -> Hash
+  def clear_dirty: () -> untyped
+  def replace: (untyped) -> untyped
+  def to_h: () -> untyped
 end
 
 class Game::TextReveal
-  def auto_close?: () -> bool
-  def done?: () -> bool
-  def initialize: (Array) -> untyped
+  def auto_close?: () -> untyped
+  def done?: () -> untyped
+  def initialize: (untyped) -> untyped
+  %a{bc2cpp:hint}
   def release_pause: () -> Integer
+  %a{bc2cpp:hint}
   def reveal_all: () -> Integer
-  def speed_at: (Integer) -> Integer
-  def through_instant: (Integer) -> Integer
+  %a{bc2cpp:hint}
+  def speed_at: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def through_instant: (untyped) -> Integer
 end
 
 class Game::Transition
+  %a{bc2cpp:hint}
   def advance: () -> Integer
+  %a{bc2cpp:hint}
   def black_alpha: () -> Integer
-  def captured?: () -> bool
-  def done?: () -> bool
-  def random_blocks?: () -> bool
-  def uniform?: () -> bool
+  def captured?: () -> untyped
+  def done?: () -> untyped
+  def random_blocks?: () -> untyped
+  def uniform?: () -> untyped
 end
 
 class Game::Variables
-  def clear_dirty: () -> Hash
-  def replace: (Hash) -> nil
-  def to_h: () -> Hash
+  def clear_dirty: () -> untyped
+  def replace: (untyped) -> untyped
+  def to_h: () -> untyped
 end
 
 class Game::Vehicle
-  def initialize: (Symbol) -> untyped
-  def load_movable: (LCF::Array1D) -> Integer
-  def placed?: () -> bool
+  def initialize: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def load_movable: (untyped) -> Integer
+  def placed?: () -> untyped
 end
 
 class Game::Weather
-  def none?: () -> bool
-  def set: (Integer, Integer) -> Integer
+  def none?: () -> untyped
+  %a{bc2cpp:hint}
+  def set: (untyped, untyped) -> Integer
 end
 
 class Hash
-  def merge: () -> Hash
-  def select: () -> Hash
+  def select: () -> untyped
 end
 
 class Integer
-  def times: () -> Integer
 end
 
 class LCF
-  def binstr: (String) -> String
-  def elements_of: (Hash) -> Hash
-  def encode_event_commands: (Array) -> String
-  def pack_int16: (Array) -> String
-  def pack_int32: (Array) -> String
-  def parse_event_commands: (String) -> Array
-  def unpack_double: (String) -> Float
-  def write_ber: (Integer) -> String
+  def binstr: (untyped) -> untyped
+  def elements_of: (untyped) -> untyped
+  def encode_event_commands: (untyped) -> untyped
+  def pack_int16: (untyped) -> untyped
+  def pack_int32: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def parse_event_commands: (untyped) -> Array
+  def unpack_double: (untyped) -> untyped
+  def write_ber: (untyped) -> untyped
 end
 
 class LCF::Array1D
-  def sym2idx: () -> Hash
-  def to_lcf: () -> String
+  def sym2idx: () -> untyped
+  def to_lcf: () -> untyped
 end
 
 class LCF::Array2D
-  def to_lcf: () -> String
+  def to_lcf: () -> untyped
 end
 
 class LCF::Database
-  def header: () -> String
-  def schema: () -> Hash
+  def header: () -> untyped
+  def schema: () -> untyped
 end
 
 class LCF::File
-  def save_to: (String) -> Integer
-  def terminate_root?: () -> bool
-  def to_lcf: () -> String
+  %a{bc2cpp:hint}
+  def save_to: (untyped) -> Integer
+  def terminate_root?: () -> untyped
+  def to_lcf: () -> untyped
 end
 
 class LCF::MapTree
-  def header: () -> String
+  def header: () -> untyped
+  %a{bc2cpp:hint}
   def schema: () -> Array
 end
 
 class LCF::MapUnit
-  def header: () -> String
-  def schema: () -> Hash
+  def header: () -> untyped
+  def schema: () -> untyped
 end
 
 class LCF::SaveData
-  def header: () -> String
-  def schema: () -> Hash
+  def header: () -> untyped
+  def schema: () -> untyped
 end
 
 class LCF::Sections
-  def field?: (Symbol) -> bool
+  def field?: (untyped) -> untyped
 end
 
 class Numeric
-  def abs: () -> Integer
-  def negative?: () -> bool
+  def negative?: () -> untyped
 end
 
 class RGSS::Bitmap
+  %a{bc2cpp:hint}
   def font: () -> RGSS::Font
-  def initialize: (String) -> untyped
+  def initialize: (untyped) -> untyped
 end
 
 class RPG2k
-  def any_save_exists?: () -> bool
-  def battle_play_requested?: () -> bool
+  def any_save_exists?: () -> untyped
+  def battle_play_requested?: () -> untyped
+  %a{bc2cpp:hint}
   def boot_title_or_new_game: () -> Array
-  def chipset_editor?: () -> bool
-  def headless_battle_troop: () -> nil
-  def hide_title?: () -> bool
-  def initialize: (Array) -> untyped
-  def load_map: (Integer) -> Game::Map
-  def lsd_path: () -> String
-  def main_loop: () -> nil
-  def map_editor?: () -> bool
-  def map_path: (Integer) -> String
-  def maybe_battle_play_test: () -> nil
-  def pop: () -> nil
-  def preview_animation_id: () -> nil
-  def preview_map_id: () -> nil
+  def chipset_editor?: () -> untyped
+  def headless_battle_troop: () -> untyped
+  def hide_title?: () -> untyped
+  def initialize: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def load_map: (untyped) -> Game::Map
+  def lsd_path: () -> untyped
+  def main_loop: () -> untyped
+  def map_editor?: () -> untyped
+  def map_path: (untyped) -> untyped
+  def maybe_battle_play_test: () -> untyped
+  def pop: () -> untyped
+  def preview_animation_id: () -> untyped
+  def preview_map_id: () -> untyped
+  %a{bc2cpp:hint}
   def push_title_screen: () -> Array
-  def read_ini_title: () -> String
-  def save_exists?: () -> bool
-  def save_game: (Game::State) -> bool
-  def show_title?: () -> bool
-  def start_new_game: () -> nil
-  def trim_ini_value: (String) -> String
+  def read_ini_title: () -> untyped
+  def save_exists?: () -> untyped
+  def save_game: (untyped) -> untyped
+  def show_title?: () -> untyped
+  def start_new_game: () -> untyped
+  def trim_ini_value: (untyped) -> untyped
 end
 
 class RPG2k::Scene::Base
-  def build_field_background: (RGSS::Bitmap) -> RGSS::Sprite
-  def db_system_se: (Integer) -> Hash
-  def draw_actor_state: (RGSS::Bitmap, Game::Actor, Integer, Integer, Integer, Integer, RGSS::Bitmap) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def build_field_background: (untyped) -> RGSS::Sprite
+  def db_system_se: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def draw_actor_state: (untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def make_windowskin: () -> RGSS::Bitmap
-  def normal_status_term: () -> String
-  def play_system_se: (Integer) -> nil
-  def state_display: (Array) -> Array
+  def normal_status_term: () -> untyped
+  def play_system_se: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def state_display: (untyped) -> Array
+  %a{bc2cpp:hint}
   def state_table: () -> LCF::Array2D
-  def system_se: (Integer) -> Hash
-  def term: (Symbol) -> String
+  def system_se: (untyped) -> untyped
+  def term: (untyped) -> untyped
 end
 
 class RPG2k::Scene::Battle
-  def tick_battle_list_arrows: () -> nil
-  def update: () -> nil
+  def tick_battle_list_arrows: () -> untyped
+  def update: () -> untyped
+  %a{bc2cpp:hint}
   def update_enemy_flashes: () -> Array
-  def update_enemy_positions: () -> nil
+  def update_enemy_positions: () -> untyped
 end
 
 class RPG2k::Scene::EquipMenu
+  %a{bc2cpp:hint}
   def actor: () -> Game::Actor
-  def base_stat: (Symbol, Game::Actor) -> Integer
-  def build_arrow_sprite: (Integer) -> RGSS::Sprite
-  def build_arrow_sprites: () -> bool
+  %a{bc2cpp:hint}
+  def base_stat: (untyped, untyped) -> Integer
+  %a{bc2cpp:hint}
+  def build_arrow_sprite: (untyped) -> RGSS::Sprite
+  def build_arrow_sprites: () -> untyped
+  %a{bc2cpp:hint}
   def build_desc_window: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def build_slot_window: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def build_stats_window: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def cand_col_w: () -> Integer
-  def cand_col_x: (Integer) -> Integer
+  %a{bc2cpp:hint}
+  def cand_col_x: (untyped) -> Integer
+  %a{bc2cpp:hint}
   def cand_row_count: () -> Integer
-  def draw_stat_row: (RGSS::Bitmap, Game::Actor) -> Array
-  def effective_stat: (Symbol, Game::Actor) -> Integer
-  def item_name: (Integer) -> String
-  def item_stat: (Integer, Symbol) -> Integer
+  %a{bc2cpp:hint}
+  def draw_stat_row: (untyped, untyped) -> Array
+  %a{bc2cpp:hint}
+  def effective_stat: (untyped, untyped) -> Integer
+  def item_name: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def item_stat: (untyped, untyped) -> Integer
+  %a{bc2cpp:hint}
   def leave_items: () -> RGSS::Bitmap
-  def move_cand_cursor: (Integer) -> nil
-  def move_slot_cursor: (Integer) -> nil
+  def move_cand_cursor: (untyped) -> untyped
+  def move_slot_cursor: (untyped) -> untyped
+  %a{bc2cpp:hint}
   def other_hand_item: () -> Integer
+  %a{bc2cpp:hint}
   def refresh_desc: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def refresh_slot_cursor: () -> RGSS::Bitmap
-  def stat_field_delta: (Integer, Symbol) -> Integer
-  def tick_arrows: () -> bool
+  %a{bc2cpp:hint}
+  def stat_field_delta: (untyped, untyped) -> Integer
+  def tick_arrows: () -> untyped
 end
 
 class RPG2k::Scene::EventResolver
-  def common_event_commands: (Integer) -> Array
-  def initialize: (Hash, LCF::Array2D) -> untyped
+  %a{bc2cpp:hint}
+  def common_event_commands: (untyped) -> Array
+  def initialize: (untyped, untyped) -> untyped
 end
 
 class RPG2k::Scene::GameOver
+  %a{bc2cpp:hint}
   def database_gameover_bgm: () -> Array
-  def gameover_bgm_override: () -> nil
+  def gameover_bgm_override: () -> untyped
+  %a{bc2cpp:hint}
   def gameover_bitmap: () -> RGSS::Bitmap
-  def play_gameover_bgm: () -> nil
-  def update: () -> nil
+  def play_gameover_bgm: () -> untyped
+  def update: () -> untyped
 end
 
 class RPG2k::Scene::ItemMenu
-  def build_arrow_sprite: (Integer, Integer) -> RGSS::Sprite
-  def build_arrow_sprites: () -> bool
+  %a{bc2cpp:hint}
+  def build_arrow_sprite: (untyped, untyped) -> RGSS::Sprite
+  def build_arrow_sprites: () -> untyped
+  %a{bc2cpp:hint}
   def build_desc_window: () -> RGSS::Bitmap
-  def choose_item: () -> nil
-  def dispose: () -> nil
+  def choose_item: () -> untyped
+  def dispose: () -> untyped
+  %a{bc2cpp:hint}
   def item_col_w: () -> Integer
+  %a{bc2cpp:hint}
   def items: () -> Array
-  def refresh_arrows: () -> bool
+  def refresh_arrows: () -> untyped
+  %a{bc2cpp:hint}
   def refresh_desc: () -> RGSS::Bitmap
-  def tick_arrows: () -> bool
-  def update: () -> nil
-  def update_items: () -> nil
+  def tick_arrows: () -> untyped
+  def update: () -> untyped
+  def update_items: () -> untyped
 end
 
 class RPG2k::Scene::Map
-  def advance_player_slide: () -> bool
-  def advance_slide: (Integer, Integer, Integer) -> Array
-  def anim_frame_period: (Integer) -> Integer
-  def apply_battle_animation_request: (Game::Interpreter) -> nil
-  def apply_graphic_change: (Game::Interpreter) -> nil
-  def apply_halt_request: (Game::Interpreter) -> nil
-  def apply_map_access: () -> bool
-  def apply_move_request: (Hash, RPG2k::Scene::Map::MapEventState) -> Integer
-  def apply_movie_request: (Game::Interpreter) -> nil
-  def apply_parallax_request: (Game::Interpreter) -> nil
-  def apply_tile_substitution: (Game::Interpreter) -> nil
-  def apply_tileset_request: (Game::Interpreter) -> nil
-  def apply_vehicle_toggle: (Game::Interpreter) -> nil
-  def auto_message_position: (Integer) -> Integer
-  def blt_bushed: (RGSS::Bitmap, Integer, Integer, RGSS::Bitmap, RGSS::Rect, Integer, Integer) -> RGSS::Bitmap
+  def advance_player_slide: () -> untyped
+  %a{bc2cpp:hint}
+  def advance_slide: (untyped, untyped, untyped) -> Array
+  %a{bc2cpp:hint}
+  def anim_frame_period: (untyped) -> Integer
+  def apply_battle_animation_request: (untyped) -> untyped
+  def apply_graphic_change: (untyped) -> untyped
+  def apply_halt_request: (untyped) -> untyped
+  def apply_map_access: () -> untyped
+  %a{bc2cpp:hint}
+  def apply_move_request: (untyped, untyped) -> Integer
+  def apply_movie_request: (untyped) -> untyped
+  def apply_parallax_request: (untyped) -> untyped
+  def apply_tile_substitution: (untyped) -> untyped
+  def apply_tileset_request: (untyped) -> untyped
+  def apply_vehicle_toggle: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def auto_message_position: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def blt_bushed: (untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def build_chipset: () -> Game::ChipSet
-  def build_event: (Integer, LCF::Array1D, LCF::Array1D, Integer) -> RPG2k::Scene::Map::MapEventState
+  %a{bc2cpp:hint}
+  def build_event: (untyped, untyped, untyped, untyped) -> RPG2k::Scene::Map::MapEventState
+  %a{bc2cpp:hint}
   def build_events: () -> Array
-  def build_parallels: () -> nil
+  def build_parallels: () -> untyped
+  %a{bc2cpp:hint}
   def build_resolver: () -> RPG2k::Scene::EventResolver
-  def bush_depth_at: (Integer, Integer) -> Integer
-  def bush_pixels_at: (Integer, Integer) -> Integer
-  def char_passable?: (Game::Character, Integer) -> bool
-  def choice_row_indent: (Integer) -> Integer
-  def clamp_speed: (Integer) -> Integer
-  def close_message: () -> nil
-  def constrained_scale: (Integer) -> Integer
-  def deindex_event_tile: (RPG2k::Scene::Map::MapEventState, Integer, Integer) -> Array
-  def dispose_parallax: () -> nil
-  def draw_event_charset: (RPG2k::Scene::Map::MapEventState, RGSS::Bitmap, Integer, Integer, Integer) -> RGSS::Bitmap
-  def draw_event_tile: (RPG2k::Scene::Map::MapEventState, RGSS::Bitmap, Integer, Integer, Integer) -> RGSS::Bitmap
-  def draw_events: (Integer, Integer) -> Array
-  def draw_map_animation: (Integer, Integer) -> nil
-  def draw_message_contents: () -> nil
-  def draw_message_face: () -> nil
-  def draw_message_run: (RGSS::Bitmap, Integer, Integer, Integer, Game::Message::Segment) -> RGSS::Bitmap
-  def draw_one_timer: (Integer, bool) -> nil
-  def draw_parallax: (Integer, Integer) -> nil
-  def draw_pictures: (Integer, Integer) -> nil
-  def draw_transition_mask: (Game::Screen) -> nil
-  def draw_vehicles: (Integer, Integer, Integer, Integer) -> Array
-  def drive_autostart_cascade: () -> nil
-  def drive_message_pause: (Game::TextReveal, Game::Message::PauseMarker, bool, bool) -> nil
-  def effective_message_position: (Integer, Game::MessageConfig) -> Integer
-  def event_charset: (String) -> RGSS::Bitmap
-  def event_pixel: (RPG2k::Scene::Map::MapEventState) -> Array
-  def event_target_buffer: (RPG2k::Scene::Map::MapEventState) -> RGSS::Bitmap
-  def force_event_route: (RPG2k::Scene::Map::MapEventState, Game::MoveRoute, Integer) -> Integer
-  def forced_movement_done?: () -> bool
+  %a{bc2cpp:hint}
+  def bush_depth_at: (untyped, untyped) -> Integer
+  %a{bc2cpp:hint}
+  def bush_pixels_at: (untyped, untyped) -> Integer
+  def char_passable?: (untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def choice_row_indent: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def clamp_speed: (untyped) -> Integer
+  def close_message: () -> untyped
+  %a{bc2cpp:hint}
+  def constrained_scale: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def deindex_event_tile: (untyped, untyped, untyped) -> Array
+  def dispose_parallax: () -> untyped
+  %a{bc2cpp:hint}
+  def draw_event_charset: (untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def draw_event_tile: (untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def draw_events: (untyped, untyped) -> Array
+  def draw_map_animation: (untyped, untyped) -> untyped
+  def draw_message_contents: () -> untyped
+  def draw_message_face: () -> untyped
+  %a{bc2cpp:hint}
+  def draw_message_run: (untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  def draw_one_timer: (untyped, untyped) -> untyped
+  def draw_parallax: (untyped, untyped) -> untyped
+  def draw_pictures: (untyped, untyped) -> untyped
+  def draw_transition_mask: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def draw_vehicles: (untyped, untyped, untyped, untyped) -> Array
+  def drive_autostart_cascade: () -> untyped
+  def drive_message_pause: (untyped, untyped, untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def effective_message_position: (untyped, untyped) -> Integer
+  %a{bc2cpp:hint}
+  def event_charset: (untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def event_pixel: (untyped) -> Array
+  %a{bc2cpp:hint}
+  def event_target_buffer: (untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def force_event_route: (untyped, untyped, untyped) -> Integer
+  def forced_movement_done?: () -> untyped
+  %a{bc2cpp:hint}
   def hero_screen_y: () -> Integer
-  def index_event_tile: (RPG2k::Scene::Map::MapEventState, Integer, Integer) -> Array
+  %a{bc2cpp:hint}
+  def index_event_tile: (untyped, untyped, untyped) -> Array
+  %a{bc2cpp:hint}
   def load_chipset_graphic: () -> RGSS::Bitmap
-  def load_face: (Game::MessageConfig) -> nil
+  def load_face: (untyped) -> untyped
+  %a{bc2cpp:hint}
   def load_windowskin: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def map_properties: () -> LCF::Array2D
-  def message_line_offset: (Integer) -> Integer
-  def message_window_open?: () -> bool
-  def message_window_y: (Integer, Game::MessageConfig) -> Integer
-  def page_anim_type: (LCF::Array1D) -> Integer
-  def page_charset_index: (LCF::Array1D) -> Integer
-  def page_charset_name: (LCF::Array1D) -> String
-  def page_commands: (LCF::Array1D) -> Array
-  def page_condition_ids: (Integer, LCF::Array1D) -> Hash
-  def page_direction: (LCF::Array1D) -> Integer
-  def page_guarded: (LCF::Array1D) -> bool
-  def page_layer: (LCF::Array1D) -> Integer
-  def page_move_frequency: (LCF::Array1D) -> Integer
-  def page_move_speed: (LCF::Array1D) -> Integer
-  def page_move_type: (LCF::Array1D) -> Integer
-  def page_overlap_forbidden: (LCF::Array1D) -> bool
-  def page_pattern: (LCF::Array1D) -> Integer
-  def page_translucent: (LCF::Array1D) -> bool
-  def page_trigger: (LCF::Array1D) -> Integer
-  def parallax_config: () -> nil
-  def perform_teleport: (Array) -> bool
-  def play_map_bgm: () -> nil
+  %a{bc2cpp:hint}
+  def message_line_offset: (untyped) -> Integer
+  def message_window_open?: () -> untyped
+  %a{bc2cpp:hint}
+  def message_window_y: (untyped, untyped) -> Integer
+  %a{bc2cpp:hint}
+  def page_anim_type: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def page_charset_index: (untyped) -> Integer
+  def page_charset_name: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def page_commands: (untyped) -> Array
+  def page_condition_ids: (untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def page_direction: (untyped) -> Integer
+  def page_guarded: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def page_layer: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def page_move_frequency: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def page_move_speed: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def page_move_type: (untyped) -> Integer
+  def page_overlap_forbidden: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def page_pattern: (untyped) -> Integer
+  def page_translucent: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def page_trigger: (untyped) -> Integer
+  def parallax_config: () -> untyped
+  def perform_teleport: (untyped) -> untyped
+  def play_map_bgm: () -> untyped
+  %a{bc2cpp:hint}
   def player_bush_depth: () -> Integer
-  def player_hidden?: () -> bool
+  def player_hidden?: () -> untyped
+  %a{bc2cpp:hint}
   def player_jump_offset: () -> Integer
+  %a{bc2cpp:hint}
   def rebuild_event_tiles: () -> Array
-  def record_map_event_positions: () -> nil
-  def record_parallel_progress: (Hash) -> nil
-  def refresh_event_pages: () -> nil
-  def release_random_blocks_transition: () -> nil
-  def release_transition_capture: () -> nil
-  def reoccupy: (RPG2k::Scene::Map::MapEventState, Integer, Integer) -> bool
-  def restore_foreground_event_exec: () -> nil
-  def restore_player_route: () -> nil
-  def run_route_step: (Game::MoveRoute, Game::Character, RPG2k::Scene::MapWorld) -> Symbol
+  def record_map_event_positions: () -> untyped
+  def record_parallel_progress: (untyped) -> untyped
+  def refresh_event_pages: () -> untyped
+  def release_random_blocks_transition: () -> untyped
+  def release_transition_capture: () -> untyped
+  def reoccupy: (untyped, untyped, untyped) -> untyped
+  def restore_foreground_event_exec: () -> untyped
+  def restore_player_route: () -> untyped
+  def run_route_step: (untyped, untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
   def set_choice_cursor: () -> RGSS::Rect
-  def setup_parallax: () -> nil
-  def setup_pictures: () -> Hash
-  def setup_screen_overlay: () -> bool
-  def setup_sprites: () -> bool
-  def speak_message: (Array) -> nil
-  def start_autostart: () -> nil
-  def start_event_slide: (RPG2k::Scene::Map::MapEventState, Integer, Integer) -> bool
-  def step_battle_owner_parallel: () -> nil
-  def step_forced_event: (RPG2k::Scene::Map::MapEventState) -> bool
-  def step_forced_movement: () -> bool
-  def step_ownerless_map_animation: () -> nil
-  def step_parallel: (Hash) -> nil
-  def step_player_route: () -> nil
-  def step_vehicle_route: (Symbol) -> nil
+  def setup_parallax: () -> untyped
+  def setup_pictures: () -> untyped
+  def setup_screen_overlay: () -> untyped
+  def setup_sprites: () -> untyped
+  def speak_message: (untyped) -> untyped
+  def start_autostart: () -> untyped
+  def start_event_slide: (untyped, untyped, untyped) -> untyped
+  def step_battle_owner_parallel: () -> untyped
+  def step_forced_event: (untyped) -> untyped
+  def step_forced_movement: () -> untyped
+  def step_ownerless_map_animation: () -> untyped
+  def step_parallel: (untyped) -> untyped
+  def step_player_route: () -> untyped
+  def step_vehicle_route: (untyped) -> untyped
+  %a{bc2cpp:hint}
   def step_vehicle_routes: () -> Array
+  %a{bc2cpp:hint}
   def store_event_draw_sigs: () -> Array
-  def terrain_row_at: (Integer, Integer) -> LCF::Array1D
-  def tick_flash: (nil) -> nil
-  def try_open_debug_menu: () -> nil
-  def update: () -> nil
-  def update_map_tone: (Array) -> nil
-  def update_vehicle_flashes: () -> Hash
-  def valid_move_freq: (Integer) -> Integer
-  def vehicle_blocks?: (Integer, Integer) -> bool
-  def walk_slide_step: (Integer) -> Integer
+  %a{bc2cpp:hint}
+  def terrain_row_at: (untyped, untyped) -> LCF::Array1D
+  def tick_flash: (untyped) -> untyped
+  def try_open_debug_menu: () -> untyped
+  def update: () -> untyped
+  def update_map_tone: (untyped) -> untyped
+  def update_vehicle_flashes: () -> untyped
+  %a{bc2cpp:hint}
+  def valid_move_freq: (untyped) -> Integer
+  def vehicle_blocks?: (untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def walk_slide_step: (untyped) -> Integer
 end
 
 class RPG2k::Scene::Map::LRUBitmapCache
-  def bitmap_bytes: (RGSS::Bitmap) -> Integer
-  def evict_lru_until_within_budget: () -> nil
-  def key?: (String) -> bool
+  %a{bc2cpp:hint}
+  def bitmap_bytes: (untyped) -> Integer
+  def evict_lru_until_within_budget: () -> untyped
+  def key?: (untyped) -> untyped
 end
 
 class RPG2k::Scene::MapWorld
-  def passable?: (Game::Character, Integer) -> bool
+  def passable?: (untyped, untyped) -> untyped
 end
 
 class RPG2k::Scene::Menu
+  %a{bc2cpp:hint}
   def build_gold_window: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def build_windows: () -> RGSS::Bitmap
-  def command_disabled?: (Symbol) -> bool
-  def draw_command_labels: (RGSS::Bitmap) -> Array
+  def command_disabled?: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def draw_command_labels: (untyped) -> Array
+  %a{bc2cpp:hint}
   def draw_gold_window: () -> RGSS::Bitmap
-  def draw_status_exp: (RGSS::Bitmap, Game::Actor, Integer) -> RGSS::Bitmap
-  def draw_status_row: (RGSS::Bitmap, Game::Actor, Integer) -> RGSS::Bitmap
-  def draw_status_stat: (RGSS::Bitmap, Integer, String, Integer, Integer, bool) -> RGSS::Bitmap
-  def load_face_bitmap: (String) -> nil
+  %a{bc2cpp:hint}
+  def draw_status_exp: (untyped, untyped, untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def draw_status_row: (untyped, untyped, untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def draw_status_stat: (untyped, untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  def load_face_bitmap: (untyped) -> untyped
+  %a{bc2cpp:hint}
   def refresh_cursor: () -> RGSS::Rect
-  def update: () -> nil
-  def update_command: () -> nil
+  def update: () -> untyped
+  def update_command: () -> untyped
 end
 
 class RPG2k::Scene::Order
-  def build_windows: () -> bool
+  def build_windows: () -> untyped
+  %a{bc2cpp:hint}
   def enter_confirm: () -> RGSS::Rect
+  %a{bc2cpp:hint}
   def pick_current: () -> RGSS::Rect
+  %a{bc2cpp:hint}
   def redo_picks: () -> RGSS::Rect
+  %a{bc2cpp:hint}
   def refresh_confirm_cursor: () -> RGSS::Rect
+  %a{bc2cpp:hint}
   def refresh_left_cursor: () -> RGSS::Rect
+  %a{bc2cpp:hint}
   def refresh_left_window: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def refresh_right_window: () -> RGSS::Bitmap
 end
 
 class RPG2k::Scene::SaveLoad
-  def build_arrow_sprites: () -> bool
+  def build_arrow_sprites: () -> untyped
+  %a{bc2cpp:hint}
   def build_header_window: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def build_slot_windows: () -> Array
-  def confirm_selection: () -> nil
-  def dispose: () -> nil
-  def draw_level_hp: (RGSS::Bitmap, Integer, Integer, Integer, bool) -> RGSS::Bitmap
-  def draw_slot_box: (RPG2k::Window, Integer, Integer) -> RGSS::Rect
-  def fixed_width_term: (Symbol) -> String
+  def confirm_selection: () -> untyped
+  def dispose: () -> untyped
+  %a{bc2cpp:hint}
+  def draw_level_hp: (untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def draw_slot_box: (untyped, untyped, untyped) -> RGSS::Rect
+  def fixed_width_term: (untyped) -> untyped
+  %a{bc2cpp:hint}
   def initial_index: () -> Integer
-  def refresh_arrows: () -> bool
+  def refresh_arrows: () -> untyped
+  %a{bc2cpp:hint}
   def refresh_slot_windows: () -> Array
-  def tick_arrows: () -> bool
-  def update: () -> nil
+  def tick_arrows: () -> untyped
+  def update: () -> untyped
 end
 
 class RPG2k::Scene::SkillMenu
-  def build_arrow_sprite: (Integer, Integer) -> RGSS::Sprite
-  def build_arrow_sprites: () -> bool
+  %a{bc2cpp:hint}
+  def build_arrow_sprite: (untyped, untyped) -> RGSS::Sprite
+  def build_arrow_sprites: () -> untyped
+  %a{bc2cpp:hint}
   def build_desc_window: () -> RGSS::Bitmap
-  def build_skill_window: () -> nil
+  def build_skill_window: () -> untyped
+  %a{bc2cpp:hint}
   def build_status_window: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def caster: () -> Game::Actor
-  def choose_skill: () -> nil
-  def dispose: () -> nil
-  def draw_stat_pair: (RGSS::Bitmap, Integer, Integer, Integer, Integer, bool) -> RGSS::Bitmap
-  def move_skill_cursor: (Integer) -> nil
+  def choose_skill: () -> untyped
+  def dispose: () -> untyped
+  %a{bc2cpp:hint}
+  def draw_stat_pair: (untyped, untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  def move_skill_cursor: (untyped) -> untyped
+  %a{bc2cpp:hint}
   def refresh_desc: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def skills: () -> Array
-  def tick_arrows: () -> bool
-  def update: () -> nil
-  def update_skills: () -> nil
+  def tick_arrows: () -> untyped
+  def update: () -> untyped
+  def update_skills: () -> untyped
 end
 
 class RPG2k::Scene::StatusMenu
+  %a{bc2cpp:hint}
   def build_windows: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def dispose: () -> Array
-  def draw_actor_panel: (Game::Actor) -> RGSS::Bitmap
-  def draw_equipment: (Game::Actor) -> RGSS::Bitmap
-  def draw_gauges: (Game::Actor) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def draw_actor_panel: (untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def draw_equipment: (untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def draw_gauges: (untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def draw_gold: () -> RGSS::Bitmap
-  def draw_params: (Game::Actor) -> RGSS::Bitmap
-  def item_name: (Integer) -> String
-  def load_face_bitmap: (String) -> nil
-  def new_contents: (RPG2k::Window) -> RGSS::Bitmap
-  def new_window: (Integer, Integer, Integer, Integer) -> RPG2k::Window
+  %a{bc2cpp:hint}
+  def draw_params: (untyped) -> RGSS::Bitmap
+  def item_name: (untyped) -> untyped
+  def load_face_bitmap: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def new_contents: (untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
+  def new_window: (untyped, untyped, untyped, untyped) -> RPG2k::Window
+  %a{bc2cpp:hint}
   def refresh: () -> RGSS::Bitmap
-  def rpg2003_party?: () -> bool
-  def update: () -> nil
+  def rpg2003_party?: () -> untyped
+  def update: () -> untyped
+  %a{bc2cpp:hint}
   def windows: () -> Array
 end
 
 class RPG2k::Scene::Title
-  def auto_continue?: () -> bool
-  def auto_new_game?: () -> nil
-  def auto_select?: () -> bool
-  def battle_troop: () -> nil
-  def chipset_editor_flag?: () -> bool
-  def continue_available?: () -> bool
-  def dispose: () -> nil
-  def hide_title?: () -> bool
+  def auto_continue?: () -> untyped
+  def auto_new_game?: () -> untyped
+  def auto_select?: () -> untyped
+  def battle_troop: () -> untyped
+  def chipset_editor_flag?: () -> untyped
+  def continue_available?: () -> untyped
+  def dispose: () -> untyped
+  def hide_title?: () -> untyped
+  %a{bc2cpp:hint}
   def load_title_picture: () -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def load_windowskin: () -> RGSS::Bitmap
-  def map_editor_flag?: () -> bool
-  def new_game_flag?: () -> bool
-  def play_title_bgm: () -> nil
-  def preview_animation_id: () -> nil
-  def preview_map_id: () -> nil
+  def map_editor_flag?: () -> untyped
+  def new_game_flag?: () -> untyped
+  def play_title_bgm: () -> untyped
+  def preview_animation_id: () -> untyped
+  def preview_map_id: () -> untyped
+  %a{bc2cpp:hint}
   def refresh_cursor: () -> RGSS::Rect
-  def update: () -> nil
+  def update: () -> untyped
 end
 
 class RPG2k::Window
-  def allocate_skin: () -> nil
-  def closing?: () -> bool
-  def dispose: () -> nil
+  def allocate_skin: () -> untyped
+  def closing?: () -> untyped
+  def dispose: () -> untyped
+  %a{bc2cpp:hint}
   def draw_arrow: () -> RGSS::Bitmap
-  def draw_arrow_visibility: () -> bool
-  def draw_background: (Integer, Integer) -> RGSS::Bitmap
-  def draw_cursor: () -> nil
-  def draw_fallback: (Integer, Integer) -> RGSS::Bitmap
+  def draw_arrow_visibility: () -> untyped
+  %a{bc2cpp:hint}
+  def draw_background: (untyped, untyped) -> RGSS::Bitmap
+  def draw_cursor: () -> untyped
+  %a{bc2cpp:hint}
+  def draw_fallback: (untyped, untyped) -> RGSS::Bitmap
+  %a{bc2cpp:hint}
   def drawn_height: () -> Integer
-  def fully_open?: () -> bool
-  def open_animation: (Integer) -> bool
-  def redraw_for_animation: () -> bool
+  def fully_open?: () -> untyped
+  def open_animation: (untyped) -> untyped
+  def redraw_for_animation: () -> untyped
 end
 
 class Range
-  def each: () -> Range
 end
