@@ -1,0 +1,25 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    abbrev (0.1.2)
+    rbs (3.4.0)
+      abbrev
+    typeprof (0.21.9)
+      rbs (>= 1.8.1)
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  rbs (= 3.4.0)
+  typeprof (= 0.21.9)
+
+CHECKSUMS
+  abbrev (0.1.2)
+  bundler (4.0.18) sha256=02d9a17429de1847b4e0c9f27a9ee4b20c0a74c0a641b4e77195d6019e3618ac
+  rbs (3.4.0)
+  typeprof (0.21.9)
+
+BUNDLED WITH
+  4.0.18

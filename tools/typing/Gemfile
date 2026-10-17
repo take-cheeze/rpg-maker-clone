@@ -1,0 +1,8 @@
+# frozen_string_literal: true
+
+# The TypeProf environment, separate from the bc2cpp one: TypeProf 0.21 needs rbs 3.x, while bc2cpp
+# (scripts/bc2cpp) runs against rbs 4.x from GEM_PATH. Use: BUNDLE_GEMFILE=tools/typing/Gemfile bundle exec typeprof ...
+source 'https://rubygems.org'
+
+gem 'rbs', '3.4.0'
+gem 'typeprof', '0.21.9'
