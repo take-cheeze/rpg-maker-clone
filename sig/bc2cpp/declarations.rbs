@@ -1160,8 +1160,7 @@ class Enumerable
 end
 
 class Game::Actor
-  %a{bc2cpp:hint}
-  def adjust_equipment_states: (untyped, untyped) -> Array
+  def adjust_equipment_states: (untyped, untyped) -> untyped
   %a{bc2cpp:hint}
   def battle_row: () -> Integer
   %a{bc2cpp:hint}
@@ -1584,8 +1583,7 @@ class RPG2k::Scene::Map
   def apply_graphic_change: (untyped) -> untyped
   def apply_halt_request: (untyped) -> untyped
   def apply_map_access: () -> untyped
-  %a{bc2cpp:hint}
-  def apply_move_request: (untyped, untyped) -> Integer
+  def apply_move_request: (untyped, untyped) -> untyped
   def apply_movie_request: (untyped) -> untyped
   def apply_parallax_request: (untyped) -> untyped
   def apply_tile_substitution: (untyped) -> untyped
