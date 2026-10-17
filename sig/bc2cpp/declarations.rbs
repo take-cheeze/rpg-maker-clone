@@ -1858,10 +1858,6 @@ end
 class Array
   %a{bc2cpp:hint}
   def include?: (untyped) -> bool
-  %a{bc2cpp:hint}
-  def reject!: () -> (Array | nil)
-  %a{bc2cpp:hint}
-  def sort!: () -> Array
 end
 class Game::Actor
   %a{bc2cpp:hint}
@@ -2045,8 +2041,6 @@ class RPG2k::Scene::EquipMenu
   %a{bc2cpp:hint}
   def refresh_arrows: () -> (bool | nil)
   %a{bc2cpp:hint}
-  def update: () -> (RGSS::Bitmap | nil)
-  %a{bc2cpp:hint}
   def update_items: () -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
   def update_slots: () -> (RGSS::Bitmap | nil)
@@ -2142,6 +2136,4 @@ class RPG2k::Scene::StatusMenu
   def draw_value_row: (untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
 end
 class RPG2k::Window
-  %a{bc2cpp:hint}
-  def update: () -> (bool | nil)
 end
