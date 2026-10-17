@@ -1,0 +1,1 @@
+- bc2cpp: 117 return types from the traced candidates are runtime-checked declarations (`%a{bc2cpp:hint}`) in `sig/bc2cpp/declarations.rbs`.
