@@ -294,6 +294,16 @@ function(rpg2k_add_mruby)
   # upstream and drop this patch on the next submodule bump.
   set(mruby_stringio_getbyte_patch
       "${ARG_REPO_ROOT}/patches/mruby-stringio-native-getbyte.patch")
+
+  # The direct read forms bc2cpp calls for `x.read(n)` (codegen_send.rb,
+  # STRINGIO_DIRECT_READ): mrb_io_read_direct and mrb_stringio_read_direct. Each
+  # runs the core #read body without a VM argument frame when method lookup
+  # still resolves to it, and returns FALSE otherwise. Declared extern "C" in
+  # the generated unit, so they must exist in every libmruby that links it.
+  set(mruby_io_read_direct_patch
+      "${ARG_REPO_ROOT}/patches/mruby-io-read-direct.patch")
+  set(mruby_stringio_read_direct_patch
+      "${ARG_REPO_ROOT}/patches/mruby-stringio-read-direct.patch")
   set(mruby_stringio_prefix "${ARG_REPO_ROOT}/3rd/mruby-stringio")
 
   # mruby-marshal's own mrbgem.rake unconditionally add_dependency'd
@@ -386,8 +396,11 @@ function(rpg2k_add_mruby)
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_maxpathlen_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_direct_puts_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_file_size_bigint_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_read_direct_patch}")
   rpg2k_mruby_patch("${mruby_stringio_prefix}"
                     "${mruby_stringio_getbyte_patch}")
+  rpg2k_mruby_patch("${mruby_stringio_prefix}"
+                    "${mruby_stringio_read_direct_patch}")
   rpg2k_mruby_patch("${mruby_marshal_prefix}" "${mruby_marshal_onigmo_patch}")
   rpg2k_mruby_patch("${mruby_onig_regexp_prefix}"
                     "${mruby_onig_regexp_no_chdir_patch}")

@@ -1,0 +1,54 @@
+diff --git a/mrbgems/mruby-io/src/io.c b/mrbgems/mruby-io/src/io.c
+--- a/mrbgems/mruby-io/src/io.c
++++ b/mrbgems/mruby-io/src/io.c
+@@ -1937,15 +1937,10 @@
+  *   f.read(16)   #=> "This is line one"
+  */
+ static mrb_value
+-io_read(mrb_state *mrb, mrb_value io)
++io_read_impl(mrb_state *mrb, struct mrb_io *fptr, mrb_bool length_given, mrb_value len, mrb_value outbuf)
+ {
+-  mrb_value outbuf = mrb_nil_value();
+-  mrb_value len;
+   mrb_int length = 0;
+-  mrb_bool length_given;
+-  struct mrb_io *fptr = io_get_read_fptr(mrb, io);
+ 
+-  mrb_get_args(mrb, "|o?S", &len, &length_given, &outbuf);
+   if (length_given) {
+     if (mrb_nil_p(len)) {
+       length_given = FALSE;
+@@ -1986,6 +1981,33 @@
+   }
+ }
+ 
++static mrb_value
++io_read(mrb_state *mrb, mrb_value io)
++{
++  mrb_value outbuf = mrb_nil_value();
++  mrb_value len;
++  mrb_bool length_given;
++  struct mrb_io *fptr = io_get_read_fptr(mrb, io);
++
++  mrb_get_args(mrb, "|o?S", &len, &length_given, &outbuf);
++  return io_read_impl(mrb, fptr, length_given, len, outbuf);
++}
++
++/* Call the core IO#read(len) body without a VM argument frame when method lookup still resolves to that body.
++ * `len` is nil (read everything) or an Integer. Returns FALSE when Ruby overrides it. */
++mrb_bool
++mrb_io_read_direct(mrb_state *mrb, mrb_value io, mrb_value len, mrb_value *result)
++{
++  struct RClass *c = mrb_obj_class(mrb, io);
++  mrb_method_t method = mrb_method_search_vm(mrb, &c, MRB_SYM(read));
++  if (MRB_METHOD_UNDEF_P(method) || !MRB_METHOD_CFUNC_P(method) ||
++      MRB_METHOD_CFUNC(method) != io_read) {
++    return FALSE;
++  }
++  *result = io_read_impl(mrb, io_get_read_fptr(mrb, io), !mrb_nil_p(len), len, mrb_nil_value());
++  return TRUE;
++}
++
+ static mrb_int
+ io_find_index(struct mrb_io *fptr, const char *rs, mrb_int rslen)
+ {
