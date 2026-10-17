@@ -1117,7 +1117,7 @@ if $PROGRAM_NAME == __FILE__
                     nil_operator_names: nil_operators, outside_const_names: outside_consts)
   # DECLARED_RETURN_CHECK (ADR 0455): a declaration with an unproven path aborts like RBS_SEED_CONTRADICTION; the
   # type check reports it (TC1010) with the signature diagnostics.
-  DeclaredReturns.report(gen, sig_applied, abort_on_error: !ENV['BC2CPP_TYPE_FACTS'].to_s.then { |v| !v.empty? })
+  profile_call.call('DeclaredReturns.report') { DeclaredReturns.report(gen, sig_applied, abort_on_error: !ENV['BC2CPP_TYPE_FACTS'].to_s.then { |v| !v.empty? }) }
   warn '== typed slots demoted to boxed slots (foreign writers, ADR 0279) =='
   if gen.typed_demotions.empty?
     warn '  (none)'
@@ -1139,9 +1139,9 @@ if $PROGRAM_NAME == __FILE__
   # of failure as a stale registration. Only a concrete inferred type can
   # contradict: UNKNOWN is an absent fact, not a conflicting one, so an
   # annotation that merely failed to apply still passes.
-  contradictions = AnnotationContradictions.find(ireps, registry, annotations, arg_types,
+  contradictions = profile_call.call('AnnotationContradictions.find') { AnnotationContradictions.find(ireps, registry, annotations, arg_types,
                                                 gen.fixnum_return_names, class_annotations,
-                                                class_arg_types)
+                                                class_arg_types) }
   # IVAR_SIGNATURE_CONTRADICTION: an RBS ivar declaration that disagrees with the class or slot the analysis
   # settled is the same build error (TypeFacts reports these rows itself, so they stay out of `contradictions`).
   ivar_contradictions = if sig_applied
@@ -1157,7 +1157,7 @@ if $PROGRAM_NAME == __FILE__
   type_facts_path = nil if type_facts_path&.empty?
   if type_facts_path
     require_relative 'type_facts'
-    TypeFacts.write(type_facts_path, TypeFacts.collect(TypeFacts::Ctx.new(
+    profile_call.call('TypeFacts.write') { TypeFacts.write(type_facts_path, TypeFacts.collect(TypeFacts::Ctx.new(
       ireps: ireps, registry: registry, annotations: annotations, class_annotations: class_annotations,
       element_annotations: element_annotations, arg_types: arg_types, class_arg_types: class_arg_types,
       class_layout_raw: class_layout_raw, class_poison_reason: class_poison_reason, store_log: ivar_store_log,
@@ -1172,7 +1172,7 @@ if $PROGRAM_NAME == __FILE__
       constant_sites: constant_assignment_sites, modules: declared_modules, superclass_of: superclass_of,
       integer_constants: integer_constants, element_site_classes: element_site_classes,
       hash_element_site_classes: hash_element_site_classes
-    )))
+    ))) }
   end
   warn '== annotation/proof contradictions (RBS_SEED_CONTRADICTION) =='
   if contradictions.empty? && ivar_contradictions.empty?
