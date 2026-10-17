@@ -116,24 +116,33 @@ module TypeFacts
     gen = ctx.gen
     defs = ctx.registry.values.flatten.select(&:irep).uniq(&:irep)
     sites = ctx.call_sites
-    feedback = IrTypeFeedback.collect(ctx)
+    # BC2CPP_PROFILE_TIMINGS=1: each section's wall time, so the slow part of the facts is named.
+    timed = lambda do |name, &block|
+      next block.call unless ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
+
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      value = block.call
+      warn format('BC2CPP_DETAIL TypeFacts.%-28s %8.3fs', name, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+      value
+    end
+    feedback = timed.call('ir_type_feedback') { IrTypeFeedback.collect(ctx) }
     ctx.ir_return_facts = feedback[:returns]
-    methods = defs.filter_map { |d| method_row(ctx, gen, d, reader, sites) }
-    ivars = ivar_rows(ctx, gen, reader)
-    consts = const_rows(ctx)
+    methods = timed.call('methods') { defs.filter_map { |d| method_row(ctx, gen, d, reader, sites) } }
+    ivars = timed.call('ivars') { ivar_rows(ctx, gen, reader) }
+    consts = timed.call('constants') { const_rows(ctx) }
     {
       'version' => VERSION,
       'methods' => methods.sort_by { |m| [m['file'], m['line'], m['owner'], m['name']] },
       'ivars' => ivars.sort_by { |i| [i['owner'], i['name']] },
       'constants' => consts.sort_by { |c| c['name'] },
-      'classes' => class_rows(ctx),
-      'annotations' => annotation_rows(ctx, defs, reader),
-      'contradictions' => contradiction_rows(ctx, gen, defs, reader),
+      'classes' => timed.call('classes') { class_rows(ctx) },
+      'annotations' => timed.call('annotations') { annotation_rows(ctx, defs, reader) },
+      'contradictions' => timed.call('contradictions') { contradiction_rows(ctx, gen, defs, reader) },
       'signature_diagnostics' => Array(ctx.signature_diagnostics),
       'ir_feedback' => feedback[:rows],
       'native_direct_forms' => gen.respond_to?(:bytecode_ir_native_expression_inventory) ? gen.bytecode_ir_native_expression_inventory : [],
       'summary' => nil
-    }.tap { |facts| facts['summary'] = summarize(facts) }
+    }.tap { |facts| facts['summary'] = timed.call('summary') { summarize(facts) } }
   end
 
   # ------------------------------------------------------------------------------------------------ methods
