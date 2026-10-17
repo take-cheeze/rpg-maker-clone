@@ -1,0 +1,1 @@
+- **bc2cpp** gives a native method its return type when every return statement of its C function yields one known kind: `nil`, `bool`, `Integer`, `Float`, `String`, `Array`, `Hash`, `Symbol`, or `self` on an instance method. A method whose returns disagree stays untyped. The types are in the base section of `sig/bc2cpp/declarations.rbs`.
