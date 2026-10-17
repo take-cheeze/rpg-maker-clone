@@ -1,0 +1,1 @@
+- bc2cpp: trace candidates keep only unions of at most four classes (the widest the linear guard checks); a wider observation is `untyped`.
