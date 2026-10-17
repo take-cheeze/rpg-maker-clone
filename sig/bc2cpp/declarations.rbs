@@ -1856,8 +1856,6 @@ end
 # Unified return types (trace candidates, scripts/bc2cpp/trace_types.rb candidates --hierarchy). Each is a
 # runtime-checked hint (%a{bc2cpp:hint}); a body that returns another class raises BC2cppHintViolation.
 class Array
-  %a{bc2cpp:hint}
-  def include?: (untyped) -> bool
 end
 class Game::Actor
   %a{bc2cpp:hint}
