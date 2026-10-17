@@ -1,0 +1,1 @@
+- bc2cpp: `Enumerable` (with an optional element argument) is a checkable return kind: a runtime-checked declaration tests `mrb_obj_is_kind_of` against the module, so every class that includes it passes. The element type is not checked, as with `Array[T]`.

@@ -1,0 +1,1 @@
+- bc2cpp: trace candidates widen a set of observed classes past a union to their nearest common ancestor in the class hierarchy, or to a named RBS interface of the methods they all share. The hierarchy comes from `scripts/bc2cpp/class_hierarchy.rb` (`--hierarchy`).
