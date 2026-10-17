@@ -49,9 +49,8 @@ Lbc2cpp_guarded_end_<send>:;
   jumps over the rest. The second copy gets its own label and nested-function prefix (`region[:label_tag]`).
 * A guarded region carries no element-class hint: that hint describes a receiver the flow proved.
 * Only the whole-method pass is guarded (not the rescue try-body pass, not resumable steps).
-* `BC2CPP_GUARDED_BLOCK_INLINE=0` turns it off. `BC2CPP_GUARDED_INLINE_WHY=1` prints on stderr, per send, why a loop was
-  not emitted (receiver traced to another class, block body not clean, no arm for the name, and the block shape of
-  every send no recognizer took).
+* `BC2CPP_GUARDED_BLOCK_INLINE=0` turns it off. The arm gate also admits a zero-argument send whose name has no
+  compiled core body but is a plain core Ruby method (ADR 0483).
 
 ### Found on the way
 
