@@ -40,12 +40,12 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_dir
 class Dir
-  def close: (*untyped) -> nil
+  def close: () -> nil
   def initialize: (String) -> self
-  def read: (*untyped) -> untyped
-  def rewind: (*untyped) -> untyped
+  def read: () -> untyped
+  def rewind: () -> untyped
   def seek: (Numeric) -> untyped
-  def tell: (*untyped) -> untyped
+  def tell: () -> untyped
   def self._chdir: (String) -> Integer
   def self.children: (String) -> Array
   def self.chroot: (String) -> Integer
@@ -53,7 +53,7 @@ class Dir
   def self.empty?: (String) -> bool
   def self.entries: (String) -> Array
   def self.exist?: (String) -> bool
-  def self.getwd: (*untyped) -> String
+  def self.getwd: () -> String
   def self.mkdir: (String, ?Numeric) -> Integer
 end
 
@@ -107,8 +107,8 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_exit
 class Kernel
-  def exit: (*untyped) -> nil
-  def exit!: (*untyped) -> nil
+  def exit: (?untyped) -> nil
+  def exit!: (?untyped) -> nil
 end
 
 # bc2cpp-native: base_exit
@@ -118,12 +118,12 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_fiber
 class Fiber
-  def alive?: (*untyped) -> bool
+  def alive?: () -> bool
   def initialize: (*untyped) -> untyped
   def resume: (*untyped) -> untyped
-  def to_s: (*untyped) -> String
+  def to_s: () -> String
   def transfer: (*untyped) -> untyped
-  def self.current: (*untyped) -> untyped
+  def self.current: () -> untyped
   def self.yield: (*untyped) -> untyped
 end
 
@@ -217,7 +217,7 @@ end
 # bc2cpp-native: base_io
 class File
   def self.absolute_path: (String, ?String) -> untyped
-  def self.absolute_path?: (*untyped) -> bool
+  def self.absolute_path?: (untyped) -> bool
   def self.basename: (String, ?String) -> String
   def self.chmod: (Numeric, *untyped) -> Integer
   def self.delete: (*untyped) -> Integer
@@ -240,24 +240,24 @@ end
 
 # bc2cpp-native: base_io
 module FileTest
-  def self.directory?: (*untyped) -> bool
-  def self.exist?: (*untyped) -> bool
-  def self.exists?: (*untyped) -> bool
-  def self.file?: (*untyped) -> bool
-  def self.pipe?: (*untyped) -> bool
-  def self.size: (*untyped) -> untyped
-  def self.size?: (*untyped) -> untyped
-  def self.socket?: (*untyped) -> bool
-  def self.symlink?: (*untyped) -> bool
-  def self.zero?: (*untyped) -> bool
+  def self.directory?: (untyped) -> bool
+  def self.exist?: (untyped) -> bool
+  def self.exists?: (untyped) -> bool
+  def self.file?: (untyped) -> bool
+  def self.pipe?: (untyped) -> bool
+  def self.size: (untyped) -> untyped
+  def self.size?: (untyped) -> untyped
+  def self.socket?: (untyped) -> bool
+  def self.symlink?: (untyped) -> bool
+  def self.zero?: (untyped) -> bool
 end
 
 # bc2cpp-native: base_io
 class IO
-  def self._pipe: (*untyped) -> untyped
-  def self._popen: (*untyped) -> untyped
+  def self._pipe: () -> untyped
+  def self._popen: (untyped, ?untyped, ?untyped) -> untyped
   def self._sysclose: (Numeric) -> Integer
-  def self.for_fd: (*untyped) -> untyped
+  def self.for_fd: (untyped, ?untyped, ?untyped) -> untyped
   def self.select: (*untyped) -> untyped
   def self.sysopen: (String, ?untyped, ?Numeric) -> Integer
 end
@@ -1110,58 +1110,67 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_math
 module Math
-  def acos: (*untyped) -> Float
-  def acosh: (*untyped) -> Float
-  def asin: (*untyped) -> Float
-  def asinh: (*untyped) -> Float
-  def atan: (*untyped) -> Float
+  def sin: (untyped) -> Float
+  def self.sin: (untyped) -> Float
+end
+
+# bc2cpp-native: base_math
+class Math::DomainError < StandardError
+end
+# bc2cpp-native: base_math
+module Math
+  def acos: (untyped) -> Float
+  def acosh: (untyped) -> Float
+  def asin: (untyped) -> Float
+  def asinh: (untyped) -> Float
+  def atan: (untyped) -> Float
   def atan2: (Numeric, Numeric) -> Float
-  def atanh: (*untyped) -> Float
-  def cbrt: (*untyped) -> Float
-  def cos: (*untyped) -> Float
-  def cosh: (*untyped) -> Float
-  def erf: (*untyped) -> Float
-  def erfc: (*untyped) -> Float
-  def exp: (*untyped) -> Float
-  def expm1: (*untyped) -> Float
-  def frexp: (*untyped) -> Integer
+  def atanh: (untyped) -> Float
+  def cbrt: (untyped) -> Float
+  def cos: (untyped) -> Float
+  def cosh: (untyped) -> Float
+  def erf: (untyped) -> Float
+  def erfc: (untyped) -> Float
+  def exp: (untyped) -> Float
+  def expm1: (untyped) -> Float
+  def frexp: (untyped) -> Integer
   def hypot: (Numeric, Numeric) -> Float
   def ldexp: (Numeric, Numeric) -> Float
   def log: (Numeric, ?Numeric) -> Float
-  def log10: (*untyped) -> Float
-  def log1p: (*untyped) -> Float
-  def log2: (*untyped) -> Float
-  def sin: (*untyped) -> Float
-  def sinh: (*untyped) -> Float
-  def sqrt: (*untyped) -> Float
-  def tan: (*untyped) -> Float
-  def tanh: (*untyped) -> Float
-  def self.acos: (*untyped) -> Float
-  def self.acosh: (*untyped) -> Float
-  def self.asin: (*untyped) -> Float
-  def self.asinh: (*untyped) -> Float
-  def self.atan: (*untyped) -> Float
+  def log10: (untyped) -> Float
+  def log1p: (untyped) -> Float
+  def log2: (untyped) -> Float
+  def sin: (untyped) -> Float
+  def sinh: (untyped) -> Float
+  def sqrt: (untyped) -> Float
+  def tan: (untyped) -> Float
+  def tanh: (untyped) -> Float
+  def self.acos: (untyped) -> Float
+  def self.acosh: (untyped) -> Float
+  def self.asin: (untyped) -> Float
+  def self.asinh: (untyped) -> Float
+  def self.atan: (untyped) -> Float
   def self.atan2: (Numeric, Numeric) -> Float
-  def self.atanh: (*untyped) -> Float
-  def self.cbrt: (*untyped) -> Float
-  def self.cos: (*untyped) -> Float
-  def self.cosh: (*untyped) -> Float
-  def self.erf: (*untyped) -> Float
-  def self.erfc: (*untyped) -> Float
-  def self.exp: (*untyped) -> Float
-  def self.expm1: (*untyped) -> Float
-  def self.frexp: (*untyped) -> Integer
+  def self.atanh: (untyped) -> Float
+  def self.cbrt: (untyped) -> Float
+  def self.cos: (untyped) -> Float
+  def self.cosh: (untyped) -> Float
+  def self.erf: (untyped) -> Float
+  def self.erfc: (untyped) -> Float
+  def self.exp: (untyped) -> Float
+  def self.expm1: (untyped) -> Float
+  def self.frexp: (untyped) -> Integer
   def self.hypot: (Numeric, Numeric) -> Float
   def self.ldexp: (Numeric, Numeric) -> Float
   def self.log: (Numeric, ?Numeric) -> Float
-  def self.log10: (*untyped) -> Float
-  def self.log1p: (*untyped) -> Float
-  def self.log2: (*untyped) -> Float
-  def self.sin: (*untyped) -> Float
-  def self.sinh: (*untyped) -> Float
-  def self.sqrt: (*untyped) -> Float
-  def self.tan: (*untyped) -> Float
-  def self.tanh: (*untyped) -> Float
+  def self.log10: (untyped) -> Float
+  def self.log1p: (untyped) -> Float
+  def self.log2: (untyped) -> Float
+  def self.sin: (untyped) -> Float
+  def self.sinh: (untyped) -> Float
+  def self.sqrt: (untyped) -> Float
+  def self.tan: (untyped) -> Float
+  def self.tanh: (untyped) -> Float
 end
 
 # bc2cpp-native: base_math
@@ -1402,28 +1411,28 @@ end
 
 # bc2cpp-native: base_numeric
 class Integer
-  def self.sqrt: (*untyped) -> Integer
+  def self.sqrt: (untyped) -> Integer
 end
 
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_random
 class Array
   def sample: (*untyped) -> untyped
-  def shuffle: (*untyped) -> Array
+  def shuffle: (?untyped) -> Array
   def shuffle!: (*untyped) -> untyped
 end
 
 # bc2cpp-native: base_random
 class Kernel
-  def rand: (*untyped) -> untyped
-  def srand: (*untyped) -> untyped
+  def rand: (?untyped) -> untyped
+  def srand: (?untyped) -> untyped
 end
 
 # bc2cpp-native: base_random
 class Random
-  def self.bytes: (*untyped) -> untyped
-  def self.rand: (*untyped) -> untyped
-  def self.srand: (*untyped) -> untyped
+  def self.bytes: (untyped) -> untyped
+  def self.rand: (?untyped) -> untyped
+  def self.srand: (?untyped) -> untyped
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -7491,22 +7500,23 @@ end
 
 # bc2cpp-native: base_stringio
 class StringIO
-  def close: (*untyped) -> nil
-  def closed?: (*untyped) -> bool
-  def eof?: (*untyped) -> bool
+  def close: () -> nil
+  def closed?: () -> bool
+  def eof?: () -> bool
+  def getbyte: () -> untyped
   def getc: (*untyped) -> untyped
   def gets: (*untyped) -> untyped
   def initialize: (?String, ?String) -> self
   def initialize_copy: (untyped) -> untyped
-  def lineno: (*untyped) -> Integer
+  def lineno: () -> Integer
   def lineno=: (Numeric) -> Integer
-  def pos: (*untyped) -> Integer
+  def pos: () -> Integer
   def pos=: (Numeric) -> Integer
   def read: (?untyped, ?untyped) -> untyped
   def reopen: (*untyped) -> untyped
-  def rewind: (*untyped) -> Integer
+  def rewind: () -> Integer
   def seek: (Numeric, ?untyped) -> Integer
-  def size: (*untyped) -> Integer
+  def size: () -> Integer
   def write: (untyped) -> Integer
 end
 
@@ -7517,7 +7527,7 @@ class Time
   def self.gm: (Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> untyped
   def self.local: (Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> untyped
   def self.mktime: (Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> untyped
-  def self.now: (*untyped) -> untyped
+  def self.now: () -> untyped
   def self.utc: (Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> untyped
 end
 
