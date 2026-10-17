@@ -983,6 +983,12 @@ jobs:
           ar t build-closed-bc2cpp/closed/lib/libmruby.a | grep -qx 'error-cxx.o'
           nm build-closed-bc2cpp/closed/lib/libmruby.a 2>/dev/null | grep -q ' U __cxa_throw$'
 
+      # BASE_RBS (scripts/bc2cpp/base_rbs_all.rb): base stubs for every gem, from the Ruby AST and clang -E over the
+      # native sources. Written under the closed build; nothing reads them as compiler inputs (sig/ is not touched).
+      - name: Base RBS for every gem
+        timeout-minutes: 10
+        run: ruby scripts/bc2cpp/base_rbs_all.rb build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
+
       # TYPE_CHECK (docs/adr/0412): a declared type the analysis contradicts (TC1001, TC1007) or a signature or
       # annotation bc2cpp cannot use (TC1002, TC1004) is an error, and only errors set the exit status. Running it
       # here makes those violations fail the job instead of waiting for someone to run the check by hand.
