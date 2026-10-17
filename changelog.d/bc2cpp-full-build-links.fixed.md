@@ -1,0 +1,1 @@
+- The full (non-hot-only) bc2cpp closed build now links: direct construction uses the owner-class cache for listed targets without a hand-wired `<Owner>_compiled_class()` accessor, instead of referencing an accessor that was never defined.
