@@ -1335,6 +1335,7 @@ jobs:
               ruby scripts/bc2cpp/native_result_facts_check.rb
               ruby scripts/bc2cpp/native_sigs_check.rb
               ruby scripts/bc2cpp/core_facts_rbs_check.rb
+              ruby scripts/bc2cpp/base_rbs_check.rb
               ruby scripts/bc2cpp/tuple_return_check.rb
               ruby scripts/bc2cpp/register_flow_check.rb
               ruby scripts/bc2cpp/foreign_definers_cache_check.rb
