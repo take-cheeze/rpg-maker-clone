@@ -1110,15 +1110,6 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_math
 module Math
-  def sin: (untyped) -> Float
-  def self.sin: (untyped) -> Float
-end
-
-# bc2cpp-native: base_math
-class Math::DomainError < StandardError
-end
-# bc2cpp-native: base_math
-module Math
   def acos: (untyped) -> Float
   def acosh: (untyped) -> Float
   def asin: (untyped) -> Float
@@ -1180,8 +1171,8 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_math-wio
 module Math
-  def sin: (*untyped) -> Float
-  def self.sin: (*untyped) -> Float
+  def sin: (untyped) -> Float
+  def self.sin: (untyped) -> Float
 end
 
 # bc2cpp-native: base_math-wio
