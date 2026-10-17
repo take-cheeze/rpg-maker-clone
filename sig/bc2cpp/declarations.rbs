@@ -1857,8 +1857,6 @@ end
 # runtime-checked hint (%a{bc2cpp:hint}); a body that returns another class raises BC2cppHintViolation.
 class Array
   %a{bc2cpp:hint}
-  def each_index: () -> Array
-  %a{bc2cpp:hint}
   def include?: (untyped) -> bool
   %a{bc2cpp:hint}
   def reject!: () -> (Array | nil)
