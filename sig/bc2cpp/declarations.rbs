@@ -1145,3 +1145,710 @@ class RPG2k::Scene::Map
   def set_map_layers_visible: (untyped) -> bool
   def store_event_draw_sig: (untyped, untyped, untyped) -> bool
 end
+
+# ---- single-class traced types (trace_types.rb candidates over the 13 workloads, BC2CPP_TRACE_TYPES)
+# Only methods whose traced parameters and returns each name one class (no union), and that the sections above do not
+# already declare. Candidates stay reviewable; the loader applies them as the other trace-derived sections do.
+class Array
+  def delete_if: () -> untyped
+  def each: () -> untyped
+  def sort: () -> untyped
+  def uniq: () -> untyped
+end
+
+class Enumerable
+end
+
+class Game::Actor
+  def adjust_equipment_states: (untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def battle_row: () -> Integer
+  %a{bc2cpp:hint}
+  def calc_exp: (untyped) -> Integer
+  def class_changed?: () -> untyped
+  def class_name: () -> untyped
+  %a{bc2cpp:hint}
+  def db_exp_param: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def display_max_hp: () -> Integer
+  %a{bc2cpp:hint}
+  def display_max_mp: () -> Integer
+  def double_hand?: () -> untyped
+  def equip: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def equip_bonus: (untyped) -> Integer
+  def equipment_fixed?: () -> untyped
+  %a{bc2cpp:hint}
+  def exp_max: () -> Integer
+  def force_ai?: () -> untyped
+  %a{bc2cpp:hint}
+  def learn_level_skills: () -> Array
+  %a{bc2cpp:hint}
+  def max_hp_cap: () -> Integer
+  def name_changed?: () -> untyped
+  def next_level_exp: () -> untyped
+  def recompute_stats: () -> untyped
+  def sprite_changed?: () -> untyped
+  def state_cursed?: () -> untyped
+  def strong_defence?: () -> untyped
+  def title_changed?: () -> untyped
+end
+
+class Game::Actors
+  %a{bc2cpp:hint}
+  def all: () -> Array
+end
+
+class Game::Character
+  %a{bc2cpp:hint}
+  def face: (untyped) -> Integer
+  def move: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def set_graphic: (untyped, untyped) -> Integer
+end
+
+class Game::ChipSet
+  def elevated?: (untyped) -> untyped
+  def passable?: (untyped, untyped) -> untyped
+  def passable_tile?: (untyped, untyped, untyped) -> untyped
+end
+
+class Game::Interpreter
+  def block_pending_screen_command: () -> untyped
+  def block_pending_teleport_command: () -> untyped
+  def check_game_over: () -> untyped
+  def choose: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def consume: () -> Integer
+  def do_change_actor_sprite: (untyped) -> untyped
+  def do_change_party: (untyped) -> untyped
+  def do_show_screen: (untyped) -> untyped
+  def do_teleport: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def enter_called_list: (untyped, untyped) -> Integer
+  %a{bc2cpp:hint}
+  def identity_target: (untyped) -> Game::Actor
+  def message_window_blocks_command?: () -> untyped
+  %a{bc2cpp:hint}
+  def random_operand: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def resolve_call: (untyped) -> Array
+  def resumable_index: () -> untyped
+  def resume: () -> untyped
+  def return_from_call: () -> untyped
+  def show_next_pending_message: () -> untyped
+  %a{bc2cpp:hint}
+  def switches: () -> Game::Switches
+  %a{bc2cpp:hint}
+  def variables: () -> Game::Variables
+end
+
+class Game::MessageConfig
+  def clear_face: () -> untyped
+  def face?: () -> untyped
+end
+
+class Game::MoveRoute
+  def advance_cursor: () -> untyped
+  %a{bc2cpp:hint}
+  def do_move: (untyped, untyped, untyped) -> Array
+  def done?: () -> untyped
+  def empty?: () -> untyped
+  %a{bc2cpp:hint}
+  def execute: (untyped, untyped, untyped) -> Array
+  def initialize: (untyped) -> untyped
+  def step: (untyped, untyped) -> untyped
+end
+
+class Game::Party
+  def apply_actor_meta: (untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def effective_agi: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def effective_atk: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def effective_def: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def effective_int: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def equip_candidates: (untyped) -> Array
+  %a{bc2cpp:hint}
+  def field_items: () -> Array
+  %a{bc2cpp:hint}
+  def field_skills: (untyped) -> Array
+  %a{bc2cpp:hint}
+  def gain_item: (untyped) -> Integer
+  def include_actor?: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def load_state: (untyped) -> Array
+  %a{bc2cpp:hint}
+  def modified_stat: (untyped, untyped, untyped) -> Integer
+  def remove_actor: (untyped) -> untyped
+  def stat_mode: (untyped, untyped) -> untyped
+  def take_leader_graphic_dirty: () -> untyped
+end
+
+class Game::Rng
+  %a{bc2cpp:hint}
+  def next_int: () -> Integer
+  %a{bc2cpp:hint}
+  def random: (untyped) -> Integer
+end
+
+class Game::Screen
+  def busy?: () -> untyped
+  %a{bc2cpp:hint}
+  def erase: (untyped) -> Game::Transition
+  %a{bc2cpp:hint}
+  def fade_level: () -> Integer
+  def fading?: () -> untyped
+  def flashing?: () -> untyped
+  def load_h: (untyped) -> untyped
+  def pan_clear: () -> untyped
+  def pan_locked?: () -> untyped
+  %a{bc2cpp:hint}
+  def pan_save_data: () -> Array
+  def panning?: () -> untyped
+  %a{bc2cpp:hint}
+  def shake_offset: () -> Integer
+  def shaking?: () -> untyped
+  %a{bc2cpp:hint}
+  def tint_save_data: () -> Array
+  def tinting?: () -> untyped
+  def update: () -> untyped
+  def update_flash: () -> untyped
+end
+
+class Game::State
+  %a{bc2cpp:hint}
+  def bgm_chunk: (untyped) -> LCF::Array1D
+  def clear_parallax: () -> untyped
+  def erase_all_pictures: () -> untyped
+  %a{bc2cpp:hint}
+  def seed_screen_transitions: (untyped) -> Array
+  %a{bc2cpp:hint}
+  def seed_vehicle_positions: (untyped) -> Array
+  def update_pictures: () -> untyped
+end
+
+class Game::Switches
+  def clear_dirty: () -> untyped
+  def replace: (untyped) -> untyped
+  def to_h: () -> untyped
+end
+
+class Game::TextReveal
+  def auto_close?: () -> untyped
+  def done?: () -> untyped
+  def initialize: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def release_pause: () -> Integer
+  %a{bc2cpp:hint}
+  def reveal_all: () -> Integer
+  %a{bc2cpp:hint}
+  def speed_at: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def through_instant: (untyped) -> Integer
+end
+
+class Game::Transition
+  %a{bc2cpp:hint}
+  def advance: () -> Integer
+  %a{bc2cpp:hint}
+  def black_alpha: () -> Integer
+  def captured?: () -> untyped
+  def done?: () -> untyped
+  def random_blocks?: () -> untyped
+  def uniform?: () -> untyped
+end
+
+class Game::Variables
+  def clear_dirty: () -> untyped
+  def replace: (untyped) -> untyped
+  def to_h: () -> untyped
+end
+
+class Game::Vehicle
+  def initialize: (untyped) -> untyped
+  def placed?: () -> untyped
+end
+
+class Game::Weather
+  def none?: () -> untyped
+  %a{bc2cpp:hint}
+  def set: (untyped, untyped) -> Integer
+end
+
+class Hash
+  def select: () -> untyped
+end
+
+class Integer
+end
+
+class LCF
+  def binstr: (untyped) -> untyped
+  def elements_of: (untyped) -> untyped
+  def encode_event_commands: (untyped) -> untyped
+  def pack_int16: (untyped) -> untyped
+  def pack_int32: (untyped) -> untyped
+  def unpack_double: (untyped) -> untyped
+  def write_ber: (untyped) -> untyped
+end
+
+class LCF::Array1D
+  def sym2idx: () -> untyped
+  def to_lcf: () -> untyped
+end
+
+class LCF::Array2D
+  def to_lcf: () -> untyped
+end
+
+class LCF::Database
+  def header: () -> untyped
+  def schema: () -> untyped
+end
+
+class LCF::File
+  %a{bc2cpp:hint}
+  def save_to: (untyped) -> Integer
+  def terminate_root?: () -> untyped
+  def to_lcf: () -> untyped
+end
+
+class LCF::MapTree
+  def header: () -> untyped
+  %a{bc2cpp:hint}
+  def schema: () -> Array
+end
+
+class LCF::MapUnit
+  def header: () -> untyped
+  def schema: () -> untyped
+end
+
+class LCF::SaveData
+  def header: () -> untyped
+  def schema: () -> untyped
+end
+
+class LCF::Sections
+  def field?: (untyped) -> untyped
+end
+
+class Numeric
+  def negative?: () -> untyped
+end
+
+class RGSS::Bitmap
+  def font: () -> untyped
+  def initialize: (untyped) -> untyped
+end
+
+class RPG2k
+  def any_save_exists?: () -> untyped
+  def battle_play_requested?: () -> untyped
+  %a{bc2cpp:hint}
+  def boot_title_or_new_game: () -> Array
+  def chipset_editor?: () -> untyped
+  def headless_battle_troop: () -> untyped
+  def hide_title?: () -> untyped
+  def initialize: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def load_map: (untyped) -> Game::Map
+  def lsd_path: () -> untyped
+  def main_loop: () -> untyped
+  def map_editor?: () -> untyped
+  def map_path: (untyped) -> untyped
+  def maybe_battle_play_test: () -> untyped
+  def pop: () -> untyped
+  def preview_animation_id: () -> untyped
+  def preview_map_id: () -> untyped
+  %a{bc2cpp:hint}
+  def push_title_screen: () -> Array
+  def read_ini_title: () -> untyped
+  def save_exists?: () -> untyped
+  def save_game: (untyped) -> untyped
+  def show_title?: () -> untyped
+  def start_new_game: () -> untyped
+  def trim_ini_value: (untyped) -> untyped
+end
+
+class RPG2k::Scene::Base
+  def build_field_background: (untyped) -> untyped
+  def db_system_se: (untyped) -> untyped
+  def draw_actor_state: (untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+  def make_windowskin: () -> untyped
+  def normal_status_term: () -> untyped
+  def play_system_se: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def state_display: (untyped) -> Array
+  def system_se: (untyped) -> untyped
+  def term: (untyped) -> untyped
+end
+
+class RPG2k::Scene::Battle
+  def tick_battle_list_arrows: () -> untyped
+  def update: () -> untyped
+  %a{bc2cpp:hint}
+  def update_enemy_flashes: () -> Array
+  def update_enemy_positions: () -> untyped
+end
+
+class RPG2k::Scene::EquipMenu
+  %a{bc2cpp:hint}
+  def actor: () -> Game::Actor
+  %a{bc2cpp:hint}
+  def base_stat: (untyped, untyped) -> Integer
+  def build_arrow_sprite: (untyped) -> untyped
+  def build_arrow_sprites: () -> untyped
+  def build_desc_window: () -> untyped
+  def build_slot_window: () -> untyped
+  def build_stats_window: () -> untyped
+  %a{bc2cpp:hint}
+  def cand_col_w: () -> Integer
+  %a{bc2cpp:hint}
+  def cand_col_x: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def cand_row_count: () -> Integer
+  %a{bc2cpp:hint}
+  def draw_stat_row: (untyped, untyped) -> Array
+  %a{bc2cpp:hint}
+  def effective_stat: (untyped, untyped) -> Integer
+  def item_name: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def item_stat: (untyped, untyped) -> Integer
+  def leave_items: () -> untyped
+  def move_cand_cursor: (untyped) -> untyped
+  def move_slot_cursor: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def other_hand_item: () -> Integer
+  def refresh_desc: () -> untyped
+  def refresh_slot_cursor: () -> untyped
+  %a{bc2cpp:hint}
+  def stat_field_delta: (untyped, untyped) -> Integer
+  def tick_arrows: () -> untyped
+end
+
+class RPG2k::Scene::EventResolver
+  def initialize: (untyped, untyped) -> untyped
+end
+
+class RPG2k::Scene::GameOver
+  %a{bc2cpp:hint}
+  def database_gameover_bgm: () -> Array
+  def gameover_bgm_override: () -> untyped
+  def gameover_bitmap: () -> untyped
+  def play_gameover_bgm: () -> untyped
+  def update: () -> untyped
+end
+
+class RPG2k::Scene::ItemMenu
+  def build_arrow_sprite: (untyped, untyped) -> untyped
+  def build_arrow_sprites: () -> untyped
+  def build_desc_window: () -> untyped
+  def choose_item: () -> untyped
+  def dispose: () -> untyped
+  %a{bc2cpp:hint}
+  def item_col_w: () -> Integer
+  %a{bc2cpp:hint}
+  def items: () -> Array
+  def refresh_arrows: () -> untyped
+  def refresh_desc: () -> untyped
+  def tick_arrows: () -> untyped
+  def update: () -> untyped
+  def update_items: () -> untyped
+end
+
+class RPG2k::Scene::Map
+  def advance_player_slide: () -> untyped
+  %a{bc2cpp:hint}
+  def advance_slide: (untyped, untyped, untyped) -> Array
+  %a{bc2cpp:hint}
+  def anim_frame_period: (untyped) -> Integer
+  def apply_battle_animation_request: (untyped) -> untyped
+  def apply_graphic_change: (untyped) -> untyped
+  def apply_halt_request: (untyped) -> untyped
+  def apply_map_access: () -> untyped
+  def apply_move_request: (untyped, untyped) -> untyped
+  def apply_movie_request: (untyped) -> untyped
+  def apply_parallax_request: (untyped) -> untyped
+  def apply_tile_substitution: (untyped) -> untyped
+  def apply_tileset_request: (untyped) -> untyped
+  def apply_vehicle_toggle: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def auto_message_position: (untyped) -> Integer
+  def blt_bushed: (untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def build_chipset: () -> Game::ChipSet
+  %a{bc2cpp:hint}
+  def build_event: (untyped, untyped, untyped, untyped) -> RPG2k::Scene::Map::MapEventState
+  %a{bc2cpp:hint}
+  def build_events: () -> Array
+  def build_parallels: () -> untyped
+  %a{bc2cpp:hint}
+  def build_resolver: () -> RPG2k::Scene::EventResolver
+  %a{bc2cpp:hint}
+  def bush_depth_at: (untyped, untyped) -> Integer
+  %a{bc2cpp:hint}
+  def bush_pixels_at: (untyped, untyped) -> Integer
+  def char_passable?: (untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def choice_row_indent: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def clamp_speed: (untyped) -> Integer
+  def close_message: () -> untyped
+  %a{bc2cpp:hint}
+  def constrained_scale: (untyped) -> Integer
+  def dispose_parallax: () -> untyped
+  def draw_event_charset: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def draw_event_tile: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def draw_events: (untyped, untyped) -> Array
+  def draw_map_animation: (untyped, untyped) -> untyped
+  def draw_message_contents: () -> untyped
+  def draw_message_face: () -> untyped
+  def draw_message_run: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def draw_one_timer: (untyped, untyped) -> untyped
+  def draw_parallax: (untyped, untyped) -> untyped
+  def draw_pictures: (untyped, untyped) -> untyped
+  def draw_transition_mask: (untyped) -> untyped
+  def drive_autostart_cascade: () -> untyped
+  def drive_message_pause: (untyped, untyped, untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def effective_message_position: (untyped, untyped) -> Integer
+  def event_charset: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def event_pixel: (untyped) -> Array
+  def event_target_buffer: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def force_event_route: (untyped, untyped, untyped) -> Integer
+  def forced_movement_done?: () -> untyped
+  %a{bc2cpp:hint}
+  def hero_screen_y: () -> Integer
+  %a{bc2cpp:hint}
+  def index_event_tile: (untyped, untyped, untyped) -> Array
+  def load_chipset_graphic: () -> untyped
+  def load_face: (untyped) -> untyped
+  def load_windowskin: () -> untyped
+  %a{bc2cpp:hint}
+  def map_properties: () -> LCF::Array2D
+  %a{bc2cpp:hint}
+  def message_line_offset: (untyped) -> Integer
+  def message_window_open?: () -> untyped
+  %a{bc2cpp:hint}
+  def message_window_y: (untyped, untyped) -> Integer
+  %a{bc2cpp:hint}
+  def page_anim_type: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def page_charset_index: (untyped) -> Integer
+  def page_charset_name: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def page_commands: (untyped) -> Array
+  def page_condition_ids: (untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def page_direction: (untyped) -> Integer
+  def page_guarded: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def page_layer: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def page_move_frequency: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def page_move_speed: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def page_move_type: (untyped) -> Integer
+  def page_overlap_forbidden: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def page_pattern: (untyped) -> Integer
+  def page_translucent: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def page_trigger: (untyped) -> Integer
+  def parallax_config: () -> untyped
+  def perform_teleport: (untyped) -> untyped
+  def play_map_bgm: () -> untyped
+  %a{bc2cpp:hint}
+  def player_bush_depth: () -> Integer
+  def player_hidden?: () -> untyped
+  %a{bc2cpp:hint}
+  def player_jump_offset: () -> Integer
+  %a{bc2cpp:hint}
+  def rebuild_event_tiles: () -> Array
+  def record_map_event_positions: () -> untyped
+  def record_parallel_progress: (untyped) -> untyped
+  def refresh_event_pages: () -> untyped
+  def release_random_blocks_transition: () -> untyped
+  def release_transition_capture: () -> untyped
+  def reoccupy: (untyped, untyped, untyped) -> untyped
+  def restore_foreground_event_exec: () -> untyped
+  def restore_player_route: () -> untyped
+  def run_route_step: (untyped, untyped, untyped) -> untyped
+  def set_choice_cursor: () -> untyped
+  def setup_parallax: () -> untyped
+  def setup_pictures: () -> untyped
+  def setup_screen_overlay: () -> untyped
+  def setup_sprites: () -> untyped
+  def speak_message: (untyped) -> untyped
+  def start_autostart: () -> untyped
+  def start_event_slide: (untyped, untyped, untyped) -> untyped
+  def step_battle_owner_parallel: () -> untyped
+  def step_forced_event: (untyped) -> untyped
+  def step_forced_movement: () -> untyped
+  def step_ownerless_map_animation: () -> untyped
+  def step_parallel: (untyped) -> untyped
+  def step_player_route: () -> untyped
+  def step_vehicle_route: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def step_vehicle_routes: () -> Array
+  %a{bc2cpp:hint}
+  def store_event_draw_sigs: () -> Array
+  %a{bc2cpp:hint}
+  def terrain_row_at: (untyped, untyped) -> LCF::Array1D
+  def tick_flash: (untyped) -> untyped
+  def try_open_debug_menu: () -> untyped
+  def update: () -> untyped
+  def update_map_tone: (untyped) -> untyped
+  def update_vehicle_flashes: () -> untyped
+  %a{bc2cpp:hint}
+  def valid_move_freq: (untyped) -> Integer
+  def vehicle_blocks?: (untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def walk_slide_step: (untyped) -> Integer
+end
+
+class RPG2k::Scene::Map::LRUBitmapCache
+  %a{bc2cpp:hint}
+  def bitmap_bytes: (untyped) -> Integer
+  def evict_lru_until_within_budget: () -> untyped
+  def key?: (untyped) -> untyped
+end
+
+class RPG2k::Scene::MapWorld
+  def passable?: (untyped, untyped) -> untyped
+end
+
+class RPG2k::Scene::Menu
+  def build_gold_window: () -> untyped
+  def build_windows: () -> untyped
+  def command_disabled?: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def draw_command_labels: (untyped) -> Array
+  def draw_gold_window: () -> untyped
+  def draw_status_exp: (untyped, untyped, untyped) -> untyped
+  def draw_status_row: (untyped, untyped, untyped) -> untyped
+  def draw_status_stat: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+  def load_face_bitmap: (untyped) -> untyped
+  def refresh_cursor: () -> untyped
+  def update: () -> untyped
+  def update_command: () -> untyped
+end
+
+class RPG2k::Scene::Order
+  def build_windows: () -> untyped
+  def enter_confirm: () -> untyped
+  def pick_current: () -> untyped
+  def redo_picks: () -> untyped
+  def refresh_confirm_cursor: () -> untyped
+  def refresh_left_cursor: () -> untyped
+  def refresh_left_window: () -> untyped
+  def refresh_right_window: () -> untyped
+end
+
+class RPG2k::Scene::SaveLoad
+  def build_arrow_sprites: () -> untyped
+  def build_header_window: () -> untyped
+  %a{bc2cpp:hint}
+  def build_slot_windows: () -> Array
+  def confirm_selection: () -> untyped
+  def dispose: () -> untyped
+  def draw_level_hp: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def draw_slot_box: (untyped, untyped, untyped) -> untyped
+  def fixed_width_term: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def initial_index: () -> Integer
+  def refresh_arrows: () -> untyped
+  %a{bc2cpp:hint}
+  def refresh_slot_windows: () -> Array
+  def tick_arrows: () -> untyped
+  def update: () -> untyped
+end
+
+class RPG2k::Scene::SkillMenu
+  def build_arrow_sprite: (untyped, untyped) -> untyped
+  def build_arrow_sprites: () -> untyped
+  def build_desc_window: () -> untyped
+  def build_skill_window: () -> untyped
+  def build_status_window: () -> untyped
+  %a{bc2cpp:hint}
+  def caster: () -> Game::Actor
+  def choose_skill: () -> untyped
+  def dispose: () -> untyped
+  def draw_stat_pair: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+  def move_skill_cursor: (untyped) -> untyped
+  def refresh_desc: () -> untyped
+  %a{bc2cpp:hint}
+  def skills: () -> Array
+  def tick_arrows: () -> untyped
+  def update: () -> untyped
+  def update_skills: () -> untyped
+end
+
+class RPG2k::Scene::StatusMenu
+  def build_windows: () -> untyped
+  %a{bc2cpp:hint}
+  def dispose: () -> Array
+  def draw_actor_panel: (untyped) -> untyped
+  def draw_equipment: (untyped) -> untyped
+  def draw_gauges: (untyped) -> untyped
+  def draw_gold: () -> untyped
+  def draw_params: (untyped) -> untyped
+  def item_name: (untyped) -> untyped
+  def load_face_bitmap: (untyped) -> untyped
+  def new_contents: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def new_window: (untyped, untyped, untyped, untyped) -> RPG2k::Window
+  def refresh: () -> untyped
+  def rpg2003_party?: () -> untyped
+  def update: () -> untyped
+  %a{bc2cpp:hint}
+  def windows: () -> Array
+end
+
+class RPG2k::Scene::Title
+  def auto_continue?: () -> untyped
+  def auto_new_game?: () -> untyped
+  def auto_select?: () -> untyped
+  def battle_troop: () -> untyped
+  def chipset_editor_flag?: () -> untyped
+  def continue_available?: () -> untyped
+  def dispose: () -> untyped
+  def hide_title?: () -> untyped
+  def load_title_picture: () -> untyped
+  def load_windowskin: () -> untyped
+  def map_editor_flag?: () -> untyped
+  def new_game_flag?: () -> untyped
+  def play_title_bgm: () -> untyped
+  def preview_animation_id: () -> untyped
+  def preview_map_id: () -> untyped
+  def refresh_cursor: () -> untyped
+  def update: () -> untyped
+end
+
+class RPG2k::Window
+  def allocate_skin: () -> untyped
+  def closing?: () -> untyped
+  def dispose: () -> untyped
+  def draw_arrow: () -> untyped
+  def draw_arrow_visibility: () -> untyped
+  def draw_background: (untyped, untyped) -> untyped
+  def draw_cursor: () -> untyped
+  def draw_fallback: (untyped, untyped) -> untyped
+  %a{bc2cpp:hint}
+  def drawn_height: () -> Integer
+  def fully_open?: () -> untyped
+  def open_animation: (untyped) -> untyped
+  def redraw_for_animation: () -> untyped
+end
+
+class Range
+end
