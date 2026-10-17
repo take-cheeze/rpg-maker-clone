@@ -1,0 +1,1 @@
+- **bc2cpp** an untyped receiver of a zero-argument block iterator (`each`, `map`, `select`, ...) on an Array or Hash runs the inlined loop behind an exact-class test in the closed build too, where mruby's own `Array#each` is not compiled. `Game::Party#initialize` is the first such site. See ADR 0483.
