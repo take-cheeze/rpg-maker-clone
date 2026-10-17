@@ -1,0 +1,1 @@
+- bc2cpp: the type check gives each untyped parameter the methods the body sends to it, and `--emit-rbs` writes one RBS interface per parameter (`_param_calls.rbs`).

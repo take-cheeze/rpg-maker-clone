@@ -36,6 +36,7 @@
 # BC2CPP_TOOLS_DIR: another copy of tools/bc2cpp (a mutant of type_check_mutation_check.rb).
 TOOLS = ENV['BC2CPP_TOOLS_DIR'] || File.expand_path('../../tools/bc2cpp', __dir__)
 $LOAD_PATH.unshift(TOOLS)
+require 'type_check_rbs'
 require 'json'
 require 'optparse'
 require 'tmpdir'
@@ -88,6 +89,7 @@ else
   end
 end
 
+facts['param_calls'] = opts[:sends] ? TypeCheckRbs.param_calls(rows, facts, scope: opts[:scope]) : []
 suggestions = opts[:sends] ? TypeCheckReport.suggestions(facts, rows, scope: opts[:scope]) : []
 diags = TypeCheckReport.diagnostics(facts, suggestions, all: opts[:all], top: opts[:top], scope: opts[:scope])
 summary = TypeCheckReport.summary(facts, scope: opts[:scope])

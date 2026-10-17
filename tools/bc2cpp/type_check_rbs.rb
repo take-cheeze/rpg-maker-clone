@@ -107,6 +107,46 @@ module TypeCheckRbs
   end
 
   # Writes the files; returns { files:, methods:, skipped: [[reason, what]] }.
+  # PARAM_CALLS: for each mandatory parameter of a method that has no type yet, the method names the body sends to
+  # that parameter (the send rows whose receiver is that argument register). `rows` are the receiver-proof rows of
+  # the run (TypeCheckReport.load_rows); only identifier-like names are kept, since an RBS interface names methods.
+  PARAM_CALL_NAME = /\A[a-z_]\w*[?!]?\z/.freeze
+
+  def param_calls(rows, facts, scope: 'engine')
+    methods = facts['methods'].select { |m| scope == 'all' || m['scope'] == scope }
+    untyped = methods.each_with_object({}) do |m, h|
+      m['params'].each_with_index { |p, i| h[[m['owner'], m['name'], i + 1]] = p['name'] unless p['type'] }
+    end
+    calls = Hash.new { |h, k| h[k] = Set.new }
+    rows.each do |r|
+      next unless r['source'] == 'argument'
+
+      k = r['detail'].to_s[/\Aarg(\d+)\z/, 1]&.to_i or next
+      owner, meth = r['owner'].to_s.split('#', 2)
+      key = [owner, meth, k]
+      next unless untyped.key?(key)
+      next unless r['name'].to_s.match?(PARAM_CALL_NAME)
+
+      calls[key] << r['name']
+    end
+    calls.sort.map do |(owner, name, index), names|
+      { 'owner' => owner, 'name' => name, 'index' => index, 'param' => untyped[[owner, name, index]],
+        'calls' => names.to_a.sort }
+    end
+  end
+
+  # One RBS interface per parameter call fact: the methods the body calls on the parameter, untyped.
+  def interface_name(fact)
+    "_Call#{fact['owner'].gsub(/\W/, '')}#{fact['name'].gsub(/\W/, '')}#{fact['index']}"
+  end
+
+  def interface_lines(facts)
+    (facts['param_calls'] || []).map do |fact|
+      body = fact['calls'].map { |m| "  def #{m}: (*untyped) -> untyped\n" }.join
+      "interface #{interface_name(fact)}\n#{body}end\n"
+    end
+  end
+
   def emit(facts, dir, scope: 'engine')
     core_names, core_has = core_env
     classes = facts['classes'] || []
@@ -185,6 +225,12 @@ module TypeCheckRbs
       path = File.join(dir, *owner.split('::')) + '.rbs'
       FileUtils.mkdir_p(File.dirname(path))
       File.write(path, "#{head}\n#{body.map { |l| "  #{l}\n" }.join}end\n")
+      written << path
+    end
+    if facts['param_calls']&.any?
+      path = File.join(dir, '_param_calls.rbs')
+      File.write(path, "# Parameter call interfaces (TypeCheckRbs.param_calls): the methods a body sends to each parameter.\n" \
+                       "#{interface_lines(facts).join("\n")}")
       written << path
     end
     { files: written, methods: method_count, skipped: skipped }
