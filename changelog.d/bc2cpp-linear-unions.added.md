@@ -1,0 +1,1 @@
+- bc2cpp: a union of two to four checkable return kinds (`Integer | nil`, `Integer | Array[Integer]`) is a runtime-checked kind: the guard is one linear test per member, joined by `||`. Unions with an uncheckable member stay unchecked.
