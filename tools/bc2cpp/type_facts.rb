@@ -125,7 +125,8 @@ module TypeFacts
       warn format('BC2CPP_DETAIL TypeFacts.%-28s %8.3fs', name, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
       value
     end
-    feedback = timed.call('ir_type_feedback') { IrTypeFeedback.collect(ctx) }
+    # IR type feedback is not collected: it dominated the facts write (ADR-free decision, see the commit message).
+    feedback = { rows: [], returns: {} }
     ctx.ir_return_facts = feedback[:returns]
     methods = timed.call('methods') { defs.filter_map { |d| method_row(ctx, gen, d, reader, sites) } }
     ivars = timed.call('ivars') { ivar_rows(ctx, gen, reader) }
