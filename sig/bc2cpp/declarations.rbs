@@ -1150,14 +1150,10 @@ end
 # Only methods whose traced parameters and returns each name one class (no union), and that the sections above do not
 # already declare. Candidates stay reviewable; the loader applies them as the other trace-derived sections do.
 class Array
-  %a{bc2cpp:hint}
-  def delete_if: () -> Array
-  %a{bc2cpp:hint}
-  def each: () -> Array
-  %a{bc2cpp:hint}
-  def sort: () -> Array
-  %a{bc2cpp:hint}
-  def uniq: () -> Array
+  def delete_if: () -> untyped
+  def each: () -> untyped
+  def sort: () -> untyped
+  def uniq: () -> untyped
 end
 
 class Enumerable
@@ -1457,8 +1453,7 @@ class Numeric
 end
 
 class RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def font: () -> RGSS::Font
+  def font: () -> untyped
   def initialize: (untyped) -> untyped
 end
 
@@ -1492,13 +1487,10 @@ class RPG2k
 end
 
 class RPG2k::Scene::Base
-  %a{bc2cpp:hint}
-  def build_field_background: (untyped) -> RGSS::Sprite
+  def build_field_background: (untyped) -> untyped
   def db_system_se: (untyped) -> untyped
-  %a{bc2cpp:hint}
-  def draw_actor_state: (untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def make_windowskin: () -> RGSS::Bitmap
+  def draw_actor_state: (untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+  def make_windowskin: () -> untyped
   def normal_status_term: () -> untyped
   def play_system_se: (untyped) -> untyped
   %a{bc2cpp:hint}
@@ -1522,15 +1514,11 @@ class RPG2k::Scene::EquipMenu
   def actor: () -> Game::Actor
   %a{bc2cpp:hint}
   def base_stat: (untyped, untyped) -> Integer
-  %a{bc2cpp:hint}
-  def build_arrow_sprite: (untyped) -> RGSS::Sprite
+  def build_arrow_sprite: (untyped) -> untyped
   def build_arrow_sprites: () -> untyped
-  %a{bc2cpp:hint}
-  def build_desc_window: () -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def build_slot_window: () -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def build_stats_window: () -> RGSS::Bitmap
+  def build_desc_window: () -> untyped
+  def build_slot_window: () -> untyped
+  def build_stats_window: () -> untyped
   %a{bc2cpp:hint}
   def cand_col_w: () -> Integer
   %a{bc2cpp:hint}
@@ -1544,16 +1532,13 @@ class RPG2k::Scene::EquipMenu
   def item_name: (untyped) -> untyped
   %a{bc2cpp:hint}
   def item_stat: (untyped, untyped) -> Integer
-  %a{bc2cpp:hint}
-  def leave_items: () -> RGSS::Bitmap
+  def leave_items: () -> untyped
   def move_cand_cursor: (untyped) -> untyped
   def move_slot_cursor: (untyped) -> untyped
   %a{bc2cpp:hint}
   def other_hand_item: () -> Integer
-  %a{bc2cpp:hint}
-  def refresh_desc: () -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def refresh_slot_cursor: () -> RGSS::Bitmap
+  def refresh_desc: () -> untyped
+  def refresh_slot_cursor: () -> untyped
   %a{bc2cpp:hint}
   def stat_field_delta: (untyped, untyped) -> Integer
   def tick_arrows: () -> untyped
@@ -1569,18 +1554,15 @@ class RPG2k::Scene::GameOver
   %a{bc2cpp:hint}
   def database_gameover_bgm: () -> Array
   def gameover_bgm_override: () -> untyped
-  %a{bc2cpp:hint}
-  def gameover_bitmap: () -> RGSS::Bitmap
+  def gameover_bitmap: () -> untyped
   def play_gameover_bgm: () -> untyped
   def update: () -> untyped
 end
 
 class RPG2k::Scene::ItemMenu
-  %a{bc2cpp:hint}
-  def build_arrow_sprite: (untyped, untyped) -> RGSS::Sprite
+  def build_arrow_sprite: (untyped, untyped) -> untyped
   def build_arrow_sprites: () -> untyped
-  %a{bc2cpp:hint}
-  def build_desc_window: () -> RGSS::Bitmap
+  def build_desc_window: () -> untyped
   def choose_item: () -> untyped
   def dispose: () -> untyped
   %a{bc2cpp:hint}
@@ -1588,8 +1570,7 @@ class RPG2k::Scene::ItemMenu
   %a{bc2cpp:hint}
   def items: () -> Array
   def refresh_arrows: () -> untyped
-  %a{bc2cpp:hint}
-  def refresh_desc: () -> RGSS::Bitmap
+  def refresh_desc: () -> untyped
   def tick_arrows: () -> untyped
   def update: () -> untyped
   def update_items: () -> untyped
@@ -1614,8 +1595,7 @@ class RPG2k::Scene::Map
   def apply_vehicle_toggle: (untyped) -> untyped
   %a{bc2cpp:hint}
   def auto_message_position: (untyped) -> Integer
-  %a{bc2cpp:hint}
-  def blt_bushed: (untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  def blt_bushed: (untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   %a{bc2cpp:hint}
   def build_chipset: () -> Game::ChipSet
   %a{bc2cpp:hint}
@@ -1640,17 +1620,14 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def deindex_event_tile: (untyped, untyped, untyped) -> Array
   def dispose_parallax: () -> untyped
-  %a{bc2cpp:hint}
-  def draw_event_charset: (untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def draw_event_tile: (untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  def draw_event_charset: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def draw_event_tile: (untyped, untyped, untyped, untyped, untyped) -> untyped
   %a{bc2cpp:hint}
   def draw_events: (untyped, untyped) -> Array
   def draw_map_animation: (untyped, untyped) -> untyped
   def draw_message_contents: () -> untyped
   def draw_message_face: () -> untyped
-  %a{bc2cpp:hint}
-  def draw_message_run: (untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  def draw_message_run: (untyped, untyped, untyped, untyped, untyped) -> untyped
   def draw_one_timer: (untyped, untyped) -> untyped
   def draw_parallax: (untyped, untyped) -> untyped
   def draw_pictures: (untyped, untyped) -> untyped
@@ -1661,12 +1638,10 @@ class RPG2k::Scene::Map
   def drive_message_pause: (untyped, untyped, untyped, untyped) -> untyped
   %a{bc2cpp:hint}
   def effective_message_position: (untyped, untyped) -> Integer
-  %a{bc2cpp:hint}
-  def event_charset: (untyped) -> RGSS::Bitmap
+  def event_charset: (untyped) -> untyped
   %a{bc2cpp:hint}
   def event_pixel: (untyped) -> Array
-  %a{bc2cpp:hint}
-  def event_target_buffer: (untyped) -> RGSS::Bitmap
+  def event_target_buffer: (untyped) -> untyped
   %a{bc2cpp:hint}
   def force_event_route: (untyped, untyped, untyped) -> Integer
   def forced_movement_done?: () -> untyped
@@ -1674,11 +1649,9 @@ class RPG2k::Scene::Map
   def hero_screen_y: () -> Integer
   %a{bc2cpp:hint}
   def index_event_tile: (untyped, untyped, untyped) -> Array
-  %a{bc2cpp:hint}
-  def load_chipset_graphic: () -> RGSS::Bitmap
+  def load_chipset_graphic: () -> untyped
   def load_face: (untyped) -> untyped
-  %a{bc2cpp:hint}
-  def load_windowskin: () -> RGSS::Bitmap
+  def load_windowskin: () -> untyped
   %a{bc2cpp:hint}
   def map_properties: () -> LCF::Array2D
   %a{bc2cpp:hint}
@@ -1730,8 +1703,7 @@ class RPG2k::Scene::Map
   def restore_foreground_event_exec: () -> untyped
   def restore_player_route: () -> untyped
   def run_route_step: (untyped, untyped, untyped) -> untyped
-  %a{bc2cpp:hint}
-  def set_choice_cursor: () -> RGSS::Rect
+  def set_choice_cursor: () -> untyped
   def setup_parallax: () -> untyped
   def setup_pictures: () -> untyped
   def setup_screen_overlay: () -> untyped
@@ -1776,58 +1748,41 @@ class RPG2k::Scene::MapWorld
 end
 
 class RPG2k::Scene::Menu
-  %a{bc2cpp:hint}
-  def build_gold_window: () -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def build_windows: () -> RGSS::Bitmap
+  def build_gold_window: () -> untyped
+  def build_windows: () -> untyped
   def command_disabled?: (untyped) -> untyped
   %a{bc2cpp:hint}
   def draw_command_labels: (untyped) -> Array
-  %a{bc2cpp:hint}
-  def draw_gold_window: () -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def draw_status_exp: (untyped, untyped, untyped) -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def draw_status_row: (untyped, untyped, untyped) -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def draw_status_stat: (untyped, untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  def draw_gold_window: () -> untyped
+  def draw_status_exp: (untyped, untyped, untyped) -> untyped
+  def draw_status_row: (untyped, untyped, untyped) -> untyped
+  def draw_status_stat: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def load_face_bitmap: (untyped) -> untyped
-  %a{bc2cpp:hint}
-  def refresh_cursor: () -> RGSS::Rect
+  def refresh_cursor: () -> untyped
   def update: () -> untyped
   def update_command: () -> untyped
 end
 
 class RPG2k::Scene::Order
   def build_windows: () -> untyped
-  %a{bc2cpp:hint}
-  def enter_confirm: () -> RGSS::Rect
-  %a{bc2cpp:hint}
-  def pick_current: () -> RGSS::Rect
-  %a{bc2cpp:hint}
-  def redo_picks: () -> RGSS::Rect
-  %a{bc2cpp:hint}
-  def refresh_confirm_cursor: () -> RGSS::Rect
-  %a{bc2cpp:hint}
-  def refresh_left_cursor: () -> RGSS::Rect
-  %a{bc2cpp:hint}
-  def refresh_left_window: () -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def refresh_right_window: () -> RGSS::Bitmap
+  def enter_confirm: () -> untyped
+  def pick_current: () -> untyped
+  def redo_picks: () -> untyped
+  def refresh_confirm_cursor: () -> untyped
+  def refresh_left_cursor: () -> untyped
+  def refresh_left_window: () -> untyped
+  def refresh_right_window: () -> untyped
 end
 
 class RPG2k::Scene::SaveLoad
   def build_arrow_sprites: () -> untyped
-  %a{bc2cpp:hint}
-  def build_header_window: () -> RGSS::Bitmap
+  def build_header_window: () -> untyped
   %a{bc2cpp:hint}
   def build_slot_windows: () -> Array
   def confirm_selection: () -> untyped
   def dispose: () -> untyped
-  %a{bc2cpp:hint}
-  def draw_level_hp: (untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def draw_slot_box: (untyped, untyped, untyped) -> RGSS::Rect
+  def draw_level_hp: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def draw_slot_box: (untyped, untyped, untyped) -> untyped
   def fixed_width_term: (untyped) -> untyped
   %a{bc2cpp:hint}
   def initial_index: () -> Integer
@@ -1839,23 +1794,18 @@ class RPG2k::Scene::SaveLoad
 end
 
 class RPG2k::Scene::SkillMenu
-  %a{bc2cpp:hint}
-  def build_arrow_sprite: (untyped, untyped) -> RGSS::Sprite
+  def build_arrow_sprite: (untyped, untyped) -> untyped
   def build_arrow_sprites: () -> untyped
-  %a{bc2cpp:hint}
-  def build_desc_window: () -> RGSS::Bitmap
+  def build_desc_window: () -> untyped
   def build_skill_window: () -> untyped
-  %a{bc2cpp:hint}
-  def build_status_window: () -> RGSS::Bitmap
+  def build_status_window: () -> untyped
   %a{bc2cpp:hint}
   def caster: () -> Game::Actor
   def choose_skill: () -> untyped
   def dispose: () -> untyped
-  %a{bc2cpp:hint}
-  def draw_stat_pair: (untyped, untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
+  def draw_stat_pair: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def move_skill_cursor: (untyped) -> untyped
-  %a{bc2cpp:hint}
-  def refresh_desc: () -> RGSS::Bitmap
+  def refresh_desc: () -> untyped
   %a{bc2cpp:hint}
   def skills: () -> Array
   def tick_arrows: () -> untyped
@@ -1864,28 +1814,20 @@ class RPG2k::Scene::SkillMenu
 end
 
 class RPG2k::Scene::StatusMenu
-  %a{bc2cpp:hint}
-  def build_windows: () -> RGSS::Bitmap
+  def build_windows: () -> untyped
   %a{bc2cpp:hint}
   def dispose: () -> Array
-  %a{bc2cpp:hint}
-  def draw_actor_panel: (untyped) -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def draw_equipment: (untyped) -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def draw_gauges: (untyped) -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def draw_gold: () -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def draw_params: (untyped) -> RGSS::Bitmap
+  def draw_actor_panel: (untyped) -> untyped
+  def draw_equipment: (untyped) -> untyped
+  def draw_gauges: (untyped) -> untyped
+  def draw_gold: () -> untyped
+  def draw_params: (untyped) -> untyped
   def item_name: (untyped) -> untyped
   def load_face_bitmap: (untyped) -> untyped
-  %a{bc2cpp:hint}
-  def new_contents: (untyped) -> RGSS::Bitmap
+  def new_contents: (untyped) -> untyped
   %a{bc2cpp:hint}
   def new_window: (untyped, untyped, untyped, untyped) -> RPG2k::Window
-  %a{bc2cpp:hint}
-  def refresh: () -> RGSS::Bitmap
+  def refresh: () -> untyped
   def rpg2003_party?: () -> untyped
   def update: () -> untyped
   %a{bc2cpp:hint}
@@ -1901,17 +1843,14 @@ class RPG2k::Scene::Title
   def continue_available?: () -> untyped
   def dispose: () -> untyped
   def hide_title?: () -> untyped
-  %a{bc2cpp:hint}
-  def load_title_picture: () -> RGSS::Bitmap
-  %a{bc2cpp:hint}
-  def load_windowskin: () -> RGSS::Bitmap
+  def load_title_picture: () -> untyped
+  def load_windowskin: () -> untyped
   def map_editor_flag?: () -> untyped
   def new_game_flag?: () -> untyped
   def play_title_bgm: () -> untyped
   def preview_animation_id: () -> untyped
   def preview_map_id: () -> untyped
-  %a{bc2cpp:hint}
-  def refresh_cursor: () -> RGSS::Rect
+  def refresh_cursor: () -> untyped
   def update: () -> untyped
 end
 
@@ -1919,14 +1858,11 @@ class RPG2k::Window
   def allocate_skin: () -> untyped
   def closing?: () -> untyped
   def dispose: () -> untyped
-  %a{bc2cpp:hint}
-  def draw_arrow: () -> RGSS::Bitmap
+  def draw_arrow: () -> untyped
   def draw_arrow_visibility: () -> untyped
-  %a{bc2cpp:hint}
-  def draw_background: (untyped, untyped) -> RGSS::Bitmap
+  def draw_background: (untyped, untyped) -> untyped
   def draw_cursor: () -> untyped
-  %a{bc2cpp:hint}
-  def draw_fallback: (untyped, untyped) -> RGSS::Bitmap
+  def draw_fallback: (untyped, untyped) -> untyped
   %a{bc2cpp:hint}
   def drawn_height: () -> Integer
   def fully_open?: () -> untyped
