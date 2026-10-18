@@ -1,0 +1,1 @@
+- The bc2cpp constant lookup treats native class and module definitions as bound classes at their full path, so references such as `RGSS::Color` and `StandardError` resolve. Generated code is unchanged.
