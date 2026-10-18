@@ -51,8 +51,11 @@ the reason buckets of what is untyped:
 
 A constant typed `Array` by `inferred:array-sum` is `(A + B).freeze` (or `A + B`) whose operands both prove Array
 (`DeclaredConstants.array_sum_names`). It is withheld when a Ruby `+` or `freeze` on Array can replace the core
-method. A constant whose sum uses another constant that is not proven Array, such as `('a'..'z').to_a` (Range#to_a is
-not in the proof yet), stays untyped.
+method. An operand may be `(lo..hi).to_a` over two literal endpoints of one kind (both String or both Integer
+literals, `DeclaredConstants.range_to_a_source?`). That proof is withheld unless no Ruby definition of `to_a`, `each`,
+`upto` or `__num_to_a` sits on Range, Enumerable or String (or a module mixed into them), and none of those has a
+prepend or an unresolved mixin (`CodeGen#range_to_a_safe?`). A constant whose sum uses a non-literal endpoint, or a
+Range literal that is not a sum operand (`X = ('a'..'z').to_a.freeze`), stays untyped.
 
 ## Workflow
 
