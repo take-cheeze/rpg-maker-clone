@@ -216,13 +216,13 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_io
 class File
-  def self.absolute_path: (String, ?String) -> untyped
+  def self.absolute_path: (String, ?String) -> String
   def self.absolute_path?: (untyped) -> bool
   def self.basename: (String, ?String) -> String
   def self.chmod: (Numeric, *untyped) -> Integer
   def self.delete: (*untyped) -> Integer
   def self.dirname: (String, ?Numeric) -> String
-  def self.expand_path: (String, ?String) -> untyped
+  def self.expand_path: (String, ?String) -> String
   def self.extname: (String) -> String
   def self.join: (*untyped) -> untyped
   def self.path: (String) -> untyped
@@ -1367,8 +1367,8 @@ class MV::JS
   def self.base_dir=: (String) -> nil
   def self.eval: (String) -> untyped
   def self.eval_file: (String) -> untyped
-  def self.present: (untyped, ?Numeric) -> untyped
-  def self.present_gl: (untyped, Numeric) -> untyped
+  def self.present: (untyped, ?Numeric) -> bool
+  def self.present_gl: (untyped, Numeric) -> bool
   def self.pump: (?Numeric) -> nil
   def self.screenshot: (String) -> bool
   def self.screenshot_gl: (String, Numeric) -> bool
@@ -1416,14 +1416,14 @@ end
 # bc2cpp-native: base_random
 class Kernel
   def rand: (?untyped) -> untyped
-  def srand: (?untyped) -> untyped
+  def srand: (?untyped) -> Integer
 end
 
 # bc2cpp-native: base_random
 class Random
-  def self.bytes: (untyped) -> untyped
+  def self.bytes: (untyped) -> String
   def self.rand: (?untyped) -> untyped
-  def self.srand: (?untyped) -> untyped
+  def self.srand: (?untyped) -> Integer
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -1724,7 +1724,7 @@ module RGSS
   def to_nfd: (String) -> String
   def window_title: () -> nil
   def window_title=: (untyped) -> untyped
-  def zlib_inflate: (String) -> untyped
+  def zlib_inflate: (String) -> String
   def self.__log_bridge_write: (String) -> untyped
   def self.default_font_path: () -> nil
   def self.mouse_pressed?: () -> bool
@@ -1733,35 +1733,35 @@ module RGSS
   def self.to_nfd: (String) -> String
   def self.window_title: () -> nil
   def self.window_title=: (untyped) -> untyped
-  def self.zlib_inflate: (String) -> untyped
+  def self.zlib_inflate: (String) -> String
 end
 
 # bc2cpp-native: base_rgss
 class RGSS::Bitmap
   def _init_file: (String, ?untyped) -> untyped
   def _init_memory: (String, ?untyped) -> untyped
-  def _init_size: (Numeric, Numeric) -> untyped
-  def _transition_alpha: (untyped, Numeric, Numeric) -> untyped
+  def _init_size: (Numeric, Numeric) -> self
+  def _transition_alpha: (untyped, Numeric, Numeric) -> bool
   def blend_text: (Numeric, Numeric, Numeric, Numeric, String, untyped, Numeric, Numeric, Numeric, Numeric, ?Numeric) -> self
-  def blt: (Numeric, Numeric, untyped, untyped, ?Numeric) -> Integer
+  def blt: (Numeric, Numeric, untyped, untyped, ?Numeric) -> self
   def blt_quads: (Numeric, Numeric, untyped, Array) -> self
   def blur: () -> self
   def clear: () -> self
-  def copy_blt: (Numeric, Numeric, untyped, untyped) -> untyped
+  def copy_blt: (Numeric, Numeric, untyped, untyped) -> self
   def dispose: () -> nil
   def disposed?: () -> bool
-  def draw_text: (*untyped) -> untyped
-  def fill_rect: (*untyped) -> untyped
+  def draw_text: (*untyped) -> self
+  def fill_rect: (*untyped) -> self
   def get_pixel: (Numeric, Numeric) -> untyped
   def gradient_fill_rect: (*untyped) -> self
   def height: () -> Integer
   def hue_change: (Numeric) -> self
-  def initialize_copy: (untyped) -> untyped
-  def mosaic_blt: (untyped, Numeric) -> untyped
+  def initialize_copy: (untyped) -> self
+  def mosaic_blt: (untyped, Numeric) -> self
   def radial_blur: (Numeric, Numeric) -> self
   def rect: () -> untyped
   def set_pixel: (Numeric, Numeric, untyped) -> self
-  def stretch_blt: (untyped, untyped, untyped, ?Numeric) -> Integer
+  def stretch_blt: (untyped, untyped, untyped, ?Numeric) -> self
   def text_size: (String) -> untyped
   def tone_blt: (untyped, untyped) -> self
   def wave_blt: (untyped, Numeric, Numeric) -> self
@@ -1803,53 +1803,53 @@ end
 # bc2cpp-native: base_rgss
 module RGSS::Input
   def _poll: () -> nil
-  def _push: (Numeric, untyped) -> untyped
+  def _push: (Numeric, untyped) -> nil
   def self._poll: () -> nil
-  def self._push: (Numeric, untyped) -> untyped
+  def self._push: (Numeric, untyped) -> nil
 end
 
 # bc2cpp-native: base_rgss
 class RGSS::Plane
   def bitmap=: (untyped) -> untyped
-  def blend_type=: (Numeric) -> untyped
+  def blend_type=: (Numeric) -> self
   def color=: (untyped) -> untyped
   def dispose: () -> nil
   def disposed?: () -> bool
   def initialize: (?untyped) -> self
-  def opacity=: (Numeric) -> untyped
-  def ox=: (Numeric) -> untyped
-  def oy=: (Numeric) -> untyped
+  def opacity=: (Numeric) -> self
+  def ox=: (Numeric) -> self
+  def oy=: (Numeric) -> self
   def tone=: (untyped) -> untyped
   def visible: () -> bool
-  def visible=: (untyped) -> untyped
-  def z=: (Numeric) -> untyped
-  def zoom_x=: (Numeric) -> untyped
-  def zoom_y=: (Numeric) -> untyped
+  def visible=: (untyped) -> self
+  def z=: (Numeric) -> self
+  def zoom_x=: (Numeric) -> self
+  def zoom_y=: (Numeric) -> self
 end
 
 # bc2cpp-native: base_rgss
 class RGSS::Sprite
-  def angle=: (Numeric) -> untyped
+  def angle=: (Numeric) -> self
   def bitmap=: (untyped) -> untyped
-  def blend_type=: (Numeric) -> untyped
-  def bush_depth=: (Numeric) -> untyped
+  def blend_type=: (Numeric) -> self
+  def bush_depth=: (Numeric) -> self
   def color=: (untyped) -> untyped
   def dispose: () -> nil
   def disposed?: () -> bool
-  def flash: (untyped, Numeric) -> untyped
+  def flash: (untyped, Numeric) -> nil
   def initialize: (?untyped) -> self
-  def mirror=: (untyped) -> untyped
-  def opacity=: (Numeric) -> untyped
+  def mirror=: (untyped) -> self
+  def opacity=: (Numeric) -> self
   def src_rect=: (untyped) -> untyped
   def tone=: (untyped) -> untyped
   def update: () -> self
   def visible: () -> bool
-  def visible=: (untyped) -> untyped
-  def x=: (Numeric) -> untyped
-  def y=: (Numeric) -> untyped
-  def z=: (Numeric) -> untyped
-  def zoom_x=: (Numeric) -> untyped
-  def zoom_y=: (Numeric) -> untyped
+  def visible=: (untyped) -> self
+  def x=: (Numeric) -> self
+  def y=: (Numeric) -> self
+  def z=: (Numeric) -> self
+  def zoom_x=: (Numeric) -> self
+  def zoom_y=: (Numeric) -> self
 end
 
 # bc2cpp-native: base_rgss
@@ -1868,20 +1868,20 @@ end
 # bc2cpp-native: base_rgss
 class RGSS::Tilemap
   def bitmaps: () -> untyped
-  def dispose: () -> untyped
+  def dispose: () -> nil
   def disposed?: () -> bool
   def flags=: (untyped) -> untyped
   def initialize: (?untyped) -> self
   def map_data=: (untyped) -> untyped
-  def ox=: (Numeric) -> untyped
-  def oy=: (Numeric) -> untyped
+  def ox=: (Numeric) -> self
+  def oy=: (Numeric) -> self
   def priorities=: (untyped) -> untyped
   def tileset=: (untyped) -> untyped
   def update: () -> self
   def visible: () -> bool
-  def visible=: (untyped) -> untyped
-  def z=: (Numeric) -> untyped
-  def self.vx_table_leg_quads: (Numeric) -> untyped
+  def visible=: (untyped) -> self
+  def z=: (Numeric) -> self
+  def self.vx_table_leg_quads: (Numeric) -> Array
   def self.vx_tile_quads: (Numeric, ?Numeric, ?untyped) -> Array
 end
 
@@ -1909,50 +1909,50 @@ class RGSS::Viewport
   def color=: (untyped) -> untyped
   def dispose: () -> nil
   def disposed?: () -> bool
-  def flash: (untyped, Numeric) -> untyped
+  def flash: (untyped, Numeric) -> nil
   def initialize: (*untyped) -> self
   def ox: () -> untyped
-  def ox=: (Numeric) -> untyped
+  def ox=: (Numeric) -> Integer
   def oy: () -> untyped
-  def oy=: (Numeric) -> untyped
+  def oy=: (Numeric) -> Integer
   def rect: () -> untyped
   def rect=: (untyped) -> untyped
   def tone: () -> untyped
   def tone=: (untyped) -> untyped
   def update: () -> nil
   def visible: () -> bool
-  def visible=: (untyped) -> untyped
-  def z=: (Numeric) -> untyped
+  def visible=: (untyped) -> self
+  def z=: (Numeric) -> self
 end
 
 # bc2cpp-native: base_rgss
 class RGSS::Window
-  def active=: (untyped) -> untyped
-  def back_opacity=: (Numeric) -> untyped
+  def active=: (untyped) -> self
+  def back_opacity=: (Numeric) -> self
   def contents=: (untyped) -> untyped
-  def contents_opacity=: (Numeric) -> untyped
+  def contents_opacity=: (Numeric) -> self
   def cursor_rect=: (untyped) -> untyped
   def dispose: () -> nil
   def disposed?: () -> bool
-  def height=: (Numeric) -> untyped
+  def height=: (Numeric) -> self
   def initialize: (?untyped) -> self
-  def opacity=: (Numeric) -> untyped
-  def openness=: (Numeric) -> untyped
-  def ox=: (Numeric) -> untyped
-  def oy=: (Numeric) -> untyped
-  def pause=: (untyped) -> untyped
-  def stretch=: (untyped) -> untyped
+  def opacity=: (Numeric) -> self
+  def openness=: (Numeric) -> Integer
+  def ox=: (Numeric) -> self
+  def oy=: (Numeric) -> self
+  def pause=: (untyped) -> self
+  def stretch=: (untyped) -> self
   def tone: () -> untyped
   def tone=: (untyped) -> untyped
   def update: () -> self
   def viewport=: (untyped) -> untyped
   def visible: () -> bool
-  def visible=: (untyped) -> untyped
-  def width=: (Numeric) -> untyped
+  def visible=: (untyped) -> self
+  def width=: (Numeric) -> self
   def windowskin=: (untyped) -> untyped
-  def x=: (Numeric) -> untyped
-  def y=: (Numeric) -> untyped
-  def z=: (Numeric) -> untyped
+  def x=: (Numeric) -> self
+  def y=: (Numeric) -> self
+  def z=: (Numeric) -> self
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
