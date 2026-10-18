@@ -52,7 +52,7 @@ the reason buckets of what is untyped:
 A constant typed `Array` by `inferred:array-sum` is `(A + B).freeze` (or `A + B`) whose operands both prove Array
 (`DeclaredConstants.array_sum_names`). It is withheld when a Ruby `+` or `freeze` on Array can replace the core
 method. A constant whose sum uses another constant that is not proven Array, such as `('a'..'z').to_a` (Range#to_a is
-not in the proof yet), stays untyped.
+not in the proof yet), stays untyped. A declared `X: Array` (RBS, TC1011) accepts the same sum under the same proof.
 
 ## Workflow
 
