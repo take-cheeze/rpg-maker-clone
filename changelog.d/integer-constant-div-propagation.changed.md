@@ -1,0 +1,1 @@
+- **bc2cpp:** the integer constant proof also follows `DIV` (floor division, as mruby's `mrb_div_int`), and refuses a zero divisor, so `HALF = CAND_H / 2` is proven and `X = HALF / 0` is not.
