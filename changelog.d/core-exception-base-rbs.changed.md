@@ -1,0 +1,1 @@
+- The base RBS declares mruby's exception hierarchy from its native registrations (`3rd/mruby/src/error.c`), with superclasses through variables and chained assignments, so `ScriptError`, `KeyError`, `FrozenError` and `SyntaxError` carry their superclass. `EOFError` declares `< IOError`.

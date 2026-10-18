@@ -7478,7 +7478,7 @@ end
 
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_stringio
-class EOFError
+class EOFError < IOError
 end
 
 # bc2cpp-native: base_stringio
@@ -8220,6 +8220,84 @@ class String
   def index: (untyped, ?untyped) -> untyped
   def match: (untyped, ?untyped) -> untyped
   def slice!: (*untyped) -> untyped
+end
+
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_mruby-core
+class ArgumentError < StandardError
+end
+
+# bc2cpp-native: base_mruby-core
+class Exception
+  def self.exception: (*untyped) -> untyped
+end
+
+# bc2cpp-native: base_mruby-core
+class FloatDomainError < RangeError
+end
+
+# bc2cpp-native: base_mruby-core
+class FrozenError < RuntimeError
+end
+
+# bc2cpp-native: base_mruby-core
+class IndexError < StandardError
+end
+
+# bc2cpp-native: base_mruby-core
+class KeyError < IndexError
+end
+
+# bc2cpp-native: base_mruby-core
+class LocalJumpError < StandardError
+end
+
+# bc2cpp-native: base_mruby-core
+class NoMatchingPatternError < StandardError
+end
+
+# bc2cpp-native: base_mruby-core
+class NoMemoryError < Exception
+end
+
+# bc2cpp-native: base_mruby-core
+class NotImplementedError < ScriptError
+end
+
+# bc2cpp-native: base_mruby-core
+class RangeError < StandardError
+end
+
+# bc2cpp-native: base_mruby-core
+class RegexpError < StandardError
+end
+
+# bc2cpp-native: base_mruby-core
+class RuntimeError < StandardError
+end
+
+# bc2cpp-native: base_mruby-core
+class ScriptError < Exception
+end
+
+# bc2cpp-native: base_mruby-core
+class StandardError < Exception
+end
+
+# bc2cpp-native: base_mruby-core
+class SyntaxError < ScriptError
+end
+
+# bc2cpp-native: base_mruby-core
+class SystemStackError < Exception
+end
+
+# bc2cpp-native: base_mruby-core
+class TypeError < StandardError
+end
+
+# bc2cpp-native: base_mruby-core
+class ZeroDivisionError < StandardError
 end
 
 # ---- block_types.rbs
