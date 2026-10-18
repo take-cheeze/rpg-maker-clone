@@ -1,0 +1,1 @@
+- The bc2cpp tooling has a clang-AST analyzer for native method return kinds (`tools/bc2cpp/native_ast_returns.rb`) that follows locals, conditionals and same-file calls where the regex classifier stops. It is not yet used by codegen.
