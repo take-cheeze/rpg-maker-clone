@@ -1619,8 +1619,8 @@ end
 # bc2cpp-native: base_rgss
 class RGSS::Plane
   def bitmap: () -> untyped
-  def ox: () -> untyped
-  def oy: () -> untyped
+  def ox: () -> Integer
+  def oy: () -> Integer
   def z: () -> untyped
   def viewport: () -> untyped
   def blend_type: () -> untyped
@@ -1664,8 +1664,8 @@ end
 class RGSS::Tilemap
   def tileset: () -> untyped
   def map_data: () -> untyped
-  def ox: () -> untyped
-  def oy: () -> untyped
+  def ox: () -> Integer
+  def oy: () -> Integer
   def viewport: () -> untyped
   def priorities: () -> untyped
   def flash_data: () -> untyped
@@ -1684,14 +1684,14 @@ end
 
 # bc2cpp-native: base_rgss
 class RGSS::Window
-  def contents: () -> untyped
+  def contents: () -> RGSS::Bitmap
   def windowskin: () -> untyped
   def x: () -> untyped
   def y: () -> untyped
   def width: () -> untyped
   def height: () -> untyped
-  def ox: () -> untyped
-  def oy: () -> untyped
+  def ox: () -> Integer
+  def oy: () -> Integer
   def z: () -> untyped
   def viewport: () -> untyped
   def contents_opacity: () -> untyped
@@ -1911,13 +1911,13 @@ class RGSS::Viewport
   def disposed?: () -> bool
   def flash: (untyped, Numeric) -> nil
   def initialize: (*untyped) -> self
-  def ox: () -> untyped
+  def ox: () -> Integer
   def ox=: (Numeric) -> Integer
-  def oy: () -> untyped
+  def oy: () -> Integer
   def oy=: (Numeric) -> Integer
-  def rect: () -> untyped
+  def rect: () -> RGSS::Rect
   def rect=: (untyped) -> untyped
-  def tone: () -> untyped
+  def tone: () -> RGSS::Tone
   def tone=: (untyped) -> untyped
   def update: () -> nil
   def visible: () -> bool
@@ -7495,7 +7495,7 @@ class StringIO
   def closed?: () -> bool
   def eof?: () -> bool
   def getbyte: () -> untyped
-  def getc: (*untyped) -> untyped
+  def getc: (*untyped) -> String?
   def gets: (*untyped) -> untyped
   def initialize: (?String, ?String) -> self
   def initialize_copy: (untyped) -> untyped
@@ -7503,7 +7503,7 @@ class StringIO
   def lineno=: (Numeric) -> Integer
   def pos: () -> Integer
   def pos=: (Numeric) -> Integer
-  def read: (?untyped, ?untyped) -> untyped
+  def read: (?untyped, ?untyped) -> String?
   def reopen: (*untyped) -> untyped
   def rewind: () -> Integer
   def seek: (Numeric, ?untyped) -> Integer
