@@ -8300,6 +8300,25 @@ end
 class ZeroDivisionError < StandardError
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+class NameError < StandardError
+  def name: () -> untyped
+  def name=: (untyped) -> untyped
+  def initialize: (?untyped, ?untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+class NoMethodError < NameError
+  def args: () -> untyped
+  def initialize: (?untyped, ?untyped, ?untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+class StopIteration < IndexError
+  def result: () -> untyped
+  def result=: (untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain

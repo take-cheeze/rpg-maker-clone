@@ -1,0 +1,1 @@
+- The base RBS declares `NameError`, `NoMethodError` and `StopIteration` from mruby's `mrblib/10error.rb`, which the closed world does not compile.
