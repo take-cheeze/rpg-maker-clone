@@ -1,0 +1,1 @@
+- The bc2cpp constant lookup follows Ruby's order over the closed world's class facts (lexical scopes, then the superclass chain, then Object and its mixins), so more class references resolve. Generated code is unchanged.
