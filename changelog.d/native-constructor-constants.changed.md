@@ -1,0 +1,1 @@
+- **bc2cpp** types a single-assignment constant built by a native class's `new` (for example `BLOCKED_COLOR = Color.new(...)` or `SHOP_PARTY_ICON_SRC = Rect.new(...)` in the RPG2k scenes) as that class, such as `RGSS::Color`, when the closed world proves the constructor is stock `Class#new`. Constants where a program class or a custom `new` could intervene stay untyped.
