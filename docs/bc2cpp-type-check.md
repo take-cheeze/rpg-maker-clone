@@ -49,6 +49,11 @@ the reason buckets of what is untyped:
 * ivars: `any` (stores disagree, inherent) or `opaque` plus the ADR 0382 bucket (`parameter`, `project_call`, ...), or
   `nil-or-unassigned`.
 
+A constant typed `Array` by `inferred:array-sum` is `(A + B).freeze` (or `A + B`) whose operands both prove Array
+(`DeclaredConstants.array_sum_names`). It is withheld when a Ruby `+` or `freeze` on Array can replace the core
+method. A constant whose sum uses another constant that is not proven Array, such as `('a'..'z').to_a` (Range#to_a is
+not in the proof yet), stays untyped.
+
 ## Workflow
 
 1. Run the check; read the top suggestions.
