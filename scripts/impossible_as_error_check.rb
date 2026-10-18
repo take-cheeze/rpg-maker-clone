@@ -101,7 +101,7 @@ reports = /\$stderr|\bwarn\b|warn_once|\braise\b/
 silent = []
 modifiers = []
 Dir[File.join(root, '{mruby-rpg2k,mruby-lcf,mruby-rgss}/mrblib/**/*.rb')].sort.each do |path|
-  lines = File.readlines(path)
+  lines = File.readlines(path, encoding: "UTF-8")
   lines.each_with_index do |line, i|
     next if line.lstrip.start_with?('#')
 
