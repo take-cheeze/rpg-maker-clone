@@ -1,0 +1,1 @@
+- **bc2cpp:** the integer constant proof follows `MUL`, and a literal held in a register (`LOADI_n`) keeps its value, so constants such as `ROWS = SLOT_W * 2` and `COLS = ROWS + 1` are proven integers and emitted as Fixnum values. Constants built with `/` are still not proven.
