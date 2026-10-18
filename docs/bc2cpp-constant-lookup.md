@@ -37,3 +37,13 @@ keys by bare name again.
 
 `ruby scripts/bc2cpp/lexical_const_check.rb` checks the resolution and each refusal against compiled fixtures (it needs
 `MRBC`).
+
+## Resolving a constant name from the closed world
+
+`UniqueClassNames.resolve` (`tools/bc2cpp/unique_class_names.rb`) answers what a bare name read from a class body
+refers to, following Ruby's order: the owner's lexical scopes (innermost first, top level excluded), then the owner's
+ancestors in MRO order (its included modules, last include first, then its superclass and so on), then Object's own
+constants and finally Object's mixins (`class Object; include RGSS; end`). Each step reads only the closed world's
+class facts, so an answer is given only when every step it passed is known. A step is refused, and the name stays
+unresolved, when the class has a prepended module, when an include cannot be resolved, when an included module itself
+includes or prepends something, or when the name is bound natively, by an assignment or by a foreign Ruby source.
