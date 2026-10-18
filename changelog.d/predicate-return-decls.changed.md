@@ -1,0 +1,1 @@
+- The bc2cpp type declarations give each predicate method (a name ending in `?`) a `bool` return where the predicate gate proves every return is a boolean. Generated code is unchanged; the type check uses the declarations as hints.
