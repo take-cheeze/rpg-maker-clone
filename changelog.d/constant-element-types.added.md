@@ -1,0 +1,1 @@
+- **bc2cpp:** a constant declared `Array[T]` (T one of Integer, Float, String, Symbol) is checked against its frozen literal: every element must prove T, else TC1011. A checked declaration gives its element class to reads of that constant, when no other binding can supply the name. Element bounds for the type report are not yet confirmed to change any fact.
