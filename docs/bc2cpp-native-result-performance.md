@@ -36,3 +36,9 @@ measurements, not game runtime or complete build timings.
 `scripts/bc2cpp/native_result_facts_check.rb` exercises the native source
 audits, receiver snapshot behavior, randomized equivalence against the
 previous query algorithm and generated-code fixtures when `MRBC` is set.
+
+The generated-code fixtures require the unproven `text_size` receiver to keep
+its native class guard and a `Bitmap` owner-call fallback. An unproven `width`
+receiver must retain the singleton owner in its dispatch set. These checks
+cover the owner-call dispatch from [ADR 0468](adr/0468-bc2cpp-outside-owner-call.md),
+including cases where exact result types still remove later numeric guards.
