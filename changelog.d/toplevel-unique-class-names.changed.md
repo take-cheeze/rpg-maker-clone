@@ -1,0 +1,1 @@
+- The bc2cpp class-name table now includes top-level modules with one binding (for example `LCF` and `Game`), so the type check can resolve their uses. Generated code is unchanged.

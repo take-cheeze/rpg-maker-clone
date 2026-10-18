@@ -1,0 +1,1 @@
+- The bc2cpp constant lookup walks a class's included modules (last include first) and Object's mixins, so constants from `include`d modules such as `RGSS` resolve. A prepended module, an unresolved include or a native name still leaves the reference unresolved. Generated code is unchanged.
