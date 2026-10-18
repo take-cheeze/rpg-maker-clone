@@ -1,0 +1,1 @@
+- The base RBS declares `IO.open` as returning `IO` when called without a block, and untyped with a block, since mruby-io's `IO.open` returns `self.new` only without one.
