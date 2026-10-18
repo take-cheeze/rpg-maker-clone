@@ -1020,6 +1020,10 @@
 
 ### Performance
 
+- [Base RBS generation](docs/bc2cpp-base-rbs.md) scans native sources with up to
+  two worker processes by default. Both base generators accept `--jobs N`,
+  including `--jobs 1` for serial generation.
+
 - bc2cpp shares foreign Ruby method-name scans across closed-world proof queries,
   avoiding a repeated AST walk for every queried name. See
   [foreign method scanning](docs/bc2cpp-foreign-method-scanning.md) for measurements.
