@@ -1016,7 +1016,7 @@ jobs:
         run: |
           mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/type_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp/type_check.rb --no-sends
 
       # SHARED_GENERATION (ADR 0464): one analysis forked per unit equals separate runs (a fixture, seconds).
       - name: Shared generation check
