@@ -961,6 +961,19 @@ jobs:
       - name: Verify host Ruby JIT
         run: ruby -e 'abort "YJIT is unavailable or disabled" unless RubyVM::YJIT.enabled?; puts RUBY_DESCRIPTION'
 
+      # The scan cache (docs/ci.md, "Scan cache") lives in the git-ignored
+      # build/bc2cpp-cache and is already reused by every generator process
+      # within one job. Persist it across runs too, so a warm cache skips the
+      # repeated native-source scans that dominate generator time. Entries are
+      # keyed on their own content digests, so a stale restore is recomputed
+      # rather than trusted.
+      - name: Cache bc2cpp scan cache
+        uses: actions/cache@v6
+        with:
+          path: build/bc2cpp-cache
+          key: bc2cpp-scan-cache-${{ hashFiles('tools/bc2cpp/*.rb') }}
+          restore-keys: bc2cpp-scan-cache-
+
       - name: Build the closed-world mruby with bc2cpp
         timeout-minutes: 45
         # `-m` makes rake schedule every prerequisite concurrently -- the four
@@ -1115,6 +1128,9 @@ jobs:
       # See the `build` job for what this is; the same game-archive downloads
       # run here.
       CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}
+      # bc2cpp's host analysis (the checks below) runs under CRuby; YJIT
+      # accelerates it the same way it does in bc2cpp-build (docs/ci.md).
+      RUBY_YJIT_ENABLE: "1"
 
     steps:
       - uses: actions/checkout@v7
@@ -1162,7 +1178,15 @@ jobs:
           ./scripts/download/killer-knights.bash
           ./scripts/download/histoire.bash
           ./scripts/download/monodori.bash
-          ./scripts/download/wolfrpg-sample.bash
+           ./scripts/download/wolfrpg-sample.bash
+
+      # Persist the bc2cpp scan cache across runs (see bc2cpp-build above).
+      - name: Cache bc2cpp scan cache
+        uses: actions/cache@v6
+        with:
+          path: build/bc2cpp-cache
+          key: bc2cpp-scan-cache-${{ hashFiles('tools/bc2cpp/*.rb') }}
+          restore-keys: bc2cpp-scan-cache-
 
       - parallel:
           # Dynamic Ruby (method_missing, computed send, ...) in the code bc2cpp
