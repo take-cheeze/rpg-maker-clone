@@ -1062,7 +1062,6 @@ end
 
 # bc2cpp-native: base_lcf
 module LCF::Schema
-  def self.lazy: () -> untyped
 end
 
 # bc2cpp-native: base_lcf
