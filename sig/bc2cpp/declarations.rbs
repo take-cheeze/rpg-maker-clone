@@ -1785,7 +1785,7 @@ class RGSS::Color
   def initialize_copy: (*untyped) -> untyped
   def red: (*untyped) -> untyped
   def red=: (*untyped) -> untyped
-  def set: (*untyped) -> self
+  def set: (RGSS::Color) -> self | (Numeric, Numeric, Numeric, ?Numeric) -> self
   def to_s: () -> String
   def self._load: (String) -> untyped
 end
@@ -1898,7 +1898,7 @@ class RGSS::Tone
   def initialize_copy: (*untyped) -> untyped
   def red: (*untyped) -> untyped
   def red=: (*untyped) -> untyped
-  def set: (*untyped) -> self
+  def set: (RGSS::Tone) -> self | (Numeric, Numeric, Numeric, ?Numeric) -> self
   def to_s: () -> String
   def self._load: (String) -> untyped
 end
