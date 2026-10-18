@@ -8356,6 +8356,12 @@ end
 class Game::EnemyAction
   @switch_off: (bool | nil)
   @switch_on: (bool | nil)
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def basic?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def skill?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def transform?: () -> bool
 end
 
 class Game::Interpreter
@@ -8787,6 +8793,8 @@ module Game
     @db: LCF::Database?
     # The one construction site (Scene::Map#open_shop) passes `@state.party`, Game::State's attr_reader.
     @party: Game::Party?
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def sellable?: (untyped) -> bool
   end
   class State
     # One writer (#initialize). Constructed by RPG2k#start_new_game with `Game::Party.new(@db)` and by
@@ -8992,11 +9000,63 @@ module Game
       # and #enemy_transform_action's `into.actions`, `e` / `into` being Game::Enemy (Troop members,
       # EnemyAi#enemy), whose one @actions writer is `[]` filled with `EnemyAction.new(a)`. Actors keep nil.
       @actions: Array[Game::EnemyAction]?
+      # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+      def back_row?: () -> bool
+      # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+      def dead?: () -> bool
+      # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+      def gauge_full?: () -> bool
+      # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+      def half_sp_cost?: () -> bool
+      # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+      def member?: () -> bool
+      # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+      def out_of_play?: () -> bool
+      # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+      def state?: (untyped) -> bool
     end
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def alive?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def ally?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def attribute_physical?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def can_leave_front_row?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def command_targets_dead_ok?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def critical?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def do_nothing_restricted?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def enemy_skill_ready?: (untyped, untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def hits?: (untyped, untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def incapacitated?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def pending_empty?: () -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def preemptive_boost?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def recovers_from_state?: (untyped, untyped, untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def skill_effect_hits?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def skill_sealed?: (untyped, untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def stat_mod_key?: (untyped) -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def terminated?: () -> bool
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def within_percent?: (untyped, untyped, untyped) -> bool
   end
   class Enemy
     # One caller, Scene::Battle's transform replay: `member.reseed_rewards(Game::Enemy.new(db, foe.enemy_id))`.
     def reseed_rewards: (Game::Enemy into) -> untyped
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def dead?: () -> bool
   end
 end
 class RPG2k
@@ -9159,6 +9219,8 @@ end
 module Game
   class Picture
     def move_to: (Integer x, Integer y, Integer zoom, Integer opacity, Integer red, Integer green, Integer blue, Integer saturation, Integer frames) -> untyped
+    # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+    def moving?: () -> bool
   end
 end
 module Game
@@ -9482,6 +9544,8 @@ class Game::MoveRoute
   def execute: (untyped, untyped, untyped) -> Array
   def initialize: (untyped) -> untyped
   def step: (untyped, untyped) -> untyped
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.same_route?: (untyped, untyped) -> bool
 end
 
 class Game::Party
@@ -9584,6 +9648,14 @@ class Game::Transition
   def done?: () -> untyped
   def random_blocks?: () -> untyped
   def uniform?: () -> untyped
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def mosaic?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def wave?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def zoom?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.setting?: (untyped) -> bool
 end
 
 class Game::Variables
@@ -9608,6 +9680,14 @@ class Hash
 end
 
 class Integer
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def allbits?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def anybits?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def integer?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def nobits?: (untyped) -> bool
 end
 
 class LCF
@@ -9650,6 +9730,8 @@ end
 class LCF::MapUnit
   def header: () -> untyped
   def schema: () -> untyped
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def terminate_root?: () -> bool
 end
 
 class LCF::SaveData
@@ -9663,6 +9745,10 @@ end
 
 class Numeric
   def negative?: () -> untyped
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def integer?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def positive?: () -> bool
 end
 
 class RGSS::Bitmap
@@ -9718,6 +9804,14 @@ class RPG2k::Scene::Battle
   %a{bc2cpp:hint}
   def update_enemy_flashes: () -> Array
   def update_enemy_positions: () -> untyped
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def any_commandable_ally?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def battle_page_target_resolves?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def battle_result_wanted?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def skill_achieved_nothing?: (untyped) -> bool
 end
 
 class RPG2k::Scene::EquipMenu
@@ -10075,11 +10169,15 @@ class RPG2k::Window
 end
 
 class Range
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def overlap?: (untyped) -> bool
 end
 
 # Unified return types (trace candidates, scripts/bc2cpp/trace_types.rb candidates --hierarchy). Each is a
 # runtime-checked hint (%a{bc2cpp:hint}); a body that returns another class raises BC2cppHintViolation.
 class Array
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def include?: (untyped) -> bool
 end
 class Game::Actor
   %a{bc2cpp:hint}
@@ -10104,12 +10202,26 @@ class Game::Actor
   def set_class_id: (untyped) -> Integer
   %a{bc2cpp:hint}
   def slot_cursed?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def equipment_flag?: (untyped, ?untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def physical_evasion_up?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def prevents_critical?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def skill_sealed?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def state_persists_type?: (untyped) -> bool
 end
 class Game::Actors
   %a{bc2cpp:hint}
   def each: () -> Array
 end
 class Game::ChipSet
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def counter?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def landable?: (untyped) -> bool
 end
 class Game::Interpreter
   %a{bc2cpp:hint}
@@ -10148,6 +10260,8 @@ class Game::Interpreter
   def trunc_div: (untyped, untyped) -> Integer
   %a{bc2cpp:hint}
   def trunc_mod: (untyped, untyped) -> Integer
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def choice_cancellable?: () -> bool
 end
 class Game::Map
   %a{bc2cpp:hint}
@@ -10158,6 +10272,8 @@ class Game::Map
   def tile: (untyped, untyped, untyped, untyped) -> (Integer | nil)
   %a{bc2cpp:hint}
   def upper: (untyped, untyped) -> (Integer | nil)
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def substituted?: () -> bool
 end
 class Game::Party
   %a{bc2cpp:hint}
@@ -10170,6 +10286,40 @@ class Game::Party
   def insert_item_in_bag: (untyped, untyped) -> Integer
   %a{bc2cpp:hint}
   def rpg2003?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def attribute_weapon_type?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def do_nothing_restricted?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def equip_candidate_for?: (untyped, untyped, untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def flying?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def has_item?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def ko_only_blocked?: (untyped, untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def skill_absorbs?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def skill_effective?: (untyped, untyped, untyped, ?untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def skill_helps_troop?: (untyped, untyped, untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def skill_ignores_defence?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def switch_item?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def switch_skill?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def unsupported_field_skill?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def weapon_attribute_ready?: (untyped, untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.normal_skill?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.permission_set_active?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.usable_flag?: (untyped) -> bool
 end
 class Game::Screen
   %a{bc2cpp:hint}
@@ -10182,6 +10332,8 @@ class Game::Screen
   def show: (untyped) -> (Game::Transition | nil)
   %a{bc2cpp:hint}
   def transition: () -> (Game::Transition | nil)
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def erased?: () -> bool
 end
 class Game::State
   %a{bc2cpp:hint}
@@ -10222,10 +10374,14 @@ class LCF::File
   def build_root: (untyped, untyped) -> LCF::Array1D
   %a{bc2cpp:hint}
   def field?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def key?: (untyped) -> bool
 end
 class LCF::Sections
   %a{bc2cpp:hint}
   def add: (untyped, untyped) -> Array
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def key?: (untyped) -> bool
 end
 class RPG2k
   %a{bc2cpp:hint}
@@ -10236,6 +10392,8 @@ class RPG2k::Scene::Base
   def advance_list_arrow_anim: (untyped) -> Integer
   %a{bc2cpp:hint}
   def clip_text_to_width: (untyped, untyped, untyped) -> String
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def list_arrow_blink_on?: (untyped) -> bool
 end
 class RPG2k::Scene::EquipMenu
   %a{bc2cpp:hint}
@@ -10298,6 +10456,26 @@ class RPG2k::Scene::Map
   def refresh_player_graphic: () -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
   def update_closing_windows: () -> (Array | nil)
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def action_touch_trigger?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def actionable?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def airship_landable?: (untyped, untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def animation_target_resolves?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def area_contains?: (untyped, untyped, untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def char_in_sight?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def sprite_flashing?: () -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def toned_animation_cell?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def touch_trigger?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def troop_allowed_on_terrain?: (untyped, untyped) -> bool
 end
 class RPG2k::Scene::Menu
   %a{bc2cpp:hint}
@@ -10330,6 +10508,8 @@ class RPG2k::Scene::StatusMenu
   def draw_value_row: (untyped, untyped, untyped, untyped, untyped) -> RGSS::Bitmap
 end
 class RPG2k::Window
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def opening?: () -> bool
 end
 
 # ---- native: core_block_params
@@ -10752,3 +10932,102 @@ class RGSS::Tone
   def blue: () -> Float
   def gray: () -> Float
 end
+
+# ---- predicate_returns.rbs (new block for Comparable)
+class Comparable
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def between?: (untyped, untyped) -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for Game::BattlePage)
+class Game::BattlePage
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.active?: (untyped, untyped, untyped, untyped, ?untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.hp_within?: (untyped, untyped, untyped) -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for Game::ChipsetLayout)
+class Game::ChipsetLayout
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.upper_blank?: (untyped) -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for Game::EventGraphic)
+class Game::EventGraphic
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.animated?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.continuous?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.fixed_direction?: (untyped) -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for Game::EventPage)
+class Game::EventPage
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.active?: (untyped, untyped, untyped, untyped, ?untyped, ?untyped) -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for Game::LegacyLsd)
+class Game::LegacyLsd
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.marked?: (untyped) -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for Game::MapAccess)
+class Game::MapAccess
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.allowed?: (untyped, untyped, untyped) -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for Game::MessagePalette)
+class Game::MessagePalette
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.valid?: (untyped) -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for LCF::SaveTyped)
+class LCF::SaveTyped
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.fits?: (untyped, untyped) -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for RGSS::Font)
+class RGSS::Font
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def self.exist?: (untyped) -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for RGSS::Window)
+class RGSS::Window
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def open?: () -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for RPG2k3::Scene::Battle)
+class RPG2k3::Scene::Battle
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def controllable?: (untyped) -> bool
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def gauge_battle?: () -> bool
+end
+
+
+# ---- predicate_returns.rbs (new block for StringIO)
+class StringIO
+  # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
+  def tty?: () -> bool
+end
+
