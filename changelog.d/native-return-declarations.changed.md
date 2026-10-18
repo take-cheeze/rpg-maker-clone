@@ -1,0 +1,1 @@
+- The base RBS takes a native method's return type from the clang AST where it can (`native_ast_returns.rb`), and from the regex classifier otherwise, so more native returns are declared.
