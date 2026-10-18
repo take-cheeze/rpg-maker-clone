@@ -989,6 +989,12 @@ jobs:
         timeout-minutes: 10
         run: ruby scripts/bc2cpp/base_rbs_all.rb build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
 
+      # BASE_SECTION (scripts/bc2cpp/base_section_check.rb): the base section of sig/bc2cpp/declarations.rbs must be what
+      # the generators write now. A stale committed base section fails here instead of drifting from its generators.
+      - name: Base section matches the generators
+        timeout-minutes: 15
+        run: ruby scripts/bc2cpp/base_section_check.rb build-closed-bc2cpp/closed
+
       # TYPE_CHECK (docs/adr/0412): a declared type the analysis contradicts (TC1001, TC1007) or a signature or
       # annotation bc2cpp cannot use (TC1002, TC1004) is an error, and only errors set the exit status. Running it
       # here makes those violations fail the job instead of waiting for someone to run the check by hand.
