@@ -1028,6 +1028,9 @@
   avoiding a repeated AST walk for every queried name. See
   [foreign method scanning](docs/bc2cpp-foreign-method-scanning.md) for measurements.
 
+- [Native-result proofs](docs/bc2cpp-native-result-performance.md) reuse immutable
+  receiver-class snapshots and avoid temporary bignum membership tests.
+
 - [Native base RBS scanning](docs/bc2cpp-native-scanning.md) jumps between braces
   during body extraction and avoids redundant owner-pattern matches.
 
