@@ -46,4 +46,10 @@ ancestors in MRO order (its included modules, last include first, then its super
 constants and finally Object's mixins (`class Object; include RGSS; end`). Each step reads only the closed world's
 class facts, so an answer is given only when every step it passed is known. A step is refused, and the name stays
 unresolved, when the class has a prepended module, when an include cannot be resolved, when an included module itself
-includes or prepends something, or when the name is bound natively, by an assignment or by a foreign Ruby source.
+includes or prepends something, or when the name is bound natively or by an assignment. A module owner has no
+superclass, so its search goes from its includes straight to Object.
+
+A foreign Ruby source (a file the closed world does not compile) refuses a name only when it rebinds it (`NAME = value`),
+opens a class or module inside another scope, or defines a top-level class the closed world does not know. A column-0
+`class X` that reopens a class already bound at top level (`class Array` in mruby's mrblib) leaves the binding alone,
+and a column-0 `class X < Y` defines X under Y (mruby's `NameError`, `StopIteration`), whose own includes stay unknown.
