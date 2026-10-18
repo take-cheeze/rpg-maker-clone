@@ -1,0 +1,1 @@
+- The bc2cpp register-flow pass skips methods with no copy or dead write to remove, and caches each register's search patterns instead of rebuilding them per check. Generated code is unchanged.
