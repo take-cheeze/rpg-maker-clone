@@ -86,8 +86,10 @@ check.call('an unknown definition kind raises', raises.call(ArgumentError) { Int
 check.call('an unknown operand kind raises', raises.call(ArgumentError) { IntegerConstants.integral_operand?([:bogus], Set.new) })
 check.call('an unknown definition kind raises when valued', raises.call(ArgumentError) { IntegerConstants.value_for_kind([:bogus], [], nil) })
 check.call('an unknown arithmetic opcode raises',
-           raises.call(ArgumentError) { IntegerConstants.value_for_kind([:arithmetic, 'MUL', [:literal, 2], [:literal, 3]], [], nil) })
+           raises.call(ArgumentError) { IntegerConstants.value_for_kind([:arithmetic, 'MOD', [:literal, 2], [:literal, 3]], [], nil) })
 check.call('a literal still has its value', IntegerConstants.value_for_kind([:literal, 7], [], nil) == 7)
+check.call('MUL folds exactly', IntegerConstants.value_for_kind([:arithmetic, 'MUL', [:literal, 2], [:literal, 3]], [], nil) == 6)
+check.call('DIV floors like mrb_div_int', IntegerConstants.value_for_kind([:arithmetic, 'DIV', [:literal, -7], [:literal, 2]], [], nil) == -4)
 
 puts '== runtime rescues'
 RESCUE = /^(\s*)rescue\b(.*)$/
