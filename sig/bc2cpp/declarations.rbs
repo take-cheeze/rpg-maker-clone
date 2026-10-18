@@ -11030,4 +11030,3 @@ class StringIO
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def tty?: () -> bool
 end
-
