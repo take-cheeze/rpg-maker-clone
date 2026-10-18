@@ -1020,6 +1020,10 @@
 
 ### Performance
 
+- [Base RBS generation](docs/bc2cpp-base-rbs.md) scans native sources with up to
+  two worker processes by default. Both base generators accept `--jobs N`,
+  including `--jobs 1` for serial generation.
+
 - The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) is closed-world
   only: it compiles the RPG2000/2003-only psp/wio/maix builds, whose only Ruby
   is the engine's own, and every other build (desktop, wasm, Android) stays the
