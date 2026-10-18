@@ -21,7 +21,13 @@ The per-gem generator accepts the same option:
 ruby scripts/bc2cpp/base_rbs_native.rb --jobs 2 OUT_DIR -I INCLUDE_DIR SOURCE.cxx
 ```
 
-Each worker runs Clang, parses its AST, and scans one source. The parent merges
+Each worker preprocesses and scans one source. It runs Clang AST extraction
+and parses the JSON only if a registered function has a body whose return kind
+needs analysis. Files with only class registrations, external function
+registrations, or no registrations skip that work. Each file loads its AST at
+most once; same-file helper functions remain available to the return analysis.
+Preprocessing failures retain their error report without a redundant AST warning.
+The parent merges
 results and diagnostics in source order, preserving declaration precedence
 and skipped registrations. Increasing jobs can reduce wall time but permits
 more large Clang ASTs in memory simultaneously. See [ADR 0488](adr/0488-base-rbs-native-file-workers.md).
@@ -39,3 +45,9 @@ base-generation timings, not bc2cpp compilation or game runtime timings.
 
 Run `ruby scripts/bc2cpp/base_rbs_check.rb` to check scheduling, error handling
 and serial/parallel output equivalence. Its native fixture requires Clang.
+
+A later lazy-AST comparison on CRuby 4.0.5 + YJIT and Clang 21.1.8 took
+21.12/21.45 seconds before this change and 13.33/12.28 seconds after it
+(37–43% less wall time), with two workers. AST extractions fell from 51 to 17.
+All 71 generated RBS files were byte-identical and the normalized report rows
+matched. The same two missing-header native gems were excluded as above.

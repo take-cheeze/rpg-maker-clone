@@ -1022,7 +1022,8 @@
 
 - [Base RBS generation](docs/bc2cpp-base-rbs.md) scans native sources with up to
   two worker processes by default. Both base generators accept `--jobs N`,
-  including `--jobs 1` for serial generation.
+  including `--jobs 1` for serial generation. Clang AST extraction runs only
+  for files with registered function bodies that need return analysis.
 
 - bc2cpp shares foreign Ruby method-name scans across closed-world proof queries,
   avoiding a repeated AST walk for every queried name. See
@@ -1779,6 +1780,8 @@
   A liveness pass over the emitted instruction texts also drops dead register
   copies and constant loads and propagates plain copies (`BC2CPP_REGISTER_FLOW=0`
   turns it off; see [the same page](docs/bc2cpp-register-output.md)).
+  Register-read masks accumulate during text scanning without intermediate
+  register lists.
 - bc2cpp binary decoding shares source-file lookups between filename and line
   metadata and avoids per-instruction enumerator allocations. The binary-loader
   check compares source locations and instructions with mrbc (see

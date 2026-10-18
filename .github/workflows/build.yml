@@ -1025,6 +1025,13 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/shared_generation_check.rb
 
+      # DECLARED_CONSTANT_CHECK ARRAY_SUM (ADR 0455): a declared `X: Array` on a sum, with the same proof as the rows.
+      - name: Declared array sum constant check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/declared_array_sum_check.rb
+
       # BLOCK_ITERATOR_DIRECT (ADR 0472): the Kernel#loop, String and Integer-literal block arms, each world refusal, and
       # a fixture run interpreted and compiled over the compiled core (one full-core libmruby build, under a minute; like
       # the closed build it runs without the dev shell's LD).
