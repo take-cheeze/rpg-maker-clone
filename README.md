@@ -1022,7 +1022,8 @@
 
 - [Base RBS generation](docs/bc2cpp-base-rbs.md) scans native sources with up to
   two worker processes by default. Both base generators accept `--jobs N`,
-  including `--jobs 1` for serial generation.
+  including `--jobs 1` for serial generation. Clang AST extraction runs only
+  for files with registered function bodies that need return analysis.
 
 - bc2cpp shares foreign Ruby method-name scans across closed-world proof queries,
   avoiding a repeated AST walk for every queried name. See
