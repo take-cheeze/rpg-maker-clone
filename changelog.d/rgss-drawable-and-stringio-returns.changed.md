@@ -1,0 +1,1 @@
+- The base RBS declares StringIO#read/getc as String? (nil at end of file) and the Viewport and Plane/Tilemap/Window ox, oy, rect, tone and contents readers with their classes.
