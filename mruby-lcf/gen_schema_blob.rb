@@ -14,8 +14,8 @@
 # (not the Ruby source) into a compact binary table plus the string table
 # field/order names draw from.
 #
-# ADR 0099's own NoMemoryError finding (schema.rb's own `lazy` comment)
-# governs the split this generator preserves exactly: DATABASE's ~18
+# ADR 0099's own NoMemoryError finding (the split schema.rb's `elements:`
+# lambdas encode) governs the split this generator preserves exactly: DATABASE's ~18
 # per-record-type field lists (each a `-> { {...} }` block in the source)
 # stay lazily resolved -- decoded from the blob into real Hash objects only
 # on first LCF.elements_of access, cached from then on -- while everything
@@ -57,8 +57,7 @@ SCHEMA_PATH = ARGV.fetch(0)
 OUT_PATH = ARGV.fetch(1)
 
 # Loading schema.rb needs the LCF.level_max / LCF.exp_default helpers a few
-# defaults call (real module_functions in lcf.rb, alongside schema.rb);
-# Schema.lazy itself is defined in schema.rb.
+# defaults call (real module_functions in lcf.rb, alongside schema.rb).
 load ::File.join(::File.dirname(SCHEMA_PATH), 'lcf.rb')
 load SCHEMA_PATH
 
@@ -246,9 +245,8 @@ class Generator
         # DATABASE / SAVE_DATA / MAP_UNIT: a single field record used
         # directly as a whole file's root schema (LCF::File#schema).
         # Encoded to bytes right here, once: DATABASE's own per-record
-        # `elements:` procs are bare `-> { {...} }` blocks, not `lazy{}`
-        # (only *top-level* constants get that memoizing wrapper -- see
-        # schema.rb's own Schema.lazy definition), so calling one a second
+        # `elements:` procs are bare `-> { {...} }` blocks (schema.rb's
+        # top-level tables are plain Hashes, so none is a Proc), so calling one a second
         # time (e.g. by
         # re-running encode_field_body against a throwaway writer first and
         # "for real" later) returns a *different* Hash object each time --

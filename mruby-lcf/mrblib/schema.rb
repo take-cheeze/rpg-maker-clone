@@ -10,23 +10,11 @@
 # documented, matching the pre-existing :int16_array convention.
 module LCF
   module Schema
-    # Wraps a hash-literal block as lazily-built and self-memoizing: unlike
-    # DATABASE's own per-entry `elements:` lambdas (LCF.elements_of in
-    # lcf.rb caches the resolved Hash back onto the shared, persistent
-    # schema entry that held the lambda), several of the constants below are
-    # only ever consumed through a fresh, throwaway `{ elements: SAVE_X }`
-    # wrapper built on every call (see mruby-rpg2k/mrblib/game.rb's
-    # Game::State#to_lsd/.from_lsd) -- LCF.elements_of would cache onto that
-    # throwaway wrapper, not onto SAVE_X's own constant binding, so the
-    # block would otherwise re-run on every single save/load. `cache`, a
-    # local captured by the returned lambda's own closure, survives across
-    # calls to that same Proc object (the module-level constant itself)
-    # regardless of which wrapper's #call reached it.
-    def self.lazy(&block)
-      cache = nil
-      -> { cache ||= block.call }
-    end
-
+    # Every table is a plain Hash literal, defined before any table that
+    # references it by name (`elements: X` needs X already bound). DATABASE's
+    # and MAP_UNIT's per-entry `elements:` values are still `-> { {...} }`
+    # lambdas; LCF.elements_of resolves those once and caches the Hash back
+    # onto the schema entry that held them.
     COMMON_EVENT = {
       1 => {
         name: :name, type: :string, default: ''
@@ -1021,7 +1009,7 @@ module LCF
     # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%9E%E3%83%83%E3%83%97
     #
     # Conditions that must hold for an event page to be active.
-    MAP_EVENT_PAGE_CONDITION = lazy { {
+    MAP_EVENT_PAGE_CONDITION = {
       # Bit flags selecting which of the conditions below are enabled.
       1 => { name: :flags, type: :int, default: 0 },
       2 => { name: :switch_a_id, type: :int, default: 1 },
@@ -1049,7 +1037,7 @@ module LCF
       # ordinary ">=" reading, not "==", once EventPage actually consults
       # this field.
       10 => { name: :compare_operator, type: :int, default: 1 },
-    } }
+    }
 
     MOVE_ROUTE = {
       11 => { name: :command_size, type: :int, default: 0 },
@@ -1058,7 +1046,7 @@ module LCF
       22 => { name: :skippable, type: :bool, default: false },
     }
 
-    MAP_EVENT_PAGE = lazy { {
+    MAP_EVENT_PAGE = {
       2 => { name: :condition, type: :Array1D, elements: MAP_EVENT_PAGE_CONDITION },
       21 => { name: :charset_name, type: :string, default: '' },
       22 => { name: :charset_index, type: :int, default: 0 },
@@ -1093,7 +1081,7 @@ module LCF
       # do the same.
       51 => { name: :event_command_size, type: :int, default: 0 },
       52 => { name: :event_commands, type: :event },
-    } }
+    }
 
     MAP_EVENT = {
       1 => { name: :name, type: :string, default: '' },
@@ -1171,10 +1159,128 @@ module LCF
       } }
     }
 
+    # One stack frame of an interpreter's own call stack (liblcf's
+    # `SaveEventExecFrame`), nested inside SAVE_EVENT_EXEC_STATE's own `stack`
+    # field below. Each frame carries its OWN full `commands` list (0x02,
+    # `Vector<EventCommand>` -- reusing the existing `:event` schema type, the
+    # same one MAP_EVENT_PAGE's own `event_commands` uses, which already
+    # round-trips through `LCF.parse_event_commands`/`encode_event_commands`),
+    # i.e. the exact command page being executed, not just a reference to one
+    # -- a Call Event pushes a frame whose commands come from the called
+    # event, so a nested call round-trips without needing to re-resolve
+    # anything (see `Game::Interpreter#call_stack_snapshot`/
+    # `#restore_call_stack`, mruby-rpg2k/mrblib/interpreter.rb). Field 0x01
+    # (`command_size`) mirrors field 0x02's own encoded byte length exactly,
+    # the same size-field convention `MAP_EVENT_PAGE`'s own
+    # `event_command_size` (field 51) already established -- see that field's
+    # own comment for why a stale length hangs genuine RPG_RT.exe; this
+    # codebase's own writer (`Game::State#to_lsd`) recomputes it the same way.
+    #
+    # `event_id` (0x0C, "0 if it's common event or in other map" per liblcf's
+    # own comment): cycle #192 gave each frame its own genuine value.
+    # `Game::Interpreter#do_call_event` now records, at the moment it pushes
+    # each frame, the concrete map-event id that frame's own `commands` list
+    # actually belongs to (via `#resolve_call`/`#map_event_call`, which
+    # already resolve exactly that to look the list up in the first place),
+    # or 0 when the call target was a common event -- see
+    # `#call_stack_snapshot`'s own comment for exactly how each frame's
+    # value is derived (the outermost frame is always this whole
+    # interpreter's own `#event_id`; every frame beneath it carries its own
+    # Call Event's resolved target). "...or in other map" does not name a
+    # distinct, reachable case here: Call Event's own command format (param0
+    # 0/1/2, see `#do_call_event`'s own comment) never names a map at all,
+    # only a common-event id or a same-map event id/page, so this codebase's
+    # own model has no "different map" target to ever resolve into a frame
+    # -- 0 covers both the common-event case and (vacuously) that one.
+    # `triggered_by_decision_key` (0x0D) is still written from this whole
+    # interpreter's single `#triggered_by_decision_key`, true only for the
+    # outermost frame (index 0): a Call Event's own nested frame was never
+    # itself started by the action key, whatever launched the outer event --
+    # this part was already correct as of cycle #191 and cycle #192 left it
+    # untouched.
+    #
+    # `subcommand_path` (0x15 count / 0x16 data, one byte per nesting level --
+    # the chosen Show Choice branch id at that level, 255 once taken, per
+    # liblcf's own comment on the field) is always written empty here. This
+    # engine's own Show Choices (`#do_show_choices`/`#find_choice_option`)
+    # resumes purely off the flat `current_command` cursor: once a branch is
+    # chosen, `@index` already points inside that branch's own commands (see
+    # `#choose`), so replaying from `current_command` alone reaches the right
+    # code with no separate "which Case was taken" lookup needed, unlike
+    # genuine RPG_RT's own jump-to-matching-Case mechanism, which is what
+    # `subcommand_path` exists to drive. Verified by reading (not by a wine
+    # capture) that nothing else in this engine's interpreter ever consults a
+    # branch identity beyond command position. This is a genuine, deliberate
+    # simplification for this engine's own internal round-trip fidelity (its
+    # own Continue), not an attempt at full interop with genuine RPG_RT.exe
+    # reading our `.lsd` files (or the reverse) -- a real save captured mid a
+    # Show Choices prompt would need this field decoded to resume the exact
+    # same way genuine RPG_RT would.
+    SAVE_EVENT_EXEC_FRAME = {
+      1  => { name: :command_size, type: :int, default: 0 },
+      2  => { name: :commands, type: :event, default: [] },
+      11 => { name: :current_command, type: :int, default: 0 },
+      12 => { name: :event_id, type: :int, default: 0 },
+      13 => { name: :triggered_by_decision_key, type: :bool, default: false },
+      21 => { name: :subcommand_path_size, type: :int, default: 0 },
+      22 => { name: :subcommand_path, type: :int8_array, default: [] },
+    }
+
+    # An interpreter's full execution state (liblcf's `SaveEventExecState`):
+    # `stack` (0x01, `Array<SaveEventExecFrame>` -- see SAVE_EVENT_EXEC_FRAME
+    # just above) is the genuine call stack, outermost frame first, matching
+    # `Game::Interpreter#call_stack_snapshot`'s own `@call_stack + [[@list,
+    # @index, event_id]]` order (this codebase's own writer/reader convention
+    # for the frame's own array index within `stack`, 1-based ascending outer
+    # to inner -- not confirmed against a genuine multi-frame capture, since
+    # none was available; only that a single-frame `stack` round-trips against
+    # this codebase's own reading of the field table). `SaveMapEvent`'s own
+    # 0x6C field and `SaveCommonEvent`'s own field 1 both point at this same
+    # struct (`generator/csv/fields.csv`'s `Save.foreground_event_execstate`
+    # field, 0x71 at the top-level Save struct, is the same struct again).
+    #
+    # Everything below `stack` -- `show_message`, `abort_on_escape`,
+    # `wait_movement`, the whole keyinput_* cluster, `wait_time`, and
+    # `wait_key_enter` -- is declared here for read-fidelity (so a genuine
+    # third-party `.lsd` carrying them decodes cleanly instead of raising on
+    # an unknown field), but is schema-only: this engine's own writer
+    # (`Game::State#to_lsd`) never populates them (they are always absent,
+    # reading back at their liblcf defaults below), and its own reader never
+    # feeds them into any live interpreter wait state. Only `stack` is
+    # genuinely round-tripped end to end. See `Game::Interpreter
+    # #call_stack_snapshot`'s own comment for exactly what capturing "mid a
+    # blocking wait" (Show Message/Choices/Key Input/etc.) does and does not
+    # preserve today -- the call-stack position survives, the UI-facing wait
+    # itself does not.
+    SAVE_EVENT_EXEC_STATE = {
+      1  => { name: :stack, type: :Array2D, elements: SAVE_EVENT_EXEC_FRAME },
+      4  => { name: :show_message, type: :bool, default: false },
+      11 => { name: :abort_on_escape, type: :bool, default: false },
+      13 => { name: :wait_movement, type: :bool, default: false },
+      21 => { name: :keyinput_wait, type: :bool, default: false },
+      22 => { name: :keyinput_variable, type: :uint8, default: 0 },
+      23 => { name: :keyinput_all_directions, type: :bool, default: false },
+      24 => { name: :keyinput_decision, type: :int, default: 0 },
+      25 => { name: :keyinput_cancel, type: :int, default: 0 },
+      26 => { name: :keyinput_2kshift_2k3numbers, type: :int, default: 0 },
+      27 => { name: :keyinput_2kdown_2k3operators, type: :int, default: 0 },
+      28 => { name: :keyinput_2kleft_2k3shift, type: :int, default: 0 },
+      29 => { name: :keyinput_2kright, type: :int, default: 0 },
+      30 => { name: :keyinput_2kup, type: :int, default: 0 },
+      31 => { name: :wait_time, type: :int, default: 0 },
+      32 => { name: :keyinput_time_variable, type: :int, default: 0 },
+      35 => { name: :keyinput_2k3down, type: :int, default: 0 },
+      36 => { name: :keyinput_2k3left, type: :int, default: 0 },
+      37 => { name: :keyinput_2k3right, type: :int, default: 0 },
+      38 => { name: :keyinput_2k3up, type: :int, default: 0 },
+      41 => { name: :keyinput_timed, type: :bool, default: false },
+      42 => { name: :wait_key_enter, type: :bool, default: false },
+    }
+
     # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%82%BB%E3%83%BC%E3%83%96%E3%83%87%E3%83%BC%E3%82%BF
     #
     # Snapshot of a hero or vehicle on the map. Vehicles reuse the same layout.
-    SAVE_MOVABLE = lazy { {
+    SAVE_MOVABLE = {
       11 => { name: :map_id, type: :int },
       12 => { name: :x, type: :int },
       13 => { name: :y, type: :int },
@@ -1334,12 +1440,8 @@ module LCF
       # call-stack snapshot, the identical SAVE_EVENT_EXEC_STATE struct chunk
       # 111's own sibling chunks 113/114 (SAVE_FOREGROUND_EVENT/
       # SAVE_COMMON_EVENT) already use. `elements:` names SAVE_EVENT_EXEC_STATE,
-      # declared later in this file (SAVE_MOVABLE is one of the earliest
-      # tables; SAVE_EVENT_EXEC_STATE, added by cycle #191, comes much
-      # later) -- referencing it here by name only works (rather than a
-      # load-order NameError) because `lazy` above defers actually
-      # evaluating this hash literal until first real access, long after
-      # every constant in the file exists.
+      # which is defined above this table for that reason (every table is
+      # defined before any table that references it).
       #
       # Cycle #193 closes the one gap cycle #191/#192's own foreground/
       # common-event call-stack persistence deliberately left open: a Map
@@ -1375,11 +1477,11 @@ module LCF
       # that table's own comment on the hero's unmodelled move-route chunk/
       # `through`/movement timers).
       108 => { name: :parallel_event_execstate, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
-    } }
+    }
 
     # Hero-only fields overlap vehicle and map-event ids; keep their types
     # out of the shared movable layout. Wire evidence and units: ADR 0400.
-    SAVE_PARTY_LOCATION = lazy { SAVE_MOVABLE.call.merge({
+    SAVE_PARTY_LOCATION = SAVE_MOVABLE.merge({
       101 => { name: :boarding, type: :bool, default: false },
       102 => { name: :aboard, type: :bool, default: false },
       103 => { name: :vehicle, type: :int, default: 0 },
@@ -1393,7 +1495,7 @@ module LCF
       115 => { name: :pan_finish_y, type: :int, default: 1792 },
       121 => { name: :pan_speed, type: :int, default: 16 },
       124 => { name: :total_encounter_rate, type: :int, default: 0 },
-    }) }
+    })
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)
     # carries a lot more of liblcf's full `SaveMapEventBase` struct
@@ -1454,7 +1556,7 @@ module LCF
     # Whether genuine RPG_RT ever *reads* this pair back for anything beyond
     # round-tripping it through Save/Continue is not established either way
     # -- see docs/TODO.md.
-    SAVE_PICTURE = lazy { {
+    SAVE_PICTURE = {
       1 => { name: :name, type: :string },              # ピクチャグラフィックのファイル名
       # Show Picture's own "fixed to map position" checkbox (param4 in
       # `Interpreter#do_show_picture`, which pins the picture to scroll with
@@ -1560,7 +1662,7 @@ module LCF
       # covering both a still picture and an old save missing this field
       # entirely) means #restore_pictures does not start a fresh move on load.
       51 => { name: :time_left, type: :int, default: 0 },
-    } }
+    }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/40.html
     #
@@ -1592,7 +1694,7 @@ module LCF
     # are also identified by liblcf as `hp_mod` (`0x21`→33) and `sp_mod`
     # (`0x22`→34) — unconfirmed stat modifiers, not the title — which is why
     # they stay undecoded here.
-    SAVE_PARTY_ACTOR = lazy { {
+    SAVE_PARTY_ACTOR = {
       1 => { name: :actor_name, type: :string },            # 名前
       2 => { name: :title, type: :string },                 # 二つ名 (Change Actor Title)
       # A live Change Sprite Association (10630) override, confirmed against
@@ -1701,20 +1803,20 @@ module LCF
       42 => { name: :defense_mod, type: :int, default: 0 },
       43 => { name: :spirit_mod, type: :int, default: 0 },
       44 => { name: :agility_mod, type: :int, default: 0 },
-    } }
+    }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/37.html
     #
     # Remembered teleport/escape destination (chunk 110), indexed by map id.
     # Index 0 is reserved for the escape target.
-    SAVE_TARGET = lazy { {
+    SAVE_TARGET = {
       1 => { name: :map_id, type: :int },
       2 => { name: :x, type: :int, default: 0 },
       3 => { name: :y, type: :int, default: 0 },
       # Turn the switch on after teleporting.
       4 => { name: :switch_on, type: :bool, default: false },
       5 => { name: :switch_id, type: :int, default: 1 },
-    } }
+    }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/27.html
     #
@@ -1746,7 +1848,7 @@ module LCF
     # the hero, and puts it at (320,240) for that tile) over all but 260 of
     # 307200 pixels, the residual being one animated coastline autotile. That is
     # what pins the unit: 5120/16 = 320.
-    SAVE_MAP_EVENT = lazy { {
+    SAVE_MAP_EVENT = {
       1 => { name: :scroll_x, type: :int, default: 0 }, # 1/16 px
       2 => { name: :scroll_y, type: :int, default: 0 }, # 1/16 px
       # A live Change Encounter Rate (11740) override, or -1/absent for "no
@@ -1774,7 +1876,7 @@ module LCF
       11 => { name: :events, type: :Array2D, elements: SAVE_MOVABLE },
       21 => { name: :chip_replacement_lower, type: :int8_array }, # uint8[144]
       22 => { name: :chip_replacement_upper, type: :int8_array }, # uint8[144]
-    } }
+    }
 
     # Camera scroll fields of SAVE_MAP_EVENT are stored in 1/16 pixel.
     SCROLL_UNITS_PER_PIXEL = 16
@@ -1806,7 +1908,7 @@ module LCF
     # a few hundred lines down in game.rb already flagged and worked around
     # without diagnosing). `#to_lsd`/`#from_lsd` (mruby-rpg2k/mrblib/game.rb)
     # updated to match.
-    SAVE_INVENTORY = lazy { {
+    SAVE_INVENTORY = {
       1 => { name: :party_count, type: :int, default: 0 },
       2 => { name: :party, type: :int16_array },
       11 => { name: :item_count, type: :int, default: 0 },
@@ -1839,125 +1941,7 @@ module LCF
       35 => { name: :victories, type: :int },
       41 => { name: :turns, type: :int },
       42 => { name: :steps, type: :int },
-    } }
-
-    # One stack frame of an interpreter's own call stack (liblcf's
-    # `SaveEventExecFrame`), nested inside SAVE_EVENT_EXEC_STATE's own `stack`
-    # field below. Each frame carries its OWN full `commands` list (0x02,
-    # `Vector<EventCommand>` -- reusing the existing `:event` schema type, the
-    # same one MAP_EVENT_PAGE's own `event_commands` uses, which already
-    # round-trips through `LCF.parse_event_commands`/`encode_event_commands`),
-    # i.e. the exact command page being executed, not just a reference to one
-    # -- a Call Event pushes a frame whose commands come from the called
-    # event, so a nested call round-trips without needing to re-resolve
-    # anything (see `Game::Interpreter#call_stack_snapshot`/
-    # `#restore_call_stack`, mruby-rpg2k/mrblib/interpreter.rb). Field 0x01
-    # (`command_size`) mirrors field 0x02's own encoded byte length exactly,
-    # the same size-field convention `MAP_EVENT_PAGE`'s own
-    # `event_command_size` (field 51) already established -- see that field's
-    # own comment for why a stale length hangs genuine RPG_RT.exe; this
-    # codebase's own writer (`Game::State#to_lsd`) recomputes it the same way.
-    #
-    # `event_id` (0x0C, "0 if it's common event or in other map" per liblcf's
-    # own comment): cycle #192 gave each frame its own genuine value.
-    # `Game::Interpreter#do_call_event` now records, at the moment it pushes
-    # each frame, the concrete map-event id that frame's own `commands` list
-    # actually belongs to (via `#resolve_call`/`#map_event_call`, which
-    # already resolve exactly that to look the list up in the first place),
-    # or 0 when the call target was a common event -- see
-    # `#call_stack_snapshot`'s own comment for exactly how each frame's
-    # value is derived (the outermost frame is always this whole
-    # interpreter's own `#event_id`; every frame beneath it carries its own
-    # Call Event's resolved target). "...or in other map" does not name a
-    # distinct, reachable case here: Call Event's own command format (param0
-    # 0/1/2, see `#do_call_event`'s own comment) never names a map at all,
-    # only a common-event id or a same-map event id/page, so this codebase's
-    # own model has no "different map" target to ever resolve into a frame
-    # -- 0 covers both the common-event case and (vacuously) that one.
-    # `triggered_by_decision_key` (0x0D) is still written from this whole
-    # interpreter's single `#triggered_by_decision_key`, true only for the
-    # outermost frame (index 0): a Call Event's own nested frame was never
-    # itself started by the action key, whatever launched the outer event --
-    # this part was already correct as of cycle #191 and cycle #192 left it
-    # untouched.
-    #
-    # `subcommand_path` (0x15 count / 0x16 data, one byte per nesting level --
-    # the chosen Show Choice branch id at that level, 255 once taken, per
-    # liblcf's own comment on the field) is always written empty here. This
-    # engine's own Show Choices (`#do_show_choices`/`#find_choice_option`)
-    # resumes purely off the flat `current_command` cursor: once a branch is
-    # chosen, `@index` already points inside that branch's own commands (see
-    # `#choose`), so replaying from `current_command` alone reaches the right
-    # code with no separate "which Case was taken" lookup needed, unlike
-    # genuine RPG_RT's own jump-to-matching-Case mechanism, which is what
-    # `subcommand_path` exists to drive. Verified by reading (not by a wine
-    # capture) that nothing else in this engine's interpreter ever consults a
-    # branch identity beyond command position. This is a genuine, deliberate
-    # simplification for this engine's own internal round-trip fidelity (its
-    # own Continue), not an attempt at full interop with genuine RPG_RT.exe
-    # reading our `.lsd` files (or the reverse) -- a real save captured mid a
-    # Show Choices prompt would need this field decoded to resume the exact
-    # same way genuine RPG_RT would.
-    SAVE_EVENT_EXEC_FRAME = lazy { {
-      1  => { name: :command_size, type: :int, default: 0 },
-      2  => { name: :commands, type: :event, default: [] },
-      11 => { name: :current_command, type: :int, default: 0 },
-      12 => { name: :event_id, type: :int, default: 0 },
-      13 => { name: :triggered_by_decision_key, type: :bool, default: false },
-      21 => { name: :subcommand_path_size, type: :int, default: 0 },
-      22 => { name: :subcommand_path, type: :int8_array, default: [] },
-    } }
-
-    # An interpreter's full execution state (liblcf's `SaveEventExecState`):
-    # `stack` (0x01, `Array<SaveEventExecFrame>` -- see SAVE_EVENT_EXEC_FRAME
-    # just above) is the genuine call stack, outermost frame first, matching
-    # `Game::Interpreter#call_stack_snapshot`'s own `@call_stack + [[@list,
-    # @index, event_id]]` order (this codebase's own writer/reader convention
-    # for the frame's own array index within `stack`, 1-based ascending outer
-    # to inner -- not confirmed against a genuine multi-frame capture, since
-    # none was available; only that a single-frame `stack` round-trips against
-    # this codebase's own reading of the field table). `SaveMapEvent`'s own
-    # 0x6C field and `SaveCommonEvent`'s own field 1 both point at this same
-    # struct (`generator/csv/fields.csv`'s `Save.foreground_event_execstate`
-    # field, 0x71 at the top-level Save struct, is the same struct again).
-    #
-    # Everything below `stack` -- `show_message`, `abort_on_escape`,
-    # `wait_movement`, the whole keyinput_* cluster, `wait_time`, and
-    # `wait_key_enter` -- is declared here for read-fidelity (so a genuine
-    # third-party `.lsd` carrying them decodes cleanly instead of raising on
-    # an unknown field), but is schema-only: this engine's own writer
-    # (`Game::State#to_lsd`) never populates them (they are always absent,
-    # reading back at their liblcf defaults below), and its own reader never
-    # feeds them into any live interpreter wait state. Only `stack` is
-    # genuinely round-tripped end to end. See `Game::Interpreter
-    # #call_stack_snapshot`'s own comment for exactly what capturing "mid a
-    # blocking wait" (Show Message/Choices/Key Input/etc.) does and does not
-    # preserve today -- the call-stack position survives, the UI-facing wait
-    # itself does not.
-    SAVE_EVENT_EXEC_STATE = lazy { {
-      1  => { name: :stack, type: :Array2D, elements: SAVE_EVENT_EXEC_FRAME },
-      4  => { name: :show_message, type: :bool, default: false },
-      11 => { name: :abort_on_escape, type: :bool, default: false },
-      13 => { name: :wait_movement, type: :bool, default: false },
-      21 => { name: :keyinput_wait, type: :bool, default: false },
-      22 => { name: :keyinput_variable, type: :uint8, default: 0 },
-      23 => { name: :keyinput_all_directions, type: :bool, default: false },
-      24 => { name: :keyinput_decision, type: :int, default: 0 },
-      25 => { name: :keyinput_cancel, type: :int, default: 0 },
-      26 => { name: :keyinput_2kshift_2k3numbers, type: :int, default: 0 },
-      27 => { name: :keyinput_2kdown_2k3operators, type: :int, default: 0 },
-      28 => { name: :keyinput_2kleft_2k3shift, type: :int, default: 0 },
-      29 => { name: :keyinput_2kright, type: :int, default: 0 },
-      30 => { name: :keyinput_2kup, type: :int, default: 0 },
-      31 => { name: :wait_time, type: :int, default: 0 },
-      32 => { name: :keyinput_time_variable, type: :int, default: 0 },
-      35 => { name: :keyinput_2k3down, type: :int, default: 0 },
-      36 => { name: :keyinput_2k3left, type: :int, default: 0 },
-      37 => { name: :keyinput_2k3right, type: :int, default: 0 },
-      38 => { name: :keyinput_2k3up, type: :int, default: 0 },
-      41 => { name: :keyinput_timed, type: :bool, default: false },
-      42 => { name: :wait_key_enter, type: :bool, default: false },
-    } }
+    }
 
     # Saved common-event execution state (chunk 114): an Array2D indexed by
     # common-event id -- 505 entries in a real Nepheshel save (this codebase's
@@ -1976,9 +1960,9 @@ module LCF
     # confirm a fresh interpreter resumes and finishes identically -- see
     # `scripts/rpg2k/logic_check.rb`). Native command/cursor/wait bytes are
     # also covered by the RPG_RT capture in ADR 0400.
-    SAVE_COMMON_EVENT = lazy { {
+    SAVE_COMMON_EVENT = {
       1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
-    } }
+    }
 
     # Foreground (map / parallel) event interpreter state (chunk 113): the
     # event that was mid-execution when the game was saved. A save taken from
@@ -2005,7 +1989,7 @@ module LCF
       1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
     }
 
-    SAVE_SYSTEM = lazy { {
+    SAVE_SYSTEM = {
       # 0 map, 1 menu, 2 battle, 3 shop, 4 name input, 5 save/load,
       # 6 title, 7 game over, 8 F9 debug menu.
       1 => { name: :scene, type: :int, default: 0 },
@@ -2249,11 +2233,11 @@ module LCF
       # what the field menu's Wait command (id 8) flips. RPG2000 saves never
       # carry it (the chunk is 2003-only), so an absent chunk reads 0 (wait).
       140 => { name: :atb_mode, type: :int, default: 0 },
-    } }
+    }
 
     # Fields shown on the file-select screen (chunk 100 of the save file). The
     # wiki lists them inline at the top of the save-data page.
-    SAVE_TITLE = lazy { {
+    SAVE_TITLE = {
       1 => { name: :timestamp, type: :double },
       11 => { name: :hero_name, type: :string },
       12 => { name: :hero_level, type: :int },
@@ -2266,10 +2250,10 @@ module LCF
       26 => { name: :face3_index, type: :int, default: 0 },
       27 => { name: :face4_name, type: :string },
       28 => { name: :face4_index, type: :int, default: 0 },
-    } }
+    }
 
     # liblcf SaveScreen fields; native weather captures are recorded in ADR 0400.
-    SAVE_SCREEN = lazy { {
+    SAVE_SCREEN = {
       1 => { name: :tint_finish_red, type: :int, default: 100 },
       2 => { name: :tint_finish_green, type: :int, default: 100 },
       3 => { name: :tint_finish_blue, type: :int, default: 100 },
@@ -2298,7 +2282,7 @@ module LCF
       # capture). `Game::Screen` has no equivalent "last played battle
       # animation" state to source these from at all, so left undecoded --
       # a larger gap than the pan fields above, for a future cycle.
-    } }
+    }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/13.html documents the LcfSaveData chunk
     # map. Chunks 109 (inventory) and 114 (common-event state), still marked

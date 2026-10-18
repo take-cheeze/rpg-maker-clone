@@ -1,0 +1,1 @@
+- **LCF schema tables are plain Hash constants.** The save-state tables in `LCF::Schema` (`SAVE_MOVABLE`, `SAVE_PARTY_ACTOR`, `SAVE_SYSTEM`, ...) are no longer wrapped in `LCF::Schema.lazy` lambdas, so `LCF::Schema::X` is a `Hash` and callers drop `.call`. Tables are now defined before any table that names them. No change to the decoded schema.
