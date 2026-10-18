@@ -1,0 +1,1 @@
+- **bc2cpp**: ADR 0490 records why literal `Color`, `Rect` and `Tone` constants are still built at startup rather than persisted as static data. No runtime or codegen change.
