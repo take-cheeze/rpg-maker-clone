@@ -1,0 +1,1 @@
+- The bc2cpp compiler looks up an instruction's first operand of a given kind through a per-instruction index instead of scanning the operand list on every call. Generated code is unchanged.
