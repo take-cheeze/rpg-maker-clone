@@ -188,7 +188,7 @@ class IO
   def pos=: (untyped) -> untyped
   def printf: (*untyped) -> untyped
   def rewind: () -> untyped
-  def self.open: (*untyped) -> IO | (*untyped) { (untyped) -> untyped } -> untyped
+  def self.open: (*untyped) -> IO | (*untyped) { (IO) -> untyped } -> untyped
   def self.pipe: () -> untyped
   def self.popen: (untyped, ?untyped, **untyped) -> untyped
   def self.read: (untyped, ?untyped, ?untyped, ?mode: untyped) -> untyped
