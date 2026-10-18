@@ -103,6 +103,20 @@ bytes off, 6,142,782 on), so the gain is source size and parse time, not code si
 `scripts/bc2cpp/register_flow_check.rb` holds hand-built soundness shapes and a
 compiled-versus-interpreted run with the pass on, off and in window mode.
 
+Register-read masks are accumulated directly while scanning each instruction's
+text, avoiding intermediate register lists, flattening and deduplication. The
+same identifier pattern still counts comments and string literals conservatively;
+duplicate mentions set the same bit, including register numbers beyond the host
+integer's immediate range.
+
+On revision `fe9086fe`, two alternating warm comparisons with Ruby 4.0.5 + YJIT,
+the Wio whole-engine source set and `BC2CPP_HOT_ONLY=0` reduced allocations from
+83.46 million to 82.21–82.22 million per generation (about 1.5%). Wall times were
+42.43/41.18 seconds before and 40.59/41.41 seconds after, so these shared-host
+measurements do not establish a consistent elapsed-time improvement. Generated
+C++ (20,909,643 bytes) and diagnostics excluding timing lines and checkout roots
+were identical. These measurements exclude base-RBS generation and C++ compilation.
+
 Optional-argument switch model (`BC2CPP_REGISTER_FLOW_GOTO`), same tree, shipped
 build (`coverage_report.rb`, `SKIP_UNSUPPORTED=1`):
 
