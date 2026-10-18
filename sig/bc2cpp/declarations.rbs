@@ -1795,7 +1795,7 @@ module RGSS::Graphics
   def frame_reset: () -> self
   def snap_to_bitmap: () -> untyped
   def update: () -> nil
-  def self.frame_reset: () -> untyped
+  def self.frame_reset: () -> singleton(RGSS::Graphics)
   def self.snap_to_bitmap: () -> untyped
   def self.update: () -> nil
 end
