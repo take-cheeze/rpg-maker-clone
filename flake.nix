@@ -66,7 +66,7 @@
                 ninja
                 nixfmt
                 pre-commit
-                ruby
+                ruby_4_0
                 sccache
                 unar
                 wget
@@ -112,6 +112,7 @@
             CMAKE_GENERATOR = "Ninja";
             CTEST_OUTPUT_ON_FAILURE = "1";
             GLOG_logtostderr = "1";
+            RUBY_YJIT_ENABLE = "1";
             LOCALE_ARCHIVE =
               if system == "x86_64-linux" then "${pkgs.glibcLocales}/lib/locale/locale-archive" else null;
             shellHook = ''
@@ -420,10 +421,11 @@
           # directory (RGSS_MRUBY_BUILD_DIR, default build/mruby/host).
           clang = pkgs.mkShell {
             packages = [
-              pkgs.ruby
+              pkgs.ruby_4_0
               (pkgs.python3.withPackages (ps: [ ps.libclang ]))
             ];
             LIBCLANG_FILE = "${pkgs.llvmPackages.libclang.lib}/lib/libclang.so";
+            RUBY_YJIT_ENABLE = "1";
           };
 
           # PSP development: everything `psp-cmake`/`cmake --build` needs to

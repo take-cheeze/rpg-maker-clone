@@ -1,0 +1,1 @@
+- **Build:** the Nix dev shells and the `build` derivation use CRuby 4.0 (`ruby_4_0`) instead of 3.4.9, and the dev shells enable YJIT by default (`RUBY_YJIT_ENABLE=1`). See ADR 0488.
