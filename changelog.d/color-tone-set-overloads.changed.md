@@ -1,0 +1,1 @@
+- **bc2cpp:** `RGSS::Color#set` and `RGSS::Tone#set` are declared as overloads: a Color or Tone object, or three to four numbers. The base declarations are generated from the native `mrb_get_args` forms, so the checker sees both calling conventions instead of `(*untyped)`.
