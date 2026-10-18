@@ -1028,6 +1028,9 @@
   avoiding a repeated AST walk for every queried name. See
   [foreign method scanning](docs/bc2cpp-foreign-method-scanning.md) for measurements.
 
+- [Native base RBS scanning](docs/bc2cpp-native-scanning.md) jumps between braces
+  during body extraction and avoids redundant owner-pattern matches.
+
 - The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) is closed-world
   only: it compiles the RPG2000/2003-only psp/wio/maix builds, whose only Ruby
   is the engine's own, and every other build (desktop, wasm, Android) stays the
