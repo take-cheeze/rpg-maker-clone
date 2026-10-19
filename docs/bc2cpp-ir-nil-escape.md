@@ -71,3 +71,12 @@ disagreements. Its verdicts are therefore unchanged.
   the forward flow of a value through many registers does not need.
 * The closure-tree walk (`closure_children`, `subtree_refs`) follows the
   irep tree (`reps`) the IR does not model; only its op scans moved.
+
+## Validation
+
+* `scripts/bc2cpp/join_dominance_check.rb` (now with copy-chain, sibling,
+  join and negative cases), `declared_return_guard_check.rb` and
+  `generic_block_return_check.rb` pass.
+* `MRBC=… ruby scripts/bc2cpp/type_check.rb --no-sends -q` exits 0.
+* `scripts/bc2cpp/closed_build.bash` generates and compiles the four
+  `*-compiled` gems.

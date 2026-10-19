@@ -1,4 +1,4 @@
-# 0497. NIL_NARROWING and ESCAPE_ANALYSIS run on the bytecode IR
+# 0505. NIL_NARROWING and ESCAPE_ANALYSIS run on the bytecode IR
 
 Date: 2026-10-19
 
