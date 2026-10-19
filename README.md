@@ -1114,6 +1114,8 @@
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
   per-pass text scraping, including a reaching-definitions query
   (`BytecodeIR.reaching_definitions`) that answers through joins and loops.
+  The return and receiver class proofs read a body's exits and returned-value
+  definitions from the same IR ([return sites](docs/bc2cpp-ir-return-sites.md)).
   [IR value-class inference](docs/bc2cpp-ir-types.md) builds on these definitions
   to union literal and ENTER-created types conservatively across those paths.
   Declaration-aware queries also track required RBS arguments, including nullable,
