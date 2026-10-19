@@ -106,7 +106,10 @@ CHECKS = [
   { name: 'maix-boot-marker', command: %w[scripts/maix/boot_marker_check.rb] },
   # The generator's scan cache (ADR 0415): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-scan-cache', command: %w[scripts/bc2cpp/scan_cache_check.rb] },
-  { name: 'bc2cpp-native-owner-scopes', command: %w[scripts/bc2cpp/native_owner_scopes_check.rb] },
+  { name: 'bc2cpp-native-registration', command: %w[scripts/bc2cpp/native_registration_check.rb] },
+  { name: 'bc2cpp-native-results', command: %w[scripts/bc2cpp/native_results_check.rb] },
+  { name: 'bc2cpp-native-arity', command: %w[scripts/bc2cpp/native_arity_check.rb] },
+  { name: 'bc2cpp-native-ast-returns', command: %w[scripts/bc2cpp/native_ast_returns_check.rb] },
   # The generator's Prism parse memo (ADR 0416): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-ruby-parse-cache', command: %w[scripts/bc2cpp/ruby_parse_cache_check.rb] },
   # No CRuby-side lines of mrblib, but every scripts/**/*_check.rb rides here.

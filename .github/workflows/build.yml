@@ -1044,6 +1044,7 @@ jobs:
           ruby scripts/bc2cpp/constructor_overloads_check.rb
           ruby scripts/bc2cpp/alias_method_check.rb
           ruby scripts/bc2cpp/core_facts_rbs_check.rb --require-mruby
+          ruby scripts/bc2cpp/native_format_types_check.rb
           # ci:parallel end
           CHECKS
           source "$RUNNER_TEMP/bc2cpp-checks.sh"
@@ -1227,8 +1228,6 @@ jobs:
           - name: bc2cpp native, RBS and definer checks
             run: |
               ruby scripts/bc2cpp/numeric_flow_speed_check.rb
-              ruby scripts/bc2cpp/native_path_registrations_check.rb
-              ruby scripts/bc2cpp/native_sigs_check.rb
               ruby scripts/bc2cpp/core_facts_rbs_check.rb
               ruby scripts/bc2cpp/base_rbs_check.rb
               ruby scripts/bc2cpp/foreign_definers_cache_check.rb

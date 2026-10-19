@@ -49,7 +49,7 @@ registrations through it.
   noise. CI's bc2cpp-build job time is the end-to-end figure. Max RSS is unchanged (858 MB and 868 MB).
 * On all 177 native sources of the engine's tree (59 with registrations), `path_registrations` equals a fresh
   `scan_class_registrations([path])`, key by key. A second ask returns the same frozen object.
-* `scripts/bc2cpp/native_path_registrations_check.rb` (host only, about 0.1 s) checks that the answer equals a fresh
+* `scripts/bc2cpp/native_registration_check.rb` (host only, about 0.1 s) checks that the answer equals a fresh
   scan, that a second ask does not scan, that the maps are frozen, that a rewritten source is scanned again, that a
   missing path is not cached, and that `nil_unanswerable_refusal` uses the memo.
 * Left for later, measured in the same profile: `ForeignDefiners.scan` rebuilds and hashes its stat key of every
