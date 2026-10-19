@@ -1054,6 +1054,13 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/integer_arith_constant_check.rb
 
+      # BYTECODE_CONSTANT_FACTS (ADR 0501): the IR's class, value and interval of constant bindings, fixture by fixture.
+      - name: Bytecode IR constant facts check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
+
       # CONSTANT_OWNERS (tools/bc2cpp/type_facts.rb const_rows): a frozen Array or Hash literal, a Hash#merge and a
       # frozen sum are typed by owner-scoped stock proofs; each Ruby definition, prepend or mixin that refuses one is a case.
       - name: Constant owner proofs check
