@@ -1025,9 +1025,7 @@ jobs:
           ruby scripts/bc2cpp/type_check.rb --no-sends
           ruby scripts/bc2cpp/constant_reviewed_check.rb
           ruby scripts/bc2cpp/shared_generation_check.rb
-          ruby scripts/bc2cpp/declared_array_sum_check.rb
-          ruby scripts/bc2cpp/lexical_join_check.rb
-          ruby scripts/bc2cpp/declared_join_check.rb
+          ruby scripts/bc2cpp/constant_proofs_check.rb
           ruby scripts/bc2cpp/symbol_flow_check.rb
           ruby scripts/bc2cpp/struct_receiver_check.rb
           ruby scripts/bc2cpp/upvar_walks_check.rb
