@@ -3344,7 +3344,9 @@ jobs:
     # detail this job does not control and CI emulators are a known source of
     # first-boot flakiness.
     needs: android
-    if: ${{ github.event_name != 'issue_comment' }}
+    # Emulator boot is flaky on pull requests (SDK downloads fail before any
+    # test runs); the APK build above still checks every PR.
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     continue-on-error: true
     env:
