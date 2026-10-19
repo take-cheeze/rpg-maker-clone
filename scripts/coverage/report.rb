@@ -98,6 +98,8 @@ CHECKS = [
   { name: 'bc2cpp-upvar-walks', command: %w[scripts/bc2cpp/upvar_walks_check.rb] },
   # CI helpers (compiler launcher, mutant pool, timing wrapper): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'ci-helpers', command: %w[scripts/ci/helpers_check.rb] },
+  # The maix-smoke boot-marker matcher's self-test: no mrblib lines, listed to mirror `ruby-checks`.
+  { name: 'maix-boot-marker', command: %w[scripts/maix/boot_marker_check.rb] },
   # The generator's scan cache (ADR 0415): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-scan-cache', command: %w[scripts/bc2cpp/scan_cache_check.rb] },
   { name: 'bc2cpp-native-owner-scopes', command: %w[scripts/bc2cpp/native_owner_scopes_check.rb] },

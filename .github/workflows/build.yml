@@ -1309,6 +1309,12 @@ jobs:
           - name: CI helpers
             run: ruby scripts/ci/helpers_check.rb
 
+          # The maix-smoke boot-marker matcher (scripts/maix/boot_marker.rb): a
+          # marker with a Renode log record spliced into it must match, a log
+          # without it must not.
+          - name: Maix boot marker matcher
+            run: ruby scripts/maix/boot_marker_check.rb
+
           # ADR 0415: the disk memo of the generator's native-source scans (keys, invalidation,
           # failure reporting, concurrent writers); the real-scanner half skips without 3rd/mruby.
           - name: bc2cpp scan cache
@@ -2267,8 +2273,10 @@ jobs:
           test -n "$elf" || { echo "::error::no firmware.elf in artifact:"; find firmware; exit 1; }
           out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode MAIX_SPI_LOG="$GITHUB_WORKSPACE/maix-spi-rgss.log" scripts/maix/renode_boot.bash "$elf")"
           echo "$out"
-          echo "$out" | grep -q "REACHED setup()" || { echo "::error::did not reach setup()"; exit 1; }
-          echo "$out" | grep -q "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
+          # The REACHED markers go through the matcher, not grep: a Renode
+          # [WARNING] record can land inside one (scripts/maix/boot_marker.rb).
+          echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED setup()" || { echo "::error::did not reach setup()"; exit 1; }
+          echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
           echo "$out" | grep -q "mrb_open ok" || { echo "::error::mruby did not open"; exit 1; }
           echo "$out" | grep -q "eval -> maix-ruby-alive" || { echo "::error::mruby eval failed"; exit 1; }
 

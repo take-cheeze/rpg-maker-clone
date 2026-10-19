@@ -1,0 +1,1 @@
+- **Maix Amigo CI** `maix-smoke` now matches the `REACHED setup()` / `REACHED loop()` markers through `scripts/maix/boot_marker.rb`, so a Renode `[WARNING]` record spliced into a marker no longer reports "did not reach loop()". A log without the marker still fails; `scripts/maix/boot_marker_check.rb` runs in `ruby-checks`.
