@@ -1046,6 +1046,20 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/symbol_flow_check.rb
 
+      # STRUCT_RECEIVER (registry.rb): a Struct.new / singleton receiver read by a dominating walk, through MOVEs.
+      - name: Struct receiver check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/struct_receiver_check.rb
+
+      # UPVAR_WALKS (bytecode_ir_dataflow.rb each_nested_insn): the nested-block upvar walks share one walker.
+      - name: Upvar walks check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/upvar_walks_check.rb
+
       # NUMERIC_CONSTANT_RANGES typing (docs/bc2cpp-type-check.md): arithmetic constants typed Integer by their interval,
       # refused under a redefined Integer operator, and the floor-division value.
       - name: Integer arithmetic constant check
@@ -1112,6 +1126,14 @@ jobs:
           mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/loop_element_writes_check.rb
+
+      # IR_BLOCK_OPERANDS (ADR 0504): YIELD_REACH, BLOCK_SELF_WORLD and BLOCK_RETURNS read registers through the
+      # bytecode IR (joins, blocks reached through locals, nested SETUPVAR writes, `x[i]` receivers; seconds).
+      - name: IR block operand check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/ir_block_operands_check.rb
 
       # ADR 0468: the owner call (chain elses, bare sends, name owner sets), the leaf-class self.new and the audited
       # constructor overloads, generated code and the interpreted-versus-compiled runs. The runs link a full-core
@@ -3353,7 +3375,9 @@ jobs:
     # detail this job does not control and CI emulators are a known source of
     # first-boot flakiness.
     needs: android
-    if: ${{ github.event_name != 'issue_comment' }}
+    # Emulator boot is flaky on pull requests (SDK downloads fail before any
+    # test runs); the APK build above still checks every PR.
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     continue-on-error: true
     env:

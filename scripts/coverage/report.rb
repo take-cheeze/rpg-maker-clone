@@ -57,6 +57,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-yields', command: %w[scripts/bc2cpp/ir_yield_types_check.rb] },
   { name: 'bc2cpp-ir-captures', command: %w[scripts/bc2cpp/ir_block_captures_check.rb] },
+  { name: 'bc2cpp-ir-block-operands', command: %w[scripts/bc2cpp/ir_block_operands_check.rb] },
   { name: 'bc2cpp-ir-numeric-classes', command: %w[scripts/bc2cpp/ir_numeric_classes_check.rb] },
   { name: 'bc2cpp-ir-rbs-blocks', command: %w[scripts/bc2cpp/ir_rbs_block_types_check.rb] },
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
@@ -90,6 +91,8 @@ CHECKS = [
   { name: 'bc2cpp-fallback-bodies', command: %w[scripts/bc2cpp/fallback_bodies_check.rb] },
   # Its hand-built-irep half (the compiled half needs mrbc, bc2cpp-build in build.yml): no mrblib lines.
   { name: 'bc2cpp-loop-element-writes', command: %w[scripts/bc2cpp/loop_element_writes_check.rb] },
+  { name: 'bc2cpp-struct-receiver', command: %w[scripts/bc2cpp/struct_receiver_check.rb] },
+  { name: 'bc2cpp-upvar-walks', command: %w[scripts/bc2cpp/upvar_walks_check.rb] },
   # CI helpers (compiler launcher, mutant pool, timing wrapper): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'ci-helpers', command: %w[scripts/ci/helpers_check.rb] },
   # The generator's scan cache (ADR 0415): no mrblib lines, listed to mirror `ruby-checks`.
