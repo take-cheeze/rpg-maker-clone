@@ -75,7 +75,19 @@ literals and other constants, whose every definition has an interval inside the 
 (`IntegerConstantRanges`, NUMERIC_CONSTANT_RANGES). It is typed only when no other producer types it first, so no existing
 row changes. The proof is withheld when a Ruby definition of `+ - * / ==` sits on Integer or a module it includes, or a
 module is prepended into Integer (the owner-scoped `IntegerConstantRanges.integer_ops_safe?`); the exact-value proof of
-`IntegerConstants` takes the same gate. `scripts/bc2cpp/integer_arith_constant_check.rb` covers both.
+`IntegerConstants` takes the same gate. A divisor interval that contains 0 has no interval. `scripts/bc2cpp/integer_arith_constant_check.rb`
+covers these.
+
+FREEZE_SELF: `R.freeze` answers its receiver (Object#freeze), so a `.freeze` send has the receiver's type while `freeze` is
+stock on that class. The one proof is `DeclaredConstants.stock_method?('freeze', klass, ...)` (owners Integer, String,
+Array, Hash with their ancestors; no Ruby `freeze`, prepend or unresolved mixin on them). It is used in two places:
+* `inferred:freeze-self` (`TypeFacts#freeze_self_type`): a constant whose every assignment is `(literal).freeze` of the same
+  class (Integer, String, Array or Hash literal) with stock `freeze` gets that class. Only a literal receiver is proven;
+  a send, sum or ivar receiver keeps its own producer, so `(DIR_BIT[2] | DIR_BIT[4]).freeze` stays untyped.
+* the `inferred:integer-range` walk reads through `.freeze` on an Integer expression (`freeze_safe:`), so
+  `SLOT = (A - B).freeze` has the interval of `A - B`. Without the proof the freeze is a poison, as before.
+On the engine today the `inferred:freeze-self` rule types no row, since the class-pool and constructed proofs already type
+every frozen literal constant it covers; it is a fallback for names those proofs do not reach.
 
 Four further constant producers come after the ones above, each consulted only when no earlier one typed the row:
 

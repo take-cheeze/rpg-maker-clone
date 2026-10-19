@@ -6,6 +6,27 @@ runs, manual dispatch and (for the Cloudflare preview only) `/preview` comments.
 There is no separate nightly workflow: the bc2cpp checks that ran only there were removed.
 Deployment is covered in [deploy.md](deploy.md).
 
+## Native cache restore scheduling
+
+The native build restores its Nix, RTP, Wine prefix and test-game caches as
+foreground steps after checkout. Their `hashFiles` keys need the checked-out
+flake, installer scripts and sample assets; running before checkout produces
+empty hashes and prefix-only keys such as `nix-Linux-`.
+
+JavaScript actions can read `GITHUB_EVENT_PATH` during
+initialization, while runner 2.337.0 rewrites that shared event file before
+every step. Starting another step while a cache action initializes can expose
+an empty event payload and fail with `SyntaxError: Unexpected end of JSON
+input` before the build begins. The runner's
+[`WriteWebhookPayload`](https://github.com/actions/runner/blob/v2.337.0/src/Runner.Worker/ExecutionContext.cs)
+uses `File.WriteAllText`, and
+[`ActionRunner`](https://github.com/actions/runner/blob/v2.337.0/src/Runner.Worker/ActionRunner.cs)
+calls it before each action.
+
+Cache restore timeouts still report stalled backends. Independent shell
+validation and asset downloads continue as background steps; their existing
+barriers still propagate failures before the build or link consumes them.
+
 ## Native SDL probes
 
 On Linux, `exe_open`, `render_probe`, `audio_probe` and `error_dump` use reserved
@@ -42,6 +63,14 @@ A push to a pull request cancels the run still going for that PR's previous
 commit (workflow-level `concurrency`, keyed on the PR number). Master pushes,
 merge-queue runs, manual dispatches and `/preview` comments use a per-run group
 and are never cancelled.
+
+### Profiling bc2cpp on a desktop host
+
+`bc2cpp` is closed-world only, and CI profiles it on wio's world. For local
+profiling on a machine with a display, set
+`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` (ADR 0428) to build `host` as a sealed
+RPG2000/2003-only world, so `bc2cpp` runs there without a cross toolchain.
+This is test-only and cannot play XP/VX/Wolf/MV or arbitrary runtime Ruby.
 
 ### Host Ruby uses YJIT for bc2cpp
 

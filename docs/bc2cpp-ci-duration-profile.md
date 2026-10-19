@@ -9,6 +9,15 @@ from the Actions API (job `started_at` to `completed_at`, queueing excluded). Lo
 Ubuntu 24.04 sandbox with the same toolchain as the runner, no sccache; the local serial run of `bc2cpp-width
 (int32-a)` took 45.8 minutes against 45.4 on CI, so the local harness is a fair stand-in for the checks.
 
+## 0. Profiling on a desktop host
+
+The canonical closed world the CI profiles is wio's (RPG2000/2003 only). A desktop
+host can run the same closed world for local profiling by setting
+`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` (ADR 0428): it builds the `host` target as a
+sealed RPG2000/2003-only world, so `bc2cpp` runs there too. This is test-only and
+cannot play XP/VX/Wolf/MV or arbitrary runtime Ruby; it exists so a machine with a
+display can profile without a cross toolchain.
+
 ## 1. Where the time was
 
 Nightly workflow (`bc2cpp-nightly.yml`, split from `build.yml` in #2133). Its first run has not happened yet, so
