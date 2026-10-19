@@ -1,0 +1,1 @@
+- **bc2cpp** analysis passes read their opcode-name sets from `BytecodeIR::Ops` instead of keeping their own copies. Generated output is unchanged.
