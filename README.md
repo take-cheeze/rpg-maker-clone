@@ -1723,6 +1723,10 @@
   `docs/adr/0049-ruby-line-coverage-from-the-host-side-checks.md` cover the
   details and the trade-off.
 
+- Native bc2cpp scope and registration checks share a host suite; native return
+  kinds and signature contracts share another. See [native check suites](docs/bc2cpp-native-checks.md)
+  for commands and CI prerequisites.
+
 ### Play in the browser (WebAssembly)
 
 - The runtime cross-compiles to WebAssembly with Emscripten and ships a page

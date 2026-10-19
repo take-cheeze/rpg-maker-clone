@@ -9,7 +9,7 @@ remain character offsets into the original source, including UTF-8 text. Nested
 namespace and `extern "C"` blocks still recurse into their function bodies;
 local owner resolution and malformed-block handling retain their existing rules.
 
-`ruby scripts/bc2cpp/native_owner_scopes_check.rb` checks quoted and nested
+`ruby scripts/bc2cpp/native_registration_check.rb` checks quoted and nested
 braces, Unicode offsets, namespace recursion, local owners, parameters and
 unclosed blocks. The host CI job and coverage reporter both run it.
 

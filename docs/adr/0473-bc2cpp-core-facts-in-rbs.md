@@ -57,7 +57,7 @@ The fact files are not program signatures. `RbsSignatures.files_in` skips `CoreF
 which is a behaviour change this move must not make.
 
 `scripts/bc2cpp/core_facts_rbs_check.rb` (host, about a second) checks the facts against the 3rd/mruby sources the
-build compiles. It runs twice in CI: in ruby-checks next to `native_sigs_check.rb`, which has no submodule and so
+build compiles. It runs twice in CI: in ruby-checks next to `native_results_check.rb`, which has no submodule and so
 checks only the loaders (the source part prints SKIP), and in bc2cpp-build with `--require-mruby`, where a missing
 tree is a failure:
 

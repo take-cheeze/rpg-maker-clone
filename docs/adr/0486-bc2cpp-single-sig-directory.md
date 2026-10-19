@@ -31,7 +31,7 @@ file order, so a native declaration of a method the program also declares wins.
 - One file to read and to edit. Adding a native declaration means putting the marker above it, inside the native table
   it belongs to.
 - A program declaration placed under a marker is treated as native. `scripts/bc2cpp/core_facts_rbs_check.rb` and
-  `native_sigs_check.rb` still check the native tables against their sources.
+  `native_results_check.rb` still check the native tables against their sources.
 - The loaded declarations were compared against the layout before this change (`HEAD`): the same 988 methods with the
   same native flags, argument and return types, the same ivars and supers, and the same diagnostics.
 - The base stubs from `scripts/bc2cpp/base_rbs*.rb` are committed as one native table per gem (`base_<gem>`), at the top of
