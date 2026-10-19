@@ -95,3 +95,33 @@ ireps of the engine's mrblib sources the successor lists, raise and rescue-only 
 answers and reachability sets are equal to master's, and `NumericFlow.states` returns the same states and writes and
 asks a logging oracle the same questions in the same order. The record-hash alias scan keeps its own handler-target
 lists, because its depth-first work stack would visit duplicate targets in another order.
+
+
+## Follow-up: avoid redundant wide-mask and register-name allocations
+
+Date: 2026-10-19
+
+The per-register join compares Integer masks by value with `Integer#eql?`
+before forming their union. Equal bignums can have different object identities; when a different
+register grows, the whole-array equality fast path cannot skip their union.
+The join still copies the old state on growth, preserves provenance only when
+both edges agree, and retains the existing behavior for nil entries and invalid
+non-Integer masks. It does
+not share incoming edge states or cache oracle answers.
+
+An empty opaque-register set now builds an all-false register table directly,
+without converting every register number to a temporary String. Nonempty sets
+use the same canonical string membership checks as before.
+
+A Ruby 4.0.5 + YJIT Wio whole-engine pass against `d3296ff5`, with all compiled
+gem owners, `BC2CPP_HOT_ONLY=0`, no hot-method list and warmed scan caches,
+measured 78,856,464 allocated objects before and 77,919,603 after (936,861
+fewer, or 1.19%). Elapsed time was 41.27 s before and 40.65 s after; a single
+pair is insufficient to attribute that difference to this change. The 20,909,643-byte generated C++ and diagnostics
+with timing lines removed were identical. This excludes RBS regeneration and
+C++ compilation.
+
+The host flow check covers 2,000 randomized joins including wide and negative
+masks, preservation of the old states and provenance, nil behavior, and empty
+and nonempty opaque sets. Existing flow cases verify oracle question order,
+loops, changing answers and captured-register handling.
