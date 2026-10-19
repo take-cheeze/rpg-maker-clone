@@ -61,6 +61,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },
   { name: 'bc2cpp-ir-ivars', command: %w[scripts/bc2cpp/ir_ivar_types_check.rb] },
+  { name: 'bc2cpp-ir-exact', command: %w[scripts/bc2cpp/ir_exact_types_check.rb] },
   { name: 'lcf-testbed',        command: %w[scripts/lcf/testbed_check.rb] },
   { name: 'lcf-bracket-access', command: %w[scripts/lcf/bracket_access_check.rb] },
   { name: 'rpg2k-command-soak', command: %w[scripts/rpg2k/command_soak.rb],
