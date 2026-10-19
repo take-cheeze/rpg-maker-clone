@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'delegate'
 require 'json'
 require 'set'
 require_relative 'annotations'
@@ -556,7 +557,110 @@ module TypeFacts
     !world.nil? && world.exact_instances_singleton_free?
   end
 
+  # EXPRESSION_CONST (docs/bc2cpp-type-check.md, "Constant typer"): a constant's type is the class set the method-body
+  # flow proves for the register its SETCONST stores. A constant initializer is instructions of its class or top-level
+  # IREP, which NumericFlow runs over like any body (return_class_states), so no synthetic method is needed. Opt-in
+  # (BC2CPP_EXPRESSION_CONST_TYPER=1) while it is measured against the specialized producers below.
+  def expression_typer?
+    ENV['BC2CPP_EXPRESSION_CONST_TYPER'] == '1'
+  end
+
+  # The class states of an initializer IREP, with the depth-aware opaque set (CodeGen#own_upvar_written_regs). The
+  # codegen flow (return_class_states) takes subtree_upvar_written_regs, which ignores a SETUPVAR's depth: a write to
+  # an enclosing scope's register 1 marks this body's register 1 opaque, and then every constant it holds is OTHER.
+  # Only the typer uses the depth-aware set; CodeGen's flow is unchanged (report-only).
+  def expression_states(ctx, irep)
+    @expression_states ||= {}
+    @expression_states[irep.label] ||= NumericFlow.states(
+      irep, RangeConstOracle.new(FreezeOracle.new(ctx.gen.send(:numeric_flow_oracle)), ctx.integer_constant_ranges || {}),
+      ctx.gen.send(:own_upvar_written_regs, irep), nil
+    )
+  end
+
+  # A constant read the class-pool proof leaves OTHER is an Integer when IntegerConstantRanges (master's Fixnum-interval
+  # proof, keyed by bare name, every definition inside the Fixnum range) names it: the same claim const_rows already
+  # types by. Only the typer's flow sees it; CodeGen's oracle is unchanged.
+  # The method-body oracle, with `x.freeze` answered by master's freeze proof (return_class_freeze_mask, which needs
+  # kernel_freeze_only?). The method-body send model has no identity case for Kernel#freeze on a non-table receiver.
+  class FreezeOracle < SimpleDelegator
+    def send_mask(irep, index, insn, state)
+      if insn.op == 'SEND0' && insn.sym == 'freeze'
+        mask = __getobj__.gen_freeze_mask(insn, state)
+        return mask if mask.is_a?(Integer) && mask.positive?
+      end
+      __getobj__.send_mask(irep, index, insn, state)
+    end
+  end
+
+  class RangeConstOracle < SimpleDelegator
+    def initialize(base, ranges)
+      super(base)
+      @ranges = ranges
+    end
+
+    def const_mask(insn)
+      mask = __getobj__.const_mask(insn)
+      return mask unless mask == NumericFlow::OTHER
+
+      name = insn.const_name
+      name && @ranges.key?(name.to_s.split('::').last) ? NumericFlow::INT : mask
+    end
+  end
+
+  # The class names the value of one assignment site holds, or the reason the flow cannot say.
+  def expression_site_type(ctx, site)
+    irep = ctx.ireps[site[:irep]]
+    return 'no-irep' unless irep && site[:reg] && site[:idx]
+
+    states = expression_states(ctx, irep)
+    state = states && states[site[:idx]]
+    return 'flow-unknown' unless state
+
+    mask = state[site[:reg].to_i]
+    return 'flow-unknown' unless mask.is_a?(Integer) && mask.positive?
+
+    names = frozen_literal_classes(ctx.gen, mask) || mask_classes(ctx.gen, mask)
+    return 'flow-mixed' if names.empty? || names.include?('OTHER') || names.include?('nil')
+
+    names.join(' | ')
+  end
+
+  # codegen_frozen_tables.rb frozen_table_exact_class, on the typer's flow mask: a value holding only frozen literal
+  # kinds of one container (`LITERAL.freeze`) is that container. Needs the same closed-world proof; nil otherwise.
+  def frozen_literal_classes(gen, mask)
+    tables = gen.send(:frozen_tables_model)
+    closed = gen.instance_variable_get(:@closed_world)
+    return nil unless tables && closed&.exact_instances_singleton_free?
+    return nil unless (mask & ~tables.mask).zero?
+
+    containers = []
+    tables.each_shape_in(mask) { |shape| containers << shape.container }
+    containers.uniq.one? ? [containers.first == :array ? 'Array' : 'Hash'] : nil
+  end
+
+  # One row per constant name: every assignment of the name must give the same class set, so a name with a second
+  # assignment of another class is untyped.
+  def expression_const_rows(ctx)
+    Array(ctx.constant_sites).group_by { |site| site[:name].to_s }.map do |name, group|
+      first = group.first
+      irep = ctx.ireps[first[:irep]]
+      row = { 'name' => name, 'owner' => first[:owner], 'type' => nil, 'source' => nil, 'reason' => nil,
+              'file' => relative(ctx, irep.file), 'line' => irep.instructions[first[:idx]].lineno, 'col' => 1,
+              'scope' => scope_of(irep.file) }
+      results = group.map { |site| expression_site_type(ctx, site) }
+      if results.uniq.size == 1 && results.first.match?(/\A[A-Z][\w:]*(?: \| [A-Z][\w:]*)*\z/)
+        row['type'] = results.first
+        row['source'] = 'inferred:expression'
+      else
+        row['reason'] = results.uniq.size == 1 ? results.first : 'mixed-sites'
+      end
+      row
+    end
+  end
+
   def const_rows(ctx)
+    return expression_const_rows(ctx) if expression_typer?
+
     classes = ctx.container_constants || {}
     pools = ctx.gen.instance_variable_get(:@class_const_pools) || {}
     ints = ctx.integer_constants || Set.new

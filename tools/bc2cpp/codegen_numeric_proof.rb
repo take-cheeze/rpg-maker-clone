@@ -98,6 +98,9 @@ class CodeGen
       @cg.numeric_op_native?(sym)
     end
 
+    # master's `x.freeze` answer (return_class_freeze_mask), for the typer's flow; nil or false when unproven.
+    def gen_freeze_mask(insn, state) = @cg.send(:return_class_freeze_mask, insn, state)
+
     def false_class_bit = @cg.numeric_false_class_bit
   end
 
@@ -109,6 +112,10 @@ class CodeGen
     @numeric_oracle = NumericOracle.new(self)
     @numeric_op_native = {}
   end
+
+  # The oracle method bodies are typed with. The exact-class oracle answers no native operator
+  # (ExactOracle#op_native?), so a flow over constant initializers must use this one to type `A + B`.
+  def numeric_flow_oracle = @numeric_oracle
 
   def numeric_op_native?(sym)
     @numeric_op_native ||= {}
