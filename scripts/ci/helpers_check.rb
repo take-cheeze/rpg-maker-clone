@@ -10,6 +10,7 @@
 require 'open3'
 require 'rbconfig'
 require 'tmpdir'
+require 'yaml'
 require_relative '../bc2cpp/cxx'
 require_relative '../bc2cpp/mutant_pool'
 
@@ -18,6 +19,19 @@ check = lambda do |what, condition|
   puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
   failures << what unless condition
 end
+
+# -- Native workflow cache ordering ---------------------------------------------------------------
+puts '-- native workflow cache ordering'
+workflow = YAML.load_file(File.expand_path('../../.github/workflows/build.yml', __dir__))
+native_steps = workflow.fetch('jobs').fetch('build').fetch('steps')
+checkout = native_steps.index { |step| step['uses']&.start_with?('actions/checkout@') }
+hashed = native_steps.each_index.select do |index|
+  native_steps[index].fetch('with', {}).values.any? { |value| value.to_s.include?('hashFiles(') }
+end
+check.call('file-hash cache keys are evaluated after checkout',
+           checkout && !hashed.empty? && hashed.all? { |index| index > checkout })
+check.call('JavaScript actions cannot race event-payload rewrites in the background',
+           native_steps.none? { |step| step['uses'] && step['background'] })
 
 # -- Bc2cppCxx -------------------------------------------------------------------------------------
 puts '-- compiler launcher'

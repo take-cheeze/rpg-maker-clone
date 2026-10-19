@@ -1651,6 +1651,10 @@
 - Linux CTest window, renderer, audio and error-dump probes select SDL's X11
   backend explicitly under Xvfb, including when launched from a Wayland session.
 
+- Native CI cache restores run sequentially after checkout so their file hashes
+  exist and JavaScript actions read a complete event payload; shell downloads
+  and validation still overlap. See [CI scheduling](docs/ci.md#native-cache-restore-scheduling).
+
 - **Formatting is checked by `build`, not by a lint job** — pre-commit runs there
   as a background step, so a formatting slip fails `build` with no compile error
   in the log. Locally, `pre-commit run clang-format --files <file>`: the hook
