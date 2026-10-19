@@ -414,6 +414,21 @@
             '';
           });
 
+          # Only host tools used by the closed-world bc2cpp gate.
+          bc2cpp = pkgs.mkShell {
+            packages = with pkgs; [
+              ruby_4_0
+              gcc
+              clang
+              bison
+              gperf
+              git
+              curl
+              python3
+              pkg-config
+            ];
+          };
+
           # libclang and its Python bindings, for scripts/native/binding_facts.py
           # (ADR 0263): `nix develop .#clang -c ruby scripts/native/binding_split.rb check`.
           # Kept out of the default shell so nothing else pays for the LLVM

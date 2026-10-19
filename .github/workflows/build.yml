@@ -947,13 +947,12 @@ jobs:
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
+          primary-key: nix-bc2cpp-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-bc2cpp-${{ runner.os }}-
 
       - name: Set up development environment
-        # Ruby (with Prism and YJIT), rake, bison and gperf for the build and the
-        # type check.
-        run: ./scripts/nix/develop-export-env.bash
+        # The small bc2cpp shell avoids the game, graphics and Wine closures.
+        run: ./scripts/nix/develop-export-env.bash .#bc2cpp
 
       - name: Verify host Ruby JIT
         run: ruby -e 'abort "YJIT is unavailable or disabled" unless RubyVM::YJIT.enabled?; puts RUBY_DESCRIPTION'
@@ -975,12 +974,14 @@ jobs:
       # about two minutes to build, identical for the same 3rd/mruby commit and build scripts, so cache it across runs.
       - name: Key for the full-core libmruby cache
         id: full-core-key
-        run: echo "mruby=$(git rev-parse HEAD:3rd/mruby)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "mruby=$(git rev-parse HEAD:3rd/mruby)" >> "$GITHUB_OUTPUT"
+          echo "stringio=$(git rev-parse HEAD:3rd/mruby-stringio)" >> "$GITHUB_OUTPUT"
       - name: Cache the full-core libmruby build
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/bc2cpp-full
-          key: bc2cpp-full-${{ steps.full-core-key.outputs.mruby }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'scripts/bc2cpp/*.bash') }}
+          key: bc2cpp-full-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.*') }}-${{ steps.full-core-key.outputs.mruby }}-${{ steps.full-core-key.outputs.stringio }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'scripts/bc2cpp/*.bash', 'patches/mruby*.patch') }}
 
       - name: Build the closed-world mruby with bc2cpp
         timeout-minutes: 45
@@ -1004,198 +1005,51 @@ jobs:
           ar t build-closed-bc2cpp/closed/lib/libmruby.a | grep -qx 'error-cxx.o'
           nm build-closed-bc2cpp/closed/lib/libmruby.a 2>/dev/null | grep -q ' U __cxa_throw$'
 
-      # BASE_RBS (scripts/bc2cpp/base_rbs_all.rb): base stubs for every gem, from the Ruby AST and clang -E over the
-      # native sources. Written under the closed build; nothing reads them as compiler inputs (sig/ is not touched).
-      - name: Base RBS for every gem
-        timeout-minutes: 10
-        run: ruby scripts/bc2cpp/base_rbs_all.rb build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
+      - name: Prepare shared check libraries
+        run: |
+          mrbc=$(find "$GITHUB_WORKSPACE/build-closed-bc2cpp/host" -path '*/bin/mrbc' -type f -print -quit)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          echo "MRBC=$mrbc" >> "$GITHUB_ENV"
+          env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "full-core mruby unavailable" unless Bc2cppFixtureRuntime.full_or_build'
+          echo "BC2CPP_MRUBY_FULL=$RUNNER_TEMP/bc2cpp-full/host" >> "$GITHUB_ENV"
 
-      # BASE_SECTION (scripts/bc2cpp/base_section_check.rb): the base section of sig/bc2cpp/declarations.rbs must be what
-      # the generators write now. A stale committed base section fails here instead of drifting from its generators.
-      - name: Base section matches the generators
-        timeout-minutes: 15
-        run: ruby scripts/bc2cpp/base_section_check.rb build-closed-bc2cpp/closed
-
-      # TYPE_CHECK (docs/adr/0412): a declared type the analysis contradicts (TC1001, TC1007) or a signature or
-      # annotation bc2cpp cannot use (TC1002, TC1004) is an error, and only errors set the exit status. An untyped
-      # engine constant the reviewed list does not cover, or a listed one that is now typed, is TC1017 (ADR 0491).
-      # Running it here makes those violations fail the job instead of waiting for someone to run the check by hand.
-      - name: Type check (declared-type violations fail the job)
+      # Two workers bound CPU/memory use; the shared libraries above are read-only.
+      # timed_checks prints every command's log and propagates failures (ADR 0510).
+      - name: Run bc2cpp checks
         timeout-minutes: 30
         run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/type_check.rb --no-sends
-
-      # CONSTANT_RATCHET (docs/adr/0491): the TC1017 gate on fixture programs (an unlisted untyped constant fails, a
-      # stale listed one fails, a clean program passes) and the list file's generated form. The real engine's list is
-      # judged by the Type check step above.
-      - name: Constant ratchet check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/constant_reviewed_check.rb
-
-      # SHARED_GENERATION (ADR 0464): one analysis forked per unit equals separate runs (a fixture, seconds).
-      - name: Shared generation check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/shared_generation_check.rb
-
-      # DECLARED_CONSTANT_CHECK ARRAY_SUM (ADR 0455): a declared `X: Array` on a sum, with the same proof as the rows.
-      - name: Declared array sum constant check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/declared_array_sum_check.rb
-
-      # Constant walks over joins (tools/bc2cpp/lexical_consts.rb, declared_constants.rb): a `c ? A : B` holder, superclass
-      # or mixin argument, and a declared element, bool or frozen proof, must agree on every arm.
-      - name: Lexical and declared constant join checks
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/lexical_join_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp/declared_join_check.rb
-
-      # SYMBOL_FLOW (ADR 0450, ADR 0499): dispatch-table name sets on the IR, and the escapes that refuse one.
-      - name: Symbol flow check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/symbol_flow_check.rb
-
-      # STRUCT_RECEIVER (registry.rb): a Struct.new / singleton receiver read by a dominating walk, through MOVEs.
-      - name: Struct receiver check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/struct_receiver_check.rb
-
-      # UPVAR_WALKS (bytecode_ir_dataflow.rb each_nested_insn): the nested-block upvar walks share one walker.
-      - name: Upvar walks check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/upvar_walks_check.rb
-
-      # NUMERIC_CONSTANT_RANGES typing (docs/bc2cpp-type-check.md): arithmetic constants typed Integer by their interval,
-      # refused under a redefined Integer operator, and the floor-division value.
-      - name: Integer arithmetic constant check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/integer_arith_constant_check.rb
-
-      # BYTECODE_CONSTANT_FACTS (ADR 0501): the IR's class, value and interval of constant bindings, fixture by fixture.
-      - name: Bytecode IR constant facts check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
-
-      # Class and module body discovery on the IR (tools/bc2cpp/bytecode_ir_classes.rb): which opener owns each body EXEC.
-      - name: Bytecode IR class bodies check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/class_bodies_check.rb
-
-      # CONSTANT_OWNERS (tools/bc2cpp/type_facts.rb const_rows): a frozen Array or Hash literal, a Hash#merge and a
-      # frozen sum are typed by owner-scoped stock proofs; each Ruby definition, prepend or mixin that refuses one is a case.
-      - name: Constant owner proofs check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/const_frozen_merge_check.rb
-
-      # BLOCK_ITERATOR_DIRECT (ADR 0472): the Kernel#loop, String and Integer-literal block arms, each world refusal, and
-      # a fixture run interpreted and compiled over the compiled core (one full-core libmruby build, under a minute; like
-      # the closed build it runs without the dev shell's LD).
-      - name: Block iterator direct check
-        timeout-minutes: 15
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" MRBC="$mrbc" ruby scripts/bc2cpp/block_iterator_direct_check.rb
-
-      # DEFINE_METHOD_LOOPS (ADR 0469): a class-definition-time define_method (literal, or in a loop over a literal
-      # list) is a compiled definition; refused shapes stay dynamic. Fixtures plus one interpreted-vs-compiled run on a
-      # full-core libmruby the check builds once with rake (the closed build's host libmruby_core.a carries gems).
-      - name: define_method check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          env -u LD MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby scripts/bc2cpp/define_method_check.rb
-
-      # BLOCK_SELF_WORLD (ADR 0477): literal blocks at rebinder sites stay interpreted; the world fact (no rebinder gets
-      # any other Proc) and, where it fails, the compiled blocks' entry check. Fixtures, the wio world's analysis, and one
-      # interpreted-vs-compiled run on the full-core libmruby the define_method check builds.
-      - name: block self world check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          env -u LD MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby scripts/bc2cpp/block_self_world_check.rb
-
-      # BLOCK_RETURNS (ADR 0475): `[T] ... { ... -> T } -> T` / `{ ... } -> self` declarations, checked against Ruby
-      # bodies and native C sources; a false one fails the build (a fixture closed world, seconds).
-      - name: Generic block return check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/generic_block_return_check.rb
-
-      # loop_flow_position's element check (codegen_send.rb, ADR 0398): a nested block's write to the loop element
-      # refuses the receiver through the reaching definitions, not the body's own write test.
-      - name: Loop element write checks
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/loop_element_writes_check.rb
-
-      # Join soundness of the literal walks (splat unroll, literal ivar/block/alias/send names, fixnum-or-nil
-      # tolerance): each snippet is compiled by mrbc and must answer for every arm of its join.
-      - name: IR join soundness check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/ir_join_soundness_check.rb
-      # IR_BLOCK_OPERANDS (ADR 0504): YIELD_REACH, BLOCK_SELF_WORLD and BLOCK_RETURNS read registers through the
-      # bytecode IR (joins, blocks reached through locals, nested SETUPVAR writes, `x[i]` receivers; seconds).
-      - name: IR block operand check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/ir_block_operands_check.rb
-
-      # ADR 0468: the owner call (chain elses, bare sends, name owner sets), the leaf-class self.new and the audited
-      # constructor overloads, generated code and the interpreted-versus-compiled runs. The runs link a full-core
-      # libmruby the first check builds once with rake into BC2CPP_FULL_BUILD_DIR (fixture_runtime.rb).
-      - name: Owner call, self.new and constructor overload checks
-        timeout-minutes: 20
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          export MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full"
+          unset LD
+          ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/bc2cpp-checks.sh" <<'CHECKS'
+          # ci:parallel begin 2
+          ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
+          ruby scripts/bc2cpp/type_check.rb --no-sends
+          ruby scripts/bc2cpp/constant_reviewed_check.rb
+          ruby scripts/bc2cpp/shared_generation_check.rb
+          ruby scripts/bc2cpp/declared_array_sum_check.rb
+          ruby scripts/bc2cpp/lexical_join_check.rb
+          ruby scripts/bc2cpp/declared_join_check.rb
+          ruby scripts/bc2cpp/symbol_flow_check.rb
+          ruby scripts/bc2cpp/struct_receiver_check.rb
+          ruby scripts/bc2cpp/upvar_walks_check.rb
+          ruby scripts/bc2cpp/integer_arith_constant_check.rb
+          ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
+          ruby scripts/bc2cpp/class_bodies_check.rb
+          ruby scripts/bc2cpp/const_frozen_merge_check.rb
+          ruby scripts/bc2cpp/block_iterator_direct_check.rb
+          ruby scripts/bc2cpp/define_method_check.rb
+          ruby scripts/bc2cpp/block_self_world_check.rb
+          ruby scripts/bc2cpp/generic_block_return_check.rb
+          ruby scripts/bc2cpp/loop_element_writes_check.rb
+          ruby scripts/bc2cpp/ir_join_soundness_check.rb
+          ruby scripts/bc2cpp/ir_block_operands_check.rb
           ruby scripts/bc2cpp/outside_owner_call_check.rb
           ruby scripts/bc2cpp/self_new_leaf_check.rb
           ruby scripts/bc2cpp/constructor_overloads_check.rb
-
-      # ALIAS_SITES (ADR 0474): a class-body alias with literal names is a definition of the new name; a
-      # method-body one stays dynamic. Fixtures plus interpreted-vs-compiled runs on the full-core libmruby the
-      # define_method check built into BC2CPP_FULL_BUILD_DIR.
-      - name: alias_method check
-        run: |
-          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
-          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          env -u LD MRBC="$mrbc" BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby scripts/bc2cpp/alias_method_check.rb
-
-      # ADR 0473: the sig/bc2cpp core facts against the 3rd/mruby this job checks out (ruby-checks has no submodule
-      # and runs only the loader half, so --require-mruby makes a missing tree an error here).
-      - name: Core facts RBS check (against 3rd/mruby)
-        run: ruby scripts/bc2cpp/core_facts_rbs_check.rb --require-mruby
-
+          ruby scripts/bc2cpp/alias_method_check.rb
+          ruby scripts/bc2cpp/core_facts_rbs_check.rb --require-mruby
+          # ci:parallel end
+          CHECKS
+          source "$RUNNER_TEMP/bc2cpp-checks.sh"
 
 
   # The `bc2cpp` status check: success when `bc2cpp-build` succeeded. It keeps the name the old one-job
