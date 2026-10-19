@@ -34,9 +34,9 @@ closure reason.
 
 ## IR implementation and comparison
 
-`BC2CPP_IR_NIL_ESCAPE=1` runs both analyses on the IR; `=compare` keeps the
-legacy answers and logs each disagreement to stderr (`NIL_NARROWING_IR_DIFF`,
-`ESCAPE_IR_DIFF`).
+During the migration `BC2CPP_IR_NIL_ESCAPE=1` ran both analyses on the IR and `=compare` kept the
+legacy answers, logging each disagreement (`NIL_NARROWING_IR_DIFF`,
+`ESCAPE_IR_DIFF`). Both are gone now that the IR is the only implementation.
 
 NIL_NARROWING's IR flow (`NilNarrowing::Flow`) replaces the `copy_source`
 back-walk with **available copies** carried in the must-state: `MOVE d s`
@@ -45,11 +45,29 @@ and a write of either register drops it. A test or a call that narrows `r`
 then narrows every register paired with `r`. Ops are read from
 `Program#decoded` and writes from `Program#may_write_at?`.
 
-Over the 4230 ireps (125496 instructions) of the engine and mruby core image,
+Over the 4249 ireps (125818 instructions) of the engine and mruby core image,
 with a stand-in nil-answer table and a guard naming one class for every
 `is_a?`, the IR flow proves **every** fact the legacy walk proves (0
-legacy-only facts) and 1993 more, at 1908 instructions. The extra facts are
+legacy-only facts) and 2014 more, at 1923 instructions. The extra facts are
 copies the one-hop, 64-instruction back-walk could not see: a sibling copy
 (`stored = v; x = v; x.is_a?(K)` proves `stored`), a chain (`block = blk;
 b = block; return unless b` proves the block slot itself), and copies that
 reach a test through a join.
+
+ESCAPE_ANALYSIS's op scans over the IR (`EscapeAnalysis.op_sites`, on
+`Program#each_with_op`) return the same instructions, in the same order, as
+the `irep.instructions` scans at all 31649 sites of the 4249 ireps: 0
+disagreements. Its verdicts are therefore unchanged.
+
+## What stays outside the IR
+
+* NIL_NARROWING reads the operands it needs (a MOVE's source, a SEND's
+  name) from the IR instruction's `source`: `Program#decoded` carries only
+  the op, branch kind, leading register and target.
+* ESCAPE_ANALYSIS's frame flow was already a may-alias flow over the IR's
+  successors and handler edges; its per-op transfer (`Analyzer#step`) still
+  decodes each operand from `source`, since the IR has no operand model.
+  Reaching definitions answer a backward question for one register, which
+  the forward flow of a value through many registers does not need.
+* The closure-tree walk (`closure_children`, `subtree_refs`) follows the
+  irep tree (`reps`) the IR does not model; only its op scans moved.
