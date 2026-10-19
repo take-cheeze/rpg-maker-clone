@@ -135,3 +135,16 @@ Risks and recommendation:
   once (`compiles_clean?` probes, the ENTRY_ARG/FIXNUM_RETURN alternation), and at two asks the costs are equal.
 * `fixnum_proof_region_ok?`, `fixnum_proof_edge_sources` and `ctx[:entries]` remain for the kept walks.
   `fixnum_barrier_shadow.rb` loses its hook on the deleted method.
+
+## Addendum: the kept walks ask the IR
+
+* `fixnum_proof_edge_sources` and `ctx[:entries]` are gone. `fixnum_interval` and `guarded_game_integer_range` ask
+  `BytecodeIR.write_dominates?` per hop (MOVE hops included), and the Integer#step literal test asks it for the
+  LOADI-to-SENDB region, so catch-handler edges, callee-frame clobbers and the irep's own nested-block writes are
+  the IR's. `fixnum_proof_region_ok?` stays as the register-agnostic form (the IR's predecessors with handler
+  edges) for `return_write_dominates?`.
+* `ctx[:upvars]` is `BytecodeIR.own_upvar_written_regs`: a SETUPVAR counts only at the level that reaches the irep
+  (vm.c `uvenv`). The old subtree set ignored the level, so registers of class bodies and outer blocks that only a
+  deeper block wrote were opaque. Every `ctx[:upvars]` consumer sees the narrower set; on the engine this widens a
+  handful of class proofs (Game::Party, RPG2k::Scene::DebugMenu, RPG2k::Scene::Map) and drops one
+  GUARDED_GAME_VARIABLE_RANGE guard whose interval came from a writer that does not dominate the use.
