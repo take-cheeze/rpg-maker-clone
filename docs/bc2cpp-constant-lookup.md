@@ -38,6 +38,11 @@ keys by bare name again.
 `ruby scripts/bc2cpp/lexical_const_check.rb` checks the resolution and each refusal against compiled fixtures (it needs
 `MRBC`).
 
+The writers a lexical question reads are the reaching definitions of its register (`BytecodeIR.writers_reaching`), not
+the textually preceding one. A `Holder::NAME` read whose holder register is a ternary, a superclass that is a ternary and
+an `include` whose argument is a ternary each need every arm to agree; otherwise the read is refused.
+`ruby scripts/bc2cpp/lexical_join_check.rb` checks those joins (it needs `MRBC`).
+
 ## Resolving a constant name from the closed world
 
 `UniqueClassNames.resolve` (`tools/bc2cpp/unique_class_names.rb`) answers what a bare name read from a class body
