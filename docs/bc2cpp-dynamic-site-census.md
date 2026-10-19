@@ -603,7 +603,8 @@ Arrays/Hashes in ivars and locals, the bulk of the unknown receiver roots, are n
 
 The `bc2cpp_slow_*` rows of the tables above are guarded numeric operators whose operands NumericFlow could not prove.
 `BC2CPP_NUMERIC_ROOTS=<file> MRBC=... ruby scripts/bc2cpp/coverage_report.rb` writes one `ROOT` line per such operator
-of the shipped pass (owner, operator, class set per operand, the leaves it is computed from), through
+of the shipped pass (owner, operator, class set per operand, the leaves it is computed from; the leaves are the reaching
+definitions since ADR 0509, and a refused query shows as `unproven:<cause>`), through
 `tools/bc2cpp/codegen_numeric_roots.rb`; the generated code is byte-identical with it on. On the branch point
 `247a34e4` the engine owners (`RPG2k*`, `Game*`) had 2,384 sites with an unproven `+ - * / < <= > >=` operand. No root
 family is worth more than 13% even when forced to Integer (`GETIDX` results -321, `size`/`length`/`count` -140,
