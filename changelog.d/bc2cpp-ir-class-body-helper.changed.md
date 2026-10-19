@@ -1,0 +1,1 @@
+- **bc2cpp** finds class and module bodies through one bytecode IR helper (`BytecodeIR.class_bodies`, `BytecodeIR.class_body_path`) instead of three hand-written copies. Generated output is unchanged.
