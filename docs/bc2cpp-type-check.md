@@ -77,6 +77,32 @@ row changes. The proof is withheld when a Ruby definition of `+ - * / ==` sits o
 module is prepended into Integer (the owner-scoped `IntegerConstantRanges.integer_ops_safe?`); the exact-value proof of
 `IntegerConstants` takes the same gate. `scripts/bc2cpp/integer_arith_constant_check.rb` covers both.
 
+Four further constant producers come after the ones above, each consulted only when no earlier one typed the row:
+
+* `inferred:integer-constant` also admits `a | b`, `a & b` and `a ^ b` (SEND with one argument; mruby 4 has no opcode for
+  them) over exact Integer operands. The value is Ruby's result (two's complement for negatives) and must sit in the
+  Fixnum margin, as for `+ - * /`. The gate is the same `integer_ops_safe?`, which now also names `| & ^`.
+* `inferred:integer-class` types a name Integer whatever its value is, the bignum-capable Integer of the vocabulary (a
+  bignum is an Integer class instance; `inferred:literal` already types an out-of-margin literal this way). It is
+  `IntegerConstants.class_admitted`: the same fixpoint, before the Fixnum check, so `BRIGHTNESS_Z = TRANSITION_Z - 1`
+  (TRANSITION_Z = 0x40000000, a bignum on the 32-bit targets) is Integer although its intermediate leaves the margin.
+  A literal-only arithmetic definition (no constant operand) must still have an exact value inside the margin. mrbc folds
+  such an expression (`1073741824 | 1` compiles to one LOADI32), so in practice a plain out-of-margin literal reaches the
+  proofs, and the existing literal producers already type it. Report only; codegen reads only the Fixnum proof.
+* `inferred:bool-compare` types `'literal'.length == <integer literal>` (EQ) as `bool`. The receiver proves Integer
+  through SEND0 `length` on a STRING literal with String#length stock (`DeclaredConstants.stock_method?`, now answering
+  for String, and every non-core native `length` definer is one read as not String's: `STRING_LENGTH_NOT_STRING_NATIVES`
+  lists four, so a new definer refuses the proof), and Integer#== is stock (`integer_ops_safe?`). An `==` on Integer
+  returns true or false, so the value is `bool`, not Integer.
+`IO.open` is not typed (STDIN, STDOUT and STDERR stay untyped). mruby-io's `IO.open` (3rd/mruby/mrbgems/mruby-io/mrblib/io.rb)
+is `io = self.new(*args); return io unless block`, so a blockless call returns Class#new on IO: an IO, never nil. That is
+read from the source, not proven by a row. The proof stopped at `ClosedWorld#native_class_unshadowed?('IO')`, which is
+false in the closed world (its write-count model counts IO as shadowed); the other gates (no closed-world `open` on
+IO's singleton, `IO.new` stock, no non-core native `open`) hold. io.rb is a foreign Ruby source, so the registry has no
+`IO.open` (`send_result:open(unregistered)`), and its `STDIN = ...` lines also poison the Fixnum proof by name. Typing
+them needs that shadowing model reviewed; `IO` is not in `NATIVE_CONSTRUCT_TARGETS`, so `native_constructed_class` does not
+reach it either.
+
 ## Constant ratchet (TC1017, ADR 0491)
 
 An engine constant the analysis gives no type is untyped. The reviewed list `CONSTANT_REVIEWED` in
