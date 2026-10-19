@@ -87,6 +87,18 @@ from 16 to 13. Each fixture uses an empty signature directory and requires a
 successful type-check exit status, so unrelated engine declarations cannot hide
 an analysis failure. See [ADR 0511](adr/0511-constant-typing-check-suite.md).
 
+### Constant proof fixtures
+
+`scripts/bc2cpp/constant_proofs_check.rb` groups the declared-Array-sum,
+declared-join and lexical-join checks under one temporary-program compiler and
+assertion reporter. Its sections cover declaration/report agreement, method
+replacement refusals, frozen and boolean values across joins, and lexical
+holders, superclasses and mixins. Every source fixture is compiled separately;
+redefinitions and repeated constant names cannot affect another fixture.
+CI invokes the suite once, and the coverage reporter registers it once in place
+of the former lexical/declared join entries. Set `MRBC` to a host compiler to
+run its fixtures; without it the suite reports a skip, as its predecessors did.
+
 ### Superseded runs
 
 A push to a pull request cancels the run still going for that PR's previous
