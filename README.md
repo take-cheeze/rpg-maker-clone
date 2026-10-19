@@ -1132,6 +1132,9 @@
   [container elements](docs/bc2cpp-ir-elements.md) with contract provenance.
   [RBS self returns and mixin lookup](docs/bc2cpp-ir-rbs-features.md) extend nominal
   call chains while refusing unsigned overrides and unknown lookup paths.
+  The type check also ratchets untyped engine constants: one that is not on the reviewed
+  `CONSTANT_REVIEWED` list, or a listed one that is now typed, fails CI (TC1017,
+  [docs/bc2cpp-type-check.md](docs/bc2cpp-type-check.md), ADR 0491).
   [Call-graph propagation](docs/bc2cpp-ir-call-graph.md) carries complete independent
   argument summaries through receiver-specific forwarding chains; disable it with
   `BC2CPP_IR_CALL_GRAPH_TYPES=0` for comparison.
