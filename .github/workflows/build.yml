@@ -1039,6 +1039,15 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/declared_array_sum_check.rb
 
+      # Constant walks over joins (tools/bc2cpp/lexical_consts.rb, declared_constants.rb): a `c ? A : B` holder, superclass
+      # or mixin argument, and a declared element, bool or frozen proof, must agree on every arm.
+      - name: Lexical and declared constant join checks
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/lexical_join_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp/declared_join_check.rb
+
       # SYMBOL_FLOW (ADR 0450, ADR 0499): dispatch-table name sets on the IR, and the escapes that refuse one.
       - name: Symbol flow check
         run: |
