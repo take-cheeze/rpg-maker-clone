@@ -1098,6 +1098,14 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/generic_block_return_check.rb
 
+      # Join soundness of the literal walks (splat unroll, literal ivar/block/alias/send names, fixnum-or-nil
+      # tolerance): each snippet is compiled by mrbc and must answer for every arm of its join.
+      - name: IR join soundness check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/ir_join_soundness_check.rb
+
       # ADR 0468: the owner call (chain elses, bare sends, name owner sets), the leaf-class self.new and the audited
       # constructor overloads, generated code and the interpreted-versus-compiled runs. The runs link a full-core
       # libmruby the first check builds once with rake into BC2CPP_FULL_BUILD_DIR (fixture_runtime.rb).
