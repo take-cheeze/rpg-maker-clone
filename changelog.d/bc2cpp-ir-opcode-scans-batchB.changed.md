@@ -1,0 +1,1 @@
+- **bc2cpp**: the return, block-capture, enumerator and computed-send scans read the BytecodeIR helpers (`instructions_with_op`, `each_with_op`, `CONDITIONAL_BRANCHES`) instead of matching opcode names over raw instruction arrays. Generated output is unchanged.
