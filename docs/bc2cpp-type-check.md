@@ -67,6 +67,13 @@ one argument, whose receiver proves exactly Hash (a Hash literal, or a constant 
 on Hash, with no singleton method on the receiver (the closed world's exact-instance check). The report-level proofs
 never change generated code.
 
+A constant typed `Integer` by `inferred:integer-range` is integer arithmetic (`+ - * /`, with `-7 / 2 == -4`, floored) on
+literals and other constants, whose every definition has an interval inside the narrowest target Fixnum range
+(`IntegerConstantRanges`, NUMERIC_CONSTANT_RANGES). It is typed only when no other producer types it first, so no existing
+row changes. The proof is withheld when a Ruby definition of `+ - * / ==` sits on Integer or a module it includes, or a
+module is prepended into Integer (the owner-scoped `IntegerConstantRanges.integer_ops_safe?`); the exact-value proof of
+`IntegerConstants` takes the same gate. `scripts/bc2cpp/integer_arith_constant_check.rb` covers both.
+
 ## Workflow
 
 1. Run the check; read the top suggestions.

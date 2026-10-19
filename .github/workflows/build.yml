@@ -1032,6 +1032,14 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/declared_array_sum_check.rb
 
+      # NUMERIC_CONSTANT_RANGES typing (docs/bc2cpp-type-check.md): arithmetic constants typed Integer by their interval,
+      # refused under a redefined Integer operator, and the floor-division value.
+      - name: Integer arithmetic constant check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/integer_arith_constant_check.rb
+
       # CONSTANT_OWNERS (tools/bc2cpp/type_facts.rb const_rows): a frozen Array or Hash literal, a Hash#merge and a
       # frozen sum are typed by owner-scoped stock proofs; each Ruby definition, prepend or mixin that refuses one is a case.
       - name: Constant owner proofs check
