@@ -1,0 +1,1 @@
+- **bc2cpp** finds the class and module bodies of the closed-world and lexical-constant analyses through the shared bytecode IR helper (`BytecodeIR.class_bodies`) instead of their own copies of the EXEC pairing. Generated output is unchanged.
