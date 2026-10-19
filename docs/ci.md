@@ -75,6 +75,18 @@ under `build-closed-bc2cpp/base_rbs`, replacing a second generation pass.
 `base_section_check.rb --output DIR CLOSED_BUILD_DIR` requires an absent or
 empty output directory. See [ADR 0510](adr/0510-bc2cpp-ci-bounded-checks.md).
 
+### Constant typing fixtures
+
+`scripts/bc2cpp/constant_typing_check.rb` combines the frozen-container,
+Hash-merge, Array-sum and integer-arithmetic checks. It runs compatible positive
+fixtures as one program and shares the `Object#freeze` withdrawal program.
+Other redefinitions, prepends and unresolved mixins remain separate programs;
+the suite also checks integer intervals independently in process. All original
+assertions retain their individual labels. This reduces end-to-end analyses
+from 16 to 13. Each fixture uses an empty signature directory and requires a
+successful type-check exit status, so unrelated engine declarations cannot hide
+an analysis failure. See [ADR 0511](adr/0511-constant-typing-check-suite.md).
+
 ### Constant proof fixtures
 
 `scripts/bc2cpp/constant_proofs_check.rb` groups the declared-Array-sum,

@@ -1029,10 +1029,9 @@ jobs:
           ruby scripts/bc2cpp/symbol_flow_check.rb
           ruby scripts/bc2cpp/struct_receiver_check.rb
           ruby scripts/bc2cpp/upvar_walks_check.rb
-          ruby scripts/bc2cpp/integer_arith_constant_check.rb
+          ruby scripts/bc2cpp/constant_typing_check.rb
           ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
           ruby scripts/bc2cpp/class_bodies_check.rb
-          ruby scripts/bc2cpp/const_frozen_merge_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
           ruby scripts/bc2cpp/define_method_check.rb
           ruby scripts/bc2cpp/block_self_world_check.rb
