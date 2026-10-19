@@ -37,18 +37,24 @@ Two things bound what can be removed:
 
 **EXACT_CORE_RECEIVER** (`tools/bc2cpp/codegen_exact_receiver.rb`). At the final dynamic send of
 `compile_send`, `exact_core_site` asks `exact_core_value_class` for the exact class of the receiver
-register (and of the argument register, for `join`'s separator). It answers when
-`irep.walk_dominating_writers` reaches, through MOVEs, one write that dominates the read:
+register (and of the argument register, for `join`'s separator). It answers when every definition
+reaching the read (`BytecodeIR::Types#exact_at`, over `BytecodeIR.reaching_definitions`, through MOVEs,
+joins and loops) is a literal of the same class:
 
 - `ARRAY`/`ARRAY2` (Array), `HASH` (Hash), `RANGE_INC`/`RANGE_EXC` (Range), `STRING` (String), `LOADNIL`
   (NilClass, arguments only); `ARYPUSH`/`ARYCAT`/`HASHADD`/`HASHCAT`/`STRCAT` on the same register
-  extend that value and are stepped over (`ARYSPLAT` is not: it calls `to_a`);
-- method entry, for the `*rest` register (`rest_entry_class`, ADR 0270);
+  extend that value and are passed through, provided the class they reach is the one they extend
+  (`ARYCAT` over nil stores a fresh Array; `ARYSPLAT` is not passed: it calls `to_a`);
+- method entry, for the `*rest` register (ENTER's `:rest` slot, ADR 0270);
 - or `compile_send`'s own `exact_new_receiver_class` proof of a fresh `Klass.new` of a stable class.
 
-A loop, a branch join, a rescue or ensure path, an or-assignment and a write from a captured block all
-fail dominance (`BytecodeIR.write_dominates?` accounts for upvar-written registers), so they are not
-proven.
+Only literal facts enter `exact_at`: an argument, signature, inferred-call or resolver fact bounds a class
+nominally, and these sites drop their class test. A write from a captured block refuses
+(`BytecodeIR.reaching_definitions` accounts for upvar-written registers), and so does any join that mixes
+classes or a non-literal source. Inside a rescue or ensure range the query follows the handler edges
+(the `through_handlers:` mode of RECORD_HASH_PROOF), where a raising instruction contributes both the value
+it leaves and the one it was entered with. The `===`, `times` and literal-block Integer proofs ask the same
+query (an Integer only from `LOADI*`, with its value when every source agrees on one).
 
 **Singleton-freedom.** "Created by the literal" means "exactly `Array`" only while nothing can give
 the object a singleton class or a mixin. `ClosedWorld#exact_instances_singleton_free?` holds when the
@@ -93,6 +99,8 @@ and audit burden for no removed site, so it is left out until a consumer needs i
   ~90 first estimated: most receivers of these arms are parameters, ivars, `GETIDX` results or
   `implicit self`, whose class only a guarded fact names.
 - The unguarded proofs are a superset of nothing that existed before: no guarded arm changed.
+- `scripts/bc2cpp/ir_exact_types_check.rb` checks `exact_at` on hand-built bytecode (joins, loops,
+  container pass-through, `ARYCAT` over nil, entry slots, pool integers).
 - `scripts/bc2cpp/exact_receiver_check.rb` checks the generated code (every proof and every reason it
   is withheld, including each singleton-making construct, a Ruby override and the open world), then
   compiles a fixture with the compiled core into a full-core mruby and requires the interpreter's

@@ -98,7 +98,7 @@ A `LOADSYM` in a register is the Symbol bit in the numeric flow too (`NumericOra
 | LCF (`lcf_index_mask`, `lcf_exact_receiver`, `exact_owner`) | foreign bit: OTHER; `exact_owner` only for object-kind bits | refused |
 | Tuple returns (`tuple_position_mask`) | `TUPLE_KEPT_BITS` is NUM\|NIL: OTHER | refused |
 | Exact-class consumers (`exact_flow_mask`: instance receivers, escape, nilable receiver, loop regions, setter pools, native send unions) | the exact flow never reads a numeric mask (checked by grep); its class narrowing now decides the bit | unchanged inputs; sound as above |
-| `LiteralElementProof`, `CallFacts`, core-results and profiler oracles | their own oracles or instruction scans: no literal class mask | unchanged |
+| `NumericClasses.element_literal_mask` (formerly `LiteralElementProof`), `CallFacts`, core-results and profiler oracles | their own oracles or instruction scans: no literal class mask | unchanged |
 | Diagnostics (`numeric_mask_name`, NUMRET/NUMARG reports, roots) | names only | diagnostic |
 
 Class narrowing on a LOADSYM literal (the exact-class run) also decides the Symbol bit now, so `:a.is_a?(Integer)` has an
@@ -142,5 +142,5 @@ Integer branch (a precision regression: the unknown Symbol kept both edges); the
 ## Not done
 
 * A frozen table refused for another reason allocates no Symbol bit, so a `LOADSYM` register stays OTHER there.
-* `LiteralElementProof` gives a Symbol element of a non-frozen literal OTHER. TrueClass and FalseClass literals stay
+* `NumericClasses.element_literal_mask` (formerly `LiteralElementProof`) gives a Symbol element of a non-frozen literal OTHER. TrueClass and FalseClass literals stay
   OTHER in the numeric flow.

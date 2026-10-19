@@ -47,8 +47,9 @@ The IR already answers the hard part: `Program#reaching_definitions` and `Progra
 
 `tools/bc2cpp/bytecode_ir_returns.rb` (RETURN_SITES, `docs/bc2cpp-ir-return-sites.md`) adds:
 
-* `Program#exits`: every frame exit with its kind (`:value`, `:block_return`, `:nil`, `:self`, `:true`, `:false`,
-  `:break`, `:stop`), and `exit?`.
+* `Program#exits`: every frame exit with its op, its kind (`:value`, `:block_return`, `:nil`, `:self`, `:true`,
+  `:false`, `:break`, `:stop`) and the Integer register RETURN, RETURN_BLK and BREAK hand back, and `exit?`. It is
+  the one definition NumericClasses (ADR 0500) reads too; the return analyses pass the register on as a string.
 * `BytecodeIR.nested_bodies`, `nested_exits` and `nested_exit?`, over `Irep#tree`.
 * `Program#return_sources` / `BytecodeIR.return_sources`: `reaching_definitions` over handler edges with the body's
   own nested-block writes opaque. A LOADNIL, and the fall-through of a RAISEIF of the register, are nil sources; an
@@ -65,8 +66,9 @@ Two refinements of the shared dataflow, both only ever turning a refusal into an
 The consumers move: the Fixnum, Array and class return proofs, DECLARED_RETURN_CHECK and the exact-class return
 table walk `exits` and `nested_exits`; `return_value_sources` is `BytecodeIR.return_sources` and
 `return_write_dominates?` is `BytecodeIR.write_dominates?`, so the private worklist, its region test, the
-`own_upvar_written_regs` copy, `fixnum_proof_writes_reg?` and `FIXNUM_PROOF_REACHING_MAX_STATES` are deleted, and the
-barrier shadow (ADR 0250) loses its two hooks on them. The bodies that call a tracked name come from one per-op index
+`own_upvar_written_regs` copy, `fixnum_proof_writes_reg?`, `FIXNUM_PROOF_REACHING_MAX_STATES` and
+`fixnum_proof_region_ok?` (kept by ADR 0476 only for `return_write_dominates?`) are deleted, and the barrier shadow
+(ADR 0250) loses its three hooks on them. The bodies that call a tracked name come from one per-op index
 instead of two whole-program scans; the pool-self, `module_function` and block-carrying-caller scans ask the IR by op.
 
 Three linear walks stay. `straightline_return_reg?` finds the textually preceding writer because `trace_new_target`
