@@ -1016,7 +1016,7 @@ jobs:
         run: |
           mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp/type_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp/type_check.rb --no-sends
 
       # SHARED_GENERATION (ADR 0464): one analysis forked per unit equals separate runs (a fixture, seconds).
       - name: Shared generation check
@@ -1039,6 +1039,14 @@ jobs:
           mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/integer_arith_constant_check.rb
+
+      # CONSTANT_OWNERS (tools/bc2cpp/type_facts.rb const_rows): a frozen Array or Hash literal, a Hash#merge and a
+      # frozen sum are typed by owner-scoped stock proofs; each Ruby definition, prepend or mixin that refuses one is a case.
+      - name: Constant owner proofs check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/const_frozen_merge_check.rb
 
       # BLOCK_ITERATOR_DIRECT (ADR 0472): the Kernel#loop, String and Integer-literal block arms, each world refusal, and
       # a fixture run interpreted and compiled over the compiled core (one full-core libmruby build, under a minute; like
@@ -1378,6 +1386,7 @@ jobs:
               ruby scripts/bc2cpp/numeric_flow_speed_check.rb
               ruby scripts/bc2cpp/native_path_registrations_check.rb
               ruby scripts/bc2cpp/native_result_facts_check.rb
+              ruby scripts/bc2cpp/native_owner_scopes_check.rb
               ruby scripts/bc2cpp/native_sigs_check.rb
               ruby scripts/bc2cpp/core_facts_rbs_check.rb
               ruby scripts/bc2cpp/base_rbs_check.rb

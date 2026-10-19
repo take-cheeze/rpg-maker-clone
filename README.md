@@ -1293,7 +1293,9 @@
   registration lands on that class; core forwarders are trusted by default, `BC2CPP_NATIVE_OWNER_MAP=strict` refuses
   them and `BC2CPP_NATIVE_OWNER_MAP=0` turns the arms off. See
   [`docs/adr/0397-bc2cpp-native-owner-map.md`](docs/adr/0397-bc2cpp-native-owner-map.md) and
-  `scripts/bc2cpp/native_owner_map_check.rb`.
+  `scripts/bc2cpp/native_owner_map_check.rb`. The owner scope scan searches between
+  braces to reduce temporary allocations; see
+  [native-owner scan performance](docs/bc2cpp-native-owner-scan-performance.md).
   After `x.m` returned normally, `x` is an instance of a class that answers `m`: a later `x.n` on the same value
   (a copy of the register, a local, no rewrite and no handler edge between) is judged against those declared
   classes, which drops 63 by-name else arms of the wio build; `BC2CPP_CALL_FACTS=0` turns it off. Provable errors

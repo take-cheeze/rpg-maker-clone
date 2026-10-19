@@ -1,0 +1,1 @@
+- The bc2cpp type check now types a constant built from `(lo..hi).to_a` over literal endpoints (both Strings or both Integers) as `Array` when the sum proof holds, as `inferred:array-sum`. The Range#to_a proof is withheld when a Ruby definition of `to_a`, `each`, `upto` or `__num_to_a` sits on Range, Enumerable or String. Report-only: generated code is unchanged.
