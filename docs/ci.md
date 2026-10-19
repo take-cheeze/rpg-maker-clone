@@ -140,6 +140,16 @@ profiling on a machine with a display, set
 RPG2000/2003-only world, so `bc2cpp` runs there without a cross toolchain.
 This is test-only and cannot play XP/VX/Wolf/MV or arbitrary runtime Ruby.
 
+### Behavioral installer fixtures
+
+`define_method_check.rb` and `alias_method_check.rb` share the
+`Bc2cppFixtureRuntime.registry_snapshot` setup: compile one temporary fixture,
+build its registry, apply the check's explicit settle policy, then capture the
+installed names. Every positive, refusal and withdrawal still has its own
+program and registry. Generation, C++ drivers, mruby build discovery and runtime
+output parsing already share `fixture_runtime.rb` with the owner-call and
+constructor checks; their different runtime scenarios remain separate.
+
 ### Host Ruby uses YJIT for bc2cpp
 
 `bc2cpp-build` sets `RUBY_YJIT_ENABLE=1` for the
