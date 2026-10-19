@@ -3,7 +3,7 @@
 NumericFlow (`tools/bc2cpp/numeric_flow.rb`, ADR 0276) is the forward class-mask
 flow (`INT FLT ARR HSH STR NIL OTHER RNG EXC`, the closed-world class bits and
 the LCF object kinds) that the unguarded numeric arms and every return-class
-result read. ADR 0493 makes it read its instruction facts from the bytecode IR
+result read. ADR 0500 makes it read its instruction facts from the bytecode IR
 (`tools/bc2cpp/bytecode_ir_numeric.rb`) instead of the raw `irep.instructions`.
 
 ## Consumers of the flow

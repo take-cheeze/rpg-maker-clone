@@ -1,4 +1,4 @@
-# 0493. NumericFlow reads its instruction facts from the bytecode IR
+# 0500. NumericFlow reads its instruction facts from the bytecode IR
 
 Date: 2026-10-19
 
