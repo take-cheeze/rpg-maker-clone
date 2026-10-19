@@ -1,0 +1,1 @@
+- bc2cpp's codegen (`codegen_block_param_call`, `codegen_receiver_facts`, `codegen_method`, `codegen_frozen_tables`, `codegen_return_classes`) reads the shared `BytecodeIR` helpers and `BytecodeIR::Ops` sets instead of matching opcode names against raw instruction arrays. Generated C++ is unchanged.
