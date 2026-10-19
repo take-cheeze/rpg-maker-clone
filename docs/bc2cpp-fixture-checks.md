@@ -28,3 +28,13 @@ and whether to disable repository signatures.
 Use `check(label, condition)` for each assertion and `finish!` for the count and
 nonzero exit on failures. Labels and assertion counts remain visible rather than
 collapsing multiple expectations into an opaque success result.
+
+## Standalone flow and constant fixtures
+
+The upvar-walk, symbol-flow, bytecode-constant-fact and lexical-constant checks
+also use this harness. Their assertion labels and separate fixture programs are
+preserved; only compiler discovery, temporary compilation and reporting are
+shared. `upvar_walks_check.rb` still accepts `BC2CPP_TOOLS_DIR` for baseline and
+mutation comparisons. These checks now follow the same compiler policy as the
+other harness users: a missing explicit `MRBC` fails, while an absent compiler
+with no configured path skips.
