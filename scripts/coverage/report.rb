@@ -29,6 +29,7 @@
 #   --only PATTERN      only run checks whose name matches PATTERN (substring)
 #   --min-line-rate PCT exit non-zero when total line coverage is below PCT
 #   --per-file          list every file, not just the least covered ones
+#   --require-needs     a check whose test bed is missing fails instead of being skipped (CI)
 #   --list              list the checks and exit
 #   --help
 
@@ -47,12 +48,13 @@ HOOK = File.join(__dir__, 'hook.rb')
 # out; `src/**.cxx` is a different language and a different tool (see the ADR).
 SOURCE_GLOBS = ['mruby-*/mrblib/**/*.rb'].freeze
 
-# The host-side checks, mirroring the `ruby-checks` job in
-# .github/workflows/build.yml plus the one CRuby check CTest owns
-# (error_report_check, which covers mruby-rgss/mrblib/error_report.rb). A check
-# that needs a downloaded test bed says so with `needs:`; without the data it is
-# reported as skipped instead of failing the run, the same way the harnesses
-# themselves skip.
+# The host-side checks. The `ruby-checks` job in .github/workflows/build.yml runs
+# each of them exactly once, here, under Coverage (it has no separate plain run),
+# plus the one CRuby check CTest owns (error_report_check, which covers
+# mruby-rgss/mrblib/error_report.rb). A check that needs a downloaded test bed says
+# so with `needs:`; without the data it is reported as skipped instead of failing
+# the run, the same way the harnesses themselves skip, unless --require-needs is
+# given (CI passes it, so a missing test bed still fails the job).
 CHECKS = [
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-yields', command: %w[scripts/bc2cpp/ir_yield_types_check.rb] },
@@ -166,6 +168,7 @@ options = {
   only: nil,
   min_line_rate: nil,
   per_file: false,
+  require_needs: false,
   list: false
 }
 
@@ -182,6 +185,7 @@ until args.empty?
   when '--min-line-rate' then options[:min_line_rate] = Float(args.shift)
   when /\A--min-line-rate=(.+)\z/ then options[:min_line_rate] = Float(Regexp.last_match(1))
   when '--per-file' then options[:per_file] = true
+  when '--require-needs' then options[:require_needs] = true
   when '--list' then options[:list] = true
   when '-h', '--help'
     puts File.read(__FILE__)[/^# Usage:.*?(?=\n[^#])/m].gsub(/^# ?/, '')
@@ -211,9 +215,12 @@ end
 
 Result = Struct.new(:check, :status, :seconds, :output, :skipped_because)
 
-def run_check(check, coverage_dir)
+def run_check(check, coverage_dir, require_needs)
   requirement = check[:needs] && REQUIREMENTS.fetch(check[:needs])
   if requirement && !requirement[:met].call
+    # CI has downloaded the test bed in an earlier step, so a missing one is a broken job, not a skip.
+    return Result.new(check, 1, 0.0, "needs #{requirement[:description]}\n", nil) if require_needs
+
     return Result.new(check, nil, 0.0, '', requirement[:description])
   end
 
@@ -248,7 +255,7 @@ begin
       rescue ThreadError
         nil
       end)
-        result = run_check(check, coverage_dir)
+        result = run_check(check, coverage_dir, options[:require_needs])
         mutex.synchronize do
           results << result
           if result.skipped_because
