@@ -92,6 +92,8 @@ CHECKS = [
   # bc2cpp's hand-built-irep half only (no mrbc under the reporter): it reaches
   # no mrblib line, listed so the CHECKS list keeps mirroring `ruby-checks`.
   { name: 'bc2cpp-fallback-bodies', command: %w[scripts/bc2cpp/fallback_bodies_check.rb] },
+  # Its hand-built-irep half (the compiled half needs mrbc, bc2cpp-build in build.yml): no mrblib lines.
+  { name: 'bc2cpp-loop-element-writes', command: %w[scripts/bc2cpp/loop_element_writes_check.rb] },
   { name: 'bc2cpp-struct-receiver', command: %w[scripts/bc2cpp/struct_receiver_check.rb] },
   { name: 'bc2cpp-upvar-walks', command: %w[scripts/bc2cpp/upvar_walks_check.rb] },
   # CI helpers (compiler launcher, mutant pool, timing wrapper): no mrblib lines, listed to mirror `ruby-checks`.
