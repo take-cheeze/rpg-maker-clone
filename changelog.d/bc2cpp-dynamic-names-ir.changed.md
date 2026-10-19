@@ -1,0 +1,1 @@
+- **bc2cpp:** dynamic method names (`DynamicNames.analyze`) read the LOADSYM, STRING and send sites and their reaching writers from `BytecodeIR`, not a raw walk of `irep.instructions`. The generated C++ is unchanged.
