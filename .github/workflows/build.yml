@@ -2458,8 +2458,10 @@ jobs:
             echo "::group::$env"
             out="$(scripts/wio/renode_boot.bash ".pio/build/$env/firmware.elf" "00:00:00.300")"
             echo "$out"
-            echo "$out" | grep -q "REACHED setup()" || { echo "::error::$env did not reach setup()"; exit 1; }
-            echo "$out" | grep -q "REACHED loop()" || { echo "::error::$env did not reach loop()"; exit 1; }
+            # The REACHED markers go through the matcher, not grep: a Renode
+            # [WARNING] record can land inside one (scripts/maix/boot_marker.rb).
+            echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED setup()" || { echo "::error::$env did not reach setup()"; exit 1; }
+            echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED loop()" || { echo "::error::$env did not reach loop()"; exit 1; }
             echo "::endgroup::"
           done
 
