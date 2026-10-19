@@ -1132,6 +1132,8 @@
   Reporting also joins [receiver-specific caller arguments](docs/bc2cpp-ir-arguments.md),
   retains [nullable ivar unions](docs/bc2cpp-ir-ivars.md), and propagates
   [container elements](docs/bc2cpp-ir-elements.md) with contract provenance.
+  The [container shape analyses](docs/bc2cpp-ir-containers.md) (Hash records,
+  element layouts, sealed Hash ivars) read the IR's producers and literals.
   [RBS self returns and mixin lookup](docs/bc2cpp-ir-rbs-features.md) extend nominal
   call chains while refusing unsigned overrides and unknown lookup paths.
   The type check also ratchets untyped engine constants: one that is not on the reviewed
@@ -1431,6 +1433,9 @@
   Literal Proc calls follow their own block when its creation dominates the call; unknown Proc values
   still follow all escaped blocks. See
   [`docs/adr/0283-bc2cpp-yield-free-blocks.md`](docs/adr/0283-bc2cpp-yield-free-blocks.md).
+  That analysis, the block-self world scan and the block-return check read block operands, receivers and
+  captured registers through the bytecode IR's reaching definitions
+  ([`docs/bc2cpp-ir-block-operands.md`](docs/bc2cpp-ir-block-operands.md)).
   A class-body `define_method(:name) { |a| ... }` with a `def`-like block is registered as an ordinary
   definition, so calls to it are devirtualized; any other way of installing a method by name keeps poisoning
   that name. See [`docs/adr/0288-bc2cpp-define-method-sites.md`](docs/adr/0288-bc2cpp-define-method-sites.md).

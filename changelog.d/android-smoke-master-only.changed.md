@@ -1,0 +1,1 @@
+- CI: the Android emulator smoke test (`android-smoke`) runs on pushes to `master` only; pull requests still build the APK.
