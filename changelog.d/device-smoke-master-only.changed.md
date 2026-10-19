@@ -1,0 +1,1 @@
+- CI: the emulator boot jobs (`maix-smoke`, `nano7-qemu`, `psp-smoke`, `psp-smoke-game`) run on pushes to `master` only; pull requests still build the device targets.
