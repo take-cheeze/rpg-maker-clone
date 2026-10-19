@@ -1105,6 +1105,14 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/generic_block_return_check.rb
 
+      # loop_flow_position's element check (codegen_send.rb, ADR 0398): a nested block's write to the loop element
+      # refuses the receiver through the reaching definitions, not the body's own write test.
+      - name: Loop element write checks
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/loop_element_writes_check.rb
+
       # ADR 0468: the owner call (chain elses, bare sends, name owner sets), the leaf-class self.new and the audited
       # constructor overloads, generated code and the interpreted-versus-compiled runs. The runs link a full-core
       # libmruby the first check builds once with rake into BC2CPP_FULL_BUILD_DIR (fixture_runtime.rb).
