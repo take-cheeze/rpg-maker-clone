@@ -1515,6 +1515,9 @@
   send (bigints included); see
   [`docs/adr/0276-bc2cpp-numeric-operand-proof.md`](docs/adr/0276-bc2cpp-numeric-operand-proof.md)
   and `scripts/bc2cpp/numeric_operand_check.rb`.
+  The flow avoids rebuilding equal wide masks at joins and skips register-name
+  allocation when no captured registers are opaque; see
+  [ADR 0467](docs/adr/0467-bc2cpp-numeric-flow-speed.md).
   The Fixnum tier of those arms is overflow-exact (a result past the Fixnum range is a
   bignum, as in the interpreter, on the 64-bit and the 32-bit `mrb_int` targets), and the
   call-site proofs refuse method names a computed-name `send` could reach and ivars a
