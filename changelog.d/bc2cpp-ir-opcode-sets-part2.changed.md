@@ -1,0 +1,1 @@
+- **bc2cpp**: the SEND, CALL, CALLEE_FRAME and FRAME_EXIT opcode sets in escape analysis, yield reach, bytecode IR dataflow and types, record hash and type facts now come from `BytecodeIR::Ops`. Analysis output is unchanged.
