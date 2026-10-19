@@ -463,3 +463,16 @@ removed or a wrong position read, each of which must fail. The check needs only 
 bc2cpp source sets (`compiled_gems.rb`) agree, and `speak_message` behaves as before where Tts exists. With `--bc2cpp`
 (the `fast` nightly shard, needs `MRBC`) it also runs the wio closed world for `mruby-rpg2k-compiled` and fails if the
 generated C++ names Tts.
+
+### IR block fixtures
+
+`scripts/bc2cpp/ir_blocks_check.rb` runs capture provenance, RBS callback
+binding, direct-yield protocols and reaching block operands in one Ruby process.
+The case files in `scripts/bc2cpp/ir_blocks/` load into separate anonymous modules,
+so helper methods cannot overwrite another case's helpers. Every mrbc fixture
+keeps its original separate program and analysis; the suite shares loaded
+libraries rather than combining closed worlds. Capture and callback host cases
+run without `MRBC`; yield and operand fixtures report skips. `bc2cpp-build` sets
+`MRBC` and runs every case, including the capture and yield fixtures previously
+registered only with the host coverage reporter. See
+[ADR 0512](adr/0512-ir-block-check-suite.md).

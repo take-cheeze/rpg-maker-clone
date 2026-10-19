@@ -57,12 +57,9 @@ SOURCE_GLOBS = ['mruby-*/mrblib/**/*.rb'].freeze
 # given (CI passes it, so a missing test bed still fails the job).
 CHECKS = [
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
-  { name: 'bc2cpp-ir-yields', command: %w[scripts/bc2cpp/ir_yield_types_check.rb] },
-  { name: 'bc2cpp-ir-captures', command: %w[scripts/bc2cpp/ir_block_captures_check.rb] },
-  { name: 'bc2cpp-ir-block-operands', command: %w[scripts/bc2cpp/ir_block_operands_check.rb] },
+  { name: 'bc2cpp-ir-blocks', command: %w[scripts/bc2cpp/ir_blocks_check.rb] },
   { name: 'bc2cpp-ir-numeric-classes', command: %w[scripts/bc2cpp/ir_numeric_classes_check.rb] },
   { name: 'bc2cpp-numeric-roots-reaching', command: %w[scripts/bc2cpp/numeric_roots_reaching_check.rb] },
-  { name: 'bc2cpp-ir-rbs-blocks', command: %w[scripts/bc2cpp/ir_rbs_block_types_check.rb] },
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },
   { name: 'bc2cpp-ir-ivars', command: %w[scripts/bc2cpp/ir_ivar_types_check.rb] },
