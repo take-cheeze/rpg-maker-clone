@@ -57,12 +57,16 @@ CHECKS = [
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-yields', command: %w[scripts/bc2cpp/ir_yield_types_check.rb] },
   { name: 'bc2cpp-ir-captures', command: %w[scripts/bc2cpp/ir_block_captures_check.rb] },
+  { name: 'bc2cpp-ir-block-operands', command: %w[scripts/bc2cpp/ir_block_operands_check.rb] },
   { name: 'bc2cpp-ir-numeric-classes', command: %w[scripts/bc2cpp/ir_numeric_classes_check.rb] },
   { name: 'bc2cpp-ir-rbs-blocks', command: %w[scripts/bc2cpp/ir_rbs_block_types_check.rb] },
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },
   { name: 'bc2cpp-ir-ivars', command: %w[scripts/bc2cpp/ir_ivar_types_check.rb] },
+  { name: 'bc2cpp-ir-containers', command: %w[scripts/bc2cpp/ir_container_shapes_check.rb] },
   { name: 'bc2cpp-ir-exact', command: %w[scripts/bc2cpp/ir_exact_types_check.rb] },
+  # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
+  { name: 'bc2cpp-ir-join-soundness', command: %w[scripts/bc2cpp/ir_join_soundness_check.rb] },
   { name: 'bc2cpp-dispatch-ir-trace', command: %w[scripts/bc2cpp/dispatch_ir_trace_check.rb] },
   { name: 'lcf-testbed',        command: %w[scripts/lcf/testbed_check.rb] },
   { name: 'lcf-bracket-access', command: %w[scripts/lcf/bracket_access_check.rb] },
@@ -87,6 +91,8 @@ CHECKS = [
   # bc2cpp's hand-built-irep half only (no mrbc under the reporter): it reaches
   # no mrblib line, listed so the CHECKS list keeps mirroring `ruby-checks`.
   { name: 'bc2cpp-fallback-bodies', command: %w[scripts/bc2cpp/fallback_bodies_check.rb] },
+  { name: 'bc2cpp-struct-receiver', command: %w[scripts/bc2cpp/struct_receiver_check.rb] },
+  { name: 'bc2cpp-upvar-walks', command: %w[scripts/bc2cpp/upvar_walks_check.rb] },
   # CI helpers (compiler launcher, mutant pool, timing wrapper): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'ci-helpers', command: %w[scripts/ci/helpers_check.rb] },
   # The generator's scan cache (ADR 0415): no mrblib lines, listed to mirror `ruby-checks`.
