@@ -5,6 +5,8 @@ closed world, why each site is still dynamic, and what proof would remove it.
 `scripts/bc2cpp/dynamic_site_census.rb` reproduces every number below from the
 generated C++.
 
+The most recent run, with its caveats, is [`bc2cpp-census-2026-10-19.md`](bc2cpp-census-2026-10-19.md).
+
 ## Method
 
 ```sh
