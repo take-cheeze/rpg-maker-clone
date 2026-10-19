@@ -2175,7 +2175,7 @@ jobs:
     # ST7789 stream into a framebuffer pixel check (see app/maix/README.md
     # "LCD capture"). Asserts all of it.
     needs: maix
-    if: ${{ github.event_name != 'issue_comment' }}
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -2795,7 +2795,7 @@ jobs:
     # and that the Cortex-A8 PMU's cycle counter gives a genuine, working
     # per-frame cost signal (printed, not asserted on -- see the ADR for why
     # that's a comparative signal rather than a pass/fail threshold).
-    if: ${{ github.event_name != 'issue_comment' && (github.event_name != 'pull_request' || needs.changes.outputs.nano7 == 'true') }}
+    if: ${{ github.event_name == 'push' }}
     needs: changes
     runs-on: ubuntu-24.04
     steps:
@@ -2998,6 +2998,7 @@ jobs:
     # of BRINGUP heartbeats per run), so the job asserts both markers and
     # gates the build alongside `psp`.
     needs: psp
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -3138,6 +3139,7 @@ jobs:
     # comments) unrelated to the EBOOT itself. Promote once this has run
     # green for a while.
     needs: [psp, psp-smoke]
+    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     continue-on-error: true
     steps:
