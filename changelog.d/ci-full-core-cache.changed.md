@@ -1,0 +1,1 @@
+- CI: the full-core libmruby build used by the bc2cpp behavioural checks is cached across runs, keyed on the 3rd/mruby commit and the build scripts.
