@@ -1127,6 +1127,13 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/loop_element_writes_check.rb
 
+      # Join soundness of the literal walks (splat unroll, literal ivar/block/alias/send names, fixnum-or-nil
+      # tolerance): each snippet is compiled by mrbc and must answer for every arm of its join.
+      - name: IR join soundness check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/ir_join_soundness_check.rb
       # IR_BLOCK_OPERANDS (ADR 0504): YIELD_REACH, BLOCK_SELF_WORLD and BLOCK_RETURNS read registers through the
       # bytecode IR (joins, blocks reached through locals, nested SETUPVAR writes, `x[i]` receivers; seconds).
       - name: IR block operand check
