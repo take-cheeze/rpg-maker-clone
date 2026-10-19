@@ -1,10 +1,10 @@
-# 0493. Block and yield analyses read registers through the bytecode IR
+# 0504. Block and yield analyses read registers through the bytecode IR
 
 Date: 2026-10-19
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -80,10 +80,20 @@ read a captured local at any time, not at one instruction.
 - A literal block reached through a local (`b = -> {}; o.instance_exec(&b)`)
   is a literal rebinder site: the block is rebound instead of failing the world
   fact.
-- `x[i]` checks the receiver, not the index register.
 - The handler model is path-insensitive: a block pushed for a `yield` inside
   `begin ... ensure` reaches the method's return on the raising path, so
   `IO.open`, `IO.popen`, `IO.pipe` and `StringIO.open` count as keeping their
   block. That only makes the proof more conservative.
+- `x[i]` checks the receiver, not the index register. `EXCEPT` counts as a
+  writer of its register, not a reader.
+- `BytecodeIR.own_upvar_written_regs` (level-exact) replaces YIELD_REACH's and
+  BLOCK_SELF_WORLD's own nested-`SETUPVAR` scans, which ignored the level.
 - `BC2CPP_IR_BLOCK_FLOW` selected the IR answers while both existed; the old
   walks are removed and the variable is gone.
+
+On the engine (wio closed world) the two answers were compared before the
+switch. The world scan and the yield-free, body-yield-free and
+fiber-unsafe sets are identical; 4 more methods keep their block (the ensure
+case above), 7 more blocks escape (31 to 38), 436 more nodes may run a Proc
+through `x[i]`, and 3 more nodes are reachable from a Fiber body. None of these
+changes what the build compiles.
