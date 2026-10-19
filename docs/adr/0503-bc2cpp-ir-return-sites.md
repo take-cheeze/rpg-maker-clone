@@ -4,7 +4,7 @@ Date: 2026-10-19
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -45,8 +45,48 @@ The IR already answers the hard part: `Program#reaching_definitions` and `Progra
 
 ## Decision
 
-To be filled in when the consumers move.
+`tools/bc2cpp/bytecode_ir_returns.rb` (RETURN_SITES, `docs/bc2cpp-ir-return-sites.md`) adds:
+
+* `Program#exits`: every frame exit with its kind (`:value`, `:block_return`, `:nil`, `:self`, `:true`, `:false`,
+  `:break`, `:stop`), and `exit?`.
+* `BytecodeIR.nested_bodies`, `nested_exits` and `nested_exit?`, over `Irep#tree`.
+* `Program#return_sources` / `BytecodeIR.return_sources`: `reaching_definitions` over handler edges with the body's
+  own nested-block writes opaque. A LOADNIL, and the fall-through of a RAISEIF of the register, are nil sources; an
+  entry value refuses.
+
+Two refinements of the shared dataflow, both only ever turning a refusal into an answer that vm.c guarantees:
+
+* `reaching_definitions(raiseif_nil: true)`: vm.c OP_RAISEIF falls through only when R(a) is nil, so on the normal
+  edge the RAISEIF is the register's (nil) definition. Off by default; `return_sources` turns it on. Without it the
+  walk of `x rescue y` crosses the handler's RESCUE and refuses.
+* `write_dominates?` steps over a frame exit inside the region without counting its leading register as a write: a
+  RETURN reads it, and nothing falls through from an exit to the use. This is a change for every caller.
+
+The consumers move: the Fixnum, Array and class return proofs, DECLARED_RETURN_CHECK and the exact-class return
+table walk `exits` and `nested_exits`; `return_value_sources` is `BytecodeIR.return_sources` and
+`return_write_dominates?` is `BytecodeIR.write_dominates?`, so the private worklist, its region test, the
+`own_upvar_written_regs` copy, `fixnum_proof_writes_reg?` and `FIXNUM_PROOF_REACHING_MAX_STATES` are deleted, and the
+barrier shadow (ADR 0250) loses its two hooks on them. The bodies that call a tracked name come from one per-op index
+instead of two whole-program scans; the pool-self, `module_function` and block-carrying-caller scans ask the IR by op.
+
+Three linear walks stay. `straightline_return_reg?` finds the textually preceding writer because `trace_new_target`
+and `proven_array_source`, which prove that writer, scan the same way (only its dominance moves to the IR).
+`rescued_exception_receiver?` follows a handler's exception register to its EXCEPT, a handler entry the normal walk
+refuses at. `receiver_trace_origin` labels where the linear receiver trace stopped, for a diagnostic. The exact-class
+oracles (`ExactOracle#ivar_slots`) belong to the numeric-flow move and are left alone.
+
+### Comparison on the engine (stage switch, removed)
+
+`BC2CPP_IR_RETURN_SITES=compare` asked both answers over the type check's engine world. Before the two refinements,
+393 return-source questions disagreed (all `x rescue y`: the IR refused at RESCUE where the old walk read the RAISEIF
+as nil) and 20 dominance questions (an early `return ids` between `ids = []` and the read). After them the only
+disagreements are four return sites where the old walk refused and the IR answers: two bodies past the old fixed cap
+of 400 states, a dead predecessor after a RETURN_BLK, and a JMPUW outside every protected range.
 
 ## Consequences
 
-To be filled in when the consumers move.
+* The generated C++ of the engine world is byte-identical to master's, and so are the RET, ARET, RETCLASS and
+  DECLARED_RET listings. The type report changes in two return `reason` strings only (the IR names more sources).
+* A return proof now refuses exactly where `reaching_definitions` does, so a future improvement of the shared walk
+  reaches these proofs without a second copy to update.
+* `scripts/bc2cpp/ir_return_sites_check.rb` covers the queries and both refinements on hand-built bytecode.
