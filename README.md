@@ -1023,7 +1023,8 @@
 - The [bc2cpp CI gate](docs/ci.md#bc2cpp-job-setup-and-check-scheduling) uses a
   dedicated host tools shell, generates base RBS once, and runs checks with two
   workers sharing a prepared fixture library. Per-command timings appear in the
-  job summary.
+  job summary. Related constant-typing fixtures share compatible whole-program
+  analyses in one [suite](docs/ci.md#constant-typing-fixtures).
 - [Base RBS generation](docs/bc2cpp-base-rbs.md) scans native sources with up to
   two worker processes by default. Both base generators accept `--jobs N`,
   including `--jobs 1` for serial generation. Clang AST extraction runs only

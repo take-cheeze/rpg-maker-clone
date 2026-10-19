@@ -75,7 +75,7 @@ literals and other constants, whose every definition has an interval inside the 
 (`IntegerConstantRanges`, NUMERIC_CONSTANT_RANGES). It is typed only when no other producer types it first, so no existing
 row changes. The proof is withheld when a Ruby definition of `+ - * / ==` sits on Integer or a module it includes, or a
 module is prepended into Integer (the owner-scoped `IntegerConstantRanges.integer_ops_safe?`); the exact-value proof of
-`IntegerConstants` takes the same gate. A divisor interval that contains 0 has no interval. `scripts/bc2cpp/integer_arith_constant_check.rb`
+`IntegerConstants` takes the same gate. A divisor interval that contains 0 has no interval. `scripts/bc2cpp/constant_typing_check.rb`
 covers these.
 
 FREEZE_SELF: `R.freeze` answers its receiver (Object#freeze), so a `.freeze` send has the receiver's type while `freeze` is
