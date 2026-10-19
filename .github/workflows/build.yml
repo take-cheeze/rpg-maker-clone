@@ -971,6 +971,17 @@ jobs:
           key: bc2cpp-scan-cache-${{ hashFiles('tools/bc2cpp/*.rb') }}
           restore-keys: bc2cpp-scan-cache-
 
+      # The full-core libmruby the behavioural checks build once (fixture_runtime.rb, BC2CPP_FULL_BUILD_DIR):
+      # about two minutes to build, identical for the same 3rd/mruby commit and build scripts, so cache it across runs.
+      - name: Key for the full-core libmruby cache
+        id: full-core-key
+        run: echo "mruby=$(git rev-parse HEAD:3rd/mruby)" >> "$GITHUB_OUTPUT"
+      - name: Cache the full-core libmruby build
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/bc2cpp-full
+          key: bc2cpp-full-${{ steps.full-core-key.outputs.mruby }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'scripts/bc2cpp/*.bash') }}
+
       - name: Build the closed-world mruby with bc2cpp
         timeout-minutes: 45
         # `-m` makes rake schedule every prerequisite concurrently -- the four
