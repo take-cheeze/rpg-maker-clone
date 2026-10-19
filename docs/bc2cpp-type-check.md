@@ -52,10 +52,14 @@ the reason buckets of what is untyped:
 A constant typed `Array` by `inferred:array-sum` is `(A + B).freeze` (or `A + B`) whose operands both prove Array
 (`DeclaredConstants.array_sum_names`). It is withheld when a Ruby `+` on Array can replace the core method, or when a
 Ruby `freeze` sits on the owners of Array (Array, Enumerable, Object, Kernel, BasicObject and the modules mixed into
-them; `DeclaredConstants.stock_method?`). A program's own `Graphics.freeze` does not withhold it. A constant whose sum
-uses another constant that is not proven Array, such as `('a'..'z').to_a` (Range#to_a is not in the proof yet), stays
-untyped. A declared `X: Array` (RBS, TC1011) accepts the same sum under the same proof; the declared check keeps the
-program-wide `freeze` refusal, so the report and the declared check can differ on such a sum.
+them; `DeclaredConstants.stock_method?`). A program's own `Graphics.freeze` does not withhold it. An operand may be
+`(lo..hi).to_a` over two literal endpoints of one kind (both String or both Integer literals,
+`DeclaredConstants.range_to_a_source?`). That proof is withheld unless `DeclaredConstants.range_to_a_safe?` holds: no
+Ruby definition of `to_a`, `each`, `upto` or `__num_to_a` sits on Range, Enumerable or String (or a module mixed into
+them), and none of those has a prepend or an unresolved mixin. A constant whose sum uses a non-literal endpoint, or a
+Range literal that is not a sum operand (`X = ('a'..'z').to_a.freeze`), stays untyped. A declared `X: Array` (RBS,
+TC1011) accepts the same sum under the same proof; the declared check keeps the program-wide `freeze` refusal, so the
+report and the declared check can differ on such a sum.
 
 A constant typed by `inferred:constructed` or `inferred:class-pool` whose value is `.freeze`d is typed `Array` or
 `Hash` only while `freeze` is stock on that class (the same owner scope). `inferred:hash-merge` is `R.merge(H)` with
