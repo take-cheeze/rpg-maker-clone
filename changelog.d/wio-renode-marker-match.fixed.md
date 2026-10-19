@@ -1,0 +1,1 @@
+- **Wio Terminal CI** `wio-renode` now matches the `REACHED setup()` / `REACHED loop()` markers through `scripts/maix/boot_marker.rb`, the same matcher `maix-smoke` uses, so a Renode `[WARNING]` record spliced into a marker no longer fails the boot check. A log without the marker still fails. The job is still disabled (`if: false`).
