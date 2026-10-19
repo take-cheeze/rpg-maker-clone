@@ -4,7 +4,7 @@ Date: 2026-10-15
 
 ## Status
 
-Accepted
+Accepted. The implementation moved to the bytecode IR in ADR 0499, which also tightens P2 to P5.
 
 ## Context
 
