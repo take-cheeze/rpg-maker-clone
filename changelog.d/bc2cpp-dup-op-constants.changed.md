@@ -1,0 +1,1 @@
+- **bc2cpp:** the read-only, read-leading and call opcode sets are read from `BytecodeIR::Ops`. The duplicate constants `READ_ONLY_OPCODE_SKIP`, `BytecodeIR::READS_LEADING_REG_OPS` and `RecordHash::CALL_OPS` are removed; the generated C++ is unchanged.
