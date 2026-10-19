@@ -131,53 +131,9 @@ jobs:
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: nixbuild/nix-quick-install-action@v35
 
-      - name: Restore and cache Nix store
-        uses: nix-community/cache-nix-action@v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-        # Network-bound (talks to the GitHub Actions cache service): bound it
-        # so a stalled cache backend can't silently eat the job's whole budget
-        # instead of surfacing as a clear timeout.
-        timeout-minutes: 15
-        background: true
-      - name: cache rtp
-        uses: actions/cache@v6
-        id: rtp-cache
-        with:
-          path: scripts/*.zip
-          key: rtp-${{ hashFiles('./scripts/rtp/*install.bash') }}
-          restore-keys: rtp-
-        # Network-bound cache restore; see "Restore and cache Nix store" above.
-        timeout-minutes: 10
-        background: true
-      - name: cache wine prefix
-        uses: actions/cache@v6
-        id: wine-prefix-cache
-        with:
-          # rtp_install.bash / rtp_xp_install.bash default WINEPREFIX to
-          # $HOME/.wine and skip the wine RTP installer entirely once they
-          # find it already populated here, so a cache hit turns "Download
-          # RTP" into a couple of `ls` calls instead of two wine installs.
-          path: ~/.wine
-          key: wine-prefix-${{ hashFiles('./scripts/rtp/*install.bash') }}
-          restore-keys: wine-prefix-
-        # Network-bound cache restore; see "Restore and cache Nix store" above.
-        timeout-minutes: 10
-        background: true
-      - name: cache test game
-        uses: actions/cache@v6
-        id: cache
-        with:
-          path: data
-          key: game-${{ hashFiles('./scripts/download/*.bash', './scripts/gen/mv-sample.py', './scripts/gen/sample-font.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/fonts/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen/mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/audio/**', './data/mz-sample/fonts/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
-        # Network-bound cache restore; see "Restore and cache Nix store" above.
-        timeout-minutes: 10
-        background: true
-
+      # Cache keys hash repository files, so checkout must finish before restores.
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
@@ -196,6 +152,49 @@ jobs:
           # settings on every checkout below.
           show-progress: false
           persist-credentials: false
+
+      # The runner rewrites GITHUB_EVENT_PATH before each step; background
+      # JavaScript actions can parse it while it is truncated. Keep cache
+      # actions in the foreground so they read a complete event payload.
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+        # Network-bound (talks to the GitHub Actions cache service): bound it
+        # so a stalled cache backend can't silently eat the job's whole budget
+        # instead of surfacing as a clear timeout.
+        timeout-minutes: 15
+      - name: cache rtp
+        uses: actions/cache@v6
+        id: rtp-cache
+        with:
+          path: scripts/*.zip
+          key: rtp-${{ hashFiles('./scripts/rtp/*install.bash') }}
+          restore-keys: rtp-
+        # Network-bound cache restore; see "Restore and cache Nix store" above.
+        timeout-minutes: 10
+      - name: cache wine prefix
+        uses: actions/cache@v6
+        id: wine-prefix-cache
+        with:
+          # rtp_install.bash / rtp_xp_install.bash default WINEPREFIX to
+          # $HOME/.wine and skip the wine RTP installer entirely once they
+          # find it already populated here, so a cache hit turns "Download
+          # RTP" into a couple of `ls` calls instead of two wine installs.
+          path: ~/.wine
+          key: wine-prefix-${{ hashFiles('./scripts/rtp/*install.bash') }}
+          restore-keys: wine-prefix-
+        # Network-bound cache restore; see "Restore and cache Nix store" above.
+        timeout-minutes: 10
+      - name: cache test game
+        uses: actions/cache@v6
+        id: cache
+        with:
+          path: data
+          key: game-${{ hashFiles('./scripts/download/*.bash', './scripts/gen/mv-sample.py', './scripts/gen/sample-font.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/fonts/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen/mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/audio/**', './data/mz-sample/fonts/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
+        # Network-bound cache restore; see "Restore and cache Nix store" above.
+        timeout-minutes: 10
 
       # find_package(SDL2 REQUIRED) resolves the nix devshell's system SDL2 on
       # this target (CMakeLists.txt), so the vendored 3rd/SDL and
@@ -218,8 +217,6 @@ jobs:
       # launchers, etc.) into $GITHUB_ENV / $GITHUB_PATH, so every later step
       # below runs its command directly instead of going through
       # `nix develop -c`.
-      - name: wait nix setup
-        wait-all:
       - run: ./scripts/nix/develop-export-env.bash
 
       # The native compile is the long pole. Everything that does not feed the
