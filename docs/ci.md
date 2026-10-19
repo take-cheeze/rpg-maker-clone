@@ -43,6 +43,14 @@ commit (workflow-level `concurrency`, keyed on the PR number). Master pushes,
 merge-queue runs, manual dispatches and `/preview` comments use a per-run group
 and are never cancelled.
 
+### Profiling bc2cpp on a desktop host
+
+`bc2cpp` is closed-world only, and CI profiles it on wio's world. For local
+profiling on a machine with a display, set
+`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` (ADR 0428) to build `host` as a sealed
+RPG2000/2003-only world, so `bc2cpp` runs there without a cross toolchain.
+This is test-only and cannot play XP/VX/Wolf/MV or arbitrary runtime Ruby.
+
 ### Host Ruby uses YJIT for bc2cpp
 
 `bc2cpp-build` sets `RUBY_YJIT_ENABLE=1` for the
