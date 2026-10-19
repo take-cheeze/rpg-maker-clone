@@ -31,3 +31,25 @@ handler edges. Its raw walks were the op scans: the world's definition scan
 (`World#scan_definitions`, closure bodies), `creation`, the BLKPUSH sources of
 a method's block, `closure_children`, `subtree_refs` and the address of a
 closure reason.
+
+## IR implementation and comparison
+
+`BC2CPP_IR_NIL_ESCAPE=1` runs both analyses on the IR; `=compare` keeps the
+legacy answers and logs each disagreement to stderr (`NIL_NARROWING_IR_DIFF`,
+`ESCAPE_IR_DIFF`).
+
+NIL_NARROWING's IR flow (`NilNarrowing::Flow`) replaces the `copy_source`
+back-walk with **available copies** carried in the must-state: `MOVE d s`
+adds the pair `[:copy, d, s]` (and `d` with every register `s` is a copy of),
+and a write of either register drops it. A test or a call that narrows `r`
+then narrows every register paired with `r`. Ops are read from
+`Program#decoded` and writes from `Program#may_write_at?`.
+
+Over the 4230 ireps (125496 instructions) of the engine and mruby core image,
+with a stand-in nil-answer table and a guard naming one class for every
+`is_a?`, the IR flow proves **every** fact the legacy walk proves (0
+legacy-only facts) and 1993 more, at 1908 instructions. The extra facts are
+copies the one-hop, 64-instruction back-walk could not see: a sibling copy
+(`stored = v; x = v; x.is_a?(K)` proves `stored`), a chain (`block = blk;
+b = block; return unless b` proves the block slot itself), and copies that
+reach a test through a join.
