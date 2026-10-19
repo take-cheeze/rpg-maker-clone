@@ -463,3 +463,13 @@ removed or a wrong position read, each of which must fail. The check needs only 
 bc2cpp source sets (`compiled_gems.rb`) agree, and `speak_message` behaves as before where Tts exists. With `--bc2cpp`
 (the `fast` nightly shard, needs `MRBC`) it also runs the wio closed world for `mruby-rpg2k-compiled` and fails if the
 generated C++ names Tts.
+
+### Behavioral installer fixtures
+
+`define_method_check.rb` and `alias_method_check.rb` share the
+`Bc2cppFixtureRuntime.registry_snapshot` setup: compile one temporary fixture,
+build its registry, apply the check's explicit settle policy, then capture the
+installed names. Every positive, refusal and withdrawal still has its own
+program and registry. Generation, C++ drivers, mruby build discovery and runtime
+output parsing already share `fixture_runtime.rb` with the owner-call and
+constructor checks; their different runtime scenarios remain separate.
