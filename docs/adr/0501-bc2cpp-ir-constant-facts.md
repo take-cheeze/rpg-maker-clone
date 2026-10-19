@@ -1,10 +1,11 @@
-# 0493. Constant facts come from the bytecode IR
+# 0501. Constant facts come from the bytecode IR
 
 Date: 2026-10-19
 
 ## Status
 
-Accepted (stage 1: report-only. Later stages are listed under Consequences.)
+Accepted. Stage 1 (report-only) and stage 2 (the IR decides the constant sets) are in this branch. Stages 3 and 4 are
+listed under Consequences.
 
 ## Context
 
@@ -45,7 +46,14 @@ scripts/bc2cpp/ir_constant_facts_compare.rb compares the two.
   - admitted-only-in-IR (18): names that NUMERIC_CONSTANT_RANGES already types as Integer.
   - class (93): `.freeze`d literal Arrays and Hashes (86), and constructed RGSS::Color and RGSS::Rect
     values (7). The IR does not model `.freeze` or constructors yet.
-- Stage 2 (not in this change): make the IR authoritative for GETCONST/GETMCNST folding, fixnum intervals
-  and class pools.
+- Stage 2: the IR decides three constant sets. CodeGen's Fixnum-admitted names (`integer_constants`) are the IR
+  groups with class Integer and an exact value or an interval, so every name is inside the Fixnum margin.
+  `integer_constant_values` (the GETCONST/GETMCNST fold) and `integer_constant_ranges` (the NUMERIC_CONSTANT_RANGES
+  intervals) are IR facts too. Integer `.freeze` is an identity under the stock-freeze gate. On the engine the
+  admitted set goes 722 to 735 names, the folded values 689 to 701, the intervals stay 735. The RPG2k generated
+  code gains 62 folded constant reads (`mrb_fixnum_value`), and loses 7 symbol-table entries. The RGSS, LCF and
+  core generated code is unchanged. Not switched in this stage: the class masks of the class pools and the frozen
+  table slots (still their own walks; they read the IR set only for the Integer test); the container and
+  constructed-class hints (`container_constants`, the proofs' class facts); and DeclaredConstants' evaluator.
 - Stage 3 (not in this change): remove the proofs that the IR replaces.
 - Stage 4 (not in this change): type check reads the IR facts as its constant rows.

@@ -1,1 +1,1 @@
-- **bc2cpp** derives constant class, value and Fixnum interval from the bytecode IR (`BytecodeIR::ConstantFacts`, ADR 0493). This stage only reports the facts beside the existing proofs; `scripts/bc2cpp/ir_constant_facts_compare.rb` lists where they disagree.
+- **bc2cpp** derives constant class, value and Fixnum interval from the bytecode IR (`BytecodeIR::ConstantFacts`, ADR 0501). The IR now decides which constants are Fixnum, which fold to a literal and which carry an interval, so constant reads in the RPG2k engine fold more often (62 more reads in the generated code).

@@ -1,6 +1,6 @@
 # bc2cpp constant facts from the bytecode IR
 
-ADR 0493 has the decision. This page is the how-to.
+ADR 0501 has the decision. This page is the how-to.
 
 `BytecodeIR::ConstantFacts` (`tools/bc2cpp/bytecode_ir_constants.rb`) derives, for every constant
 binding, its class set, exact integer value and Fixnum interval. It uses the IR's reaching definitions
@@ -26,7 +26,9 @@ A bc2cpp run prints, after the proof sections:
 
 `classes=?` means unknown, `value=-` no exact value, `interval=-` no interval.
 
-To compare the IR facts with the proofs of the same run:
+The IR now decides the constant sets (the Fixnum-admitted names, the folded values and the intervals), so the
+bc2cpp log's constant sections are `(BYTECODE_CONSTANT_FACTS)` headings. The comparison below reads the proof
+sections of a build made before ADR 0501's stage 2 (it is removed with the proofs in stage 3):
 
 ```
 ruby scripts/bc2cpp/ir_constant_facts_compare.rb BUILD_LOG
