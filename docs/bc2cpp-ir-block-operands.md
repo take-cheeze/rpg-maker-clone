@@ -28,7 +28,7 @@ parameter, nested `return`/`break`/`yield` in BLOCK_RETURNS, and the op
 inventories.
 
 ```sh
-MRBC=/path/to/mrbc ruby scripts/bc2cpp/ir_block_operands_check.rb
+MRBC=/path/to/mrbc ruby scripts/bc2cpp/ir_blocks_check.rb
 ```
 
 See [ADR 0504](adr/0504-bc2cpp-ir-block-operands.md).

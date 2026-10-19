@@ -1020,6 +1020,9 @@
 
 ### Performance
 
+- The [IR block check suite](docs/ci.md#ir-block-fixtures) shares one Ruby
+  process across capture, callback, yield and block-operand checks while keeping
+  each fixture program isolated. Host checks run even without `MRBC`.
 - The [bc2cpp CI gate](docs/ci.md#bc2cpp-job-setup-and-check-scheduling) uses a
   dedicated host tools shell, generates base RBS once, and runs checks with two
   workers sharing a prepared fixture library. Per-command timings appear in the

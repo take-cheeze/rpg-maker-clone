@@ -1048,7 +1048,7 @@ jobs:
           ruby scripts/bc2cpp/generic_block_return_check.rb
           ruby scripts/bc2cpp/loop_element_writes_check.rb
           ruby scripts/bc2cpp/ir_join_soundness_check.rb
-          ruby scripts/bc2cpp/ir_block_operands_check.rb
+          ruby scripts/bc2cpp/ir_blocks_check.rb
           ruby scripts/bc2cpp/outside_owner_call_check.rb
           ruby scripts/bc2cpp/self_new_leaf_check.rb
           ruby scripts/bc2cpp/constructor_overloads_check.rb
