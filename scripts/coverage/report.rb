@@ -59,6 +59,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-captures', command: %w[scripts/bc2cpp/ir_block_captures_check.rb] },
   { name: 'bc2cpp-ir-block-operands', command: %w[scripts/bc2cpp/ir_block_operands_check.rb] },
   { name: 'bc2cpp-ir-numeric-classes', command: %w[scripts/bc2cpp/ir_numeric_classes_check.rb] },
+  { name: 'bc2cpp-numeric-roots-reaching', command: %w[scripts/bc2cpp/numeric_roots_reaching_check.rb] },
   { name: 'bc2cpp-ir-rbs-blocks', command: %w[scripts/bc2cpp/ir_rbs_block_types_check.rb] },
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },
