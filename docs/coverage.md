@@ -15,6 +15,7 @@ ruby scripts/coverage/report.rb            # run every check, write coverage/
 ruby scripts/coverage/report.rb --per-file # ... listing every file
 ruby scripts/coverage/report.rb --only rpg2k   # just the rpg2k-* checks
 ruby scripts/coverage/report.rb --list     # what it would run
+ruby scripts/coverage/report.rb --require-needs  # CI: a missing test bed fails its check
 ```
 
 Output:
@@ -78,8 +79,9 @@ not in the dev shell. See ADR 0049 for that trade-off.
 
 ## In CI
 
-The `ruby-checks` job runs the report after its check group and publishes it
-two ways.
+The `ruby-checks` job runs every host-side check through the report, each one
+once and under coverage (it has no separate plain run of them), and publishes
+the coverage it measured two ways.
 
 On the run's **summary page** (`$GITHUB_STEP_SUMMARY`): the headline
 percentage and the per-gem table, then two collapsed sections — the least
@@ -91,8 +93,11 @@ per-file picture, for `genhtml` or a coverage service.
 
 The **number** is report-only
 — no floor is enforced, so coverage moving does not fail a build. The step
-itself is an ordinary one: a broken reporter, or a check that fails only under
-the coverage re-run, fails the job rather than silently producing no report.
+itself is an ordinary one: a broken reporter, or a failing check, fails the job
+rather than silently producing no report.
+
+CI passes `--require-needs`: the test beds are downloaded earlier in the job, so
+a check whose data is missing fails there instead of being reported as skipped.
 
 To make it a gate instead, pass a floor:
 

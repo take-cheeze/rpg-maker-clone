@@ -1208,7 +1208,7 @@ jobs:
           # Without code changes the build is skipped on purpose; anything else must succeed.
           [ "$BUILD" = success ] || { [ "$CODE" != true ] && [ "$BUILD" = skipped ]; }
 
-  # Ruby-only checks split out of `build`: none of the nine steps below ever
+  # Ruby-only checks split out of `build`: none of the steps below ever
   # touches the compiled engine binary (they load the mruby-*/mrblib sources
   # directly under CRuby), so unlike everything left in `build`'s `parallel:`
   # group they do not need to wait on `cmake`/`build` -- the native compile
@@ -1298,30 +1298,10 @@ jobs:
               ruby scripts/rpg2k/closed_world_lint_check.rb
               ruby scripts/rpg2k/closed_world_lint.rb
               ruby scripts/bc2cpp/lint_crosscheck_check.rb
-          # ADR 0262: a should-not-happen path raises or reports instead of
-          # falling back silently (bc2cpp source readers, constant-proof
-          # invariants, every broad mrblib rescue).
-          - name: Impossible-as-error check
-            run: ruby scripts/impossible_as_error_check.rb
-
-          # The helpers every bc2cpp shard runs through (docs/ci.md): the
-          # compiler launcher, the mutant pool and the timing table.
-          - name: CI helpers
-            run: ruby scripts/ci/helpers_check.rb
-
-          # ADR 0415: the disk memo of the generator's native-source scans (keys, invalidation,
-          # failure reporting, concurrent writers); the real-scanner half skips without 3rd/mruby.
-          - name: bc2cpp scan cache
-            run: ruby scripts/bc2cpp/scan_cache_check.rb
 
           # ADR 0465: the whole-program fixed points run under a hard round limit; reaching it is a located error.
           - name: bc2cpp fixpoint bounds
             run: ruby scripts/bc2cpp/fixpoint_check.rb
-
-          # ADR 0416: the per-process Prism parse memo of the foreign-Ruby name scans (exact bytes per path,
-          # one tree shared by every reader); the real-file half skips without 3rd/mruby.
-          - name: bc2cpp Ruby parse cache
-            run: ruby scripts/bc2cpp/ruby_parse_cache_check.rb
 
           # An outside Ruby `@name` in an instance method of `class C` poisons only C's family; blocks, modules,
           # class bodies and strings stay global (tools/bc2cpp/outside_ruby_ivar_scopes.rb).
@@ -1338,18 +1318,8 @@ jobs:
           - name: CP932 table lookups match the reference
             run: ruby scripts/cp932_tables_check.rb
 
-          - name: LCF test-bed smoke check
-            run: ruby scripts/lcf/testbed_check.rb
-
           - name: LCF schema coverage
             run: ruby scripts/lcf/schema_coverage.rb
-
-          # LCF record/section/file fields are read with `[]` only (ADR 0213):
-          # method_missing must not come back, no field name may answer as a
-          # method, and `[]` must read what the removed dotted access read on
-          # real test-bed records.
-          - name: LCF bracket field access check
-            run: ruby scripts/lcf/bracket_access_check.rb
 
           - name: RPG2003 battle-command data check
             run: ruby scripts/rpg2k3/battle_command_check.rb
@@ -1359,35 +1329,6 @@ jobs:
 
           - name: RPG2003 battle gauge (active-time) check
             run: ruby scripts/rpg2k3/battle_gauge_check.rb
-
-          # The interpreter against every event command the downloaded games
-          # ship (371k of them), asserting that none raises and none reaches a
-          # handler's "I do not know this" arm. The unit checks pin the
-          # semantics against hand-written commands; this covers the parameter
-          # shapes real games use, which no fixture set reaches.
-          - name: RPG2k event-command soak
-            run: ruby scripts/rpg2k/command_soak.rb
-
-          - name: RPG XP test-bed smoke check
-            run: ruby scripts/rpgxp/testbed_check.rb
-
-          - name: RPG XP script-host smoke check
-            run: ruby scripts/rpgxp/script_host_check.rb
-
-          # RPG Maker VX / VX Ace data layer. Commercial editors and RTPs mean
-          # there is close to no fetchable open-source test bed for either
-          # edition, so this check also builds a full project per edition and
-          # drives the loader over it — loose on disk and repacked into the
-          # edition's encrypted archive — plus an audit that every field in the
-          # data has an accessor in the schema. download-monodori.bash supplies
-          # a real one for VX proper: a freeware release packed entirely into
-          # Game.rgss2a with no loose Data/, picked up automatically here.
-          # download-sanctuary-of-the-ruler.bash is the VX Ace counterpart, but
-          # stays a manual/local download (see its own comment) rather than a
-          # CI one: at ~400MB it is well past this repo's 100MB CI budget for a
-          # downloaded test bed.
-          - name: RPG VX / VX Ace data check
-            run: ruby scripts/rpgvx/testbed_check.rb
 
           # WOLF RPG Editor data layer, driven over the editor's own official
           # sample game (download-wolfrpg-sample.bash) -- every BasicData file
@@ -1404,20 +1345,6 @@ jobs:
           # fixtures in mruby-wolf/test/wolf_test.rb never exercised.
           - name: WOLF RPG Editor interpreter soak check
             run: ruby scripts/wolf/interpreter_check.rb
-
-          # Validate the committed MV test-bed database (data/mv-sample). Pure
-          # CRuby, no JS engine — a guard against a sample-data regression
-          # that would silently break the native MV smokes in the `build` job.
-          - name: MV test-bed data check
-            run: ruby scripts/mv/testbed_check.rb data/mv-sample
-
-          # The same guard for the MZ bed (data/mz-sample, authored by
-          # scripts/gen/mz-sample.py). MZ's boot is fussier than MV's about two
-          # things a JSON-shape check cannot see — the ButtonSet sheet's
-          # minimum size, which Sprite_Button *asserts*, and the "no effect on
-          # passage" flag on the empty tile, without which no wall blocks.
-          - name: MZ test-bed data check
-            run: ruby scripts/mz/testbed_check.rb data/mz-sample
 
           # Static, maker-agnostic source scan across every mruby-*/mrblib tree:
           # a bare, unbraced trailing keyword-style hash into Array#push/
@@ -1439,85 +1366,17 @@ jobs:
           - name: mruby patch context check
             run: ruby scripts/mruby/patch_context_check.rb
 
-          # The hand-built-irep half of the bc2cpp fallback-bodies check (JMPUW
-          # in rescue/ensure regions, bigint pool entries, ...). The compiled
-          # half needs a host mrbc and runs in the `bc2cpp-checks` (bc2cpp-nightly.yml) fast shard.
-          - name: bc2cpp fallback bodies check (unit half)
-            run: ruby scripts/bc2cpp/fallback_bodies_check.rb
-
-          # LEXICAL_CONST (ADR 0423): each fixture is compiled by a host mrbc, which this job
-          # does not build, so here the check prints SKIP and passes; the fixtures run where MRBC is set.
-          - name: bc2cpp lexical constant check
-            run: ruby scripts/bc2cpp/lexical_const_check.rb
-
-          # The host-only sections (hand-built bytecode, a synthetic core tree,
-          # the patch text); the fixture sections need mrbc and the patched
-          # mruby, so they run in the `bc2cpp-checks` (bc2cpp-nightly.yml) job (ADR 0261).
-          - name: bc2cpp join dominance, core mixins, typed reflection, numeric operand and class object argument checks
+          - name: bc2cpp native, RBS and definer checks
             run: |
-              ruby scripts/bc2cpp/join_dominance_check.rb
-              ruby scripts/bc2cpp/declared_return_guard_check.rb
-              ruby scripts/bc2cpp/ir_return_sites_check.rb
-              ruby scripts/bc2cpp/core_mixins_check.rb
-              ruby scripts/bc2cpp/typed_reflection_check.rb
-              ruby scripts/bc2cpp/numeric_operand_check.rb
-              ruby scripts/bc2cpp/bitop_results_check.rb
               ruby scripts/bc2cpp/numeric_flow_speed_check.rb
-              ruby scripts/bc2cpp/ir_numeric_classes_check.rb
               ruby scripts/bc2cpp/native_path_registrations_check.rb
-              ruby scripts/bc2cpp/native_result_facts_check.rb
-              ruby scripts/bc2cpp/native_owner_scopes_check.rb
               ruby scripts/bc2cpp/native_sigs_check.rb
               ruby scripts/bc2cpp/core_facts_rbs_check.rb
               ruby scripts/bc2cpp/base_rbs_check.rb
-              ruby scripts/bc2cpp/tuple_return_check.rb
-              ruby scripts/bc2cpp/register_flow_check.rb
               ruby scripts/bc2cpp/foreign_definers_cache_check.rb
-              ruby scripts/bc2cpp/class_object_args_check.rb
-
-          # ADR 0285: the LCF schema oracle against the real reader (host-only, no mrbc).
-          - name: bc2cpp LCF schema oracle check
-            run: ruby scripts/bc2cpp/lcf_schema_oracle_check.rb
-
-          # ADR 0294: the LCF row model against the real reader (host-only; the compiled
-          # fixtures run in the `bc2cpp-checks` (bc2cpp-nightly.yml) job).
-          - name: bc2cpp LCF row flow check (host)
-            run: ruby scripts/bc2cpp/lcf_row_flow_check.rb
-
-          # ADR 0424: the Symbol class bit of frozen tables (host model; the generated-code half needs MRBC, see bc2cpp-nightly).
-          - name: bc2cpp symbol class check (host)
-            run: ruby scripts/bc2cpp/symbol_class_check.rb
-          # ADR 0429: the Symbol bit of a LOADSYM register and the Symbol class chain (host model; the generated-code
-          # half needs MRBC, see bc2cpp-nightly).
-          - name: bc2cpp loadsym class check (host)
-            run: ruby scripts/bc2cpp/loadsym_class_check.rb
-          # ADR 0425: the frozen-table slot class on hand-built bytecode (host-only; the compiled
-          # section runs when MRBC is set, in the `bc2cpp-checks` (bc2cpp-nightly.yml) job).
-          - name: bc2cpp frozen-table slot class check (host)
-            run: ruby scripts/bc2cpp/frozen_slot_check.rb
-
-          - name: bc2cpp IR annotation coverage checks (host)
-            run: |
-              ruby scripts/bc2cpp/ir_argument_types_check.rb
-              ruby scripts/bc2cpp/ir_ivar_types_check.rb
-              ruby scripts/bc2cpp/ir_context_results_check.rb
-              ruby scripts/bc2cpp/ir_yield_types_check.rb
-              ruby scripts/bc2cpp/ir_block_captures_check.rb
-              ruby scripts/bc2cpp/ir_rbs_block_types_check.rb
-              ruby scripts/bc2cpp/ir_block_protocols_check.rb
-              ruby scripts/bc2cpp/ir_container_shapes_check.rb
-              ruby scripts/bc2cpp/ir_exact_types_check.rb
-              ruby scripts/bc2cpp/ir_soundness_classes_check.rb
-
-          # Dispatch-target traces on hand-built bytecode (ADR 0508): reaching definitions at joins, per-trace join mode.
-          - name: bc2cpp dispatch IR trace check (host)
-            run: ruby scripts/bc2cpp/dispatch_ir_trace_check.rb
 
           - name: RPG2k game-logic checks
             run: |
-              ruby scripts/rpg2k/logic_check.rb
-              ruby scripts/rpg2k/scene_check.rb
-              ruby scripts/rpg2k/render_check.rb
               # ADR 0395: the .lsd-authoritative save (field by field against the live
               # state, each chunk-200 record load-bearing, the save-slot policy).
               ruby scripts/rpg2k/lsd_authoritative_check.rb
@@ -1529,45 +1388,16 @@ jobs:
               ruby scripts/lcf_save_typed_check.rb
               ruby scripts/rpg2k/lsd_adversarial_check.rb
 
-          # The iPod nano 7G map-walk export (scripts/export_nano7_map.rb, ADR
-          # 61): runs the exporter over real test-bed maps and re-parses
-          # map.bin/tiles.bin against the invariants the on-device C reader
-          # relies on. This port has no CI build and no emulator, so this is
-          # the only automated coverage it has -- and it is what catches an
-          # exporter/reader format drift, or the chipset colour key leaking
-          # back into the atlas, without a device.
-          - name: iPod nano 7G map export check
-            run: ruby scripts/export_nano7_map_check.rb
-
-          # The join of the two check kinds above: real test-bed databases
-          # (LCF test-bed smoke check's data) driven through the real
-          # Game::Interpreter, so a rule only genuine game data violates gets
-          # caught. Its first subject is Nepheshel's companion swaps — the
-          # party-roster bug of ADR 0030 passed every fixture check. Skips
-          # with exit 0 when no game has been downloaded.
-          - name: RPG2k test-bed logic check
-            run: ruby scripts/rpg2k/testbed_logic_check.rb
-
-          # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under
-          # CRuby through the RGSS compatibility layer
-          # (scripts/rgss/cruby_compat.rb). In the build job the same file runs
-          # inside the built mruby (the mruby_test ctest); here it guards the
-          # RGSS behavioural contract with no build, and the coverage reporter
-          # below can finally measure the RGSS mrblib lines the suite reaches.
-          - name: RGSS mrbtest suite under CRuby
-            run: ruby scripts/rgss/cruby_test_check.rb
-
-      # How much of the Ruby engine the checks above actually reach. It re-runs
-      # them (concurrently, like the group above) with CRuby's Coverage stdlib
-      # switched on and reports the line coverage of `mruby-*/mrblib` per gem
-      # and per file — see ADR 0049 and docs/coverage.md. Report-only as far as
-      # the *number* goes: it lands in the job summary and in an artifact, and
-      # no floor is enforced (`--min-line-rate` exists for when one is wanted).
-      # The step itself is not `continue-on-error`, so a reporter that breaks —
-      # or a check that fails only on this second, coverage-instrumented run —
-      # is visible rather than a quietly missing report.
+      # Runs the host-side checks this job used to run as separate steps (the CHECKS list in
+      # scripts/coverage/report.rb), each one once, with CRuby's Coverage stdlib switched on, and
+      # reports the line coverage of `mruby-*/mrblib` per gem and per file — see ADR 0049 and
+      # docs/coverage.md. Report-only as far as the *number* goes: it lands in the job summary and
+      # in an artifact, and no floor is enforced (`--min-line-rate` exists for when one is wanted).
+      # `--require-needs`: the test beds were downloaded above, so a missing one fails the step
+      # rather than skipping its check. The step itself is not `continue-on-error`, so a failing
+      # check or a broken reporter is visible rather than a quietly missing report.
       - name: Ruby coverage report
-        run: ruby scripts/coverage/report.rb
+        run: ruby scripts/coverage/report.rb --require-needs
 
       # `always()`: the reporter writes its files before it exits non-zero on a
       # failed check, so the report is still worth publishing on a red run.
