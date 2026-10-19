@@ -12,6 +12,12 @@ comments and string literals, so it can conservatively retain extra declarations
 It does not remove assignments or perform bytecode liveness analysis.
 Resumable methods keep their separate frame-based register assembly.
 
+The declaration scan streams register matches through Ruby's standard
+`StringScanner`, keeping integer-keyed counts instead of an array and string
+for every occurrence. Leading-zero spellings retain distinct string keys, so
+`r01` does not keep an otherwise unused `r1` declaration. The pruning rule and
+generated output are unchanged (ADR 0492).
+
 For a local full-world rpg2k generation, this removed 7,520 lines and 229,623
 bytes (1.2% of the original source). This is a source reduction; optimized
 binary size and compile-time benefits depend on the C++ compiler.
