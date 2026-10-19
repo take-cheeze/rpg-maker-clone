@@ -1,0 +1,1 @@
+- **bc2cpp**: more opcode scans in the closed-world tools (symbol flow, block self world, tuple returns, the registry walk, core defs, loop installers) read the `BytecodeIR` helpers (`each_with_op`, `instructions_with_op`, `op?`) and `BytecodeIR::Ops::SEND`. Analysis output is unchanged.
