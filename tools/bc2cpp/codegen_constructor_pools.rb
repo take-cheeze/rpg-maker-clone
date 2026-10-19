@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'set'
+require_relative 'bytecode_ir_ops'
 
 # CodeGen: CONSTRUCTOR_POOLS (ADR 0313).
 #
@@ -32,7 +33,6 @@ require 'set'
 #
 # BC2CPP_CONSTRUCTOR_POOLS=0 turns it off.
 class CodeGen
-  CONSTRUCTOR_NEW_OPS = %w[SEND SEND0 SENDB SSEND SSEND0 SSENDB].freeze
   # Ops that name a method without calling it, so the name can reach a body with arguments nobody sees.
   CONSTRUCTOR_NAMING_OPS = %w[LOADSYM ALIAS KARG KEY_P].freeze
 
@@ -168,7 +168,7 @@ class CodeGen
     @ireps.each do |label, irep|
       insns = irep.instructions
       insns.each_with_index do |insn, idx|
-        return 'explicit initialize call' if insn.sym == 'initialize' && CONSTRUCTOR_NEW_OPS.include?(insn.op)
+        return 'explicit initialize call' if insn.sym == 'initialize' && BytecodeIR::Ops::SEND.include?(insn.op)
 
         string_spelled ||= insn.op == 'STRING' && %w[new initialize].include?(irep.pool[insn.pool_index.to_i])
         next unless CONSTRUCTOR_NAMING_OPS.include?(insn.op)
@@ -211,21 +211,14 @@ class CodeGen
       children = @ireps.values.flat_map { |irep| Array(irep.reps) }.to_set
       walk = lambda do |label, namespace|
         irep = @ireps.fetch(label)
-        pending = nil
-        irep.instructions.each_with_index do |insn, idx|
-          case insn.op
-          when 'CLASS', 'MODULE'
-            outer = irep.last_writer(idx - 1, insn.reg)&.op
-            full = outer == 'LOADNIL' ? [namespace, insn.sym].compact.join('::') : (insn.sym if outer == 'OCLASS')
-            pending = [insn.reg_token, full, idx]
-          when 'EXEC'
-            if pending && pending[0] == insn.reg_token && pending[2] == idx - 1 && pending[1]
-              child = irep.reps[insn.block_index]
-              map[child] = pending[1]
-              walk.call(child, pending[1])
-            end
-            pending = nil
-          end
+        bodies = BytecodeIR.class_bodies(irep, 'CLASS', 'MODULE')
+        irep.each_with_op('CLASS', 'MODULE') do |insn, idx|
+          full = BytecodeIR.class_body_path(irep, idx, namespace)
+          next unless full && bodies.key?(idx)
+
+          child = bodies[idx]
+          map[child] = full
+          walk.call(child, full)
         end
       end
       @ireps.each_key { |label| walk.call(label, nil) unless children.include?(label) }
@@ -242,7 +235,7 @@ class CodeGen
       irep.instructions.each_with_index do |insn, idx|
         if insn.op == 'SUPER'
           constructor_super_site(irep, idx, insn, owner, found)
-        elsif CONSTRUCTOR_NEW_OPS.include?(insn.op) && insn.sym == 'new'
+        elsif BytecodeIR::Ops::SEND.include?(insn.op) && insn.sym == 'new'
           constructor_new_site(irep, idx, insn, owner, found)
         end
       end

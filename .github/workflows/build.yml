@@ -1095,6 +1095,13 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
 
+      # Class and module body discovery on the IR (tools/bc2cpp/bytecode_ir_classes.rb): which opener owns each body EXEC.
+      - name: Bytecode IR class bodies check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/class_bodies_check.rb
+
       # CONSTANT_OWNERS (tools/bc2cpp/type_facts.rb const_rows): a frozen Array or Hash literal, a Hash#merge and a
       # frozen sum are typed by owner-scoped stock proofs; each Ruby definition, prepend or mixin that refuses one is a case.
       - name: Constant owner proofs check
@@ -2097,8 +2104,10 @@ jobs:
           test -n "$elf" || { echo "::error::no firmware.elf in artifact:"; find firmware; exit 1; }
           out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode MAIX_SPI_LOG="$GITHUB_WORKSPACE/maix-spi-rgss.log" scripts/maix/renode_boot.bash "$elf")"
           echo "$out"
-          echo "$out" | grep -q "REACHED setup()" || { echo "::error::did not reach setup()"; exit 1; }
-          echo "$out" | grep -q "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
+          # The REACHED markers go through the matcher, not grep: a Renode
+          # [WARNING] record can land inside one (scripts/maix/boot_marker.rb).
+          echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED setup()" || { echo "::error::did not reach setup()"; exit 1; }
+          echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
           echo "$out" | grep -q "mrb_open ok" || { echo "::error::mruby did not open"; exit 1; }
           echo "$out" | grep -q "eval -> maix-ruby-alive" || { echo "::error::mruby eval failed"; exit 1; }
 

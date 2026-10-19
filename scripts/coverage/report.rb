@@ -61,12 +61,14 @@ CHECKS = [
   { name: 'bc2cpp-ir-captures', command: %w[scripts/bc2cpp/ir_block_captures_check.rb] },
   { name: 'bc2cpp-ir-block-operands', command: %w[scripts/bc2cpp/ir_block_operands_check.rb] },
   { name: 'bc2cpp-ir-numeric-classes', command: %w[scripts/bc2cpp/ir_numeric_classes_check.rb] },
+  { name: 'bc2cpp-numeric-roots-reaching', command: %w[scripts/bc2cpp/numeric_roots_reaching_check.rb] },
   { name: 'bc2cpp-ir-rbs-blocks', command: %w[scripts/bc2cpp/ir_rbs_block_types_check.rb] },
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },
   { name: 'bc2cpp-ir-ivars', command: %w[scripts/bc2cpp/ir_ivar_types_check.rb] },
   { name: 'bc2cpp-ir-containers', command: %w[scripts/bc2cpp/ir_container_shapes_check.rb] },
   { name: 'bc2cpp-ir-exact', command: %w[scripts/bc2cpp/ir_exact_types_check.rb] },
+  { name: 'bc2cpp-class-bodies', command: %w[scripts/bc2cpp/class_bodies_check.rb] },
   { name: 'bc2cpp-ir-soundness-classes', command: %w[scripts/bc2cpp/ir_soundness_classes_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
   { name: 'bc2cpp-ir-join-soundness', command: %w[scripts/bc2cpp/ir_join_soundness_check.rb] },
@@ -100,6 +102,8 @@ CHECKS = [
   { name: 'bc2cpp-upvar-walks', command: %w[scripts/bc2cpp/upvar_walks_check.rb] },
   # CI helpers (compiler launcher, mutant pool, timing wrapper): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'ci-helpers', command: %w[scripts/ci/helpers_check.rb] },
+  # The maix-smoke boot-marker matcher's self-test: no mrblib lines, listed to mirror `ruby-checks`.
+  { name: 'maix-boot-marker', command: %w[scripts/maix/boot_marker_check.rb] },
   # The generator's scan cache (ADR 0415): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-scan-cache', command: %w[scripts/bc2cpp/scan_cache_check.rb] },
   { name: 'bc2cpp-native-owner-scopes', command: %w[scripts/bc2cpp/native_owner_scopes_check.rb] },
