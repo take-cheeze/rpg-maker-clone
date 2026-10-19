@@ -66,6 +66,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-ivars', command: %w[scripts/bc2cpp/ir_ivar_types_check.rb] },
   { name: 'bc2cpp-ir-containers', command: %w[scripts/bc2cpp/ir_container_shapes_check.rb] },
   { name: 'bc2cpp-ir-exact', command: %w[scripts/bc2cpp/ir_exact_types_check.rb] },
+  { name: 'bc2cpp-class-bodies', command: %w[scripts/bc2cpp/class_bodies_check.rb] },
   { name: 'bc2cpp-ir-soundness-classes', command: %w[scripts/bc2cpp/ir_soundness_classes_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
   { name: 'bc2cpp-ir-join-soundness', command: %w[scripts/bc2cpp/ir_join_soundness_check.rb] },
