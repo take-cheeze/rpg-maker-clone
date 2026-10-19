@@ -1020,9 +1020,6 @@
 
 ### Performance
 
-- [Behavioral installer checks](docs/ci.md#behavioral-installer-fixtures) share
-  registry setup while preserving separate `define_method` and alias fixture
-  programs and settle policies.
 - The [bc2cpp CI gate](docs/ci.md#bc2cpp-job-setup-and-check-scheduling) uses a
   dedicated host tools shell, generates base RBS once, and runs checks with two
   workers sharing a prepared fixture library. Per-command timings appear in the
@@ -1045,6 +1042,9 @@
 - [Native base RBS scanning](docs/bc2cpp-native-scanning.md) jumps between braces
   during body extraction and avoids redundant owner-pattern matches.
 
+- [Behavioral installer checks](docs/ci.md#behavioral-installer-fixtures) share
+  registry setup while preserving separate `define_method` and alias fixture
+  programs and settle policies.
 - The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) is closed-world
   only: it compiles the RPG2000/2003-only psp/wio/maix builds, whose only Ruby
   is the engine's own, and every other build (desktop, wasm, Android) stays the
