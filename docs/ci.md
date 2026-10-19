@@ -57,6 +57,24 @@ The desktop `host` build loads Ruby at runtime and never carries the compiled ge
 The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` (skipped on purpose for
 a docs-only change). Require `bc2cpp`.
 
+### bc2cpp job setup and check scheduling
+
+The gate uses `nix develop .#bc2cpp`, a host tools shell without the game
+shell's Wine, Emscripten or graphics dependencies. Its Nix store cache has a
+separate `nix-bc2cpp-` prefix. The environment export helper accepts this
+installable as its optional first argument; other jobs keep the default shell.
+
+After compiling and verifying the closed-world archive, the job prepares the
+full-core fixture library once. Its exact cache key includes the pinned Nix
+toolchain, mruby and stringio revisions, build helpers and mruby patches.
+`BC2CPP_MRUBY_FULL` makes subsequent fixtures read the prepared library.
+The existing timed-check wrapper runs every check with at most two commands
+at once, retaining command logs, failure status and a timing table in the job
+summary. Base-section verification also writes the freshly generated base RBS
+under `build-closed-bc2cpp/base_rbs`, replacing a second generation pass.
+`base_section_check.rb --output DIR CLOSED_BUILD_DIR` requires an absent or
+empty output directory. See [ADR 0510](adr/0510-bc2cpp-ci-bounded-checks.md).
+
 ### Superseded runs
 
 A push to a pull request cancels the run still going for that PR's previous

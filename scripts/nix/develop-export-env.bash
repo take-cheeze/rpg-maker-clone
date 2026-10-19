@@ -11,7 +11,7 @@ set -euo pipefail
 # to avoid taking on a third-party Action for this one step; the technique
 # below is theirs.
 #
-# `nix develop -c bash -c 'echo -ne "\0"; env -0'` runs the shell for real
+# `nix develop "${1:-.}" -c bash -c 'echo -ne "\0"; env -0'` runs the shell for real
 # and dumps its fully realised environment (including anything the
 # shellHook set), NUL-delimited. The leading `echo -ne '\0'` fences off
 # whatever the shellHook printed to stdout from the `env -0` dump that
@@ -94,6 +94,6 @@ while IFS='=' read -r -d '' name value || exit "$name"; do
     printf '%s=%s\n' "$name" "$value" >>"$GITHUB_ENV"
 done < <(
     set +e
-    nix develop -c bash -c "echo -ne '\0'; env -0" 2> >("$drop_fetch_noise" >&2)
+    nix develop "${1:-.}" -c bash -c "echo -ne '\0'; env -0" 2> >("$drop_fetch_noise" >&2)
     printf '%s' "$?"
 )
