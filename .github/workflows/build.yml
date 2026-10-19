@@ -1406,6 +1406,7 @@ jobs:
               ruby scripts/bc2cpp/numeric_operand_check.rb
               ruby scripts/bc2cpp/bitop_results_check.rb
               ruby scripts/bc2cpp/numeric_flow_speed_check.rb
+              ruby scripts/bc2cpp/ir_numeric_classes_check.rb
               ruby scripts/bc2cpp/native_path_registrations_check.rb
               ruby scripts/bc2cpp/native_result_facts_check.rb
               ruby scripts/bc2cpp/native_owner_scopes_check.rb
@@ -1447,6 +1448,7 @@ jobs:
               ruby scripts/bc2cpp/ir_block_captures_check.rb
               ruby scripts/bc2cpp/ir_rbs_block_types_check.rb
               ruby scripts/bc2cpp/ir_block_protocols_check.rb
+              ruby scripts/bc2cpp/ir_exact_types_check.rb
 
           - name: RPG2k game-logic checks
             run: |
