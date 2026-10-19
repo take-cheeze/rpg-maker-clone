@@ -56,6 +56,15 @@ SOURCE_GLOBS = ['mruby-*/mrblib/**/*.rb'].freeze
 # the run, the same way the harnesses themselves skip, unless --require-needs is
 # given (CI passes it, so a missing test bed still fails the job).
 CHECKS = [
+  { name: 'bc2cpp-class-arg-types', command: %w[scripts/bc2cpp/class_arg_types_check.rb] },
+  { name: 'ci-check-registry', command: %w[scripts/ci/check_registry_check.rb] },
+  { name: 'bc2cpp-class-hierarchy', command: %w[scripts/bc2cpp/class_hierarchy_check.rb] },
+  { name: 'bc2cpp-conversion-returns', command: %w[scripts/bc2cpp/conversion_returns_check.rb] },
+  { name: 'bc2cpp-origin-transfers', command: %w[scripts/bc2cpp/origin_transfers_check.rb] },
+  { name: 'bc2cpp-param-trace-return', command: %w[scripts/bc2cpp/param_trace_return_check.rb] },
+  { name: 'bc2cpp-predicate-returns', command: %w[scripts/bc2cpp/predicate_returns_check.rb] },
+  { name: 'bc2cpp-recv-trace', command: %w[scripts/bc2cpp/recv_trace_check.rb] },
+  { name: 'bc2cpp-trace-types', command: %w[scripts/bc2cpp/trace_types_check.rb] },
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-blocks', command: %w[scripts/bc2cpp/ir_blocks_check.rb] },
   { name: 'bc2cpp-ir-numeric-classes', command: %w[scripts/bc2cpp/ir_numeric_classes_check.rb] },

@@ -1037,6 +1037,10 @@
   including `--jobs 1` for serial generation. Clang AST extraction runs only
   for files with registered function bodies that need return analysis.
 
+- The [check-registration audit](docs/ci.md#check-registration-audit) detects
+  missing or duplicate bc2cpp registrations and distinguishes host checks from
+  required compiler fixtures. Existing deferred audits have explicit reasons.
+
 - bc2cpp shares foreign Ruby method-name scans across closed-world proof queries,
   avoiding a repeated AST walk for every queried name. See
   [foreign method scanning](docs/bc2cpp-foreign-method-scanning.md) for measurements.

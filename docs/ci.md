@@ -99,6 +99,32 @@ CI invokes the suite once, and the coverage reporter registers it once in place
 of the former lexical/declared join entries. Set `MRBC` to a host compiler to
 run its fixtures; without it the suite reports a skip, as its predecessors did.
 
+### Check registration audit
+
+`ruby scripts/ci/check_registry.rb` reads the coverage reporter's actual
+`--list` output and the workflow's shell steps, including nested parallel
+steps. It rejects references to deleted checks, duplicate invocations within
+one job or the coverage list, and newly discovered bc2cpp checks without a
+registration or an explanation in `scripts/ci/deferred_bc2cpp_checks.yml`.
+A check may appear in both the host coverage runner and the compiler job;
+these exercise different fixture capabilities.
+
+The compiler job now also runs the context, argument, ivar, class-soundness,
+numeric-root and block-protocol fixture sections that previously only had
+host coverage registrations. The block-receiver proof requires MRBC too,
+even though its source has no explicit environment guard. The registry check
+requires these entrypoints in `bc2cpp-build`, where MRBC is prepared.
+Eight previously unscheduled host checks run through the coverage reporter,
+including the standalone argument-type suite. Its call-site index now imports
+the numeric IR methods it uses instead of depending on a prior compiler load.
+
+The deferred inventory records existing argument-driven utilities and larger
+runtime, mutation or whole-engine audits. It describes current scheduling;
+it does not claim those checks run in ordinary CI. Entries for checks moved
+or enabled by another branch may be pruned when syncing the inventory. This
+keeps independent suite PRs mergeable in either order. See
+[ADR 0513](adr/0513-bc2cpp-check-registration-audit.md).
+
 ### Superseded runs
 
 A push to a pull request cancels the run still going for that PR's previous
