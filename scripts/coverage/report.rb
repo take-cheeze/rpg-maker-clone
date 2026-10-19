@@ -57,14 +57,17 @@ CHECKS = [
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-yields', command: %w[scripts/bc2cpp/ir_yield_types_check.rb] },
   { name: 'bc2cpp-ir-captures', command: %w[scripts/bc2cpp/ir_block_captures_check.rb] },
+  { name: 'bc2cpp-ir-block-operands', command: %w[scripts/bc2cpp/ir_block_operands_check.rb] },
   { name: 'bc2cpp-ir-numeric-classes', command: %w[scripts/bc2cpp/ir_numeric_classes_check.rb] },
   { name: 'bc2cpp-ir-rbs-blocks', command: %w[scripts/bc2cpp/ir_rbs_block_types_check.rb] },
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },
   { name: 'bc2cpp-ir-ivars', command: %w[scripts/bc2cpp/ir_ivar_types_check.rb] },
+  { name: 'bc2cpp-ir-containers', command: %w[scripts/bc2cpp/ir_container_shapes_check.rb] },
   { name: 'bc2cpp-ir-exact', command: %w[scripts/bc2cpp/ir_exact_types_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
   { name: 'bc2cpp-ir-join-soundness', command: %w[scripts/bc2cpp/ir_join_soundness_check.rb] },
+  { name: 'bc2cpp-dispatch-ir-trace', command: %w[scripts/bc2cpp/dispatch_ir_trace_check.rb] },
   { name: 'lcf-testbed',        command: %w[scripts/lcf/testbed_check.rb] },
   { name: 'lcf-bracket-access', command: %w[scripts/lcf/bracket_access_check.rb] },
   { name: 'rpg2k-command-soak', command: %w[scripts/rpg2k/command_soak.rb],
@@ -105,6 +108,7 @@ CHECKS = [
   # sections need mrbc and skip here.
   { name: 'bc2cpp-join-dominance', command: %w[scripts/bc2cpp/join_dominance_check.rb] },
   { name: 'bc2cpp-declared-return-guard', command: %w[scripts/bc2cpp/declared_return_guard_check.rb] },
+  { name: 'bc2cpp-ir-return-sites', command: %w[scripts/bc2cpp/ir_return_sites_check.rb] },
   # The host-only hand-built shapes of the register flow pass (ADR 0415).
   { name: 'bc2cpp-register-flow', command: %w[scripts/bc2cpp/register_flow_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp/core_mixins_check.rb] },

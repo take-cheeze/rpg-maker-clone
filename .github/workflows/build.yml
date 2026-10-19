@@ -1054,6 +1054,13 @@ jobs:
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/integer_arith_constant_check.rb
 
+      # BYTECODE_CONSTANT_FACTS (ADR 0501): the IR's class, value and interval of constant bindings, fixture by fixture.
+      - name: Bytecode IR constant facts check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
+
       # CONSTANT_OWNERS (tools/bc2cpp/type_facts.rb const_rows): a frozen Array or Hash literal, a Hash#merge and a
       # frozen sum are typed by owner-scoped stock proofs; each Ruby definition, prepend or mixin that refuses one is a case.
       - name: Constant owner proofs check
@@ -1105,6 +1112,13 @@ jobs:
           mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
           [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp/ir_join_soundness_check.rb
+      # IR_BLOCK_OPERANDS (ADR 0504): YIELD_REACH, BLOCK_SELF_WORLD and BLOCK_RETURNS read registers through the
+      # bytecode IR (joins, blocks reached through locals, nested SETUPVAR writes, `x[i]` receivers; seconds).
+      - name: IR block operand check
+        run: |
+          mrbc=$(ls build-closed-bc2cpp/host/mrbc/bin/mrbc build-closed-bc2cpp/host/bin/mrbc 2>/dev/null | head -n1)
+          [ -n "$mrbc" ] || { echo "::error::no host mrbc in build-closed-bc2cpp"; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp/ir_block_operands_check.rb
 
       # ADR 0468: the owner call (chain elses, bare sends, name owner sets), the leaf-class self.new and the audited
       # constructor overloads, generated code and the interpreted-versus-compiled runs. The runs link a full-core
@@ -1401,6 +1415,7 @@ jobs:
             run: |
               ruby scripts/bc2cpp/join_dominance_check.rb
               ruby scripts/bc2cpp/declared_return_guard_check.rb
+              ruby scripts/bc2cpp/ir_return_sites_check.rb
               ruby scripts/bc2cpp/core_mixins_check.rb
               ruby scripts/bc2cpp/typed_reflection_check.rb
               ruby scripts/bc2cpp/numeric_operand_check.rb
@@ -1448,7 +1463,12 @@ jobs:
               ruby scripts/bc2cpp/ir_block_captures_check.rb
               ruby scripts/bc2cpp/ir_rbs_block_types_check.rb
               ruby scripts/bc2cpp/ir_block_protocols_check.rb
+              ruby scripts/bc2cpp/ir_container_shapes_check.rb
               ruby scripts/bc2cpp/ir_exact_types_check.rb
+
+          # Dispatch-target traces on hand-built bytecode (ADR 0508): reaching definitions at joins, per-trace join mode.
+          - name: bc2cpp dispatch IR trace check (host)
+            run: ruby scripts/bc2cpp/dispatch_ir_trace_check.rb
 
           - name: RPG2k game-logic checks
             run: |
