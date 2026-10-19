@@ -27,7 +27,7 @@ variable can contain:
 ## On the IR
 
 `tools/bc2cpp/bytecode_ir_containers.rb` gives the three analyses the facts they
-used to read from `irep.instructions` (ADR 0493):
+used to read from `irep.instructions` (ADR 0502):
 
 - `BytecodeIR.producers(irep, index, reg)`: every value that can reach a
   register read, each with its writing instruction, from the shared reaching
@@ -44,6 +44,18 @@ used to read from `irep.instructions` (ADR 0493):
   `#each_with_op`: the instruction-order questions, answered from the IR's
   predecessor sets.
 
-`BC2CPP_IR_CONTAINER_SHAPES=1` answers from these facts; `compare` answers from
-the legacy walks and prints `IR_CONTAINER_DIFF kind [where]: legacy=... ir=...`
-for every query the two answer differently.
+What the analyses decide on top of these facts:
+
+- The element scans join over every producer of a register (through handler
+  edges): all must classify and agree, and an empty literal agrees with any
+  class. A container literal counts only over a quiet span, so a local Array
+  pushed to before it is stored is unknown, not vacuous.
+- A mutation is attributed to the ivar of every `GETIV` producer of its
+  receiver.
+- RecordHash classifies a stored value with the type layer's literal classes.
+- SEALED_HASH_IVAR reads its store literal, receiver and windows from the IR.
+
+Still outside the IR: `trace_new_target` (the receiver class trace the element
+scans try first), RecordHash's `Array.new` / `Hash.new` constructor check
+(`constant_path`) and the RBS record checker's `DeclScanner` overrides
+(`rbs_record_types.rb`).
