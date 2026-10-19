@@ -528,14 +528,17 @@ class CodeGen
   end
 
   def interpreted_access?(owner, name)
-    holders = [owner, *Array(@included_modules[owner])]
-    # Snapshot: compiles_clean? reads @registry through its default proc,
-    # which inserts keys.
-    @registry.values.any? do |defs|
-      defs.any? do |d|
-        d.irep &&
-          (holders.include?(d.owner) || strict_subclass?(d.owner, owner)) &&
-          irep_subtree_touches_ivar?(d.irep, name) && !compiles_clean?(d.irep)
+    @interpreted_access_memo ||= {}
+    @interpreted_access_memo[[owner, name]] ||= begin
+      holders = [owner, *Array(@included_modules[owner])]
+      # Snapshot: compiles_clean? reads @registry through its default proc,
+      # which inserts keys.
+      @registry.values.any? do |defs|
+        defs.any? do |d|
+          d.irep &&
+            (holders.include?(d.owner) || strict_subclass?(d.owner, owner)) &&
+            irep_subtree_touches_ivar?(d.irep, name) && !compiles_clean?(d.irep)
+        end
       end
     end
   end
@@ -552,8 +555,8 @@ class CodeGen
     end
     yield
   ensure
-    (instance_variables - saved.keys - [:@clean_cache]).each { |ivar| remove_instance_variable(ivar) }
-    saved.each { |ivar, value| instance_variable_set(ivar, value) unless ivar == :@clean_cache }
+    (instance_variables - saved.keys - [:@clean_cache, :@interpreted_access_memo]).each { |ivar| remove_instance_variable(ivar) }
+    saved.each { |ivar, value| instance_variable_set(ivar, value) unless ivar == :@clean_cache || ivar == :@interpreted_access_memo }
   end
 
   def initializer_starts_with_super?(definition)
