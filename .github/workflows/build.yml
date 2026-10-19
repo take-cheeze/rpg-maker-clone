@@ -1013,6 +1013,9 @@ jobs:
           env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "full-core mruby unavailable" unless Bc2cppFixtureRuntime.full_or_build'
           echo "BC2CPP_MRUBY_FULL=$RUNNER_TEMP/bc2cpp-full/host" >> "$GITHUB_ENV"
 
+      - name: Check bc2cpp registrations
+        run: ruby scripts/ci/check_registry.rb
+
       # Two workers bound CPU/memory use; the shared libraries above are read-only.
       # timed_checks prints every command's log and propagates failures (ADR 0510).
       - name: Run bc2cpp checks
@@ -1026,6 +1029,13 @@ jobs:
           ruby scripts/bc2cpp/constant_reviewed_check.rb
           ruby scripts/bc2cpp/shared_generation_check.rb
           ruby scripts/bc2cpp/constant_proofs_check.rb
+          ruby scripts/bc2cpp/block_receiver_proof_check.rb
+          ruby scripts/bc2cpp/ir_context_results_check.rb
+          ruby scripts/bc2cpp/ir_argument_types_check.rb
+          ruby scripts/bc2cpp/ir_ivar_types_check.rb
+          ruby scripts/bc2cpp/ir_soundness_classes_check.rb
+          ruby scripts/bc2cpp/numeric_roots_reaching_check.rb
+          ruby scripts/bc2cpp/ir_block_protocols_check.rb
           ruby scripts/bc2cpp/symbol_flow_check.rb
           ruby scripts/bc2cpp/struct_receiver_check.rb
           ruby scripts/bc2cpp/upvar_walks_check.rb

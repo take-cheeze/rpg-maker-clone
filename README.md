@@ -1027,6 +1027,9 @@
   analyses in one [suite](docs/ci.md#constant-typing-fixtures). The
   [constant-proof suite](docs/ci.md#constant-proof-fixtures) groups declared and
   lexical constant checks with isolated source fixtures.
+- The [check-registration audit](docs/ci.md#check-registration-audit) detects
+  missing or duplicate bc2cpp registrations and distinguishes host checks from
+  required compiler fixtures. Existing deferred audits have explicit reasons.
 - [Base RBS generation](docs/bc2cpp-base-rbs.md) scans native sources with up to
   two worker processes by default. Both base generators accept `--jobs N`,
   including `--jobs 1` for serial generation. Clang AST extraction runs only
