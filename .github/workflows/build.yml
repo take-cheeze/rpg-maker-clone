@@ -1462,7 +1462,12 @@ jobs:
               ruby scripts/bc2cpp/ir_block_captures_check.rb
               ruby scripts/bc2cpp/ir_rbs_block_types_check.rb
               ruby scripts/bc2cpp/ir_block_protocols_check.rb
+              ruby scripts/bc2cpp/ir_container_shapes_check.rb
               ruby scripts/bc2cpp/ir_exact_types_check.rb
+
+          # Dispatch-target traces on hand-built bytecode (ADR 0508): reaching definitions at joins, per-trace join mode.
+          - name: bc2cpp dispatch IR trace check (host)
+            run: ruby scripts/bc2cpp/dispatch_ir_trace_check.rb
 
           - name: RPG2k game-logic checks
             run: |
