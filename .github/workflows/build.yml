@@ -1448,6 +1448,7 @@ jobs:
               ruby scripts/bc2cpp/ir_block_captures_check.rb
               ruby scripts/bc2cpp/ir_rbs_block_types_check.rb
               ruby scripts/bc2cpp/ir_block_protocols_check.rb
+              ruby scripts/bc2cpp/ir_container_shapes_check.rb
               ruby scripts/bc2cpp/ir_exact_types_check.rb
 
           # Dispatch-target traces on hand-built bytecode (ADR 0508): reaching definitions at joins, per-trace join mode.
