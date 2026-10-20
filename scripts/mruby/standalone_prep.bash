@@ -60,6 +60,7 @@ for p in mruby-colon3-assign-setmcnst mruby-dollar-bang-scoped \
 done
 apply_patch "$root/3rd/mruby-stringio" "$root/patches/mruby-stringio-native-getbyte.patch"
 apply_patch "$root/3rd/mruby-stringio" "$root/patches/mruby-stringio-read-direct.patch"
+apply_patch "$root/3rd/mruby-marshal" "$root/patches/mruby-marshal-psp-wio-onigmo-optional.patch"
 
 export cp932_table="$tables/bestfit932.txt"
 export jis0208_table="$tables/JIS0208.TXT"
