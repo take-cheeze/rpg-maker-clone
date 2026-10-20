@@ -1037,6 +1037,7 @@ jobs:
           ruby scripts/bc2cpp/type_check_run_check.rb
           ruby scripts/bc2cpp/ir_context_results_check.rb
           ruby scripts/bc2cpp/ir_argument_types_check.rb
+          ruby scripts/bc2cpp/ir_entry_seeds_check.rb
           ruby scripts/bc2cpp/ir_ivar_types_check.rb
           ruby scripts/bc2cpp/ir_soundness_classes_check.rb
           ruby scripts/bc2cpp/numeric_roots_reaching_check.rb
