@@ -135,8 +135,19 @@ on every compile and drops any entry that no longer matches.
 
 `tools/bc2cpp/native_core_candidates.rb` proposes candidates from the clang AST of
 a core source. A candidate is an entry whose body passes the frame rules above,
-checked through the unit's own functions and the reviewed allowlist. It only
-proposes; code generation does not use it yet.
+checked through the unit's own functions and the reviewed allowlist.
+
+`scripts/bc2cpp/native_core_direct_wire.rb` turns the candidates on Array, String
+and Integer with no arguments into entries in
+`tools/bc2cpp/native_core_direct_generated.rb`. Such an entry calls the mruby
+function itself. Its body text is pinned in the entry, so the audit drops it if
+the function changes. A function with no public `MRB_API` declaration is called
+through an `extern "C"` prototype in a helper, whose signature the pinned body
+confirms. Candidates whose body has conditional compilation, and operator-named
+methods, are not wired: their frame verdict or their registration name is not
+checked by the audit. `scripts/bc2cpp/native_core_direct_wired_check.rb` fails if
+any generated entry stops verifying, since the audit would otherwise drop it
+silently.
 
 ## Where the generated artifacts come from
 
