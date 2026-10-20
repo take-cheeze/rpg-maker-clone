@@ -1736,6 +1736,9 @@
   kinds and signature contracts share another. See [native check suites](docs/bc2cpp-native-checks.md)
   for commands and CI prerequisites.
 
+- Constant typing shares compatible positive and unknown-receiver fixtures while
+  retaining separate worlds for method redefinitions; see [CI fixtures](docs/ci.md#constant-typing-fixtures).
+
 ### Play in the browser (WebAssembly)
 
 - The runtime cross-compiles to WebAssembly with Emscripten and ships a page
