@@ -1,0 +1,1 @@
+- The embedded hardware ports (Wio Terminal, M5Stack Core, Sipeed Maix Amigo, iPod nano 7G and PlayStation Portable) are removed. The project now targets desktop, with the browser (Emscripten), Android and Optcarrot builds kept. The bc2cpp closed world is re-pointed from the `wio` build to `closed`; see docs/adr/0522-desktop-only-embedded-targets-removed.md.
