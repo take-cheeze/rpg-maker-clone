@@ -1,0 +1,1 @@
+- The closed-world build analyses mruby core's own Ruby and the `stringio` Ruby as program, so their method names are no longer treated as outside calls. Engine-internal only: no change to game behaviour.
