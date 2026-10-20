@@ -4,9 +4,12 @@
 class Array
   def __svalue: () -> untyped
   def compact: () -> untyped
+  def empty?: () -> untyped
   def index: (untyped) -> untyped
   def join: () -> untyped | (String?) -> untyped
+  def length: () -> untyped
   def shift: () -> untyped
+  def size: () -> untyped
   def to_a: () -> untyped
 end
 
@@ -24,6 +27,12 @@ end
 
 class String
   def bytes: () -> untyped
+  def bytesize: () -> untyped
+  def empty?: () -> untyped
+  def hash: () -> untyped
+  def intern: () -> untyped
   def length: () -> untyped
   def size: () -> untyped
+  def to_f: () -> untyped
+  def to_sym: () -> untyped
 end
