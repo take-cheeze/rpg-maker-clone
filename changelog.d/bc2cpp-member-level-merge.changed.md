@@ -1,0 +1,1 @@
+- **bc2cpp** `sig/bc2cpp/declarations.rbs` merges 11 repeated method declarations into one member each and folds 46 duplicate class/module blocks, each member keeping its native table marker, so every table still reads the same members (ADR 0516). Program-hint signatures of the merged methods now carry the union of their copies.
