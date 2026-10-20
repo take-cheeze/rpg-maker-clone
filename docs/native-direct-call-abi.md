@@ -141,9 +141,10 @@ checked through the unit's own functions and the reviewed allowlist.
 and Integer with no arguments into entries in
 `tools/bc2cpp/native_core_direct_generated.rb`. Such an entry calls the mruby
 function itself. Its body text is pinned in the entry, so the audit drops it if
-the function changes. A function with no public `MRB_API` declaration is called
-through an `extern "C"` prototype in a helper, whose signature the pinned body
-confirms. Candidates whose body has conditional compilation, and operator-named
+the function changes. Only a function with external linkage is wired: a `static`
+function is not exported, so a call from generated code fails to link. The
+candidates producer reports linkage from the AST, and the wired check reads each
+definition to confirm it. Candidates whose body has conditional compilation, and operator-named
 methods, are not wired: their frame verdict or their registration name is not
 checked by the audit. `scripts/bc2cpp/native_core_direct_wired_check.rb` fails if
 any generated entry stops verifying, since the audit would otherwise drop it
