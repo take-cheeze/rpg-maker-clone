@@ -9526,7 +9526,7 @@ end
 # already declare. Candidates stay reviewable; the loader applies them as the other trace-derived sections do.
 class Array
   def delete_if: () -> untyped
-  def each: () -> untyped
+  def each: () -> untyped | () { (Elem) -> void } -> self
   def sort: () -> untyped
   def uniq: () -> untyped
 end
@@ -9765,7 +9765,7 @@ class Game::Weather
 end
 
 class Hash
-  def select: () -> untyped
+  def select: () -> untyped | () { (K, V) -> untyped } -> untyped
 end
 
 class Integer
@@ -10626,7 +10626,6 @@ end
 # body (`return to_enum(:each) unless block`, `yield self[idx]` in a loop, then `self`).
 # bc2cpp-native: core_block_params
 class Array[unchecked out Elem]
-  def each: () { (Elem) -> void } -> self
   def reverse_each: () { (Elem) -> void } -> untyped
   def map: () { (Elem) -> untyped } -> untyped
   def collect: () { (Elem) -> untyped } -> untyped
@@ -10647,7 +10646,7 @@ class Array[unchecked out Elem]
   def find_index: () { (Elem) -> untyped } -> untyped
   def index: () { (Elem) -> untyped } -> untyped
   def rindex: () { (Elem) -> untyped } -> untyped
-  def any?: () { (Elem) -> untyped } -> untyped
+  def any?: () { (Elem) -> untyped } -> untyped | () -> bool | (untyped) -> bool | () { (untyped) -> untyped } -> bool
   def all?: () { (Elem) -> untyped } -> untyped
   def none?: () { (Elem) -> untyped } -> untyped
   def count: () { (Elem) -> untyped } -> untyped
@@ -10671,7 +10670,6 @@ class Hash[unchecked out K, unchecked out V]
   def each_pair: () { (K, V) -> void } -> untyped
   def each_value: () { (V) -> void } -> untyped
   def each_key: () { (K) -> void } -> untyped
-  def select: () { (K, V) -> untyped } -> untyped
   def filter: () { (K, V) -> untyped } -> untyped
   def reject: () { (K, V) -> untyped } -> untyped
 end
@@ -10882,7 +10880,6 @@ end
 # still holds the result kinds NativeCoreResultSigs reads.
 # bc2cpp-native: core_predicates
 class Array
-  def any?: () -> bool | (untyped) -> bool | () { (untyped) -> untyped } -> bool
 end
 
 # bc2cpp-native: core_predicates
@@ -10917,7 +10914,6 @@ end
 # bc2cpp-native: core_results
 class Array
   def to_a: () -> Array[untyped]
-  def compact: () -> Array[untyped]
   def join: (?String sep) -> String
 end
 
