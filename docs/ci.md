@@ -150,6 +150,16 @@ program and registry. Generation, C++ drivers, mruby build discovery and runtime
 output parsing already share `fixture_runtime.rb` with the owner-call and
 constructor checks; their different runtime scenarios remain separate.
 
+### Block iterator fixtures
+
+`block_iterator_direct_check.rb` retains its baseline generated C++, bytecode
+and registration report through the runtime comparison, avoiding a second
+identical closed-world generation. `BC2CPP_CXXFLAGS=-DMRB_USE_BIGINT` is still
+applied when compiling the driver; that variable is consumed only by the C++
+runtime helper, so it does not change generator inputs. Withdrawal worlds and
+`BC2CPP_BLOCK_CORE_DIRECT=0` each retain their own generation. All iterator,
+Fiber and GC scenarios still run in both interpreted and compiled VMs.
+
 ### Host Ruby uses YJIT for bc2cpp
 
 `bc2cpp-build` sets `RUBY_YJIT_ENABLE=1` for the

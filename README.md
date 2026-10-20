@@ -1054,6 +1054,8 @@
 - [Behavioral installer checks](docs/ci.md#behavioral-installer-fixtures) share
   registry setup while preserving separate `define_method` and alias fixture
   programs and settle policies.
+- The [block iterator fixture](docs/ci.md#block-iterator-fixtures) reuses its
+  baseline generation for C++ shape checks and interpreted/compiled comparison.
 - The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) is closed-world
   only: it compiles the RPG2000/2003-only psp/wio/maix builds, whose only Ruby
   is the engine's own, and every other build (desktop, wasm, Android) stays the
