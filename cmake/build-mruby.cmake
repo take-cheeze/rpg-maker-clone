@@ -1,14 +1,13 @@
 # Shared logic for building libmruby.a via mruby's own rake-based build system
 # (build_config.rb), used by both the desktop/wasm build (root CMakeLists.txt)
-# mruby's gem system -- which
-# C sources, generated headers, gembox membership -- is entirely decided by that
-# Rakefile, not by anything CMake can glob on its own, so this drives rake as an
-# external build system via a custom command rather than declaring a native
-# CMake target.
+# mruby's gem system -- which C sources, generated headers, gembox membership --
+# is entirely decided by that Rakefile, not by anything CMake can glob on its
+# own, so this drives rake as an external build system via a custom command
+# rather than declaring a native CMake target.
 #
 # rpg2k_add_mruby() takes TARGET_NAME (the mruby build's own name -- build.name
-# in build_config.rb, e.g. "host", "emscripten", "android"), REPO_ROOT (repo root:
-# build_config.rb, 3rd/mruby and 3rd/mgem-list all hang off this),
+# in build_config.rb, e.g. "host", "emscripten", "android"), REPO_ROOT (repo
+# root: build_config.rb, 3rd/mruby and 3rd/mgem-list all hang off this),
 # PROJECT_BUILD_DIR (the calling project's CMAKE_CURRENT_BINARY_DIR), GEMS
 # (local mrbgem dirs to watch for rebuild triggers, e.g. mruby-rgss) and an
 # optional MRB_OPTS (extra rake VAR=value args beyond the
@@ -121,12 +120,12 @@ function(rpg2k_add_mruby)
   # project controls to carry the fix on), so it is patched in place here
   # instead, the same way the other mruby patches here are applied: via a real
   # script (scripts/apply_mruby_patch.bash), not a `patch` call embedded
-  # straight in this COMMAND: it needs a dry-run-first idempotency check across repeat
-  # configures/builds without re-cloning the submodule, and that redirect- heavy
-  # shell logic does not survive CMake's own command-line escaping reliably
-  # inline. The script itself fails loudly (not silently) if the patch stops
-  # applying, e.g. after a future submodule bump moves the patched code -- see
-  # its own preamble.
+  # straight in this COMMAND: it needs a dry-run-first idempotency check across
+  # repeat configures/builds without re-cloning the submodule, and that
+  # redirect- heavy shell logic does not survive CMake's own command-line
+  # escaping reliably inline. The script itself fails loudly (not silently) if
+  # the patch stops applying, e.g. after a future submodule bump moves the
+  # patched code -- see its own preamble.
   set(mruby_colon3_patch
       "${ARG_REPO_ROOT}/patches/mruby-colon3-assign-setmcnst.patch")
 
@@ -210,9 +209,9 @@ function(rpg2k_add_mruby)
   # left; and mrb_open() cannot tell mrb_core_init_abort()'s deliberate
   # mrb->exc=NULL apart from genuine success, so an allocation failure early
   # enough in bootstrap lets it proceed into gem init on a half-initialized
-  # state instead of failing cleanly. Same patch-in-place treatment as
-  # the other mruby patches above, for the same reason (no fork of upstream
-  # mruby/mruby this project controls).
+  # state instead of failing cleanly. Same patch-in-place treatment as the other
+  # mruby patches above, for the same reason (no fork of upstream mruby/mruby
+  # this project controls).
   set(mruby_nomem_patch
       "${ARG_REPO_ROOT}/patches/mruby-nomemoryerror-reentrant-alloc.patch")
 
@@ -245,12 +244,11 @@ function(rpg2k_add_mruby)
   # `#include <sys/param.h>` on every non-Windows target -- true on glibc and
   # most BSD/Darwin libcs, but this board's bare-metal arm-none-eabi newlib's
   # own sys/param.h defines PATHSIZE, not MAXPATHLEN, so the file fails to
-  # compile outright. Adds the
-  # same `#ifndef MAXPATHLEN #define MAXPATHLEN 1024` fallback the file's own
-  # _WIN32 branch already carries a few lines up, just gated for any libc
-  # missing the macro rather than only Windows's. Same patch-in- place treatment
-  # as the other mruby patches above, for the same reason (no fork of upstream
-  # mruby/mruby this project controls).
+  # compile outright. Adds the same `#ifndef MAXPATHLEN #define MAXPATHLEN 1024`
+  # fallback the file's own _WIN32 branch already carries a few lines up, just
+  # gated for any libc missing the macro rather than only Windows's. Same
+  # patch-in- place treatment as the other mruby patches above, for the same
+  # reason (no fork of upstream mruby/mruby this project controls).
   set(mruby_io_maxpathlen_patch
       "${ARG_REPO_ROOT}/patches/mruby-io-maxpathlen-fallback.patch")
 
@@ -409,13 +407,13 @@ function(rpg2k_add_mruby)
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
   # GitHub. Both repos/host and repos/<TARGET_NAME> are linked: a cross build
-  # (emscripten, android, ...) also runs a native "host" build alongside the cross
-  # target to produce mrbc, and that half looks for the index under its own
-  # repos/host too. Use `ln -sfn`, not `ln -sf`: once these links exist, a plain
-  # `ln -sf` would dereference the existing symlink-to-directory and drop a new
-  # link *inside* 3rd/mgem-list (a self-referential 3rd/mgem-list/mgem-list),
-  # dirtying the submodule. `-n` (no-dereference; portable across GNU and
-  # BSD/macOS) replaces the symlink in place instead.
+  # (emscripten, android, ...) also runs a native "host" build alongside the
+  # cross target to produce mrbc, and that half looks for the index under its
+  # own repos/host too. Use `ln -sfn`, not `ln -sf`: once these links exist, a
+  # plain `ln -sf` would dereference the existing symlink-to-directory and drop
+  # a new link *inside* 3rd/mgem-list (a self-referential
+  # 3rd/mgem-list/mgem-list), dirtying the submodule. `-n` (no-dereference;
+  # portable across GNU and BSD/macOS) replaces the symlink in place instead.
   set(mruby_rake_command
       ${mruby_patch_chain} mkdir -p ${mruby_build_dir}/repos/host
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME} && ln -sfn
