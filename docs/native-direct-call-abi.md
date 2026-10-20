@@ -1,0 +1,137 @@
+# Native direct-call ABI
+
+A **direct call** lets compiled Ruby call a native method's C body without going
+through mruby's method dispatch. The compiler emits `rgss::NAME_direct(M, self,
+args...)` instead of a by-name send, behind a guard that proves the receiver's
+class. This page describes the calling convention those calls use, and the
+conditions a body must meet. The decisions are in ADR 0253 (wio's hand split),
+ADR 0257 (core entries), and ADR 0263 (the generated RGSS split).
+
+## Two entry shapes
+
+Every native method exists in two forms.
+
+| Form | Signature | Used by |
+|---|---|---|
+| By-name binding | `mrb_value f(mrb_state* M, mrb_value self)` | mruby's method table |
+| Direct entry | `mrb_value NAME_direct(mrb_state* M, mrb_value self, <typed args>)` | compiled call sites |
+
+The binding is what `mrb_define_method` registers. It unpacks its arguments with
+`mrb_get_args` (or `mrb_get_argc` and `mrb_get_arg1`) and then runs the body. The
+direct entry takes the same arguments already unpacked and typed, with no
+argument parsing. For a generated RGSS entry, the split looks like this:
+
+```c
+// the body moves into NAME_native_body, which reads no calling frame
+mrb_value bmp_decoder_ran(mrb_state* M, mrb_value self) { ... }
+
+// the direct entry forwards to it
+mrb_value bmp_decoder_ran_direct(mrb_state* M, mrb_value self) {
+  return bmp_decoder_ran(M, self);
+}
+```
+
+The body text is moved, never copied, so the binding and the direct path run one
+body. `include/rgss_native_direct.hxx` declares every direct entry, and the forwarders
+are in a generated block at the end of `mruby-rgss/src/lib.cxx`.
+
+## Argument kinds
+
+Each direct entry's parameters have one of four kinds. The compiler converts the
+Ruby value to the C type before the call:
+
+| Kind | C parameter | Conversion at the call site | Guard |
+|---|---|---|---|
+| `:int` | `mrb_int` | `mrb_integer(v)` | `mrb_integer_p(v)` |
+| `:float` | `mrb_float` | `mrb_as_float(M, v)` | none; the same conversion the `f` format of `mrb_get_args` uses |
+| `:bool` | `bool` | `mrb_test(v)` | none (truthiness) |
+| `:value` | `mrb_value` | passed as is | none |
+
+A call whose argument fails its guard takes the generic send instead, so the
+behaviour (including the error for a bad argument) is the one dispatch gives.
+`tools/bc2cpp/native_direct.rb` loads the table kinds the compiler accepts,
+`int float bool value`. A kind the compiler does not know keeps the entry out.
+
+## The receiver guard
+
+A direct call is emitted in a chain of exact-class arms. Only a receiver whose
+class is exactly the owner reaches the arm, so a subclass or a singleton class
+falls through to dispatch.
+
+- RGSS: `bc2cpp_native_class == rgss::<wrapper class>()`, comparing the receiver's
+  class with the wrapper class the binding was registered on.
+- Core Array: `mrb_array_p(r) && mrb_obj_ptr(r)->c == M->array_class`. Core String is
+  the same with `string_class`. Integer needs only `mrb_integer_p(r)`, since an
+  Integer is an immediate.
+
+The guard, not the arm's body, decides which class the call belongs to, so an entry
+for one owner never runs on another.
+
+## What a body must satisfy
+
+A body may be admitted as a direct entry only if it is **frame-independent**: its
+result depends on its arguments and receiver, not on the calling frame. The checks
+below are enforced, not conventions.
+
+- It reads no frame API: `mrb_get_args`, `mrb_get_argc`, `mrb_get_argv`,
+  `mrb_get_arg1`, `mrb_block_given_p`, `mrb_yield*`, `mrb_get_mid`,
+  `mrb_call_super`, `mrb_get_backtrace`, and any access to the frame fields of
+  `mrb_state` (`c`, `ci`, `root_c`) or of `mrb_context`, `mrb_callinfo` and `REnv`.
+- It calls no mruby API that takes an `mrb_state` unless that API is on the reviewed
+  allowlist (`MRB_API_ALLOW` in `scripts/native/binding_facts.py`). An unknown API
+  may read the frame, so the body is refused.
+- It has no statement before the argument unpack that could raise in a different
+  order from the binding, no `goto`, no `#if` inside the body, and no template
+  specialization. The `binding_split.rb` refusal list is the full set.
+
+A body that fails any rule keeps its by-name binding. Nothing is dropped silently:
+the generator reports the refusal reasons.
+
+## Configuration guards
+
+A binding that exists only in some builds gets its direct entry under the same `#if`
+as its callee. Builds without the callee get a stub:
+
+```c
+mrb_value bmp_init_copy_direct(mrb_state* M, mrb_value self, mrb_value) {
+  return native_split_compiled_out(M, self);  // raises NotImplementedError
+}
+```
+
+Each configuration must define every entry point, really or as a stub, exactly where
+the guard predicts its callee is compiled (ADR 0263). A mismatch fails
+`binding_split.rb check`.
+
+## Core natives (ADR 0257)
+
+mruby's own methods are registered from static ROM tables, `MRB_MT_ENTRY(fn, SYM,
+ARGS)`. `tools/bc2cpp/native_core_direct.rb` holds a hand-audited entry per method:
+an expression over public mruby APIs, the arity and argument guard, and the
+body text it was written against. `audit` re-checks each entry against the sources
+on every compile and drops any entry that no longer matches.
+
+`tools/bc2cpp/native_core_candidates.rb` proposes candidates from the clang AST of
+a core source. A candidate is an entry whose body passes the frame rules above,
+checked through the unit's own functions and the reviewed allowlist. It only
+proposes; code generation does not use it yet.
+
+## Where the generated artifacts come from
+
+| Artifact | Generator |
+|---|---|
+| `include/rgss_native_direct.hxx`, the forwarder block in `lib.cxx`, `tools/bc2cpp/native_direct_table.rb`, `mruby-rgss/test/native_direct_probe.inc` | `scripts/native/binding_split.rb write` |
+| `generated/bc2cpp/rgss_direct.rbs` | `scripts/bc2cpp/native_rgss_direct_sigs.rb` |
+| `generated/bc2cpp/core_direct.rbs` | `scripts/bc2cpp/native_core_direct_sigs.rb` |
+
+`binding_split.rb check` fails when the committed files differ from what the
+generator would write, and runs in the bc2cpp checks. The generator needs libclang's
+Python bindings, which `nix develop .#clang` provides, and the mruby headers from a
+host build with the `mruby-gc-type-live-counts` patch applied.
+
+## Not covered
+
+- Bodies that read the frame or call an unreviewed mruby API keep their by-name binding.
+- Variadic functions, block-taking methods and functions returning an unlisted kind
+  have no direct entry.
+- The callee's result is an `mrb_value`; typed result kinds are declared separately
+  in `declarations.rbs` and do not change this ABI.
