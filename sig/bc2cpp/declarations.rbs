@@ -10726,17 +10726,17 @@ end
 # bc2cpp-native: core_block_results
 class Array[unchecked out Elem] < Object
   # bc2cpp-native: core_block_results
-  def map: () { (Elem) -> untyped } -> Array[untyped]
+  def map: () -> Enumerator[untyped, untyped] | () { (Elem) -> untyped } -> Array[untyped]
   # bc2cpp-native: core_block_results
-  def collect: () { (Elem) -> untyped } -> Array[untyped]
+  def collect: () -> Enumerator[untyped, untyped] | () { (Elem) -> untyped } -> Array[untyped]
 end
 
 # bc2cpp-native: core_block_results
 class Hash[unchecked out K, unchecked out V] < Object
   # bc2cpp-native: core_block_results
-  def map: () { (untyped) -> untyped } -> Array[untyped]
+  def map: () -> Enumerator[untyped, untyped] | () { (untyped) -> untyped } -> Array[untyped]
   # bc2cpp-native: core_block_results
-  def collect: () { (untyped) -> untyped } -> Array[untyped]
+  def collect: () -> Enumerator[untyped, untyped] | () { (untyped) -> untyped } -> Array[untyped]
 end
 
 # ---- native: core_proc_calls
