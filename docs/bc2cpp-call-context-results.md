@@ -1,7 +1,5 @@
 # Call-context receiver results
 
-> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
-
 The compiler can analyze a selected user method with the exact receiver and
 positional argument classes of one call. For example, `relay.carry(a).tag`
 retains `a`'s class when `carry(value)` returns `value`, even if another call

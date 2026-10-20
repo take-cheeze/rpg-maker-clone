@@ -329,7 +329,7 @@ load File.join(lib, 'game.rb')
 load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
 load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
 load File.join(lib, 'game', 'legacy_lsd.rb')
-load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out of game/state.rb, see docs/adr/0128
+load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
 load File.join(lib, 'interpreter.rb')
 load File.join(lib, 'main.rb')
 Dir[File.join(lib, 'scene', '*.rb')].sort.each { |path| load path }
@@ -15328,7 +15328,7 @@ check 'a captured transition falls back to a plain fade when the backend cannot 
   scene.update
   st = scene.instance_variable_get(:@state)
 
-  RGSS::Graphics.snapshot = nil # e.g. a build with LV_USE_SNAPSHOT off
+  RGSS::Graphics.snapshot = nil # e.g. the Wio/PSP builds, LV_USE_SNAPSHOT off
   st.screen.erase(Game::Transition::SCROLL_LEFT_OUT, 4)
   4.times { scene.update }
   eq 255, fade.opacity, 'still lands on the right end state via the fade fallback'

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>	<string>org.rpg-maker-clone.rpg2k_walk</string>
+	<key>CFBundleName</key>		<string>RPG2k Walk</string>
+	<key>CFBundleExecutable</key>	<string>rpg2k_walk</string>
+	<key>HBAppKind</key>			<integer>1</integer>
+	<key>HBIconGlyph</key>		<string>map</string>
+	<key>HBIconColor</key>		<string>#3a7d44</string>
+</dict>
+</plist>

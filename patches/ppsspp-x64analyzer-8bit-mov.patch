@@ -1,0 +1,80 @@
+PPSSPP upstream gap: Common/x64Analyzer.cpp's X86AnalyzeMOV -- used by the
+crash handler (Core/MemFault.cpp) to recover from a bad guest memory access
+under the x86-64 JIT/JIT_IR backends when g_Config.bIgnoreBadMemAccess is set
+(headless mode's default; also settable per-game) -- only recognizes MOV
+opcodes 0x89 (32/64-bit reg->mem), 0x8B (32/64-bit mem->reg), 0xC6 and 0xC7
+(immediate stores). It has no case for 0x88 (MOV r/m8, r8, an 8-bit
+reg->mem store) or 0x8A (MOV r8, r/m8, an 8-bit mem->reg load) -- both
+completely ordinary x86-64 instructions the JIT emits for any single-byte
+guest MIPS store/load (e.g. `sb`, or any C struct field write narrower than
+a word). Hitting one during a bad-memory-access recovery falls through to
+the `default:` case, which logs "Unhandled disasm case in write handler!"
+and returns false; MemFault.cpp then treats the access as unrecoverable
+("Bad memory access detected! ... Stopping emulation") and halts the whole
+emulated process, even though bIgnoreBadMemAccess would otherwise have let
+it skip the faulting instruction and continue exactly as it already does
+for 4/8-byte stores through the 0x89 case.
+
+Found while trying to get this project's own PSP EBOOT to boot under
+PPSSPP-headless (see docs/adr/0047-psp-memory-budget.md's P1 and
+app/psp/README.md for the fuller trail -- this was misdiagnosed one layer
+too deep in an earlier pass of that investigation, as a JIT
+register-allocation bug rather than this crash-recovery gap; the crash
+log's own disassembly, `mov [rbx+r9+0x4], r10b`, is exactly an 0x88
+instruction -- an 8-bit byte-store from r10b -- which is what led back
+here). The guest code hitting this is mruby's own GC heap-page
+initialization (3rd/mruby/src/gc.c's init_heap_page loop,
+`p->as.free.tt = MRB_TT_FREE`, a per-object byte-store loop the compiler
+inlined into mrb_gc_init); whatever guest-level condition made that
+specific access land outside mapped memory is a separate question from
+this one, but this patch is what lets PPSSPP's own existing
+bIgnoreBadMemAccess recovery path handle it uniformly with every other
+store width instead of hard-stopping specifically on byte stores.
+
+Adds MOVE_8BIT_REG_TO_MEM (0x88) and MOVE_MEM_TO_8BIT_REG (0x8A) alongside
+the existing MOVE_REG_TO_MEM (0x89) / MOVE_MEM_TO_REG (0x8B) cases,
+following the same pattern already used for MOVZX_BYTE/MOVSX_BYTE
+(info.operandSize = 1) elsewhere in the same function -- both opcodes were
+already routed into X86AnalyzeMOV's accessType==1 (reg/mem) branch by the
+existing `(codeByte & 0xF0) == 0x80` check (0x88 and 0x8A both fall in that
+range), they were just missing from the switch that decides what to do
+once there.
+
+Not yet upstreamed to https://github.com/hrydgard/ppsspp -- applied here
+locally (flake.nix's `ppsspp` package output) alongside the LwMutex
+workarea-validation and mfic/mtic patches in this same directory. Safe to
+drop once upstream adds these two opcodes to X86AnalyzeMOV, or this patch
+fails to apply against a future nixpkgs bump (check Common/x64Analyzer.cpp/
+.h for whether it already stopped being incomplete before just bumping
+context lines).
+
+--- a/Common/x64Analyzer.cpp
++++ b/Common/x64Analyzer.cpp
+@@ -187,6 +187,16 @@
+ 			info.isMemoryWrite = false;
+ 			break;
+
++		case MOVE_8BIT_REG_TO_MEM: //move 8-bit reg to memory
++			info.isMemoryWrite = true;
++			info.operandSize = 1;
++			break;
++
++		case MOVE_MEM_TO_8BIT_REG: //move memory to 8-bit reg
++			info.isMemoryWrite = false;
++			info.operandSize = 1;
++			break;
++
+ 		default:
+ 			ERROR_LOG(Log::CPU, "Unhandled disasm case in write handler!\n\nPlease implement or avoid.");
+ 			return false;
+--- a/Common/x64Analyzer.h
++++ b/Common/x64Analyzer.h
+@@ -54,6 +54,8 @@
+ 	MOVE_16_32BIT   = 0xC7, //move 16 or 32-bit immediate
+ 	MOVE_REG_TO_MEM = 0x89, //move reg to memory
+ 	MOVE_MEM_TO_REG = 0x8B, //move memory to reg
++	MOVE_8BIT_REG_TO_MEM = 0x88, //move 8-bit reg to memory
++	MOVE_MEM_TO_8BIT_REG = 0x8A, //move memory to 8-bit reg
+ };
+
+ enum AccessType {

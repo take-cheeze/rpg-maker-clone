@@ -1,7 +1,5 @@
 # bc2cpp baseline after ADRs 0307-0317 (2026-10-02)
 
-> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
-
 One consistent measurement of the dynamic dispatch left in bc2cpp's generated C++, taken on a single tree after the
 eleven PRs of ADRs 0307-0317 landed. Each of those PRs measured its own delta on a different master commit, so the
 per-PR deltas overlap; here every number comes from the same tree, and the marginal contribution of each feature is

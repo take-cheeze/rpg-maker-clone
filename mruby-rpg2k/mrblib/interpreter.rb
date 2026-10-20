@@ -1721,8 +1721,8 @@ module Game
     # Scene::Map::NUMBER_KEY_BUTTONS/OPERATOR_KEY_BUTTONS (RGSS::Input::N0..N9
     # / PLUS..PERIOD, see #key_input_result's KEY_INPUT_GROUPS), which today
     # have real key backing only on the SDL desktop window backend
-    # (src/sdl_input.cxx) — the other native backends (terminal/sixel)
-    # never press those ids, so a Numbers/Operators-only
+    # (src/sdl_input.cxx) — the other native backends (PSP, Wio Terminal,
+    # terminal/sixel) never press those ids, so a Numbers/Operators-only
     # request there resolves the same as before this: never. 🚧 The mouse
     # (Maniac) stays fully unmodelled everywhere.
     def do_key_input(cmd)

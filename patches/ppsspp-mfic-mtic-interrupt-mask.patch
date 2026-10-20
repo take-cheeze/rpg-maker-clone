@@ -1,0 +1,92 @@
+PPSSPP upstream gap: the interpreter's Int_Special2 (Core/MIPS/MIPSInt.cpp)
+treats the Allegrex mfic/mtic instructions ("move from/to interrupt
+controller") as pure no-ops -- logs a one-time warning and does nothing else,
+per its own TODO comment ("Should we actually implement this?"). PPSSPP
+already tracks an interruptsEnabled flag for the documented
+sceKernelCpuSuspendIntr/ResumeIntr syscalls (Core/HLE/sceKernelInterrupt.cpp),
+with __DisableInterrupts()/__EnableInterrupts()/__InterruptsEnabled()
+accessors already exported for exactly this kind of use; mfic/mtic just never
+got wired to it.
+
+This matters because pspsdk's own pspSdkDisableInterrupts()/
+EnableInterrupts() (src/sdk/interrupt.S) are built directly on mfic/mtic
+instead of the syscall, specifically to build fast critical sections around
+its own non-reentrant state (the pte_os*/newlib glue in
+src/libpthreadglue/osal.c) without syscall overhead. With mfic/mtic doing
+nothing, those critical sections provide no actual protection under
+PPSSPP: a timer/thread-switch interrupt can land in the middle of what
+pspsdk's own C runtime believes is atomic, corrupting whatever kernel
+object it was setting up at the time. Found while trying to get this
+project's own PSP EBOOT to boot under PPSSPP-headless (see
+docs/adr/0047-psp-memory-budget.md and app/psp/README.md for the fuller
+trail) -- one of several bugs on that path, not by itself sufficient to get
+the EBOOT booting, but a real correctness gap independent of that.
+
+Not yet upstreamed to https://github.com/hrydgard/ppsspp -- applied here
+locally (flake.nix's `ppsspp` package output) alongside the LwMutex
+workarea-validation patch in this same directory. Safe to drop once either
+upstream implements mfic/mtic in a version newer than what nixpkgs pins, or
+this patch fails to apply against a future nixpkgs bump (check
+Core/MIPS/MIPSInt.cpp's Int_Special2 for whether it already stopped being a
+no-op before just bumping the context lines). Only the interpreter's
+Int_Special2 is patched -- the JIT/IR backends route mfic/mtic through
+Comp_Generic, which calls this same interpreter function, so all CPU cores
+pick the fix up.
+
+--- a/Core/MIPS/MIPSInt.cpp
++++ b/Core/MIPS/MIPSInt.cpp
+@@ -34,6 +34,7 @@
+ #include "Core/HLE/HLE.h"
+ #include "Core/HLE/HLETables.h"
+ #include "Core/HLE/ReplaceTables.h"
++#include "Core/HLE/sceKernelInterrupt.h"
+
+ #define R(i) (currentMIPS->r[i])
+ #define F(i) (currentMIPS->f[i])
+@@ -817,25 +818,30 @@
+
+ 	void Int_Special2(MIPSOpcode op)
+ 	{
+-		static int reported = 0;
++		int rt = _RT;
+ 		switch (op & 0x3F)
+ 		{
+-		case 36:  // mfic
+-			// move from interrupt controller, not implemented
+-			// See related report https://report.ppsspp.org/logs/kind/316 for possible locations.
+-			// Also see https://forums.ps2dev.org/viewtopic.php?p=32700#p32700 .
+-			// TODO: Should we actually implement this?
+-			if (!reported) {
+-				WARN_LOG(Log::CPU, "MFIC Disable/Enable Interrupt CPU instruction");
+-				reported = 1;
+-			}
++		case 36:  // mfic rt, $0 -- reads the current interrupt-enable state into
++			// rt and disables interrupts, mirroring sceKernelCpuSuspendIntr's
++			// effect on the same interruptsEnabled flag (sceKernelInterrupt.cpp).
++			// Homebrew SDKs (pspsdk's pspSdkDisableInterrupts) use this
++			// undocumented pair instead of the syscall to build critical
++			// sections around non-reentrant state (e.g. its own newlib/pthread
++			// glue) without syscall overhead; leaving it a no-op let interrupts
++			// (and the thread switches they trigger) land inside those
++			// supposedly-atomic sections, corrupting kernel objects created
++			// there. See https://forums.ps2dev.org/viewtopic.php?p=32700#p32700 .
++			if (rt != 0)
++				R(rt) = __InterruptsEnabled() ? 1 : 0;
++			__DisableInterrupts();
+ 			break;
+-		case 38:  // mtic
+-			// move to interrupt controller, not implemented
+-			if (!reported) {
+-				WARN_LOG(Log::CPU, "MTIC Disable/Enable Interrupt CPU instruction");
+-				reported = 1;
+-			}
++		case 38:  // mtic rt, $0 -- restores the interrupt-enable state saved by
++			// a prior mfic (or explicitly clears/sets it, as pspSdkDisableInterrupts
++			// does with mtic $0, $0 right after its own mfic).
++			if (R(rt) != 0)
++				__EnableInterrupts();
++			else
++				__DisableInterrupts();
+ 			break;
+ 		}
+ 		PC += 4;

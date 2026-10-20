@@ -62,6 +62,8 @@ body:
         - Terminal (sixel / iTerm2)
         - Linux (SDL)
         - Windows
+        - PSP
+        - Wio Terminal
         - Other platform
 
   - type: dropdown

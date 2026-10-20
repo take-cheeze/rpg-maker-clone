@@ -1,0 +1,75 @@
+PPSSPP upstream gap: Core/HLE/sceKernelInterrupt.cpp's SysclibForKernel
+implementations of strchr and strrchr search for the wrong thing entirely.
+Both do
+
+    size_t cpos = str.find(str, c);      // sysclib_strchr
+    size_t cpos = str.rfind(str, c);     // sysclib_strrchr
+
+which is std::string::find(const std::string&, size_t pos) -- "find the whole
+string `str` inside itself, starting at offset `c`" -- rather than
+find(char c), "find the character c". The intended call is almost certainly
+str.find((char)c); the two-argument overload silently accepts the character
+as a *position* instead.
+
+The result is not subtly wrong, it is wrong for every input. Searching a
+string for itself starting at 0 always matches at 0, and starting anywhere
+past 0 never matches at all, so
+
+    strchr(s, c)  == s     for c == 0
+    strchr(s, c)  == NULL  for every other c
+
+regardless of what s contains. strrchr behaves the same way. A caller
+looking for a separator in a path gets NULL no matter what the path is.
+
+That matters here because pspsdk's own libcglue resolves strchr/strrchr to
+these kernel syscalls (this project's EBOOT imports both from
+SysclibForKernel), and newlib's path handling uses them to split paths on
+'/'. This project's PSP EBOOT shows the symptoms directly under
+PPSSPP-headless: sceIoOpen calls arriving with paths that were never made
+absolute ("NOCWD=sceIoOpen(/Title/Nepheshel_logo): no current working
+directory", where the same file opens correctly moments later once the full
+ms0: path is built another way), a _unlink() reaching sceIoRemove with a
+path pointer PPSSPP cannot read, and a directory scan of a non-existent
+Fonts/ directory retried on every single frame. See
+docs/adr/0047-psp-memory-budget.md's P1 and app/psp/README.md for the wider
+trail.
+
+Fixed by calling the single-argument character overload, and by handling
+c == 0 explicitly: C's strchr/strrchr match the terminating NUL and return a
+pointer to it, which std::string::find cannot express because the NUL is not
+part of the string's contents.
+
+Not upstreamed to https://github.com/hrydgard/ppsspp yet -- nothing about
+this is specific to this project, and it affects any PSP binary whose libc
+routes strchr/strrchr through SysclibForKernel.
+
+--- a/Core/HLE/sceKernelInterrupt.cpp
++++ b/Core/HLE/sceKernelInterrupt.cpp
+@@ -973,7 +973,12 @@
+ 		return hleLogError(Log::sceKernel, 0, "invalid address");
+ 	}
+ 	const std::string str = Memory::GetCharPointer(src);
+-	size_t cpos = str.find(str, c);
++	// C's strchr also matches the terminating NUL, which std::string::find
++	// cannot see -- it is not part of the string's contents.
++	if ((char)c == '\0') {
++		return hleLogVerbose(Log::sceKernel, src + (u32)str.size());
++	}
++	size_t cpos = str.find((char)c);
+ 	if (cpos == std::string::npos) {
+ 		return hleLogVerbose(Log::sceKernel, 0);
+ 	}
+@@ -985,7 +990,12 @@
+ 		return hleLogError(Log::sceKernel, 0, "invalid address");
+ 	}
+ 	const std::string str = Memory::GetCharPointer(src);
+-	size_t cpos = str.rfind(str, c);
++	// See sysclib_strchr above: strrchr matches the terminating NUL too, and
++	// being the last character it wins outright.
++	if ((char)c == '\0') {
++		return hleLogVerbose(Log::sceKernel, src + (u32)str.size());
++	}
++	size_t cpos = str.rfind((char)c);
+ 	if (cpos == std::string::npos) {
+ 		return hleLogVerbose(Log::sceKernel, 0);
+ 	}

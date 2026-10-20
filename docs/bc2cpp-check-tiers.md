@@ -50,7 +50,7 @@ without a policy record fails the audit, so registration alone cannot imply that
 its capability requirements were reviewed. Update both the execution list and
 policy when adding or moving a check.
 
-Generation through the closed world or fixture runtime records `native_sources`
+Generation through the wio world or fixture runtime records `native_sources`
 because those paths read real native registrations. Runtime metadata names a
 supported library configuration, not every accepted fallback. Optional
 width/no-bigint variants in tuple and LCF checks remain separate local extensions;

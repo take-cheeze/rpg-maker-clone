@@ -105,6 +105,12 @@ File.write(File.join(out_dir, 'cp932.h'), <<~EOS)
   #include <cstdint>
   #include <utility>
 
+  // ADR 0217: wio encodes by scanning the decode tables below instead of
+  // carrying a 38 KB reverse table in flash.
+  #if defined(WIO_TERMINAL) && !defined(CP932_NO_REVERSE_TABLE)
+  #define CP932_NO_REVERSE_TABLE 1
+  #endif
+
   constexpr uint16_t CP932_UNMAPPED = 0x#{UNMAPPED.to_s(16)};
   constexpr unsigned CP932_LEAD_FIRST = 0x#{LEAD_FIRST.to_s(16)};
   constexpr unsigned CP932_LEAD_LAST = 0x#{LEAD_LAST.to_s(16)};

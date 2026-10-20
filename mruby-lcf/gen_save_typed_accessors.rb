@@ -11,7 +11,7 @@
 #   ruby mruby-lcf/gen_save_typed_accessors.rb [OUT]        # write (default: mrblib/save_typed_accessors.rb and save_typed_setters.rb)
 #   ruby mruby-lcf/gen_save_typed_accessors.rb --check      # exit 1 when the committed file is stale
 #
-# This only reads schema.rb (the single source of
+# Like gen_schema_blob.rb this only reads schema.rb (the single source of
 # truth, loadable by CRuby) and never edits it. Accessors are emitted as
 # plain, explicit methods rather than define_method, because mrblib/ of this
 # gem is compiled by bc2cpp as a closed world (AGENTS.md).
@@ -160,7 +160,8 @@ module GenSaveTyped
     out << "# One typed writer per save-schema field (docs/adr/0407), the write side of\n"
     out << "# save_typed_accessors.rb. `rec.save_x = v` checks v against the field's schema\n"
     out << "# type and stores it through LCF::Array1D#[]= (the schema encoder), so the bytes\n"
-    out << "# are those of `array1d[id] = v`. nil drops the chunk.\n"
+    out << "# are those of `array1d[id] = v`. nil drops the chunk. Not shipped on wio: see\n"
+    out << "# mrbgem.rake.\n"
     out << "\nmodule LCF\n  module SaveTyped\n"
     order.each do |const|
       out << "\n    class #{class_name(const)} < Record\n"

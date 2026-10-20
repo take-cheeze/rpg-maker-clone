@@ -7,7 +7,8 @@ android {
     // Keep in lockstep with the NDK release this project has actually been
     // built against (docs/adr/0058-android-port.md) rather than "whatever
     // Gradle finds" -- a newer NDK silently changing codegen/ABI is exactly
-    // the kind of drift a pinned toolchain guards against.
+    // the kind of drift the other ports (app/psp, platformio.ini) pin against
+    // too.
     ndkVersion "27.2.12479018"
     compileSdk 34
 

@@ -9,6 +9,7 @@ now lives at `scripts/bc2cpp/array_push_fastpath_check.rb`.
 | `bc2cpp/` | Compiler checks, shared test helpers, analysis and reports |
 | `rpg2k/`, `rpg2k3/`, `rpgxp/`, `rpgvx/`, `mv/`, `mz/`, `wolf/` | Engine checks and utilities |
 | `lcf/`, `rgss/`, `rgssad/` | Data codecs and Ruby compatibility checks |
+| `wio/`, `nano7/`, `maix/`, `m5stack/` | Target builds, smoke checks and reports |
 | `download/`, `rtp/` | Sample projects, assets and RTP installers |
 | `build/`, `native/`, `mruby/`, `nix/` | Build and dependency utilities |
 | `optcarrot/` | Optcarrot benchmark and dispatch checks |

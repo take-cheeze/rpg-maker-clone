@@ -1,0 +1,1 @@
+- bc2cpp's canonical closed world is the `closed` build (docs/adr/0524-bc2cpp-canonical-world-closed.md). The wio-only bc2cpp tooling is removed: the flash-overflow measurement, the wio stub and unreachable-method strip passes, the registered-methods probe, and the `wio-bc2cpp` CI job. The other embedded builds are unchanged.

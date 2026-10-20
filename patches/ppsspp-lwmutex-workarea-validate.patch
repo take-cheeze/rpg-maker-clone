@@ -1,0 +1,52 @@
+PPSSPP upstream bug: sceKernelCreateLwMutex (Core/HLE/sceKernelMutex.cpp)
+dereferences its caller-supplied workareaPtr without validating it first,
+unlike every other LwMutex function in the same file (Delete/Lock/Unlock/
+TryLock/ReferStatus all check Memory::IsValidAddress()/workarea.IsValid()
+before touching it). A guest passing workareaPtr=0 (or any other invalid
+address) turns workarea->init() into a null-pointer write that segfaults
+the *host* emulator process, rather than raising a guest-catchable error --
+confirmed with gdb against a core dump reproducing at the identical
+instruction across independent runs, and found by reading this project's
+own PSP EBOOT boot under PPSSPP-headless, tracing the crash back through
+pspsdk's own C-runtime lock init (see docs/adr/0047-psp-memory-budget.md
+and app/psp/README.md for the full story).
+
+Not yet upstreamed to https://github.com/hrydgard/ppsspp -- applied here
+locally (flake.nix's `ppsspp` package output) so this repo's own dev tools
+(`nix build .#ppsspp`, the psp-smoke-adjacent local testing this ADR
+describes) get a build that survives past this crash. Safe to drop once
+either upstream fixes the same bug in a version newer than what nixpkgs
+pins, or this patch fails to apply against a future nixpkgs bump (check
+Core/HLE/sceKernelMutex.cpp's sceKernelCreateLwMutex for whether the fix
+already landed before just bumping the context lines).
+
+--- a/Core/HLE/sceKernelMutex.cpp
++++ b/Core/HLE/sceKernelMutex.cpp
+@@ -679,6 +679,19 @@
+ 		return hleLogError(Log::sceKernel, SCE_KERNEL_ERROR_ILLEGAL_COUNT);
+ 	}
+
++	// The workarea is a caller-supplied guest buffer this function writes
++	// through unconditionally below; validate it before creating the kernel
++	// object, the same way sceKernelReferMutexStatus validates its own
++	// caller-supplied output pointer before writing to it. Without this check
++	// a bad workareaPtr (0, or an address outside mapped guest RAM) resolves
++	// to a null/invalid host pointer and workarea->init() below is a
++	// null-pointer write that crashes the emulator process itself rather than
++	// raising a guest-catchable error.
++	auto workarea = PSPPointer<NativeLwMutexWorkarea>::Create(workareaPtr);
++	if (!workarea.IsValid()) {
++		return hleLogError(Log::sceKernel, SCE_KERNEL_ERROR_ILLEGAL_ADDR, "invalid workarea address");
++	}
++
+ 	LwMutex *mutex = new LwMutex();
+ 	SceUID id = kernelObjects.Create(mutex);
+ 	mutex->nm.size = sizeof(mutex->nm);
+@@ -688,7 +701,6 @@
+ 	mutex->nm.uid = id;
+ 	mutex->nm.workarea = workareaPtr;
+ 	mutex->nm.initialCount = initialCount;
+-	auto workarea = PSPPointer<NativeLwMutexWorkarea>::Create(workareaPtr);
+ 	workarea->init();
+ 	workarea->lockLevel = initialCount;
+ 	if (initialCount == 0)

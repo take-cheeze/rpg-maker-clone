@@ -167,7 +167,7 @@ before in this repo.
 
 Not steady-state fps, but visible on device the same as on desktop: every
 `.mid` BGM/ME change blocks the game loop 20-30ms in `Mix_LoadMUS`
-(profiling.md, "The part that is worth moving"). Unlike wasm, Android
+(profiling.md, "The part that is worth moving"). Unlike wasm/PSP/Wio, Android
 has real threads, so the load-worker-thread sketch there can run
 unconditionally on this target — keep `Mix_PlayMusic`/`Mix_PlayChannel` and
 the chunk cache main-thread-owned per the constraints listed in profiling.md.

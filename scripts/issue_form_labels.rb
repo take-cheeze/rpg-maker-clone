@@ -50,6 +50,8 @@ module IssueFormLabels
       'Terminal (sixel / iTerm2)' => 'platform:terminal',
       'Linux (SDL)' => 'platform:linux',
       'Windows' => 'platform:windows',
+      'PSP' => 'platform:psp',
+      'Wio Terminal' => 'platform:wio',
       'Other platform' => 'platform:other'
     }.freeze,
     'Component' => {

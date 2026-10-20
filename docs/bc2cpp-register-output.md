@@ -1,7 +1,5 @@
 # Generated register declarations
 
-> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
-
 Ordinary compiled methods and fallback block functions initialize argument
 registers directly from their parameters. Native arguments use the same boxing
 operations and parameter order as before; rest, optional and explicit block

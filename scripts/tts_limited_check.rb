@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 # ADR 0417: RGSS::Tts (Zundamon/VOICEVOX narration, ADR 0046) exists only where
-# a backend can: the desktop "host" build. Every limited build (closed,
+# a backend can: the desktop "host" build. Every limited build (wio, maix, psp,
 # emscripten, android) must carry no RGSS::Tts native registration and no Ruby
 # naming it, and the desktop build must keep both, behaving as before.
 #
@@ -23,8 +23,8 @@
 #      pre-ADR-0417 method (reference copy below); in a limited build it is a
 #      private no-op that never touches RGSS::Tts, even with one defined.
 #
-# --bc2cpp (nightly, needs a host mrbc, minutes): runs bc2cpp over the closed
-# world for mruby-rpg2k-compiled and fails if the generated C++ names
+# --bc2cpp (nightly, needs a host mrbc, minutes): runs bc2cpp over the wio
+# closed world for mruby-rpg2k-compiled and fails if the generated C++ names
 # Tts or sends `speak_message`'s calls by name.
 
 require 'open3'
@@ -46,7 +46,7 @@ def check(name, ok, detail = nil)
   end
 end
 
-LIMITED = %w[closed emscripten android].freeze
+LIMITED = %w[wio maix psp emscripten android].freeze
 BUILDS = (['host'] + LIMITED).freeze
 
 # -- 1. the predicate -----------------------------------------------------------
@@ -60,7 +60,7 @@ check 'optcarrot-probe has no backend', !RgssTtsConfig.backend_possible?('optcar
 
 # Just enough of MRuby::Gem::Specification for the two rake files: the attributes
 # they filter (rbfiles, objs, cxx.defines); anything else is swallowed. Same idea
-# (no real build needed).
+# as scripts/wio/unreachable_methods.rb's SpecProbe.
 class SpecProbe
   class Sink < BasicObject
     def method_missing(*) = self
@@ -156,7 +156,7 @@ BUILDS.each do |b|
   check "outside sources #{b}: tts.cxx #{host ? 'in' : 'out'}", outside_native.any? { |p| p.end_with?('/mruby-rgss/src/tts.cxx') } == host
 end
 canonical = tail_names(closed_world_mrblib_srcs(ROOT))
-check 'canonical (closed) world has no map_tts.rb', !canonical.include?('mruby-rpg2k/mrblib/scene/map_tts.rb')
+check 'canonical (wio) world has no map_tts.rb', !canonical.include?('mruby-rpg2k/mrblib/scene/map_tts.rb')
 check 'the stand-in sorts after map.rb in the world',
       canonical.index('mruby-rpg2k/mrblib_limited/map_tts_off.rb') > canonical.index('mruby-rpg2k/mrblib/scene/map.rb')
 check 'prerequisites name both files', (tail_names(bc2cpp_closed_world_prerequisites(ROOT)) &
@@ -226,7 +226,7 @@ if ARGV.include?('--bc2cpp')
   mrbc = ENV.fetch('MRBC') { abort 'MRBC=path/to/mrbc is required for --bc2cpp' }
   require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
   out, err, status = NomethodReviewedProbe.run('mruby-rpg2k-compiled', ROOT, mrbc)
-  check 'bc2cpp (closed world, mruby-rpg2k-compiled) runs', status.success?, err[-500..]
+  check 'bc2cpp (wio closed world, mruby-rpg2k-compiled) runs', status.success?, err[-500..]
   check 'bc2cpp output never names Tts', !out.match?(/Tts|tts_(available|speak|stop)/), out.lines.grep(/Tts|tts_/).first(3).join
   puts "bc2cpp_send(M sites: #{out.scan('bc2cpp_send(M').size}"
 end

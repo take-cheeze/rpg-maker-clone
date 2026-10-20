@@ -1026,11 +1026,15 @@
   graph admission or round budgets. Prepared RBS indexes share signature lookup
   across methods while keeping their inference state separate. Context argument layouts
   and call-site keyword layouts are indexed per bytecode body while argument
-  values remain context-specific.
+  values remain context-specific. Settled method lookup also shares ancestor paths,
+  simple names and Ruby owner sets to reduce allocation pressure.
 
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
+
+- Receiver unions reuse indexed class-bit members instead of scanning every
+  registered class, with bounded decoding caches that follow lazy registration.
 
 - The [host IR fact suite](docs/bc2cpp-ir-instruction-checks.md) shares library
   loading across exact-class, container, numeric, return-site and origin-transfer
@@ -1076,7 +1080,7 @@
 - The [block iterator fixture](docs/ci.md#block-iterator-fixtures) reuses its
   baseline generation for C++ shape checks and interpreted/compiled comparison.
 - The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) is closed-world
-  only: it compiles the RPG2000/2003-only `closed` build, whose only Ruby
+  only: it compiles the RPG2000/2003-only psp/wio/maix builds, whose only Ruby
   is the engine's own, and every other build (desktop, wasm, Android) stays the
   plain mruby build ([ADR 0466](docs/adr/0466-bc2cpp-closed-world-only.md)). It generates
   guarded native call paths from recognized mruby core C methods. It uses
@@ -1100,7 +1104,7 @@
   [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md),
   [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md),
   and [`docs/adr/0203-bc2cpp-unique-class-names.md`](docs/adr/0203-bc2cpp-unique-class-names.md).
-  On the closed-world (`closed`) build the else arm of a guard on a stable class
+  On closed-world (psp, wio, maix) builds the else arm of a guard on a stable class
   constant (`Klass.new`, `is_a?(Klass)`, `Klass === x`) logs a `[RPG2k]` guard violation
   and raises instead of dispatching; see
   [`docs/adr/0290-bc2cpp-guard-violation.md`](docs/adr/0290-bc2cpp-guard-violation.md).
@@ -1254,8 +1258,8 @@
   The block-taking ones (`Array#each`, `Integer#times`, `Kernel#loop`, `Hash#each`,
   most of `Enumerable`, ...) sit behind a Fiber guard: while a Fiber runs (a game
   script, `Enumerator#next`) the entry hands the call to the bytecode, since a
-  `Fiber.yield` inside a block cannot cross a compiled frame. The flash-limited `closed`
-  build compiles none of it. See
+  `Fiber.yield` inside a block cannot cross a compiled frame. Flash-limited builds
+  (wio, psp, maix) compile none of it. See
   [`docs/adr/0264-bc2cpp-compiled-core-mrblib.md`](docs/adr/0264-bc2cpp-compiled-core-mrblib.md)
   and
   [`docs/adr/0269-bc2cpp-core-block-methods-fiber-guard.md`](docs/adr/0269-bc2cpp-core-block-methods-fiber-guard.md).
@@ -1286,7 +1290,7 @@
   The same exact-receiver proof now reaches every arm wrapper of a send (the registered-expression chains
   of `size`/`empty?`/`first`, the tail of a POLY chain, the `core_or_native` fallbacks), and constants
   join the pools (`LIST = [...].freeze` is exactly an Array wherever it is read, unless a `const_missing`
-  or a Ruby `freeze` on instances exists): 176 fewer by-name-reachable sites on the closed build; see
+  or a Ruby `freeze` on instances exists): 176 fewer by-name-reachable sites on the wio build; see
   [`docs/adr/0301-bc2cpp-exact-receiver-consumers-and-constant-pools.md`](docs/adr/0301-bc2cpp-exact-receiver-consumers-and-constant-pools.md)
   and `scripts/bc2cpp/exact_receiver_flow_check.rb`.
   A local a block only reads or mutates (`h = {}; 3.times { |i| h[i] = h.size }`) keeps the exact class
@@ -1296,7 +1300,7 @@
   `scripts/bc2cpp/captured_local_class_check.rb`).
   The arguments of an `initialize` are joined over every `Klass.new`, `super(...)`, implicit-self `new` and
   `self.class.new` of the closed world (`BC2CPP_CONSTRUCTOR_POOLS=0` turns it off; 25 fewer index-helper callers on
-  the closed build, see
+  the wio build, see
   [`docs/adr/0313-bc2cpp-constructor-pools.md`](docs/adr/0313-bc2cpp-constructor-pools.md) and
   `scripts/bc2cpp/constructor_pools_check.rb`). When a module or singleton defines `initialize`,
   the refusal diagnostic names its owner so the unavailable constructor proof can be traced.
@@ -1308,7 +1312,7 @@
   The arguments of every call of a setter (`x=`) are joined into a class pool for the ivar an `attr_writer` or an audited
   native writes and for the parameter of a setter with several definitions; a receiver those pools prove nil or one
   class takes a class test whose else is `bc2cpp_guard_violation` (`BC2CPP_SETTER_POOLS=0` turns it off; 11 fewer
-  by-name sends on the closed build, 27 before the singleton-definer arms, see
+  by-name sends on the wio build, 27 before the singleton-definer arms, see
   [`docs/adr/0370-bc2cpp-setter-pools-checked-receivers.md`](docs/adr/0370-bc2cpp-setter-pools-checked-receivers.md) and
   `scripts/bc2cpp/setter_pools_check.rb`).
   `BC2CPP_SPECIALIZE=<file>` (lines `Owner#name param=Class`, off by default) compiles a second body of a hot
@@ -1347,7 +1351,7 @@
   [native-owner scan performance](docs/bc2cpp-native-owner-scan-performance.md).
   After `x.m` returned normally, `x` is an instance of a class that answers `m`: a later `x.n` on the same value
   (a copy of the register, a local, no rewrite and no handler edge between) is judged against those declared
-  classes, which drops 63 by-name else arms of the closed build; `BC2CPP_CALL_FACTS=0` turns it off. Provable errors
+  classes, which drops 63 by-name else arms of the wio build; `BC2CPP_CALL_FACTS=0` turns it off. Provable errors
   (no class answers, nil receiver, wrong argument count) were measured at 0 engine hits and are not a build error;
   `BC2CPP_REFINE_REPORT=FILE` and `BC2CPP_PROVABLE_ERROR_REPORT=FILE` write the reports that
   `scripts/bc2cpp/refine_report.rb` aggregates. See
@@ -1372,7 +1376,7 @@
   [`docs/adr/0331-bc2cpp-receiver-class-proofs-measured-not-built.md`](docs/adr/0331-bc2cpp-receiver-class-proofs-measured-not-built.md).
   An audited native call graph scopes `@contents` and `@cursor_rect` poisoning to RGSS::Window, and `@viewport`
   poisoning to RGSS::Sprite/Plane/Tilemap/Window, allowing unrelated Ruby classes to prove their own slots.
-  It removes 43 cached by-name engine sends in the closed
+  It removes 43 cached by-name engine sends in the Wio
   census (39 gain nil-receiver helper calls). Source changes or new outside callers withdraw the audit;
   `BC2CPP_NATIVE_IVAR_SCOPES=0` disables it. See
   [`docs/adr/0332-bc2cpp-native-window-ivar-families.md`](docs/adr/0332-bc2cpp-native-window-ivar-families.md).
@@ -1391,11 +1395,11 @@
   Native `compact`, `flatten`, `__uniq` and `join` contracts also join compiled Ruby returns
   when every linked implementation and helper is audited. `File.join` requires String subclass freedom;
   uncompiled Hash transformations remain unknown. `BC2CPP_NATIVE_ARRAY_TRANSFORMS=0` withdraws these
-  name-wide facts. The current shipped closed-build output remains unchanged. See [`docs/adr/0336-bc2cpp-native-array-transforms.md`](docs/adr/0336-bc2cpp-native-array-transforms.md).
+  name-wide facts. The current shipped Wio output remains unchanged. See [`docs/adr/0336-bc2cpp-native-array-transforms.md`](docs/adr/0336-bc2cpp-native-array-transforms.md).
   Native `bitmap=` writes are scoped to Sprite/Plane families, allowing unrelated Ruby `@bitmap`
   fields to prove their own stores. Native setter values remain unconstrained.
   `BC2CPP_NATIVE_SETTER_REPORT=path` reports named `contents=`/`bitmap=` input classes and blockers;
-  it never enables native-family pooling. Current closed-build output remains unchanged. See
+  it never enables native-family pooling. Current Wio output remains unchanged. See
   [`docs/bc2cpp-native-setter-inputs.md`](docs/bc2cpp-native-setter-inputs.md) and
   [`ADR 0337`](docs/adr/0337-bc2cpp-native-setter-input-audit.md).
   User-method identity and forwarding calls can retain exact receiver classes
@@ -1418,7 +1422,7 @@
   Selected core Ruby collection bodies now retain exact return classes across zero-argument calls,
   including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
   `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks
-  withdraw the proof. The same-tree closed-build comparison removes five cached sites (2,858 to 2,853).
+  withdraw the proof. The same-tree Wio comparison removes five cached sites (2,858 to 2,853).
   `BC2CPP_CORE_RUBY_RESULTS=0` disables it. See
   [`docs/bc2cpp-core-ruby-returns.md`](docs/bc2cpp-core-ruby-returns.md) and
   [`ADR 0338`](docs/adr/0338-bc2cpp-core-ruby-return-classes.md).
@@ -1431,7 +1435,7 @@
   [`ADR 0343`](docs/adr/0343-bc2cpp-nested-core-ruby-results.md).
   A constant defined by `+ - * /` of other constants (`HEADER_H = LINE_H + Window::BORDER * 2`) has a proven Fixnum
   interval, and an `RGSS::Bitmap.new(w, h)` whose arguments are such constants, literals or arithmetic of them keeps
-  neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the closed
+  neither its `mrb_integer_p` test nor its by-name `new` else (65 of the 115 sites, 69 fewer `bc2cpp_send` of the wio
   build, all removals); `BC2CPP_NUMERIC_CONSTANTS=0` turns it off and `BC2CPP_NUMERIC_CONSTANTS_REPORT=FILE` /
   `BC2CPP_NATIVE_INT_ARGS=FILE` write why a constant or an argument is unproven. See
   [`docs/adr/0318-bc2cpp-numeric-constant-ranges-and-native-int-arguments.md`](docs/adr/0318-bc2cpp-numeric-constant-ranges-and-native-int-arguments.md)
@@ -1439,7 +1443,7 @@
   A proven receiver set is judged per class (ADR 0323): a `def`/`alias_method` directly in `class << <constant>`
   lands on that object, so it is no unknown definer or installed name for instances; a name natives or outside Ruby
   also spell is resolved per class along its lookup path; and a flow-proven exact `Hash` calls the compiled
-  `Hash#delete` instead of a chain over user classes. 50 fewer by-name sends in the closed engine gems (`update` on
+  `Hash#delete` instead of a chain over user classes. 50 fewer by-name sends in the wio engine gems (`update` on
   `RPG2k::Window`/`Game::Interpreter`, `delete`); `BC2CPP_NATIVE_CLASS_ARMS=0` turns it off and
   `BC2CPP_NATIVE_ARMS_REPORT=FILE` (`scripts/bc2cpp/native_arms_report.rb`) measures the levers. See
   [`docs/adr/0323-bc2cpp-native-class-arms.md`](docs/adr/0323-bc2cpp-native-class-arms.md) and
@@ -1601,7 +1605,7 @@
   [`docs/adr/0375-bc2cpp-class-narrowing.md`](docs/adr/0375-bc2cpp-class-narrowing.md) and
   `scripts/bc2cpp/class_narrowing_check.rb`.
 
-- On the flash-limited `closed` build, the compiled-Ruby backend
+- On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
   `tools/bc2cpp/hot_methods.txt`. Every other method stays mruby bytecode.
   The generated C++ shrinks from about 4.1 MB to 0.56 MB of `-Os` text.
@@ -1633,20 +1637,20 @@
 
 - The LCF chunk-scanning `loop` bodies now use direct EOF/terminator
   loops, removing two hot-only cfunc/RProc fallbacks while preserving
-  `StopIteration#result` behavior. The measured closed-build LCF object text shrinks by
+  `StopIteration#result` behavior. The measured Wio LCF object text shrinks by
   4,686 bytes. See
   [`docs/adr/0157-bc2cpp-interpreter-unlock.md`](docs/adr/0157-bc2cpp-interpreter-unlock.md).
 
 - The remaining LCF schema and field-index builders now use direct index loops
   for their fixed `Array`/`Hash` receivers, removing the last two hot-only
-  cfunc/RProc fallbacks. A same-flags closed-build-style object comparison measures
+  cfunc/RProc fallbacks. A same-flags Wio-style object comparison measures
   208 bytes less `.text` and 2,904 bytes less total object size. See
   [`docs/adr/0157-bc2cpp-interpreter-unlock.md`](docs/adr/0157-bc2cpp-interpreter-unlock.md).
 
 - `RGSS::Profiler.section("name") { ... }` and `Profiler.frame { ... }` are
   compiled to a direct call around the native profiling primitives instead of an
   RProc and a by-name block dispatch, removing 21 of the 26 hot-only profiler
-  block fallbacks in `mruby-rpg2k`. A same-flags closed-build-style object comparison
+  block fallbacks in `mruby-rpg2k`. A same-flags Wio-style object comparison
   measures 5,901 bytes less `.text`. A computed section name, or a body
   containing `break`, keeps the existing fallback. See
   [`docs/adr/0232-bc2cpp-profiler-section-inlining.md`](docs/adr/0232-bc2cpp-profiler-section-inlining.md).
@@ -1660,7 +1664,8 @@
 - `--render_fps=N` caps how many of every 60 `Graphics.update` calls actually
   repaint the screen — `30`, `15` or `10` redraw the screen that many times a
   second instead of 60, to cut rendering CPU/GPU work and the memory
-  bandwidth it costs on constrained hardware (handhelds, older phones). Game logic, `Graphics.frame_count`, animation
+  bandwidth it costs on constrained hardware (handhelds, older phones, the
+  PSP/Wio Terminal ports). Game logic, `Graphics.frame_count`, animation
   timers, message speed and `Wait` all keep running every call at the normal
   rate — the game plays and times identically at every setting, it just
   visibly updates less often:
@@ -1873,8 +1878,9 @@
   [ADR 0409](docs/adr/0409-bc2cpp-dataflow-query-cache.md).
   Its independent test oracle shares immutable definition sets and avoids duplicate
   queued instructions; see [the CI guide](docs/ci.md).
-- CI also runs the bc2cpp checks on the closed-world build and listens for
-  merge-queue runs; [`docs/ci.md`](docs/ci.md) lists the repository settings the owner has
+- CI also runs the width-sensitive bc2cpp checks on a 32-bit-`mrb_int` and a
+  no-bigint mruby (the Emscripten/Wio/PSP widths) and listens for merge-queue
+  runs; [`docs/ci.md`](docs/ci.md) lists the repository settings the owner has
   to enable for the queue.
 
 ### Android
@@ -1892,12 +1898,111 @@
   has not been run on real Android hardware or an emulator yet — see the
   app's own README for exactly what that does and doesn't cover.
 - There is no in-app project picker yet: `adb push` an RPG Maker project's
-  files to the app's external-files directory, and the first slice is "one
-  install, one game".
+  files to the app's external-files directory (the Android equivalent of the
+  PSP port's fixed Memory Stick path), matching the PSP port's own
+  "one install, one game" scope for its first slice.
 - RPG Maker MV/MZ (the WebGL/quickjs-ng maker) does not render on Android in
   this first slice, for a real, documented reason (an EGL symbol Android's
   `libEGL.so` doesn't export) — RPG2000/2003, XP and VX/VX Ace are
   unaffected. See the ADR.
+
+### iPod nano 7th generation (homebrew)
+
+- [`app/nano7/rpg2k_walk`](app/nano7/rpg2k_walk) walks a real RPG Maker
+  2000/2003 map on a jailbroken iPod nano 7th generation via the
+  [NanoApps](https://github.com/nfzerox/NanoApps) homebrew SDK. Unlike every
+  other port above, this is **not** the mruby/RGSS engine on a new display
+  backend — NanoApps caps a compiled app image at roughly 500 KB, far under
+  what this repo's mruby + RGSS/RPG2k gem stack needs, so it is instead a
+  small from-scratch C engine. A new host-side exporter
+  (`scripts/export_nano7_map.rb`) does the real LCF parsing and chipset/
+  autotile compositing once, on this repo's own pure-Ruby tooling, and writes
+  a compact binary the on-device app reads directly. See
+  [`docs/adr/0061-ipod-nano-7-homebrew-map-walk.md`](docs/adr/0061-ipod-nano-7-homebrew-map-walk.md)
+  for why, and the app's own README for build/install instructions.
+- **Scope: map walking, not the game.** Tile rendering (including autotiles)
+  and grid movement with real collision, for one static map, drawn as the
+  project's own initial party leader with map events as static sprites
+  alongside it — no event commands, battle or menus.
+- **The water animates, and so does the hero**, on RPG2000's own clocks
+  ([`docs/adr/0094`](docs/adr/0094-walk-map-tile-animation.md),
+  [`0096`](docs/adr/0096-walk-map-hero-sprite.md)). The export asks
+  `Game::ChipsetLayout.anim_ab` / `.anim_c` and `Game::CharSet` what those
+  clocks and frames are rather than restating their rules, ships the frames
+  each tile or the hero's own walk cycle draws, and the device advances a
+  counter and redraws only what moved. A blocked step still turns the player
+  to face it, the same bump-turn the genuine renderer does. 480 bytes of
+  device code for the tile clocks, and a map that animates nothing costs the
+  frame loop nothing.
+- **Map events draw too, as static sprites**
+  ([`docs/adr/0102`](docs/adr/0102-walk-map-event-sprites.md)): whichever
+  page a fresh save's own page-selection rules would pick, if that page
+  carries a CharSet graphic, drawn before or after the player by the same
+  below/same/above-characters layering the genuine renderer uses — no live
+  facing, walk cycle, or event command, just the one resting frame a
+  brand-new save would see. Verified against Nepheshel's own 543 maps: the
+  worst carries 256 sprited events reducing to 12 distinct pictures, well
+  inside each target's cap.
+- Verified on real hardware: `.hbapp` image ~4.5 KB (well under the ~500 KB
+  ceiling), installed via NanoApps on a jailbroken nano 7G, walking a real
+  exported map with working collision. Chipset transparency is honoured: the
+  export keys on palette index 0 exactly as the real renderer does, the app
+  composites a cell's two layers before blitting, and a map's parallax
+  background is reduced to a single backdrop colour behind it — an island
+  map's sea comes out as sea rather than as holes. See the ADR.
+- **A tile pixel is one byte** and **a map cell 2.5**
+  ([`docs/adr/0092`](docs/adr/0092-walk-map-indexed-atlas.md),
+  [`0093`](docs/adr/0093-walk-map-packed-cells.md)): a pixel indexes the
+  map's own palette — which is what an RPG Maker chipset is to begin with —
+  and a cell is a byte of lower-layer index, a byte of upper, and a nibble of
+  passability. Both are lossless, byte-for-byte the same picture and the same
+  collision. This is what the port's RAM budget turns on: the nano app's
+  `.bss` is **~171 KB** (108 KB of map/atlas, a fixed ~9 KB for the hero's
+  own frames, and a fixed ~54 KB for the event-sprite atlas and table —
+  [`docs/adr/0102`](docs/adr/0102-walk-map-event-sprites.md)) where the
+  first slice needed 336 KB, and the Wio Terminal now takes the same
+  128×128 maps the nano does, in less SRAM than 64×64 cost it two revisions
+  ago.
+- **The same engine also runs on the Wio Terminal.** The device-independent
+  half — the file format, the movement rule, the camera, the layer
+  compositing — is
+  [`app/shared/rpg2k_walk`](app/shared/rpg2k_walk), plain C with no I/O; each
+  device supplies only its own buffers, screen and buttons. `pio run -e
+  wio_walk` builds it for the Wio Terminal (LCD, microSD, 5-way switch, no
+  LVGL and no mruby), which is what lets that board run real RPG Maker map
+  data now rather than after the interpreter fits in its 192 KB of SRAM
+  ([`docs/adr/0007`](docs/adr/0007-wio-terminal-port.md) is still the plan for
+  that). Export with `--target wio` to size a map for it. The shared core is
+  covered by the `walk_core` ctest — neither device is reachable from CI, but
+  the engine half of both firmwares is plain host-testable C. See
+  [`docs/adr/0091-shared-minimal-walk-engine.md`](docs/adr/0091-shared-minimal-walk-engine.md).
+- **A host-side emulator for the nano 7G app itself.**
+  [`app/nano7/host`](app/nano7/host) implements the small
+  `hb_raw_surface`/`hb_sdk` API surface `rpg2k_walk.c` calls (on top of this
+  repo's own SDL2 dependency, no new one added) and links that device source
+  file *unmodified* into a native `nano7_walk_host` executable — an
+  interactive window with the mouse as touch, or a headless
+  `--frames N --screenshot out.bmp` mode that needs no display at all. Unlike
+  the Wio Terminal's Renode platform ([`docs/adr/0094`](docs/adr/0094-wio-terminal-renode-emulator.md)),
+  this does not emulate the nano 7G's Cortex-A8 SoC or its proprietary OS —
+  `rpg2k_walk.c` never touches either directly, only this six-function API,
+  which is the right thing to reimplement instead. The `nano7_host_smoke`
+  ctest exports a real Nepheshel map and asserts the rendered frame actually
+  shows real map content, not a blank fill. See
+  [`docs/adr/0102-ipod-nano-7-host-emulator.md`](docs/adr/0102-ipod-nano-7-host-emulator.md).
+- **A real ARM Cortex-A8 build too, for CPU cost.** The host build above
+  runs natively on the build machine's own CPU, so it has nothing to say
+  about device timing. [`app/nano7/qemu`](app/nano7/qemu) cross-compiles
+  `rpg2k_walk.c` with the same `arm-none-eabi-gcc -mcpu=cortex-a8` NanoApps'
+  own SDK uses and boots it under `qemu-system-arm`'s real `cortex-a8` core
+  on the `realview-pb-a8` machine — a real PL110 display controller QEMU
+  already ships (verified pixel-correct against a hand-drawn test pattern,
+  no new peripheral code needed, unlike the Wio Terminal's Renode work
+  below), and the Cortex-A8 PMU's real cycle counter, giving a genuine (if
+  approximate — see the ADR) per-frame CPU cost signal the host build
+  cannot. The `nano7-qemu` CI job boots a real exported map through it on
+  every push. See
+  [`docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md`](docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md).
 
 ### Reporting an error
 

@@ -7,7 +7,8 @@ import org.libsdl.app.SDLActivity;
  * actually produces (root CMakeLists.txt's ANDROID branch, plus the
  * SDL2/SDL2_mixer .so's it builds alongside it -- see
  * docs/adr/0058-android-port.md) and points --game_dir at this app's own
- * external-files directory, the Android equivalent of a fixed game path: `adb push` an RPG Maker project's
+ * external-files directory, the Android equivalent of app/psp's fixed
+ * ms0:/PSP/GAME/rpg2k Memory Stick path: `adb push` an RPG Maker project's
  * files there and it is what boots.
  */
 public class RpgMakerCloneActivity extends SDLActivity {

@@ -1,7 +1,5 @@
 # Readonly Ruby call effects
 
-> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
-
 Receiver flow retains exact ivar stores across a proven readonly Ruby call:
 
 ```ruby
@@ -24,7 +22,7 @@ covers thirteen conditions plus an unchanged control. See ADR 0356.
 
 ## Measured world
 
-On base `0b0e9e9e`, the identical closed-build input set emits byte-identical C++ with
+On base `0b0e9e9e`, the identical Wio input set emits byte-identical C++ with
 this extension enabled or disabled: 2,785 cached dispatch sites and 911 POLY
 markers. The fixture's five exact chains demonstrate the new proof path; this
 measurement shows no additional eliminated fallback in the shipped world.

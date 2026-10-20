@@ -1,0 +1,167 @@
+diff --git a/hw/i2c/esp32_faces_gamepad.c b/hw/i2c/esp32_faces_gamepad.c
+new file mode 100644
+index 0000000..343521a
+--- /dev/null
++++ b/hw/i2c/esp32_faces_gamepad.c
+@@ -0,0 +1,131 @@
++/*
++ * M5Stack FACES kit "Gamepad Face" (aka Game Face), MEGA328-based, on the
++ * ESP32 machine's internal I2C0 bus at address 0x08 (docs/adr/0157 in
++ * take-cheeze/rpg-maker-clone, this fork's downstream user). Real M5Stack
++ * Core hardware wires this bus to GPIO21 (SDA) / GPIO22 (SCL); this QEMU
++ * I2C0 model has no GPIO-matrix pin routing of its own (see
++ * esp32_machine_init_i2c() in hw/xtensa/esp32.c, which already attaches a
++ * tmp105 device to this same bus for the AXP192-adjacent temperature
++ * sensor), so any firmware that talks to I2C0 reaches this device
++ * regardless of which GPIOs it thinks it configured for Wire.begin().
++ *
++ * Modelled directly on the real MEGA328 firmware
++ * (github.com/m5stack/FACES-Firmware, GameBoy.ino, fetched and read
++ * directly rather than assumed -- this project's own culture, see
++ * AGENTS.md and docs/adr/0157's own investigation): on every I2C read
++ * request it just returns the AVR's live PORTB snapshot (`Wire.write
++ * (PINB)`), with no register addressing and no write support at all --
++ * the real firmware never registers a Wire.onReceive() handler, so a
++ * write to this device correctly NACKs, matching real hardware (see
++ * esp32_faces_gamepad_class_init()'s comment on leaving `send` unset).
++ * Active-low, one bit per button, confirmed by that same source file's
++ * own commented-out (dead, but accurate -- it names bits of the very same
++ * PINB register the live code returns unmodified) per-value switch:
++ * bit0 Up, bit1 Down, bit2 Left, bit3 Right, bit4 A, bit5 B, bit6 Select,
++ * bit7 Start.
++ *
++ * The real module also has an IRQ line (wired to the host's GPIO5 on real
++ * M5Stack Core hardware) that pulses low on a state change and high again
++ * once read, but a plain read at any time already returns the live
++ * snapshot regardless of that line's state -- so a driver that only polls
++ * (like this fork's own m5stack.cxx HAL) needs no IRQ at all, and none is
++ * modelled here: an accepted scope decision for a poll-only host driver,
++ * not an oversight.
++ *
++ * State is settable while QEMU runs from outside the guest, for the same
++ * reason and by the same means hw/display/esp32_ili9341.c's own
++ * ESP32_ILI9341_DUMP_PATH env var exists: this device is unreachable by
++ * the ordinary monitor/QMP path (it lives on the ESP32 SoC's own private
++ * i2c bus, itself inside the SoC's own private bus -- see that file's own
++ * comment for the full reachability story, equally true here). Rather
++ * than fix that shared, invasive problem in this downstream fork, this
++ * re-reads a single raw byte from ESP32_FACES_GAMEPAD_STATE_PATH on every
++ * I2C read, if that env var is set and the file exists -- the byte is the
++ * exact live PORTB value a test/CI script wants the firmware to see
++ * (active low, the same convention as the real hardware, so no
++ * translation layer to get wrong). A missing or unreadable file keeps
++ * whatever the last successfully read value was; the reset value is 0xff
++ * (nothing pressed), matching real hardware's own all-pins-pulled-up
++ * power-on state (`DDRB = 0x00; PORTB = 0xff;` in GameBoy.ino's setup()).
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 or
++ * (at your option) any later version.
++ */
++
++#include "qemu/osdep.h"
++#include "hw/i2c/i2c.h"
++#include "migration/vmstate.h"
++#include "qemu/module.h"
++#include "qom/object.h"
++
++#define TYPE_ESP32_FACES_GAMEPAD "esp32.faces_gamepad"
++OBJECT_DECLARE_SIMPLE_TYPE(Esp32FacesGamepadState, ESP32_FACES_GAMEPAD)
++
++struct Esp32FacesGamepadState {
++    I2CSlave i2c;
++    uint8_t state;
++};
++
++static uint8_t esp32_faces_gamepad_recv(I2CSlave *i2c)
++{
++    Esp32FacesGamepadState *s = ESP32_FACES_GAMEPAD(i2c);
++    const char *path = getenv("ESP32_FACES_GAMEPAD_STATE_PATH");
++
++    if (path) {
++        FILE *f = fopen(path, "rb");
++        if (f) {
++            uint8_t byte;
++            if (fread(&byte, 1, 1, f) == 1) {
++                s->state = byte;
++            }
++            fclose(f);
++        }
++    }
++    return s->state;
++}
++
++static void esp32_faces_gamepad_reset(DeviceState *dev)
++{
++    Esp32FacesGamepadState *s = ESP32_FACES_GAMEPAD(dev);
++    s->state = 0xff;
++}
++
++static const VMStateDescription vmstate_esp32_faces_gamepad = {
++    .name = "esp32_faces_gamepad",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .fields = (const VMStateField[]) {
++        VMSTATE_UINT8(state, Esp32FacesGamepadState),
++        VMSTATE_I2C_SLAVE(i2c, Esp32FacesGamepadState),
++        VMSTATE_END_OF_LIST()
++    }
++};
++
++static void esp32_faces_gamepad_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
++
++    /* No .send: the real MEGA328 firmware never calls Wire.onReceive(), so
++     * real hardware NACKs a write too -- hw/i2c/core.c's i2c_send() already
++     * does exactly that (returns -1) whenever a slave leaves this pointer
++     * NULL, so this is a real behavioral match, not just an omission. */
++    k->recv = esp32_faces_gamepad_recv;
++    device_class_set_legacy_reset(dc, esp32_faces_gamepad_reset);
++    dc->vmsd = &vmstate_esp32_faces_gamepad;
++}
++
++static const TypeInfo esp32_faces_gamepad_info = {
++    .name          = TYPE_ESP32_FACES_GAMEPAD,
++    .parent        = TYPE_I2C_SLAVE,
++    .instance_size = sizeof(Esp32FacesGamepadState),
++    .class_init    = esp32_faces_gamepad_class_init,
++};
++
++static void esp32_faces_gamepad_register_types(void)
++{
++    type_register_static(&esp32_faces_gamepad_info);
++}
++
++type_init(esp32_faces_gamepad_register_types)
+diff --git a/hw/i2c/meson.build b/hw/i2c/meson.build
+index e72dca0..de08ffe 100644
+--- a/hw/i2c/meson.build
++++ b/hw/i2c/meson.build
+@@ -15,7 +15,7 @@ i2c_ss.add(when: 'CONFIG_SMBUS_EEPROM', if_true: files('smbus_eeprom.c'))
+ i2c_ss.add(when: 'CONFIG_ARM_SBCON_I2C', if_true: files('arm_sbcon_i2c.c'))
+ i2c_ss.add(when: 'CONFIG_OMAP', if_true: files('omap_i2c.c'))
+ i2c_ss.add(when: 'CONFIG_PPC4XX', if_true: files('ppc4xx_i2c.c'))
+-i2c_ss.add(when: 'CONFIG_XTENSA_ESP32', if_true: files('esp32_i2c.c'))
++i2c_ss.add(when: 'CONFIG_XTENSA_ESP32', if_true: files('esp32_i2c.c', 'esp32_faces_gamepad.c'))
+ i2c_ss.add(when: 'CONFIG_XTENSA_ESP32S3', if_true: files('esp32_i2c.c'))
+ i2c_ss.add(when: 'CONFIG_PCA954X', if_true: files('i2c_mux_pca954x.c'))
+ i2c_ss.add(when: 'CONFIG_PMBUS', if_true: files('pmbus_device.c'))
+diff --git a/hw/xtensa/esp32.c b/hw/xtensa/esp32.c
+index 841b021..1b79668 100644
+--- a/hw/xtensa/esp32.c
++++ b/hw/xtensa/esp32.c
+@@ -772,6 +772,12 @@ static void esp32_machine_init_i2c(Esp32SocState *s)
+     I2CBus* i2c_bus = I2C_BUS(qdev_get_child_bus(i2c_master, "i2c"));
+     I2CSlave* tmp105 = i2c_slave_create_simple(i2c_bus, "tmp105", 0x48);
+     object_property_set_int(OBJECT(tmp105), "temperature", 25 * 1000, &error_fatal);
++
++    /* M5Stack FACES kit's Gamepad Face, on this same bus at 0x08 on real
++     * M5Stack Core hardware -- see hw/i2c/esp32_faces_gamepad.c's own
++     * header comment for the full protocol and why this bus (rather than
++     * a GPIO-matrix-routed one) is the right place to attach it. */
++    i2c_slave_create_simple(i2c_bus, "esp32.faces_gamepad", 0x08);
+ }
+ 
+ static void esp32_machine_init_openeth(Esp32SocState *ss)

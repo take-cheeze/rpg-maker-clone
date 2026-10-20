@@ -10,8 +10,24 @@
 // and Emscripten variants, so the search is plain POSIX directory reading plus
 // whatever directory the executable hands in (see default_font.hxx).
 //
+// The Wio Terminal is one of the two targets this does not hold for (the
+// other is the Maix Amigo, whose bare riscv64-unknown-elf newlib fails the
+// same way): its bare arm-none-eabi newlib has no dirent implementation at
+// all (a hard #error in <dirent.h>, unlike PSP's own pspsdk newlib), and
+// there is no real "enumerate this directory" concept to give it in
+// exchange -- a project ships one font at a fixed path or it does not,
+// decided at export time, not discovered on-device. `add_default_font_dir`
+// is also never called on wio (only src/main.cxx's desktop entry point calls
+// it). So the whole directory-scan implementation below -- and the
+// std::vector<std::string>/std::string machinery it pulls in -- is provably
+// dead weight there, the same shape docs/adr/0125 already found and fixed
+// for profiler.cxx; gated out here the same way, behind the same
+// WIO_TERMINAL macro terminal.cxx already uses (plus MAIX_BUILD for the
+// Amigo). See docs/adr/0126.
 
 #include "default_font.hxx"
+
+#if !defined(WIO_TERMINAL) && !defined(MAIX_BUILD)
 
 #include <cctype>
 #include <cstdio>
@@ -25,11 +41,13 @@ namespace rgss {
 namespace {
 
 // Filled by the executable before the first lookup; empty in the gem's own test
-// build, which falls through to the candidates below.
+// build and on the embedded targets, which fall through to the candidates
+// below.
 std::vector<std::string> g_app_dirs;
 
-// opendir/fopen rather than stat: the scan needs only the POSIX directory and
-// stdio calls.
+// opendir/fopen rather than stat: the embedded targets (Wio, PSP) build this
+// gem too, and both already have to provide the directory and stdio calls the
+// rest of it uses.
 bool is_dir(const std::string& path) {
   if (path.empty())
     return false;
@@ -134,3 +152,28 @@ const std::string& default_font_path() {
 }
 
 }  // namespace rgss
+
+#else  // WIO_TERMINAL || MAIX_BUILD
+
+#include <string>
+
+namespace rgss {
+
+// Never called on wio (only src/main.cxx's desktop entry point calls this),
+// but keep it a real, harmless no-op rather than an unimplemented symbol in
+// case that ever changes. Same on the Maix Amigo.
+void add_default_font_dir(const std::string&) {}
+
+// Always "" on wio: every real candidate above (dirent-based directory scan)
+// is unreachable on this board's bare newlib, so this always resolved to
+// "not found" already -- see the file comment. Same on the Maix Amigo.
+// RGSS::Font falls back to the bundled shinonome bitmap font, same as before
+// this file was gated.
+const std::string& default_font_path() {
+  static const std::string kEmpty;
+  return kEmpty;
+}
+
+}  // namespace rgss
+
+#endif  // WIO_TERMINAL || MAIX_BUILD

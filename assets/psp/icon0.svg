@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sapphire Chip mark, recomposed for the PSP XMB icon's fixed 144x80 canvas. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="80" viewBox="0 0 144 80">
+  <rect width="144" height="80" fill="#191c2b"/>
+  <polygon points="54.6,8.1 89.4,8.1 101,22.6 72,60.3 43,22.6" fill="#1e4a8c"/>
+  <polygon points="54.6,8.1 72,25.5 43,22.6" fill="#a3701f" opacity="0.55"/>
+  <path d="M54.6,8.1 L72,25.5 M89.4,8.1 L72,25.5 M43,22.6 L72,25.5 M101,22.6 L72,25.5 M72,25.5 L72,60.3"
+        stroke="#eae3d3" stroke-width="2" fill="none"/>
+  <rect x="67.65" y="63.2" width="8.7" height="8.7" fill="#a3701f"/>
+</svg>

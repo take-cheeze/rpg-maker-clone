@@ -92,7 +92,8 @@ reference VOICEVOX Engine.
 
 ## Platform coverage
 
-Desktop native only (Linux/macOS `dlopen`); the Emscripten build compiles the
-same source file down to two no-op functions (VOICEVOX CORE ships no Emscripten
-port). `--zundamon_tts` on that build logs why and the game runs silently, same
-as a native build with nothing downloaded here.
+Desktop native only (Linux/macOS `dlopen`); Emscripten, PSP and Wio Terminal
+builds compile the same source file down to two no-op functions (VOICEVOX
+CORE ships no port for any of the three). `--zundamon_tts` on one of those
+builds logs why and the game runs silently, same as a native build with
+nothing downloaded here.

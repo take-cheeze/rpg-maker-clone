@@ -1,0 +1,152 @@
+cpu0: CPU.CortexM @ sysbus
+    cpuType: "cortex-m4f"
+    nvic: nvic
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    -> cpu0@0
+
+sercom3: UART.SAMD5_UART @ sysbus 0x41014000
+    ->nvic@58
+
+sram0: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x30000
+
+flash0: Memory.MappedMemory @ sysbus 0x0
+    size: 0x80000
+
+dwt: Miscellaneous.DWT @ sysbus 0xE0001000
+    frequency: 72000000
+
+// --- Clock-tree stubs for Arduino SAMD51's SystemInit() (startup.c) -------
+// SystemInit spins on each of these as a "wait until ready"/"wait while
+// busy" bit-test loop. flipflop.py toggles the whole register between
+// 0x00000000 and 0xFFFFFFFF on every read, which satisfies either polarity
+// of that test within at most two reads regardless of which bit is being
+// checked -- unlike counter.py (kept below only where it was already
+// proven to work), which resolves a high bit only after that many reads.
+// Addresses are this repo's own read of the SAMD51 CMSIS headers
+// (framework-cmsis-atmel/.../instance/{oscctrl,osc32kctrl,gclk}.h), not a
+// full peripheral model: SystemInit only ever writes control fields (which
+// land on "non existing peripheral" WARNINGs, harmless) and polls the
+// status/syncbusy bit below it.
+
+// OSC32KCTRL_STATUS (0x4000140C): XOSC32KRDY, the external 32kHz crystal's
+// ready bit -- the very first thing SystemInit waits on.
+osc32kctrl_status: Python.PythonPeripheral @ sysbus 0x4000140C
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// GCLK_SYNCBUSY (0x40001C04): shared by every GENCTRL[n]/SWRST synchronise
+// wait in SystemInit (7 separate call sites, one register).
+gclk_syncbusy: Python.PythonPeripheral @ sysbus 0x40001C04
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// OSCCTRL_STATUS (0x40001010): DFLLRDY. Renode's own base atsamd51g19a.repl
+// already stubbed this address (as "pac_intflag", a leftover name from
+// whatever it was first stood up against) -- kept, renamed for what it
+// actually is on this firmware's boot path.
+oscctrl_status: Python.PythonPeripheral @ sysbus 0x40001010
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// OSCCTRL_DFLLSYNC (0x4000102C): DFLLMUL/DFLLCTRLB/ENABLE/DFLLVAL sync
+// (4 call sites, one register).
+oscctrl_dfllsync: Python.PythonPeripheral @ sysbus 0x4000102C
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// OSCCTRL_DPLLSYNCBUSY0/1 (0x4000103C / 0x40001050): DPLLRATIO sync for
+// each PLL.
+oscctrl_dpllsyncbusy0: Python.PythonPeripheral @ sysbus 0x4000103C
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+oscctrl_dpllsyncbusy1: Python.PythonPeripheral @ sysbus 0x40001050
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// OSCCTRL_DPLLSTATUS0/1 (0x40001040 / 0x40001054): compiled from
+// `DPLLSTATUS.bit.CLKRDY == 0 || DPLLSTATUS.bit.LOCK == 0`, which re-reads
+// the register once per `.bit.X` access rather than caching one snapshot --
+// two separate reads, one per bit. flipflop can never satisfy this: it only
+// ever presents all-0 or all-1, so consecutive reads are always the
+// complementary extreme and the "other" bit is never simultaneously set.
+// counter sweeps every value in order, so it always eventually lands on a
+// read ending ...10 immediately followed by one ending ...11 -- both bits
+// set on the read that matters. 0x40001040 is the base platform's own
+// pre-existing stub (already a counter); 0x40001054 is new, matched to it.
+oscctrl_dpllstatus0: Python.PythonPeripheral @ sysbus 0x40001040
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/counter.py"
+
+oscctrl_dpllstatus1: Python.PythonPeripheral @ sysbus 0x40001054
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/counter.py"
+
+// GCLK_PCHCTRL[0..47] (0x40001C80 .. 0x40001D3C, 4 bytes each): Arduino's
+// wiring.c init() enables a peripheral's generic-clock channel by writing
+// CHEN then re-reading the *same* register's CHEN bit back (a single fresh
+// read per poll iteration, so flipflop's toggle is enough -- this is not
+// the DPLLSTATUS two-different-bits trap above). One stub spans every
+// channel index since whichever ones init() touches depend only on which
+// peripherals this firmware uses.
+gclk_pchctrl: Python.PythonPeripheral @ sysbus 0x40001C80
+    size: 0xC0
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// --- P2/P3: the two SERCOM instances this board wires to SPI mode --------
+// Per the Wio Terminal Arduino variant (variants/wio_terminal/variant.h):
+// SDCARD_SPI is SPI2 -> SERCOM6 (0x43000800), LCD_SPI is SPI3 -> SERCOM7
+// (0x43000C00) -- two separate buses, not one shared bus (this repo's own
+// walk_main.cxx SDCARD_SPI fallback to plain `SPI` never actually triggers
+// on this board; the variant already defines it).
+//
+// P2 first stubbed these as four independent flipflop registers per
+// instance (CTRLA/INTFLAG/SYNCBUSY/DATA -- one wide stub per instance
+// live-locked in SERCOM::resetSPI's cross-register poll, the same trap as
+// OSCCTRL_DPLLSTATUS above). P3 replaces both with a real controller,
+// SPI.SAMD51_SERCOM_SPI (this repo's own peripheral -- nothing upstream
+// implements SERCOM in any mode; SAM_SPI is the unrelated classic
+// SAM4/SAME70 peripheral, checked against source rather than assumed): it
+// answers the same polls correctly by construction instead of by
+// coincidence, and actually delivers bytes to whatever ISPIPeripheral is
+// registered on it via `@`.
+sercom6_spi: SPI.SAMD51_SERCOM_SPI @ sysbus 0x43000800
+
+sercom7_spi: SPI.SAMD51_SERCOM_SPI @ sysbus 0x43000C00
+
+// The LCD's D/C (data/command select) line: variants/wio_terminal/
+// variant.cpp puts LCD_DC on PORTC pin 6, driven by plain digitalWrite
+// (TFT_Interface.h's DC_C/DC_D macros) -- not part of the SPI byte stream,
+// so the display peripheral needs this wired as a GPIO input alongside its
+// SPI registration. GPIOPort.SAMD21_GPIO already exists upstream and its
+// PORT register layout is shared with SAMD51 (not re-verified beyond this
+// pin working correctly here); PORTC's own base address is this repo's
+// read of the SAMD51 CMSIS headers (.../instance/port.h), spaced +0x80
+// per group after PORTA/PORTB the same way SAMD21_GPIO sizes itself.
+portc: GPIOPort.SAMD21_GPIO @ sysbus 0x41008100
+    6 -> lcd@0
+
+// The 320x240 ILI9341 panel itself (docs/adr/0094 P3): a from-scratch
+// SPI-command-stream -> framebuffer model (nothing upstream models any
+// SPI TFT), scoped to exactly what this firmware's TFT_eSPI fork sends --
+// see app/wio/renode/README.md and the class's own comments for what it
+// does and does not interpret. `lcd SaveFramebufferPng "/path.png"` from
+// the Monitor dumps the current frame.
+lcd: Video.ILI9341_SPI @ sercom7_spi
+
+// The SD card (docs/adr/0094 P4): not modelled yet. Nothing is registered
+// on sercom6_spi, so SD.begin() behaves exactly as it does on real
+// hardware with an empty slot -- SPI writes complete (SAMD51_SERCOM_SPI
+// logs a warning and returns 0 with no device attached) but every command
+// reads back as failure.

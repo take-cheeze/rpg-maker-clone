@@ -5,7 +5,7 @@
 # The only backend is src/voicevox_tts.cxx: VOICEVOX CORE dlopen()'d on a
 # Linux/macOS desktop executable that already links SDL_mixer (the root
 # CMakeLists.txt executable for a native build). That executable links the
-# mruby "host" build. Every other build -- emscripten, android, closed --
+# mruby "host" build. Every other build -- wio, maix, psp, emscripten, android --
 # has no such executable (the cross builds link their own libmruby, not
 # src/voicevox_tts.cxx), so RGSS::Tts could only ever be a no-op there.
 #

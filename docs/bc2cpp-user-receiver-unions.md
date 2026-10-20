@@ -1,7 +1,5 @@
 # User receiver unions
 
-> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
-
 Closed-world return analysis can join results from two to eight exact user
 receiver classes. Every selected method must prove the same single result
 class through stable Ruby lookup. Different overrides, missing methods, nil
@@ -30,7 +28,7 @@ See [ADR 0352](adr/0352-bc2cpp-user-receiver-unions.md).
 
 ## Measured output
 
-The same-tree closed-build comparison against base `ba3a3ef0` changes cached sites from
+The same-tree Wio comparison against base `ba3a3ef0` changes cached sites from
 2,786 to 2,785, with POLY unchanged at 911. The removed site is `to_h` in
 `RPG2k::Scene::DebugMenu#max_id`: its receiver is exactly `Game::Switches` or
 `Game::Variables`, so both compiled bodies have direct arms. The fixture has

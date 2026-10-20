@@ -1,12 +1,14 @@
-# Battle-only helpers, split out of mrblib/game.rb. Everything here is called
-# only from mruby-rpg2k/mrblib/game/battle.rb, mruby-rpg2k/mrblib/scene/battle.rb,
-# mruby-rpg2k/mrblib/scene/battle_rpg2k3.rb or mruby-rpg2k/mrblib/scene/map_viewer.rb
-# -- confirmed by grepping every real (non-comment, non-CRuby-test-script) call
-# site of each method/class moved here before it moved. `Dir.glob(...).sort`
-# loads this file after mrblib/game.rb (`game.rb` < `game/battle_support.rb`
-# lexically), so every one of these reopened classes/modules already exists by
-# the time this file's own class bodies run. See
-# docs/adr/0124-rpg2k-battle-only-helpers-trim.md.
+# Battle-only helpers dropped from mrblib/game.rb wio's own battle exclusion
+# left dead: everything here is called only from mruby-rpg2k/mrblib/game/
+# battle.rb, mruby-rpg2k/mrblib/scene/battle.rb, mruby-rpg2k/mrblib/scene/
+# battle_rpg2k3.rb (already dropped from the wio build, see mrbgem.rake) or
+# mruby-rpg2k/mrblib/scene/map_viewer.rb (dropped for the same reason since
+# ADR 0097) -- confirmed by grepping every real (non-comment, non-CRuby-
+# test-script) call site of each method/class moved here before it moved.
+# `Dir.glob(...).sort` loads this file after mrblib/game.rb regardless of
+# target (`game.rb` < `game/battle_support.rb` lexically), so every one of
+# these reopened classes/modules already exists by the time this file's own
+# class bodies run. See docs/adr/0124-rpg2k-battle-only-helpers-trim.md.
 
 module Game
   class Actor

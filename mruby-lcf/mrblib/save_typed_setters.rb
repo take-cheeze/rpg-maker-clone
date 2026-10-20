@@ -2,7 +2,8 @@
 # One typed writer per save-schema field (docs/adr/0407), the write side of
 # save_typed_accessors.rb. `rec.save_x = v` checks v against the field's schema
 # type and stores it through LCF::Array1D#[]= (the schema encoder), so the bytes
-# are those of `array1d[id] = v`. nil drops the chunk.
+# are those of `array1d[id] = v`. nil drops the chunk. Not shipped on wio: see
+# mrbgem.rake.
 
 module LCF
   module SaveTyped

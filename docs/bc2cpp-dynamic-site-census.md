@@ -1,7 +1,5 @@
 # bc2cpp dynamic-dispatch site census
 
-> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
-
 How much by-name dispatch is left in the C++ that bc2cpp generates for the wio
 closed world, why each site is still dynamic, and what proof would remove it.
 `scripts/bc2cpp/dynamic_site_census.rb` reproduces every number below from the

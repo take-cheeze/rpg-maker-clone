@@ -1,7 +1,5 @@
 # LCF::Schema save-state tables: eager vs lazy footprint
 
-> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
-
 Measurement behind PR #2360, which turned the 15 save-state tables in
 `mruby-lcf/mrblib/schema.rb` from `lazy { { ... } }` wrappers (built on first
 `.call`) into plain Hash constants built at module load. This note records what

@@ -4,7 +4,7 @@ A **direct call** lets compiled Ruby call a native method's C body without going
 through mruby's method dispatch. The compiler emits `rgss::NAME_direct(M, self,
 args...)` instead of a by-name send, behind a guard that proves the receiver's
 class. This page describes the calling convention those calls use, and the
-conditions a body must meet. The decisions are in ADR 0253 (the closed build's hand split),
+conditions a body must meet. The decisions are in ADR 0253 (wio's hand split),
 ADR 0257 (core entries), and ADR 0263 (the generated RGSS split).
 
 ## Two entry shapes

@@ -570,7 +570,7 @@ unconditionally in `tilemap_init`, so every XP tilemap paid a permanent,
 always-blank 1.17 MiB canvas plus a wasted per-refresh viewport-tone pass over
 it for a layer its own priority tiles could never reach once the per-row
 strips took over — dead weight on every RPG Maker XP game, including the
-embedded targets this code was shared with. It is now allocated lazily
+psp/wio targets this code is shared with. It is now allocated lazily
 (`tilemap_ensure_above`), on the first VX-path refresh that actually needs it,
 syncing to whatever `z`/`visible` the tilemap already has by then rather than
 the fixed defaults the old eager allocation in `Tilemap.new` could assume.

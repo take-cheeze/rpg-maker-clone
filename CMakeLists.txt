@@ -212,8 +212,9 @@ set(LV_BUILD_CONF_DIR
 # LVGL's CMake builds its examples and demos into the `lvgl` library itself
 # (they are PUBLIC-linked), and their sources call widget constructors that
 # include/lv_conf.h disables -- so building them would fail to compile. The
-# runtime uses none of them. Set as cache variables so they override LVGL's
-# `option(...)` defaults even with CMP0077 unset.
+# runtime uses none of them, and matching app/psp's EBOOT keeps the configs
+# aligned. Set as cache variables so they override LVGL's `option(...)` defaults
+# even with CMP0077 unset (see app/psp/CMakeLists.txt).
 set(CONFIG_LV_BUILD_EXAMPLES
     OFF
     CACHE BOOL "" FORCE)
@@ -454,8 +455,9 @@ else()
 endif()
 
 # Build libmruby.a via mruby's own rake-based build system (build_config.rb),
-# factored into cmake/build-mruby.cmake so every target that needs libmruby.a
-# shares one rake invocation, differing only in target name and extra options.
+# factored into cmake/build-mruby.cmake since the PSP EBOOT build
+# (app/psp/CMakeLists.txt) drives the exact same rake invocation with only the
+# target name, gem list and a few extra rake options differing.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-mruby.cmake)
 rpg2k_add_mruby(
   TARGET_NAME
@@ -472,9 +474,9 @@ rpg2k_add_mruby(
   mruby-rpgvx
   mruby-wolf
   mruby-mvjs
-  # No *-compiled gem: bc2cpp compiles closed-world builds only (docs/adr/0466),
-  # and every build this file makes loads or defines Ruby at runtime, so it is
-  # always the plain mruby build.
+  # No *-compiled gem: bc2cpp compiles closed-world builds only (psp/wio/maix,
+  # docs/adr/0466), and every build this file makes loads or defines Ruby at
+  # runtime, so it is always the plain mruby build.
   MRB_OPTS
   BUILD_DIR=${MRUBY_BUILD_DIR}
   "CXX=${CMAKE_CXX_COMPILER_LAUNCHER} ${CMAKE_CXX_COMPILER}"
@@ -513,7 +515,7 @@ set(RPG_SOURCES
 if(ANDROID)
   # SDLActivity (app/android) loads a JNI shared library, not a process it can
   # exec -- Android has no argv-taking process launcher for an app's own native
-  # code the way a desktop OS does. SDL2main's
+  # code the way a desktop OS or the PSP's EBOOT loader does. SDL2main's
   # src/main/android/SDL_android_main.c (linked below) is the real JNI entry
   # point Java calls; it forwards into this project's own renamed SDL_main
   # (src/main.cxx's ordinary `int main`, renamed by SDL.h's `#define main
@@ -897,6 +899,51 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
   add_test(NAME error_report_capture
            COMMAND ruby
                    ${CMAKE_CURRENT_SOURCE_DIR}/scripts/error_report_check.rb)
+
+  # The shared map-walk core (app/shared/rpg2k_walk), the engine the iPod nano
+  # 7G homebrew app and the Wio Terminal walk firmware both run. Neither device
+  # is reachable from CI -- no toolchain, no emulator, no board (ADR 61, ADR 7)
+  # -- but the core is plain C with no I/O, so the half that can be wrong in an
+  # interesting way (format parsing, the movement rule, camera clamping, layer
+  # compositing) runs here. It links nothing else, so it builds even where the
+  # engine's own dependencies are unavailable.
+  add_executable(
+    walk_core_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk/rpg2k_walk_core.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk/test/walk_core_test.c)
+  target_include_directories(
+    walk_core_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk)
+  add_test(NAME walk_core COMMAND walk_core_test)
+
+  # A host-side implementation of the hb_raw_surface/hb_sdk subset the iPod nano
+  # 7G app calls (app/nano7/host, docs/adr/0102), linking
+  # app/nano7/rpg2k_walk/rpg2k_walk.c itself unmodified -- unlike walk_core
+  # above, this exercises the app's real entry points (hb_raw_init/
+  # hb_raw_frame), not just the platform-independent core behind them. Built
+  # here alongside walk_core_test (desktop only, like it), linking the same
+  # SDL2::SDL2 target src/main.cxx does.
+  add_executable(
+    nano7_walk_host
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk/rpg2k_walk_core.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/rpg2k_walk/rpg2k_walk.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/shim_common/hb_fb_ops.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/host/nano7_host_shim.c)
+  target_include_directories(
+    nano7_walk_host PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk
+                            ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/host/include)
+  target_link_libraries(nano7_walk_host PRIVATE SDL2::SDL2)
+
+  # scripts/nano7/host_smoke.bash exports a real Nepheshel map, runs
+  # nano7_walk_host headless against it and saves a BMP;
+  # scripts/nano7/host_smoke_check.rb (a plain-Ruby BMP reader, no ImageMagick)
+  # asserts the frame actually carries real map content rather than a blank/flat
+  # fill. Needs no display -- see docs/adr/0102 -- so unlike
+  # exe_open/render_probe below this needs no xvfb-run/--server-num.
+  add_test(
+    NAME nano7_host_smoke
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/nano7/host_smoke.bash
+            $<TARGET_FILE:nano7_walk_host>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
   set(exe_open_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
                    --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta)

@@ -148,6 +148,7 @@ mrb_value rect_x_set_direct(mrb_state* M, mrb_value self, mrb_int x);
 mrb_value rect_y_set_direct(mrb_state* M, mrb_value self, mrb_int y);
 mrb_value rect_width_set_direct(mrb_state* M, mrb_value self, mrb_int w);
 mrb_value rect_height_set_direct(mrb_state* M, mrb_value self, mrb_int h);
+// Window, Tilemap and Plane: real bodies off wio, link-only stubs on wio.
 mrb_value window_tone_direct(mrb_state* M, mrb_value self);
 mrb_value window_contents_set_direct(mrb_state* M,
                                      mrb_value self,

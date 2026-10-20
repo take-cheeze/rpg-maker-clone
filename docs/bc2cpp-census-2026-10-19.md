@@ -1,7 +1,5 @@
 # bc2cpp dynamic-dispatch census, 2026-10-19
 
-> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
-
 A fresh run of the generated-C++ census (`docs/bc2cpp-dynamic-site-census.md`, `## Method`) on two trees that generate
 byte-identical wio shipped output: `master` at `5e4d81e` (#2421), and the lexical-constants branch
 `claude/bc2cpp-lexical-consts-ir-p3x8` (the dynamic-names and lexical-constants raw-scan migrations on top of it).

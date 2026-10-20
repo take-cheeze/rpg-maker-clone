@@ -455,7 +455,7 @@ end
 # load time (a very common pattern for an *optional* feature, e.g. CACAO's
 # widely bundled screenshot-saving utility binds MultiByteToWideChar/
 # FindWindow/BitBlt/... just by being included in a project). There is no
-# real Win32 to call into on this engine's targets (also Linux/wasm), so
+# real Win32 to call into on this engine's targets (also Linux/PSP/wasm), so
 # construction must not raise -- only #call is reached if the game actually
 # tries to use the feature, and even then it degrades to a warning + 0 rather
 # than ending the whole script host over an optional Windows integration.

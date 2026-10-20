@@ -1,7 +1,5 @@
 # TODOs of this project
 
-> **Historical backlog.** Entries naming the removed embedded targets (PSP, Wio, Maix, M5Stack, nano 7) are kept as history.
-
 ## RPG Maker 2k
 - 🚧 Support all data schema of LCF — the core database, map tree and map-unit
   chunks needed for boot and gameplay are covered and validated against a real

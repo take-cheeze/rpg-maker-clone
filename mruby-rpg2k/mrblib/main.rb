@@ -563,12 +563,17 @@ class RPG2k
   # "none" if the stack is somehow empty (never true after #initialize, which
   # pushes Scene::Title before returning). Exposed so a native caller with no
   # other window into this object's state can tag a diagnostic snapshot with
-  # the scene the player is on.
+  # what the player was looking at -- the PSP bring-up heartbeat
+  # (app/psp/main.cxx) uses this to attribute its per-second memory numbers to
+  # a scene instead of just a frame count; see
+  # docs/adr/0047-psp-memory-budget.md.
   # `.to_s`, not `.name`: `Class#name` lives in the mruby-class-ext gem, which
   # this project's build_config.rb never pulls in, so it raises NoMethodError
-  # here. Core mruby's `Module#to_s` (3rd/mruby/src/class.c's mrb_mod_to_s)
-  # resolves through the identical mrb_class_path machinery and returns the
-  # same qualified name ("RPG2k::Scene::Title") for free.
+  # here (confirmed by a real psp-smoke-game CI run -- every heartbeat read
+  # back "none" despite the scene stack never actually being empty). Core
+  # mruby's `Module#to_s` (3rd/mruby/src/class.c's mrb_mod_to_s) resolves
+  # through the identical mrb_class_path machinery and returns the same
+  # qualified name ("RPG2k::Scene::Title") for free.
   def current_scene_name
     @scenes.empty? ? "none" : @scenes.last.class.to_s
   end

@@ -1761,8 +1761,12 @@ module RGSS
     # since Scene::Map re-maps each hit onto the RPG2000 key-input code
     # (Game::Interpreter::KEY_INPUT_CODES). Key backing: the SDL desktop backend
     # (src/sdl_input.cxx) binds every digit and operator; the terminal/sixel
-    # backends type them too (mruby-rgss/src/terminal.cxx), since a keyboard
-    # can actually produce them.
+    # backends now type them too (mruby-rgss/src/terminal.cxx), since a keyboard
+    # can actually produce them; the PSP backend binds the first five digits
+    # (N0-N4) to its spare buttons (Square/L/R/Start/Select,
+    # include/psp.hxx + mruby-rgss/src/psp.cxx); the Wio Terminal has no free
+    # pin (its seven buttons are all assigned), so these ids stay unbound there,
+    # the same way it already leaves F5-F12 unbound.
     N0 = 21
     N1 = 22
     N2 = 23
@@ -1817,7 +1821,7 @@ module RGSS
     # and every key a game reads afterwards reflects what this call sampled. So
     # this is where the backends' buffered transitions are applied (`_poll`,
     # native: the SDL window backend via src/sdl_input.cxx, the terminal
-    # backends), *after* the previous frame's triggers expire and
+    # backends, wio/psp), *after* the previous frame's triggers expire and
     # *before* the repeat bookkeeping runs over the new state.
     #
     # The order is what makes a game's own engine playable. An RGSS scene loop is

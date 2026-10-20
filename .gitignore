@@ -1,11 +1,36 @@
 /build
 /build-bc2cpp
+/build-psp
+/build-psp-docker
+/build-maix-mruby
+/build-maix-unialgo
 /wasm-build
 /emsdk
 # gprof's default output file, written to the current working directory by
 # any -pg-instrumented binary invoked without GMON_OUT_PREFIX -- several
 # tools/optcarrot_probe/compiled_run.rb GPROF=1 runs leave one here.
 /gmon.out
+
+# PlatformIO's build tree and downloaded packages for the Wio Terminal
+# firmwares (platformio.ini's `wio` / `wio_walk` environments). Machine-local
+# build output and toolchains, the same rationale as /build above.
+/.pio
+
+# The M5Stack Core port (app/m5stack) is its own standalone PlatformIO
+# project (see its own platformio.ini for why), so its build tree and
+# ESP-IDF/CMake-generated files sit under that directory rather than the
+# repo root -- not covered by the anchored /.pio rule above. CMakeLists.txt
+# (both the project-root one PlatformIO's espidf builder writes and the one
+# it writes into src/ as the "main" component wrapper) and sdkconfig.<env>
+# are auto-(re)generated from platformio.ini/sdkconfig.defaults -- confirmed:
+# deleting them and running `pio run -e m5stack` again recreates them with
+# no other input -- so there is nothing to commit by keeping them.
+/app/m5stack/.pio
+/app/m5stack/CMakeLists.txt
+/app/m5stack/src/CMakeLists.txt
+/app/m5stack/sdkconfig.m5stack
+/app/m5stack/sdkconfig.m5stack_qemu
+/app/m5stack/sdkconfig
 
 # Android (app/android): Gradle/AGP build output, the CMake/ninja tree AGP's
 # externalNativeBuild drives underneath it, Gradle's own local cache, and the
@@ -18,12 +43,13 @@
 /app/android/.gradle
 /app/android/local.properties
 # Downloaded test-bed games live under data/ and are not committed, except the
-# hand-authored MV and MZ samples (data/mv-sample, data/mz-sample), which each
-# have their own .gitignore for the engine files they fetch. Ignore data/
-# contents but re-include those two.
+# hand-authored MV, MZ and Maix-hello samples (data/mv-sample, data/mz-sample,
+# data/maix-hello), which each have their own .gitignore for the engine files
+# they fetch. Ignore data/ contents but re-include those three.
 /data/*
 !/data/mv-sample
 !/data/mz-sample
+!/data/maix-hello
 /ss
 
 # The MIDI instrument patches (~32 MiB of GUS samples) are fetched by

@@ -39,12 +39,12 @@ value = obj.send(accessor) # rpg2k-lint:allow Dynamic/Send -- accessor names com
 See ADR 0212. bc2cpp itself re-runs this lint on every closed-world build and
 aborts when it fails or disagrees with the `ClosedWorld` analysis (ADR 0368).
 
-The closed build's unreachable-method strip (ADR 0218) relies on the same
+The wio build's unreachable-method strip (ADR 0218) relies on the same
 property: a method counts as reachable only when some literal spells its name.
-A computed `send`, `respond_to?`, `method` or `to_sym` in the closed build's
+A computed `send`, `respond_to?`, `method` or `to_sym` in the wio build's
 mrblib therefore also has to be listed, with where its names come from, in
-`WioUnreachable::REVIEWED`. That list lived in `scripts/wio/unreachable_methods.rb`
-and was removed with the embedded targets.
+`WioUnreachable::REVIEWED` (`scripts/wio/unreachable_methods.rb`), or the wio
+build and `scripts/wio/strip_scripts_check.rb` fail.
 
 The bc2cpp closed-world dispatch analysis also recognizes calls to
 `Exception#message` whose receiver traces to a rescued exception register. The

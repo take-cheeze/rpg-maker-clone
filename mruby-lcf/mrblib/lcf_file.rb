@@ -4,7 +4,7 @@
 # Split out of schema.rb (docs/adr/0109/0123): these are real, hand-written
 # behavior -- #initialize's read path, #to_lcf's write path, #rpg2003?,
 # #terminate_root? -- not schema *data*, so they were never something
-# a data-only schema generator should have owned. schema.rb
+# gen_schema_blob.rb's data-only generator should have owned. schema.rb
 # itself is entirely replaced by a generated blob (mrbgem.rake's own
 # spec.rbfiles swap); keeping these classes in that same file meant they
 # silently stopped compiling into every target the moment that swap

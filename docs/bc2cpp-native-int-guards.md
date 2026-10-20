@@ -1,7 +1,5 @@
 # bc2cpp native int guards (ADR 0358)
 
-> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
-
 An `:int` argument of a NATIVE_DIRECT_EXACT arm is passed to a native `mrb_int`, and
 `mrb_integer()` raises on anything the binding's `mrb_get_args "i"` would have coerced. So the
 arm carries a runtime `mrb_integer_p` test whose else is a by-name send.

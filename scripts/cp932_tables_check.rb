@@ -5,8 +5,8 @@
 # cp932_to_unicode.rb generates, ADR 0217) return exactly what ADR 0111's two
 # sorted pair tables returned, for all 65,536 inputs in both directions:
 # decode (CP932 code -> Unicode) and encode (Unicode -> CP932 code). Both
-# encode paths are checked: the reverse table and the decode-table scan that
-# CP932_NO_REVERSE_TABLE selects. Also prints the host
+# encode paths are checked: the reverse table desktop keeps, and the
+# decode-table scan wio uses (CP932_NO_REVERSE_TABLE). Also prints the host
 # timing of each path.
 #
 # The reference is ADR 0111's generator and lookups, reproduced below. With
@@ -184,7 +184,7 @@ end
 
 CONFIGS = {
   'desktop (reverse table)' => [],
-  'no reverse table (decode-table scan)' => ['-DCP932_NO_REVERSE_TABLE']
+  'wio (decode-table scan)' => ['-DCP932_NO_REVERSE_TABLE']
 }.freeze
 
 ok = true

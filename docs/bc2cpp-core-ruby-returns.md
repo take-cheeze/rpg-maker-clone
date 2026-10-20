@@ -1,7 +1,5 @@
 # Core Ruby return classes
 
-> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
-
 bc2cpp can prove the result of a core Ruby collection method when
 the receiver class and lookup are known. It analyzes the actual method bytecode
 with that receiver, fixed positional argument masks and the supplied-block

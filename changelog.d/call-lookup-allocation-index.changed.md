@@ -1,0 +1,1 @@
+- **bc2cpp typing** reuses settled method-lookup paths, simple class names and Ruby owner sets to reduce temporary object allocation while preserving lookup order and refusals.
