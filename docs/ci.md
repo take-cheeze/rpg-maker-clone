@@ -79,11 +79,12 @@ empty output directory. See [ADR 0510](adr/0510-bc2cpp-ci-bounded-checks.md).
 
 `scripts/bc2cpp/constant_typing_check.rb` combines the frozen-container,
 Hash-merge, Array-sum and integer-arithmetic checks. It runs compatible positive
-fixtures as one program and shares the `Object#freeze` withdrawal program.
+fixtures and the unknown merge receiver as one program, and shares the
+`Object#freeze` withdrawal program. The unknown receiver adds no method definitions.
 Other redefinitions, prepends and unresolved mixins remain separate programs;
 the suite also checks integer intervals independently in process. All original
 assertions retain their individual labels. This reduces end-to-end analyses
-from 16 to 13. Each fixture uses an empty signature directory and requires a
+from 16 to 12. Each fixture uses an empty signature directory and requires a
 successful type-check exit status, so unrelated engine declarations cannot hide
 an analysis failure. See [ADR 0511](adr/0511-constant-typing-check-suite.md).
 
