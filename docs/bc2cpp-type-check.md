@@ -33,6 +33,13 @@ one context engine and is bounded to 128 snapshots of at most 4096 state cells.
 Set `BC2CPP_IR_LEAF_EVALUATIONS=0` for a comparison run. See
 [ADR 0518](adr/0518-reuse-leaf-context-evaluations.md).
 
+Receiver union decoding indexes numeric class bits and visits only bits present
+in a receiver. Decoded unions are cached within one CodeGen instance, with a
+2048-entry limit. Lazy class registration and probe table replacement invalidate
+the index; unknown/core/provenance bits and unions above eight classes remain
+refused. Set `BC2CPP_CLASS_MEMBER_INDEX=0` for a full-table comparison. See
+[ADR 0523](adr/0523-receiver-class-member-index.md).
+
 Applied RBS contracts are indexed once per typing world. Methods and callbacks
 share owner lookup, inherited ivar maps and named-return tables, while each method
 keeps fresh inference and query state. A new signature or hierarchy world needs a

@@ -1032,6 +1032,9 @@
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
 
+- Receiver unions reuse indexed class-bit members instead of scanning every
+  registered class, with bounded decoding caches that follow lazy registration.
+
 - The [host IR fact suite](docs/bc2cpp-ir-instruction-checks.md) shares library
   loading across exact-class, container, numeric, return-site and origin-transfer
   checks with isolated case namespaces and no compiler requirement.
