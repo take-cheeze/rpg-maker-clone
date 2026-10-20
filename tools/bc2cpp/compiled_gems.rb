@@ -474,7 +474,12 @@ def bc2cpp_closed_world_outside_srcs(build_name, gems, repo_root)
                                                BC2CPP_PROGRAM_CORE_MRBLIB_GEMS.include?(name) ||
                                                (build_name == 'optcarrot-probe' && name == 'optcarrot-benchmark')
   end
-  [native.map { |p| File.expand_path(p) }.uniq.sort, ruby.map { |p| File.expand_path(p) }.uniq.sort]
+  # Ruby the program compiles (core_compiled_mrblib_srcs, the same list closed_world_mrblib_srcs uses) is not outside,
+  # even when it is a file of mruby's own mrblib or an external gem: keeping it here would count its names as outside
+  # tokens for no reason. Files the program leaves foreign (BC2CPP_CORE_MRBLIB_EXCLUDED) are not in that list.
+  program = core_compiled_mrblib_srcs(repo_root, gems.keys).map { |p| File.expand_path(p) }
+  ruby = ruby.map { |p| File.expand_path(p) } - program
+  [native.map { |p| File.expand_path(p) }.uniq.sort, ruby.uniq.sort]
 end
 
 # The bc2cpp environment for `spec`'s build: its name and gem list. bc2cpp is
