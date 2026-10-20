@@ -10718,25 +10718,28 @@ module Enumerable
   def any?: () -> bool | (untyped) -> bool | () { (untyped) -> untyped } -> bool
 end
 
-# ---- native: core_block_results
-# The result class of a core iterator called WITH a block (a SENDB site). mruby's Enumerable#collect/map
-# (3rd/mruby/mrblib/enum.rb) return `ary`, a new Array, when given a block; without one they return an Enumerator, so
-# the bare call keeps its untyped result (core_results). Read by NativeCoreBlockResultSigs
-# (tools/bc2cpp/native_core_block_result_sigs.rb); a member names the block form's result only.
-# bc2cpp-native: core_block_results
-class Array[unchecked out Elem] < Object
-  # bc2cpp-native: core_block_results
-  def map: () { (Elem) -> untyped } -> Array[untyped]
-  # bc2cpp-native: core_block_results
-  def collect: () { (Elem) -> untyped } -> Array[untyped]
+# ---- native: core_block_iterators
+# The result class of a block iterator called with a literal block (a SENDB site), read by CoreBlockIteratorSigs
+# (tools/bc2cpp/core_block_iterator_sigs.rb) and checked by scripts/bc2cpp/core_facts_rbs_check.rb. Each returns a new
+# Array or Hash whatever the block returns: mrblib/enum.rb's collect, find_all, partition (`[ary_T, ary_F]`) and reject
+# and mruby-enum-ext's group_by build `ary = []` or `h = {}`; Enumerable#sort_by answers Array#sort_by (`self.to_a`),
+# and filter_map is mruby-enum-ext's `ary`. Hash#reject (mrblib/hash.rb) builds `h = {}`. The bare call returns an
+# Enumerator and is not declared here (core_results).
+# bc2cpp-native: core_block_iterators
+module Enumerable
+  def map: () { (untyped) -> untyped } -> Array[untyped]
+  def collect: () { (untyped) -> untyped } -> Array[untyped]
+  def reject: () { (untyped) -> untyped } -> Array[untyped]
+  def find_all: () { (untyped) -> untyped } -> Array[untyped]
+  def partition: () { (untyped) -> untyped } -> Array[untyped]
+  def filter_map: () { (untyped) -> untyped } -> Array[untyped]
+  def sort_by: () { (untyped) -> untyped } -> Array[untyped]
+  def group_by: () { (untyped) -> untyped } -> Hash[untyped, untyped]
 end
 
-# bc2cpp-native: core_block_results
+# bc2cpp-native: core_block_iterators
 class Hash[unchecked out K, unchecked out V] < Object
-  # bc2cpp-native: core_block_results
-  def map: () { (untyped) -> untyped } -> Array[untyped]
-  # bc2cpp-native: core_block_results
-  def collect: () { (untyped) -> untyped } -> Array[untyped]
+  def reject: () { (untyped) -> untyped } -> Hash[untyped, untyped]
 end
 
 # ---- native: core_proc_calls
