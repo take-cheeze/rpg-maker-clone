@@ -1,0 +1,1 @@
+- **Core String#size and #length** are typed as Integer on an exact String receiver, so a closed-world caller can use the result without a send. The UTF-8 build no longer sends the call back by name.

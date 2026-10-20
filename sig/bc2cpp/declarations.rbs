@@ -10924,6 +10924,8 @@ end
 # bc2cpp-native: core_results
 class String
   def bytes: () -> Array[Integer]
+  def size: () -> Integer
+  def length: () -> Integer
 end
 
 # ---- native: rgss_block_returns
