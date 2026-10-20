@@ -11,7 +11,7 @@
 #   ruby mruby-lcf/gen_save_typed_accessors.rb [OUT]        # write (default: mrblib/save_typed_accessors.rb and save_typed_setters.rb)
 #   ruby mruby-lcf/gen_save_typed_accessors.rb --check      # exit 1 when the committed file is stale
 #
-# Like gen_schema_blob.rb this only reads schema.rb (the single source of
+# This only reads schema.rb (the single source of
 # truth, loadable by CRuby) and never edits it. Accessors are emitted as
 # plain, explicit methods rather than define_method, because mrblib/ of this
 # gem is compiled by bc2cpp as a closed world (AGENTS.md).

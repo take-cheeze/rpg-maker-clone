@@ -26,8 +26,7 @@ namespace rgss {
 namespace {
 
 // Filled by the executable before the first lookup; empty in the gem's own test
-// build and on the embedded targets, which fall through to the candidates
-// below.
+// build, which falls through to the candidates below.
 std::vector<std::string> g_app_dirs;
 
 // opendir/fopen rather than stat: the scan needs only the POSIX directory and
