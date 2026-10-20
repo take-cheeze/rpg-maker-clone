@@ -1,0 +1,1 @@
+- **bc2cpp** types the result of `map`/`collect` called with a block as an `Array` on exact `Array` and `Hash` receivers (new `core_block_results` native table). The bare call keeps its untyped result.

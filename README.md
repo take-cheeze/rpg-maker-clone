@@ -1020,9 +1020,18 @@
 
 ### Performance
 
+- [Type checking](docs/bc2cpp-type-check.md) reuses context class decoding and skips
+  discarded C++ assembly while retaining method compilation and report diagnostics.
+  Reusable leaf evaluations avoid repeated context dataflow without sharing root
+  graph admission or round budgets.
+
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
+
+- The [host IR fact suite](docs/bc2cpp-ir-instruction-checks.md) shares library
+  loading across exact-class, container, numeric, return-site and origin-transfer
+  checks with isolated case namespaces and no compiler requirement.
 
 - The [IR block check suite](docs/ci.md#ir-block-fixtures) shares one Ruby
   process across capture, callback, yield and block-operand checks while keeping

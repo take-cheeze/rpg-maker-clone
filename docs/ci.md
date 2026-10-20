@@ -347,3 +347,11 @@ run without `MRBC`; yield and operand fixtures report skips. `bc2cpp-build` sets
 `MRBC` and runs every case, including the capture and yield fixtures previously
 registered only with the host coverage reporter. See
 [ADR 0512](adr/0512-ir-block-check-suite.md).
+
+### Host IR facts
+
+`scripts/bc2cpp/ir_facts_check.rb` groups the exact-class, container-shape,
+numeric-class, return-site and origin-transfer host checks in one process.
+Each case loads in a private namespace; their assertions and failure behavior
+remain separate. The coverage runner invokes the suite once, without MRBC or
+native source prerequisites.

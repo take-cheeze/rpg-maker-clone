@@ -19,6 +19,20 @@ ruby scripts/bc2cpp/type_check.rb --facts kept/facts.json --rows kept/rows.tsv  
 the mruby core mrblib, `--constants FILE` names the reviewed-constant list the TC1017 ratchet judges by (default: the
 engine's `tools/bc2cpp/constant_reviewed_list.rb`; a `--files` program has no list unless one is given). The analysis takes the time of a build's analysis phase (minutes for the engine).
 
+The report runner keeps whole-program analysis, real method compilation, return-guard
+validation and nilable-index collection. It skips the discarded C++ translation
+unit and declaration sidecar; receiver-report writers still finish normally.
+`--keep` therefore contains analysis diagnostics rather than final emission listings.
+Repeated context class decoding is cached within one engine, with invalidation
+when numeric class bits or private container shapes are registered. See [ADR 0517](adr/0517-type-check-report-cost.md).
+
+Root context graphs retain their own admission and round budgets. Small leaf
+contexts reuse immutable evaluations at their normal solver turn; graphs with
+callee or effect dependencies still use the full evaluator. Reuse stays within
+one context engine and is bounded to 128 snapshots of at most 4096 state cells.
+Set `BC2CPP_IR_LEAF_EVALUATIONS=0` for a comparison run. See
+[ADR 0518](adr/0518-reuse-leaf-context-evaluations.md).
+
 ## Output
 
 Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, so an editor problem matcher

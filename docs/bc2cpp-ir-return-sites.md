@@ -37,4 +37,4 @@ What stays a linear walk, and why:
   normal-flow walk refuses at.
 * `receiver_trace_origin` names the producer the linear receiver trace stopped at, for a diagnostic comment.
 
-Run `ruby scripts/bc2cpp/ir_return_sites_check.rb` for the host-side regression checks.
+Run `ruby scripts/bc2cpp/ir_facts_check.rb` for the host-side regression checks.
