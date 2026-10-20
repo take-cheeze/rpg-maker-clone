@@ -940,6 +940,7 @@ NOMETHOD_REVIEWED = Set[
   "Game::MoveRoute#execute -> command_id",
   "Game::MoveRoute#execute -> facing_locked=",
   "Game::MoveRoute#execute -> last_move_direction",
+  "Game::MoveRoute#execute -> max",
   "Game::MoveRoute#execute -> move_frequency",
   "Game::MoveRoute#execute -> move_frequency=",
   "Game::MoveRoute#execute -> move_speed",
@@ -1628,6 +1629,7 @@ NOMETHOD_REVIEWED = Set[
   "RPG2k::Scene::EquipMenu#build_slot_window -> equipment",
   "RPG2k::Scene::EquipMenu#build_stats_window -> color=",
   "RPG2k::Scene::EquipMenu#build_stats_window -> dispose",
+  "RPG2k::Scene::EquipMenu#cand_row_count -> max",
   "RPG2k::Scene::EquipMenu#candidates -> equip_candidates",
   "RPG2k::Scene::EquipMenu#candidates -> party",
   "RPG2k::Scene::EquipMenu#dispose -> dispose",
@@ -3002,4 +3004,6 @@ NOMETHOD_REVIEWED = Set[
   "RPG2k::Window#draw_cursor -> width",
   "RPG2k::Window#draw_cursor -> x",
   "RPG2k::Window#draw_cursor -> y",
+  "RPG2k::Window#initialize -> max",
+  "RPG2k::Window#update -> max",
 ].freeze
