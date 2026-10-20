@@ -1,0 +1,1 @@
+- **bc2cpp typing** indexes immutable argument layouts per context engine, avoiding repeated keyword and optional-jump scans while preserving per-context values and solver budgets.
