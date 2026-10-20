@@ -1064,8 +1064,8 @@ jobs:
 
 
   # The `bc2cpp` status check: success when `bc2cpp-build` succeeded. It keeps the name the old one-job
-  # `bc2cpp` reported, so a required check on `bc2cpp` needs no settings change. The long check shards and
-  # the width build run in bc2cpp-nightly.yml, not here (docs/ci.md, "Nightly bc2cpp").
+  # `bc2cpp` reported, so a required check on `bc2cpp` needs no settings change.
+  # Deferred audits and fixture prerequisites are recorded by the check registry.
   bc2cpp:
     if: ${{ always() && github.event_name != 'issue_comment' }}
     needs: [changes, bc2cpp-build]

@@ -1741,9 +1741,15 @@
   `docs/adr/0049-ruby-line-coverage-from-the-host-side-checks.md` cover the
   details and the trade-off.
 
+- The [bc2cpp check policy](docs/bc2cpp-check-tiers.md) audits execution tiers,
+  prerequisites and host versus full fixture registrations without scheduling extra work.
+
 - Native bc2cpp scope and registration checks share a host suite; native return
   kinds and signature contracts share another. See [native check suites](docs/bc2cpp-native-checks.md)
   for commands and CI prerequisites.
+
+- [Adding bc2cpp checks](docs/bc2cpp-adding-checks.md) covers fixture isolation,
+  execution requirements, CI registration and validation when reorganizing suites.
 
 - Constant typing shares compatible positive and unknown-receiver fixtures while
   retaining separate worlds for method redefinitions; see [CI fixtures](docs/ci.md#constant-typing-fixtures).

@@ -39,3 +39,7 @@ registration is tested independently of a host-only pass. The newly exercised
 fixtures add useful work to CI, so this audit is a coverage improvement rather
 than a job-time optimization. The deferred inventory makes remaining gaps
 visible without adding every expensive historical audit to every pull request.
+
+[ADR 0515](0515-bc2cpp-check-tier-policy.md) replaces the temporary string-only
+deferral inventory with complete active/deferred prerequisite metadata and
+rejects obsolete inventory paths. Execution lists remain authoritative.
