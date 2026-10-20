@@ -11,19 +11,39 @@ end
 
 paths = Set['scripts/bc2cpp/a_check.rb', 'scripts/bc2cpp/b_check.rb']
 a, b = paths.to_a
-run = lambda do |coverage: [a], jobs: {}, deferred: { b => 'manual fixture' }, fixture_gates: []|
-  Bc2cppCheckRegistry.audit(discovered: paths, coverage: coverage, jobs: jobs, deferred: deferred,
-                           fixture_gates: fixture_gates)
+policy = {
+  'version' => 1,
+  'runners' => { 'coverage' => [], 'bc2cpp-build' => ['mrbc'] },
+  'checks' => { a => { 'tier' => 'fast', 'capabilities' => [], 'fixture_capabilities' => ['mrbc'] } },
+  'deferred' => { b => { 'tier' => 'review', 'capabilities' => ['git_base'], 'reason' => 'argument-driven audit' } }
+}
+run = lambda do |coverage: [a], jobs: { 'bc2cpp-build' => [a] }, change: nil|
+  config = Marshal.load(Marshal.dump(policy))
+  change&.call(config)
+  Bc2cppCheckRegistry.audit(discovered: paths, coverage: coverage, jobs: jobs, policy: config)
 end
-expect('a scheduled check and an explained deferred check pass', run.call.empty?)
-expect('new unscheduled checks fail', run.call(deferred: {}).any? { |message| message.include?('unregistered') })
-expect('duplicate coverage invocations fail', run.call(coverage: [a, a]).any? { |message| message.include?('duplicate') })
-expect('duplicate invocations in one job fail', run.call(jobs: { 'build' => [a, a] }).any? { |message| message.include?('duplicate') })
-expect('missing check paths fail', run.call(coverage: ['scripts/bc2cpp/gone_check.rb']).any? { |message| message.include?('missing') })
-expect('a host pass and an MRBC pass may share an entrypoint', run.call(jobs: { 'bc2cpp-build' => [a] }).empty?)
-expect('coverage alone cannot satisfy a compiler-fixture gate', run.call(fixture_gates: [a]).any? { |message| message.include?('MRBC') })
-expect('the compiler job satisfies its fixture gate', run.call(jobs: { 'bc2cpp-build' => [a] }, fixture_gates: [a]).empty?)
-expect('empty deferral reasons fail', run.call(deferred: { b => '' }).any? { |message| message.include?('reason') })
+expect('host and full fixture registrations pass', run.call.empty?)
+expect('active checks need inspected requirements', run.call(change: ->(c) { c['checks'].clear }).any? { |m| m.include?('unclassified active') })
+expect('unregistered checks fail', run.call(change: ->(c) { c['deferred'].clear }).any? { |m| m.include?('unregistered') })
+expect('duplicate coverage fails', run.call(coverage: [a, a]).any? { |m| m.include?('duplicate') })
+expect('duplicate job invocation fails', run.call(jobs: { 'bc2cpp-build' => [a, a] }).any? { |m| m.include?('duplicate') })
+expect('missing check fails', run.call(coverage: ['scripts/bc2cpp/gone_check.rb']).any? { |m| m.include?('missing') })
+expect('host-only registration cannot satisfy fixtures', run.call(jobs: {}).any? { |m| m.include?('full fixture') })
+expect('incompatible job cannot satisfy fixtures', run.call(jobs: { 'ruby-checks' => [a] }).any? { |m| m.include?('full fixture') })
+expect('incompatible host requirements fail', run.call(change: ->(c) { c['checks'][a]['capabilities'] = ['native_sources'] }).any? { |m| m.include?('requires native_sources') })
+expect('unknown capabilities fail', run.call(change: ->(c) { c['checks'][a]['capabilities'] = ['typo'] }).any? { |m| m.include?('unknown capabilities') })
+expect('misspelled policy keys fail', run.call(change: ->(c) { c['checks'][a]['fixture_capability'] = ['mrbc'] }).any? { |m| m.include?('unknown policy keys') })
+expect('overlapping classifications fail', run.call(change: ->(c) { c['checks'][b] = c['deferred'][b] }).any? { |m| m.include?('both active and deferred') })
+expect('unknown top-level keys fail', run.call(change: ->(c) { c['typo'] = {} }).any? { |m| m.include?('top-level') })
+expect('non-array capabilities fail clearly', run.call(change: ->(c) { c['checks'][a]['capabilities'] = 'mrbc' }).any? { |m| m.include?('array of strings') })
+expect('non-string capability entries fail clearly', run.call(change: ->(c) { c['runners']['coverage'] = [nil] }).any? { |m| m.include?('array of strings') })
+expect('malformed optional capabilities fail clearly', run.call(change: ->(c) { c['checks'][a]['fixture_capabilities'] = nil }).any? { |m| m.include?('array of strings') })
+expect('unexplained optional gates fail', run.call(change: ->(c) { c['checks'][a]['fixture_gate'] = false }).any? { |m| m.include?('needs a reason') })
+expect('explained optional fixtures do not schedule work', run.call(jobs: {}, change: ->(c) { c['checks'][a].merge!('fixture_gate' => false, 'reason' => 'budgeted separately') }).empty?)
+expect('unknown tiers fail', run.call(change: ->(c) { c['deferred'][b]['tier'] = 'typo' }).any? { |m| m.include?('unknown tier') })
+expect('empty reasons fail', run.call(change: ->(c) { c['deferred'][b]['reason'] = '' }).any? { |m| m.include?('reason') })
+expect('scheduled deferrals fail', run.call(coverage: [a, b]).any? { |m| m.include?('leave deferred') })
+expect('stale deferred paths fail', run.call(change: ->(c) { c['deferred']['scripts/bc2cpp/gone_check.rb'] = c['deferred'][b] }).any? { |m| m.include?('missing check') })
 workflow = { 'jobs' => { 'build' => { 'steps' => [{ 'parallel' => [{ 'run' => "# #{a}\nruby #{b}\n" }] }] } } }
-expect('nested parallel steps are read and comment-only references ignored', Bc2cppCheckRegistry.workflow_checks(workflow) == { 'build' => [b] })
-expect('the repository registry is valid', Bc2cppCheckRegistry.run)
+expect('nested commands ignore comment references', Bc2cppCheckRegistry.workflow_checks(workflow) == { 'build' => [b] })
+expect('repository registry is valid', Bc2cppCheckRegistry.run)

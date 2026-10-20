@@ -105,7 +105,7 @@ run its fixtures; without it the suite reports a skip, as its predecessors did.
 `--list` output and the workflow's shell steps, including nested parallel
 steps. It rejects references to deleted checks, duplicate invocations within
 one job or the coverage list, and newly discovered bc2cpp checks without a
-registration or an explanation in `scripts/ci/deferred_bc2cpp_checks.yml`.
+registration or an explanation in `scripts/ci/bc2cpp_check_policy.yml`.
 A check may appear in both the host coverage runner and the compiler job;
 these exercise different fixture capabilities.
 
@@ -118,11 +118,12 @@ Eight previously unscheduled host checks run through the coverage reporter,
 including the standalone argument-type suite. Its call-site index now imports
 the numeric IR methods it uses instead of depending on a prior compiler load.
 
-The deferred inventory records existing argument-driven utilities and larger
-runtime, mutation or whole-engine audits. It describes current scheduling;
-it does not claim those checks run in ordinary CI. Entries for checks moved
-or enabled by another branch may be pruned when syncing the inventory. This
-keeps independent suite PRs mergeable in either order. See
+The policy records tiers and prerequisites for every active and deferred check.
+Host-only passes and complete fixture coverage are reported separately. Existing
+argument-driven utilities and larger runtime, mutation or whole-engine audits
+retain explicit deferral reasons; this does not claim they run in ordinary CI.
+Removed paths and scheduled deferrals must leave the inventory. See the
+[tier and capability guide](bc2cpp-check-tiers.md) and
 [ADR 0513](adr/0513-bc2cpp-check-registration-audit.md).
 
 ### Superseded runs
@@ -205,52 +206,25 @@ changes only that skips these jobs, and the push to `master` after the merge run
 regression from shared code therefore shows up on `master`, not on the pull request. To check a branch
 earlier, use `workflow_dispatch` on it, or add the path to the filter.
 
-### Compiler cache (sccache)
+### Compiler caching and shared mruby builds
 
-`scripts/bc2cpp/cxx.rb` is where the checks start the C++ compiler
-(`${CXX:-g++}`) and where they set `CC`/`CXX` for the `rake` that builds mruby
-(the full-core build, `core_mrbtest`, the width builds, the block/exact-receiver
-builds). When an `sccache` is usable it goes in front of the compiler, found in
-this order: `BC2CPP_SCCACHE` (a path; `0` turns the launcher off),
-`CMAKE_CXX_COMPILER_LAUNCHER` (the dev shell sets it, so the checks use the same
-client as the cmake steps), then `sccache` on `PATH`. Without one nothing
-changes: the arguments reach `g++` untouched.
+`scripts/bc2cpp/cxx.rb` launches fixture C++ compilers and supplies `CC`/`CXX`
+for fixture-library builds. It can use `BC2CPP_SCCACHE`, the CMake launcher or
+`sccache` on `PATH`; `BC2CPP_SCCACHE=0` disables it. A cached compilation uses
+`-c` followed by a separate link, with temporary source paths made relative.
+Without a launcher, the compiler arguments pass through unchanged.
 
-Two details make this effective rather than cosmetic:
+The native game job configures the action-provided sccache with writes limited
+to master pushes. The dedicated bc2cpp shell does not require that service.
+Instead, `bc2cpp-build` caches its full-core fixture library with an exact key
+covering the Nix pin, contributing submodules, build helpers and patches.
+`full_or_build` trusts an existing library, so callers reusing a build directory
+must invalidate it when those inputs change. CI prepares it once before the
+parallel group and exports `BC2CPP_MRUBY_FULL` to the fixture checks.
 
-- sccache caches a compile (`-c`), not `g++ main.cpp lib.a -o bin`. For a
-  one-source build the helper therefore runs a cached `-c` and then the link.
-- The preprocessed text sccache hashes contains the source path, and fixtures
-  live in a fresh `mktmpdir`, so the `-c` runs inside the source's directory
-  with the source and its `-I` spelled relative. Two runs of the same fixture
-  then hit even though their temp directories differ.
-
-What it does and does not buy: the fixtures themselves are small (a
-`return_class` fixture compiles in under a second), so the cache matters for the
-mruby builds, about 2 minutes each in CI and a handful per shard. The caches are
-only written by pushes to `master` (`SCCACHE_GHA_RW_MODE`), so a pull request
-sees the effect once `master` has run these steps once (the workflow compiles through
-the `sccache-action` binary, not the dev shell's nixpkgs 0.15.0, whose GHA backend ignores
-`SCCACHE_GHA_RW_MODE`; read-only mode needs 0.16.0 or later), and only for build
-directories whose path is stable between runs (`BC2CPP_FULL_BUILD_DIR`,
-`BC2CPP_BLOCK_DIRECT_DIR`, the `$RUNNER_TEMP` ones the workflow names; a check
-that builds in a random temp directory still misses). Run with
-`SCCACHE_DIR=... sccache --show-stats` locally to see the requests.
-
-The full-core build is not stored with `actions/cache`: `full_or_build` treats an
-existing `libmruby.a` as current and never checks the inputs (patches, the mruby
-submodule, the gembox config, the compiler), so a key that missed one would hand a
-stale library to every check. sccache keys on the real compile inputs instead.
-
-### Test mruby builds execute prerequisites in parallel
-
-The bc2cpp fixture, width and core-test builders pass `rake -m -jN`, with
-`N` capped at 16. `-j` alone limits the thread pool but leaves mruby's ordinary
-task prerequisites serial; `-m` enables their concurrent execution, as in the
-main host build. Existing artifact checks and error handling still apply.
-[ADR 0410](adr/0410-bc2cpp-test-rake-multitask.md) records a clean-build
-comparison. For a local concurrency check, add `RAKEOPT=--job-stats` and inspect
-the builder's saved log for `Total threads in play`.
+The closed build uses `rake -m -j4`. The fixture-library builder uses `rake -m`
+with a processor-based limit capped at 16; `-j` alone does not enable concurrent
+ordinary Rake prerequisites. See [ADR 0410](adr/0410-bc2cpp-test-rake-multitask.md).
 
 ### Scan cache (ADRs 0415, 0462)
 
@@ -271,103 +245,42 @@ Marshal dumps, so the checkout must be a directory only you write.
 
 ### Mutant pool
 
-The mutation checks run one subprocess per mutant, each independent. Through
-`scripts/bc2cpp/mutant_pool.rb` they run up to `BC2CPP_JOBS` at a time (default
-the core count, at most 4; `1` is the old serial order) and report in input
-order, so the log and every `ok`/`FAIL` line read as before. Memory is small
-for the generated-code mutants (the generator stays under 100 MB); a mutant that
-also compiles and runs a fixture is the larger one. Two behaviours worth
-knowing:
+`scripts/bc2cpp/mutant_pool.rb` runs independent mutant subprocesses with up to
+`BC2CPP_JOBS` workers (processor count capped at four by default). Results and
+logs appear in input order. A configured failure matcher stops a mutant after
+its expected failure becomes visible; `scripts/ci/helpers_check.rb` tests
+failure propagation and concurrency. A supplied `BC2CPP_FULL_BUILD_DIR` is
+prepared before the pool begins so workers cannot build the same library.
 
-- A mutant is stopped at the first `FAIL` line that already proves it caught
-  (for the checks with an expected label, the first line matching it). Every
-  check prints `FAIL` only together with a nonzero exit, so the verdict is the
-  same; the run just does not finish the checks after the one that fails. A
-  mutant that survives runs to the end, as before. Ruby children with a
-  stop matcher preload `scripts/bc2cpp/unbuffered_stdout.rb`, so a failure is
-  visible through the pipe before subsequent work starts. Controls without a
-  matcher keep their normal buffering, and Ruby subprocesses do not inherit
-  the preload. A local one-second delayed-work reproduction stops in about
-  0.04 seconds instead of 1.03 seconds; this is a latency check, not a measured
-  nightly-workflow speedup.
-- With `BC2CPP_FULL_BUILD_DIR` set, the pool builds the shared full-core mruby
-  once before it starts, so the concurrent mutants do not race to build it.
-
-Measured locally on a shared 4-core machine (load average 5-8, so absolute
-times are inflated): `UCC_MUTANTS=1 bc2cpp_unlisted_class_call_check` took 913 s
-with the old serial loop and 364 s through the pool. Expect `core-mutants` and
-the CSEND/ERF mutants of `core-flow` to shorten by a similar factor on a 4-vCPU
-runner; that is an estimate until a CI run reports the timing table.
-
-Used by `bc2cpp_unlisted_class_call_check` (`UCC_MUTANTS`),
-`bc2cpp_computed_send_check` (`CSEND_MUTANTS`),
-`bc2cpp_exact_receiver_flow_mutation_check`,
-`bc2cpp_loop_installers_mutation_check`, `bc2cpp_getidx_integer_arm_check`
-(`GIA_MUTANTS`), `bc2cpp_block_arm_reach_check` (`BR_MUTANTS`),
-`bc2cpp_core_exact_direct_check` (`CX_MUTANTS`), and the
-`bc2cpp_frozen_tables_mutation_check`,
-`bc2cpp_call_results_mutation_check`, `bc2cpp_class_pools_mutation_check`,
-`bc2cpp_tuple_return_mutation_check` (always, no flag needed).
-`ci_helpers_check.rb` covers the pool itself. `frozen_slot_check.rb` (ADR 0425) runs its host section in `build.yml` and
-its MRBC section in the `core-tables` shard of `bc2cpp-nightly.yml`.
-
-Two of these keep their `MUTANTS` as a Hash and pass `MUTANTS.to_a`, because the
-pool indexes its items and needs a sequence; declaration order is preserved, so
-the log reads as before. `core_exact_direct` runs its unmutated control first and
-alone, ahead of the pool: it is what says the copy-and-run path itself still
-works, so running it beside a mutant would attribute a broken path to that
-mutant. Its mutant directories carry an index, because two mutants may edit the
-same generator file and would otherwise share — and delete — one copy.
+`class_pools_mutation_check.rb` uses this helper. It is an explicitly deferred
+mutation audit, rather than a check scheduled by a removed nightly workflow.
+Its generator copies remain isolated from the checkout. Consult the
+[check inventory](bc2cpp-check-tiers.md) before choosing an execution tier.
 
 ### Parallel groups
 
-A shard can run independent checks at the same time. Put the commands between two
-comment lines in the `checks:` block:
+`scripts/ci/timed_checks.rb` accepts independent shell commands between
+comment markers:
 
-```
-# ci:parallel begin 3
+```bash
+# ci:parallel begin 2
 MRBC="$mrbc" ruby scripts/bc2cpp/a_check.rb
 MRBC="$mrbc" ruby scripts/bc2cpp/b_check.rb
 # ci:parallel end
 ```
 
-`scripts/ci/timed_checks.rb` runs them at most N at a time (without a number, `CI_PARALLEL_JOBS`,
-then 3). The markers are comments, so a block that is not run through the script runs the same
-commands in order. Each command runs in a subshell of the step, so it sees the step's variables
-(`$mrbc`, `$core`) but cannot set one for later commands; assigning a variable inside a group is
-refused when the script is generated. Output goes to a log per command and is printed in input
-order after the group, so a failing command's output is shown in full and the others are folded
-(`::group::`). The step fails with the first failed command's status, after the rest of the group
-has finished; the commands after a failed group do not run.
+The bc2cpp gate uses two workers. The generic helper defaults to
+`CI_PARALLEL_JOBS`, then three, when a marker omits the number. Each command
+runs in a subshell and inherits the step's variables; assignments made inside
+that subshell cannot configure later commands. Output is saved per command and
+replayed in input order. A failed command keeps its status, all commands in the
+group are reported, and subsequent commands do not run after a failed group.
+The timing table sums command durations, which can exceed elapsed group time.
 
-What may go in a group: commands that share no build state. A command that *builds* the
-full-core mruby into `BC2CPP_FULL_BUILD_DIR` stays outside the group and runs first, alone, because
-two builders would race on one directory. A command after it only reads that build
-(`full_or_build` returns an existing `lib/libmruby.a` before it writes anything), so the rest may
-share it in a group. The four mutation checks that build their mutant trees in the repository's
-`.mutants/` directory (`call_facts_mutation`, `class_narrowing_mutation`, `native_arm_cover_mutation`,
-`native_class_arms_mutation`) must not run side by side: each removes `.mutants/` when it finds it
-empty, so one can delete the directory under another. The mutant pool already uses the cores, so a
-group is for shards made of single-process scripts. A group adds CPU and memory load, so keep N at 3
-on the 4-vCPU runner: `embedded_ivar_access_check` alone uses about 2.5 cores.
-
-A command that appends to the job summary (`$GITHUB_STEP_SUMMARY`) shares that file with the other
-commands, so it joins a group only with a file of its own. Prefix it with `GITHUB_STEP_SUMMARY=<file>`
-and add a line after `# ci:parallel end` that appends the files to the summary in input order. The
-prefix works because a group runs each command with `eval` in its own subshell. If the group fails,
-the appending line does not run, so the summaries of that shard are missing and the failing command's
-output is in the log.
-
-Groups in use: `registrations`, both width legs, `call-facts` (its first command builds the
-full core, the rest of the non-mutation checks run as a group) and `coverage` (the two job-summary
-reports, each with its own file, and the rescue shadow check; see the summary rule above). The ten `call-facts` mutation checks are not in
-a group: they are split over the shards `call-facts-mutants-a` and `call-facts-mutants-b` and run in sequence,
-because each already runs a four-wide mutant pool and `call_facts_mutation` is the only one of them that uses
-`.mutants/`. Measured on a 4-core machine for the `registrations` shard:
-its four scripts took 211 s in sequence and 118 s through a group, the longest single script. The
-width leg `int32-a` took 2749 s in sequence and 1085 s in a group (same 1329 passing checks). The
-timing table's `total` is the sum of the command times, so for a group it is more than the wall
-time of the step. docs/bc2cpp-ci-duration-profile.md has the measurements.
+Only read-only shared build state belongs in a group. Prepare a shared mruby
+library first, and keep source-mutating checks isolated. Summary writers need
+separate `GITHUB_STEP_SUMMARY` files followed by ordered concatenation after
+the group; otherwise parallel writers share one output file.
 
 ## Cross-PR interaction (merge queue)
 
@@ -394,110 +307,13 @@ The `changes` job's path filter (dorny/paths-filter) has not been exercised on a
 `merge_group` as well as on `pull_request`; every job here has no event filter
 beyond excluding `issue_comment`, so it is.
 
-### Call-context receiver results
-
-The bc2cpp core-mrbtest shard runs the call-context result parity check and its
-mutation check. They exercise exact self, positional inputs, inherited overrides,
-cache separation and withdrawal for uncertain returns or unsupported method
-shapes, captured writes and nonlocal block returns (sixteen mutants plus a
-control). See ADRs 0351 and 0353. Native-summary withdrawal checks and profiler mutation
-checks disable call-context results so an independent local proof cannot mask
-the proof path they are testing. The dedicated call-context checks exercise the
-enabled analysis.
-
-### Enumerator wrapper compilation
-
-The bc2cpp core checks run `bc2cpp_enumerator_wrappers_check.rb` and its mutation
-check. They verify the seven admitted wrappers' unconditional Fiber guards,
-saved bytecode registration, admission gates and runtime parity for yielding
-callbacks, state changes, overrides and GC. See ADR 0350.
-
-### Compiled core definers and the Hash comparison arm
-
-The `core-flow` shard also runs `bc2cpp_core_compiled_cmp_check.rb` and its mutation check
-(ADR 0371). A closed world that compiles mruby's own Ruby puts the compiled `Hash#<`, `<=`, `>`
-and `>=` in the Hash arm of the four comparison helpers; the check covers the generated code, the
-negative worlds (reopened, prepended, aliased, outside or computed definers, a `==` that may
-yield, `method_missing`, a singleton, a build without mruby-hash-ext, no core
-compile, the `BC2CPP_CORE_COMPILED_CMP=0` kill switch), and a run of every helper against the
-interpreted operator on a full-core build. The compiler also prints `== core-source methods left
-interpreted ==` with a reason and the language features per method, which the coverage report's
-core line counts.
-
-### User receiver unions
-
-The core-mrbtest shard runs user receiver union parity and mutation checks.
-They verify shared-body direct calls, every family member, differing overrides, unknown and nil bits,
-constructor lookup, hierarchy bounds and outside replacements. See ADR 0352.
-
-ADR 0355 expands call-context checks to positional defaults, rest and trailing
-arguments, with interpreter parity and fourteen proof-condition mutants plus a
-control. The core shard also runs `bc2cpp_context_arguments_check.rb` and its
-seven-mutant binding checker.
-
-### Numeric native conversions
-
-The core-mrbtest shard runs enabled and disabled Integer conversion parity and
-nine proof-condition mutants plus control. Cases include fixnums, bigints beyond
-64 bits, decimal ABI, mixed numeric inputs, overrides, singleton makers, open
-worlds, wrong arity and blocks. See ADR 0357.
-
-The conversion parity check also runs in both width shards with width-safe
-literals and matching bigint defines. Visibility changes withdraw the numeric
-proof alongside altered method lookup.
-
-### Fresh literal element receivers
-
-The core-mrbtest shard runs enabled and disabled literal element parity checks,
-plus six proof-condition mutants and their control. They cover exact primitive
-results and withdrawal for captured writes, effects, branch entries, unknown
-indices and out-of-bounds reads. See ADR 0354.
-
-ADR 0356 adds `bc2cpp_readonly_call_effects_check.rb` and its mutation checker to
-the core shard: readonly getters, receiver unions, unknown and outside writers,
-strict opcode/arity checks, runtime parity, and thirteen mutants plus a control.
-
-The native class-arm and join-dominance checks disable exhaustive user receiver
-unions so their guarded fallback assertions continue to exercise those proof
-paths. The receiver-union suite separately checks exhaustive dispatch.
-
-### Native arm Integer guards
-
-The core shard runs `bc2cpp_native_int_guard_check.rb` enabled and disabled, plus
-its mutation check (control, switch-off control and six mutants covering the
-gate, the kind filter, the proof's register test and the position argument).
-The check pins both emitters' shape for every answer the Fixnum proof can give
-and drives the real proof over its own refusals; the generated-code section
-covers the closed world. See ADR 0358 and
-[bc2cpp-native-int-guards](bc2cpp-native-int-guards.md).
-
-### The zero? helper through compiled core
-
-The `core-flow` shard also runs `bc2cpp_zero_direct_check.rb` and its mutation check (ADR 0374); the `int32`
-width legs run the same check against their own libmruby. A closed world that compiles
-mruby's own Ruby has `bc2cpp_slow_zero` call the compiled `Numeric#zero?` for every Numeric that is not a
-Float, raise the `File.zero?` argument error for those class objects, and keep the NoMethodError proof for
-the rest. The check covers the generated code, twelve negative worlds (reopened, aliased, included,
-prepended, singleton or class-level definers, a computed installer, `method_missing`, a `==` that may
-yield, a build without mruby-numeric-ext or mruby-io, no core compile, both kill switches)
-and a run of the helper against the real `zero?` (values, error class and message, user `==` calls, the
-by-name call count) at every width, in the closed world and in four worlds that must keep the by-name helper.
-
-### Loop flow positions (ADR 0398)
-
-The `core-mrbtest` shard runs `bc2cpp_loop_flow_position_check.rb`: four closed-world worlds (a method local read in an
-inlined `each` takes the method's flow at the loop, refused for a reassigned element and for a local the body writes,
-no set for an argument receiver) and the switch-off control, which must read and refuse no position. The
-`core-flow-mutants` shard runs the same check with `LFP_MUTANTS=1`: four copies of `tools/bc2cpp` with one guard
-removed or a wrong position read, each of which must fail. The check needs only `MRBC`; it runs no mruby build.
-
 ### RGSS::Tts in limited builds (ADR 0417)
 
 `scripts/tts_limited_check.rb` (the `ruby-checks` job, no submodules needed) evaluates the real `mruby-rgss` and
 `mruby-rpg2k` `mrbgem.rake` files for every build name and fails unless `tts.cxx`, `RGSS_NO_TTS` and the
 `speak_message` source (`map_tts.rb` against `map_tts_off.rb`) are exactly what `tools/rgss_tts_config.rb` says, the
 bc2cpp source sets (`compiled_gems.rb`) agree, and `speak_message` behaves as before where Tts exists. With `--bc2cpp`
-(the `fast` nightly shard, needs `MRBC`) it also runs the wio closed world for `mruby-rpg2k-compiled` and fails if the
+(an explicit local invocation requiring `MRBC`) it also runs the wio closed world for `mruby-rpg2k-compiled` and fails if the
 generated C++ names Tts.
 
 ### IR block fixtures
