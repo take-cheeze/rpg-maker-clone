@@ -1242,6 +1242,7 @@ jobs:
           - name: bc2cpp native, RBS and definer checks
             run: |
               ruby scripts/bc2cpp/numeric_flow_speed_check.rb
+              ruby scripts/bc2cpp/element_type_check.rb
               ruby scripts/bc2cpp/core_facts_rbs_check.rb
               ruby scripts/bc2cpp/base_rbs_check.rb
               ruby scripts/bc2cpp/foreign_definers_cache_check.rb

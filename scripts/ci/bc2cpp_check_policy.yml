@@ -490,6 +490,9 @@ checks:
   scripts/bc2cpp/numeric_flow_speed_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/element_type_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/origin_transfers_check.rb:
     tier: fast
     capabilities: []
