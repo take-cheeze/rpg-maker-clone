@@ -38,3 +38,15 @@ shared. `upvar_walks_check.rb` still accepts `BC2CPP_TOOLS_DIR` for baseline and
 mutation comparisons. These checks now follow the same compiler policy as the
 other harness users: a missing explicit `MRBC` fails, while an absent compiler
 with no configured path skips.
+
+## Type-check report fixtures
+
+`type_check_fixture.rb` shares the JSON CLI runner used by the argument, ivar
+and context-result checks. It resolves an inherited `MRBC` before changing to
+the fixture directory, builds the report command, checks the subprocess status
+and parses stdout or an explicit `--out` report. Failures retain both output
+streams. Callers retain their temporary directories, source programs, signature
+configuration, tools overrides and feature-toggle runs; the helper neither
+combines closed worlds nor caches reports from different configurations.
+These checks keep their existing policy of running host assertions and skipping
+compiler fixtures when `MRBC` is unset.

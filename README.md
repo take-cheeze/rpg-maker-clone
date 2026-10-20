@@ -1020,6 +1020,10 @@
 
 ### Performance
 
+- [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
+  bytecode construction and assertion reporting across exact-class, container
+  shape and control-flow soundness checks. Compiler fixtures remain isolated.
+
 - The [IR block check suite](docs/ci.md#ir-block-fixtures) shares one Ruby
   process across capture, callback, yield and block-operand checks while keeping
   each fixture program isolated. Host checks run even without `MRBC`.
@@ -1032,7 +1036,9 @@
   lexical constant checks with isolated source fixtures. Small MRBC checks use a
   [shared fixture harness](docs/bc2cpp-fixture-checks.md) for compiler discovery,
   temporary programs and assertion summaries, including symbol flow, upvar walks
-  and bytecode constant resolution.
+  and bytecode constant resolution. Argument, ivar and context-result checks use
+  a shared [type-check JSON runner](docs/bc2cpp-fixture-checks.md#type-check-report-fixtures)
+  with independent programs and feature-toggle comparisons.
 - [Base RBS generation](docs/bc2cpp-base-rbs.md) scans native sources with up to
   two worker processes by default. Both base generators accept `--jobs N`,
   including `--jobs 1` for serial generation. Clang AST extraction runs only
@@ -1055,6 +1061,8 @@
 - [Behavioral installer checks](docs/ci.md#behavioral-installer-fixtures) share
   registry setup while preserving separate `define_method` and alias fixture
   programs and settle policies.
+- The [block iterator fixture](docs/ci.md#block-iterator-fixtures) reuses its
+  baseline generation for C++ shape checks and interpreted/compiled comparison.
 - The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) is closed-world
   only: it compiles the RPG2000/2003-only psp/wio/maix builds, whose only Ruby
   is the engine's own, and every other build (desktop, wasm, Android) stays the
@@ -1736,6 +1744,9 @@
 - Native bc2cpp scope and registration checks share a host suite; native return
   kinds and signature contracts share another. See [native check suites](docs/bc2cpp-native-checks.md)
   for commands and CI prerequisites.
+
+- Constant typing shares compatible positive and unknown-receiver fixtures while
+  retaining separate worlds for method redefinitions; see [CI fixtures](docs/ci.md#constant-typing-fixtures).
 
 ### Play in the browser (WebAssembly)
 
