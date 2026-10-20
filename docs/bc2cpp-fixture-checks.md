@@ -28,3 +28,15 @@ and whether to disable repository signatures.
 Use `check(label, condition)` for each assertion and `finish!` for the count and
 nonzero exit on failures. Labels and assertion counts remain visible rather than
 collapsing multiple expectations into an opaque success result.
+
+## Type-check report fixtures
+
+`type_check_fixture.rb` shares the JSON CLI runner used by the argument, ivar
+and context-result checks. It resolves an inherited `MRBC` before changing to
+the fixture directory, builds the report command, checks the subprocess status
+and parses stdout or an explicit `--out` report. Failures retain both output
+streams. Callers retain their temporary directories, source programs, signature
+configuration, tools overrides and feature-toggle runs; the helper neither
+combines closed worlds nor caches reports from different configurations.
+These checks keep their existing policy of running host assertions and skipping
+compiler fixtures when `MRBC` is unset.

@@ -79,11 +79,12 @@ empty output directory. See [ADR 0510](adr/0510-bc2cpp-ci-bounded-checks.md).
 
 `scripts/bc2cpp/constant_typing_check.rb` combines the frozen-container,
 Hash-merge, Array-sum and integer-arithmetic checks. It runs compatible positive
-fixtures as one program and shares the `Object#freeze` withdrawal program.
+fixtures and the unknown merge receiver as one program, and shares the
+`Object#freeze` withdrawal program. The unknown receiver adds no method definitions.
 Other redefinitions, prepends and unresolved mixins remain separate programs;
 the suite also checks integer intervals independently in process. All original
 assertions retain their individual labels. This reduces end-to-end analyses
-from 16 to 13. Each fixture uses an empty signature directory and requires a
+from 16 to 12. Each fixture uses an empty signature directory and requires a
 successful type-check exit status, so unrelated engine declarations cannot hide
 an analysis failure. See [ADR 0511](adr/0511-constant-typing-check-suite.md).
 
@@ -157,6 +158,16 @@ runs whole-program analysis once, then uses the existing `--units` mechanism
 bytecode stay in memory until that fixture runs. Different worlds never share
 analysis, and core-only runs retain their separate core-source polyfill world.
 There is no cache across invocations or changes to generator inputs.
+
+### Block iterator fixtures
+
+`block_iterator_direct_check.rb` retains its baseline generated C++, bytecode
+and registration report through the runtime comparison, avoiding a second
+identical closed-world generation. `BC2CPP_CXXFLAGS=-DMRB_USE_BIGINT` is still
+applied when compiling the driver; that variable is consumed only by the C++
+runtime helper, so it does not change generator inputs. Withdrawal worlds and
+`BC2CPP_BLOCK_CORE_DIRECT=0` each retain their own generation. All iterator,
+Fiber and GC scenarios still run in both interpreted and compiled VMs.
 
 ### Host Ruby uses YJIT for bc2cpp
 
