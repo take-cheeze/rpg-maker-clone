@@ -1022,6 +1022,8 @@
 
 - [Type checking](docs/bc2cpp-type-check.md) reuses context class decoding and skips
   discarded C++ assembly while retaining method compilation and report diagnostics.
+  Reusable leaf evaluations avoid repeated context dataflow without sharing root
+  graph admission or round budgets.
 
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
