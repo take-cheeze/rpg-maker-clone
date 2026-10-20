@@ -1020,6 +1020,9 @@
 
 ### Performance
 
+- [Type checking](docs/bc2cpp-type-check.md) reuses context class decoding and skips
+  discarded C++ assembly while retaining method compilation and report diagnostics.
+
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
