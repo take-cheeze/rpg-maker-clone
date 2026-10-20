@@ -1,1 +1,1 @@
-- Native direct calls: `Array#empty?`, `Array#length`, `Array#size`, `String#bytesize`, `String#empty?`, `String#hash`, `String#intern`, `String#to_f` and `String#to_sym` now call the mruby function directly on an exact receiver. Engine-internal; behaviour is unchanged.
+- Native direct calls: `String#intern` and `String#to_sym` now call the mruby function directly on an exact receiver. Engine-internal; behaviour is unchanged.
