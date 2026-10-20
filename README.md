@@ -1025,7 +1025,8 @@
   Reusable leaf evaluations avoid repeated context dataflow without sharing root
   graph admission or round budgets. Prepared RBS indexes share signature lookup
   across methods while keeping their inference state separate. Context argument layouts
-  are indexed per bytecode body while argument values remain context-specific.
+  and call-site keyword layouts are indexed per bytecode body while argument
+  values remain context-specific.
 
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
