@@ -10,9 +10,9 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # invisible to bc2cpp the same way every other native method in that file
 # is -- nothing to compile or override for those.
 #
-# This whole gem only exists in the build when RPGMAKER_BC2CPP is set on a
-# closed-world build (psp/wio/maix/closed, see build_config.rb; docs/adr/0466) -- it is
-# never part of the default build, and never of a desktop build.
+# This whole gem only exists in the build when RPGMAKER_BC2CPP is set on the
+# closed build (see build_config.rb; docs/adr/0466) -- it is never part of the
+# default build, and never of a desktop build.
 MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   spec.license = 'MIT'
   spec.author = 'take-cheeze'

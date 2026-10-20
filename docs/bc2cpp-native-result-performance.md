@@ -1,5 +1,7 @@
 # Native-result proof performance
 
+> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
+
 Native-result inference asks which registered class a receiver mask can hold
 and joins the native return facts for those classes. The generator now reuses
 an immutable snapshot of class/bit/position entries and tests individual bits

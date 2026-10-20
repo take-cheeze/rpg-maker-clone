@@ -486,10 +486,8 @@
 /* The RGSS runtime renders through lv_canvas (every Bitmap is a canvas buffer)
  * and base lv_obj containers, with lv_image's transform calls for sprite
  * zoom/rotation; nothing else is ever instantiated, so every other widget is
- * dead weight. Keeping the exact same minimal set (and the same disabled
- * themes/layouts below) as the PSP and Wio configs (app/psp/lv_conf.h,
- * app/wio/lv_conf.h) means all targets build the same LVGL, so the render path
- * cannot drift between desktop and the embedded builds. */
+ * dead weight. Every target builds this same set, so the render path cannot
+ * drift between desktop, wasm and android. */
 #define LV_USE_ANIMIMG    0
 #define LV_USE_ARC        0
 #define LV_USE_ARCLABEL   0
@@ -536,8 +534,7 @@
  * styles reference every widget, which is what pulls all those widget object
  * files into the link in the first place. The RGSS runtime styles every object
  * it creates explicitly (lv_obj_remove_style_all + lv_obj_set_style_*), so
- * dropping the theme changes nothing visually -- and matches the PSP/Wio
- * configs, which need it gone to shrink the EBOOT. */
+ * dropping the theme changes nothing visually. */
 #define LV_USE_THEME_DEFAULT 0
 #define LV_USE_THEME_SIMPLE 0
 #define LV_USE_THEME_MONO 0
@@ -691,11 +688,8 @@
 /* RGSS's Graphics.snap_to_bitmap (and the freeze/transition built on it) needs
  * to read back the rendered screen, which lv_snapshot_take does by re-rendering
  * the object tree into a fresh buffer — the only way that works on every
- * backend, since the SDL/terminal/wasm displays buffer differently. The module
- * costs code space, but this file is only the desktop/wasm config: the two
- * bare-metal targets carry their own minimal lv_conf.h (app/wio, app/psp) and
- * leave this unset, so lv_conf_internal.h's default of 0 keeps it out of their
- * flash — and mruby-rgss's `#if LV_USE_SNAPSHOT` fallback answers nil there. */
+ * backend, since the SDL/terminal/wasm displays buffer differently. mruby-rgss's
+ * `#if LV_USE_SNAPSHOT` fallback answers nil when this is off. */
 #define LV_USE_SNAPSHOT 1
 
 /*1: Enable system monitor component*/
@@ -818,8 +812,8 @@
 #define LV_USE_IMGFONT 0
 
 /*1: Enable an observer pattern implementation*/
-/* The RGSS runtime never registers observers; off to match the PSP/Wio
- * configs -- except Android and the browser build, whose FPS counter
+/* The RGSS runtime never registers observers; off -- except Android and the
+ * browser build, whose FPS counter
  * (LV_USE_SYSMON / LV_USE_PERF_MONITOR above) is built on the observer API. */
 #if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
 #define LV_USE_OBSERVER 1

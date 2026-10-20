@@ -1,12 +1,7 @@
 // Only ever reached through sixel_display_create, which only src/main.cxx
-// (the desktop entry point's --sixel flag) calls. terminal.cxx's own file
-// comment already excludes its real implementation -- the only caller this
-// file's encoder has -- on the same two targets for the same reason (no
-// controlling tty, no way to select a terminal backend at all); compiled out
-// here too rather than left linked with nothing left able to reach it.
+// (the desktop entry point's --sixel flag) calls.
 #include "sixel.hxx"
 
-#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL) && !defined(MAIX_BUILD)
 
 #include <cstdint>
 #include <cstring>
@@ -164,10 +159,3 @@ lv_display_t* sixel_display_create(int32_t hor_res,
   return terminal_display_create(hor_res, ver_res, scale, sixel_encode_frame);
 }
 
-#else  // PSP_BUILD || WIO_TERMINAL || MAIX_BUILD
-
-lv_display_t* sixel_display_create(int32_t, int32_t, int) {
-  return nullptr;
-}
-
-#endif  // !PSP_BUILD && !WIO_TERMINAL && !MAIX_BUILD

@@ -7,7 +7,7 @@
 namespace {
 window_title_hook_fn g_hook = nullptr;
 // Kept even when no hook is installed, so RGSS.window_title reads back what the
-// game asked for under every backend (the terminal ones, mrbtest, PSP, Wio).
+// game asked for under every backend (the terminal ones, mrbtest).
 std::string g_title;
 }  // namespace
 

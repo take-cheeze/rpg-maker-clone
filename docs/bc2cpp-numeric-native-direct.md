@@ -1,5 +1,7 @@
 # Proven Integer native conversions
 
+> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
+
 Closed-world bc2cpp can call `Integer#to_s` and `Integer#to_i` directly when
 NumericFlow proves the receiver is an Integer and the call has zero arguments.
 The proof covers fixnums and bigints, including values beyond a target's

@@ -25,287 +25,8 @@ UNI_ALGO_TRIM_DEFINES = %w[
   UNI_ALGO_DISABLE_SEGMENT_WORD
 ].freeze
 
-# docs/adr/0119: wio-only, per-gem build step. Rewrites a copy of each of
-# spec's own .rb files (never the checked-in source itself) to drop
-# $stderr.puts diagnostic statements before mrbc ever sees them --
-# strip_wio_debug_output.rb's own file comment covers the mechanism and why
-# it is a real Ripper-based rewrite rather than a regex/sed pass. A no-op
-# for every other target (build.name != 'wio'): desktop/wasm/psp keep every
-# line, including the ones mruby-rgss/mrblib/error_report.rb's Tee
-# specifically exists to capture into a crash report and a terminal log
-# console -- see that file's own comment. Call this *last* in a gem's own
-# spec block (only wio_strip_unreachable follows it), after every other spec.rbfiles filter (debug-tools/battle
-# trims, schema.rb's own blob swap, ...): it replaces each surviving
-# entry's path outright, so anything that still needs to subtract or
-# substitute an entry by its original path has to run before this does.
-def wio_strip_debug_rbfiles(spec)
-  return unless spec.build.name == 'wio'
-
-  strip_script = File.expand_path('scripts/wio/strip_debug_output.rb', __dir__)
-  out_dir = "#{spec.build_dir}/wio_debug_stripped"
-  spec.rbfiles = spec.rbfiles.map do |src|
-    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
-    out = "#{out_dir}/#{rel}"
-    file out => [src, strip_script] do |t|
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      ruby strip_script, src, out
-    end
-    out
-  end
-end
-
-# docs/adr/0129: wio-only, per-gem build step, the same shape as
-# wio_strip_debug_rbfiles above (and calling convention: last among filters
-# that subtract/substitute an rbfiles entry by its original path, before
-# wio_strip_debug_rbfiles itself). Rewrites a copy of a small, hand-picked
-# set of files to fold a handful of methods with exactly one real *engine*
-# caller into that call site -- strip_wio_inline_helpers.rb's own file
-# comment covers why this is a curated, hand-verified rewrite table rather
-# than a general single-caller inliner: scripts/**/*.rb's own CRuby-based
-# regression checks call several of these same methods directly by name,
-# so deleting them from the checked-in source would silently break real
-# test coverage that has nothing to do with wio. This rewrites only a
-# wio-only build-time copy; the checked-in definitions, and every other
-# target's build, are untouched.
-def wio_strip_inline_helpers(spec)
-  return unless spec.build.name == 'wio'
-
-  strip_script = File.expand_path('scripts/wio/strip_inline_helpers.rb', __dir__)
-  out_dir = "#{spec.build_dir}/wio_inline_helpers"
-  spec.rbfiles = spec.rbfiles.map do |src|
-    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
-    out = "#{out_dir}/#{rel}"
-    file out => [src, strip_script] do |t|
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      ruby strip_script, src, out
-    end
-    out
-  end
-end
-
-# ADR 0220: wio-only. Drops the RGSS.*_probe diagnostics from a build-time copy
-# of mruby-rgss/mrblib/lib.rb (see strip_wio_rgss_probes.rb). Call it before
-# wio_strip_bc2cpp_stubs, so it reads the checked-in source.
-def wio_strip_rgss_probes(spec)
-  return unless spec.build.name == 'wio'
-
-  strip_script = File.expand_path('scripts/wio/strip_rgss_probes.rb', __dir__)
-  lib_rb = "#{spec.dir}/mrblib/lib.rb"
-  out = "#{spec.build_dir}/wio_rgss_probes_stripped/mrblib/lib.rb"
-  raise "wio_strip_rgss_probes: #{lib_rb} is not in #{spec.name}'s rbfiles" unless spec.rbfiles.include?(lib_rb)
-
-  file out => [lib_rb, strip_script] do
-    FileUtils.mkdir_p File.dirname(out), verbose: true
-    ruby strip_script, lib_rb, out
-  end
-  spec.rbfiles = spec.rbfiles.map { |src| src == lib_rb ? out : src }
-end
-
-# ADR 0221: wio-only. The wio build links no mruby-time. This rewrites the
-# engine's Time uses in a build-time copy of each rbfile, and fails the build
-# if any Time reference survives (see strip_wio_clock.rb). Call it just
-# before wio_strip_debug_rbfiles, after wio_strip_inline_helpers.
-def wio_strip_clock(spec)
-  return unless spec.build.name == 'wio'
-
-  strip_script = File.expand_path('scripts/wio/strip_clock.rb', __dir__)
-  out_dir = "#{spec.build_dir}/wio_clock_stripped"
-  spec.rbfiles = spec.rbfiles.map do |src|
-    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
-    out = "#{out_dir}/#{rel}"
-    file out => [src, strip_script] do
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      ruby strip_script, src, out
-    end
-    out
-  end
-end
-
-# docs/adr/0144 (and its own host/wasm follow-up): the generalized version of
-# wio_strip_debug_rbfiles/wio_strip_inline_helpers above, this time for
-# RPGMAKER_BC2CPP=1's own real coverage -- deletes the whole `def ... end`
-# (see strip_wio_bc2cpp_stubs.rb's own file comment for why a stub body isn't
-# needed -- Ruby's own default `method_missing` covers the narrow
-# pre-override window this mechanism already has to verify is unreachable
-# per owner) of every method `compiled_gem`'s own real bc2cpp.rb run
-# registers a C++ override for, restricted to `owners` (a deliberately
-# bounded, per-gem-vetted subset -- see docs/adr/0144 and each gem's own
-# `wio_strip_bc2cpp_stubs` call site for how that list grew from an initial
-# `RGSS::Sprite`-only proof to its own current, per-gem-vetted scope).
-#
-# BUILD_NAME_SHARED_STRIP: wio-only again since docs/adr/0466: bc2cpp compiles
-# closed-world builds only, so the desktop/wasm `'host'` build no longer carries
-# a `compiled_gem` and must keep every def. The history below is why `'host'`
-# once ran it too. It used to also run for `'host'` -- the *same*, unnamed `MRuby::Build.new` this
-# file's own top-level block defines, which is not desktop-exclusive: its own
-# `cross` branch (see that block's own `if cross ... emscripten ...` comment)
-# is what actually produces the wasm build too, so `'host'` covers desktop
-# AND wasm identically, both real, size-sensitive final binaries (wasm's own
-# load-time cost from every extra byte a browser has to fetch, if anything,
-# more directly than desktop's). Deliberately NOT extended to `'psp'`/
-# `'maix'`/`'android'` here -- those cross targets never called this function
-# at all before this change, and adding them needs the same kind of
-# real-measurement verification this file's own history already required for
-# wio and for widening `owners:`, not a bare guard-list addition.
-#
-# A no-op unless BOTH `spec.build.name` is one of the above AND
-# `ENV['RPGMAKER_BC2CPP']` is set: deleting a real method with no
-# RPGMAKER_BC2CPP-installed C++ override in place to replace it would be a
-# live correctness regression (every real call would raise NoMethodError),
-# not just a missed size saving -- this must never fire for a build that does
-# not also carry the `compiled_gem` that makes the deleted method's call
-# sites unreachable in practice. Nothing about that guarantee is build-name-
-# specific: `wio_registered_methods.rb`'s own probe (below) re-derives the
-# registered set from a real bc2cpp.rb run every time this function runs, for
-# whichever build called it, so a `'host'` call is exactly as safe as a
-# `'wio'` one and shares the identical soundness argument.
-#
-# Ordering (the property this whole mechanism depends on for soundness):
-# this only ever rewrites `spec.rbfiles` for the *base* gem's own build
-# (mruby-rgss/mruby-lcf/mruby-rpg2k -- never a `*-compiled` gem, which has no
-# mrblib of its own to strip in the first place).
-# `compiled_gem`'s own bc2cpp.rb registry-building pass -- both its real
-# generation step (that gem's own mrbgem.rake) AND the probe this
-# function runs below (wio_registered_methods.rb) -- reads the
-# whole-program closed world via `closed_world_mrblib_srcs`, which
-# Dir-globs the base gem's real, checked-in mrblib directory directly
-# (e.g. `Dir["#{gems_root}/mruby-rgss/mrblib/*.rb"]`, see
-# tools/bc2cpp/compiled_gems.rb) -- NOT `spec.rbfiles` -- so nothing this
-# function does to `spec.rbfiles` can ever reach or perturb bc2cpp's own
-# registry-building input, in either direction: the registry (and every
-# MONO/POLY/embedding decision downstream of it) always sees the real,
-# unstripped source, exactly as required.
-#
-# Call this *before* wio_strip_debug_rbfiles/wio_strip_inline_helpers in a
-# gem's own spec block: all three share the same "last one wins on
-# `spec.rbfiles`'s surviving path for a given entry" convention (the other
-# two stay wio-only, so for a `'host'` call they are simply never reached at
-# all -- no interaction to reason about), and strip_wio_bc2cpp_stubs.rb's own
-# registered.tsv lookups key on method names exactly as bc2cpp.rb's own
-# diagnostic named them -- running this one first, against the real checked-in
-# source, keeps that lookup trivially correct regardless of what either
-# sibling step goes on to do to the same file afterward.
-def wio_strip_bc2cpp_stubs(spec, compiled_gem:, owners:)
-  return unless spec.build.name == 'wio' && ENV['RPGMAKER_BC2CPP']
-
-  repo_root = __dir__
-  probe_script = File.expand_path('tools/bc2cpp/wio_registered_methods.rb', __dir__)
-  strip_script = File.expand_path('scripts/wio/strip_bc2cpp_stubs.rb', __dir__)
-  compiled_gems_rb = File.expand_path('tools/bc2cpp/compiled_gems.rb', __dir__)
-  bc2cpp = File.expand_path('tools/bc2cpp/bc2cpp.rb', __dir__)
-
-  out_dir = "#{spec.build_dir}/wio_bc2cpp_stubbed"
-  registered_tsv = "#{out_dir}/#{compiled_gem}_registered.tsv"
-
-  # One real bc2cpp.rb run per `compiled_gem`, shared across every base
-  # gem that asks to strip from it -- Rake's own file-task memoization
-  # means a second wio_strip_bc2cpp_stubs call naming the same
-  # `compiled_gem` (from a different base gem's own mrbgem.rake, in the
-  # same build) reuses this exact task rather than re-running bc2cpp.rb
-  # a second time for the same answer.
-  # Every tools/bc2cpp/*.rb, not a hand list: the probe require_relative's
-  # never_called_registrations.rb/static_dispatch_unregistered.rb too, and an
-  # edit to either changes this TSV (same STALE_REQUIRE_RELATIVE_DEPS reason
-  # the compiled gems' own mrbgem.rake globs this directory).
-  # A hot-only build's probe uses the build's own list, so an excluded method's
-  # bytecode `def` -- its only implementation -- is never stripped (ADR 0214).
-  hot_methods = File.expand_path('tools/bc2cpp/hot_methods.txt', __dir__)
-  file registered_tsv => [probe_script, compiled_gems_rb, bc2cpp, hot_methods,
-                          *Dir[File.expand_path('tools/bc2cpp/*.rb', __dir__)],
-                          spec.build.mrbcfile].uniq do |t|
-    FileUtils.mkdir_p File.dirname(registered_tsv), verbose: true
-    mrbc = spec.build.mrbcfile.to_s
-    require compiled_gems_rb
-    env = { 'BC2CPP_HOT_METHODS' => (hot_methods if bc2cpp_hot_only_build?(spec.build)) }
-    cmd = Shellwords.join([RbConfig.ruby, probe_script, compiled_gem, repo_root, mrbc])
-    sh env, "#{cmd} > #{registered_tsv.shellescape}"
-  end
-
-  owners_csv = owners.join(',')
-  spec.rbfiles = spec.rbfiles.map do |src|
-    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
-    out = "#{out_dir}/#{rel}"
-    file out => [src, strip_script, registered_tsv] do |t|
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      ruby strip_script, registered_tsv, owners_csv, src, out
-    end
-    out
-  end
-end
-
-# docs/adr/0218: wio-only, per-gem build step, called after every other
-# rbfiles filter. Deletes each `def` scripts/wio/unreachable_methods.rb proves
-# nothing in the build can call. The analysis needs every closed-world gem's
-# final rbfiles, so one shared task per build runs it; each gem registers its
-# files here, and the task reads the rest of the build's gems when it runs,
-# after every gem is set up. Off under RPGMAKER_BC2CPP, whose compiled C++
-# still calls what the stripped Ruby no longer shows.
-# RPGMAKER_WIO_UNREACHABLE_HOST=1 runs it on the desktop build too, test-only:
-# desktop game Ruby (RGSS scripts, ...) is outside what the analysis sees.
-# RPGMAKER_WIO_KEEP_UNREACHABLE=1 turns it off (to measure it or bisect with it).
-WIO_UNREACHABLE_STATE = {}
-def wio_strip_unreachable(spec)
-  build = spec.build
-  host_test = build.name == 'host' && ENV['RPGMAKER_WIO_UNREACHABLE_HOST']
-  return unless (build.name == 'wio' || host_test) && !ENV['RPGMAKER_BC2CPP']
-  return if ENV['RPGMAKER_WIO_KEEP_UNREACHABLE']
-
-  root = __dir__
-  analysis = File.expand_path('scripts/wio/unreachable_methods.rb', root)
-  strip_script = File.expand_path('scripts/wio/strip_unreachable_methods.rb', root)
-  state = WIO_UNREACHABLE_STATE[build.name] ||= begin
-    dir = "#{build.build_dir}/wio_unreachable"
-    st = { tsv: "#{dir}/unreachable.tsv", world: {} }
-    deps = [analysis, strip_script, *Dir["#{root}/scripts/wio/strip_bc2cpp_stubs.rb"], *Dir["#{root}/tools/bc2cpp/*.rb"],
-            *Dir["#{MRUBY_ROOT}/{src,include,mrblib}/**/*.{c,h,rb}"],
-            *Dir["#{MRUBY_ROOT}/mrbgems/*/{src,core,include,mrblib}/**/*.{c,h,rb}"],
-            *Dir["#{root}/{app/wio,include,mruby-rgss/src,mruby-lcf/src,mruby-rpg2k/src}/**/*.{c,cc,cpp,cxx,h,hpp,hxx}"]]
-    deps += Dir["#{root}/src/**/*.{c,cc,cpp,cxx,h,hpp,hxx}"] if host_test
-    file st[:tsv] => deps do
-      require 'json'
-      require File.expand_path('tools/bc2cpp/compiled_gems.rb', root)
-      missing = BC2CPP_CLOSED_WORLD_GEMS - st[:world].keys
-      raise "wio_strip_unreachable: #{missing.join(', ')} never registered its rbfiles" unless missing.empty?
-
-      gems = build.gems.to_h { |g| [g.name, File.expand_path(g.dir)] }
-      native, ruby = bc2cpp_closed_world_outside_srcs(build.name, gems, root)
-      native += Dir["#{root}/src/**/#{BC2CPP_NATIVE_GLOB}"] if host_test
-      manifest = { build: build.name, gems: gems.keys, world: st[:world], ruby: ruby, native: native }
-      FileUtils.mkdir_p dir, verbose: true
-      File.write("#{dir}/manifest.json", JSON.pretty_generate(manifest))
-      ruby analysis, '--manifest', "#{dir}/manifest.json", '--out', st[:tsv]
-    end
-    st
-  end
-
-  out_dir = "#{spec.build_dir}/wio_unreachable"
-  # "mrblib/..." for the analysis's per-file keys; generated files by basename.
-  inputs = spec.rbfiles.map { |src| [src, src[%r{.*/(mrblib/.+)\z}, 1] || File.basename(src)] }
-  state[:world][spec.name] = inputs
-  Rake::Task[state[:tsv]].enhance(spec.rbfiles)
-  spec.rbfiles = inputs.map do |src, rel|
-    out = "#{out_dir}/#{rel}"
-    file out => [src, strip_script, state[:tsv]] do
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      ruby strip_script, state[:tsv], src, out
-    end
-    out
-  end
-end
-
 # Gems shared by every build variant (the actual game libraries).
-#
-# include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
-# QuickJS). Only the psp cross-build passes this: mruby-mvjs's mrbgem.rake
-# links against qjs (quickjs-ng, cross-compiled by the *root* CMakeLists.txt
-# for the desktop/wasm targets only -- app/psp's standalone CMake project has
-# no equivalent) and optionally EGL/GLESv2 for MZ's WebGL renderer, neither
-# of which exists for MIPS/pspdev. RPG Maker MV/MZ support was never in scope
-# for the PSP port (ADR 0010 only ever describes "starting the real RPG2k
-# scene tree"), so this drops a gem that cannot link rather than attempting
-# to port quickjs and a software GL stack to the PSP as a side effect of
-# wiring RPG2k up.
-def rpg_maker_gems(conf, include_mvjs: true)
+def rpg_maker_gems(conf)
   # uni-algo is C++-only, so only the C++ compiler needs these.
   conf.cxx.defines += UNI_ALGO_TRIM_DEFINES
   # Opt-in (docs/bc2cpp-nomethod-verify.md, ADR 0275): a dead bc2cpp_nomethod site aborts
@@ -334,17 +55,10 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # uninitialized constant Dir" the moment mruby-rpgxp's rgss_library.rb --
   # which patches Dir.glob over it -- loaded. Declare it for real.
   #
-  # wio/maix are the exceptions: their bare arm-none-eabi/riscv64-unknown-elf
-  # newlibs have no dirent implementation at all (a hard #error in
-  # <dirent.h>, unlike PSP's own pspsdk newlib -- confirmed for real on the
-  # Kendryte riscv64-unknown-elf toolchain, same as wio's arm-none-eabi),
-  # reachable there needs Dir at all in the first place: mruby-rpgxp is the
-  # only real caller (rgss_library.rb's Dir.glob patch) and it is already
-  # excluded from wio's/maix's own single_format_only gem set below, so unlike the
-  # desktop/android history above, there is no live NameError risk to guard
-  # against by keeping it. The native `closed` bc2cpp build (below) leaves it
-  # out too: its gem set is maix's.
-  conf.gem core: 'mruby-dir' unless %w[wio maix closed].include?(conf.name)
+  # The closed build leaves it out: bc2cpp's canonical world is that build's
+  # gem set (BC2CPP_CANONICAL_CORE_GEMS, tools/bc2cpp/compiled_gems.rb), and its
+  # single-format game has no Dir caller (mruby-rpgxp, the only one, is absent).
+  conf.gem core: 'mruby-dir' unless conf.name == 'closed'
   conf.gem core: 'mruby-numeric-ext'
   # Range#cover? lives here, not in core Range. Five call sites in mruby-rpg2k
   # (Game::Shop#equip?, the special-item checks in game.rb / item_menu.rb)
@@ -372,47 +86,28 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # String() / Array(), which community scripts reach for.
   #
   # Both this and mruby-random below exist only for a game's *own* Ruby -- the
-  # RGSS script host's Game_Battler/Game_Player/community scripts. wio ships
-  # mruby-rpg2k alone (single_format_only, below): RPG2000/2003 games carry
-  # no Ruby, the build links no compiler/eval to run any, and none of wio's
-  # gems (mruby-rpg2k/-lcf/-rgss mrblib and src, marshal, stringio, or the
-  # core gems' own mrblib) calls Integer()/Float()/String()/Array()/Hash()/
-  # fail/caller/__method__ or rand/srand/Random/shuffle/sample -- grepped. So
-  # on wio both gems are provably unreachable flash. See docs/adr/0202.
-  conf.gem core: 'mruby-kernel-ext' unless conf.name == 'wio'
+  # RGSS script host's Game_Battler/Game_Player/community scripts.
+  conf.gem core: 'mruby-kernel-ext'
   # Kernel#rand: a game's own scripts roll dice constantly — `Game_Player`
   # makes its encounter count with `rand(n) + rand(n) + 1` the moment New Game
   # places the party, damage variance uses it, and RPG::Weather scatters its
   # drops with it. This engine's own code deliberately uses seeded LCGs instead
   # (its runs are diffed frame by frame against the genuine runtimes), which is
   # why the gem was never needed until games ran their own code.
-  conf.gem core: 'mruby-random' unless conf.name == 'wio'
+  conf.gem core: 'mruby-random'
   # The Math module. `Game_Character#jump` — stock RMXP, run by every game the
   # moment an event or a move route jumps — sizes its arc with
   # `Math.sqrt(x_plus * x_plus + y_plus * y_plus).round`, and community scripts
   # reach for sin/cos to move things in circles. Not in the default gem set:
   # mruby keeps Math in its own core gem (mrbgems/math.gembox).
   #
-  # wio gets app/wio/mruby-math-wio instead: only Math::PI/E and Math.sin.
-  # Nothing there can call the rest -- no game Ruby exists on wio (see
-  # mruby-kernel-ext above) and the engine's own gems use only those two --
-  # while mruby-math's ~30 registered functions keep every libm routine
-  # behind them (erf, cbrt, the hyperbolics, ...) linked. 20.8 KB.
-  # scripts/wio/dropped_gems_check.rb keeps the engine inside that set. See
-  # docs/adr/0204.
-  if conf.name == 'wio'
-    conf.gem "#{MRUBY_ROOT}/../../app/wio/mruby-math-wio"
-  else
-    conf.gem core: 'mruby-math'
-  end
+  conf.gem core: 'mruby-math'
   # Time. Stock `Scene_Load` picks the newest save with `latest_time =
   # Time.at(0)` and `Window_SaveFile` stamps each slot with `file.mtime` — and
   # mruby-io's File#mtime answers a Time, so the save and load screens of every
   # game need this gem even though nothing in the engine's own code does. Only a
   # test dependency of mruby-io, so it does not come along for the ride.
-  # Not on wio: it has no set real-time clock and no game Ruby, and
-  # wio_strip_clock keeps the engine's own gems Time-free (ADR 0221).
-  conf.gem core: 'mruby-time' unless conf.name == 'wio'
+  conf.gem core: 'mruby-time'
   # mruby 4.0 removed the mruby-print gem; Kernel#p / #print live in the core
   # now, and mruby-io (above) supplies Kernel#print / #puts / #printf.
 
@@ -422,18 +117,14 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # raise "integer overflow" on load.
   conf.gem core: 'mruby-bigint'
 
-  # maix-only: the rgss_boot smoke firmware evaluates a probe string at
-  # runtime (mrb_load_string), which needs the compiler linked in. Production
-  # game loading uses precompiled bytecode (the mrbc this same build already
-  # produces), so nothing a shipped game runs needs this -- it can go again
-  # once the smoke grows past string eval, same as everything else this
-  # slice carries only for the link proof. `closed` carries maix's gem set.
-  conf.gem core: 'mruby-compiler' if %w[maix closed].include?(conf.name)
+  # Only the closed build carries the compiler: bc2cpp's source-loader check
+  # (BC2CPP_SOURCE_LOADER_CALL, tools/bc2cpp/compiled_gems.rb) runs against it.
+  conf.gem core: 'mruby-compiler' if conf.name == 'closed'
 
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
   conf.gem "#{MRUBY_ROOT}/../mruby-marshal"
 
-  # psp/wio/maix ship one RPG Maker format only, RPG2000/2003 (ADR 0061/0091/0097)
+  # The closed build ships one RPG Maker format only, RPG2000/2003 (ADR 0061/0091/0097)
   # -- unlike desktop/wasm/android, which run whichever format a game
   # directory on disk turns out to be (rpg_maker_gem_dispatch below picks the
   # matching one at runtime). mruby-rpgxp (RPG Maker XP), mruby-rpgvx (VX/VX
@@ -449,8 +140,8 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # shape tags, mruby-rpgxp's Dir.glob fallback, mruby-mvjs's JSON/HTML
   # scanning), so nothing left needs it once they're gone. See docs/adr/
   # 0098-rpg2k-single-format-trim.md.
-  # `closed` is the native bc2cpp build of maix's closed world (its stanza below).
-  single_format_only = %w[psp wio maix closed].include?(conf.name)
+  # `closed` is the native bc2cpp build of the closed world (its stanza below).
+  single_format_only = conf.name == 'closed'
   # docs/adr/0466: bc2cpp compiles closed-world programs only. RPGMAKER_BC2CPP=1
   # adds the compiled gems to the single-format builds, whose only Ruby is the
   # closed world; every other build (desktop, wasm, android, and the bootstrap
@@ -501,10 +192,10 @@ def rpg_maker_gems(conf, include_mvjs: true)
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"
     conf.gem "#{MRUBY_ROOT}/../../mruby-wolf"
-    conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs" if include_mvjs
+    conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs"
   end
 
-  rpg_maker_gem_dispatch(conf, include_mvjs: include_mvjs, single_format_only: single_format_only)
+  rpg_maker_gem_dispatch(conf, single_format_only: single_format_only)
 end
 
 # mrb_open() eagerly runs *every* configured gem's init -- defining every
@@ -532,8 +223,8 @@ end
 # entry points mrb_init_mrbgems already calls, so it costs nothing beyond
 # which function calls which of them. See src/main.cxx's "Deferred per-maker
 # gem init" section for the call side.
-def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
-  # single_format_only (psp/wio/maix, see rpg_maker_gems) compiles mruby-rpg2k
+def rpg_maker_gem_dispatch(conf, single_format_only: false)
+  # single_format_only (closed, see rpg_maker_gems) compiles mruby-rpg2k
   # alone -- the closure/dispatch machinery below still runs, generating a
   # trivial rpg_maker_init_rpg2k_gem with nothing to dispatch *between*, so
   # the two builds keep exactly one code path instead of a parallel
@@ -541,8 +232,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
   maker_gem_names = if single_format_only
                        %w[mruby-rpg2k]
                      else
-                       %w[mruby-rpg2k mruby-rpgxp mruby-rpgvx mruby-wolf] +
-                         (include_mvjs ? %w[mruby-mvjs] : [])
+                       %w[mruby-rpg2k mruby-rpgxp mruby-rpgvx mruby-wolf mruby-mvjs]
                      end
   src = "#{conf.build_dir}/mrbgems/rpg_maker_gem_dispatch.c"
 
@@ -649,7 +339,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
 
       # single_format_only's maker_gem_names is just ['mruby-rpg2k'], so
       # rpgxp/rpgvx/wolf/mvjs all come out nil here -- guard each of their
-      # blocks the same way mvjs already had to (include_mvjs: false), rather
+      # blocks the same way mvjs already had to, rather
       # than assuming every maker this dispatch has ever known about is
       # still active.
       rpg2k, rpgxp, rpgvx, wolf, mvjs = maker_gem_names.zip(makers).to_h.values_at(
@@ -701,37 +391,15 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
   file conf.objfile(src.sub(/\.c$/, '')) => src
 end
 
-# When cross-compiling (Emscripten, Android, or the Wio Terminal below) the
+# When cross-compiling (Emscripten, Android, or the closed bc2cpp build below) the
 # host build only exists to produce the `mrbc` bytecode compiler, which must
 # run natively during the cross build; the actual libmruby.a is produced by
 # the cross build.
 emscripten = ENV['MRUBY_TARGET'] == 'emscripten'
-wio = ENV['MRUBY_TARGET'] == 'wio'
-maix = ENV['MRUBY_TARGET'] == 'maix'
-psp = ENV['MRUBY_TARGET'] == 'psp'
 android = ENV['MRUBY_TARGET'] == 'android'
-# Not a device: the maix closed world built natively for bc2cpp (its stanza below).
+# The closed bc2cpp world, built natively (its stanza below).
 closed = ENV['MRUBY_TARGET'] == 'closed'
-cross = emscripten || wio || maix || psp || android || closed
-
-if wio
-  # docs/adr/0112: wio's own RAM/flash margin (ADR 107/111) is tight enough
-  # that the GOTHIC (JIS0208 kanji) face's SD offload (ADR 110) -- previously
-  # a no-op-unless-set escape hatch, same as every other opt-in knob in this
-  # series -- is now this target's *default*, not something a caller has to
-  # remember to ask for. `||=` so an explicit override (e.g. a measurement
-  # build that wants the old compiled-in GOTHIC array back) still wins.
-  # SHINONOME_GOTHIC_SD_FILE is read by gen_shinonome_data.rb from inside
-  # mruby-rgss's own build_dir (mrbgem.rake's `chdir:`), so a bare filename
-  # lands there rather than needing an absolute path computed this early.
-  # RGSS_SHINONOME_GOTHIC_SD_PATH is the on-device path baked into the
-  # firmware; no real SD deployment step writes gothic.bin there yet (ADR
-  # 110's own "what was not done" section), so this only fixes what the
-  # *build* produces -- getting the generated file onto a real card remains
-  # future work.
-  ENV['SHINONOME_GOTHIC_SD_FILE'] ||= 'gothic.bin'
-  ENV['RGSS_SHINONOME_GOTHIC_SD_PATH'] ||= '/gothic.bin'
-end
+cross = emscripten || android || closed
 
 MRuby::Build.new do |conf|
   toolchain :gcc
@@ -744,8 +412,8 @@ MRuby::Build.new do |conf|
     # Android's NDK clang++ -- root CMakeLists.txt's ANDROID branch configures
     # this whole project against the NDK toolchain, this "host" build included,
     # so without the override toolchain :gcc's own ENV['CC']/ENV['CXX'] fallback
-    # would pick that cross compiler right back up). For the Wio and PSP builds
-    # the host toolchain is invoked natively already, so the default cc/c++ are
+    # would pick that cross compiler right back up). For the closed build the
+    # host toolchain is invoked natively already, so the default cc/c++ are
     # fine.
     if emscripten || android
       conf.cc.command = ENV['HOST_CC'] || 'cc'
@@ -777,9 +445,9 @@ MRuby::Build.new do |conf|
 
     conf.gem core: 'mruby-bin-mrbc'
     rpg_maker_gems(conf)
-    # MRUBY_FORCE_NO_CXX_EXCEPTION (set by scripts/maix/mruby_build.bash for
-    # the maix cross target) also stops load_gems.rb from enabling C++
-    # exceptions in THIS host build -- which then compiles the same .cxx gem
+    # MRUBY_FORCE_NO_CXX_EXCEPTION (a manual escape hatch, unset by the
+    # closed build's scripts/bc2cpp/closed_build.bash) also stops load_gems.rb
+    # from enabling C++ exceptions in THIS host build -- which then compiles the same .cxx gem
     # sources exception-free-or-not per its own flags below. Without the flag
     # they keep referencing the C++ runtime (__cxa_throw and friends) while
     # the host link stays plain gcc, and mrbc fails to link. Our sources use
@@ -788,7 +456,7 @@ MRuby::Build.new do |conf|
     conf.cxx.flags << '-fno-exceptions' if ENV['MRUBY_FORCE_NO_CXX_EXCEPTION']
     # mruby 4.0 always enables presym (MRB_NO_PRESYM / disable_presym were
     # removed) and serializes bytecode symbols by name, so the host mrbc and the
-    # cross targets (emscripten, wio) stay compatible even though their presym
+    # cross targets (emscripten, android) stay compatible even though their presym
     # tables differ.
   else
     enable_test
@@ -801,496 +469,20 @@ MRuby::Build.new do |conf|
   end
 end
 
-if wio
-  # Cross build for the Wio Terminal (Seeed, ATSAMD51 / Cortex-M4F). Produces a
-  # libmruby.a that the PlatformIO firmware (app/wio, platformio.ini) links. The
-  # host build above supplies mrbc.
-  #
-  # NOTE: this is the starting point for the P1/P2 work in
-  # docs/adr/0007-wio-terminal-port.md, not a finished, fitting build. The full
-  # gem set (onigmo via mruby-onig-regexp, uni-algo) is expected to overrun the
-  # 512 KB internal flash; trimming those (P2) is a follow-up. It is only built
-  # when MRUBY_TARGET=wio, so it never affects the desktop or wasm builds.
-  MRuby::CrossBuild.new('wio') do |conf|
-    toolchain :gcc
-
-    # A real `pio run -e wio_rgss_boot` link surfaced a whole class of bogus
-    # undefined references (__aeabi_read_tp, from stack-protector code no
-    # bare-metal newlib here implements) that turned out to have nothing to
-    # do with mruby-rgss at all: a bare `arm-none-eabi-gcc` resolves via PATH
-    # to this machine's distro package (13.2.1, built with
-    # -fstack-protector-strong baked into ITS OWN defaults) rather than
-    # PlatformIO's own bundled toolchain (7.2.1, which the final link always
-    # uses) -- two different compiler majors, silently disagreeing on ABI
-    # and codegen defaults, is not something any amount of flag-matching can
-    # paper over. Prefer PlatformIO's own copy so the object files this rake
-    # build produces are built by the exact same compiler that links them;
-    # fall back to plain PATH resolution (the prior behaviour) where that
-    # package isn't installed, e.g. a standalone measurement-only build (see
-    # RGSS_WIO_STUB_HEADERS above) never needs a real link to agree with.
-    pio_gcc_bin = "#{ENV['HOME']}/.platformio/packages/toolchain-gccarmnoneeabi/bin"
-    gcc_prefix = Dir.exist?(pio_gcc_bin) ? "#{pio_gcc_bin}/" : ''
-    conf.cc.command = "#{gcc_prefix}arm-none-eabi-gcc"
-    conf.cxx.command = "#{gcc_prefix}arm-none-eabi-g++"
-    conf.linker.command = "#{gcc_prefix}arm-none-eabi-gcc"
-    conf.archiver.command = "#{gcc_prefix}arm-none-eabi-ar"
-
-    # onigmo's (old) config.sub needs a triplet it recognizes to enter
-    # cross-compile mode; arm-none-eabi is such a bare-metal triple.
-    conf.host_target = 'arm-none-eabi'
-
-    enable_debug
-
-    # enable_debug also appends ` -g` to mrbc's own compile options (default
-    # "-B%{funcname} -o-", see mruby's Command::Mrbc#initialize), which embeds
-    # line-number/local-variable debug tables in every gem's compiled mrblib
-    # bytecode -- the game's own Ruby (mruby-rpg2k, mruby-rgss, mruby-lcf,
-    # mruby's own core mrblib, ...), not mruby's C core. Unlike the C-level
-    # -g3 kept below (native DWARF, never mapped into RAM -- ELF debug
-    # sections sit outside every PT_LOAD segment), mrb_load_irep parses these
-    # Ruby-level tables into live heap structures the moment the interpreter
-    # boots -- docs/adr/0047-psp-memory-budget.md already measured this at
-    # roughly 240-350 KB of live RAM for the very same rpg2k+lcf+rgss mrblib
-    # stack on PSP, and made this same fix there. Wio never got the sibling
-    # fix: real host-side `mrbc` runs on this project's own rpg2k mrblib (16
-    # files, minus the debug-menu/battle files already trimmed above) show
-    # `-g` alone costs 85,188 bytes on that slice alone, before rgss/lcf/core
-    # are even counted -- and unlike PSP's ~24 MB+ budget, wio's 192 KB RAM
-    # has nowhere to absorb a boot-time cost of that shape at all (docs/adr/
-    # 0111 already found one hidden-RAM bug invisible to every static relink
-    # measurement this series relies on; this is the same class of risk).
-    conf.mrbc.compile_options =
-      conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' }.join(' ')
-
-    # --remove-lv (MRB_DUMP_NO_LVAR) drops a *second* debug-only table, the
-    # separate local-variable name array -- it exists purely for
-    # introspection/backtraces (`Kernel#local_variables`, a debugger) this
-    # firmware never calls, confirmed by grepping every rpg2k/rgss/lcf .rb
-    # file for eval/instance_eval/class_eval/binding, all absent. Passing it
-    # to mrbc alone does *not* work here, though: this build's own
-    # Command::Mrbc#run always adds `-S` (mrbgem.rake's `cdump: true`,
-    # mruby's default), which routes through mruby's own src/cdump.c rather
-    # than the *binary* .mrb path (src/dump.c) -- and cdump.c's own two
-    # `if (irep->lv)` checks never look at MRB_DUMP_NO_LVAR at all, unlike
-    # dump.c's `lv_defined = (flags & MRB_DUMP_NO_LVAR) ? FALSE : ...`. A
-    # real gap in mruby's own C-struct dumper (confirmed: a real relink with
-    # 3rd/mruby/src/cdump.c locally patched to also check the flag recovers
-    # a further 43,416 bytes on top of the `-g` strip above), not something
-    # fixable from this file alone -- 3rd/mruby is the real upstream
-    # mruby/mruby, not a fork this project can push a patch to. Get the same
-    # effect from this side of the fence instead: wrap conf.mrbc's own `run`
-    # to strip the `<name>_lv_<N>` array mruby's compiler always populates
-    # (mrbgems/mruby-compiler/core/codegen.c does this unconditionally for
-    # every scope with named locals -- there is no compile-time flag to stop
-    # it at the source) out of the C source cdump.c already wrote, the same
-    # way ADR 111 patched a build-time generator rather than the C++ it fed
-    # instead of leaving the runtime construction broken.
-    conf.mrbc.define_singleton_method(:run) do |out, *args, **kwargs|
-      method(:run).super_method.call(out, *args, **kwargs)
-      path = out.path
-      src = File.read(path)
-      src.gsub!(/^mrb_DEFINE_SYMS_VAR\(\w+_lv_\d+, .*\);\n/, '')
-      src.gsub!(/^(  )(\w+_lv_\d+),\n/, "\\1NULL,\t\t\t\t\t/* lv */\n")
-      File.write(path, src)
-    end
-
-    # Cortex-M4F with hardware single-precision FPU. Must be identical on the
-    # compile and link lines so the mruby objects match the firmware's ABI.
-    cpu_flags = %w[-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16]
-
-    # Dev/measurement escape hatch, a no-op unless set: wio.cxx's real HAL
-    # (mruby-rgss/src/wio.cxx) needs Arduino.h/TFT_eSPI.h, which normally only
-    # exist inside a PlatformIO build (app/wio's own env:wio already has
-    # them). Pointing this at a directory with minimal declaration-only stubs
-    # of both lets `MRUBY_TARGET=wio rake` produce a real, complete libmruby.a
-    # standalone -- e.g. for a real arm-none-eabi-size measurement -- without
-    # a PlatformIO project. NOT suitable for an actual PlatformIO link: TFT_eSPI
-    # is a real stateful C++ class (fields, a Print base), and wio.cxx embeds a
-    # `TFT_eSPI g_tft` global by value, so the object's size and layout must
-    # match the real class exactly -- a declarations-only stub compiles fine
-    # but silently gives g_tft the wrong (too small, unrelated) layout, which
-    # the real library's own methods then read/write past. See
-    # RGSS_WIO_ARDUINO_INCLUDES below for the real-headers alternative this
-    # implies. Nothing in this repo sets either by default.
-    [conf.cc, conf.cxx].each { |t| t.include_paths << ENV['RGSS_WIO_STUB_HEADERS'] } if ENV['RGSS_WIO_STUB_HEADERS']
-
-    # Real-link escape hatch, a no-op unless set: points wio.cxx's compile at
-    # the actual PlatformIO framework headers (Arduino.h, TFT_eSPI.h and their
-    # own transitive includes -- CMSIS, the SAMD51 device headers, the board's
-    # variant.h) instead of the measurement-only stub above, so the resulting
-    # wio.o is truly ABI-compatible with a real `pio run -e wio_rgss_boot`
-    # link: same extern "C" linkage and parameter types for pinMode/
-    # digitalRead/delay/millis (the stub had the wrong types and was missing
-    # extern "C" entirely, so the linker looked for mangled C++ symbols no
-    # framework object ever defines), and the same true TFT_eSPI layout.
-    # RGSS_WIO_ARDUINO_INCLUDES is a colon-separated list of -I directories --
-    # see docs/adr/0103-wio-mruby-rgss-first-real-build.md's follow-up ADR for
-    # the exact set (extracted from a real `pio run -v` compile of a
-    # PlatformIO-framework file, since the PlatformIO package cache paths are
-    # host- and package-version-specific and cannot be hardcoded here). The
-    # defines below are true Wio Terminal board/toolchain constants, not host
-    # paths, so they are hardcoded rather than threaded through the
-    # environment -- they only apply once real Arduino headers are actually
-    # in play.
-    if ENV['RGSS_WIO_ARDUINO_INCLUDES']
-      ENV['RGSS_WIO_ARDUINO_INCLUDES'].split(':').each { |p| conf.cxx.include_paths << p }
-      conf.cxx.defines +=
-        %w[PLATFORMIO=60200 __SAMD51P19A__ SEEED_WIO_TERMINAL SEEED_GROVE_UI_WIRELESS __SAMD51__
-           __FPU_PRESENT ARM_MATH_CM4 VARIANT_QSPI_BAUD_DEFAULT=50000000 TXRXLED_ENABLE ROLE=0
-           ARDUINO=10805 F_CPU=120000000L USBCON USB_VID=0x2886 USB_PID=0x802D ARDUINO_ARCH_SAMD
-           USB_CONFIG_POWER=100]
-    end
-
-    # Not gated behind RGSS_WIO_ARDUINO_INCLUDES above: this is a real,
-    # always-applicable fix, found the same way (a real `pio run -e
-    # wio_rgss_boot` link). GCC's C++11 thread-safe static-local-variable
-    # guards (mruby-rgss's stb_image-derived decoders and mruby-lcf's cp932
-    # conversion both have function-local statics with non-trivial init)
-    # compile, on ARM EABI, to an inline fast path that reads the current
-    # thread id via __aeabi_read_tp -- a helper no arm-none-eabi newlib
-    # multilib in this toolchain actually defines (single-threaded bare-metal
-    # firmware has no thread pointer to read), so the link fails outright.
-    # PlatformIO's own Arduino framework compiles already build every C++
-    # file with this same flag for the same reason; libmruby.a just never
-    # picked it up before there was a real, non-stub link to catch it.
-    conf.cxx.flags << '-fno-threadsafe-statics'
-
-    # mruby-lcf and mruby-rgss both need C++17 (uni-algo's own conv.h hard-
-    # errors below it, and mruby-lcf/src/lcf.cxx includes <optional>). Every
-    # other cross build here (host, wasm) gets this for free because the
-    # system/emsdk compiler's OWN default standard happens to already be new
-    # enough -- but PlatformIO's bundled arm-none-eabi-g++ is GCC 7.2.1,
-    # whose default (gnu++14) is not, and using PlatformIO's own toolchain
-    # (see the gcc_prefix comment above) is exactly what surfaced this.
-    conf.cxx.flags << '-std=gnu++17'
-
-    # docs/adr/0120/0122: unlike -fno-exceptions (reverted -- mruby's own
-    # core needs real C++ exceptions whenever any gem has a C++ source),
-    # -fno-rtti has no auto-re-enabling gem-loader hook to fight and no
-    # other blocker once lib.cxx's own one real `typeid` use (a
-    # per-type diagnostic label on each DataType<T>::data_type, ADR 122)
-    # is replaced with a plain static name each wrapped type supplies
-    # itself. Matches PlatformIO's own Arduino framework build
-    # (platformio.ini's own comment on this).
-    conf.cxx.flags << '-fno-rtti'
-
-    [conf.cc, conf.cxx].each do |t|
-      t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
-      t.flags += cpu_flags
-      # mruby's own gcc.rake defaults to -O3 (dropping only the debug
-      # build's -O0 above leaves that -O3 in place, same as PSP's own cross
-      # build); PSP has UMD-backed storage to spare, but the Wio Terminal's
-      # 512 KB internal flash does not -- a real `pio run -e wio_rgss_boot`
-      # link overflows FLASH by over 1.5 MB even before this. -Os (GCC's
-      # last -O flag wins) trades some speed for meaningfully smaller code,
-      # the same tradeoff PlatformIO's own Arduino framework build already
-      # makes for this board. Still nowhere near enough on its own to fit --
-      # see docs/adr/0103-wio-mruby-rgss-first-real-build.md's follow-up ADR.
-      t.flags << '-Os'
-      # docs/adr/0135: -flto was tried (docs/adr/0133) and reverted -- a
-      # real, previously-unverified regression, not a size/speed tradeoff.
-      # Booting the real, linked env:wio/env:wio_rgss_boot under this
-      # project's own Renode emulator (docs/adr/0094) with -flto in play
-      # aborts on a wild jump moments after reset, on every build that
-      # includes it, isolated by testing GCC 14.2.1 and -fmerge-all-constants
-      # independently (both boot fine alone). Root cause, confirmed by
-      # reading the linked ELF directly: with -flto, the .isr_vector section
-      # -- the ARM Cortex-M reset/interrupt vector table a real chip reads at
-      # boot for its initial SP and Reset_Handler address -- is missing from
-      # the binary entirely, not just misplaced. PlatformIO's vendored
-      # Arduino/SAMD startup code (this project does not own it) references
-      # that array only via the linker script's own KEEP(*(.isr_vector)),
-      # never through a real call-graph edge or an explicit
-      # __attribute__((used)) -- exactly the shape LTO's own whole-program
-      # dead-code elimination (which runs before the final link, earlier
-      # than KEEP()/--gc-sections ever get a say) is liable to discard. Not
-      # a Renode-only artifact: a real SAMD51 boots by reading the identical
-      # fixed vector table location, so this would very likely have kept
-      # the real board from booting at all despite linking cleanly and
-      # reporting a correctly-sized image -- ADR 133 was verified only by
-      # linker output size and CI compile success, never actually run.
-      # -fno-ident/-fmerge-all-constants below are unaffected (each verified
-      # independently to boot correctly on their own) and stay.
-      # Free: drops the per-object GCC-version comment string.
-      t.flags << '-fno-ident'
-      # More aggressive than the default -fmerge-constants: deduplicates
-      # equal-valued constants across translation units too. GCC's own docs
-      # flag this as not strictly conforming for constants whose identity
-      # could matter (distinct addresses expected for two "different"
-      # equal-valued literals) -- nothing in this project's own code relies
-      # on that.
-      t.flags << '-fmerge-all-constants'
-      # docs/adr/0134 measurement only: forcing mruby's own core off the
-      # real-C++-exception path (see the "Tried and reverted" comment
-      # below) needs -fno-exceptions too, once MRUBY_FORCE_NO_CXX_EXCEPTION
-      # has kept load_gems.rb from ever calling enable_cxx_exception.
-      t.flags << '-fno-exceptions' if ENV['MRUBY_FORCE_NO_CXX_EXCEPTION']
-      # Neither this rake-driven compile nor mruby's own gcc.rake defaults set
-      # these, so every mrbgem's whole .text/.data/.bss lands in one section
-      # per object file -- env:wio_rgss_boot's real link already passes
-      # `-Wl,--gc-sections` (PlatformIO's own Arduino/LVGL build already
-      # needs it for the same reason), but that can only drop a section
-      # entirely, so one live symbol anywhere in a .o keeps every other
-      # unused function and global data table in that same file too. Splitting
-      # each function/global into its own section lets --gc-sections actually
-      # prune at that granularity instead. Confirmed real, not just reasoned
-      # about in the abstract: a real env:wio_rgss_boot link's own flash
-      # overflow dropped by 196,012 bytes from this alone, and
-      # mruby-rgss/src/iterm.cxx and sixel.cxx (dead PNG/sixel-encoding code
-      # on wio -- see terminal.cxx's own file comment) are now provably
-      # absent from the linked image's own map file, closing
-      # docs/adr/0103's own flagged gap without ever needing an explicit
-      # PSP_BUILD/WIO_TERMINAL guard on either file. See
-      # docs/adr/0105-wio-flash-shrink-sections-and-font-subsetting.md.
-      t.flags << '-ffunction-sections' << '-fdata-sections'
-      # Bare-metal newlib falls through mruby's string.c to a 1 MiB default cap
-      # (see below); game data (maps/images loaded as strings, and whole packed
-      # archives read in one shot by RGSSAD.open) can exceed that many times
-      # over, so disable the cap outright (0 = unlimited), matching what
-      # mruby already does for free on Linux/macOS/BSD. Actual RAM fit is a
-      # separate concern handled by the streaming rework (P3).
-      t.defines << 'MRB_STR_LENGTH_MAX=0'
-      # The micro-controller tuning knobs from mruby's own mrbconf.h (the
-      # MRB_CONSTRAINED_BASELINE_PROFILE set, minus MRB_NO_METHOD_CACHE which
-      # costs dispatch speed on a CPU-bound handheld): a smaller GC heap page
-      # (256 vs 1024 objects) cuts the slack an under-filled last page wastes,
-      # and a smaller initial khash bucket count (16 vs 32) shrinks the symbol
-      # and instance-variable tables that start nearly empty. Both are pure
-      # footprint wins with no behaviour change -- the same object graph just
-      # allocates in smaller, tighter units. See
-      # docs/adr/0047-psp-memory-budget.md.
-      t.defines << 'MRB_HEAP_PAGE_SIZE=256'
-      t.defines << 'KHASH_INITIAL_SIZE=16'
-      # No lv/debug_info fields in mrb_irep: this build already compiles its
-      # Ruby without -g and strips lv (above), and links no compiler/binding.
-      # 8 bytes of flash per irep; see docs/adr/0225.
-      t.defines << 'MRB_NO_IREP_DEBUG'
-      # Mirrors PSP_BUILD below: gates the wio.cxx HAL in the mruby-rgss gem
-      # on and the desktop-only sixel/iTerm2 terminal.cxx backend off (that
-      # file's own guard is `#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL)`).
-      # PlatformIO's app/wio build already defines this for the app half
-      # (platformio.ini's `-DWIO_TERMINAL`); this rake-driven libmruby.a needs
-      # its own copy since it never sees that build's flags.
-      t.defines << 'WIO_TERMINAL'
-      # docs/adr/0115 already found and stripped mrbc's own `-g` (Ruby-level
-      # line-number/local-variable debug tables baked into compiled
-      # bytecode); enable_debug's `-g3` on this same cc/cxx loop is its
-      # harmless C-level sibling (native DWARF, never mapped into RAM -- ELF
-      # debug sections sit outside every PT_LOAD segment, same reasoning
-      # docs/adr/0047-psp-memory-budget.md already gave). MRB_DEBUG is a
-      # third, different thing enable_debug also defines here: a C
-      # preprocessor flag (mruby.h) that turns mrb_assert(...) -- used
-      # ~100 times across mruby's own core (vm.c/gc.c/class.c/dump.c/...,
-      # not counting mrbgems) -- from a no-op into a real libc assert(),
-      # each one a real branch plus a string literal holding the assertion
-      # source text and file/line for every call site. Real, unavoidable
-      # flash cost for checks that would only ever fire on an actual mruby
-      # VM/GC bug (this project's own code, not a game's), which a device
-      # with no attached debugger and no serial console wired to it in this
-      # firmware could not usefully report anyway -- a failed assert here
-      # just calls abort() into nothing. Not part of ADR 115's own fix (a
-      # different mechanism, mrbc vs cc/cxx), so removed separately.
-      t.defines.delete('MRB_DEBUG')
-    end
-    conf.linker.flags += cpu_flags
-
-    # Own HAL for mruby-io (see its own file comment): this board's bare
-    # newlib is close enough to POSIX for plain file I/O (open/read/write/
-    # lseek/fstat/unlink all compile and, once app/wio/src/sd_syscalls.cxx's
-    # WIO_WITH_SD syscalls are linked in by the firmware, work), but has none
-    # of hal-posix-io's wider POSIX surface (lstat, symlinks, fork/exec,
-    # select) -- and none of that surface is reachable from a real
-    # RPG2000/2003 game running through this exporter's own file access
-    # anyway. Added before rpg_maker_gems (which pulls in mruby-io itself) so
-    # mruby-io's own "no HAL specified" auto-selection never fires here.
-    conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
-
-    rpg_maker_gems(conf)
-
-    # Tried and reverted: -fno-exceptions, matching PlatformIO's own Arduino
-    # framework build (platformio.ini's own comment on this). This project's
-    # own .cxx files (mruby-rgss/src, mruby-lcf/src, app/wio/src) have no
-    # try/catch/throw at all, but that turned out not to be the real
-    # question -- mruby's own gem loader (lib/mruby/build/load_gems.rb)
-    # auto-enables MRB_USE_CXX_EXCEPTION the moment any gem has a .cxx
-    # source (mruby-rgss/mruby-lcf/mruby-marshal all do here), which
-    # compiles mruby's own core error.c as C++ (build/wio/.../error-cxx.cxx)
-    # and implements Ruby's own begin/rescue/ensure -- MRB_TRY/MRB_CATCH,
-    # src/throw.h -- as real C++ throw/catch rather than setjmp/longjmp,
-    # specifically because longjmp does not run C++ destructors and would
-    # leak/corrupt any C++ object on the stack being unwound through. A
-    # real, load-bearing use of exceptions this build cannot do without:
-    # -fno-exceptions fails to even compile mruby's own core
-    # ("'e' was not declared in this scope" inside MRB_CATCH's own
-    # expansion). Not attempted further.
-  end
-end
-
-if maix
-  # Cross build for the Sipeed Maix Amigo (Kendryte K210, RV64IMACFD).
-  # Produces a libmruby.a that the PlatformIO firmware (app/maix,
-  # platformio.ini env:maix_amigo) links; the host build above supplies mrbc.
-  #
-  # NOTE: like the PSP/Wio builds this is the starting point for the port
-  # (see app/maix/README.md), not a finished, linked build. The bring-up
-  # firmware links neither libmruby nor any input bridge yet; this cross
-  # target exists so the interpreter can be layered on in the next slice.
-  # It is only built when MRUBY_TARGET=maix, so it never affects the desktop
-  # or wasm builds.
-  MRuby::CrossBuild.new('maix') do |conf|
-    toolchain :gcc
-
-    # Same two-compiler problem the wio stanza above documents: prefer
-    # PlatformIO's own Kendryte toolchain (GCC 8.2.0, the exact compiler the
-    # final firmware link uses) so the object files this rake build produces
-    # agree with it; fall back to plain PATH resolution (e.g. a hand-
-    # installed Kendryte toolchain) where PlatformIO never ran.
-    pio_gcc_bin = "#{ENV['HOME']}/.platformio/packages/toolchain-kendryte210/bin"
-    gcc_prefix = Dir.exist?(pio_gcc_bin) ? "#{pio_gcc_bin}/" : ''
-    conf.cc.command = "#{gcc_prefix}riscv64-unknown-elf-gcc"
-    conf.cxx.command = "#{gcc_prefix}riscv64-unknown-elf-g++"
-    conf.linker.command = "#{gcc_prefix}riscv64-unknown-elf-gcc"
-    conf.archiver.command = "#{gcc_prefix}riscv64-unknown-elf-ar"
-
-    # A triplet mruby's own build (and mruby-io's HAL selection) accepts for
-    # a bare-metal cross; the real compiler is still riscv64-unknown-elf-gcc.
-    conf.host_target = 'riscv64-unknown-elf'
-
-    enable_debug
-
-    # Strip mrbc's own `-g` (Ruby-level line-number tables baked into the
-    # bytecode, parsed into live heap at boot) the same way the psp/wio
-    # stanzas do -- see the wio stanza's own comment for the measurement.
-    conf.mrbc.compile_options =
-      conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' }.join(' ')
-
-    # Drop the local-variable name arrays out of cdump'd sources the same way
-    # (same mechanism and reasoning -- see the wio stanza's own comment).
-    conf.mrbc.define_singleton_method(:run) do |out, *args, **kwargs|
-      method(:run).super_method.call(out, *args, **kwargs)
-      path = out.path
-      src = File.read(path)
-      src.gsub!(/^mrb_DEFINE_SYMS_VAR\(\w+_lv_\d+, .*\);\n/, '')
-      src.gsub!(/^(  )(\w+_lv_\d+),\n/, "\\1NULL,\t\t\t\t\t/* lv */\n")
-      File.write(path, src)
-    end
-
-    # K210 ABI. Must be identical on the compile and link lines so the mruby
-    # objects match the firmware's ABI -- mirrors platform-kendryte210's own
-    # machine_flags (builder/frameworks/_bare.py), the flags the firmware
-    # half already builds with.
-    cpu_flags = %w[-mcmodel=medany -mabi=lp64f -march=rv64imafc]
-
-    [conf.cc, conf.cxx].each do |t|
-      t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
-      t.flags += cpu_flags
-      # -Os like the firmware half (the platform's own _bare.py builds -Os
-      # too); with 8 MB of flash this is hygiene rather than the Wio
-      # Terminal's survival, but it costs nothing.
-      t.flags << '-Os'
-      # Free: drops the per-object GCC-version comment string.
-      t.flags << '-fno-ident'
-      # Deduplicates equal-valued constants across translation units; see
-      # the wio stanza's own comment for the (inapplicable here) caveat.
-      t.flags << '-fmerge-all-constants'
-      # Single-threaded Arduino firmware has no thread pointer for the
-      # thread-safe-static-local fast path to read; the wio stanza's own
-      # comment covers the failure mode. Verified by every real maix
-      # firmware link since (the failure it guards is a link error, so a
-      # successful link is the check).
-      t.flags << '-fno-threadsafe-statics'
-      # The Kendryte link drops every .eh_frame section (its linker script
-      # has no output section for them), so mruby's C++-exception control
-      # flow (MRB_TRY/MRB_CATCH as real throw/catch) cannot unwind at all --
-      # the first rescued Ruby exception kills the firmware, confirmed by
-      # actually raising one on-device. Keep load_gems.rb from ever enabling
-      # it (see its MRUBY_FORCE_NO_CXX_EXCEPTION escape hatch, which
-      # scripts/maix/mruby_build.bash sets) and compile without exceptions
-      # instead: setjmp/longjmp, mruby's own portable fallback, needs no
-      # unwind tables. Our own .cxx sources use no try/catch/throw (same
-      # verification the wio stanza's own "Tried and reverted" comment
-      # records), so nothing here misses them.
-      t.flags << '-fno-exceptions' if ENV['MRUBY_FORCE_NO_CXX_EXCEPTION']
-      # mruby-lcf and mruby-rgss both need C++17 (uni-algo's conv.h hard-
-      # errors below it); the platform's bundled GCC 8.2.0 defaults to
-      # gnu++14, and the firmware half already passes -std=gnu++17 itself
-      # (the platform's own _bare.py CXXFLAGS).
-      t.flags << '-std=gnu++17'
-      # One section per function/global so the firmware link's own
-      # -Wl,--gc-sections (already in the platform's LINKFLAGS) can prune
-      # at that granularity -- same reasoning as the wio stanza.
-      t.flags << '-ffunction-sections' << '-fdata-sections'
-      # Bare-metal newlib falls through mruby's string.c to a 1 MiB default
-      # cap; game data loaded as strings can exceed that many times over, so
-      # disable the cap outright (0 = unlimited), matching the wio/psp
-      # builds. Actual RAM fit is a later slice's concern.
-      t.defines << 'MRB_STR_LENGTH_MAX=0'
-      # Gates the maix HAL (once it exists) in the mruby-rgss gem on and the
-      # desktop-only sixel/iTerm2 terminal.cxx backend off (that file's own
-      # guard is `#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL) &&
-      # !defined(MAIX_BUILD)`). Like WIO_TERMINAL for the wio build, this
-      # rake-driven libmruby.a needs its own copy since it never sees the
-      # firmware build's flags.
-      t.defines << 'MAIX_BUILD'
-      # This toolchain's libstdc++ was configured without C99 stdio, so
-      # std::snprintf/vsnprintf/fprintf (used across mruby-rgss) are
-      # undeclared even though newlib provides them underneath -- confirmed
-      # by compiling, not just reasoned about. Re-enabling the declarations
-      # is safe exactly because the functions exist; whether the final
-      # firmware link's own newlib stubs satisfy them is re-checked when a
-      # firmware first links this archive (same caveat as
-      # -fno-threadsafe-statics above). The sibling gap, std::lround
-      # (TR1-gated, and the TR1 macro itself cannot go on: newlib genuinely
-      # lacks the long-double companions), is handled at the call sites
-      # instead: the kept code spells it ::lround, identical everywhere.
-      t.defines << '_GLIBCXX_USE_C99_STDIO=1'
-      # The same micro-controller knobs as the wio/psp builds above (see the
-      # wio stanza's comment): a 256-object GC heap page and 16-entry
-      # initial khash buckets, pure footprint wins with no behaviour change.
-      t.defines << 'MRB_HEAP_PAGE_SIZE=256'
-      t.defines << 'KHASH_INITIAL_SIZE=16'
-    end
-    conf.linker.flags += cpu_flags
-
-    # Own HAL for mruby-io: same situation as the wio build above (see its
-    # comment) -- this board's bare newlib is close enough to POSIX for
-    # plain file I/O (open/read/write/lseek/fstat/unlink all compile) but
-    # has none of hal-posix-io's wider surface (st_atim, lstat -- confirmed
-    # for real on the Kendryte toolchain, same as wio's arm-none-eabi), and
-    # none of that surface is reachable from a real RPG2000/2003 game
-    # anyway. hal-wio-io is shared as-is despite the name: it is already
-    # board-agnostic code (plain newlib syscalls only, plus ENOSYS stubs
-    # whose init symbols derive from its directory name), so renaming it
-    # would churn the wio build for no behavioural gain. Added before
-    # rpg_maker_gems (which pulls in mruby-io itself) so mruby-io's own
-    # "no HAL specified" auto-selection never fires here.
-    conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
-
-    rpg_maker_gems(conf)
-  end
-end
-
 if closed
-  # `closed`: the maix closed world compiled natively, for CI's `bc2cpp-build`
-  # job (scripts/bc2cpp/closed_build.bash, docs/ci.md). bc2cpp compiles
-  # closed-world builds only (docs/adr/0466), and every closed-world device
-  # target is a cross build, so this is the one a plain host compiler can build.
+  # `closed`: the closed world compiled natively, for CI's `bc2cpp-build` job
+  # (scripts/bc2cpp/closed_build.bash, docs/ci.md). bc2cpp compiles closed-world
+  # builds only (docs/adr/0466), and a plain host compiler can build it with
+  # the C++ exception mode bc2cpp's generated code needs: block `break`,
+  # non-local `return` and `raise` are lowered to real C++ throw/catch, which
+  # requires MRB_USE_CXX_EXCEPTION.
   #
-  # Why not the maix cross library itself: bc2cpp's generated C++ lowers block
-  # `break`, non-local `return` and `raise` with real C++ throw/catch, which
-  # needs MRB_USE_CXX_EXCEPTION. The maix stanza above compiles with
-  # -fno-exceptions because the Kendryte link drops .eh_frame, so nothing could
-  # unwind on the device; enabling exceptions there would build firmware code
-  # that cannot unwind. Here the host compiler unwinds normally.
-  #
-  # The closed world is maix's: rpg_maker_gems with single_format_only
-  # (RPG2000/2003 only, no mruby-dir, mruby-compiler for the smoke probe, no
-  # mvjs) plus maix's mruby-io HAL, so bc2cpp sees the same gem list, native
-  # sources (tools/bc2cpp/compiled_gems.rb maps `closed` to maix's host
-  # sources) and foreign Ruby. What it checks: the generation of the compiled
-  # gems and the compilation of the generated code, with exceptions. What it
-  # does not: the RISC-V cross-compile and the device's -fno-exceptions
-  # configuration (the `maix` job builds that, without bc2cpp).
+  # The closed world is rpg_maker_gems with single_format_only (RPG2000/2003
+  # only, no mruby-dir, mruby-compiler for the source-loader check, no mvjs)
+  # and the stock mruby-io, so bc2cpp sees the same gem list, native sources
+  # (tools/bc2cpp/compiled_gems.rb, BC2CPP_CLOSED_WORLD_HOST_SRCS) and foreign
+  # Ruby. What it checks: the generation of the compiled gems and the
+  # compilation of the generated code, with exceptions.
   MRuby::CrossBuild.new('closed') do |conf|
     toolchain :gcc
 
@@ -1301,8 +493,8 @@ if closed
     # turn it on for the gems' .cxx sources; this says so outright).
     enable_cxx_exception
 
-    # maix's Ruby-visible settings: bytecode without mrbc's `-g` tables, the
-    # same string cap and heap/khash sizes, C++17.
+    # Ruby-visible settings: bytecode without mrbc's `-g` tables, the same
+    # string cap and heap/khash sizes, C++17.
     conf.mrbc.compile_options =
       conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' }.join(' ')
     [conf.cc, conf.cxx].each do |t|
@@ -1312,104 +504,7 @@ if closed
     end
     conf.cxx.flags << '-std=gnu++17'
 
-    # maix's mruby-io HAL (plain POSIX file calls, ENOSYS for the rest), so the
-    # gem list matches maix's; see the maix stanza.
-    conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
-
     rpg_maker_gems(conf)
-  end
-end
-
-if psp
-  # Cross build for the Sony PlayStation Portable (Allegrex, MIPS32 R4000 with a
-  # VFPU). Produces a libmruby.a that the pspdev EBOOT (app/psp, its
-  # CMakeLists.txt) links; the host build above supplies mrbc.
-  #
-  # NOTE: like the Wio build this is the starting point for the port in
-  # docs/adr/0010-psp-port.md, not a finished, fitting build. The bring-up EBOOT
-  # links neither libmruby nor the input bridge yet; this cross target exists so
-  # the interpreter can be layered on in the next slice. It is only built when
-  # MRUBY_TARGET=psp, so it never affects the desktop or wasm builds.
-  MRuby::CrossBuild.new('psp') do |conf|
-    toolchain :gcc
-
-    conf.cc.command = 'psp-gcc'
-    conf.cxx.command = 'psp-g++'
-    conf.linker.command = 'psp-gcc'
-    conf.archiver.command = 'psp-ar'
-
-    # onigmo's (old) config.sub needs a triplet it recognizes to enter
-    # cross-compile mode; mipsel-unknown-linux keeps the 32-bit little-endian
-    # word size and only forces cross mode (the real compiler is still psp-gcc).
-    conf.host_target = 'mipsel-unknown-linux'
-
-    enable_debug
-
-    # enable_debug also appends ` -g` to mrbc's own compile options (default
-    # "-B%{funcname} -o-", see mruby's Command::Mrbc#initialize), which embeds
-    # line-number/local-variable debug tables in every gem's compiled mrblib
-    # bytecode -- the game's own Ruby (mruby-rpg2k, mruby-rgss, mruby-lcf, ...),
-    # not mruby's C core. Unlike the C-level -g3 kept below (native DWARF, never
-    # mapped into RAM -- ELF debug sections sit outside every PT_LOAD segment),
-    # mrb_load_irep parses these Ruby-level tables into live heap structures the
-    # moment the interpreter boots: measured at roughly 240-350 KB of live RAM
-    # for the rpg2k+lcf+rgss mrblib stack alone (docs/adr/0047-psp-memory-budget.md),
-    # against a 4 MB LVGL pool that may have to cover mruby's whole heap too. It
-    # buys nothing on a device with no interactive Ruby debugger attached to it,
-    # so strip it from mrbc the same way -O0 is stripped from cc/cxx below.
-    # (mruby's own mruby-bin-strip gem -- not part of this project's gem set --
-    # removes the same debug tables after the fact and gives byte-identical
-    # output to this, so this is equivalent to stripping post-compile.)
-    conf.mrbc.compile_options =
-      conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' }.join(' ')
-
-    # Allegrex ABI. -G0 disables gp-relative small-data addressing (pspsdk links
-    # expect this); PSP_BUILD gates the psp.cxx / psp_input_bridge.cxx HAL in the
-    # mruby-rgss gem on. Must be identical on compile and link lines so the mruby
-    # objects match the EBOOT's ABI.
-    cpu_flags = %w[-G0]
-
-    # pspsdk's own headers (pspctrl.h, pspdisplay.h, pspkernel.h, ... --
-    # needed once PSP_BUILD turns on the real psp.cxx / psp_input_bridge.cxx
-    # HAL below) live outside psp-gcc's baked-in sysroot; psp-cmake's
-    # toolchain file adds this automatically for CMake's own compiles (main.cxx,
-    # LVGL, uni-algo), but this Rakefile drives psp-gcc/psp-g++ directly and
-    # gets none of that, so ask pspsdk's own discovery tool for the path
-    # instead of hardcoding one.
-    pspsdk_include = "#{`psp-config --pspsdk-path`.strip}/include"
-
-    [conf.cc, conf.cxx].each do |t|
-      t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
-      t.flags += cpu_flags
-      t.include_paths << pspsdk_include
-      t.defines << 'PSP_BUILD'
-      # newlib on the PSP defines none of __linux__/__APPLE__/__*BSD__, so
-      # mruby's string.c falls through to the 1 MiB MRB_STR_LENGTH_MAX cap and
-      # rejects larger strings. Game data (maps, images loaded as strings, and
-      # whole packed archives read in one shot by RGSSAD.open) can exceed that
-      # many times over, so disable the cap outright (0 = unlimited), matching
-      # the wasm/Wio builds and what mruby already does for free on
-      # Linux/macOS/BSD.
-      t.defines << 'MRB_STR_LENGTH_MAX=0'
-      # Same micro-controller knobs as the Wio build above (see its comment):
-      # a 256-object GC heap page and 16-entry initial khash buckets cut the
-      # interpreter's live footprint on the PSP's ~24 MB without any
-      # behaviour change.
-      t.defines << 'MRB_HEAP_PAGE_SIZE=256'
-      t.defines << 'KHASH_INITIAL_SIZE=16'
-      # stb_image's FILE*-based stbi_load(path, ...) is only ever called by
-      # mruby-mvjs's mvcanvas.cxx (MV/MZ's Image loader); this cross-build
-      # excludes mvjs (include_mvjs: false below) and mruby-rgss's own loader
-      # always reads bytes itself and decodes via stbi_load_from_memory (see
-      # bmp_decode_into, mruby-rgss/src/lib.cxx), so the stdio path is dead
-      # code here. Dropping it removes newlib's stdio-backed stb decode path
-      # (and the buffered-FILE state it pulls in) from the one PT_LOAD-mapped
-      # EBOOT that would otherwise carry it unused.
-      t.defines << 'STBI_NO_STDIO'
-    end
-    conf.linker.flags += cpu_flags
-
-    rpg_maker_gems(conf, include_mvjs: false)
   end
 end
 
@@ -1455,7 +550,7 @@ if android
   # links, through root CMakeLists.txt's own ANDROID branch (see
   # docs/adr/0058-android-port.md).
   #
-  # NOTE: like the Wio and PSP builds, this is the starting point for the
+  # NOTE: this is the starting point for the
   # port -- a single ABI (arm64-v8a, matching app/android/app/build.gradle's
   # abiFilters) rather than the full armeabi-v7a/arm64-v8a/x86/x86_64 set a
   # Play Store release would ship. Adding a second ABI is a matter of
@@ -1488,7 +583,7 @@ if android
       t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
       # Bionic (Android's libc) is Linux-based and mruby's string.c already
       # detects __linux__ to default MRB_STR_LENGTH_MAX to unlimited, unlike
-      # the Wio/PSP bare-metal targets above -- so no override is needed here.
+      # bare-metal targets (no __linux__) -- so no override is needed here.
     end
 
     rpg_maker_gems(conf)

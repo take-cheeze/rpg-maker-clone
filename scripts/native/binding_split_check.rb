@@ -34,22 +34,22 @@ end
 
 puts 'guards'
 holds = ->(clauses, config) { NBS::GuardEval.holds?(clauses, config) }
-check.call('!defined(WIO_TERMINAL) holds everywhere but wio',
-           %w[host wio psp maix].map { |c| holds.call(['!defined(WIO_TERMINAL)'], c) } == [true, false, true, true])
+check.call('!defined(__EMSCRIPTEN__) holds everywhere but emscripten',
+           %w[host closed emscripten].map { |c| holds.call(['!defined(__EMSCRIPTEN__)'], c) } == [true, true, false])
 check.call('a conjunction needs every clause',
-           holds.call(['!defined(WIO_TERMINAL)', '!defined(MAIX_BUILD)'], 'maix') == false &&
-             holds.call(['!defined(WIO_TERMINAL)', '!defined(MAIX_BUILD)'], 'psp') == true)
-check.call('|| and parentheses', holds.call(['defined(PSP_BUILD) || (defined(WIO_TERMINAL) && !defined(MAIX_BUILD))'], 'wio') == true)
-check.call('an empty guard always holds', holds.call([], 'wio') == true)
+           holds.call(['!defined(__EMSCRIPTEN__)', '!defined(WIO_TERMINAL)'], 'emscripten') == false &&
+             holds.call(['!defined(__EMSCRIPTEN__)', '!defined(WIO_TERMINAL)'], 'closed') == true)
+check.call('|| and parentheses', holds.call(['defined(__EMSCRIPTEN__) || (!defined(__EMSCRIPTEN__) && !defined(WIO_TERMINAL))'], 'host') == true)
+check.call('an empty guard always holds', holds.call([], 'closed') == true)
 check.call('a macro the model does not know is unproven, not false', holds.call(['LV_USE_SNAPSHOT'], 'host').nil?)
 check.call('no guard (an #elif) is unproven', holds.call(nil, 'host').nil?)
 
 src = NBS::Source.new('fake.cxx', <<~CXX)
   int a;
-  #if !defined(WIO_TERMINAL)  // dead weight on wio
+  #if !defined(__EMSCRIPTEN__)  // dead weight on emscripten
   int b;
-  #  if defined(PSP_BUILD) && \\
-       !defined(MAIX_BUILD)
+  #  if defined(CLOSED_ONLY) && \\
+       !defined(__EMSCRIPTEN__)
   int c;
   #  else
   int d;
@@ -65,10 +65,10 @@ src = NBS::Source.new('fake.cxx', <<~CXX)
 CXX
 at = ->(text) { src.guard_at(src.bytes.index(text)) }
 check.call('no directive above: no guard', at.call('int a') == [])
-check.call('an #if with a trailing comment', at.call('int b') == ['!defined(WIO_TERMINAL)'])
+check.call('an #if with a trailing comment', at.call('int b') == ['!defined(__EMSCRIPTEN__)'])
 check.call('nested guards and a continued line stack up',
-           at.call('int c') == ['!defined(WIO_TERMINAL)', 'defined(PSP_BUILD) && !defined(MAIX_BUILD)'])
-check.call('an #else negates its #if', at.call('int d') == ['!defined(WIO_TERMINAL)', '!(defined(PSP_BUILD) && !defined(MAIX_BUILD))'])
+           at.call('int c') == ['!defined(__EMSCRIPTEN__)', 'defined(CLOSED_ONLY) && !defined(__EMSCRIPTEN__)'])
+check.call('an #else negates its #if', at.call('int d') == ['!defined(__EMSCRIPTEN__)', '!(defined(CLOSED_ONLY) && !defined(__EMSCRIPTEN__))'])
 check.call('comments do not open or close a conditional', at.call('int e') == [])
 check.call('an #elif makes the guard unprovable', at.call('int f').nil?)
 check.call('a conditional inside a range is seen', src.conditional_inside?([src.bytes.index('int b'), src.bytes.index('int d')]))
@@ -79,7 +79,7 @@ check.call('and one outside it is not', !src.conditional_inside?([src.bytes.inde
 puts 'fixture'
 fixture_dir = File.join(root, 'scripts/fixtures/native_binding_split')
 fixture_file = 'scripts/fixtures/native_binding_split/bindings.cxx'
-facts = NBS.load_facts({ 'host' => File.join(fixture_dir, 'facts_host.json'), 'wio' => File.join(fixture_dir, 'facts_wio.json') }, root)
+facts = NBS.load_facts({ 'host' => File.join(fixture_dir, 'facts_host.json'), 'closed' => File.join(fixture_dir, 'facts_closed.json') }, root)
 sources = { fixture_file => NBS::Source.new(File.join(root, fixture_file)) }
 bindings, problems = NBS.classify_all(facts, sources)
 problems.concat(NBS.apply_presence(bindings, facts))
@@ -104,15 +104,15 @@ check.call('the block binding is refused for its & format too',
 check.call('a hand-written forwarder is recognised and its entry point named',
            by_name['forwards'].verdict.function == 'fixture_named_direct' && by_name['forwards'].verdict.kinds == [:int])
 check.call('typed parameters come from the declarations', by_name['pair'].verdict.params == [%w[a mrb_int], %w[b mrb_int]])
-check.call('a binding compiled off wio only is present in host alone', by_name['flag='].configs == ['host'])
+check.call('a binding under a guard no configuration defines is present in both', by_name['flag='].configs == %w[host closed])
 check.call('owners are attributed', by_name['x='].owner == 'Fixture' && by_name['twice'].owner == 'Fixture.singleton')
 
 # a configuration that classifies a binding differently refuses it
-skewed = JSON.parse(File.read(File.join(fixture_dir, 'facts_wio.json')))
+skewed = JSON.parse(File.read(File.join(fixture_dir, 'facts_closed.json')))
 skewed['files'][fixture_file]['registrations'].find { |r| r['name'] == 'x=' }['target']['reasons'] << 'frame_api:mrb_get_argc'
 skew_dir = Dir.mktmpdir
-File.write(File.join(skew_dir, 'facts_wio.json'), JSON.generate(skewed))
-skewed_facts = NBS.load_facts({ 'host' => File.join(fixture_dir, 'facts_host.json'), 'wio' => File.join(skew_dir, 'facts_wio.json') }, root)
+File.write(File.join(skew_dir, 'facts_closed.json'), JSON.generate(skewed))
+skewed_facts = NBS.load_facts({ 'host' => File.join(fixture_dir, 'facts_host.json'), 'closed' => File.join(skew_dir, 'facts_closed.json') }, root)
 skewed_bindings, = NBS.classify_all(skewed_facts, sources)
 check.call('configurations that disagree on a binding refuse it',
            skewed_bindings.find { |b| b.name == 'x=' }.verdict.then { |v| v.status == :refused && v.reasons.first.first == 'config_disagreement' })

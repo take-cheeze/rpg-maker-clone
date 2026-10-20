@@ -10,7 +10,7 @@
 #   scripts/native/binding_split.rb check    fail when `write` would change anything
 #
 # The facts come from scripts/native/binding_facts.py (libclang), run once per
-# configuration (host, wio, psp, maix, emscripten); see that file for how to get
+# configuration (host, closed, emscripten); see that file for how to get
 # libclang and the headers. Options:
 #   --facts DIR     read facts_<config>.json from DIR instead of running it
 #   --configs a,b   only those configurations

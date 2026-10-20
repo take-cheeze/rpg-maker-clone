@@ -44,13 +44,9 @@ end
 # database text is the intended use) whose distinct codepoints become an
 # allow-list for the "full" (JIS0208 kanji) font face below. Every RPG Maker
 # game's dialogue only ever touches a few hundred distinct kanji out of the
-# ~7000 JIS0208 defines; embedding the entire table on a target as flash-
-# constrained as the Wio Terminal (docs/adr/0104's own real measurement: the
-# unfiltered GOTHIC face alone is 165 KB, a third of the board's whole 496 KB
-# budget) means shipping thousands of glyphs no game exported today will ever
-# draw. This is the general mechanism; nothing calls it with a real file yet
-# -- that needs an actual per-game export step (scanning LMU/LMT/LDB text),
-# still future work. HANKAKU/LATIN1 are never filtered: both are small,
+# ~7000 JIS0208 defines. This is the general mechanism; nothing calls it with
+# a real file yet -- that needs an actual per-game export step (scanning
+# LMU/LMT/LDB text), still future work. HANKAKU/LATIN1 are never filtered: both are small,
 # bounded charsets (halfwidth kana, Latin-1) needed for basically any game's
 # UI regardless of which kanji it uses, unlike JIS0208's own much larger
 # range.
@@ -59,23 +55,6 @@ if ENV["SHINONOME_GLYPH_TEXT_FILE"]
   glyph_allowlist = File.read(ENV["SHINONOME_GLYPH_TEXT_FILE"], external_encoding: Encoding::UTF_8)
                         .each_codepoint.to_a.uniq.to_set
 end
-
-# docs/adr/0110/0112: a second, independent escape hatch (a no-op unless
-# set, same convention as SHINONOME_GLYPH_TEXT_FILE above -- build_config.rb
-# sets it by default for wio specifically, everywhere else it stays opt-in)
-# -- rather than
-# *trimming* the GOTHIC (JIS0208 kanji) face's flash cost, moves the whole
-# thing to the SD card: every glyph this pass would otherwise emit as a
-# compiled-in C array entry is instead packed into a flat binary file
-# (u32 glyph_count, then glyph_count * (u32 codepoint, GOTHIC_WORDS * u32
-# bitmap data), all little-endian, still sorted by codepoint) that
-# mruby-rgss/src/lib.cxx's own find_gothic_char reads back with a plain
-# fseek/fread binary search (RGSS_SHINONOME_GOTHIC_SD_PATH) instead of
-# find_char's in-memory one. GOTHIC's own compiled-in array still gets
-# written -- just empty (GOTHIC_LEN 0) -- so a build that sets this without
-# also defining RGSS_SHINONOME_GOTHIC_SD_PATH simply finds no kanji glyphs
-# at all rather than failing to compile.
-gothic_sd_file = ENV["SHINONOME_GOTHIC_SD_FILE"]
 
 f = File.new "shinonome.cxx", "w"
 
@@ -96,9 +75,7 @@ EOS
   # RGSS::Font resolves every request to GOTHIC (mruby-rgss/src/lib.cxx's
   # find_char call sites name it explicitly, never MINCHO) -- so it was pure
   # dead weight: declared, generated, and never called anywhere, confirmed by
-  # grepping the whole repo. Dropped outright rather than gated, since this
-  # is not a target-specific tradeoff -- desktop/PSP/wasm never used it
-  # either.
+  # grepping the whole repo. Dropped outright rather than gated.
 }.each do |k, (name, encoding, full)|
   if File.exist? "#{FONT_DIR}/#{k}/font_src.bit"
     src = File.read "#{FONT_DIR}/#{k}/font_src.bit", external_encoding: Encoding::SJIS
@@ -135,15 +112,8 @@ EOS
     end
   end
 
-  to_sd = gothic_sd_file && name == "GOTHIC"
-  sd_out = nil
-  if to_sd
-    sd_out = File.open(gothic_sd_file, "wb")
-    sd_out.write [t.size].pack("V") # glyph_count, little-endian u32
-  end
-
   f.write <<EOS
-const unsigned #{name}_LEN = #{to_sd ? 0 : t.size};
+const unsigned #{name}_LEN = #{t.size};
 const Char<#{full ? "HEIGHT" : "HEIGHT / 2"}> #{name}[] = {
 EOS
 
@@ -157,18 +127,11 @@ EOS
       v
     end
 
-    if to_sd
-      sd_out.write [u, *words].pack("V*")
-      next
-    end
-
     d = words.map { |v| "0x#{v.to_s(16)}" }
     f.write <<EOS
   { 0x#{u.to_s(16)}, {#{d.join(", ")}} },
 EOS
   end
-
-  sd_out&.close
 
   f.write <<EOS
 };

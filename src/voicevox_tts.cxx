@@ -24,8 +24,7 @@
 
 #include "voicevox_core_capi.hxx"
 
-// VOICEVOX CORE ships as a native shared library with no Emscripten/PSP/Wio
-// port, so this backend only makes sense where dlopen() is both available and
+// VOICEVOX CORE ships as a native shared library with no Emscripten port, so this backend only makes sense where dlopen() is both available and
 // meaningful -- the desktop native build. Everywhere else rgss_tts_init()
 // below leaves the backend uninstalled. Android defines __linux__ but is not
 // such a build (no VOICEVOX CORE is shipped there, and the asset directory

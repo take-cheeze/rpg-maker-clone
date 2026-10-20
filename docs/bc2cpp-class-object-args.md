@@ -1,5 +1,7 @@
 # bc2cpp class-object arguments (CLASS_OBJECT_ARGS)
 
+> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
+
 Which classes a `klass.new(...)` builds when `klass` is a method parameter, and why that decides how many constructors
 CONSTRUCTOR_POOLS (ADR 0313) can pool. The decision record is
 [`docs/adr/0416-bc2cpp-class-object-arguments.md`](adr/0416-bc2cpp-class-object-arguments.md); this page is the

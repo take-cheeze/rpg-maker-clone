@@ -1,6 +1,6 @@
 # Running the smoke suites with NOMETHOD_VERIFY
 
-A closed-world build (`psp`, `wio`, `maix`) compiles some guard-chain fallbacks
+A closed-world build (the `closed` build) compiles some guard-chain fallbacks
 proven dead into `bc2cpp_nomethod` (ADR 0210). In a normal build such a site
 dispatches, then raises `NoMethodError`, or a "closed-world proof violated"
 `RuntimeError` if the method exists after all (ADR 0262). Both are ordinary Ruby
@@ -32,14 +32,10 @@ BC2CPP_NOMETHOD_VERIFY=1 BC2CPP_HOT_ONLY=0 <the job's usual build command>
 
 ## Smoke suites
 
-The `.github/workflows/build.yml` jobs that boot a closed-world firmware are the
-ones to run this against: `psp` then `psp-smoke` (PPSSPP headless), `maix` then
-`maix-smoke` (Renode), and the `wio` / `wio-renode` pair. Rebuild the firmware
-job's artifact with the two variables set and run the smoke job unchanged. A
-failure shows as the smoke job's firmware stopping (no bring-up heartbeat) with
-the line above on stderr or the emulator's console. `abort()` needs a libc with
-`stderr`; on a target where that line is not visible, the emulator stopping at
-`abort` is the signal.
+The PPSSPP and Renode firmware smoke jobs that booted closed-world firmware were
+removed with the embedded targets, so no CI job runs this check now. Rebuild the
+`closed` world with the two variables set and run the workload that reaches the
+guard. A violation shows as the line above on stderr.
 
 The desktop and wasm builds use the interpreter fallbacks for the same Ruby and
 have no `bc2cpp_nomethod` sites (they are not closed-world builds), so verify

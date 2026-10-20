@@ -39,19 +39,15 @@ continue to select their backend through SDL's usual configuration.
 
 bc2cpp compiles closed-world programs only (ADR 0466), so `bc2cpp-build` builds a closed world:
 `build_config.rb`'s `closed` build (`MRUBY_TARGET=closed`, `scripts/bc2cpp/closed_build.bash`)
-with `RPGMAKER_BC2CPP=1`. It is the maix closed world compiled by the runner's own compiler:
-`single_format_only` (RPG2000/2003 only), maix's gem set (no `mruby-dir`, `mruby-compiler`,
-maix's mruby-io HAL) and maix's host sources as bc2cpp's native input. The four `*-compiled`
-gems are generated in that closed world and compiled into its `libmruby.a`, and the job then
-runs the type check (`scripts/bc2cpp/type_check.rb`) with that build's host `mrbc`.
+with `RPGMAKER_BC2CPP=1`. It is the closed world compiled by the runner's own compiler:
+`single_format_only` (RPG2000/2003 only), the `closed` build's gem set and its host sources as
+bc2cpp's native input. The four `*-compiled` gems are generated in that closed world and compiled
+into its `libmruby.a`, and the job then runs the type check (`scripts/bc2cpp/type_check.rb`) with that build's host `mrbc`.
 
 The build is native because bc2cpp's generated C++ lowers block `break`, non-local `return`
 and `raise` with real C++ throw/catch, which needs mruby's C++-exception mode
-(`MRB_USE_CXX_EXCEPTION`). The `maix` cross library is compiled with `-fno-exceptions` (the
-Kendryte link drops `.eh_frame`, so nothing can unwind on the device), so the generated code
-does not compile there. The job covers generation and compilation of the generated code with
-exceptions; it does not cover the RISC-V cross-compile, which the `maix` job builds without
-bc2cpp. It needs no PlatformIO or cross toolchain.
+(`MRB_USE_CXX_EXCEPTION`). The job covers generation and compilation of the generated code
+with exceptions. It needs no cross toolchain.
 The desktop `host` build loads Ruby at runtime and never carries the compiled gems.
 
 The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` (skipped on purpose for
@@ -136,7 +132,7 @@ and are never cancelled.
 
 ### Profiling bc2cpp on a desktop host
 
-`bc2cpp` is closed-world only, and CI profiles it on wio's world. For local
+`bc2cpp` is closed-world only, and CI profiles it on the `closed` world. For local
 profiling on a machine with a display, set
 `RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` (ADR 0428) to build `host` as a sealed
 RPG2000/2003-only world, so `bc2cpp` runs there without a cross toolchain.
@@ -204,25 +200,21 @@ all instruction/register states matched the earlier oracle. Backward-query
 cost and the optional whole-tree check's total duration are separate costs.
 
 
-### Device jobs run on a pull request only for their own files
+### Android runs on a pull request only for its own files
 
-`android` (with `android-smoke`), `maix` (with `maix-smoke`) and `nano7-qemu` build or emulate one
-device target each. On a `pull_request` run they are skipped unless the `changes` job's filter for
-that device matched; a push to `master`, a merge-queue run and a manual dispatch always run them.
-The smoke jobs need their build job, so they are skipped with it. `wasm` is not gated and still runs
-on every pull request, and `psp` keeps its own filter (it runs only when `app/psp/**` or the workflow
-changed, and not on other pushes).
+`android` (with `android-smoke`) builds and emulates the Android port. On a `pull_request` run it is
+skipped unless the `changes` job's `android` filter matched; a push to `master`, a merge-queue run and a
+manual dispatch always run it. `android-smoke` needs its build job, so it is skipped with it. `wasm` is
+not gated and still runs on every pull request.
 
 | Filter | Files that count as related |
 | --- | --- |
 | `android` | `app/android/**`, `scripts/android_smoke_check.bash`, `CMakeLists.txt`, `cmake/**`, `build_config.rb`, the workflow |
-| `maix` | `app/maix/**`, `app/shared/**`, `scripts/maix/**`, `scripts/gen/maix-hello-game.rb`, `build_config.rb`, the workflow |
-| `nano7` | `app/nano7/**`, `app/shared/**`, `scripts/nano7/**`, `scripts/export_nano7_map*.rb`, `scripts/stage_nano7_walk_app.bash`, `scripts/download/nepheshel.bash`, the workflow |
 
-`build_config.rb` holds each device's cross-build definition, so a change to it runs the Android and
-Maix jobs. Shared engine code (`src/`, the `mruby-*` gems) is not in any list: a pull request that
-changes only that skips these jobs, and the push to `master` after the merge runs them. A device
-regression from shared code therefore shows up on `master`, not on the pull request. To check a branch
+`build_config.rb` holds the Android cross-build definition, so a change to it runs the Android job.
+Shared engine code (`src/`, the `mruby-*` gems) is not in any list: a pull request that changes only
+that skips these jobs, and the push to `master` after the merge runs them. An Android regression from
+shared code therefore shows up on `master`, not on the pull request. To check a branch
 earlier, use `workflow_dispatch` on it, or add the path to the filter.
 
 ### Compiler caching and shared mruby builds
@@ -332,7 +324,7 @@ beyond excluding `issue_comment`, so it is.
 `mruby-rpg2k` `mrbgem.rake` files for every build name and fails unless `tts.cxx`, `RGSS_NO_TTS` and the
 `speak_message` source (`map_tts.rb` against `map_tts_off.rb`) are exactly what `tools/rgss_tts_config.rb` says, the
 bc2cpp source sets (`compiled_gems.rb`) agree, and `speak_message` behaves as before where Tts exists. With `--bc2cpp`
-(an explicit local invocation requiring `MRBC`) it also runs the wio closed world for `mruby-rpg2k-compiled` and fails if the
+(an explicit local invocation requiring `MRBC`) it also runs the closed world for `mruby-rpg2k-compiled` and fails if the
 generated C++ names Tts.
 
 ### IR block fixtures

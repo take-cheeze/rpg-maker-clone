@@ -11,7 +11,7 @@ Ubuntu 24.04 sandbox with the same toolchain as the runner, no sccache; the loca
 
 ## 0. Profiling on a desktop host
 
-The canonical closed world the CI profiles is wio's (RPG2000/2003 only). A desktop
+The canonical closed world the CI profiles is the `closed` build's (RPG2000/2003 only). A desktop
 host can run the same closed world for local profiling by setting
 `RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` (ADR 0428): it builds the `host` target as a
 sealed RPG2000/2003-only world, so `bc2cpp` runs there too. This is test-only and

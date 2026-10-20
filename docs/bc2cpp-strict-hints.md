@@ -46,8 +46,8 @@ and aborts. `-DBC2CPP_HINT_VIOLATION_LOG` (ADR 0428) is the survey mode: each di
 printed once as `bc2cpp: HINT_VIOLATION_LOG: <Class>#<name> at <site>` and the by-name send runs, so
 one workload run lists every wrong hint.
 
-bc2cpp compiles closed-world programs only (ADR 0466), and the closed world is built for
-wio/maix/psp, none of which runs here. The sealed desktop host of ADR 0428
+bc2cpp compiles closed-world programs only (ADR 0466), and the closed world is built only
+for the `closed` build. The sealed desktop host of ADR 0428
 (`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1`) and `scripts/bc2cpp/strict_hints_verify.bash`, which ran
 the real workloads on it, were removed with every other open-world path: the desktop engine is the
 plain mruby build. A verify run needs a closed-world target that can run the workloads. mruby's
@@ -57,7 +57,7 @@ plain mruby build. A verify run needs a closed-world target that can run the wor
 A violation is a wrong or incomplete hint: fix the inference or annotation, widen the hint class
 set if the extra class is legitimate, or fix the Ruby. A candidate-set family (`poly_small_n`,
 `poly_table`, `interface_table`) keeps the dispatch when a known class outside the set answers the
-name (`ClosedWorld#answered_outside?`), so on the wio world `all` forces what `1` forces.
+name (`ClosedWorld#answered_outside?`), so on the closed world `all` forces what `1` forces.
 `-DBC2CPP_HINT_VIOLATION_DISPATCH` (compile time, no regeneration) restores the by-name send
 silently to tell a wrong hint from another bug.
 
@@ -69,5 +69,5 @@ static fact the run contradicts.
 
 `scripts/bc2cpp/strict_hints_check.rb` (generated code and a deliberately violated fixture on
 real mruby, default, strict, verify and dispatch builds), `strict_hints_mutation_check.rb`
-(16 mutants) and `strict_hints_reviewed_check.rb` (the list against the real wio closed world)
+(16 mutants) and `strict_hints_reviewed_check.rb` (the list against the real closed world)
 run in the nightly `strict-hints` shard (`docs/ci.md`).

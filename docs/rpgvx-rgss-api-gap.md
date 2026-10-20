@@ -383,7 +383,7 @@ the single biggest reason a real VX Ace release could not boot at all.
 **The 64 MB LVGL heap** (which backs mruby's whole VM heap on desktop, not
 just graphics) was too small for this game's database alone — `NoMemoryError`
 during `Data/*.rvdata2` loading, before a single scene ran. Raised to 256 MB
-for desktop (PSP/Wio keep their own separate, already-tuned pools).
+for desktop.
 
 **Community utility scripts assume more Ruby/Windows surface than this build
 ships**, found by continuing past the superclass fix into the game's own
@@ -489,8 +489,7 @@ above, the script host now reaches actual scene construction — building the
 title screen's own windows, sprites and bitmaps — which is a second, larger
 memory consumer 256 MB did not cover: the game aborted with
 `NoMemoryError` mid-boot even with a fully loaded database. 512 MB cleared
-it. Desktop-only, same as before (`include/lv_conf.h`; the PSP and Wio
-builds keep their own separately-tuned pools).
+it. Desktop-only, same as before (`include/lv_conf.h`).
 
 **Fixed: mruby's VM had no `$!` ("currently handled exception") at all.**
 `rescue => e` binds the exception to the clause's own local variable, but
@@ -758,8 +757,8 @@ this project controls to carry the fix on), the fix ships as
 `patches/mruby-colon3-assign-setmcnst.patch` (one line:
 `gen_colon3_assign` now finishes with `OP_SETMCNST`), applied
 idempotently at build time by `scripts/apply_mruby_patch.bash` — the
-same `patches/` + apply-script convention already used for the PSP
-toolchain's own patch. Verified against: a minimal synthetic repro
+same `patches/` + apply-script convention already used for the other mruby
+patches. Verified against: a minimal synthetic repro
 matching the real semantics, the full mruby test suite (zero
 regressions from a compiler-level change), and the real, unmodified
 516-line script — `Object.const_defined?(:MapFog)` now returns `true`
@@ -772,7 +771,7 @@ instead of re-raising what was actually caught. An earlier pass at this
 considered both fixable *only* by hooking `Kernel#raise` itself — wrapping
 every `raise` call in the whole engine in an extra begin/rescue to capture
 and stash the exception before it propagates, on every platform this build
-targets, PSP included, where call-stack depth is already the tightest
+targets, where call-stack depth is already the tightest
 constraint — and left both alone rather than take on that blast radius for
 one utility script's log fidelity. `$!` itself turned out to have a much
 smaller, VM-internal fix (see above); once that fix's `mrb->errinfo` field

@@ -1,7 +1,9 @@
 # Native setter inputs
 
+> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
+
 `BC2CPP_NATIVE_SETTER_REPORT=/tmp/setters.json` asks bc2cpp to report the named
-`contents=` and `bitmap=` input candidates after C++ emission. For the full Wio
+`contents=` and `bitmap=` input candidates after C++ emission. For the full closed-build
 world, use the existing census command:
 
 ```sh
@@ -21,7 +23,7 @@ is explicitly a named candidate, not a proven native call. `mentions` contains
 Symbol/String stems and definitions; `computed_names_present` covers compiled
 bytecode's name-producing operations. Missing/zero/opaque masks are unresolved.
 
-On ADR 0337's parent Wio tree:
+On ADR 0337's parent closed-build tree:
 
 | Setter | Named sites | Input facts | Other blockers |
 | --- | ---: | --- | --- |

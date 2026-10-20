@@ -88,7 +88,7 @@ from 22.3ms to 12.9ms and frame work from 33.5ms to 22.8ms (20 → 25fps), with
 allocation churn dropping from ~350k to ~225k/s. Two things it needs, both of
 which bit during development: `quads` is called with `nil` ids (the renderer
 draws the map edge every frame), and the key has to stay inside a signed
-32-bit `mrb_int` or it becomes a bignum on the Emscripten / PSP / Wio builds.
+32-bit `mrb_int` or it becomes a bignum on the Emscripten build.
 Resolving the tile's block first answers both.
 
 **(2) The grid is cached.** `#rebuild_tile_cache` builds the visible tiles into
@@ -277,7 +277,7 @@ already in place, before assuming which one actually explains it.
 
 ## bc2cpp: regenerating the hot-method profile
 
-The flash-limited builds (psp, wio, maix) compile only the methods
+The flash-limited `closed` build compiles only the methods
 `tools/bc2cpp/hot_methods.txt` lists to C++, and every other method runs as
 bytecode (ADR 0214). Regenerate the list after a change moves hot code
 around. A method the list does not name is interpreted: always correct, but
@@ -383,7 +383,7 @@ Closed-world constant-object calls can also trace across branches when every
 forward edge either reaches the constant assignment or skips the call; a
 branch-selected receiver keeps ordinary dispatch.
 
-This report runs under the wio closed-world proof with the same gem map used by
+This report runs under the closed-world proof with the same gem map used by
 the compiled gems. It allows the `NOMETHOD_REVIEWED` audit to report findings
 without aborting the measurement; that environment flag does not change
 generated code. The dispatch totals therefore describe closed-world output,
@@ -451,7 +451,7 @@ audio calls are the ones that touch the decoder, not the ones that mix.
   additionally need `SharedArrayBuffer`, i.e. COOP/COEP headers on the deployed
   page. Since GitHub Pages is the primary distribution, a worker thread has to
   be conditional, with the synchronous path kept for wasm.
-- **PSP and Wio have no usable `std::thread`.** `mruby-rgss/src/terminal.cxx`
+- **Some targets have no usable `std::thread`.** `mruby-rgss/src/terminal.cxx`
   already documents and handles exactly this: its background writer thread is
   compiled out with `#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL)`. Any
   audio worker should follow that same shape.

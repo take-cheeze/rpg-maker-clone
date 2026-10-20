@@ -295,7 +295,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
 
 // DUPLICATE_REGISTRATIONS: every mrb_define_* below names a method that the
 // bc2cpp_register_owner_methods(M) call above already installs, so a full build
-// registers every one of them twice. Measured on the real wio closed world:
+// registers every one of them twice. Measured on the real closed world:
 // 39/39 here, 96/96 in mruby-rgss-compiled, 1240/1240 in mruby-rpg2k-compiled,
 // with no orphan -- no call below is the only registration of its method.
 //

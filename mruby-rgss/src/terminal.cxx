@@ -1,15 +1,6 @@
 // The sixel/iTerm2 terminal backends (see include/terminal.hxx): a POSIX
-// tty in raw mode, driven by a background std::thread writer. Neither exists
-// on the PSP (pspdev's newlib has no termios/ioctl, and no proven std::thread
-// support), the Wio Terminal (bare-metal Arduino, same story) or the Maix
-// Amigo (bare-metal Arduino on the K210, same story), and mruby's build never
-// offers the game a way to select this backend on any of those targets
-// anyway (no --sixel/--iterm CLI, no controlling tty) -- so the whole real
-// implementation below is compiled out there, the same way psp.cxx/wio.cxx
-// are no-ops off their own target. Only rgss_terminal_poll's declared
-// signature is required elsewhere (mruby-rgss/src/lib.cxx's input_poll calls
-// it unconditionally on every target), so the #else branch stubs just that.
-#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL) && !defined(MAIX_BUILD)
+// tty in raw mode, driven by a background std::thread writer. Only the
+// desktop executable selects one (src/main.cxx's --sixel/--iterm flags).
 
 #include "terminal.hxx"
 
@@ -63,7 +54,7 @@ enum Key {
   // RPG2003 Key Input Processing Numbers/Operators groups (RGSS::Input::N0..
   // PERIOD), used by Input Number and the numeric/operator key-input groups.
   // Like the F-keys, these were previously unbound on the terminal/sixel
-  // backends; a keyboard (unlike the PSP/Wio button pads) can actually type
+  // backends; a keyboard can actually type
   // them, so they are bound here. See the key switch in terminal_poll.
   KEY_N0 = 21,
   KEY_N1 = 22,
@@ -909,12 +900,3 @@ lv_display_t* terminal_display_create(int32_t hor_res,
   return disp;
 }
 
-#else  // PSP_BUILD || WIO_TERMINAL || MAIX_BUILD
-
-struct mrb_state;
-
-// No terminal backend exists on this target (see the file-level comment) and
-// nothing on it can select one, so there is never anything to drain.
-extern "C" void rgss_terminal_poll(mrb_state*) {}
-
-#endif  // !PSP_BUILD && !WIO_TERMINAL && !MAIX_BUILD

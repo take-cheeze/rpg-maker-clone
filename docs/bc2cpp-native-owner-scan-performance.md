@@ -1,5 +1,7 @@
 # Native-owner scope scanning
 
+> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
+
 The native-owner map identifies the function-local class variables used by
 native method registrations. Its scope scan searches between braces rather
 than visiting every character, reducing temporary character strings.

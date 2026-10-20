@@ -121,7 +121,7 @@ void terminal_append_console(std::string& s);
 // rather than a direct call into ng-log, is what keeps mruby-rgss free of a
 // compile-time dependency on it -- the same reason the log console above is
 // split this way (see docs/adr/0005).  Builds that never install a hook --
-// mrbtest, the PSP and Wio Terminal targets -- leave it null, so the forward
+// mrbtest -- leave it null, so the forward
 // is a harmless no-op and $stderr keeps behaving exactly as before there.
 
 // Each forwarded line carries the source location it came from, because
@@ -157,7 +157,7 @@ void log_bridge_write(const char* msg,
 
 // Convenience for the native (non-Ruby) diagnostics in mruby-rgss/mruby-mvjs
 // that used to be a bare `fprintf(stderr, ...)`: writes `msg` to the real
-// stderr unconditionally -- so mrbtest, PSP and Wio Terminal, which never
+// stderr unconditionally -- so mrbtest, which never
 // install a hook, keep exactly the visibility they had before -- and also
 // forwards it through log_bridge_write.  `msg` must be NUL-terminated and
 // have no trailing newline; one is added to the stderr copy.
@@ -178,10 +178,10 @@ void log_bridge_write_stderr(const char* msg);
 // window_title_set (mruby-rgss/src/window_title.cxx), and that only calls an
 // optional hook the executable installs at start-up with
 // window_title_set_hook.  The gem therefore needs no SDL -- it is also built
-// for the terminal-only, PSP and Wio Terminal targets, none of which compile
-// LVGL's SDL driver at all.  Where no hook is installed -- the terminal
-// backends, mrbtest, PSP, Wio -- setting a title is a no-op that only records
-// the last value for window_title_get.
+// for the terminal-only build, which does not compile LVGL's SDL driver at
+// all.  Where no hook is installed -- the terminal backends, mrbtest --
+// setting a title is a no-op that only records the last value for
+// window_title_get.
 
 using window_title_hook_fn = void (*)(const char* title);
 

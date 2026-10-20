@@ -7,8 +7,8 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # Registration is generated (bc2cpp_register_owner_methods), so there is no
 # hand-kept register list to drift.
 #
-# Only exists in the build when RPGMAKER_BC2CPP is set on a closed-world build
-# (psp/wio/maix/closed, build_config.rb; docs/adr/0466).
+# Only exists in the build when RPGMAKER_BC2CPP is set on the closed build
+# (build_config.rb; docs/adr/0466).
 MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   spec.license = 'MIT'
   spec.author = 'take-cheeze'

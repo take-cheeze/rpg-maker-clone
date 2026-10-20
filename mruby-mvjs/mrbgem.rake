@@ -46,16 +46,14 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   # dispatch) buildInput in flake.nix. (mvgl used OSMesa until Mesa dropped that
   # frontend; EGL surfaceless is its supported replacement.)
   #
-  # The script-driven embedded ports (scripts/wio, scripts/maix, the psp
-  # pipeline) and the native bc2cpp `closed` build (scripts/bc2cpp/
-  # closed_build.bash) run this rake only to build mrbc plus their target lib:
-  # no CMake project builds Effekseer under PROJECT_BUILD_DIR for them, and
-  # their host sub-build never renders. They are excluded by target, like
-  # emscripten, not by whether the machine's compiler happens to see EGL
-  # headers (CI's bc2cpp-build job builds `closed` inside the nix dev shell,
-  # which has them).
+  # The native bc2cpp `closed` build (scripts/bc2cpp/closed_build.bash) runs
+  # this rake only to build mrbc plus its target lib: no CMake project builds
+  # Effekseer under PROJECT_BUILD_DIR for it, and its host sub-build never
+  # renders. It is excluded by target, like emscripten, not by whether the
+  # machine's compiler happens to see EGL headers (CI's bc2cpp-build job builds
+  # `closed` inside the nix dev shell, which has them).
   have_egl = false
-  unless %w[emscripten wio maix psp closed].include?(ENV["MRUBY_TARGET"])
+  unless %w[emscripten closed].include?(ENV["MRUBY_TARGET"])
     have_egl =
       begin
         system("echo '#include <EGL/egl.h>' | #{cc.command} -E -x c - " \

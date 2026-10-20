@@ -148,55 +148,12 @@
           - "scripts/run/rpg2k-rpgrt-wine.bash"
           - "scripts/run/rpg2k-wine.bash"
 
-"platform:psp":
-  - changed-files:
-      - any-glob-to-any-file:
-          - "app/psp/**"
-          - "mruby-rgss/src/psp*.cxx"
-          - "include/psp.hxx"
-
 "platform:android":
   - changed-files:
       - any-glob-to-any-file:
           - "app/android/**"
           - "src/android*.cxx"
           - "docs/adr/0058-android-port.md"
-
-"platform:wio":
-  - changed-files:
-      - any-glob-to-any-file:
-          - "app/wio/**"
-          - "mruby-rgss/src/wio*.cxx"
-          - "include/wio.hxx"
-          - "include/lv_conf.h"
-          - "platformio.ini"
-          # The minimal walk engine the wio_walk firmware runs is shared with
-          # the iPod nano 7G app (docs/adr/0091), so a change to it is a
-          # change to this platform too.
-          - "app/shared/rpg2k_walk/**"
-
-"platform:maix":
-  - changed-files:
-      - any-glob-to-any-file:
-          - "app/maix/**"
-          - "boards/sipeed-maix-amigo.json"
-          # platformio.ini is shared with the Wio Terminal environments (one
-          # project-wide src_dir), so the labeler also tags platform:wio on
-          # mixed diffs -- both labels on such a PR is correct.
-
-"platform:m5stack":
-  - changed-files:
-      - any-glob-to-any-file:
-          # A standalone PlatformIO project (its own platformio.ini under
-          # app/m5stack/, not another environment in the repo root's --
-          # see that file's own comment) -- unlike Wio/Maix, none of its
-          # own files live outside app/m5stack/, so this rule needs no
-          # cross-tagging onto platform:wio the way platform:maix's own
-          # comment describes for itself.
-          - "app/m5stack/**"
-          - "mruby-rgss/src/m5stack.cxx"
-          - "include/m5stack.hxx"
-          - "scripts/m5stack/qemu_*.bash"
 
 # --- component -------------------------------------------------------------
 
@@ -317,7 +274,6 @@
           - "cmake/**"
           - "flake.nix"
           - "flake.lock"
-          - "platformio.ini"
           - ".gitmodules"
           - "3rd/**"
           - "scripts/Dockerfile"

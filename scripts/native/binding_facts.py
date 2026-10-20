@@ -31,9 +31,7 @@ import sys
 
 CONFIG_DEFINES = {
     'host': [],
-    'wio': ['-DWIO_TERMINAL'],
-    'psp': ['-DPSP_BUILD'],
-    'maix': ['-DMAIX_BUILD'],
+    'closed': [],
     'emscripten': ['-D__EMSCRIPTEN__'],
 }
 
@@ -145,12 +143,6 @@ def derived_flags(root, third, build_dir, config):
         os.path.join(build_dir, 'mrbgems/mruby-rgss'),
         os.path.join(root, 'mruby-rgss/src'),
     ]
-    if config == 'psp':
-        incs.insert(3, os.path.join(root, 'app/psp'))
-    if config == 'wio':
-        incs.insert(3, os.path.join(root, 'app/wio'))
-    if config == 'maix':
-        incs.insert(3, os.path.join(root, 'app/maix'))
     for inc in incs:
         flags.append('-I' + inc)
     return flags

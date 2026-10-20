@@ -905,9 +905,8 @@
 //
 // A plain global per owner, not keyed per-mrb_state: safe here for the
 // identical reason lib.cxx's own comment gives -- every real mrb_open()
-// call site in this project (src/main.cxx, app/psp/main.cxx, app/wio's own
-// SD-card smoke-test binary) opens and uses exactly one mrb_state at a
-// time, never two concurrently. A fresh mrb_mruby_rpg2k_compiled_gem_init
+// call site in this project opens and uses exactly one mrb_state at a time,
+// never two concurrently. A fresh mrb_mruby_rpg2k_compiled_gem_init
 // call (a fresh VM) simply overwrites these for that VM's own lifetime.
 //
 // Deliberately NOT a second mrb_const_get/mrb_class_get_under lookup
@@ -941,7 +940,7 @@
 // DECLARATION, deliberately leaving the real definition to this file). A
 // real g++ compile of this file with the three names missing confirmed the
 // undefined-reference failure directly (invisible to the SKIP_UNSUPPORTED
-// text-generation/wio_registered_methods.rb-TSV verification the owning
+// text-generation/registered-methods TSV verification the owning
 // round relied on, since neither ever actually compiles or links this
 // file) -- fixed here by mirroring the same three-line pattern for each of
 // the three owners, re-verified the same way (a real g++ -c compile of all
@@ -1138,7 +1137,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 
 // DUPLICATE_REGISTRATIONS: every mrb_define_* below names a method that the
 // bc2cpp_register_owner_methods(M) call above already installs, so a full build
-// registers every one of them twice. Measured on the real wio closed world:
+// registers every one of them twice. Measured on the real closed world:
 // 39/39 here, 96/96 in mruby-rgss-compiled, 1240/1240 in mruby-rpg2k-compiled,
 // with no orphan -- no call below is the only registration of its method.
 //
@@ -3649,11 +3648,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // unembedded). Checked directly against the exact Game::Actor-shaped
   // embedding bug several follow-ups up, not assumed safe by analogy:
   // grepping the whole closed world for `Switches.new`/
-  // `Game::Switches.new`/`.allocate`/a subclass finds exactly two real
-  // construction sites (mruby-rpg2k/mrblib/game.rb's own
-  // Game::State#initialize and this project's own
-  // scripts/export_nano7_map.rb harness), both plain zero-argument `.new`
-  // calls, no bypass and no subclass anywhere. No bare
+  // `Game::Switches.new`/`.allocate`/a subclass finds exactly one real
+  // construction site (mruby-rpg2k/mrblib/game.rb's own Game::State#initialize,
+  // a plain zero-argument `.new` call), no bypass and no subclass anywhere. No bare
   // `private`/`protected`/`public` anywhere in the real source (confirmed
   // directly, not guessed from bc2cpp's own diagnostic), so every method
   // below is `mrb_define_method` except #initialize itself, which mruby's
@@ -6165,7 +6162,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // #build_event and #rebuild_events_preserving_positions are bound by
   // CLOSED_WORLD_CONSTANT_OBJECT / MONO once their owners are emitted. Like
   // every call in this guarded region they exist only in a full build: a
-  // hot-only build (wio, psp, maix) lists none of these methods in
+  // hot-only build lists none of these methods in
   // tools/bc2cpp/hot_methods.txt, so it compiles none of them and emits no
   // code for these owners at all.
   //

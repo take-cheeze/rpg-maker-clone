@@ -37,68 +37,19 @@
 #include <utility>
 #include <vector>
 
-// The Wio Terminal's bare arm-none-eabi newlib -- and the Maix Amigo's bare
-// riscv64-unknown-elf newlib just the same (a hard #error in <dirent.h> on
-// both, unlike PSP's own pspsdk newlib) -- has no dirent implementation at
-// all -- find_font_path below (its only caller here) degrades to "no custom
-// Fonts/ folder on this board" rather than a build that cannot compile at
-// all; a bundled default font (default_font.cxx, gated the same way) still
-// resolves through its own fixed-path fallback.
-#if defined(WIO_TERMINAL) || defined(MAIX_BUILD)
-typedef void DIR;
-static inline DIR* opendir(const char*) {
-  return nullptr;
-}
-static inline void closedir(DIR*) {}
-struct dirent {
-  char d_name[1];
-};
-static inline dirent* readdir(DIR*) {
-  return nullptr;
-}
-#else
 #include <dirent.h>
-#endif
 
 #include <iostream>
 
-// The asset search this engine actually performs only ever tries .png,
-// .jpg/.jpeg, .bmp (via stb, all three formats an RPG Maker XP/VX RTP mixes —
-// see docs/adr/0025-rpgxp-cross-runtime-testing.md) and .xyz (the custom
-// decoder below, not stb's). None of stb's other format decoders — GIF, PSD,
-// TGA, HDR, PIC, PNM — are reachable from any loader in this codebase
-// (confirmed by grep: no stbi__gif/psd/tga/hdr/pic/pnm-specific symbol is
-// referenced anywhere). Compiling them in cost real bytes for nothing: on the
-// PSP every PT_LOAD segment of the EBOOT is mapped into RAM at launch (see
-// docs/adr/0047-psp-memory-budget.md's uni-algo trim for the same reasoning),
-// so this is live RAM there, not just file/flash size, and it shrinks the
-// desktop/wasm/wio/android binaries for free the same way that trim did.
+// Only the decoders the asset loaders reach (.png/.jpg/.bmp via stb, plus the
+// custom .xyz decoder); the others are never referenced from this codebase
+// (docs/adr/0025).
 #define STBI_NO_GIF
 #define STBI_NO_PSD
 #define STBI_NO_TGA
 #define STBI_NO_HDR
 #define STBI_NO_PIC
 #define STBI_NO_PNM
-
-// JPEG is real, reachable code on every *other* target: RGSS::Bitmap::
-// EXTENSIONS (this gem's own mrblib/lib.rb) tries :jpg/:jpeg because the RPG
-// Maker XP RTP genuinely ships .jpg title screens (see the comment on that
-// constant). wio, though, is a single_format_only build (build_config.rb) --
-// it compiles mruby-rpg2k alone, never mruby-rpgxp/mruby-rpgvx/mruby-wolf, so
-// no Ruby path on this target can ever select the XP/VX maker that .jpg
-// candidate exists for. RPG2k::Game#initialize (mruby-rpg2k/mrblib/main.rb)
-// installs RGSS::Bitmap::RPG2K_EXTENSIONS instead -- `[:bmp, :png, :xyz]`,
-// measured directly against a real RPG_RT.exe under wine to have "no
-// `.jpg`/`.jpeg` candidate ... at all" -- before any asset load this engine's
-// own boot sequence performs. So on wio specifically, every stbi__jpeg_*
-// function stb_image.h compiles in is dead weight the same way GIF/PSD/TGA/
-// HDR/PIC/PNM already are above: linked and flashed, never reachable at
-// runtime. Scoped to WIO_TERMINAL only (not a blanket single_format_only
-// check) so desktop/wasm/android/psp, none of which this measurement
-// touched, keep their current behaviour unchanged.
-#ifdef WIO_TERMINAL
-#define STBI_NO_JPEG
-#endif
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -107,11 +58,8 @@ static inline dirent* readdir(DIR*) {
 // implementation for the whole build. mruby-mvjs depends on this gem and only
 // includes the header, so its glyph rasteriser (mvcanvas.cxx) resolves against
 // the symbols emitted here — keep exactly one STB_TRUETYPE_IMPLEMENTATION.
-// Not on wio (ADR 0220): nothing there can load a TrueType face.
-#if !defined(WIO_TERMINAL)
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
-#endif
 
 // Defined in terminal.cxx (same gem).  A no-op unless the game was started with
 // a terminal backend (--sixel / --iterm); forwards terminal keyboard input to
@@ -146,9 +94,9 @@ extern "C" void rgss_audio_frame(void);
 void rgss_tts_define(mrb_state* M, RClass* rgss);
 
 // Defined in log_bridge.cxx (same gem). Forwards one already-buffered
-// $stderr line to the executable's ng-log hook (a no-op on mrbtest, PSP and
-// Wio Terminal, which never install one -- see include/terminal.hxx's
-// "Stderr log bridge" section, docs/adr/0005).
+// $stderr line to the executable's ng-log hook (a no-op on mrbtest, which
+// never installs one -- see include/terminal.hxx's "Stderr log bridge"
+// section, docs/adr/0005).
 void log_bridge_write(const char* msg,
                       size_t len,
                       const char* file = nullptr,
@@ -161,34 +109,13 @@ void log_bridge_write_stderr(const char* msg);
 // Defined in window_title.cxx (same gem). Hands the running game's own title
 // to the executable's hook -- the SDL window's caption, or the browser tab
 // under Emscripten -- and remembers it. Beyond that record it is a no-op where
-// no hook is installed (the terminal backends, mrbtest, PSP, Wio Terminal);
+// no hook is installed (the terminal backends, mrbtest);
 // see include/terminal.hxx's "Window title bridge" section.
 void window_title_set(const char* title);
 const std::string& window_title_get();
 
-#if defined(WIO_TERMINAL)
-// Defined in wio_input_bridge.cxx; scans the board's buttons/5-way switch and
-// forwards press/release edges to RGSS::Input.  Guarded so the desktop/wasm
-// builds, which do not compile the Wio backend, need no such symbol.
-extern "C" void rgss_wio_poll(mrb_state* M);
-#endif
 
-#if defined(PSP_BUILD)
-// Defined in psp_input_bridge.cxx; scans the PSP pad and forwards press/release
-// edges to RGSS::Input.  Guarded so the desktop/wasm builds, which do not
-// compile the PSP backend, need no such symbol.
-extern "C" void rgss_psp_poll(mrb_state* M);
-#endif
 
-#if defined(MAIX_BUILD)
-// Defined platform-side (app/wio/src/maix_input.cxx); scans the Amigo touch
-// panel and forwards press/release edges to RGSS::Input. Guarded so the
-// desktop/wasm builds, which do not compile the Maix backend, need no such
-// symbol. Unlike the Wio bridge above, this lives outside libmruby.a
-// entirely (nothing Arduino-touching is compiled at rake time), so there is
-// no mruby-side counterpart file -- just this declaration.
-extern "C" void rgss_maix_poll(mrb_state* M);
-#endif
 
 namespace {
 // RGSS.default_font_path -> the bundled default UI font, or nil when none is
@@ -205,23 +132,8 @@ mrb_value to_nfd(mrb_state* M, mrb_value self) {
   const char* ptr;
   mrb_int len;
   mrb_get_args(M, "s", &ptr, &len);
-#ifdef WIO_TERMINAL
-  // uni-algo's NFD decomposition/combining-class tables are ~94 KB on their
-  // own (docs/adr/0105's own real measurement) -- a meaningful slice of this
-  // board's 496 KB flash budget for a feature that exists to paper over a
-  // real but narrow bug class (a macOS-authored zip/archive storing
-  // filenames in NFD while the game data references them in NFC, or vice
-  // versa). mrblib/lib.rb's exist_with_ext calls this as a *second-chance*
-  // fallback only when the exact filename already failed to resolve, so
-  // returning the input unchanged here just means that second chance never
-  // fires on this target -- an asset whose filename's normalization form
-  // already matches (by far the common case: this project's own export
-  // pipeline writes one consistent form) still loads exactly as before.
-  return mrb_str_new(M, ptr, len);
-#else
   std::string nfd = una::norm::to_nfd_utf8(std::string_view(ptr, len));
   return mrb_str_new(M, nfd.data(), nfd.size());
-#endif
 }
 
 // Inflate a zlib stream and return the decompressed bytes as a String. RGSS
@@ -231,8 +143,6 @@ mrb_value to_nfd(mrb_state* M, mrb_value self) {
 // decoder -- already linked for PNG/XYZ loading -- so no extra dependency is
 // pulled in. Falls back to a raw (headerless) DEFLATE decode the way load_xyz
 // does, and raises RGSS::RGSSError when the stream cannot be inflated.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
-                            // (docs/adr/0132)
 mrb_value zlib_inflate_native_body(mrb_state* M,
                                    mrb_value self,
                                    const char* ptr,
@@ -256,7 +166,6 @@ mrb_value zlib_inflate(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "s", &ptr, &len);
   return zlib_inflate_native_body(M, self, ptr, len);
 }
-#endif  // !defined(WIO_TERMINAL)
 
 using V = ::mrb_value;
 
@@ -296,22 +205,6 @@ struct Table {
   std::vector<int16_t> data;
 };
 
-// Live decoded-Bitmap-buffer byte totals, split by how the buffer's contents
-// came to be, since the two have very different growth shapes: `decoded` is
-// real asset pixels (CharSet/Picture/Chipset/... -- what
-// mruby-rpg2k/mrblib/scene/map.rb's LRUBitmapCache now bounds, and what
-// docs/adr/0047-psp-memory-budget.md's Finding 3 calls "the third pool"),
-// while `blank` is everything that never touched a decoder: render targets,
-// snapshots, canvases (`Bitmap.new(w, h)`), and a `Bitmap#clone`'s own copy
-// (RPG::Cache's hue-variant pattern -- copies an existing buffer, decodes
-// nothing itself, so it is not double-counted against `decoded` even though
-// the bitmap it was cloned from was). Exposed to app/psp/main.cxx's own
-// heartbeat via rgss_bitmap_bytes_decoded/_blank below, the same
-// extern-"C"-without-a-shared-header pattern rgss_set_display already uses
-// across this boundary.
-static size_t g_bitmap_bytes_decoded = 0;
-static size_t g_bitmap_bytes_blank = 0;
-
 struct Bitmap {
   static constexpr const char* kTypeName = "Bitmap";
   int32_t width, height;
@@ -321,64 +214,26 @@ struct Bitmap {
   // sprites showing this bitmap and have LVGL redraw them. Starts true so the
   // initial contents are painted on the first frame after assignment.
   bool dirty = true;
-  // Which of g_bitmap_bytes_decoded/_blank this instance's buffer counts
-  // against -- fixed at construction (see the constructor's own `decoded`
-  // parameter) and never changed afterward, including across a
-  // Bitmap#clone's own reassignment (see operator= below): the category
-  // tracks how *this* object came to exist, not what its buffer currently
-  // holds.
-  bool decoded_from_source;
-
-  Bitmap(mrb_int w, mrb_int h, lv_color_format_t f, bool decoded = false)
-      : width(w),
-        height(h),
-        format(f),
-        buffer(w * h * lv_color_format_get_size(f)),
-        decoded_from_source(decoded) {
-    (decoded ? g_bitmap_bytes_decoded : g_bitmap_bytes_blank) += buffer.size();
-  }
-
-  ~Bitmap() {
-    (decoded_from_source ? g_bitmap_bytes_decoded : g_bitmap_bytes_blank) -=
-        buffer.size();
-  }
+  Bitmap(mrb_int w, mrb_int h, lv_color_format_t f)
+      : width(w), height(h), format(f), buffer(w * h * lv_color_format_get_size(f)) {}
 
   // Only ever assigned through Bitmap#clone's `dst = src;` (this file's
-  // bmp_init_copy): a deep copy of the pixel content, but deliberately
-  // *not* of `decoded_from_source` -- `dst` keeps counting against whatever
-  // category its own construction already added it to, so this can't leave
-  // the two counters out of sync with what was actually added/removed at
-  // construction/destruction time. Copy-constructing a Bitmap is never done
-  // anywhere in this codebase (every use goes through DataType<Bitmap>'s
-  // alloc_obj or this operator=) and is deleted below so a future one
-  // can't silently bypass this bookkeeping.
+  // bmp_init_copy). Copy-constructing a Bitmap is never done anywhere in this
+  // codebase (every use goes through DataType<Bitmap>'s alloc_obj or this
+  // operator=), so it is deleted below.
   Bitmap& operator=(const Bitmap& other) {
     if (this == &other)
       return *this;
-    size_t& counter =
-        decoded_from_source ? g_bitmap_bytes_decoded : g_bitmap_bytes_blank;
-    counter -= buffer.size();
     width = other.width;
     height = other.height;
     format = other.format;
     buffer = other.buffer;
     dirty = other.dirty;
-    counter += buffer.size();
     return *this;
   }
 
   Bitmap(const Bitmap&) = delete;
 };
-
-// The RPG2k/RPGXP/RPGVX asset loaders below (bmp_decode_into) are the only
-// real "decoded from a source" construction path; every other Bitmap
-// (blank buffers, canvases, snapshots, and a clone's own copy) is `blank`.
-extern "C" size_t rgss_bitmap_bytes_decoded(void) {
-  return g_bitmap_bytes_decoded;
-}
-extern "C" size_t rgss_bitmap_bytes_blank(void) {
-  return g_bitmap_bytes_blank;
-}
 
 // Every DataType<T>-wrapped Ruby object is backed by a std::shared_ptr<T>
 // rather than a bare T* -- but every real call site in this codebase today
@@ -698,14 +553,9 @@ namespace {
 // This is the real RClass* this gem's own gem_init created, independent
 // of whatever the constant table says right now.
 //
-// A plain global (not keyed per-mrb_state) is safe here: every real
-// mrb_open() call site in this project (src/main.cxx, app/psp/main.cxx,
-// app/wio's own SD-card smoke-test binary) opens and uses exactly one
-// mrb_state at a time, never two concurrently -- confirmed by grepping
-// every mrb_open() call site in this project. A fresh
-// mrb_mruby_rgss_gem_init call (a fresh VM) simply overwrites these for
-// that VM's own lifetime, same as this file's own g_bitmap_bytes_decoded/
-// _blank pair already does for a different fact.
+// A plain global (not keyed per-mrb_state) is safe here: the project opens
+// and uses exactly one mrb_state at a time. A fresh mrb_mruby_rgss_gem_init
+// call (a fresh VM) simply overwrites these for that VM's own lifetime.
 RClass* g_native_rect_class = nullptr;
 RClass* g_native_color_class = nullptr;
 RClass* g_native_tone_class = nullptr;
@@ -1557,8 +1407,6 @@ mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
 // cache's original along with the variant. The copy starts dirty so anything
 // already showing it repaints, and gets its own Font, so setting a size or
 // colour on the clone cannot reach back into the bitmap it came from.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
-                            // (docs/adr/0132)
 mrb_value bmp_init_copy_native_body(mrb_state* M, V self, mrb_value other) {
   if (mrb_obj_equal(M, self, other))
     return self;
@@ -1594,7 +1442,6 @@ mrb_value bmp_init_copy(mrb_state* M, V self) {
   mrb_get_args(M, "o", &other);
   return bmp_init_copy_native_body(M, self, other);
 }
-#endif  // !defined(WIO_TERMINAL)
 
 // One frame of RGSS's Graphics.transition(duration, filename, vague) with a
 // transition *graphic*: a greyscale image whose brightness at each pixel says
@@ -1742,8 +1589,7 @@ static bool bmp_decode_into(mrb_state* M,
   const int channels = from_stb ? req : 4;
   Bitmap& bmp = DataType<Bitmap>::alloc_obj(
       M, self, w, h,
-      channels == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888,
-      /* decoded = */ true);
+      channels == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888);
   std::memcpy(bmp.buffer.data(), img.get(), bmp.buffer.size());
   if (from_stb) {
     uint8_t* p = bmp.buffer.data();
@@ -1761,17 +1607,13 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   if (slurp_file(f, data) &&
       bmp_decode_into(M, self, data.data(), data.size(), f, trans))
     return self;
-#ifndef WIO_TERMINAL
   // Some archives store filenames in NFD form while the game data refers to
   // them in NFC (or vice versa); retry with the decomposed form before giving
-  // up so accented paths still resolve. Skipped on wio: see to_nfd's own
-  // comment above for why this ~94 KB uni-algo table set isn't worth it on a
-  // 496 KB-flash target -- the exact same tradeoff applies here.
+  // up so accented paths still resolve.
   const std::string nfd_f = una::norm::to_nfd_utf8(f);
   if (nfd_f != f && slurp_file(nfd_f.c_str(), data) &&
       bmp_decode_into(M, self, data.data(), data.size(), nfd_f.c_str(), trans))
     return self;
-#endif
   return mrb_nil_value();
 }
 
@@ -2003,8 +1845,6 @@ mrb_value bmp_tone_blt(mrb_state* M, V self) {
 // (x, y, width, height, color1, color2, vertical=false): fill the rect with a
 // linear gradient from color1 to color2, left-to-right (or top-to-bottom when
 // vertical). Like fill_rect, it overwrites the pixels (colour + alpha).
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
-                            // (docs/adr/0132)
 mrb_value bmp_gradient_fill_rect(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int x, y, w, h;
@@ -2037,7 +1877,6 @@ mrb_value bmp_gradient_fill_rect(mrb_state* M, V self) {
   b.dirty = true;
   return self;
 }
-#endif  // !defined(WIO_TERMINAL)
 
 // RGSS Bitmap#hue_change(hue): rotate every pixel's hue by `hue` degrees,
 // preserving saturation, value and alpha (an RGB -> HSV -> RGB pass, matching
@@ -2053,8 +1892,6 @@ mrb_value bmp_gradient_fill_rect(mrb_state* M, V self) {
 // transparent neighbour dragging colour out of an opaque pixel: a transparent
 // pixel has no colour to contribute, only weight. RGSS's own blur is a
 // fixed, mild one with no parameters, so there is nothing here to tune.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
-                            // (docs/adr/0132)
 mrb_value bmp_blur(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   if (b.width < 1 || b.height < 1)
@@ -2100,7 +1937,6 @@ mrb_value bmp_blur(mrb_state* M, V self) {
   b.dirty = true;
   return self;
 }
-#endif  // !defined(WIO_TERMINAL)
 
 // RGSS Bitmap#radial_blur(angle, division): a rotational blur about the centre.
 //
@@ -2113,8 +1949,6 @@ mrb_value bmp_blur(mrb_state* M, V self) {
 //
 // division < 2 or angle == 0 is the identity, matching "no rotation to spread
 // over" rather than dividing by zero.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
-                            // (docs/adr/0132)
 mrb_value bmp_radial_blur(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int angle, division;
@@ -2166,10 +2000,7 @@ mrb_value bmp_radial_blur(mrb_state* M, V self) {
   b.dirty = true;
   return self;
 }
-#endif  // !defined(WIO_TERMINAL)
 
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
-                            // (docs/adr/0132)
 mrb_value bmp_hue_change(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int hue;
@@ -2235,7 +2066,6 @@ mrb_value bmp_hue_change(mrb_state* M, V self) {
   b.dirty = true;
   return self;
 }
-#endif  // !defined(WIO_TERMINAL)
 
 mrb_value bmp_get_pixel(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
@@ -2250,8 +2080,6 @@ mrb_value bmp_get_pixel(mrb_state* M, V self) {
       M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);
 }
 
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
-                            // (docs/adr/0132)
 mrb_value bmp_set_pixel(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int x, y;
@@ -2262,7 +2090,6 @@ mrb_value bmp_set_pixel(mrb_state* M, V self) {
   b.dirty = true;
   return self;
 }
-#endif  // !defined(WIO_TERMINAL)
 
 // Composite one source row onto one destination row: `w` pixels from source
 // row `sy` starting at column `sx`, written from destination column `x` on row
@@ -2723,128 +2550,8 @@ auto find_char = [](char32_t c, const auto* g, unsigned g_len) -> const auto* {
   return i;
 };
 
-// docs/adr/0110: the JIS0208 GOTHIC face is 165,624 bytes flash (real
-// measurement, ADR 0104) -- by far the single largest piece of static data
-// mruby-rgss carries, and RGSS_SHINONOME_GOTHIC_SD_PATH (a no-op unless
-// defined) moves it to the SD card instead: gen_shinonome_data.rb's own
-// SHINONOME_GOTHIC_SD_FILE writes the same sorted (codepoint, bitmap) pairs
-// find_char above already binary-searches, as flat packed binary, to a file
-// this reads back with plain std::fopen/fseek/fread -- the same file API
-// bmp_init_file already uses for every game asset, on every target
-// including wio, so this needs no new HAL. Unlike mruby-rpg2k's compiled
-// Ruby (docs/adr/0108's own attempt, abandoned once RAM-scaling made it
-// impractical), a glyph bitmap is raw data with a fixed, tiny per-entry
-// size -- no mrb_load_irep_buf, no interpreter IREP overhead, no cost that
-// scales with how much of the face is "loaded": binary search touches
-// O(log n) records, and a small fixed-size cache (shinonome_sd::Cache below)
-// keeps every glyph a session actually draws resident after its first,
-// one-time SD read, so a dialogue box that reuses the same few hundred
-// kanji over and over reads the card once per glyph, not once per frame.
-#ifdef RGSS_SHINONOME_GOTHIC_SD_PATH
-namespace shinonome_sd {
-
-using GothicChar = shinonome::Char<shinonome::HEIGHT>;
-// Mirrors shinonome.hxx's own std::array<uint32_t, PIXELS/32 + ...> sizing
-// for Char::data exactly, so a record here is byte-for-byte the same shape
-// gen_shinonome_data.rb's SHINONOME_GOTHIC_SD_FILE writer emits.
-constexpr unsigned GOTHIC_WORDS =
-    GothicChar::PIXELS / 32 + ((GothicChar::PIXELS % 32) > 0 ? 1 : 0);
-
-// Fixed-size, direct-mapped cache: CAPACITY slots, replaced round-robin as
-// new glyphs are looked up. Not an LRU (no per-access bookkeeping) -- with
-// a few dozen distinct kanji in an ordinary dialogue box, a round-robin
-// still keeps the working set resident far more often than it evicts it,
-// and costs nothing to maintain per lookup. 64, not a rounder-looking 256:
-// each slot is sizeof(GothicChar) (24 bytes) of static BSS, and a real
-// relink at 256 slots (docs/adr/0110's own measurement) overflowed the
-// board's 192 KB RAM budget by 248 bytes -- this board has none to spare
-// for a cache size picked without checking.
-struct Cache {
-  static constexpr unsigned CAPACITY = 64;
-  std::array<GothicChar, CAPACITY> slots{};
-  unsigned next = 0;
-  std::FILE* fp = nullptr;
-  bool tried_open = false;
-  uint32_t count = 0;
-
-  Cache() {
-    for (auto& s : slots)
-      s.codepoint = 0xffffffffu;  // never a real Unicode codepoint
-  }
-
-  static uint32_t read_u32le(std::FILE* f) {
-    uint8_t b[4];
-    if (std::fread(b, 1, 4, f) != 4)
-      return 0;
-    return static_cast<uint32_t>(b[0]) | (static_cast<uint32_t>(b[1]) << 8) |
-           (static_cast<uint32_t>(b[2]) << 16) |
-           (static_cast<uint32_t>(b[3]) << 24);
-  }
-
-  bool ensure_open() {
-    if (tried_open)
-      return fp != nullptr;
-    tried_open = true;
-    fp = std::fopen(RGSS_SHINONOME_GOTHIC_SD_PATH, "rb");
-    if (!fp)
-      return false;
-    count = read_u32le(fp);
-    return true;
-  }
-
-  const GothicChar* find(char32_t c) {
-    for (const auto& s : slots)
-      if (s.codepoint == c)
-        return &s;
-
-    if (!ensure_open())
-      return nullptr;
-
-    constexpr long kRecordSize = 4 + GOTHIC_WORDS * 4;
-    long lo = 0, hi = static_cast<long>(count);
-    while (lo < hi) {
-      const long mid = lo + (hi - lo) / 2;
-      std::fseek(fp, 4 + mid * kRecordSize, SEEK_SET);
-      const uint32_t cp = read_u32le(fp);
-      if (cp == c) {
-        GothicChar& slot = slots[next];
-        next = (next + 1) % CAPACITY;
-        slot.codepoint = c;
-        for (auto& word : slot.data)
-          word = read_u32le(fp);
-        return &slot;
-      }
-      if (cp < c)
-        lo = mid + 1;
-      else
-        hi = mid;
-    }
-    return nullptr;
-  }
-};
-
-Cache g_cache;
-
-}  // namespace shinonome_sd
-#endif  // RGSS_SHINONOME_GOTHIC_SD_PATH
-
-// Every real call site already reads shinonome::GOTHIC through find_char
-// directly; route them all through here instead so the SD fallback above is
-// one place, not three. Checks the (possibly now-empty, see
-// gen_shinonome_data.rb) compiled-in table first -- a build that never
-// defined RGSS_SHINONOME_GOTHIC_SD_PATH behaves exactly as before, and one
-// that did but shipped some glyphs in flash anyway (a partial
-// SHINONOME_GLYPH_TEXT_FILE allow-list, say) never pays for an SD lookup on
-// those.
 const shinonome::Char<shinonome::HEIGHT>* find_gothic_char(char32_t c) {
-  auto* f = find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
-  if (f)
-    return f;
-#ifdef RGSS_SHINONOME_GOTHIC_SD_PATH
-  return shinonome_sd::g_cache.find(c);
-#else
-  return nullptr;
-#endif
+  return find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
 }
 
 // --- TrueType text rendering -------------------------------------------------
@@ -2855,12 +2562,7 @@ const shinonome::Char<shinonome::HEIGHT>* find_gothic_char(char32_t c) {
 // the font's pixel size (plus bold/italic/outline/shadow), instead of the
 // fixed-size shinonome bitmap font. When no usable font file is found we fall
 // back to the shinonome path below, so text always draws.
-//
-// Compiled out on wio (ADR 0220): it has no Fonts/ directory to scan (no
-// dirent) and no maker that sets RGSS::Font.default_path, so every face
-// lookup there fails and text is always shinonome.
 
-#if !defined(WIO_TERMINAL)
 struct TtfFont {
   std::vector<uint8_t> data;
   stbtt_fontinfo info{};
@@ -2960,7 +2662,6 @@ std::string find_font_path(mrb_state* M, const std::string& name) {
   }
   return partial.empty() ? first_any : partial;
 }
-#endif  // !defined(WIO_TERMINAL)
 
 // The attribute `reader` of `obj` without a call frame (ADR 0472): when the
 // method `reader` answers on obj's class with the reader mruby's own
@@ -3028,7 +2729,6 @@ std::string font_default_path(mrb_state* M) {
 // The fallback path is part of the key, not just the name: a game's scripts may
 // set Font.default_path (or the boot may set it after the first text has been
 // drawn), and the entry cached before that must not outlive it.
-#if !defined(WIO_TERMINAL)
 std::shared_ptr<TtfFont> ttf_for_name(mrb_state* M, const std::string& name) {
   static std::map<std::string, std::shared_ptr<TtfFont>> cache;
   const std::string fallback = font_default_path(M);
@@ -3045,13 +2745,10 @@ std::shared_ptr<TtfFont> ttf_for_name(mrb_state* M, const std::string& name) {
   cache[key] = f;
   return f;
 }
-#endif  // !defined(WIO_TERMINAL)
 
 // The subset of RGSS::Font a draw needs, read once from the bitmap's @font.
 struct FontAttr {
-#if !defined(WIO_TERMINAL)
   std::shared_ptr<TtfFont> ttf;
-#endif
   double size = 22;
   bool bold = false, italic = false, outline = true, shadow = false;
   uint8_t color[4] = {0, 0, 0, 255};      // r, g, b, a
@@ -3070,14 +2767,11 @@ void color_rgba(mrb_state* M, V cv, uint8_t out[4]) {
 
 FontAttr read_font(mrb_state* M, V self) {
   FontAttr fa;
-#if !defined(WIO_TERMINAL)
   std::string name;
-#endif
   const V fv = mrb_iv_get(M, self, mrb_intern_lit(M, "@font"));
   if (!mrb_nil_p(fv)) {
     // Each attribute is read through plain_attr_read; only a Font whose
     // reader was replaced is asked by name.
-#if !defined(WIO_TERMINAL)
     V nv = plain_attr_read(M, fv, mrb_intern_lit(M, "name"));
     if (mrb_undef_p(nv))
       nv = mrb_funcall(M, fv, "name", 0);
@@ -3089,7 +2783,6 @@ FontAttr read_font(mrb_state* M, V self) {
       const V n0 = mrb_ary_ref(M, nv, 0);
       name.assign(RSTRING_PTR(n0), RSTRING_LEN(n0));
     }
-#endif
     V sv = plain_attr_read(M, fv, mrb_intern_lit(M, "size"));
     if (mrb_undef_p(sv))
       sv = mrb_funcall(M, fv, "size", 0);
@@ -3122,20 +2815,10 @@ FontAttr read_font(mrb_state* M, V self) {
       ocv = mrb_funcall(M, fv, "out_color", 0);
     color_rgba(M, ocv, fa.out_color);
   }
-#if defined(WIO_TERMINAL)
-  // A default face asks for the renderer this build left out; drawing it in
-  // shinonome instead would hide that.
-  if (!font_default_path(M).empty())
-    mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(NotImplementedError)),
-              "RGSS::Font.default_path: TrueType text is not compiled into "
-              "the Wio Terminal build (ADR 0220)");
-#else
   fa.ttf = ttf_for_name(M, name);
-#endif
   return fa;
 }
 
-#if !defined(WIO_TERMINAL)
 // Advance width and line height of `s` at `px` em size, in whole pixels.
 void measure_text_ttf(TtfFont& f,
                       std::string_view s,
@@ -3420,7 +3103,6 @@ void draw_text_tex_ttf(Bitmap& bmp,
   bmp.dirty = true;
 }
 
-#endif  // !defined(WIO_TERMINAL)
 
 // Measure the pixel width and height of `s` using the shinonome font tables.
 void measure_text(std::string_view s, int& width, unsigned& height) {
@@ -3532,12 +3214,10 @@ mrb_value bmp_draw_text_body(mrb_state* M,
   // rasterising at the font's pixel size. Fall back to the fixed-size shinonome
   // bitmap font when no usable font file is found.
   const FontAttr fa = read_font(M, self);
-#if !defined(WIO_TERMINAL)
   if (fa.ttf && fa.ttf->ok) {
     draw_text_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h, static_cast<int>(align));
     return self;
   }
-#endif
 
   // Text colour comes from the font (default opaque black when no @font is
   // set), laid out in the bitmap's byte order (B, G, R, A).
@@ -3612,14 +3292,12 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
   const std::string_view sv(s, len);
 
   [[maybe_unused]] const FontAttr fa = read_font(M, self);
-#if !defined(WIO_TERMINAL)
   if (fa.ttf && fa.ttf->ok) {
     draw_text_tex_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h, static_cast<int>(align),
                       src_bmp, static_cast<int>(sx), static_cast<int>(sy),
                       static_cast<int>(sw), static_cast<int>(sh));
     return self;
   }
-#endif
 
   int tw = 0;
   unsigned th = 0;
@@ -3689,11 +3367,9 @@ mrb_value bmp_text_size_body(mrb_state* M,
   int w = 0;
   int height = 0;
   [[maybe_unused]] const FontAttr fa = read_font(M, self);
-#if !defined(WIO_TERMINAL)
   if (fa.ttf && fa.ttf->ok) {
     measure_text_ttf(*fa.ttf, sv, fa.size, w, height);
   } else
-#endif
   {
     unsigned uh = 0;
     measure_text(sv, w, uh);
@@ -3779,15 +3455,6 @@ void update_z(mrb_state* M) {
 mrb_value input_poll(mrb_state* M, mrb_value self) {
   rgss_terminal_poll(M);
   rgss_sdl_poll(M);
-#if defined(WIO_TERMINAL)
-  rgss_wio_poll(M);
-#endif
-#if defined(PSP_BUILD)
-  rgss_psp_poll(M);
-#endif
-#if defined(MAIX_BUILD)
-  rgss_maix_poll(M);
-#endif
   return mrb_nil_value();
 }
 
@@ -3832,14 +3499,11 @@ uint32_t g_render_acc = 0;
 //
 // Dropping the deadline is the whole implementation: the next update sees
 // !g_paced and starts counting from then.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
-                            // (docs/adr/0132)
 mrb_value gfx_frame_reset(mrb_state* M, mrb_value self) {
   (void)M;
   g_paced = false;
   return self;
 }
-#endif  // !defined(WIO_TERMINAL)
 
 // Whether *this* Graphics.update call should reach the LVGL redraw, per
 // --render_fps (src/main.cxx). Game logic runs every call regardless -- this
@@ -4081,7 +3745,7 @@ void RGSS_warn_stub(mrb_state* M, const char* name) {
 // byte order (B, G, R, A), the same layout Bitmap uses, so the rows copy
 // straight across (honouring the snapshot's stride, which is padded).
 //
-// Answers nil where the module is compiled out (the Wio/PSP builds) rather than
+// Answers nil where LVGL's snapshot module is compiled out rather than
 // pretending, and says so once.
 mrb_value gfx_snap_to_bitmap(mrb_state* M, mrb_value self) {
 #if LV_USE_SNAPSHOT
@@ -4709,8 +4373,6 @@ mrb_value obj_visible(mrb_state* M, mrb_value self) {
   return mrb_nil_p(v) ? mrb_true_value() : v;
 }
 
-#if !defined(WIO_TERMINAL)  // Plane: dead weight on wio, no Ruby path ever
-                            // instantiates it (docs/adr/0132)
 // ---- Plane ----------------------------------------------------------------
 
 // Redraw the plane's canvas: fill it by tiling the source bitmap, wrapping the
@@ -4945,14 +4607,8 @@ mrb_value plane_set_zoom_y(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "f", &z);
   return plane_set_zoom_y_native_body(M, self, z);
 }
-#endif  // !defined(WIO_TERMINAL)
 
 // ---- Tilemap --------------------------------------------------------------
-
-// Tilemap and Window are compiled out on wio (ADR 0220): its only maker,
-// RPG2k, draws with its own tilemap and RPG2k::Window. The classes stay, with
-// an initialize that raises (not_compiled_init).
-#if !defined(WIO_TERMINAL)
 
 // One RGSS map tile is 32x32 px; a tileset is 8 tiles (256 px) wide.
 static const int TILE_SIZE = 32;
@@ -5627,8 +5283,7 @@ void tilemap_apply_viewport_tone(mrb_state* M,
 // XP's 640x480) plus a wasted per-refresh viewport-tone pass walking every
 // one of its pixels (tilemap_apply_viewport_tone) for a layer that could
 // never show anything -- dead weight on every RPG Maker XP game, including
-// the psp/wio targets this code is shared with (see TILEMAP_STRIP_SLOTS's own
-// comment on why that budget matters here). Mirrors tilemap_strip's own lazy
+// Mirrors tilemap_strip's own lazy
 // shape: created once, held on the tilemap so the GC keeps it alive, torn
 // down by tilemap_dispose exactly as before.
 void tilemap_ensure_above(mrb_state* M, mrb_value self, int w, int h) {
@@ -6075,8 +5730,6 @@ mrb_value tilemap_set_flags(mrb_state* M, mrb_value self) {
 // The VX / VX Ace tile geometry, exposed so it can be pinned by unit tests: the
 // drawing needs a display the headless test binary has not got, but the decode
 // is pure arithmetic. Answers an empty Array for an id that draws nothing.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
-                            // (docs/adr/0132)
 mrb_value tilemap_vx_tile_quads(mrb_state* M, mrb_value self) {
   mrb_int tile_id = 0, frame = 0;
   mrb_bool table = FALSE;
@@ -6099,7 +5752,6 @@ mrb_value tilemap_vx_tile_quads(mrb_state* M, mrb_value self) {
   }
   return out;
 }
-#endif  // !defined(WIO_TERMINAL)
 
 // Tilemap.vx_table_leg_quads(tile_id) -> [[sheet, sx, sy, dx, dy, w, h], ...]
 //
@@ -6107,8 +5759,6 @@ mrb_value tilemap_vx_tile_quads(mrb_state* M, mrb_value self) {
 // vx_table_leg_quads above), exposed the same way vx_tile_quads is: pure
 // arithmetic, pinned without needing the display the headless test binary
 // has not got.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
-                            // (docs/adr/0132)
 mrb_value tilemap_vx_table_leg_quads_native_body(mrb_state* M,
                                                  mrb_value self,
                                                  mrb_int tile_id) {
@@ -6135,7 +5785,6 @@ mrb_value tilemap_vx_table_leg_quads(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "i", &tile_id);
   return tilemap_vx_table_leg_quads_native_body(M, self, tile_id);
 }
-#endif  // !defined(WIO_TERMINAL)
 
 // Show/hide the tilemap, propagating to the priority "above" layer so a hidden
 // tilemap hides its roofs too (the above canvas is a separate LVGL object that
@@ -6919,7 +6568,6 @@ mrb_value window_update(mrb_state* M, mrb_value self) {
   return self;
 }
 
-#endif  // !defined(WIO_TERMINAL)
 
 // ---- Viewport -------------------------------------------------------------
 
@@ -7209,10 +6857,8 @@ void vp_refresh_overlay(mrb_state* M, mrb_value self) {
 void vp_refresh_children(mrb_state* M, mrb_value self) {
   RClass* rgss = mrb_module_get(M, "RGSS");
   RClass* spr_class = mrb_class_get_under(M, rgss, "Sprite");
-#if !defined(WIO_TERMINAL)  // Plane is never registered on wio (docs/adr/0132)
   RClass* plane_class = mrb_class_get_under(M, rgss, "Plane");
   RClass* tilemap_class = mrb_class_get_under(M, rgss, "Tilemap");
-#endif  // !defined(WIO_TERMINAL)
   const mrb_value objs = zorder_objs(M);
   for (mrb_int i = 0; i < RARRAY_LEN(objs); ++i) {
     const mrb_value v = RARRAY_PTR(objs)[i];
@@ -7223,12 +6869,10 @@ void vp_refresh_children(mrb_state* M, mrb_value self) {
       continue;
     if (mrb_obj_is_kind_of(M, v, spr_class))
       spr_bind_display(M, v, reinterpret_cast<lv_obj_t*>(DATA_PTR(v)));
-#if !defined(WIO_TERMINAL)  // Plane: ADR 0132; Tilemap: ADR 0220
     else if (mrb_obj_is_kind_of(M, v, plane_class))
       plane_retile(M, v);
     else if (mrb_obj_is_kind_of(M, v, tilemap_class))
       tilemap_refresh(M, v);
-#endif  // !defined(WIO_TERMINAL)
   }
 }
 
@@ -7392,10 +7036,8 @@ void define_rect(mrb_state* M, RClass* m) {
         return self;
       },
       MRB_ARGS_OPT(4));
-#if !defined(WIO_TERMINAL)  // Rect#dup/#clone: unused on wio (docs/adr/0132)
   mrb_define_method(M, rect, "initialize_copy", data_init_copy<Rect>,
                     MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
   mrb_define_method(
       M, rect, "set",
       [](mrb_state* M, V self) {
@@ -7985,8 +7627,6 @@ mrb_value rect_height_set_direct(mrb_state* M, mrb_value self, mrb_int h) {
   return mrb_fixnum_value(DataType<Rect>::get(M, self).height = h);
 }
 
-#if !defined(WIO_TERMINAL)
-// Window, Tilemap and Plane bodies exist only off wio (ADR 0220, 0132).
 mrb_value window_update_direct(mrb_state* M, mrb_value self) {
   return window_update(M, self);
 }
@@ -8093,66 +7733,6 @@ mrb_value plane_color_set_direct(mrb_state* M, mrb_value self, mrb_value v) {
   plane_retile(M, self);
   return v;
 }
-#else   // defined(WIO_TERMINAL)
-// The classes are never instantiated on wio, so their exact-class guards are
-// never true; these only satisfy the link of generated call sites.
-static mrb_value compiled_out_direct(mrb_state* M, mrb_value self) {
-  mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(NotImplementedError)),
-             "%C is not compiled into the Wio Terminal build (ADR 0220)",
-             mrb_obj_class(M, self));
-  return self;
-}
-
-mrb_value window_update_direct(mrb_state* M, mrb_value self) {
-  return compiled_out_direct(M, self);
-}
-mrb_value tilemap_dispose_direct(mrb_state* M, mrb_value self) {
-  return compiled_out_direct(M, self);
-}
-mrb_value window_openness_set_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return compiled_out_direct(M, self);
-}
-mrb_value window_tone_set_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return compiled_out_direct(M, self);
-}
-mrb_value window_tone_direct(mrb_state* M, mrb_value self) {
-  return compiled_out_direct(M, self);
-}
-mrb_value window_contents_set_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return compiled_out_direct(M, self);
-}
-mrb_value window_width_set_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return compiled_out_direct(M, self);
-}
-mrb_value window_height_set_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return compiled_out_direct(M, self);
-}
-mrb_value window_windowskin_set_direct(mrb_state* M,
-                                       mrb_value self,
-                                       mrb_value) {
-  return compiled_out_direct(M, self);
-}
-mrb_value window_cursor_rect_set_direct(mrb_state* M,
-                                        mrb_value self,
-                                        mrb_value) {
-  return compiled_out_direct(M, self);
-}
-mrb_value window_active_set_direct(mrb_state* M, mrb_value self, mrb_bool) {
-  return compiled_out_direct(M, self);
-}
-mrb_value window_pause_set_direct(mrb_state* M, mrb_value self, mrb_bool) {
-  return compiled_out_direct(M, self);
-}
-mrb_value tilemap_z_set_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return compiled_out_direct(M, self);
-}
-mrb_value tilemap_visible_set_direct(mrb_state* M, mrb_value self, mrb_bool) {
-  return compiled_out_direct(M, self);
-}
-mrb_value plane_color_set_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return compiled_out_direct(M, self);
-}
-#endif  // !defined(WIO_TERMINAL)
 
 mrb_value table_new_direct(mrb_state* M,
                            RClass* klass,
@@ -8321,16 +7901,6 @@ static mrb_value window_title_get_m(mrb_state* M, mrb_value) {
                        : mrb_str_new(M, title.data(), title.size());
 }
 
-#if defined(WIO_TERMINAL)
-// RGSS::Tilemap / RGSS::Window on wio (ADR 0220): fail loudly rather than
-// hand back an object that never draws.
-static mrb_value not_compiled_init(mrb_state* M, mrb_value self) {
-  mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(NotImplementedError)),
-             "%C is not compiled into the Wio Terminal build (ADR 0220)",
-             mrb_obj_class(M, self));
-  return self;
-}
-#endif
 
 static mrb_value table_dim_native_body(mrb_state* M, mrb_value self) {
   return mrb_fixnum_value(DataType<Table>::get(M, self).dim);
@@ -8363,15 +7933,9 @@ mrb_value bmp_begin_load_direct(mrb_state* M, mrb_value self) {
   return bmp_begin_load(M, self);
 }
 
-#if !defined(WIO_TERMINAL)
 mrb_value bmp_blur_direct(mrb_state* M, mrb_value self) {
   return bmp_blur(M, self);
 }
-#else
-mrb_value bmp_blur_direct(mrb_state* M, mrb_value self) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
 mrb_value bmp_decoder_ran_direct(mrb_state* M, mrb_value self) {
   return bmp_decoder_ran(M, self);
@@ -8423,15 +7987,9 @@ mrb_value default_font_path_m_direct(mrb_state* M, mrb_value self) {
   return default_font_path_m(M, self);
 }
 
-#if !defined(WIO_TERMINAL)
 mrb_value gfx_frame_reset_direct(mrb_state* M, mrb_value self) {
   return gfx_frame_reset(M, self);
 }
-#else
-mrb_value gfx_frame_reset_direct(mrb_state* M, mrb_value self) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
 mrb_value input_push_direct(mrb_state* M,
                             mrb_value self,
@@ -8452,65 +8010,29 @@ mrb_value mouse_y_m_direct(mrb_state* M, mrb_value self) {
   return mouse_y_m(M, self);
 }
 
-#if !defined(WIO_TERMINAL)
 mrb_value plane_set_bmp_direct(mrb_state* M, mrb_value self, mrb_value bmp) {
   return plane_set_bmp_native_body(M, self, bmp);
 }
-#else
-mrb_value plane_set_bmp_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value plane_set_ox_direct(mrb_state* M, mrb_value self, mrb_int ox) {
   return plane_set_ox_native_body(M, self, ox);
 }
-#else
-mrb_value plane_set_ox_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value plane_set_oy_direct(mrb_state* M, mrb_value self, mrb_int oy) {
   return plane_set_oy_native_body(M, self, oy);
 }
-#else
-mrb_value plane_set_oy_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value plane_set_tone_direct(mrb_state* M, mrb_value self, mrb_value v) {
   return plane_set_tone_native_body(M, self, v);
 }
-#else
-mrb_value plane_set_tone_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value plane_set_zoom_x_direct(mrb_state* M, mrb_value self, mrb_float z) {
   return plane_set_zoom_x_native_body(M, self, z);
 }
-#else
-mrb_value plane_set_zoom_x_direct(mrb_state* M, mrb_value self, mrb_float) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value plane_set_zoom_y_direct(mrb_state* M, mrb_value self, mrb_float z) {
   return plane_set_zoom_y_native_body(M, self, z);
 }
-#else
-mrb_value plane_set_zoom_y_direct(mrb_state* M, mrb_value self, mrb_float) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
 mrb_value rect_dump_direct(mrb_state* M, mrb_value self) {
   return rect_dump_native_body(M, self);
@@ -8598,107 +8120,49 @@ mrb_value table_zsize_direct(mrb_state* M, mrb_value self) {
   return table_zsize_native_body(M, self);
 }
 
-#if !defined(WIO_TERMINAL)
 mrb_value tilemap_bitmaps_direct(mrb_state* M, mrb_value self) {
   return tilemap_bitmaps(M, self);
 }
-#else
-mrb_value tilemap_bitmaps_direct(mrb_state* M, mrb_value self) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value tilemap_set_flags_direct(mrb_state* M, mrb_value self, mrb_value v) {
   return tilemap_set_flags_native_body(M, self, v);
 }
-#else
-mrb_value tilemap_set_flags_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value tilemap_set_map_data_direct(mrb_state* M,
                                       mrb_value self,
                                       mrb_value v) {
   return tilemap_set_map_data_native_body(M, self, v);
 }
-#else
-mrb_value tilemap_set_map_data_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value tilemap_set_ox_direct(mrb_state* M, mrb_value self, mrb_int v) {
   return tilemap_set_ox_native_body(M, self, v);
 }
-#else
-mrb_value tilemap_set_ox_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value tilemap_set_oy_direct(mrb_state* M, mrb_value self, mrb_int v) {
   return tilemap_set_oy_native_body(M, self, v);
 }
-#else
-mrb_value tilemap_set_oy_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value tilemap_set_priorities_direct(mrb_state* M,
                                         mrb_value self,
                                         mrb_value v) {
   return tilemap_set_priorities_native_body(M, self, v);
 }
-#else
-mrb_value tilemap_set_priorities_direct(mrb_state* M,
-                                        mrb_value self,
-                                        mrb_value) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value tilemap_set_tileset_direct(mrb_state* M,
                                      mrb_value self,
                                      mrb_value v) {
   return tilemap_set_tileset_native_body(M, self, v);
 }
-#else
-mrb_value tilemap_set_tileset_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value tilemap_update_direct(mrb_state* M, mrb_value self) {
   return tilemap_update(M, self);
 }
-#else
-mrb_value tilemap_update_direct(mrb_state* M, mrb_value self) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if (!defined(WIO_TERMINAL)) && (!defined(WIO_TERMINAL))
 mrb_value tilemap_vx_table_leg_quads_direct(mrb_state* M,
                                             mrb_value self,
                                             mrb_int tile_id) {
   return tilemap_vx_table_leg_quads_native_body(M, self, tile_id);
 }
-#else
-mrb_value tilemap_vx_table_leg_quads_direct(mrb_state* M,
-                                            mrb_value self,
-                                            mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
 mrb_value tone_dump_direct(mrb_state* M, mrb_value self) {
   return tone_dump(M, self);
@@ -8743,105 +8207,47 @@ mrb_value vp_set_tone_direct(mrb_state* M, mrb_value self, mrb_value t) {
   return vp_set_tone_native_body(M, self, t);
 }
 
-#if !defined(WIO_TERMINAL)
 mrb_value window_set_back_opacity_direct(mrb_state* M,
                                          mrb_value self,
                                          mrb_int v) {
   return window_set_back_opacity_native_body(M, self, v);
 }
-#else
-mrb_value window_set_back_opacity_direct(mrb_state* M,
-                                         mrb_value self,
-                                         mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value window_set_contents_opacity_direct(mrb_state* M,
                                              mrb_value self,
                                              mrb_int v) {
   return window_set_contents_opacity_native_body(M, self, v);
 }
-#else
-mrb_value window_set_contents_opacity_direct(mrb_state* M,
-                                             mrb_value self,
-                                             mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value window_set_opacity_direct(mrb_state* M, mrb_value self, mrb_int v) {
   return window_set_opacity_native_body(M, self, v);
 }
-#else
-mrb_value window_set_opacity_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value window_set_openness_direct(mrb_state* M, mrb_value self, mrb_int v) {
   return window_set_openness_native_body(M, self, v);
 }
-#else
-mrb_value window_set_openness_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value window_set_ox_direct(mrb_state* M, mrb_value self, mrb_int v) {
   return window_set_ox_native_body(M, self, v);
 }
-#else
-mrb_value window_set_ox_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value window_set_oy_direct(mrb_state* M, mrb_value self, mrb_int v) {
   return window_set_oy_native_body(M, self, v);
 }
-#else
-mrb_value window_set_oy_direct(mrb_state* M, mrb_value self, mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value window_set_stretch_direct(mrb_state* M, mrb_value self, mrb_bool v) {
   return window_set_stretch_native_body(M, self, v);
 }
-#else
-mrb_value window_set_stretch_direct(mrb_state* M, mrb_value self, mrb_bool) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value window_set_tone_direct(mrb_state* M, mrb_value self, mrb_value t) {
   return window_set_tone_native_body(M, self, t);
 }
-#else
-mrb_value window_set_tone_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
-#if !defined(WIO_TERMINAL)
 mrb_value window_set_viewport_direct(mrb_state* M,
                                      mrb_value self,
                                      mrb_value vp) {
   return window_set_viewport_native_body(M, self, vp);
 }
-#else
-mrb_value window_set_viewport_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
 mrb_value window_title_get_m_direct(mrb_state* M, mrb_value self) {
   return window_title_get_m(M, self);
@@ -8853,21 +8259,12 @@ mrb_value window_title_set_m_direct(mrb_state* M,
   return window_title_set_m_native_body(M, self, title);
 }
 
-#if !defined(WIO_TERMINAL)
 mrb_value zlib_inflate_direct(mrb_state* M,
                               mrb_value self,
                               const char* ptr,
                               mrb_int len) {
   return zlib_inflate_native_body(M, self, ptr, len);
 }
-#else
-mrb_value zlib_inflate_direct(mrb_state* M,
-                              mrb_value self,
-                              const char*,
-                              mrb_int) {
-  return native_split_compiled_out(M, self);
-}
-#endif
 
 }  // namespace rgss
 // END native-binding-split
@@ -8877,10 +8274,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_module_function(M, m, "to_nfd", to_nfd, MRB_ARGS_REQ(1));
   mrb_define_module_function(M, m, "default_font_path", default_font_path_m,
                              MRB_ARGS_NONE());
-#if !defined(WIO_TERMINAL)  // unused on wio (docs/adr/0132)
   mrb_define_module_function(M, m, "zlib_inflate", zlib_inflate,
                              MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
   mrb_define_module_function(M, m, "mouse_x", mouse_x_m, MRB_ARGS_NONE());
   mrb_define_module_function(M, m, "mouse_y", mouse_y_m, MRB_ARGS_NONE());
   mrb_define_module_function(M, m, "mouse_pressed?", mouse_pressed_m,
@@ -8946,8 +8341,6 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "bush_depth=", spr_set_bush_depth, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "flash", spr_flash, MRB_ARGS_REQ(2));
 
-#if !defined( \
-    WIO_TERMINAL)  // Plane: never instantiated by wio's Ruby (docs/adr/0132)
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   g_native_plane_class = plane;
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
@@ -8967,14 +8360,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, plane, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
   mrb_define_method(M, plane, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, plane, "disposed?", obj_disposed, MRB_ARGS_NONE());
-#endif  // !defined(WIO_TERMINAL)
 
-#if defined(WIO_TERMINAL)  // ADR 0220
-  mrb_define_method(M, mrb_define_class_under(M, m, "Tilemap", M->object_class),
-                    "initialize", not_compiled_init, MRB_ARGS_ANY());
-  mrb_define_method(M, mrb_define_class_under(M, m, "Window", M->object_class),
-                    "initialize", not_compiled_init, MRB_ARGS_ANY());
-#else
   RClass* tilemap = mrb_define_class_under(M, m, "Tilemap", M->object_class);
   g_native_tilemap_class = tilemap;
   MRB_SET_INSTANCE_TT(tilemap, MRB_TT_DATA);
@@ -8989,13 +8375,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   // flags table, in place of XP's single tileset + autotiles + priorities.
   mrb_define_method(M, tilemap, "bitmaps", tilemap_bitmaps, MRB_ARGS_NONE());
   mrb_define_method(M, tilemap, "flags=", tilemap_set_flags, MRB_ARGS_REQ(1));
-#if !defined(WIO_TERMINAL)  // VX-only tilemap rendering; wio ships no
-                            // mruby-rpgvx (docs/adr/0132)
   mrb_define_class_method(M, tilemap, "vx_tile_quads", tilemap_vx_tile_quads,
                           MRB_ARGS_ARG(1, 2));
   mrb_define_class_method(M, tilemap, "vx_table_leg_quads",
                           tilemap_vx_table_leg_quads, MRB_ARGS_REQ(1));
-#endif                      // !defined(WIO_TERMINAL)
   mrb_define_method(M, tilemap, "ox=", tilemap_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "oy=", tilemap_set_oy, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "update", tilemap_update, MRB_ARGS_NONE());
@@ -9044,7 +8427,6 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, window, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "dispose", obj_dispose, MRB_ARGS_NONE());
   mrb_define_method(M, window, "disposed?", obj_disposed, MRB_ARGS_NONE());
-#endif                      // defined(WIO_TERMINAL)
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
@@ -9058,10 +8440,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "_init_file", bmp_init_file,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   // #clone / #dup: a real pixel copy, which RPG::Cache's hue variants need --
-  // an XP-only consumer (mruby-rpgxp), not shipped on wio; unused there.
-#if !defined(WIO_TERMINAL)  // docs/adr/0132
+  // an XP-only consumer (mruby-rpgxp).
   mrb_define_method(M, bmp, "initialize_copy", bmp_init_copy, MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
   // One frame of Graphics.transition's transition-graphic form; answers false
   // when this bitmap cannot carry the dissolve, so the caller can plain-fade.
   mrb_define_method(M, bmp, "_transition_alpha", bmp_transition_alpha,
@@ -9083,20 +8463,14 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   // gradient_fill_rect/hue_change/blur/radial_blur/set_pixel: RGSS2/RGSS3
   // Bitmap effects the stock XP/VX scripts use (title background, animation
   // effects, RPG::Cache hue variants) -- none of mruby-rpg2k's own Ruby calls
-  // them, and wio ships no XP/VX/Wolf gem that would. Unused on wio.
-#if !defined(WIO_TERMINAL)  // docs/adr/0132
+  // them; only the XP/VX/Wolf gems do.
   mrb_define_method(M, bmp, "gradient_fill_rect", bmp_gradient_fill_rect,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(4));
   mrb_define_method(M, bmp, "hue_change", bmp_hue_change, MRB_ARGS_REQ(1));
-#endif                      // !defined(WIO_TERMINAL)
-#if !defined(WIO_TERMINAL)  // docs/adr/0132
   mrb_define_method(M, bmp, "blur", bmp_blur, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "radial_blur", bmp_radial_blur, MRB_ARGS_REQ(2));
-#endif  // !defined(WIO_TERMINAL)
   mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
-#if !defined(WIO_TERMINAL)  // docs/adr/0132
   mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
-#endif  // !defined(WIO_TERMINAL)
   mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
   mrb_define_method(M, bmp, "blt_quads", bmp_blt_quads, MRB_ARGS_REQ(4));
   mrb_define_method(M, bmp, "copy_blt", bmp_copy_blt, MRB_ARGS_REQ(4));
@@ -9119,13 +8493,9 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   MRB_SET_INSTANCE_TT(color, MRB_TT_DATA);
   g_native_color_class = color;
   mrb_define_method(M, color, "initialize", color_init, MRB_ARGS_OPT(4));
-  // #clone / #dup, which a game's scripts use on these constantly -- checked
-  // against wio's own Ruby specifically: no real .dup/.clone target is ever
-  // a Color there, so unused on wio (docs/adr/0132).
-#if !defined(WIO_TERMINAL)
+  // #clone / #dup, which a game's scripts use on these constantly.
   mrb_define_method(M, color, "initialize_copy", data_init_copy<Color>,
                     MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
   mrb_define_method(M, color, "set", color_set,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
   mrb_define_method(M, color, "red", component_get<Color, &Color::red>,
@@ -9156,10 +8526,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   MRB_SET_INSTANCE_TT(tone, MRB_TT_DATA);
   g_native_tone_class = tone;
   mrb_define_method(M, tone, "initialize", tone_init, MRB_ARGS_OPT(4));
-#if !defined(WIO_TERMINAL)  // Tone#dup/#clone: unused on wio (docs/adr/0132)
   mrb_define_method(M, tone, "initialize_copy", data_init_copy<Tone>,
                     MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
   mrb_define_method(M, tone, "set", tone_set,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
   mrb_define_method(M, tone, "red", component_get<Tone, &Tone::red>,
@@ -9178,10 +8546,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, tone,
                     "blue=", component_set<Tone, &Tone::blue, -255, 255>,
                     MRB_ARGS_REQ(1));
-#if !defined(WIO_TERMINAL)  // Tone#gray=: unused on wio (docs/adr/0132)
   mrb_define_method(M, tone, "gray=", component_set<Tone, &Tone::gray, 0, 255>,
                     MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
   mrb_define_method(M, tone, "==", tone_eq, MRB_ARGS_REQ(1));
   mrb_define_method(M, tone, "to_s", tone_to_s, MRB_ARGS_NONE());
   mrb_define_method(M, tone, "_dump", tone_dump, MRB_ARGS_REQ(1));
@@ -9192,10 +8558,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   g_native_table_class = table;
   mrb_define_method(M, table, "initialize", table_init,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
-#if !defined(WIO_TERMINAL)  // Table#dup/#clone: unused on wio (docs/adr/0132)
   mrb_define_method(M, table, "initialize_copy", data_init_copy<Table>,
                     MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
   mrb_define_method(M, table, "[]", table_get,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
   mrb_define_method(M, table, "[]=", table_set,
@@ -9225,10 +8589,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   // built on it (mrblib/lib.rb), and RGSS.effect_probe measures with it.
   mrb_define_module_function(M, gfx, "snap_to_bitmap", gfx_snap_to_bitmap,
                              MRB_ARGS_NONE());
-#if !defined(WIO_TERMINAL)  // unused on wio (docs/adr/0132)
   mrb_define_module_function(M, gfx, "frame_reset", gfx_frame_reset,
                              MRB_ARGS_NONE());
-#endif  // !defined(WIO_TERMINAL)
 
   profiler_init(M);
 

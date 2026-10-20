@@ -1,5 +1,7 @@
 # Compiled Enumerator wrappers
 
+> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
+
 Closed-world core compilation admits seven Enumerator methods: `inspect`,
 `size`, `rewind`, `feed`, `next`, `peek` and `peek_values`.
 

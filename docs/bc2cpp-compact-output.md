@@ -1,5 +1,7 @@
 # Compact generated C++
 
+> **Historical record.** The `wio` build named here was removed; `closed` is its successor. Figures are as measured then.
+
 `tools/bc2cpp/bc2cpp.rb` writes compact C++ by default (ADR 0463): the `//` diagnostic comments it attaches to every
 call site and method are removed from its stdout. There is no environment switch. A caller that reads those comments
 (the proof and dispatch markers the fixture checks match, `MONO :name -> ...`, `CLOSED_WORLD_SELF`, and so on) passes

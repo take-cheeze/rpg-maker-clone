@@ -6,7 +6,7 @@
 # record's schema, not repeated per writer), then stores
 # it through LCF::Array1D#[]=, which encodes by the schema (LCF.encode). The write
 # never has an encoder of its own, so the bytes are exactly those of
-# `array1d[id] = value`. Not shipped on wio (mrbgem.rake).
+# `array1d[id] = value`.
 
 module LCF
   module SaveTyped

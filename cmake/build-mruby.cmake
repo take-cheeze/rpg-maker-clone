@@ -1,13 +1,13 @@
 # Shared logic for building libmruby.a via mruby's own rake-based build system
 # (build_config.rb), used by both the desktop/wasm build (root CMakeLists.txt)
-# and the PSP EBOOT build (app/psp/CMakeLists.txt). mruby's gem system -- which
+# mruby's gem system -- which
 # C sources, generated headers, gembox membership -- is entirely decided by that
 # Rakefile, not by anything CMake can glob on its own, so this drives rake as an
 # external build system via a custom command rather than declaring a native
 # CMake target.
 #
 # rpg2k_add_mruby() takes TARGET_NAME (the mruby build's own name -- build.name
-# in build_config.rb, e.g. "host", "emscripten", "psp"), REPO_ROOT (repo root:
+# in build_config.rb, e.g. "host", "emscripten", "android"), REPO_ROOT (repo root:
 # build_config.rb, 3rd/mruby and 3rd/mgem-list all hang off this),
 # PROJECT_BUILD_DIR (the calling project's CMAKE_CURRENT_BINARY_DIR), GEMS
 # (local mrbgem dirs to watch for rebuild triggers, e.g. mruby-rgss) and an
@@ -119,10 +119,9 @@ function(rpg2k_add_mruby)
   # Foo; ::Bar = 42; end; p Object.const_defined?(:Bar)'` prints true, mruby's
   # does not. This submodule tracks upstream mruby/mruby directly (no fork this
   # project controls to carry the fix on), so it is patched in place here
-  # instead, the same way patches/psp-fixup-imports-jal-relocation-aware. patch
-  # is applied to a fetched pspsdk checkout -- via a real script
-  # (scripts/apply_mruby_patch.bash), not a `patch` call embedded straight in
-  # this COMMAND: it needs a dry-run-first idempotency check across repeat
+  # instead, the same way the other mruby patches here are applied: via a real
+  # script (scripts/apply_mruby_patch.bash), not a `patch` call embedded
+  # straight in this COMMAND: it needs a dry-run-first idempotency check across repeat
   # configures/builds without re-cloning the submodule, and that redirect- heavy
   # shell logic does not survive CMake's own command-line escaping reliably
   # inline. The script itself fails loudly (not silently) if the patch stops
@@ -204,18 +203,14 @@ function(rpg2k_add_mruby)
 
   # Vendored mruby's own out-of-memory recovery has two real gaps
   # (patches/mruby-nomemoryerror-reentrant-alloc.patch's own preamble has the
-  # full trail, including a host-native repro harness built against this
-  # project's own exact PSP arena allocator): the pre-allocated
+  # full trail, including a host-native repro harness): the pre-allocated
   # NoMemoryError/SystemStackError/arena-overflow singletons were never actually
   # frozen, so raising one of them can still trigger a second, avoidable
   # allocation (a backtrace capture) at exactly the moment there is no room
   # left; and mrb_open() cannot tell mrb_core_init_abort()'s deliberate
   # mrb->exc=NULL apart from genuine success, so an allocation failure early
   # enough in bootstrap lets it proceed into gem init on a half-initialized
-  # state instead of failing cleanly. Found chasing P1c
-  # (docs/adr/0047-psp-memory-budget.md), though the repro did not reproduce
-  # P1c's own exact crash signature -- these are real, independently verified
-  # fixes, not a confirmed fix for P1c itself. Same patch-in-place treatment as
+  # state instead of failing cleanly. Same patch-in-place treatment as
   # the other mruby patches above, for the same reason (no fork of upstream
   # mruby/mruby this project controls).
   set(mruby_nomem_patch
@@ -250,9 +245,7 @@ function(rpg2k_add_mruby)
   # `#include <sys/param.h>` on every non-Windows target -- true on glibc and
   # most BSD/Darwin libcs, but this board's bare-metal arm-none-eabi newlib's
   # own sys/param.h defines PATHSIZE, not MAXPATHLEN, so the file fails to
-  # compile outright (a real `MRUBY_TARGET=wio rake` run against PlatformIO's
-  # own toolchain-gccarmnoneeabi never got this far before -- see
-  # docs/adr/0103-wio-mruby-rgss-first-real-build.md's follow-up ADR). Adds the
+  # compile outright. Adds the
   # same `#ifndef MAXPATHLEN #define MAXPATHLEN 1024` fallback the file's own
   # _WIN32 branch already carries a few lines up, just gated for any libc
   # missing the macro rather than only Windows's. Same patch-in- place treatment
@@ -306,21 +299,6 @@ function(rpg2k_add_mruby)
       "${ARG_REPO_ROOT}/patches/mruby-stringio-read-direct.patch")
   set(mruby_stringio_prefix "${ARG_REPO_ROOT}/3rd/mruby-stringio")
 
-  # mruby-marshal's own mrbgem.rake unconditionally add_dependency'd
-  # mruby-onig-regexp, silently defeating ADR 0098's psp/wio onigmo trim (that
-  # ADR's own top-level conf.gem exclusion never stopped this unconditional
-  # dependency from pulling onigmo right back in) -- not noticed until a real
-  # end-to-end MRUBY_TARGET=wio build first ran to completion. Made conditional,
-  # paired with a marshal.cpp fix so Marshal.dump/load do not hard-require the
-  # Regexp class to exist at all once onigmo (which alone defines it) is really
-  # gone. Same project-owned-submodule, no-push-access reasoning as the
-  # mruby-stringio patch above: mruby-marshal is take-cheeze's own repo, but
-  # this session's access is scoped to rpg-maker-clone, so it is patched in
-  # place here instead.
-  set(mruby_marshal_onigmo_patch
-      "${ARG_REPO_ROOT}/patches/mruby-marshal-psp-wio-onigmo-optional.patch")
-  set(mruby_marshal_prefix "${ARG_REPO_ROOT}/3rd/mruby-marshal")
-
   # docs/adr/0134 measurement-only escape hatch, a no-op unless
   # MRUBY_FORCE_NO_CXX_EXCEPTION is set in the environment: mruby's own gem
   # loader (lib/mruby/build/load_gems.rb) unconditionally calls
@@ -348,7 +326,7 @@ function(rpg2k_add_mruby)
 
   # Flash/RAM trims for the static irep and presym data every build embeds
   # (docs/adr/0223, 0224, 0225). The first two change no behaviour; the third
-  # only adds the MRB_NO_IREP_DEBUG option, which only the wio build defines.
+  # only adds the MRB_NO_IREP_DEBUG option, which a build must opt into.
   set(mruby_presym_compact_patch
       "${ARG_REPO_ROOT}/patches/mruby-presym-compact-table.patch")
   set(mruby_cdump_const_reps_patch
@@ -401,7 +379,6 @@ function(rpg2k_add_mruby)
                     "${mruby_stringio_getbyte_patch}")
   rpg2k_mruby_patch("${mruby_stringio_prefix}"
                     "${mruby_stringio_read_direct_patch}")
-  rpg2k_mruby_patch("${mruby_marshal_prefix}" "${mruby_marshal_onigmo_patch}")
   rpg2k_mruby_patch("${mruby_onig_regexp_prefix}"
                     "${mruby_onig_regexp_no_chdir_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_force_no_cxx_exception_patch}")
@@ -416,7 +393,7 @@ function(rpg2k_add_mruby)
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
   # GitHub. Both repos/host and repos/<TARGET_NAME> are linked: a cross build
-  # (emscripten, psp, ...) also runs a native "host" build alongside the cross
+  # (emscripten, android, ...) also runs a native "host" build alongside the cross
   # target to produce mrbc, and that half looks for the index under its own
   # repos/host too. Use `ln -sfn`, not `ln -sf`: once these links exist, a plain
   # `ln -sf` would dereference the existing symlink-to-directory and drop a new
