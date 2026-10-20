@@ -11,10 +11,15 @@ module NativeCoreBlockResultSigs
 
   module_function
 
-  # { 'Array' => { 'map' => 'Array', ... }, ... }, frozen, read once per path. Only Array results. A member's blockless
-  # overload (its Enumerator result) is skipped: the table names the block form only.
+  # { 'Array' => { 'map' => 'Array', ... }, ... }, frozen, read once per path. Only Array results: the block overload.
   def kinds(path = PATH)
     @kinds ||= {}
-    @kinds[path] ||= NativeCoreResultSigs.load_kinds(path, classes: %w[Array], block_form: true)
+    @kinds[path] ||= NativeCoreResultSigs.load_kinds(path, classes: %w[Array], form: :block)
+  end
+
+  # { 'Array' => { 'map' => 'Enumerator', ... }, ... }: the blockless overload (a bare SEND), Enumerator results only.
+  def blockless_kinds(path = PATH)
+    @blockless_kinds ||= {}
+    @blockless_kinds[path] ||= NativeCoreResultSigs.load_kinds(path, classes: %w[Enumerator], form: :blockless)
   end
 end
