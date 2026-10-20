@@ -23,3 +23,7 @@ not total generator or generated-game performance.
 uncached scans, including multiple definitions, accessor names, absent names,
 path ordering and duplicates. It counts file scans to catch repeated work
 and checks that a new world sees rewritten sources.
+
+Parser reuse assertions isolate the surrounding disk scan cache so a warm scan
+cannot bypass the parser under test. Validate cache checks with both cold and
+warm surrounding state.
