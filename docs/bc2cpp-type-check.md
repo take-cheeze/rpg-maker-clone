@@ -152,7 +152,9 @@ the ranking is where a type fact acts, and it is exact only for the lines counte
 
 Put `.rbs` files under `sig/bc2cpp/` (or point `BC2CPP_SIG_DIRS` / `--sig DIR` at other directories). They feed the same
 hints as the comments and are checked the same way (ADR 0413). A declaration preceded by `# bc2cpp-native: <table>`
-declares built-in or RGSS methods instead of the program's (ADR 0486); it is not a program hint.
+declares built-in or RGSS methods instead of the program's (ADR 0486); it is not a program hint. A member may carry its own
+marker above its definition; a member with none takes its block's, and a member of an untagged block is a program hint
+(ADR 0516).
 
 ```rbs
 module Game
