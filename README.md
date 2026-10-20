@@ -1020,6 +1020,10 @@
 
 ### Performance
 
+- [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
+  bytecode construction and assertion reporting across exact-class, container
+  shape and control-flow soundness checks. Compiler fixtures remain isolated.
+
 - The [IR block check suite](docs/ci.md#ir-block-fixtures) shares one Ruby
   process across capture, callback, yield and block-operand checks while keeping
   each fixture program isolated. Host checks run even without `MRBC`.
