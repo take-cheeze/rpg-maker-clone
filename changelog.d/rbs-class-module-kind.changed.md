@@ -1,0 +1,1 @@
+- **Type declarations**: each class or module in `sig/bc2cpp/declarations.rbs` uses the keyword its Ruby source uses (Kernel, Enumerable, LCF and the Game page modules as `module`, RPG2k as `class`), so no name is declared as both.
