@@ -481,6 +481,9 @@ checks:
   scripts/bc2cpp/numeric_flow_speed_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/element_type_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/outside_ruby_ivar_scopes_check.rb:
     tier: fast
     capabilities: []
