@@ -39,6 +39,13 @@ keeps fresh inference and query state. A new signature or hierarchy world needs 
 new index. Set `BC2CPP_IR_PREPARED_CONTRACTS=0` to compare the unprepared path. See
 [ADR 0519](adr/0519-prepared-rbs-ir-contracts.md).
 
+Context argument binding indexes immutable arity, keyword names and validated
+optional-entry jumps per bytecode body. Every binding still checks its current
+arguments and keywords and builds fresh masks and entry edges. Indexes live only
+for one context engine; malformed layouts remain refused. Set
+`BC2CPP_IR_BINDING_INDEX=0` to compare rebuilding layouts on each bind. See
+[ADR 0520](adr/0520-context-binding-index.md).
+
 Context call frames also index fixed receiver/argument registers and keyword-name
 producers. This avoids repeated reaching-definition result copies and name decoding;
 values are read from the current context on every call. Splat, ambiguous and
