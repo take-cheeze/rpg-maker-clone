@@ -39,6 +39,13 @@ keeps fresh inference and query state. A new signature or hierarchy world needs 
 new index. Set `BC2CPP_IR_PREPARED_CONTRACTS=0` to compare the unprepared path. See
 [ADR 0519](adr/0519-prepared-rbs-ir-contracts.md).
 
+Context call frames also index fixed receiver/argument registers and keyword-name
+producers. This avoids repeated reaching-definition result copies and name decoding;
+values are read from the current context on every call. Splat, ambiguous and
+nonliteral keyword names keep their conservative refusals. Set
+`BC2CPP_IR_CALL_INDEX=0` to rebuild layouts. See
+[ADR 0521](adr/0521-context-call-layout-index.md).
+
 ## Output
 
 Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, so an editor problem matcher
