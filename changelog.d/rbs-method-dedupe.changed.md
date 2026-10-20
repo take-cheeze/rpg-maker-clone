@@ -1,1 +1,0 @@
-- **Type declarations**: methods declared more than once in `sig/bc2cpp/declarations.rbs` (in the hand-owned part) now have one declaration each. A block method becomes a union of its overloads; other copies merge per position, with untyped yielding to a typed side and different types forming a union.
