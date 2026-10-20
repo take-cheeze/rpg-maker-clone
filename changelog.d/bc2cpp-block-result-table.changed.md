@@ -1,0 +1,1 @@
+- **bc2cpp** types the result of an Enumerable block iterator called with a block (`map`, `collect`, `reject`, `find_all`, `partition`, `filter_map`, `sort_by` as an `Array`; `group_by` as a `Hash`) from mruby's own compiled bodies, with no per-name table. The bare call keeps its untyped result.
