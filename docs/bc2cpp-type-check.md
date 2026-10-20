@@ -33,6 +33,12 @@ one context engine and is bounded to 128 snapshots of at most 4096 state cells.
 Set `BC2CPP_IR_LEAF_EVALUATIONS=0` for a comparison run. See
 [ADR 0518](adr/0518-reuse-leaf-context-evaluations.md).
 
+Applied RBS contracts are indexed once per typing world. Methods and callbacks
+share owner lookup, inherited ivar maps and named-return tables, while each method
+keeps fresh inference and query state. A new signature or hierarchy world needs a
+new index. Set `BC2CPP_IR_PREPARED_CONTRACTS=0` to compare the unprepared path. See
+[ADR 0519](adr/0519-prepared-rbs-ir-contracts.md).
+
 ## Output
 
 Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, so an editor problem matcher
