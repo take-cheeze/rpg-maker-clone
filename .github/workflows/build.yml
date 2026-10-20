@@ -1030,6 +1030,7 @@ jobs:
           ruby scripts/bc2cpp/constant_reviewed_check.rb
           ruby scripts/bc2cpp/native_core_candidates_check.rb
           ruby scripts/bc2cpp/native_core_direct_wired_check.rb
+          ruby scripts/bc2cpp/native_member_tables_check.rb
           ruby scripts/bc2cpp/shared_generation_check.rb
           ruby scripts/bc2cpp/constant_proofs_check.rb
           ruby scripts/bc2cpp/block_receiver_proof_check.rb
