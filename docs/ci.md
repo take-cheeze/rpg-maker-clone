@@ -151,6 +151,14 @@ program and registry. Generation, C++ drivers, mruby build discovery and runtime
 output parsing already share `fixture_runtime.rb` with the owner-call and
 constructor checks; their different runtime scenarios remain separate.
 
+With a usable full-core library and C++ compiler, each installer/refusal world
+runs whole-program analysis once, then uses the existing `--units` mechanism
+(ADR 0464) to emit both unrestricted code-shape output and the runtime's exact
+`ONLY_OWNERS` selection. The runtime unit's generated code, diagnostics and
+bytecode stay in memory until that fixture runs. Different worlds never share
+analysis, and core-only runs retain their separate core-source polyfill world.
+There is no cache across invocations or changes to generator inputs.
+
 ### Block iterator fixtures
 
 `block_iterator_direct_check.rb` retains its baseline generated C++, bytecode

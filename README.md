@@ -1058,8 +1058,8 @@
   during body extraction and avoids redundant owner-pattern matches.
 
 - [Behavioral installer checks](docs/ci.md#behavioral-installer-fixtures) share
-  registry setup while preserving separate `define_method` and alias fixture
-  programs and settle policies.
+  registry setup and full-core code-shape/runtime analysis while preserving
+  separate fixture worlds, owner selections and settle policies.
 - The [block iterator fixture](docs/ci.md#block-iterator-fixtures) reuses its
   baseline generation for C++ shape checks and interpreted/compiled comparison.
 - The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) is closed-world
