@@ -2,7 +2,6 @@
 // (the desktop entry point's --sixel flag) calls.
 #include "sixel.hxx"
 
-
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -158,4 +157,3 @@ lv_display_t* sixel_display_create(int32_t hor_res,
                                    int scale) {
   return terminal_display_create(hor_res, ver_res, scale, sixel_encode_frame);
 }
-

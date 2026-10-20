@@ -738,4 +738,3 @@ void profiler_init(mrb_state* M) {
   mrb_define_module_function(M, prof, "tracing?", prof_tracing_p,
                              MRB_ARGS_NONE());
 }
-

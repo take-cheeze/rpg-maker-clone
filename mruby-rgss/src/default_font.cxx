@@ -13,7 +13,6 @@
 
 #include "default_font.hxx"
 
-
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -135,4 +134,3 @@ const std::string& default_font_path() {
 }
 
 }  // namespace rgss
-

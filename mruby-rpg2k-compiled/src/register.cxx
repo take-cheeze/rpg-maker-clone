@@ -3650,8 +3650,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // grepping the whole closed world for `Switches.new`/
   // `Game::Switches.new`/`.allocate`/a subclass finds exactly one real
   // construction site (mruby-rpg2k/mrblib/game.rb's own Game::State#initialize,
-  // a plain zero-argument `.new` call), no bypass and no subclass anywhere. No bare
-  // `private`/`protected`/`public` anywhere in the real source (confirmed
+  // a plain zero-argument `.new` call), no bypass and no subclass anywhere. No
+  // bare `private`/`protected`/`public` anywhere in the real source (confirmed
   // directly, not guessed from bc2cpp's own diagnostic), so every method
   // below is `mrb_define_method` except #initialize itself, which mruby's
   // own src/class.c forces private unconditionally regardless of source,

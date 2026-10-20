@@ -899,4 +899,3 @@ lv_display_t* terminal_display_create(int32_t hor_res,
   g_active = true;
   return disp;
 }
-

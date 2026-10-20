@@ -4,7 +4,6 @@
 // lib.cxx's stb_image only inflates.
 #include "iterm.hxx"
 
-
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -124,4 +123,3 @@ lv_display_t* iterm_display_create(int32_t hor_res,
   stbi_write_png_compression_level = 6;
   return terminal_display_create(hor_res, ver_res, scale, iterm_encode_frame);
 }
-

@@ -114,9 +114,6 @@ void log_bridge_write_stderr(const char* msg);
 void window_title_set(const char* title);
 const std::string& window_title_get();
 
-
-
-
 namespace {
 // RGSS.default_font_path -> the bundled default UI font, or nil when none is
 // installed (it is downloaded, not committed -- see assets/fonts/README.md).
@@ -215,7 +212,10 @@ struct Bitmap {
   // initial contents are painted on the first frame after assignment.
   bool dirty = true;
   Bitmap(mrb_int w, mrb_int h, lv_color_format_t f)
-      : width(w), height(h), format(f), buffer(w * h * lv_color_format_get_size(f)) {}
+      : width(w),
+        height(h),
+        format(f),
+        buffer(w * h * lv_color_format_get_size(f)) {}
 
   // Only ever assigned through Bitmap#clone's `dst = src;` (this file's
   // bmp_init_copy). Copy-constructing a Bitmap is never done anywhere in this
@@ -3103,7 +3103,6 @@ void draw_text_tex_ttf(Bitmap& bmp,
   bmp.dirty = true;
 }
 
-
 // Measure the pixel width and height of `s` using the shinonome font tables.
 void measure_text(std::string_view s, int& width, unsigned& height) {
   width = 0;
@@ -3369,8 +3368,7 @@ mrb_value bmp_text_size_body(mrb_state* M,
   [[maybe_unused]] const FontAttr fa = read_font(M, self);
   if (fa.ttf && fa.ttf->ok) {
     measure_text_ttf(*fa.ttf, sv, fa.size, w, height);
-  } else
-  {
+  } else {
     unsigned uh = 0;
     measure_text(sv, w, uh);
     height = static_cast<int>(uh);
@@ -6568,7 +6566,6 @@ mrb_value window_update(mrb_state* M, mrb_value self) {
   return self;
 }
 
-
 // ---- Viewport -------------------------------------------------------------
 
 // Build an RGSS::Rect value.
@@ -7900,7 +7897,6 @@ static mrb_value window_title_get_m(mrb_state* M, mrb_value) {
   return title.empty() ? mrb_nil_value()
                        : mrb_str_new(M, title.data(), title.size());
 }
-
 
 static mrb_value table_dim_native_body(mrb_state* M, mrb_value self) {
   return mrb_fixnum_value(DataType<Table>::get(M, self).dim);
