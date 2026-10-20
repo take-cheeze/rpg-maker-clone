@@ -10718,6 +10718,27 @@ module Enumerable
   def any?: () -> bool | (untyped) -> bool | () { (untyped) -> untyped } -> bool
 end
 
+# ---- native: core_block_results
+# The result class of a core iterator called WITH a block (a SENDB site). mruby's Enumerable#collect/map
+# (3rd/mruby/mrblib/enum.rb) return `ary`, a new Array, when given a block; without one they return an Enumerator, so
+# the bare call keeps its untyped result (core_results). Read by NativeCoreBlockResultSigs
+# (tools/bc2cpp/native_core_block_result_sigs.rb); a member names the block form's result only.
+# bc2cpp-native: core_block_results
+class Array[unchecked out Elem] < Object
+  # bc2cpp-native: core_block_results
+  def map: () { (Elem) -> untyped } -> Array[untyped]
+  # bc2cpp-native: core_block_results
+  def collect: () { (Elem) -> untyped } -> Array[untyped]
+end
+
+# bc2cpp-native: core_block_results
+class Hash[unchecked out K, unchecked out V] < Object
+  # bc2cpp-native: core_block_results
+  def map: () { (untyped) -> untyped } -> Array[untyped]
+  # bc2cpp-native: core_block_results
+  def collect: () { (untyped) -> untyped } -> Array[untyped]
+end
+
 # ---- native: core_proc_calls
 # The Proc methods that run the proc with their arguments, read by CoreFactSigs.proc_call_names
 # (codegen_block_fallback.rb PROC_CALL_NAMES). bc2cpp_cfunc_proc_call_p (bc2cpp.rb) spells the same set; scripts/
