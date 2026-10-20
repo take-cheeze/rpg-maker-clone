@@ -88,6 +88,9 @@ deferred:
     - native_sources
     reason: Full-engine reviewed-fallback generation audit; retains a separate manual run until budgeted explicitly.
 checks:
+  scripts/bc2cpp/ir_facts_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/block_receiver_proof_check.rb:
     tier: fast
     capabilities:
@@ -518,6 +521,3 @@ checks:
     tier: fast
     capabilities:
     - native_sources
-  scripts/bc2cpp/ir_facts_check.rb:
-    tier: fast
-    capabilities: []
