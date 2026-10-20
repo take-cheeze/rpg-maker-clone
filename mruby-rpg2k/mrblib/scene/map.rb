@@ -379,6 +379,7 @@ class RPG2k
         # so creates no eviction pressure on its own.
         def bitmap_bytes(v)
           return 0 unless v.respond_to?(:width) && v.respond_to?(:height)
+          # bc2cpp-reviewed: nomethod height, nomethod width -- dead fallback (ADR 0226)
           v.width * v.height * 4
         end
 
@@ -662,7 +663,9 @@ class RPG2k
         @move_count = 0
         @slide_frac = 0
         @player_jumping = false
+        # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
         @dest_x = @state.x
+        # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
         @dest_y = @state.y
         # This frame's input-driven move target, snapshotted before
         # #step_events runs -- see #player_intended_target.
@@ -708,6 +711,7 @@ class RPG2k
       # page/conditions currently pick something else). Diagnostics only --
       # RPG2k#dump_bug_report is the one caller today.
       def parallel_interpreter_for(id)
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         p = @parallels.find { |pp| pp[:event] && pp[:event].id == id }
         p && p[:interp]
       end
@@ -742,9 +746,12 @@ class RPG2k
         [@lower_sprite, @upper_sprite, @player_sprite, @parallax_sprite,
          @picture_sprite, @fade_sprite, @flash_sprite,
          @weather_sprite].each do |s|
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           s.dispose if s
         end
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         (@timer_sprites || []).each { |s| s.dispose if s }
         @airship_shadow.dispose if @airship_shadow
         @animation_sprite.dispose if @animation_sprite
@@ -772,7 +779,9 @@ class RPG2k
         # effect. See Game::Party#reorder's own citation for the reference
         # implementation this ports (NOT independently confirmed against
         # genuine RPG_RT under wine -- see that method's own disclosure).
+        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         refresh_player_graphic if @state.party.respond_to?(:take_leader_graphic_dirty) &&
+                                   # bc2cpp-reviewed: nomethod party, nomethod take_leader_graphic_dirty -- dead fallback (ADR 0226)
                                    @state.party.take_leader_graphic_dirty
         # An Escape / Teleport field skill queues its destination here rather
         # than jumping directly -- it is cast from the skill menu, a scene with
@@ -786,13 +795,18 @@ class RPG2k
         # skipped exactly as it already is on that frame -- #event_busy? holds
         # it off there because the interpreter is mid-wait, and there is no
         # interpreter wait to hold it off here, so it is skipped explicitly.
+        # bc2cpp-reviewed: nomethod pending_teleport -- dead fallback (ADR 0226)
         if @state.pending_teleport
+          # bc2cpp-reviewed: nomethod boarded, nomethod boarded? -- dead fallback (ADR 0226)
           if @state.boarded? && @state.boarded != :airship
             follow_vehicle
+            # bc2cpp-reviewed: nomethod boarded= -- dead fallback (ADR 0226)
             @state.boarded = nil
             restore_pre_vehicle_bgm
           end
+          # bc2cpp-reviewed: nomethod pending_teleport -- dead fallback (ADR 0226)
           perform_teleport(@state.pending_teleport, keep_pictures: true)
+          # bc2cpp-reviewed: nomethod pending_teleport= -- dead fallback (ADR 0226)
           @state.pending_teleport = nil
           animate_events
           render
@@ -808,10 +822,13 @@ class RPG2k
         # then), so any true here is unambiguously that case. Mirrors Terminate
         # Battle's own :abort outcome (#finish_terminated_battle), just reachable
         # from any battle phase rather than only the battle-event one.
+        # bc2cpp-reviewed: nomethod tick_timer -- dead fallback (ADR 0226)
         if @state.tick_timer(!@battle.nil?) && @battle
           @battle.finish_battle(:abort)
         end
+        # bc2cpp-reviewed: nomethod screen, nomethod update -- dead fallback (ADR 0226)
         @state.screen.update # screen tint progresses every frame, even in events
+        # bc2cpp-reviewed: nomethod update_pictures -- dead fallback (ADR 0226)
         @state.update_pictures # picture moves progress every frame too
         update_sprite_flashes # Flash Sprite decays during events too
         update_vehicle_flashes # a vehicle's own map-triggered animation flash decays too
@@ -864,6 +881,7 @@ class RPG2k
         # @interpreter.update call below, however many times #drive_event and
         # #drive_autostart_cascade's own cascading call it this frame, shares
         # this one reset rather than each getting its own fresh 10000.
+        # bc2cpp-reviewed: nomethod reset_frame_steps -- dead fallback (ADR 0226)
         @interpreter.reset_frame_steps
         if event_busy?
           drive_event
@@ -1101,10 +1119,13 @@ class RPG2k
       # 255 black, and the flash as a colour plus a 0..255 strength that decays
       # over the command's duration.
       def update_screen_overlay
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         screen = @state.screen
         draw_transition_mask screen
+        # bc2cpp-reviewed: nomethod tint -- dead fallback (ADR 0226)
         update_map_tone screen.tint
 
+        # bc2cpp-reviewed: nomethod flash_color -- dead fallback (ADR 0226)
         r, g, b, strength = screen.flash_color
         if strength <= 0
           @flash_sprite.opacity = 0
@@ -1141,20 +1162,26 @@ class RPG2k
       # #draw_captured_transition. Random blocks is a shaped mask too, but an
       # *incremental* one -- see #draw_random_blocks_transition.
       def draw_transition_mask(screen)
+        # bc2cpp-reviewed: nomethod transition -- dead fallback (ADR 0226)
         tr = screen.transition
+        # bc2cpp-reviewed: nomethod captured? -- dead fallback (ADR 0226)
         if tr && tr.captured?
           release_random_blocks_transition
           return draw_captured_transition(tr)
         end
         release_transition_capture
+        # bc2cpp-reviewed: nomethod random_blocks? -- dead fallback (ADR 0226)
         return draw_random_blocks_transition(tr) if tr && tr.random_blocks?
         release_random_blocks_transition
+        # bc2cpp-reviewed: nomethod uniform? -- dead fallback (ADR 0226)
         if tr.nil? || tr.uniform?
           reset_fade_bitmap if @fade_masked
+          # bc2cpp-reviewed: nomethod fade_level -- dead fallback (ADR 0226)
           @fade_sprite.opacity = screen.fade_level
           return
         end
         @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, OPAQUE_BLACK
+        # bc2cpp-reviewed: nomethod visible_rects -- dead fallback (ADR 0226)
         tr.visible_rects.each { |x, y, w, h| @fade_bmp.fill_rect x, y, w, h, CLEAR }
         @fade_masked = true
         @fade_sprite.opacity = 255
@@ -1162,6 +1189,7 @@ class RPG2k
         # A drawing failure must not strand the screen mid-transition: fall back
         # to the plain fade level, which still lands on the right end state.
         $stderr.puts "[RPG2k] screen transition draw failed: #{e.message}"
+        # bc2cpp-reviewed: nomethod fade_level -- dead fallback (ADR 0226)
         @fade_sprite.opacity = screen.fade_level
       end
 
@@ -1182,6 +1210,7 @@ class RPG2k
       # `#mosaic_block_size`/`#wave_params` rather than `#capture_ops`.
       def draw_captured_transition(tr)
         unless @captured_transition.equal?(tr)
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @transition_capture.dispose if @transition_capture
           @transition_capture = Graphics.snap_to_bitmap
           @captured_transition = tr
@@ -1191,19 +1220,27 @@ class RPG2k
           # The backend cannot snapshot (Wio/PSP, or a headless test double) --
           # fall back to a plain fade, same as every style this build does not
           # paint for real.
+          # bc2cpp-reviewed: nomethod black_alpha -- dead fallback (ADR 0226)
           @fade_sprite.opacity = tr.black_alpha
           return
         end
         @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, OPAQUE_BLACK
+        # bc2cpp-reviewed: nomethod zoom? -- dead fallback (ADR 0226)
         if tr.zoom?
+          # bc2cpp-reviewed: nomethod capture_ops -- dead fallback (ADR 0226)
           dx, dy, dw, dh, sx, sy, sw, sh = tr.capture_ops.first
           @fade_bmp.stretch_blt Rect.new(dx, dy, dw, dh), cap, Rect.new(sx, sy, sw, sh)
+        # bc2cpp-reviewed: nomethod mosaic? -- dead fallback (ADR 0226)
         elsif tr.mosaic?
+          # bc2cpp-reviewed: nomethod mosaic_block_size -- dead fallback (ADR 0226)
           @fade_bmp.mosaic_blt cap, tr.mosaic_block_size
+        # bc2cpp-reviewed: nomethod wave? -- dead fallback (ADR 0226)
         elsif tr.wave?
+          # bc2cpp-reviewed: nomethod wave_params -- dead fallback (ADR 0226)
           depth, phase = tr.wave_params
           @fade_bmp.wave_blt cap, depth, phase
         else
+          # bc2cpp-reviewed: nomethod capture_ops -- dead fallback (ADR 0226)
           tr.capture_ops.each do |dx, dy, sx, sy, sw, sh|
             @fade_bmp.blt dx, dy, cap, Rect.new(sx, sy, sw, sh)
           end
@@ -1212,6 +1249,7 @@ class RPG2k
         @fade_sprite.opacity = 255
       rescue StandardError => e
         $stderr.puts "[RPG2k] screen transition capture draw failed: #{e.message}"
+        # bc2cpp-reviewed: nomethod black_alpha -- dead fallback (ADR 0226)
         @fade_sprite.opacity = tr.black_alpha
       end
 
@@ -1219,6 +1257,7 @@ class RPG2k
       # a 320x240 bitmap between transitions would be a pointless leak.
       def release_transition_capture
         return unless @transition_capture
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @transition_capture.dispose
         @transition_capture = nil
         @captured_transition = nil
@@ -1240,10 +1279,12 @@ class RPG2k
       # mask, every frame) is the wrong shape for ~4800 blocks.
       def draw_random_blocks_transition(tr)
         if @random_blocks_transition.equal?(tr)
+          # bc2cpp-reviewed: nomethod new_block_rects -- dead fallback (ADR 0226)
           rects = tr.new_block_rects
         else
           @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, OPAQUE_BLACK
           @random_blocks_transition = tr
+          # bc2cpp-reviewed: nomethod revealed_block_rects -- dead fallback (ADR 0226)
           rects = tr.revealed_block_rects
         end
         rects.each { |x, y, w, h| @fade_bmp.fill_rect x, y, w, h, CLEAR }
@@ -1251,6 +1292,7 @@ class RPG2k
         @fade_sprite.opacity = 255
       rescue StandardError => e
         $stderr.puts "[RPG2k] screen transition block draw failed: #{e.message}"
+        # bc2cpp-reviewed: nomethod black_alpha -- dead fallback (ADR 0226)
         @fade_sprite.opacity = tr.black_alpha
       end
 
@@ -1288,6 +1330,7 @@ class RPG2k
       # field falls smoothly without needing a per-frame RNG. Cleared / hidden
       # when there is no weather.
       def draw_weather
+        # bc2cpp-reviewed: nomethod weather -- dead fallback (ADR 0226)
         w = @state.weather
         if w.none? || (w.type != WEATHER_RAIN && w.type != WEATHER_SNOW)
           @weather_sprite.visible = false
@@ -1484,8 +1527,10 @@ class RPG2k
       # (Game::State#parallax) when one is active, otherwise the map's own
       # panorama fields. nil when the map declares no parallax and none was set.
       def parallax_config
+        # bc2cpp-reviewed: nomethod parallax -- dead fallback (ADR 0226)
         ov = @state.parallax
         return ov if ov
+        # bc2cpp-reviewed: nomethod unit -- dead fallback (ADR 0226)
         u = @map.unit
         return nil unless record_value(u, :parallax_flag, false)
         { name: record_value(u, :parallax_name, '').to_s,
@@ -1520,6 +1565,7 @@ class RPG2k
       end
 
       def build_chipset
+        # bc2cpp-reviewed: nomethod chipset_id -- dead fallback (ADR 0226)
         Game::ChipSet.new(@db, @tileset_id || @map.chipset_id)
       rescue StandardError => e
         $stderr.puts "[RPG2k] chipset load failed, tiles treated as passable: #{e.message}"
@@ -1554,9 +1600,12 @@ class RPG2k
       # when there is no party or the file is missing. Colour-keyed for the same
       # reason event graphics are (see event_charset).
       def load_charset
+        # bc2cpp-reviewed: nomethod leader, nomethod party -- dead fallback (ADR 0226)
         leader = @state.party.leader
         return nil if leader.nil?
+        # bc2cpp-reviewed: nomethod charset_name -- dead fallback (ADR 0226)
         name = leader.charset_name
+        # bc2cpp-reviewed: nomethod charset_index -- dead fallback (ADR 0226)
         @charset_index = leader.charset_index || 0
         return nil if name.nil? || name.empty?
         cached_bitmap(@charset_cache, name) do
@@ -1573,6 +1622,7 @@ class RPG2k
       def load_windowskin
         # A Change System Graphics override (persisted in the save) wins over the
         # database's own windowskin.
+        # bc2cpp-reviewed: nomethod system_graphic -- dead fallback (ADR 0226)
         name = @state.system_graphic
         name = @db[:system][:system_graphic] if name.nil?
         return nil if name.nil? || name.empty?
@@ -1602,6 +1652,7 @@ class RPG2k
         @events = []
         @event_tiles = {}
         @event_tiles_by_pos = {}
+        # bc2cpp-reviewed: nomethod unit -- dead fallback (ADR 0226)
         evs = @map.unit[:events]
         return unless evs
         evs.each do |id, ev|
@@ -1611,8 +1662,11 @@ class RPG2k
           # keeps it current once the event actually goes live).
           @event_last_position[id] ||= [ev[:x], ev[:y], nil]
           next if @erased_events[id] # an Erase Event lasts the whole visit
+          # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
           selected = Game::EventPage.select(ev[:pages], @state.switches,
+                                            # bc2cpp-reviewed: nomethod party, nomethod variables -- dead fallback (ADR 0226)
                                             @state.variables, @state.party,
+                                            # bc2cpp-reviewed: nomethod timer2_seconds, nomethod timer_seconds -- dead fallback (ADR 0226)
                                             @state.timer_seconds, @state.timer2_seconds)
           next unless selected
           page_number, page = selected
@@ -1636,6 +1690,7 @@ class RPG2k
         # editor spawn tile. Empty for a brand-new visit (perform_teleport
         # clears it before a genuine map change) and for a fresh game, so those
         # cases fall through to ev.x/ev.y exactly as before.
+        # bc2cpp-reviewed: nomethod map_event_positions -- dead fallback (ADR 0226)
         if (saved = @state.map_event_positions[id])
           x, y = saved[0], saved[1]
           dir = saved[2] if saved[2]
@@ -1677,6 +1732,7 @@ class RPG2k
         # coarser index), and one whose route genuinely did change must
         # restart at 0, not seek into an index that belonged to a different
         # route entirely.
+        # bc2cpp-reviewed: nomethod map_event_route_index -- dead fallback (ADR 0226)
         if restore_route_index && route && (saved_index = @state.map_event_route_index[id])
           route.resume_at(saved_index)
         end
@@ -1750,7 +1806,9 @@ class RPG2k
         size = @events.size
         while i < size
           e = @events[i]
+          # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
           ch = e.char
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           id = e.id
           # A stationary event's tuple reads the same every frame -- reuse the
           # Array already sitting in @state.map_event_positions instead of
@@ -1760,13 +1818,18 @@ class RPG2k
           # (only reassigned wholesale, e.g. #set_char_location's own hidden-
           # target @event_last_position write), so sharing the reference is
           # safe.
+          # bc2cpp-reviewed: nomethod map_event_positions -- dead fallback (ADR 0226)
           cur = @state.map_event_positions[id]
+          # bc2cpp-reviewed: nomethod direction, nomethod x, nomethod y -- dead fallback (ADR 0226)
           if cur && cur[0] == ch.x && cur[1] == ch.y && cur[2] == ch.direction
             pos = cur
           else
+            # bc2cpp-reviewed: nomethod direction, nomethod x, nomethod y -- dead fallback (ADR 0226)
             pos = [ch.x, ch.y, ch.direction]
+            # bc2cpp-reviewed: nomethod map_event_positions -- dead fallback (ADR 0226)
             @state.map_event_positions[id] = pos
           end
+          # bc2cpp-reviewed: nomethod map_event_route_index, nomethod route -- dead fallback (ADR 0226)
           @state.map_event_route_index[id] = e.route.index if e.route
           # Also keeps @event_last_position current for #event_id_at's hidden-
           # event fallback -- see #build_events' seeding comment.
@@ -1785,8 +1848,10 @@ class RPG2k
       # overwhelming majority of the time -- carries no stale chunk 113 at
       # all when #to_lsd runs, matching genuine RPG_RT.
       def record_foreground_event_exec
+        # bc2cpp-reviewed: nomethod call_stack_snapshot -- dead fallback (ADR 0226)
         frames = @interpreter.call_stack_snapshot
         @state.foreground_event_exec =
+          # bc2cpp-reviewed: nomethod foreground_event_exec=, nomethod id -- dead fallback (ADR 0226)
           frames && { event_id: @active_event ? @active_event.id : 0, frames: frames }
       end
 
@@ -1809,12 +1874,16 @@ class RPG2k
       # ordinary Auto-Start common event running on this same shared
       # interpreter today (#start_autostart's own `@active_event = nil`).
       def restore_foreground_event_exec
+        # bc2cpp-reviewed: nomethod foreground_event_exec -- dead fallback (ADR 0226)
         saved = @state.foreground_event_exec
         frames = saved && saved[:frames]
         return unless frames && !frames.empty?
+        # bc2cpp-reviewed: nomethod restore_call_stack -- dead fallback (ADR 0226)
         @interpreter.restore_call_stack(frames)
+        # bc2cpp-reviewed: nomethod running? -- dead fallback (ADR 0226)
         return unless @interpreter.running?
         ev_id = saved[:event_id]
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         @active_event = (ev_id && ev_id != 0) ? @events.find { |e| e.id == ev_id } : nil
       end
 
@@ -1824,6 +1893,7 @@ class RPG2k
       # keeps for event positions -- see Game::State#tile_substitutions and
       # Game::Map#substitution_snapshot.
       def record_tile_substitutions
+        # bc2cpp-reviewed: nomethod substitution_snapshot, nomethod tile_substitutions= -- dead fallback (ADR 0226)
         @state.tile_substitutions = @map.substitution_snapshot
       end
 
@@ -1831,7 +1901,9 @@ class RPG2k
       # id (they are global) plus this map's raw events for map-event page calls.
       def build_resolver
         common = {}
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         @common.each { |c| common[c.id] = c }
+        # bc2cpp-reviewed: nomethod unit -- dead fallback (ADR 0226)
         map_events = record_value(@map.unit, :events, nil)
         EventResolver.new(common, map_events)
       rescue StandardError => e
@@ -1843,6 +1915,7 @@ class RPG2k
       def rebuild_event_tiles
         @event_tiles = {}
         @event_tiles_by_pos = {}
+        # bc2cpp-reviewed: nomethod char, nomethod x, nomethod y -- dead fallback (ADR 0226)
         @events.each { |e| index_event_tile(e, e.char.x, e.char.y) }
       end
 
@@ -1929,6 +2002,7 @@ class RPG2k
       # this is read once per event per page rebuild.
       def page_guarded(page)
         page_field(:guarded, false) do
+          # bc2cpp-reviewed: nomethod guarded -- dead fallback (ADR 0226)
           page.respond_to?(:guarded) && page.guarded ? true : false
         end
       end
@@ -1970,6 +2044,7 @@ class RPG2k
       # entirely, with the requested variable left holding 0 rather than a
       # genuine key code.
       def event_busy?
+        # bc2cpp-reviewed: nomethod running?, nomethod waiting? -- dead fallback (ADR 0226)
         @message || @number_input || @interpreter.running? || @interpreter.waiting? ||
           # A battle a Parallel Process opened (#drive_parallel_wait's :battle
           # case) is exactly as busy as one the foreground itself opened --
@@ -2009,6 +2084,7 @@ class RPG2k
       # of the map either way, matching yado.tk ("Autorun ... blocks other
       # events too, unless 'move other events during message wait' is on").
       def events_move_during_message?
+        # bc2cpp-reviewed: nomethod message_config -- dead fallback (ADR 0226)
         message_window_open? && @state.message_config.continue_events
       end
 
@@ -2026,6 +2102,7 @@ class RPG2k
       # still-bursting case (in practice: a command list heavy enough to spill
       # past a single frame's MAX_STEPS budget without hitting a wait).
       def parallels_paused?
+        # bc2cpp-reviewed: nomethod running?, nomethod waiting? -- dead fallback (ADR 0226)
         !@battle.nil? || (@interpreter.running? && !@interpreter.waiting?)
       end
 
@@ -2087,34 +2164,49 @@ class RPG2k
       # cascade. Parallel processes are driven separately by #step_parallels.
       def start_autostart
         ev = @events.find do |e|
+          # bc2cpp-reviewed: nomethod commands, nomethod trigger -- dead fallback (ADR 0226)
           e.trigger == TRIGGER_AUTO_START && e.commands &&
+            # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
             !@started_auto[e.id] &&
+            # bc2cpp-reviewed: nomethod guarded, nomethod id -- dead fallback (ADR 0226)
             !(e.guarded && @auto_once[e.id])
         end
         if ev
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           @started_auto[ev.id] = true
+          # bc2cpp-reviewed: nomethod guarded, nomethod id -- dead fallback (ADR 0226)
           @auto_once[ev.id] = true if ev.guarded
           @active_event = ev
+          # bc2cpp-reviewed: nomethod commands -- dead fallback (ADR 0226)
           @interpreter.start(ev.commands)
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           @interpreter.event_id = ev.id
           return
         end
 
         ce = @common.find do |c|
+          # bc2cpp-reviewed: nomethod commands, nomethod trigger -- dead fallback (ADR 0226)
           c.trigger == Game::CommonEvent::AUTO_START && c.commands &&
+            # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
             common_gate_open?(c) && !@started_common[c.id] &&
+            # bc2cpp-reviewed: nomethod guarded, nomethod id -- dead fallback (ADR 0226)
             !(c.guarded && @auto_once_common[c.id])
         end
         return unless ce
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         @started_common[ce.id] = true
+        # bc2cpp-reviewed: nomethod guarded, nomethod id -- dead fallback (ADR 0226)
         @auto_once_common[ce.id] = true if ce.guarded
         @active_event = nil # a common event has no "this event" map character
+        # bc2cpp-reviewed: nomethod commands -- dead fallback (ADR 0226)
         @interpreter.start(ce.commands)
       end
 
       # A common event's switch gate: open unless it needs a flag that is off.
       def common_gate_open?(c)
+        # bc2cpp-reviewed: nomethod need_flag -- dead fallback (ADR 0226)
         return true unless c.need_flag
+        # bc2cpp-reviewed: nomethod switch_id, nomethod switches -- dead fallback (ADR 0226)
         @state.switches[c.switch_id]
       end
 
@@ -2182,6 +2274,7 @@ class RPG2k
           if p[:common_event_id]
             previous_common[p[:common_event_id]] = p
           elsif preserve_map_events && p[:event]
+            # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
             previous_map[p[:event].id] = p
           end
         end
@@ -2201,16 +2294,24 @@ class RPG2k
         # @parallels in array order, so the order they are pushed in here is
         # the order they run in.
         @common.each do |c|
+          # bc2cpp-reviewed: nomethod commands, nomethod trigger -- dead fallback (ADR 0226)
           next unless c.trigger == Game::CommonEvent::PARALLEL && c.commands
+          # bc2cpp-reviewed: nomethod need_flag, nomethod switch_id -- dead fallback (ADR 0226)
           gate = c.need_flag ? c.switch_id : nil
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           @parallels.push(previous_common[c.id] ||
+                           # bc2cpp-reviewed: nomethod commands, nomethod id -- dead fallback (ADR 0226)
                            new_parallel(c.commands, gate, nil, c.id))
         end
         live_map_ids = {}
         @events.each do |e|
+          # bc2cpp-reviewed: nomethod commands, nomethod trigger -- dead fallback (ADR 0226)
           next unless e.trigger == TRIGGER_PARALLEL && e.commands
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           live_map_ids[e.id] = true
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           prior = previous_map[e.id]
+          # bc2cpp-reviewed: nomethod commands -- dead fallback (ADR 0226)
           if prior && prior[:commands].equal?(e.commands)
             # Same page, same command list -- only the surrounding
             # Game::Character objects were rebuilt (see #build_events), so keep
@@ -2219,6 +2320,7 @@ class RPG2k
             prior[:event] = e
             @parallels.push prior
           else
+            # bc2cpp-reviewed: nomethod commands -- dead fallback (ADR 0226)
             @parallels.push new_parallel(e.commands, nil, e, nil)
           end
         end
@@ -2267,20 +2369,26 @@ class RPG2k
         it.resolver = @interpreter.resolver
         it.map_info = self
         saved_frames = if common_event_id
+                         # bc2cpp-reviewed: nomethod common_event_exec -- dead fallback (ADR 0226)
                          @state.common_event_exec[common_event_id]
                        elsif event
+                         # bc2cpp-reviewed: nomethod id, nomethod map_event_exec -- dead fallback (ADR 0226)
                          @state.map_event_exec[event.id]
                        end
         if saved_frames && !saved_frames.empty?
+          # bc2cpp-reviewed: nomethod restore_call_stack -- dead fallback (ADR 0226)
           it.restore_call_stack(saved_frames)
         else
+          # bc2cpp-reviewed: nomethod common_event_progress -- dead fallback (ADR 0226)
           resume_at = common_event_id && @state.common_event_progress[common_event_id]
           if resume_at
+            # bc2cpp-reviewed: nomethod start_at -- dead fallback (ADR 0226)
             it.start_at(commands, resume_at)
           else
             it.start(commands)
           end
         end
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         it.event_id = event && event.id
         { interp: it, commands: commands, gate_switch: gate_switch,
           wait_timer: nil, event: event, common_event_id: common_event_id }
@@ -2323,6 +2431,7 @@ class RPG2k
       # no battle open at all.
       def step_battle_owner_parallel
         return unless @battle
+        # bc2cpp-reviewed: nomethod owner -- dead fallback (ADR 0226)
         owner = @battle.owner
         return if owner.nil? || owner.equal?(@interpreter)
         i = 0
@@ -2338,6 +2447,7 @@ class RPG2k
       end
 
       def step_parallel(p)
+        # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
         return if p[:gate_switch] && !@state.switches[p[:gate_switch]]
         it = p[:interp]
         # Every @parallels record carries the Game::Interpreter its event's page
@@ -2356,8 +2466,11 @@ class RPG2k
         # here is exactly the once-per-frame reset MAX_STEPS' own comment
         # requires, however many times `it.update` below ends up called this
         # same frame (a same-frame Wait/Animation resume can call it twice).
+        # bc2cpp-reviewed: nomethod reset_frame_steps -- dead fallback (ADR 0226)
         it.reset_frame_steps
+        # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
         if it.waiting?
+          # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
           wait_kind = it.wait_kind
           drive_parallel_wait(p, it)
           # A plain Wait resolves the instant its timer elapses; keep spending
@@ -2404,19 +2517,25 @@ class RPG2k
                   wait_kind == :battle_blocked || wait_kind == :exp_level_blocked ||
                   wait_kind == :key_input_blocked || wait_kind == :message_config_blocked ||
                   wait_kind == :screen_blocked) &&
+                 # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
                  !it.waiting?
             apply_interpreter_requests(it, p[:event])
             return record_parallel_progress(p)
           end
         end
+        # bc2cpp-reviewed: nomethod running? -- dead fallback (ADR 0226)
         if it.running?
+          # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
           it.update
         else
+          # bc2cpp-reviewed: nomethod start -- dead fallback (ADR 0226)
           it.start(p[:commands]) # loop the process
           # #start clears the "this event" id, so re-attach it on every lap or
           # the second pass would answer the process's own position queries with
           # nothing.
+          # bc2cpp-reviewed: nomethod event_id=, nomethod id -- dead fallback (ADR 0226)
           it.event_id = p[:event] && p[:event].id
+          # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
           it.update
         end
         # Same "starts on the same real frame the command runs" fix as
@@ -2424,6 +2543,7 @@ class RPG2k
         # waited-for Show Battle Animation -- #drive_parallel_wait's :animation
         # case (drive_map_animation) used to only ever be reached the *next*
         # time this method found `it` already parked on that wait.
+        # bc2cpp-reviewed: nomethod wait_kind, nomethod waiting? -- dead fallback (ADR 0226)
         drive_parallel_wait(p, it) if it.waiting? && it.wait_kind == :animation
         apply_interpreter_requests(it, p[:event])
         record_parallel_progress(p)
@@ -2464,41 +2584,55 @@ class RPG2k
       #     history in docs/TODO.md for why.
       def record_parallel_progress(p)
         if p[:common_event_id]
+          # bc2cpp-reviewed: nomethod resumable_index -- dead fallback (ADR 0226)
           idx = p[:interp].resumable_index
+          # bc2cpp-reviewed: nomethod common_event_progress -- dead fallback (ADR 0226)
           @state.common_event_progress[p[:common_event_id]] = idx if idx
+          # bc2cpp-reviewed: nomethod call_stack_snapshot -- dead fallback (ADR 0226)
           frames = p[:interp].call_stack_snapshot
+          # bc2cpp-reviewed: nomethod common_event_exec -- dead fallback (ADR 0226)
           @state.common_event_exec[p[:common_event_id]] = frames if frames
         elsif p[:event]
+          # bc2cpp-reviewed: nomethod call_stack_snapshot -- dead fallback (ADR 0226)
           frames = p[:interp].call_stack_snapshot
+          # bc2cpp-reviewed: nomethod id, nomethod map_event_exec -- dead fallback (ADR 0226)
           @state.map_event_exec[p[:event].id] = frames if frames
         end
       end
 
       def drive_parallel_wait(p, it)
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         if it.wait_kind == :wait
+          # bc2cpp-reviewed: nomethod wait_frames -- dead fallback (ADR 0226)
           p[:wait_timer] = frames_from_tenths(it.wait_frames) if p[:wait_timer].nil?
           if p[:wait_timer] <= 0
             p[:wait_timer] = nil
+            # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
             it.resume
           else
             p[:wait_timer] -= 1
           end
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :key_input
           # Parallel processes commonly poll a key each frame into a variable.
           resolve_key_input(it)
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :wait_key_enter
           # RPG2003's Wait-for-Decision-key mode, reached from a parallel
           # process's own command list -- see #drive_wait_key_enter, the
           # foreground's equivalent; #message_window_open? already blocks a
           # parallel process for other reasons only when it does not (see
           # #parallels_paused?), so this needs the same explicit guard here.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume if !message_window_open? && Input.trigger?(Input::C)
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :animation
           # A Show Battle Animation with its wait flag set, issued from a
           # parallel process rather than the foreground event -- shares the
           # same single on-screen animation slot #drive_map_animation already
           # drives for the foreground, see there.
           drive_map_animation(it)
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :game_over
           # A wipe-triggering command (Change HP, Change Condition, ...) run
           # from a Parallel Process's own interpreter raises the same
@@ -2509,6 +2643,7 @@ class RPG2k
           # silently cleared the wait and let the process carry on with a
           # fully-dead party never reaching the Game Over screen.
           perform_game_over(it)
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :battle
           # Battle Processing (Enemy Encounter) issued from a Parallel
           # Process -- a Common Event's or a map event's own -- opens and
@@ -2529,6 +2664,7 @@ class RPG2k
           # @battle's own presence pauses the ordinary #step_parallels
           # pass this entry would otherwise need for that (#parallels_paused?).
           drive_battle(it)
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :movement
           # Proceed With Movement / Force Complete Move issued from a
           # Parallel Process: block that process until every targeted
@@ -2553,7 +2689,9 @@ class RPG2k
           # again here would double-advance every forced route on any frame
           # both a parallel process and the foreground happen to be waiting
           # on movement at once.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume if forced_movement_done?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :teleport
           # Transfer Player / Recall to Location issued from a Parallel
           # Process (yado.tk: "a Transfer Player command inside one [a
@@ -2579,8 +2717,11 @@ class RPG2k
           # out of the rebuilt @parallels and this #resume call is its last --
           # matching the separately-documented "for a map event specifically,
           # its context is gone post-transfer".
+          # bc2cpp-reviewed: nomethod teleport -- dead fallback (ADR 0226)
           perform_teleport(it.teleport)
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :message
           # Show Text issued from a Parallel Process: real RPG_RT has exactly
           # one global message window, so this one shares @message with the
@@ -2613,8 +2754,10 @@ class RPG2k
           # foreground and a Parallel Process happen to reach their own
           # Show Text on at once.
           if @message.nil? && forced_movement_done?
+            # bc2cpp-reviewed: nomethod message_lines -- dead fallback (ADR 0226)
             open_message(it.message_lines, false, interp: it)
           end
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :choice
           # Show Choices issued from a Parallel Process: the same shared
           # single window as :message just above, with no implicit-auto-run
@@ -2630,9 +2773,12 @@ class RPG2k
           # reaching #open_message's existing "append instead of opening
           # fresh" branch. A genuinely new, unrelated request still waits its
           # turn until whichever window is currently up closes.
+          # bc2cpp-reviewed: nomethod interp -- dead fallback (ADR 0226)
           if @message.nil? || @message.interp.equal?(it)
+            # bc2cpp-reviewed: nomethod choice_labels -- dead fallback (ADR 0226)
             open_message(it.choice_labels, true, interp: it)
           end
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :number
           # Input Number issued from a Parallel Process: the same shared
           # window as :message/:choice above, standalone panel and the
@@ -2644,9 +2790,12 @@ class RPG2k
           # silently dropped outright -- docs/TODO.md "Left open: Input
           # Number (:number) issued from a Parallel Process is still
           # silently dropped."
+          # bc2cpp-reviewed: nomethod interp -- dead fallback (ADR 0226)
           if @message.nil? || @message.interp.equal?(it)
+            # bc2cpp-reviewed: nomethod input_digits -- dead fallback (ADR 0226)
             open_number_input(it.input_digits, interp: it)
           end
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :screen
           # Erase/Show/Tint/Flash/Pan/Shake Screen issued with its own wait
           # flag from a Parallel Process: block that process until the effect
@@ -2657,17 +2806,23 @@ class RPG2k
           # the command -- the effect itself already ran (#apply_interpreter_
           # requests runs for a parallel process's own requests too), only
           # the wait never actually held anything up.
+          # bc2cpp-reviewed: nomethod busy?, nomethod resume, nomethod screen -- dead fallback (ADR 0226)
           it.resume unless @state.screen.busy?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :picture
           # Move Picture's own wait flag, the parallel-process equivalent of
           # the :screen case just above.
+          # bc2cpp-reviewed: nomethod pictures_moving?, nomethod resume -- dead fallback (ADR 0226)
           it.resume unless @state.pictures_moving?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :picture_blocked
           # A Show/Move/Erase Picture command issued from a Parallel Process
           # while a message window or choice list is open -- the parallel-
           # process equivalent of #drive_event's own :picture_blocked case
           # just above, see #block_pending_picture_command for the citation.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume unless message_window_open?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :teleport_blocked
           # A Transfer Player / Recall to Location command issued from a
           # Parallel Process while a message window or choice list is open --
@@ -2677,46 +2832,60 @@ class RPG2k
           # simply never reached :teleport_blocked at all (the guard is what
           # raises it in the first place); this and the interpreter-side fix
           # land together.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume unless message_window_open?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :battle_blocked
           # A Battle Processing / Enemy Encounter command issued from a
           # Parallel Process while a message window or choice list is open --
           # the parallel-process equivalent of #drive_event's own
           # :battle_blocked case, see #block_pending_battle_command for the
           # citation.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume unless message_window_open?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :exp_level_blocked
           # A "show message"-flagged Change EXP / Change Level command
           # issued from a Parallel Process while a message window or choice
           # list is open -- the parallel-process equivalent of #drive_event's
           # own :exp_level_blocked case, see
           # Interpreter#block_pending_exp_level_command for the citation.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume unless message_window_open?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :key_input_blocked
           # A waiting Key Input Processing command issued from a Parallel
           # Process while a message window or choice list is open -- the
           # parallel-process equivalent of #drive_event's own
           # :key_input_blocked case, see
           # Interpreter#block_pending_key_input_command for the citation.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume unless message_window_open?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :message_config_blocked
           # A Message Options / Change Face Graphic command issued from a
           # Parallel Process while a *different* message window or choice
           # list is open -- the parallel-process equivalent of #drive_event's
           # own :message_config_blocked case, see
           # Interpreter#block_pending_message_config_command for the citation.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume unless message_window_open?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :screen_blocked
           # An Erase Screen / Show Screen command issued from a Parallel
           # Process while a message window or choice list is open -- the
           # parallel-process equivalent of #drive_event's own :screen_blocked
           # case, see Interpreter#block_pending_screen_command for the
           # citation.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume unless message_window_open?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :sprite_flash
           # Flash Sprite's own wait flag, the parallel-process equivalent of
           # the :screen/:picture cases just above.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume unless sprite_flashing?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :name_input
           # Enter Hero Name issued from a Parallel Process. Ported from a
           # reference implementation, NOT independently confirmed against
@@ -2734,6 +2903,7 @@ class RPG2k
           if (@name_ui.nil? || @name_ui[:interp].equal?(it)) && @message.nil?
             drive_name_input(it)
           end
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :shop
           # Open Shop issued from a Parallel Process. Ported from a
           # reference implementation, NOT independently confirmed against
@@ -2752,6 +2922,7 @@ class RPG2k
           if (@shop.nil? || @shop.interp.equal?(it)) && @message.nil? && @name_ui.nil?
             drive_shop(it)
           end
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :inn
           # Show Inn issued from a Parallel Process. Ported from a reference
           # implementation, NOT independently confirmed against genuine
@@ -2783,9 +2954,11 @@ class RPG2k
           # distinct interpreter's own Show Inn waits for this one's flow
           # to finish before starting its own.
           if @inn_interp.nil? || @inn_interp.equal?(it)
+            # bc2cpp-reviewed: nomethod inn_request -- dead fallback (ADR 0226)
             req = it.inn_request
             drive_inn(it) if (req && req.prompt) || @message.nil?
           end
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :return_title
           # Return to Title Screen issued from a Parallel Process. Ported
           # from a reference implementation, NOT independently confirmed
@@ -2801,6 +2974,7 @@ class RPG2k
           # (unlike :shop/:name_input): the whole scene tears down the
           # instant this runs, so there is nothing left to race.
           perform_return_to_title(it)
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :exit_game
           # Exit Game issued from a Parallel Process: same reasoning as
           # :return_title just above -- ported from a reference
@@ -2810,6 +2984,7 @@ class RPG2k
           # Exit Game silently never quit the game at all -- the classic
           # "auto-quit once switch X is on" idiom was a permanent no-op.
           perform_exit_game(it)
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :save_menu
           # Open Save Menu issued from a Parallel Process. Ported from a
           # reference implementation, NOT independently confirmed against
@@ -2824,12 +2999,14 @@ class RPG2k
           # own #update -- and so #drive_parallel_wait itself -- until it
           # pops, so nothing else can race it open.
           perform_event_save(it) if @message.nil?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :menu
           # Open Main Menu issued from a Parallel Process: same reasoning as
           # :save_menu just above -- ported from a reference implementation,
           # NOT independently confirmed against genuine RPG_RT under wine:
           # its Open Main Menu handling has no foreground gate either.
           perform_event_menu(it) if @message.nil?
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         elsif it.wait_kind == :load_menu
           # Open Load Menu (5001, RPG2003) issued from a Parallel Process:
           # same reasoning as :save_menu/:menu above -- ported from a
@@ -2839,6 +3016,7 @@ class RPG2k
           perform_event_load(it) if @message.nil?
         else
           # :message, :choice and :number are all handled above now.
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume
         end
       end
@@ -2852,10 +3030,13 @@ class RPG2k
       # records that the action button (not a touch or auto-start) launched it,
       # which the "the decision key started this event" conditional branch reads.
       def start_event(ev, by_decision_key = false)
+        # bc2cpp-reviewed: nomethod char, nomethod face, nomethod x, nomethod y -- dead fallback (ADR 0226)
         ev.char.face(ev.char.direction_toward(@state.x, @state.y))
         @active_event = ev
+        # bc2cpp-reviewed: nomethod commands -- dead fallback (ADR 0226)
         @interpreter.start(ev.commands)
         @interpreter.triggered_by_decision_key = by_decision_key
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         @interpreter.event_id = ev.id
       end
 
@@ -2890,7 +3071,9 @@ class RPG2k
         # blocking, action-triggered LAYER_SAME page while the player already
         # happens to be standing on that exact tile (e.g. a switch flips
         # elsewhere, with no movement in between).
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         here = event_at(@state.x, @state.y)
+        # bc2cpp-reviewed: nomethod layer -- dead fallback (ADR 0226)
         return start_event(here, true) if actionable?(here) && here.layer != LAYER_SAME
 
         # The faced tile only answers the button for a LAYER_SAME event: RPG_RT
@@ -2902,8 +3085,10 @@ class RPG2k
         # the overlap check above. A same-layer event never has that option
         # (it blocks the party from ever standing on it), so facing it is its
         # only way in.
+        # bc2cpp-reviewed: nomethod direction, nomethod x, nomethod y -- dead fallback (ADR 0226)
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
+        # bc2cpp-reviewed: nomethod layer -- dead fallback (ADR 0226)
         return start_event(ev, true) if actionable?(ev) && ev.layer == LAYER_SAME
         # A same-layer Player Touch / Event Touch event on the faced tile
         # answers the action button too, not just an action-triggered one --
@@ -2926,8 +3111,10 @@ class RPG2k
         # across it for whoever is standing behind, up to three counters deep.
         MAX_COUNTER_REACH.times do
           break unless counter_tile?(fx, fy)
+          # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
           fx, fy = target_tile(fx, fy, @state.direction)
           ev = event_at(fx, fy)
+          # bc2cpp-reviewed: nomethod layer -- dead fallback (ADR 0226)
           return start_event(ev, true) if actionable?(ev) && ev.layer == LAYER_SAME
         end
         nil
@@ -2935,6 +3122,7 @@ class RPG2k
 
       # Whether an event can answer the action button.
       def actionable?(ev)
+        # bc2cpp-reviewed: nomethod commands, nomethod trigger -- dead fallback (ADR 0226)
         ev && ev.trigger == TRIGGER_ACTION && ev.commands ? true : false
       end
 
@@ -2947,7 +3135,9 @@ class RPG2k
       # hero-*contact* purposes): Parallel is not in that
       # `{Trigger_touched, Trigger_collision}` set here.
       def action_touch_trigger?(ev)
+        # bc2cpp-reviewed: nomethod commands, nomethod layer -- dead fallback (ADR 0226)
         ev && ev.layer == LAYER_SAME && ev.commands &&
+          # bc2cpp-reviewed: nomethod trigger -- dead fallback (ADR 0226)
           (ev.trigger == TRIGGER_PLAYER_TOUCH || ev.trigger == TRIGGER_EVENT_TOUCH) ? true : false
       end
 
@@ -2965,7 +3155,9 @@ class RPG2k
 
       # Whether (x, y) carries an upper-layer counter tile.
       def counter_tile?(x, y)
+        # bc2cpp-reviewed: nomethod in_bounds? -- dead fallback (ADR 0226)
         return false if @chipset.nil? || !@map.in_bounds?(x, y)
+        # bc2cpp-reviewed: nomethod counter?, nomethod upper -- dead fallback (ADR 0226)
         @chipset.counter?(@map.upper(x, y))
       end
 
@@ -2976,7 +3168,9 @@ class RPG2k
       def try_board_vehicle
         return false if event_busy?
         return false unless Input.trigger?(Input::C)
+        # bc2cpp-reviewed: nomethod boarded? -- dead fallback (ADR 0226)
         if @state.boarded?
+          # bc2cpp-reviewed: nomethod boarded -- dead fallback (ADR 0226)
           airship = @state.boarded == :airship
           disembarked = disembark_vehicle
           # Ported from a reference implementation's action-trigger check,
@@ -3017,17 +3211,25 @@ class RPG2k
       # symmetrically, would have let a boat/ship be boarded by standing on
       # its tile rather than facing it from the shore.
       def board_vehicle
+        # bc2cpp-reviewed: nomethod direction, nomethod x, nomethod y -- dead fallback (ADR 0226)
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
+        # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
         airship = @state.vehicle(:airship)
+        # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
         if airship.placed? && airship.map_id == @state.map_id &&
+           # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
            airship.x == @state.x && airship.y == @state.y
           board_as(:airship)
           return true
         end
         [:ship, :boat].each do |type|
+          # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
           v = @state.vehicle(type)
+          # bc2cpp-reviewed: nomethod map_id, nomethod x, nomethod y -- dead fallback (ADR 0226)
           next unless v.placed? && v.map_id == @state.map_id && v.x == fx && v.y == fy
+          # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
           @state.x = fx
+          # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
           @state.y = fy
           board_as(type)
           return true
@@ -3045,7 +3247,9 @@ class RPG2k
       # own comment, not this project's independent finding) -- the boat/ship
       # branch has no equivalent call at all, so this is airship-specific.
       def board_as(type)
+        # bc2cpp-reviewed: nomethod boarded= -- dead fallback (ADR 0226)
         @state.boarded = type
+        # bc2cpp-reviewed: nomethod direction= -- dead fallback (ADR 0226)
         @state.direction = 4 if type == :airship
         play_vehicle_bgm(type)
       end
@@ -3065,19 +3269,28 @@ class RPG2k
       # own return is never read -- see #try_board_vehicle's own comment on
       # why the airship needs no such signal).
       def disembark_vehicle
+        # bc2cpp-reviewed: nomethod boarded -- dead fallback (ADR 0226)
         if @state.boarded == :airship
+          # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
           return unless airship_landable?(@state.x, @state.y)
+          # bc2cpp-reviewed: nomethod direction= -- dead fallback (ADR 0226)
           @state.direction = 4
           follow_vehicle # the airship is left where it touched down
+          # bc2cpp-reviewed: nomethod boarded= -- dead fallback (ADR 0226)
           @state.boarded = nil
           restore_pre_vehicle_bgm # the map BGM resumes
           return
         end
+        # bc2cpp-reviewed: nomethod direction, nomethod x, nomethod y -- dead fallback (ADR 0226)
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
+        # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
         return false unless ship_disembark_passable?(fx, fy, @state.direction)
         follow_vehicle # the vehicle is left where the party is getting off
+        # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
         @state.x = fx
+        # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
         @state.y = fy
+        # bc2cpp-reviewed: nomethod boarded= -- dead fallback (ADR 0226)
         @state.boarded = nil
         restore_pre_vehicle_bgm # the map BGM resumes
         true
@@ -3101,10 +3314,14 @@ class RPG2k
       # explicitly): a boat/ship parked on the landing tile never blocks
       # disembarking here. Only a same-layer, non-Through event still does.
       def ship_disembark_passable?(x, y, dir)
+        # bc2cpp-reviewed: nomethod in_bounds? -- dead fallback (ADR 0226)
         return false unless @map.in_bounds?(x, y)
+        # bc2cpp-reviewed: nomethod char, nomethod layer, nomethod through -- dead fallback (ADR 0226)
         return false if blockers_at(x, y).any? { |b| b.layer == LAYER_SAME && !b.char.through }
         return true if @chipset.nil?
+        # bc2cpp-reviewed: nomethod lower, nomethod upper -- dead fallback (ADR 0226)
         @chipset.passable_tile?(@map.lower(x, y), @map.upper(x, y),
+                                 # bc2cpp-reviewed: nomethod passable_tile? -- dead fallback (ADR 0226)
                                  Game::Character::TURN_180[dir] || dir)
       end
 
@@ -3132,6 +3349,7 @@ class RPG2k
       # returns here blocks unconditionally. A tile with no terrain data (a
       # bare fixture) is landable.
       def airship_landable?(x, y)
+        # bc2cpp-reviewed: nomethod in_bounds? -- dead fallback (ADR 0226)
         return false unless @map.in_bounds?(x, y)
         return false if blockers_at(x, y).any?
         # A Boat/Ship parked on the ground blocks a landing too, matching
@@ -3180,6 +3398,7 @@ class RPG2k
       # those slots was silently dropped and playback kept whatever pan a
       # prior Play BGM (or the SDL default) had last set instead.
       def play_bgm(music)
+        # bc2cpp-reviewed: nomethod current_bgm -- dead fallback (ADR 0226)
         same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == music[:name]
         if same_file_already_playing
           # No restart happens here, so there is nothing for a fade-in to
@@ -3209,6 +3428,7 @@ class RPG2k
           # looped") checked right after would misread as already having
           # played through once, or -- once a real `#finish_inn` fade-in
           # gate someday reads this same flag -- would skip the wait outright.
+          # bc2cpp-reviewed: nomethod bgm_looped= -- dead fallback (ADR 0226)
           @state.bgm_looped = false
           RGSS::Audio.bgm_play(music[:name], music[:volume] || 100, music[:tempo] || 100,
                                0, music[:fadein] || 0)
@@ -3217,6 +3437,7 @@ class RPG2k
         # #play_audio's own :bgm branch and #do_play_memorized_bgm (cycle
         # #219) -- see this method's own doc comment above.
         RGSS::Audio.bgm_pan(music[:balance] || 50)
+        # bc2cpp-reviewed: nomethod current_bgm= -- dead fallback (ADR 0226)
         @state.current_bgm = music
       end
 
@@ -3248,6 +3469,7 @@ class RPG2k
           play_bgm(music)
         else
           RGSS::Audio.bgm_stop
+          # bc2cpp-reviewed: nomethod current_bgm= -- dead fallback (ADR 0226)
           @state.current_bgm = nil
         end
       end
@@ -3257,6 +3479,7 @@ class RPG2k
       # airship music — remembering the BGM that was playing so
       # #restore_pre_vehicle_bgm can bring it back on disembark.
       def play_vehicle_bgm(type)
+        # bc2cpp-reviewed: nomethod current_bgm, nomethod pre_vehicle_bgm= -- dead fallback (ADR 0226)
         @state.pre_vehicle_bgm = @state.current_bgm
         play_bgm_or_stop(vehicle_bgm(type))
       rescue StandardError => e
@@ -3265,7 +3488,9 @@ class RPG2k
 
       # Restore the BGM that was playing before the party boarded (the map BGM).
       def restore_pre_vehicle_bgm
+        # bc2cpp-reviewed: nomethod pre_vehicle_bgm -- dead fallback (ADR 0226)
         bgm = @state.pre_vehicle_bgm
+        # bc2cpp-reviewed: nomethod pre_vehicle_bgm= -- dead fallback (ADR 0226)
         @state.pre_vehicle_bgm = nil
         play_bgm_or_stop(bgm)
       rescue StandardError => e
@@ -3289,6 +3514,7 @@ class RPG2k
       def play_battle_bgm
         music = battle_bgm
         return unless music
+        # bc2cpp-reviewed: nomethod current_bgm, nomethod pre_battle_bgm= -- dead fallback (ADR 0226)
         @state.pre_battle_bgm = @state.current_bgm
         play_bgm(music)
       rescue StandardError => e
@@ -3310,6 +3536,7 @@ class RPG2k
       # gap, for field 5 (`balance`) instead -- see #play_bgm's own doc
       # comment.
       def battle_bgm
+        # bc2cpp-reviewed: nomethod system_bgm -- dead fallback (ADR 0226)
         ov = @state.system_bgm[SYSTEM_BGM_BATTLE]
         if ov && ov[:name] && !ov[:name].empty?
           return { name: ov[:name], volume: ov[:volume] || 100,
@@ -3395,6 +3622,7 @@ class RPG2k
       # now included too (cycle #220) -- see #play_victory_bgm's own doc
       # comment.
       def victory_bgm
+        # bc2cpp-reviewed: nomethod system_bgm -- dead fallback (ADR 0226)
         ov = @state.system_bgm[SYSTEM_BGM_VICTORY]
         if ov && ov[:name] && !ov[:name].to_s.empty?
           return { name: ov[:name], volume: ov[:volume] || 100,
@@ -3425,7 +3653,9 @@ class RPG2k
       # it. Harmless to call for an escape or a defeat too: there is no ME
       # active then, so it is a no-op.
       def restore_pre_battle_bgm
+        # bc2cpp-reviewed: nomethod pre_battle_bgm -- dead fallback (ADR 0226)
         bgm = @state.pre_battle_bgm
+        # bc2cpp-reviewed: nomethod pre_battle_bgm= -- dead fallback (ADR 0226)
         @state.pre_battle_bgm = nil
         return unless bgm && bgm[:name] && !bgm[:name].empty?
         RGSS::Audio.me_stop
@@ -3454,6 +3684,7 @@ class RPG2k
       def play_inn_bgm
         music = inn_bgm
         return unless music
+        # bc2cpp-reviewed: nomethod current_bgm -- dead fallback (ADR 0226)
         @pre_inn_bgm = @state.current_bgm
         play_bgm(music)
       rescue StandardError => e
@@ -3469,6 +3700,7 @@ class RPG2k
       # (cycle #219): the same gap, for field 5 -- see #play_bgm's own doc
       # comment.
       def inn_bgm
+        # bc2cpp-reviewed: nomethod system_bgm -- dead fallback (ADR 0226)
         ov = @state.system_bgm[SYSTEM_BGM_INN]
         if ov && ov[:name] && !ov[:name].to_s.empty?
           return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100,
@@ -3516,6 +3748,7 @@ class RPG2k
       # comment.
       def vehicle_bgm(type)
         slot = VEHICLE_SYSTEM_BGM_SLOT[type]
+        # bc2cpp-reviewed: nomethod system_bgm -- dead fallback (ADR 0226)
         ov = slot && @state.system_bgm[slot]
         if ov && ov[:name] && !ov[:name].to_s.empty?
           return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100,
@@ -3560,11 +3793,16 @@ class RPG2k
 
       # Keep the ridden vehicle on the party's tile / facing.
       def follow_vehicle
+        # bc2cpp-reviewed: nomethod boarded, nomethod vehicle -- dead fallback (ADR 0226)
         v = @state.vehicle(@state.boarded)
         return unless v
+        # bc2cpp-reviewed: nomethod map_id, nomethod map_id= -- dead fallback (ADR 0226)
         v.map_id = @state.map_id
+        # bc2cpp-reviewed: nomethod x, nomethod x= -- dead fallback (ADR 0226)
         v.x = @state.x
+        # bc2cpp-reviewed: nomethod y, nomethod y= -- dead fallback (ADR 0226)
         v.y = @state.y
+        # bc2cpp-reviewed: nomethod direction, nomethod direction= -- dead fallback (ADR 0226)
         v.direction = @state.direction
       end
 
@@ -3592,12 +3830,14 @@ class RPG2k
       # `passable?` check) is a *separate*, additional exemption on top of the
       # layer gate, not the only one.
       def vehicle_passable?(x, y, dir, type)
+        # bc2cpp-reviewed: nomethod in_bounds? -- dead fallback (ADR 0226)
         return false unless @map.in_bounds?(x, y)
         row = terrain_row_at(x, y)
         if type == :airship
           return true if row.nil?
           return row[:airship_pass] ? true : false
         end
+        # bc2cpp-reviewed: nomethod char, nomethod layer, nomethod through -- dead fallback (ADR 0226)
         return false if blockers_at(x, y).any? { |b| !b.char.through && b.layer == LAYER_SAME }
         # A moving Boat/Ship also collides with a *different* parked
         # Boat/Ship, and with a grounded Airship -- ported from a reference
@@ -3620,7 +3860,9 @@ class RPG2k
       # #char_passable? does for the hero/events (a route's Through Mode
       # Begin/End sub-commands work the same way on a vehicle mirror).
       def vehicle_char_passable?(character, dir, type)
+        # bc2cpp-reviewed: nomethod through -- dead fallback (ADR 0226)
         return true if character.through
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         nx, ny = Game::Character.step_tile(character.x, character.y, dir)
         vehicle_passable?(nx, ny, dir, type)
       end
@@ -3632,8 +3874,11 @@ class RPG2k
       # occupied by the mover itself), and Through Mode bypasses the check
       # entirely, same as stepping.
       def vehicle_char_can_land?(character, x, y, type)
+        # bc2cpp-reviewed: nomethod through -- dead fallback (ADR 0226)
         return true if character.through
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         return true if x == character.x && y == character.y
+        # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
         vehicle_passable?(x, y, character.direction, type)
       end
       public :vehicle_char_can_land?
@@ -3649,6 +3894,7 @@ class RPG2k
       # #warn_stale_terrain for the "log once, not once per frame" diagnostic.
       def terrain_row_at(x, y)
         return nil if @chipset.nil? || !LCF.field?(@db, :terrain) || @db[:terrain].nil?
+        # bc2cpp-reviewed: nomethod lower, nomethod terrain -- dead fallback (ADR 0226)
         tid = @chipset.terrain(@map.lower(x, y))
         row = @db[:terrain][tid]
         warn_stale_terrain(x, y, tid) if row.nil?
@@ -3717,7 +3963,9 @@ class RPG2k
       def run_route_step(route, character, world)
         start = route.index
         status = route.step(character, world)
+        # bc2cpp-reviewed: nomethod done?, nomethod index -- dead fallback (ADR 0226)
         while status == :effect && !route.done? && route.index != start
+          # bc2cpp-reviewed: nomethod step -- dead fallback (ADR 0226)
           status = route.step(character, world)
         end
         status
@@ -3729,6 +3977,7 @@ class RPG2k
         # #player_intended_target) never lingers into a later frame where
         # this event does not even attempt a move -- #step_movement must
         # only ever see this true for a refusal decided *this* frame.
+        # bc2cpp-reviewed: nomethod crossed_hero_this_frame= -- dead fallback (ADR 0226)
         e.crossed_hero_this_frame = false
         # An event fired earlier this frame; hold the rest -- except when this
         # is the "keep moving during the message" pass, which is *always*
@@ -3752,30 +4001,45 @@ class RPG2k
         # (`return nil if @moving`, `#step_movement`) -- events had no
         # equivalent.
         return if event_sliding?(e)
+        # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
         ch = e.char
+        # bc2cpp-reviewed: nomethod move_timer, nomethod move_timer= -- dead fallback (ADR 0226)
         e.move_timer -= 1
+        # bc2cpp-reviewed: nomethod move_timer -- dead fallback (ADR 0226)
         return if e.move_timer > 0
+        # bc2cpp-reviewed: nomethod forced_route -- dead fallback (ADR 0226)
         forced = e.forced_route
         # A forced route (from a Move Event) is paced by its own frequency when
         # one was given, otherwise by the page's; it overrides page movement.
+        # bc2cpp-reviewed: nomethod forced_freq, nomethod move_frequency -- dead fallback (ADR 0226)
         freq = forced && e.forced_freq ? e.forced_freq : ch.move_frequency
+        # bc2cpp-reviewed: nomethod move_timer= -- dead fallback (ADR 0226)
         e.move_timer = EVENT_MOVE_DELAY[freq] || 40
+        # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
         ox = ch.x
+        # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
         oy = ch.y
         status = nil
         if forced
+          # bc2cpp-reviewed: nomethod done? -- dead fallback (ADR 0226)
           status = run_route_step(forced, ch, @world) unless forced.done?
+          # bc2cpp-reviewed: nomethod done? -- dead fallback (ADR 0226)
           if forced.done? # revert to page movement
+            # bc2cpp-reviewed: nomethod forced_route= -- dead fallback (ADR 0226)
             e.forced_route = nil
             # The page's own Move Frequency reasserts itself once the forced
             # route finishes -- a Frequency Up/Down sub-command inside that
             # route must not go on pacing the event after control reverts to
             # its page, only for the duration of the route that issued it.
+            # bc2cpp-reviewed: nomethod move_frequency=, nomethod page -- dead fallback (ADR 0226)
             ch.move_frequency = page_move_frequency(e.page)
           end
+        # bc2cpp-reviewed: nomethod route -- dead fallback (ADR 0226)
         elsif e.route
+          # bc2cpp-reviewed: nomethod done?, nomethod route -- dead fallback (ADR 0226)
           status = run_route_step(e.route, ch, @world) unless e.route.done?
         else
+          # bc2cpp-reviewed: nomethod move_type -- dead fallback (ADR 0226)
           dir = Game::MoveType.next_direction(e.move_type, ch, @world)
           move_autonomous(e, dir, allow_trigger: allow_trigger) if dir
         end
@@ -3795,14 +4059,18 @@ class RPG2k
         # reason #move_autonomous gates its own crossing check on it -- see
         # that comment.
         if status == :touched_hero
+          # bc2cpp-reviewed: nomethod crossed_hero_this_frame= -- dead fallback (ADR 0226)
           e.crossed_hero_this_frame = allow_trigger && @player_intended_target == [ox, oy]
         end
+        # bc2cpp-reviewed: nomethod crossed_hero_this_frame -- dead fallback (ADR 0226)
         if allow_trigger && status == :touched_hero && !e.crossed_hero_this_frame &&
+           # bc2cpp-reviewed: nomethod commands, nomethod trigger -- dead fallback (ADR 0226)
            e.trigger == TRIGGER_EVENT_TOUCH && e.commands
           start_event(e)
         end
         # A jump that lands where it started still needs the render slide, so
         # the hop is visible; an ordinary step only when the tile changed.
+        # bc2cpp-reviewed: nomethod jumped, nomethod x, nomethod y -- dead fallback (ADR 0226)
         reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy || ch.jumped
       rescue StandardError => ex
         $stderr.puts "[RPG2k] event ##{e[:id]} movement failed: #{ex.message}"
@@ -3835,43 +4103,60 @@ class RPG2k
       end
 
       def animate_event(e)
+        # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
         ch = e.char
         # Advance the slide first so a fixed-graphic event still glides smoothly.
         # The per-frame advance now follows the event's move_speed (a jump uses
         # the separate jump table) instead of a hardcoded constant, so the
         # previously-dead speed axis actually takes effect.
+        # bc2cpp-reviewed: nomethod move_count -- dead fallback (ADR 0226)
         if e.move_count < TILE
+          # bc2cpp-reviewed: nomethod jumping, nomethod move_speed -- dead fallback (ADR 0226)
           step = e.jumping ? jump_slide_step(ch.move_speed)
+                             # bc2cpp-reviewed: nomethod move_speed -- dead fallback (ADR 0226)
                              : walk_slide_step(ch.move_speed)
+          # bc2cpp-reviewed: nomethod move_count, nomethod move_count=, nomethod slide_frac, nomethod slide_frac= -- dead fallback (ADR 0226)
           e.move_count, e.slide_frac = advance_slide(e.move_count, e.slide_frac || 0, step)
         end
         sliding = event_sliding?(e)
+        # bc2cpp-reviewed: nomethod moving= -- dead fallback (ADR 0226)
         e.moving = sliding
+        # bc2cpp-reviewed: nomethod anim_type -- dead fallback (ADR 0226)
         type = e.anim_type
         return unless Game::EventGraphic.animated?(type)
         return unless sliding || Game::EventGraphic.continuous?(type)
+        # bc2cpp-reviewed: nomethod anim_count, nomethod anim_count= -- dead fallback (ADR 0226)
         e.anim_count += 1
         # Sliding always uses the (fastest) stationary-per-frame table; an
         # event merely idling in place -- Spin rotating its facing, or a
         # Continuous/Fixed-Continuous type cycling its walk frame with nobody
         # pushing it -- uses its own slower table instead of reusing this one
         # (see #ANIM_CONTINUOUS_FRAMES / #ANIM_SPIN_FRAMES above).
+        # bc2cpp-reviewed: nomethod move_speed -- dead fallback (ADR 0226)
         period = if sliding then anim_frame_period(ch.move_speed)
+                 # bc2cpp-reviewed: nomethod move_speed -- dead fallback (ADR 0226)
                  elsif type == Game::EventGraphic::SPIN then anim_spin_period(ch.move_speed)
+                 # bc2cpp-reviewed: nomethod move_speed -- dead fallback (ADR 0226)
                  else anim_continuous_period(ch.move_speed)
                  end
+        # bc2cpp-reviewed: nomethod anim_count -- dead fallback (ADR 0226)
         return if e.anim_count < period
+        # bc2cpp-reviewed: nomethod anim_count= -- dead fallback (ADR 0226)
         e.anim_count = 0
+        # bc2cpp-reviewed: nomethod anim_phase, nomethod anim_phase= -- dead fallback (ADR 0226)
         e.anim_phase = (e.anim_phase + 1) % Game::EventGraphic::WALK_COLUMNS.size
       end
 
       # Whether an event is mid-step: its display origin has not yet caught up to
       # its logical tile (the slide started by reoccupy is still in progress).
       def event_sliding?(e)
+        # bc2cpp-reviewed: nomethod move_count -- dead fallback (ADR 0226)
         return false unless e.move_count < TILE
         # A jump that lands on its own tile moves the sprite nowhere but is
         # still in progress, so it cannot be recognised by the displacement.
+        # bc2cpp-reviewed: nomethod jumping -- dead fallback (ADR 0226)
         e.jumping ||
+          # bc2cpp-reviewed: nomethod char, nomethod disp_x, nomethod disp_y, nomethod x, nomethod y -- dead fallback (ADR 0226)
           e.disp_x != e.char.x || e.disp_y != e.char.y
       end
 
@@ -3901,9 +4186,13 @@ class RPG2k
       # never shows two message windows at once, so a second event's
       # commands have nowhere safe to run until the first message closes.
       def move_autonomous(e, dir, allow_trigger: true)
+        # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
         ch = e.char
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         if nx == @state.x && ny == @state.y
+          # bc2cpp-reviewed: nomethod face -- dead fallback (ADR 0226)
           ch.face(dir)
           # A genuine same-frame crossing (docs/TODO.md "Map Event" case (c)):
           # this event's target is the party's current tile *and* the
@@ -3923,9 +4212,12 @@ class RPG2k
           # branch), so @player_intended_target was not refreshed for this
           # frame and cannot be trusted -- treat that pass as never
           # crossing, same as it never fires the trigger either.
+          # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
           crossing = allow_trigger && @player_intended_target == [ch.x, ch.y]
+          # bc2cpp-reviewed: nomethod crossed_hero_this_frame= -- dead fallback (ADR 0226)
           e.crossed_hero_this_frame = crossing
           start_event(e) if allow_trigger && !crossing &&
+                             # bc2cpp-reviewed: nomethod commands, nomethod trigger -- dead fallback (ADR 0226)
                              e.trigger == TRIGGER_EVENT_TOUCH && e.commands
         elsif @world.passable?(ch, dir)
           ch.move(dir)
@@ -3939,6 +4231,7 @@ class RPG2k
       # sprite glides instead of teleporting (see event_pixel).
       def reoccupy(e, ox, oy)
         deindex_event_tile(e, ox, oy)
+        # bc2cpp-reviewed: nomethod char, nomethod x, nomethod y -- dead fallback (ADR 0226)
         index_event_tile(e, e.char.x, e.char.y)
         start_event_slide(e, ox, oy)
       end
@@ -3953,18 +4246,30 @@ class RPG2k
       # clearing the tiles between. Anything else -- a multi-tile displacement
       # that is not a jump -- snaps, so a sprite never streaks across the map.
       def start_event_slide(e, ox, oy)
+        # bc2cpp-reviewed: nomethod char, nomethod jumped -- dead fallback (ADR 0226)
         jumped = e.char.jumped
+        # bc2cpp-reviewed: nomethod char, nomethod x, nomethod y -- dead fallback (ADR 0226)
         if jumped || (e.char.x - ox).abs + (e.char.y - oy).abs == 1
+          # bc2cpp-reviewed: nomethod disp_x= -- dead fallback (ADR 0226)
           e.disp_x = ox
+          # bc2cpp-reviewed: nomethod disp_y= -- dead fallback (ADR 0226)
           e.disp_y = oy
+          # bc2cpp-reviewed: nomethod move_count= -- dead fallback (ADR 0226)
           e.move_count = 0
+          # bc2cpp-reviewed: nomethod slide_frac= -- dead fallback (ADR 0226)
           e.slide_frac = 0
+          # bc2cpp-reviewed: nomethod jumping= -- dead fallback (ADR 0226)
           e.jumping = jumped
         else
+          # bc2cpp-reviewed: nomethod char, nomethod disp_x=, nomethod x -- dead fallback (ADR 0226)
           e.disp_x = e.char.x
+          # bc2cpp-reviewed: nomethod char, nomethod disp_y=, nomethod y -- dead fallback (ADR 0226)
           e.disp_y = e.char.y
+          # bc2cpp-reviewed: nomethod move_count= -- dead fallback (ADR 0226)
           e.move_count = TILE
+          # bc2cpp-reviewed: nomethod slide_frac= -- dead fallback (ADR 0226)
           e.slide_frac = 0
+          # bc2cpp-reviewed: nomethod jumping= -- dead fallback (ADR 0226)
           e.jumping = false
         end
       end
@@ -3993,7 +4298,9 @@ class RPG2k
       # camera follows and what the draw order sorts on -- stays on the ground.
       JUMP_STEP_UNITS = 256              # a reference implementation's own screen-tile-size unit
       def event_jump_offset(e)
+        # bc2cpp-reviewed: nomethod jumping, nomethod move_count -- dead fallback (ADR 0226)
         return 0 unless e.jumping && e.move_count < TILE
+        # bc2cpp-reviewed: nomethod move_count -- dead fallback (ADR 0226)
         jump_offset_for(e.move_count)
       end
 
@@ -4019,14 +4326,18 @@ class RPG2k
       # event every frame) can skip building and immediately discarding the
       # two-element array.
       def event_pixel_x(e)
+        # bc2cpp-reviewed: nomethod char, nomethod x -- dead fallback (ADR 0226)
         cx = e.char.x
         return cx * TILE unless event_sliding?(e)
+        # bc2cpp-reviewed: nomethod disp_x, nomethod move_count -- dead fallback (ADR 0226)
         e.disp_x * TILE + (cx - e.disp_x) * e.move_count
       end
 
       def event_pixel_y(e)
+        # bc2cpp-reviewed: nomethod char, nomethod y -- dead fallback (ADR 0226)
         cy = e.char.y
         return cy * TILE unless event_sliding?(e)
+        # bc2cpp-reviewed: nomethod disp_y, nomethod move_count -- dead fallback (ADR 0226)
         e.disp_y * TILE + (cy - e.disp_y) * e.move_count
       end
 
@@ -4036,6 +4347,7 @@ class RPG2k
       # was running it (`this_event`) from the map. A common event has no such
       # map event, so nothing happens.
       def apply_erase_request(interp, this_event)
+        # bc2cpp-reviewed: nomethod take_erase_request -- dead fallback (ADR 0226)
         erase_event(this_event) if interp.take_erase_request && this_event
       rescue StandardError => e
         $stderr.puts "[RPG2k] Erase Event failed: #{e.message}"
@@ -4050,7 +4362,9 @@ class RPG2k
         @events.delete(ev)
         # Remembered so a page refresh cannot resurrect it: an Erase Event lasts
         # for the rest of the visit to the map, whatever its conditions do next.
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         @erased_events[ev.id] = true
+        # bc2cpp-reviewed: nomethod char, nomethod x, nomethod y -- dead fallback (ADR 0226)
         tile = [ev.char.x, ev.char.y]
         deindex_event_tile(ev, tile[0], tile[1])
         # Starts frozen at the tile it occupied right before erasure --
@@ -4060,6 +4374,7 @@ class RPG2k
         # event's single backing object (see #set_char_location), and keep
         # this table in sync when they do, the same way ordinary movement
         # keeps @event_last_position current for a merely-hidden one.
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         @erased_event_positions[ev.id] = tile
         @parallels.reject! { |p| p[:event].equal?(ev) } if @parallels
       end
@@ -4095,6 +4410,7 @@ class RPG2k
       # party stand-ins some harnesses pass in). A source that cannot report a
       # change simply never asks for a refresh.
       def rev(o)
+        # bc2cpp-reviewed: nomethod revision -- dead fallback (ADR 0226)
         o.respond_to?(:revision) && o.revision ? o.revision : 0
       end
 
@@ -4124,19 +4440,26 @@ class RPG2k
       # (an item or a member appeared), and a timer-conditioned event flips on
       # the timer's own schedule.
       def pages_changed?
+        # bc2cpp-reviewed: nomethod unit -- dead fallback (ADR 0226)
         evs = @map.unit[:events]
         return false unless evs
+        # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
         sw = @state.switches
+        # bc2cpp-reviewed: nomethod variables -- dead fallback (ADR 0226)
         va = @state.variables
         sw_dirty = sw.dirty
         var_dirty = va.dirty
+        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         party_moved = rev(@state.party) != @swept_party_revision
+        # bc2cpp-reviewed: nomethod timer_seconds -- dead fallback (ADR 0226)
         timer_moved = @state.timer_seconds != @swept_timer_seconds ||
+                      # bc2cpp-reviewed: nomethod timer2_seconds -- dead fallback (ADR 0226)
                       @state.timer2_seconds != @swept_timer2_seconds
         if sw_dirty.nil? && var_dirty.nil? && !party_moved && !timer_moved
           return false
         end
         live = {}
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         @events.each { |e| live[e.id] = e }
         changed = false
         evs.each do |id, src|
@@ -4148,16 +4471,22 @@ class RPG2k
                  ids_touch?(ids[:variables], var_dirty)
             next
           end
+          # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
           selected = Game::EventPage.select(src[:pages], sw, va, @state.party,
+                                            # bc2cpp-reviewed: nomethod timer2_seconds, nomethod timer_seconds -- dead fallback (ADR 0226)
                                             @state.timer_seconds, @state.timer2_seconds)
           page = selected && selected[1]
           e = live[id]
+          # bc2cpp-reviewed: nomethod page -- dead fallback (ADR 0226)
           changed = true unless page.equal?(e && e.page)
         end
         sw.clear_dirty
         va.clear_dirty
+        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         @swept_party_revision = rev(@state.party)
+        # bc2cpp-reviewed: nomethod timer_seconds -- dead fallback (ADR 0226)
         @swept_timer_seconds = @state.timer_seconds
+        # bc2cpp-reviewed: nomethod timer2_seconds -- dead fallback (ADR 0226)
         @swept_timer2_seconds = @state.timer2_seconds
         changed
       end
@@ -4237,26 +4566,41 @@ class RPG2k
       # reasoning already applied to Through Mode above.
       def rebuild_events_preserving_positions
         placed = {}
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         @events.each { |e| placed[e.id] = e }
         # false: this is a live, in-place page reselection, not a save/load
         # restore -- see #build_event's own comment on `restore_route_index`.
         build_events(restore_route_index: false)
         @events.each do |e|
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           old = placed[e.id]
           next unless old
+          # bc2cpp-reviewed: nomethod char, nomethod x, nomethod x= -- dead fallback (ADR 0226)
           e.char.x = old.char.x
+          # bc2cpp-reviewed: nomethod char, nomethod y, nomethod y= -- dead fallback (ADR 0226)
           e.char.y = old.char.y
+          # bc2cpp-reviewed: nomethod char, nomethod direction, nomethod direction= -- dead fallback (ADR 0226)
           e.char.direction = old.char.direction
+          # bc2cpp-reviewed: nomethod char, nomethod through, nomethod through= -- dead fallback (ADR 0226)
           e.char.through = old.char.through
+          # bc2cpp-reviewed: nomethod char, nomethod facing_locked, nomethod facing_locked= -- dead fallback (ADR 0226)
           e.char.facing_locked = old.char.facing_locked
+          # bc2cpp-reviewed: nomethod animation_stopped, nomethod animation_stopped=, nomethod char -- dead fallback (ADR 0226)
           e.char.animation_stopped = old.char.animation_stopped
+          # bc2cpp-reviewed: nomethod char, nomethod transparency, nomethod transparency= -- dead fallback (ADR 0226)
           e.char.transparency = old.char.transparency
+          # bc2cpp-reviewed: nomethod page -- dead fallback (ADR 0226)
           if old.page.equal?(e.page)
+            # bc2cpp-reviewed: nomethod char, nomethod graphic_index, nomethod graphic_name -- dead fallback (ADR 0226)
             e.char.set_graphic(old.char.graphic_name, old.char.graphic_index)
           end
+          # bc2cpp-reviewed: nomethod move_type -- dead fallback (ADR 0226)
           next unless e.move_type == Game::MoveType::CUSTOM &&
+                      # bc2cpp-reviewed: nomethod move_type -- dead fallback (ADR 0226)
                       old.move_type == Game::MoveType::CUSTOM
+          # bc2cpp-reviewed: nomethod page -- dead fallback (ADR 0226)
           if Game::MoveRoute.same_route?(page_move_route(old.page), page_move_route(e.page))
+            # bc2cpp-reviewed: nomethod route, nomethod route= -- dead fallback (ADR 0226)
             e.route = old.route
           end
         end
@@ -4268,6 +4612,7 @@ class RPG2k
         build_parallels(preserve_map_events: true)
         # The event the foreground interpreter is running may have just been
         # rebuilt; re-point it so "this event" still reaches the live character.
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         @active_event = @events.find { |e| e.id == @active_event.id } if @active_event
       end
 
@@ -4287,10 +4632,12 @@ class RPG2k
       # @player_through here would make the player the one case that quietly
       # cleans up after itself.
       def apply_halt_request(interp)
+        # bc2cpp-reviewed: nomethod take_halt_movement_request -- dead fallback (ADR 0226)
         return unless interp.take_halt_movement_request
         @player_route = nil
         @player_char = nil
         sync_player_route_to_state
+        # bc2cpp-reviewed: nomethod forced_route= -- dead fallback (ADR 0226)
         @events.each { |e| e.forced_route = nil } if @events
       rescue StandardError => e
         $stderr.puts "[RPG2k] Halt All Movement failed: #{e.message}"
@@ -4303,7 +4650,9 @@ class RPG2k
       # leader's on-screen graphic so the change shows immediately (a change to a
       # non-leader actor is held in the model until that actor leads the party).
       def apply_graphic_change(interp)
+        # bc2cpp-reviewed: nomethod take_actor_graphic_changed -- dead fallback (ADR 0226)
         refresh_player_graphic if interp.take_actor_graphic_changed
+        # bc2cpp-reviewed: nomethod take_system_graphic_changed -- dead fallback (ADR 0226)
         reload_windowskin if interp.take_system_graphic_changed
       rescue StandardError => e
         $stderr.puts "[RPG2k] Change Actor Graphic failed: #{e.message}"
@@ -4316,6 +4665,7 @@ class RPG2k
       def reload_windowskin
         old = @windowskin
         @windowskin = load_windowskin
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         old.dispose if old && !old.equal?(@windowskin)
       end
 
@@ -4340,6 +4690,7 @@ class RPG2k
       # translucency tint, independently gating whether the sprite draws at
       # all).
       def player_hidden?
+        # bc2cpp-reviewed: nomethod player_transparent -- dead fallback (ADR 0226)
         @state.player_transparent ? true : false
       end
 
@@ -4366,7 +4717,9 @@ class RPG2k
       # cycle. This codebase used to fold this flag into #player_hidden? and
       # hide the sprite outright instead.
       def player_translucent?
+        # bc2cpp-reviewed: nomethod leader, nomethod party -- dead fallback (ADR 0226)
         leader = @state.party.leader
+        # bc2cpp-reviewed: nomethod transparent -- dead fallback (ADR 0226)
         leader && leader.transparent ? true : false
       end
 
@@ -4393,6 +4746,7 @@ class RPG2k
       # chipset to the requested id and rebuild its tile graphic. The override
       # lasts until the next map load (see perform_teleport).
       def apply_tileset_request(interp)
+        # bc2cpp-reviewed: nomethod take_tileset_request -- dead fallback (ADR 0226)
         id = interp.take_tileset_request
         return if id.nil?
         @tileset_id = id
@@ -4409,6 +4763,7 @@ class RPG2k
       # (Game::State#parallax). The override lasts until the next map load (see
       # perform_teleport, which clears it), when the map's own panorama returns.
       def apply_parallax_request(interp)
+        # bc2cpp-reviewed: nomethod take_parallax_request -- dead fallback (ADR 0226)
         return unless interp.take_parallax_request
         dispose_parallax
         setup_parallax
@@ -4442,6 +4797,7 @@ class RPG2k
         pos = RGSS::Audio.bgm_pos.to_i
         prev = @bgm_pos || 0
         @bgm_pos = pos
+        # bc2cpp-reviewed: nomethod bgm_looped=, nomethod current_bgm -- dead fallback (ADR 0226)
         @state.bgm_looped = true if pos < prev && @state.current_bgm
       rescue StandardError => e
         # Report once and stop polling, rather than repeating the same failure
@@ -4461,6 +4817,7 @@ class RPG2k
       # nothing to invalidate by hand here. Draining the flag is what keeps the
       # request from being reported again next step.
       def apply_tile_substitution(interp)
+        # bc2cpp-reviewed: nomethod take_tiles_changed -- dead fallback (ADR 0226)
         interp.take_tiles_changed
         nil
       end
@@ -4471,7 +4828,9 @@ class RPG2k
       # the action button performs, so an event can put the party on the ship it
       # just placed, or set them ashore.
       def apply_vehicle_toggle(interp)
+        # bc2cpp-reviewed: nomethod take_vehicle_toggle_request -- dead fallback (ADR 0226)
         return unless interp.take_vehicle_toggle_request
+        # bc2cpp-reviewed: nomethod boarded? -- dead fallback (ADR 0226)
         if @state.boarded?
           disembark_vehicle
         else
@@ -4488,6 +4847,7 @@ class RPG2k
       # the movie cannot be shown; the request is logged rather than dropped in
       # silence, so a game that plays a cut-scene here is visible in the trace.
       def apply_movie_request(interp)
+        # bc2cpp-reviewed: nomethod take_movie_request -- dead fallback (ADR 0226)
         req = interp.take_movie_request
         return if req.nil?
         $stderr.puts "[RPG2k] Play Movie '#{req[:name]}' at (#{req[:x]}, #{req[:y]}) " \
@@ -4537,6 +4897,7 @@ class RPG2k
       # on and resumes immediately rather than being left to hang on a slot
       # that no longer holds its request.
       def apply_battle_animation_request(interp)
+        # bc2cpp-reviewed: nomethod take_battle_animation_request -- dead fallback (ADR 0226)
         req = interp.take_battle_animation_request
         return if req.nil?
         if @map_animation || @anim_wait
@@ -4568,6 +4929,7 @@ class RPG2k
       # unknown-event-id half; a vehicle target is not actually unresolvable.
       # An unknown event id is still a silent no-op.
       def apply_sprite_flash_requests(interp, this_event)
+        # bc2cpp-reviewed: nomethod take_sprite_flash_requests -- dead fallback (ADR 0226)
         reqs = interp.take_sprite_flash_requests
         return if reqs.nil? || reqs.empty?
         started = nil
@@ -4575,6 +4937,7 @@ class RPG2k
         # A Flash Sprite that carried its wait flag paused the interpreter on a
         # :sprite_flash wait; remember the flash it started so the wait releases
         # on *that* character, not on some other one still flashing.
+        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         @flash_wait = started if interp.wait_kind == :sprite_flash
       rescue StandardError => e
         $stderr.puts "[RPG2k] Flash Sprite failed: #{e.message}"
@@ -4589,10 +4952,12 @@ class RPG2k
         return nil if flash[:frames] <= 0
         case r[:target]
         when MOVE_TARGET_PLAYER
+          # bc2cpp-reviewed: nomethod player_flash= -- dead fallback (ADR 0226)
           @state.player_flash = flash
           @last_frame = nil # force the hero's cached frame to be re-toned
           flash
         when 0, MOVE_TARGET_THIS
+          # bc2cpp-reviewed: nomethod flash= -- dead fallback (ADR 0226)
           this_event ? (this_event.flash = flash) : nil
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           type = Game::Vehicle::TYPES[r[:target] - MOVE_TARGET_BOAT]
@@ -4602,7 +4967,9 @@ class RPG2k
           flash[:vehicle] = true
           flash
         else
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           ev = @events.find { |e| e.id == r[:target] }
+          # bc2cpp-reviewed: nomethod flash= -- dead fallback (ADR 0226)
           ev ? (ev.flash = flash) : nil
         end
       end
@@ -4622,7 +4989,9 @@ class RPG2k
         # Invalidate the hero's cached frame whenever a flash was running this
         # tick — including the tick it ends on, so the last toned frame is
         # replaced by the plain one instead of staying baked in.
+        # bc2cpp-reviewed: nomethod player_flash -- dead fallback (ADR 0226)
         @last_frame = nil if @state.player_flash
+        # bc2cpp-reviewed: nomethod player_flash, nomethod player_flash= -- dead fallback (ADR 0226)
         @state.player_flash = tick_flash(@state.player_flash)
         # A plain while loop instead of #each avoids allocating a Proc+env for
         # the block on every single frame. Safe without a defensive #dup:
@@ -4632,6 +5001,7 @@ class RPG2k
         size = @events.size
         while i < size
           e = @events[i]
+          # bc2cpp-reviewed: nomethod flash= -- dead fallback (ADR 0226)
           e.flash = tick_flash(e.flash) if e.flash
           i += 1
         end
@@ -4660,6 +5030,7 @@ class RPG2k
       # sprite with no flash in flight costs nothing here (native #update
       # no-ops).
       def update_vehicle_flashes
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         (@vehicle_sprites || {}).each_value { |s| s.update if s }
       end
 
@@ -4732,6 +5103,7 @@ class RPG2k
       rescue StandardError => e
         $stderr.puts "[RPG2k] Open Save Menu failed: #{e.message}"
         @event_save_load = nil
+        # bc2cpp-reviewed: strict_hint typed resume -- reviewed before the source-annotation migration (ADR 0419)
         it.resume
       end
 
@@ -4767,6 +5139,7 @@ class RPG2k
       rescue StandardError => e
         $stderr.puts "[RPG2k] Open Load Menu failed: #{e.message}"
         @event_save_load = nil
+        # bc2cpp-reviewed: strict_hint typed resume -- reviewed before the source-annotation migration (ADR 0419)
         it.resume
       end
 
@@ -4782,6 +5155,7 @@ class RPG2k
       # immediately after -- but it is threaded through for consistency with
       # #perform_return_to_title just below.
       def perform_exit_game(it = @interpreter)
+        # bc2cpp-reviewed: nomethod stop -- dead fallback (ADR 0226)
         it.stop
         exit
       end
@@ -4811,6 +5185,7 @@ class RPG2k
       rescue StandardError => e
         $stderr.puts "[RPG2k] Open Main Menu failed: #{e.message}"
         @event_menu = nil
+        # bc2cpp-reviewed: strict_hint typed resume -- reviewed before the source-annotation migration (ADR 0419)
         it.resume
       end
 
@@ -4820,6 +5195,7 @@ class RPG2k
       # is the map event running that process (or nil for a common event), so a
       # route targeting "this event" reaches the right character.
       def apply_move_requests(interp, this_event)
+        # bc2cpp-reviewed: nomethod take_move_route_requests -- dead fallback (ADR 0226)
         reqs = interp.take_move_route_requests
         return if reqs.nil? || reqs.empty?
         reqs.each { |r| apply_move_request(r, this_event) }
@@ -4850,15 +5226,18 @@ class RPG2k
           # straight into #force_vehicle_route, which explicitly no-ops
           # while ridden (`return if @state.boarded == type`) -- the whole
           # route was silently dropped instead of redirected.
+          # bc2cpp-reviewed: nomethod boarded -- dead fallback (ADR 0226)
           if @state.boarded == type
             start_player_route(route, r[:frequency])
           else
             force_vehicle_route(type, route, r[:frequency])
           end
         else
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           ev = @events.find { |e| e.id == r[:target] }
           if ev
             force_event_route(ev, route, r[:frequency])
+          # bc2cpp-reviewed: nomethod unit -- dead fallback (ADR 0226)
           elsif (@map.unit[:events] || {})[r[:target]]
             # A real event on this map, just currently hidden because no page's
             # conditions are satisfied (#build_events never gave it a
@@ -4897,6 +5276,7 @@ class RPG2k
       # event running the process (or nil), so a request targeting "this event"
       # reaches the right character.
       def apply_location_requests(interp, this_event)
+        # bc2cpp-reviewed: nomethod take_location_requests -- dead fallback (ADR 0226)
         reqs = interp.take_location_requests
         return if reqs.nil? || reqs.empty?
         reqs.each { |r| apply_location_request(r, this_event) }
@@ -4932,15 +5312,21 @@ class RPG2k
       def char_location(target, this_event)
         case target
         when MOVE_TARGET_PLAYER
+          # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
           [@state.x, @state.y]
         when 0, MOVE_TARGET_THIS
+          # bc2cpp-reviewed: nomethod char, nomethod x, nomethod y -- dead fallback (ADR 0226)
           this_event ? [this_event.char.x, this_event.char.y] : nil
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
           v = @state.vehicle(Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT])
+          # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
           [v.x, v.y]
         else
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           ev = @events.find { |e| e.id == target }
           if ev
+            # bc2cpp-reviewed: nomethod char, nomethod x, nomethod y -- dead fallback (ADR 0226)
             [ev.char.x, ev.char.y]
           else
             pos = @event_last_position[target]
@@ -4970,20 +5356,25 @@ class RPG2k
         case target
         when MOVE_TARGET_PLAYER
           move_player_to(x, y)
+          # bc2cpp-reviewed: nomethod direction= -- dead fallback (ADR 0226)
           @state.direction = dir if dir && dir > 0
         when 0, MOVE_TARGET_THIS
           if this_event
             move_event_to(this_event, x, y)
+            # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
             this_event.char.face!(dir) if dir && dir > 0
           end
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           type = Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]
           move_vehicle_to(type, x, y)
+          # bc2cpp-reviewed: nomethod direction=, nomethod vehicle -- dead fallback (ADR 0226)
           @state.vehicle(type).direction = dir if dir && dir > 0
         else
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           ev = @events.find { |e| e.id == target }
           if ev
             move_event_to(ev, x, y)
+            # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
             ev.char.face!(dir) if dir && dir > 0
           elsif @event_last_position[target]
             prior_dir = @event_last_position[target][2]
@@ -4997,7 +5388,9 @@ class RPG2k
       # route's mirror character (if one is running) in sync so it steps on from
       # the new tile.
       def move_player_to(x, y)
+        # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
         @state.x = x
+        # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
         @state.y = y
         @dest_x = x
         @dest_y = y
@@ -5014,9 +5407,13 @@ class RPG2k
       # and the marker follow it.
       def move_event_to(ev, x, y)
         return unless ev
+        # bc2cpp-reviewed: nomethod char, nomethod x -- dead fallback (ADR 0226)
         ox = ev.char.x
+        # bc2cpp-reviewed: nomethod char, nomethod y -- dead fallback (ADR 0226)
         oy = ev.char.y
+        # bc2cpp-reviewed: nomethod char, nomethod x= -- dead fallback (ADR 0226)
         ev.char.x = x
+        # bc2cpp-reviewed: nomethod char, nomethod y= -- dead fallback (ADR 0226)
         ev.char.y = y
         reoccupy(ev, ox, oy)
       end
@@ -5028,13 +5425,19 @@ class RPG2k
       # does, so an in-flight route steps on from the new tile rather than
       # immediately correcting the teleport back.
       def move_vehicle_to(type, x, y)
+        # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
         v = @state.vehicle(type)
+        # bc2cpp-reviewed: nomethod map_id, nomethod map_id= -- dead fallback (ADR 0226)
         v.map_id = @state.map_id
+        # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
         v.x = x
+        # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
         v.y = y
         ch = @vehicle_chars[type]
         if ch
+          # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
           ch.x = x
+          # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
           ch.y = y
         end
       end
@@ -5043,8 +5446,11 @@ class RPG2k
       # route finishes (a repeating route runs until replaced). It steps on the
       # next frame, paced by the requested frequency when one was given.
       def force_event_route(ev, route, freq)
+        # bc2cpp-reviewed: nomethod forced_route= -- dead fallback (ADR 0226)
         ev.forced_route = route
+        # bc2cpp-reviewed: nomethod forced_freq= -- dead fallback (ADR 0226)
         ev.forced_freq = valid_move_freq(freq)
+        # bc2cpp-reviewed: nomethod move_timer= -- dead fallback (ADR 0226)
         ev.move_timer = 0
       end
 
@@ -5060,12 +5466,19 @@ class RPG2k
       # frame, so a route driving the vehicle character directly while
       # boarded would fight that.
       def force_vehicle_route(type, route, freq)
+        # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
         v = @state.vehicle(type)
+        # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
         return unless v.placed? && v.map_id == @state.map_id
+        # bc2cpp-reviewed: nomethod boarded -- dead fallback (ADR 0226)
         return if @state.boarded == type
+        # bc2cpp-reviewed: nomethod direction, nomethod x, nomethod y -- dead fallback (ADR 0226)
         ch = (@vehicle_chars[type] ||= Game::Character.new(v.x, v.y, v.direction))
+        # bc2cpp-reviewed: nomethod x, nomethod x= -- dead fallback (ADR 0226)
         ch.x = v.x
+        # bc2cpp-reviewed: nomethod y, nomethod y= -- dead fallback (ADR 0226)
         ch.y = v.y
+        # bc2cpp-reviewed: nomethod direction, nomethod direction= -- dead fallback (ADR 0226)
         ch.direction = v.direction
         # Snapshot the frequency in effect before this route starts overriding
         # it -- but only if a route is not already running, matching a
@@ -5075,7 +5488,9 @@ class RPG2k
         # RPG_RT under wine) -- so a second Set Move Route issued mid-route
         # does not clobber the *original* pre-route value with whatever the
         # first route's own Frequency Up/Down had already left behind.
+        # bc2cpp-reviewed: nomethod move_frequency -- dead fallback (ADR 0226)
         @vehicle_orig_freq[type] = ch.move_frequency unless @vehicle_routes[type]
+        # bc2cpp-reviewed: nomethod move_frequency, nomethod move_frequency= -- dead fallback (ADR 0226)
         ch.move_frequency = valid_move_freq(freq) || ch.move_frequency
         @vehicle_routes[type] = route
         @vehicle_route_timers[type] = 0
@@ -5094,16 +5509,24 @@ class RPG2k
       def step_vehicle_route(type)
         route = @vehicle_routes[type]
         return unless route
+        # bc2cpp-reviewed: nomethod boarded -- dead fallback (ADR 0226)
         return if @state.boarded == type # frozen while ridden, see #force_vehicle_route
         ch = @vehicle_chars[type]
         @vehicle_route_timers[type] -= 1
         return if @vehicle_route_timers[type] > 0
+        # bc2cpp-reviewed: nomethod move_frequency -- dead fallback (ADR 0226)
         @vehicle_route_timers[type] = EVENT_MOVE_DELAY[ch.move_frequency] || 40
+        # bc2cpp-reviewed: nomethod done? -- dead fallback (ADR 0226)
         run_route_step(route, ch, @vehicle_worlds[type]) unless route.done?
+        # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
         v = @state.vehicle(type)
+        # bc2cpp-reviewed: nomethod x, nomethod x= -- dead fallback (ADR 0226)
         v.x = ch.x
+        # bc2cpp-reviewed: nomethod y, nomethod y= -- dead fallback (ADR 0226)
         v.y = ch.y
+        # bc2cpp-reviewed: nomethod direction, nomethod direction= -- dead fallback (ADR 0226)
         v.direction = ch.direction
+        # bc2cpp-reviewed: nomethod done? -- dead fallback (ADR 0226)
         if route.done?
           @vehicle_routes[type] = nil
           # The frequency in effect before this route started reasserts
@@ -5118,6 +5541,7 @@ class RPG2k
           # rule #step_event already applies to a Move Event's own forced
           # route.
           orig = @vehicle_orig_freq.delete(type)
+          # bc2cpp-reviewed: nomethod move_frequency= -- dead fallback (ADR 0226)
           ch.move_frequency = orig if orig
         end
       rescue StandardError => e
@@ -5134,7 +5558,9 @@ class RPG2k
       def sync_player_route_to_state
         @state.player_route = if @player_route
                                 { commands: @player_route.commands, repeat: @player_route.repeat?,
+                                  # bc2cpp-reviewed: nomethod index -- dead fallback (ADR 0226)
                                   skippable: @player_route.skippable?, index: @player_route.index,
+                                  # bc2cpp-reviewed: nomethod player_route= -- dead fallback (ADR 0226)
                                   frequency: @player_char && @player_char.move_frequency }
                               end
       end
@@ -5149,12 +5575,17 @@ class RPG2k
         # Through Mode outlives the route that set it (see #apply_halt_
         # request's own citation), so it is restored unconditionally, not
         # only alongside an active route.
+        # bc2cpp-reviewed: nomethod player_through -- dead fallback (ADR 0226)
         @player_through = @state.player_through ? true : false
+        # bc2cpp-reviewed: nomethod player_route -- dead fallback (ADR 0226)
         pr = @state.player_route
         return unless pr
+        # bc2cpp-reviewed: nomethod direction, nomethod x, nomethod y -- dead fallback (ADR 0226)
         @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
         @player_char.event_id = MOVE_TARGET_PLAYER
+        # bc2cpp-reviewed: nomethod through= -- dead fallback (ADR 0226)
         @player_char.through = @player_through
+        # bc2cpp-reviewed: nomethod move_frequency, nomethod move_frequency= -- dead fallback (ADR 0226)
         @player_char.move_frequency = pr[:frequency] || @player_char.move_frequency
         @player_route = Game::MoveRoute.new(pr[:commands], repeat: pr[:repeat],
                                             skippable: pr[:skippable])
@@ -5170,13 +5601,16 @@ class RPG2k
       # so mirror one, step it against the map world and slide the party after
       # it. Input movement is suppressed while the route is active.
       def start_player_route(route, freq)
+        # bc2cpp-reviewed: nomethod direction, nomethod x, nomethod y -- dead fallback (ADR 0226)
         @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
         @player_char.event_id = MOVE_TARGET_PLAYER # #char_passable?/#char_can_land?'s hero test
         # Through Mode carries over from whatever an earlier route (or one
         # halted mid-Through-Mode) left it at -- a fresh mirror's own default
         # (false) would otherwise silently turn it back off.
+        # bc2cpp-reviewed: nomethod through= -- dead fallback (ADR 0226)
         @player_char.through = @player_through
         @player_char.move_frequency = valid_move_freq(freq) ||
+                                      # bc2cpp-reviewed: nomethod move_frequency, nomethod move_frequency= -- dead fallback (ADR 0226)
                                       @player_char.move_frequency
         @player_route = route
         @player_route_timer = 0
@@ -5196,8 +5630,11 @@ class RPG2k
         return if @moving
         @player_route_timer -= 1
         return if @player_route_timer > 0
+        # bc2cpp-reviewed: nomethod move_frequency -- dead fallback (ADR 0226)
         @player_route_timer = EVENT_MOVE_DELAY[@player_char.move_frequency] || 40
+        # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
         ox = @player_char.x
+        # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
         oy = @player_char.y
         # A boarded party's own Set Move Route commands (Dash, Jump, plain
         # movement, all alike) must clear the *ridden vehicle's* passability,
@@ -5211,14 +5648,19 @@ class RPG2k
         # (or an airship's own event-blind rule) applies here exactly as it
         # already does for #try_move (the input-driven path, see
         # @state.boarded? above).
+        # bc2cpp-reviewed: nomethod boarded, nomethod boarded? -- dead fallback (ADR 0226)
         world = @state.boarded? ? @vehicle_worlds[@state.boarded] : @world
         run_route_step(@player_route, @player_char, world) unless @player_route.done?
         # Mirror Through Mode out to the standing flag every step (not just when
         # the route ends), so a Halt All Movement mid-route sees whatever the
         # route had set so far rather than the mirror's now-discarded state.
+        # bc2cpp-reviewed: nomethod through -- dead fallback (ADR 0226)
         @player_through = @player_char.through
+        # bc2cpp-reviewed: nomethod player_through= -- dead fallback (ADR 0226)
         @state.player_through = @player_through
+        # bc2cpp-reviewed: nomethod direction, nomethod direction= -- dead fallback (ADR 0226)
         @state.direction = @player_char.direction
+        # bc2cpp-reviewed: nomethod jumped, nomethod x, nomethod y -- dead fallback (ADR 0226)
         if @player_char.x != ox || @player_char.y != oy || @player_char.jumped
           start_player_slide
         end
@@ -5231,11 +5673,14 @@ class RPG2k
       # ordinary walking), so everything reading @state.x/y sees a character on a
       # tile rather than between two.
       def start_player_slide
+        # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
         @dest_x = @player_char.x
+        # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
         @dest_y = @player_char.y
         @moving = true
         @move_count = 0
         @slide_frac = 0
+        # bc2cpp-reviewed: nomethod jumped -- dead fallback (ADR 0226)
         @player_jumping = @player_char.jumped
         @player_forced_step = true
       end
@@ -5250,6 +5695,7 @@ class RPG2k
         speed = @player_char&.move_speed || 3
         step = @player_jumping ? jump_slide_step(speed)
                                : walk_slide_step(speed)
+        # bc2cpp-reviewed: nomethod boarded -- dead fallback (ADR 0226)
         @state.boarded == :airship && !@player_jumping ? step * 2 : step
       end
 
@@ -5265,7 +5711,9 @@ class RPG2k
         return false unless @moving
         @move_count, @slide_frac = advance_slide(@move_count, @slide_frac || 0, player_slide_step)
         if @move_count >= TILE
+          # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
           @state.x = @dest_x
+          # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
           @state.y = @dest_y
           @moving = false
           @move_count = 0
@@ -5276,6 +5724,7 @@ class RPG2k
           # player-input steps, never for a forced route -- see
           # #check_random_encounter and the @player_forced_step comment above.
           check_random_encounter unless @player_forced_step
+          # bc2cpp-reviewed: nomethod boarded? -- dead fallback (ADR 0226)
           follow_vehicle if @state.boarded? # the ridden vehicle tracks the party
         end
         # True for the landing frame as well as the ones before it: that frame
@@ -5299,6 +5748,7 @@ class RPG2k
       def step_forced_movement
         advance_player_slide
         step_player_route
+        # bc2cpp-reviewed: nomethod forced_route -- dead fallback (ADR 0226)
         @events.each { |e| step_forced_event(e) if e.forced_route }
         step_vehicle_routes
         forced_movement_done?
@@ -5307,19 +5757,29 @@ class RPG2k
       # Pace and advance one event's forced route, mirroring step_event's forced
       # branch (used only while waiting on Proceed With Movement).
       def step_forced_event(e)
+        # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
         ch = e.char
+        # bc2cpp-reviewed: nomethod move_timer, nomethod move_timer= -- dead fallback (ADR 0226)
         e.move_timer -= 1
+        # bc2cpp-reviewed: nomethod move_timer -- dead fallback (ADR 0226)
         return if e.move_timer > 0
+        # bc2cpp-reviewed: nomethod forced_freq, nomethod move_frequency, nomethod move_timer= -- dead fallback (ADR 0226)
         e.move_timer = EVENT_MOVE_DELAY[e.forced_freq || ch.move_frequency] || 40
+        # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
         ox = ch.x
+        # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
         oy = ch.y
+        # bc2cpp-reviewed: nomethod done?, nomethod forced_route -- dead fallback (ADR 0226)
         run_route_step(e.forced_route, ch, @world) unless e.forced_route.done?
+        # bc2cpp-reviewed: nomethod done?, nomethod forced_route, nomethod forced_route= -- dead fallback (ADR 0226)
         e.forced_route = nil if e.forced_route.done?
         # A jump that lands where it started still needs the render slide, so
         # the hop is visible; an ordinary step only when the tile changed.
+        # bc2cpp-reviewed: nomethod jumped, nomethod x, nomethod y -- dead fallback (ADR 0226)
         reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy || ch.jumped
       rescue StandardError => ex
         $stderr.puts "[RPG2k] forced movement failed: #{ex.message}"
+        # bc2cpp-reviewed: nomethod forced_route= -- dead fallback (ADR 0226)
         e.forced_route = nil # drop a broken route so Proceed does not hang
       end
 
@@ -5329,6 +5789,7 @@ class RPG2k
       # exists under the CRuby host checks but not in the shipped engine.
       def forced_movement_done?
         return false if @player_route
+        # bc2cpp-reviewed: nomethod forced_route -- dead fallback (ADR 0226)
         return false if @events.any? { |e| e.forced_route }
         return false unless @stuck_move_targets.empty?
         !@vehicle_routes.values.any? { |route| route }
@@ -5361,7 +5822,9 @@ class RPG2k
       def vehicle_blocks?(x, y, block_airship:)
         types = block_airship ? Game::Vehicle::TYPES : %i[boat ship]
         types.any? do |type|
+          # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
           v = @state.vehicle(type)
+          # bc2cpp-reviewed: nomethod map_id, nomethod x, nomethod y -- dead fallback (ADR 0226)
           v && v.placed? && v.map_id == @state.map_id && v.x == x && v.y == y
         end
       end
@@ -5416,10 +5879,15 @@ class RPG2k
       # same two-sided check: an obstacle drawn on top of the ground (a
       # boulder, a shop counter) is exactly as solid as a lower-layer wall.
       def char_passable?(character, dir)
+        # bc2cpp-reviewed: nomethod through -- dead fallback (ADR 0226)
         return true if character.through
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         nx, ny = Game::Character.step_tile(character.x, character.y, dir)
+        # bc2cpp-reviewed: nomethod in_bounds? -- dead fallback (ADR 0226)
         return false unless @map.in_bounds?(nx, ny)
+        # bc2cpp-reviewed: nomethod layer, nomethod x, nomethod y -- dead fallback (ADR 0226)
         return false if nx == @state.x && ny == @state.y && character.layer == LAYER_SAME
+        # bc2cpp-reviewed: nomethod event_id -- dead fallback (ADR 0226)
         hero = character.event_id == MOVE_TARGET_PLAYER
         # A blocker's own Through Mode exempts it from every collision test
         # below, not just the layer one -- `WouldCollide` (`src/
@@ -5428,14 +5896,20 @@ class RPG2k
         # the layer test, uniformly for the hero, another event, or a
         # vehicle (see `#passable?`'s own citation).
         return false if blockers_at(nx, ny).any? do |b|
+          # bc2cpp-reviewed: nomethod char, nomethod layer, nomethod through -- dead fallback (ADR 0226)
           !b.char.through && (b.layer == character.layer ||
+            # bc2cpp-reviewed: nomethod overlap_forbidden -- dead fallback (ADR 0226)
             (!hero && (character.overlap_forbidden || b.overlap_forbidden)))
         end
         return false if vehicle_blocks?(nx, ny, block_airship: !hero)
         return true if @chipset.nil?
+        # bc2cpp-reviewed: nomethod lower, nomethod x, nomethod y -- dead fallback (ADR 0226)
         @chipset.passable_tile?(@map.lower(character.x, character.y),
+                                 # bc2cpp-reviewed: nomethod passable_tile?, nomethod upper, nomethod x, nomethod y -- dead fallback (ADR 0226)
                                  @map.upper(character.x, character.y), dir) &&
+          # bc2cpp-reviewed: nomethod lower, nomethod upper -- dead fallback (ADR 0226)
           @chipset.passable_tile?(@map.lower(nx, ny), @map.upper(nx, ny),
+                                   # bc2cpp-reviewed: nomethod passable_tile? -- dead fallback (ADR 0226)
                                    Game::Character::TURN_180[dir] || dir)
       end
       # Called by MapWorld (an external collaborator) with an explicit receiver.
@@ -5451,24 +5925,32 @@ class RPG2k
       # way a step does, so the landing tile is asked whether it permits passage
       # at all rather than from one specific direction.
       def char_can_land?(character, x, y)
+        # bc2cpp-reviewed: nomethod through -- dead fallback (ADR 0226)
         return true if character.through
         # A hop that lands on the tile it left is always allowed: the character
         # occupies that tile itself, so every occupancy test below would refuse
         # it and RPG2000's hop-in-place could never happen. Found by drawing the
         # arc -- the in-place hop was silently impossible before there was
         # anything on screen to notice it by.
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         return true if x == character.x && y == character.y
+        # bc2cpp-reviewed: nomethod in_bounds? -- dead fallback (ADR 0226)
         return false unless @map.in_bounds?(x, y)
         # Same layer-gated occupancy rule as #char_passable? (see its
         # comment) -- including the same blocker-Through exemption.
+        # bc2cpp-reviewed: nomethod layer, nomethod x, nomethod y -- dead fallback (ADR 0226)
         return false if x == @state.x && y == @state.y && character.layer == LAYER_SAME
+        # bc2cpp-reviewed: nomethod event_id -- dead fallback (ADR 0226)
         hero = character.event_id == MOVE_TARGET_PLAYER
         return false if blockers_at(x, y).any? do |b|
+          # bc2cpp-reviewed: nomethod char, nomethod layer, nomethod through -- dead fallback (ADR 0226)
           !b.char.through && (b.layer == character.layer ||
+            # bc2cpp-reviewed: nomethod overlap_forbidden -- dead fallback (ADR 0226)
             (!hero && (character.overlap_forbidden || b.overlap_forbidden)))
         end
         return false if vehicle_blocks?(x, y, block_airship: !hero)
         return true if @chipset.nil?
+        # bc2cpp-reviewed: nomethod landable_tile?, nomethod lower, nomethod upper -- dead fallback (ADR 0226)
         @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
       end
       public :char_can_land?
@@ -5477,7 +5959,9 @@ class RPG2k
       # command (0 when out of bounds or no chipset). Queried by the interpreter
       # via its map_info hook.
       def terrain_id(x, y)
+        # bc2cpp-reviewed: nomethod in_bounds? -- dead fallback (ADR 0226)
         return 0 if @chipset.nil? || !@map.in_bounds?(x, y)
+        # bc2cpp-reviewed: nomethod lower, nomethod terrain -- dead fallback (ADR 0226)
         @chipset.terrain(@map.lower(x, y))
       end
       public :terrain_id
@@ -5507,10 +5991,12 @@ class RPG2k
       def event_id_at(x, y)
         best = 0
         ev = @event_tiles[[x, y]]
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         best = ev.id if ev
         @erased_event_positions.each do |id, tile|
           best = id if tile == [x, y] && id > best
         end
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         live_ids = @events.each_with_object({}) { |e, h| h[e.id] = true }
         @event_last_position.each do |id, pos|
           next if live_ids[id] || @erased_events[id]
@@ -5543,9 +6029,12 @@ class RPG2k
       # exactly what #event_id_at's own identical fallback already had to
       # solve this same gap for.
       def event_position(id)
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         ev = @events.find { |e| e.id == id }
         if ev
+          # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
           c = ev.char
+          # bc2cpp-reviewed: nomethod direction, nomethod x, nomethod y -- dead fallback (ADR 0226)
           return { x: c.x, y: c.y, direction: c.direction }
         end
         pos = @event_last_position[id]
@@ -5557,6 +6046,7 @@ class RPG2k
       # Menu Access command has forbidden it.
       def try_open_menu
         return if event_busy?
+        # bc2cpp-reviewed: nomethod menu_access -- dead fallback (ADR 0226)
         return unless @state.menu_access
         return unless Input.trigger?(Input::B)
         @parent.push Scene::Menu.new(@parent, @state)
@@ -5599,6 +6089,7 @@ class RPG2k
         # has finished typing and is just waiting on the interpreter to reach
         # that next command (see #drive_text_message) -- fall through to the
         # `waiting?` dispatch below instead of driving it as a live message.
+        # bc2cpp-reviewed: nomethod awaiting_followup -- dead fallback (ADR 0226)
         if @message && !@message.awaiting_followup
           drive_message
           return
@@ -5614,8 +6105,10 @@ class RPG2k
         # battle"). The message/choice/number dispatch above is left
         # unblocked either way, since a shown window is a shared resource
         # independent of who owns the battle.
+        # bc2cpp-reviewed: nomethod owner -- dead fallback (ADR 0226)
         return if @battle && !@battle.owner.equal?(@interpreter)
 
+        # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
         if @interpreter.waiting?
           case @interpreter.wait_kind
           when :message
@@ -5650,7 +6143,9 @@ class RPG2k
             # spend the rest of this frame's own step budget on it immediately,
             # so a Lose branch with no Wait/Show Text before its recovery reaches
             # it before this frame's #step_parallels window closes, not after.
+            # bc2cpp-reviewed: nomethod running?, nomethod waiting? -- dead fallback (ADR 0226)
             if @interpreter.running? && !@interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5664,7 +6159,9 @@ class RPG2k
             # spending that same frame's step budget -- Wait 0.0 sec is
             # documented as costing exactly one frame (1/60s), not two, so the
             # command right after it must not wait for a second frame here.
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5676,7 +6173,9 @@ class RPG2k
             # command comes next in that same Update() call, the same
             # "spend this frame's own step budget immediately" idiom the
             # :wait branch above documents for its own timer running out.
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5693,11 +6192,14 @@ class RPG2k
             # it is not -- once every targeted route finishes,
             # that same update call falls straight through into whatever
             # command follows, costing no further frame.
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
           when :screen
+            # bc2cpp-reviewed: nomethod busy?, nomethod screen -- dead fallback (ADR 0226)
             @interpreter.resume unless @state.screen.busy?
             # Same "spend this frame's own step budget immediately" idiom as
             # :wait/:animation above, ported from a reference implementation
@@ -5709,17 +6211,22 @@ class RPG2k
             # mechanism -- so its own update loop falls straight
             # through into whatever command follows the instant that
             # countdown clears, rather than costing a further frame.
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
           when :picture
+            # bc2cpp-reviewed: nomethod pictures_moving? -- dead fallback (ADR 0226)
             @interpreter.resume unless @state.pictures_moving?
             # Same reasoning as :screen just above (ported from a reference
             # implementation, NOT independently confirmed against genuine
             # RPG_RT under wine): Move Picture's own wait
             # flag uses the identical wait-time field.
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5743,7 +6250,9 @@ class RPG2k
             # command this frame, not the next one, matching this ported
             # model.
             @interpreter.resume unless message_window_open?
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5759,7 +6268,9 @@ class RPG2k
             # from a reference implementation, NOT independently confirmed
             # against genuine RPG_RT under wine).
             @interpreter.resume unless message_window_open?
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5775,7 +6286,9 @@ class RPG2k
             # from a reference implementation, NOT independently confirmed
             # against genuine RPG_RT under wine).
             @interpreter.resume unless message_window_open?
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5791,7 +6304,9 @@ class RPG2k
             # the index untouched -- ported from a reference implementation,
             # NOT independently confirmed against genuine RPG_RT under wine).
             @interpreter.resume unless message_window_open?
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5806,7 +6321,9 @@ class RPG2k
             # the index untouched -- ported from a reference implementation,
             # NOT independently confirmed against genuine RPG_RT under wine).
             @interpreter.resume unless message_window_open?
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5823,7 +6340,9 @@ class RPG2k
             # from a reference implementation, NOT independently confirmed
             # against genuine RPG_RT under wine).
             @interpreter.resume unless message_window_open?
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5840,7 +6359,9 @@ class RPG2k
             # reference implementation, NOT independently confirmed against
             # genuine RPG_RT under wine).
             @interpreter.resume unless message_window_open?
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5866,7 +6387,9 @@ class RPG2k
             # frame later than real RPG_RT: yado.tk's "chaining two Show
             # Battle Animation calls back-to-back produces a visible
             # one-frame stutter".
+            # bc2cpp-reviewed: nomethod running?, nomethod waiting? -- dead fallback (ADR 0226)
             if @interpreter.running? && !@interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5876,7 +6399,9 @@ class RPG2k
             # reference implementation, NOT independently confirmed against
             # genuine RPG_RT under wine): Flash Sprite's own
             # wait flag uses the identical wait-time field.
+            # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
             unless @interpreter.waiting?
+              # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
@@ -5886,6 +6411,7 @@ class RPG2k
           when :exit_game then perform_exit_game
           end
         else
+          # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
           @interpreter.update
           apply_interpreter_requests(@interpreter, @active_event)
           # A Show Battle Animation with its wait flag set builds its animation
@@ -5915,6 +6441,7 @@ class RPG2k
           # dispatch, same as before this fix. Scoped to :animation only,
           # matching this project's own previously "still open" note on this
           # exact gap.
+          # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
           init_map_animation_this_frame(@interpreter) if @interpreter.waiting? && @interpreter.wait_kind == :animation
         end
       end
@@ -5986,28 +6513,39 @@ class RPG2k
       # held state and resumes immediately (storing 0 when nothing is down),
       # matching RPG_RT.
       def resolve_key_input(it)
+        # bc2cpp-reviewed: nomethod key_input_request -- dead fallback (ADR 0226)
         req = it.key_input_request
+        # bc2cpp-reviewed: nomethod resume_key_input -- dead fallback (ADR 0226)
         return it.resume_key_input(0) unless req
         accepted = req.accepted
         active = []
         KEY_INPUT_BUTTONS.each do |sym, btn|
+          # bc2cpp-reviewed: nomethod accepts? -- dead fallback (ADR 0226)
           next unless accepted.accepts?(sym)
+          # bc2cpp-reviewed: nomethod wait -- dead fallback (ADR 0226)
           active << sym if key_input_hit?(btn, req.wait)
         end
+        # bc2cpp-reviewed: nomethod numbers -- dead fallback (ADR 0226)
         if accepted.numbers
           NUMBER_KEY_BUTTONS.each do |sym, btn|
+            # bc2cpp-reviewed: nomethod wait -- dead fallback (ADR 0226)
             active << sym if key_input_hit?(btn, req.wait)
           end
         end
+        # bc2cpp-reviewed: nomethod operators -- dead fallback (ADR 0226)
         if accepted.operators
           OPERATOR_KEY_BUTTONS.each do |sym, btn|
+            # bc2cpp-reviewed: nomethod wait -- dead fallback (ADR 0226)
             active << sym if key_input_hit?(btn, req.wait)
           end
         end
+        # bc2cpp-reviewed: nomethod key_input_result -- dead fallback (ADR 0226)
         code = it.key_input_result(active)
         if req.wait
+          # bc2cpp-reviewed: nomethod resume_key_input -- dead fallback (ADR 0226)
           it.resume_key_input(code) if code != 0
         else
+          # bc2cpp-reviewed: nomethod resume_key_input -- dead fallback (ADR 0226)
           it.resume_key_input(code)
         end
       end
@@ -6040,16 +6578,20 @@ class RPG2k
       # waits its turn instead of colliding with this one's window/fade state
       # (all of it plain scene ivars, not per-interpreter).
       def drive_inn(it = @interpreter)
+        # bc2cpp-reviewed: nomethod inn_request -- dead fallback (ADR 0226)
         req = it.inn_request
+        # bc2cpp-reviewed: nomethod resume_inn -- dead fallback (ADR 0226)
         return it.resume_inn(false) unless req
         @inn_interp = it
         if @inn_fading_out
+          # bc2cpp-reviewed: nomethod fading?, nomethod screen -- dead fallback (ADR 0226)
           return if @state.screen.fading?
           @inn_fading_out = false
           start_inn_bgm_wait(it)
           return
         end
         if @inn_waiting_bgm
+          # bc2cpp-reviewed: nomethod bgm_looped -- dead fallback (ADR 0226)
           return unless @state.bgm_looped || @bgm_pos_unavailable
           @inn_waiting_bgm = false
           finish_inn(true, it)
@@ -6115,7 +6657,9 @@ class RPG2k
       # it goes straight to the BGM wait instead, exactly like Erase Screen
       # onto Erase Screen does.
       def start_inn_fade_out(it = @interpreter)
+        # bc2cpp-reviewed: nomethod erase, nomethod screen -- dead fallback (ADR 0226)
         @state.screen.erase(Game::Transition::FADE_OUT)
+        # bc2cpp-reviewed: nomethod fading?, nomethod screen -- dead fallback (ADR 0226)
         if @state.screen.fading?
           @inn_fading_out = true
         else
@@ -6154,7 +6698,9 @@ class RPG2k
         @inn_bgm_started = false
         @inn_interp = nil
         restore_pre_inn_bgm
+        # bc2cpp-reviewed: nomethod screen, nomethod show -- dead fallback (ADR 0226)
         @state.screen.show(Game::Transition::FADE_IN) if stayed
+        # bc2cpp-reviewed: nomethod resume_inn -- dead fallback (ADR 0226)
         it.resume_inn(stayed)
       end
 
@@ -6193,6 +6739,7 @@ class RPG2k
         win.z = 300
         win.windowskin = @windowskin
         contents = Bitmap.new(inner_w, inner_h)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         contents.font.color = Color.new(255, 255, 255, 255)
         lines.each_with_index do |line, i|
           contents.draw_text 0, i * INN_LINE_H, inner_w, INN_LINE_H, line
@@ -6225,7 +6772,9 @@ class RPG2k
         win.z = 300
         win.windowskin = @windowskin
         c = Bitmap.new(gw - Window::BORDER * 2, INN_LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
+        # bc2cpp-reviewed: nomethod gold, nomethod party -- dead fallback (ADR 0226)
         c.draw_text 0, 0, c.width, INN_LINE_H, "#{@state.party.gold}#{gold_term}"
         win.contents = c
         win
@@ -6237,12 +6786,15 @@ class RPG2k
         return unless @inn_window
         win = @inn_window[:window]
         row = 2 + @inn_choice
+        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         win.cursor_rect = Rect.new(0, row * INN_LINE_H, win.contents.width, INN_LINE_H)
       end
 
       def close_inn_window
         return unless @inn_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @inn_window[:window].dispose
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @inn_window[:gold].dispose if @inn_window[:gold]
         @inn_window = nil
       end
@@ -6267,7 +6819,9 @@ class RPG2k
       # tracking. `@shop[:interp]` is what #leave_shop resumes once the
       # player leaves.
       def drive_shop(it = @interpreter)
+        # bc2cpp-reviewed: nomethod shop_request -- dead fallback (ADR 0226)
         req = it.shop_request
+        # bc2cpp-reviewed: nomethod resume_shop -- dead fallback (ADR 0226)
         return it.resume_shop(false) unless req
         if @shop.nil?
           open_shop(req, it) # opened this frame; take input from the next one
@@ -6284,11 +6838,16 @@ class RPG2k
       def open_shop(req, it = @interpreter)
         # `party` is POLY (Game::State's attr_reader, Game::Interpreter#party), so
         # the check is what proves Game::Shop's typed parameter (IS_A_GUARD, ADR 0456).
+        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         party = @state.party
         raise TypeError, "shop party is #{party.class}, not Game::Party" unless party.is_a?(Game::Party)
+        # bc2cpp-reviewed: nomethod goods -- dead fallback (ADR 0226)
         model = Game::Shop.new(db, party, req.goods,
+                               # bc2cpp-reviewed: nomethod allow_buy, nomethod allow_sell -- dead fallback (ADR 0226)
                                req.allow_buy, req.allow_sell)
+        # bc2cpp-reviewed: nomethod allow_buy, nomethod allow_sell -- dead fallback (ADR 0226)
         has_menu = req.allow_buy && req.allow_sell
+        # bc2cpp-reviewed: nomethod allow_buy -- dead fallback (ADR 0226)
         screen = has_menu ? :command : (req.allow_buy ? :buy : :sell)
         shop = ShopState.new
         shop.model = model
@@ -6303,6 +6862,7 @@ class RPG2k
         shop.party = nil
         shop.desc = nil
         shop.prompt = nil
+        # bc2cpp-reviewed: nomethod type -- dead fallback (ADR 0226)
         shop.terms = shop_terms(req.type)
         shop.browsed = false
         shop.interp = it
@@ -6348,12 +6908,16 @@ class RPG2k
       # it is its own separate, full-width window at the screen's bottom
       # message slot instead; see #draw_shop_prompt.
       def shop_header
+        # bc2cpp-reviewed: nomethod terms -- dead fallback (ADR 0226)
         t = @shop.terms
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         case @shop.screen
+        # bc2cpp-reviewed: nomethod browsed -- dead fallback (ADR 0226)
         when :command then @shop.browsed ? t[:regreeting] : t[:greeting]
         when :buy then t[:buy_select]
         when :sell then t[:sell_select]
         when :quantity
+          # bc2cpp-reviewed: nomethod mode, nomethod quantity -- dead fallback (ADR 0226)
           @shop.quantity.mode == :buy ? t[:buy_number] : t[:sell_number]
         when :purchased then t[:purchased]
         when :sold then t[:sold]
@@ -6398,28 +6962,40 @@ class RPG2k
       # The [label, target] rows for the current shop screen: the command menu's
       # actions, the goods on the buy list, or the party's sellable items.
       def shop_lines
+        # bc2cpp-reviewed: nomethod model -- dead fallback (ADR 0226)
         m = @shop.model
+        # bc2cpp-reviewed: nomethod terms -- dead fallback (ADR 0226)
         t = @shop.terms
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         case @shop.screen
         when :command
           rows = []
+          # bc2cpp-reviewed: nomethod allow_buy? -- dead fallback (ADR 0226)
           rows << [t[:buy], :buy] if m.allow_buy?
+          # bc2cpp-reviewed: nomethod allow_sell? -- dead fallback (ADR 0226)
           rows << [t[:sell], :sell] if m.allow_sell?
           rows << [t[:leave], :leave]
           rows
         when :quantity
           # The counter is one row: how many, and what the stack comes to.
+          # bc2cpp-reviewed: nomethod quantity -- dead fallback (ADR 0226)
           q = @shop.quantity
+          # bc2cpp-reviewed: nomethod id, nomethod mode, nomethod price, nomethod sell_price -- dead fallback (ADR 0226)
           unit = q.mode == :buy ? m.price(q.id) : m.sell_price(q.id)
+          # bc2cpp-reviewed: nomethod mode -- dead fallback (ADR 0226)
           verb = q.mode == :buy ? t[:buy] : t[:sell]
+          # bc2cpp-reviewed: nomethod count, nomethod id -- dead fallback (ADR 0226)
           [["#{verb} #{m.name(q.id)} x#{q.count}  " \
             "#{unit * q.count}#{shop_gold_term}", q.id]]
         when :buy
+          # bc2cpp-reviewed: nomethod goods, nomethod name, nomethod price -- dead fallback (ADR 0226)
           m.goods.map { |id| ["#{m.name(id)}  #{m.price(id)}#{shop_gold_term}", id] }
         when :purchased, :sold
           [] # the confirmation line is the whole screen -- no selectable rows
         else # :sell
+          # bc2cpp-reviewed: nomethod sellable_items -- dead fallback (ADR 0226)
           m.sellable_items.map do |id|
+            # bc2cpp-reviewed: nomethod item_count, nomethod name, nomethod party, nomethod sell_price -- dead fallback (ADR 0226)
             ["#{m.name(id)} x#{@state.party.item_count(id)}  " \
              "#{m.sell_price(id)}#{shop_gold_term}", id]
           end
@@ -6472,6 +7048,7 @@ class RPG2k
 
       def draw_shop
         lines = shop_lines
+        # bc2cpp-reviewed: nomethod index, nomethod index= -- dead fallback (ADR 0226)
         @shop.index = Game.clamp(@shop.index, 0, [lines.length - 1, 0].max)
         # Scroll the fixed SHOP_LIST_ROWS-tall window instead of growing it
         # past that -- confirmed against genuine RPG_RT.exe under wine
@@ -6481,11 +7058,16 @@ class RPG2k
         # (`@shop[:index]`) inside the visible page, matching every other
         # RPG2000 list window's own "scroll just far enough to reveal the
         # cursor" behaviour rather than snapping to a page boundary.
+        # bc2cpp-reviewed: nomethod scroll, nomethod scroll= -- dead fallback (ADR 0226)
         @shop.scroll ||= 0
+        # bc2cpp-reviewed: nomethod index, nomethod scroll, nomethod scroll= -- dead fallback (ADR 0226)
         @shop.scroll = @shop.index if @shop.index < @shop.scroll
+        # bc2cpp-reviewed: nomethod index, nomethod scroll -- dead fallback (ADR 0226)
         if @shop.index > @shop.scroll + SHOP_LIST_ROWS - 1
+          # bc2cpp-reviewed: nomethod index, nomethod scroll= -- dead fallback (ADR 0226)
           @shop.scroll = @shop.index - SHOP_LIST_ROWS + 1
         end
+        # bc2cpp-reviewed: nomethod scroll, nomethod scroll= -- dead fallback (ADR 0226)
         @shop.scroll = Game.clamp(@shop.scroll, 0, [lines.length - SHOP_LIST_ROWS, 0].max)
         # The command menu's own Buy/Sell/Leave rows are never drawn into
         # this list window -- confirmed against genuine RPG_RT.exe under
@@ -6498,6 +7080,7 @@ class RPG2k
         # each screenshotted highlighted in turn showed the identical blank
         # window). The actual choice list renders merged into the bottom
         # prompt window instead -- see #draw_shop_command_prompt.
+        # bc2cpp-reviewed: nomethod screen, nomethod scroll -- dead fallback (ADR 0226)
         visible = @shop.screen == :command ? [] : (lines[@shop.scroll, SHOP_LIST_ROWS] || [])
         # Docks flush to the screen's left edge, not inset 10px -- the same
         # stale anti-pattern ADR 0021 already diagnosed and fixed for the
@@ -6509,6 +7092,7 @@ class RPG2k
         # edge lands exactly where the panel column starts on Buy/the
         # quantity counter, flush with the panel's own SHOP_STATUS_W+6
         # offset from the screen's right edge.
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         win_w = SHOP_PANELS_VISIBLE_ON.include?(@shop.screen) ? SCREEN_W - SHOP_STATUS_W - 6 : SCREEN_W
         inner_w = win_w - Window::BORDER * 2
         # Always the same fixed height -- never content-sized, whether the
@@ -6520,6 +7104,7 @@ class RPG2k
         # because the two branches still differ.
         inner_h = [visible.length, 1].max * SHOP_LINE_H
         inner_h = [inner_h, shop_list_min_inner_h].max
+        # bc2cpp-reviewed: nomethod dispose, nomethod window -- dead fallback (ADR 0226)
         @shop.window.dispose if @shop.window
         # Top-anchored right below the description bar (#draw_shop_desc), not
         # bottom-anchored above a 6px screen margin -- confirmed against
@@ -6531,15 +7116,18 @@ class RPG2k
         win.z = 300
         win.windowskin = @windowskin
         c = Bitmap.new(inner_w, inner_h)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         visible.each_with_index do |(label, _), i|
           c.draw_text 0, i * SHOP_LINE_H, inner_w, SHOP_LINE_H, label
         end
         win.contents = c
         unless visible.empty?
+          # bc2cpp-reviewed: nomethod index, nomethod scroll -- dead fallback (ADR 0226)
           cursor_row = @shop.index - @shop.scroll
           win.cursor_rect = Rect.new(0, cursor_row * SHOP_LINE_H, inner_w, SHOP_LINE_H)
         end
+        # bc2cpp-reviewed: nomethod window= -- dead fallback (ADR 0226)
         @shop.window = win
         draw_shop_gold
         draw_shop_status(lines)
@@ -6579,29 +7167,38 @@ class RPG2k
       SHOP_DESC_VISIBLE_ON = %i[command buy sell quantity purchased sold].freeze
 
       def shop_desc_item_id(lines)
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         return nil unless SHOP_DESC_VISIBLE_ON.include?(@shop.screen)
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         case @shop.screen
         when :buy, :sell
           return nil if lines.nil? || lines.empty?
+          # bc2cpp-reviewed: nomethod index -- dead fallback (ADR 0226)
           lines[@shop.index][1]
         when :quantity, :purchased, :sold
+          # bc2cpp-reviewed: nomethod id, nomethod quantity -- dead fallback (ADR 0226)
           @shop.quantity && @shop.quantity.id
         end
       end
 
       def draw_shop_desc(lines)
         id = shop_desc_item_id(lines)
+        # bc2cpp-reviewed: nomethod desc -- dead fallback (ADR 0226)
         win = @shop.desc
         unless win
           win = Window.new(0, 0, SCREEN_W, SHOP_DESC_H)
           win.z = 300
           win.windowskin = @windowskin
+          # bc2cpp-reviewed: nomethod desc= -- dead fallback (ADR 0226)
           @shop.desc = win
         end
         inner_w = SCREEN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
+        # bc2cpp-reviewed: nomethod description, nomethod model -- dead fallback (ADR 0226)
         c.draw_text 0, 0, inner_w, SHOP_LINE_H, id ? @shop.model.description(id) : ''
+        # bc2cpp-reviewed: nomethod contents= -- dead fallback (ADR 0226)
         win.contents = c
       end
 
@@ -6616,24 +7213,31 @@ class RPG2k
       # The command menu draws differently in this same window -- see
       # #draw_shop_command_prompt.
       def draw_shop_prompt
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         return draw_shop_command_prompt if @shop.screen == :command
         text = shop_header
         if text.nil?
+          # bc2cpp-reviewed: nomethod dispose, nomethod prompt -- dead fallback (ADR 0226)
           @shop.prompt.dispose if @shop.prompt
+          # bc2cpp-reviewed: nomethod prompt= -- dead fallback (ADR 0226)
           @shop.prompt = nil
           return
         end
+        # bc2cpp-reviewed: nomethod prompt -- dead fallback (ADR 0226)
         win = @shop.prompt
         unless win
           win = Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W, MSG_WIN_H)
           win.z = 300
           win.windowskin = @windowskin
+          # bc2cpp-reviewed: nomethod prompt= -- dead fallback (ADR 0226)
           @shop.prompt = win
         end
         inner_w = MSG_WIN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, SHOP_LINE_H, text
+        # bc2cpp-reviewed: nomethod contents= -- dead fallback (ADR 0226)
         win.contents = c
       end
 
@@ -6661,20 +7265,25 @@ class RPG2k
       def draw_shop_command_prompt
         rows = shop_lines
         text_lines = [shop_header] + rows.map { |label, _| label }
+        # bc2cpp-reviewed: nomethod prompt -- dead fallback (ADR 0226)
         win = @shop.prompt
         unless win
           win = Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W, MSG_WIN_H)
           win.z = 300
           win.windowskin = @windowskin
+          # bc2cpp-reviewed: nomethod prompt= -- dead fallback (ADR 0226)
           @shop.prompt = win
         end
         inner_w = MSG_WIN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, text_lines.length * MSG_LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         text_lines.each_with_index do |line, i|
           c.draw_text 0, i * MSG_LINE_H, inner_w, MSG_LINE_H, line
         end
+        # bc2cpp-reviewed: nomethod contents= -- dead fallback (ADR 0226)
         win.contents = c
+        # bc2cpp-reviewed: nomethod cursor_rect=, nomethod index -- dead fallback (ADR 0226)
         win.cursor_rect = Rect.new(0, (1 + @shop.index) * MSG_LINE_H, inner_w, MSG_LINE_H)
       end
 
@@ -6689,14 +7298,19 @@ class RPG2k
       SHOP_PANELS_VISIBLE_ON = %i[buy quantity purchased sold].freeze
 
       def draw_shop_gold
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         visible = SHOP_PANELS_VISIBLE_ON.include?(@shop.screen)
+        # bc2cpp-reviewed: nomethod gold, nomethod visible= -- dead fallback (ADR 0226)
         @shop.gold.visible = visible
         return unless visible
         gw = SHOP_STATUS_W
         c = Bitmap.new(gw - Window::BORDER * 2, SHOP_LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, SHOP_LINE_H,
+                    # bc2cpp-reviewed: nomethod gold, nomethod party -- dead fallback (ADR 0226)
                     "#{@state.party.gold}#{shop_gold_term}"
+        # bc2cpp-reviewed: nomethod contents=, nomethod gold -- dead fallback (ADR 0226)
         @shop.gold.contents = c
       end
 
@@ -6713,11 +7327,14 @@ class RPG2k
       # see #drive_shop_quantity / #drive_shop_confirm). The command menu and
       # the sell list get no status panel at all, matching SHOP_PANELS_VISIBLE_ON.
       def shop_status_item_id(lines)
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         case @shop.screen
         when :buy
           return nil if lines.nil? || lines.empty?
+          # bc2cpp-reviewed: nomethod index -- dead fallback (ADR 0226)
           lines[@shop.index][1]
         when :quantity, :purchased, :sold
+          # bc2cpp-reviewed: nomethod id, nomethod quantity -- dead fallback (ADR 0226)
           @shop.quantity && @shop.quantity.id
         end
       end
@@ -6735,10 +7352,13 @@ class RPG2k
       def draw_shop_status(lines)
         id = shop_status_item_id(lines)
         if id.nil?
+          # bc2cpp-reviewed: nomethod dispose, nomethod status -- dead fallback (ADR 0226)
           @shop.status.dispose if @shop.status
+          # bc2cpp-reviewed: nomethod status= -- dead fallback (ADR 0226)
           @shop.status = nil
           return
         end
+        # bc2cpp-reviewed: nomethod status -- dead fallback (ADR 0226)
         win = @shop.status
         unless win
           # Right-aligned, not the screen's left edge -- confirmed against
@@ -6750,16 +7370,21 @@ class RPG2k
                            SHOP_STATUS_W, SHOP_LINE_H * 2 + Window::BORDER * 2)
           win.z = 300
           win.windowskin = @windowskin
+          # bc2cpp-reviewed: nomethod status= -- dead fallback (ADR 0226)
           @shop.status = win
         end
         inner_w = SHOP_STATUS_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H * 2)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, SHOP_LINE_H, db[:term][:possessed_items].to_s
         c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H, db[:term][:equipped_items].to_s
+        # bc2cpp-reviewed: nomethod item_count, nomethod party -- dead fallback (ADR 0226)
         c.draw_text 0, 0, inner_w, SHOP_LINE_H, @state.party.item_count(id).to_s, 2
         c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H,
+                    # bc2cpp-reviewed: nomethod equipped_item_count, nomethod party -- dead fallback (ADR 0226)
                     @state.party.equipped_item_count(id).to_s, 2
+        # bc2cpp-reviewed: nomethod contents= -- dead fallback (ADR 0226)
         win.contents = c
       end
 
@@ -6870,12 +7495,16 @@ class RPG2k
 
       def draw_shop_party(lines)
         id = shop_status_item_id(lines)
+        # bc2cpp-reviewed: nomethod equip?, nomethod model -- dead fallback (ADR 0226)
         visible = id && @shop.model.equip?(id)
         unless visible
+          # bc2cpp-reviewed: nomethod dispose, nomethod party -- dead fallback (ADR 0226)
           @shop.party.dispose if @shop.party
+          # bc2cpp-reviewed: nomethod party= -- dead fallback (ADR 0226)
           @shop.party = nil
           return
         end
+        # bc2cpp-reviewed: nomethod party, nomethod party= -- dead fallback (ADR 0226)
         @shop.party ||= begin
           win = Window.new(SCREEN_W - SHOP_STATUS_W - 6, SHOP_DESC_H,
                            SHOP_STATUS_W, SHOP_PARTY_H)
@@ -6903,6 +7532,7 @@ class RPG2k
           # cursor moved
         elsif Input.trigger?(Input::C)
           play_system_se(SFX_DECISION)
+          # bc2cpp-reviewed: nomethod index -- dead fallback (ADR 0226)
           case lines[@shop.index][1]
           when :buy  then shop_switch(:buy)
           when :sell then shop_switch(:sell)
@@ -6925,6 +7555,7 @@ class RPG2k
         if shop_move_cursor(lines)
           # cursor moved
         elsif Input.trigger?(Input::C) && !lines.empty?
+          # bc2cpp-reviewed: nomethod index -- dead fallback (ADR 0226)
           if open_shop_quantity(lines[@shop.index][1])
             play_system_se(SFX_DECISION)
           else
@@ -6932,6 +7563,7 @@ class RPG2k
           end
         elsif Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
+          # bc2cpp-reviewed: nomethod has_menu -- dead fallback (ADR 0226)
           @shop.has_menu ? shop_switch(:command) : leave_shop
         end
       end
@@ -6947,9 +7579,13 @@ class RPG2k
       # so a button press neither dismisses the confirmation early nor
       # does anything else while it is up.
       def drive_shop_confirm
+        # bc2cpp-reviewed: nomethod confirm_timer, nomethod confirm_timer= -- dead fallback (ADR 0226)
         @shop.confirm_timer -= 1
+        # bc2cpp-reviewed: nomethod confirm_timer -- dead fallback (ADR 0226)
         return if @shop.confirm_timer > 0
+        # bc2cpp-reviewed: nomethod screen, nomethod screen= -- dead fallback (ADR 0226)
         @shop.screen = @shop.screen == :purchased ? :buy : :sell
+        # bc2cpp-reviewed: nomethod quantity= -- dead fallback (ADR 0226)
         @shop.quantity = nil
         draw_shop
       end
@@ -6966,15 +7602,20 @@ class RPG2k
       # 99-item cap, or (selling) what it holds. An item with no room at all —
       # unaffordable, already capped — never opens the counter.
       def open_shop_quantity(id)
+        # bc2cpp-reviewed: nomethod model -- dead fallback (ADR 0226)
         model = @shop.model
+        # bc2cpp-reviewed: nomethod max_buy, nomethod max_sell, nomethod screen -- dead fallback (ADR 0226)
         max = @shop.screen == :buy ? model.max_buy(id) : model.max_sell(id)
         return false if max < 1
         q = ShopQuantity.new
         q.id = id
         q.count = 1
         q.max = max
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         q.mode = @shop.screen
+        # bc2cpp-reviewed: nomethod quantity= -- dead fallback (ADR 0226)
         @shop.quantity = q
+        # bc2cpp-reviewed: nomethod screen= -- dead fallback (ADR 0226)
         @shop.screen = :quantity
         draw_shop
         true
@@ -6984,18 +7625,24 @@ class RPG2k
       # clamped to 1..max), C commits the whole stack in one transaction and B
       # goes back to the list having bought nothing.
       def drive_shop_quantity
+        # bc2cpp-reviewed: nomethod quantity -- dead fallback (ADR 0226)
         q = @shop.quantity
         if shop_quantity_move(q)
           draw_shop
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
+          # bc2cpp-reviewed: nomethod model -- dead fallback (ADR 0226)
           model = @shop.model
+          # bc2cpp-reviewed: nomethod mode -- dead fallback (ADR 0226)
           mode = q.mode
+          # bc2cpp-reviewed: nomethod buy, nomethod count, nomethod id, nomethod sell -- dead fallback (ADR 0226)
           mode == :buy ? model.buy(q.id, q.count) : model.sell(q.id, q.count)
           # @shop[:quantity] survives into :purchased/:sold -- the status
           # panel there still needs its item id (see #shop_status_item_id) --
           # and is only cleared once #drive_shop_confirm leaves the screen.
+          # bc2cpp-reviewed: nomethod screen= -- dead fallback (ADR 0226)
           @shop.screen = mode == :buy ? :purchased : :sold
+          # bc2cpp-reviewed: nomethod confirm_timer= -- dead fallback (ADR 0226)
           @shop.confirm_timer = 60
           draw_shop
           play_system_se(SFX_DECISION)
@@ -7016,24 +7663,32 @@ class RPG2k
       def shop_quantity_move(q)
         before = q.count
         if Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
+          # bc2cpp-reviewed: nomethod count= -- dead fallback (ADR 0226)
           q.count += 1
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
+          # bc2cpp-reviewed: nomethod count= -- dead fallback (ADR 0226)
           q.count -= 1
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
+          # bc2cpp-reviewed: nomethod count= -- dead fallback (ADR 0226)
           q.count += SHOP_QUANTITY_STEP
         elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
+          # bc2cpp-reviewed: nomethod count= -- dead fallback (ADR 0226)
           q.count -= SHOP_QUANTITY_STEP
         else
           return false
         end
+        # bc2cpp-reviewed: nomethod count, nomethod count=, nomethod max -- dead fallback (ADR 0226)
         q.count = Game.clamp(q.count, 1, q.max)
+        # bc2cpp-reviewed: nomethod count -- dead fallback (ADR 0226)
         q.count != before
       end
 
       # Leave the counter for the list it was opened from, refreshing the gold
       # and (after a sale) the shrunk list.
       def close_shop_quantity
+        # bc2cpp-reviewed: nomethod mode, nomethod quantity, nomethod screen= -- dead fallback (ADR 0226)
         @shop.screen = @shop.quantity.mode
+        # bc2cpp-reviewed: nomethod quantity= -- dead fallback (ADR 0226)
         @shop.quantity = nil
         draw_shop
       end
@@ -7051,13 +7706,17 @@ class RPG2k
       # every RPG2000 list cursor in this ported model auto-repeats.
       def shop_move_cursor(lines)
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !lines.empty?
+          # bc2cpp-reviewed: nomethod index, nomethod index= -- dead fallback (ADR 0226)
           @shop.index += 1
+          # bc2cpp-reviewed: nomethod index, nomethod index= -- dead fallback (ADR 0226)
           @shop.index %= lines.length
           draw_shop
           play_system_se(SFX_CURSOR)
           true
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !lines.empty?
+          # bc2cpp-reviewed: nomethod index, nomethod index= -- dead fallback (ADR 0226)
           @shop.index -= 1
+          # bc2cpp-reviewed: nomethod index, nomethod index= -- dead fallback (ADR 0226)
           @shop.index %= lines.length
           draw_shop
           play_system_se(SFX_CURSOR)
@@ -7071,6 +7730,7 @@ class RPG2k
         # Once the player has gone into Buy or Sell at all this visit, the
         # shopkeeper's line on returning to the command menu switches from a
         # first-time greeting to "anything else?" for the rest of it.
+        # bc2cpp-reviewed: nomethod browsed= -- dead fallback (ADR 0226)
         @shop.browsed = true if screen == :buy || screen == :sell
         # The command menu's own cursor position persists across a trip into
         # Buy/Sell and back, rather than always snapping to the first row --
@@ -7084,8 +7744,11 @@ class RPG2k
         # only the command menu has a cursor position worth remembering
         # across a screen change -- Buy/Sell/the quantity counter always
         # start a fresh browse at their own first row.
+        # bc2cpp-reviewed: nomethod cmd_index=, nomethod index, nomethod screen -- dead fallback (ADR 0226)
         @shop.cmd_index = @shop.index if @shop.screen == :command
+        # bc2cpp-reviewed: nomethod screen= -- dead fallback (ADR 0226)
         @shop.screen = screen
+        # bc2cpp-reviewed: nomethod cmd_index, nomethod index= -- dead fallback (ADR 0226)
         @shop.index = screen == :command ? (@shop.cmd_index || 0) : 0
         # A fresh browse also starts scrolled to the top -- #draw_shop only
         # ever nudges @shop[:scroll] forward to follow the cursor, so without
@@ -7093,24 +7756,34 @@ class RPG2k
         # (e.g. cancelling out of Buy back to the command menu, then back
         # into Buy) would still open scrolled down instead of showing goods
         # 1..SHOP_LIST_ROWS the way a fresh Buy/Sell always does.
+        # bc2cpp-reviewed: nomethod scroll= -- dead fallback (ADR 0226)
         @shop.scroll = 0
         draw_shop
       end
 
       def leave_shop
+        # bc2cpp-reviewed: nomethod did_transaction, nomethod model -- dead fallback (ADR 0226)
         transacted = @shop.model.did_transaction
+        # bc2cpp-reviewed: nomethod interp -- dead fallback (ADR 0226)
         interp = @shop.interp
         close_shop
+        # bc2cpp-reviewed: nomethod resume_shop -- dead fallback (ADR 0226)
         interp.resume_shop(transacted)
       end
 
       def close_shop
         return unless @shop
+        # bc2cpp-reviewed: nomethod dispose, nomethod window -- dead fallback (ADR 0226)
         @shop.window.dispose if @shop.window
+        # bc2cpp-reviewed: nomethod dispose, nomethod gold -- dead fallback (ADR 0226)
         @shop.gold.dispose if @shop.gold
+        # bc2cpp-reviewed: nomethod dispose, nomethod status -- dead fallback (ADR 0226)
         @shop.status.dispose if @shop.status
+        # bc2cpp-reviewed: nomethod dispose, nomethod party -- dead fallback (ADR 0226)
         @shop.party.dispose if @shop.party
+        # bc2cpp-reviewed: nomethod desc, nomethod dispose -- dead fallback (ADR 0226)
         @shop.desc.dispose if @shop.desc
+        # bc2cpp-reviewed: nomethod dispose, nomethod prompt -- dead fallback (ADR 0226)
         @shop.prompt.dispose if @shop.prompt
         @shop = nil
       end
@@ -7135,7 +7808,9 @@ class RPG2k
       # one simply waits its turn and tries again next frame, the same
       # block-and-retry shape already used for :message/:choice/:number above.
       def drive_battle(it)
+        # bc2cpp-reviewed: nomethod battle_request -- dead fallback (ADR 0226)
         req = it.battle_request
+        # bc2cpp-reviewed: nomethod resume_battle -- dead fallback (ADR 0226)
         return it.resume_battle(:victory) unless req
         if @battle.nil?
           battle_class = RPG2k::Scene.battle_scene_class(db)
@@ -7147,12 +7822,16 @@ class RPG2k
           @battle.start # opened this frame; take input from the next one
           return
         end
+        # bc2cpp-reviewed: nomethod owner -- dead fallback (ADR 0226)
         return unless @battle.owner.equal?(it)
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @battle.update
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle failed: #{e.message}"
+        # bc2cpp-reviewed: nomethod owner -- dead fallback (ADR 0226)
         owner = @battle ? @battle.owner : it
         close_battle
+        # bc2cpp-reviewed: nomethod resume_battle -- dead fallback (ADR 0226)
         owner.resume_battle(:victory)
       end
 
@@ -7164,6 +7843,7 @@ class RPG2k
       # teardown while a fight happens to be open).
       def close_battle
         return unless @battle
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @battle.dispose
         @battle = nil
       end
@@ -7215,8 +7895,11 @@ class RPG2k
       # the next map load recomputes all three from the tree again.
       def apply_map_access
         props = map_properties
+        # bc2cpp-reviewed: nomethod map_id, nomethod save_access= -- dead fallback (ADR 0226)
         @state.save_access = Game::MapAccess.save_allowed?(@state.map_id, props)
+        # bc2cpp-reviewed: nomethod map_id, nomethod teleport_access= -- dead fallback (ADR 0226)
         @state.teleport_access = Game::MapAccess.teleport_allowed?(@state.map_id, props)
+        # bc2cpp-reviewed: nomethod escape_access=, nomethod map_id -- dead fallback (ADR 0226)
         @state.escape_access = Game::MapAccess.escape_allowed?(@state.map_id, props)
       end
 
@@ -7249,7 +7932,9 @@ class RPG2k
       # #203) but this call site never called it either, so a map's own
       # Autoplay BGM pan was silently dropped the same way its fade-in was.
       def play_map_bgm
+        # bc2cpp-reviewed: nomethod boarded? -- dead fallback (ADR 0226)
         return if @state.boarded?
+        # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
         bgm = Game::MapBgm.chunk_for(@state.map_id, map_properties)
         return unless bgm
         name = music_name(bgm)
@@ -7279,9 +7964,11 @@ class RPG2k
       # @state.current_bgm to itself and skip the call outright, leaving
       # nothing audible after a fresh process start.
       def resume_saved_bgm
+        # bc2cpp-reviewed: nomethod current_bgm -- dead fallback (ADR 0226)
         bgm = @state.current_bgm
         return if bgm.nil? || bgm[:name].nil? || bgm[:name].empty?
         RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+        # bc2cpp-reviewed: nomethod bgm_looped= -- dead fallback (ADR 0226)
         @state.bgm_looped = false
       rescue StandardError => e
         $stderr.puts "[RPG2k] saved BGM resume failed: #{e.message}"
@@ -7368,10 +8055,13 @@ class RPG2k
       # same as the foreground's already did.
       def perform_game_over(interp = @interpreter)
         $stderr.puts '[RPG2k] game over'
+        # bc2cpp-reviewed: nomethod stop -- dead fallback (ADR 0226)
         interp.stop
+        # bc2cpp-reviewed: nomethod show_game_over -- dead fallback (ADR 0226)
         @parent.show_game_over(@state)
       rescue StandardError => e
         $stderr.puts "[RPG2k] Game over failed: #{e.message}"
+        # bc2cpp-reviewed: nomethod stop -- dead fallback (ADR 0226)
         interp.stop
       end
 
@@ -7530,7 +8220,9 @@ class RPG2k
       # for this shared, singleton widget" tracking. `@name_ui[:interp]` is
       # what #commit_name_input resumes once the actor's name is confirmed.
       def drive_name_input(it = @interpreter)
+        # bc2cpp-reviewed: nomethod name_input_request -- dead fallback (ADR 0226)
         req = it.name_input_request
+        # bc2cpp-reviewed: nomethod resume_name_input -- dead fallback (ADR 0226)
         return it.resume_name_input('') unless req
         if @name_ui.nil?
           background = build_field_background(@windowskin)
@@ -7691,11 +8383,13 @@ class RPG2k
         name = ui[:name]
         interp = ui[:interp]
         close_name_input
+        # bc2cpp-reviewed: nomethod resume_name_input -- dead fallback (ADR 0226)
         interp.resume_name_input(name)
       end
 
       def draw_name_input
         ui = @name_ui
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         ui[:win].dispose if ui[:win]
         rows = (NAME_CELLS.length + NAME_COLS - 1) / NAME_COLS
         inner_w = NAME_COLS * NAME_CELL_W
@@ -7705,6 +8399,7 @@ class RPG2k
         win.z = 400
         win.windowskin = @windowskin
         c = Bitmap.new(inner_w, inner_h)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, NAME_CELL_H, "Name: #{ui[:name]}"
         NAME_CELLS.each_with_index do |cell, i|
@@ -7862,13 +8557,18 @@ class RPG2k
       def draw_kana_name_input
         ui = @name_ui
         if ui[:face_win]
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           ui[:face_win].dispose
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           ui[:name_win].dispose
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           ui[:grid_win].dispose
         end
 
         actor = roster_actor(ui[:actor_id])
+        # bc2cpp-reviewed: nomethod face_name -- dead fallback (ADR 0226)
         face_name = actor && actor.respond_to?(:face_name) ? actor.face_name : nil
+        # bc2cpp-reviewed: nomethod face_index -- dead fallback (ADR 0226)
         face_index = actor && actor.respond_to?(:face_index) ? (actor.face_index || 0) : 0
 
         draw_kana_face(ui, face_name, face_index)
@@ -7940,12 +8640,17 @@ class RPG2k
       end
       def close_name_input
         return unless @name_ui
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @name_ui[:background].dispose if @name_ui[:background]
         if @name_ui[:kana]
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @name_ui[:face_win].dispose if @name_ui[:face_win]
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @name_ui[:name_win].dispose if @name_ui[:name_win]
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @name_ui[:grid_win].dispose if @name_ui[:grid_win]
         else
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @name_ui[:win].dispose if @name_ui[:win]
         end
         @name_ui = nil
@@ -8105,6 +8810,7 @@ class RPG2k
       # request, or arm the timed-wait fallback when there is no drawable
       # animation.
       def init_map_animation(it)
+        # bc2cpp-reviewed: nomethod battle_animation -- dead fallback (ADR 0226)
         begin_map_animation(it.battle_animation)
       end
 
@@ -8165,6 +8871,7 @@ class RPG2k
         when 0, MOVE_TARGET_THIS
           !@active_event.nil?
         else
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           @events.any? { |e| e.id == target }
         end
       end
@@ -8263,6 +8970,7 @@ class RPG2k
         if hold && hold > 0
           ma[:screen_flash_hold] = hold - 1
         else
+          # bc2cpp-reviewed: nomethod screen, strict_hint typed flash -- dead fallback (ADR 0226)
           @state.screen.flash(0, 0, 0, 0, 0)
         end
       end
@@ -8323,9 +9031,12 @@ class RPG2k
           spr = @vehicle_sprites && @vehicle_sprites[target]
           spr.flash(nil, 0) if spr
         elsif target == :player
+          # bc2cpp-reviewed: nomethod player_flash -- dead fallback (ADR 0226)
           @last_frame = nil if @state.player_flash
+          # bc2cpp-reviewed: nomethod player_flash= -- dead fallback (ADR 0226)
           @state.player_flash = nil
         else
+          # bc2cpp-reviewed: nomethod flash= -- dead fallback (ADR 0226)
           target.flash = nil
         end
       end
@@ -8428,6 +9139,7 @@ class RPG2k
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]
         else
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           @events.find { |e| e.id == target }
         end
       end
@@ -8543,6 +9255,7 @@ class RPG2k
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           vehicle_pixel(Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT])
         else
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           ev = @events.find { |e| e.id == target }
           ev ? event_pixel(ev) : player_pixel
         end
@@ -8563,8 +9276,10 @@ class RPG2k
           next unless (t[:frame] || 0) == ma[:frame_i]
           case (t[:flash_scope] || 0)
           when 2
+            # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
             @state.screen.flash((t[:flash_red] || 0) * 8, (t[:flash_green] || 0) * 8,
                                 (t[:flash_blue] || 0) * 8, (t[:flash_power] || 0) * 8,
+                                # bc2cpp-reviewed: strict_hint typed flash -- reviewed before the source-annotation migration (ADR 0419)
                                 ANIM_FLASH_FRAMES)
             # #hold_animation_screen_flash keeps re-asserting this fire (and,
             # once it lapses, zeroing the screen flash outright) every real
@@ -8598,6 +9313,7 @@ class RPG2k
             # A timed shake decays on its own via Game::Screen#update
             # (already driven every frame), so unlike the flash paths above
             # this needs no per-frame re-assertion hold.
+            # bc2cpp-reviewed: nomethod screen, nomethod shake -- dead fallback (ADR 0226)
             @state.screen.shake(ANIM_SHAKE_POWER, ANIM_SHAKE_SPEED, ANIM_SHAKE_FRAMES)
           when 1
             # The map-triggered Show Battle
@@ -8683,9 +9399,11 @@ class RPG2k
                   blue: (t[:flash_blue] || 0) * 8, power: (t[:flash_power] || 0) * 8,
                   frames: ANIM_FLASH_FRAMES, total: ANIM_FLASH_FRAMES }
         if target == :player
+          # bc2cpp-reviewed: nomethod player_flash= -- dead fallback (ADR 0226)
           @state.player_flash = flash
           @last_frame = nil # force the hero's cached frame to be re-toned
         else
+          # bc2cpp-reviewed: nomethod flash= -- dead fallback (ADR 0226)
           target.flash = flash
         end
       end
@@ -8989,6 +9707,7 @@ class RPG2k
       def perform_teleport(t, keep_pictures: false)
         map_id, x, y, dir = t
         begin
+          # bc2cpp-reviewed: nomethod load_map -- dead fallback (ADR 0226)
           @map = RGSS::Profiler.section("map.transition.load") { @parent.load_map(map_id) }
         rescue StandardError => e
           # Transfer Player / Recall to Location naming a map id whose .lmu no
@@ -9003,12 +9722,16 @@ class RPG2k
           @interpreter.stop
           return
         end
+        # bc2cpp-reviewed: nomethod map= -- dead fallback (ADR 0226)
         @state.map = @map
         @state.map_id = map_id
         apply_map_access
         RGSS::Profiler.section("map.transition.bgm") { play_map_bgm }
+        # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
         @state.x = x
+        # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
         @state.y = y
+        # bc2cpp-reviewed: nomethod direction= -- dead fallback (ADR 0226)
         @state.direction = dir if dir && dir > 0
         # Same marker `RPG2k#start_new_game`/`#continue_game` log on the initial
         # map load (`mruby-rpg2k/mrblib/main.rb`) — those only fire once, so a
@@ -9019,6 +9742,7 @@ class RPG2k
         # compare-nepheshel-save-wine.bash) stays correct: one only checks the
         # marker's presence, and the other's `tail -1` never crosses a teleport
         # in the sequence it scripts.
+        # bc2cpp-reviewed: nomethod map_id, nomethod x, nomethod y -- dead fallback (ADR 0226)
         $stderr.puts "[RPG2k-MAP] map=#{@state.map_id} x=#{@state.x} y=#{@state.y}"
         # RPG2000 clears every shown picture when the map changes (RPG2003 is
         # the edition that added a per-picture "keep across map change" flag).
@@ -9026,10 +9750,12 @@ class RPG2k
         # pictures on top of the first room and the map is never visible —
         # exactly what the wine comparison showed (ADR 0021). Not for a
         # Teleport/Escape skill's own warp, though — see `keep_pictures` above.
+        # bc2cpp-reviewed: nomethod erase_all_pictures -- dead fallback (ADR 0226)
         @state.erase_all_pictures unless keep_pictures
         # A Change Parallax Background override does not survive a teleport
         # either; the destination map's own panorama applies. Rebuild the
         # backdrop from the new map so it isn't drawn with the old one.
+        # bc2cpp-reviewed: nomethod clear_parallax -- dead fallback (ADR 0226)
         @state.clear_parallax
         dispose_parallax
         setup_parallax
@@ -9037,6 +9763,7 @@ class RPG2k
         # on the hero on the new map. Nepheshel's opening pans a long way before
         # teleporting into the first room, and keeping that offset drew the room
         # from (304, 352) -- entirely outside a 320x240 map, i.e. a blank screen.
+        # bc2cpp-reviewed: nomethod pan_clear, nomethod screen -- dead fallback (ADR 0226)
         @state.screen.pan_clear
         @locked_cam = nil
         # ... nor does a Change Encounter Rate override: the destination map's
@@ -9044,6 +9771,7 @@ class RPG2k
         # Panorama/Tile Replacement as one family of per-map runtime overrides
         # that reset on any map change, not just a save/load) -- #current_encounter_steps
         # falls back to the map's own rate whenever this is nil.
+        # bc2cpp-reviewed: nomethod encounter_rate= -- dead fallback (ADR 0226)
         @state.encounter_rate = nil
         @tileset_id = nil # a Change Map Tileset override does not survive a teleport
         RGSS::Profiler.section("map.transition.chipset") do
@@ -9074,7 +9802,9 @@ class RPG2k
         # unlike the dedicated Change Hero Graphic command.
         @player_char = nil
         @player_through = false # ... nor does Through Mode
+        # bc2cpp-reviewed: nomethod player_route= -- dead fallback (ADR 0226)
         @state.player_route = nil
+        # bc2cpp-reviewed: nomethod player_through= -- dead fallback (ADR 0226)
         @state.player_through = false
         # Same for a vehicle's own forced route / Change Graphic override
         # (#force_vehicle_route, #vehicle_charset): none of it survives a
@@ -9110,8 +9840,11 @@ class RPG2k
         # ordinary Transfer Player (see #build_parallels' own comment) even
         # though #new_parallel now knows how to resume one -- this reset is
         # what keeps that true.
+        # bc2cpp-reviewed: nomethod map_event_positions= -- dead fallback (ADR 0226)
         @state.map_event_positions = {}
+        # bc2cpp-reviewed: nomethod map_event_route_index= -- dead fallback (ADR 0226)
         @state.map_event_route_index = {}
+        # bc2cpp-reviewed: nomethod map_event_exec= -- dead fallback (ADR 0226)
         @state.map_event_exec = {}
         # Tiles #warn_stale_terrain has already reported are per-visit too, same
         # reasoning as the tables above -- a stale reference on the map being
@@ -9155,10 +9888,13 @@ class RPG2k
       # Common Event's or a map event's own Parallel Process can trigger it
       # exactly like the foreground can.
       def perform_return_to_title(it = @interpreter)
+        # bc2cpp-reviewed: nomethod stop -- dead fallback (ADR 0226)
         it.stop
+        # bc2cpp-reviewed: nomethod return_to_title -- dead fallback (ADR 0226)
         @parent.return_to_title
       rescue StandardError => e
         $stderr.puts "[RPG2k] Return to Title failed: #{e.message}"
+        # bc2cpp-reviewed: nomethod stop -- dead fallback (ADR 0226)
         it.stop
       end
 
@@ -9258,13 +9994,17 @@ class RPG2k
       # The live actor `id`, if the game has one. nil for a scene fixture whose
       # party is a stub without a roster.
       def roster_actor(id)
+        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         party = @state.party
         return nil unless party.respond_to?(:roster)
+        # bc2cpp-reviewed: nomethod existing, nomethod roster -- dead fallback (ADR 0226)
         party.roster.existing(id)
       end
 
       def party_leader
+        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         party = @state.party
+        # bc2cpp-reviewed: nomethod leader -- dead fallback (ADR 0226)
         party.respond_to?(:leader) ? party.leader : nil
       end
 
@@ -9313,7 +10053,9 @@ class RPG2k
       # be revealed relative to its own start.
       def message_line_offset(idx)
         off = 0
+        # bc2cpp-reviewed: nomethod seg_lines -- dead fallback (ADR 0226)
         lines = @message.seg_lines
+        # bc2cpp-reviewed: nomethod text -- dead fallback (ADR 0226)
         idx.times { |i| (lines[i] || []).each { |s| off += (s.text || '').length } }
         off
       end
@@ -9323,6 +10065,7 @@ class RPG2k
           # A Show Choices that directly follows a Show Text keeps the same
           # window: append the choice list below the text already on screen
           # instead of building a new window (see #drive_text_message).
+          # bc2cpp-reviewed: nomethod awaiting_followup -- dead fallback (ADR 0226)
           return unless choice && @message.awaiting_followup == :choice
           append_choice_lines(lines)
           return
@@ -9333,9 +10076,12 @@ class RPG2k
         # Parse each line into colour runs; the plain text (segments joined)
         # drives the reveal counter so it counts visible characters only.
         scans = raw.map do |l|
+          # bc2cpp-reviewed: nomethod variables -- dead fallback (ADR 0226)
           Game::Message.scan(l.to_s, @state.variables, names)
         end
+        # bc2cpp-reviewed: nomethod segments -- dead fallback (ADR 0226)
         seg_lines = scans.map { |s| s.segments }
+        # bc2cpp-reviewed: nomethod text -- dead fallback (ADR 0226)
         plain = seg_lines.map { |segs| segs.map { |s| s.text }.join }
         # Lift each line's pacing codes into global reveal coordinates (offset by
         # the visible length of the lines before it) so one reveal counter drives
@@ -9350,26 +10096,34 @@ class RPG2k
           # Bare `.new` plus setters throughout this loop, not a keyword
           # call -- same reason as #message_page_layout's own PauseMarker
           # construction above.
+          # bc2cpp-reviewed: nomethod pauses -- dead fallback (ADR 0226)
           s.pauses.each do |p|
             pa = Game::Message::PauseMarker.new
             pa.at = offset + p.at
+            # bc2cpp-reviewed: nomethod kind -- dead fallback (ADR 0226)
             pa.kind = p.kind
             pauses << pa
           end
+          # bc2cpp-reviewed: nomethod instants -- dead fallback (ADR 0226)
           (s.instants || []).each { |a, b| instants << [offset + a, offset + b] }
+          # bc2cpp-reviewed: nomethod speeds -- dead fallback (ADR 0226)
           (s.speeds || []).each do |sp0|
             sp = Game::Message::SpeedMarker.new
             sp.at = offset + sp0.at
+            # bc2cpp-reviewed: nomethod speed -- dead fallback (ADR 0226)
             sp.speed = sp0.speed
             speeds << sp
           end
+          # bc2cpp-reviewed: nomethod auto_close -- dead fallback (ADR 0226)
           auto_close ||= s.auto_close
+          # bc2cpp-reviewed: nomethod show_gold -- dead fallback (ADR 0226)
           show_gold ||= s.show_gold
           offset += plain[li].length
         end
 
         # Message Options / Change Face Graphic settings in effect for this
         # window (position, transparency and an optional FaceSet graphic).
+        # bc2cpp-reviewed: nomethod message_config -- dead fallback (ADR 0226)
         cfg = @state.message_config
         face_sheet = load_face(cfg)
         face_left = face_sheet && !cfg.face_right
@@ -9401,6 +10155,7 @@ class RPG2k
         # No animation mid-battle: RPG_RT's own message/gold windows pop
         # straight in there instead of unrolling (see MSG_ANIM_FRAMES above).
         open_frames = @battle.nil? ? MSG_ANIM_FRAMES : 0
+        # bc2cpp-reviewed: nomethod open_animation -- dead fallback (ADR 0226)
         win.open_animation(open_frames)
 
         contents = Bitmap.new(inner_w, inner_h)
@@ -9412,11 +10167,13 @@ class RPG2k
         # Plain messages type out gradually; choice lists appear at once.
         reveal = Game::TextReveal.new(plain, 0, pauses + page_pauses,
                                       auto_close, instants, speeds)
+        # bc2cpp-reviewed: nomethod reveal_all -- dead fallback (ADR 0226)
         reveal.reveal_all if choice
         # `\$` shows the party's gold in a small window alongside the message.
         gold_window = nil
         if show_gold
           gold_window = build_inn_gold_window(db[:term][:gold].to_s)
+          # bc2cpp-reviewed: nomethod open_animation -- dead fallback (ADR 0226)
           gold_window.open_animation(open_frames)
         end
         message = MessageState.new
@@ -9443,6 +10200,7 @@ class RPG2k
         # #append_choice_lines) inherits it rather than starting
         # back at the default (yado.tk: an explicit `\c[0]` is
         # needed in the text to stop the choices inheriting it).
+        # bc2cpp-reviewed: nomethod end_color -- dead fallback (ADR 0226)
         message.trailing_color = scans.empty? ? 0 : scans.last.end_color
         @message = message
         speak_message(plain)
@@ -9462,6 +10220,7 @@ class RPG2k
       # for the pair: text on top, choices below). Reuses the existing window,
       # contents bitmap and text layout; only the reveal and line list grow.
       def append_choice_lines(labels)
+        # bc2cpp-reviewed: nomethod awaiting_followup= -- dead fallback (ADR 0226)
         @message.awaiting_followup = nil
         names = ->(id) { actor_name(id) }
         raw = (labels || [])
@@ -9469,13 +10228,17 @@ class RPG2k
         # Each choice label inherits the colour the preceding text (or an
         # earlier label) left off at, unless it sets its own -- the whole
         # merged window reads as one continuous colour stream (yado.tk).
+        # bc2cpp-reviewed: nomethod trailing_color -- dead fallback (ADR 0226)
         color = @message.trailing_color || 0
         scans = raw.map do |l|
+          # bc2cpp-reviewed: nomethod variables -- dead fallback (ADR 0226)
           s = Game::Message.scan(l.to_s, @state.variables, names, color)
           color = s.end_color
           s
         end
+        # bc2cpp-reviewed: nomethod trailing_color= -- dead fallback (ADR 0226)
         @message.trailing_color = color
+        # bc2cpp-reviewed: nomethod segments -- dead fallback (ADR 0226)
         new_seg_lines = scans.map { |s| s.segments }
         # RPG_RT only merges the options *under* the text when they still fit
         # in the window's four rows; when they do not, the text page finishes
@@ -9486,15 +10249,20 @@ class RPG2k
         # options at rows 1-2 with the text cleared -- not the text plus the
         # first option paginated, which is what appending unconditionally and
         # letting #message_page_layout split it produced here before.
+        # bc2cpp-reviewed: nomethod seg_lines -- dead fallback (ADR 0226)
         if @message.seg_lines.length + new_seg_lines.length > MSG_LINES_PER_PAGE
           # No room: hold the options back until the text page has been
           # confirmed on its own (#drive_text_message answers :pending_choice),
           # then they replace it.
+          # bc2cpp-reviewed: nomethod pending_choice= -- dead fallback (ADR 0226)
           @message.pending_choice = new_seg_lines
+          # bc2cpp-reviewed: nomethod pause=, nomethod window -- dead fallback (ADR 0226)
           @message.window.pause = true
           return
         end
+        # bc2cpp-reviewed: nomethod choice_start=, nomethod seg_lines -- dead fallback (ADR 0226)
         @message.choice_start = @message.seg_lines.length
+        # bc2cpp-reviewed: nomethod seg_lines, nomethod seg_lines= -- dead fallback (ADR 0226)
         @message.seg_lines = @message.seg_lines + new_seg_lines
         install_choice_lines(new_seg_lines)
       end
@@ -9503,10 +10271,15 @@ class RPG2k
       # they follow: the text page has now had its confirm, so the options take
       # the window over from row 0 with the text gone.
       def apply_pending_choice_lines
+        # bc2cpp-reviewed: nomethod pending_choice -- dead fallback (ADR 0226)
         new_seg_lines = @message.pending_choice
+        # bc2cpp-reviewed: nomethod pending_choice= -- dead fallback (ADR 0226)
         @message.pending_choice = nil
+        # bc2cpp-reviewed: nomethod pause=, nomethod window -- dead fallback (ADR 0226)
         @message.window.pause = false
+        # bc2cpp-reviewed: nomethod choice_start= -- dead fallback (ADR 0226)
         @message.choice_start = 0
+        # bc2cpp-reviewed: nomethod seg_lines= -- dead fallback (ADR 0226)
         @message.seg_lines = new_seg_lines
         install_choice_lines(new_seg_lines)
       end
@@ -9515,23 +10288,32 @@ class RPG2k
       # (already spliced into @message[:seg_lines] by the caller, either merged
       # under the text or on their own page).
       def install_choice_lines(new_seg_lines)
+        # bc2cpp-reviewed: nomethod choice= -- dead fallback (ADR 0226)
         @message.choice = true
+        # bc2cpp-reviewed: nomethod count= -- dead fallback (ADR 0226)
         @message.count = new_seg_lines.length
         # Choice lists appear at once, same as a standalone choice window; the
         # text lines above are already fully revealed. A merged window that runs
         # past one screen still paginates, so recompute the page layout and
         # pause the reveal at each boundary (a confirm pages rather than
         # dismissing, see #drive_message).
+        # bc2cpp-reviewed: nomethod seg_lines, nomethod text -- dead fallback (ADR 0226)
         plain = @message.seg_lines.map { |segs| segs.map { |s| s.text }.join }
         page_pauses, pages = message_page_layout(plain)
         reveal = Game::TextReveal.new(plain, 0, page_pauses,
+                                      # bc2cpp-reviewed: nomethod auto_close -- dead fallback (ADR 0226)
                                       @message.auto_close, [], [])
+        # bc2cpp-reviewed: nomethod reveal_all -- dead fallback (ADR 0226)
         reveal.reveal_all
+        # bc2cpp-reviewed: nomethod reveal= -- dead fallback (ADR 0226)
         @message.reveal = reveal
+        # bc2cpp-reviewed: nomethod pages= -- dead fallback (ADR 0226)
         @message.pages = pages
+        # bc2cpp-reviewed: nomethod page= -- dead fallback (ADR 0226)
         @message.page = 0
         # Only the newly appended options -- the preceding Show Text already
         # spoke itself from #open_message.
+        # bc2cpp-reviewed: nomethod text -- dead fallback (ADR 0226)
         speak_message(new_seg_lines.map { |segs| segs.map { |s| s.text }.join })
         draw_message_contents
         @choice_index = 0
@@ -9617,6 +10399,7 @@ class RPG2k
       # unfixed alongside them.
       def hero_screen_y
         _px, py = player_pixel
+        # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
         cam_y = Game.camera_offset(py + TILE, SCREEN_H, @map.height * TILE)
         (py + TILE) - cam_y
       end
@@ -9624,6 +10407,7 @@ class RPG2k
       # Load the FaceSet graphic named by the message config, or nil when no face
       # is selected or the file is missing (the message then shows text only).
       def load_face(cfg)
+        # bc2cpp-reviewed: nomethod face? -- dead fallback (ADR 0226)
         return nil unless cfg.face?
         load_face_bitmap(cfg.face_name)
       end
@@ -9670,25 +10454,33 @@ class RPG2k
       # that more pages follow.
       def draw_message_contents
         return unless @message
+        # bc2cpp-reviewed: nomethod contents -- dead fallback (ADR 0226)
         c = @message.contents
         c.clear
         draw_message_face
+        # bc2cpp-reviewed: nomethod seg_lines -- dead fallback (ADR 0226)
         lines = @message.seg_lines
+        # bc2cpp-reviewed: nomethod page -- dead fallback (ADR 0226)
         page = @message.page || 0
         start = page * MSG_LINES_PER_PAGE
         slice = lines[start, MSG_LINES_PER_PAGE] || []
+        # bc2cpp-reviewed: nomethod reveal, nomethod revealed -- dead fallback (ADR 0226)
         rel = @message.reveal.revealed - message_line_offset(start)
         rel = 0 if rel < 0
         vis = Game::Message.visible_segments(slice, rel)
+        # bc2cpp-reviewed: nomethod text_w, nomethod text_x -- dead fallback (ADR 0226)
         right = @message.text_x + @message.text_w
         vis.each_with_index do |segs, i|
+          # bc2cpp-reviewed: nomethod text_x -- dead fallback (ADR 0226)
           x = @message.text_x + choice_row_indent(start + i)
           y = i * MSG_LINE_H
           segs.each do |seg|
             draw_message_run(c, x, y, right - x, seg)
+            # bc2cpp-reviewed: nomethod text -- dead fallback (ADR 0226)
             x += c.text_size(seg.text).width
           end
         end
+        # bc2cpp-reviewed: nomethod pages -- dead fallback (ADR 0226)
         draw_message_more if page + 1 < (@message.pages || 1)
       end
 
@@ -9698,7 +10490,9 @@ class RPG2k
       # list drew its labels at native x 20 in the same window whose plain text
       # sat at native x 8.
       def choice_row_indent(line_index)
+        # bc2cpp-reviewed: nomethod choice -- dead fallback (ADR 0226)
         return 0 unless @message && @message.choice
+        # bc2cpp-reviewed: nomethod choice_start -- dead fallback (ADR 0226)
         line_index >= (@message.choice_start || 0) ? MSG_CHOICE_INDENT : 0
       end
 
@@ -9708,10 +10502,13 @@ class RPG2k
       # replaces.
       def draw_message_more
         return unless @message
+        # bc2cpp-reviewed: nomethod contents -- dead fallback (ADR 0226)
         c = @message.contents
         return unless @anim_frame % 30 < 15
         col = message_color(0)
+        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         x = c.width - 14
+        # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
         y = c.height - 9
         7.times { |i| c.fill_rect(x + (6 - i), y + i, 2 * i + 1, 1, col) }
       end
@@ -9741,10 +10538,12 @@ class RPG2k
       # whatever the contents bitmap happens to be sized to.
       def draw_message_run(c, x, y, w, seg)
         idx = seg.color
+        # bc2cpp-reviewed: nomethod text -- dead fallback (ADR 0226)
         text = clip_text_to_width(c, seg.text, w)
         if @windowskin && Game::MessagePalette.valid?(idx)
           draw_system_text c, x, y, w, MSG_LINE_H, text, @windowskin, idx
         else
+          # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
           c.font.color = message_color(idx)
           c.draw_text x, y, w, MSG_LINE_H, text
         end
@@ -9753,8 +10552,10 @@ class RPG2k
       # Blit the already-cropped (and possibly mirrored, see #build_face_cell)
       # face cell into the message contents at its configured side.
       def draw_message_face
+        # bc2cpp-reviewed: nomethod face -- dead fallback (ADR 0226)
         face = @message.face
         return unless face
+        # bc2cpp-reviewed: nomethod contents, nomethod face_x, nomethod face_y -- dead fallback (ADR 0226)
         @message.contents.blt @message.face_x, @message.face_y || 0, face,
                                 Rect.new(0, 0, FACE_SIZE, FACE_SIZE)
       end
@@ -9779,8 +10580,10 @@ class RPG2k
 
       def set_choice_cursor
         return unless @message
+        # bc2cpp-reviewed: nomethod choice_start -- dead fallback (ADR 0226)
         offset = @message.choice_start || 0
         sel = offset + @choice_index
+        # bc2cpp-reviewed: nomethod page -- dead fallback (ADR 0226)
         page = @message.page || 0
         # The cursor only shows when the selected option is on the current page;
         # RPG2000 scrolls the choice list to keep the selection visible.
@@ -9794,10 +10597,13 @@ class RPG2k
           # side (native x 10..309 for the 320-wide window, cycle #257) -- so
           # the rect handed over is pulled in by the overhang plus that inset.
           inset = MSG_CURSOR_INSET + Game::WindowCursor::OVERHANG
+          # bc2cpp-reviewed: nomethod window -- dead fallback (ADR 0226)
           @message.window.cursor_rect =
             Rect.new(inset, row * MSG_LINE_H,
+                     # bc2cpp-reviewed: nomethod contents, nomethod cursor_rect=, nomethod width, nomethod window -- dead fallback (ADR 0226)
                      @message.window.contents.width - inset * 2, MSG_LINE_H)
         else
+          # bc2cpp-reviewed: nomethod cursor_rect=, nomethod window -- dead fallback (ADR 0226)
           @message.window.cursor_rect = Rect.new(0, 0, 0, 0)
         end
       end
@@ -9806,8 +10612,10 @@ class RPG2k
       # scrolls the list to keep the cursor visible).
       def page_to_choice
         return unless @message
+        # bc2cpp-reviewed: nomethod choice_start -- dead fallback (ADR 0226)
         offset = @message.choice_start || 0
         sel = offset + @choice_index
+        # bc2cpp-reviewed: nomethod page= -- dead fallback (ADR 0226)
         @message.page = sel / MSG_LINES_PER_PAGE
       end
 
@@ -9821,19 +10629,28 @@ class RPG2k
         # is a fresh object every message here rather than a persistent one
         # game scripts can poll, and holding logic off it would only delay
         # dismissal by MSG_ANIM_FRAMES with nothing else to show for it.
+        # bc2cpp-reviewed: nomethod update, nomethod window -- dead fallback (ADR 0226)
         @message.window.update
+        # bc2cpp-reviewed: nomethod gold_window, nomethod update -- dead fallback (ADR 0226)
         @message.gold_window.update if @message.gold_window
+        # bc2cpp-reviewed: nomethod choice -- dead fallback (ADR 0226)
         if @message.choice
+          # bc2cpp-reviewed: nomethod reveal -- dead fallback (ADR 0226)
           reveal = @message.reveal
           # A merged text+choices window that runs past one screen pages its
           # text first: while a `:page` pause is still pending, a confirm
           # advances the page (releasing it) instead of choosing, so the options
           # only become selectable once they are actually on screen.
+          # bc2cpp-reviewed: nomethod done? -- dead fallback (ADR 0226)
           unless reveal.done?
+            # bc2cpp-reviewed: nomethod pending_pause -- dead fallback (ADR 0226)
             p = reveal.pending_pause
+            # bc2cpp-reviewed: nomethod kind -- dead fallback (ADR 0226)
             if p && p.kind == :page
               if Input.trigger?(Input::C)
+                # bc2cpp-reviewed: nomethod page, nomethod page=, nomethod pages -- dead fallback (ADR 0226)
                 @message.page = [@message.page + 1, @message.pages - 1].min
+                # bc2cpp-reviewed: nomethod release_pause -- dead fallback (ADR 0226)
                 reveal.release_pause
                 draw_message_contents
               end
@@ -9852,12 +10669,14 @@ class RPG2k
           # default and never overridden here).
           if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
             @choice_index += 1
+            # bc2cpp-reviewed: nomethod count -- dead fallback (ADR 0226)
             @choice_index %= @message.count
             page_to_choice
             set_choice_cursor
             play_system_se(SFX_CURSOR)
           elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
             @choice_index -= 1
+            # bc2cpp-reviewed: nomethod count -- dead fallback (ADR 0226)
             @choice_index %= @message.count
             page_to_choice
             set_choice_cursor
@@ -9865,16 +10684,21 @@ class RPG2k
           elsif Input.trigger?(Input::C)
             play_system_se(SFX_DECISION)
             index = @choice_index
+            # bc2cpp-reviewed: nomethod interp -- dead fallback (ADR 0226)
             interp = @message.interp
             close_message
+            # bc2cpp-reviewed: nomethod choose -- dead fallback (ADR 0226)
             interp.choose(index)
+          # bc2cpp-reviewed: nomethod choice_cancellable?, nomethod interp -- dead fallback (ADR 0226)
           elsif Input.trigger?(Input::B) && @message.interp.choice_cancellable?
             # The Show Choices block says what cancelling means (pick a given
             # choice, or run its [Cancel] branch); a block that forbids it
             # swallows the key, as RPG_RT does.
             play_system_se(SFX_CANCEL)
+            # bc2cpp-reviewed: nomethod interp -- dead fallback (ADR 0226)
             interp = @message.interp
             close_message
+            # bc2cpp-reviewed: nomethod cancel_choice -- dead fallback (ADR 0226)
             interp.cancel_choice
           end
         else
@@ -9910,7 +10734,9 @@ class RPG2k
       MSG_PAUSE_FULL = 61
 
       def drive_text_message
+        # bc2cpp-reviewed: nomethod interp -- dead fallback (ADR 0226)
         interp = @message.interp
+        # bc2cpp-reviewed: nomethod reveal -- dead fallback (ADR 0226)
         reveal = @message.reveal
         # Cancel (B) dismisses a plain message exactly like Decision (C) --
         # re-verified against genuine RPG_RT.exe under wine (cycle #143):
@@ -9934,16 +10760,22 @@ class RPG2k
         # same way #debug_through? is, so a released game never sees it.
         shift_forward = @parent.test_play && Input.press?(Input::SHIFT)
         fast_forward = confirm || shift_forward
+        # bc2cpp-reviewed: nomethod done? -- dead fallback (ADR 0226)
         unless reveal.done?
+          # bc2cpp-reviewed: nomethod pending_pause -- dead fallback (ADR 0226)
           pause = reveal.pending_pause
           # A `:page` pause (synthetic, at a page boundary) means the current
           # page is full and more follow: a confirm advances to the next page
           # and releases it so that page's text starts typing, instead of
           # dismissing the window. No keypress arrow -- the "▼" marks it.
+          # bc2cpp-reviewed: nomethod kind -- dead fallback (ADR 0226)
           if pause && pause.kind == :page
+            # bc2cpp-reviewed: nomethod pause=, nomethod window -- dead fallback (ADR 0226)
             @message.window.pause = false
             if fast_forward
+              # bc2cpp-reviewed: nomethod page, nomethod page=, nomethod pages -- dead fallback (ADR 0226)
               @message.page = [@message.page + 1, @message.pages - 1].min
+              # bc2cpp-reviewed: nomethod release_pause -- dead fallback (ADR 0226)
               reveal.release_pause
               draw_message_contents
             end
@@ -9952,12 +10784,15 @@ class RPG2k
           # The blinking pause arrow only stands for a player-input wait
           # (`\!`, or the fully-revealed message below) -- not the timed
           # `\.` / `\|` holds, which clear on their own.
+          # bc2cpp-reviewed: nomethod kind, nomethod pause=, nomethod window -- dead fallback (ADR 0226)
           @message.window.pause = pause ? pause.kind == :key : false
           if pause
             drive_message_pause(reveal, pause, fast_forward, shift_forward)
           elsif fast_forward
+            # bc2cpp-reviewed: nomethod reveal_all -- dead fallback (ADR 0226)
             reveal.reveal_all
           else
+            # bc2cpp-reviewed: nomethod advance -- dead fallback (ADR 0226)
             reveal.advance(MSG_REVEAL_SPEED)
           end
           draw_message_contents
@@ -9967,7 +10802,9 @@ class RPG2k
         # #append_choice_lines): the text page takes one confirm of its own,
         # then they replace it. The interpreter is already suspended on its
         # Show Choices, so nothing is resumed here.
+        # bc2cpp-reviewed: nomethod pending_choice -- dead fallback (ADR 0226)
         if @message.pending_choice
+          # bc2cpp-reviewed: nomethod pause=, nomethod window -- dead fallback (ADR 0226)
           @message.window.pause = true
           apply_pending_choice_lines if confirm
           return
@@ -9981,9 +10818,13 @@ class RPG2k
         # interpreter so its Show Choices runs now; #append_choice_lines then
         # either merges the options under the text or parks them above.
         # Input Number is left waiting for its confirm -- not measured.
+        # bc2cpp-reviewed: nomethod followup_resumed, nomethod message_followup -- dead fallback (ADR 0226)
         if interp.message_followup == :choice && !@message.followup_resumed
+          # bc2cpp-reviewed: nomethod followup_resumed= -- dead fallback (ADR 0226)
           @message.followup_resumed = true
+          # bc2cpp-reviewed: nomethod awaiting_followup= -- dead fallback (ADR 0226)
           @message.awaiting_followup = :choice
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           interp.resume
           return
         end
@@ -9991,20 +10832,26 @@ class RPG2k
         # what answers next (this frame or the one after), so a confirm landing
         # in the gap must not resume it a second time and step straight past
         # the choices.
+        # bc2cpp-reviewed: nomethod followup_resumed -- dead fallback (ADR 0226)
         return if @message.followup_resumed
         # `\^` closes the finished window on its own; otherwise wait for a button.
+        # bc2cpp-reviewed: nomethod auto_close? -- dead fallback (ADR 0226)
         if reveal.auto_close? || confirm
+          # bc2cpp-reviewed: nomethod message_followup -- dead fallback (ADR 0226)
           followup = interp.message_followup
           if followup
             # A Show Choices / Input Number immediately follows this Show Text:
             # RPG_RT keeps the same window up, with the choices / digit entry
             # appended below the text already shown, instead of closing it.
+            # bc2cpp-reviewed: nomethod awaiting_followup= -- dead fallback (ADR 0226)
             @message.awaiting_followup = followup
           else
             close_message
           end
+          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           interp.resume
         else
+          # bc2cpp-reviewed: nomethod pause=, nomethod window -- dead fallback (ADR 0226)
           @message.window.pause = true
         end
       end
@@ -10026,19 +10873,27 @@ class RPG2k
       # the reference implementation's own fast-forward guard around
       # that same wait -- an ordinary player confirm press must not.
       def drive_message_pause(reveal, pause, pressed, shift_forward)
+        # bc2cpp-reviewed: nomethod kind -- dead fallback (ADR 0226)
         if pause.kind == :key
+          # bc2cpp-reviewed: nomethod release_pause -- dead fallback (ADR 0226)
           reveal.release_pause if pressed
           return
         end
+        # bc2cpp-reviewed: nomethod kind, nomethod pause_frames, nomethod pause_frames= -- dead fallback (ADR 0226)
         @message.pause_frames ||= if pause.kind == :full
                                        MSG_PAUSE_FULL
                                      else
+                                       # bc2cpp-reviewed: nomethod at, nomethod speed_at -- dead fallback (ADR 0226)
                                        speed = reveal.speed_at(pause.at)
                                        MSG_PAUSE_QUARTER + Game.clamp(speed - 16, 0, 4)
                                      end
+        # bc2cpp-reviewed: nomethod pause_frames, nomethod pause_frames= -- dead fallback (ADR 0226)
         @message.pause_frames -= 1
+        # bc2cpp-reviewed: nomethod pause_frames -- dead fallback (ADR 0226)
         if shift_forward || @message.pause_frames <= 0
+          # bc2cpp-reviewed: nomethod pause_frames= -- dead fallback (ADR 0226)
           @message.pause_frames = nil
+          # bc2cpp-reviewed: nomethod release_pause -- dead fallback (ADR 0226)
           reveal.release_pause
         end
       end
@@ -10057,18 +10912,24 @@ class RPG2k
       # selection, ...) is never blocked on the animation finishing.
       def close_message(animate: true)
         return unless @message
+        # bc2cpp-reviewed: nomethod window -- dead fallback (ADR 0226)
         win = @message.window
+        # bc2cpp-reviewed: nomethod gold_window -- dead fallback (ADR 0226)
         gold = @message.gold_window
         frames = (animate && @battle.nil?) ? MSG_ANIM_FRAMES : 0
         if frames > 0
+          # bc2cpp-reviewed: nomethod close_animation -- dead fallback (ADR 0226)
           win.close_animation(frames)
           (@closing_windows ||= []) << win
           if gold
+            # bc2cpp-reviewed: nomethod close_animation -- dead fallback (ADR 0226)
             gold.close_animation(frames)
             @closing_windows << gold
           end
         else
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           win.dispose
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           gold.dispose if gold
         end
         @message = nil
@@ -10081,8 +10942,11 @@ class RPG2k
       def update_closing_windows
         return unless @closing_windows
         @closing_windows.reject! do |w|
+          # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
           w.update
+          # bc2cpp-reviewed: nomethod closing? -- dead fallback (ADR 0226)
           unless w.closing?
+            # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
             w.dispose
             true
           end
@@ -10109,9 +10973,13 @@ class RPG2k
       def open_number_input(digits, interp: @interpreter)
         return if @number_input
         model = Game::NumberInput.new(digits || 1)
+        # bc2cpp-reviewed: nomethod awaiting_followup -- dead fallback (ADR 0226)
         if @message && @message.awaiting_followup == :number
+          # bc2cpp-reviewed: nomethod awaiting_followup= -- dead fallback (ADR 0226)
           @message.awaiting_followup = nil
+          # bc2cpp-reviewed: nomethod inner_w -- dead fallback (ADR 0226)
           x = @message.inner_w - model.digits * NUM_CELL
+          # bc2cpp-reviewed: nomethod seg_lines -- dead fallback (ADR 0226)
           y = @message.seg_lines.length * MSG_LINE_H
           @number_input = { model: model, embedded: true, x: x, y: y, interp: interp }
           draw_number_input
@@ -10135,6 +11003,7 @@ class RPG2k
         return unless ni
         model = ni[:model]
         if ni[:embedded]
+          # bc2cpp-reviewed: nomethod contents -- dead fallback (ADR 0226)
           c = @message.contents
           x0 = ni[:x]
           y0 = ni[:y]
@@ -10147,10 +11016,13 @@ class RPG2k
         end
         (0...model.digits).each do |i|
           x = x0 + i * NUM_CELL
+          # bc2cpp-reviewed: nomethod cursor -- dead fallback (ADR 0226)
           if i == model.cursor
             c.fill_rect x, y0 + 1, NUM_CELL, MSG_LINE_H - 2, Color.new(40, 72, 200, 160)
           end
+          # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
           c.font.color = Color.new(255, 255, 255, 255)
+          # bc2cpp-reviewed: nomethod digit -- dead fallback (ADR 0226)
           c.draw_text x, y0, NUM_CELL, MSG_LINE_H, model.digit(i).to_s, 1
         end
       end
@@ -10167,14 +11039,17 @@ class RPG2k
         ni = @number_input
         model = ni[:model]
         if Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
+          # bc2cpp-reviewed: nomethod inc -- dead fallback (ADR 0226)
           model.inc
           draw_number_input
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
+          # bc2cpp-reviewed: nomethod dec -- dead fallback (ADR 0226)
           model.dec
           draw_number_input
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
+          # bc2cpp-reviewed: nomethod left -- dead fallback (ADR 0226)
           model.left
           draw_number_input
           play_system_se(SFX_CURSOR)
@@ -10187,22 +11062,26 @@ class RPG2k
         # single-cell cursor unmoved either way. Not the symmetric pair a
         # single `#left`/`#right` gate would suggest.
         elsif (Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && model.digits >= 2
+          # bc2cpp-reviewed: nomethod right -- dead fallback (ADR 0226)
           model.right
           draw_number_input
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
           play_system_se(SFX_DECISION)
+          # bc2cpp-reviewed: nomethod value -- dead fallback (ADR 0226)
           value = model.value
           embedded = ni[:embedded]
           interp = ni[:interp] || @interpreter
           close_number_input
           close_message if embedded
+          # bc2cpp-reviewed: nomethod resume_number -- dead fallback (ADR 0226)
           interp.resume_number(value)
         end
       end
 
       def close_number_input
         return unless @number_input
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @number_input[:window].dispose if @number_input[:window]
         @number_input = nil
       end
@@ -10222,9 +11101,11 @@ class RPG2k
         return nil if @moving
         return nil if event_busy?
         return nil if @player_route
+        # bc2cpp-reviewed: nomethod boarded? -- dead fallback (ADR 0226)
         return nil if @state.boarded? # no touch trigger applies while riding
         dir = Input.dir4
         return nil if dir == 0
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         target_tile(@state.x, @state.y, dir)
       end
 
@@ -10236,12 +11117,16 @@ class RPG2k
         dir = Input.dir4
         return if dir == 0
 
+        # bc2cpp-reviewed: nomethod direction= -- dead fallback (ADR 0226)
         @state.direction = dir
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         nx, ny = target_tile(@state.x, @state.y, dir)
 
+        # bc2cpp-reviewed: nomethod boarded? -- dead fallback (ADR 0226)
         if @state.boarded?
           # Aboard a vehicle: use the vehicle's passability and glide over touch
           # events (you cannot trigger them from the water / air).
+          # bc2cpp-reviewed: nomethod boarded -- dead fallback (ADR 0226)
           return unless vehicle_passable?(nx, ny, dir, @state.boarded)
         else
           # Walking into a touch event runs it; whether that also blocks the
@@ -10272,7 +11157,9 @@ class RPG2k
           # passability check below exactly as if `touched` were not a touch
           # page at all -- ordinary blocking (a same-layer event still stops
           # the party cold, just silently) is unaffected.
+          # bc2cpp-reviewed: nomethod commands, nomethod trigger -- dead fallback (ADR 0226)
           if touched && touch_trigger?(touched.trigger) && touched.commands &&
+             # bc2cpp-reviewed: nomethod crossed_hero_this_frame -- dead fallback (ADR 0226)
              !touched.crossed_hero_this_frame
             # A same-frame confirm press defers to #try_action_trigger instead
             # of starting the event here, when this same tile would also
@@ -10300,6 +11187,7 @@ class RPG2k
             # let it block movement elsewhere, so falling through to the
             # ordinary passability check below lets the party keep walking
             # onto its tile while the event's commands run alongside.
+            # bc2cpp-reviewed: nomethod layer -- dead fallback (ADR 0226)
             return if touched.layer == LAYER_SAME
           end
           # Through Mode (see @player_through) bypasses collision the same way
@@ -10328,13 +11216,17 @@ class RPG2k
       # check. It flashes the screen red instead, because otherwise the HP would
       # simply fall with nothing on screen saying why: the map has no HP display.
       def note_party_step
+        # bc2cpp-reviewed: nomethod walk_step -- dead fallback (ADR 0226)
         steps = @state.walk_step
+        # bc2cpp-reviewed: nomethod apply_map_step_damage, nomethod party -- dead fallback (ADR 0226)
         hit = @state.party.apply_map_step_damage(state_table, steps)
         # A GAIN-type (regen) state's own tick never flashes red, matching
         # a reference implementation, not independently
         # confirmed against genuine RPG_RT under wine -- see
         # Game::Party#map_step_damaged?'s own doc comment.
+        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         state_damaged = @state.party.respond_to?(:map_step_damaged?) &&
+                        # bc2cpp-reviewed: nomethod map_step_damaged?, nomethod party -- dead fallback (ADR 0226)
                         @state.party.map_step_damaged?
         # RPG2000's 地形ダメージ on top of it: the terrain the tile just stepped
         # onto belongs to may take HP off everyone not wearing gear that blocks
@@ -10362,7 +11254,9 @@ class RPG2k
         # call runs unconditionally), so it stays outside
         # this guard.
         terrain_damaged = false
+        # bc2cpp-reviewed: nomethod boarded -- dead fallback (ADR 0226)
         unless @state.boarded == :airship
+          # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
           row = terrain_row_at(@state.x, @state.y)
           terrain_hit = terrain_step_damage(row)
           terrain_damaged = !terrain_hit.empty? && row && LCF.field?(row, :damage) &&
@@ -10370,6 +11264,7 @@ class RPG2k
           play_terrain_footstep_se(row, terrain_damaged)
         end
         return if hit.empty? && !terrain_damaged
+        # bc2cpp-reviewed: nomethod screen, strict_hint typed flash -- dead fallback (ADR 0226)
         @state.screen.flash(*STEP_DAMAGE_FLASH) if state_damaged || terrain_damaged
       end
 
@@ -10379,8 +11274,10 @@ class RPG2k
       # (and the diagnostic dedup test, which calls this indirectly through a
       # step) keep working; #note_party_step passes its own already-looked-up
       # row instead of asking #terrain_row_at a second time for the same tile.
+      # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
       def terrain_step_damage(row = terrain_row_at(@state.x, @state.y))
         return [] unless row && LCF.field?(row, :damage)
+        # bc2cpp-reviewed: nomethod apply_terrain_damage, nomethod party -- dead fallback (ADR 0226)
         @state.party.apply_terrain_damage(row[:damage])
       end
 
@@ -10452,6 +11349,7 @@ class RPG2k
       # steps<=0 exit, not independently confirmed against genuine RPG_RT
       # under wine.
       def current_encounter_steps
+        # bc2cpp-reviewed: nomethod encounter_rate -- dead fallback (ADR 0226)
         return @state.encounter_rate if @state.encounter_rate
         row = map_node_properties
         row && LCF.field?(row, :encount_steps) ? row[:encount_steps] : 25
@@ -10463,6 +11361,7 @@ class RPG2k
       # an ancestor node the way it does Save/Teleport/Escape access.
       def map_node_properties
         props = map_properties
+        # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
         props ? props[@state.map_id] : nil
       end
 
@@ -10481,6 +11380,7 @@ class RPG2k
       # own, so the roll draws uniformly across both -- not a
       # separate roll layered on top.
       def candidate_troops
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         tag = terrain_id(@state.x, @state.y)
         troop_ids(map_node_properties).concat(area_troop_ids).select do |tid|
           troop_allowed_on_terrain?(tid, tag)
@@ -10508,8 +11408,10 @@ class RPG2k
         troops = []
         props.each do |_, row|
           next unless LCF.field?(row, :type) && row[:type] == 2
+          # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
           next unless LCF.field?(row, :parent_map_id) && row[:parent_map_id] == @state.map_id
           area = LCF.field?(row, :area) ? row[:area] : nil
+          # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
           next unless area && area_contains?(area, @state.x, @state.y)
           troops.concat(troop_ids(row))
         end
@@ -10553,6 +11455,7 @@ class RPG2k
       # event, common event or forced route can be running underneath it.
       def check_random_encounter
         return if debug_through?
+        # bc2cpp-reviewed: nomethod flying?, nomethod party -- dead fallback (ADR 0226)
         return if @state.party.flying?(@state)
         # yado.tk quirk, multiply corroborated: a Hero Touch (trigger 1)
         # event's own tile also answers random encounters -- the party can
@@ -10561,10 +11464,13 @@ class RPG2k
         # see #touch_trigger?'s comment), and while standing there the
         # wandering-monster roll is suppressed for that step, same as
         # flying or a forced-route step above/below.
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         ev = event_at(@state.x, @state.y)
+        # bc2cpp-reviewed: nomethod trigger -- dead fallback (ADR 0226)
         return if ev && ev.trigger == TRIGGER_PLAYER_TOUCH
         steps = current_encounter_steps
         if steps <= 0
+          # bc2cpp-reviewed: nomethod encounter_total= -- dead fallback (ADR 0226)
           @state.encounter_total = 0
           @encounter_idx = 0
           return
@@ -10584,19 +11490,24 @@ class RPG2k
         # test-fixture tolerance for a bare OpenStruct row that omits the
         # field, not something a real LCF terrain row (which always carries
         # it) can actually do.
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         terrain = terrain_row_at(@state.x, @state.y)
         return unless terrain
         rate = LCF.field?(terrain, :encounter_rate) ? terrain[:encounter_rate] : 100
+        # bc2cpp-reviewed: nomethod encounter_total, nomethod encounter_total= -- dead fallback (ADR 0226)
         @state.encounter_total += rate
+        # bc2cpp-reviewed: nomethod encounter_total -- dead fallback (ADR 0226)
         ratio = @state.encounter_total / steps
         @encounter_idx += 1 while ratio >= ENCOUNTER_TABLE[@encounter_idx + 1][0]
         pmod = ENCOUNTER_TABLE[@encounter_idx][1]
         chance = pmod * rate / (100.0 * steps)
         return unless roll_encounter_chance(chance)
+        # bc2cpp-reviewed: nomethod encounter_total= -- dead fallback (ADR 0226)
         @state.encounter_total = 0
         @encounter_idx = 0
         troops = candidate_troops
         return if troops.empty?
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         troop_id = troops[@rng.random(troops.size)]
         # RPG2000's own first-strike roll for a wandering encounter -- ported
         # from a reference implementation, not independently confirmed against
@@ -10610,6 +11521,7 @@ class RPG2k
         # matching the reference implementation's own branching exactly and keeping this
         # engine's seeded RNG stream in step with a genuine RPG2003 run, which
         # never consumes a random number here either.
+        # bc2cpp-reviewed: nomethod party, nomethod random, nomethod rpg2003? -- dead fallback (ADR 0226)
         first_strike = !@state.party.rpg2003? && @rng.random(32).zero?
         @interpreter.start_random_battle(troop_id, first_strike: first_strike)
       end
@@ -10638,6 +11550,7 @@ class RPG2k
       # allow entry from the opposite side — and the upper layer at each tile
       # gets the same say as the lower one.
       def passable?(x, y, dir)
+        # bc2cpp-reviewed: nomethod in_bounds? -- dead fallback (ADR 0226)
         return false unless @map.in_bounds?(x, y)
         # The hero is always a "normal character" for collision purposes: only
         # a same-layer event blocks it, a below/above-characters one is a
@@ -10663,6 +11576,7 @@ class RPG2k
         # blocks the party) must let the hero walk straight through it,
         # matching `#vehicle_passable?`'s own already-correct `!b[:char].
         # through` idiom just above.
+        # bc2cpp-reviewed: nomethod char, nomethod layer, nomethod through -- dead fallback (ADR 0226)
         return false if blockers_at(x, y).any? { |b| b.layer == LAYER_SAME && !b.char.through }
         # An unridden boat/ship blocks the hero on foot exactly like a
         # same-layer event would (see #vehicle_blocks?); an unridden airship
@@ -10670,18 +11584,25 @@ class RPG2k
         # is always "the player" for this rule).
         return false if vehicle_blocks?(x, y, block_airship: false)
         return true if @chipset.nil?
+        # bc2cpp-reviewed: nomethod lower, nomethod x, nomethod y -- dead fallback (ADR 0226)
         @chipset.passable_tile?(@map.lower(@state.x, @state.y),
+                                 # bc2cpp-reviewed: nomethod passable_tile?, nomethod upper, nomethod x, nomethod y -- dead fallback (ADR 0226)
                                  @map.upper(@state.x, @state.y), dir) &&
+          # bc2cpp-reviewed: nomethod lower, nomethod upper -- dead fallback (ADR 0226)
           @chipset.passable_tile?(@map.lower(x, y), @map.upper(x, y),
+                                   # bc2cpp-reviewed: nomethod passable_tile? -- dead fallback (ADR 0226)
                                    Game::Character::TURN_180[dir] || dir)
       end
 
       # Current player position in map pixels, interpolated during a step.
       def player_pixel
         if @moving
+          # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
           [@state.x * TILE + (@dest_x - @state.x) * @move_count,
+           # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
            @state.y * TILE + (@dest_y - @state.y) * @move_count]
         else
+          # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
           [@state.x * TILE, @state.y * TILE]
         end
       end
@@ -10696,12 +11617,16 @@ class RPG2k
       # recomputing (and re-allocating) it here.
       def camera_position(px = nil, py = nil)
         px, py = player_pixel if px.nil?
+        # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
         screen = @state.screen
+        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         hero_cx = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
+        # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
         hero_cy = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
         # Pan Screen: while the camera is locked it holds where locking began
         # (captured once) instead of following the hero; the pan offset then
         # scrolls that view. Unlocked, it tracks the hero as usual.
+        # bc2cpp-reviewed: nomethod pan_locked? -- dead fallback (ADR 0226)
         if screen.pan_locked?
           @locked_cam ||= [hero_cx, hero_cy]
           base_x, base_y = @locked_cam
@@ -10710,10 +11635,12 @@ class RPG2k
           base_x = hero_cx
           base_y = hero_cy
         end
+        # bc2cpp-reviewed: nomethod pan_offset -- dead fallback (ADR 0226)
         ox, oy = screen.pan_offset
         # Screen shake slides the whole view horizontally (the player moves with
         # the map, so the entire screen shakes); the map edge may show a sliver
         # of void during the shake/pan, which is fine.
+        # bc2cpp-reviewed: nomethod shake_offset -- dead fallback (ADR 0226)
         [base_x + ox - screen.shake_offset, base_y + oy]
       end
 
@@ -10736,6 +11663,7 @@ class RPG2k
           elsif ref >= MOVE_TARGET_BOAT && ref <= MOVE_TARGET_AIRSHIP
             vehicle_pixel(Game::Vehicle::TYPES[ref - MOVE_TARGET_BOAT])
           else
+            # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
             e = @events.find { |ev| ev.id == ref }
             e && event_pixel(e)
           end
@@ -10757,7 +11685,9 @@ class RPG2k
       # decision is only ever made between slides, never mid-step).
       def char_in_sight?(character)
         cam_x, cam_y = camera_position
+        # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
         sx = character.x * TILE - cam_x + TILE / 2
+        # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
         sy = character.y * TILE - cam_y + TILE
         offset = TILE * 2
         sx >= -offset && sx <= SCREEN_W + offset && sy >= -offset && sy <= SCREEN_H + offset
@@ -10770,8 +11700,11 @@ class RPG2k
       # renders a vehicle's sprite by. nil when the vehicle isn't placed on the
       # currently loaded map at all (unplaced, or sitting on a different one).
       def vehicle_pixel(type)
+        # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
         v = @state.vehicle(type)
+        # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
         return nil unless v.placed? && v.map_id == @state.map_id
+        # bc2cpp-reviewed: nomethod boarded, nomethod x, nomethod y -- dead fallback (ADR 0226)
         @state.boarded == type ? player_pixel : [v.x * TILE, v.y * TILE]
       end
       # Split into two statements (round 44, docs/adr/0144's own
@@ -10935,22 +11868,29 @@ class RPG2k
       end
 
       def draw_one_timer(id, battle)
+        # bc2cpp-reviewed: nomethod timer -- dead fallback (ADR 0226)
         timer = @state.timer(id)
         spr = @timer_sprites[id]
+        # bc2cpp-reviewed: nomethod drawn? -- dead fallback (ADR 0226)
         unless timer.drawn?(battle) && @windowskin
+          # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
           spr.visible = false if spr
           return
         end
         spr ||= (@timer_sprites[id] = build_timer_sprite)
+        # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
         spr.x = id == 0 ? 4 : SCREEN_W - TIMER_INNER_W - 4
         spr.y = if battle
                   SCREEN_H * 2 / 3 - 20
                 elsif @message_window_top
                   SCREEN_H - 20
                 else
+                  # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
                   4
                 end
+        # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
         spr.visible = true
+        # bc2cpp-reviewed: nomethod bitmap -- dead fallback (ADR 0226)
         draw_timer_digits(spr.bitmap, timer)
       end
 
@@ -10982,6 +11922,7 @@ class RPG2k
       # not merely miscomputed. `mins >= 1000` (over 16.7 real hours) departs
       # from even this pattern and is left unhandled, same as before.
       def draw_timer_digits(bmp, timer)
+        # bc2cpp-reviewed: nomethod seconds -- dead fallback (ADR 0226)
         s = timer.seconds
         mins = s / 60
         secs = s % 60
@@ -10993,6 +11934,7 @@ class RPG2k
             [mins_tens, mins % 10, nil, secs / 10, secs % 10]
           end
         bmp.clear
+        # bc2cpp-reviewed: nomethod frames -- dead fallback (ADR 0226)
         blink_off = (timer.frames % Game::Timer::FPS) < Game::Timer::FPS / 2
         cells.each_with_index do |digit, i|
           next if digit.nil? && blink_off # a colon cell, mid-blink-off
@@ -11020,26 +11962,38 @@ class RPG2k
         @airship_shadow.visible = false
         Game::Vehicle::TYPES.each do |type|
           spr = @vehicle_sprites[type]
+          # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
           v = @state.vehicle(type)
+          # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
           charset = (v.placed? && v.map_id == @state.map_id) ? vehicle_charset(v) : nil
           unless charset
+            # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
             spr.visible = false
             next
           end
+          # bc2cpp-reviewed: nomethod boarded -- dead fallback (ADR 0226)
           ridden = @state.boarded == type
+          # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
           vpx = ridden ? px : v.x * TILE
+          # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
           vpy = ridden ? py : v.y * TILE
           sx = vpx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
           sy = vpy - cam_y - (Game::CharSet::HEIGHT - TILE)
           if type == :airship
             # The shadow marks the ground tile; the airship floats above it.
+            # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
             @airship_shadow.x = vpx - cam_x
+            # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
             @airship_shadow.y = vpy - cam_y
+            # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
             @airship_shadow.visible = true
             sy -= AIRSHIP_ALTITUDE
           end
+          # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
           spr.x = sx
+          # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
           spr.y = sy
+          # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
           spr.visible = true
           draw_vehicle_frame(type, v, charset, vehicle_charset_index(v), ridden)
         end
@@ -11055,10 +12009,12 @@ class RPG2k
       # docs/TODO.md) and so has no in-tile progress to animate against.
       def draw_vehicle_frame(type, v, charset, index, ridden)
         pat = ridden ? player_walk_pattern : 1
+        # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
         frame = [index, v.direction, charset.object_id, pat]
         return if frame == @vehicle_last_frame[type]
         @vehicle_last_frame[type] = frame
 
+        # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
         rx, ry, rw, rh = Game::CharSet.frame_rect(index, v.direction, pat)
         bmp = @vehicle_bmps[type]
         bmp.clear
@@ -11076,10 +12032,14 @@ class RPG2k
       # name). Loaded through the shared event-charset cache; nil when it has
       # none.
       def vehicle_charset(v)
+        # bc2cpp-reviewed: nomethod type -- dead fallback (ADR 0226)
         mirror = @vehicle_chars[v.type]
+        # bc2cpp-reviewed: nomethod graphic_name -- dead fallback (ADR 0226)
         return event_charset(mirror.graphic_name) if mirror && mirror.graphic_name
+        # bc2cpp-reviewed: nomethod charset_name -- dead fallback (ADR 0226)
         name = v.charset_name
         if (name.nil? || name.empty?)
+          # bc2cpp-reviewed: nomethod type -- dead fallback (ADR 0226)
           field = :"#{v.type}_name"
           name = @db[:system][field] if LCF.field?(@db[:system], field)
         end
@@ -11102,12 +12062,17 @@ class RPG2k
       # slot has ever been written; a mirror override (Set Move Route's own
       # "Change Graphic") already returns above and never reaches this.
       def vehicle_charset_index(v)
+        # bc2cpp-reviewed: nomethod type -- dead fallback (ADR 0226)
         mirror = @vehicle_chars[v.type]
+        # bc2cpp-reviewed: nomethod graphic_index, nomethod graphic_name -- dead fallback (ADR 0226)
         return mirror.graphic_index if mirror && mirror.graphic_name
+        # bc2cpp-reviewed: nomethod charset_name -- dead fallback (ADR 0226)
         if v.charset_name.nil? || v.charset_name.empty?
+          # bc2cpp-reviewed: nomethod type -- dead fallback (ADR 0226)
           field = :"#{v.type}_index"
           return @db[:system][field] if LCF.field?(@db[:system], field)
         end
+        # bc2cpp-reviewed: nomethod charset_index -- dead fallback (ADR 0226)
         v.charset_index
       end
 
@@ -11127,6 +12092,7 @@ class RPG2k
       # when a picture is actually shown (an empty layer is the same cleared
       # bitmap whatever the camera does).
       def draw_pictures(cam_x, cam_y)
+        # bc2cpp-reviewed: nomethod pictures -- dead fallback (ADR 0226)
         pics = @state.pictures
         sig = pictures_signature pics, cam_x, cam_y
         return if sig == @pictures_sig
@@ -11160,11 +12126,15 @@ class RPG2k
       # it arrives.
       def pictures_signature(pics, cam_x, cam_y)
         return [].freeze if pics.empty?
+        # bc2cpp-reviewed: nomethod screen, nomethod shake_offset -- dead fallback (ADR 0226)
         sig = [cam_x, cam_y, @state.screen.shake_offset]
         pics.keys.sort.each do |id|
           p = pics[id]
+          # bc2cpp-reviewed: nomethod use_transparent_color, nomethod x, nomethod y, strict_hint ivar_accessor name -- dead fallback (ADR 0226)
           sig.concat [id, p.name, p.use_transparent_color, p.x, p.y, p.zoom,
+                      # bc2cpp-reviewed: nomethod blue, nomethod green, nomethod opacity, nomethod red -- dead fallback (ADR 0226)
                       p.opacity, p.red, p.green, p.blue, p.saturation,
+                      # bc2cpp-reviewed: nomethod fixed_to_map -- dead fallback (ADR 0226)
                       p.fixed_to_map]
         end
         sig
@@ -11184,6 +12154,7 @@ class RPG2k
 
       # Whether a picture asks for any tint at all.
       def toned?(pic)
+        # bc2cpp-reviewed: nomethod blue, nomethod green, nomethod red -- dead fallback (ADR 0226)
         pic.red != 100 || pic.green != 100 || pic.blue != 100 ||
           pic.saturation != 100
       end
@@ -11200,12 +12171,17 @@ class RPG2k
       # does not reach the display (see the screen-effects note in docs/TODO.md).
       def toned_picture_src(pic, src)
         key = [pic.name, pic.use_transparent_color,
+               # bc2cpp-reviewed: nomethod blue, nomethod green, nomethod red -- dead fallback (ADR 0226)
                pic.red, pic.green, pic.blue, pic.saturation]
         cached = @picture_tone_cache[key]
         return cached if cached
+        # bc2cpp-reviewed: nomethod height, nomethod width -- dead fallback (ADR 0226)
         scratch = Bitmap.new(src.width, src.height)
+        # bc2cpp-reviewed: nomethod red -- dead fallback (ADR 0226)
         tone = Tone.new(Scene::Map.tone_channel(pic.red),
+                        # bc2cpp-reviewed: nomethod green -- dead fallback (ADR 0226)
                         Scene::Map.tone_channel(pic.green),
+                        # bc2cpp-reviewed: nomethod blue -- dead fallback (ADR 0226)
                         Scene::Map.tone_channel(pic.blue),
                         # RPG2000's saturation runs the other way from RGSS's
                         # grey: below 100 is *less* saturated, so a value under
@@ -11231,11 +12207,15 @@ class RPG2k
         src = picture_src(pic.name, pic.use_transparent_color)
         return unless src
         src = (toned_picture_src(pic, src) || src) if toned?(pic)
+        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         zw = src.width * pic.zoom / 100
+        # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
         zh = src.height * pic.zoom / 100
         return if zw <= 0 || zh <= 0
         # RPG2000 positions a picture by its centre.
+        # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
         dx = pic.x - zw / 2
+        # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
         dy = pic.y - zh / 2
         if pic.fixed_to_map
           # `cam_x` (#camera_position) already folds in the screen-shake
@@ -11256,9 +12236,11 @@ class RPG2k
           # graphic, a portrait during dialogue, a HUD) held rock-steady
           # through a Shake Screen instead of jittering with the rest of
           # the view.
+          # bc2cpp-reviewed: nomethod screen, nomethod shake_offset -- dead fallback (ADR 0226)
           dx -= @state.screen.shake_offset
         end
         @picture_bmp.stretch_blt Rect.new(dx, dy, zw, zh), src,
+                                 # bc2cpp-reviewed: nomethod height, nomethod width -- dead fallback (ADR 0226)
                                  Rect.new(0, 0, src.width, src.height),
                                  pic.opacity
       rescue StandardError => e
@@ -11276,9 +12258,11 @@ class RPG2k
         ih = @parallax_img.height
         ox = Game::Parallax.axis_offset(@par_loop_x, @par_auto_x, @par_sx,
                                         @anim_frame, cam_x, SCREEN_W,
+                                        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
                                         @map.width * TILE, iw)
         oy = Game::Parallax.axis_offset(@par_loop_y, @par_auto_y, @par_sy,
                                         @anim_frame, cam_y, SCREEN_H,
+                                        # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
                                         @map.height * TILE, ih)
         # The re-tile is a full-screen copy; while the camera (or an autoscroll)
         # sits still it redraws the identical picture every frame. Skip those --
@@ -11354,7 +12338,9 @@ class RPG2k
         # Animation columns/frames for this render, shared by every tile so the
         # whole map animates in lock-step. Only needed on the real-chipset path.
         if @chipset_bmp
+          # bc2cpp-reviewed: nomethod animation_type -- dead fallback (ADR 0226)
           abf = Game::ChipsetLayout.anim_ab(@anim_frame, @chipset.animation_type,
+                                            # bc2cpp-reviewed: nomethod animation_speed -- dead fallback (ADR 0226)
                                             @chipset.animation_speed)
           cf = Game::ChipsetLayout.anim_c(@anim_frame)
         end
@@ -11371,11 +12357,13 @@ class RPG2k
         # the freshly-stored signatures instead of redoing the same work.
         events_checked = !rebuilt && !@layers_dirty &&
                           @drawn_ox == ox && @drawn_oy == oy &&
+                          # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
                           @drawn_party_y == @state.y
         return if events_checked && !events_dirty?
         @layers_dirty = false
         @drawn_ox = ox
         @drawn_oy = oy
+        # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
         @drawn_party_y = @state.y
 
         @lower_bmp.clear
@@ -11421,24 +12409,32 @@ class RPG2k
       # buffer, rather than an array-of-tuples rebuilt every call, so a frame
       # with nothing to redraw costs no per-event allocation to find that out.
       def store_event_draw_sig(e, buf, base)
+        # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
         ch = e.char
+        # bc2cpp-reviewed: nomethod anim_phase, nomethod anim_type, nomethod direction -- dead fallback (ADR 0226)
         dir = Game::EventGraphic.frame_dir(e.anim_type, ch.direction, e.anim_phase)
+        # bc2cpp-reviewed: nomethod anim_type, nomethod base_pattern -- dead fallback (ADR 0226)
         col = Game::EventGraphic.frame_col(e.anim_type, e.base_pattern,
+                                           # bc2cpp-reviewed: nomethod anim_phase, nomethod moving -- dead fallback (ADR 0226)
                                            e.anim_phase, e.moving)
         epx = event_pixel_x(e)
         epy = event_pixel_y(e)
+        # bc2cpp-reviewed: nomethod translucent -- dead fallback (ADR 0226)
         translucent = e.translucent
         jump = event_jump_offset(e)
         bush = event_bush_depth(e)
         upper = event_target_buffer(e).equal?(@upper_bmp)
 
+        # bc2cpp-reviewed: nomethod graphic_index, nomethod graphic_name -- dead fallback (ADR 0226)
         changed = buf[base] != ch.graphic_name || buf[base + 1] != ch.graphic_index ||
                   buf[base + 2] != dir || buf[base + 3] != col ||
                   buf[base + 4] != epx || buf[base + 5] != epy ||
                   buf[base + 6] != translucent || buf[base + 7] != jump ||
                   buf[base + 8] != bush || buf[base + 9] != upper
 
+        # bc2cpp-reviewed: nomethod graphic_name -- dead fallback (ADR 0226)
         buf[base] = ch.graphic_name
+        # bc2cpp-reviewed: nomethod graphic_index -- dead fallback (ADR 0226)
         buf[base + 1] = ch.graphic_index
         buf[base + 2] = dir
         buf[base + 3] = col
@@ -11472,6 +12468,7 @@ class RPG2k
       # every frame by the global flash check below -- its tone changes per
       # frame, cheaper to over-draw than to fingerprint.
       def events_dirty?
+        # bc2cpp-reviewed: nomethod player_flash, strict_hint ivar_accessor flash -- dead fallback (ADR 0226)
         return true if @state.player_flash || @events.any? { |e| e.flash }
         needed = @events.size * EVENT_DRAW_SIG_FIELDS
         unless @event_draw_sigs && @event_draw_sigs.size == needed
@@ -11506,6 +12503,7 @@ class RPG2k
           (!@tiles_uses_abf || @tiles_abf == abf) &&
           (!@tiles_uses_cf || @tiles_cf == cf) &&
           @tiles_map.equal?(@map) &&
+          # bc2cpp-reviewed: nomethod revision -- dead fallback (ADR 0226)
           @tiles_revision == @map.revision &&
           @tiles_chipset.equal?(@chipset) &&
           @tiles_chipset_bmp.equal?(@chipset_bmp)
@@ -11541,6 +12539,7 @@ class RPG2k
       def rebuild_tile_cache(first_tx, first_ty, abf, cf)
         if @tiles_built && @anim_cells &&
            @tiles_tx == first_tx && @tiles_ty == first_ty &&
+           # bc2cpp-reviewed: nomethod revision -- dead fallback (ADR 0226)
            @tiles_map.equal?(@map) && @tiles_revision == @map.revision &&
            @tiles_chipset.equal?(@chipset) && @tiles_chipset_bmp.equal?(@chipset_bmp)
           patch_anim_cells abf, cf
@@ -11565,7 +12564,9 @@ class RPG2k
             dx = rx * TILE
             dy = ry * TILE
 
+            # bc2cpp-reviewed: nomethod lower -- dead fallback (ADR 0226)
             lower = @map.lower(tx, ty)
+            # bc2cpp-reviewed: nomethod upper -- dead fallback (ADR 0226)
             upper = @map.upper(tx, ty)
             upper_drawn = !Game::ChipsetLayout.upper_blank?(upper)
             lower_input = note_anim_input lower
@@ -11588,6 +12589,7 @@ class RPG2k
                 # *under*) goes in the same buffer as the lower layer instead,
                 # so it draws behind a character standing on or against it
                 # rather than masking them outright.
+                # bc2cpp-reviewed: nomethod elevated? -- dead fallback (ADR 0226)
                 if @chipset.elevated?(upper)
                   draw_tile @upper_tiles, upper, dx, dy, abf, cf
                 else
@@ -11608,6 +12610,7 @@ class RPG2k
         @tiles_abf = abf
         @tiles_cf = cf
         @tiles_map = @map
+        # bc2cpp-reviewed: nomethod revision -- dead fallback (ADR 0226)
         @tiles_revision = @map.revision
         @tiles_chipset = @chipset
         @tiles_chipset_bmp = @chipset_bmp
@@ -11622,6 +12625,7 @@ class RPG2k
           dy = ry * TILE
           draw_tile @lower_tiles, lower, dx, dy, abf, cf
           if upper_drawn
+            # bc2cpp-reviewed: nomethod elevated? -- dead fallback (ADR 0226)
             if @chipset.elevated?(upper)
               draw_tile @upper_tiles, upper, dx, dy, abf, cf
             else
@@ -11650,6 +12654,7 @@ class RPG2k
       # A translucent page is blitted at half opacity. Events with no graphic
       # (empty CharSet name and no tile substitution) draw nothing.
       def draw_events(cam_x, cam_y)
+        # bc2cpp-reviewed: nomethod char, nomethod id, nomethod x, nomethod y -- dead fallback (ADR 0226)
         ordered = @events.sort_by { |e| [e.char.y, e.char.x, e.id] }
         ordered.each { |e| draw_event e, cam_x, cam_y }
       end
@@ -11657,11 +12662,15 @@ class RPG2k
       def draw_event(e, cam_x, cam_y)
         bmp = event_target_buffer(e)
         return unless bmp
+        # bc2cpp-reviewed: nomethod translucent -- dead fallback (ADR 0226)
         opacity = e.translucent ? 128 : 255
+        # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
         ch = e.char
+        # bc2cpp-reviewed: nomethod graphic_name -- dead fallback (ADR 0226)
         name = ch.graphic_name
         if name && !name.empty?
           draw_event_charset(e, bmp, cam_x, cam_y, opacity)
+        # bc2cpp-reviewed: nomethod graphic_index -- dead fallback (ADR 0226)
         elsif ch.graphic_index && ch.graphic_index > 0
           draw_event_tile(e, bmp, cam_x, cam_y, opacity)
         end
@@ -11672,8 +12681,10 @@ class RPG2k
       # Which tile buffer an event composits into, per its page layer and (for
       # the same-as-hero layer) its y relative to the player.
       def event_target_buffer(e)
+        # bc2cpp-reviewed: nomethod layer -- dead fallback (ADR 0226)
         case e.layer
         when 2 then @upper_bmp                                   # above hero
+        # bc2cpp-reviewed: nomethod char, nomethod y -- dead fallback (ADR 0226)
         when 1 then e.char.y >= @state.y ? @upper_bmp : @lower_bmp
         else @lower_bmp                                          # below hero
         end
@@ -11681,18 +12692,25 @@ class RPG2k
 
       # Blit an event's CharSet frame (24x32), feet-on-tile like the player.
       def draw_event_charset(e, bmp, cam_x, cam_y, opacity)
+        # bc2cpp-reviewed: nomethod char, nomethod graphic_name -- dead fallback (ADR 0226)
         charset = event_charset(e.char.graphic_name)
         return unless charset
+        # bc2cpp-reviewed: nomethod anim_type, nomethod base_dir -- dead fallback (ADR 0226)
         dir, col = Game::EventGraphic.frame(e.anim_type, e.base_dir,
+                                            # bc2cpp-reviewed: nomethod base_pattern -- dead fallback (ADR 0226)
                                             e.base_pattern,
+                                            # bc2cpp-reviewed: nomethod anim_phase, nomethod char, nomethod direction -- dead fallback (ADR 0226)
                                             e.char.direction, e.anim_phase,
+                                            # bc2cpp-reviewed: nomethod moving -- dead fallback (ADR 0226)
                                             e.moving)
+        # bc2cpp-reviewed: nomethod char, nomethod graphic_index -- dead fallback (ADR 0226)
         sx, sy, sw, sh = Game::CharSet.frame_rect(e.char.graphic_index, dir, col)
         epx, epy = event_pixel(e)
         dx = epx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
         dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE) - event_jump_offset(e)
         src = Rect.new(sx, sy, sw, sh)
         bush = event_bush_depth(e)
+        # bc2cpp-reviewed: nomethod flash -- dead fallback (ADR 0226)
         toned = e.flash && flashed_charset(charset, src, e.flash)
         if toned
           blt_bushed bmp, dx, dy, toned,
@@ -11726,6 +12744,7 @@ class RPG2k
       # the tile event is skipped.
       def draw_event_tile(e, bmp, cam_x, cam_y, opacity)
         return unless @chipset_bmp
+        # bc2cpp-reviewed: nomethod char, nomethod graphic_index -- dead fallback (ADR 0226)
         sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e.char.graphic_index)
         epx, epy = event_pixel(e)
         dx = epx - cam_x
@@ -11761,6 +12780,7 @@ class RPG2k
       # load a map event's own graphic already goes through.
       def player_draw_charset
         if @player_char && @player_char.graphic_name
+          # bc2cpp-reviewed: nomethod graphic_index, nomethod graphic_name -- dead fallback (ADR 0226)
           [event_charset(@player_char.graphic_name), @player_char.graphic_index]
         else
           [@charset, @charset_index]
@@ -11787,15 +12807,18 @@ class RPG2k
         # tall grass redraws the sprite even though the pose has not changed.
         # The bitmap identity + index are too, so a move-route graphic change
         # forces a redraw even when direction/pose/bush all stay the same.
+        # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
         frame = [@state.direction, pat, bush, charset.object_id, charset_index]
         return if frame == @last_frame
         @last_frame = frame
 
+        # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
         rx, ry, rw, rh = Game::CharSet.frame_rect(charset_index, @state.direction, pat)
         src = Rect.new(rx, ry, rw, rh)
         # A Flash Sprite aimed at the hero tones the frame as it is laid down
         # (update_sprite_flashes invalidates @last_frame each frame it runs, so
         # the fading colour is re-applied rather than baked in once).
+        # bc2cpp-reviewed: nomethod player_flash -- dead fallback (ADR 0226)
         toned = @state.player_flash && flashed_charset(charset, src, @state.player_flash)
         @player_bmp.clear
         if toned
@@ -11817,12 +12840,16 @@ class RPG2k
         sunk = Game::CharSet.bush_opacity(opacity)
         if bush <= 0
           bmp.blt dx, dy, src_bmp, src, opacity
+        # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
         elsif bush >= src.height
           bmp.blt dx, dy, src_bmp, src, sunk
         else
+          # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
           top = src.height - bush
+          # bc2cpp-reviewed: nomethod width, nomethod x, nomethod y -- dead fallback (ADR 0226)
           bmp.blt dx, dy, src_bmp, Rect.new(src.x, src.y, src.width, top), opacity
           bmp.blt dx, dy + top, src_bmp,
+                  # bc2cpp-reviewed: nomethod width, nomethod x, nomethod y -- dead fallback (ADR 0226)
                   Rect.new(src.x, src.y + top, src.width, bush), sunk
         end
       end
@@ -11831,7 +12858,9 @@ class RPG2k
       # A jumping hero is *over* the tile rather than in it, and a boarded party
       # draws its vehicle instead of the hero, so neither sinks.
       def player_bush_depth
+        # bc2cpp-reviewed: nomethod boarded? -- dead fallback (ADR 0226)
         return 0 if @player_jumping || @state.boarded?
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         bush_pixels_at(@state.x, @state.y)
       end
 
@@ -11841,9 +12870,13 @@ class RPG2k
       # `height` is the frame the depth is scaled against — the 32px charset
       # frame for an ordinary event, one tile for a tile-graphic one.
       def event_bush_depth(e, height = Game::CharSet::HEIGHT)
+        # bc2cpp-reviewed: nomethod layer -- dead fallback (ADR 0226)
         return 0 unless e.layer == 1
+        # bc2cpp-reviewed: nomethod jumping -- dead fallback (ADR 0226)
         return 0 if e.jumping
+        # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
         ch = e.char
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         Game::CharSet.bush_pixels(bush_depth_at(ch.x, ch.y), height)
       end
 

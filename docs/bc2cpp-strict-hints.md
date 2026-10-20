@@ -24,14 +24,12 @@ baseline with the tier off.
 descendant in the closed world and whose name `nil` does not answer: the conservative
 setting, for a first look at a program that has never been verified.
 
-Every forced site carries `/* STRICT_HINT <family>: <name> */`, is printed on stderr as
-`STRICT_HINT_SITE Owner#method -> name (FAMILY)`, and must be listed in
-`tools/bc2cpp/strict_hints_reviewed.rb`; an unlisted site of the engine always aborts the generator
-(there is no switch). A fixture program's sites are listed but are not the program the list reviews
-(`tools/bc2cpp/review_scope.rb`). Regenerate the list with
-`MRBC=... ruby scripts/bc2cpp/strict_hints_update.rb --write`; it reads the listing of a run that fails
-only on the list. Writing is not a review: the verify build below is, and a site it reaches is a wrong
-hint, fixed at its source.
+Every forced site carries `/* STRICT_HINT <family>: <name> @ file:line */` and is printed on stderr as
+`STRICT_HINT_SITE file:line -> name (FAMILY)`. A reviewed site carries
+`# bc2cpp-reviewed: strict_hint <family> <name> -- reason` on its source line or the line above (ADR 0522). A fixture
+program's sites are listed but are not the program the review judges (`tools/bc2cpp/review_scope.rb`). The
+annotation check runs in `scripts/bc2cpp/source_review_check.rb`; writing an annotation is not a review: the verify
+build below is, and a site it reaches is a wrong hint, fixed at its source.
 
 ## Verify build
 
@@ -69,5 +67,5 @@ static fact the run contradicts.
 
 `scripts/bc2cpp/strict_hints_check.rb` (generated code and a deliberately violated fixture on
 real mruby, default, strict, verify and dispatch builds), `strict_hints_mutation_check.rb`
-(16 mutants) and `strict_hints_reviewed_check.rb` (the list against the real wio closed world)
+(16 mutants) and `source_review_check.rb` (the annotations against the real wio closed world)
 run in the nightly `strict-hints` shard (`docs/ci.md`).

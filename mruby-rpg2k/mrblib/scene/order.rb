@@ -77,6 +77,7 @@ class RPG2k
         super parent
         @state = state
         @skin = make_windowskin
+        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         @names = @state.party.actors.map { |a| a.name.to_s }
         @picked = Array.new(@names.size)   # original index picked into slot i, or nil
         @counter = 0
@@ -87,8 +88,11 @@ class RPG2k
       end
 
       def dispose
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @left_window.dispose if @left_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @right_window.dispose if @right_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @confirm_window.dispose if @confirm_window
       end
 
@@ -97,8 +101,11 @@ class RPG2k
         # advance its selection-cursor blink (RPG2k::Window#update) -- this
         # scene never called it at all, the same gap Scene::Menu's own
         # #update had (see its own citation).
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @left_window.update if @left_window
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @right_window.update if @right_window
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @confirm_window.update if @confirm_window
         @focus == :confirm ? update_confirm : update_left
       end
@@ -206,6 +213,7 @@ class RPG2k
 
       def confirm_order
         play_system_se(SFX_DECISION)
+        # bc2cpp-reviewed: nomethod party, nomethod reorder -- dead fallback (ADR 0226)
         @state.party.reorder(@picked.compact)
         @parent.pop
       end
@@ -248,6 +256,7 @@ class RPG2k
         @confirm_window.z = 450
         @confirm_window.windowskin = @skin
         cc = Bitmap.new(CONFIRM_W - Window::BORDER * 2, labels.size * LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         cc.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |l, i|
           draw_system_text cc, 0, i * LINE_H, cc.width, LINE_H, l, @skin
@@ -260,6 +269,7 @@ class RPG2k
       def refresh_left_window
         inner_w = COLUMN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, @names.size * LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         @names.each_with_index do |name, i|
           next if @picked.include?(i)
@@ -271,6 +281,7 @@ class RPG2k
       def refresh_right_window
         inner_w = COLUMN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, @names.size * LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         @picked.each_with_index do |orig, i|
           next unless orig
@@ -281,11 +292,13 @@ class RPG2k
 
       def refresh_left_cursor
         @left_window.cursor_rect =
+          # bc2cpp-reviewed: nomethod contents, nomethod width -- dead fallback (ADR 0226)
           Rect.new(0, @cursor_index * LINE_H, @left_window.contents.width, LINE_H)
       end
 
       def refresh_confirm_cursor
         @confirm_window.cursor_rect =
+          # bc2cpp-reviewed: nomethod contents, nomethod width -- dead fallback (ADR 0226)
           Rect.new(0, @confirm_index * LINE_H, @confirm_window.contents.width, LINE_H)
       end
     end

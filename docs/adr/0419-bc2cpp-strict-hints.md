@@ -4,7 +4,7 @@ Date: 2026-10-12
 
 ## Status
 
-Accepted
+Accepted. Its review list is replaced by source annotations (ADR 0522).
 
 ## Context
 

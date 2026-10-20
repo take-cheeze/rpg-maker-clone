@@ -129,6 +129,7 @@ class RPG2k
     end
 
     def z=(v)
+      # bc2cpp-reviewed: nomethod z= -- dead fallback (ADR 0226)
       @viewport.z = v
     end
 
@@ -179,6 +180,7 @@ class RPG2k
 
     def visible=(v)
       @visible = v
+      # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
       @viewport.visible = v
     end
 
@@ -188,6 +190,7 @@ class RPG2k
     # window visible.
     def open_animation(frames)
       @visible = true
+      # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
       @viewport.visible = true
       if frames > 0
         @openness = 0.0
@@ -293,6 +296,7 @@ class RPG2k
       # Dispose the layers before the viewport so each Sprite tears its own
       # LVGL object down; disposing the viewport then only frees the frame.
       [@skin_sprite, @cursor_sprite, @contents_sprite, @arrow_sprite].each(&:dispose)
+      # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
       @viewport.dispose
     end
 
@@ -471,9 +475,11 @@ class RPG2k
       @cursor_bmp.clear
       return unless @active
       r = @cursor_rect
+      # bc2cpp-reviewed: nomethod height, nomethod width -- dead fallback (ADR 0226)
       return if r.width <= 0 || r.height <= 0
 
       x, y, w, h =
+        # bc2cpp-reviewed: nomethod height, nomethod width, nomethod x, nomethod y -- dead fallback (ADR 0226)
         Game::WindowCursor.dest_rect(r.x, r.y, r.width, r.height, BORDER)
       if @windowskin
         draw_cursor_skin x, y, w, h
@@ -751,6 +757,7 @@ class RPG2k
   def pop
     return if @scenes.size <= 1
     scene = @scenes.pop
+    # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
     scene.dispose if scene.respond_to?(:dispose)
     @scenes.last.resume if @scenes.last.respond_to?(:resume)
   end
@@ -779,6 +786,7 @@ class RPG2k
 
   # Tear down all scenes and return to a fresh title screen.
   def return_to_title
+    # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [Scene::Title.new(self)]
   end
@@ -790,6 +798,7 @@ class RPG2k
   # through a battle/event game over); Scene::GameOver reads a Change System
   # BGM game-over override off it when one is present.
   def show_game_over(state = nil)
+    # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [Scene::GameOver.new(self, state)]
   end
@@ -833,6 +842,7 @@ class RPG2k
     init = map_tree[:initial]
     map_id = preview_map_id || init[:initial_map_id]
     map = RGSS::Profiler.section("map.transition.load") { load_map map_id }
+    # bc2cpp-reviewed: nomethod height, nomethod width -- dead fallback (ADR 0226)
     x, y = preview_map_id ? [map.width / 2, map.height / 2]
                            : [init[:initial_x], init[:initial_y]]
     state = RGSS::Profiler.section("map.transition.party") do
@@ -841,20 +851,24 @@ class RPG2k
     RGSS::Profiler.section("map.transition.seed") do
       # The database's System tab configures the six screen transitions a
       # "use the configured transition" (-1) Erase / Show Screen resolves against.
+      # bc2cpp-reviewed: nomethod seed_screen_transitions -- dead fallback (ADR 0226)
       state.seed_screen_transitions @db
       # The map tree's own boat/ship/airship starting positions, the editor's
       # counterpart to the hero's initial_map_id/x/y just above.
+      # bc2cpp-reviewed: nomethod seed_vehicle_positions -- dead fallback (ADR 0226)
       state.seed_vehicle_positions map_tree
     end
     state.map = map
     # Build the play scene first; only tear down the title once it succeeds so a
     # data problem leaves the title intact instead of a blank screen.
     scene = Scene::Map.new(self, state)
+    # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [scene]
     # A machine-readable marker so a headless run (see --rpg2k_new_game and
     # scripts/compare/nepheshel-wine.bash) can assert the map scene was really
     # reached, not just the title.
+    # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
     $stderr.puts "[RPG2k-MAP] map=#{state.map_id} x=#{state.x} y=#{state.y}"
     # --rpg2k_battle: jump straight from New Game into a fight against the
     # named troop (a headless battle-drive -- the 2003 test beds ship no
@@ -1023,8 +1037,11 @@ class RPG2k
       return
     end
 
+    # bc2cpp-reviewed: nomethod ui -- dead fallback (ADR 0226)
     model = battle.ui[:battle]
+    # bc2cpp-reviewed: nomethod enemies -- dead fallback (ADR 0226)
     enemies = model.enemies
+    # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
     hp = enemies.reduce(0) { |s, e| s + e.hp }
     alive = enemies.reject(&:dead?).size
 
@@ -1043,6 +1060,7 @@ class RPG2k
     # prints a handful of lines (the phase moves along as each actor/round is
     # resolved), and one that is wedged prints nothing after the first --
     # which is the diagnosis (see mz.rb's identical reasoning).
+    # bc2cpp-reviewed: nomethod ui -- dead fallback (ADR 0226)
     phase = battle.ui[:phase]
     if phase != @btl_play_last_phase
       @btl_play_last_phase = phase
@@ -1135,7 +1153,9 @@ class RPG2k
   # Native field precision follows ADR 0401. A failed write fails the save,
   # so the player is told rather than silently keeping an older slot.
   def save_game state, slot = 1
+    # bc2cpp-reviewed: nomethod save_count, nomethod save_count= -- dead fallback (ADR 0226)
     state.save_count += 1 # RPG2000 counts each save; written into the .lsd
+    # bc2cpp-reviewed: nomethod save_count, nomethod to_lsd -- dead fallback (ADR 0226)
     state.to_lsd(state.save_count, nil, slot, @db, @map_tree).save_to(lsd_path(slot))
     true
   rescue StandardError => e
@@ -1176,12 +1196,14 @@ class RPG2k
       RGSS.warn_stub "Continue (no save data found)"
       return
     end
+    # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
     state.map = RGSS::Profiler.section("map.transition.load") { load_map state.map_id }
     # Reapply the Tile Substitution table the save carried for this map --
     # #load_map always builds a fresh, unsubstituted Game::Map (correct for
     # an ordinary map re-visit), but a genuine Continue on the same map
     # restores it, matching real RPG_RT's own SaveMapInfo.lower_tiles/
     # upper_tiles. See Game::State#tile_substitutions.
+    # bc2cpp-reviewed: nomethod restore_substitutions -- dead fallback (ADR 0226)
     state.map.restore_substitutions(*state.tile_substitutions)
     # apply_access: false -- a resumed save already carries its own
     # save/teleport/escape access (restored by Game::State.from_lsd
@@ -1189,11 +1211,13 @@ class RPG2k
     # it as), which re-deriving from the current map's tree here would
     # silently discard. See Scene::Map#initialize's own comment.
     scene = Scene::Map.new(self, state, apply_access: false)
+    # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [scene]
     # Same marker start_new_game emits, so a headless run resuming a save (see
     # --rpg2k_continue) can assert which map it landed on -- which for a save
     # comparison is the whole point: both runtimes must reach the same one.
+    # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
     $stderr.puts "[RPG2k-MAP] map=#{state.map_id} x=#{state.x} y=#{state.y}"
   rescue StandardError => e
     $stderr.puts "[RPG2k] Failed to continue: #{e.message}"
@@ -1251,33 +1275,47 @@ class RPG2k
 
     map_scene = @scenes.find { |s| s.is_a?(Scene::Map) }
     if map_scene
+      # bc2cpp-reviewed: nomethod state -- dead fallback (ADR 0226)
       state = map_scene.state
       r += "## Hero\n\n"
+      # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
       r += "- map: #{state.map_id}"
+      # bc2cpp-reviewed: nomethod height, nomethod map, nomethod width -- dead fallback (ADR 0226)
       r += " (#{state.map.width}x#{state.map.height})" if state.map
       r += "\n"
+      # bc2cpp-reviewed: nomethod direction, nomethod x, nomethod y -- dead fallback (ADR 0226)
       r += "- position: x=#{state.x} y=#{state.y} direction=#{state.direction}\n"
+      # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
       state.party.actors.each do |a|
+        # bc2cpp-reviewed: nomethod display_max_hp, nomethod display_max_mp, nomethod hp, nomethod level, nomethod mp -- dead fallback (ADR 0226)
         r += "- #{a.name}: HP #{a.hp}/#{a.display_max_hp}" \
              " MP #{a.mp}/#{a.display_max_mp} Lv#{a.level}\n"
       end
+      # bc2cpp-reviewed: nomethod interpreter -- dead fallback (ADR 0226)
       fg = map_scene.interpreter
       r += "\n## Interpreter\n\n"
+      # bc2cpp-reviewed: nomethod running? -- dead fallback (ADR 0226)
       r += "- foreground: #{bug_report_interp_text(fg)}" \
            " event=#{fg.running? ? (fg.event_id || "(none)") : "-"}\n"
       r += "\n## Events on this map\n\n"
+      # bc2cpp-reviewed: nomethod events -- dead fallback (ADR 0226)
       if map_scene.events.empty?
         r += "(none)\n\n"
       else
+        # bc2cpp-reviewed: nomethod events -- dead fallback (ADR 0226)
         map_scene.events.each do |e|
+          # bc2cpp-reviewed: nomethod char -- dead fallback (ADR 0226)
           ch = e.char
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           interp = map_scene.parallel_interpreter_for(e.id)
           kind = if interp
                    "parallel"
+                 # bc2cpp-reviewed: nomethod id, nomethod running? -- dead fallback (ADR 0226)
                  elsif fg.running? && fg.event_id == e.id
                    interp = fg
                    "foreground"
                  end
+          # bc2cpp-reviewed: nomethod direction, nomethod graphic_index, nomethod graphic_name, nomethod id, nomethod page_number, nomethod x, nomethod y -- dead fallback (ADR 0226)
           r += "- id=#{e.id} x=#{ch.x} y=#{ch.y} direction=#{ch.direction}" \
                " graphic=#{ch.graphic_name.inspect}(#{ch.graphic_index})" \
                " page=#{e.page_number}" \
@@ -1300,9 +1338,12 @@ class RPG2k
   # turned into the one-line summary #bug_report_text puts next to the
   # foreground interpreter and each event that owns one.
   def bug_report_interp_text(interp)
+    # bc2cpp-reviewed: nomethod running? -- dead fallback (ADR 0226)
     return "idle" unless interp && interp.running?
+    # bc2cpp-reviewed: nomethod diagnostic_position -- dead fallback (ADR 0226)
     pos = interp.diagnostic_position
     return "idle" unless pos
+    # bc2cpp-reviewed: nomethod wait_kind, nomethod waiting? -- dead fallback (ADR 0226)
     state = interp.waiting? ? "waiting(#{interp.wait_kind})" : "running"
     "#{state} idx=#{pos.index}/#{pos.size} call_depth=#{pos.call_depth}"
   end
@@ -1340,9 +1381,12 @@ class RPG2k
         # press has to land before this same frame's #update, not the next
         # one's).
         maybe_battle_play_test
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @scenes.last.update
       end
+      # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
       RGSS::Profiler.section("input.update") { Input.update }
+      # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
       Graphics.update
     end
   end

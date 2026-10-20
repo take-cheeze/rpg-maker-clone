@@ -12,6 +12,12 @@ runners:
   - closed_build
   - clang
 deferred:
+  scripts/bc2cpp/source_review_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    reason: Full-engine review-site exactness audit (every NOMETHOD, PROVEN_MISS and STRICT_HINT site annotated, no stale annotation); retains a separate manual run until budgeted explicitly.
   scripts/bc2cpp/class_pools_check.rb:
     tier: runtime
     capabilities:
@@ -68,12 +74,6 @@ deferred:
     - native_sources
     - git_base
     reason: Requires MRBC, native sources and a git-archive comparison base; keep worlds and base comparison isolated.
-  scripts/bc2cpp/nomethod_reviewed_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    reason: Full-engine hot/all-method generation audit; retains a separate manual run until budgeted explicitly.
   scripts/bc2cpp/optional_block_frame_check.rb:
     tier: runtime
     capabilities:
@@ -81,12 +81,6 @@ deferred:
     - full_library
     - cxx
     reason: Requires a full-core library and compiled-vs-interpreted fixture binaries.
-  scripts/bc2cpp/proven_miss_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    reason: Full-engine reviewed-fallback generation audit; retains a separate manual run until budgeted explicitly.
 checks:
   scripts/bc2cpp/ir_facts_check.rb:
     tier: fast

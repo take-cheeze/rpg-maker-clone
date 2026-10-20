@@ -4,7 +4,7 @@ Date: 2026-09-24
 
 ## Status
 
-Accepted. Superseded for reviewed sites by ADR 0401 (direct raise).
+Accepted. Superseded for reviewed sites by ADR 0401 (direct raise). Its review list is replaced by source annotations (ADR 0522).
 
 ## Context
 

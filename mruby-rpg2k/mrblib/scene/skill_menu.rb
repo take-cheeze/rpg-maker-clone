@@ -143,10 +143,15 @@ class RPG2k
       end
 
       def dispose
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @desc_window.dispose if @desc_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @status_window.dispose if @status_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @skill_window.dispose if @skill_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @target_window.dispose if @target_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @teleport_window.dispose if @teleport_window
         @up_arrow.dispose if @up_arrow
         @down_arrow.dispose if @down_arrow
@@ -157,10 +162,15 @@ class RPG2k
         # advance its selection-cursor blink (RPG2k::Window#update) -- this
         # scene never called it at all, the same gap Scene::Menu's own
         # #update had (see its own citation).
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @desc_window.update if @desc_window
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @status_window.update if @status_window
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @skill_window.update if @skill_window
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @target_window.update if @target_window
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @teleport_window.update if @teleport_window
         tick_arrows
         case @mode
@@ -173,14 +183,17 @@ class RPG2k
       private
 
       def caster
+        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         @state.party.actors[@caster_index]
       end
 
       def skills
+        # bc2cpp-reviewed: nomethod field_skills, nomethod party -- dead fallback (ADR 0226)
         @skills ||= @state.party.field_skills(caster, @state)
       end
 
       def skill_name(sid)
+        # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
         sk = @state.party.db_skill(sid)
         n = sk && sk[:name].to_s
         n.nil? || n.empty? ? "Skill #{sid}" : n
@@ -239,13 +252,19 @@ class RPG2k
       # call sites agree by construction rather than by two separately-
       # maintained copies of the same check.
       def skill_unavailable?(sid, sk)
+        # bc2cpp-reviewed: nomethod field_skill?, nomethod party -- dead fallback (ADR 0226)
         (sk && @state.party.respond_to?(:field_skill?) && !@state.party.field_skill?(sk, @state)) ||
+          # bc2cpp-reviewed: nomethod can_cast?, nomethod party -- dead fallback (ADR 0226)
           (@state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)) ||
           (sk && sk[:type] == Game::Party::SKILL_ESCAPE &&
+           # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
            @state.party.respond_to?(:escape_skill_available?) &&
+           # bc2cpp-reviewed: nomethod escape_skill_available?, nomethod party -- dead fallback (ADR 0226)
            !@state.party.escape_skill_available?(@state)) ||
           (sk && sk[:type] == Game::Party::SKILL_TELEPORT &&
+           # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
            @state.party.respond_to?(:teleport_skill_available?) &&
+           # bc2cpp-reviewed: nomethod party, nomethod teleport_skill_available? -- dead fallback (ADR 0226)
            !@state.party.teleport_skill_available?(@state))
       end
 
@@ -255,6 +274,7 @@ class RPG2k
           return
         end
         sid, = skills[@skill_index]
+        # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
         sk = @state.party.db_skill(sid)
         # A greyed-out (currently unusable) entry is selectable but not
         # activatable -- ported from a reference implementation, NOT
@@ -336,6 +356,7 @@ class RPG2k
       end
 
       def update_target
+        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         party = @state.party.actors
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
@@ -377,10 +398,12 @@ class RPG2k
       # fabricated dialog this runtime invented that also forced an extra
       # dismiss press before the next target could be picked.
       def apply_skill(sid, target)
+        # bc2cpp-reviewed: nomethod cast_skill, nomethod party -- dead fallback (ADR 0226)
         affected = @state.party.cast_skill(caster, sid, target)
         if affected.empty?
           play_system_se(SFX_BUZZER)
         else
+          # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
           sk = @state.party.db_skill(sid)
           play_animation_se(sk && sk[:animation_id])
         end
@@ -406,10 +429,13 @@ class RPG2k
       # confirmed reasoning that a no-effect Decision never shows a message) -- but
       # it is kept message-free for consistency with every reachable sibling.
       def apply_switch_skill(sid)
+        # bc2cpp-reviewed: nomethod cast_switch_skill, nomethod party -- dead fallback (ADR 0226)
         switch = @state.party.cast_switch_skill(caster, sid)
         if switch
+          # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
           @state.switches[switch] = true
           play_skill_sound_effect(sid)
+          # bc2cpp-reviewed: nomethod pop_to_map -- dead fallback (ADR 0226)
           @parent.pop_to_map
         else
           play_system_se(SFX_BUZZER)
@@ -426,6 +452,7 @@ class RPG2k
       # Array1D/SE struct, read the same way) -- a no-op on a blank/absent
       # filename, or when the field carries no SE at all.
       def play_skill_sound_effect(sid)
+        # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
         sk = @state.party.db_skill(sid)
         se = sk && sk[:sound_effect]
         return unless se
@@ -446,6 +473,7 @@ class RPG2k
         @target_lock = nil
         @mode = :skills
         if @target_window
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @target_window.dispose
           @target_window = nil
         end
@@ -524,6 +552,7 @@ class RPG2k
       # frame draws. Failure is unreachable the same way #apply_switch_skill's
       # is (`#escape_skill_available?` gates `#choose_skill` first).
       def apply_escape_skill(sid)
+        # bc2cpp-reviewed: nomethod cast_escape_skill, nomethod party -- dead fallback (ADR 0226)
         target = @state.party.cast_escape_skill(caster, sid, @state)
         if target
           play_skill_sound_effect(sid)
@@ -537,6 +566,7 @@ class RPG2k
       # #build_teleport_window. Failure is unreachable the same way
       # (`#teleport_skill_available?` gates `#choose_skill` first).
       def apply_teleport_skill(sid, map_id)
+        # bc2cpp-reviewed: nomethod cast_teleport_skill, nomethod party -- dead fallback (ADR 0226)
         target = @state.party.cast_teleport_skill(caster, sid, @state, map_id)
         if target
           queue_teleport(target)
@@ -553,8 +583,11 @@ class RPG2k
       # against genuine RPG_RT under wine -- see
       # Game::Party#cast_escape_skill/#cast_teleport_skill.
       def queue_teleport(target)
+        # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
         @state.switches[target[:switch_id]] = true if target[:switch_id]
+        # bc2cpp-reviewed: nomethod pending_teleport= -- dead fallback (ADR 0226)
         @state.pending_teleport = [target[:map_id], target[:x], target[:y], 0]
+        # bc2cpp-reviewed: nomethod pop_to_map -- dead fallback (ADR 0226)
         @parent.pop_to_map
       end
 
@@ -581,14 +614,17 @@ class RPG2k
       # target's own rebuild (mirroring #enter_teleport_target) now matches.
       def enter_teleport_target
         if @desc_window
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @desc_window.dispose
           @desc_window = nil
         end
         if @status_window
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @status_window.dispose
           @status_window = nil
         end
         if @skill_window
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @skill_window.dispose
           @skill_window = nil
         end
@@ -600,6 +636,7 @@ class RPG2k
         @pending_skill = nil
         @mode = :skills
         if @teleport_window
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @teleport_window.dispose
           @teleport_window = nil
         end
@@ -645,6 +682,7 @@ class RPG2k
       # #142) since that mode disposes `@desc_window` outright rather than
       # refreshing its text.
       def build_desc_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @desc_window.dispose if @desc_window
         w = left_panel_w
         inner_w = w - Window::BORDER * 2
@@ -664,6 +702,7 @@ class RPG2k
               else
                 @pending_skill
               end
+        # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
         sk = sid ? @state.party.db_skill(sid) : nil
         text = if sk.nil?
                  ''
@@ -673,6 +712,7 @@ class RPG2k
                  sk[:description].to_s
                end
         @desc_contents.clear
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         @desc_contents.font.color = Color.new(255, 255, 255, 255)
         @desc_contents.draw_text 0, 0, @desc_contents.width, LINE_H, text
       end
@@ -687,6 +727,7 @@ class RPG2k
       # documented up top. This screen used to fold a "name   MP cur/max"
       # header into the grid box instead, with no level, condition or HP.
       def build_status_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @status_window.dispose if @status_window
         @status_window = nil
         return unless @mode == :skills
@@ -695,18 +736,22 @@ class RPG2k
         @status_window.z = 400
         @status_window.windowskin = @skin
         c = Bitmap.new(inner_w, LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         a = caster
         draw_system_text c, 0, 0, STATUS_LEVEL_X, LINE_H, a.name.to_s, @skin
         draw_system_text c, STATUS_LEVEL_X, 0, STATUS_LEVEL_VALUE_X - STATUS_LEVEL_X, LINE_H,
                          term(:level_short), @skin, 1
+        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         draw_system_text c, STATUS_LEVEL_VALUE_X, 0, LEVEL_FIELD_W, LINE_H, a.level.to_s, @skin, 0, 2
         draw_actor_state c, a, STATUS_STATE_X, 0, STATUS_HP_X - STATUS_STATE_X, LINE_H, @skin
         draw_system_text c, STATUS_HP_X, 0, STATUS_HP_VALUE_X - STATUS_HP_X, LINE_H,
                          term(:hp_short), @skin, 1
+        # bc2cpp-reviewed: nomethod display_max_hp, nomethod hp -- dead fallback (ADR 0226)
         draw_stat_pair c, STATUS_HP_VALUE_X, 0, a.hp, a.display_max_hp, true
         draw_system_text c, STATUS_MP_X, 0, STATUS_MP_VALUE_X - STATUS_MP_X, LINE_H,
                          term(:mp_short), @skin, 1
+        # bc2cpp-reviewed: nomethod display_max_mp, nomethod mp -- dead fallback (ADR 0226)
         draw_stat_pair c, STATUS_MP_VALUE_X, 0, a.mp, a.display_max_mp, false
         @status_window.contents = c
       end
@@ -731,6 +776,7 @@ class RPG2k
       # The skill grid box in :skills mode; a single-row "MP cost" box in its
       # place once :target mode is entered -- see #build_mp_cost_window.
       def build_skill_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @skill_window.dispose if @skill_window
         if @mode == :target
           build_mp_cost_window
@@ -741,6 +787,7 @@ class RPG2k
         @skill_window.z = 400
         @skill_window.windowskin = @skin
         @skill_contents = Bitmap.new(inner_w, VISIBLE_ROWS * LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         @skill_contents.font.color = Color.new(255, 255, 255, 255)
         @skill_window.contents = @skill_contents
         # #refresh_skill_cursor clamps @top_row for the current cursor row
@@ -782,6 +829,7 @@ class RPG2k
           sid, cost = rows[i]
           x = (i % COLUMN_MAX) * COL_PITCH
           y = (i / COLUMN_MAX - @top_row) * LINE_H
+          # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
           sk = @state.party.db_skill(sid)
           idx = skill_unavailable?(sid, sk) ? 3 : 0
           draw_system_text(c, x, y, COST_RIGHT - 24, LINE_H, skill_name(sid), @skin, idx)
@@ -830,9 +878,12 @@ class RPG2k
         @skill_window.z = 400
         @skill_window.windowskin = @skin
         c = Bitmap.new(inner_w, LINE_H)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, LINE_H, term(:mp_cost)
+        # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
         sk = @pending_skill ? @state.party.db_skill(@pending_skill) : nil
+        # bc2cpp-reviewed: nomethod party, nomethod skill_cost -- dead fallback (ADR 0226)
         cost = sk ? @state.party.skill_cost(sk, caster) : 0
         c.draw_text 0, 0, inner_w, LINE_H, cost.to_s, 2
         @skill_window.contents = c
@@ -930,13 +981,16 @@ class RPG2k
       TARGET_FACE_SIZE = 48
 
       def build_target_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @target_window.dispose if @target_window
+        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         party = @state.party.actors
         inner_w = TARGET_W - Window::BORDER * 2
         @target_window = Window.new(SCREEN_W - TARGET_W, 0, TARGET_W, SCREEN_H)
         @target_window.z = 450
         @target_window.windowskin = @skin
         c = Bitmap.new(inner_w, SCREEN_H - Window::BORDER * 2)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         # Row text formats measured on this screen's own genuine RPG_RT.exe
         # frame under wine (cycle #241, the leader at Lv 5 with 56/60 HP and
@@ -955,9 +1009,11 @@ class RPG2k
           draw_system_text c, TARGET_LABEL_X, y + LINE_H, LEVEL_FIELD_W, LINE_H,
                            term(:level_short), @skin, 1
           draw_system_text c, TARGET_LABEL_X + LEVEL_FIELD_W, y + LINE_H, LEVEL_FIELD_W, LINE_H,
+                           # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
                            a.level.to_s, @skin, 0, 2
           draw_system_text c, TARGET_VALUE_X, y + LINE_H, LEVEL_FIELD_W, LINE_H,
                            term(:hp_short), @skin, 1
+          # bc2cpp-reviewed: nomethod display_max_hp, nomethod hp -- dead fallback (ADR 0226)
           draw_stat_pair c, TARGET_VALUE_X + LEVEL_FIELD_W, y + LINE_H, a.hp, a.display_max_hp, true
           # RPG_RT's target list shows each member's condition -- which is
           # most of the point of the list, since it is where you pick who to
@@ -966,6 +1022,7 @@ class RPG2k
                            TARGET_VALUE_X - TARGET_LABEL_X, LINE_H, @skin
           draw_system_text c, TARGET_VALUE_X, y + LINE_H * 2, LEVEL_FIELD_W, LINE_H,
                            term(:mp_short), @skin, 1
+          # bc2cpp-reviewed: nomethod display_max_mp, nomethod mp -- dead fallback (ADR 0226)
           draw_stat_pair c, TARGET_VALUE_X + LEVEL_FIELD_W, y + LINE_H * 2, a.mp, a.display_max_mp, false
         end
         @target_window.contents = c
@@ -975,8 +1032,10 @@ class RPG2k
       # See Scene::ItemMenu#draw_target_face's identical comment/citation.
       def draw_target_face(c, actor, y)
         return unless actor.respond_to?(:faceset_name)
+        # bc2cpp-reviewed: nomethod faceset_name -- dead fallback (ADR 0226)
         face = load_face_bitmap(actor.faceset_name)
         return unless face
+        # bc2cpp-reviewed: nomethod faceset_index -- dead fallback (ADR 0226)
         index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
         src = Rect.new((index % 4) * TARGET_FACE_SIZE, (index / 4) * TARGET_FACE_SIZE,
                        TARGET_FACE_SIZE, TARGET_FACE_SIZE)
@@ -998,6 +1057,7 @@ class RPG2k
         # see Scene::ItemMenu#refresh_target_cursor's identical comment.
         if @target_lock == :party
           @target_window.cursor_rect =
+            # bc2cpp-reviewed: nomethod contents, nomethod height, nomethod width -- dead fallback (ADR 0226)
             Rect.new(0, 0, @target_window.contents.width, @target_window.contents.height)
         else
           # The single-row frame spans logical x 196..315 (120 wide) and y
@@ -1008,6 +1068,7 @@ class RPG2k
           # lead there; unmeasured on that screen this cycle).
           @target_window.cursor_rect =
             Rect.new(TARGET_LABEL_X, @target_index * TARGET_ROW_PITCH,
+                     # bc2cpp-reviewed: nomethod contents, nomethod width -- dead fallback (ADR 0226)
                      @target_window.contents.width - TARGET_LABEL_X, TARGET_ROW_H)
         end
       end
@@ -1018,6 +1079,7 @@ class RPG2k
       # the same order a reference implementation lists them in (sorted by
       # map id on insert).
       def teleport_targets
+        # bc2cpp-reviewed: nomethod teleport_targets -- dead fallback (ADR 0226)
         @state.teleport_targets.keys.sort.map { |id| [id, map_display_name(id)] }
       end
 
@@ -1041,6 +1103,7 @@ class RPG2k
       end
 
       def build_teleport_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @teleport_window.dispose if @teleport_window
         rows = teleport_targets
         inner_w = SCREEN_W - Window::BORDER * 2
@@ -1051,6 +1114,7 @@ class RPG2k
         @teleport_window.z = 450
         @teleport_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         if rows.empty?
           c.draw_text 0, 0, inner_w, LINE_H, "No destinations"

@@ -41,11 +41,17 @@ class RPG2k
       LOWER_COUNT = 162
       UPPER_COUNT = 144
 
+      # bc2cpp-reviewed: constant RPG2k::Scene::ChipsetEditor::PASSABLE_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       PASSABLE_COLOR = Color.new(64, 160, 64, 255)
+      # bc2cpp-reviewed: constant RPG2k::Scene::ChipsetEditor::BLOCKED_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       BLOCKED_COLOR = Color.new(160, 48, 48, 255)
+      # bc2cpp-reviewed: constant RPG2k::Scene::ChipsetEditor::UNKNOWN_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       UNKNOWN_COLOR = Color.new(96, 96, 96, 255)
+      # bc2cpp-reviewed: constant RPG2k::Scene::ChipsetEditor::CURSOR_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       CURSOR_COLOR = Color.new(255, 255, 255, 255)
+      # bc2cpp-reviewed: constant RPG2k::Scene::ChipsetEditor::TEXT_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       TEXT_COLOR = Color.new(255, 255, 255, 255)
+      # bc2cpp-reviewed: constant RPG2k::Scene::ChipsetEditor::HINT_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       HINT_COLOR = Color.new(200, 200, 200, 255)
 
       # `quit_on_close:` -- set by RPG2k#open_chipset_editor (the
@@ -61,6 +67,7 @@ class RPG2k
         super parent
         @state = state
         @quit_on_close = quit_on_close
+        # bc2cpp-reviewed: nomethod chipset_id, nomethod map -- dead fallback (ADR 0226)
         @chipset_id = state.map ? state.map.chipset_id : 1
         @chip = LCF.field?(@db, :chipset) ? @db[:chipset][@chipset_id] : nil
         @skin = make_windowskin
@@ -78,6 +85,7 @@ class RPG2k
 
       def dispose
         @background.dispose if @background
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @window.dispose if @window
       end
 
@@ -177,6 +185,7 @@ class RPG2k
       def save_to_disk
         return unless @chip && @dirty
         @db.save_to(@parent.db_path)
+        # bc2cpp-reviewed: nomethod map_scene -- dead fallback (ADR 0226)
         map_scene = @parent.respond_to?(:map_scene) ? @parent.map_scene : nil
         map_scene.rebuild_chipset if map_scene.respond_to?(:rebuild_chipset)
         @dirty = false
@@ -194,6 +203,7 @@ class RPG2k
       end
 
       def draw_header
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         @contents.font.color = TEXT_COLOR
         text = if !@chip
                  "Chipset ##{@chipset_id} not found in the database"
@@ -201,6 +211,7 @@ class RPG2k
                  dirty = @dirty ? '  *unsaved*' : ''
                  "Chipset ##{@chipset_id} #{@tab} [#{@idx}]  #{cell_word}#{dirty}"
                end
+        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, 0, @contents.width, HEADER_H, text
       end
 
@@ -211,6 +222,7 @@ class RPG2k
       end
 
       def draw_footer
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         @contents.font.color = HINT_COLOR
         hint = 'Arrows:Move  L:Tab  C:Toggle  R:Save  B:Close'
         draw_wrapped_hint(hint, HEADER_H + rows * CELL, HEADER_H)

@@ -350,26 +350,32 @@ module Game
     # the fight afflicted (a map Change Condition) is still afflicted in battle,
     # and a cure applied here can be written back. A bare fixture without #states
     # starts clean.
+    # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
     def self.actor_states(a); a.respond_to?(:states) ? (a.states || []).dup : []; end
 
     # A battler's critical-hit chance in basis points (0 when it never crits, or
     # the source lacks the field).
+    # bc2cpp-reviewed: nomethod crit_chance -- dead fallback (ADR 0226)
     def self.crit_chance_of(b); b.respond_to?(:crit_chance) ? b.crit_chance : 0; end
 
     # Whether a battler's gear guards against critical hits.
+    # bc2cpp-reviewed: nomethod prevents_critical? -- dead fallback (ADR 0226)
     def self.prevents_crit_of(b); b.respond_to?(:prevents_critical?) && b.prevents_critical?; end
 
     # A battler's per-attribute defence ranks ({ attribute_id => rank 0..4 }), or
     # {} when the source (a bare fixture) doesn't model them.
+    # bc2cpp-reviewed: nomethod attribute_ranks -- dead fallback (ADR 0226)
     def self.attr_ranks_of(b); b.respond_to?(:attribute_ranks) ? b.attribute_ranks : {}; end
 
     # The elemental attribute ids a battler's basic attack carries (its equipped
     # weapon's attribute_set); [] for an enemy or an unarmed / fixture attacker.
+    # bc2cpp-reviewed: nomethod weapon_attributes -- dead fallback (ADR 0226)
     def self.atk_attrs_of(b); b.respond_to?(:weapon_attributes) ? b.weapon_attributes : []; end
 
     # The status conditions a battler's basic attack carries via its equipped
     # weapon(s) (`Game::Actor#weapon_states`); nil (read as empty by
     # Combatant#atk_states) for an enemy or an unarmed / fixture attacker.
+    # bc2cpp-reviewed: nomethod weapon_states -- dead fallback (ADR 0226)
     def self.atk_states_of(b); b.respond_to?(:weapon_states) ? b.weapon_states : nil; end
 
     # A battler's basic-attack base hit rate (percent), or 90 (the RPG2000
@@ -378,6 +384,7 @@ module Game
 
     # A battler's per-state susceptibility ranks ({ state_id => rank 0..4 }), or
     # {} when the source (a bare fixture) doesn't model them.
+    # bc2cpp-reviewed: nomethod state_ranks -- dead fallback (ADR 0226)
     def self.state_ranks_of(b); b.respond_to?(:state_ranks) ? b.state_ranks : {}; end
 
     # A battler's basic-attack swing count (`Actor#strike_count`, which
@@ -389,7 +396,9 @@ module Game
     end
 
     def self.from_actor(a)
+      # bc2cpp-reviewed: nomethod agi, nomethod atk, nomethod def, nomethod hp, nomethod max_hp -- dead fallback (ADR 0226)
       c = Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
+                    # bc2cpp-reviewed: nomethod int, nomethod max_mp, nomethod mp -- dead fallback (ADR 0226)
                     nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a),
                     nil, crit_chance_of(a), prevents_crit_of(a),
                     attr_ranks_of(a), atk_attrs_of(a), nil, hit_rate_of(a),
@@ -415,11 +424,13 @@ module Game
       # those two independently of row, and `Calculate2k3BattlePosition`'s
       # `row_x_offset` only ever *reads* the already-set row back, for the
       # automatic-placement sprite's own on-screen X (still unmodelled here).
+      # bc2cpp-reviewed: nomethod battle_row -- dead fallback (ADR 0226)
       c.row = a.respond_to?(:battle_row) ? a.battle_row : ROW_FRONT
       # RPG2003 active-time gauge: seeded from the actor's own persisted
       # #atb_gauge, the same way #row is -- see Actor#atb_gauge's own
       # citation for why RPG_RT carries this across fights instead of
       # starting every battle from empty.
+      # bc2cpp-reviewed: nomethod atb_gauge -- dead fallback (ADR 0226)
       c.gauge = a.respond_to?(:atb_gauge) ? a.atb_gauge : 0
       c
     end
@@ -427,12 +438,18 @@ module Game
     # A boolean predicate on the source row, false for a fixture without it.
     def self.flag_of(b, name)
       case name
+      # bc2cpp-reviewed: nomethod dual_attack? -- dead fallback (ADR 0226)
       when :dual_attack? then b.respond_to?(:dual_attack?) && b.dual_attack? ? true : false
+      # bc2cpp-reviewed: nomethod ignores_evasion? -- dead fallback (ADR 0226)
       when :ignores_evasion? then b.respond_to?(:ignores_evasion?) && b.ignores_evasion? ? true : false
+      # bc2cpp-reviewed: nomethod attack_all? -- dead fallback (ADR 0226)
       when :attack_all? then b.respond_to?(:attack_all?) && b.attack_all? ? true : false
+      # bc2cpp-reviewed: nomethod preemptive? -- dead fallback (ADR 0226)
       when :preemptive? then b.respond_to?(:preemptive?) && b.preemptive? ? true : false
+      # bc2cpp-reviewed: nomethod strong_defence? -- dead fallback (ADR 0226)
       when :strong_defence? then b.respond_to?(:strong_defence?) && b.strong_defence? ? true : false
       when :half_sp_cost? then b.respond_to?(:half_sp_cost?) && b.half_sp_cost? ? true : false
+      # bc2cpp-reviewed: nomethod physical_evasion_up? -- dead fallback (ADR 0226)
       else b.respond_to?(:physical_evasion_up?) && b.physical_evasion_up? ? true : false
       end
     end
@@ -440,21 +457,28 @@ module Game
     # Enemies have no source actor (that field stays nil), so the post-battle
     # write-back skips them; they carry no status set into this simple sim.
     def self.from_enemy(e)
+      # bc2cpp-reviewed: nomethod agi, nomethod atk, nomethod def, nomethod hp, nomethod max_hp -- dead fallback (ADR 0226)
       c = Combatant.new(e.name, e.atk, e.def, e.agi, e.hp, e.max_hp,
+                        # bc2cpp-reviewed: nomethod max_sp, nomethod sp, nomethod spi -- dead fallback (ADR 0226)
                         nil, false, e.sp, e.max_sp, e.spi, nil, nil, [], nil,
                         crit_chance_of(e), prevents_crit_of(e),
                         attr_ranks_of(e), atk_attrs_of(e), nil, hit_rate_of(e),
                         state_ranks_of(e))
       # A member the troop flagged invisible starts out of play until a Show
       # Hidden Monster command brings it in (see Combatant#out_of_play?).
+      # bc2cpp-reviewed: nomethod hidden -- dead fallback (ADR 0226)
       c.hidden = e.respond_to?(:hidden) && e.hidden ? true : false
       # The 行動パターン the AI picks from each turn, and the database id it was
       # built from (which a transformation re-points at another enemy row).
+      # bc2cpp-reviewed: nomethod actions -- dead fallback (ADR 0226)
       c.actions = e.respond_to?(:actions) ? (e.actions || []) : []
+      # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
       c.enemy_id = e.respond_to?(:id) ? e.id : nil
       # The Monster/<name> graphic, carried so the battle screen can redraw a
       # combatant whose transformation swapped it.
+      # bc2cpp-reviewed: nomethod battler_name -- dead fallback (ADR 0226)
       c.battler_name = e.respond_to?(:battler_name) ? e.battler_name : nil
+      # bc2cpp-reviewed: nomethod battler_hue -- dead fallback (ADR 0226)
       c.battler_hue = e.respond_to?(:battler_hue) ? (e.battler_hue || 0) : 0
       c.attr_base_ranks = c.attr_ranks.dup
       c
@@ -607,9 +631,12 @@ module Game
       # see Scene::Battle's
       # `:row` handler; not independently confirmed against genuine RPG_RT
       # under wine) -- RPG_RT does not undo it at battle end.
+      # bc2cpp-reviewed: strict_hint element row -- reviewed before the source-annotation migration (ADR 0419)
       if @rpg2003 && @allies.none? { |a| a.row == ROW_FRONT && !incapacitated?(a) }
         @allies.each do |a|
+          # bc2cpp-reviewed: nomethod row= -- dead fallback (ADR 0226)
           a.row = ROW_FRONT
+          # bc2cpp-reviewed: nomethod actor, nomethod battle_row= -- dead fallback (ADR 0226)
           a.actor.battle_row = ROW_FRONT if a.actor.respond_to?(:battle_row=)
         end
       end
@@ -705,6 +732,7 @@ module Game
     # The live combatant for the party member whose database actor id is `id`
     # (nil when that actor is not in this fight).
     def ally_by_actor_id(id)
+      # bc2cpp-reviewed: nomethod actor, nomethod id -- dead fallback (ADR 0226)
       @allies.find { |a| a.actor && a.actor.respond_to?(:id) && a.actor.id == id }
     end
 
@@ -767,9 +795,13 @@ module Game
       return 0 if @allies.empty?
       hp = 0; total_hp = 0; sp = 0; total_sp = 0
       @allies.each do |a|
+        # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
         hp += a.hp
+        # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
         total_hp += a.max_hp || 0
+        # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
         sp += a.mp || 0
+        # bc2cpp-reviewed: nomethod max_mp -- dead fallback (ADR 0226)
         total_sp += a.max_mp || 0
       end
       return 0 if total_hp <= 0
@@ -793,8 +825,11 @@ module Game
     # that ported behaviour.
     def actor_command(actor_id, source = nil)
       return nil unless source
+      # bc2cpp-reviewed: nomethod actor -- dead fallback (ADR 0226)
       a = source.actor
+      # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
       return nil unless a && a.respond_to?(:id) && a.id == actor_id
+      # bc2cpp-reviewed: nomethod last_battle_action -- dead fallback (ADR 0226)
       source.last_battle_action
     end
 
@@ -824,8 +859,10 @@ module Game
     # rarely-observable quirk left unmodelled here.
     def target_enemy_index(source)
       return nil unless source
+      # bc2cpp-reviewed: nomethod actor -- dead fallback (ADR 0226)
       a = source.actor
       return nil unless a
+      # bc2cpp-reviewed: nomethod action, nomethod command -- dead fallback (ADR 0226)
       target = source.command ? (source.command[:all] ? nil : source.command[:target]) : source.action
       return nil unless target
       @enemies.find_index { |e| e.equal?(target) }
@@ -845,7 +882,9 @@ module Game
     # caller only plays the escape sound when one did.
     def flee_enemy(index)
       foe = enemy(index)
+      # bc2cpp-reviewed: nomethod dead?, nomethod hidden -- dead fallback (ADR 0226)
       return false if foe.nil? || foe.dead? || foe.hidden
+      # bc2cpp-reviewed: nomethod hidden= -- dead fallback (ADR 0226)
       foe.hidden = true
       true
     end
@@ -881,16 +920,22 @@ module Game
     # handling.
     def apply_to_party
       @allies.each do |c|
+        # bc2cpp-reviewed: nomethod actor -- dead fallback (ADR 0226)
         next unless c.actor
+        # bc2cpp-reviewed: nomethod actor, nomethod states, nomethod states= -- dead fallback (ADR 0226)
         c.actor.states = surviving_states(c.states) if c.states && c.actor.respond_to?(:states=)
+        # bc2cpp-reviewed: nomethod actor, nomethod hp, nomethod set_hp -- dead fallback (ADR 0226)
         c.actor.set_hp(c.hp)
+        # bc2cpp-reviewed: nomethod actor, nomethod max_mp, nomethod mp, nomethod mp= -- dead fallback (ADR 0226)
         c.actor.mp = Game.clamp(c.mp, 0, c.actor.max_mp) if c.mp
         # A survivor's active-time gauge carries into the next fight; one who
         # ended this fight dead carries 0 instead, matching AddState's own
         # Knockout-zeroes-the-gauge rule -- see Actor#atb_gauge.
+        # bc2cpp-reviewed: nomethod actor, nomethod atb_gauge=, nomethod hp -- dead fallback (ADR 0226)
         c.actor.atb_gauge = c.hp > 0 ? c.gauge : 0 if c.actor.respond_to?(:atb_gauge=)
         # An Enable Combo (1007) armed for this fight never carries into the
         # next one -- see Actor#clear_battle_combo.
+        # bc2cpp-reviewed: nomethod actor, nomethod clear_battle_combo -- dead fallback (ADR 0226)
         c.actor.clear_battle_combo if c.actor.respond_to?(:clear_battle_combo)
       end
     end
@@ -907,6 +952,7 @@ module Game
         b = @queue.shift
         @acting = b
         sync_allies_from_party if @party # see #step_action's own comment on why
+        # bc2cpp-reviewed: nomethod dead?, nomethod member? -- dead fallback (ADR 0226)
         next if b.dead? || !b.member?
         # The battler's own turn starts here, whether or not it ends up able to
         # act — RPG_RT bumps the per-battler counter as the turn begins, not
@@ -918,7 +964,9 @@ module Game
         # built (or picked up live, above, from one inflicted since) always
         # wins over a cure that landed in between -- see the Combatant
         # `queued_no_act` field's own comment.
+        # bc2cpp-reviewed: nomethod queued_no_act -- dead fallback (ADR 0226)
         can_act = false if b.queued_no_act
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         next if b.dead? || !can_act
         entry = record_action(strike(b))
         next unless entry # attacker had no living target; try the next
@@ -940,6 +988,7 @@ module Game
       return nil if result.nil?
       entries = result.is_a?(Array) ? result : [result]
       return nil if entries.empty?
+      # bc2cpp-reviewed: nomethod turn_state_message -- dead fallback (ADR 0226)
       entries.first[:state_message] = @acting.turn_state_message if @acting
       entries.each { |e| @log << e }
       @pending.concat(entries[1..-1])
@@ -957,10 +1006,12 @@ module Game
     # (take half damage and not attack). Player-driven battles command each ally
     # before running the round; enemies choose their own action.
     def command_attack(ally, target)
+      # bc2cpp-reviewed: nomethod action=, nomethod command=, nomethod defending= -- dead fallback (ADR 0226)
       ally.action = target; ally.defending = false; ally.command = nil
     end
 
     def command_defend(ally)
+      # bc2cpp-reviewed: nomethod action=, nomethod command=, nomethod defending= -- dead fallback (ADR 0226)
       ally.action = nil; ally.defending = true; ally.command = nil
     end
 
@@ -972,6 +1023,7 @@ module Game
     # scene's `select_battle_command` `:special` arm). Cleared with the other
     # commands at #end_round.
     def command_skip(ally)
+      # bc2cpp-reviewed: nomethod action=, nomethod command=, nomethod defending=, nomethod skip= -- dead fallback (ADR 0226)
       ally.action = nil; ally.defending = false; ally.command = nil; ally.skip = true
     end
 
@@ -1003,6 +1055,7 @@ module Game
     # the scene's job (`#command_skip`) once this returns true.
     def toggle_row(ally)
       return false if !ally.back_row? && !can_leave_front_row?(ally)
+      # bc2cpp-reviewed: nomethod row= -- dead fallback (ADR 0226)
       ally.row = ally.back_row? ? ROW_FRONT : ROW_BACK
       true
     end
@@ -1099,6 +1152,7 @@ module Game
     # their round.
     def attempt_escape(preemptive = false)
       return false if finished?
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       if preemptive || @force_flee || @rng.random(100) < escape_chance
         @escaped = true
         @result = :escaped
@@ -1224,6 +1278,7 @@ module Game
     # rate.
     def advance_gauges(ticks = 1)
       return unless @battle_type == 2
+      # bc2cpp-reviewed: nomethod hidden -- dead fallback (ADR 0226)
       visible = all_combatants.reject { |c| c.hidden }
       return if visible.empty?
       sum_agi = visible.reduce(0) { |s, c| s + effective_agi(c) } * 100
@@ -1231,6 +1286,7 @@ module Game
         next if c.out_of_play?
         next if do_nothing_restricted?(c) && side_of(c) != :enemy
         add = GAUGE_MAX / (sum_agi / (effective_agi(c) + 1)) * ticks
+        # bc2cpp-reviewed: nomethod gauge= -- dead fallback (ADR 0226)
         c.gauge = [c.gauge + add, GAUGE_MAX].min
       end
     end
@@ -1300,6 +1356,7 @@ module Game
     # turn picker; exposed here so the gauge cycle is unit-testable without
     # the 2003 boot path (Phase 3).
     def reset_gauge(c)
+      # bc2cpp-reviewed: nomethod gauge= -- dead fallback (ADR 0226)
       c.gauge = 0
     end
 
@@ -1335,6 +1392,7 @@ module Game
       @pending = []
       @acting = b
       b.next_battle_turn
+      # bc2cpp-reviewed: nomethod queued_no_act= -- dead fallback (ADR 0226)
       b.queued_no_act = do_nothing_restricted?(b)
       reset_gauge(b)
       @queue = [b]
@@ -1351,12 +1409,14 @@ module Game
       # the finished, agility-adjusted percentage) skews the result whenever
       # attacker and target have unequal agility, since the AGI term is not
       # linear in its input.
+      # bc2cpp-reviewed: nomethod hit_rate -- dead fallback (ADR 0226)
       base = (attacker.hit_rate || 90) * hit_modifier(attacker) / 100
       # 必中: a weapon flagged `ignore_evasion` skips the agility term entirely —
       # RPG_RT's `CalcNormalAttackToHit` returns before it applies evasion for
       # such a weapon. The attacker's own statuses still spoil its aim (baked
       # into `base` above), since what the flag ignores is the *target's*
       # evasion, not the wielder's blind.
+      # bc2cpp-reviewed: nomethod ignores_evasion -- dead fallback (ADR 0226)
       if attacker.ignores_evasion
         Game.clamp(base, 0, 100)
       else
@@ -1378,6 +1438,7 @@ module Game
         # the flag off -- consistent with a substantial flat hit-chance
         # reduction, not merely independently ported from a reference
         # implementation's source.
+        # bc2cpp-reviewed: nomethod evasion_up -- dead fallback (ADR 0226)
         agi_adjusted -= 25 if target.evasion_up
         # RPG2003 row: a back-row defender is harder to hit (a flat 25, after
         # the AGI term -- a reference implementation's own formula
@@ -1417,6 +1478,7 @@ module Game
     # cutting accuracy to a fifth.
     def hit_modifier(b)
       m = 100
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (b.states || []).each do |sid|
         r = state_hit_ratio(state_def(sid))
         m = r if r < m
@@ -1465,6 +1527,7 @@ module Game
     # ATK) on the same battler net out to its ordinary attack.
     def stat_mode(b, stat_flag)
       half = false; dbl = false
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (b.states || []).each do |sid|
         d = state_def(sid)
         next unless d && state_flag(d, stat_flag)
@@ -1504,18 +1567,22 @@ module Game
     end
 
     def effective_atk(b)
+      # bc2cpp-reviewed: nomethod atk, nomethod atk_mod -- dead fallback (ADR 0226)
       adjust_stat(modified_stat(b.atk, b.atk_mod), stat_mode(b, :affect_attack))
     end
 
     def effective_def(b)
+      # bc2cpp-reviewed: nomethod def, nomethod def_mod -- dead fallback (ADR 0226)
       adjust_stat(modified_stat(b.def, b.def_mod), stat_mode(b, :affect_defense))
     end
 
     def effective_spi(b)
+      # bc2cpp-reviewed: nomethod spi, nomethod spi_mod -- dead fallback (ADR 0226)
       adjust_stat(modified_stat(b.spi, b.spi_mod), stat_mode(b, :affect_spirit))
     end
 
     def effective_agi(b)
+      # bc2cpp-reviewed: nomethod agi, nomethod agi_mod -- dead fallback (ADR 0226)
       adjust_stat(modified_stat(b.agi, b.agi_mod), stat_mode(b, :affect_agility))
     end
 
@@ -1609,7 +1676,9 @@ module Game
                        # -- `#apply_skill_hit`'s recovery branch already reads
                        # `cmd[:switch_id]` onto the produced log entry, and
                        # `Scene::Battle#drive_battle_animate` flips it there.
+                       # bc2cpp-reviewed: nomethod command= -- dead fallback (ADR 0226)
                        switch_id: switch_id }
+      # bc2cpp-reviewed: nomethod action=, nomethod defending= -- dead fallback (ADR 0226)
       ally.action = nil; ally.defending = false
     end
 
@@ -1642,7 +1711,9 @@ module Game
                        cured: cured || [],
                        # See #command_skill's identical field for what this
                        # feeds and why it has to ride along here too.
+                       # bc2cpp-reviewed: nomethod command= -- dead fallback (ADR 0226)
                        physical_rate: physical_rate || 0 }
+      # bc2cpp-reviewed: nomethod action=, nomethod defending= -- dead fallback (ADR 0226)
       ally.action = nil; ally.defending = false
     end
 
@@ -1655,7 +1726,9 @@ module Game
     # action lands too, the same moment the bag is finally debited.
     def command_item(ally, target, item_id:, name:, hp: 0, mp: 0, cured: nil, switch_id: nil)
       ally.command = { kind: :item, target: target, item_id: item_id,
+                       # bc2cpp-reviewed: nomethod command= -- dead fallback (ADR 0226)
                        name: name, hp: hp, mp: mp, cured: cured || [], switch_id: switch_id }
+      # bc2cpp-reviewed: nomethod action=, nomethod defending= -- dead fallback (ADR 0226)
       ally.action = nil; ally.defending = false
     end
 
@@ -1666,7 +1739,9 @@ module Game
     # bag deduction fires once).
     def command_item_all(ally, targets, item_id:, name:, cured: nil)
       ally.command = { kind: :item, all: true, item_id: item_id, targets: targets,
+                       # bc2cpp-reviewed: nomethod command= -- dead fallback (ADR 0226)
                        name: name, cured: cured || [] }
+      # bc2cpp-reviewed: nomethod action=, nomethod defending= -- dead fallback (ADR 0226)
       ally.action = nil; ally.defending = false
     end
 
@@ -1720,6 +1795,7 @@ module Game
         b = @queue.shift
         @acting = b
         sync_allies_from_party if @party
+        # bc2cpp-reviewed: nomethod dead?, nomethod member? -- dead fallback (ADR 0226)
         next if b.dead? || !b.member?
         # Afflicted states act at the start of the battler's turn: slip damage
         # (which cannot itself knock it out -- see apply_turn_states) and, if it
@@ -1728,7 +1804,9 @@ module Game
         # ...unless a do-nothing restriction was already locked in when this
         # round's queue was built -- see #step's own comment and the
         # Combatant `queued_no_act` field's.
+        # bc2cpp-reviewed: nomethod queued_no_act -- dead fallback (ADR 0226)
         can_act = false if b.queued_no_act
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         next if b.dead? || !can_act
         entry = record_action(strike(b))
         next unless entry
@@ -1749,6 +1827,7 @@ module Game
     # the next round starts fresh) and settle the result once a side is wiped.
     def end_round
       @allies.each do |a|
+        # bc2cpp-reviewed: nomethod action=, nomethod command=, nomethod defending=, nomethod skip= -- dead fallback (ADR 0226)
         a.action = nil; a.defending = false; a.command = nil; a.skip = false
       end
       @result = alive?(@allies) ? :victory : :defeat if finished? && !@escaped
@@ -1768,6 +1847,7 @@ module Game
     # all three left the victim casting freely.
     def skill_sealed?(b, sk)
       return false unless sk
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (b.states || []).each do |sid|
         d = state_def(sid)
         next unless d
@@ -1809,6 +1889,7 @@ module Game
     # restriction). Shared by #command_restricted? (half of its own check)
     # and #to_hit (a restricted target always gets hit).
     def do_nothing_restricted?(b)
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (b.states || []).any? { |id| state_field(state_def(id), :restriction) == RESTRICTION_DO_NOTHING }
     end
     # Called from Game::Interpreter#battle_actor_condition (the battle-page
@@ -1832,6 +1913,7 @@ module Game
     # entry because a state's message is worded differently for an actor and an
     # enemy, and the entry only carries the target's *name*.
     def ally?(battler)
+      # bc2cpp-reviewed: nomethod actor -- dead fallback (ADR 0226)
       battler.respond_to?(:actor) && !battler.actor.nil?
     end
 
@@ -1860,14 +1942,19 @@ module Game
     # unconditional-loss behaviour exactly.
     def apply_turn_states(b)
       can_act = true
+      # bc2cpp-reviewed: nomethod state_turns, nomethod state_turns= -- dead fallback (ADR 0226)
       b.state_turns ||= {}
       healed = []
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (b.states || []).dup.each do |id|
         d = state_def(id)
         next unless d
+        # bc2cpp-reviewed: nomethod state_turns -- dead fallback (ADR 0226)
         b.state_turns[id] = (b.state_turns[id] || 0) + 1
         if recovers_from_state?(b, id, d)
+          # bc2cpp-reviewed: nomethod states, nomethod states= -- dead fallback (ADR 0226)
           b.states = b.states - [id]
+          # bc2cpp-reviewed: nomethod state_turns -- dead fallback (ADR 0226)
           b.state_turns.delete(id)
           healed << id
           next
@@ -1887,14 +1974,20 @@ module Game
         # uncited assumption that the popup limit "applies to slip damage
         # too"; it does not, and the SP slip two lines down was never capped
         # to begin with, which should have been a hint.
+        # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
         hp = state_field(d, :hp_change_val) + b.max_hp * state_field(d, :hp_change_max) / 100
+        # bc2cpp-reviewed: nomethod hp, nomethod hp=, nomethod max_hp -- dead fallback (ADR 0226)
         b.hp = slip_stat(b.hp, b.max_hp, hp, state_field(d, :hp_change_type), 1) if hp > 0
+        # bc2cpp-reviewed: nomethod max_mp, nomethod mp -- dead fallback (ADR 0226)
         if b.max_mp && b.mp
+          # bc2cpp-reviewed: nomethod max_mp -- dead fallback (ADR 0226)
           sp = state_field(d, :sp_change_val) + b.max_mp * state_field(d, :sp_change_max) / 100
+          # bc2cpp-reviewed: nomethod max_mp, nomethod mp, nomethod mp= -- dead fallback (ADR 0226)
           b.mp = slip_stat(b.mp, b.max_mp, sp, state_field(d, :sp_change_type), 0) if sp > 0
         end
         can_act = false if state_field(d, :restriction) == RESTRICTION_DO_NOTHING
       end
+      # bc2cpp-reviewed: nomethod turn_state_message= -- dead fallback (ADR 0226)
       b.turn_state_message = turn_state_message(b, healed)
       can_act
     end
@@ -1917,6 +2010,7 @@ module Game
       best_id = nil
       best_healed = false
       best_priority = -1
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (healed | (b.states || [])).sort.each do |id|
         d = state_def(id)
         next unless d
@@ -1928,8 +2022,10 @@ module Game
       end
       return nil unless best_id
       if best_healed
+        # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
         States.recovery_message(best_id, @states, b.name) || ''
       else
+        # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
         States.affected_message(best_id, @states, b.name)
       end
     end
@@ -1966,7 +2062,9 @@ module Game
     # `@rng.random(100) < 0` is always false, so the observable outcome at 0%
     # is unchanged -- only the draw itself is now consumed, same as RPG_RT.
     def recovers_from_state?(b, id, d)
+      # bc2cpp-reviewed: nomethod state_turns -- dead fallback (ADR 0226)
       return false unless b.state_turns[id] > state_field(d, :hold_turn)
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       @rng.random(100) < state_field(d, :auto_release_prob)
     end
 
@@ -1992,6 +2090,7 @@ module Game
     # fight until it is actually reduced to 0 HP or removed.
     def incapacitated?(b)
       return true if b.out_of_play?
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (b.states || []).any? do |id|
         d = state_def(id)
         d && state_field(d, :restriction) == RESTRICTION_DO_NOTHING &&
@@ -2039,6 +2138,7 @@ module Game
       # a reference implementation's own live state-add override); this flag only ever adds
       # to that, it never lets a battler restricted here act again once its
       # state clears before its turn comes up.
+      # bc2cpp-reviewed: nomethod queued_no_act= -- dead fallback (ADR 0226)
       @queue.each { |b| b.queued_no_act = do_nothing_restricted?(b) }
       # Lock this round's plain basic-Attack target for every enemy right
       # here too, alongside `queued_no_act` above -- see `queued_target`'s
@@ -2047,6 +2147,7 @@ module Game
       # target live via #restricted_target, unaffected by this: this trivia
       # item and its fix are about an *unforced* basic Attack only.
       @queue.each do |b|
+        # bc2cpp-reviewed: nomethod queued_target= -- dead fallback (ADR 0226)
         b.queued_target = random_living(@allies) if side_of(b) == :enemy
       end
     end
@@ -2077,11 +2178,16 @@ module Game
     # of its own to update.
     def sync_allies_from_party
       live_ids = {}
+      # bc2cpp-reviewed: nomethod actors, nomethod id -- dead fallback (ADR 0226)
       @party.actors.each { |a| live_ids[a.id] = true }
+      # bc2cpp-reviewed: nomethod actor, nomethod id, nomethod member= -- dead fallback (ADR 0226)
       @allies.each { |c| c.member = false if c.actor && !live_ids[c.actor.id] }
+      # bc2cpp-reviewed: nomethod actors -- dead fallback (ADR 0226)
       @party.actors.each do |a|
+        # bc2cpp-reviewed: nomethod actor, nomethod id -- dead fallback (ADR 0226)
         existing = @allies.find { |c| c.actor && c.actor.id == a.id }
         if existing
+          # bc2cpp-reviewed: nomethod member= -- dead fallback (ADR 0226)
           existing.member = true
           # A mid-battle Change Equipment event command (#equip_item_from_bag)
           # writes straight to the persistent Actor, but this Combatant's own
@@ -2098,9 +2204,13 @@ module Game
           # alone: they are this Combatant's own live battle state (current
           # HP, current MP), not a re-derivable stat, and overwriting them
           # here would erase mid-fight damage the moment this resync next runs.
+          # bc2cpp-reviewed: nomethod atk, nomethod atk= -- dead fallback (ADR 0226)
           existing.atk = a.atk
+          # bc2cpp-reviewed: nomethod def, nomethod def= -- dead fallback (ADR 0226)
           existing.def = a.def
+          # bc2cpp-reviewed: nomethod int, nomethod spi= -- dead fallback (ADR 0226)
           existing.spi = a.int
+          # bc2cpp-reviewed: nomethod agi, nomethod agi= -- dead fallback (ADR 0226)
           existing.agi = a.agi
         else
           @allies.push(self.class.from_actor(a))
@@ -2146,6 +2256,7 @@ module Game
       # identity, but the pairs keep the order explicit.
       rolled = (@allies + @enemies).reject(&:out_of_play?).map do |b|
         agi = effective_agi(b)
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         roll = agi + @rng.random(agi / 4 + 4)
         roll += 9999 if preemptive_boost?(b)
         [b, roll]
@@ -2156,6 +2267,7 @@ module Game
       # plainly a fresh Array, which keeps @queue's class provable.
       keyed = []
       rolled.each_with_index do |(b, roll), i|
+        # bc2cpp-reviewed: nomethod actor, nomethod id -- dead fallback (ADR 0226)
         keyed << [[-roll, b.actor ? 0 : 1, b.actor ? b.actor.id : i], b]
       end
       keyed.sort_by { |key, _b| key }.map { |_key, b| b }
@@ -2192,10 +2304,12 @@ module Game
     # leader in the attack-*enemy* restriction. `preemptive` is actor-only
     # (see Combatant), so an enemy never qualifies either way.
     def preemptive_boost?(b)
+      # bc2cpp-reviewed: nomethod preemptive -- dead fallback (ADR 0226)
       return false unless b.preemptive
       r = battler_restriction(b)
       return false if r == RESTRICTION_ATTACK_ENEMY
       return true if r == RESTRICTION_ATTACK_ALLY
+      # bc2cpp-reviewed: nomethod command, nomethod defending, nomethod skip -- dead fallback (ADR 0226)
       b.command.nil? && !b.defending && !b.skip
     end
 
@@ -2204,6 +2318,7 @@ module Game
     # ally with a queued Skill / Item command resolves that instead.
     def strike(b)
       # A battler that forfeited its turn (a failed escape) does nothing.
+      # bc2cpp-reviewed: nomethod skip -- dead fallback (ADR 0226)
       return nil if b.skip
       # A "forced action" restriction (berserk / confused) overrides the chosen
       # command / defend with a basic attack on a forced target -- still an
@@ -2243,7 +2358,9 @@ module Game
       # A combo multiplies a skill's hits (SP paid once), never an item's --
       # #combo_hits resolves the chosen command's type, and an Item command
       # reads 1.
+      # bc2cpp-reviewed: nomethod command -- dead fallback (ADR 0226)
       return apply_command(b, combo_hits(b, :skill)) if b.command
+      # bc2cpp-reviewed: nomethod defending -- dead fallback (ADR 0226)
       return nil if side_of(b) == :ally && b.defending # defending = no attack
       # An enemy with a 行動パターン chooses from it rather than always swinging,
       # even while charged -- charge only forces the *swing count* of an
@@ -2280,11 +2397,14 @@ module Game
       if side_of(b) == :enemy
         # A guard raised last turn expires as this one begins (the allies' is
         # cleared by #end_round; an enemy acts on its own schedule).
+        # bc2cpp-reviewed: nomethod defending= -- dead fallback (ADR 0226)
         b.defending = false
         act = choose_enemy_action(b)
         attack_type_pick = act && act.basic? &&
                            [EnemyAction::BASIC_ATTACK, EnemyAction::BASIC_DUAL_ATTACK]
+                             # bc2cpp-reviewed: nomethod basic -- dead fallback (ADR 0226)
                              .include?(act.basic)
+        # bc2cpp-reviewed: nomethod charged -- dead fallback (ADR 0226)
         act = nil if b.charged && attack_type_pick
         return perform_enemy_action(b, act) if act
       end
@@ -2315,7 +2435,9 @@ module Game
     # `#actor` link
     # at all.
     def pay_weapon_sp_cost(b)
+      # bc2cpp-reviewed: nomethod actor -- dead fallback (ADR 0226)
       actor = b.respond_to?(:actor) ? b.actor : nil
+      # bc2cpp-reviewed: nomethod change_mp, nomethod weapon_sp_cost -- dead fallback (ADR 0226)
       actor.change_mp(-actor.weapon_sp_cost) if actor && actor.respond_to?(:weapon_sp_cost)
     end
 
@@ -2354,7 +2476,9 @@ module Game
     # own customized list's row when it has one, else the fixed-four default
     # table (a 2000 actor, or one whose list does not reach this id).
     def battle_command_type(b, cmd_id)
+      # bc2cpp-reviewed: nomethod actor -- dead fallback (ADR 0226)
       actor = b.respond_to?(:actor) ? b.actor : nil
+      # bc2cpp-reviewed: nomethod battle_command_row -- dead fallback (ADR 0226)
       row = actor && actor.respond_to?(:battle_command_row) ? actor.battle_command_row(cmd_id) : nil
       return row[:type] if row && LCF.field?(row, :type)
       DEFAULT_BATTLE_COMMAND_TYPES[cmd_id]
@@ -2365,11 +2489,14 @@ module Game
     # comment above for the exact matching rules. Enemies and auto-battling
     # allies never record a `last_battle_action`, so they never combo.
     def combo_hits(b, kind)
+      # bc2cpp-reviewed: nomethod actor -- dead fallback (ADR 0226)
       actor = b.respond_to?(:actor) ? b.actor : nil
       return 1 unless actor && actor.respond_to?(:battle_combo)
+      # bc2cpp-reviewed: nomethod battle_combo -- dead fallback (ADR 0226)
       combo = actor.battle_combo
       multiple = combo && combo[:multiple]
       return 1 unless multiple && multiple > 1
+      # bc2cpp-reviewed: nomethod last_battle_action -- dead fallback (ADR 0226)
       return 1 unless combo[:command_id] && combo[:command_id] == b.last_battle_action
       case kind
       when :attack
@@ -2396,11 +2523,13 @@ module Game
     # rating-40 desperation move is excluded until the moves above it stop being
     # valid — which is how an RPG2000 enemy's behaviour shifts as a fight goes on.
     def choose_enemy_action(b)
+      # bc2cpp-reviewed: nomethod actions -- dead fallback (ADR 0226)
       list = b.actions
       return nil if list.nil? || list.empty?
       prios = []
       max_prio = 0
       list.each do |a|
+        # bc2cpp-reviewed: nomethod rating -- dead fallback (ADR 0226)
         r = enemy_action_valid?(b, a) ? a.rating : 0
         r = 0 if r < 0
         prios << r
@@ -2424,11 +2553,14 @@ module Game
       # draw is zeroed out, in this separate pass, once weights are settled.
       list.each_with_index do |a, i|
         next unless prios[i] > 0 && a.skill?
+        # bc2cpp-reviewed: nomethod skill, nomethod skill_id -- dead fallback (ADR 0226)
         sk = @ai && @ai.skill(a.skill_id)
+        # bc2cpp-reviewed: nomethod skill_helps_troop? -- dead fallback (ADR 0226)
         prios[i] = 0 if sk && !@ai.skill_helps_troop?(sk, b, @enemies)
       end
       total = prios.reduce(0) { |sum, v| sum + v }
       return nil if total <= 0
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       which = @rng.random(total)
       chosen = nil
       list.each_with_index do |a, i|
@@ -2445,15 +2577,18 @@ module Game
     # are inclusive on both ends.
     def enemy_action_valid?(b, a)
       return false if a.skill? && !enemy_skill_ready?(b, a)
+      # bc2cpp-reviewed: nomethod condition_type -- dead fallback (ADR 0226)
       case a.condition_type
       when EnemyAction::COND_ALWAYS
         true
       when EnemyAction::COND_SWITCH
+        # bc2cpp-reviewed: nomethod switch?, nomethod switch_id -- dead fallback (ADR 0226)
         @ai ? @ai.switch?(a.switch_id) : false
       when EnemyAction::COND_TURN
         # Same argument order as the battle pages' turn condition: the base is
         # condition_param2 and the multiple condition_param1 (see
         # BattlePage.check_turns, which documents why it reads backwards).
+        # bc2cpp-reviewed: nomethod condition_param1, nomethod condition_param2 -- dead fallback (ADR 0226)
         BattlePage.check_turns(turn, a.condition_param2, a.condition_param1)
       when EnemyAction::COND_ACTORS
         # "Enemies" in the editor's own condition list -- how many of this
@@ -2464,17 +2599,23 @@ module Game
         # the enemy troop's own active-battler count here,
         # never the player party.
         n = @enemies.reject(&:out_of_play?).size
+        # bc2cpp-reviewed: nomethod condition_param1, nomethod condition_param2 -- dead fallback (ADR 0226)
         n >= a.condition_param1 && n <= a.condition_param2
       when EnemyAction::COND_HP
+        # bc2cpp-reviewed: nomethod hp, nomethod max_hp -- dead fallback (ADR 0226)
         within_percent?(b.hp, b.max_hp, a)
       when EnemyAction::COND_SP
+        # bc2cpp-reviewed: nomethod max_mp, nomethod mp -- dead fallback (ADR 0226)
         within_percent?(b.mp, b.max_mp, a)
       when EnemyAction::COND_PARTY_LVL
         return false unless @ai
+        # bc2cpp-reviewed: nomethod party_level -- dead fallback (ADR 0226)
         lvl = @ai.party_level
+        # bc2cpp-reviewed: nomethod condition_param1, nomethod condition_param2 -- dead fallback (ADR 0226)
         lvl >= a.condition_param1 && lvl <= a.condition_param2
       when EnemyAction::COND_FATIGUE
         f = fatigue
+        # bc2cpp-reviewed: nomethod condition_param1, nomethod condition_param2 -- dead fallback (ADR 0226)
         f >= a.condition_param1 && f <= a.condition_param2
       else
         # An out-of-range condition_type (past COND_FATIGUE, the highest of
@@ -2497,6 +2638,7 @@ module Game
     def within_percent?(cur, max, a)
       return false if max.nil? || max <= 0
       pct = (cur || 0) * 100 / max
+      # bc2cpp-reviewed: nomethod condition_param1, nomethod condition_param2 -- dead fallback (ADR 0226)
       pct >= a.condition_param1 && pct <= a.condition_param2
     end
 
@@ -2508,13 +2650,17 @@ module Game
     # actions, the way RPG_RT never lets either kind enter the weighted draw.
     def enemy_skill_ready?(b, a)
       return false unless @ai
+      # bc2cpp-reviewed: nomethod skill, nomethod skill_id -- dead fallback (ADR 0226)
       sk = @ai.skill(a.skill_id)
       return false unless sk
+      # bc2cpp-reviewed: nomethod skill_battle_usable? -- dead fallback (ADR 0226)
       return false unless @ai.skill_battle_usable?(sk)
       return false if skill_sealed?(b, sk) # silenced: this entry cannot fire
+      # bc2cpp-reviewed: nomethod skill_command -- dead fallback (ADR 0226)
       cmd = @ai.skill_command(sk, b, nil)
       return false unless cmd
       cost = cmd[:cost] || 0
+      # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
       cost <= 0 || (b.mp || 0) >= cost
     end
 
@@ -2534,7 +2680,9 @@ module Game
     # branch below hands to #deal_attack explicitly, since by the time any of
     # them would run, `b.charged` here has already been cleared.
     def perform_enemy_action(b, act)
+      # bc2cpp-reviewed: nomethod charged -- dead fallback (ADR 0226)
       charged = b.charged ? true : false
+      # bc2cpp-reviewed: nomethod charged= -- dead fallback (ADR 0226)
       b.charged = false
       entry = if act.skill?
                 enemy_skill_action(b, act, charged)
@@ -2551,7 +2699,9 @@ module Game
     # enemy's move signals a troop's battle-event pages.
     def apply_action_switches(act)
       return unless @ai
+      # bc2cpp-reviewed: nomethod set_switch, nomethod switch_on, nomethod switch_on_id -- dead fallback (ADR 0226)
       @ai.set_switch(act.switch_on_id, true) if act.switch_on
+      # bc2cpp-reviewed: nomethod set_switch, nomethod switch_off, nomethod switch_off_id -- dead fallback (ADR 0226)
       @ai.set_switch(act.switch_off_id, false) if act.switch_off
     end
 
@@ -2562,6 +2712,7 @@ module Game
     # `b.charged` -- handed to #deal_attack explicitly rather than read off
     # `b` again here, since it is already gone by this point either way.
     def enemy_basic_action(b, act, charged)
+      # bc2cpp-reviewed: nomethod basic -- dead fallback (ADR 0226)
       case act.basic
       when EnemyAction::BASIC_DUAL_ATTACK
         target = attack_target(b)
@@ -2583,6 +2734,7 @@ module Game
         # charged at all.
         first = deal_attack(b, target, 0, charged: charged)
         # The second swing only lands if the first did not fell the target.
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         return [first] if target.dead?
         second = deal_attack(b, target, 1, charged: charged)
         # The enemy-attack SE plays once per action (at its very start), not
@@ -2596,7 +2748,9 @@ module Game
         second[:attacker_ally] = nil
         [first, second]
       when EnemyAction::BASIC_DEFEND
+        # bc2cpp-reviewed: nomethod defending= -- dead fallback (ADR 0226)
         b.defending = true
+        # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
         { attacker: b.name, defend: true }
       when EnemyAction::BASIC_OBSERVE
         { attacker: b.name, observe: true }
@@ -2610,14 +2764,18 @@ module Game
         # any stale charge
         # already spent by #perform_enemy_action above starts fresh here
         # regardless.
+        # bc2cpp-reviewed: nomethod charged= -- dead fallback (ADR 0226)
         b.charged = true
+        # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
         { attacker: b.name, charge: true }
       when EnemyAction::BASIC_AUTODESTRUCT
         enemy_autodestruct(b)
       when EnemyAction::BASIC_ESCAPE
         # The enemy runs: out of play without counting as a kill, exactly as a
         # battle page's Force Flee removes one.
+        # bc2cpp-reviewed: nomethod hidden= -- dead fallback (ADR 0226)
         b.hidden = true
+        # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
         { attacker: b.name, fled: true }
       when EnemyAction::BASIC_NOTHING
         { attacker: b.name, nothing: true }
@@ -2685,9 +2843,11 @@ module Game
         # specifically -- see this method's own citation above). No second
         # halving for Strong Defence here: reverted after a genuine wine
         # capture falsified it (this method's own citation above).
+        # bc2cpp-reviewed: nomethod defending -- dead fallback (ADR 0226)
         dmg /= 2 if t.defending && dmg > 0
         cap = damage_cap
         dmg = cap if dmg > cap
+        # bc2cpp-reviewed: nomethod hp, nomethod hp= -- dead fallback (ADR 0226)
         t.hp -= dmg
         apply_knockout_reset(t)
         # A survivor's physical-release states shake off here too -- ported
@@ -2696,8 +2856,11 @@ module Game
         # `BattlePhysicalStateHeal(100, ...)` a basic attack does
         # (#deal_attack's own #shake_off_states call), not a
         # self-destruct-specific omission.
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         woke = t.dead? ? [] : shake_off_states(t, 100)
+        # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
         entry = { attacker: b.name, target: t.name, damage: dmg, critical: false,
+                  # bc2cpp-reviewed: nomethod dead?, nomethod hp -- dead fallback (ADR 0226)
                   autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead?,
                   target_ally: ally?(t) }
         # Ported from a reference implementation's own self-destruct start-SE
@@ -2721,7 +2884,9 @@ module Game
         entry
       end
       # Hidden, not killed -- see the method comment above.
+      # bc2cpp-reviewed: nomethod hidden= -- dead fallback (ADR 0226)
       b.hidden = true
+      # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
       entries.empty? ? { attacker: b.name, autodestruct: true, autodestruct_se: true } : entries
     end
 
@@ -2731,27 +2896,36 @@ module Game
     # sleep the party. A skill whose scope names the caster's own side heals /
     # buffs a fellow monster instead.
     def enemy_skill_action(b, act, charged)
+      # bc2cpp-reviewed: nomethod skill, nomethod skill_id -- dead fallback (ADR 0226)
       sk = @ai && @ai.skill(act.skill_id)
       return enemy_fallback_attack(b, charged) unless sk
       targets = enemy_skill_targets(b, sk)
       return enemy_fallback_attack(b, charged) if targets.empty?
+      # bc2cpp-reviewed: nomethod skill_command -- dead fallback (ADR 0226)
       cmd = @ai.skill_command(sk, b, targets.first)
       return enemy_fallback_attack(b, charged) unless cmd
+      # bc2cpp-reviewed: nomethod command= -- dead fallback (ADR 0226)
       b.command = skill_command_hash(sk, cmd, targets.first)
+      # bc2cpp-reviewed: nomethod command, nomethod skill_id -- dead fallback (ADR 0226)
       b.command[:skill_id] = act.skill_id
       if targets.size > 1
         # An all-target skill carries one effect per target, since attack damage
         # is computed against each target's own defence.
         per = targets.map do |t|
+          # bc2cpp-reviewed: nomethod skill_command -- dead fallback (ADR 0226)
           c = @ai.skill_command(sk, b, t)
           c ? { target: t, hp: c[:hp] || 0, mp: c[:mp] || 0 } : nil
         end.compact
         return enemy_fallback_attack(b, charged) if per.empty?
+        # bc2cpp-reviewed: nomethod command -- dead fallback (ADR 0226)
         b.command[:all] = true
+        # bc2cpp-reviewed: nomethod command -- dead fallback (ADR 0226)
         b.command[:targets] = per
+        # bc2cpp-reviewed: nomethod command -- dead fallback (ADR 0226)
         b.command[:target] = nil
       end
       entry = apply_command(b)
+      # bc2cpp-reviewed: nomethod command= -- dead fallback (ADR 0226)
       b.command = nil
       entry
     end
@@ -2794,10 +2968,12 @@ module Game
       when 2 then [b]
       when 3
         own = @enemies.reject(&:out_of_play?)
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         own.empty? ? [] : [own[@rng.random(own.size)]]
       when 4 then @enemies.reject(&:out_of_play?)
       else
         foes = @allies.reject(&:out_of_play?)
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         foes.empty? ? [] : [foes[@rng.random(foes.size)]]
       end
     end
@@ -2821,12 +2997,17 @@ module Game
     # clamp made impossible by silently full-healing every downward
     # transform.
     def enemy_transform_action(b, act, charged)
+      # bc2cpp-reviewed: nomethod enemy, nomethod enemy_id -- dead fallback (ADR 0226)
       into = @ai && @ai.enemy(act.enemy_id)
       return enemy_fallback_attack(b, charged) unless into
       b.name = into.name
+      # bc2cpp-reviewed: nomethod agi, nomethod agi=, nomethod atk, nomethod atk=, nomethod def, nomethod def=, nomethod spi, nomethod spi= -- dead fallback (ADR 0226)
       b.atk = into.atk; b.def = into.def; b.agi = into.agi; b.spi = into.spi
+      # bc2cpp-reviewed: nomethod max_hp, nomethod max_hp=, nomethod max_mp=, nomethod max_sp -- dead fallback (ADR 0226)
       b.max_hp = into.max_hp; b.max_mp = into.max_sp
+      # bc2cpp-reviewed: nomethod crit_chance= -- dead fallback (ADR 0226)
       b.crit_chance = Battle.crit_chance_of(into)
+      # bc2cpp-reviewed: nomethod attr_ranks= -- dead fallback (ADR 0226)
       b.attr_ranks = Battle.attr_ranks_of(into)
       # #apply_attr_shift caps a later attribute-defence shift to +-1 of
       # `attr_base_ranks`, snapshotted once at spawn (Combatant.from_actor/
@@ -2838,13 +3019,21 @@ module Game
       # transform changes what "the base" is, exactly the event a snapshot
       # needs to be told about; left stale, a later shift is capped against
       # the pre-transform monster's own resistance instead of this one's.
+      # bc2cpp-reviewed: nomethod attr_base_ranks=, nomethod attr_ranks -- dead fallback (ADR 0226)
       b.attr_base_ranks = b.attr_ranks.dup
+      # bc2cpp-reviewed: nomethod state_ranks= -- dead fallback (ADR 0226)
       b.state_ranks = Battle.state_ranks_of(into)
+      # bc2cpp-reviewed: nomethod hit_rate= -- dead fallback (ADR 0226)
       b.hit_rate = Battle.hit_rate_of(into)
+      # bc2cpp-reviewed: nomethod actions, nomethod actions= -- dead fallback (ADR 0226)
       b.actions = into.actions
+      # bc2cpp-reviewed: nomethod enemy_id, nomethod enemy_id= -- dead fallback (ADR 0226)
       b.enemy_id = act.enemy_id
+      # bc2cpp-reviewed: nomethod battler_name, nomethod battler_name= -- dead fallback (ADR 0226)
       b.battler_name = into.battler_name
+      # bc2cpp-reviewed: nomethod battler_hue, nomethod battler_hue= -- dead fallback (ADR 0226)
       b.battler_hue = into.battler_hue
+      # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
       { attacker: b.name, transform: true, target: into.name }
     end
 
@@ -2889,8 +3078,10 @@ module Game
       best_skill = nil
       best_sid = nil
       best_skill_rank = 0.0
+      # bc2cpp-reviewed: nomethod actor, nomethod skills -- dead fallback (ADR 0226)
       skills = b.actor && b.actor.respond_to?(:skills) ? b.actor.skills : []
       skills.each do |sid|
+        # bc2cpp-reviewed: nomethod skill -- dead fallback (ADR 0226)
         sk = @ai && @ai.skill(sid)
         next unless sk
         r = auto_battle_skill_rank(b, sk, sid)
@@ -2927,6 +3118,7 @@ module Game
     # that would otherwise tie do not always resolve the same way twice.
     def auto_battle_skill_rank(b, sk, sid)
       return 0.0 unless Game::Party.normal_skill?(sk)
+      # bc2cpp-reviewed: nomethod actor, nomethod skill_ready? -- dead fallback (ADR 0226)
       return 0.0 unless @ai && b.actor && @ai.skill_ready?(b.actor, sid)
       rank =
         case sk[:scope]
@@ -2937,6 +3129,7 @@ module Game
         when 2 then auto_battle_heal_rank(b, sk, b)
         else 0.0
         end
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       rank += @rng.random(100) / 100.0 if rank > 0.0
       rank
     end
@@ -2963,15 +3156,18 @@ module Game
     # the front-most target rather than spreading damage around).
     def auto_battle_damage_rank(b, sk, target)
       return 0.0 unless target && !target.out_of_play?
+      # bc2cpp-reviewed: nomethod skill_command -- dead fallback (ADR 0226)
       cmd = @ai && @ai.skill_command(sk, b, target)
       return 0.0 unless cmd
       dmg = -(cmd[:hp] || 0)
       dmg = apply_attr_multiplier(dmg, cmd[:attributes], target)
       dmg = varied(dmg, LCF.field?(sk, :variance) ? (sk[:variance] || 0) : 0)
+      # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
       tgt_hp = target.hp
       return 0.0 if tgt_hp <= 0
       rank = [dmg, tgt_hp].min.to_f / tgt_hp
       rank = 1.5 if rank == 1.0
+      # bc2cpp-reviewed: nomethod max_mp -- dead fallback (ADR 0226)
       src_max_sp = b.max_mp || 0
       if src_max_sp > 0
         rank -= auto_battle_raw_cost(sk, b).to_f / src_max_sp / 4.0
@@ -3003,18 +3199,23 @@ module Game
     # *inflict* Knockout via the reverse flag still reads as a viable revive
     # here, exactly like real RPG_RT).
     def auto_battle_heal_rank(b, sk, target)
+      # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
       if target.hp > 0
         return 0.0 unless LCF.field?(sk, :affect_hp) && sk[:affect_hp]
+        # bc2cpp-reviewed: nomethod skill_command -- dead fallback (ADR 0226)
         cmd = @ai && @ai.skill_command(sk, b, target)
         return 0.0 unless cmd
         base = cmd[:hp] || 0
         return 0.0 if base <= 0
         base = apply_attr_multiplier(base, cmd[:attributes], target)
         base = varied(base, LCF.field?(sk, :variance) ? (sk[:variance] || 0) : 0)
+        # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
         tgt_max_hp = target.max_hp || 0
         return 0.0 if tgt_max_hp <= 0
+        # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
         max_effect = [base, tgt_max_hp - target.hp].min
         rank = max_effect.to_f / tgt_max_hp
+        # bc2cpp-reviewed: nomethod max_mp -- dead fallback (ADR 0226)
         src_max_sp = b.max_mp || 0
         if src_max_sp > 0
           rank -= auto_battle_raw_cost(sk, b).to_f / src_max_sp / 8.0
@@ -3048,6 +3249,7 @@ module Game
       # percent formula here even though the actual charge (#skill_cost) never
       # would, inflating the ranking-only cost term this feeds.
       if @rpg2003 && LCF.field?(sk, :sp_type) && sk[:sp_type] == 1
+        # bc2cpp-reviewed: nomethod max_mp -- dead fallback (ADR 0226)
         (caster.max_mp || 0) * (LCF.field?(sk, :sp_percent) ? (sk[:sp_percent] || 0) : 0) / 100
       else
         LCF.field?(sk, :sp_cost) ? (sk[:sp_cost] || 0) : 0
@@ -3097,14 +3299,17 @@ module Game
       return 0.0 unless target && !target.out_of_play?
       dmg = Battle.attack_damage(effective_atk(b), effective_def(target))
       dmg = 125 * dmg / 100 if row_adjusted?(b, true)
+      # bc2cpp-reviewed: nomethod atk_attrs -- dead fallback (ADR 0226)
       dmg = apply_attr_multiplier(dmg, b.atk_attrs, target)
       dmg = 75 * dmg / 100 if row_adjusted?(target, false)
+      # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
       tgt_hp = target.hp
       return 0.0 if tgt_hp <= 0
       rank = [dmg, tgt_hp].min.to_f / tgt_hp
       rank = 1.5 if rank == 1.0
       first = @enemies.find { |e| !e.out_of_play? }
       rank = rank * 1.5 + 0.5 if first && first.equal?(target)
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       rank > 0.0 ? @rng.random(100) / 100.0 + rank * 1.5 : rank
     end
 
@@ -3174,21 +3379,28 @@ module Game
     end
 
     def queue_single_auto_battle_skill(b, sk, sid, target)
+      # bc2cpp-reviewed: nomethod skill_command -- dead fallback (ADR 0226)
       cmd = @ai.skill_command(sk, b, target)
       return command_skip(b) unless cmd
+      # bc2cpp-reviewed: nomethod command= -- dead fallback (ADR 0226)
       b.command = skill_command_hash(sk, cmd, target)
+      # bc2cpp-reviewed: nomethod command -- dead fallback (ADR 0226)
       b.command[:skill_id] = sid
+      # bc2cpp-reviewed: nomethod last_skill_id= -- dead fallback (ADR 0226)
       b.last_skill_id = sid
     end
 
     def queue_auto_battle_group_skill(b, sk, sid, targets)
       return command_skip(b) if targets.empty?
+      # bc2cpp-reviewed: nomethod skill_command -- dead fallback (ADR 0226)
       meta = @ai.skill_command(sk, b, targets.first)
       return command_skip(b) unless meta
       effects = targets.map do |t|
+        # bc2cpp-reviewed: nomethod skill_command -- dead fallback (ADR 0226)
         c = @ai.skill_command(sk, b, t)
         c ? { target: t, hp: c[:hp] || 0, mp: c[:mp] || 0 } : nil
       end.compact
+      # bc2cpp-reviewed: nomethod last_skill_id= -- dead fallback (ADR 0226)
       b.last_skill_id = sid
       command_skill_all(b, effects, name: skill_name_of(sk), skill_id: sid,
                         absorb: meta[:absorb] ? true : false, attack: meta[:attack],
@@ -3236,10 +3448,14 @@ module Game
       # single-round rule below and a reference implementation's repeat loop
       # (not independently confirmed against genuine RPG_RT under wine).
       hits.times do
+        # bc2cpp-reviewed: nomethod strike_count -- dead fallback (ADR 0226)
         b.strike_count.times do |i|
+          # bc2cpp-reviewed: nomethod deal_attack -- dead fallback (ADR 0226)
           entries << deal_attack(b, target, i)
+          # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
           break if target.dead?
         end
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         break if target.dead?
       end
       entries.size == 1 ? entries.first : entries
@@ -3266,16 +3482,23 @@ module Game
     # including an ally's own #swing, which never sets `b.charged` at all --
     # keeps the old self-contained behaviour.
     def deal_attack(b, target, swing_index = 0, charged: nil)
+      # bc2cpp-reviewed: nomethod actor, nomethod swing_weapon_data -- dead fallback (ADR 0226)
       wdata = b.respond_to?(:actor) && b.actor.respond_to?(:swing_weapon_data) ? b.actor.swing_weapon_data(swing_index) : nil
+      # bc2cpp-reviewed: nomethod atk_attrs, nomethod crit_chance, nomethod hit_rate -- dead fallback (ADR 0226)
       saved = wdata ? [b.hit_rate, b.atk_attrs, b.atk_states, b.crit_chance] : nil
       if wdata
+        # bc2cpp-reviewed: nomethod hit_rate= -- dead fallback (ADR 0226)
         b.hit_rate = wdata[:hit_rate]
+        # bc2cpp-reviewed: nomethod atk_attrs= -- dead fallback (ADR 0226)
         b.atk_attrs = wdata[:atk_attrs]
+        # bc2cpp-reviewed: nomethod atk_states= -- dead fallback (ADR 0226)
         b.atk_states = wdata[:atk_states]
+        # bc2cpp-reviewed: nomethod crit_chance= -- dead fallback (ADR 0226)
         b.crit_chance = wdata[:crit_chance]
       end
       deal_attack_with_current_weapon(b, target, charged: charged)
     ensure
+      # bc2cpp-reviewed: nomethod atk_attrs=, nomethod atk_states=, nomethod crit_chance=, nomethod hit_rate= -- dead fallback (ADR 0226)
       b.hit_rate, b.atk_attrs, b.atk_states, b.crit_chance = saved if saved
     end
 
@@ -3291,6 +3514,7 @@ module Game
       # animation plays on a miss too -- the swing itself always happens, only
       # its damage is what a miss zeroes -- so this is computed once and
       # attached to both branches below.
+      # bc2cpp-reviewed: nomethod actor, nomethod attack_animation_id -- dead fallback (ADR 0226)
       anim = b.respond_to?(:actor) && b.actor.respond_to?(:attack_animation_id) ? b.actor.attack_animation_id : nil
       # Where it plays: over the targeted enemy's sprite, the same
       # `@enemies.index(target)` lookup #apply_command already attaches to a
@@ -3302,6 +3526,7 @@ module Game
       # damage and reads as `missed` on the log entry.
       if @accuracy && !hits?(b, target)
         return { attacker: b.name, target: target.name, damage: 0, missed: true,
+                 # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
                  critical: false, target_hp: target.hp < 0 ? 0 : target.hp,
                  defeated: false, target_ally: ally?(target), attacker_ally: ally?(b),
                  attack_animation_id: anim, target_index: target_index }
@@ -3316,6 +3541,7 @@ module Game
       # An elemental weapon scales its damage by the target's resistance before
       # variance / criticals (ported from a reference implementation's
       # attribute multiplier step).
+      # bc2cpp-reviewed: nomethod atk_attrs -- dead fallback (ADR 0226)
       dmg = apply_attr_multiplier(dmg, b.atk_attrs, target)
       # RPG2003 row: a back-row defender takes -25% damage -- the reference's
       # defender adjustment, applied *after* the elemental scaling, again in
@@ -3325,6 +3551,7 @@ module Game
       # against a target whose gear prevents criticals, matching a reference
       # implementation (not independently confirmed against genuine RPG_RT
       # under wine).
+      # bc2cpp-reviewed: nomethod prevents_crit -- dead fallback (ADR 0226)
       crit = critical?(b) && side_of(b) != side_of(target) && !target.prevents_crit
       # A charged-up attack (the enemy's Charge basic action) hits twice as hard,
       # but a critical takes precedence over it — a reference implementation
@@ -3333,7 +3560,9 @@ module Game
       # back to reading (and spending) `b.charged` directly, matching the old
       # self-contained behaviour.
       if charged.nil?
+        # bc2cpp-reviewed: nomethod charged -- dead fallback (ADR 0226)
         charged = b.charged ? true : false
+        # bc2cpp-reviewed: nomethod charged= -- dead fallback (ADR 0226)
         b.charged = false if charged
       end
       if crit
@@ -3372,16 +3601,20 @@ module Game
       # ported as `Battle.attack_damage`'s `d < 0 ? 0 : d`) -- a defending,
       # let alone a strong-defending, target can and does take a genuine 0
       # from a weak hit that would otherwise have landed for 1.
+      # bc2cpp-reviewed: nomethod defending -- dead fallback (ADR 0226)
       if target.defending && dmg > 0
         dmg /= 2
+        # bc2cpp-reviewed: nomethod strong_defence -- dead fallback (ADR 0226)
         dmg /= 2 if target.strong_defence
       end
       # RPG_RT's damage popup tops out at a fixed width -- a crit/charge blow
       # that would compute past it still only ever takes #damage_cap.
       cap = damage_cap
       dmg = cap if dmg > cap
+      # bc2cpp-reviewed: nomethod hp, nomethod hp= -- dead fallback (ADR 0226)
       target.hp -= dmg
       apply_knockout_reset(target)
+      # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
       if target.dead?
         woke = []
         inflicted = []
@@ -3394,8 +3627,11 @@ module Game
         # like the rest of this section once the blow already felled the target.
         inflicted, cured = roll_weapon_states(b, target)
       end
+      # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
       entry = { attacker: b.name, target: target.name, damage: dmg, critical: crit,
+                # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
                 charged: charged, target_hp: target.hp < 0 ? 0 : target.hp,
+                # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
                 defeated: target.dead?, target_ally: ally?(target),
                 attacker_ally: ally?(b), attack_animation_id: anim,
                 target_index: target_index }
@@ -3458,13 +3694,17 @@ module Game
     def shake_off_states(target, rate)
       woke = []
       return woke if rate <= 0
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (target.states || []).dup.each do |sid|
         d = state_def(sid)
         base = d ? state_field(d, :release_by_attack) : 0
         next unless base > 0
         chance = base * rate / 100
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         next unless @rng.random(100) < chance
+        # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
         target.states.delete(sid)
+        # bc2cpp-reviewed: nomethod state_turns -- dead fallback (ADR 0226)
         (target.state_turns || {}).delete(sid) if target.state_turns
         woke.push(sid)
       end
@@ -3498,12 +3738,14 @@ module Game
     # caller in this file.
     def critical?(b)
       return false unless @criticals
+      # bc2cpp-reviewed: nomethod crit_chance, nomethod random -- dead fallback (ADR 0226)
       @rng.random(100) < (b.crit_chance || 0)
     end
 
     # Whether `attacker`'s basic attack lands on `target`: a 0..99 roll under the
     # #to_hit chance.
     def hits?(attacker, target)
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       @rng.random(100) < to_hit(attacker, target)
     end
 
@@ -3529,6 +3771,7 @@ module Game
     # this on (Scene::Map's own `Game::Battle.new(..., true, true, true, ...)`).
     def skill_effect_hits?(cmd)
       return true unless @accuracy
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       @rng.random(100) < (cmd[:chance] || 100)
     end
 
@@ -3540,6 +3783,7 @@ module Game
       return base unless var > 0 && base > 0
       adj = var * base / 10
       adj = 1 if adj < 1
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       d = base + @rng.random(adj + 1) - adj / 2
       d < 1 ? 1 : d
     end
@@ -3607,6 +3851,7 @@ module Game
     # than multiplying) once either side is negative and both are present.
     def apply_attr_multiplier(dmg, attr_ids, target)
       return dmg if attr_ids.nil? || attr_ids.empty?
+      # bc2cpp-reviewed: nomethod attr_ranks -- dead fallback (ADR 0226)
       ranks = target.attr_ranks || {}
       physical = nil
       magical = nil
@@ -3661,6 +3906,7 @@ module Game
     # numerically the larger constant.
     def battler_restriction(b)
       r = 0
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (b.states || []).each do |id|
         v = state_field(state_def(id), :restriction)
         case v
@@ -3700,10 +3946,13 @@ module Game
     # citation and the "never went through #refill_queue" fallback.
     def attack_target(b)
       if side_of(b) == :ally
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         return b.action if b.action && !b.action.dead?
         return random_living(@enemies)
       end
+      # bc2cpp-reviewed: nomethod queued_target -- dead fallback (ADR 0226)
       return random_living(@allies) if b.queued_target.nil?
+      # bc2cpp-reviewed: nomethod queued_target -- dead fallback (ADR 0226)
       b.queued_target.out_of_play? ? nil : b.queued_target
     end
 
@@ -3713,6 +3962,7 @@ module Game
     # existed.
     def random_living(pool)
       living = pool.reject(&:out_of_play?)
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       living.empty? ? nil : living[@rng.random(living.size)]
     end
 
@@ -3766,11 +4016,14 @@ module Game
     # with, matching this session's earlier `evades_all_physical?`/
     # `avoid_attacks` reversal.
     def apply_command(b, combo = 1)
+      # bc2cpp-reviewed: nomethod command -- dead fallback (ADR 0226)
       cmd = b.command
       return apply_command_all(b, cmd, combo) if cmd[:all]
       target = cmd[:target]
       return nil if target.nil?
+      # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
       return nil if target.dead? && !command_targets_dead_ok?(cmd)
+      # bc2cpp-reviewed: nomethod mp, nomethod mp= -- dead fallback (ADR 0226)
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
       # A combo'd skill repeats its effect `combo` times against the same
       # target, the SP spent once -- a reference implementation's repeat loop
@@ -3782,6 +4035,7 @@ module Game
       combo.times do
         entry = apply_skill_hit(b, target, cmd[:hp] || 0, cmd[:mp] || 0, cmd)
         entries << entry if entry
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         break if target.dead?
       end
       entries.size == 1 ? entries.first : (entries.empty? ? nil : entries)
@@ -3803,9 +4057,11 @@ module Game
     # falsified the mechanic outright, in both shapes alike.
     def apply_command_all(b, cmd, combo = 1)
       live = (cmd[:targets] || []).select do |t|
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         t[:target] && (!t[:target].dead? || command_targets_dead_ok?(cmd))
       end
       return nil if live.empty?
+      # bc2cpp-reviewed: nomethod mp, nomethod mp= -- dead fallback (ADR 0226)
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
       # A combo'd all-target skill repeats the whole volley `combo` times (one
       # entry per hit, buffered by #record_action), the SP spent once -- the
@@ -3868,6 +4124,7 @@ module Game
         # skill/spell critical at all -- every offensive skill's damage was
         # capped at its non-critical value on every single cast. Same
         # same-side / gear exclusions as a basic attack.
+        # bc2cpp-reviewed: nomethod prevents_crit -- dead fallback (ADR 0226)
         crit = critical?(b) && side_of(b) != side_of(target) && !target.prevents_crit
         dmg *= 3 if crit
         # Spread the skill's damage by its own variance when the fight rolls it.
@@ -3903,6 +4160,7 @@ module Game
         # merely capped in what it gives.
         absorbed = 0
         hp_dmg = 0
+        # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
         hp_before = target.hp
         if hits && hp != 0
           hp_dmg = dmg
@@ -3923,17 +4181,22 @@ module Game
           # stat-mod branches read the same raw `effect` with no such
           # adjustment, so only `hp_dmg` gets this treatment here -- that half
           # of the claim remains unconfirmed.
+          # bc2cpp-reviewed: nomethod defending -- dead fallback (ADR 0226)
           if target.defending && hp_dmg > 0
             hp_dmg /= 2
+            # bc2cpp-reviewed: nomethod strong_defence -- dead fallback (ADR 0226)
             hp_dmg /= 2 if target.strong_defence
           end
           if cmd[:absorb] && hp_dmg > 0
+            # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
             hp_dmg = target.hp if hp_dmg > target.hp
             absorbed = hp_dmg
           end
+          # bc2cpp-reviewed: nomethod hp, nomethod hp= -- dead fallback (ADR 0226)
           target.hp -= hp_dmg
           apply_knockout_reset(target)
         end
+        # bc2cpp-reviewed: nomethod hp, nomethod hp=, nomethod max_hp -- dead fallback (ADR 0226)
         b.hp = [b.hp + absorbed, b.max_hp].min if absorbed > 0
         # The same shared, un-gated `dmg` the HP branch above just used, applied
         # to the target's SP instead -- ported from a reference
@@ -3951,9 +4214,12 @@ module Game
         # independently confirmed against @2000_battle_bot/デフォ戦bot's own
         # trivia: "HPがゼロになった場合、MPは減らない".
         sp_dmg = 0
+        # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
         mp_before = target.mp
+        # bc2cpp-reviewed: nomethod dead?, nomethod max_mp, nomethod mp -- dead fallback (ADR 0226)
         if mp != 0 && !target.dead? && target.mp && target.max_mp && skill_effect_hits?(cmd)
           sp_dmg = dmg
+          # bc2cpp-reviewed: nomethod mp, nomethod mp= -- dead fallback (ADR 0226)
           target.mp = [target.mp - sp_dmg, 0].max
         end
         # A hit that landed (accuracy roll succeeded) but changed neither pool
@@ -3969,7 +4235,9 @@ module Game
         # skill with neither flag set (a pure stat-mod/state skill) is
         # unaffected by this and keeps landing its effects normally.
         no_effect = hits && (hp != 0 || mp != 0) &&
+                    # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
                     (hp == 0 || target.hp == hp_before) &&
+                    # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
                     (mp == 0 || target.mp == mp_before)
         # An attack skill may inflict its states -- or, under the RPG2003
         # reverse_state_effect flip #battle_skill_command's own `heals_states`
@@ -3982,6 +4250,7 @@ module Game
         # a skill's buff/state can still land on a swing whose damage missed,
         # or vice versa -- but not on a swing that landed and changed
         # nothing at all (wine-confirmed above).
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         if target.dead? || no_effect
           inflicted = already = cured = shifted = woke = []
           stat_changed = {}
@@ -3991,6 +4260,7 @@ module Game
           # accuracy check, exactly like a stat mod/attribute shift's own
           # `skill_effect_hits?` gate just below -- see the comment on the
           # recovery branch's own `cured` line for the full citation.
+          # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
           cured = (cmd[:cured] || []).select { |s| target.state?(s) && skill_effect_hits?(cmd) }
           cured.each { |s| cure_state(target, s) }
           shifted = apply_attr_shift(target, cmd)
@@ -4008,9 +4278,11 @@ module Game
           # is in, not a separate roll.
           woke = hits ? shake_off_states(target, cmd[:physical_rate] || 0) : []
         end
+        # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
         { attacker: b.name, target: target.name, damage: hp_dmg, missed: !hits,
           no_effect: no_effect,
           critical: crit,
+          # bc2cpp-reviewed: nomethod dead?, nomethod hp -- dead fallback (ADR 0226)
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
           inflicted: inflicted, already: already, cured: cured, woke: woke,
           attr_shifted: shifted, attr_shift_dir: cmd[:attr_shift],
@@ -4023,6 +4295,7 @@ module Game
           # bag-consumption.
           item_id: cmd[:item_id], skill_id: cmd[:skill_id], target_index: @enemies.index(target),
           absorbed_hp: absorbed, sp_damage: sp_dmg,
+          # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
           target_mp: target.mp }
       else
         # The skill's one shared, un-gated effect magnitude -- the exact same
@@ -4060,7 +4333,9 @@ module Game
         hp = effect if hp != 0
         mp = effect if mp != 0
         stat_amount = effect
+        # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
         before_hp = target.hp
+        # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
         before_mp = target.mp || 0
         # Each affected field rolls its own, independent accuracy check --
         # ported from a reference implementation's own fresh accuracy roll
@@ -4075,6 +4350,7 @@ module Game
         # accuracy roll, never adding the skill's heal onto a corpse's raw
         # (possibly deeply negative, nothing floors HP at 0 mid-fight)
         # HP total -- reviving is handled entirely by the cure step below.
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         was_dead = target.dead?
         # Whether this same hit's own cure list includes Death -- the one
         # thing that may still affect an already-dead target at all. Ported
@@ -4095,7 +4371,9 @@ module Game
         # in depth in this shared method itself, not only at the outer
         # target-selection layer.
         cures_death = (cmd[:cured] || []).include?(Game::States::DEATH_ID)
+        # bc2cpp-reviewed: nomethod hp, nomethod hp=, nomethod max_hp -- dead fallback (ADR 0226)
         target.hp = [target.hp + hp, target.max_hp].min if hp > 0 && !was_dead && skill_effect_hits?(cmd)
+        # bc2cpp-reviewed: nomethod max_mp, nomethod mp= -- dead fallback (ADR 0226)
         target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp && skill_effect_hits?(cmd) && (!was_dead || cures_death)
         # Cure the target's status conditions, routed through #cure_state
         # (like the attack branch's own `cured.each` above) so curing Death
@@ -4118,6 +4396,7 @@ module Game
         # `#battle_skill_command` does), and the helper's own `cmd[:chance]
         # || 100` fallback makes an absent chance an unconditional hit,
         # exactly matching Item's own roll-free cure.
+        # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
         cured = (was_dead && !cures_death) ? [] : (cmd[:cured] || []).select { |s| target.state?(s) && skill_effect_hits?(cmd) }
         cured.each { |s| cure_state(target, s) }
         # A revival (this skill's own cure just took Death off the target)
@@ -4159,13 +4438,18 @@ module Game
         # treating this as a general mechanic rather than a battle-only
         # quirk -- though only the battle path is fixed here, and none of
         # this is independently confirmed against genuine RPG_RT under wine.
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         if was_dead && !target.dead?
           affected_hp = hp
+          # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
           if affected_hp.zero? && (cmd[:stat_effect] || 0) > 0 && target.max_hp
+            # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
             affected_hp = target.max_hp * cmd[:stat_effect] / 100
           end
+          # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
           revived = target.hp + (affected_hp - 1)
           revived = 1 if revived < 1
+          # bc2cpp-reviewed: nomethod hp=, nomethod max_hp -- dead fallback (ADR 0226)
           target.hp = target.max_hp ? [revived, target.max_hp].min : revived
         end
         # An RPG2003 reverse_state_effect ally/self-scoped skill flips
@@ -4173,18 +4457,25 @@ module Game
         # (see its comment) -- roll it here the same way an attack skill does,
         # so e.g. a self-scoped Berserk can confuse its own caster rather than
         # only ever curing states on this branch.
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         inflicted, already = target.dead? ? [[], []] : roll_inflict(target, cmd)
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         shifted = target.dead? ? [] : apply_attr_shift(target, cmd)
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         stat_keys = target.dead? ? [] : (cmd[:stat_mod_keys] || []).select { skill_effect_hits?(cmd) }
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         stat_changed = target.dead? ? {} : apply_stat_mods(target, stat_keys, stat_amount)
         { recover: true, actor: b.name, source: cmd[:name],
+          # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
           item_id: cmd[:item_id], skill_id: cmd[:skill_id], target: target.name,
           target_index: @enemies.index(target),
+          # bc2cpp-reviewed: nomethod hp, nomethod mp -- dead fallback (ADR 0226)
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
           cured: cured, inflicted: inflicted, already: already,
           target_ally: ally?(target), attr_shifted: shifted,
           attr_shift_dir: cmd[:attr_shift],
           stat_changed: stat_changed, switch_id: cmd[:switch_id],
+          # bc2cpp-reviewed: nomethod hp, nomethod mp -- dead fallback (ADR 0226)
           target_hp: target.hp, target_mp: target.mp }
       end
     end
@@ -4212,15 +4503,19 @@ module Game
       shift = cmd[:attr_shift]
       ids = cmd[:attr_ids]
       return [] unless shift && ids && !ids.empty?
+      # bc2cpp-reviewed: nomethod attr_ranks, nomethod attr_ranks= -- dead fallback (ADR 0226)
       target.attr_ranks ||= {}
+      # bc2cpp-reviewed: nomethod attr_base_ranks -- dead fallback (ADR 0226)
       base = target.attr_base_ranks || {}
       moved = []
       ids.each do |aid|
         next unless skill_effect_hits?(cmd)
         b = Game.clamp(base[aid] || 2, 0, 4)
+        # bc2cpp-reviewed: nomethod attr_ranks -- dead fallback (ADR 0226)
         cur = target.attr_ranks[aid] || b
         nxt = Game.clamp(cur + shift, Game.clamp(b - 1, 0, 4), Game.clamp(b + 1, 0, 4))
         next if nxt == cur
+        # bc2cpp-reviewed: nomethod attr_ranks -- dead fallback (ADR 0226)
         target.attr_ranks[aid] = nxt
         moved << aid
       end
@@ -4273,6 +4568,7 @@ module Game
     # An ally's own defensive equipment can scale the A-E result down further
     # still -- see Actor#state_resist_mul.
     def state_susceptibility(target, sid)
+      # bc2cpp-reviewed: nomethod state_ranks -- dead fallback (ADR 0226)
       ranks = target.state_ranks
       return 100 if ranks.nil? || ranks.empty?
       is_ally = ally?(target)
@@ -4287,7 +4583,9 @@ module Game
       # rank-only formula (no equipment scan at all). `respond_to?` tolerates
       # a bare test double standing in for `actor` (#ally? only cares that the
       # field is non-nil), read as full resistance (100, a no-op multiplier).
+      # bc2cpp-reviewed: nomethod actor -- dead fallback (ADR 0226)
       if is_ally && target.actor.respond_to?(:state_resist_mul)
+        # bc2cpp-reviewed: nomethod actor, nomethod state_resist_mul -- dead fallback (ADR 0226)
         pct = pct * target.actor.state_resist_mul(sid) / 100
       end
       pct
@@ -4361,6 +4659,7 @@ module Game
     # a harmless no-op, matching a corpse's own stats always reading the
     # same reset values whether checked once or many times.
     def apply_knockout_reset(target)
+      # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
       return unless target.dead?
       target.gauge = 0 if target.respond_to?(:gauge)
       Game.set_stat_mod(target, :atk, 0)
@@ -4388,7 +4687,9 @@ module Game
     # (`Actor#knock_out!`, `Party#cast_skill`, `Interpreter#
     # do_change_condition`) this codebase already fixed.
     def combatant_permanent_states(target)
+      # bc2cpp-reviewed: nomethod actor -- dead fallback (ADR 0226)
       actor = target.respond_to?(:actor) ? target.actor : nil
+      # bc2cpp-reviewed: nomethod permanent_states -- dead fallback (ADR 0226)
       actor && actor.respond_to?(:permanent_states) ? actor.permanent_states : []
     end
 
@@ -4405,9 +4706,13 @@ module Game
     # instead of caching one to invalidate (#command_restricted?'s own doc
     # comment).
     def inflict_state(target, sid)
+      # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
       return if target.state?(sid)
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       target.states = Game::States.prune((target.states || []) + [sid], @states,
+                                          # bc2cpp-reviewed: nomethod states= -- dead fallback (ADR 0226)
                                           keep: combatant_permanent_states(target))
+      # bc2cpp-reviewed: nomethod hp= -- dead fallback (ADR 0226)
       target.hp = 0 if sid == Game::States::DEATH_ID
       apply_knockout_reset(target)
       if battler_restriction(target) != 0
@@ -4434,8 +4739,10 @@ module Game
     # equivalent to bypass it with, since that reference implementation's own
     # in-battle callers never pass one either.
     def cure_state(target, sid)
+      # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
       return unless target.state?(sid)
       return if combatant_permanent_states(target).include?(sid)
+      # bc2cpp-reviewed: nomethod states, nomethod states= -- dead fallback (ADR 0226)
       target.states = (target.states || []) - [sid]
       # Clear the per-state turn counter too, the same idiom
       # #shake_off_states already uses for its own release path -- ported
@@ -4451,7 +4758,9 @@ module Game
       # `states`/`hp` only) -- leaving a stale entry behind would make a
       # state re-inflicted later in the same fight eligible for its
       # auto-release roll far too early, sometimes on the very next tick.
+      # bc2cpp-reviewed: nomethod state_turns -- dead fallback (ADR 0226)
       target.state_turns.delete(sid) if target.state_turns
+      # bc2cpp-reviewed: nomethod hp= -- dead fallback (ADR 0226)
       target.hp = 1 if sid == Game::States::DEATH_ID
     end
     public :inflict_state, :cure_state, :apply_knockout_reset
@@ -4473,11 +4782,13 @@ module Game
       inflicted = []
       already = []
       (cmd[:inflict] || []).each do |sid|
+        # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
         if target.state?(sid)
           already << sid
           next
         end
         prob = chance * state_susceptibility(target, sid) / 100
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         next unless @rng.random(100) < prob
         inflict_state(target, sid)
         inflicted << sid
@@ -4508,15 +4819,19 @@ module Game
       return [[], []] unless states
       inflicted = []
       (states[:inflict] || {}).each do |sid, chance|
+        # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
         next if target.state?(sid)
         prob = chance * state_susceptibility(target, sid) / 100
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         next unless @rng.random(100) < prob
         inflict_state(target, sid)
         inflicted << sid
       end
       healed = []
       (states[:heal] || {}).each do |sid, chance|
+        # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
         next unless target.state?(sid)
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         next unless @rng.random(100) < chance
         cure_state(target, sid)
         healed << sid

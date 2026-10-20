@@ -46,9 +46,13 @@ module RGSS
   def self.frame_mean(x0 = 0, y0 = 0, width = nil, height = nil)
     bmp = Graphics.snap_to_bitmap
     return nil if bmp.nil?
+    # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
     x1 = width.nil? ? bmp.width : x0 + width
+    # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
     y1 = height.nil? ? bmp.height : y0 + height
+    # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
     x1 = bmp.width if x1 > bmp.width
+    # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
     y1 = bmp.height if y1 > bmp.height
     r = 0
     g = 0
@@ -59,14 +63,18 @@ module RGSS
       x = x0
       while x < x1
         c = bmp.get_pixel(x, y)
+        # bc2cpp-reviewed: nomethod red -- dead fallback (ADR 0226)
         r += c.red.to_i
+        # bc2cpp-reviewed: nomethod green -- dead fallback (ADR 0226)
         g += c.green.to_i
+        # bc2cpp-reviewed: nomethod blue -- dead fallback (ADR 0226)
         b += c.blue.to_i
         n += 1
         x += 8
       end
       y += 8
     end
+    # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
     bmp.dispose
     return nil if n.zero?
     [r / n, g / n, b / n]
@@ -247,6 +255,7 @@ module RGSS
     cover = Sprite.new
     cover.bitmap = still
     cover.z = Graphics::TRANSITION_Z
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     Graphics.update
     edge = w / 4
     left = shaped ? frame_mean(0, 0, edge, h) : nil
@@ -254,6 +263,7 @@ module RGSS
     cover.dispose
     still.dispose
     map.dispose
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     Graphics.update
     [left, right]
   end
@@ -281,21 +291,25 @@ module RGSS
     win = Window.new(0, 0, 320, 240)
     alive = !win.disposed?
     win.windowskin = skin
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     Graphics.update
     drawn = frame_mean
 
     # RGSS2/RGSS3 openness: the window unrolls from its centre line, so the area
     # it covers scales with the value. Half-open must measure about half.
     win.openness = 128
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     Graphics.update
     half = frame_mean
 
     win.openness = 0
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     Graphics.update
     closed = frame_mean
 
     win.openness = 255
     win.tone = Tone.new(255, 0, 0, 0)
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     Graphics.update
     toned = frame_mean
 
@@ -364,6 +378,7 @@ module RGSS
 
     win = Window.new(0, 0, w, h)
     win.windowskin = skin
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     Graphics.update
 
     # Each region of the drawn window, and the colour its source rect should
@@ -504,6 +519,7 @@ module RGSS
     Audio.bgm_play(path)
     loose = wait_for_bgm_pos
     Audio.bgm_stop
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     Graphics.update
     stopped = Audio.bgm_pos
 
@@ -518,6 +534,7 @@ module RGSS
     Audio.bgm_play(path, 100, 100, 1000)
     seek_got = wait_for_bgm_pos
     Audio.bgm_stop
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     Graphics.update
 
     # A Music Effect interrupting the BGM resumes it where it left off once
@@ -530,13 +547,16 @@ module RGSS
     # me_resumed both being small numbers could look like "resumed" even if
     # the BGM had actually restarted, so give the BGM real ground to have
     # covered before interrupting it.
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     30.times { Graphics.update }
     pre_me = Audio.bgm_pos
     Audio.me_play(path)
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     5.times { Graphics.update }
     Audio.me_stop
     me_resumed = wait_for_bgm_pos
     Audio.bgm_stop
+    # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
     Graphics.update
     File.delete(path) if File.exist?(path)
 
@@ -555,6 +575,7 @@ module RGSS
       packed = wait_for_bgm_pos
       Audio.se_play("Beep")
       Audio.bgm_stop
+      # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
       Graphics.update
 
       # The same seek, through the packed/archived path this time (a released
@@ -594,6 +615,7 @@ module RGSS
   def self.wait_for_bgm_pos(frames = 120)
     n = 0
     while n < frames
+      # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
       Graphics.update
       pos = Audio.bgm_pos
       return pos if pos > 0
@@ -862,10 +884,12 @@ module RGSS
     # speech-bubble add-on centres its tail sprite this way
     # (`self.y - @tail.height / 2`).
     def width
+      # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
       bitmap ? bitmap.width : 0
     end
 
     def height
+      # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
       bitmap ? bitmap.height : 0
     end
 
@@ -1579,6 +1603,7 @@ module RGSS
       # Run `duration` frames. Real behaviour, not a stub: the scripts use it to
       # hold a scene (fade-ins, message waits), and each update is a real frame.
       def wait(duration)
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         duration.to_i.times { update }
       end
 
@@ -1611,6 +1636,7 @@ module RGSS
         end
         duration.times do |i|
           self.brightness = start - (start * (i + 1) / duration)
+          # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
           update
         end
       end
@@ -1624,6 +1650,7 @@ module RGSS
         diff = 255 - start
         duration.times do |i|
           self.brightness = start + (diff * (i + 1) / duration)
+          # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
           update
         end
       end
@@ -1670,16 +1697,20 @@ module RGSS
             # will not start carrying it on a later frame, so drop the map and
             # let the rest of the run fade.
             unless frozen._transition_alpha(map, (i + 1).to_f / duration, softness)
+              # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
               map.dispose
               map = nil
             end
           end
           sprite.opacity = 255 - (255 * (i + 1) / duration) if map.nil?
+          # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
           update
           @transition_frame_hook&.call
         end
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         map.dispose if map
         sprite.dispose
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         frozen.dispose
         nil
       end
@@ -1693,6 +1724,7 @@ module RGSS
         return nil if filename.nil? || filename.empty?
         Bitmap.new(filename)
       rescue Bitmap::LoadError => e
+        # bc2cpp-reviewed: nomethod reason -- dead fallback (ADR 0226)
         RGSS.warn_once("Graphics.transition: #{filename} did not load " \
                        "(#{e.reason}); fading instead")
         nil
@@ -1712,16 +1744,23 @@ module RGSS
       # changes out from under it (#resize_screen is normally called once at
       # boot, before any fade, but nothing stops a script calling it again).
       def brightness_sprite
+        # bc2cpp-reviewed: nomethod bitmap -- dead fallback (ADR 0226)
         if @brightness_sprite && @brightness_sprite.bitmap &&
+           # bc2cpp-reviewed: nomethod bitmap, nomethod width -- dead fallback (ADR 0226)
            @brightness_sprite.bitmap.width == width &&
+           # bc2cpp-reviewed: nomethod bitmap, nomethod height -- dead fallback (ADR 0226)
            @brightness_sprite.bitmap.height == height
           return @brightness_sprite
         end
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @brightness_sprite.dispose if @brightness_sprite
+        # bc2cpp-reviewed: nomethod height, nomethod width -- dead fallback (ADR 0226)
         bmp = Bitmap.new(width, height)
+        # bc2cpp-reviewed: nomethod height, nomethod width -- dead fallback (ADR 0226)
         bmp.fill_rect(0, 0, width, height, Color.new(0, 0, 0, 255))
         @brightness_sprite = Sprite.new
         @brightness_sprite.bitmap = bmp
+        # bc2cpp-reviewed: nomethod z= -- dead fallback (ADR 0226)
         @brightness_sprite.z = BRIGHTNESS_Z
         @brightness_sprite.opacity = 0
         @brightness_sprite

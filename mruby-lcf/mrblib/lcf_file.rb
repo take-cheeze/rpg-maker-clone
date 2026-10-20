@@ -29,6 +29,7 @@ module LCF
         i = 0
         while i < schema.size
           s = schema[i]
+          # bc2cpp-reviewed: nomethod add -- dead fallback (ADR 0226)
           sections.add s[:name], LCF.read_section(io, s)
           i += 1
         end
@@ -64,6 +65,7 @@ module LCF
     # Drop a root chunk (Array1D#delete), e.g. to write a save that predates
     # a chunk. A section-based root has no chunks to drop and raises
     # NoMethodError, as before.
+    # bc2cpp-reviewed: nomethod delete -- dead fallback (ADR 0226)
     def delete idx ; @root.delete(idx) end
 
     # Whether the root chunk list ends with a trailing 0x00 terminator.
@@ -79,6 +81,7 @@ module LCF
     # byte-for-byte. Multi-section (Array-schema) files are not yet writable.
     def to_lcf
       raise 'section-based file serialization not implemented' if schema.is_a? Array
+      # bc2cpp-reviewed: nomethod to_lcf -- dead fallback (ADR 0226)
       root = @root.is_a?(LCF::Array1D) ? @root.to_lcf(terminate_root?) : @root.to_lcf
       LCF.write_ber(header.bytesize) + LCF.binstr(header) + LCF.binstr(root)
     end

@@ -1176,9 +1176,9 @@
   element layouts, sealed Hash ivars) read the IR's producers and literals.
   [RBS self returns and mixin lookup](docs/bc2cpp-ir-rbs-features.md) extend nominal
   call chains while refusing unsigned overrides and unknown lookup paths.
-  The type check also ratchets untyped engine constants: one that is not on the reviewed
-  `CONSTANT_REVIEWED` list, or a listed one that is now typed, fails CI (TC1017,
-  [docs/bc2cpp-type-check.md](docs/bc2cpp-type-check.md), ADR 0491).
+  The type check also ratchets untyped engine constants: one with no `bc2cpp-reviewed: constant` annotation on its
+  line, or an annotation on one that is now typed, fails CI (TC1017,
+  [docs/bc2cpp-type-check.md](docs/bc2cpp-type-check.md), ADR 0491 and ADR 0522).
   [Call-graph propagation](docs/bc2cpp-ir-call-graph.md) carries complete independent
   argument summaries through receiver-specific forwarding chains; disable it with
   `BC2CPP_IR_CALL_GRAPH_TYPES=0` for comparison.
@@ -1209,7 +1209,7 @@
   The frame-independent wrapper rules and supported methods are recorded in
   [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
   In a closed world a send to a receiver of proven class that nothing answers
-  (`PROVEN_MISS_REVIEWED`) is a build error, and `BC2CPP_NOMETHOD_VERIFY=1` builds
+  (reviewed with a `bc2cpp-reviewed: proven_miss` annotation on its line, ADR 0522) is a build error, and `BC2CPP_NOMETHOD_VERIFY=1` builds
   make a dead `bc2cpp_nomethod` site abort for smoke runs; see
   [`docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md`](docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md)
   and [`docs/bc2cpp-nomethod-verify.md`](docs/bc2cpp-nomethod-verify.md).

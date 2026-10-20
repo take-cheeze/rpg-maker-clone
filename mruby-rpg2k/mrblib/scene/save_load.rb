@@ -151,6 +151,7 @@ class RPG2k
         @skin = make_windowskin
         # One Game::State (or nil for an empty slot) per slot, read once so
         # scrolling the list never re-touches disk.
+        # bc2cpp-reviewed: nomethod load_save_state -- dead fallback (ADR 0226)
         @slots = (1..SLOT_COUNT).map { |slot| parent.load_save_state(slot) }
         @index = initial_index
         @top = [@index - VISIBLE_SLOTS + 1, 0].max
@@ -174,6 +175,7 @@ class RPG2k
 
       def dispose
         @background.dispose if @background
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @header_window.dispose if @header_window
         @slot_windows.each(&:dispose)
         @up_arrow.dispose if @up_arrow
@@ -185,6 +187,7 @@ class RPG2k
         # advance its selection-cursor blink (RPG2k::Window#update) -- this
         # scene never called it at all, the same gap Scene::Menu's own
         # #update had (see its own citation).
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @header_window.update if @header_window
         @slot_windows.each(&:update)
         tick_arrows
@@ -262,6 +265,7 @@ class RPG2k
       # one, or one with no title chunk at all (the same defensive shape
       # `RPG2k#load_save_state` already uses for this exact file).
       def slot_timestamp(slot)
+        # bc2cpp-reviewed: nomethod lsd_path -- dead fallback (ADR 0226)
         path = parent.lsd_path(slot)
         return nil unless path && File.exist?(path)
         title = LCF::SaveData.new(File.open(path, "rb"))[100]
@@ -308,6 +312,7 @@ class RPG2k
         case @mode
         when :save
           play_system_se(SFX_DECISION)
+          # bc2cpp-reviewed: nomethod save_game -- dead fallback (ADR 0226)
           @parent.save_game(@state, slot)
           @parent.pop
         when :load
@@ -471,7 +476,9 @@ class RPG2k
         state = @slots[slot_index]
         draw_slot_label c, slot_index, state ? TEXT_COLOR : DISABLED_COLOR
         if state
+          # bc2cpp-reviewed: nomethod leader, nomethod party -- dead fallback (ADR 0226)
           leader = state.party.leader
+          # bc2cpp-reviewed: strict_hint ivar_accessor name -- reviewed before the source-annotation migration (ADR 0419)
           name = leader ? leader.name.to_s : ''
           # The title-chunk snapshot (`State#preview_level`/`#preview_hp`,
           # see its own citation) when the save carries one, falling back to
@@ -480,19 +487,24 @@ class RPG2k
           # snapshot-first, live-fallback shape `#draw_slot_faces` already
           # uses for the face row below.
           has_preview = state.respond_to?(:preview_level) && !state.preview_level.nil?
+          # bc2cpp-reviewed: nomethod level, nomethod preview_level -- dead fallback (ADR 0226)
           level = has_preview ? state.preview_level : (leader ? leader.level : 0)
+          # bc2cpp-reviewed: nomethod hp, nomethod preview_hp -- dead fallback (ADR 0226)
           hp = has_preview ? state.preview_hp : (leader ? leader.hp : 0)
           draw_system_text c, 0, LINE_H, inner_w, LINE_H, name, @skin, TEXT_COLOR
+          # bc2cpp-reviewed: nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
           rpg2003 = state.party.respond_to?(:rpg2003?) && state.party.rpg2003?
           draw_level_hp(c, LINE_H * 2, level, hp, rpg2003)
           draw_slot_faces(c, inner_w, state)
         end
+        # bc2cpp-reviewed: nomethod contents= -- dead fallback (ADR 0226)
         win.contents = c
         # A fixed-width cursor over the label line (see LABEL_W), the same
         # 63px whether the slot number has one digit or two.
         win.cursor_rect = if slot_index == @index
                              Rect.new(0, 0, LABEL_W, LINE_H)
                            else
+                             # bc2cpp-reviewed: nomethod cursor_rect= -- dead fallback (ADR 0226)
                              Rect.new(0, 0, 0, 0)
                            end
       end
@@ -558,8 +570,11 @@ class RPG2k
 
       def draw_slot_faces(c, inner_w, state)
         pairs = state.respond_to?(:preview_faces) ? state.preview_faces : nil
+        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         pairs ||= state.party.actors.first(MAX_SLOT_FACES).map do |actor|
+          # bc2cpp-reviewed: nomethod faceset_name -- dead fallback (ADR 0226)
           [actor.respond_to?(:faceset_name) ? actor.faceset_name : nil,
+           # bc2cpp-reviewed: nomethod faceset_index -- dead fallback (ADR 0226)
            actor.respond_to?(:faceset_index) ? actor.faceset_index : 0]
         end
         start_x = inner_w - ((MAX_SLOT_FACES - 1) * FACE_SPACING + FACE_SIZE)

@@ -131,6 +131,7 @@ module Game
     # Expand a line to its plain visible text (no colour information): the same
     # string the segments from #parse concatenate to.
     def self.expand(text, variables, names)
+      # bc2cpp-reviewed: nomethod text -- dead fallback (ADR 0226)
       parse(text, variables, names).map { |s| s.text }.join
     end
 
@@ -334,6 +335,7 @@ module Game
       seg_lines.map do |segs|
         out = []
         segs.each do |seg|
+          # bc2cpp-reviewed: nomethod text -- dead fallback (ADR 0226)
           t = seg.text
           if remaining <= 0
             next
@@ -345,6 +347,7 @@ module Game
             # as #scan's own Segment sites above.
             truncated = Segment.new
             truncated.text = t[0, remaining]
+            # bc2cpp-reviewed: nomethod color -- dead fallback (ADR 0226)
             truncated.color = seg.color
             out << truncated
             remaining = 0
@@ -574,6 +577,7 @@ module Game
       s = 1
       @speeds.each do |sp|
         break if sp.at > pos
+        # bc2cpp-reviewed: nomethod speed -- dead fallback (ADR 0226)
         s = sp.speed
       end
       s
@@ -678,9 +682,13 @@ module Game
   # sees every reader (closed-world lint, ADR 0212).
   def self.stat_of(b, key)
     v = case key
+        # bc2cpp-reviewed: nomethod atk -- dead fallback (ADR 0226)
         when :atk then b.respond_to?(:atk) ? b.atk : 0
+        # bc2cpp-reviewed: nomethod def -- dead fallback (ADR 0226)
         when :def then b.respond_to?(:def) ? b.def : 0
+        # bc2cpp-reviewed: nomethod spi -- dead fallback (ADR 0226)
         when :spi then b.respond_to?(:spi) ? b.spi : 0
+        # bc2cpp-reviewed: nomethod agi -- dead fallback (ADR 0226)
         else b.respond_to?(:agi) ? b.agi : 0
         end
     v || 0
@@ -782,6 +790,7 @@ module Game
     ABOVE_BIT = 0x10
     COUNTER_BIT = 0x40
     # Every directional bit ORed together, for a jump's any-side landing check.
+    # bc2cpp-reviewed: constant Game::ChipSet::ALL_DIRS -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
     ALL_DIRS = (DIR_BIT[2] | DIR_BIT[4] | DIR_BIT[6] | DIR_BIT[8]).freeze
 
     attr_reader :name, :graphic, :animation_type, :animation_speed
@@ -2286,6 +2295,7 @@ module Game
 
     def base_stats(level)
       a = curve_row
+      # bc2cpp-reviewed: nomethod int16_values -- dead fallback (ADR 0226)
       curve = a.respond_to?(:int16_values) ? a.int16_values(31) : nil
       if curve && curve.size >= STAT_NAMES.size
         levels = curve.size / STAT_NAMES.size
@@ -3969,6 +3979,7 @@ module Game
       hp = data[:hp] || {}
       mp = data[:mp] || {}
       meta = data[:actor_meta] || {}
+      # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
       ids = @actors.map { |a| a.id }
       [exp, hp, mp, meta].each do |table|
         table.keys.each { |id| ids.push(id) unless ids.include?(id) }
@@ -3989,13 +4000,18 @@ module Game
         # such key, read as false -- the same "never changed" default the .lsd
         # format's own -1 sentinel gives an older save.
         m = meta[id]
+        # bc2cpp-reviewed: nomethod restore_class -- dead fallback (ADR 0226)
         a.restore_class(m[:class_id]) if m && m[:class_changed]
+        # bc2cpp-reviewed: nomethod set_exp -- dead fallback (ADR 0226)
         a.set_exp(exp[id]) if exp[id]
         # #set_exp re-seeds @base/@base_raw from the level-derived baseline
         # whenever it changes the level, discarding a live Change Parameters
         # edit -- restore the saved shadow total after it, not before.
+        # bc2cpp-reviewed: nomethod restore_base -- dead fallback (ADR 0226)
         a.restore_base(m[:base_raw]) if m && m[:base_raw]
+        # bc2cpp-reviewed: nomethod hp= -- dead fallback (ADR 0226)
         a.hp = hp[id] if hp[id]
+        # bc2cpp-reviewed: nomethod mp= -- dead fallback (ADR 0226)
         a.mp = mp[id] if mp[id]
         apply_actor_meta(a, m)
       end
@@ -4006,6 +4022,7 @@ module Game
     def apply_actor_meta(actor, m)
       return unless m
       actor.name = m[:name] if m[:name]
+      # bc2cpp-reviewed: nomethod title= -- dead fallback (ADR 0226)
       actor.title = m[:title] unless m[:title].nil?
       # `sprite_changed` false means the database default was never actually
       # overridden -- skip #set_charset so the actor's own #sprite_changed?
@@ -4013,11 +4030,16 @@ module Game
       # `sprite_changed` existed carries no such key (nil, not false), read
       # as "assume changed" -- the old behavior, gated on charset_name alone.
       if m[:charset_name] && m[:sprite_changed] != false
+        # bc2cpp-reviewed: nomethod charset_index, nomethod set_charset -- dead fallback (ADR 0226)
         actor.set_charset(m[:charset_name], m[:charset_index] || actor.charset_index)
       end
+      # bc2cpp-reviewed: nomethod transparent= -- dead fallback (ADR 0226)
       actor.transparent = m[:transparent] unless m[:transparent].nil?
+      # bc2cpp-reviewed: nomethod states= -- dead fallback (ADR 0226)
       actor.states = m[:states] if m[:states]
+      # bc2cpp-reviewed: nomethod battle_commands= -- dead fallback (ADR 0226)
       actor.battle_commands = m[:battle_commands] if m[:battle_commands]
+      # bc2cpp-reviewed: nomethod battle_row= -- dead fallback (ADR 0226)
       actor.battle_row = m[:row] if m[:row]
     end
 
@@ -4082,11 +4104,15 @@ module Game
     # this method's; this only ever silently no-ops a refused toggle.
     def toggle_actor_row(actor)
       return unless actor.respond_to?(:battle_row) && actor.respond_to?(:battle_row=)
+      # bc2cpp-reviewed: nomethod battle_row -- dead fallback (ADR 0226)
       if actor.battle_row == Actor::ROW_FRONT
+        # bc2cpp-reviewed: nomethod battle_row -- dead fallback (ADR 0226)
         back_count = @actors.count { |a| a != actor && a.respond_to?(:battle_row) && a.battle_row == Actor::ROW_BACK }
         return if back_count >= @actors.size - 1
+        # bc2cpp-reviewed: nomethod battle_row= -- dead fallback (ADR 0226)
         actor.battle_row = Actor::ROW_BACK
       else
+        # bc2cpp-reviewed: nomethod battle_row= -- dead fallback (ADR 0226)
         actor.battle_row = Actor::ROW_FRONT
       end
     end
@@ -4102,6 +4128,7 @@ module Game
       i = 0
       n = @actors.size
       while i < n
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         return true if @actors[i].id == id
         i += 1
       end
@@ -4113,6 +4140,7 @@ module Game
       n = @actors.size
       while i < n
         a = @actors[i]
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         return a if a.id == id
         i += 1
       end
@@ -4124,6 +4152,7 @@ module Game
       i = 0
       n = @actors.size
       while i < n
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         return true unless @actors[i].dead?
         i += 1
       end
@@ -4178,6 +4207,7 @@ module Game
         next if actor.nil?
         hp = 0
         sp = 0
+        # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
         actor.states.each do |id|
           dhp, dsp = States.map_step_drain(id, table, steps)
           @map_step_damaged ||= dhp < 0 || dsp < 0
@@ -4185,7 +4215,9 @@ module Game
           sp += dsp
         end
         next if hp.zero? && sp.zero?
+        # bc2cpp-reviewed: nomethod change_hp -- dead fallback (ADR 0226)
         actor.change_hp(hp, false) unless hp.zero?
+        # bc2cpp-reviewed: nomethod change_mp -- dead fallback (ADR 0226)
         actor.change_mp(sp) unless sp.zero?
         hit << actor
       end
@@ -4243,8 +4275,11 @@ module Game
       return [] unless amount && amount != 0
       hit = []
       @actors.each do |actor|
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         next if actor.nil? || actor.dead?
+        # bc2cpp-reviewed: nomethod prevents_terrain_damage? -- dead fallback (ADR 0226)
         next if amount > 0 && actor.prevents_terrain_damage?
+        # bc2cpp-reviewed: nomethod change_hp -- dead fallback (ADR 0226)
         actor.change_hp(-amount, false)
         hit << actor
       end
@@ -4269,6 +4304,7 @@ module Game
     # which is what lets #add_actor give them back unchanged.
     def remove_actor(id)
       before = @actors.size
+      # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
       @actors.reject! { |a| a.id == id }
       @revision += 1 unless @actors.size == before
       return unless @actors.size == before
@@ -4284,6 +4320,7 @@ module Game
       # enrolling the actor into the save data -- unlike Add, a Remove of a
       # merely-never-met-but-otherwise-valid actor must not have that
       # side effect.
+      # bc2cpp-reviewed: nomethod known_invalid? -- dead fallback (ADR 0226)
       @roster.known_invalid?(id)
     end
 
@@ -4325,6 +4362,7 @@ module Game
     # numeric "item possession count" operand (Control Variables, item_operand
     # above) stays bag-only, matching RPG_RT's own split between the two reads.
     def has_item?(id)
+      # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
       item_count(id) > 0 || @actors.any? { |a| a.equipment.include?(id) }
     end
 
@@ -4344,6 +4382,7 @@ module Game
     # repeated attempts at reading multi-digit numbers off this pixel font
     # proved unreliable -- showed "TWO", not "NOTTWO".
     def equipped_item_count(id)
+      # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
       @actors.reduce(0) { |n, a| n + a.equipment.count(id) }
     end
 
@@ -4733,7 +4772,9 @@ module Game
     # The HP and SP a medicine restores to `actor`: the flat amount plus a
     # percentage of the actor's maximum, summed with RPG2000's integer math.
     def item_recovery(it, actor)
+      # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
       hp = (it[:recover_hp] || 0) + (actor.max_hp * (it[:recover_hp_rate] || 0)) / 100
+      # bc2cpp-reviewed: nomethod max_mp -- dead fallback (ADR 0226)
       mp = (it[:recover_sp] || 0) + (actor.max_mp * (it[:recover_sp_rate] || 0)) / 100
       [hp, mp]
     end
@@ -4798,6 +4839,7 @@ module Game
     def ko_only_blocked?(it, actor)
       return false unless LCF.field?(it, :ko_only) && it[:ko_only]
       return false if actor.nil?
+      # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
       !actor.dead?
     end
 
@@ -4919,6 +4961,7 @@ module Game
       return true unless LCF.field?(it, :class_set) && it[:class_set]
       return true if actor_id.nil?
       actor = @roster[actor_id]
+      # bc2cpp-reviewed: nomethod class_id -- dead fallback (ADR 0226)
       class_id = actor && actor.respond_to?(:class_id) ? (actor.class_id || 0) : 0
       set = it[:class_set]
       return true if set.size <= class_id
@@ -4939,17 +4982,22 @@ module Game
     def item_effective?(id, actor)
       it = db_item(id)
       return false unless it && actor
+      # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
       return false unless item_usable_by?(it, actor.id)
       case it[:type]
       when ITEM_MEDICINE
         return false if ko_only_blocked?(it, actor)
         hp, mp = item_recovery(it, actor)
+        # bc2cpp-reviewed: nomethod hp, nomethod max_hp, nomethod max_mp, nomethod mp -- dead fallback (ADR 0226)
         (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp) ||
+          # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
           item_cured_states(it).any? { |s| actor.state?(s) }
       when ITEM_SKILL_BOOK
         s = it[:skill_id]
+        # bc2cpp-reviewed: nomethod dead?, nomethod knows_skill? -- dead fallback (ADR 0226)
         !actor.dead? && !s.nil? && s != 0 && !actor.knows_skill?(s)
       when ITEM_SEED
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         !actor.dead? && seed_boosts(it).any? { |b| b != 0 }
       when ITEM_SWITCH
         true # a switch item always flips its switch
@@ -5056,6 +5104,7 @@ module Game
     # #use_special_escape_item / #use_special_teleport_item instead -- the same
     # reason a switch item bypasses #use_item for #use_switch_item.
     def use_special_item(it, id, actor)
+      # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
       return [] unless actor && item_usable_by?(it, actor.id)
       affected = cast_skill(actor, it[:skill_id], actor, true)
       consume_item_use(id) unless affected.empty?
@@ -5106,6 +5155,7 @@ module Game
     # only path that calls #use_item today -- see #use_special_switch_item's
     # own doc.)
     def use_equip_skill_item(it, id, actor)
+      # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
       return [] unless actor && item_usable_by?(it, actor.id)
       sk = db_skill(it[:skill_id])
       if sk && (sk[:type] == SKILL_ESCAPE || sk[:type] == SKILL_TELEPORT)
@@ -5145,6 +5195,7 @@ module Game
       # without tracing one level further into what the skill-use path
       # itself does for these two skill types specifically.
       return nil unless it && it[:type] == ITEM_SPECIAL &&
+                        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
                         actor && item_usable_by?(it, actor.id)
       target = cast_escape_skill(actor, it[:skill_id], state, true)
       return nil unless target
@@ -5162,6 +5213,7 @@ module Game
       # item-menu/skill-use dispatch gap applies to
       # Teleport-type skills identically.
       return nil unless it && it[:type] == ITEM_SPECIAL &&
+                        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
                         actor && item_usable_by?(it, actor.id)
       target = cast_teleport_skill(actor, it[:skill_id], state, map_id, true)
       return nil unless target
@@ -5185,6 +5237,7 @@ module Game
       return nil unless it &&
                         (it[:type] == ITEM_SPECIAL ||
                          (it[:use_skill] && (1..5).cover?(it[:type]))) &&
+                        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
                         actor && item_usable_by?(it, actor.id)
       switch = cast_switch_skill(actor, it[:skill_id], true)
       return nil unless switch
@@ -5217,19 +5270,24 @@ module Game
         # its own (`return @hp if dead?`), which is what hid this for the HP
         # half alone, but the cure loop and `#change_mp` below have no such
         # guard of their own.
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         next if t.dead? && !cured.include?(Game::Actor::DEATH_STATE)
         # A 蘇生専用 item passes over anyone still standing without touching
         # them -- not even the HP restore -- which is what keeps an all-party
         # revive from topping up the members who never fell. An actor_set
         # restriction does the same for a member the item simply is not
         # usable on, even under an all-party scope.
+        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         next if ko_only_blocked?(it, t) || !item_usable_by?(it, t.id)
         changed = false
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         was_dead = t.dead?
         # Cure first: a revive item (curing 戦闘不能) stands the actor back up so
         # the HP recovery below lands instead of being blocked as a no-op.
         cured.each do |s|
+          # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
           if t.state?(s)
+            # bc2cpp-reviewed: nomethod remove_state -- dead fallback (ADR 0226)
             t.remove_state(s)
             changed = true
           end
@@ -5245,12 +5303,18 @@ module Game
         # so a combined revive+HP
         # item must not add its full recovery on top of the 1 HP the cure
         # already granted.
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         revived = was_dead && !t.dead?
         hp, mp = item_recovery(it, t)
+        # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
         before_hp = t.hp
+        # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
         before_mp = t.mp
+        # bc2cpp-reviewed: nomethod change_hp -- dead fallback (ADR 0226)
         t.change_hp(revived ? hp - 1 : hp) if hp > 0
+        # bc2cpp-reviewed: nomethod change_mp -- dead fallback (ADR 0226)
         t.change_mp(mp) if mp > 0
+        # bc2cpp-reviewed: nomethod hp, nomethod mp -- dead fallback (ADR 0226)
         changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
       end
@@ -5301,8 +5365,11 @@ module Game
     # pure save-file edit sidesteps it entirely.)
     def use_skill_book(it, id, actor)
       skill = it[:skill_id]
+      # bc2cpp-reviewed: nomethod dead?, nomethod id -- dead fallback (ADR 0226)
       return [] unless actor && !actor.dead? && item_usable_by?(it, actor.id) &&
+                       # bc2cpp-reviewed: nomethod knows_skill? -- dead fallback (ADR 0226)
                        skill && skill != 0 && !actor.knows_skill?(skill)
+      # bc2cpp-reviewed: nomethod learn_skill -- dead fallback (ADR 0226)
       actor.learn_skill(skill)
       consume_item_use(id)
       [actor]
@@ -5339,9 +5406,11 @@ module Game
     # comment for the full genuine-RPG_RT.exe evidence (cycle #156); this
     # shares the identical dead-actor guard.
     def use_seed(it, id, actor)
+      # bc2cpp-reviewed: nomethod dead?, nomethod id -- dead fallback (ADR 0226)
       return [] unless actor && !actor.dead? && item_usable_by?(it, actor.id)
       boosts = seed_boosts(it)
       return [] unless boosts.any? { |b| b != 0 }
+      # bc2cpp-reviewed: nomethod change_param -- dead fallback (ADR 0226)
       boosts.each_index { |i| actor.change_param(i, boosts[i]) if boosts[i] != 0 }
       consume_item_use(id)
       [actor]
@@ -5381,9 +5450,11 @@ module Game
     # path, which reads the restriction the same way. Both actor-dependent filters are
     # simply skipped when no `actor` is given.
     def equip_candidates(slot, actor = nil)
+      # bc2cpp-reviewed: nomethod double_hand? -- dead fallback (ADR 0226)
       slot = Actor::WEAPON_SLOT if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
       @items.keys.select do |id|
         item_count(id) > 0 && equip_slot_for(id) == slot &&
+          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           (actor.nil? || item_usable_by?(db_item(id), actor.id))
       end.map { |id| [id, item_count(id)] }
     end
@@ -5397,7 +5468,9 @@ module Game
     def equip_candidate_for?(actor, id, slot)
       base = equip_slot_for(id)
       return false if base.nil?
+      # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
       return false if actor && !item_usable_by?(db_item(id), actor.id)
+      # bc2cpp-reviewed: nomethod double_hand? -- dead fallback (ADR 0226)
       if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
         base == Actor::WEAPON_SLOT
       else
@@ -5411,9 +5484,11 @@ module Game
     # #equip_from_bag (the equip menu) and #equip_item_from_bag (the Change
     # Equipment event command) -- see each for the gating layered on top.
     def swap_equipment_through_bag(actor, item_id, slot)
+      # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
       previous = actor.equipment[slot]
       # A 両手持ち weapon empties the other hand; whatever it was holding comes
       # back to the bag alongside the item this slot displaced.
+      # bc2cpp-reviewed: nomethod equip_item -- dead fallback (ADR 0226)
       freed = actor.equip_item(item_id, slot)
       lose_item(item_id, 1)
       gain_item(previous, 1) if previous && previous != 0
@@ -5479,12 +5554,16 @@ module Game
       return false unless actor
       slot = equip_slot_for(item_id)
       return false if slot.nil?
+      # bc2cpp-reviewed: nomethod double_hand? -- dead fallback (ADR 0226)
       if actor.double_hand?
         return false if slot == Actor::SHIELD_SLOT
         if slot == Actor::WEAPON_SLOT
+          # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
           weapon = actor.equipment[Actor::WEAPON_SLOT]
+          # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
           shield = actor.equipment[Actor::SHIELD_SLOT]
           if weapon && weapon != 0 && (shield.nil? || shield == 0) &&
+             # bc2cpp-reviewed: nomethod two_handed? -- dead fallback (ADR 0226)
              !actor.two_handed?(weapon) && !actor.two_handed?(item_id)
             slot = Actor::SHIELD_SLOT
           end
@@ -5509,7 +5588,9 @@ module Game
         return 0
       end
       return 0 unless slot >= 0 && slot < Actor::EQUIP_ORDER.size
+      # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
       removed = actor.equipment[slot]
+      # bc2cpp-reviewed: nomethod unequip -- dead fallback (ADR 0226)
       actor.unequip(slot)
       gain_item(removed, 1) if removed && removed != 0
       removed || 0
@@ -5588,6 +5669,7 @@ module Game
       half = caster.respond_to?(:half_sp_cost?) && caster.half_sp_cost?
       div = half ? 2 : 1
       if rpg2003? && sk[:sp_type] == 1
+        # bc2cpp-reviewed: nomethod max_mp -- dead fallback (ADR 0226)
         caster.max_mp * (sk[:sp_percent] || 0) / 100 / div
       else
         ((sk[:sp_cost] || 0) + (half ? 1 : 0)) / div
@@ -5719,6 +5801,7 @@ module Game
     # unusable exactly like the old "always false" behaviour.
     def escape_skill_available?(state)
       return false unless state
+      # bc2cpp-reviewed: nomethod escape_access, nomethod escape_target -- dead fallback (ADR 0226)
       state.escape_access && !state.escape_target.nil? && !flying?(state)
     end
 
@@ -5733,6 +5816,7 @@ module Game
     # implementation never reads it back, so it is left unconsumed here too).
     def teleport_skill_available?(state)
       return false unless state
+      # bc2cpp-reviewed: nomethod teleport_access, nomethod teleport_targets -- dead fallback (ADR 0226)
       state.teleport_access && !state.teleport_targets.empty? && !flying?(state)
     end
 
@@ -5764,8 +5848,10 @@ module Game
       return nil unless sk && sk[:type] == SKILL_ESCAPE
       return nil unless (free ? !caster.nil? : can_cast?(caster, sid)) &&
                          escape_skill_available?(state)
+      # bc2cpp-reviewed: nomethod escape_target -- dead fallback (ADR 0226)
       target = state.escape_target
       return nil unless target
+      # bc2cpp-reviewed: nomethod change_mp -- dead fallback (ADR 0226)
       caster.change_mp(-skill_cost(sk, caster)) unless free
       { map_id: target[:map_id], x: target[:x], y: target[:y], switch_id: target[:switch_id] }
     end
@@ -5783,8 +5869,10 @@ module Game
       return nil unless sk && sk[:type] == SKILL_TELEPORT
       return nil unless (free ? !caster.nil? : can_cast?(caster, sid)) &&
                          teleport_skill_available?(state)
+      # bc2cpp-reviewed: nomethod teleport_targets -- dead fallback (ADR 0226)
       target = state.teleport_targets[map_id]
       return nil unless target
+      # bc2cpp-reviewed: nomethod change_mp -- dead fallback (ADR 0226)
       caster.change_mp(-skill_cost(sk, caster)) unless free
       { map_id: map_id, x: target[:x], y: target[:y], switch_id: target[:switch_id] }
     end
@@ -5823,6 +5911,7 @@ module Game
     def cast_switch_skill(caster, sid, free = false)
       return nil unless switch_skill?(sid) && (free ? !caster.nil? : can_cast?(caster, sid))
       sk = db_skill(sid)
+      # bc2cpp-reviewed: nomethod change_mp -- dead fallback (ADR 0226)
       caster.change_mp(-skill_cost(sk, caster)) unless free
       sk[:switch_id]
     end
@@ -5842,8 +5931,11 @@ module Game
     # at all until now.
     def can_cast?(caster, sid)
       sk = db_skill(sid)
+      # bc2cpp-reviewed: nomethod knows_skill? -- dead fallback (ADR 0226)
       !sk.nil? && caster && caster.knows_skill?(sid) &&
+        # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
         caster.mp >= skill_cost(sk, caster) && weapon_attribute_ready?(caster, sk) &&
+        # bc2cpp-reviewed: nomethod skill_sealed? -- dead fallback (ADR 0226)
         !(caster.respond_to?(:skill_sealed?) && caster.skill_sealed?(sk))
     end
 
@@ -5876,6 +5968,7 @@ module Game
       return true if LCF.field?(sk, :affect_attr_defence) && sk[:affect_attr_defence]
       ids = skill_attributes(sk).select { |aid| attribute_weapon_type?(aid) }
       return true if ids.empty?
+      # bc2cpp-reviewed: nomethod weapon_attributes -- dead fallback (ADR 0226)
       equipped = caster.respond_to?(:weapon_attributes) ? caster.weapon_attributes : []
       ids.all? { |aid| equipped.include?(aid) }
     end
@@ -5909,6 +6002,7 @@ module Game
     def stat_mode(b, stat_flag)
       return :normal unless LCF.field?(@db, :situation) && @db[:situation]
       half = false; dbl = false
+      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (b.respond_to?(:states) ? (b.states || []) : []).each do |sid|
         d = @db[:situation][sid]
         next unless d && LCF.field?(d, stat_flag) && d[stat_flag]
@@ -5949,24 +6043,29 @@ module Game
     end
 
     def effective_atk(b)
+      # bc2cpp-reviewed: nomethod atk -- dead fallback (ADR 0226)
       adjust_stat(modified_stat(b.atk, b, :atk), stat_mode(b, :affect_attack))
     end
 
     def effective_int(b)
+      # bc2cpp-reviewed: nomethod int -- dead fallback (ADR 0226)
       adjust_stat(modified_stat(b.int, b, :spi), stat_mode(b, :affect_spirit))
     end
 
     def effective_def(b)
+      # bc2cpp-reviewed: nomethod def -- dead fallback (ADR 0226)
       base = (b.respond_to?(:def) ? b.def : 0) || 0
       adjust_stat(modified_stat(base, b, :def), stat_mode(b, :affect_defense))
     end
 
     def effective_spi(b)
+      # bc2cpp-reviewed: nomethod spi -- dead fallback (ADR 0226)
       base = (b.respond_to?(:spi) ? b.spi : 0) || 0
       adjust_stat(modified_stat(base, b, :spi), stat_mode(b, :affect_spirit))
     end
 
     def effective_agi(b)
+      # bc2cpp-reviewed: nomethod agi -- dead fallback (ADR 0226)
       base = (b.respond_to?(:agi) ? b.agi : 0) || 0
       adjust_stat(modified_stat(base, b, :agi), stat_mode(b, :affect_agility))
     end
@@ -6076,9 +6175,13 @@ module Game
       cured = skill_cured_states(sk)
       inflicted = skill_inflicted_states(sk)
       skill_targets(sk, caster, target).any? do |t|
+        # bc2cpp-reviewed: nomethod hp, nomethod max_hp -- dead fallback (ADR 0226)
         (amount > 0 && sk[:affect_hp] && t.hp < t.max_hp) ||
+          # bc2cpp-reviewed: nomethod max_mp, nomethod mp -- dead fallback (ADR 0226)
           (amount > 0 && sk[:affect_sp] && t.mp < t.max_mp) ||
+          # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
           cured.any? { |s| t.state?(s) } ||
+          # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
           inflicted.any? { |s| !t.state?(s) }
       end
     end
@@ -6103,9 +6206,12 @@ module Game
       affected = []
       skill_targets(sk, caster, target).each do |t|
         changed = false
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         was_dead = t.dead?
         cured.each do |s|
+          # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
           if t.state?(s)
+            # bc2cpp-reviewed: nomethod remove_state -- dead fallback (ADR 0226)
             t.remove_state(s)
             changed = true
           end
@@ -6115,10 +6221,13 @@ module Game
         # comes off, matching a reference implementation's own state-removal
         # handling (not independently confirmed against genuine RPG_RT under
         # wine).
+        # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
         revived = was_dead && !t.dead?
         landed = false
         inflicted.each do |s|
+          # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
           unless t.state?(s)
+            # bc2cpp-reviewed: nomethod add_state -- dead fallback (ADR 0226)
             t.add_state(s)
             changed = true
             landed = true
@@ -6127,8 +6236,11 @@ module Game
         # RPG_RT's crowding-out rule (see Game::States::PRUNE_GAP): a state
         # just landed may itself immediately push out one already held, or
         # be pushed out by one already held that outranks it.
+        # bc2cpp-reviewed: nomethod permanent_states, nomethod states, nomethod states= -- dead fallback (ADR 0226)
         t.states = Game::States.prune(t.states, state_table, keep: t.permanent_states) if landed
+        # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
         before_hp = t.hp
+        # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
         before_mp = t.mp
         if sk[:affect_hp] && amount > 0
           # Same `- revived` treatment as the Affect-HP-off branch just
@@ -6139,7 +6251,9 @@ module Game
           # applies
           # the same revive-adjusted amount here too, not just in its
           # HP-percentage sibling branch.
+          # bc2cpp-reviewed: nomethod change_hp -- dead fallback (ADR 0226)
           t.change_hp(revived ? amount - 1 : amount)
+        # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
         elsif revived && amount > 0 && t.max_hp
           # A revival skill with Affect HP off heals a percentage of max HP
           # instead of leaving `t` on the bare revival floor of 1 -- ported
@@ -6153,6 +6267,7 @@ module Game
           # additive on top of the cure's own HP-to-1
           # (`revived` there is the literal int 1, the same role `- 1`
           # plays here).
+          # bc2cpp-reviewed: nomethod change_hp, nomethod max_hp -- dead fallback (ADR 0226)
           t.change_hp(t.max_hp * amount / 100 - 1)
         end
         # `!t.dead?` mirrors a reference implementation's own skill-use SP
@@ -6167,10 +6282,13 @@ module Game
         # `#change_hp`'s own `return @hp if dead?` guard gives the HP branch
         # this same protection incidentally; `#change_mp` has no such guard
         # of its own, so this needed to be explicit here.
+        # bc2cpp-reviewed: nomethod change_mp, nomethod dead? -- dead fallback (ADR 0226)
         t.change_mp(amount) if sk[:affect_sp] && amount > 0 && !t.dead?
+        # bc2cpp-reviewed: nomethod hp, nomethod mp -- dead fallback (ADR 0226)
         changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
       end
+      # bc2cpp-reviewed: nomethod change_mp -- dead fallback (ADR 0226)
       caster.change_mp(-skill_cost(sk, caster)) unless free || affected.empty?
       affected
     end
@@ -6824,10 +6942,15 @@ module Game
       return false unless ca.size == cb.size
       ca.each_index do |i|
         x = ca[i]; y = cb[i]
+        # bc2cpp-reviewed: nomethod command_id -- dead fallback (ADR 0226)
         return false unless x.command_id == y.command_id &&
+                             # bc2cpp-reviewed: nomethod parameter_string -- dead fallback (ADR 0226)
                              x.parameter_string == y.parameter_string &&
+                             # bc2cpp-reviewed: nomethod parameter_a -- dead fallback (ADR 0226)
                              x.parameter_a == y.parameter_a &&
+                             # bc2cpp-reviewed: nomethod parameter_b -- dead fallback (ADR 0226)
                              x.parameter_b == y.parameter_b &&
+                             # bc2cpp-reviewed: nomethod parameter_c -- dead fallback (ADR 0226)
                              x.parameter_c == y.parameter_c
       end
       true
@@ -6861,6 +6984,7 @@ module Game
     end
 
     def execute(cmd, character, world)
+      # bc2cpp-reviewed: nomethod command_id -- dead fallback (ADR 0226)
       id = cmd.command_id
       case id
       when MOVE_UP, MOVE_RIGHT, MOVE_DOWN, MOVE_LEFT
@@ -6868,6 +6992,7 @@ module Game
       when MOVE_UPRIGHT, MOVE_DOWNRIGHT, MOVE_DOWNLEFT, MOVE_UPLEFT
         do_diagonal(character, world, id)
       when MOVE_RANDOM
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         do_move(character, world, Character::CARDINALS[world.random(4)])
       when MOVE_TOWARD_HERO
         do_move(character, world, toward_hero(character, world))
@@ -6881,6 +7006,7 @@ module Game
         # (see #last_move_direction's own citation). A diagonal last
         # direction continues diagonally rather than collapsing to one
         # cardinal axis.
+        # bc2cpp-reviewed: nomethod last_move_direction -- dead fallback (ADR 0226)
         last = character.last_move_direction
         if last.is_a?(Array)
           do_diagonal_dir(character, world, last[0], last[1])
@@ -6896,16 +7022,20 @@ module Game
       when TURN_LEFT  then character.turn_left;   [:turned, true]
       when TURN_180   then character.turn_around; [:turned, true]
       when TURN_RANDOM
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         world.random(2) == 0 ? character.turn_right : character.turn_left
         [:turned, true]
       when FACE_RANDOM
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         character.face!(Character::CARDINALS[world.random(4)]); [:turned, true]
       when FACE_HERO      then character.face!(toward_hero(character, world)); [:turned, true]
       when FACE_AWAY_HERO then character.face!(away_hero(character, world));  [:turned, true]
       when WAIT       then [:waited, true]
       when BEGIN_JUMP then do_jump(character, world)
       when END_JUMP   then [:effect, true] # an End Jump with no Begin: skipped
+      # bc2cpp-reviewed: nomethod facing_locked= -- dead fallback (ADR 0226)
       when LOCK_FACING   then character.facing_locked = true;  [:effect, true]
+      # bc2cpp-reviewed: nomethod facing_locked= -- dead fallback (ADR 0226)
       when UNLOCK_FACING then character.facing_locked = false; [:effect, true]
       # Bounds are the internal 0..5 scale (real Move Speed 1..6 minus 1; see
       # Scene::Map::SLIDE_UNITS/#page_move_speed), shifted down by that same
@@ -7000,23 +7130,38 @@ module Game
       # the sprite needs no relative-hue tracking at all) would pin the
       # exact value down; none of this game's own authored "up-first" wisp
       # routes offer that combination.
+      # bc2cpp-reviewed: nomethod move_speed, nomethod move_speed= -- dead fallback (ADR 0226)
       when SPEED_UP   then character.move_speed = [character.move_speed + 1, 5].min; [:effect, true]
+      # bc2cpp-reviewed: nomethod move_speed, nomethod move_speed= -- dead fallback (ADR 0226)
       when SPEED_DOWN then character.move_speed = [character.move_speed - 1, 0].max; [:effect, true]
+      # bc2cpp-reviewed: nomethod move_frequency, nomethod move_frequency= -- dead fallback (ADR 0226)
       when FREQ_UP    then character.move_frequency = [character.move_frequency + 1, 8].min; [:effect, true]
+      # bc2cpp-reviewed: nomethod move_frequency, nomethod move_frequency= -- dead fallback (ADR 0226)
       when FREQ_DOWN  then character.move_frequency = [character.move_frequency - 1, 1].max; [:effect, true]
+      # bc2cpp-reviewed: nomethod parameter_a, nomethod set_switch -- dead fallback (ADR 0226)
       when SWITCH_ON  then world.set_switch(cmd.parameter_a, true);  [:effect, true]
+      # bc2cpp-reviewed: nomethod parameter_a, nomethod set_switch -- dead fallback (ADR 0226)
       when SWITCH_OFF then world.set_switch(cmd.parameter_a, false); [:effect, true]
       when CHANGE_GRAPHIC
+        # bc2cpp-reviewed: nomethod parameter_a, nomethod parameter_string -- dead fallback (ADR 0226)
         character.set_graphic(cmd.parameter_string, cmd.parameter_a); [:effect, true]
       when PLAY_SOUND
+        # bc2cpp-reviewed: nomethod parameter_a, nomethod parameter_string -- dead fallback (ADR 0226)
         world.play_sound(cmd.parameter_string, cmd.parameter_a,
+                         # bc2cpp-reviewed: nomethod parameter_b, nomethod parameter_c, nomethod play_sound -- dead fallback (ADR 0226)
                          cmd.parameter_b, cmd.parameter_c)
         [:effect, true]
+      # bc2cpp-reviewed: nomethod through= -- dead fallback (ADR 0226)
       when THROUGH_ON  then character.through = true;  [:effect, true]
+      # bc2cpp-reviewed: nomethod through= -- dead fallback (ADR 0226)
       when THROUGH_OFF then character.through = false; [:effect, true]
+      # bc2cpp-reviewed: nomethod animation_stopped= -- dead fallback (ADR 0226)
       when STOP_ANIM   then character.animation_stopped = true;  [:effect, true]
+      # bc2cpp-reviewed: nomethod animation_stopped= -- dead fallback (ADR 0226)
       when START_ANIM  then character.animation_stopped = false; [:effect, true]
+      # bc2cpp-reviewed: nomethod transparency, nomethod transparency= -- dead fallback (ADR 0226)
       when TRANSP_UP   then character.transparency = [character.transparency + 1, 7].min; [:effect, true]
+      # bc2cpp-reviewed: nomethod transparency, nomethod transparency= -- dead fallback (ADR 0226)
       when TRANSP_DOWN then character.transparency = [character.transparency - 1, 0].max; [:effect, true]
       else [:effect, true] # unknown / unsupported id: no-op, advance past it
       end
@@ -7047,13 +7192,18 @@ module Game
     # independently confirmed against genuine RPG_RT under wine.
     def do_move(character, world, dir)
       return [:turned, true] if dir.nil?
+      # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
       prev_dir = character.direction
+      # bc2cpp-reviewed: nomethod passable?, nomethod through -- dead fallback (ADR 0226)
       if character.through || world.passable?(character, dir)
         character.move(dir)
         [:moved, true]
       else
+        # bc2cpp-reviewed: nomethod face -- dead fallback (ADR 0226)
         character.face(dir) # an obstructed move still turns to face it --
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         nx, ny = Character.step_tile(character.x, character.y, dir)
+        # bc2cpp-reviewed: nomethod hero_position -- dead fallback (ADR 0226)
         status = world.hero_position == [nx, ny] ? :touched_hero : :blocked
         if @skippable
           # ...unless the route can skip past the block, in which case this
@@ -7065,6 +7215,7 @@ module Game
           # keeps the turn (the same command retries next frame, still
           # facing the obstacle). NOT independently confirmed against
           # genuine RPG_RT under wine.
+          # bc2cpp-reviewed: nomethod direction= -- dead fallback (ADR 0226)
           character.direction = prev_dir
           [status, true]
         else
@@ -7089,9 +7240,11 @@ module Game
     def do_jump(character, world)
       dx = 0
       dy = 0
+      # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
       dir = character.direction
       i = @index + 1
       while i < @commands.size
+        # bc2cpp-reviewed: nomethod command_id -- dead fallback (ADR 0226)
         id = @commands[i].command_id
         if id >= MOVE_UP && id <= MOVE_FORWARD
           dir = jump_move_direction(id, dir, character, world)
@@ -7115,8 +7268,11 @@ module Game
 
     # Finish a jump scanned out to the End Jump at `end_index`.
     def land_jump(character, world, dx, dy, end_index)
+      # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
       tx = character.x + dx
+      # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
       ty = character.y + dy
+      # bc2cpp-reviewed: nomethod can_land?, nomethod through -- dead fallback (ADR 0226)
       if character.through || world.can_land?(character, tx, ty)
         character.jump(tx, ty)
         @index = end_index
@@ -7149,6 +7305,7 @@ module Game
       case id
       when MOVE_UP, MOVE_RIGHT, MOVE_DOWN, MOVE_LEFT then MOVE_DIR[id]
       when MOVE_UPRIGHT, MOVE_DOWNRIGHT, MOVE_DOWNLEFT, MOVE_UPLEFT then DIAGONAL[id]
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       when MOVE_RANDOM then Character::CARDINALS[world.random(4)]
       when MOVE_TOWARD_HERO then toward_hero(character, world)
       when MOVE_AWAY_HERO then away_hero(character, world)
@@ -7194,8 +7351,10 @@ module Game
       when TURN_LEFT  then Character::TURN_LEFT[dir]  || dir
       when TURN_180   then Character::TURN_180[dir]   || dir
       when TURN_RANDOM
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         world.random(2).zero? ? (Character::TURN_LEFT[dir] || dir)
                              : (Character::TURN_RIGHT[dir] || dir)
+      # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
       when FACE_RANDOM then Character::CARDINALS[world.random(4)]
       when FACE_HERO then toward_hero(character, world)
       when FACE_AWAY_HERO then away_hero(character, world)
@@ -7220,10 +7379,15 @@ module Game
     # leaves set. This structural choice is a design mirror, not a claim
     # independently confirmed against genuine RPG_RT under wine.
     def do_diagonal_dir(character, world, horizontal, vertical)
+      # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
       prev_dir = character.direction
+      # bc2cpp-reviewed: nomethod face -- dead fallback (ADR 0226)
       character.face(character.diagonal_facing(horizontal, vertical))
+      # bc2cpp-reviewed: nomethod through -- dead fallback (ADR 0226)
       passable = character.through ||
+                 # bc2cpp-reviewed: nomethod passable? -- dead fallback (ADR 0226)
                  (world.passable?(character, horizontal) &&
+                  # bc2cpp-reviewed: nomethod passable? -- dead fallback (ADR 0226)
                   world.passable?(character, vertical))
       if passable
         character.move_diagonal(horizontal, vertical)
@@ -7231,6 +7395,7 @@ module Game
       elsif @skippable
         # Same skippable-block reversion #do_move applies -- a diagonal that
         # can't move leaves no visible turn behind on a skippable route.
+        # bc2cpp-reviewed: nomethod direction= -- dead fallback (ADR 0226)
         character.direction = prev_dir
         [:blocked, true]
       else
@@ -7239,11 +7404,13 @@ module Game
     end
 
     def toward_hero(character, world)
+      # bc2cpp-reviewed: nomethod hero_position -- dead fallback (ADR 0226)
       hx, hy = world.hero_position
       character.direction_toward(hx, hy)
     end
 
     def away_hero(character, world)
+      # bc2cpp-reviewed: nomethod hero_position -- dead fallback (ADR 0226)
       hx, hy = world.hero_position
       character.direction_away(hx, hy)
     end
@@ -7307,9 +7474,13 @@ module Game
     # truthy).
     def self.random_direction(character, world)
       draw = world.random(10)
+      # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
       return character.direction if draw < 3
+      # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
       return Character::TURN_LEFT[character.direction]  || character.direction if draw < 5
+      # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
       return Character::TURN_RIGHT[character.direction] || character.direction if draw < 7
+      # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
       return Character::TURN_180[character.direction]   || character.direction if draw == 7
       nil
     end
@@ -7331,6 +7502,7 @@ module Game
     def self.toward_away_direction(character, world, towards)
       return Character::CARDINALS[world.random(4)] unless world.in_sight?(character)
       draw = world.random(10)
+      # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
       return character.direction if draw == 0
       return Character::CARDINALS[world.random(4)] if draw == 1
       hx, hy = world.hero_position
@@ -7351,6 +7523,7 @@ module Game
     # confirmed against genuine RPG_RT under wine -- first-principles/
     # by-hand reasoning, left for a future cycle to verify.
     def self.bounce(character, world, pair)
+      # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
       cur = pair.include?(character.direction) ? character.direction : pair[0]
       return cur if world.passable?(character, cur)
       cur == pair[0] ? pair[1] : pair[0]
@@ -7408,6 +7581,7 @@ module Game
         # to the operator-based check) -- these are
         # genuinely different rules, not the same comparison with an
         # edition-gated constant.
+        # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
         rpg2003 = party && party.respond_to?(:rpg2003?) && party.rpg2003?
         if rpg2003
           op = cond[:compare_operator]
@@ -7419,9 +7593,11 @@ module Game
         end
       end
       if (flags & ITEM) != 0
+        # bc2cpp-reviewed: nomethod has_item? -- dead fallback (ADR 0226)
         return false unless party && party.has_item?(cond[:item_id])
       end
       if (flags & ACTOR) != 0
+        # bc2cpp-reviewed: nomethod include_actor? -- dead fallback (ADR 0226)
         return false unless party && party.include_actor?(cond[:actor_id])
       end
       # Ported from a reference implementation's own condition check -- NOT
@@ -7435,6 +7611,7 @@ module Game
       # TIMER2 is the identical rule against Timer2's own remaining seconds,
       # RPG2003-only -- ported from a reference implementation's own
       # RPG2003-gate check, NOT independently confirmed against genuine RPG_RT under wine.
+      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       if (flags & TIMER2) != 0 && party && party.respond_to?(:rpg2003?) && party.rpg2003?
         return false if timer2_seconds > cond[:timer2_sec]
       end
@@ -7522,8 +7699,11 @@ module Game
     # gated — their switch is on).
     def self.eligible(events, switches)
       events.select do |e|
+        # bc2cpp-reviewed: nomethod trigger -- dead fallback (ADR 0226)
         next false unless e.trigger == AUTO_START || e.trigger == PARALLEL
+        # bc2cpp-reviewed: nomethod need_flag -- dead fallback (ADR 0226)
         next true unless e.need_flag
+        # bc2cpp-reviewed: nomethod switch_id -- dead fallback (ADR 0226)
         switches[e.switch_id]
       end
     end
@@ -8380,7 +8560,9 @@ module Game
     # overlay is a mask instead (see #transition), and this holds the level the
     # screen settles at once it finishes.
     def fade_level
+      # bc2cpp-reviewed: nomethod uniform? -- dead fallback (ADR 0226)
       return @fade unless @transition && @transition.uniform?
+      # bc2cpp-reviewed: nomethod black_alpha -- dead fallback (ADR 0226)
       @transition.black_alpha
     end
 
@@ -9033,6 +9215,7 @@ module Game
 
     # Whether item `id` can be sold: the party owns at least one and it has a
     # non-zero price (RPG2000 marks price-0 / key items as unsellable).
+    # bc2cpp-reviewed: nomethod item_count -- dead fallback (ADR 0226)
     def sellable?(id); price(id) > 0 && @party.item_count(id) > 0; end
 
     # Every item the party holds, id-ordered, for the sell list -- list
@@ -9074,6 +9257,7 @@ module Game
     # appear in the Sell list on genuine RPG_RT.exe, exactly as this method
     # already assumed.
     def sellable_items
+      # bc2cpp-reviewed: nomethod items -- dead fallback (ADR 0226)
       @party.items.keys.sort
     end
 
@@ -9087,10 +9271,12 @@ module Game
     # 0 when the shop will not sell it at all.
     def max_buy(id)
       return 0 unless @allow_buy && @goods.include?(id)
+      # bc2cpp-reviewed: nomethod item_count -- dead fallback (ADR 0226)
       room = ITEM_CAP - @party.item_count(id)
       return 0 if room <= 0
       cost = price(id)
       return room if cost <= 0
+      # bc2cpp-reviewed: nomethod gold -- dead fallback (ADR 0226)
       affordable = @party.gold / cost
       affordable < room ? affordable : room
     end
@@ -9098,6 +9284,7 @@ module Game
     # How many of `id` the party could sell — everything it holds, or 0 when the
     # item cannot be sold here at all.
     def max_sell(id)
+      # bc2cpp-reviewed: nomethod item_count -- dead fallback (ADR 0226)
       @allow_sell && sellable?(id) ? @party.item_count(id) : 0
     end
 
@@ -9108,7 +9295,9 @@ module Game
     def buy(id, n = 1)
       n = n.to_i
       return false if n < 1 || n > max_buy(id)
+      # bc2cpp-reviewed: nomethod gain_gold -- dead fallback (ADR 0226)
       @party.gain_gold(-price(id) * n)
+      # bc2cpp-reviewed: nomethod gain_item -- dead fallback (ADR 0226)
       @party.gain_item(id, n)
       @did_transaction = true
       true
@@ -9118,7 +9307,9 @@ module Game
     def sell(id, n = 1)
       n = n.to_i
       return false if n < 1 || n > max_sell(id)
+      # bc2cpp-reviewed: nomethod gain_gold -- dead fallback (ADR 0226)
       @party.gain_gold(sell_price(id) * n)
+      # bc2cpp-reviewed: nomethod gain_item -- dead fallback (ADR 0226)
       @party.gain_item(id, -n)
       @did_transaction = true
       true
@@ -10289,6 +10480,7 @@ module Game
 
     # Advance every shown picture's in-flight move one frame.
     def update_pictures
+      # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
       @pictures.each_value { |picture| picture.update }
     end
 
@@ -10301,6 +10493,7 @@ module Game
     # zero on this frame.
     def tick_timer(battle = false)
       finished = false
+      # bc2cpp-reviewed: nomethod tick -- dead fallback (ADR 0226)
       @timers.each { |t| finished = true if t.tick(battle) }
       finished
     end
@@ -10316,17 +10509,26 @@ module Game
     #
     # Everything written before the second timer existed talks to the first one,
     # so these keep reading and writing it by name.
+    # bc2cpp-reviewed: nomethod seconds -- dead fallback (ADR 0226)
     def timer_seconds; timer(0).seconds; end
+    # bc2cpp-reviewed: nomethod display_text -- dead fallback (ADR 0226)
     def timer_display_text; timer(0).display_text; end
 
     # Timer2's own remaining seconds -- RPG2003's map-event page TIMER2
     # condition reads this, not #timer_seconds (Timer1's).
+    # bc2cpp-reviewed: nomethod seconds -- dead fallback (ADR 0226)
     def timer2_seconds; timer(1).seconds; end
+    # bc2cpp-reviewed: nomethod frames -- dead fallback (ADR 0226)
     def timer_frames; timer(0).frames; end
+    # bc2cpp-reviewed: nomethod frames= -- dead fallback (ADR 0226)
     def timer_frames=(v); timer(0).frames = v; end
+    # bc2cpp-reviewed: nomethod running -- dead fallback (ADR 0226)
     def timer_running; timer(0).running; end
+    # bc2cpp-reviewed: nomethod running= -- dead fallback (ADR 0226)
     def timer_running=(v); timer(0).running = v; end
+    # bc2cpp-reviewed: nomethod visible -- dead fallback (ADR 0226)
     def timer_visible; timer(0).visible; end
+    # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
     def timer_visible=(v); timer(0).visible = v; end
 
     # The six Change Screen Transitions (10690) slots (see #screen_transitions).
@@ -10386,8 +10588,11 @@ module Game
       Vehicle::TYPES.each do |type|
         next unless LCF.field?(init, :"#{type}_map_id")
         v = @vehicles[type]
+        # bc2cpp-reviewed: nomethod map_id= -- dead fallback (ADR 0226)
         v.map_id = init[:"#{type}_map_id"] || 0
+        # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
         v.x = init[:"#{type}_x"] || 0
+        # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
         v.y = init[:"#{type}_y"] || 0
       end
     rescue StandardError => e

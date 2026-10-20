@@ -91,6 +91,7 @@ class RPG2k
       # previous scene.
       def update
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        # bc2cpp-reviewed: nomethod return_to_title -- dead fallback (ADR 0226)
         parent.return_to_title
       end
 
@@ -182,6 +183,7 @@ class RPG2k
 
       def gameover_bgm_override
         return nil unless @game_state
+        # bc2cpp-reviewed: nomethod system_bgm -- dead fallback (ADR 0226)
         ov = @game_state.system_bgm[SYSTEM_BGM_GAMEOVER]
         return nil unless ov && ov[:name] && !ov[:name].to_s.empty?
         [ov[:name], ov[:volume] || 100, ov[:tempo] || 100, ov[:fadein] || 0, ov[:balance] || 50]

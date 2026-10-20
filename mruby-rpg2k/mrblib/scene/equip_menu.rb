@@ -171,9 +171,13 @@ class RPG2k
       end
 
       def dispose
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @desc_window.dispose if @desc_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @stats_window.dispose if @stats_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @slot_window.dispose if @slot_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @cand_window.dispose if @cand_window
         @up_arrow.dispose if @up_arrow
         @down_arrow.dispose if @down_arrow
@@ -184,9 +188,13 @@ class RPG2k
         # advance its selection-cursor blink (RPG2k::Window#update) -- this
         # scene never called it at all, the same gap Scene::Menu's own
         # #update had (see its own citation).
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @desc_window.update if @desc_window
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @stats_window.update if @stats_window
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @slot_window.update if @slot_window
+        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @cand_window.update if @cand_window
         tick_arrows
         @mode == :items ? update_items : update_slots
@@ -195,11 +203,13 @@ class RPG2k
       private
 
       def actor
+        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         @state.party.actors[@actor_index]
       end
 
       def item_name(id)
         return nil if id.nil? || id == 0
+        # bc2cpp-reviewed: nomethod db_item, nomethod party -- dead fallback (ADR 0226)
         it = @state.party.db_item(id)
         if it.nil?
           warn_missing_item(id)
@@ -241,6 +251,7 @@ class RPG2k
       # moving a cursor within one -- left as a discrete-only, one-tap
       # action, unlike the DOWN/UP slot cursor right beside it.
       def update_slots
+        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         party = @state.party.actors
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
@@ -283,6 +294,7 @@ class RPG2k
           # rejecting whatever gets chosen there -- a rejected Decision plays
           # Buzzer, matching every other "confirmed but refused" case this
           # scene's siblings handle the same way.
+          # bc2cpp-reviewed: nomethod equipment_fixed?, nomethod slot_cursed? -- dead fallback (ADR 0226)
           if actor.equipment_fixed? || actor.slot_cursed?(@slot_index)
             play_system_se(SFX_BUZZER)
           else
@@ -347,6 +359,7 @@ class RPG2k
       # unusable bag row.
       def candidates
         return @candidates if @candidates
+        # bc2cpp-reviewed: nomethod equip_candidates, nomethod party -- dead fallback (ADR 0226)
         real = @state.party.equip_candidates(@slot_index, actor)
         @candidates = real + [[0, 0]]
       end
@@ -418,11 +431,13 @@ class RPG2k
       def apply_choice
         id, = candidates[@cand_index]
         if id == 0
+          # bc2cpp-reviewed: nomethod party, nomethod unequip_to_bag -- dead fallback (ADR 0226)
           @state.party.unequip_to_bag(actor, @slot_index)
         else
           # Pass the slot the candidate list was built for -- a 二刀流 actor's
           # second weapon has to land in the shield slot (1), which its own
           # item type (weapon, slot 0) would not otherwise pick.
+          # bc2cpp-reviewed: nomethod equip_from_bag, nomethod party -- dead fallback (ADR 0226)
           @state.party.equip_from_bag(actor, id, @slot_index)
         end
         leave_items
@@ -457,6 +472,7 @@ class RPG2k
       # Remove entry and for an empty slot, both re-confirmed on genuine
       # frames in cycle #250.
       def build_desc_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @desc_window.dispose if @desc_window
         inner_w = SCREEN_W - Window::BORDER * 2
         @desc_window = Window.new(0, 0, SCREEN_W, DESC_H)
@@ -469,10 +485,13 @@ class RPG2k
 
       def refresh_desc
         return unless @desc_contents
+        # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
         id = @mode == :items ? candidates[@cand_index].first : actor.equipment[@slot_index]
+        # bc2cpp-reviewed: nomethod db_item, nomethod party -- dead fallback (ADR 0226)
         it = id && id != 0 ? @state.party.db_item(id) : nil
         text = it ? it[:description].to_s : ''
         @desc_contents.clear
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         @desc_contents.font.color = Color.new(255, 255, 255, 255)
         draw_system_text @desc_contents, 0, 0, @desc_contents.width, LINE_H,
                          text, @skin, TEXT_COLOR
@@ -482,6 +501,7 @@ class RPG2k
       # battle stats one row apart -- see LAYOUT for the window rect and the
       # STAT_* constants for the columns inside it.
       def build_stats_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @stats_window.dispose if @stats_window
         inner_w = STATS_W - Window::BORDER * 2
         h = LINE_H * (1 + STAT_DEFS.size)
@@ -489,6 +509,7 @@ class RPG2k
         @stats_window.z = 400
         @stats_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         a = actor
         draw_system_text c, 0, 0, inner_w, LINE_H, a.name.to_s, @skin, TEXT_COLOR
@@ -523,18 +544,26 @@ class RPG2k
       # (closed-world lint, ADR 0212).
       def effective_stat(method, a)
         case method
+        # bc2cpp-reviewed: nomethod effective_atk, nomethod party -- dead fallback (ADR 0226)
         when :effective_atk then @state.party.effective_atk(a)
+        # bc2cpp-reviewed: nomethod effective_def, nomethod party -- dead fallback (ADR 0226)
         when :effective_def then @state.party.effective_def(a)
+        # bc2cpp-reviewed: nomethod effective_int, nomethod party -- dead fallback (ADR 0226)
         when :effective_int then @state.party.effective_int(a)
+        # bc2cpp-reviewed: nomethod effective_agi, nomethod party -- dead fallback (ADR 0226)
         else @state.party.effective_agi(a)
         end
       end
 
       def base_stat(accessor, a)
         case accessor
+        # bc2cpp-reviewed: nomethod atk -- dead fallback (ADR 0226)
         when :atk then a.atk
+        # bc2cpp-reviewed: nomethod def -- dead fallback (ADR 0226)
         when :def then a.def
+        # bc2cpp-reviewed: nomethod int -- dead fallback (ADR 0226)
         when :int then a.int
+        # bc2cpp-reviewed: nomethod agi -- dead fallback (ADR 0226)
         else a.agi
         end
       end
@@ -581,7 +610,9 @@ class RPG2k
           # runs ahead of the state-adjustment step, not after.
           new_base = Game.clamp(base_stat(accessor, a) + delta, 1,
                                  Game::Actor::MAX_EFFECTIVE_STAT)
+          # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
           new_value = @state.party.adjust_stat(
+            # bc2cpp-reviewed: nomethod adjust_stat, nomethod party, nomethod stat_mode -- dead fallback (ADR 0226)
             new_base, @state.party.stat_mode(a, stat_flag)
           )
           # That reference implementation's own new-value color logic compares
@@ -603,6 +634,7 @@ class RPG2k
       # leader wearing only a weapon showed 盾/鎧/守護石/装飾品 with blank
       # name columns, not the "-" placeholder this class used to draw.
       def build_slot_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @slot_window.dispose if @slot_window
         inner_w = SLOT_W - Window::BORDER * 2
         h = @slots.size * LINE_H
@@ -610,7 +642,9 @@ class RPG2k
         @slot_window.z = 400
         @slot_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
+        # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
         eq = actor.equipment
         @slots.each_with_index do |label, i|
           y = i * LINE_H
@@ -632,6 +666,7 @@ class RPG2k
       def refresh_slot_cursor
         return unless @slot_window
         @slot_window.cursor_rect =
+          # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
           Rect.new(0, @slot_index * LINE_H, @slot_window.contents.width, LINE_H)
         refresh_desc
       end
@@ -645,6 +680,7 @@ class RPG2k
       # database row, or a fixture item lacking the field).
       def item_stat(id, field)
         return 0 if id.nil? || id == 0
+        # bc2cpp-reviewed: nomethod db_item, nomethod party -- dead fallback (ADR 0226)
         row = @state.party.db_item(id)
         return 0 unless row
         (LCF.field?(row, field) ? row[field] : nil) || 0
@@ -662,7 +698,9 @@ class RPG2k
       # own `slot == WEAPON_SLOT || slot == SHIELD_SLOT` gate.
       def other_hand_item
         case @slot_index
+        # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
         when Game::Actor::WEAPON_SLOT then actor.equipment[Game::Actor::SHIELD_SLOT]
+        # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
         when Game::Actor::SHIELD_SLOT then actor.equipment[Game::Actor::WEAPON_SLOT]
         end
       end
@@ -680,8 +718,10 @@ class RPG2k
       # calls this once per battle stat; #equip_delta below is its sum
       # across all four.
       def stat_field_delta(id, field)
+        # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
         delta = item_stat(id, field) - item_stat(actor.equipment[@slot_index], field)
         other = other_hand_item
+        # bc2cpp-reviewed: nomethod two_handed? -- dead fallback (ADR 0226)
         if id != 0 && other && (actor.two_handed?(other) || actor.two_handed?(id))
           delta -= item_stat(other, field)
         end
@@ -721,6 +761,7 @@ class RPG2k
       # constants), measured with a fourteen-weapon bag in cycle #250 --
       # previously left open here.
       def build_cand_window
+        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @cand_window.dispose if @cand_window
         rows = candidates
         inner_w = SCREEN_W - Window::BORDER * 2
@@ -729,6 +770,7 @@ class RPG2k
         @cand_window.z = 450
         @cand_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
+        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         col_w = cand_col_w
         first = @cand_top * COLUMN_MAX

@@ -16,8 +16,7 @@ ruby scripts/bc2cpp/type_check.rb --facts kept/facts.json --rows kept/rows.tsv  
 
 `--keep DIR` keeps `facts.json`, `rows.tsv` and `bc2cpp.stderr`. `--all` adds one info line per untyped item,
 `--no-sends` skips the send ranking, `--what-if` estimates removable lines (slow), `--top N`, `--scope all` includes
-the mruby core mrblib, `--constants FILE` names the reviewed-constant list the TC1017 ratchet judges by (default: the
-engine's `tools/bc2cpp/constant_reviewed_list.rb`; a `--files` program has no list unless one is given). The analysis takes the time of a build's analysis phase (minutes for the engine).
+the mruby core mrblib. The TC1017 ratchet judges an engine run by the review annotations on its untyped constants (ADR 0522); a `--files` program is not judged. The analysis takes the time of a build's analysis phase (minutes for the engine).
 
 The report runner keeps whole-program analysis, real method compilation, return-guard
 validation and nilable-index collection. It skips the discarded C++ translation
@@ -68,7 +67,7 @@ Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, 
 | TC1013 | error | a caller's argument is not proven to be the class an RBS parameter declares (ADR 0456) |
 | TC1014 | error | an RBS class parameter is refused: POLY, computed or outside-world name, splat caller (ADR 0456) |
 | TC1016 | error | an RBS `class C < S` names a superclass the program does not give C (ADR 0453) |
-| TC1017 | error | the constant ratchet (ADR 0491): an engine constant with no type that `CONSTANT_REVIEWED` does not list, or a listed one that is now typed or gone |
+| TC1017 | error | the constant ratchet (ADR 0491): an engine constant with no type and no `constant` review annotation on its line, or an annotation whose constant is now typed or gone |
 | TC2004 | info | (`--all`) an IR query is unknown, with its refusal or producer reason |
 | TC1005 | warning | an index (`x[i]`, `x[i] = v`) on a receiver that may be nil, with no nil check before it (ADR 0439) |
 | TC1004 | error | an annotation token bc2cpp ignores (unknown class), a signature or annotation with more tokens than the method has parameters (fewer is fine: a prefix) |
@@ -151,22 +150,17 @@ reach it either.
 
 ## Constant ratchet (TC1017, ADR 0491)
 
-An engine constant the analysis gives no type is untyped. The reviewed list `CONSTANT_REVIEWED` in
-`tools/bc2cpp/constant_reviewed_list.rb` names the ones that were read and accepted as untyped, and the gate holds it to
+An engine constant the analysis gives no type is untyped. A reviewer reads it and annotates its source line,
+`# bc2cpp-reviewed: constant <Name> -- reason`, on the line of the constant or the line above (ADR 0522). The gate holds
 two rules:
 
-* an untyped engine constant that is not listed is a TC1017 error at its file:line;
-* a listed constant that is now typed, or no longer an engine constant, is a TC1017 error at its line (or `-` when it
-  is gone), so the list is pruned as constants get typed and it can only shrink.
+* an untyped engine constant with no such annotation is a TC1017 error at its file:line;
+* an annotation whose constant is now typed, or is no longer an engine constant, is a TC1017 error at its line, so the
+  annotations are removed as constants get typed and they can only shrink.
 
-With the list empty and every engine constant typed, the gate is a plain "no untyped constants" check. A `--files`
-program is not judged unless `--constants FILE` names a list. The list is generated, not hand-edited:
-
-```
-MRBC=path/to/host/mrbc ruby scripts/bc2cpp/constant_reviewed_update.rb          # the diff, no write
-MRBC=... ruby scripts/bc2cpp/constant_reviewed_update.rb --write                # after reading each added name
-ruby scripts/bc2cpp/constant_reviewed_check.rb                                  # fixture + list format (needs MRBC)
-```
+A `--files` program is not judged. A constant whose claimed file does not hold its line (mrbc names the previous file of
+a multi-file compile) is not an engine constant and is not judged; mruby-io's STDIN, STDOUT and STDERR come out this way.
+`scripts/bc2cpp/constant_reviewed_check.rb` checks the gate on fixtures and, with MRBC, on the engine's own type check.
 
 The check runs in CI's `bc2cpp-build` job, after the closed-world build, with the host mrbc that build makes. The
 type check step runs the gate on the real engine; the check fixes the gate's behaviour on small programs.

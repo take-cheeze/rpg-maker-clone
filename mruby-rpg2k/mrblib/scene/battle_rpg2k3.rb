@@ -41,6 +41,7 @@ module RPG2k3
       # filling while a command menu is open; wait mode (raw 1,
       # `AtbMode_atb_wait`) freezes them.
       def active_atb?
+        # bc2cpp-reviewed: nomethod atb_mode -- dead fallback (ADR 0226)
         gauge_battle? && @state.atb_mode != 1
       end
 
@@ -63,7 +64,9 @@ module RPG2k3
       # round machine) untouched.
       def update
         battle = @ui && @ui[:battle]
+        # bc2cpp-reviewed: nomethod battle_type -- dead fallback (ADR 0226)
         if battle && battle.battle_type == 2
+          # bc2cpp-reviewed: nomethod advance_gauges -- dead fallback (ADR 0226)
           battle.advance_gauges if atb_accumulating?
           update_enemy_flashes
           update_enemy_positions
@@ -101,6 +104,7 @@ module RPG2k3
       # field in this codebase.
       def gauge_battle?
         battle = @ui && @ui[:battle]
+        # bc2cpp-reviewed: nomethod battle_type -- dead fallback (ADR 0226)
         !!(battle && battle.battle_type == 2)
       end
 
@@ -115,16 +119,20 @@ module RPG2k3
       def drive_battle_atb
         battle = @ui[:battle]
         return if run_battle_events(:atb)
+        # bc2cpp-reviewed: nomethod finished? -- dead fallback (ADR 0226)
         if battle.finished?
           # #finish_round_animation settles the result before returning here,
           # but the per-frame loop should not trust that: settle it defensively
           # (end_round is idempotent) so a fight that became decided another
           # way -- a battle-event page, say -- lands on its result, never on a
           # nil one.
+          # bc2cpp-reviewed: nomethod end_round -- dead fallback (ADR 0226)
           battle.end_round
+          # bc2cpp-reviewed: nomethod result -- dead fallback (ADR 0226)
           enter_battle_result(battle.result)
           return
         end
+        # bc2cpp-reviewed: nomethod ready_combatants -- dead fallback (ADR 0226)
         b = battle.ready_combatants.first
         return unless b
         if controllable?(b)
@@ -140,6 +148,7 @@ module RPG2k3
           # A Forced-AI actor's ready gauge gets the same AI pick the round
           # machine's skip logic would have queued for it; a restricted actor
           # just fires its turn (which #step_action resolves to a no-op).
+          # bc2cpp-reviewed: nomethod choose_auto_battle_command -- dead fallback (ADR 0226)
           battle.choose_auto_battle_command(b) if force_ai_actor?(b)
           start_gauge_action(b)
         end
@@ -211,6 +220,7 @@ module RPG2k3
       def interrupting_ready_combatant
         battle = @ui[:battle]
         cur = current_actor
+        # bc2cpp-reviewed: nomethod ready_combatants -- dead fallback (ADR 0226)
         battle.ready_combatants.find { |c| c != cur && !controllable?(c) }
       end
 
@@ -227,9 +237,11 @@ module RPG2k3
       # yet (the flag is normally set by the *previous* action's step_action).
       def start_gauge_action(b)
         if @ui[:cmd_win]
+          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @ui[:cmd_win].dispose
           @ui[:cmd_win] = nil
         end
+        # bc2cpp-reviewed: nomethod begin_gauge_turn -- dead fallback (ADR 0226)
         @ui[:battle].begin_gauge_turn(b)
         @ui[:battler_boundary] = true
         @ui[:phase] = :animate
@@ -248,11 +260,14 @@ module RPG2k3
         # so their sprite can revert to Idle, and catch up anyone felled
         # this action onto the Dead pose.
         defenders = @ui[:allies].select(&:defending)
+        # bc2cpp-reviewed: nomethod end_round -- dead fallback (ADR 0226)
         battle.end_round
         (defenders + @ui[:allies].select(&:dead?)).uniq { |a| a.object_id }
           .each { |ally| reposition_actor_sprite(ally) }
         close_battle_action
+        # bc2cpp-reviewed: nomethod finished? -- dead fallback (ADR 0226)
         if battle.finished?
+          # bc2cpp-reviewed: nomethod result -- dead fallback (ADR 0226)
           enter_battle_result(battle.result)
         else
           @ui[:actor_i] = 0
@@ -285,6 +300,7 @@ module RPG2k3
       def controllable?(b)
         return false unless @ui[:allies].include?(b)
         battle = @ui[:battle]
+        # bc2cpp-reviewed: nomethod command_restricted? -- dead fallback (ADR 0226)
         !battle.command_restricted?(b) && !force_ai_actor?(b)
       end
     end

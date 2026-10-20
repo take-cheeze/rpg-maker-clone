@@ -259,6 +259,7 @@ class RPG2k
       # implementation's source, NOT independently confirmed against
       # genuine RPG_RT under wine.
       def draw_actor_state(bmp, actor, x, y, w, h, skin, align = 0)
+        # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
         text, color = state_display(actor.states)
         draw_system_text bmp, x, y, w, h, text, skin, color, align
       end
@@ -402,6 +403,7 @@ class RPG2k
       # the state override (set by Change System SFX) first, then the
       # database default for that slot, or nil when neither names a file.
       def system_se(slot)
+        # bc2cpp-reviewed: nomethod system_sfx -- dead fallback (ADR 0226)
         ov = @state && @state.respond_to?(:system_sfx) ? @state.system_sfx[slot] : nil
         return ov if ov && ov[:name] && !ov[:name].empty?
         db_system_se(slot)
@@ -491,7 +493,9 @@ class RPG2k
       end
 
       def hero_position
+        # bc2cpp-reviewed: nomethod state -- dead fallback (ADR 0226)
         s = @scene.state
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         [s.x, s.y]
       end
 
@@ -506,6 +510,7 @@ class RPG2k
       end
 
       def set_switch(id, on)
+        # bc2cpp-reviewed: nomethod state, nomethod switches -- dead fallback (ADR 0226)
         @scene.state.switches[id] = on
       end
 
@@ -528,6 +533,7 @@ class RPG2k
       end
 
       def random(n)
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         @rng.random(n)
       end
     end
@@ -554,11 +560,14 @@ class RPG2k
       end
 
       def hero_position
+        # bc2cpp-reviewed: nomethod state -- dead fallback (ADR 0226)
         s = @scene.state
+        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         [s.x, s.y]
       end
 
       def set_switch(id, on)
+        # bc2cpp-reviewed: nomethod state, nomethod switches -- dead fallback (ADR 0226)
         @scene.state.switches[id] = on
       end
 
@@ -581,6 +590,7 @@ class RPG2k
       end
 
       def random(n)
+        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         @rng.random(n)
       end
     end
@@ -603,6 +613,7 @@ class RPG2k
       def common_event_commands(id)
         entry = @common[id]
         return nil unless entry
+        # bc2cpp-reviewed: nomethod chunk, nomethod commands, nomethod commands= -- dead fallback (ADR 0226)
         entry.commands ||= entry.chunk && entry.chunk[:event]
       end
 
