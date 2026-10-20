@@ -22,10 +22,11 @@ translation-unit assembly. Receiver-report writers still run through `at_exit`.
 Ordinary compiler invocations retain their complete emission path.
 
 Within each context engine, cache up to 2048 class-mask decodings, including
-unknown results. Clear the cache whenever a private shape is registered. Keep an
+unknown results. Clear the cache whenever a private shape is registered or the
+generator allocates another numeric class bit. Keep an
 aggregate registered-shape mask and enumerate only the set bits of each query.
-The generator's native and numeric class tables are settled before these report
-queries; the cache never crosses a generator instance or program world.
+Native table shapes are settled before these report queries; the cache never
+crosses a generator instance or program world.
 
 ## Consequences
 

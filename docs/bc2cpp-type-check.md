@@ -24,7 +24,7 @@ validation and nilable-index collection. It skips the discarded C++ translation
 unit and declaration sidecar; receiver-report writers still finish normally.
 `--keep` therefore contains analysis diagnostics rather than final emission listings.
 Repeated context class decoding is cached within one engine, with invalidation
-when a private container shape is registered. See [ADR 0517](adr/0517-type-check-report-cost.md).
+when numeric class bits or private container shapes are registered. See [ADR 0517](adr/0517-type-check-report-cost.md).
 
 ## Output
 
