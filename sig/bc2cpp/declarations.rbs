@@ -106,7 +106,7 @@ end
 
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_exit
-module Kernel
+class Kernel
   def exit: (?untyped) -> nil
   def exit!: (?untyped) -> nil
 end
@@ -1413,7 +1413,7 @@ class Array
 end
 
 # bc2cpp-native: base_random
-module Kernel
+class Kernel
   def rand: (?untyped) -> untyped
   def srand: (?untyped) -> Integer
 end
@@ -7446,7 +7446,7 @@ end
 
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_sprintf
-module Kernel
+class Kernel
   def format: (*untyped) -> untyped
   def sprintf: (*untyped) -> untyped
   def self.format: (*untyped) -> untyped
@@ -8350,7 +8350,7 @@ end
 # Layout constants the DECLARED_CONSTANT_CHECK (docs/adr/0455) evaluates at every assignment: integer literals and
 # other such constants combined with + - * / whose interval fits a Fixnum. Each bare name's every binding checks, so
 # it joins INTEGER_CONSTANT_PROOF (inference proves literal / + - chains only). Listed: the ones method bodies read.
-class RPG2k
+module RPG2k
   module Scene
     class Battle
       BATTLE_PANEL_Y: Integer
@@ -8417,7 +8417,7 @@ module Game
     def self.from_lsd: (LCF::Database db, untyped save) -> Game::State
   end
 end
-class RPG2k
+module RPG2k
   # `Game::State.from_lsd(@db, save)`, or nil: no Save<slot>.lsd (`return nil unless File.exist?`) or an
   # unreadable one (the rescue). #continue_game returns on nil before Scene::Map.new; Scene::SaveLoad keeps nil
   # as an empty slot.
@@ -9000,7 +9000,7 @@ end
 # ---- record_types.rbs
 # Record types (RBS_RECORD_TYPES, docs/adr/0454): checked at every write of the ivar name in the closed world, so a
 # wrong field is a TC1009 build error at the offending write, never a silent hint.
-class RPG2k
+module RPG2k
   module Scene
     class Battle
       # Writers (both scene classes; RPG2k3::Scene::Battle reuses the ivar): `@ui = {}` in #initialize, so every key
@@ -9043,7 +9043,7 @@ end
 # Left out on purpose: Scene::Battle#battle_ally_targets and Scene::SkillMenu#skills (they depend on @ui[:allies] and
 # caster.skills, untyped) and Game::Actor#battle_commands (its setter stores ids.dup of an untyped argument).
 # Scene::Map#blockers_at is declared in receiver_returns.rbs.
-class RPG2k
+module RPG2k
   module Scene
     class SkillMenu
       def teleport_targets: () -> Array
@@ -9531,7 +9531,7 @@ class Array
   def uniq: () -> untyped
 end
 
-module Enumerable
+class Enumerable
 end
 
 class Game::Actor
@@ -9779,7 +9779,7 @@ class Integer
   def nobits?: (untyped) -> bool
 end
 
-module LCF
+class LCF
   def binstr: (untyped) -> untyped
   def elements_of: (untyped) -> untyped
   def encode_event_commands: (untyped) -> untyped
@@ -11030,7 +11030,7 @@ end
 
 
 # ---- predicate_returns.rbs (new block for Game::BattlePage)
-module Game::BattlePage
+class Game::BattlePage
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def self.active?: (untyped, untyped, untyped, untyped, ?untyped) -> bool
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
@@ -11039,14 +11039,14 @@ end
 
 
 # ---- predicate_returns.rbs (new block for Game::ChipsetLayout)
-module Game::ChipsetLayout
+class Game::ChipsetLayout
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def self.upper_blank?: (untyped) -> bool
 end
 
 
 # ---- predicate_returns.rbs (new block for Game::EventGraphic)
-module Game::EventGraphic
+class Game::EventGraphic
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def self.animated?: (untyped) -> bool
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
@@ -11057,35 +11057,35 @@ end
 
 
 # ---- predicate_returns.rbs (new block for Game::EventPage)
-module Game::EventPage
+class Game::EventPage
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def self.active?: (untyped, untyped, untyped, untyped, ?untyped, ?untyped) -> bool
 end
 
 
 # ---- predicate_returns.rbs (new block for Game::LegacyLsd)
-module Game::LegacyLsd
+class Game::LegacyLsd
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def self.marked?: (untyped) -> bool
 end
 
 
 # ---- predicate_returns.rbs (new block for Game::MapAccess)
-module Game::MapAccess
+class Game::MapAccess
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def self.allowed?: (untyped, untyped, untyped) -> bool
 end
 
 
 # ---- predicate_returns.rbs (new block for Game::MessagePalette)
-module Game::MessagePalette
+class Game::MessagePalette
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def self.valid?: (untyped) -> bool
 end
 
 
 # ---- predicate_returns.rbs (new block for LCF::SaveTyped)
-module LCF::SaveTyped
+class LCF::SaveTyped
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def self.fits?: (untyped, untyped) -> bool
 end
