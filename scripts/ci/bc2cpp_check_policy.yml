@@ -533,3 +533,9 @@ checks:
     tier: fast
     capabilities:
     - native_sources
+  scripts/bc2cpp/type_check_run_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources

@@ -65,6 +65,7 @@ CHECKS = [
   { name: 'bc2cpp-predicate-returns', command: %w[scripts/bc2cpp/predicate_returns_check.rb] },
   { name: 'bc2cpp-recv-trace', command: %w[scripts/bc2cpp/recv_trace_check.rb] },
   { name: 'bc2cpp-trace-types', command: %w[scripts/bc2cpp/trace_types_check.rb] },
+  { name: 'bc2cpp-type-check-run', command: %w[scripts/bc2cpp/type_check_run_check.rb] },
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-blocks', command: %w[scripts/bc2cpp/ir_blocks_check.rb] },
   { name: 'bc2cpp-ir-numeric-classes', command: %w[scripts/bc2cpp/ir_numeric_classes_check.rb] },
