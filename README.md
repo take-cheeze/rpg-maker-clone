@@ -1026,7 +1026,8 @@
   graph admission or round budgets. Prepared RBS indexes share signature lookup
   across methods while keeping their inference state separate. Context argument layouts
   and call-site keyword layouts are indexed per bytecode body while argument
-  values remain context-specific.
+  values remain context-specific. Settled method lookup also shares ancestor paths,
+  simple names and Ruby owner sets to reduce allocation pressure.
 
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
