@@ -152,7 +152,7 @@ def build_registry(ireps, root_label)
   conditional_labels = nil
   conditional = -> { conditional_labels ||= CoreDefs.conditional_def_labels(ireps) }
   register_alias = lambda do |label, irep, idx, namespace|
-    next if namespace.nil? || namespace.start_with?('<')
+    next if namespace.nil? || namespace.start_with?('<') || CoreDefs.core_source?(irep.file)
 
     found = AliasSites.site(irep, idx)
     next unless found
