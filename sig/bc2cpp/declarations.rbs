@@ -10718,6 +10718,30 @@ module Enumerable
   def any?: () -> bool | (untyped) -> bool | () { (untyped) -> untyped } -> bool
 end
 
+# ---- native: core_block_iterators
+# The result class of a block iterator called with a literal block (a SENDB site), read by CoreBlockIteratorSigs
+# (tools/bc2cpp/core_block_iterator_sigs.rb) and checked by scripts/bc2cpp/core_facts_rbs_check.rb. Each returns a new
+# Array or Hash whatever the block returns: mrblib/enum.rb's collect, find_all, partition (`[ary_T, ary_F]`) and reject
+# and mruby-enum-ext's group_by build `ary = []` or `h = {}`; Enumerable#sort_by answers Array#sort_by (`self.to_a`),
+# and filter_map is mruby-enum-ext's `ary`. Hash#reject (mrblib/hash.rb) builds `h = {}`. The bare call returns an
+# Enumerator and is not declared here (core_results).
+# bc2cpp-native: core_block_iterators
+module Enumerable
+  def map: () { (untyped) -> untyped } -> Array[untyped]
+  def collect: () { (untyped) -> untyped } -> Array[untyped]
+  def reject: () { (untyped) -> untyped } -> Array[untyped]
+  def find_all: () { (untyped) -> untyped } -> Array[untyped]
+  def partition: () { (untyped) -> untyped } -> Array[untyped]
+  def filter_map: () { (untyped) -> untyped } -> Array[untyped]
+  def sort_by: () { (untyped) -> untyped } -> Array[untyped]
+  def group_by: () { (untyped) -> untyped } -> Hash[untyped, untyped]
+end
+
+# bc2cpp-native: core_block_iterators
+class Hash[unchecked out K, unchecked out V] < Object
+  def reject: () { (untyped) -> untyped } -> Hash[untyped, untyped]
+end
+
 # ---- native: core_proc_calls
 # The Proc methods that run the proc with their arguments, read by CoreFactSigs.proc_call_names
 # (codegen_block_fallback.rb PROC_CALL_NAMES). bc2cpp_cfunc_proc_call_p (bc2cpp.rb) spells the same set; scripts/
