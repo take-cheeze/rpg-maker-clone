@@ -10519,6 +10519,9 @@ class Array[unchecked out Elem] < Object
 # ---- single-class traced types (trace_types.rb candidates over the 13 workloads, BC2CPP_TRACE_TYPES)
 # Only methods whose traced parameters and returns each name one class (no union), and that the sections above do not
 # already declare. Candidates stay reviewable; the loader applies them as the other trace-derived sections do.
+  def delete_if: () -> untyped
+  def each: () -> untyped
+  def sort: () -> untyped
   def uniq: () -> untyped
 # Unified return types (trace candidates, scripts/bc2cpp/trace_types.rb candidates --hierarchy). Each is a
 # runtime-checked hint (%a{bc2cpp:hint}); a body that returns another class raises BC2cppHintViolation.
@@ -10548,7 +10551,7 @@ class Array[unchecked out Elem] < Object
 # Array#each's `-> self` is a block-return declaration (BLOCK_RETURNS, docs/adr/0475), checked against mrblib/array.rb's
 # body (`return to_enum(:each) unless block`, `yield self[idx]` in a loop, then `self`).
   # bc2cpp-native: core_block_params
-  def each: () -> untyped | () { (Elem) -> void } -> self
+  def each: () { (Elem) -> void } -> self
   # bc2cpp-native: core_block_params
   def reverse_each: () { (Elem) -> void } -> untyped
   # bc2cpp-native: core_block_params
@@ -10574,7 +10577,7 @@ class Array[unchecked out Elem] < Object
   # bc2cpp-native: core_block_params
   def keep_if: () { (Elem) -> untyped } -> untyped
   # bc2cpp-native: core_block_params
-  def delete_if: () -> untyped | () { (Elem) -> untyped } -> untyped
+  def delete_if: () { (Elem) -> untyped } -> untyped
   # bc2cpp-native: core_block_params
   def partition: () { (Elem) -> untyped } -> untyped
   # bc2cpp-native: core_block_params
@@ -10612,7 +10615,7 @@ class Array[unchecked out Elem] < Object
   # bc2cpp-native: core_block_params
   def drop_while: () { (Elem) -> untyped } -> untyped
   # bc2cpp-native: core_block_params
-  def sort: () -> untyped | () { (Elem, Elem) -> untyped } -> untyped
+  def sort: () { (Elem, Elem) -> untyped } -> untyped
   # bc2cpp-native: core_block_params
   def each_with_index: () { (Elem, Integer) -> void } -> untyped
   # bc2cpp-native: core_block_params
@@ -10650,6 +10653,7 @@ class Array[unchecked out Elem] < Object
 end
 
 class Hash[unchecked out K, unchecked out V] < Object
+  def select: () -> untyped
   # bc2cpp-native: core_block_params
   def each: () { (K, V) -> void } -> untyped
   # bc2cpp-native: core_block_params
@@ -10659,7 +10663,7 @@ class Hash[unchecked out K, unchecked out V] < Object
   # bc2cpp-native: core_block_params
   def each_key: () { (K) -> void } -> untyped
   # bc2cpp-native: core_block_params
-  def select: () -> untyped | () { (K, V) -> untyped } -> untyped
+  def select: () { (K, V) -> untyped } -> untyped
   # bc2cpp-native: core_block_params
   def filter: () { (K, V) -> untyped } -> untyped
   # bc2cpp-native: core_block_params

@@ -478,9 +478,6 @@ checks:
     fixture_gate: false
     reason: This host registration skips without clang; its AST fixtures require an explicitly provisioned parser.
     host_phase: false
-  scripts/bc2cpp/native_member_tables_check.rb:
-    tier: fast
-    capabilities: []
   scripts/bc2cpp/native_registration_check.rb:
     tier: fast
     capabilities: []
