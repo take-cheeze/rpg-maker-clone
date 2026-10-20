@@ -1,0 +1,1 @@
+- **bc2cpp typing** indexes fixed context call layouts and keyword-name producers while reading fresh receiver and argument values on every evaluation.

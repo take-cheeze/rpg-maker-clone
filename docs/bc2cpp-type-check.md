@@ -33,11 +33,39 @@ one context engine and is bounded to 128 snapshots of at most 4096 state cells.
 Set `BC2CPP_IR_LEAF_EVALUATIONS=0` for a comparison run. See
 [ADR 0518](adr/0518-reuse-leaf-context-evaluations.md).
 
+Receiver union decoding indexes numeric class bits and visits only bits present
+in a receiver. Decoded unions are cached within one CodeGen instance, with a
+2048-entry limit. Lazy class registration and probe table replacement invalidate
+the index; unknown/core/provenance bits and unions above eight classes remain
+refused. Set `BC2CPP_CLASS_MEMBER_INDEX=0` for a full-table comparison. See
+[ADR 0523](adr/0523-receiver-class-member-index.md).
+
 Applied RBS contracts are indexed once per typing world. Methods and callbacks
 share owner lookup, inherited ivar maps and named-return tables, while each method
 keeps fresh inference and query state. A new signature or hierarchy world needs a
 new index. Set `BC2CPP_IR_PREPARED_CONTRACTS=0` to compare the unprepared path. See
 [ADR 0519](adr/0519-prepared-rbs-ir-contracts.md).
+
+Context argument binding indexes immutable arity, keyword names and validated
+optional-entry jumps per bytecode body. Every binding still checks its current
+arguments and keywords and builds fresh masks and entry edges. Indexes live only
+for one context engine; malformed layouts remain refused. Set
+`BC2CPP_IR_BINDING_INDEX=0` to compare rebuilding layouts on each bind. See
+[ADR 0520](adr/0520-context-binding-index.md).
+
+Context call frames also index fixed receiver/argument registers and keyword-name
+producers. This avoids repeated reaching-definition result copies and name decoding;
+values are read from the current context on every call. Splat, ambiguous and
+nonliteral keyword names keep their conservative refusals. Set
+`BC2CPP_IR_CALL_INDEX=0` to rebuild layouts. See
+[ADR 0521](adr/0521-context-call-layout-index.md).
+
+Method resolution indexes ordered ancestor paths, simple class names and Ruby
+instance owner sets within each `CallFacts::Answers` world. Hierarchy and registry
+inputs must remain settled for that instance; changed inputs require a new world.
+Unknown paths stay refused and inherited/native lookup order is preserved. Set
+`BC2CPP_CALL_LOOKUP_INDEX=0` to compare the uncached path. See
+[ADR 0522](adr/0522-call-lookup-allocation-index.md).
 
 ## Output
 

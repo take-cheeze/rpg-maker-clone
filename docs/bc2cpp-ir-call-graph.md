@@ -25,3 +25,17 @@ On the current engine workload, this adds one required argument annotation
 (555 to 556): `RPG2k::Scene::SkillMenu#move_teleport_cursor` receives Integer.
 Typed returns and ivars remain 892 and 525. Existing class pools already cover
 many simple graph cases; unknown receiver edges still limit further gains.
+
+## Entry seeds
+
+The native entries seed the same summary (ENTRY_SEEDS, see
+[ADR 0519](adr/0519-bc2cpp-entry-seeds.md)). The `initialize` of a maker
+(`RPG2k`, `RPGVX`, `RPGXP`, `MZ`, `MV`, `WolfRPG`) takes one Array at position 1.
+The wio entry (`app/wio/src/maix_game_main.cxx`, the closed world the type check
+analyses) and the desktop and browser entry (`src/main.cxx`) build it themselves
+and pass it to `mrb_obj_new`. The seed applies only while that construction is
+the maker's whole entry: every native spelling of the name is such a construction,
+and no Ruby `new` or `super` reaches the body. Its parameter row keeps source
+`inferred:call-graph`. `BC2CPP_ENTRY_SEEDS=0` turns the seeds off. The `start`
+receiver is not seeded: the closed-world self model already gives the maker class
+exactly. Check: `ruby scripts/bc2cpp/ir_entry_seeds_check.rb`.
