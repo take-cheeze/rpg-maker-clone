@@ -88,6 +88,9 @@ deferred:
     - native_sources
     reason: Full-engine reviewed-fallback generation audit; retains a separate manual run until budgeted explicitly.
 checks:
+  scripts/bc2cpp/ir_facts_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/block_receiver_proof_check.rb:
     tier: fast
     capabilities:
@@ -449,18 +452,6 @@ checks:
   scripts/bc2cpp/foreign_definers_cache_check.rb:
     tier: fast
     capabilities: []
-  scripts/bc2cpp/ir_container_shapes_check.rb:
-    tier: fast
-    capabilities: []
-  scripts/bc2cpp/ir_exact_types_check.rb:
-    tier: fast
-    capabilities: []
-  scripts/bc2cpp/ir_numeric_classes_check.rb:
-    tier: fast
-    capabilities: []
-  scripts/bc2cpp/ir_return_sites_check.rb:
-    tier: fast
-    capabilities: []
   scripts/bc2cpp/lcf_schema_oracle_check.rb:
     tier: fast
     capabilities: []
@@ -488,9 +479,6 @@ checks:
     tier: fast
     capabilities: []
   scripts/bc2cpp/numeric_flow_speed_check.rb:
-    tier: fast
-    capabilities: []
-  scripts/bc2cpp/origin_transfers_check.rb:
     tier: fast
     capabilities: []
   scripts/bc2cpp/outside_ruby_ivar_scopes_check.rb:

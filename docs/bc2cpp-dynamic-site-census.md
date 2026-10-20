@@ -1589,7 +1589,7 @@ The origin walk (`BytecodeIR.reaching_definitions` with `origin_transfers: true`
 writes only `R[b]`; `EXCEPT a` writes `R[a]` on every entry, so its handler edges need not be known for that
 register. Each follows vm.c. Codegen never passes the option, so generated C++ is unchanged: the shipped pass
 with the `/*SO:*/` comments stripped is byte-identical before and after (442,855 lines).
-`scripts/bc2cpp/origin_transfers_check.rb` has a positive and a negative case per transfer.
+`scripts/bc2cpp/ir_facts_check.rb` has a positive and a negative case per transfer.
 
 The origin walk also refuses where vm.c writes above an op's leading register, which the codegen walk
 treats as a write of the leading register only: the fallback send of `GETIDX0`, `GETIDX`, `SETIDX`, the
