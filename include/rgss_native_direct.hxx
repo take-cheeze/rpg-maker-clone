@@ -18,17 +18,12 @@ mrb_value bgs_stop_direct(mrb_state* M, mrb_value self);
 mrb_value bmp_begin_load_direct(mrb_state* M, mrb_value self);
 mrb_value bmp_blur_direct(mrb_state* M, mrb_value self);
 mrb_value bmp_decoder_ran_direct(mrb_state* M, mrb_value self);
-mrb_value bmp_init_copy_direct(mrb_state* M, mrb_value self, mrb_value other);
 mrb_value bmp_init_size_direct(mrb_state* M,
                                mrb_value self,
                                mrb_int w,
                                mrb_int h);
 mrb_value bmp_load_error_direct(mrb_state* M, mrb_value self);
 mrb_value bmp_stbi_error_direct(mrb_state* M, mrb_value self);
-mrb_value bmp_text_size_direct(mrb_state* M,
-                               mrb_value self,
-                               const char* s,
-                               mrb_int len);
 mrb_value bmp_transition_alpha_direct(mrb_state* M,
                                       mrb_value self,
                                       mrb_value map_v,

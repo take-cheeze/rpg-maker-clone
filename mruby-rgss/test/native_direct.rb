@@ -16,7 +16,7 @@ assert 'the probe table lists the split entry points' do
   names = probe.names
   assert_true names.size >= 60, "expected the generated entry points, got #{names.size}"
   assert_equal names.size, names.uniq.size
-  %w[color_eq_direct rect_eq_direct tone_eq_direct table_load_direct bmp_text_size_direct
+  %w[color_eq_direct rect_eq_direct tone_eq_direct table_load_direct
      spr_set_zoom_x_direct window_set_ox_direct].each { |n| assert_include names, n }
   assert_raise(ArgumentError) { probe.call('nope_direct', nil) }
 end
@@ -81,13 +81,10 @@ assert 'Table#_dump, ._load and the size readers: binding and direct entry point
   assert_equal RGSS::Table._load(t._dump(0))[1, 1, 1], loaded[1, 1, 1]
 end
 
-assert 'Bitmap#text_size and #blur: binding and direct entry point agree' do
+# Bitmap#text_size has no direct entry point: its body reads the calling frame (REnv), so the generator refuses it
+# (ADR 0263).
+assert 'Bitmap#blur: binding and direct entry point agree' do
   b = RGSS::Bitmap.new(64, 24)
-  %w[Hello a].each do |text|
-    r = b.text_size(text)
-    d = probe.call('bmp_text_size_direct', b, text)
-    assert_equal [r.x, r.y, r.width, r.height], [d.x, d.y, d.width, d.height], "text_size #{text.inspect}"
-  end
   b.set_pixel(1, 1, RGSS::Color.new(255, 255, 255, 255))
   clone = b.clone
   b.blur

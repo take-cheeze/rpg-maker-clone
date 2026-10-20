@@ -37,13 +37,11 @@ class RGSS::Bitmap
   def dispose: () -> untyped
   def disposed?: () -> untyped
   def height: () -> untyped
-  def initialize_copy: (untyped) -> untyped
   def rect: () -> untyped
   def self._begin_load: () -> untyped
   def self._decoder_ran?: () -> untyped
   def self._load_error: () -> untyped
   def self._stbi_error: () -> untyped
-  def text_size: (String) -> untyped
   def width: () -> untyped
 end
 

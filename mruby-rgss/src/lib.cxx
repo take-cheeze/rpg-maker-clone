@@ -8377,16 +8377,6 @@ mrb_value bmp_decoder_ran_direct(mrb_state* M, mrb_value self) {
   return bmp_decoder_ran(M, self);
 }
 
-#if !defined(WIO_TERMINAL)
-mrb_value bmp_init_copy_direct(mrb_state* M, mrb_value self, mrb_value other) {
-  return bmp_init_copy_native_body(M, self, other);
-}
-#else
-mrb_value bmp_init_copy_direct(mrb_state* M, mrb_value self, mrb_value) {
-  return native_split_compiled_out(M, self);
-}
-#endif
-
 mrb_value bmp_init_size_direct(mrb_state* M,
                                mrb_value self,
                                mrb_int w,
@@ -8400,13 +8390,6 @@ mrb_value bmp_load_error_direct(mrb_state* M, mrb_value self) {
 
 mrb_value bmp_stbi_error_direct(mrb_state* M, mrb_value self) {
   return bmp_stbi_error(M, self);
-}
-
-mrb_value bmp_text_size_direct(mrb_state* M,
-                               mrb_value self,
-                               const char* s,
-                               mrb_int len) {
-  return bmp_text_size_native_body(M, self, s, len);
 }
 
 mrb_value bmp_transition_alpha_direct(mrb_state* M,
