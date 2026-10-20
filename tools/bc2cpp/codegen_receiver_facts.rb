@@ -187,11 +187,27 @@ class CodeGen
   # method or operator shares them (bc2cpp.rb core_hidden_defs): mruby's own Array#sort_by is one. Those
   # bodies still exist at run time, so a send of their name is not a miss. Only adds names, so it only
   # withholds a miss claim. Nil stays nil (the scan did not run).
+  #
+  # Core Ruby's own `def`s and `alias`es (core mrblib, compiled as program) are not in the installed-names scan
+  # (collect_installed_names skips core source) nor always in the registry (an alias of an inherited core method is
+  # not a registry definition), so their names are added here too.
   def proven_miss_answered_names
     return @proven_miss_answered_names if defined?(@proven_miss_answered_names)
 
     names = symbol_installed_names
-    @proven_miss_answered_names = names && (names | (self.class.core_hidden_defs || []).map(&:name))
+    if names
+      core_defined = Set.new
+      @ireps.each_value do |irep|
+        next unless CoreDefs.core_source?(irep.file)
+
+        irep.instructions.each do |insn|
+          core_defined << insn.sym_token if insn.op == 'DEF'
+          core_defined << insn.sym if insn.op == 'ALIAS'
+        end
+      end
+      names = names | (self.class.core_hidden_defs || []).map(&:name) | core_defined
+    end
+    @proven_miss_answered_names = names
   end
 
   # Diagnostic-only: identify the nearest producer behind an unresolved
