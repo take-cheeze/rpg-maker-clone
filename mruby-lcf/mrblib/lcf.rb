@@ -38,7 +38,7 @@ module LCF
   # IREP bignum-pool entry that folding produces does not survive being
   # cross-compiled by a 64-bit-mrb_int host `mrbc` (this project's own
   # desktop build, AGENTS.md's "mrb_int is 32-bit on the cross targets") and
-  # then loaded by a 32-bit-mrb_int target VM (Emscripten/Wio/PSP) --
+  # then loaded by a 32-bit-mrb_int target VM (Emscripten) --
   # `mrb_load_irep_file` on the 32-bit side fails the whole compiled unit
   # with "irep load error", before any of this module's own code ever runs.
   # A bare bignum literal's own pool entry does not have this problem
@@ -75,7 +75,7 @@ module LCF
     # the five bytes 8f ff ff ff 7f), so the low 32 bits are reinterpreted as
     # signed. Done arithmetically rather than with `[ret].pack('L').unpack1('l')`
     # because on a target whose `mrb_int` is 32-bit -- the browser/Emscripten
-    # build, Wio, PSP -- `ret` is already a bignum here, and pack has to convert
+    # build -- `ret` is already a bignum here, and pack has to convert
     # it back to an `mrb_int` to write it: it raised `RangeError: integer out of
     # range` on every value with the high bit set, i.e. on every negative
     # parameter. That is one command list into any real project, so New Game
@@ -516,7 +516,7 @@ module LCF
   # DATABASE's own per-record-type `elements:` sub-schemas (schema.rb) are
   # `-> { {...} }` lambdas, not the hash literal directly -- building all ~930
   # fields' worth of nested Hash/Symbol objects at gem-load time is what
-  # raised a real NoMemoryError on the Wio's 192 KB SRAM (see docs/adr/0099).
+  # raised a real NoMemoryError on a constrained target (see docs/adr/0099).
   # Resolved and cached in place on first real access, the same way
   # Array1D#[]/Array2D#[] already cache a chunk's *decoded value* rather than
   # re-running LCF.to_rb on every read -- this just extends that to the

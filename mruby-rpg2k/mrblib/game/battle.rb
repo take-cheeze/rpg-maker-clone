@@ -1,9 +1,5 @@
-# Game::Battle -- split into its own file (mruby-rpg2k/mrbgem.rake) so
-# it, alongside scene/battle.rb and scene/battle_rpg2k3.rb, can be
-# excluded from the wio build's own compiled bytecode: at 81,230 bytes
-# on its own (docs/adr/0107's own real measurement), it is the single
-# largest chunk of game.rb, for a feature (a live fight) most of a
-# session never touches. See docs/adr/0107-wio-battle-bytecode-split.md.
+# Game::Battle -- the headless combat model, split into its own file so it can
+# be trimmed out of a build on its own (docs/adr/0107).
 
 module Game
   # A headless combat model driving both the live turn-based fight

@@ -398,12 +398,9 @@ class RPG2k
 
       # Per-category caps for the named-graphic caches below (see #initialize),
       # in estimated decoded bytes (see LRUBitmapCache#bitmap_bytes) -- a
-      # conservative first cut, not a measured budget: this build's only
-      # native-heap instrumentation (sceKernelTotalFreeMemSize/MaxFreeMemSize,
-      # app/psp/main.cxx's `free`/`maxfree` fields) reported the exact same
-      # value across every heartbeat of a full psp-smoke-game run regardless
-      # of arena_used moving by megabytes, so it cannot currently validate
-      # (or rule out) whatever headroom is actually available. Each constant
+      # conservative first cut, not a measured budget: no native-heap
+      # instrumentation in this build can currently validate (or rule out)
+      # whatever headroom is actually available. Each constant
       # is independent and trivially raised later once real measurement
       # exists; sized for now to comfortably outlast one screen's working set
       # (e.g. a troop's handful of distinct battler graphics) while still
@@ -427,8 +424,8 @@ class RPG2k
       # Scale a named-graphic cache's byte budget (or the picture tone
       # cache's entry count, see #toned_picture_src) down when --render_fps
       # (src/main.cxx) signals a constrained device: a target picked for a
-      # low real-time render rate -- the PSP/Wio-class ports this flag exists
-      # for -- is RAM-constrained too, so it is worth evicting decoded
+      # low real-time render rate is RAM-constrained too, so it is worth
+      # evicting decoded
       # graphics more eagerly (a re-decode-on-next-use cost) to hold a
       # smaller working set. Scaled by the fps ratio rather than a single
       # on/off cut -- --render_fps=30 roughly halves a budget, 10 roughly
@@ -1188,7 +1185,7 @@ class RPG2k
         end
         cap = @transition_capture
         unless cap
-          # The backend cannot snapshot (Wio/PSP, or a headless test double) --
+          # The backend cannot snapshot (a headless test double) --
           # fall back to a plain fade, same as every style this build does not
           # paint for real.
           @fade_sprite.opacity = tr.black_alpha
@@ -5578,10 +5575,8 @@ class RPG2k
         return if event_busy? && @battle.nil?
         return unless @parent.test_play
         return unless Input.trigger?(Input::F9)
-        # psp/wio builds drop debug_menu.rb (mruby-rpg2k/mrbgem.rake, docs/adr/
-        # 0097): Test Play never happens on those, but nothing else stops a
-        # future build flag from flipping @parent.test_play on regardless, so
-        # this stays a no-op rather than a NameError if that ever happens.
+        # Some builds drop debug_menu.rb (see docs/adr/0097): this stays a
+        # no-op rather than a NameError if @parent.test_play is ever true there.
         return unless defined?(Scene::DebugMenu)
         @parent.push Scene::DebugMenu.new(@parent, @state)
       end
@@ -5954,11 +5949,7 @@ class RPG2k
       # :numbers/:operators accept flag. Real key backing for
       # RGSS::Input::N0..PERIOD: the SDL desktop backend binds every digit and
       # operator (src/sdl_input.cxx); the terminal/sixel backend types them
-      # too, a real keyboard being able to produce them (mruby-rgss/src/
-      # terminal.cxx); the PSP backend binds only the first five digits
-      # (N0-N4) to its spare buttons; the Wio Terminal has no free pin left,
-      # so these ids stay unbound there — the same backend split F5-F9/F12
-      # follow (bound on SDL and terminal/sixel, unbound on PSP/Wio).
+      # too (mruby-rgss/src/terminal.cxx).
       NUMBER_KEY_BUTTONS = {
         n0: Input::N0, n1: Input::N1, n2: Input::N2, n3: Input::N3, n4: Input::N4,
         n5: Input::N5, n6: Input::N6, n7: Input::N7, n8: Input::N8, n9: Input::N9
@@ -10774,24 +10765,7 @@ class RPG2k
         return nil unless v.placed? && v.map_id == @state.map_id
         @state.boarded == type ? player_pixel : [v.x * TILE, v.y * TILE]
       end
-      # Split into two statements (round 44, docs/adr/0144's own
-      # wio_strip_bc2cpp_stubs series): the original single
-      # `public :camera_position, :character_screen_position, :char_in_sight?`
-      # named both bc2cpp-registered and non-registered methods together --
-      # strip_wio_bc2cpp_stubs.rb's own companion-statement mechanism (see its
-      # file comment) only ever deletes a `private`/`protected`/`public`
-      # statement whole, and only when EVERY name it lists is being stripped
-      # from the very same invocation, raising rather than guessing at a
-      # mixed stripped/kept argument list. Splitting the original statement
-      # into one all-kept and one all-stripped call is behaviorally identical
-      # (`Module#public` with an explicit name list only ever marks those
-      # names public; calling it twice with disjoint subsets of the same
-      # total name set has the exact same net effect as calling it once with
-      # the union) and turns `#char_in_sight?`'s own companion statement into
-      # the ordinary full-overlap single-name shape this mechanism already
-      # strips cleanly -- no change to strip_wio_bc2cpp_stubs.rb itself
-      # needed, and zero regression risk to any other owner's own already-
-      # shipped companion-statement handling.
+      # Split by bc2cpp registration status (docs/adr/0144).
       public :camera_position, :character_screen_position
       public :char_in_sight?
 
@@ -10801,17 +10775,9 @@ class RPG2k
       # Scene::Battle with an explicit `@map.` receiver, which -- like any
       # cross-object call -- only reaches a public method.
       #
-      # Split the same way as #char_in_sight?'s own statement just above
-      # (round 44): calling `public` twice with disjoint subsets of the
-      # same name set has the exact same net effect as calling it once
-      # with the union -- a behaviorally inert refactor for every build,
-      # wio or otherwise. The first call lists exactly this owner's own
-      # methods NOT covered by mruby-rpg2k-compiled's own bc2cpp.rb
-      # registry (try_open_debug_menu included -- confirmed directly
-      # against a real wio_registered_methods.rb run, not assumed), the
-      # second lists exactly the ones that are -- a mixed list of both
-      # would hit strip_wio_bc2cpp_stubs.rb's own documented
-      # partial-argument-list raise, for the same reason.
+      # Split by bc2cpp registration status (docs/adr/0144): the first call
+      # lists the methods mruby-rpg2k-compiled does not register, the second
+      # the ones it does.
       public :play_battle_bgm, :play_victory_bgm, :restore_pre_battle_bgm,
              :backdrop_for_terrain_id, :map_properties, :perform_game_over,
              :build_animation, :anim_target, :fire_animation_flashes, :load_face_bitmap,

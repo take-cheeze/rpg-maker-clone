@@ -1,8 +1,7 @@
 # shellcheck shell=bash
 # Shared preparation of the script-driven mruby builds that run rake directly
-# instead of through cmake/build-mruby.cmake: scripts/maix/mruby_build.bash (the
-# `maix` cross library) and scripts/bc2cpp/closed_build.bash (the native `closed`
-# bc2cpp build, build_config.rb). Sourced, with `root` set to the repository
+# instead of through cmake/build-mruby.cmake: scripts/bc2cpp/closed_build.bash
+# (the native `closed` bc2cpp build, build_config.rb). Sourced, with `root` set to the repository
 # root: checks the tools, fetches and verifies the Unicode tables the rake-time
 # generators read, applies the mruby patches, and exports cp932_table and
 # jis0208_table.
@@ -19,8 +18,7 @@ done
 mkdir -p "$tables"
 # url, destination, and the sha256 flake.nix pins for it (base64, as Nix
 # prints) -- same bytes Nix would hand the build, not a lookalike. Keep the
-# pins in sync with the `psp` job in .github/workflows/build.yml, which
-# duplicates this fetch for its docker container.
+# pins in sync with flake.nix.
 fetch_table() {
   local url="$1" dest="$2" want="$3"
   if [ ! -s "$dest" ]; then
@@ -62,7 +60,6 @@ for p in mruby-colon3-assign-setmcnst mruby-dollar-bang-scoped \
 done
 apply_patch "$root/3rd/mruby-stringio" "$root/patches/mruby-stringio-native-getbyte.patch"
 apply_patch "$root/3rd/mruby-stringio" "$root/patches/mruby-stringio-read-direct.patch"
-apply_patch "$root/3rd/mruby-marshal" "$root/patches/mruby-marshal-psp-wio-onigmo-optional.patch"
 
 export cp932_table="$tables/bestfit932.txt"
 export jis0208_table="$tables/JIS0208.TXT"

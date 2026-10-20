@@ -4,7 +4,6 @@
 # every build. New saves use native chunks; legacy chunk 200 is read only
 # (ADR 0401). See main.rb's #save_game/#load_save_state for the slot policy.
 #
-# Ships on wio too (docs/adr/0399); the wio-only exclusion this file had is gone.
 # `Dir.glob(...).sort` loads this file after mrblib/game.rb regardless of target
 # (`game.rb` < `game/lsd_io.rb` lexically), so Game::State already exists by the
 # time this file's own reopening runs.

@@ -1,13 +1,9 @@
-# Battle-only Scene::Base helpers dropped from mrblib/scene/base.rb: wio's
-# own battle exclusion (mruby-rpg2k/mrbgem.rake) left these dead the same
-# way mrblib/game/battle_support.rb's own header explains -- every one of
-# them is called only from mrblib/scene/battle.rb (dropped for wio) or, for
-# the word-wrap helpers, mrblib/scene/map_viewer.rb / chipset_editor.rb
-# (dropped since ADR 0097). `Dir.glob(...).sort` loads this after
-# mrblib/scene/base.rb regardless of target (`scene/base.rb` <
-# `scene/battle_support.rb` lexically), so `class Base` already exists by
-# the time this file's own reopen runs. See
-# docs/adr/0124-rpg2k-battle-only-helpers-trim.md.
+# Battle-only Scene::Base helpers, split out of mrblib/scene/base.rb. Every one
+# of them is called only from mrblib/scene/battle.rb or, for the word-wrap
+# helpers, mrblib/scene/map_viewer.rb / chipset_editor.rb. `Dir.glob(...).sort`
+# loads this after mrblib/scene/base.rb (`scene/base.rb` < `scene/battle_support.rb`
+# lexically), so `class Base` already exists by the time this file's own reopen
+# runs. See docs/adr/0124-rpg2k-battle-only-helpers-trim.md.
 
 class RPG2k
   module Scene

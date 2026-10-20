@@ -209,10 +209,10 @@ module Wolf
     end
 
     # Opens the archive for streaming, seekable reads (see #initialize)
-    # rather than reading it whole -- the same PSP-memory-budget reasoning
-    # rgssad.rb's own .open documents (docs/adr/0047-psp-memory-budget.md
-    # Finding 2): a released game's `Data.wolf` packs every map, chipset and
-    # character sheet into one file, easily past the PSP's whole RAM budget.
+    # rather than reading it whole, for the same memory-budget reason as
+    # RGSSAD.open: a released game's `Data.wolf` packs every map, chipset and
+    # character sheet into one file, easily past a constrained target's whole
+    # RAM budget.
     def self.open(path)
       new(File.open(path, "rb"))
     end

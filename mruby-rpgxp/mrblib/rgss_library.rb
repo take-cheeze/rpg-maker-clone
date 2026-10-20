@@ -414,8 +414,8 @@ end
 # MultiByteToWideChar/FindWindow/BitBlt/... at its top level, unconditionally,
 # just by being included in the project.
 #
-# There is no real Win32 to call into here (this engine also targets Linux,
-# the PSP and wasm), and a script that merely *binds* a function is not
+# There is no real Win32 to call into here (this engine also targets Linux
+# and wasm), and a script that merely *binds* a function is not
 # choosing to use it yet — raising at `Win32API.new` would fail the whole
 # script host over a feature the game may never invoke, exactly the class of
 # unnecessary death this file's `RPG::Cache` fallback avoids for a missing

@@ -90,11 +90,6 @@ CHECKS = [
   { name: 'rpg2k-scene',        command: %w[scripts/rpg2k/scene_check.rb] },
   { name: 'rpg2k-render',       command: %w[scripts/rpg2k/render_check.rb] },
   { name: 'rpg2k-testbed-logic', command: %w[scripts/rpg2k/testbed_logic_check.rb] },
-  # Spawns the exporter as a child process; the coverage hook rides RUBYOPT
-  # into it, so Game::ChipsetLayout/ChipSet and the LCF readers it drives are
-  # measured here like any other check.
-  { name: 'nano7-map-export',   command: %w[scripts/export_nano7_map_check.rb],
-    needs: :rpg2k_game },
   { name: 'error-report',       command: %w[scripts/error_report_check.rb] },
   { name: 'impossible-as-error', command: %w[scripts/impossible_as_error_check.rb] },
   # bc2cpp's hand-built-irep half only (no mrbc under the reporter): it reaches
@@ -106,8 +101,6 @@ CHECKS = [
   { name: 'bc2cpp-upvar-walks', command: %w[scripts/bc2cpp/upvar_walks_check.rb] },
   # CI helpers (compiler launcher, mutant pool, timing wrapper): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'ci-helpers', command: %w[scripts/ci/helpers_check.rb] },
-  # The maix-smoke boot-marker matcher's self-test: no mrblib lines, listed to mirror `ruby-checks`.
-  { name: 'maix-boot-marker', command: %w[scripts/maix/boot_marker_check.rb] },
   # The generator's scan cache (ADR 0415): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-scan-cache', command: %w[scripts/bc2cpp/scan_cache_check.rb] },
   { name: 'bc2cpp-native-registration', command: %w[scripts/bc2cpp/native_registration_check.rb] },

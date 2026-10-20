@@ -7,7 +7,7 @@
 # driven over a real game, the way mruby-lcf's parser is. Two portability rules
 # shape the code (see AGENTS.md):
 #
-#   * `mrb_int` is 32-bit on the browser / Wio / PSP builds, so a little-endian
+#   * `mrb_int` is 32-bit on the browser build, so a little-endian
 #     32-bit word is folded to its signed value arithmetically instead of via
 #     pack('L').unpack('l'), exactly like LCF.read_ber.
 #   * mruby has no String#encode. Shift_JIS text (every file a v2.x editor

@@ -12,8 +12,8 @@ end
 
 assert 'Read BER number folds the sign without pack' do
   # Every value with bit 31 set overflows a 32-bit `mrb_int` while it is being
-  # accumulated, so on the browser/Emscripten build (and Wio, and PSP) it is a
-  # bignum by the time the sign is folded in. Folding it with
+  # accumulated, so on the browser/Emscripten build it is a bignum by the time
+  # the sign is folded in. Folding it with
   # `[ret].pack('L').unpack1('l')` raised `RangeError: integer out of range`
   # there -- New Game died on the first command list carrying a -1 parameter,
   # which is every real project -- so the fold is plain arithmetic instead.

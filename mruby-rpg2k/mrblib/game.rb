@@ -1085,8 +1085,8 @@ module Game
       # past the last block -- before anything does arithmetic on them. And it
       # is what bounds the key below: past this guard `id` is under
       # BLOCK_F + BLOCK_F_TILES, so `id << 16` stays well inside a signed 32-bit
-      # mrb_int and cannot silently become a bignum on the Emscripten / PSP /
-      # Wio builds (see AGENTS.md on 32-bit mrb_int).
+      # mrb_int and cannot silently become a bignum on the Emscripten build
+      # (see AGENTS.md on 32-bit mrb_int).
       b = block(id)
       return [] if b.nil?
       # abf is 0..2 and cf is 0..3 (see .anim_ab / .anim_c), so eight bits each
@@ -9319,12 +9319,10 @@ module Game
     # affliction. Lives here (not on `Game::Battle`, which used to own the
     # only copy) because `Actor#state_persists_type?`/`Party#field_skill?`
     # both need it outside any fight (curing a state from the field, or a
-    # Change Condition event command run with no `@battle`), and wio drops
-    # `game/battle.rb` entirely (see mrbgem.rake) -- a live `Battle::
-    # STATE_PERSISTS_ON_MAP` reference from either caller was an unguarded
-    # `NameError` waiting for an ordinary state cure outside battle on that
-    # build. `Game::Battle::STATE_PERSISTS_ON_MAP` aliases this one so its
-    # own many internal references keep resolving unchanged.
+    # Change Condition event command run with no `@battle`), so it cannot
+    # live only on `Game::Battle`. `Game::Battle::STATE_PERSISTS_ON_MAP`
+    # aliases this one so its own many internal references keep resolving
+    # unchanged.
     PERSISTS_ON_MAP = 1
 
     # A state's `hp_change_type` / `sp_change_type` (RPG2003 fields 45/46):
