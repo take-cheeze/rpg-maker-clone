@@ -1035,7 +1035,8 @@
   [constant-proof suite](docs/ci.md#constant-proof-fixtures) groups declared and
   lexical constant checks with isolated source fixtures. Small MRBC checks use a
   [shared fixture harness](docs/bc2cpp-fixture-checks.md) for compiler discovery,
-  temporary programs and assertion summaries. Argument, ivar and context-result checks use
+  temporary programs and assertion summaries, including symbol flow, upvar walks
+  and bytecode constant resolution. Argument, ivar and context-result checks use
   a shared [type-check JSON runner](docs/bc2cpp-fixture-checks.md#type-check-report-fixtures)
   with independent programs and feature-toggle comparisons.
 - [Base RBS generation](docs/bc2cpp-base-rbs.md) scans native sources with up to
