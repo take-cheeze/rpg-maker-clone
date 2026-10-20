@@ -1,0 +1,1 @@
+- Native direct calls: `String#intern` and `String#to_sym` now call the mruby function directly on an exact receiver. Engine-internal; behaviour is unchanged.
