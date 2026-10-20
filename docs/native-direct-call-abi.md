@@ -35,6 +35,29 @@ The body text is moved, never copied, so the binding and the direct path run one
 body. `include/rgss_native_direct.hxx` declares every direct entry, and the forwarders
 are in a generated block at the end of `mruby-rgss/src/lib.cxx`.
 
+## What each form costs
+
+The body is extracted once, not copied. Both forms call the same
+`NAME_native_body`, so the code size of the body does not change.
+
+- **Body (`NAME_native_body`):** the method's own work. Its cost is the same in
+  either form.
+- **By-name binding:** the `mrb_func_t` mruby calls through its method table. It
+  pays the normal dispatch cost (the method lookup and the `mrb_get_args` unpack),
+  then calls the body.
+- **Direct form (`NAME_direct`):** a one-line forwarder to the body, with the
+  arguments already typed. It skips dispatch and the unpack. The forwarder is in the
+  same translation unit as the body, so an optimising build can inline it, and the
+  direct path then calls the body directly.
+- **Call site:** a guard check (the receiver's class, and `mrb_integer_p` for
+  `:int` arguments) in place of the dispatched send. A failed guard takes the
+  normal send, so a wrong class or argument still gets the same behaviour.
+- **Code size:** one small function per direct entry, plus its declaration in
+  `include/rgss_native_direct.hxx`.
+
+The saving has not been measured. A runtime benchmark would be needed to give a
+figure for the dispatch saved against the cost of the guard.
+
 ## Argument kinds
 
 Each direct entry's parameters have one of four kinds. The compiler converts the
