@@ -53,6 +53,13 @@ nonliteral keyword names keep their conservative refusals. Set
 `BC2CPP_IR_CALL_INDEX=0` to rebuild layouts. See
 [ADR 0521](adr/0521-context-call-layout-index.md).
 
+Method resolution indexes ordered ancestor paths, simple class names and Ruby
+instance owner sets within each `CallFacts::Answers` world. Hierarchy and registry
+inputs must remain settled for that instance; changed inputs require a new world.
+Unknown paths stay refused and inherited/native lookup order is preserved. Set
+`BC2CPP_CALL_LOOKUP_INDEX=0` to compare the uncached path. See
+[ADR 0522](adr/0522-call-lookup-allocation-index.md).
+
 ## Output
 
 Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, so an editor problem matcher
