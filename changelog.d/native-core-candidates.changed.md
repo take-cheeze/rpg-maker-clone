@@ -1,0 +1,1 @@
+- Engine-internal: a clang-based producer of direct-call candidates for mruby core native methods (`tools/bc2cpp/native_core_candidates.rb`). Not wired into code generation yet.
