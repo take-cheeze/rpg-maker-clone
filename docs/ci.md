@@ -73,7 +73,10 @@ at once, retaining command logs, failure status and a timing table in the job
 summary. Base-section verification also writes the freshly generated base RBS
 under `build-closed-bc2cpp/base_rbs`, replacing a second generation pass.
 `base_section_check.rb --output DIR CLOSED_BUILD_DIR` requires an absent or
-empty output directory. See [ADR 0510](adr/0510-bc2cpp-ci-bounded-checks.md).
+empty output directory. `base_section_regen_check.rb` is the host-only diff test for the
+writer: fixture generator output, plus a round trip of the committed file that must reproduce it
+byte for byte.
+See [ADR 0510](adr/0510-bc2cpp-ci-bounded-checks.md).
 
 ### Constant typing fixtures
 

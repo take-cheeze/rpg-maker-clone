@@ -181,6 +181,12 @@ checks:
     - native_sources
     - closed_build
     - clang
+  scripts/bc2cpp/base_section_regen_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
+    fixture_gate: false
+    reason: Fixture directories stand in for base_rbs_all.rb's output; the committed file's round trip needs no generator.
   scripts/bc2cpp/type_check.rb:
     tier: runtime
     capabilities:

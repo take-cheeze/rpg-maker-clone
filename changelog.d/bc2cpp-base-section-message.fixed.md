@@ -1,0 +1,1 @@
+- **bc2cpp** the base section check's failure message names `base_section_check.rb --write` as the fix; the old message pointed at `base_rbs_all.rb`, which writes only to a scratch directory.
