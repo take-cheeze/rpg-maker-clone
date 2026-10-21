@@ -21,6 +21,8 @@ submodule is available for its `class.c` conversion audit.
 programs with mrbc and compares a kill-switch world with an archived base tree.
 `native_result_facts_check.rb` keeps its real-source mutation audit independent
 of the declaration tables, and its MRBC-generated worlds remain separate.
+Its dead-fallback assertions match complete no-method markers, including the
+receiver, method and `file:line` source location.
 The two new suites replace `native_owner_scopes_check.rb`,
 `native_path_registrations_check.rb`, `native_return_kinds_check.rb`,
 `native_core_result_sigs_check.rb` and `native_sigs_check.rb`.
