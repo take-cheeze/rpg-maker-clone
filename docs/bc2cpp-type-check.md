@@ -169,14 +169,28 @@ Four further constant producers come after the ones above, each consulted only w
   for String, and every non-core native `length` definer is one read as not String's: `STRING_LENGTH_NOT_STRING_NATIVES`
   lists four, so a new definer refuses the proof), and Integer#== is stock (`integer_ops_safe?`). An `==` on Integer
   returns true or false, so the value is `bool`, not Integer.
-`IO.open` is not typed (STDIN, STDOUT and STDERR stay untyped). mruby-io's `IO.open` (3rd/mruby/mrbgems/mruby-io/mrblib/io.rb)
-is `io = self.new(*args); return io unless block`, so a blockless call returns Class#new on IO: an IO, never nil. That is
-read from the source, not proven by a row. The proof stopped at `ClosedWorld#native_class_unshadowed?('IO')`, which is
-false in the closed world (its write-count model counts IO as shadowed); the other gates (no closed-world `open` on
-IO's singleton, `IO.new` stock, no non-core native `open`) hold. io.rb is a foreign Ruby source, so the registry has no
-`IO.open` (`send_result:open(unregistered)`), and its `STDIN = ...` lines also poison the Fixnum proof by name. Typing
-them needs that shadowing model reviewed; `IO` is not in `NATIVE_CONSTRUCT_TARGETS`, so `native_constructed_class` does not
-reach it either.
+* `inferred:io-open` types a constant whose every value is a blockless `IO.open(...)` (SEND or SEND0 named `open`, with
+  the constant IO as receiver; a SENDB carries a block and is not this) as `IO`. mruby-io's IO.open (io.rb:
+  `io = self.new(*args); return io unless block`) answers Class#new on IO when there is no block, so the value is an IO.
+  With a block it returns the block's value, so such a call is not typed. The gates are `IO_OPEN_SAFE`
+  (type_facts `io_open_safe?`): `ClosedWorld#native_class_unshadowed?('IO')`; no engine `open` defined on `IO.singleton`
+  and no prepend or unknown mixin on it; no non-core native `open`; and `new` stock (`class_new_is_stock?`). The row is
+  report-only: const_rows runs in the type check, and io_open_safe? is read there alone.
+
+  Why `native_class_unshadowed?('IO')` was false, and what changed. Its outside write count was 2, not the 1 the model
+  expects: mruby-io's io.c defines IO with `mrb_define_class_id(mrb, MRB_SYM(IO), mrb->object_class)` and mruby-stringio's
+  stringio.c with `mrb_define_class(mrb, "IO", mrb->object_class)`. A define with the same superclass returns the class
+  already bound, so these two bind one class; a different superclass raises at startup. The model also counted io.rb's
+  root-level `class IO` (a CLASS op, no superclass) as a program class declaration, though it only reopens the native
+  class. The count is now allowed when every outside write is a plain Object-superclass define (`@outside_plain_class_defines`),
+  and a root-level no-superclass CLASS op is not a declaration (`root_reopen?`; mruby runs the root irep with the Object
+  target class). A nested `class IO`, a `IO = ...` rebinding, a `const_set` or any second non-plain write still refuses.
+  Codegen: the predicate change reaches codegen only through infer_constructed_constant_classes for NATIVE_CONSTRUCT_TARGETS
+  names. Those are RGSS:: classes defined with mrb_define_class_under (not plain Object defines), with no top-level Ruby
+  reopen in the engine's closed-world sources, so their answer is unchanged; the engine run changed no typed row.
+  Checked by scripts/bc2cpp/io_open_check.rb (fixtures: blockless, block, redefined `open`, nested `class IO`, rebinding).
+  Not investigated: io.rb's irep is labelled `mruby-rpg2k/mrblib_limited/map_tts_off.rb` in the rows (a pre-existing file label
+  error), so the core-source filter does not drop it; the root-reopen rule is what keeps it harmless.
 
 Two constant rows widen what the report can type. Both are report-only: codegen reads the value proof and the
 `container_constants` map as before, except where noted below.
