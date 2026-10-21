@@ -1,4 +1,4 @@
-# 0522. bc2cpp: a blockless map/collect result is a reserved Enumerator bit
+# 0524. bc2cpp: a blockless Enumerable iterator result is a reserved Enumerator bit
 
 Date: 2026-10-20
 
@@ -8,9 +8,9 @@ Accepted
 
 ## Context
 
-A bare `SEND` of `map` or `collect` on an exact Array or Hash has no block, so mruby's
-`Enumerable#collect` (`3rd/mruby/mrblib/enum.rb`, with `alias map collect`) returns
-`to_enum(:collect)`. The block form (`SENDB`) returns an Array, and ADR 0338 and the
+A bare `SEND` of an Enumerable iterator such as `map` or `collect` on an exact core receiver
+that includes Enumerable (Array, Hash, Range) has no block, so mruby returns `to_enum(:name, *args)`
+(`3rd/mruby/mrblib/enum.rb` and `mruby-enum-ext`, with aliases such as `map collect`). The block form (`SENDB`) returns an Array, and ADR 0338 and the
 block-iterator declarations (`core_block_iterators`) already type it. The bare call stayed
 unknown, because the flow had no way to name an Enumerator result.
 
@@ -31,18 +31,21 @@ refuses the value and treats it as unknown. Escape analysis also names only allo
 class bits, so the bit alone yields no name there either.
 
 The blockless result is declared in `core_blockless_iterators` as the method-level union of
-the two forms of `Enumerable#map` and `#collect`: the blockless overload is `Enumerator`, the
-block overload stays `Array` in `core_block_iterators`. `CoreBlocklessIteratorSigs` reads the
-blockless overload (`NativeCoreResultSigs.form_overload`).
+the blockless overloads of the Enumerable iterators mruby answers with `to_enum` (26 names,
+including `map` and `collect`, whose block overload stays `Array` in `core_block_iterators`).
+Each declaration's parameters are the arity the blockless call accepts. `CoreBlocklessIteratorSigs`
+reads the results and the arity. `find_index` is not declared: its blockless call with an argument
+is not an Enumerator.
 
 `CodeGen#native_core_blockless_enumerator_result` gives the bit to a `SEND`/`SEND0` of a
-table name on an exact Array or Hash receiver, under the gates of the block form: exact
+table name on an exact core receiver whose class includes Enumerable (`CoreHierarchySigs`), with an
+argument count the declaration accepts, under the gates of the block form: exact
 instances, no installed name, every registry definition native, and the kill switch
 `BC2CPP_NATIVE_CLASS_RESULTS=0`. It is checked by `scripts/bc2cpp/enumerator_result_check.rb`.
 
 ## Consequences
 
-- A blockless `map`/`collect` result is known to be an Enumerator, which is not nil, not
+- A blockless Enumerable iterator result is known to be an Enumerator, which is not nil, not
   an Array and not a Hash, but its class is not named. Codegen gains no class test or
   direct call from it; the gain is that its downstream results are no longer treated
   as untyped by the flow.
