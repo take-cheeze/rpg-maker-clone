@@ -1489,35 +1489,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # (mixed stripped/kept companion statements shrink to the kept names)
   # plus a `:SYM`-node Symbol-arg case, both exercised for real by
   # `RPG2k::Scene::Map`'s own newly-mixed `public` lists this round.
-  wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rpg2k-compiled',
-                         owners: %w[Game::TextReveal Game::MessageConfig Game::Switches
-                                    Game::Variables Game::NumberInput Game::Actors Game::Rng
-                                    Game::MoveRoute Game::Shop Game::Weather Game::Timer
-                                    RPG2k::Scene::ItemMenu RPG2k::Scene::SkillMenu
-                                    RPG2k::Scene::EquipMenu RPG2k::Scene::Menu
-                                    RPG2k::Scene::StatusMenu RPG2k::Scene::SaveLoad
-                                    RPG2k::Scene::Order RPG2k::Scene::Base
-                                    RPG2k::Scene::Title RPG2k::Scene::MapWorld
-                                    RPG2k::Scene::VehicleWorld RPG2k::Scene::EventResolver
-                                    RPG2k::Scene::GameOver
-                                    Game.singleton Game::States.singleton
-                                    Game::ChipsetLayout.singleton Game::EventGraphic.singleton
-                                    Game::Transition.singleton Game::Party.singleton Game::LegacyLsd.singleton
-                                    Game::Picture.singleton Game::Character.singleton
-                                    Game::ChipSet.singleton RPG2k::Scene::Map.singleton
-                                    Game::MoveType.singleton Game::MapAccess.singleton
-                                    Game::Parallax.singleton Game::MessagePalette.singleton
-                                    Game::MapBgm.singleton Game::WindowCursor.singleton
-                                    Game::Message.singleton Game::EventPage.singleton
-                                    Game::CharSet.singleton Game::Backdrop.singleton
-                                    RPG2k::Scene.singleton
-                                    Game::ChipSet Game::Map Game::Transition Game::State
-                                    Game::Screen Game::Actor Game::Character Game::Party
-                                    Game::Interpreter RPG2k::Scene::Map
-                                    RPG2k::Window RPG2k Game::Picture Game::Vehicle
-                                    RPG2k::Scene::Map::LRUBitmapCache])
   wio_strip_inline_helpers(spec)
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
-  wio_strip_unreachable(spec)
 end

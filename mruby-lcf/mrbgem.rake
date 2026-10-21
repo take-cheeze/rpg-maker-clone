@@ -175,11 +175,6 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   # build's own `enable_debug`): mrblib/lcf.rb 16,567 -> 13,868 bytes
   # (-2,699), mrblib/lcf_file.rb 3,431 -> 1,492 bytes (-1,939) -- 4,638
   # bytes total, before this gem's own wio_strip_debug_rbfiles pass runs.
-  wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-lcf-compiled',
-                         owners: %w[LCF::File LCF::Database LCF::MapTree LCF::MapUnit
-                                    LCF::SaveData LCF::MoveCommand LCF::EventCommand LCF::Tree
-                                    LCF::Sections LCF::Array1D LCF::Array2D StringIO])
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
-  wio_strip_unreachable(spec)
 end

@@ -1,5 +1,5 @@
 {
- "config": "wio",
+ "config": "closed",
  "files": {
   "scripts/fixtures/native_binding_split/bindings.cxx": {
    "errors": [],
@@ -66,7 +66,7 @@
        "unknown_mrb_api:mrb_define_class_method",
        "unknown_mrb_api:mrb_define_method"
       ],
-      "refs": "79aa010c58947caee9261bf7d101558e1bb25a0e",
+      "refs": "87f042c61eea4126ec111bfb8f4567850b1ba37d",
       "ret": "void",
       "storage": "NONE",
       "usr": "c:@F@fixture_init#*$@S@mrb_state#"
@@ -248,7 +248,7 @@
       "reasons": [
        "frame_api:mrb_get_args"
       ],
-      "refs": "740679a3953f38eb2f9dae0e92fb5831dceb05ca",
+      "refs": "b03d49a6872e628e207fea9a67a69582dcb63b50",
       "ret": "mrb_value",
       "storage": "NONE",
       "usr": "c:bindings.cxx@aN@F@ifdef_inside#*$@S@mrb_state#$@S@mrb_value#"
@@ -283,6 +283,37 @@
       "ret": "mrb_value",
       "storage": "NONE",
       "usr": "c:bindings.cxx@aN@F@into_member#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "off_wio_set": [
+     {
+      "body_extent": [
+       2804,
+       2886
+      ],
+      "extent": [
+       2752,
+       2886
+      ],
+      "goto": false,
+      "line": 110,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "ed1ad2694d9999aa64aefe350f2371f6435fb8f4",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@off_wio_set#*$@S@mrb_state#$@S@mrb_value#"
      }
     ],
     "optional": [
@@ -1792,7 +1823,7 @@
       "reasons": [
        "frame_api:mrb_get_args"
       ],
-      "refs": "bee487b94d96d89bbe47e0c43059fb813109ad34",
+      "refs": "e14744571546459964e1205b45e903589e9aa8e6",
       "ret": "mrb_value",
       "ret_call": {
        "args": [
@@ -1828,13 +1859,6 @@
          2241
         ],
         "kind": "CALL_EXPR"
-       },
-       {
-        "extent": [
-         2271,
-         2277
-        ],
-        "kind": "COMPOUND_ASSIGNMENT_OPERATOR"
        },
        {
         "extent": [
@@ -2074,6 +2098,143 @@
       "storage": "NONE",
       "template": false,
       "usr": "c:bindings.cxx@aN@F@into_member#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       4252,
+       4253
+      ],
+      [
+       4255,
+       4256
+      ],
+      [
+       4258,
+       4265
+      ],
+      [
+       4267,
+       4278
+      ],
+      [
+       4280,
+       4295
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      4234,
+      4296
+     ],
+     "kind": "method",
+     "line": 150,
+     "name": "flag=",
+     "target": {
+      "body_extent": [
+       2804,
+       2886
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 110,
+      "extent": [
+       2752,
+       2886
+      ],
+      "external": [],
+      "gets": [
+       {
+        "extent": [
+         2825,
+         2852
+        ],
+        "format": "b",
+        "nargs": 3,
+        "targets": [
+         {
+          "line": 111,
+          "type": "mrb_bool",
+          "var": "flag"
+         }
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": false,
+      "kind": "function",
+      "name": "off_wio_set",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "bc32a4bb2953cde9268ec55713a211d9c13f4573",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        "flag"
+       ],
+       "callee": "mrb_bool_value",
+       "ns": "",
+       "usr": "c:value.h@F@mrb_bool_value#b#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         2808,
+         2822
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           2808,
+           2821
+          ],
+          "has_init": false,
+          "name": "flag",
+          "storage": "NONE",
+          "type": "mrb_bool"
+         }
+        ]
+       },
+       {
+        "extent": [
+         2825,
+         2852
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         2856,
+         2883
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@off_wio_set#*$@S@mrb_state#$@S@mrb_value#"
      }
     },
     {

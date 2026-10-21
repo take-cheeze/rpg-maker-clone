@@ -371,13 +371,6 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # for this gem specifically (a future round adding a new bc2cpp-covered
   # RGSS owner would need to extend compiled_gems.rb's own list first).
   wio_strip_rgss_probes(spec)
-  wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rgss-compiled',
-                         owners: %w[RGSS::Sprite RGSS::Window RGSS::Audio.singleton
-                                    RGSS::ErrorReport.singleton RGSS::Plane RGSS::Tilemap
-                                    RGSS::Bitmap RGSS::Bitmap.singleton RGSS.singleton
-                                    RGSS::Input.singleton RGSS::Graphics.singleton
-                                    RGSS::Font.singleton RGSS::ErrorReport::Tee Array])
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
-  wio_strip_unreachable(spec)
 end
