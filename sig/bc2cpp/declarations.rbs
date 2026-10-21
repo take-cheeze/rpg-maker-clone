@@ -10742,16 +10742,67 @@ class Hash[unchecked out K, unchecked out V] < Object
 end
 
 # ---- native: core_blockless_iterators
-# The result class of a core block iterator called WITHOUT a block (a SEND site), as the method-level union of its two
-# forms: the blockless overload returns an Enumerator (mruby's Enumerable#collect returns `to_enum(:collect)` when no
-# block is given, and map is `alias map collect`, 3rd/mruby/mrblib/enum.rb); the block overload returns Array, as in
-# core_block_iterators. Read by CoreBlocklessIteratorSigs (tools/bc2cpp/core_blockless_iterator_sigs.rb).
+# The result class of a core block iterator called WITHOUT a block (a SEND site). mruby's Enumerable iterators return
+# `to_enum(:name, *args)` when no block is given (3rd/mruby/mrblib/enum.rb, mrbgems/mruby-enum-ext/mrblib/enum.rb; map is
+# `alias map collect`, select `alias select find_all`), and Array and Hash override some of them with the same to_enum
+# (hash.rb select, reject; mruby-array-ext find, reverse_each). Each declaration's parameters are the arity the blockless
+# call accepts: codegen refuses a site whose argument count is outside them. map and collect also declare the block
+# overload (core_block_iterators gives its Array result). Read by CoreBlocklessIteratorSigs
+# (tools/bc2cpp/core_blockless_iterator_sigs.rb).
 # bc2cpp-native: core_blockless_iterators
 module Enumerable
   # bc2cpp-native: core_blockless_iterators
+  def collect: () -> Enumerator[untyped, untyped] | () { (untyped) -> untyped } -> Array[untyped]
+  # bc2cpp-native: core_blockless_iterators
   def map: () -> Enumerator[untyped, untyped] | () { (untyped) -> untyped } -> Array[untyped]
   # bc2cpp-native: core_blockless_iterators
-  def collect: () -> Enumerator[untyped, untyped] | () { (untyped) -> untyped } -> Array[untyped]
+  def find: (?untyped ifnone) -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def detect: (?untyped ifnone) -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def find_all: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def select: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def filter: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def partition: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def reject: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def each_with_index: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def each_with_object: (untyped obj) -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def each_slice: (Integer n) -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def each_cons: (Integer n) -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def drop_while: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def take_while: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def group_by: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def sort_by: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def flat_map: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def collect_concat: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def filter_map: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def max_by: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def min_by: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def minmax_by: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def reverse_each: () -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def cycle: (?untyped nv) -> Enumerator[untyped, untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def each_entry: (*untyped args) -> Enumerator[untyped, untyped]
 end
 
 # ---- native: core_proc_calls

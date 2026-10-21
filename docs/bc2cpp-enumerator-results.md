@@ -1,18 +1,20 @@
 # Blockless Enumerator results
 
-A call to `map` or `collect` with no block, on an exact Array or Hash, returns an
-Enumerator. mruby's `Enumerable#collect` (`3rd/mruby/mrblib/enum.rb`) returns
-`to_enum(:collect)` when no block is given, and `map` is an alias of it.
+A call to an Enumerable iterator with no block, such as `map`, `select` or `each_slice(n)`, on an
+exact core receiver that includes Enumerable (Array, Hash, Range), returns an Enumerator. mruby returns
+`to_enum(:name, *args)` from those iterators when no block is given (`3rd/mruby/mrblib/enum.rb`,
+`mruby-enum-ext`), and some aliases such as `map` and `filter` point at them.
 
 bc2cpp's flow records that result as the reserved `NumericFlow::ENUMERATOR` bit
-(ADR 0522). The bit names no class, so the codegen treats the value as known to be an
+(ADR 0524). The bit names no class, so the codegen treats the value as known to be an
 Enumerator but emits no class test or direct call for it.
 
 The declarations are in `sig/bc2cpp/declarations.rbs` under `core_blockless_iterators`.
-`Enumerable#map` and `#collect` (which Array and Hash take) have two overloads: the
-blockless one returns `Enumerator[untyped, untyped]`, and the block one returns
-`Array[untyped]` as in `core_block_iterators`. `CoreBlocklessIteratorSigs`
-(`tools/bc2cpp/core_blockless_iterator_sigs.rb`) reads the blockless overload.
+Each Enumerable iterator mruby answers with `to_enum` is declared there with the arity its blockless
+call accepts (`find_index` is not: its blockless call with an argument is not an Enumerator). `map` and
+`collect` have two overloads: the blockless one returns `Enumerator[untyped, untyped]`, and the block
+one returns `Array[untyped]` as in `core_block_iterators`. `CoreBlocklessIteratorSigs`
+(`tools/bc2cpp/core_blockless_iterator_sigs.rb`) reads the results and the arity.
 
 Kill switch: `BC2CPP_NATIVE_CLASS_RESULTS=0` removes the result. The check is
 `scripts/bc2cpp/enumerator_result_check.rb`; it runs on the host and is listed in
