@@ -1026,6 +1026,7 @@ jobs:
           ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/bc2cpp-checks.sh" <<'CHECKS'
           # ci:parallel begin 4
           ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
+          ruby scripts/bc2cpp/base_section_regen_check.rb
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c ruby scripts/native/binding_split.rb check
           ruby scripts/bc2cpp/type_check.rb --no-sends
           ruby scripts/bc2cpp/native_core_candidates_check.rb

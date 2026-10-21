@@ -46,6 +46,31 @@ base-generation timings, not bc2cpp compilation or game runtime timings.
 Run `ruby scripts/bc2cpp/base_rbs_check.rb` to check scheduling, error handling
 and serial/parallel output equivalence. Its native fixture requires Clang.
 
+## Base section in `sig/bc2cpp/declarations.rbs`
+
+The base section of the committed signature file (everything before
+`# ---- block_types.rbs`) is the generators' output. Check it against them with
+
+```sh
+ruby scripts/bc2cpp/base_section_check.rb CLOSED_BUILD_DIR
+```
+
+and rewrite it when the check fails, with
+
+```sh
+ruby scripts/bc2cpp/base_section_check.rb --write CLOSED_BUILD_DIR
+```
+
+`--write` regenerates the native blocks and the `# Base RBS` declarations and
+leaves the rest of the file byte for byte. A declaration the generator no longer
+writes is removed; one it writes and the file lacks is appended under its
+`# bc2cpp-native:` marker. The later sections (trace-derived and hand-written
+tables) have no generator and are not touched.
+
+`scripts/bc2cpp/base_section_regen_check.rb` tests the writer on the host, with
+fixture generator output and a round trip of the committed file, which must
+reproduce it byte for byte. It needs neither clang nor the closed build.
+
 A later lazy-AST comparison on CRuby 4.0.5 + YJIT and Clang 21.1.8 took
 21.12/21.45 seconds before this change and 13.33/12.28 seconds after it
 (37–43% less wall time), with two workers. AST extractions fell from 51 to 17.
