@@ -55,5 +55,5 @@ scripts/bc2cpp/ir_constant_facts_compare.rb compares the two.
   core generated code is unchanged. Not switched in this stage: the class masks of the class pools and the frozen
   table slots (still their own walks; they read the IR set only for the Integer test); the container and
   constructed-class hints (`container_constants`, the proofs' class facts); and DeclaredConstants' evaluator.
-- Stage 3 (not in this change): remove the proofs that the IR replaces.
+- Stage 3 (not in this change): remove the proofs that the IR replaces. The audit of what can go is ADR 0533; no code was removed.
 - Stage 4 (not in this change): type check reads the IR facts as its constant rows.
