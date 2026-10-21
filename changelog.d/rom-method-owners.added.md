@@ -1,0 +1,1 @@
+- **bc2cpp**: `tools/bc2cpp/native_rom_owners.rb` attributes each mruby `MRB_MT_ENTRY` method table to the class its `MRB_MT_INIT_ROM` installs it on (44 of 45 core tables resolve, 709 entries). The base generator can read these owners instead of leaving core `MRB_MT_ENTRY` methods unattributed.
