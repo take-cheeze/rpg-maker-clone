@@ -190,7 +190,47 @@ Ranked by what they would save on the critical path. The first item is partly do
 4. **`bc2cpp-build`** (PR gate, 10.3 min). The 8 minutes are one `rake -m -j4` of the core, so only the sccache hit
    rate on pull requests or the compile flags would move it. Not changed here.
 
-## 5. Method notes
+## 5. The check phase of `bc2cpp-build` (2026-10-21)
+
+Sections 1 to 4 describe the sharded layout that has since been folded into `bc2cpp-build`: its
+checks run as one `Run bc2cpp checks` step, a `ci:parallel begin` group of 36 commands. Profile of
+master run `39562892961` (job `bc2cpp-build`, success, warm caches), from the Actions step timings
+and the group's timing table:
+
+| Step | s |
+| --- | ---: |
+| setup (checkout, Nix restore, dev shell, full-core cache restore) | ~30 |
+| Build the closed-world mruby with bc2cpp | 112 |
+| Run bc2cpp checks | 271 |
+
+The 36 commands sum to 532 s of serial time, so the group already runs at about 2x. Its
+largest commands are `type_check.rb --no-sends` (98 s), `ir_context_results_check.rb` (82 s),
+`block_iterator_direct_check.rb` (55 s), `binding_split.rb` under `nix develop .#clang` (48 s),
+`constant_typing_check.rb` (34 s) and `base_section_check.rb` (32 s).
+
+The scheduler starts each command in input order as soon as a slot frees (`__ci_par_run`). Replaying
+those measured durations through that rule gives 270 s at width 2 (the observed 271 s), so the model
+matches the run. Predicted check-step wall time at other widths, with the same commands:
+
+| Width | Predicted s | Lower bound sum/N s |
+| ---: | ---: | ---: |
+| 2 (before) | 270 | 266 |
+| 3 (this change) | 178 | 177 |
+| 4 | 139 | 133 |
+| 6 | 98 | 89 (the longest command) |
+
+Input order is not a lever: the in-order schedule is within 4 s of the bound at width 2 and 1 s
+at width 3. The only lever is width, or making the longest commands shorter.
+
+Width 3 is the change: the runner has 4 vCPUs, and the commands are single-process Ruby, so three
+of them fit. Width 4 would fill every core and was not chosen. Shared state is unchanged by it: the
+scan cache writes each entry to a private name and renames it (`tools/bc2cpp/scan_cache.rb`), the
+fixtures use private temp directories, and only `base_section_check.rb` writes a build directory.
+The memory of three simultaneous analyses on a 16 GB runner was not measured here; the first CI run
+after this change shows it in the step's timing table, and ADR 0510's two-worker limit is the reason
+to revert to 2 if the step fails or slows down.
+
+## 6. Method notes
 
 * Ruby version: the generator needs Prism, so 3.1 and 3.2 cannot run it (they fail at load). 4.0.7 was built with
   `RUBY_CONFIGURE_OPTS=--enable-yjit` for the comparison above.
