@@ -1,0 +1,1 @@
+- **bc2cpp** parses each RBS declaration file once per generator process instead of once per loader, cutting about a second from every fixture-based check run; generated output is unchanged.
