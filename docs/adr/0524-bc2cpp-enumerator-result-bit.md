@@ -31,9 +31,12 @@ refuses the value and treats it as unknown. Escape analysis also names only allo
 class bits, so the bit alone yields no name there either.
 
 The blockless result is declared in `core_blockless_iterators` as the method-level union of
-the blockless overloads of the Enumerable iterators mruby answers with `to_enum` (26 names,
-including `map` and `collect`, whose block overload stays `Array` in `core_block_iterators`).
-Each declaration's parameters are the arity the blockless call accepts. `CoreBlocklessIteratorSigs`
+the Enumerable iterators mruby answers with `to_enum` (26 names). Every member is the method-level
+union of its two forms: the blockless overload (`-> Enumerator`, with the arity its call accepts) and
+the block overload. The block overload's result is the class `core_block_iterators` declares for it
+(`map`, `collect`, `reject`, `find_all`, `partition`, `filter_map`, `sort_by`, `group_by`), else
+`untyped`; it is not `self`, so `BlockReturns` does not take the member as a checked block-return
+declaration. The loader refuses a member that has only one form. `CoreBlocklessIteratorSigs`
 reads the results and the arity. `find_index` is not declared: its blockless call with an argument
 is not an Enumerator.
 
