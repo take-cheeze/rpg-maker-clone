@@ -245,7 +245,7 @@ module FileTest
   def self.exists?: (untyped) -> bool
   def self.file?: (untyped) -> bool
   def self.pipe?: (untyped) -> bool
-  def self.size: (untyped) -> untyped
+  def self.size: (untyped) -> Integer
   def self.size?: (untyped) -> untyped
   def self.socket?: (untyped) -> bool
   def self.symlink?: (untyped) -> bool
@@ -8300,6 +8300,17 @@ end
 class StopIteration < IndexError
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_symbol
+class Symbol
+  def capitalize: () -> untyped
+  def casecmp: (untyped) -> untyped
+  def casecmp?: (untyped) -> untyped
+  def downcase: () -> untyped
+  def empty?: () -> untyped
+  def upcase: () -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
@@ -10973,4 +10984,16 @@ end
 class StringIO
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def tty?: () -> bool
+end
+
+# ---- conversion_returns.rbs
+# Result classes of Integer conversions that have a direct-call entry (NativeCoreDirect::ENTRIES): the entry's C
+# expression is what codegen emits, so the return follows from it. Other owners wait for their own entries.
+class Integer
+  # bc2cpp-native: core_results
+  def to_s: (?Integer) -> String
+  # bc2cpp-native: core_results
+  def to_i: () -> Integer
+  # bc2cpp-native: core_results
+  def inspect: () -> String
 end

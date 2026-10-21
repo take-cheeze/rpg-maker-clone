@@ -1048,10 +1048,14 @@ jobs:
           ruby scripts/bc2cpp/struct_receiver_check.rb
           ruby scripts/bc2cpp/upvar_walks_check.rb
           ruby scripts/bc2cpp/constant_typing_check.rb
+          ruby scripts/bc2cpp/io_open_check.rb
           ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
           ruby scripts/bc2cpp/decided_branch_check.rb
+          ruby scripts/bc2cpp/decided_fold_count_check.rb
           ruby scripts/bc2cpp/arm_prune_check.rb
           ruby scripts/bc2cpp/arm_prune_block_check.rb
+          ruby scripts/bc2cpp/param_fold_check.rb
+          ruby scripts/bc2cpp/constant_argument_sites_check.rb
           ruby scripts/bc2cpp/class_bodies_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
           ruby scripts/bc2cpp/define_method_check.rb
@@ -1126,9 +1130,10 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Shallow, mruby only: a full mruby clone for one .rb file is wasteful.
-      - name: Init mruby submodule
-        run: git submodule update --init --depth 1 3rd/mruby
+      # Shallow, and only the gems the closed-world gem closure reads (compiled_gems.rb
+      # bc2cpp_rake_dependencies): a full clone of each for one .rb file is wasteful.
+      - name: Init mruby submodules
+        run: git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio 3rd/mruby-marshal 3rd/mruby-onig-regexp
 
       # No test262-skip step here either; see the `build` job.
 

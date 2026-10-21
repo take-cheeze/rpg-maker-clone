@@ -61,13 +61,6 @@ deferred:
     - mrbc
     - native_sources
     reason: Full-engine Range code-generation audit; no fixture library is linked.
-  scripts/bc2cpp/native_owner_map_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    - git_base
-    reason: Requires MRBC, native sources and a git-archive comparison base; keep worlds and base comparison isolated.
   scripts/bc2cpp/optional_block_frame_check.rb:
     tier: runtime
     capabilities:
@@ -159,6 +152,10 @@ checks:
     capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/io_open_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/bytecode_ir_constants_check.rb:
     tier: fast
     capabilities:
@@ -167,11 +164,22 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/decided_fold_count_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/arm_prune_check.rb:
     tier: fast
     capabilities:
     - mrbc
   scripts/bc2cpp/arm_prune_block_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/param_fold_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/constant_argument_sites_check.rb:
     tier: fast
     capabilities:
     - mrbc
@@ -416,6 +424,14 @@ checks:
     fixture_gate: false
     reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
       ordinary CI.
+  scripts/bc2cpp/native_owner_map_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    fixture_gate: false
+    reason: Coverage runs the host slice; the generated-code part needs MRBC and is run by hand (see the check's header).
   scripts/bc2cpp/class_object_args_check.rb:
     tier: fast
     capabilities: []
@@ -481,6 +497,12 @@ checks:
     tier: fast
     capabilities: []
   scripts/bc2cpp/native_arity_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/native_return_classes_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/native_rom_owners_check.rb:
     tier: fast
     capabilities: []
   scripts/bc2cpp/native_ast_returns_check.rb:

@@ -1,0 +1,1 @@
+- **bc2cpp**: the native return analysis treats `mrb_obj_freeze(mrb, value)` as returning its value, so a body that returns `mrb_str_new_frozen(...)` (a `String`) is classified as `String` instead of unknown.

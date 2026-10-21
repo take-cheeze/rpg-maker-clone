@@ -1,0 +1,1 @@
+- **bc2cpp**: the numeric slow path calls `Integer#%` and `Float#%` directly for an Integer or Float receiver when the closed world proves no user definer of `%` reaches them (ADR 0537).

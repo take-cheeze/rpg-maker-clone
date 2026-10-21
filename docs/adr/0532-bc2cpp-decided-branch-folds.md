@@ -30,8 +30,14 @@ the unshifted register at its real index, so it is folded as well. `BC2CPP_DECID
 
 ## Consequences
 
-- On the engine (3,669 methods compiled, none failed) 57 of 2,544 conditional tests fold. With the gate off the same run
-  emits 2,544 tests, so the fold accounts for every change.
+- On the engine, the closed-world build folds 126 conditional jumps in the rpg2k generated file: 41 taken `JMPIF`s become a
+  `goto`, and 85 not-taken tests are removed (75 `JMPNIL`, 10 `JMPNOT`). The `mrb_test(` count drops by 51 and the
+  `mrb_nil_p(` count by 75 against the same build with `BC2CPP_DECIDED_BRANCH=0`. Each fold removes exactly the test it
+  replaces. An earlier figure of 57 came from a setup that could not be reproduced and is withdrawn.
+- The default build strips `//` comments (CompactOutput, ADR 0463), so the `DECIDED_BRANCH` markers are absent from its
+  output. The taken folds' `goto`s and the removed tests are still there. Generate with `--annotated` to see the markers.
+  `scripts/bc2cpp/decided_fold_count.rb` counts the markers and checks the drops against the folds. Its check,
+  `decided_fold_count_check.rb`, runs without `mrbc`.
 - Folding does not remove code, so the generated C++ keeps its unreachable arms and labels. A later change could cut
   arms that no edge reaches, using `BytecodeIR` jump edges; that is not done here.
 - The fold trusts the NumericFlow masks. A wrong mask would now change control flow, not only a proof, so soundness rests on

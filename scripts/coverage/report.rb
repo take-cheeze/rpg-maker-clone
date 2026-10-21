@@ -115,6 +115,8 @@ CHECKS = [
   { name: 'bc2cpp-native-results', command: %w[scripts/bc2cpp/native_results_check.rb] },
   { name: 'bc2cpp-native-arity', command: %w[scripts/bc2cpp/native_arity_check.rb] },
   { name: 'bc2cpp-native-ast-returns', command: %w[scripts/bc2cpp/native_ast_returns_check.rb] },
+  { name: 'bc2cpp-native-return-classes', command: %w[scripts/bc2cpp/native_return_classes_check.rb] },
+  { name: 'bc2cpp-native-rom-owners', command: %w[scripts/bc2cpp/native_rom_owners_check.rb] },
   # The generator's Prism parse memo (ADR 0416): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-ruby-parse-cache', command: %w[scripts/bc2cpp/ruby_parse_cache_check.rb] },
   # No CRuby-side lines of mrblib, but every scripts/**/*_check.rb rides here.
@@ -152,6 +154,8 @@ CHECKS = [
   # ADR 0302: the RGSS native result facts against the native sources, and the ClosedWorld questions;
   # the generated-code section skips here.
   { name: 'bc2cpp-native-result-facts', command: %w[scripts/bc2cpp/native_result_facts_check.rb] },
+  # ADR 0397: the owner map's exact-class arms and their kill switch; the generated-code section skips without MRBC.
+  { name: 'bc2cpp-native-owner-map', command: %w[scripts/bc2cpp/native_owner_map_check.rb] },
   # ADR 0311: the AREF transfer and the tuple shape on hand-built bytecode; the fixture sections skip here.
   { name: 'bc2cpp-tuple-return', command: %w[scripts/bc2cpp/tuple_return_check.rb] },
   # ADR 0416: the class-object resolver on hand-built bytecode; the fixture section skips here.
