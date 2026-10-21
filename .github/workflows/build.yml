@@ -3087,9 +3087,10 @@ jobs:
           show-progress: false
           persist-credentials: false
 
+      # Every submodule, not the build jobs' subset: the `?submodules=1` walk
+      # below reads each `.gitmodules` entry off disk, and an uninitialised
+      # 3rd/SDL makes it fail.
       - name: Init submodules
-        env:
-          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
       # This is the one job that still fetches submodules (`?submodules=1` on
