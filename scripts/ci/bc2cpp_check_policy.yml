@@ -159,6 +159,10 @@ checks:
     capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/io_open_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/bytecode_ir_constants_check.rb:
     tier: fast
     capabilities:
