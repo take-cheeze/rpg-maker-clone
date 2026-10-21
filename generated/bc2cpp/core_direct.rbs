@@ -25,7 +25,5 @@ end
 class String
   def bytes: () -> untyped
   def intern: () -> untyped
-  def length: () -> untyped
-  def size: () -> untyped
   def to_sym: () -> untyped
 end
