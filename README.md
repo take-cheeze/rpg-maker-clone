@@ -1040,6 +1040,9 @@
   compilation probes while keeping embedding eligibility and emitted registrations
   specific to each compilation. See [ADR 0528](docs/adr/0528-block-capture-index.md).
 
+- Numeric dataflow shares read-only first incoming states, avoiding redundant
+  state-array copies while retaining independent updates; see [numeric class facts](docs/bc2cpp-ir-numeric-classes.md).
+
 - Receiver unions reuse indexed class-bit members instead of scanning every
   registered class, with bounded decoding caches that follow lazy registration.
 
