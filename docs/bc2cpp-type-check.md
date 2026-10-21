@@ -178,6 +178,20 @@ IO's singleton, `IO.new` stock, no non-core native `open`) hold. io.rb is a fore
 them needs that shadowing model reviewed; `IO` is not in `NATIVE_CONSTRUCT_TARGETS`, so `native_constructed_class` does not
 reach it either.
 
+Two constant rows widen what the report can type. Both are report-only: codegen reads the value proof and the
+`container_constants` map as before, except where noted below.
+
+* The integer-class rows (`inferred:integer-class`) come from a second `BytecodeIR::ConstantFacts` run whose poison is
+  `IntegerConstants.foreign_class_poison`. A foreign `NAME = <integer literal>` does not poison (it is an Integer
+  definition; the class proof needs no value), and a foreign `NAME = A | B` over bare names does not poison when its file
+  is one the IR already binds. Any other foreign definition, and every foreign class or module name, still poisons. The
+  value run keeps `foreign_const_names`, so `fixnum_names` is unchanged. `StringIO::READWRITE` (`READABLE | WRITABLE`) is
+  typed this way.
+* The constructed-constant rows (`inferred:constructed`) judge a bare name's sites together: every site must construct the
+  same class (for example `Color.new`), and `ClosedWorld#static_constant_writes?` must show the name is written only by
+  those sites. A single-site name is judged as before. Because these hints feed `container_constants`, this does change
+  codegen for multi-site names; the hints stay guarded at dispatch (CLOSED_WORLD_VALUE_CONSTANT).
+
 ## Constant ratchet (TC1017, ADR 0491)
 
 The TC1017 gate that judged untyped engine constants by a review list (ADR 0491) and then by source annotations
