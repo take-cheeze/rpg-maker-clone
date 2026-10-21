@@ -1,0 +1,1 @@
+- **bc2cpp typing** indexes bounded receiver class unions and inverse class-bit names, avoiding repeated wide-mask scans while preserving lazy class discovery and probe rollback.

@@ -1026,11 +1026,15 @@
   graph admission or round budgets. Prepared RBS indexes share signature lookup
   across methods while keeping their inference state separate. Context argument layouts
   and call-site keyword layouts are indexed per bytecode body while argument
-  values remain context-specific.
+  values remain context-specific. Settled method lookup also shares ancestor paths,
+  simple names and Ruby owner sets to reduce allocation pressure.
 
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
+
+- Receiver unions reuse indexed class-bit members instead of scanning every
+  registered class, with bounded decoding caches that follow lazy registration.
 
 - The [host IR fact suite](docs/bc2cpp-ir-instruction-checks.md) shares library
   loading across exact-class, container, numeric, return-site and origin-transfer
@@ -1176,9 +1180,8 @@
   element layouts, sealed Hash ivars) read the IR's producers and literals.
   [RBS self returns and mixin lookup](docs/bc2cpp-ir-rbs-features.md) extend nominal
   call chains while refusing unsigned overrides and unknown lookup paths.
-  The type check also ratchets untyped engine constants: one that is not on the reviewed
-  `CONSTANT_REVIEWED` list, or a listed one that is now typed, fails CI (TC1017,
-  [docs/bc2cpp-type-check.md](docs/bc2cpp-type-check.md), ADR 0491).
+  The type check reports untyped engine constants (TC1017,
+  [docs/bc2cpp-type-check.md](docs/bc2cpp-type-check.md), ADR 0491); no review gate fails the build on them (ADR 0522).
   [Call-graph propagation](docs/bc2cpp-ir-call-graph.md) carries complete independent
   argument summaries through receiver-specific forwarding chains; disable it with
   `BC2CPP_IR_CALL_GRAPH_TYPES=0` for comparison.
@@ -1209,7 +1212,7 @@
   The frame-independent wrapper rules and supported methods are recorded in
   [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
   In a closed world a send to a receiver of proven class that nothing answers
-  (`PROVEN_MISS_REVIEWED`) is a build error, and `BC2CPP_NOMETHOD_VERIFY=1` builds
+  (`PROVEN_MISS`, listed on stderr; no review gate judges it, ADR 0522) is a build error, and `BC2CPP_NOMETHOD_VERIFY=1` builds
   make a dead `bc2cpp_nomethod` site abort for smoke runs; see
   [`docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md`](docs/adr/0275-bc2cpp-proven-class-miss-and-nomethod-verify.md)
   and [`docs/bc2cpp-nomethod-verify.md`](docs/bc2cpp-nomethod-verify.md).

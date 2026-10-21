@@ -16,8 +16,7 @@ ruby scripts/bc2cpp/type_check.rb --facts kept/facts.json --rows kept/rows.tsv  
 
 `--keep DIR` keeps `facts.json`, `rows.tsv` and `bc2cpp.stderr`. `--all` adds one info line per untyped item,
 `--no-sends` skips the send ranking, `--what-if` estimates removable lines (slow), `--top N`, `--scope all` includes
-the mruby core mrblib, `--constants FILE` names the reviewed-constant list the TC1017 ratchet judges by (default: the
-engine's `tools/bc2cpp/constant_reviewed_list.rb`; a `--files` program has no list unless one is given). The analysis takes the time of a build's analysis phase (minutes for the engine).
+the mruby core mrblib. The analysis takes the time of a build's analysis phase (minutes for the engine).
 
 The report runner keeps whole-program analysis, real method compilation, return-guard
 validation and nilable-index collection. It skips the discarded C++ translation
@@ -32,6 +31,13 @@ callee or effect dependencies still use the full evaluator. Reuse stays within
 one context engine and is bounded to 128 snapshots of at most 4096 state cells.
 Set `BC2CPP_IR_LEAF_EVALUATIONS=0` for a comparison run. See
 [ADR 0518](adr/0518-reuse-leaf-context-evaluations.md).
+
+Receiver union decoding indexes numeric class bits and visits only bits present
+in a receiver. Decoded unions are cached within one CodeGen instance, with a
+2048-entry limit. Lazy class registration and probe table replacement invalidate
+the index; unknown/core/provenance bits and unions above eight classes remain
+refused. Set `BC2CPP_CLASS_MEMBER_INDEX=0` for a full-table comparison. See
+[ADR 0523](adr/0523-receiver-class-member-index.md).
 
 Applied RBS contracts are indexed once per typing world. Methods and callbacks
 share owner lookup, inherited ivar maps and named-return tables, while each method
@@ -53,6 +59,13 @@ nonliteral keyword names keep their conservative refusals. Set
 `BC2CPP_IR_CALL_INDEX=0` to rebuild layouts. See
 [ADR 0521](adr/0521-context-call-layout-index.md).
 
+Method resolution indexes ordered ancestor paths, simple class names and Ruby
+instance owner sets within each `CallFacts::Answers` world. Hierarchy and registry
+inputs must remain settled for that instance; changed inputs require a new world.
+Unknown paths stay refused and inherited/native lookup order is preserved. Set
+`BC2CPP_CALL_LOOKUP_INDEX=0` to compare the uncached path. See
+[ADR 0522](adr/0522-call-lookup-allocation-index.md).
+
 ## Output
 
 Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, so an editor problem matcher
@@ -68,7 +81,7 @@ Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, 
 | TC1013 | error | a caller's argument is not proven to be the class an RBS parameter declares (ADR 0456) |
 | TC1014 | error | an RBS class parameter is refused: POLY, computed or outside-world name, splat caller (ADR 0456) |
 | TC1016 | error | an RBS `class C < S` names a superclass the program does not give C (ADR 0453) |
-| TC1017 | error | the constant ratchet (ADR 0491): an engine constant with no type that `CONSTANT_REVIEWED` does not list, or a listed one that is now typed or gone |
+| TC1017 | error | the constant ratchet (ADR 0491): an engine constant with no type and no `constant` review annotation on its line, or an annotation whose constant is now typed or gone |
 | TC2004 | info | (`--all`) an IR query is unknown, with its refusal or producer reason |
 | TC1005 | warning | an index (`x[i]`, `x[i] = v`) on a receiver that may be nil, with no nil check before it (ADR 0439) |
 | TC1004 | error | an annotation token bc2cpp ignores (unknown class), a signature or annotation with more tokens than the method has parameters (fewer is fine: a prefix) |
@@ -151,25 +164,9 @@ reach it either.
 
 ## Constant ratchet (TC1017, ADR 0491)
 
-An engine constant the analysis gives no type is untyped. The reviewed list `CONSTANT_REVIEWED` in
-`tools/bc2cpp/constant_reviewed_list.rb` names the ones that were read and accepted as untyped, and the gate holds it to
-two rules:
-
-* an untyped engine constant that is not listed is a TC1017 error at its file:line;
-* a listed constant that is now typed, or no longer an engine constant, is a TC1017 error at its line (or `-` when it
-  is gone), so the list is pruned as constants get typed and it can only shrink.
-
-With the list empty and every engine constant typed, the gate is a plain "no untyped constants" check. A `--files`
-program is not judged unless `--constants FILE` names a list. The list is generated, not hand-edited:
-
-```
-MRBC=path/to/host/mrbc ruby scripts/bc2cpp/constant_reviewed_update.rb          # the diff, no write
-MRBC=... ruby scripts/bc2cpp/constant_reviewed_update.rb --write                # after reading each added name
-ruby scripts/bc2cpp/constant_reviewed_check.rb                                  # fixture + list format (needs MRBC)
-```
-
-The check runs in CI's `bc2cpp-build` job, after the closed-world build, with the host mrbc that build makes. The
-type check step runs the gate on the real engine; the check fixes the gate's behaviour on small programs.
+The TC1017 gate that judged untyped engine constants by a review list (ADR 0491) and then by source annotations
+(ADR 0522) has been removed. Untyped constants are reported by the type check but no longer fail a build; the
+annotation gate and its check script are gone (ADR 0522).
 
 ## Workflow
 

@@ -11,8 +11,8 @@ Accepted
 A bare `SEND` of `map` or `collect` on an exact Array or Hash has no block, so mruby's
 `Enumerable#collect` (`3rd/mruby/mrblib/enum.rb`, with `alias map collect`) returns
 `to_enum(:collect)`. The block form (`SENDB`) returns an Array, and ADR 0338 and the
-`core_block_results` table already type it. The bare call stayed unknown, because the
-flow had no way to name an Enumerator result.
+block-iterator declarations (`core_block_iterators`) already type it. The bare call stayed
+unknown, because the flow had no way to name an Enumerator result.
 
 NumericFlow allocates class bits on demand (`CodeGen#numeric_class_bit`). A class bit
 carries a class name, and several consumers turn a bit into a name for a class test,
@@ -30,10 +30,10 @@ name is ever attached to it. Every consumer that names a class from a bit theref
 refuses the value and treats it as unknown. Escape analysis also names only allocated
 class bits, so the bit alone yields no name there either.
 
-The blockless table is read from the same `core_block_results` declarations: a member
-with two overloads (the method-level union of the bare and block forms) reads its
-Enumerator kind from the blockless overload and its Array kind from the block overload
-(`NativeCoreResultSigs.load_kinds(form:)`).
+The blockless result is declared in `core_blockless_iterators` as the method-level union of
+the two forms of `Enumerable#map` and `#collect`: the blockless overload is `Enumerator`, the
+block overload stays `Array` in `core_block_iterators`. `CoreBlocklessIteratorSigs` reads the
+blockless overload (`NativeCoreResultSigs.form_overload`).
 
 `CodeGen#native_core_blockless_enumerator_result` gives the bit to a `SEND`/`SEND0` of a
 table name on an exact Array or Hash receiver, under the gates of the block form: exact

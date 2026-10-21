@@ -14,7 +14,8 @@ require 'set'
 require_relative '../../tools/bc2cpp/irep'
 require_relative '../../tools/bc2cpp/bytecode_ir'
 require_relative '../../tools/bc2cpp/numeric_flow'
-require_relative '../../tools/bc2cpp/native_core_block_result_sigs'
+require_relative '../../tools/bc2cpp/core_blockless_iterator_sigs'
+require_relative '../../tools/bc2cpp/core_block_iterator_sigs'
 require_relative '../../tools/bc2cpp/codegen_native_results'
 
 failures = []
@@ -71,12 +72,12 @@ end
 check.call('the next class bit is refused, not allocated on top of ENUMERATOR', refused)
 
 puts '== tables'
-check.call('blockless map/collect of Array and Hash read as Enumerator',
-           %w[Array Hash].all? { |k| %w[map collect].all? { |m| NativeCoreBlockResultSigs.blockless_kinds.dig(k, m) == 'Enumerator' } })
-check.call('the block overload still reads Array',
-           %w[Array Hash].all? { |k| %w[map collect].all? { |m| NativeCoreBlockResultSigs.kinds.dig(k, m) == 'Array' } })
+check.call('blockless Enumerable#map and #collect read as Enumerator',
+           %w[map collect].all? { |m| CoreBlocklessIteratorSigs.results.dig('Enumerable', m) == 'Enumerator' })
+check.call('the block overload still reads Array (core_block_iterators)',
+           %w[map collect].all? { |m| CoreBlockIteratorSigs.results.dig('Enumerable', m) == 'Array' })
 check.call('a method without a blockless Enumerator is absent from the blockless table',
-           NativeCoreBlockResultSigs.blockless_kinds.dig('Array', 'each').nil?)
+           CoreBlocklessIteratorSigs.results.dig('Enumerable', 'each').nil?)
 
 puts '== codegen hook'
 cg = codegen_with(defs: native_defs('map', 'collect'))

@@ -3,7 +3,7 @@
 require_relative 'native_result_facts'
 require_relative 'native_class_results'
 require_relative 'native_core_result_sigs'
-require_relative 'native_core_block_result_sigs'
+require_relative 'core_blockless_iterator_sigs'
 require_relative 'numeric_flow'
 require_relative 'codegen_return_classes'
 
@@ -55,38 +55,6 @@ class CodeGen
     NativeCoreResultSigs.kinds.dig(klass, name)
   end
 
-  # SENDB (a call with a block): the block form's result class (core_block_results). Only an exact core receiver
-  # whose name no installer or program definition can replace; the bare SEND keeps its own answer below.
-  def native_core_block_class_result(insn, state)
-    return nil unless ENV['BC2CPP_NATIVE_CLASS_RESULTS'] != '0' && @closed_world&.exact_instances_singleton_free?
-
-    owner = RETURN_CORE_CLASS[state[insn.reg.to_i]]
-    kind = owner && NativeCoreBlockResultSigs.kinds.dig(owner, insn.sym)
-    return nil unless kind
-    return nil if symbol_installed_names.include?(insn.sym)
-    return nil unless (@registry[insn.sym] || []).all? { |definition| definition.owner == '<native>' }
-
-    native_result_bits(kind, true)
-  end
-
-  # SEND/SEND0 with no block: the blockless overload's result (core_block_results, `-> Enumerator`). mruby's Enumerable
-  # #collect/#map (3rd/mruby/mrblib/enum.rb, `alias map collect`) return `to_enum(:collect)` without a block, and Array
-  # and Hash take that method. Gated like the block form: exact instances, no installed or program definition of the
-  # name, and the result is NumericFlow::ENUMERATOR, which names no class.
-  def native_core_blockless_enumerator_result(insn, state)
-    return nil unless ENV['BC2CPP_NATIVE_CLASS_RESULTS'] != '0' && %w[SEND SEND0].include?(insn.op)
-    return nil unless @closed_world&.exact_instances_singleton_free?
-
-    owner = RETURN_CORE_CLASS[state[insn.reg.to_i]]
-    return nil unless owner && NativeCoreBlockResultSigs.blockless_kinds.dig(owner, insn.sym) == 'Enumerator'
-    return nil if symbol_installed_names.nil? || symbol_installed_names.include?(insn.sym)
-    return nil unless (@registry[insn.sym] || []).all? { |definition| definition.owner == '<native>' }
-
-    NumericFlow::ENUMERATOR
-  end
-
-  # Only the exact-class oracle supplies this receiver: numeric masks alone
-  # do not prove lookup reaches the built-in class's audited body.
   # BOOL (`!=`): mruby's BasicObject#!= is `!(self == other)`, and `!` answers true or false, so a `!=` send answers
   # one of the two boolean class bits whatever the receiver. Gated like the other core results: exact instances, and no
   # program definition or installer of `!=` or `!` (a program override of either would change the answer).
@@ -101,11 +69,31 @@ class CodeGen
     numeric_class_bit('TrueClass') | numeric_class_bit('FalseClass')
   end
 
+  # SEND/SEND0 with no block: the blockless overload of Enumerable#map and #collect (core_blockless_iterators) is an
+  # Enumerator. mruby's Enumerable#collect (3rd/mruby/mrblib/enum.rb, `alias map collect`) returns `to_enum(:collect)`
+  # without a block, and Array and Hash take that method. Gated: exact instances, no installed or program definition of
+  # the name, and the result is NumericFlow::ENUMERATOR, which names no class.
+  BLOCKLESS_ENUMERATOR_OWNERS = %w[Array Hash].freeze
+
+  def native_core_blockless_enumerator_result(insn, state)
+    return nil unless ENV['BC2CPP_NATIVE_CLASS_RESULTS'] != '0' && %w[SEND SEND0].include?(insn.op)
+    return nil unless @closed_world&.exact_instances_singleton_free?
+
+    owner = RETURN_CORE_CLASS[state[insn.reg.to_i]]
+    return nil unless BLOCKLESS_ENUMERATOR_OWNERS.include?(owner)
+    return nil unless CoreBlocklessIteratorSigs.results.dig('Enumerable', insn.sym) == 'Enumerator'
+    return nil if symbol_installed_names.nil? || symbol_installed_names.include?(insn.sym)
+    return nil unless (@registry[insn.sym] || []).all? { |definition| definition.owner == '<native>' }
+
+    NumericFlow::ENUMERATOR
+  end
+
+  # Only the exact-class oracle supplies this receiver: numeric masks alone
+  # do not prove lookup reaches the built-in class's audited body.
   def native_core_class_result(insn, state)
     neq = native_core_neq_class_result(insn, state)
     return neq if neq
 
-    return native_core_block_class_result(insn, state) if insn.op == 'SENDB'
     enumerator = native_core_blockless_enumerator_result(insn, state)
     return enumerator if enumerator
     return nil unless ENV['BC2CPP_NATIVE_CLASS_RESULTS'] != '0' && %w[SEND SEND0].include?(insn.op)
