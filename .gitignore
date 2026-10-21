@@ -106,3 +106,6 @@
 /.nc_mutant*/
 /.ni_mutant*/
 /.ic_mutant*/
+
+# Closed-world bc2cpp build output (scripts/bc2cpp/closed_build.bash default BUILD_DIR).
+/build-closed-bc2cpp
