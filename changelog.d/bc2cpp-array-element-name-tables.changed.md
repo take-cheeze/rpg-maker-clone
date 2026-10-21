@@ -1,0 +1,1 @@
+- **bc2cpp** no longer keys its element-class tables and native-direct entries to core method names (`first`, `last`, `push`, `size`, `length`, ...). Those calls take ordinary dispatch and the generic element proof, so some element hints and the inlined `String#size`/`#length` helpers are dropped; program behavior is unchanged.
