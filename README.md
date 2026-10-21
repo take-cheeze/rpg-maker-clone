@@ -1434,6 +1434,16 @@
   Compiler opacity queries reuse finalized outside-source touch results while
   retaining live declaration and rebinding guards; see
   [ADR 0534](docs/adr/0534-bc2cpp-opacity-touch-cache.md).
+  Embedding compile probes reuse a fixed state-key list and restore caller state
+  without temporary pairs; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
+  LCF and frozen-table mask diagnostics avoid temporary wide integer intersections;
+  see [mask diagnostics](docs/bc2cpp-type-check.md#mask-diagnostic-allocations).
+  Numeric flow shares unchanged load states while preserving metadata
+  invalidation and write tracking; see
+  [ADR 0536](docs/adr/0536-bc2cpp-unchanged-load-states.md).
+  Numeric flow reuses each ivar slot's last widened mask during a run, avoiding
+  repeated wide-mask unions while preserving call invalidation; see
+  [ADR 0538](docs/adr/0538-bc2cpp-slot-union-fixed-points.md).
   Selected core Ruby collection bodies now retain exact return classes across zero-argument calls,
   including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
   `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks

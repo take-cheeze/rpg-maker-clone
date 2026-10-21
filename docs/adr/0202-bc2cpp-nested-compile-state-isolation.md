@@ -47,7 +47,9 @@ inside a runtime-def/EXEC body inherited it and compiled the callee as if its
 `with_fresh_method_state`. That helper sets every listed ivar to its top-level
 value and restores the caller's values afterwards, including after an
 exception. So the callee compiles exactly as it would at top level, and the
-caller continues with its own state.
+caller continues with its own state. A frozen list of the state keys is shared
+across probes; restoration indexes the saved values directly rather than
+allocating key/value pairs for each invocation.
 
 The other ivars that CodeGen writes after construction are not per-method
 state. They are memo caches of pure functions (`@clean_cache`,

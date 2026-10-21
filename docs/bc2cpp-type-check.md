@@ -289,7 +289,12 @@ order. The snapshot follows numeric naming because a Symbol lookup can lazily
 register its class. Snapshot identity and size continue to follow class growth
 and probe rollback (ADR 0531). Negative masks, LCF kinds, private shape names and
 the text and mutability of returned strings retain their existing behavior.
-No diagnostic result strings are cached.
+LCF kind and frozen-table membership also read their single bit positions,
+including sign-extended negative masks and shapes registered after earlier queries.
+No diagnostic result strings are cached. A warmed Ruby 4.0.5/YJIT full-engine
+comparison of the private-mask extension reduced compiler allocations from
+98,452,530 to 94,582,052 (3.9%); facts, receiver rows and report JSON were byte-identical.
+One profiled timing pair was 53.459s versus 52.101s; it is not a repeated speed benchmark.
 
 ## Shared reaching definitions
 
@@ -310,3 +315,38 @@ finalized touch result is cached. Native source-inclusive questions retain their
 existing scan. A changed source universe requires a new world.
 `BC2CPP_CLOSED_OPACITY_INDEX=0` disables this cache for comparison.
 See [ADR 0534](adr/0534-bc2cpp-opacity-touch-cache.md).
+
+## Unchanged load states
+
+Numeric flow can share its incoming read-only state across repeated integer,
+literal, pool, self, nil and string loads when the effective mask, element bound,
+provenance and affected class tests are already unchanged. Oracle questions and
+write-union collection still run. A per-Program MOVE-reader index narrows the
+provenance checks; standalone transfer contexts retain their copying behavior.
+`BC2CPP_NUMERIC_LOAD_COPY_ELISION=0` restores the copying load path.
+See [ADR 0536](adr/0536-bc2cpp-unchanged-load-states.md).
+
+### Ivar slot union fixed points
+
+Each numeric-flow run retains the last widened mask for each tracked ivar slot.
+When a call sees that same mask again, or the exact slot fact itself, its union
+with the run's fixed slot fact is already known. Reuse the mask while still
+invalidating provenance and class tests on every call. This retains one mask per
+slot and never shares oracle answers between runs. Standalone transfer contexts
+continue to read mutable slot facts without this cache.
+`BC2CPP_NUMERIC_SLOT_UNIONS=0` restores unconditional slot unions for comparison.
+See [ADR 0538](adr/0538-bc2cpp-slot-union-fixed-points.md).
+
+### Embedding compile probe state
+
+Embedding eligibility still compiles methods under isolated top-level state and
+keeps clean-result caches local to each compiler instance. The state key list is
+shared and restoration indexes saved values without temporary pairs. Nested
+probes and exceptions restore the immediate caller's original state objects
+(ADR 0202).
+
+A warmed Ruby 4.0.5/YJIT full-engine comparison reduced compiler allocations
+from 98,452,530 to 98,289,476 (163,054 fewer, 0.17%). Facts, receiver rows and
+report JSON were byte-identical. Profiled elapsed time was essentially unchanged
+(53.459s versus 53.405s). This reduces state-restoration overhead; the method
+bodies are still compiled to determine eligibility.

@@ -1,0 +1,1 @@
+- **bc2cpp**: core results with a direct-call entry (`Integer#to_s`, `Integer#to_i`, `Integer#inspect`) are trusted without the per-method source-digest pin; the entry's audited C expression is what codegen emits. The pin lookup is removed.

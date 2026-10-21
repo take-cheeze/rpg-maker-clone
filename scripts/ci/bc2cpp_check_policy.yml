@@ -479,6 +479,12 @@ checks:
   scripts/bc2cpp/native_arity_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/native_return_classes_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/native_rom_owners_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/native_ast_returns_check.rb:
     tier: fast
     capabilities: []
