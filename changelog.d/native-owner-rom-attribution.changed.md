@@ -1,0 +1,1 @@
+- **bc2cpp**: the native owner map reads each MRB_MT_INIT_ROM installer through the ROM owner resolver, so a core method table installed on a class bound by `mrb->x = y = mrb_define_class...` is attributed to that class. Dynamic by-name sends on the closed world drop from 815 to 729 (`to_i` 62 to 8, `to_f` 21 to 0).
