@@ -180,6 +180,10 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # was equipment -- and the Item screen with a special item -- raised
   # NoMethodError in the built engine while the CRuby host checks passed.
   conf.gem core: 'mruby-range-ext'
+  # Symbol's Comparable (and casecmp/upcase/...) come from mruby-symbol-ext.
+  # The closed world's bc2cpp model (compiled_gems.rb) assumes Symbol includes
+  # Comparable, so the closed build has to load the gem that declares it.
+  conf.gem core: 'mruby-symbol-ext' if conf.name == 'closed'
   # Fiber: the RGSS script host drives the game's bundled blocking main loop
   # (`$scene.main while $scene`) one frame at a time through a Fiber so the web
   # build's per-frame emscripten callback keeps control each frame. Not in the
