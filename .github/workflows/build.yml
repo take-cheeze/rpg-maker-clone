@@ -1016,14 +1016,15 @@ jobs:
       - name: Check bc2cpp registrations
         run: ruby scripts/ci/check_registry.rb
 
-      # Two workers bound CPU/memory use; the shared libraries above are read-only.
+      # Four workers fill the 4-vCPU runner (the group's wall time is the sum of its commands over the
+      # width, docs/bc2cpp-ci-duration-profile.md section 5); the shared libraries above are read-only.
       # timed_checks prints every command's log and propagates failures (ADR 0510).
       - name: Run bc2cpp checks
         timeout-minutes: 30
         run: |
           unset LD
           ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/bc2cpp-checks.sh" <<'CHECKS'
-          # ci:parallel begin 2
+          # ci:parallel begin 4
           ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c ruby scripts/native/binding_split.rb check
           ruby scripts/bc2cpp/type_check.rb --no-sends
