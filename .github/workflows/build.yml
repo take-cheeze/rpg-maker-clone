@@ -1113,16 +1113,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # None of the checks in this job touch 3rd/ (they load
-          # mruby-*/mrblib sources directly under CRuby, and the nix dev shell
-          # no longer pulls submodules either -- see flake.nix's own comment on
-          # dropping `self.submodules = true`), so this job initializes no
-          # submodule at all rather than the full sixteen `recursive` used to
-          # clone.
+          # Only 3rd/mruby is needed: tools/bc2cpp/native_names.rb derives its
+          # operator table from 3rd/mruby/lib/mruby/presym.rb. The other
+          # submodules stay uninitialized (the nix dev shell does not pull them
+          # either -- see flake.nix's own comment on dropping
+          # `self.submodules = true`).
           submodules: false
           # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
+
+      # Shallow, mruby only: a full mruby clone for one .rb file is wasteful.
+      - name: Init mruby submodule
+        run: git submodule update --init --depth 1 3rd/mruby
 
       # No test262-skip step here either; see the `build` job.
 
@@ -1250,6 +1253,7 @@ jobs:
               ruby scripts/bc2cpp/core_facts_rbs_check.rb
               ruby scripts/bc2cpp/base_rbs_check.rb
               ruby scripts/bc2cpp/foreign_definers_cache_check.rb
+              ruby scripts/bc2cpp/native_api_lists_parity_check.rb
 
           - name: RPG2k game-logic checks
             run: |
@@ -3089,10 +3093,12 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Every submodule, not the build jobs' subset: the `?submodules=1` walk
-      # below reads each `.gitmodules` entry off disk, and an uninitialised
-      # 3rd/SDL makes it fail.
+      # Every submodule, nested ones too, not the build jobs' subset: the
+      # `?submodules=1` walk below reads each `.gitmodules` entry off disk, and
+      # an uninitialised 3rd/SDL or 3rd/SDL_mixer/external/flac makes it fail.
       - name: Init submodules
+        env:
+          RECURSIVE: 1
         run: ./scripts/checkout-submodules.bash
 
       # This is the one job that still fetches submodules (`?submodules=1` on
@@ -3130,8 +3136,13 @@ jobs:
       # build log line. Merging stderr into stdout is what lets one filter see
       # both; `-L`'s build logs stay untouched, they are prefixed with the
       # derivation name rather than looking like fetch output.
+      # `set -o pipefail` is explicit because this step's shell is `bash -e`,
+      # which does not set it: without it the pipeline's status would be the
+      # filter's, and a failed nix build would pass.
       - name: Build flake
-        run: nix build -L '.?submodules=1#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
+        run: |
+          set -o pipefail
+          nix build -L '.?submodules=1#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
 
   # Publish the WebAssembly page to GitHub Pages on every push to master. The
   # build carries no pthreads/SharedArrayBuffer, so it needs no COOP/COEP
