@@ -6,6 +6,9 @@ Date: 2026-09-30
 
 Accepted
 
+**Amended 2026-10-21: the String#size and #length rows and their `bc2cpp_str_size`/`bc2cpp_str_length` helpers were
+removed (commit e9b77c3). Library method names are no longer special-cased, so these sends are ordinary dispatch.**
+
 ## Context
 
 The request was to replace the by-name sends of the common container methods
