@@ -289,7 +289,12 @@ order. The snapshot follows numeric naming because a Symbol lookup can lazily
 register its class. Snapshot identity and size continue to follow class growth
 and probe rollback (ADR 0531). Negative masks, LCF kinds, private shape names and
 the text and mutability of returned strings retain their existing behavior.
-No diagnostic result strings are cached.
+LCF kind and frozen-table membership also read their single bit positions,
+including sign-extended negative masks and shapes registered after earlier queries.
+No diagnostic result strings are cached. A warmed Ruby 4.0.5/YJIT full-engine
+comparison of the private-mask extension reduced compiler allocations from
+98,452,530 to 94,582,052 (3.9%); facts, receiver rows and report JSON were byte-identical.
+One profiled timing pair was 53.459s versus 52.101s; it is not a repeated speed benchmark.
 
 ## Shared reaching definitions
 
