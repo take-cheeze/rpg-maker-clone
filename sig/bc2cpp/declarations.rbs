@@ -10143,7 +10143,8 @@ end
 class Game::Switches
   def clear_dirty: () -> untyped
   def replace: (untyped) -> untyped
-  def to_h: () -> untyped
+  %a{bc2cpp:hint}
+  def to_h: () -> Hash
 end
 
 class Game::TextReveal
@@ -10167,7 +10168,8 @@ end
 class Game::Variables
   def clear_dirty: () -> untyped
   def replace: (untyped) -> untyped
-  def to_h: () -> untyped
+  %a{bc2cpp:hint}
+  def to_h: () -> Hash
 end
 
 class Game::Vehicle
