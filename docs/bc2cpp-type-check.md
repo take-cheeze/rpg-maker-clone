@@ -300,3 +300,13 @@ Queries with diagnostics, mutable opaque sets or a saturated cache keep their
 existing fresh-result path. Query options, refusal causes and cache bounds are
 unchanged. `BC2CPP_IR_SHARED_DEFINITIONS=0` retains the copying path for comparison.
 See [ADR 0530](adr/0530-shared-reaching-definitions.md).
+
+## Closed-world opacity queries
+
+After construction finishes its source scans, each ClosedWorld caches the
+outside-source touch predicate for declared owners. Declaration, boot/synthetic
+owner, rebinding and dynamic-subclass guards still run on every query; only the
+finalized touch result is cached. Native source-inclusive questions retain their
+existing scan. A changed source universe requires a new world.
+`BC2CPP_CLOSED_OPACITY_INDEX=0` disables this cache for comparison.
+See [ADR 0534](adr/0534-bc2cpp-opacity-touch-cache.md).
