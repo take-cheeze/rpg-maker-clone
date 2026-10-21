@@ -1,0 +1,1 @@
+- **bc2cpp** parses `sig/bc2cpp/declarations.rbs` once per generator process instead of twice, and shares that parse with the signature loaders; generated output is unchanged.
