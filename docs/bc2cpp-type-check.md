@@ -310,3 +310,13 @@ finalized touch result is cached. Native source-inclusive questions retain their
 existing scan. A changed source universe requires a new world.
 `BC2CPP_CLOSED_OPACITY_INDEX=0` disables this cache for comparison.
 See [ADR 0534](adr/0534-bc2cpp-opacity-touch-cache.md).
+
+## Unchanged load states
+
+Numeric flow can share its incoming read-only state across repeated integer,
+literal, pool, self, nil and string loads when the effective mask, element bound,
+provenance and affected class tests are already unchanged. Oracle questions and
+write-union collection still run. A per-Program MOVE-reader index narrows the
+provenance checks; standalone transfer contexts retain their copying behavior.
+`BC2CPP_NUMERIC_LOAD_COPY_ELISION=0` restores the copying load path.
+See [ADR 0536](adr/0536-bc2cpp-unchanged-load-states.md).
