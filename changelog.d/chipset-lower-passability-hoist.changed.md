@@ -1,0 +1,1 @@
+- **Map** tile landing checks read the chipset's lower passability table presence once per chipset instead of once per tile. Behaviour is unchanged. Covered by `scripts/rpg2k/logic_check.rb`.

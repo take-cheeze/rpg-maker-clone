@@ -805,6 +805,8 @@ module Game
       @name = c ? c[:name] : ''
       @graphic = c ? c[:chipset_name] : ''
       @passable_lower = c ? c[:passable_data_lower] : nil
+      # The lower table is written only here, so this flag cannot go stale; landable? tests it per tile.
+      @lower_table_absent = @passable_lower.nil?
       # The upper layer's own passage table, which is where the counter flag
       # lives (the lower table has no room for it).
       @passable_upper = c ? c[:passable_data_upper] : nil
@@ -864,7 +866,7 @@ module Game
     # blocks from *every* direction — the four direction bits ORed together,
     # not one specific bit.
     def landable?(tile_id)
-      return true if @passable_lower.nil?
+      return true if @lower_table_absent
       idx = ChipSet.lower_index(tile_id)
       return true if idx.nil? || idx < 0 || idx >= @passable_lower.size
       flags = @passable_lower[idx]
