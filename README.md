@@ -1043,6 +1043,9 @@
 - Mask diagnostics reuse immutable class-bit positions and primitive name tables
   while preserving registration order and private shape names; see [type checking](docs/bc2cpp-type-check.md).
 
+- Numeric dataflow shares read-only first incoming states, avoiding redundant
+  state-array copies while retaining independent updates; see [numeric class facts](docs/bc2cpp-ir-numeric-classes.md).
+
 - Receiver unions reuse indexed class-bit members instead of scanning every
   registered class, with bounded decoding caches that follow lazy registration.
 

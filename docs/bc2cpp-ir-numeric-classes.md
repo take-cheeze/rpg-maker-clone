@@ -41,3 +41,18 @@ Every run of the flow, and whether it feeds the generated code:
 - The `op_native?` / `nil_raises?` gates and every other oracle question
   (`send_mask`, `pool_mask`, `const_mask`, ...) are answered by the consumer's
   oracle, which reads the operands of the instruction it is asked about.
+
+## Sharing incoming states
+
+The solver treats every incoming state array as read-only. Transfers, edge
+refinements and joins copy before changing any entry, including ivar slots,
+elements, provenance and class-test records. A first incoming edge can therefore
+share its state with its target rather than allocating an identical array
+(ADR 0529). Sibling normal and exception edges retain independent updates.
+Consumers must read these arrays without modifying them; a consumer that needs
+a writable state must copy it first.
+
+`BC2CPP_NUMERIC_SHARE_STATES=0` restores the first-edge copies for differential
+report comparisons. It changes neither oracle calls nor the solver's worklist,
+and does not cache oracle answers or share inference across runs. Standalone
+`NumericFlow.join_state` callers still get a first-edge copy by default.
