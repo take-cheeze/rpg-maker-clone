@@ -10985,3 +10985,15 @@ class StringIO
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def tty?: () -> bool
 end
+
+# ---- conversion_returns.rbs
+# Result classes of Integer conversions that have a direct-call entry (NativeCoreDirect::ENTRIES): the entry's C
+# expression is what codegen emits, so the return follows from it. Other owners wait for their own entries.
+class Integer
+  # bc2cpp-native: core_results
+  def to_s: (?Integer) -> String
+  # bc2cpp-native: core_results
+  def to_i: () -> Integer
+  # bc2cpp-native: core_results
+  def inspect: () -> String
+end
