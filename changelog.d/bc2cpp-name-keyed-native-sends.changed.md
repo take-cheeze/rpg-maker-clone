@@ -1,0 +1,1 @@
+- **bc2cpp** no longer inlines core method names (`respond_to?`, `is_a?`, `keys`, `values`, `key?`, `to_s`, `length`, `first`, `dup`, `to_i`, and others) as special cases. They take ordinary dispatch; the operators `!`, `!=` and `===` keep their inline forms.
