@@ -258,5 +258,32 @@ Dir.mktmpdir do |dir|
   end
 end
 
+# -- drop-git-fetch-noise.bash ---------------------------------------------------------------------
+puts '-- nix output filter'
+filter = File.expand_path('../drop-git-fetch-noise.bash', __dir__)
+# Binary-looking bytes must not make grep print "binary file matches" and drop the lines around them.
+binary_out, binary_status = Open3.capture2e({ 'LC_ALL' => 'C.UTF-8' }, filter,
+                                            stdin_data: "fatal: boom\n\xff\nerror: after\n".b)
+check.call('a fatal line is kept when the input has invalid UTF-8 bytes',
+           binary_out.include?('fatal: boom') && binary_out.include?('error: after') && !binary_out.include?('binary file'))
+check.call('the filter itself exits 0 for that input', binary_status.success?)
+
+# The step's pipeline status must be the failing command's, under the pipefail the step sets itself.
+pipe_out, pipe_status = Open3.capture2e('bash', '-eo', 'pipefail', '-c',
+                                        "{ printf 'fatal: nix\\n'; exit 3; } 2>&1 | #{filter}")
+check.call('a failing command in a pipefail pipeline fails the step with its own status',
+           pipe_status.exitstatus == 3 && pipe_out.include?('fatal: nix'))
+no_pipefail_out, no_pipefail_status = Open3.capture2e('bash', '-e', '-c',
+                                                      "{ printf 'fatal: nix\\n'; exit 3; } 2>&1 | #{filter}")
+check.call('without pipefail the same pipeline passes (why the workflow sets it)', no_pipefail_status.success?)
+
+flake_steps = workflow.fetch('jobs').fetch('flake').fetch('steps')
+build_flake = flake_steps.find { |step| step['name'] == 'Build flake' }
+check.call('the flake job sets pipefail in its nix build step, not the runner default',
+           build_flake && build_flake['run'].to_s.include?('set -o pipefail') && build_flake['run'].to_s.include?('drop-git-fetch-noise.bash'))
+flake_init = flake_steps.find { |step| step['name'] == 'Init submodules' }
+check.call('the flake job initialises nested submodules too (the ?submodules=1 walk reads them)',
+           flake_init && flake_init.dig('env', 'RECURSIVE').to_s == '1')
+
 puts(failures.empty? ? 'ci helpers check OK' : "FAILED: #{failures.size}")
 exit(failures.empty? ? 0 : 1)
