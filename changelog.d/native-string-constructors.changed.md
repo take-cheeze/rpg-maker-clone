@@ -1,0 +1,1 @@
+- **bc2cpp**: the native return table names `mrb_sym_str` and `mrb_obj_as_string` as Strings, so a method body that returns one of them is classified `String`.

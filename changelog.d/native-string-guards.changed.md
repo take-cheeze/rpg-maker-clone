@@ -1,0 +1,1 @@
+- **bc2cpp**: the native return analysis reads `mrb_string_p` guards: a local tested by a leading `if (!(x.tt == MRB_TT_STRING)) return ...;` is a String after that statement, unless a later statement reassigns it. Bignum constructors (`mrb_bint_new_*`) are Integer.
