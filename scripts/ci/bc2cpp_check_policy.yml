@@ -163,6 +163,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/decided_branch_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/class_bodies_check.rb:
     tier: fast
     capabilities: []
@@ -457,6 +461,9 @@ checks:
     tier: fast
     capabilities: []
   scripts/bc2cpp/foreign_definers_cache_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/native_api_lists_parity_check.rb:
     tier: fast
     capabilities: []
   scripts/bc2cpp/lcf_schema_oracle_check.rb:

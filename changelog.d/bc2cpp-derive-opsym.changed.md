@@ -1,0 +1,1 @@
+- **bc2cpp**: `OPSYM_TO_RUBY` is now derived by inverting mruby's own `MRuby::Presym::OPERATORS` (`3rd/mruby/lib/mruby/presym.rb`) instead of a hand-copied table. The emitted output is unchanged. Loading it needs the `3rd/mruby` submodule (`git submodule update --init 3rd/mruby`); the `ruby-checks` CI job now initializes that one submodule.
