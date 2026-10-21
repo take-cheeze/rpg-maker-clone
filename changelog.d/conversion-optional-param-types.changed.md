@@ -1,0 +1,1 @@
+- **Conversion method optionals** are declared with the class of their literal default (`def to_s(sep = ",")` gives `?String`) in the generated conversion RBS. The checker gives them no hint yet, so this is documentation for now.
