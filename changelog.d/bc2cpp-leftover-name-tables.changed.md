@@ -1,0 +1,1 @@
+- **bc2cpp**: the fresh-Array proof no longer keys `sort_by` on its name; a block-carrying `sort_by` is no longer assumed to return an Array (the generic proof answers unknown), and `CORE_ARRAY_CHAIN_NEEDS_BLOCK` is removed.
