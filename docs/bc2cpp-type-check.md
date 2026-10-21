@@ -339,3 +339,17 @@ from 98,452,530 to 98,289,476 (163,054 fewer, 0.17%). Facts, receiver rows and
 report JSON were byte-identical. Profiled elapsed time was essentially unchanged
 (53.459s versus 53.405s). This reduces state-restoration overhead; the method
 bodies are still compiled to determine eligibility.
+
+Eligibility probes still emit each instruction, but skip register-copy propagation
+and dead-write removal when no instruction text contains `#error`. Error-bearing
+texts, entry-specialization runs and methods with runtime-installed names retain
+the regular pass, preserving
+cleanliness decisions and the emitted-text audit. Final C++ emission always runs
+the regular pass. `BC2CPP_PROBE_REGISTER_FLOW=0` restores register optimization
+inside probes. The scoped probe flag follows the same nested/exception restoration
+as other method state. See [ADR 0537](adr/0537-bc2cpp-probe-register-text.md).
+
+A warmed Ruby 4.0.5/YJIT full-engine comparison reduced compiler allocations
+from 94,426,399 to 88,482,065 (5,944,334 fewer, 6.3%). Facts, receiver rows and
+report JSON were byte-identical. Object-profiled elapsed time was 51.970s versus
+50.382s in one pair; this is not a repeated timing benchmark.

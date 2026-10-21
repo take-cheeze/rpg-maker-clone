@@ -1435,7 +1435,8 @@
   retaining live declaration and rebinding guards; see
   [ADR 0534](docs/adr/0534-bc2cpp-opacity-touch-cache.md).
   Embedding compile probes reuse a fixed state-key list and restore caller state
-  without temporary pairs; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
+  without temporary pairs. Eligibility probes also skip error-free register-text
+  optimization while final emission retains it; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
   LCF and frozen-table mask diagnostics avoid temporary wide integer intersections;
   see [mask diagnostics](docs/bc2cpp-type-check.md#mask-diagnostic-allocations).
   Numeric flow shares unchanged load states while preserving metadata
