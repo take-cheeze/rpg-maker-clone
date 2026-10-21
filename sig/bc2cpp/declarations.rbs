@@ -10677,8 +10677,7 @@ class Hash[unchecked out K, unchecked out V] < Object
 #   - flatten: ary_flatten -> flatten_internal, a new Array;
 #   - split: String#split (src/string.c);
 #   - uniq: Array#uniq (dup / __uniq) and Enumerable#uniq (hash.values).
-# Not here: to_a/dup (receiver-dependent, see core_results.rbs), to_h (Hash), blockless sort_by
-# (CORE_ARRAY_CHAIN_NEEDS_BLOCK) and argless first/last (CORE_ARRAY_CHAIN_NEEDS_ARG).
+# Not here: to_a/dup (receiver-dependent, see core_results.rbs), to_h (Hash), sort_by (an Enumerator without a block).
   # bc2cpp-native: core_fresh_arrays
   def keys: () -> Array[untyped]
   # bc2cpp-native: core_fresh_arrays

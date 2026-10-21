@@ -6,6 +6,10 @@ Date: 2026-10-16
 
 Accepted
 
+**Amended 2026-10-21: the `bc2cpp_str_size`/`bc2cpp_str_length` helpers described under Context no longer exist. They
+and the String#size/#length direct rows were removed with the library method-name tables (commit e9b77c3). The counts
+above are from the 2026-10-16 pass and are not updated.**
+
 ## Context
 
 On master's wio shipped pass the generated code still holds 374 `mrb_funcall_with_block` sites: sends with a block
