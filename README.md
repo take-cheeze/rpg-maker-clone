@@ -1029,6 +1029,9 @@
   values remain context-specific. Settled method lookup also shares ancestor paths,
   simple names and Ruby owner sets to reduce allocation pressure.
 
+- Context typing reuses evaluations while callee states and return masks remain
+  unchanged within one root graph, retaining the original solver budgets.
+
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
