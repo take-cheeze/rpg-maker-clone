@@ -10733,13 +10733,13 @@ end
 # Enumerator and is not declared here (core_results).
 # bc2cpp-native: core_block_iterators
 module Enumerable
-  def map: () { (untyped) -> untyped } -> Array[untyped]
-  def collect: () { (untyped) -> untyped } -> Array[untyped]
+  def map: [U] () { (untyped) -> U } -> Array[U]
+  def collect: [U] () { (untyped) -> U } -> Array[U]
   def select: () { (untyped) -> untyped } -> Array[untyped]
   def reject: () { (untyped) -> untyped } -> Array[untyped]
   def find_all: () { (untyped) -> untyped } -> Array[untyped]
   def partition: () { (untyped) -> untyped } -> Array[untyped]
-  def filter_map: () { (untyped) -> untyped } -> Array[untyped]
+  def filter_map: [U] () { (untyped) -> U } -> Array[U]
   def sort_by: () { (untyped) -> untyped } -> Array[untyped]
   def group_by: () { (untyped) -> untyped } -> Hash[untyped, untyped]
 end
