@@ -852,7 +852,7 @@ module Game
 
     # Can a character enter a tile with the given lower-layer id moving in `dir`?
     def passable?(tile_id, dir)
-      return true if @passable_lower.nil?
+      return true if @lower_table_absent
       idx = ChipSet.lower_index(tile_id)
       return true if idx.nil? || idx < 0 || idx >= @passable_lower.size
       flags = @passable_lower[idx]
