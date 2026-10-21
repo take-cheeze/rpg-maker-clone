@@ -320,3 +320,17 @@ write-union collection still run. A per-Program MOVE-reader index narrows the
 provenance checks; standalone transfer contexts retain their copying behavior.
 `BC2CPP_NUMERIC_LOAD_COPY_ELISION=0` restores the copying load path.
 See [ADR 0536](adr/0536-bc2cpp-unchanged-load-states.md).
+
+### Embedding compile probe state
+
+Embedding eligibility still compiles methods under isolated top-level state and
+keeps clean-result caches local to each compiler instance. The state key list is
+shared and restoration indexes saved values without temporary pairs. Nested
+probes and exceptions restore the immediate caller's original state objects
+(ADR 0202).
+
+A warmed Ruby 4.0.5/YJIT full-engine comparison reduced compiler allocations
+from 98,452,530 to 98,289,476 (163,054 fewer, 0.17%). Facts, receiver rows and
+report JSON were byte-identical. Profiled elapsed time was essentially unchanged
+(53.459s versus 53.405s). This reduces state-restoration overhead; the method
+bodies are still compiled to determine eligibility.

@@ -1434,6 +1434,8 @@
   Compiler opacity queries reuse finalized outside-source touch results while
   retaining live declaration and rebinding guards; see
   [ADR 0534](docs/adr/0534-bc2cpp-opacity-touch-cache.md).
+  Embedding compile probes reuse a fixed state-key list and restore caller state
+  without temporary pairs; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
   Numeric flow shares unchanged load states while preserving metadata
   invalidation and write tracking; see
   [ADR 0536](docs/adr/0536-bc2cpp-unchanged-load-states.md).
