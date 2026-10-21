@@ -1,0 +1,1 @@
+- bc2cpp no longer special-cases `to_s` sends: the native-direct table's RGSS `to_s` entries stay out of core-only fixture builds (the fixtures' closed world drops `mruby-rgss`), so the compiler's generic path decides `to_s` like any other name.

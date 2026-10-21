@@ -359,6 +359,12 @@ checks:
     fixture_gate: false
     reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
       ordinary CI.
+  scripts/bc2cpp/enumerator_result_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
+    fixture_gate: false
+    reason: Host only. Drives CodeGen on a stubbed closed world and registry, so it needs no mrbc or native sources.
   scripts/bc2cpp/symbol_class_check.rb:
     tier: fast
     capabilities: []

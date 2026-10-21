@@ -142,6 +142,8 @@ CHECKS = [
   { name: 'bc2cpp-numeric-operand', command: %w[scripts/bc2cpp/numeric_operand_check.rb] },
   # ADR 0431: the Integer bit-operator result class on hand-built bytecode; no mrblib lines.
   { name: 'bc2cpp-bitop-results', command: %w[scripts/bc2cpp/bitop_results_check.rb] },
+  # ADR 0522: the blockless map/collect Enumerator result and the reserved bit that names no class (host only).
+  { name: 'bc2cpp-enumerator-result', command: %w[scripts/bc2cpp/enumerator_result_check.rb] },
   # ADR 0424: the Symbol class bit of frozen tables (the model half; the fixture half needs mrbc).
   { name: 'bc2cpp-symbol-class', command: %w[scripts/bc2cpp/symbol_class_check.rb] },
   # ADR 0429: the Symbol bit of a LOADSYM register and the Symbol class chain (the model half; the fixture half needs mrbc).

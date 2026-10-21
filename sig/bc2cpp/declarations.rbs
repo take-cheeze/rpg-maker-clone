@@ -10731,6 +10731,19 @@ class Hash[unchecked out K, unchecked out V] < Object
   def reject: () { (untyped) -> untyped } -> Hash[untyped, untyped]
 end
 
+# ---- native: core_blockless_iterators
+# The result class of a core block iterator called WITHOUT a block (a SEND site), as the method-level union of its two
+# forms: the blockless overload returns an Enumerator (mruby's Enumerable#collect returns `to_enum(:collect)` when no
+# block is given, and map is `alias map collect`, 3rd/mruby/mrblib/enum.rb); the block overload returns Array, as in
+# core_block_iterators. Read by CoreBlocklessIteratorSigs (tools/bc2cpp/core_blockless_iterator_sigs.rb).
+# bc2cpp-native: core_blockless_iterators
+module Enumerable
+  # bc2cpp-native: core_blockless_iterators
+  def map: () -> Enumerator[untyped, untyped] | () { (untyped) -> untyped } -> Array[untyped]
+  # bc2cpp-native: core_blockless_iterators
+  def collect: () -> Enumerator[untyped, untyped] | () { (untyped) -> untyped } -> Array[untyped]
+end
+
 # ---- native: core_proc_calls
 # The Proc methods that run the proc with their arguments, read by CoreFactSigs.proc_call_names
 # (codegen_block_fallback.rb PROC_CALL_NAMES). bc2cpp_cfunc_proc_call_p (bc2cpp.rb) spells the same set; scripts/
