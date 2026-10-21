@@ -171,6 +171,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/param_fold_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/constant_argument_sites_check.rb:
     tier: fast
     capabilities:
