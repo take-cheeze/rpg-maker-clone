@@ -163,6 +163,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/decided_branch_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/class_bodies_check.rb:
     tier: fast
     capabilities: []
