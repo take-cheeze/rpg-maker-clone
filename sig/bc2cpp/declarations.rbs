@@ -10745,6 +10745,17 @@ module Enumerable
 end
 
 # bc2cpp-native: core_block_iterators
+# Array's own declarations of the iterators whose elements are the receiver's (Enumerable's find_all, reject, select and
+# sort_by bodies push the elements `each` yields, unchanged). The block receives one element, so the element type is the
+# class's Elem: the RBS names the receiver element, not a block return.
+class Array[unchecked out Elem] < Object
+  def select: () { (Elem) -> untyped } -> Array[Elem]
+  def reject: () { (Elem) -> untyped } -> Array[Elem]
+  def find_all: () { (Elem) -> untyped } -> Array[Elem]
+  def sort_by: () { (Elem) -> untyped } -> Array[Elem]
+end
+
+# bc2cpp-native: core_block_iterators
 class Hash[unchecked out K, unchecked out V] < Object
   def reject: () { (untyped) -> untyped } -> Hash[untyped, untyped]
   def select: () { (untyped) -> untyped } -> Hash[untyped, untyped]
