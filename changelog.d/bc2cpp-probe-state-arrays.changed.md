@@ -1,0 +1,1 @@
+- Reduce temporary arrays while saving and restoring nested compiler state during embedding eligibility probes.
