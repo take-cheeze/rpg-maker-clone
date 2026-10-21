@@ -1033,6 +1033,10 @@
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
 
+- Block capture metadata reuses immutable upvar and block-level indexes across
+  compilation probes while keeping embedding eligibility and emitted registrations
+  specific to each compilation. See [ADR 0528](docs/adr/0528-block-capture-index.md).
+
 - Mask diagnostics reuse immutable class-bit positions and primitive name tables
   while preserving registration order and private shape names; see [type checking](docs/bc2cpp-type-check.md).
 

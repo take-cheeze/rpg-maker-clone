@@ -10,10 +10,11 @@ bc2cpp's flow records that result as the reserved `NumericFlow::ENUMERATOR` bit
 Enumerator but emits no class test or direct call for it.
 
 The declarations are in `sig/bc2cpp/declarations.rbs` under `core_blockless_iterators`.
-Each Enumerable iterator mruby answers with `to_enum` is declared there with the arity its blockless
-call accepts (`find_index` is not: its blockless call with an argument is not an Enumerator). `map` and
-`collect` have two overloads: the blockless one returns `Enumerator[untyped, untyped]`, and the block
-one returns `Array[untyped]` as in `core_block_iterators`. `CoreBlocklessIteratorSigs`
+Each Enumerable iterator mruby answers with `to_enum` is declared there as the method-level union of
+two overloads: the blockless one returns `Enumerator[untyped, untyped]` with the arity its call accepts,
+and the block one takes a block. The block overload's result is the class `core_block_iterators`
+declares where it does, else `untyped`. `find_index` is not declared: its blockless call with an
+argument is not an Enumerator. The loader refuses a member that has only one form. `CoreBlocklessIteratorSigs`
 (`tools/bc2cpp/core_blockless_iterator_sigs.rb`) reads the results and the arity.
 
 Kill switch: `BC2CPP_NATIVE_CLASS_RESULTS=0` removes the result. The check is

@@ -66,6 +66,14 @@ Unknown paths stay refused and inherited/native lookup order is preserved. Set
 `BC2CPP_CALL_LOOKUP_INDEX=0` to compare the uncached path. See
 [ADR 0522](adr/0522-call-lookup-allocation-index.md).
 
+Compilation probes share immutable block-capture metadata within each CodeGen.
+Captured upvar pairs and forwarded-block levels are indexed by bytecode body;
+block levels also distinguish traversal depth and whether native `block_given?`
+reads are modeled. This preserves the depth refusal and Ruby override checks.
+Only structural metadata survives probe rollback; region eligibility, layout checks
+and generated registrations still run normally. Set `BC2CPP_BLOCK_CAPTURE_INDEX=0`
+to repeat the original walks. See [ADR 0528](adr/0528-block-capture-index.md).
+
 ## Output
 
 Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, so an editor problem matcher
