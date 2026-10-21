@@ -215,18 +215,20 @@ matches the run. Predicted check-step wall time at other widths, with the same c
 | Width | Predicted s | Lower bound sum/N s |
 | ---: | ---: | ---: |
 | 2 (before) | 270 | 266 |
-| 3 (this change) | 178 | 177 |
-| 4 | 139 | 133 |
+| 3 | 178 | 177 |
+| 4 (this change) | 139 | 133 |
 | 6 | 98 | 89 (the longest command) |
 
 Input order is not a lever: the in-order schedule is within 4 s of the bound at width 2 and 1 s
 at width 3. The only lever is width, or making the longest commands shorter.
 
-Width 3 is the change: the runner has 4 vCPUs, and the commands are single-process Ruby, so three
-of them fit. Width 4 would fill every core and was not chosen. Shared state is unchanged by it: the
+Width 4 is the change: the runner has 4 vCPUs, and the commands are single-process Ruby, so four
+of them fill the cores. Splitting the slowest scripts' internal fixtures was not pursued: the group is
+already saturated, so it would not shorten the step, and reordering by duration gives the same 178 s at
+width 3 (in-order 178, longest-first 178). Shared state is unchanged by it: the
 scan cache writes each entry to a private name and renames it (`tools/bc2cpp/scan_cache.rb`), the
 fixtures use private temp directories, and only `base_section_check.rb` writes a build directory.
-The memory of three simultaneous analyses on a 16 GB runner was not measured here; the first CI run
+The memory of four simultaneous analyses on a 16 GB runner was not measured here; the first CI run
 after this change shows it in the step's timing table, and ADR 0510's two-worker limit is the reason
 to revert to 2 if the step fails or slows down.
 
