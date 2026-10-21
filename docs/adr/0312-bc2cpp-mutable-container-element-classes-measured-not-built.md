@@ -122,3 +122,11 @@ Run the report again (`BC2CPP_ELEMENT_REPORT=elements.tsv MRBC=<host mrbc> ruby 
 `BC2CPP_ELEMENT_REPORT` and `scripts/bc2cpp/element_site_report.rb` are kept as the census, like ADR 0296's guard
 hint report; they are loaded only when the variable is set. They are not a CI check: a full run is a whole-program
 build, and the output is a measurement with no pass or fail. Nothing in the compiler's output depends on them.
+
+## Amendment (2026-10-21): the report's name-keyed rows stay
+
+The report's `store` rows (`ELEMENT_STORES`: `<<`, `push`, `[]=`, `unshift`, `insert`, `append`) and `extreme` rows
+(`[a, b].max` / `.min`) are kept with their columns. The Results section above cites both (the element-write counts and
+the min/max class-set table), so they are part of the measurement this ADR records, not diagnostic leftovers. The name
+lists choose which rows are written; they never change generated code, and the report is off unless
+`BC2CPP_ELEMENT_REPORT` is set.
