@@ -181,6 +181,12 @@ checks:
     - native_sources
     - closed_build
     - clang
+  scripts/bc2cpp/trace_merge_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
+    fixture_gate: false
+    reason: Host-only RBS comparison; the committed declarations are its only real input.
   scripts/bc2cpp/base_section_regen_check.rb:
     tier: fast
     capabilities: []
