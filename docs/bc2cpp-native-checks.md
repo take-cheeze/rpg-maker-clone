@@ -49,11 +49,15 @@ BC2CPP_NATIVE_FN_KINDS=$PWD/fn-kinds.tsv ...   # the bc2cpp run that should use 
 The generator reads every native source the base generator reads and every
 source the closed world reads (without `test/` directories), each with its gem's
 include paths, and runs clang on each. A file clang cannot parse keeps the regex
-kinds and is reported on stderr. Still unparsed in the closed world:
-`profiler.cxx` (`mrb_gc_type_counts` is not declared in the closed build). The
-wio-only `io_hal.c` is outside the closed world.
+kinds and is reported on stderr. Every closed-world source parses on the patched
+tree; the wio-only `io_hal.c` is outside the closed world.
 
-The analysis reads the sources as the build does, so it needs the mruby patches
-`standalone_prep.bash` applies. A checkout without them fails to parse `symbol.c`,
-whose table the compact form replaces. Run `closed_build.bash` (which applies
-them) before the generator.
+The analysis reads the sources as the build does, so the generator refuses to run
+until the mruby patches `standalone_prep.bash` applies are in `3rd/mruby`. Without
+them `profiler.cxx` (`mrb_gc_type_counts` comes from a patch) and `symbol.c` (whose
+table the compact form replaces) do not parse. Run `closed_build.bash`, which
+applies them, before the generator.
+
+Time: each file's result is cached under `closed/analysis/kinds-cache` (keyed on
+the file, its flags, the analyzer's sources and the external kinds), and files run
+in `BC2CPP_TABLE_JOBS` workers (default 2). A rerun parses only what changed.
