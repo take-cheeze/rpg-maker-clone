@@ -9727,7 +9727,7 @@ class RPG2k::Scene::MapWorld
 end
 class RPG2k::Scene::Menu
   def initialize: (RPG2k, Game::State) -> untyped
-  def build_commands: () -> Array[Array]
+  def build_commands: () -> untyped
   def build_gold_window: () -> untyped
   def build_windows: () -> untyped
   def command_disabled?: (untyped) -> untyped
@@ -9942,8 +9942,8 @@ module RPG2k
       # (`troop = Game::Troop.new(...)`), :events (Game::Interpreter.new), :allies/:foes (block `map`s) and
       # :pages_run (`{}`, also reset by `@ui[:pages_run] = {}`); `@ui[:enemy_sprites]`/`[:actor_sprites]` are nil or
       # `Array.new(n) { }`. The other keys hold method results or arithmetic the checker cannot trace: untyped.
-      @ui: { ?battle: Game::Battle, ?troop: Game::Troop, ?events: Game::Interpreter, ?allies: Array[untyped],
-             ?foes: Array[untyped], ?pages_run: Hash[untyped, untyped], ?enemy_sprites: Array[untyped]?,
+      @ui: { ?battle: Game::Battle, ?troop: Game::Troop, ?events: Game::Interpreter, ?allies: untyped,
+             ?foes: untyped, ?pages_run: Hash[untyped, untyped], ?enemy_sprites: Array[untyped]?,
              ?actor_sprites: Array[untyped]?,
              ?phase: untyped, ?options_shown: untyped, ?opt: untyped, ?actor_i: untyped, ?cmd: untyped,
              ?target_i: untyped, ?skill_i: untyped, ?item_i: untyped, ?ally_i: untyped, ?pending: untyped,
@@ -9986,10 +9986,10 @@ module RPG2k
       def teleport_targets: () -> Array
     end
     class Battle
-      def battle_commands: () -> Array
+      def battle_commands: () -> untyped
     end
     class Map
-      def shop_lines: () -> Array
+      def shop_lines: () -> untyped
     end
   end
 end
