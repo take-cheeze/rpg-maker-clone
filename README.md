@@ -1033,6 +1033,9 @@
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
 
+- Mask diagnostics reuse immutable class-bit positions and primitive name tables
+  while preserving registration order and private shape names; see [type checking](docs/bc2cpp-type-check.md).
+
 - Receiver unions reuse indexed class-bit members instead of scanning every
   registered class, with bounded decoding caches that follow lazy registration.
 
