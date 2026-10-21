@@ -32,9 +32,11 @@ The two new suites replace `native_owner_scopes_check.rb`,
 ## Native return-kind table
 
 `BC2CPP_NATIVE_FN_KINDS` names the table of each native function's return kind
-that the unknown-receiver join reads (ADR 0537). The closed build writes the
-generated headers it needs: `closed_build.bash` leaves `shinonome.hxx` in
-`closed/mrbgems/mruby-rgss` next to the presym IDs in `closed/include`. Then:
+that the unknown-receiver join reads (ADR 0537). `closed_build.bash` writes the
+headers the analysis needs: `shinonome.hxx` in `closed/mrbgems/mruby-rgss`, and
+the analysis overlay in `closed/analysis/include` (presym IDs for every symbol the
+closed world's native sources name, and the Onigmo header; ADR 0539). The closed
+library does not compile against the overlay. Then:
 
 ```bash
 scripts/bc2cpp/closed_build.bash build-closed-bc2cpp
@@ -42,8 +44,14 @@ ruby scripts/bc2cpp/native_fn_kinds.rb build-closed-bc2cpp/closed > fn-kinds.tsv
 BC2CPP_NATIVE_FN_KINDS=$PWD/fn-kinds.tsv ...   # the bc2cpp run that should use it
 ```
 
-The generator reads every native source the base generator reads, with the same
+The generator reads every native source the base generator reads and every
+source the closed world reads (without `test/` directories), each with its gem's
 include paths, and runs clang on each. A file clang cannot parse keeps the regex
-kinds and is reported on stderr. Still unparsed: `mruby-dir` (its presym IDs are
-outside the closed build), wio's `io_hal.c`, `mruby-onig-regexp` (needs
-oniguruma) and `profiler.cxx` (`mrb_gc_type_counts` is not in this build).
+kinds and is reported on stderr. Still unparsed in the closed world:
+`profiler.cxx` (`mrb_gc_type_counts` is not declared in the closed build). The
+wio-only `io_hal.c` is outside the closed world.
+
+The analysis reads the sources as the build does, so it needs the mruby patches
+`standalone_prep.bash` applies. A checkout without them fails to parse `symbol.c`,
+whose table the compact form replaces. Run `closed_build.bash` (which applies
+them) before the generator.
