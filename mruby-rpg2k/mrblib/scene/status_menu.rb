@@ -122,7 +122,6 @@ class RPG2k
       end
 
       def dispose
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         windows.each { |w| w.dispose }
       end
 
@@ -134,9 +133,7 @@ class RPG2k
         # `cursor_rect`, so there is no selection highlight to blink here,
         # but the call is still correct to make for consistency and any
         # future animated window state.
-        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         windows.each { |w| w.update }
-        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         party = @state.party.actors
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
@@ -171,7 +168,6 @@ class RPG2k
 
       def item_name(id)
         return '' if id.nil? || id == 0
-        # bc2cpp-reviewed: nomethod db_item, nomethod party -- dead fallback (ADR 0226)
         it = @state.party.db_item(id)
         if it.nil?
           warn_missing_item(id)
@@ -220,16 +216,13 @@ class RPG2k
       end
 
       def new_contents(win)
-        # bc2cpp-reviewed: nomethod height, nomethod width -- dead fallback (ADR 0226)
         c = Bitmap.new(win.width - Window::BORDER * 2, win.height - Window::BORDER * 2)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         c
       end
 
       # Redraw all five windows for the currently selected actor.
       def refresh
-        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         a = @state.party.actors[@actor_index]
         draw_actor_panel a
         draw_gold
@@ -244,9 +237,7 @@ class RPG2k
         draw_actor_face c, a
         pairs = [
           [NAME_LABEL, a.name.to_s],
-          # bc2cpp-reviewed: nomethod class_name -- dead fallback (ADR 0226)
           [CLASS_LABEL, a.respond_to?(:class_name) ? a.class_name.to_s : ''],
-          # bc2cpp-reviewed: nomethod title -- dead fallback (ADR 0226)
           [TITLE_LABEL, a.title.to_s]
         ]
         pairs.each_with_index do |(label, value), i|
@@ -265,7 +256,6 @@ class RPG2k
         draw_actor_state c, a, VALUE_X, y + LINE_H, c.width - VALUE_X, LINE_H, @skin
         y = LEVEL_LINE * LINE_H
         draw_system_text c, 0, y, c.width, LINE_H, term(:level), @skin, LABEL_COLOR
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         draw_system_text c, 0, y, LEVEL_VALUE_RIGHT, LINE_H, a.level.to_s, @skin, 0, 2
         @actor_window.contents = c
       end
@@ -277,7 +267,6 @@ class RPG2k
       def draw_gold
         c = new_contents(@gold_window)
         draw_system_text c, 0, 0, c.width, LINE_H,
-                         # bc2cpp-reviewed: nomethod gold, nomethod party -- dead fallback (ADR 0226)
                          "#{@state.party.gold}#{term(:gold)}", @skin, 0, 2
         @gold_window.contents = c
       end
@@ -291,16 +280,12 @@ class RPG2k
       # 12345/79050, and 79050 - 12345 is not a curve value.
       def draw_gauges(a)
         c = new_contents(@gauge_window)
-        # bc2cpp-reviewed: nomethod display_max_hp, nomethod hp -- dead fallback (ADR 0226)
         draw_value_row c, 0, term(:hp), a.hp, a.display_max_hp, true
-        # bc2cpp-reviewed: nomethod display_max_mp, nomethod mp -- dead fallback (ADR 0226)
         draw_value_row c, 1, term(:mp), a.mp, a.display_max_mp, false
-        # bc2cpp-reviewed: nomethod next_level_exp -- dead fallback (ADR 0226)
         nxt = a.next_level_exp
         if nxt.nil?
           draw_value_row c, 2, term(:exp_short), MAX_LEVEL_EXP, MAX_LEVEL_EXP
         else
-          # bc2cpp-reviewed: nomethod exp -- dead fallback (ADR 0226)
           draw_value_row c, 2, term(:exp_short), a.exp, nxt
         end
         @gauge_window.contents = c
@@ -309,11 +294,9 @@ class RPG2k
       # One "label  cur / max" line in this screen's shared column grid.
       def draw_value_row(c, line, label, cur, max, can_knockout = nil)
         y = line * LINE_H
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         draw_system_text c, 0, y, c.width, LINE_H, label, @skin, LABEL_COLOR
         color = can_knockout.nil? ? 0 : value_font_color(cur, max, can_knockout)
         draw_system_text c, 0, y, VALUE_CUR_RIGHT, LINE_H, cur.to_s, @skin, color, 2
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         draw_system_text c, VALUE_SLASH_X, y, c.width - VALUE_SLASH_X, LINE_H, '/', @skin
         draw_system_text c, 0, y, VALUE_MAX_RIGHT, LINE_H, max.to_s, @skin, 0, 2
       end
@@ -328,13 +311,9 @@ class RPG2k
       def draw_params(a)
         c = new_contents(@param_window)
         rows = [
-          # bc2cpp-reviewed: nomethod effective_atk, nomethod party -- dead fallback (ADR 0226)
           [term(:attack), @state.party.effective_atk(a)],
-          # bc2cpp-reviewed: nomethod effective_def, nomethod party -- dead fallback (ADR 0226)
           [term(:defense), @state.party.effective_def(a)],
-          # bc2cpp-reviewed: nomethod effective_int, nomethod party -- dead fallback (ADR 0226)
           [term(:mind), @state.party.effective_int(a)],
-          # bc2cpp-reviewed: nomethod effective_agi, nomethod party -- dead fallback (ADR 0226)
           [term(:agility), @state.party.effective_agi(a)]
         ]
         rows.each_with_index do |(label, value), i|
@@ -353,7 +332,6 @@ class RPG2k
       # and drew as a blank label rather than anything substituted.
       def draw_equipment(a)
         c = new_contents(@equip_window)
-        # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
         eqp = a.equipment
         slot_labels(a).each_with_index do |label, i|
           y = i * LINE_H
@@ -365,7 +343,6 @@ class RPG2k
       end
 
       def slot_labels(a)
-        # bc2cpp-reviewed: nomethod double_hand? -- dead fallback (ADR 0226)
         second = if a.respond_to?(:double_hand?) && a.double_hand?
                    term(:weapon)
                  else
@@ -378,7 +355,6 @@ class RPG2k
       # indicator is gated on it, the same way the rest of this codebase gates
       # RPG2003-only presentation.
       def rpg2003_party?
-        # bc2cpp-reviewed: nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
         @state.party.respond_to?(:rpg2003?) && @state.party.rpg2003?
       end
 
@@ -386,7 +362,6 @@ class RPG2k
       # the content width (measured at screen x=92..113 for a 12px-per-glyph
       # pair whose cell ends exactly on the content's right edge, 116).
       def draw_battle_row(c, a)
-        # bc2cpp-reviewed: nomethod battle_row -- dead fallback (ADR 0226)
         back = a.respond_to?(:battle_row) && a.battle_row == Game::Actor::ROW_BACK
         draw_system_text c, 0, ROW_LABEL_LINE * LINE_H, c.width, LINE_H,
                          back ? ROW_BACK_LABEL : ROW_FRONT_LABEL, @skin, 0, 2
@@ -397,11 +372,9 @@ class RPG2k
       # load (the same "a missing portrait draws nothing" rule every other
       # face-drawing screen in this port uses), leaving just the text columns.
       def draw_actor_face(c, actor)
-        # bc2cpp-reviewed: nomethod face_name -- dead fallback (ADR 0226)
         name = actor.respond_to?(:face_name) ? actor.face_name : nil
         sheet = load_face_bitmap(name)
         return unless sheet
-        # bc2cpp-reviewed: nomethod face_index -- dead fallback (ADR 0226)
         index = actor.respond_to?(:face_index) ? (actor.face_index || 0) : 0
         src = Rect.new((index % 4) * FACE_SIZE, (index / 4) * FACE_SIZE,
                        FACE_SIZE, FACE_SIZE)

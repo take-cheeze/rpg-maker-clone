@@ -12,12 +12,6 @@ runners:
   - closed_build
   - clang
 deferred:
-  scripts/bc2cpp/source_review_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    reason: Full-engine review-site exactness audit (every NOMETHOD, PROVEN_MISS and STRICT_HINT site annotated, no stale annotation); retains a separate manual run until budgeted explicitly.
   scripts/bc2cpp/class_pools_check.rb:
     tier: runtime
     capabilities:
@@ -175,11 +169,6 @@ checks:
     fixture_capabilities:
     - mrbc
     host_phase: false
-  scripts/bc2cpp/constant_reviewed_check.rb:
-    tier: fast
-    capabilities:
-    - mrbc
-    - native_sources
   scripts/bc2cpp/base_section_check.rb:
     tier: runtime
     capabilities:

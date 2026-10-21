@@ -271,7 +271,6 @@ module Game
           states.include?(1)
         else
           sk[:affect_hp] || sk[:affect_sp] || !skill_stat_mod_keys(sk).empty? ||
-            # bc2cpp-reviewed: nomethod state? -- dead fallback (ADR 0226)
             states.any? { |sid| t.state?(sid) } ||
             (LCF.field?(sk, :affect_attr_defence) && sk[:affect_attr_defence] && !skill_attributes(sk).empty?)
         end
@@ -304,7 +303,6 @@ module Game
     # otherwise (both Array-producing), never nil.
     def battle_skills(actor, caster)
       return [] unless actor && caster
-      # bc2cpp-reviewed: nomethod skills -- dead fallback (ADR 0226)
       actor.skills.sort.select { |sid| battle_skill?(db_skill(sid)) }
            .map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
     end
@@ -415,7 +413,6 @@ module Game
       # 必中: a source that ignores evasion skips the agility term entirely. So does a call with no target:
       # Game::Battle#enemy_skill_ready? asks for a skill's command before any target is picked (cost and
       # usability only), and there is no agility or evasion to apply to nobody.
-      # bc2cpp-reviewed: nomethod ignores_evasion -- dead fallback (ADR 0226)
       return to_hit if source.ignores_evasion || target.nil?
       src = effective_agi(source)
       src = 1 if src < 1
@@ -423,7 +420,6 @@ module Game
       agi_adjusted = 100 - (100 - to_hit) * (src + tgt) / (2 * src)
       # 物理回避率アップ: a shield/armour/helmet/accessory flagged
       # `raise_evasion` subtracts a flat 25, after the AGI term.
-      # bc2cpp-reviewed: nomethod evasion_up -- dead fallback (ADR 0226)
       agi_adjusted -= 25 if target.evasion_up
       Game.clamp(agi_adjusted, 0, 100)
     end
@@ -435,7 +431,6 @@ module Game
     # sometimes a bare Game::Actor with no Battle behind it, see Party#stat_mode).
     def do_nothing_restricted?(b)
       return false unless b.respond_to?(:states)
-      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (b.states || []).each do |sid|
         d = LCF.field?(@db, :situation) ? @db[:situation][sid] : nil
         return true if LCF.field?(d, :restriction) && (d[:restriction] || 0) == 1
@@ -451,7 +446,6 @@ module Game
     def hit_modifier(b)
       m = 100
       return m unless b.respond_to?(:states)
-      # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
       (b.states || []).each do |sid|
         d = LCF.field?(@db, :situation) ? @db[:situation][sid] : nil
         r = state_hit_ratio(d)
@@ -888,9 +882,7 @@ module Game
     # Whether a battler's HP sits within a percentage window of its maximum
     # (the enemy-HP / actor-HP conditions are expressed in percent).
     def self.hp_within?(battler, min, max)
-      # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
       return false if battler.nil? || battler.max_hp.nil? || battler.max_hp <= 0
-      # bc2cpp-reviewed: nomethod hp, nomethod max_hp -- dead fallback (ADR 0226)
       pct = battler.hp * 100 / battler.max_hp
       pct >= min && pct <= max
     end
@@ -928,15 +920,12 @@ module Game
         return false if variables[cond[:variable_id]] < cond[:variable_value]
       end
       return false if (flags & TURN) != 0 &&
-                      # bc2cpp-reviewed: nomethod turn -- dead fallback (ADR 0226)
                       !check_turns(ctx.turn, cond[:turn_b], cond[:turn_a])
       if (flags & ENEMY_HP) != 0
-        # bc2cpp-reviewed: nomethod enemy -- dead fallback (ADR 0226)
         return false unless hp_within?(ctx.enemy(cond[:enemy_id]),
                                        cond[:enemy_hp_min], cond[:enemy_hp_max])
       end
       if (flags & ACTOR_HP) != 0
-        # bc2cpp-reviewed: nomethod ally_by_actor_id -- dead fallback (ADR 0226)
         return false unless hp_within?(ctx.ally_by_actor_id(cond[:actor_id]),
                                        cond[:actor_hp_min], cond[:actor_hp_max])
       end
@@ -950,28 +939,20 @@ module Game
       # with no guard reads as "always true" the instant one is set, exactly
       # the same silent-pass-through class of bug the map-event TIMER2
       # condition (Game::EventPage.active?, this file) was already fixed for.
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       if (flags & TURN_ENEMY) != 0 && ctx.rpg2003?
-        # bc2cpp-reviewed: nomethod enemy_turn -- dead fallback (ADR 0226)
         t = ctx.enemy_turn(cond[:turn_enemy_id], source)
         return false if t.nil?
         return false unless check_turns(t, cond[:turn_enemy_b], cond[:turn_enemy_a])
       end
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       if (flags & TURN_ACTOR) != 0 && ctx.rpg2003?
-        # bc2cpp-reviewed: nomethod actor_turn -- dead fallback (ADR 0226)
         t = ctx.actor_turn(cond[:turn_actor_id], source)
         return false if t.nil?
         return false unless check_turns(t, cond[:turn_actor_b], cond[:turn_actor_a])
       end
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       if (flags & COMMAND_ACTOR) != 0 && ctx.rpg2003?
-        # bc2cpp-reviewed: nomethod actor_command -- dead fallback (ADR 0226)
         return false unless ctx.actor_command(cond[:command_actor_id], source) == cond[:command_id]
       end
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       if (flags & FATIGUE) != 0 && ctx.rpg2003?
-        # bc2cpp-reviewed: nomethod fatigue -- dead fallback (ADR 0226)
         f = ctx.fatigue
         return false if f.nil?
         return false if f < cond[:fatigue_min] || f > cond[:fatigue_max]
@@ -1274,7 +1255,6 @@ module Game
       # always 0, and only a Troop's own `Enemy` members bob in the first
       # place), so as not to shift the shared `rng`'s draw count for every
       # ordinary fight the way a full, unconditional port would.
-      # bc2cpp-reviewed: nomethod flying_phase=, nomethod levitate, nomethod random -- dead fallback (ADR 0226)
       @members.each { |m| m.flying_phase = rng.random(64) if m.levitate } if rng
     end
 
@@ -1309,9 +1289,7 @@ module Game
     # available here, and by the "hidden ~ not dead" equivalence above it is
     # also the *correct* one: a non-hidden member reaching this call is
     # always the dead case.
-    # bc2cpp-reviewed: nomethod exp -- dead fallback (ADR 0226)
     def total_exp;  live_members.reduce(0) { |s, e| s + e.exp } end
-    # bc2cpp-reviewed: nomethod gold -- dead fallback (ADR 0226)
     def total_gold; live_members.reduce(0) { |s, e| s + e.gold } end
 
     # The item ids the troop yields on victory: each member carrying a drop item
@@ -1325,9 +1303,7 @@ module Game
     # `#drops` below are each the whole program's own single def).
     def drops(rng)
       live_members.each_with_object([]) do |e, out|
-        # bc2cpp-reviewed: nomethod drop_id -- dead fallback (ADR 0226)
         next unless e.drop_id && e.drop_id > 0
-        # bc2cpp-reviewed: nomethod drop_id, nomethod drop_prob, nomethod random -- dead fallback (ADR 0226)
         out << e.drop_id if rng.random(100) < e.drop_prob
       end
     end
@@ -1362,15 +1338,11 @@ module Game
     # have no RNG to hand in and expect a `Troop` to build deterministically.
     def apply_appear_randomly(row, rng)
       return unless LCF.field?(row, :appear_randomly) && row[:appear_randomly]
-      # bc2cpp-reviewed: nomethod hidden -- dead fallback (ADR 0226)
       non_hidden = @members.count { |m| !m.hidden }
       @members.each do |m|
         break if non_hidden <= 1
-        # bc2cpp-reviewed: nomethod hidden -- dead fallback (ADR 0226)
         next if m.hidden
-        # bc2cpp-reviewed: nomethod random -- dead fallback (ADR 0226)
         next unless rng.random(100) < 40
-        # bc2cpp-reviewed: nomethod hidden= -- dead fallback (ADR 0226)
         m.hidden = true
         non_hidden -= 1
       end
@@ -1426,10 +1398,8 @@ module Game
     # The cast numbers for `sk` from `caster` on `target`, reusing Game::Party's
     # own battle_skill_command so an enemy's skill costs and scales identically.
     def skill_command(sk, caster, target)
-      # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
       party = @state && @state.respond_to?(:party) ? @state.party : nil
       return nil unless party && party.respond_to?(:battle_skill_command)
-      # bc2cpp-reviewed: nomethod battle_skill_command -- dead fallback (ADR 0226)
       party.battle_skill_command(sk, caster, target)
     end
 
@@ -1440,10 +1410,8 @@ module Game
     # trying" without a party to ask, matching every other tolerant accessor
     # here.
     def skill_helps_troop?(sk, caster, troop)
-      # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
       party = @state && @state.respond_to?(:party) ? @state.party : nil
       return true unless party && party.respond_to?(:skill_helps_troop?)
-      # bc2cpp-reviewed: nomethod skill_helps_troop? -- dead fallback (ADR 0226)
       party.skill_helps_troop?(sk, caster, troop)
     end
 
@@ -1461,10 +1429,8 @@ module Game
     # Defaults to "usable" without a party to ask, matching every other
     # tolerant accessor here.
     def skill_battle_usable?(sk)
-      # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
       party = @state && @state.respond_to?(:party) ? @state.party : nil
       return true unless party && party.respond_to?(:battle_skill?)
-      # bc2cpp-reviewed: nomethod battle_skill? -- dead fallback (ADR 0226)
       party.battle_skill?(sk)
     end
 
@@ -1478,22 +1444,18 @@ module Game
     # auto-battle rank calculation gates on. Defaults to "eligible" without a party to ask, matching every
     # other tolerant accessor here.
     def skill_ready?(caster, sid)
-      # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
       party = @state && @state.respond_to?(:party) ? @state.party : nil
       return true unless party && party.respond_to?(:can_cast?)
-      # bc2cpp-reviewed: nomethod can_cast? -- dead fallback (ADR 0226)
       party.can_cast?(caster, sid)
     end
 
     def switch?(id)
-      # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
       sw = @state && @state.respond_to?(:switches) ? @state.switches : nil
       sw ? sw[id] : false
     end
 
 
     def set_switch(id, on)
-      # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
       sw = @state && @state.respond_to?(:switches) ? @state.switches : nil
       sw[id] = on if sw && id && id > 0
     end
@@ -1501,9 +1463,7 @@ module Game
     # The party's average level, which the party_lvl action condition ranges
     # over (a reference implementation's average-level calculation). 0 with no party.
     def party_level
-      # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
       party = @state && @state.respond_to?(:party) ? @state.party : nil
-      # bc2cpp-reviewed: nomethod actors -- dead fallback (ADR 0226)
       actors = party && party.respond_to?(:actors) ? party.actors : nil
       return 0 if actors.nil? || actors.empty?
       total = 0

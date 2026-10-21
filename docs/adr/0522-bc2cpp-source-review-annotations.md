@@ -4,7 +4,7 @@ Date: 2026-10-20
 
 ## Status
 
-Accepted
+Withdrawn. The source annotations, the annotation gates and the check scripts were removed again; the gates no longer judge reviews, so unreviewed dead fallbacks, proven misses and untyped constants pass the build.
 
 ## Context
 

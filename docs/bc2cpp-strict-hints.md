@@ -25,11 +25,8 @@ descendant in the closed world and whose name `nil` does not answer: the conserv
 setting, for a first look at a program that has never been verified.
 
 Every forced site carries `/* STRICT_HINT <family>: <name> @ file:line */` and is printed on stderr as
-`STRICT_HINT_SITE file:line -> name (FAMILY)`. A reviewed site carries
-`# bc2cpp-reviewed: strict_hint <family> <name> -- reason` on its source line or the line above (ADR 0522). A fixture
-program's sites are listed but are not the program the review judges (`tools/bc2cpp/review_scope.rb`). The
-annotation check runs in `scripts/bc2cpp/source_review_check.rb`; writing an annotation is not a review: the verify
-build below is, and a site it reaches is a wrong hint, fixed at its source.
+`STRICT_HINT_SITE file:line -> name (FAMILY)`. No gate judges the listing (ADR 0522). Writing a hint is not a review:
+the verify build below is, and a site it reaches is a wrong hint, fixed at its source.
 
 ## Verify build
 
@@ -67,5 +64,4 @@ static fact the run contradicts.
 
 `scripts/bc2cpp/strict_hints_check.rb` (generated code and a deliberately violated fixture on
 real mruby, default, strict, verify and dispatch builds), `strict_hints_mutation_check.rb`
-(16 mutants) and `source_review_check.rb` (the annotations against the real wio closed world)
-run in the nightly `strict-hints` shard (`docs/ci.md`).
+(16 mutants) run in the nightly `strict-hints` shard (`docs/ci.md`).

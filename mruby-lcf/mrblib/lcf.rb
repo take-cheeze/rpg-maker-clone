@@ -186,7 +186,6 @@ module LCF
       code = c.respond_to?(:code) ? c.code : c[:code]
       indent = c.respond_to?(:indent) ? c.indent : c[:indent]
       str = binstr(utf8_to_cp932((c.respond_to?(:string) ? c.string : c[:string]) || ''))
-      # bc2cpp-reviewed: nomethod parameters -- dead fallback (ADR 0226)
       params = c.respond_to?(:parameters) ? c.parameters : c[:parameters]
       out = out + write_ber(code) + write_ber(indent) +
             write_ber(str.bytesize) + str + write_ber(params.size)
@@ -234,15 +233,10 @@ module LCF
   def encode_move_commands(cmds)
     out = String.new
     cmds.each do |c|
-      # bc2cpp-reviewed: nomethod command_id -- dead fallback (ADR 0226)
       id = c.respond_to?(:command_id) ? c.command_id : c[:command_id]
-      # bc2cpp-reviewed: nomethod parameter_string -- dead fallback (ADR 0226)
       str_field = c.respond_to?(:parameter_string) ? c.parameter_string : c[:parameter_string]
-      # bc2cpp-reviewed: nomethod parameter_a -- dead fallback (ADR 0226)
       a = (c.respond_to?(:parameter_a) ? c.parameter_a : c[:parameter_a]) || 0
-      # bc2cpp-reviewed: nomethod parameter_b -- dead fallback (ADR 0226)
       b = (c.respond_to?(:parameter_b) ? c.parameter_b : c[:parameter_b]) || 0
-      # bc2cpp-reviewed: nomethod parameter_c -- dead fallback (ADR 0226)
       cc = (c.respond_to?(:parameter_c) ? c.parameter_c : c[:parameter_c]) || 0
       out = out + write_ber(id)
       case id
@@ -513,7 +507,6 @@ module LCF
     when :move_commands ; encode_move_commands value
     when :Array1D, :Array2D
       return binstr(value) if value.is_a? String
-      # bc2cpp-reviewed: nomethod to_lcf -- dead fallback (ADR 0226)
       value.to_lcf
     else
       raise "cannot encode type: #{type}"
@@ -718,7 +711,6 @@ module LCF
       out = String.new
       @data.each_with_index do |v, idx|
         next if idx == 0 || v.nil?
-        # bc2cpp-reviewed: nomethod to_lcf -- dead fallback (ADR 0226)
         bytes = LCF.binstr(v.is_a?(String) ? v : v.to_lcf)
         out = out + LCF.write_ber(idx) + LCF.write_ber(bytes.bytesize) + bytes
       end
@@ -842,7 +834,6 @@ module LCF
       out = LCF.write_ber(ids.size)
       ids.each do |i|
         entry = @data[i]
-        # bc2cpp-reviewed: nomethod to_lcf -- dead fallback (ADR 0226)
         bytes = LCF.binstr(entry.is_a?(String) ? entry : entry.to_lcf)
         out = out + LCF.write_ber(i) + bytes
       end

@@ -49,7 +49,6 @@ class RPG2k
       # party settles to a defeat on the spot -- and that has to be able to
       # reach back through the map.
       def initialize(map, req, owner)
-        # bc2cpp-reviewed: nomethod parent -- dead fallback (ADR 0226)
         super map.parent
         @map = map
         @state = map.state
@@ -81,7 +80,6 @@ class RPG2k
       # mid-fight (Scene::Map#reload_windowskin), and every window opened from
       # here on has to pick the new one up.
       def windowskin
-        # bc2cpp-reviewed: nomethod windowskin -- dead fallback (ADR 0226)
         @map.windowskin
       end
 
@@ -153,7 +151,6 @@ class RPG2k
         play_system_se(SFX_BATTLE)
         @map.play_battle_bgm
         troop = Game::Troop.new(db, @req.troop_id, @rng)
-        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
         # The database's state table drives per-turn afflictions (poison slip,
@@ -224,7 +221,6 @@ class RPG2k
                                                 # Interpreter#do_change_party
                                                 # via `@ui[:events].
                                                 # battle_screen` below.
-                                                # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
                                                 party: @state.party),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
@@ -250,7 +246,6 @@ class RPG2k
                        # never read for any combat/save-affecting purpose, so
                        # it needs no seeding beyond starting at 0 every fight.
                        frame: 0 })
-        # bc2cpp-reviewed: nomethod battle= -- dead fallback (ADR 0226)
         @ui[:events].battle = @ui[:battle]
         # Lets a Change Party Member command run from a battle event page
         # (Interpreter#do_change_party) reach back into this screen the
@@ -259,13 +254,11 @@ class RPG2k
         # (the foreground/parallel interpreters are held off by `event_busy?`/
         # `parallels_paused?` for as long as `@ui` exists), so this is
         # never set on any other interpreter.
-        # bc2cpp-reviewed: nomethod battle_screen= -- dead fallback (ADR 0226)
         @ui[:events].battle_screen = self
         # A battle page can Call Common Event (1005), so it needs the same
         # resolver the encounter's own owning interpreter runs against --
         # the foreground by default, or a Parallel Process's own interpreter
         # for a fight it opened itself (see `owner` above).
-        # bc2cpp-reviewed: nomethod resolver, nomethod resolver= -- dead fallback (ADR 0226)
         @ui[:events].resolver = @owner.resolver
         build_battle_sprites
         build_actor_sprites
@@ -329,7 +322,6 @@ class RPG2k
       # keyed off a phase #start has not assigned yet.
       def battle_encounter_lines(troop, req)
         lines = troop.members.reject(&:hidden).map do |enemy|
-          # bc2cpp-reviewed: strict_hint ivar_accessor name -- reviewed before the source-annotation migration (ADR 0419)
           "#{enemy.name}#{term(:encounter)}"
         end
         lines << term(:special_combat) if req.first_strike
@@ -412,7 +404,6 @@ class RPG2k
         return true if @ui[:banner_timer] > 0
         @ui[:banner_shown] += 1
         @ui[:banner_timer] = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:action_win].dispose if @ui[:action_win]
         @ui[:action_win] = battle_panel_window(pending[0, @ui[:banner_shown]], 340)
         true
@@ -438,11 +429,8 @@ class RPG2k
       # someone to command.
       def settle_already_finished_battle
         battle = @ui[:battle]
-        # bc2cpp-reviewed: nomethod finished? -- dead fallback (ADR 0226)
         return false unless battle.finished?
-        # bc2cpp-reviewed: nomethod end_round -- dead fallback (ADR 0226)
         battle.end_round
-        # bc2cpp-reviewed: nomethod result -- dead fallback (ADR 0226)
         enter_battle_result(battle.result)
         true
       end
@@ -460,7 +448,6 @@ class RPG2k
       # ordering predicts.
 
       def battler_z(i)
-        # bc2cpp-reviewed: strict_hint ivar_accessor members -- reviewed before the source-annotation migration (ADR 0419)
         100 + (@ui[:troop].members.size - 1 - i)
       end
 
@@ -487,9 +474,7 @@ class RPG2k
       FLYING_AMPLITUDE = 4
       FLYING_PERIOD = 256
       def flying_offset(member)
-        # bc2cpp-reviewed: nomethod levitate, nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
         return 0 unless member.levitate && @state.party.rpg2003?
-        # bc2cpp-reviewed: nomethod flying_phase -- dead fallback (ADR 0226)
         frame = (@ui[:frame] || 0) + (member.flying_phase || 0)
         (Math.sin(2 * Math::PI * frame / FLYING_PERIOD.to_f) * FLYING_AMPLITUDE).round
       end
@@ -508,7 +493,6 @@ class RPG2k
       # (168,115)-(244,146) -- and those are exactly the boxes measured in
       # the reference frame (and in ours), to the pixel, on both enemies.
       def battler_y(member, bmp)
-        # bc2cpp-reviewed: nomethod height, nomethod y -- dead fallback (ADR 0226)
         member.y - bmp.height / 2 + flying_offset(member)
       end
 
@@ -524,7 +508,6 @@ class RPG2k
       # so all three agree.
       TRANSPARENT_ENEMY_OPACITY = 160
       def battler_opacity(member)
-        # bc2cpp-reviewed: nomethod transparent -- dead fallback (ADR 0226)
         member.transparent ? TRANSPARENT_ENEMY_OPACITY : 255
       end
 
@@ -539,16 +522,13 @@ class RPG2k
       # #take_revealed_monsters), building the sprite on screen mid-battle.
       def build_battle_sprites
         build_battle_back(encounter_backdrop)
-        # bc2cpp-reviewed: strict_hint ivar_accessor members -- reviewed before the source-annotation migration (ADR 0419)
         troop_members = @ui[:troop].members
         @ui[:enemy_sprites] = Array.new(troop_members.size) do |i|
           enemy = troop_members[i]
-          # bc2cpp-reviewed: nomethod hidden -- dead fallback (ADR 0226)
           next nil if enemy.hidden
           bmp = battler_bitmap(enemy)
           spr = Sprite.new
           spr.bitmap = bmp
-          # bc2cpp-reviewed: nomethod width, nomethod x -- dead fallback (ADR 0226)
           spr.x = enemy.x - bmp.width / 2
           spr.y = battler_y(enemy, bmp)
           spr.z = battler_z(i)
@@ -559,9 +539,7 @@ class RPG2k
         # transformation mid-fight is noticed and redrawn (see
         # #refresh_battle_sprites) -- matching a reference implementation's own
         # sprite refresh, which rebuilds on either changing.
-        # bc2cpp-reviewed: nomethod battler_name -- dead fallback (ADR 0226)
         @ui[:sprite_names] = @ui[:foes].map { |f| f.battler_name }
-        # bc2cpp-reviewed: nomethod battler_hue -- dead fallback (ADR 0226)
         @ui[:sprite_hues] = @ui[:foes].map { |f| f.battler_hue || 0 }
         refresh_battle_sprites
       end
@@ -583,16 +561,12 @@ class RPG2k
       # matching current behaviour exactly.
       def build_actor_sprites
         @ui[:actor_sprites] = nil
-        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         return unless @state.party.respond_to?(:alternate_battle_layout?) &&
-                      # bc2cpp-reviewed: nomethod alternate_battle_layout?, nomethod party -- dead fallback (ADR 0226)
                       @state.party.alternate_battle_layout?
         allies = @ui[:allies]
         @ui[:actor_sprites] = Array.new(allies.size) do |i|
           ally = allies[i]
-          # bc2cpp-reviewed: nomethod actor, nomethod dead?, nomethod defending -- dead fallback (ADR 0226)
           build_actor_sprite(ally.actor, i, defending: ally.defending, dead: ally.dead?,
-                             # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
                              states: ally.states)
         end
       end
@@ -689,7 +663,6 @@ class RPG2k
       # actual C++ source, not independently confirmed against genuine
       # RPG_RT under wine: it splits exactly this way there.
       def build_actor_sprite(actor, i, defending: false, dead: false, states: nil)
-        # bc2cpp-reviewed: nomethod battler_animation_id -- dead fallback (ADR 0226)
         anim_id = actor.respond_to?(:battler_animation_id) ? (actor.battler_animation_id || 0) : 0
         table = LCF.field?(db, :battleranimations) ? db[:battleranimations] : nil
         entry = (table && anim_id > 0) ? table[anim_id] : nil
@@ -716,7 +689,6 @@ class RPG2k
         if pose[:animation_type] == ACTOR_POSE_TYPE_BATTLE
           label = { ACTOR_DEFEND_POSE => 'defend', ACTOR_DEAD_POSE => 'dead',
                     ACTOR_IDLE_POSE => 'idle' }.fetch(pose_id, 'state')
-          # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
           $stderr.puts "[RPG2k] actor ##{actor.id}: #{label} pose " \
                        "uses a battle-animation (CBA) sheet, not a BattleCharSet -- not yet " \
                        "implemented, sprite not drawn"
@@ -729,9 +701,7 @@ class RPG2k
         x, y = automatic_battle_position(i)
         if x.nil?
           # Manual placement: the database's own battle_x/battle_y.
-          # bc2cpp-reviewed: nomethod battle_x -- dead fallback (ADR 0226)
           x = actor.respond_to?(:battle_x) ? (actor.battle_x || 0) : 0
-          # bc2cpp-reviewed: nomethod battle_y -- dead fallback (ADR 0226)
           y = actor.respond_to?(:battle_y) ? (actor.battle_y || 0) : 0
         end
 
@@ -783,9 +753,7 @@ class RPG2k
       # (x unshifted, y only half a cell up), i.e. every battler sat 24px
       # right and 24px low.
       def automatic_battle_position(i)
-        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         return nil unless @state.party.respond_to?(:automatic_battle_placement?) &&
-                          # bc2cpp-reviewed: nomethod automatic_battle_placement?, nomethod party -- dead fallback (ADR 0226)
                           @state.party.automatic_battle_placement?
         pos = battle_grid_position(i, @ui[:allies].length)
         return nil unless pos
@@ -847,7 +815,6 @@ class RPG2k
       # The encounter terrain's grid fields (database terrain chunks 46-48), or
       # the reference implementation's no-terrain defaults when the party's tile names no terrain.
       def battle_grid_params
-        # bc2cpp-reviewed: nomethod terrain_id, nomethod x, nomethod y, strict_hint typed terrain_id -- dead fallback (ADR 0226)
         tid = @map.respond_to?(:terrain_id) ? @map.terrain_id(@state.x, @state.y) : 0
         row = tid && tid > 0 && LCF.field?(db, :terrain) && db[:terrain] ? db[:terrain][tid] : nil
         return { top_y: GRID_TOP_Y_DEFAULT, elongation: GRID_ELONGATION_DEFAULT,
@@ -887,18 +854,15 @@ class RPG2k
       # `Combatant` objects for the same actor.
       def add_battle_actor_sprite(actor)
         battle = @ui[:battle]
-        # bc2cpp-reviewed: nomethod ally_by_actor_id, nomethod id -- dead fallback (ADR 0226)
         combatant = battle.ally_by_actor_id(actor.id)
         unless combatant
           combatant = Game::Battle.from_actor(actor)
-          # bc2cpp-reviewed: nomethod allies -- dead fallback (ADR 0226)
           battle.allies.push(combatant)
         end
         return if @ui[:allies].any? { |c| c.equal?(combatant) }
         @ui[:allies].push(combatant)
         return unless @ui[:actor_sprites]
         i = @ui[:allies].length - 1
-        # bc2cpp-reviewed: nomethod actor, nomethod dead?, nomethod defending, nomethod states -- dead fallback (ADR 0226)
         @ui[:actor_sprites].push(build_actor_sprite(combatant.actor, i, defending: combatant.defending, dead: combatant.dead?, states: combatant.states))
         reset_actor_battler_z
       end
@@ -911,7 +875,6 @@ class RPG2k
       # #build_actor_sprite fresh); this never leaves a disposed `Sprite`
       # sitting in the collection for that to reuse.
       def remove_battle_actor_sprite(actor)
-        # bc2cpp-reviewed: nomethod actor, nomethod id -- dead fallback (ADR 0226)
         idx = @ui[:allies].index { |c| c.actor && c.actor.id == actor.id }
         return unless idx
         @ui[:allies].delete_at(idx)
@@ -939,7 +902,6 @@ class RPG2k
         i = @ui[:allies].index { |c| c.equal?(combatant) }
         return unless i && sprites[i]
         dispose_battle_sprite(sprites[i])
-        # bc2cpp-reviewed: nomethod actor, nomethod dead?, nomethod defending, nomethod states -- dead fallback (ADR 0226)
         sprites[i] = build_actor_sprite(combatant.actor, i, defending: combatant.defending, dead: combatant.dead?, states: combatant.states)
       end
 
@@ -954,7 +916,6 @@ class RPG2k
       def reset_actor_battler_z
         sprites = @ui[:actor_sprites]
         return unless sprites
-        # bc2cpp-reviewed: nomethod z= -- dead fallback (ADR 0226)
         sprites.each_with_index { |spr, i| spr.z = actor_sprite_z(i) if spr }
       end
 
@@ -1039,9 +1000,7 @@ class RPG2k
         return @map.backdrop_for_terrain_id(@req.terrain_id) unless @req.terrain_id.nil?
         carried = @state.respond_to?(:battle_background) ? @state.battle_background : nil
         return carried unless carried.nil?
-        # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
         Game::Backdrop.name_for(@state.map_id, @map.map_properties,
-                                # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
                                 @map.terrain_backdrop(@state.x, @state.y))
       end
 
@@ -1157,9 +1116,7 @@ class RPG2k
       # `Bitmap#hue_change` (`mruby-rgss/src/lib.cxx`) mutates in place, so the
       # cache key must fold hue in rather than rotate a shared entry.
       def battler_bitmap(enemy)
-        # bc2cpp-reviewed: nomethod battler_name -- dead fallback (ADR 0226)
         name = enemy.battler_name
-        # bc2cpp-reviewed: nomethod battler_hue -- dead fallback (ADR 0226)
         hue = enemy.respond_to?(:battler_hue) ? (enemy.battler_hue || 0) : 0
         key = (name && !name.empty?) ? "#{name}\0#{hue}" : nil
         cached_bitmap(@monster_cache, key) do
@@ -1192,7 +1149,6 @@ class RPG2k
       # for the per-enemy sprites instead of a viewport tone. A sprite with no
       # flash in flight costs nothing here (native #update no-ops).
       def update_enemy_flashes
-        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         (@ui[:enemy_sprites] || []).each { |s| s.update if s }
       end
 
@@ -1205,12 +1161,9 @@ class RPG2k
         @ui[:frame] = (@ui[:frame] || 0) + 1
         sprites = @ui[:enemy_sprites]
         return unless sprites
-        # bc2cpp-reviewed: strict_hint ivar_accessor members -- reviewed before the source-annotation migration (ADR 0419)
         @ui[:troop].members.each_with_index do |member, i|
           spr = sprites[i]
-          # bc2cpp-reviewed: nomethod levitate -- dead fallback (ADR 0226)
           next unless spr && member.levitate
-          # bc2cpp-reviewed: nomethod bitmap, nomethod y= -- dead fallback (ADR 0226)
           spr.y = battler_y(member, spr.bitmap)
         end
       end
@@ -1226,16 +1179,13 @@ class RPG2k
         names = (@ui[:sprite_names] ||= [])
         hues = (@ui[:sprite_hues] ||= [])
         @ui[:foes].each_with_index do |foe, i|
-          # bc2cpp-reviewed: nomethod battler_hue, nomethod battler_name -- dead fallback (ADR 0226)
           changed = names[i] != foe.battler_name || hues[i] != (foe.battler_hue || 0)
           next unless changed
           rebuild_battler_sprite(i, foe) if sprites[i]
           # Recorded here rather than only inside #rebuild_battler_sprite, so a
           # transformed slot with no sprite object to rebuild (a bare fixture,
           # say) still stops re-triggering this every frame.
-          # bc2cpp-reviewed: nomethod battler_name -- dead fallback (ADR 0226)
           names[i] = foe.battler_name
-          # bc2cpp-reviewed: nomethod battler_hue -- dead fallback (ADR 0226)
           hues[i] = foe.battler_hue || 0
           # The battler swap is this method's only signal that a Transform ran
           # (Game::Battle#enemy_transform_action updates the combatant's stats
@@ -1251,7 +1201,6 @@ class RPG2k
           # action, or a page's Force Flee) or one still flagged invisible is off
           # the field and must not be drawn — the same test #living_foes uses to
           # keep it out of the target cursor.
-          # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
           spr.visible = !foe.out_of_play? if spr
           # A combatant hidden by anything other than a battle page's own Force
           # Flee (its own Escape action, or self-destruct -- Game::Battle#
@@ -1260,9 +1209,7 @@ class RPG2k
           # #drops key off the troop member's own `hidden`, not the combatant's
           # -- without this they would still pay out for a monster that never
           # actually died this fight.
-          # bc2cpp-reviewed: strict_hint ivar_accessor members -- reviewed before the source-annotation migration (ADR 0419)
           member = @ui[:troop].members[i]
-          # bc2cpp-reviewed: nomethod hidden, nomethod hidden= -- dead fallback (ADR 0226)
           member.hidden = true if member && foe.hidden && !member.hidden
         end
       end
@@ -1288,14 +1235,12 @@ class RPG2k
       # already use for a raw RGSS `Color`.
       def rebuild_battler_sprite(i, foe)
         sprites = @ui[:enemy_sprites]
-        # bc2cpp-reviewed: strict_hint ivar_accessor members -- reviewed before the source-annotation migration (ADR 0419)
         member = @ui[:troop].members[i]
         return unless member
         old = sprites[i]
         bmp = battler_bitmap(foe)
         spr = Sprite.new
         spr.bitmap = bmp
-        # bc2cpp-reviewed: nomethod width, nomethod x -- dead fallback (ADR 0226)
         spr.x = member.x - bmp.width / 2
         spr.y = battler_y(member, bmp)
         spr.z = battler_z(i)
@@ -1322,11 +1267,8 @@ class RPG2k
       # `enemy_id`, the identical constructor `EnemyAi#enemy` used to resolve
       # what the combatant just turned into.
       def sync_troop_member_rewards(i, foe)
-        # bc2cpp-reviewed: strict_hint ivar_accessor members -- reviewed before the source-annotation migration (ADR 0419)
         member = @ui[:troop].members[i]
-        # bc2cpp-reviewed: nomethod enemy_id -- dead fallback (ADR 0226)
         return unless member && foe.respond_to?(:enemy_id) && foe.enemy_id
-        # bc2cpp-reviewed: nomethod enemy_id, nomethod reseed_rewards -- dead fallback (ADR 0226)
         member.reseed_rewards(Game::Enemy.new(db, foe.enemy_id))
       end
 
@@ -1357,11 +1299,9 @@ class RPG2k
       def battle_ally_targets
         return living_allies unless pending_kind == :item
         allies = @ui[:allies]
-        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         return allies unless @state.party.respond_to?(:item_usable_by?)
         it = @ui[:pending] && @ui[:pending][:it]
         return allies unless it
-        # bc2cpp-reviewed: nomethod actor, nomethod id, nomethod item_usable_by?, nomethod party -- dead fallback (ADR 0226)
         allies.select { |a| a.actor.nil? || @state.party.item_usable_by?(it, a.actor.id) }
       end
       # Targetable foes: alive *and* in play, so a troop member still flagged
@@ -1373,7 +1313,6 @@ class RPG2k
       # from the party in order), so the Skill menu can read its known skills.
       def current_actor_row
         idx = @ui[:allies].index(current_actor)
-        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         idx ? @state.party.actors[idx] : nil
       end
 
@@ -1440,7 +1379,6 @@ class RPG2k
       # editor-only extension with no real LCF field, so there is
       # nothing for a vanilla database to gate this on beyond the edition).
       def row_command_available?
-        # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
         @ui[:battle] && @ui[:battle].respond_to?(:rpg2003?) && @ui[:battle].rpg2003?
       end
 
@@ -1467,13 +1405,11 @@ class RPG2k
       # resolves it to a forfeited turn.
       def custom_battle_commands(actor)
         return nil unless actor.respond_to?(:battle_commands)
-        # bc2cpp-reviewed: nomethod battle_commands -- dead fallback (ADR 0226)
         cmds = actor.battle_commands
         return nil unless cmds
         rows = cmds.each_with_object([]) do |cmd_id, out|
           next if cmd_id.nil? || cmd_id <= 0 # Row / empty slot
 
-          # bc2cpp-reviewed: nomethod battle_command_row -- dead fallback (ADR 0226)
           row = actor.battle_command_row(cmd_id)
           next unless row
 
@@ -1508,9 +1444,7 @@ class RPG2k
       # renaming Skill to "Magic") showed the generic term regardless.
       def skill_command_label
         actor = current_actor_row
-        # bc2cpp-reviewed: nomethod rename_skill? -- dead fallback (ADR 0226)
         if actor && actor.respond_to?(:rename_skill?) && actor.rename_skill?
-          # bc2cpp-reviewed: nomethod skill_command_name -- dead fallback (ADR 0226)
           actor.skill_command_name.to_s
         else
           term(:battle_skill)
@@ -1603,7 +1537,6 @@ class RPG2k
       # and not already on auto battle.
       def any_commandable_ally?
         battle = @ui[:battle]
-        # bc2cpp-reviewed: nomethod command_restricted? -- dead fallback (ADR 0226)
         living_allies.any? { |a| !battle.command_restricted?(a) && !force_ai_actor?(a) }
       end
 
@@ -1703,9 +1636,7 @@ class RPG2k
       def queue_auto_battle_round
         battle = @ui[:battle]
         living_allies.each do |a|
-          # bc2cpp-reviewed: nomethod command_restricted? -- dead fallback (ADR 0226)
           next if battle.command_restricted?(a)
-          # bc2cpp-reviewed: nomethod choose_auto_battle_command -- dead fallback (ADR 0226)
           battle.choose_auto_battle_command(a)
         end
         @ui[:actor_i] = living_allies.length
@@ -1729,7 +1660,6 @@ class RPG2k
       # enemies fast enough to floor the roll at 0%.
       def try_battle_escape
         battle = @ui[:battle]
-        # bc2cpp-reviewed: nomethod attempt_escape, nomethod first_strike? -- dead fallback (ADR 0226)
         if battle.attempt_escape(battle.first_strike?)
           # A dedicated Escape SE, not Decision -- ported from a reference
           # implementation's own escape handling, not independently confirmed
@@ -1741,7 +1671,6 @@ class RPG2k
         else
           $stderr.puts '[RPG2k battle] escape failed'
           show_battle_banner([term(:escape_failure)])
-          # bc2cpp-reviewed: nomethod command_skip -- dead fallback (ADR 0226)
           living_allies.each { |a| battle.command_skip(a) }
           start_round_animation
         end
@@ -1777,9 +1706,7 @@ class RPG2k
         # reference implementation's own clearing of the last battle action
         # right before handling the Row selection.
         if current_actor
-          # bc2cpp-reviewed: nomethod last_battle_action= -- dead fallback (ADR 0226)
           current_actor.last_battle_action = row[:command_id] if row[:command_id]
-          # bc2cpp-reviewed: nomethod last_battle_action= -- dead fallback (ADR 0226)
           current_actor.last_battle_action = nil if row[:action] == :row
         end
         case row[:action]
@@ -1792,7 +1719,6 @@ class RPG2k
         when :skill then open_battle_skill
         when :defend
           play_system_se(SFX_DECISION)
-          # bc2cpp-reviewed: nomethod command_defend -- dead fallback (ADR 0226)
           @ui[:battle].command_defend(current_actor)
           # The alternate-layout sprite swaps to its Defend pose the instant
           # the command commits (a reference implementation's own idle
@@ -1813,7 +1739,6 @@ class RPG2k
           # `Game::Battle#command_skip` resolves to here (#strike returns nil
           # for a skipped battler and the turn is passed).
           play_system_se(SFX_DECISION)
-          # bc2cpp-reviewed: nomethod command_skip -- dead fallback (ADR 0226)
           @ui[:battle].command_skip(current_actor)
           advance_actor
         when :row
@@ -1831,10 +1756,8 @@ class RPG2k
           # Combatant class's own field comment) -- and, like Special,
           # consumes the turn as a `DoNothing` action
           # (`Game::Battle#command_skip`).
-          # bc2cpp-reviewed: nomethod toggle_row -- dead fallback (ADR 0226)
           if @ui[:battle].toggle_row(current_actor)
             if current_actor_row && current_actor_row.respond_to?(:battle_row=)
-              # bc2cpp-reviewed: nomethod battle_row= -- dead fallback (ADR 0226)
               current_actor_row.battle_row = current_actor.row
             end
             # The alternate-layout sprite's automatic-placement X depends on
@@ -1843,7 +1766,6 @@ class RPG2k
             # roster-change redraw happens to catch it up.
             reposition_actor_sprite(current_actor)
             play_system_se(SFX_DECISION)
-            # bc2cpp-reviewed: nomethod command_skip -- dead fallback (ADR 0226)
             @ui[:battle].command_skip(current_actor)
             advance_actor
           else
@@ -1890,7 +1812,6 @@ class RPG2k
           if pending_skill?
             apply_pending_skill(target)
           else
-            # bc2cpp-reviewed: nomethod command_attack -- dead fallback (ADR 0226)
             @ui[:battle].command_attack(current_actor, target)
             @ui[:pending] = nil
             @ui[:phase] = :command
@@ -1950,7 +1871,6 @@ class RPG2k
       # no battle-usable skill).
       def open_battle_skill
         actor = current_actor_row
-        # bc2cpp-reviewed: nomethod battle_skills, nomethod party -- dead fallback (ADR 0226)
         list = actor ? @state.party.battle_skills(actor, current_actor) : []
         # A status that seals skills (封印 / Silence) takes them off the menu
         # rather than letting the actor pick one that would be refused.
@@ -1958,7 +1878,6 @@ class RPG2k
         battler = current_actor
         if battle && battler
           list = list.reject do |sid, _cost|
-            # bc2cpp-reviewed: nomethod db_skill, nomethod party, nomethod skill_sealed? -- dead fallback (ADR 0226)
             battle.skill_sealed?(battler, @state.party.db_skill(sid))
           end
         end
@@ -1982,7 +1901,6 @@ class RPG2k
         # the list -- falls back to 0 when nothing was ever chosen yet, or
         # that skill no longer appears in this list (forgotten, or newly
         # sealed by a status effect).
-        # bc2cpp-reviewed: nomethod last_skill_id -- dead fallback (ADR 0226)
         remembered = current_actor.last_skill_id
         @ui[:skill_i] = remembered && @ui[:skills].index { |sid, _cost| sid == remembered } || 0
         @ui[:phase] = :skill
@@ -2125,9 +2043,7 @@ class RPG2k
       # row colour (see its own comment) so both agree by construction.
 
       def battle_skill_unavailable?(cost, sk)
-        # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
         current_actor.mp < cost ||
-          # bc2cpp-reviewed: nomethod party, nomethod weapon_attribute_ready? -- dead fallback (ADR 0226)
           !@state.party.weapon_attribute_ready?(current_actor_row, sk)
       end
 
@@ -2140,18 +2056,15 @@ class RPG2k
       # cast at once on a self-scope skill).
       def confirm_battle_skill
         sid, cost = @ui[:skills][@ui[:skill_i]]
-        # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
         sk = @state.party.db_skill(sid)
         if battle_skill_unavailable?(cost, sk)
           play_system_se(SFX_BUZZER)
           return
         end
         play_system_se(SFX_DECISION)
-        # bc2cpp-reviewed: nomethod last_skill_id= -- dead fallback (ADR 0226)
         current_actor.last_skill_id = sid
         @ui[:pending] = { kind: :skill, sk: sk, sid: sid }
         close_battle_skill
-        # bc2cpp-reviewed: nomethod battle_skill_target, nomethod party -- dead fallback (ADR 0226)
         case @state.party.battle_skill_target(sk)
         when :self
           apply_pending_skill(current_actor)
@@ -2184,7 +2097,6 @@ class RPG2k
         sk = @ui[:pending][:sk]
         sid = @ui[:pending][:sid]
         item_id = @ui[:pending][:item_id]
-        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         c = @state.party.battle_skill_command(sk, current_actor, target, free: !item_id.nil?)
         @ui[:battle].command_skill(current_actor, target,
                                           name: sk[:name], skill_id: sid, item_id: item_id,
@@ -2225,10 +2137,8 @@ class RPG2k
         sk = @ui[:pending][:sk]
         sid = @ui[:pending][:sid]
         item_id = @ui[:pending][:item_id]
-        # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
         meta = @state.party.battle_skill_command(sk, current_actor, targets.first, free: !item_id.nil?)
         effects = targets.map do |t|
-          # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
           c = @state.party.battle_skill_command(sk, current_actor, t, free: !item_id.nil?)
           { target: t, hp: c[:hp], mp: c[:mp] }
         end
@@ -2256,7 +2166,6 @@ class RPG2k
       # Open the party's battle-usable items (nothing to open if the bag holds
       # none).
       def open_battle_item
-        # bc2cpp-reviewed: nomethod battle_items, nomethod party -- dead fallback (ADR 0226)
         @ui[:items] = @state.party.battle_items
         # See #start_skill's identical comment -- the same Decision/
         # Buzzer split, ported from that reference implementation.
@@ -2318,13 +2227,11 @@ class RPG2k
           # the same "greyed entry" shape the field Item menu's
           # Scene::ItemMenu#choose_item already gates its own dispatch
           # behind.
-          # bc2cpp-reviewed: nomethod battle_usable?, nomethod party -- dead fallback (ADR 0226)
           unless @state.party.battle_usable?(item_id)
             play_system_se(SFX_BUZZER)
             return
           end
           play_system_se(SFX_DECISION)
-          # bc2cpp-reviewed: nomethod db_item, nomethod party -- dead fallback (ADR 0226)
           it = @state.party.db_item(item_id)
           @ui[:pending] = { kind: :item, item_id: item_id, it: it }
           close_battle_item
@@ -2339,12 +2246,10 @@ class RPG2k
           # this item from the list entirely unless its skill is battle-usable
           # in the first place (never Escape/Teleport, see #battle_skill?), so
           # every skill reached here is one #battle_skill_target can resolve.
-          # bc2cpp-reviewed: nomethod db_skill, nomethod party, nomethod skill_invoking_item? -- dead fallback (ADR 0226)
           sk = @state.party.skill_invoking_item?(it) ? @state.party.db_skill(it[:skill_id]) : nil
           if sk
             @ui[:pending][:sk] = sk
             @ui[:pending][:sid] = it[:skill_id]
-            # bc2cpp-reviewed: nomethod battle_skill_target, nomethod party -- dead fallback (ADR 0226)
             case @state.party.battle_skill_target(sk)
             when :self
               apply_pending_skill(current_actor)
@@ -2361,10 +2266,8 @@ class RPG2k
               @ui[:phase] = :ally_target
               draw_battle_ally_target
             end
-          # bc2cpp-reviewed: nomethod party, nomethod switch_item? -- dead fallback (ADR 0226)
           elsif @state.party.switch_item?(item_id)
             apply_pending_switch_item
-          # bc2cpp-reviewed: nomethod item_all_allies?, nomethod party -- dead fallback (ADR 0226)
           elsif @state.party.item_all_allies?(it)
             # The whole roster, dead included -- a reference implementation's
             # own entire-party branch targets the full party
@@ -2497,7 +2400,6 @@ class RPG2k
       # consumed later, when the action lands), then move to the next actor.
       def apply_pending_item(target)
         pending = @ui[:pending]
-        # bc2cpp-reviewed: nomethod battle_item_command, nomethod party -- dead fallback (ADR 0226)
         c = @state.party.battle_item_command(pending[:it], target)
         @ui[:battle].command_item(current_actor, target,
                                          item_id: pending[:item_id],
@@ -2513,11 +2415,9 @@ class RPG2k
       def apply_pending_item_all(targets)
         pending = @ui[:pending]
         effects = targets.map do |t|
-          # bc2cpp-reviewed: nomethod battle_item_command, nomethod party -- dead fallback (ADR 0226)
           c = @state.party.battle_item_command(pending[:it], t)
           { target: t, hp: c[:hp], mp: c[:mp] }
         end
-        # bc2cpp-reviewed: nomethod battle_item_command, nomethod party -- dead fallback (ADR 0226)
         cured = @state.party.battle_item_command(pending[:it], targets.first)[:cured]
         @ui[:battle].command_item_all(current_actor, effects,
                                              item_id: pending[:item_id],
@@ -2571,11 +2471,9 @@ class RPG2k
         loop do
           a = allies[i]
           break unless a
-          # bc2cpp-reviewed: nomethod command_restricted? -- dead fallback (ADR 0226)
           if battle.command_restricted?(a)
             i += 1
           elsif force_ai_actor?(a)
-            # bc2cpp-reviewed: nomethod choose_auto_battle_command -- dead fallback (ADR 0226)
             battle.choose_auto_battle_command(a)
             i += 1
           else
@@ -2586,7 +2484,6 @@ class RPG2k
       end
 
       def force_ai_actor?(combatant)
-        # bc2cpp-reviewed: nomethod actor, nomethod force_ai? -- dead fallback (ADR 0226)
         combatant.actor && combatant.actor.respond_to?(:force_ai?) && combatant.actor.force_ai?
       end
 
@@ -2602,7 +2499,6 @@ class RPG2k
         battle = @ui[:battle]
         allies = living_allies
         i = @ui[:actor_i] - 1
-        # bc2cpp-reviewed: nomethod command_restricted? -- dead fallback (ADR 0226)
         i -= 1 while i >= 0 && (battle.command_restricted?(allies[i]) || force_ai_actor?(allies[i]))
         i >= 0 ? i : nil
       end
@@ -2647,11 +2543,9 @@ class RPG2k
       # attack per BATTLE_ANIM_FRAMES until the round's queue empties.
       def start_round_animation
         if @ui[:cmd_win]
-          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @ui[:cmd_win].dispose
           @ui[:cmd_win] = nil
         end
-        # bc2cpp-reviewed: nomethod begin_round -- dead fallback (ADR 0226)
         @ui[:battle].begin_round
         @ui[:phase] = :animate
         @ui[:anim_timer] = 0 # land the first attack next frame
@@ -2686,10 +2580,8 @@ class RPG2k
         # battler the check is for (Game::BattlePage.active?).
         if @ui[:battler_boundary]
           @ui[:battler_boundary] = false
-          # bc2cpp-reviewed: nomethod acting_battler -- dead fallback (ADR 0226)
           return if run_battle_events(:animate, @ui[:battle].acting_battler)
         end
-        # bc2cpp-reviewed: nomethod step_action -- dead fallback (ADR 0226)
         entry = @ui[:battle].step_action
         if entry
           # An Item action spends one *use* from the real bag when it lands (so
@@ -2700,9 +2592,7 @@ class RPG2k
           # A switch item flips its switch at the same moment -- the state table
           # is the scene's, same as the field menu's own Scene::ItemMenu, and
           # this is the only place a queued switch-item action ever reaches it.
-          # bc2cpp-reviewed: nomethod consume_item_use, nomethod party -- dead fallback (ADR 0226)
           @state.party.consume_item_use(entry[:item_id]) if entry[:item_id]
-          # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
           @state.switches[entry[:switch_id]] = true if entry[:switch_id]
           log_round([entry])
           refresh_battle_status
@@ -2714,7 +2604,6 @@ class RPG2k
           # is, exactly as before.
           @ui[:anim_timer] =
             start_battle_animation(entry) ? 0 : BATTLE_ANIM_FRAMES
-          # bc2cpp-reviewed: nomethod pending_empty? -- dead fallback (ADR 0226)
           @ui[:battler_boundary] = @ui[:battle].pending_empty?
         else
           finish_round_animation
@@ -2722,7 +2611,6 @@ class RPG2k
       end
 
       def battle_animation_playing?
-        # bc2cpp-reviewed: nomethod map_animation -- dead fallback (ADR 0226)
         !@map.map_animation.nil? && @map.map_animation[:battle]
       end
 
@@ -2744,7 +2632,6 @@ class RPG2k
                                   flash_target: nil)
         anim = @map.build_animation(id, [target], true)
         return false unless anim
-        # bc2cpp-reviewed: nomethod map_animation= -- dead fallback (ADR 0226)
         @map.map_animation = anim
         @map.fire_animation_flashes(anim) # frame 0 flashes, as the map path does
         true
@@ -2776,10 +2663,8 @@ class RPG2k
         i = entry[:target_index]
         sprites = @ui[:enemy_sprites]
         spr = i && sprites ? sprites[i] : nil
-        # bc2cpp-reviewed: nomethod bitmap -- dead fallback (ADR 0226)
         bmp = spr && spr.bitmap
         return [SCREEN_W / 2, SCREEN_H / 2, nil] unless bmp
-        # bc2cpp-reviewed: nomethod height, nomethod width, nomethod x, nomethod y -- dead fallback (ADR 0226)
         [spr.x + bmp.width / 2, spr.y + bmp.height / 2, bmp.height]
       end
 
@@ -2836,7 +2721,6 @@ class RPG2k
         return true unless req[:target] && req[:target] >= 0
         if req[:allies]
           idx = req[:target] - 1
-          # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
           idx >= 0 && idx < @state.party.actors.size
         else
           req[:target] < (@ui[:foes] || []).size
@@ -2877,12 +2761,9 @@ class RPG2k
         sprites.each_with_index do |spr, i|
           foe = foes[i]
           next if spr.nil? || (foe && foe.out_of_play?)
-          # bc2cpp-reviewed: nomethod bitmap -- dead fallback (ADR 0226)
           bmp = spr.bitmap
           next unless bmp
-          # bc2cpp-reviewed: nomethod height, nomethod width, nomethod x, nomethod y -- dead fallback (ADR 0226)
           out << @map.anim_target(spr.x + bmp.width / 2, spr.y + bmp.height / 2,
-                                  # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
                                   height: bmp.height, index: i, flash_target: nil)
         end
         out
@@ -2901,14 +2782,11 @@ class RPG2k
         # the Dead pose -- `dead?` itself survives `#end_round` untouched,
         # so it is read after rather than snapshotted before.
         defenders = @ui[:allies].select(&:defending)
-        # bc2cpp-reviewed: nomethod end_round -- dead fallback (ADR 0226)
         battle.end_round
         (defenders + @ui[:allies].select(&:dead?)).uniq { |a| a.object_id }
           .each { |ally| reposition_actor_sprite(ally) }
         close_battle_action
-        # bc2cpp-reviewed: nomethod finished? -- dead fallback (ADR 0226)
         if battle.finished?
-          # bc2cpp-reviewed: nomethod result -- dead fallback (ADR 0226)
           enter_battle_result(battle.result)
         else
           @ui[:actor_i] = 0
@@ -2943,22 +2821,16 @@ class RPG2k
       # default, no source) leaves them ungated.
       def run_battle_events(return_phase = :command, source = nil)
         ui = @ui
-        # bc2cpp-reviewed: nomethod pages -- dead fallback (ADR 0226)
         return false unless ui && ui[:troop].pages
-        # bc2cpp-reviewed: nomethod pages, nomethod switches -- dead fallback (ADR 0226)
         matched = Game::BattlePage.select_all(ui[:troop].pages, @state.switches,
-                                              # bc2cpp-reviewed: nomethod variables -- dead fallback (ADR 0226)
                                               @state.variables, ui[:battle], source)
         entry = matched.find { |(id, _)| !ui[:pages_run][id] }
         return false unless entry
         ui[:pages_run][entry[0]] = true
         cmds = entry[1][:event]
         return run_battle_events(return_phase, source) if cmds.nil? || cmds.empty? # empty page: try the next
-        # bc2cpp-reviewed: nomethod battle= -- dead fallback (ADR 0226)
         ui[:events].battle = ui[:battle]
-        # bc2cpp-reviewed: nomethod battle_source= -- dead fallback (ADR 0226)
         ui[:events].battle_source = source
-        # bc2cpp-reviewed: strict_hint typed start -- reviewed before the source-annotation migration (ADR 0419)
         ui[:events].start(cmds)
         ui[:event_return_phase] = return_phase
         ui[:phase] = :event
@@ -2976,12 +2848,9 @@ class RPG2k
         it = @ui[:events]
         apply_battle_event_requests(it)
         return if finish_terminated_battle
-        # bc2cpp-reviewed: nomethod waiting? -- dead fallback (ADR 0226)
         if it.waiting?
           drive_battle_event_wait(it)
-        # bc2cpp-reviewed: nomethod running? -- dead fallback (ADR 0226)
         elsif it.running?
-          # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
           it.update
         else
           leave_battle_event_phase
@@ -2989,16 +2858,13 @@ class RPG2k
       end
 
       def drive_battle_event_wait(it)
-        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         case it.wait_kind
         when :message, :choice then drive_battle_event_message(it)
         when :animation then @map.drive_map_animation(it)
         when :wait
-          # bc2cpp-reviewed: nomethod wait_frames -- dead fallback (ADR 0226)
           @ui[:event_timer] ||= @map.frames_from_tenths(it.wait_frames)
           if @ui[:event_timer] <= 0
             @ui[:event_timer] = nil
-            # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
             it.resume
           else
             @ui[:event_timer] -= 1
@@ -3006,7 +2872,6 @@ class RPG2k
         else
           # A battle page cannot open the map's teleport / shop / menu UI; those
           # requests are released so the page runs on rather than wedging here.
-          # bc2cpp-reviewed: nomethod resume -- dead fallback (ADR 0226)
           it.resume
         end
       end
@@ -3017,26 +2882,21 @@ class RPG2k
       # a battle choice widget.
       def drive_battle_event_message(it)
         unless @ui[:event_win]
-          # bc2cpp-reviewed: nomethod choice_labels, nomethod message_lines, nomethod wait_kind -- dead fallback (ADR 0226)
           lines = it.wait_kind == :choice ? it.choice_labels : it.message_lines
           @ui[:event_win] = battle_text_window(lines || [], 340)
           # Same player-input wait as the map's Show Message/Show Choices, so
           # it gets the same blinking keypress arrow (Window#pause).
-          # bc2cpp-reviewed: nomethod pause= -- dead fallback (ADR 0226)
           @ui[:event_win].pause = true
           return # shown this frame; take the button from the next one
         end
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        # bc2cpp-reviewed: nomethod wait_kind -- dead fallback (ADR 0226)
         choice = it.wait_kind == :choice
         close_battle_event_window
-        # bc2cpp-reviewed: nomethod choose, nomethod resume -- dead fallback (ADR 0226)
         choice ? it.choose(0) : it.resume
       end
 
       def close_battle_event_window
         return if @disposed || !@ui[:event_win]
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:event_win].dispose
         @ui[:event_win] = nil
       end
@@ -3051,16 +2911,12 @@ class RPG2k
       # told the panel it is stale — a page that poisoned the boss changed the
       # fight but not the screen until the next action happened to redraw it.
       def apply_battle_event_requests(it)
-        # bc2cpp-reviewed: nomethod take_revealed_monsters -- dead fallback (ADR 0226)
         it.take_revealed_monsters.each { |i| reveal_battle_monster(i) }
-        # bc2cpp-reviewed: nomethod take_fled_monsters -- dead fallback (ADR 0226)
         fled = it.take_fled_monsters
         fled.each { |i| remove_fled_monster(i) }
         play_escape_se unless fled.empty?
-        # bc2cpp-reviewed: nomethod take_monster_kills -- dead fallback (ADR 0226)
         kills = it.take_monster_kills
         kills.each { play_monster_kill_se }
-        # bc2cpp-reviewed: nomethod take_battle_background -- dead fallback (ADR 0226)
         name = it.take_battle_background
         rebuild_battle_back(name) unless name.nil?
         refresh_battle_status
@@ -3072,22 +2928,16 @@ class RPG2k
       # Show Hidden Monster: clear the member's hidden flag and build the sprite
       # build_battle_sprites skipped, so it appears mid-fight.
       def reveal_battle_monster(index)
-        # bc2cpp-reviewed: strict_hint ivar_accessor members -- reviewed before the source-annotation migration (ADR 0419)
         member = @ui[:troop].members[index]
-        # bc2cpp-reviewed: nomethod hidden -- dead fallback (ADR 0226)
         return unless member && member.hidden
-        # bc2cpp-reviewed: nomethod hidden= -- dead fallback (ADR 0226)
         member.hidden = false
         # Bring the combatant into the fight as well, not just the sprite: until
         # now it took no turn and could not be targeted (Combatant#out_of_play?).
-        # bc2cpp-reviewed: nomethod enemy -- dead fallback (ADR 0226)
         foe = @ui[:battle].enemy(index)
-        # bc2cpp-reviewed: nomethod hidden= -- dead fallback (ADR 0226)
         foe.hidden = false if foe
         bmp = battler_bitmap(member)
         spr = Sprite.new
         spr.bitmap = bmp
-        # bc2cpp-reviewed: nomethod width, nomethod x -- dead fallback (ADR 0226)
         spr.x = member.x - bmp.width / 2
         spr.y = battler_y(member, bmp)
         spr.z = battler_z(index)
@@ -3101,9 +2951,7 @@ class RPG2k
       # as a kill), and the troop member's own flag is set so a later rebuild does
       # not draw it again.
       def remove_fled_monster(index)
-        # bc2cpp-reviewed: strict_hint ivar_accessor members -- reviewed before the source-annotation migration (ADR 0419)
         member = @ui[:troop].members[index]
-        # bc2cpp-reviewed: nomethod hidden= -- dead fallback (ADR 0226)
         member.hidden = true if member
         dispose_battle_sprite(@ui[:enemy_sprites][index])
         @ui[:enemy_sprites][index] = nil
@@ -3130,7 +2978,6 @@ class RPG2k
       # Terminate Battle: leave the fight with no victory / defeat processing.
       # Returns whether the battle was ended, so the caller stops driving it.
       def finish_terminated_battle
-        # bc2cpp-reviewed: nomethod terminated? -- dead fallback (ADR 0226)
         return false unless @ui[:battle].terminated?
         close_battle_event_window
         finish_battle(:abort)
@@ -3149,9 +2996,7 @@ class RPG2k
         return_phase = @ui[:event_return_phase] || :command
         return if run_battle_events(return_phase)
         battle = @ui[:battle]
-        # bc2cpp-reviewed: nomethod finished? -- dead fallback (ADR 0226)
         if battle.finished?
-          # bc2cpp-reviewed: nomethod result -- dead fallback (ADR 0226)
           enter_battle_result(battle.result)
         elsif return_phase == :animate
           @ui[:phase] = :animate
@@ -3166,7 +3011,6 @@ class RPG2k
         @ui[:result] = result
         @map.play_victory_bgm if result == :victory
         lines = battle_result_lines(result, @ui[:troop])
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         [@ui[:status_win], @ui[:cmd_win]].each { |w| w.dispose if w }
         @ui[:status_win] = nil
         @ui[:cmd_win] = nil
@@ -3211,13 +3055,11 @@ class RPG2k
       def finish_battle(result)
         # Persist the party's post-battle HP (and any knock-outs) before leaving
         # the fight, so damage taken sticks and a downed member stays down.
-        # bc2cpp-reviewed: nomethod apply_to_party -- dead fallback (ADR 0226)
         @ui[:battle].apply_to_party
         # Capture the fight's own round count (Game::Battle#turn, its live
         # @rounds counter) before #dispose discards the Battle object --
         # this is RPG2000's "turns passed in latest battle" (Game::State
         # #last_battle_turns, LCF inventory chunk 109 field 41).
-        # bc2cpp-reviewed: nomethod last_battle_turns=, nomethod turn -- dead fallback (ADR 0226)
         @state.last_battle_turns = @ui[:battle].turn
         # Tally the Control Variables "Other" battle counters here, together and
         # unconditionally, matching a reference implementation's own
@@ -3227,23 +3069,17 @@ class RPG2k
         # defeat -- not scattered across the moment the encounter is armed (long
         # before the fight has actually concluded) and a resume path a
         # game-over-ending defeat skips entirely.
-        # bc2cpp-reviewed: nomethod battle_count, nomethod battle_count= -- dead fallback (ADR 0226)
         @state.battle_count += 1
         case result
-        # bc2cpp-reviewed: nomethod win_count, nomethod win_count= -- dead fallback (ADR 0226)
         when :victory then @state.win_count += 1
-        # bc2cpp-reviewed: nomethod defeat_count, nomethod defeat_count= -- dead fallback (ADR 0226)
         when :defeat  then @state.defeat_count += 1
-        # bc2cpp-reviewed: nomethod escape_count, nomethod escape_count= -- dead fallback (ADR 0226)
         when :escape  then @state.escape_count += 1
         end
         # A defeat in "game over" mode (no custom [Defeat] handler) with the whole
         # party knocked out ends the game; every other outcome resumes the event.
         game_over = result == :defeat && @req.defeat_game_over &&
-                    # bc2cpp-reviewed: nomethod all_dead?, nomethod party -- dead fallback (ADR 0226)
                     @state.party.all_dead?
         death_handler = result == :defeat && @req.random &&
-                        # bc2cpp-reviewed: nomethod all_dead?, nomethod party -- dead fallback (ADR 0226)
                         !@req.defeat_game_over && @state.party.all_dead?
         owner = @owner
         @map.close_battle
@@ -3251,9 +3087,7 @@ class RPG2k
           @map.perform_game_over(owner)
         else
           @map.restore_pre_battle_bgm
-          # bc2cpp-reviewed: nomethod resume_battle -- dead fallback (ADR 0226)
           owner.resume_battle(result)
-          # bc2cpp-reviewed: nomethod start_death_handler -- dead fallback (ADR 0226)
           owner.start_death_handler if death_handler
         end
       end
@@ -3380,7 +3214,6 @@ class RPG2k
       # matching this codebase's usual dangling-id-degrades-gracefully rule.
       def skill_start_lines(e, row, caster)
         bt = Game::States::BattleText
-        # bc2cpp-reviewed: nomethod db_item, nomethod party -- dead fallback (ADR 0226)
         it = e[:item_id] && @state.party.db_item(e[:item_id])
         if it
           uses_skill_message = LCF.field?(it, :using_message) && (it[:using_message] || 0) != 0
@@ -3622,11 +3455,8 @@ class RPG2k
       def battle_result_lines(result, troop)
         return [term(:escape_success)] if result == :escape
         return [term(:defeat)] unless result == :victory
-        # bc2cpp-reviewed: nomethod total_exp -- dead fallback (ADR 0226)
         exp = troop.total_exp
-        # bc2cpp-reviewed: nomethod total_gold -- dead fallback (ADR 0226)
         gold = troop.total_gold
-        # bc2cpp-reviewed: nomethod gain_gold, nomethod party -- dead fallback (ADR 0226)
         @state.party.gain_gold(gold)
         lines = [term(:victory)]
         lines << "#{exp}#{term(:exp_received)}" if exp > 0
@@ -3636,16 +3466,12 @@ class RPG2k
         end
         # Each defeated enemy may drop its treasure item (rolled on the battle's
         # own RNG); grant it to the bag and name it in the result window.
-        # bc2cpp-reviewed: nomethod drops, nomethod rng -- dead fallback (ADR 0226)
         troop.drops(@ui[:battle].rng).each do |iid|
-          # bc2cpp-reviewed: nomethod gain_item, nomethod party -- dead fallback (ADR 0226)
           @state.party.gain_item(iid, 1)
-          # bc2cpp-reviewed: nomethod db_item, nomethod party -- dead fallback (ADR 0226)
           it = @state.party.db_item(iid)
           name = it ? it[:name] : "item #{iid}"
           lines << "#{name}#{term(:item_received)}"
         end
-        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         @state.party.actors.each do |a|
           # A KO'd party member earns nothing from the victory -- a reference
           # implementation's own EXP-granting loop iterates only the active
@@ -3653,9 +3479,7 @@ class RPG2k
           # not in the party.
           next if a.respond_to?(:dead?) && a.dead?
           before_level = a.respond_to?(:level) ? a.level : nil
-          # bc2cpp-reviewed: nomethod skills -- dead fallback (ADR 0226)
           before_skills = a.respond_to?(:skills) ? a.skills.dup : []
-          # bc2cpp-reviewed: nomethod gain_exp -- dead fallback (ADR 0226)
           a.gain_exp(exp)
           lines.concat(battle_level_up_lines(a, before_level, before_skills)) if before_level
         end
@@ -3671,17 +3495,13 @@ class RPG2k
       # just taught. Returns [] when the level did not rise.
 
       def battle_level_up_lines(actor, before_level, before_skills)
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         return [] if actor.level <= before_level
         lines = []
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         ((before_level + 1)..actor.level).each do |lv|
           lines << battle_level_up_message(actor, lv)
           next unless actor.respond_to?(:learn_table)
-          # bc2cpp-reviewed: nomethod learn_table -- dead fallback (ADR 0226)
           actor.learn_table.each do |sid, at|
             next unless at == lv && !before_skills.include?(sid)
-            # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
             sk = @state.party.db_skill(sid)
             lines << battle_skill_learned_message(actor, sk) if sk
           end
@@ -3858,7 +3678,6 @@ class RPG2k
       # cannot be built (no System2 graphic, or a failed load) rather than
       # leaving the panel blank.
       def refresh_battle_status
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:status_win].dispose if @ui[:status_win]
         win = battle_status_gauge_window(@ui[:allies]) if gauge_battle_layout?
         @ui[:status_win] = win || begin
@@ -3881,7 +3700,6 @@ class RPG2k
       # any database `#alternate_battle_layout?` itself already reads false
       # for) reads false here too.
       def gauge_battle_layout?
-        # bc2cpp-reviewed: nomethod gauge_battle_layout?, nomethod party -- dead fallback (ADR 0226)
         @state.party.respond_to?(:gauge_battle_layout?) && @state.party.gauge_battle_layout?
       end
 
@@ -3892,20 +3710,15 @@ class RPG2k
       # segments leave them nil (a 3-element array, same as always), which
       # the shared drawing loop's destructuring already tolerates.
       def battle_status_row(b)
-        # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
         hp = b.hp < 0 ? 0 : b.hp
-         # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
          [[b.name, STATUS_NAME_X, 0], battle_state_segment(b),
-          # bc2cpp-reviewed: nomethod display_max_hp -- dead fallback (ADR 0226)
           ['HP', STATUS_HP_X, 0, hp, b.display_max_hp, true],
-          # bc2cpp-reviewed: nomethod display_max_mp, nomethod mp -- dead fallback (ADR 0226)
           ['MP', STATUS_MP_X, 0, b.mp, b.display_max_mp, false]]
       end
 
       # The condition column, as a status-panel segment: the same reading the
       # field windows draw (Scene::Base#state_display), placed in its column.
       def battle_state_segment(b)
-        # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
         text, color = state_display(b.states)
         [text, STATUS_STATE_X, color]
       end
@@ -3992,7 +3805,6 @@ class RPG2k
       # so it is always a Fixnum.
 
       def draw_battle_gauge_card(c, system2, ally, i)
-        # bc2cpp-reviewed: nomethod actor -- dead fallback (ADR 0226)
         draw_battle_gauge_face(c, ally.actor, i)
         x = 32 + i * 80
         y = ACTOR_FACE_HEIGHT
@@ -4002,11 +3814,8 @@ class RPG2k
         c.stretch_blt Rect.new(x, y, 25, 48), system2, Rect.new(16, 32, 16, 48)
         x += 25
         c.blt x, y, system2, Rect.new(32, 32, 16, 48)
-        # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
         hp = ally.hp < 0 ? 0 : ally.hp
-        # bc2cpp-reviewed: nomethod display_max_hp -- dead fallback (ADR 0226)
         draw_gauge_system2(c, system2, fill_x, y, hp, ally.display_max_hp, 0)
-        # bc2cpp-reviewed: nomethod display_max_mp, nomethod mp -- dead fallback (ADR 0226)
         draw_gauge_system2(c, system2, fill_x, y + 16, ally.mp, ally.display_max_mp, 1)
         if ally.respond_to?(:gauge)
           draw_gauge_system2(c, system2, fill_x, y + 32, ally.gauge,
@@ -4014,7 +3823,6 @@ class RPG2k
         end
         num_x = 40 + 80 * i
         draw_number_system2(c, system2, num_x, y, hp)
-        # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
         draw_number_system2(c, system2, num_x, y + 12 + 4, ally.mp)
       end
 
@@ -4034,10 +3842,8 @@ class RPG2k
 
       def draw_battle_gauge_face(c, actor, i)
         return unless actor && actor.respond_to?(:faceset_name)
-        # bc2cpp-reviewed: nomethod faceset_name, nomethod load_face_bitmap, strict_hint typed load_face_bitmap -- dead fallback (ADR 0226)
         face = @map.load_face_bitmap(actor.faceset_name)
         return unless face
-        # bc2cpp-reviewed: nomethod faceset_index -- dead fallback (ADR 0226)
         index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
         src = Rect.new((index % 4) * Map::FACE_SIZE,
                        (index / 4) * Map::FACE_SIZE,
@@ -4149,7 +3955,6 @@ class RPG2k
       def draw_battle_command
         actor = current_actor
         return unless actor
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:cmd_win].dispose if @ui[:cmd_win]
         labels = battle_commands
         cmd_x, cmd_y = battle_cmd_window_rect
@@ -4158,7 +3963,6 @@ class RPG2k
         win.windowskin = windowskin
         inner_w = BATTLE_CMD_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |label, i|
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, label
@@ -4184,7 +3988,6 @@ class RPG2k
       # x=4..71 -- a `Rect.new(0, row * 16, 60, 16)`, the full contents
       # width, wrapping from 逃げる back to 戦う on a fourth Down.
       def draw_battle_options
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:cmd_win].dispose if @ui[:cmd_win]
         labels = battle_option_rows.map { |r| r[:label] }
         win = Window.new(0, BATTLE_PANEL_Y, BATTLE_CMD_W, BATTLE_PANEL_H)
@@ -4192,7 +3995,6 @@ class RPG2k
         win.windowskin = windowskin
         inner_w = BATTLE_CMD_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |label, i|
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, label
@@ -4231,7 +4033,6 @@ class RPG2k
       # redraws it (at a lower z) rather than relying on it still being up.
       def draw_battle_target
         foes = living_foes
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:target_win].dispose if @ui[:target_win]
         draw_battle_skill if pending_kind == :skill
         draw_battle_item if pending_kind == :item
@@ -4250,7 +4051,6 @@ class RPG2k
         close_battle_item
         close_battle_list_desc
         return unless @ui[:target_win]
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:target_win].dispose
         @ui[:target_win] = nil
       end
@@ -4346,7 +4146,6 @@ class RPG2k
         win.z = z
         win.windowskin = windowskin
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |label, i|
           row = i / column_max
@@ -4374,13 +4173,11 @@ class RPG2k
                                      col_w, BATTLE_LINE_H)
         end
         if desc
-          # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
           @ui[:desc_win].dispose if @ui[:desc_win]
           dwin = Window.new(0, 0, SCREEN_W, desc_h)
           dwin.z = z
           dwin.windowskin = windowskin
           dc = Bitmap.new(SCREEN_W - Window::BORDER * 2, desc_h - Window::BORDER * 2)
-          # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
           dc.font.color = Color.new(255, 255, 255, 255)
           draw_system_text(dc, 0, 0, dc.width, BATTLE_LINE_H, desc.to_s, windowskin, 0)
           dwin.contents = dc
@@ -4394,7 +4191,6 @@ class RPG2k
       # method so the banner never outlives the list it belongs to.
       def close_battle_list_desc
         return if @disposed || !@ui[:desc_win]
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:desc_win].dispose
         @ui[:desc_win] = nil
       end
@@ -4434,9 +4230,7 @@ class RPG2k
         @ui[:list_up_shown] = scroll > 0
         @ui[:list_down_shown] = scroll + rows < row_count
         on = list_arrow_blink_on?(@ui[:list_arrow_anim])
-        # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
         @ui[:list_up_arrow].visible = on && @ui[:list_up_shown]
-        # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
         @ui[:list_down_arrow].visible = on && @ui[:list_down_shown]
       end
 
@@ -4451,15 +4245,12 @@ class RPG2k
         down = @ui[:list_down_arrow]
         return unless up && down
         on = list_arrow_blink_on?(@ui[:list_arrow_anim])
-        # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
         up.visible = !!(on && @ui[:list_up_shown])
-        # bc2cpp-reviewed: nomethod visible= -- dead fallback (ADR 0226)
         down.visible = !!(on && @ui[:list_down_shown])
       end
 
       def close_battle_list_arrows
         return if @disposed
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         [@ui[:list_up_arrow], @ui[:list_down_arrow]].each { |s| s.dispose if s }
         @ui[:list_up_arrow] = nil
         @ui[:list_down_arrow] = nil
@@ -4494,15 +4285,12 @@ class RPG2k
       # wine in cycle #249 on a 26-skill leader, and all three previously
       # left open here.
       def draw_battle_skill
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:skill_win].dispose if @ui[:skill_win]
         labels = @ui[:skills].map do |sid, cost|
-          # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
           sk = @state.party.db_skill(sid)
           [sk ? sk[:name] : "Skill #{sid}", '-', cost.to_s]
         end
         idxs = @ui[:skills].map do |sid, cost|
-          # bc2cpp-reviewed: nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
           sk = @state.party.db_skill(sid)
           battle_skill_unavailable?(cost, sk) ? 3 : 0
         end
@@ -4527,7 +4315,6 @@ class RPG2k
         close_battle_list_desc
         close_battle_list_arrows
         return unless @ui[:skill_win]
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:skill_win].dispose
         @ui[:skill_win] = nil
       end
@@ -4547,14 +4334,11 @@ class RPG2k
       # both sampled (99,166,247) against the usable rows' (189,223,255) --
       # and Decision on one only buzzes (`#drive_battle_item`).
       def draw_battle_item
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:item_win].dispose if @ui[:item_win]
         labels = @ui[:items].map do |id, count|
-          # bc2cpp-reviewed: nomethod db_item, nomethod party -- dead fallback (ADR 0226)
           it = @state.party.db_item(id)
           [it ? it[:name] : "Item #{id}", ':', count.to_s]
         end
-        # bc2cpp-reviewed: nomethod battle_usable?, nomethod party -- dead fallback (ADR 0226)
         idxs = @ui[:items].map { |id, _count| @state.party.battle_usable?(id) ? 0 : 3 }
         @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325,
                                             column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs,
@@ -4574,7 +4358,6 @@ class RPG2k
       # still showed, in the enabled colour).
       def battle_list_description(row, skill)
         return '' unless row
-        # bc2cpp-reviewed: nomethod db_item, nomethod db_skill, nomethod party -- dead fallback (ADR 0226)
         rec = skill ? @state.party.db_skill(row[0]) : @state.party.db_item(row[0])
         return '' unless rec && LCF.field?(rec, :description)
         rec[:description].to_s
@@ -4586,7 +4369,6 @@ class RPG2k
         close_battle_list_desc
         close_battle_list_arrows
         return unless @ui[:item_win]
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:item_win].dispose
         @ui[:item_win] = nil
       end
@@ -4619,7 +4401,6 @@ class RPG2k
       # (chunk 109's party list blackens RPG_RT on Continue). Cycle #136's
       # multi-actor Down/Up findings stand unchanged.
       def draw_battle_ally_target
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:ally_win].dispose if @ui[:ally_win]
         draw_battle_skill if pending_kind == :skill
         draw_battle_item if pending_kind == :item
@@ -4628,10 +4409,8 @@ class RPG2k
         idx = allies.index(target) || 0
         win = (gauge_battle_layout? && battle_status_gauge_window(allies)) ||
               battle_status_window(allies.map { |a| battle_status_row(a) }, idx)
-        # bc2cpp-reviewed: nomethod z= -- dead fallback (ADR 0226)
         win.z = 335
         win.cursor_rect = Rect.new(0, idx * BATTLE_LINE_H,
-                                   # bc2cpp-reviewed: nomethod cursor_rect= -- dead fallback (ADR 0226)
                                    BATTLE_STATUS_W - Window::BORDER * 2, BATTLE_LINE_H)
         @ui[:ally_win] = win
       end
@@ -4645,7 +4424,6 @@ class RPG2k
         close_battle_item
         close_battle_list_desc
         return unless @ui[:ally_win]
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:ally_win].dispose
         @ui[:ally_win] = nil
       end
@@ -4695,7 +4473,6 @@ class RPG2k
         else
           @ui[:banner_pending] = nil
         end
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:action_win].dispose if @ui[:action_win]
         @ui[:action_win] = battle_panel_window(lines, 340)
       end
@@ -4828,7 +4605,6 @@ class RPG2k
       def close_battle_action
         @ui[:banner_pending] = nil
         return unless @ui[:action_win]
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @ui[:action_win].dispose
         @ui[:action_win] = nil
       end
@@ -4861,7 +4637,6 @@ class RPG2k
         # message box (see #drive_battle_result), so it gets the same
         # blinking keypress arrow (Window#pause, native primitive at
         # mruby-rgss/src/lib.cxx:5845-5855).
-        # bc2cpp-reviewed: nomethod pause= -- dead fallback (ADR 0226)
         @ui[:result_win].pause = true
       end
 
@@ -4890,7 +4665,6 @@ class RPG2k
         win.z = z
         win.windowskin = windowskin
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         lines.each_with_index do |line, i|
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, line
@@ -4924,13 +4698,11 @@ class RPG2k
       # RPG2000/RPG2003 y split above was already correct and untouched.
       def battle_text_window(lines, z)
         inner_w = SCREEN_W - Window::BORDER * 2
-        # bc2cpp-reviewed: nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
         y = @state.party.rpg2003? ? BATTLE_EVENT_MSG_Y : BATTLE_PANEL_Y
         win = Window.new(0, y, SCREEN_W, BATTLE_PANEL_H)
         win.z = z
         win.windowskin = windowskin
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         lines.each_with_index do |line, i|
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, line
@@ -5033,7 +4805,6 @@ class RPG2k
         win.z = 300
         win.windowskin = windowskin
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         rows.each_with_index do |segments, i|
           segments.each_with_index do |(text, x, color, cur, max, can_knockout), j|
@@ -5062,7 +4833,6 @@ class RPG2k
          @ui[:target_win], @ui[:skill_win],
          @ui[:item_win], @ui[:ally_win],
          @ui[:action_win], @ui[:result_win],
-         # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
          @ui[:event_win]].each { |w| w.dispose if w }
         close_battle_list_arrows
         dispose_battle_sprite(@ui[:back_sprite])
@@ -5078,7 +4848,6 @@ class RPG2k
       # so only the sprite itself is freed here.
       def dispose_battle_sprite(spr)
         return unless spr
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         spr.dispose
       end
 
@@ -5149,7 +4918,6 @@ class RPG2k
         return unless entry[:damage] && entry[:damage] > 0
         return if entry[:absorbed_hp] && entry[:absorbed_hp] > 0
         if entry[:target_ally]
-          # bc2cpp-reviewed: nomethod screen, nomethod shake -- dead fallback (ADR 0226)
           @state.screen.shake(Map::ANIM_SHAKE_POWER, Map::ANIM_SHAKE_SPEED, Map::ANIM_SHAKE_FRAMES)
         else
           sprites = @ui && @ui[:enemy_sprites]
@@ -5221,7 +4989,6 @@ class RPG2k
             cutoff = (st[:speed] * amplitude) / 8 + 1
             st[:offset] = Game.clamp(newpos, st[:offset] - cutoff, st[:offset] + cutoff)
           end
-          # bc2cpp-reviewed: nomethod bitmap, nomethod width, nomethod x, nomethod x= -- dead fallback (ADR 0226)
           spr.x = member.x - spr.bitmap.width / 2 + st[:offset]
         end
       end

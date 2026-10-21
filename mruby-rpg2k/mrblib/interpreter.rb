@@ -728,7 +728,6 @@ module Game
         # checked fact bc2cpp's RBS_CHECKED_PARAMS proves `execute(LCF::EventCommand)` from (IS_A_GUARD, ADR 0456).
         raise TypeError, "event command #{@index - 1} is #{cmd.class}, not LCF::EventCommand" unless cmd.is_a?(LCF::EventCommand)
         execute cmd
-        # bc2cpp-reviewed: nomethod code -- dead fallback (ADR 0226)
         @frame_steps += step_cost(cmd.code)
       end
       if finished?
@@ -743,7 +742,6 @@ module Game
         # -- those are deliberately sticky global state for the rest of the
         # game, a real and separate RPG_RT rule, not touched here.
         if @face_owner
-          # bc2cpp-reviewed: nomethod clear_face, nomethod message_config -- dead fallback (ADR 0226)
           @state.message_config.clear_face
           @face_owner = false
         end
@@ -1076,7 +1074,6 @@ module Game
       # Through the roster, matching the lookup #do_name_input opened the request
       # with — otherwise naming a companion who is out of the party would put up
       # the widget and then quietly drop what was typed.
-      # bc2cpp-reviewed: nomethod roster -- dead fallback (ADR 0226)
       actor = req && party.roster[req.actor_id]
       actor.name = name if actor && name && !name.empty?
       reset_waits
@@ -1099,9 +1096,7 @@ module Game
     # :inn wait, then calls this.
     def resume_inn(stayed)
       if stayed
-        # bc2cpp-reviewed: nomethod gain_gold -- dead fallback (ADR 0226)
         party.gain_gold(-@inn_price) if @inn_price && @inn_price > 0
-        # bc2cpp-reviewed: nomethod actors -- dead fallback (ADR 0226)
         party.actors.each(&:full_heal)
       end
       if @inn_has_handlers
@@ -1120,11 +1115,8 @@ module Game
       i = @index
       while i < @list.size
         c = @list[i]
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         return i + 1 if c.indent == @inn_indent && c.code == want
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         return i if c.indent == @inn_indent && c.code == Cmd::INN_END
-        # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
         return nil if c.indent < @inn_indent
         i += 1
       end
@@ -1153,11 +1145,8 @@ module Game
       i = @index
       while i < @list.size
         c = @list[i]
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         return i + 1 if c.indent == @shop_indent && c.code == want
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         return i if c.indent == @shop_indent && c.code == Cmd::SHOP_END
-        # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
         return nil if c.indent < @shop_indent
         i += 1
       end
@@ -1203,11 +1192,8 @@ module Game
       i = @index
       while i < @list.size
         c = @list[i]
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         return i + 1 if c.indent == @battle_indent && c.code == want
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         return i if c.indent == @battle_indent && c.code == Cmd::END_BATTLE
-        # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
         return nil if c.indent < @battle_indent
         i += 1
       end
@@ -1252,7 +1238,6 @@ module Game
       return 0 unless acc
       KEY_INPUT_CODES.each do |sym, code|
         group = KEY_INPUT_GROUPS[sym] || sym
-        # bc2cpp-reviewed: nomethod accepts? -- dead fallback (ADR 0226)
         return code if acc.accepts?(group) && active.include?(sym)
       end
       0
@@ -1280,44 +1265,32 @@ module Game
       @battle_animation_pending = false
     end
 
-    # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
     def switches;  @state.switches;  end
-    # bc2cpp-reviewed: nomethod variables -- dead fallback (ADR 0226)
     def variables; @state.variables; end
-    # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
     def party;     @state.party;     end
 
     def execute(cmd)
-      # bc2cpp-reviewed: nomethod code -- dead fallback (ADR 0226)
       case cmd.code
       when Cmd::SHOW_MESSAGE     then do_show_message cmd
       when Cmd::MESSAGE_OPTIONS  then do_message_options cmd
       when Cmd::CHANGE_FACE      then do_change_face cmd
       when Cmd::SHOW_CHOICES     then do_show_choices cmd
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       when Cmd::CHOICE_OPTION    then skip_to(SKIP_TO_CHOICE_END, cmd.indent); consume
       when Cmd::CHOICE_END       then nil
       when Cmd::INPUT_NUMBER     then do_input_number cmd
       when Cmd::KEY_INPUT_PROC   then do_key_input cmd
       when Cmd::ENEMY_ENCOUNTER  then do_enemy_encounter cmd
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       when Cmd::VICTORY_HANDLER  then skip_to(SKIP_TO_END_BATTLE, cmd.indent); consume
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       when Cmd::ESCAPE_HANDLER   then skip_to(SKIP_TO_END_BATTLE, cmd.indent); consume
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       when Cmd::DEFEAT_HANDLER   then skip_to(SKIP_TO_END_BATTLE, cmd.indent); consume
       when Cmd::END_BATTLE       then nil
       when Cmd::OPEN_SHOP        then do_open_shop cmd
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       when Cmd::SHOP_TRANSACTION    then skip_to(SKIP_TO_SHOP_END, cmd.indent); consume
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       when Cmd::SHOP_NO_TRANSACTION then skip_to(SKIP_TO_SHOP_END, cmd.indent); consume
       when Cmd::SHOP_END         then nil
       when Cmd::NAME_INPUT       then do_name_input cmd
       when Cmd::SHOW_INN         then do_show_inn cmd
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       when Cmd::INN_STAY         then skip_to(SKIP_TO_INN_END, cmd.indent); consume
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       when Cmd::INN_NO_STAY      then skip_to(SKIP_TO_INN_END, cmd.indent); consume
       when Cmd::INN_END          then nil
       when Cmd::CONTROL_SWITCHES then do_control_switches cmd
@@ -1346,7 +1319,6 @@ module Game
       when Cmd::SET_VEHICLE_LOCATION then do_set_vehicle_location cmd
       when Cmd::ENTER_EXIT_VEHICLE then @vehicle_toggle_requested = true
       when Cmd::CONDITIONAL      then do_conditional cmd
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       when Cmd::ELSE_BRANCH      then skip_to(SKIP_TO_END_BRANCH, cmd.indent); consume
       when Cmd::END_BRANCH       then nil
       when Cmd::JUMP_TO_LABEL    then do_jump_label cmd
@@ -1383,10 +1355,8 @@ module Game
       when Cmd::PLAY_MEMORIZED_BGM then do_play_memorized_bgm cmd
       when Cmd::PLAY_SE          then play_audio(:se, cmd)
       when Cmd::PLAY_MOVIE       then do_play_movie cmd
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       when Cmd::CHANGE_MAP_TILESET then @tileset_request = cmd.param(0)
       when Cmd::CHANGE_PARALLAX   then do_change_parallax cmd
-      # bc2cpp-reviewed: nomethod encounter_rate=, nomethod param -- dead fallback (ADR 0226)
       when Cmd::CHANGE_ENCOUNTER_RATE then @state.encounter_rate = cmd.param(0)
       when Cmd::TILE_SUBSTITUTION then do_tile_substitution cmd
       when Cmd::SET_TELEPORT_TARGET then do_set_teleport_target cmd
@@ -1394,17 +1364,12 @@ module Game
       when Cmd::CHANGE_SYSTEM_GFX     then do_change_system_graphic cmd
       when Cmd::CHANGE_SYSTEM_BGM    then do_change_system_bgm cmd
       when Cmd::CHANGE_SYSTEM_SFX    then do_change_system_sfx cmd
-      # bc2cpp-reviewed: nomethod param, nomethod set_screen_transition -- dead fallback (ADR 0226)
       when Cmd::CHANGE_TRANSITION    then @state.set_screen_transition(cmd.param(0), cmd.param(1))
-      # bc2cpp-reviewed: nomethod param, nomethod teleport_access= -- dead fallback (ADR 0226)
       when Cmd::CHANGE_TELEPORT_ACCESS then @state.teleport_access = cmd.param(0) != 0
-      # bc2cpp-reviewed: nomethod escape_access=, nomethod param -- dead fallback (ADR 0226)
       when Cmd::CHANGE_ESCAPE_ACCESS then @state.escape_access = cmd.param(0) != 0
       when Cmd::OPEN_SAVE_MENU   then do_open_save_menu cmd
-      # bc2cpp-reviewed: nomethod param, nomethod save_access= -- dead fallback (ADR 0226)
       when Cmd::CHANGE_SAVE_ACCESS then @state.save_access = cmd.param(0) != 0
       when Cmd::OPEN_MAIN_MENU   then do_open_main_menu cmd
-      # bc2cpp-reviewed: nomethod menu_access=, nomethod param -- dead fallback (ADR 0226)
       when Cmd::CHANGE_MENU_ACCESS then @state.menu_access = cmd.param(0) != 0
       when Cmd::RETURN_TO_TITLE  then do_return_to_title cmd
       when Cmd::GAME_OVER        then do_game_over cmd
@@ -1428,7 +1393,6 @@ module Game
       when Cmd::CHANGE_BATTLE_BG         then do_change_battle_bg cmd
       when Cmd::SHOW_BATTLE_ANIM_B       then do_show_battle_animation_b cmd
       when Cmd::CONDITIONAL_B            then do_conditional_battle cmd
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       when Cmd::ELSE_BRANCH_B    then skip_to(SKIP_TO_END_BRANCH_B, cmd.indent); consume
       when Cmd::END_BRANCH_B     then nil
       when Cmd::TERMINATE_BATTLE then do_terminate_battle cmd
@@ -1487,20 +1451,14 @@ module Game
     # at all, only a common-event id or a same-map event id/page, so there is
     # no "different map" target for this engine to ever resolve here).
     def resolve_call(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(0)
       when 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         id = cmd.param(1)
-        # bc2cpp-reviewed: nomethod common_event_commands -- dead fallback (ADR 0226)
         cmds = @resolver.common_event_commands(id)
         $stderr.puts "[RPG2k] Call Event: common event #{id} not found" if cmds.nil?
         [cmds, 0]
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       when 1 then map_event_call(cmd.param(1), cmd.param(2))
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       when 2 then map_event_call(variables[cmd.param(1)],
-                                 # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                                  variables[cmd.param(2)])
       end
     rescue StandardError => e
@@ -1547,7 +1505,6 @@ module Game
     def skip_to(codes, indent)
       while @index < @list.size
         c = @list[@index]
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         break if c.indent == indent && codes.include?(c.code)
         @index += 1
       end
@@ -1560,10 +1517,8 @@ module Game
 
     # Jump to the (first) label command with the given id.
     def do_jump_label(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       target = cmd.param(0)
       @list.each_with_index do |c, j|
-        # bc2cpp-reviewed: nomethod code, nomethod param -- dead fallback (ADR 0226)
         if c.code == Cmd::LABEL && c.param(0) == target
           @index = j
           return
@@ -1576,7 +1531,6 @@ module Game
       j = @index - 2 # scan back from before this End Loop
       while j >= 0
         c = @list[j]
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         if c.indent == cmd.indent && c.code == Cmd::LOOP
           @index = j + 1
           return
@@ -1601,7 +1555,6 @@ module Game
     def do_break_loop(_cmd)
       j = @index
       while j < @list.size
-        # bc2cpp-reviewed: nomethod code -- dead fallback (ADR 0226)
         if @list[j].code == Cmd::END_LOOP
           @index = j + 1
           return
@@ -1613,9 +1566,7 @@ module Game
     # -- message / choices ----------------------------------------------------
 
     def do_show_message(cmd)
-      # bc2cpp-reviewed: strict_hint ivar_accessor string -- reviewed before the source-annotation migration (ADR 0419)
       lines = [cmd.string]
-      # bc2cpp-reviewed: nomethod code -- dead fallback (ADR 0226)
       while @index < @list.size && @list[@index].code == Cmd::MESSAGE_2
         lines.push @list[@index].string
         @index += 1
@@ -1629,10 +1580,8 @@ module Game
       # knows at reveal-completion time whether to keep the window.
       next_cmd = @list[@index]
       @message_followup =
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         if next_cmd && next_cmd.indent == cmd.indent && next_cmd.code == Cmd::SHOW_CHOICES
           :choice
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         elsif next_cmd && next_cmd.indent == cmd.indent && next_cmd.code == Cmd::INPUT_NUMBER
           :number
         end
@@ -1650,15 +1599,10 @@ module Game
     # #block_pending_message_config_command), same as Show Message itself.
     def do_message_options(cmd)
       return if block_pending_message_config_command
-      # bc2cpp-reviewed: nomethod message_config -- dead fallback (ADR 0226)
       cfg = @state.message_config
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       cfg.transparent = cmd.param(0) != 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       cfg.position = cmd.param(1)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       cfg.position_fixed = cmd.param(2) == 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       cfg.continue_events = cmd.param(3) != 0
     end
 
@@ -1672,21 +1616,15 @@ module Game
     # *different* message window is already open, same as Message Options.
     def do_change_face(cmd)
       return if block_pending_message_config_command
-      # bc2cpp-reviewed: nomethod message_config -- dead fallback (ADR 0226)
       cfg = @state.message_config
-      # bc2cpp-reviewed: strict_hint ivar_accessor string -- reviewed before the source-annotation migration (ADR 0419)
       name = cmd.string || ''
       if name.empty?
-        # bc2cpp-reviewed: nomethod clear_face -- dead fallback (ADR 0226)
         cfg.clear_face
         @face_owner = false
       else
         cfg.face_name = name
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         cfg.face_index = cmd.param(0)
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         cfg.face_right = cmd.param(1) != 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         cfg.face_flipped = cmd.param(2) != 0
         @face_owner = true
       end
@@ -1708,21 +1646,15 @@ module Game
       i = @index
       while i < @list.size
         c = @list[i]
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         break if c.indent == cmd.indent && c.code == Cmd::CHOICE_END
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         if c.indent == cmd.indent && c.code == Cmd::CHOICE_OPTION &&
-           # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
            c.param(0) < MAX_CHOICES
-          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
           labels[c.param(0)] = c.string
         end
         i += 1
       end
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       @choice_indent = cmd.indent
       @choice_labels = labels.compact
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       @choice_cancel_type = cmd.param(0)
       @wait_kind = :choice
       @waiting = true
@@ -1733,9 +1665,7 @@ module Game
       i = @index
       while i < @list.size
         c = @list[i]
-        # bc2cpp-reviewed: nomethod code, nomethod indent, nomethod param -- dead fallback (ADR 0226)
         return i + 1 if c.indent == @choice_indent && c.code == Cmd::CHOICE_OPTION && c.param(0) == index
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         return i if c.indent == @choice_indent && c.code == Cmd::CHOICE_END
         i += 1
       end
@@ -1748,10 +1678,8 @@ module Game
     # `resume_number` with the value, which stores it into the variable. A digit
     # count below 1 is clamped so the widget always has at least one cell.
     def do_input_number(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       digits = cmd.param(0)
       @input_digits = digits < 1 ? 1 : digits
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       @input_variable = cmd.param(1)
       @wait_kind = :number
       @waiting = true
@@ -1798,9 +1726,7 @@ module Game
     # request there resolves the same as before this: never. 🚧 The mouse
     # (Maniac) stays fully unmodelled everywhere.
     def do_key_input(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       var_id = cmd.param(0)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       wait = cmd.param(1) != 0
       # RPG_RT clears the variable every retried frame while a waiting proc
       # is pending, before it even checks whether a message window blocks it
@@ -1808,12 +1734,9 @@ module Game
       # check the block, so the reset still happens on every retry.
       variables[var_id] = 0 if wait && var_id && var_id > 0
       return if block_pending_key_input_command(wait)
-      # bc2cpp-reviewed: nomethod parameters -- dead fallback (ADR 0226)
       size = cmd.parameters.size
       accepted = KeyInputAccepted.new
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       accepted.decision = cmd.param(3) != 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       accepted.cancel = cmd.param(4) != 0
       accepted.shift = false
       accepted.down = false
@@ -1822,37 +1745,27 @@ module Game
       accepted.up = false
       accepted.numbers = false
       accepted.operators = false
-      # bc2cpp-reviewed: nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       if @state.party.rpg2003? && size != 10
         # RPG2003's Numbers/Operators layout: still a single flag for the
         # whole D-pad, not the individual Shift/arrows RPG2000 1.50+ offers.
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         if size < 10 && cmd.param(2) != 0
           accepted.down = accepted.left = true
           accepted.right = accepted.up = true
         end
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         accepted.numbers = cmd.param(5) != 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         accepted.operators = cmd.param(6) != 0
       elsif size < 6
         # Pre-1.50: a single flag enables the whole D-pad, no Shift.
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         if cmd.param(2) != 0
           accepted.down = accepted.left = true
           accepted.right = accepted.up = true
         end
       else
         # RPG2000 1.50+, or that same layout carried into an RPG2003 project.
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         accepted.shift = cmd.param(5) != 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         accepted.down  = cmd.param(6) != 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         accepted.left  = cmd.param(7) != 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         accepted.right = cmd.param(8) != 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         accepted.up    = cmd.param(9) != 0
       end
       @input_variable = var_id
@@ -1892,11 +1805,8 @@ module Game
       actor = identity_target(cmd)
       return unless actor
       req = NameInputRequest.new
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       req.actor_id = cmd.param(0)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       req.charset = cmd.param(1)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       req.seed = cmd.param(2) != 0 ? actor.name : ''
       @name_input_request = req
       @wait_kind = :name_input
@@ -1904,22 +1814,17 @@ module Game
     end
 
     def do_show_inn(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       price = cmd.param(1)
       @inn_price = price
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       @inn_indent = cmd.indent
       # Handler branches, when present, open with an INN_STAY marker immediately
       # after the command (as a Show Choices block opens with CHOICE_OPTION).
       nxt = @list[@index]
       @inn_has_handlers =
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         !nxt.nil? && nxt.code == Cmd::INN_STAY && nxt.indent == cmd.indent
       req = InnRequest.new
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       req.type = cmd.param(0)
       req.price = price
-      # bc2cpp-reviewed: nomethod gold -- dead fallback (ADR 0226)
       req.can_afford = party.gold >= price
       req.prompt = price > 0
       @inn_request = req
@@ -1936,21 +1841,16 @@ module Game
     # request and suspends on a :shop wait; the scene runs the buy / sell UI
     # (where the gold and inventory changes happen) and resumes via resume_shop.
     def do_open_shop(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       mode = cmd.param(0)
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       @shop_indent = cmd.indent
       nxt = @list[@index]
       @shop_has_handlers =
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         !nxt.nil? && nxt.code == Cmd::SHOP_TRANSACTION && nxt.indent == cmd.indent
       req = ShopRequest.new
       req.mode = mode
       req.allow_buy = mode == 0 || mode == 1
       req.allow_sell = mode == 0 || mode == 2
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       req.type = cmd.param(1)
-      # bc2cpp-reviewed: nomethod parameters -- dead fallback (ADR 0226)
       req.goods = cmd.parameters[4..-1] || []
       @shop_request = req
       @wait_kind = :shop
@@ -1985,32 +1885,22 @@ module Game
     # back by `Scene::Battle#encounter_backdrop`.
     def do_enemy_encounter(cmd)
       return if block_pending_battle_command
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       escape_mode = cmd.param(3)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       troop_id = cmd.param(0) == 0 ? cmd.param(1) : variables[cmd.param(1)]
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       @battle_indent = cmd.indent
       @battle_escape_aborts = escape_mode == 1
       nxt = @list[@index]
       @battle_has_handlers =
-        # bc2cpp-reviewed: nomethod code, nomethod indent -- dead fallback (ADR 0226)
         !nxt.nil? && nxt.code == Cmd::VICTORY_HANDLER && nxt.indent == cmd.indent
-      # bc2cpp-reviewed: nomethod db_enemy_group -- dead fallback (ADR 0226)
       return skip_invalid_troop(troop_id) unless party.db_enemy_group(troop_id)
       req = BattleRequest.new
       req.troop_id = troop_id
       req.allow_escape = escape_mode != 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       req.first_strike = cmd.param(5) != 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       req.defeat_game_over = cmd.param(4) == 0
       @battle_request = req
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(2)
-      # bc2cpp-reviewed: nomethod background=, nomethod string -- dead fallback (ADR 0226)
       when 1 then @battle_request.background = cmd.string.to_s
-      # bc2cpp-reviewed: nomethod param, nomethod terrain_id= -- dead fallback (ADR 0226)
       when 2 then @battle_request.terrain_id = cmd.param(8)
       end
       @wait_kind = :battle
@@ -2072,7 +1962,6 @@ module Game
     # marker the boot check asserts on -- a headless fight is otherwise
     # indistinguishable from any other battle the same interpreter opens.
     def start_random_battle(troop_id, first_strike: false, headless: false)
-      # bc2cpp-reviewed: nomethod db_enemy_group -- dead fallback (ADR 0226)
       unless party.db_enemy_group(troop_id)
         $stderr.puts "[RPG2k] Enemy Encounter: enemy group #{troop_id} not " \
                      'found, skipping random encounter'
@@ -2084,7 +1973,6 @@ module Game
       req.troop_id = troop_id
       req.allow_escape = true
       req.first_strike = first_strike
-      # bc2cpp-reviewed: nomethod death_handler? -- dead fallback (ADR 0226)
       req.defeat_game_over = !party.death_handler?
       req.random = true
       req.headless = headless ? true : false
@@ -2114,11 +2002,9 @@ module Game
     # never starts (see the early return below).
     def start_death_handler
       cmds = []
-      # bc2cpp-reviewed: nomethod death_handler_event -- dead fallback (ADR 0226)
       event_id = party.death_handler_event
       ev_cmds = event_id > 0 ? common_event_commands(event_id) : nil
       cmds.concat(ev_cmds) if ev_cmds
-      # bc2cpp-reviewed: nomethod death_handler_teleport -- dead fallback (ADR 0226)
       tp = party.death_handler_teleport
       cmds << LCF::EventCommand.new(Cmd::TELEPORT, 0, '', tp) if tp
       return if cmds.empty?
@@ -2140,14 +2026,10 @@ module Game
     # (#do_control_vars, for its own `a < b` check and the range-variable
     # split).
     def range(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       mode = cmd.param(0)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       a = cmd.param(1)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       b = mode == 0 ? a : cmd.param(2)
       if mode == 2 # indirect: id held in a variable
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         a = variables[cmd.param(1)]
         # RPG_RT's indirect *target* addressing (as opposed to an indirect
         # operand read, which resolves a missing/out-of-range id to 0) is a
@@ -2162,7 +2044,6 @@ module Game
     end
 
     def do_control_switches(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       op = cmd.param(3) # 0 on, 1 off, 2 toggle
       r = range(cmd)
       # The overwhelmingly common case (a single-switch target, mode 0 or a
@@ -2178,7 +2059,6 @@ module Game
       case op
       when 0 then switches[id] = true
       when 1 then switches[id] = false
-      # bc2cpp-reviewed: nomethod flip -- dead fallback (ADR 0226)
       when 2 then switches.flip(id)
       end
     end
@@ -2187,7 +2067,6 @@ module Game
       r = range(cmd)
       a = r.begin
       b = r.end
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       op = cmd.param(3)  # 0 =, 1 +, 2 -, 3 *, 4 /, 5 %
       # A random operand (type 3) rolls independently for each variable in the
       # range, matching RPG_RT -- a batch "Var[1..5] = random 1~6" is five
@@ -2207,9 +2086,7 @@ module Game
       # direct-variable operand applied to a genuine multi-id range, which
       # needs its own split below (a variable-A-ops-B batch reading its own
       # operand out of the same range it writes).
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       live = cmd.param(4) == 3 || cmd.param(4) == 2
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       return do_control_vars_range_variable(cmd, a, b, op) if !live && cmd.param(4) == 1 && a < b
       # The overwhelmingly common case (a single-variable target) needs no
       # iteration at all, and reading the operand exactly once either way
@@ -2243,7 +2120,6 @@ module Game
     # up-front read every other operand type already uses.
 
     def do_control_vars_range_variable(cmd, a, b, op)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       src = cmd.param(5)
       unless src >= a && src <= b
         val = variables[src]
@@ -2257,13 +2133,9 @@ module Game
     end
 
     def operand_value(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(4) # operand type
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       when 0 then cmd.param(5)                             # constant
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       when 1 then variables[cmd.param(5)]                  # variable
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       when 2 then variables[variables[cmd.param(5)]]       # variable indirect
       when 3 then random_operand(cmd)                      # random in a range
       when 4 then item_operand(cmd)                        # item count / equipped
@@ -2276,7 +2148,6 @@ module Game
         # Reading 0 is the safe answer; returning param5 — which is the operand's
         # *selector*, not a value — used to write the enemy index or actor id
         # into the variable and look like a plausible number.
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         $stderr.puts "[RPG2k] Control Variables: unsupported operand #{cmd.param(4)}"
         0
       end
@@ -2305,9 +2176,7 @@ module Game
     # currently occupies). An unresolvable reference (no map_info hook,
     # unknown event, "this event" outside a map event) reads 0.
     def event_operand(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       ref = character_ref(cmd.param(5))
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       attr = cmd.param(6)
       return screen_operand(ref, attr) if attr == 4 || attr == 5
       if ref.nil?
@@ -2317,13 +2186,9 @@ module Game
       end
       if ref == CHAR_PLAYER # the hero / party leader
         case attr
-        # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
         when 0 then @state.map_id
-        # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
         when 1 then @state.x
-        # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
         when 2 then @state.y
-        # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
         when 3 then @state.direction
         else 0
         end
@@ -2336,7 +2201,6 @@ module Game
           return 0
         end
         case attr
-        # bc2cpp-reviewed: nomethod map_id, nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
         when 0 then @state.party.rpg2003? ? @state.map_id : 0 # the RPG2000-only quirk
         when 1 then pos[:x]
         when 2 then pos[:y]
@@ -2356,17 +2220,12 @@ module Game
     # same whether or not the vehicle's own map is the one currently loaded.
 
     def vehicle_operand(ref, attr)
-      # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
       v = @state.vehicle(Vehicle::TYPES[ref - CHAR_BOAT])
       return 0 unless v
       case attr
-      # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
       when 0 then v.map_id
-      # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
       when 1 then v.x
-      # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
       when 2 then v.y
-      # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
       when 3 then v.direction
       else 0
       end
@@ -2400,18 +2259,14 @@ module Game
     # not independently confirmed against genuine
     # RPG_RT under wine.
     def item_operand(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       id = cmd.param(5)
-      # bc2cpp-reviewed: nomethod equipped_item_count, nomethod item_count, nomethod param -- dead fallback (ADR 0226)
       cmd.param(6) == 1 ? party.equipped_item_count(id) : party.item_count(id)
     end
 
     # Operand type 3: a random integer in [param5, param6] inclusive (the bounds
     # are swapped if given the wrong way round).
     def random_operand(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       lo = cmd.param(5)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       hi = cmd.param(6)
       lo, hi = hi, lo if lo > hi
       lo + @rng.random(hi - lo + 1)
@@ -2441,33 +2296,20 @@ module Game
     # `#effective_int`/`#effective_agi` already model and already use
     # elsewhere (Simulated Attack's `#do_simulated_attack`, the Status menu).
     def actor_operand(cmd)
-      # bc2cpp-reviewed: nomethod param, nomethod roster -- dead fallback (ADR 0226)
       actor = party.roster[cmd.param(5)]
       return 0 unless actor
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       attr = cmd.param(6)
       case attr
-      # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
       when 0 then actor.level
-      # bc2cpp-reviewed: nomethod exp -- dead fallback (ADR 0226)
       when 1 then actor.exp
-      # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
       when 2 then actor.hp
-      # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
       when 3 then actor.mp
-      # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
       when 4 then actor.max_hp
-      # bc2cpp-reviewed: nomethod max_mp -- dead fallback (ADR 0226)
       when 5 then actor.max_mp
-      # bc2cpp-reviewed: nomethod effective_atk -- dead fallback (ADR 0226)
       when 6 then party.effective_atk(actor)
-      # bc2cpp-reviewed: nomethod effective_def -- dead fallback (ADR 0226)
       when 7 then party.effective_def(actor)
-      # bc2cpp-reviewed: nomethod effective_int -- dead fallback (ADR 0226)
       when 8 then party.effective_int(actor)
-      # bc2cpp-reviewed: nomethod effective_agi -- dead fallback (ADR 0226)
       when 9 then party.effective_agi(actor)
-      # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
       when 10, 11, 12, 13, 14 then actor.equipment[attr - 10] || 0
       else 0
       end
@@ -2488,26 +2330,16 @@ module Game
     # `Party#effective_*` above, already used elsewhere in this same battle
     # engine (e.g. `#deal_attack_with_current_weapon`).
     def enemy_operand(cmd)
-      # bc2cpp-reviewed: nomethod enemy, nomethod param -- dead fallback (ADR 0226)
       foe = @battle && @battle.enemy(cmd.param(5))
       return 0 unless foe
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(6)
-      # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
       when 0 then foe.hp
-      # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
       when 1 then foe.mp || 0
-      # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
       when 2 then foe.max_hp
-      # bc2cpp-reviewed: nomethod max_mp -- dead fallback (ADR 0226)
       when 3 then foe.max_mp || 0
-      # bc2cpp-reviewed: nomethod effective_atk -- dead fallback (ADR 0226)
       when 4 then @battle.effective_atk(foe)
-      # bc2cpp-reviewed: nomethod effective_def -- dead fallback (ADR 0226)
       when 5 then @battle.effective_def(foe)
-      # bc2cpp-reviewed: nomethod effective_spi -- dead fallback (ADR 0226)
       when 6 then @battle.effective_spi(foe)
-      # bc2cpp-reviewed: nomethod effective_agi -- dead fallback (ADR 0226)
       when 7 then @battle.effective_agi(foe)
       else 0
       end
@@ -2529,26 +2361,16 @@ module Game
     # selectors (9+ other than the RPG2003 second timer below) are not
     # modelled and read as 0.
     def other_operand(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(5)
-      # bc2cpp-reviewed: nomethod gold -- dead fallback (ADR 0226)
       when 0 then party.gold
-      # bc2cpp-reviewed: nomethod seconds, nomethod timer -- dead fallback (ADR 0226)
       when 1 then @state.timer(0).seconds
-      # bc2cpp-reviewed: nomethod actors -- dead fallback (ADR 0226)
       when 2 then party.actors.size
-      # bc2cpp-reviewed: nomethod save_count -- dead fallback (ADR 0226)
       when 3 then @state.save_count
-      # bc2cpp-reviewed: nomethod battle_count -- dead fallback (ADR 0226)
       when 4 then @state.battle_count
-      # bc2cpp-reviewed: nomethod win_count -- dead fallback (ADR 0226)
       when 5 then @state.win_count
-      # bc2cpp-reviewed: nomethod defeat_count -- dead fallback (ADR 0226)
       when 6 then @state.defeat_count
-      # bc2cpp-reviewed: nomethod escape_count -- dead fallback (ADR 0226)
       when 7 then @state.escape_count
       when 8 then RGSS::Audio.respond_to?(:bgm_pos) ? RGSS::Audio.bgm_pos.to_i : 0
-      # bc2cpp-reviewed: nomethod seconds, nomethod timer -- dead fallback (ADR 0226)
       when 9 then @state.timer(1).seconds # RPG2003's second timer
       else 0
       end
@@ -2606,23 +2428,16 @@ module Game
     # *which* timer — RPG2003 has a second one, and RPG2000 data simply never
     # carries that parameter, so it reads 0 and addresses the only timer there.
     def do_timer(cmd)
-      # bc2cpp-reviewed: nomethod param, nomethod timer -- dead fallback (ADR 0226)
       t = @state.timer(cmd.param(5))
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(0)
-      # bc2cpp-reviewed: nomethod param, strict_hint typed set -- dead fallback (ADR 0226)
       when 0 then t.set(cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)])
-      # bc2cpp-reviewed: nomethod param, strict_hint typed start -- dead fallback (ADR 0226)
       when 1 then t.start(cmd.param(3) != 0, cmd.param(4) != 0)
-      # bc2cpp-reviewed: nomethod stop -- dead fallback (ADR 0226)
       when 2 then t.stop
       end
     end
 
     def do_change_gold(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       v = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
-      # bc2cpp-reviewed: nomethod gain_gold, nomethod param -- dead fallback (ADR 0226)
       party.gain_gold(cmd.param(0) == 0 ? v : -v)
     end
 
@@ -2657,15 +2472,10 @@ module Game
     # amount silently flips Add into a removal (or Remove into a gain)
     # instead of doing nothing.
     def do_change_items(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       item = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       amount = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       value = cmd.param(0) == 0 ? amount : -amount
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       return if cmd.param(0) == 0 ? value < 0 : value > 0
-      # bc2cpp-reviewed: nomethod gain_item -- dead fallback (ADR 0226)
       party.gain_item(item, value)
     end
 
@@ -2683,13 +2493,9 @@ module Game
     # (@battle_screen set, see its own comment), also pushes the change to
     # the open battle screen's actor sprites and status window immediately.
     def do_change_party(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       id = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       added = cmd.param(0) == 0
-      # bc2cpp-reviewed: nomethod include_actor? -- dead fallback (ADR 0226)
       was_member = party.include_actor?(id)
-      # bc2cpp-reviewed: nomethod add_actor, nomethod remove_actor -- dead fallback (ADR 0226)
       added ? party.add_actor(id) : party.remove_actor(id)
       # #add_actor/#remove_actor silently no-op on a full party, an unknown
       # roster id, or a redundant add/remove of an already-(non)member -- only
@@ -2697,9 +2503,7 @@ module Game
       # actor back from the roster (not @actors, which no longer holds it
       # after a remove) since #on_battle_party_changed needs the same
       # Game::Actor either way.
-      # bc2cpp-reviewed: nomethod include_actor? -- dead fallback (ADR 0226)
       if @battle_screen && party.include_actor?(id) != was_member
-        # bc2cpp-reviewed: nomethod roster -- dead fallback (ADR 0226)
         actor = party.roster[id]
         @battle_screen.on_battle_party_changed(actor, added) if actor
       end
@@ -2726,9 +2530,7 @@ module Game
     # true when it fired, so a caller can drop what it was about to do.
     def check_game_over
       return false if @battle
-      # bc2cpp-reviewed: nomethod actors -- dead fallback (ADR 0226)
       return false if party.actors.empty?
-      # bc2cpp-reviewed: nomethod all_dead? -- dead fallback (ADR 0226)
       return false unless party.all_dead?
       @wait_kind = :game_over
       @waiting = true
@@ -2744,18 +2546,13 @@ module Game
     # thresholds; param5 is the "show message" flag — when set, each level an
     # actor gains queues a level-up message (drained by #resume).
     def do_change_exp(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       show_msg = cmd.param(5) != 0
       return if block_pending_exp_level_command(show_msg)
       amount = stat_amount(cmd)
       stat_targets(cmd).each do |a|
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         before = a.level
-        # bc2cpp-reviewed: nomethod skills -- dead fallback (ADR 0226)
         before_skills = show_msg && a.respond_to?(:skills) ? a.skills.dup : []
-        # bc2cpp-reviewed: nomethod gain_exp -- dead fallback (ADR 0226)
         a.gain_exp(amount)
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         queue_level_up_messages(a, before, a.level, before_skills) if show_msg
       end
       # RPG_RT asks about the wipe first: a level change that killed the party
@@ -2769,18 +2566,13 @@ module Game
     # operand layout as Change EXP; param5 is the "show message" flag — when set,
     # each level an actor gains queues a level-up message (drained by #resume).
     def do_change_level(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       show_msg = cmd.param(5) != 0
       return if block_pending_exp_level_command(show_msg)
       amount = stat_amount(cmd)
       stat_targets(cmd).each do |a|
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         before = a.level
-        # bc2cpp-reviewed: nomethod skills -- dead fallback (ADR 0226)
         before_skills = show_msg && a.respond_to?(:skills) ? a.skills.dup : []
-        # bc2cpp-reviewed: nomethod change_level_by -- dead fallback (ADR 0226)
         a.change_level_by(amount)
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         queue_level_up_messages(a, before, a.level, before_skills) if show_msg
       end
       return if check_game_over
@@ -2826,10 +2618,8 @@ module Game
       ((old_level + 1)..new_level).each do |lv|
         lines = [level_up_message(actor, lv)]
         if actor.respond_to?(:learn_table)
-          # bc2cpp-reviewed: nomethod learn_table -- dead fallback (ADR 0226)
           actor.learn_table.each do |sid, at|
             next unless at == lv && !before_skills.include?(sid)
-            # bc2cpp-reviewed: nomethod db_skill -- dead fallback (ADR 0226)
             sk = party.db_skill(sid)
             lines.push(skill_learned_message(actor, sk)) if sk
           end
@@ -2864,9 +2654,7 @@ module Game
     # implements no `#term` at all (this codebase's usual optional-interface
     # guard, matching `db.respond_to?(:term)` elsewhere).
     def party_term(name)
-      # bc2cpp-reviewed: nomethod party -- dead fallback (ADR 0226)
       party = @state.party
-      # bc2cpp-reviewed: strict_hint typed term -- reviewed before the source-annotation migration (ADR 0419)
       party.respond_to?(:term) ? party.term(name) : ''
     end
 
@@ -2915,13 +2703,9 @@ module Game
     # #do_simulated_attack, #do_change_equipment,
     # #do_change_battle_commands) devirtualize its per-actor calls.
     def stat_targets(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(0)
-      # bc2cpp-reviewed: nomethod actors -- dead fallback (ADR 0226)
       when 0 then party.actors
-      # bc2cpp-reviewed: nomethod param, nomethod roster -- dead fallback (ADR 0226)
       when 1 then [party.roster[cmd.param(1)]].compact
-      # bc2cpp-reviewed: nomethod param, nomethod roster -- dead fallback (ADR 0226)
       when 2 then [party.roster[variables[cmd.param(1)]]].compact
       else []
       end
@@ -2930,32 +2714,26 @@ module Game
     # The signed amount a HP/MP change applies: param2 is the operation (0 add,
     # 1 remove) and param3/param4 the operand (0 constant / 1 variable, value).
     def stat_amount(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       amount = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       cmd.param(2) == 0 ? amount : -amount
     end
 
     # Change HP: param5 is the "allow death" flag (0 floors HP at 1, 1 permits 0).
     def do_change_hp(cmd)
       amount = stat_amount(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       allow_death = cmd.param(5) != 0
-      # bc2cpp-reviewed: nomethod change_hp -- dead fallback (ADR 0226)
       stat_targets(cmd).each { |a| a.change_hp(amount, allow_death) }
       check_game_over
     end
 
     def do_change_mp(cmd)
       amount = stat_amount(cmd)
-      # bc2cpp-reviewed: nomethod change_mp -- dead fallback (ADR 0226)
       stat_targets(cmd).each { |a| a.change_mp(amount) }
       check_game_over
     end
 
     # Full recovery: restore HP and MP to their maxima for the target actors.
     def do_full_heal(cmd)
-      # bc2cpp-reviewed: nomethod full_heal -- dead fallback (ADR 0226)
       stat_targets(cmd).each { |a| a.full_heal }
       check_game_over
     end
@@ -2999,9 +2777,7 @@ module Game
     # an uncapped variance-adjustment helper and
     # the plain HP-change routine directly, neither of which clamps either.
     def do_simulated_attack(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       atk = cmd.param(2)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       store_result = cmd.param(6) != 0
       stat_targets(cmd).each do |a|
         # Reads the target's state-adjusted Defence/Spirit, not the raw base
@@ -3019,17 +2795,12 @@ module Game
         # by a Weaken-type status -- including one an RPG2003 cursed item is
         # currently forcing on -- now takes the correct amount of damage
         # instead of one computed off its unadjusted stat.
-        # bc2cpp-reviewed: nomethod effective_def, nomethod param -- dead fallback (ADR 0226)
         damage = atk - (party.effective_def(a) * cmd.param(3)) / 400 -
-                 # bc2cpp-reviewed: nomethod effective_int, nomethod param -- dead fallback (ADR 0226)
                  (party.effective_int(a) * cmd.param(4)) / 800
         damage = 0 if damage < 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         damage = simulated_attack_variance(damage, cmd.param(5))
         damage = 0 if damage < 0
-        # bc2cpp-reviewed: nomethod change_hp -- dead fallback (ADR 0226)
         a.change_hp(-damage, true)
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         variables[cmd.param(7)] = damage if store_result
       end
       check_game_over
@@ -3082,22 +2853,18 @@ module Game
     # battle-context check in this file already reads) is this port's own
     # battle-running flag.
     def do_change_condition(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       state_id = cmd.param(3)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       remove = cmd.param(2) != 0
       stat_targets(cmd).each do |a|
         if remove
           a.remove_state(state_id, always_remove_battle_states: @battle.nil?)
         else
-          # bc2cpp-reviewed: nomethod add_state -- dead fallback (ADR 0226)
           a.add_state(state_id)
           # RPG_RT's crowding-out rule (Game::States::PRUNE_GAP): a state
           # just inflicted may push out (or itself be pushed out by) one
           # already held that outranks it by 10+ priority -- except a state
           # a's own worn cursed armor is forcing on (`keep:`, see #prune's
           # own citation), which the same C++ pass exempts from the wipe.
-          # bc2cpp-reviewed: nomethod permanent_states, nomethod state_table, nomethod states, nomethod states= -- dead fallback (ADR 0226)
           a.states = Game::States.prune(a.states, party.state_table, keep: a.permanent_states)
         end
       end
@@ -3122,26 +2889,16 @@ module Game
     # side effects (recomputing `@base`/`@exp`/clearing `@battle_commands`)
     # regardless of whether the database carries a class table at all.
     def do_change_class(cmd)
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       return unless party.rpg2003?
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       class_id = cmd.param(2)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       level_1 = cmd.param(3) != 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       skill_mode = cmd.param(4)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       param_mode = cmd.param(5)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       show_msg = cmd.param(6) != 0
       stat_targets(cmd).each do |a|
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         before = a.level
-        # bc2cpp-reviewed: nomethod skills -- dead fallback (ADR 0226)
         before_skills = show_msg && a.respond_to?(:skills) ? a.skills.dup : []
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         next unless a.change_class(class_id, level_1 ? 1 : a.level,
-                                   # bc2cpp-reviewed: nomethod change_class -- dead fallback (ADR 0226)
                                    skill_mode, param_mode)
         # Unlike Change Level (which announces every level crossed) RPG_RT shows
         # a single line here, and shows it whenever the level exceeds 1 and
@@ -3160,14 +2917,10 @@ module Game
         # swapping between two classes whose level 1..N learn tables the actor
         # has already fully absorbed) still shows the line.
         next unless show_msg
-        # bc2cpp-reviewed: nomethod skills -- dead fallback (ADR 0226)
         new_skills = a.respond_to?(:skills) ? a.skills - before_skills : []
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         next unless a.level > 1 && (a.level > before || skill_mode != Game::Actor::CLASS_SKILL_NO_CHANGE)
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         lines = [level_up_message(a, a.level)]
         new_skills.each do |sid|
-          # bc2cpp-reviewed: nomethod db_skill -- dead fallback (ADR 0226)
           sk = party.db_skill(sid)
           lines.push(skill_learned_message(a, sk)) if sk
         end
@@ -3190,13 +2943,9 @@ module Game
     # lookup of its own to make it inert on a table-less database by
     # construction (see `Game::Actor#change_battle_commands`).
     def do_change_battle_commands(cmd)
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       return unless party.rpg2003?
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       cmd_id = cmd.param(2)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       add = cmd.param(3) != 0
-      # bc2cpp-reviewed: nomethod change_battle_commands -- dead fallback (ADR 0226)
       stat_targets(cmd).each { |a| a.change_battle_commands(add, cmd_id) }
     end
 
@@ -3208,7 +2957,6 @@ module Game
     # against genuine RPG_RT under wine, so a companion who is currently away is still renamed,
     # re-dressed and re-portraited, and has it waiting when they rejoin. nil only
     # for an id the database has no row for.
-    # bc2cpp-reviewed: nomethod param, nomethod roster -- dead fallback (ADR 0226)
     def identity_target(cmd); party.roster[cmd.param(0)]; end
 
     # Change Actor Name: rename the actor whose id is param0 to the command
@@ -3238,7 +2986,6 @@ module Game
     # string clears the title.
     def do_change_actor_title(cmd)
       actor = identity_target(cmd)
-      # bc2cpp-reviewed: nomethod title= -- dead fallback (ADR 0226)
       actor.title = cmd.string || '' if actor
     end
 
@@ -3253,9 +3000,7 @@ module Game
     def do_change_actor_sprite(cmd)
       actor = identity_target(cmd)
       return unless actor
-      # bc2cpp-reviewed: nomethod param, nomethod set_charset -- dead fallback (ADR 0226)
       actor.set_charset(cmd.string || '', cmd.param(1))
-      # bc2cpp-reviewed: nomethod param, nomethod transparent= -- dead fallback (ADR 0226)
       actor.transparent = cmd.param(2) != 0
       @actor_graphic_changed = true
     end
@@ -3267,16 +3012,13 @@ module Game
     def do_change_actor_face(cmd)
       actor = identity_target(cmd)
       return unless actor
-      # bc2cpp-reviewed: nomethod param, nomethod set_faceset -- dead fallback (ADR 0226)
       actor.set_faceset(cmd.string || '', cmd.param(1))
     end
 
     # The vehicle a vehicle command targets: param0 is 0 boat / 1 ship /
     # 2 airship (Game::Vehicle::TYPES order), or nil for an out-of-range value.
     def vehicle_target(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       type = Vehicle::TYPES[cmd.param(0)]
-      # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
       type && @state.vehicle(type)
     end
 
@@ -3300,30 +3042,20 @@ module Game
     # touched, so the very next completed step's `#follow_vehicle` silently
     # overwrote the vehicle back to the party's still-unmoved tile.
     def do_set_vehicle_location(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       type = Vehicle::TYPES[cmd.param(0)]
-      # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
       v = type && @state.vehicle(type)
       return unless v
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       map_id = cmd.param(2)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       x = cmd.param(3)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       y = cmd.param(4)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       if cmd.param(1) == 1
         map_id = variables[map_id]
         x = variables[x]
         y = variables[y]
       end
-      # bc2cpp-reviewed: nomethod map_id= -- dead fallback (ADR 0226)
       v.map_id = map_id
-      # bc2cpp-reviewed: nomethod x= -- dead fallback (ADR 0226)
       v.x = x
-      # bc2cpp-reviewed: nomethod y= -- dead fallback (ADR 0226)
       v.y = y
-      # bc2cpp-reviewed: nomethod boarded, nomethod map_id -- dead fallback (ADR 0226)
       return unless @state.boarded == type && map_id == @state.map_id
       @location_requests.push({ op: :set, target: CHAR_PLAYER, x: x, y: y })
     end
@@ -3334,9 +3066,7 @@ module Game
     def do_change_vehicle_graphic(cmd)
       v = vehicle_target(cmd)
       return unless v
-      # bc2cpp-reviewed: nomethod charset_name= -- dead fallback (ADR 0226)
       v.charset_name = cmd.string || ''
-      # bc2cpp-reviewed: nomethod charset_index=, nomethod param -- dead fallback (ADR 0226)
       v.charset_index = cmd.param(1)
     end
 
@@ -3345,13 +3075,9 @@ module Game
     # operation (0 add, 1 remove) and param4/param5 the operand (0 constant /
     # 1 variable, value).
     def do_change_params(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       type = cmd.param(3)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       amount = cmd.param(4) == 0 ? cmd.param(5) : variables[cmd.param(5)]
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       amount = -amount if cmd.param(2) != 0
-      # bc2cpp-reviewed: nomethod change_param -- dead fallback (ADR 0226)
       stat_targets(cmd).each { |a| a.change_param(type, amount) }
       check_game_over # a lowered max HP can knock the party out
     end
@@ -3362,13 +3088,10 @@ module Game
     # id held in variable param4). Skill id 0 is the editor's "none" and is
     # ignored.
     def do_change_skills(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       skill_id = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
       return if skill_id.nil? || skill_id <= 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       forget = cmd.param(2) != 0
       stat_targets(cmd).each do |a|
-        # bc2cpp-reviewed: nomethod forget_skill, nomethod learn_skill -- dead fallback (ADR 0226)
         forget ? a.forget_skill(skill_id) : a.learn_skill(skill_id)
       end
       check_game_over
@@ -3401,11 +3124,8 @@ module Game
     # and whatever was previously equipped comes back to the bag either way.
     def do_change_equipment(cmd)
       targets = stat_targets(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       if cmd.param(2) == 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         item = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
-        # bc2cpp-reviewed: nomethod db_item -- dead fallback (ADR 0226)
         it = party.db_item(item)
         # An actor_set restriction blocks this command the same way it blocks
         # the equip menu (ported from a reference implementation, not
@@ -3413,10 +3133,8 @@ module Game
         # own Change Equipment checks item usability the same way) -- per target,
         # since one target of a multi-actor
         # command might be allowed the item and another not.
-        # bc2cpp-reviewed: nomethod equip_item_from_bag, nomethod id, nomethod item_usable_by? -- dead fallback (ADR 0226)
         targets.each { |a| party.equip_item_from_bag(a, item) if party.item_usable_by?(it, a.id) }
       else
-        # bc2cpp-reviewed: nomethod param, nomethod unequip_to_bag -- dead fallback (ADR 0226)
         targets.each { |a| party.unequip_to_bag(a, cmd.param(3)) }
       end
       check_game_over # losing an item's max-HP bonus can knock the party out
@@ -3439,13 +3157,9 @@ module Game
     # all (param2 is only ever 0/1 there -- the editor offers no % option for
     # Change Monster MP), so this only ever matters for the HP path.
     def monster_change_amount(cmd, battler)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(2)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       when 1 then variables[cmd.param(3)]
-      # bc2cpp-reviewed: nomethod hp, nomethod param -- dead fallback (ADR 0226)
       when 2 then cmd.param(3) * (battler.hp || 0) / 100
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       else cmd.param(3)
       end
     end
@@ -3496,44 +3210,30 @@ module Game
     # already tell the scene about a mid-battle change it has no other way
     # to see (see #take_monster_kills).
     def do_change_monster_hp(cmd)
-      # bc2cpp-reviewed: nomethod enemy, nomethod param -- dead fallback (ADR 0226)
       target = @battle && @battle.enemy(cmd.param(0))
       return unless target
-      # bc2cpp-reviewed: nomethod dead? -- dead fallback (ADR 0226)
       return if target.dead?
       amount = monster_change_amount(cmd, target)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       amount = -amount if cmd.param(1) != 0
-      # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
       hp = target.hp + amount
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       floor = cmd.param(4) != 0 ? 0 : 1
       hp = floor if hp < floor
-      # bc2cpp-reviewed: nomethod max_hp -- dead fallback (ADR 0226)
       hp = target.max_hp if target.max_hp && hp > target.max_hp
-      # bc2cpp-reviewed: nomethod hp= -- dead fallback (ADR 0226)
       target.hp = hp
-      # bc2cpp-reviewed: nomethod apply_knockout_reset -- dead fallback (ADR 0226)
       @battle.apply_knockout_reset(target)
-      # bc2cpp-reviewed: nomethod dead?, nomethod param -- dead fallback (ADR 0226)
       @monster_kills.push(cmd.param(0)) if target.dead?
     end
 
     # Change Monster MP (13120): the SP counterpart. Same operand layout minus
     # the percentage mode and the lethal flag.
     def do_change_monster_mp(cmd)
-      # bc2cpp-reviewed: nomethod enemy, nomethod param -- dead fallback (ADR 0226)
       target = @battle && @battle.enemy(cmd.param(0))
       return unless target
       amount = monster_change_amount(cmd, target)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       amount = -amount if cmd.param(1) != 0
-      # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
       mp = (target.mp || 0) + amount
       mp = 0 if mp < 0
-      # bc2cpp-reviewed: nomethod max_mp -- dead fallback (ADR 0226)
       mp = target.max_mp if target.max_mp && mp > target.max_mp
-      # bc2cpp-reviewed: nomethod mp= -- dead fallback (ADR 0226)
       target.mp = mp
     end
 
@@ -3549,18 +3249,13 @@ module Game
     # rather than merely toggling an id in its states list with no HP effect
     # at all.
     def do_change_monster_condition(cmd)
-      # bc2cpp-reviewed: nomethod enemy, nomethod param -- dead fallback (ADR 0226)
       target = @battle && @battle.enemy(cmd.param(0))
       return unless target
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       state_id = cmd.param(2)
       return if state_id.nil? || state_id <= 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       if cmd.param(1) != 0
-        # bc2cpp-reviewed: nomethod cure_state -- dead fallback (ADR 0226)
         @battle.cure_state(target, state_id)
       else
-        # bc2cpp-reviewed: nomethod inflict_state -- dead fallback (ADR 0226)
         @battle.inflict_state(target, state_id)
       end
     end
@@ -3570,7 +3265,6 @@ module Game
     # request so the scene can build the sprite that was never made.
     def do_show_hidden_monster(cmd)
       return unless @battle
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       @revealed_monsters.push(cmd.param(0))
     end
 
@@ -3589,18 +3283,12 @@ module Game
     # command list should never carry it, but an unguarded dispatch reads it
     # as live the instant one does.
     def do_force_flee(cmd)
-      # bc2cpp-reviewed: nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       return unless @battle && @state.party.rpg2003?
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(0)
-      # bc2cpp-reviewed: nomethod force_flee_party -- dead fallback (ADR 0226)
       when 0 then @battle.force_flee_party
-      # bc2cpp-reviewed: nomethod flee_all_enemies -- dead fallback (ADR 0226)
       when 1 then @fled_monsters.concat(@battle.flee_all_enemies)
       when 2
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         index = cmd.param(1)
-        # bc2cpp-reviewed: nomethod flee_enemy -- dead fallback (ADR 0226)
         @fled_monsters.push(index) if @battle.flee_enemy(index)
       end
     end
@@ -3630,13 +3318,10 @@ module Game
     # point it would incorrectly fire in a battle real RPG_RT never armed it
     # for at all.
     def do_enable_combo(cmd)
-      # bc2cpp-reviewed: nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       return unless @battle && @state.party.rpg2003?
-      # bc2cpp-reviewed: nomethod include_actor?, nomethod param -- dead fallback (ADR 0226)
       return unless party.include_actor?(cmd.param(0))
       actor = identity_target(cmd)
       return unless actor
-      # bc2cpp-reviewed: nomethod param, nomethod set_battle_combo -- dead fallback (ADR 0226)
       actor.set_battle_combo(cmd.param(1), cmd.param(2))
     end
 
@@ -3668,11 +3353,8 @@ module Game
     # already a correct, harmless no-op either way, only the missing trace
     # is new.
     def do_call_common_event(cmd)
-      # bc2cpp-reviewed: nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       return unless @resolver && @state.party.rpg2003?
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       id = cmd.param(0)
-      # bc2cpp-reviewed: nomethod common_event_commands -- dead fallback (ADR 0226)
       cmds = @resolver.common_event_commands(id)
       $stderr.puts "[RPG2k] Call Common Event: common event #{id} not found" if cmds.nil?
       return if cmds.nil? || cmds.empty?
@@ -3683,7 +3365,6 @@ module Game
     end
 
     def common_event_commands(id)
-      # bc2cpp-reviewed: nomethod common_event_commands -- dead fallback (ADR 0226)
       @resolver.common_event_commands(id)
     rescue StandardError => e
       $stderr.puts "[RPG2k] Call Common Event #{id} failed: #{e.message}"
@@ -3709,13 +3390,9 @@ module Game
     # parameter. Raised through the same request/wait the map command uses,
     # so the scene drives one animation player for both.
     def do_show_battle_animation_b(cmd)
-      # bc2cpp-reviewed: nomethod param, nomethod parameters, nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       allies = @state.party.rpg2003? && cmd.parameters.size > 3 && cmd.param(3) != 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       @battle_animation = { animation: cmd.param(0), target: cmd.param(1),
-                            # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                             wait: cmd.param(2) != 0, battle: true, allies: allies }
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       return unless cmd.param(2) != 0
       @wait_kind = :animation
       @waiting = true
@@ -3725,7 +3402,6 @@ module Game
     # defeat processing. The rest of the page is abandoned, as in RPG_RT.
     def do_terminate_battle(_cmd)
       return unless @battle
-      # bc2cpp-reviewed: nomethod terminate -- dead fallback (ADR 0226)
       @battle.terminate
       @index = @list.size
       @call_stack = []
@@ -3768,23 +3444,17 @@ module Game
     # test 5 already threads.
     def do_conditional_battle(cmd)
       return if eval_battle_condition(cmd)
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       skip_to(SKIP_TO_ELSE_OR_END_BRANCH_B, cmd.indent)
       consume
     end
 
     def eval_battle_condition(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(0)
       when 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         on = switches[cmd.param(1)]
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         cmd.param(2) == 0 ? on : !on
       when 1
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         rhs = cmd.param(2) == 0 ? cmd.param(3) : variables[cmd.param(3)]
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         compare(variables[cmd.param(1)], rhs, cmd.param(4))
       when 2 then battle_actor_condition(cmd)
       when 3 then battle_enemy_condition(cmd)
@@ -3835,9 +3505,7 @@ module Game
     # see `Actor#dead?`'s identical belt-and-suspenders check) -- checking
     # `#dead?` explicitly closes that gap rather than assuming it away.
     def battle_actor_condition(cmd)
-      # bc2cpp-reviewed: nomethod ally_by_actor_id, nomethod param -- dead fallback (ADR 0226)
       ally = @battle && @battle.ally_by_actor_id(cmd.param(1))
-      # bc2cpp-reviewed: nomethod command_restricted?, nomethod dead? -- dead fallback (ADR 0226)
       ally ? !ally.dead? && !@battle.command_restricted?(ally) : false
     end
 
@@ -3853,9 +3521,7 @@ module Game
     # a states-only scan, and for the wine evidence behind
     # #command_restricted? over the narrower do-nothing-only check.
     def battle_enemy_condition(cmd)
-      # bc2cpp-reviewed: nomethod enemy, nomethod param -- dead fallback (ADR 0226)
       foe = @battle && @battle.enemy(cmd.param(1))
-      # bc2cpp-reviewed: nomethod command_restricted?, nomethod dead? -- dead fallback (ADR 0226)
       foe ? !foe.dead? && !@battle.command_restricted?(foe) : false
     end
 
@@ -3878,7 +3544,6 @@ module Game
     # "no match" the same way `#actor_command`'s own early returns do.
     def battle_command_condition(cmd)
       return false unless @battle
-      # bc2cpp-reviewed: nomethod actor_command, nomethod param -- dead fallback (ADR 0226)
       @battle.actor_command(cmd.param(1), battle_source) == cmd.param(2)
     end
 
@@ -3894,7 +3559,6 @@ module Game
     # never matches any `cmd.param(1)`.
     def battle_target_enemy_condition(cmd)
       return false unless @battle
-      # bc2cpp-reviewed: nomethod param, nomethod target_enemy_index -- dead fallback (ADR 0226)
       @battle.target_enemy_index(battle_source) == cmd.param(1)
     end
 
@@ -3903,53 +3567,39 @@ module Game
     def do_conditional(cmd)
       @last_condition_matched = eval_condition(cmd)
       return if @last_condition_matched # fall through into the true branch
-      # bc2cpp-reviewed: nomethod indent -- dead fallback (ADR 0226)
       skip_to(SKIP_TO_ELSE_OR_END_BRANCH, cmd.indent)
       consume # step past the else/end marker to run the else body (or continue)
     end
 
     def eval_condition(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(0) # condition type
       when 0 # switch: param1 id, param2 state (0 on / 1 off)
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         on = switches[cmd.param(1)]
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         cmd.param(2) == 0 ? on : !on
       when 1 # variable: param1 id, param2 operand type, param3 operand, param4 comparison
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         rhs = cmd.param(2) == 0 ? cmd.param(3) : variables[cmd.param(3)]
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         compare(variables[cmd.param(1)], rhs, cmd.param(4))
       when 2 # timer: param1 seconds, param2 comparison (0 >=, 1 <=)
         timer_condition(cmd, 0)
       when 3 # gold: param1 amount, param2 comparison (0 >=, 1 <=)
-        # bc2cpp-reviewed: nomethod gold, nomethod param -- dead fallback (ADR 0226)
         cmd.param(2) == 0 ? party.gold >= cmd.param(1) : party.gold <= cmd.param(1)
       when 4 # item: param1 id, param2 (0 has / 1 not)
-        # bc2cpp-reviewed: nomethod has_item?, nomethod param -- dead fallback (ADR 0226)
         has = party.has_item?(cmd.param(1))
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         cmd.param(2) == 0 ? has : !has
       when 5 # actor: param1 id, param2 sub-condition (see actor_condition)
         actor_condition(cmd)
       when 6 # orientation: is character param1 (10001 the hero, 10002-10004 a
              # vehicle, 0 / 10005 this event, any other positive id a map
              # event) facing direction param2 (0 up / 1 right / 2 down / 3 left)?
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         facing = character_facing(cmd.param(1))
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         !facing.nil? && facing == FACING_NUMPAD[cmd.param(2)]
       when 7 # vehicle: true when the party is riding vehicle param1 (0 boat /
              # 1 ship / 2 airship)
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         v = cmd.param(1)
-        # bc2cpp-reviewed: nomethod boarded -- dead fallback (ADR 0226)
         v >= 0 && v < Vehicle::TYPES.size && @state.boarded == Vehicle::TYPES[v]
       when 8 # the decision (action) key started this event
         @triggered_by_decision_key ? true : false
       when 9 # the BGM has played through at least once
-        # bc2cpp-reviewed: nomethod bgm_looped -- dead fallback (ADR 0226)
         @state.bgm_looped ? true : false
       when 10 # RPG2003's second timer, laid out exactly like type 2
         # Ported from a reference implementation, not independently confirmed
@@ -3959,7 +3609,6 @@ module Game
         # the same "unhandled type" answer the `else` arm below already
         # gives, not a live comparison against Timer2 (which RPG2000 has no
         # editor control to even set up a Conditional Branch against).
-        # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
         party.rpg2003? && timer_condition(cmd, 1)
       else
         # An unhandled/unsupported branch type (RPG2003 v1.11's own type 11
@@ -3980,9 +3629,7 @@ module Game
     # param1 is the seconds to compare against and param2 the comparison
     # (0 "at least", 1 "at most").
     def timer_condition(cmd, id)
-      # bc2cpp-reviewed: nomethod seconds, nomethod timer -- dead fallback (ADR 0226)
       secs = @state.timer(id).seconds
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       cmd.param(2) == 0 ? secs >= cmd.param(1) : secs <= cmd.param(1)
     end
 
@@ -3999,16 +3646,13 @@ module Game
       id = character_ref(ref)
       return nil if id.nil?
       if id == CHAR_PLAYER
-        # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
         @state.direction
       elsif id >= CHAR_BOAT && id <= CHAR_AIRSHIP
         # A vehicle ref, mirroring #vehicle_operand's identical lookup
         # (Control Variables operand 6 attr 3) -- read straight off
         # `Game::State` rather than through `@map_info`, since a vehicle is
         # tracked independently of whatever map is currently loaded.
-        # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
         v = @state.vehicle(Vehicle::TYPES[id - CHAR_BOAT])
-        # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
         v && v.direction
       elsif id > 0 && id < 10000 && @map_info.respond_to?(:event_position)
         pos = @map_info.event_position(id)
@@ -4030,26 +3674,16 @@ module Game
     # answering them from the party alone sent every one down the false branch
     # while that companion was away. A missing database row is still false.
     def actor_condition(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       id = cmd.param(1)
-      # bc2cpp-reviewed: nomethod include_actor?, nomethod param -- dead fallback (ADR 0226)
       return party.include_actor?(id) if cmd.param(2) == 0
-      # bc2cpp-reviewed: nomethod roster -- dead fallback (ADR 0226)
       actor = party.roster[id]
       return false unless actor
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(2)
-      # bc2cpp-reviewed: nomethod string -- dead fallback (ADR 0226)
       when 1 then actor.name == cmd.string
-      # bc2cpp-reviewed: nomethod level, nomethod param -- dead fallback (ADR 0226)
       when 2 then actor.level >= cmd.param(3)
-      # bc2cpp-reviewed: nomethod hp, nomethod param -- dead fallback (ADR 0226)
       when 3 then actor.hp >= cmd.param(3)
-      # bc2cpp-reviewed: nomethod knows_skill?, nomethod param -- dead fallback (ADR 0226)
       when 4 then actor.knows_skill?(cmd.param(3))
-      # bc2cpp-reviewed: nomethod equipped?, nomethod param -- dead fallback (ADR 0226)
       when 5 then actor.equipped?(cmd.param(3))
-      # bc2cpp-reviewed: nomethod param, nomethod state? -- dead fallback (ADR 0226)
       when 6 then actor.state?(cmd.param(3))
       else false
       end
@@ -4136,9 +3770,7 @@ module Game
     # touched only this one command's own parameter list.
     def do_teleport(cmd)
       return if block_pending_teleport_command
-      # bc2cpp-reviewed: nomethod param, nomethod parameters, nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       dir = @state.party.rpg2003? && cmd.parameters.size > 3 ? teleport_facing(cmd.param(3)) : 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       @teleport = [cmd.param(0), cmd.param(1), cmd.param(2), dir]
       @wait_kind = :teleport
       @waiting = true
@@ -4156,11 +3788,8 @@ module Game
     # three variables named by param0/param1/param2. Non-blocking — it only
     # records the position for a later Recall to Location.
     def do_memorize_location(cmd)
-      # bc2cpp-reviewed: nomethod map_id, nomethod param -- dead fallback (ADR 0226)
       variables[cmd.param(0)] = @state.map_id
-      # bc2cpp-reviewed: nomethod param, nomethod x -- dead fallback (ADR 0226)
       variables[cmd.param(1)] = @state.x
-      # bc2cpp-reviewed: nomethod param, nomethod y -- dead fallback (ADR 0226)
       variables[cmd.param(2)] = @state.y
     end
 
@@ -4171,9 +3800,7 @@ module Game
     # kept (direction 0).
     def do_recall_location(cmd)
       return if block_pending_teleport_command
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       @teleport = [variables[cmd.param(0)], variables[cmd.param(1)],
-                   # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                    variables[cmd.param(2)], 0]
       @wait_kind = :teleport
       @waiting = true
@@ -4201,19 +3828,14 @@ module Game
     # guard had been quoted here without actually being applied in the code
     # below it -- fixed to match #do_teleport's own identical correction.
     def do_change_event_location(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       x = cmd.param(2)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       y = cmd.param(3)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       variable_mode = cmd.param(1) == 1
       if variable_mode
         x = variables[x]
         y = variables[y]
       end
-      # bc2cpp-reviewed: nomethod param, nomethod parameters, nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       dir = (!variable_mode && @state.party.rpg2003? && cmd.parameters.size > 4) ? teleport_facing(cmd.param(4)) : 0
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       @location_requests.push({ op: :set, target: cmd.param(0), x: x, y: y, dir: dir })
     end
 
@@ -4221,7 +3843,6 @@ module Game
     # characters named by param0 and param1 (same target ids as Change Event
     # Location). Queued as a `:swap` request the scene applies; non-blocking.
     def do_trade_event_locations(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       @location_requests.push({ op: :swap, a: cmd.param(0), b: cmd.param(1) })
     end
 
@@ -4230,11 +3851,9 @@ module Game
     # error) it stores 0.
     def do_store_terrain_id(cmd)
       x, y = query_position(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       variables[cmd.param(3)] = @map_info ? (@map_info.terrain_id(x, y) || 0) : 0
     rescue StandardError => e
       $stderr.puts "[RPG2k] Store Terrain ID failed, storing 0: #{e.class}: #{e.message}"
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       variables[cmd.param(3)] = 0
     end
 
@@ -4242,11 +3861,9 @@ module Game
     # into the variable named by param3 (0 when no event is there). Non-blocking.
     def do_store_event_id(cmd)
       x, y = query_position(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       variables[cmd.param(3)] = @map_info ? (@map_info.event_id_at(x, y) || 0) : 0
     rescue StandardError => e
       $stderr.puts "[RPG2k] Store Event ID failed, storing 0: #{e.class}: #{e.message}"
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       variables[cmd.param(3)] = 0
     end
 
@@ -4254,12 +3871,9 @@ module Game
     # takes x and y as the constants param1/param2, otherwise as the values of
     # those two variables (the shared operand mode matches RPG_RT).
     def query_position(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       if cmd.param(0) == 0
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         [cmd.param(1), cmd.param(2)]
       else
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         [variables[cmd.param(1)], variables[cmd.param(2)]]
       end
     end
@@ -4271,10 +3885,8 @@ module Game
     # id). The route runs in the background, so this only records the request —
     # the scene resolves the target and steps the route (see decode_move_route).
     def do_move_event(cmd)
-      # bc2cpp-reviewed: nomethod parameters -- dead fallback (ADR 0226)
       params = cmd.parameters || []
       return if params.empty?
-      # bc2cpp-reviewed: strict_hint ivar_accessor string -- reviewed before the source-annotation migration (ADR 0419)
       decoded = decode_move_route(params, cmd.string || '')
       # Braced explicitly (not the bare `push(target: ..., ...)` keyword-style
       # call this used to be written as): a builtin C-defined method like
@@ -4291,13 +3903,9 @@ module Game
       # argument in every Ruby implementation, keyword-parameter destructuring
       # included, so this same shape is unambiguous everywhere.
       @move_route_requests.push({
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         target: cmd.param(0),
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         frequency: cmd.param(1),
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         repeat: cmd.param(2) != 0,
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         skippable: cmd.param(3) != 0,
         commands: decoded
       })
@@ -4347,11 +3955,9 @@ module Game
     # the Decision key (the Maniac Patch's own extra wait_type/mode encoding is a
     # separate, unimplemented feature, out of scope here).
     def do_wait(cmd)
-      # bc2cpp-reviewed: nomethod param, nomethod parameters, nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       if @state.party.rpg2003? && cmd.parameters.size > 1 && cmd.param(1) != 0
         @wait_kind = :wait_key_enter
       else
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         @wait_frames = cmd.param(0) # tenths of a second in RPG2000
         @wait_kind = :wait
       end
@@ -4390,7 +3996,6 @@ module Game
     # zero really is hidden, confirming this polarity was already correct,
     # only its citation was not. The flag persists through Save / Continue.
     def do_player_visibility(cmd)
-      # bc2cpp-reviewed: nomethod param, nomethod player_transparent= -- dead fallback (ADR 0226)
       @state.player_transparent = cmd.param(0) == 0
     end
 
@@ -4423,26 +4028,19 @@ module Game
     FLASH_CHANNEL_SCALE = 8
 
     def do_flash_sprite(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       frames = cmd.param(5) * FRAMES_PER_TENTH
       # Braced explicitly -- see #do_move_event's own citation for why a bare
       # `push(target: ..., ...)` keyword-style call silently pushes nothing
       # at all against a builtin C-defined method like Array#push on this
       # build's mruby.
       @sprite_flash_requests.push({
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         target: cmd.param(0),
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         red: cmd.param(1) * FLASH_CHANNEL_SCALE,
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         green: cmd.param(2) * FLASH_CHANNEL_SCALE,
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         blue: cmd.param(3) * FLASH_CHANNEL_SCALE,
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         power: cmd.param(4) * FLASH_CHANNEL_SCALE,
         frames: frames
       })
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       return unless cmd.param(6) != 0
       @wait_kind = :sprite_flash
       @waiting = true
@@ -4473,10 +4071,8 @@ module Game
     # scene redraws its cached tile layers. Non-blocking; the rewrite lasts until
     # the map is left, as in RPG_RT.
     def do_tile_substitution(cmd)
-      # bc2cpp-reviewed: nomethod map -- dead fallback (ADR 0226)
       map = @state.map
       return unless map.respond_to?(:substitute_tile)
-      # bc2cpp-reviewed: nomethod param, nomethod substitute_tile -- dead fallback (ADR 0226)
       map.substitute_tile(cmd.param(0), cmd.param(1), cmd.param(2))
       @tiles_changed = true
     end
@@ -4513,7 +4109,6 @@ module Game
     # Return to Title leaves it. Raised as a :load_menu request; there is nothing
     # to resume, because whatever the player loads replaces this scene.
     def do_open_load_menu(_cmd)
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       return unless party.rpg2003?
       @wait_kind = :load_menu
       @waiting = true
@@ -4523,7 +4118,6 @@ module Game
     # by an event. Raised as an :exit_game request the scene answers by leaving
     # the process; nothing resumes.
     def do_exit_game(_cmd)
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       return unless party.rpg2003?
       @wait_kind = :exit_game
       @waiting = true
@@ -4540,9 +4134,7 @@ module Game
     # 2k3e "Toggle ATB Mode" command is the event-driven path to the same
     # setting either way. The event runs on.
     def do_toggle_atb_mode(_cmd)
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       return unless party.rpg2003?
-      # bc2cpp-reviewed: nomethod atb_mode, nomethod atb_mode= -- dead fallback (ADR 0226)
       @state.atb_mode = @state.atb_mode == 1 ? 0 : 1
     end
 
@@ -4552,13 +4144,11 @@ module Game
     # platform whose window cannot change mode — the command is a logged no-op rather than a silent
     # one, and the event runs straight on.
     def do_toggle_fullscreen(_cmd)
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       return unless party.rpg2003?
       $stderr.puts '[RPG2k] Toggle Fullscreen: this display has no fullscreen mode'
     end
 
     def do_open_video_options(_cmd)
-      # bc2cpp-reviewed: nomethod rpg2003? -- dead fallback (ADR 0226)
       return unless party.rpg2003?
       $stderr.puts '[RPG2k] Open Video Options: no video-options screen in this build'
     end
@@ -4590,11 +4180,8 @@ module Game
     # state) settles at once and does not wait at all.
     def do_erase_screen(cmd)
       return if block_pending_screen_command
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       style = Game::Transition.erase_style(cmd.param(0), teleport_transition(0))
-      # bc2cpp-reviewed: nomethod erase, nomethod screen -- dead fallback (ADR 0226)
       @state.screen.erase(style)
-      # bc2cpp-reviewed: nomethod fading?, nomethod screen -- dead fallback (ADR 0226)
       return unless @state.screen.fading?
       @wait_kind = :screen
       @waiting = true
@@ -4602,11 +4189,8 @@ module Game
 
     def do_show_screen(cmd)
       return if block_pending_screen_command
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       style = Game::Transition.show_style(cmd.param(0), teleport_transition(1))
-      # bc2cpp-reviewed: nomethod screen, nomethod show -- dead fallback (ADR 0226)
       @state.screen.show(style)
-      # bc2cpp-reviewed: nomethod fading?, nomethod screen -- dead fallback (ADR 0226)
       return unless @state.screen.fading?
       @wait_kind = :screen
       @waiting = true
@@ -4618,7 +4202,6 @@ module Game
     # The state seeds these from the database when the game starts; setting 0,
     # the plain fade, stands in for a state that never got the chance.
     def teleport_transition(slot)
-      # bc2cpp-reviewed: nomethod screen_transitions -- dead fallback (ADR 0226)
       v = @state.screen_transitions[slot]
       Game::Transition.setting?(v) ? v : 0
     end
@@ -4640,13 +4223,9 @@ module Game
     # the very next frame's dispatch resumes us, the same one-frame floor
     # `#drive_wait` gives an ordinary `Wait 0.0s` command.
     def do_tint_screen(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       frames = cmd.param(4) * FRAMES_PER_TENTH
-      # bc2cpp-reviewed: nomethod param, nomethod screen -- dead fallback (ADR 0226)
       @state.screen.tint_to(cmd.param(0), cmd.param(1), cmd.param(2),
-                            # bc2cpp-reviewed: nomethod param, nomethod tint_to -- dead fallback (ADR 0226)
                             cmd.param(3), frames)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       return unless cmd.param(5) != 0
       @wait_kind = :screen
       @waiting = true
@@ -4681,27 +4260,18 @@ module Game
     # `* 8`), so the raw command params are scaled here to match.
     FLASH_SCALE = 8
     def do_flash_screen(cmd)
-      # bc2cpp-reviewed: nomethod param, nomethod parameters, nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       mode = @state.party.rpg2003? && cmd.parameters.size > 6 ? cmd.param(6) : 0
       case mode
       when 1
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         frames = cmd.param(4) * FRAMES_PER_TENTH
-        # bc2cpp-reviewed: nomethod param, nomethod screen -- dead fallback (ADR 0226)
         @state.screen.flash_begin(cmd.param(0) * FLASH_SCALE, cmd.param(1) * FLASH_SCALE,
-                                  # bc2cpp-reviewed: nomethod flash_begin, nomethod param -- dead fallback (ADR 0226)
                                   cmd.param(2) * FLASH_SCALE, cmd.param(3) * FLASH_SCALE, frames)
       when 2
-        # bc2cpp-reviewed: nomethod flash_end, nomethod screen -- dead fallback (ADR 0226)
         @state.screen.flash_end
       else
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         frames = cmd.param(4) * FRAMES_PER_TENTH
-        # bc2cpp-reviewed: nomethod param, nomethod screen -- dead fallback (ADR 0226)
         @state.screen.flash(cmd.param(0) * FLASH_SCALE, cmd.param(1) * FLASH_SCALE,
-                            # bc2cpp-reviewed: nomethod param, strict_hint typed flash -- dead fallback (ADR 0226)
                             cmd.param(2) * FLASH_SCALE, cmd.param(3) * FLASH_SCALE, frames)
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         return unless cmd.param(5) != 0
         @wait_kind = :screen
         @waiting = true
@@ -4714,20 +4284,13 @@ module Game
     # the pan back to the hero at speed param3. param4 is the wait flag for the
     # pan/reset scroll (lock/unlock are instant, so they never wait).
     def do_pan_screen(cmd)
-      # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
       screen = @state.screen
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       case cmd.param(0)
-      # bc2cpp-reviewed: nomethod pan_lock -- dead fallback (ADR 0226)
       when 0 then screen.pan_lock
-      # bc2cpp-reviewed: nomethod pan_unlock -- dead fallback (ADR 0226)
       when 1 then screen.pan_unlock
-      # bc2cpp-reviewed: nomethod pan, nomethod param -- dead fallback (ADR 0226)
       when 2 then screen.pan(cmd.param(1), cmd.param(2), cmd.param(3))
-      # bc2cpp-reviewed: nomethod pan_reset, nomethod param -- dead fallback (ADR 0226)
       when 3 then screen.pan_reset(cmd.param(3))
       end
-      # bc2cpp-reviewed: nomethod panning?, nomethod param -- dead fallback (ADR 0226)
       return unless cmd.param(4) != 0 && screen.panning?
       @wait_kind = :screen
       @waiting = true
@@ -4777,21 +4340,15 @@ module Game
     # predict the identical null result actually observed here. Left open,
     # honestly, rather than overclaimed.
     def do_shake_screen(cmd)
-      # bc2cpp-reviewed: nomethod param, nomethod parameters, nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       mode = @state.party.rpg2003? && cmd.parameters.size > 4 ? cmd.param(4) : 0
       case mode
       when 1
-        # bc2cpp-reviewed: nomethod param, nomethod screen, nomethod shake_begin -- dead fallback (ADR 0226)
         @state.screen.shake_begin(cmd.param(0), cmd.param(1))
       when 2
-        # bc2cpp-reviewed: nomethod screen, nomethod shake_end -- dead fallback (ADR 0226)
         @state.screen.shake_end
       else
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         frames = cmd.param(2) * FRAMES_PER_TENTH
-        # bc2cpp-reviewed: nomethod param, nomethod screen, nomethod shake -- dead fallback (ADR 0226)
         @state.screen.shake(cmd.param(0), cmd.param(1), frames)
-        # bc2cpp-reviewed: nomethod param, nomethod screen, nomethod shaking? -- dead fallback (ADR 0226)
         return unless cmd.param(3) != 0 && @state.screen.shaking?
         @wait_kind = :screen
         @waiting = true
@@ -4987,24 +4544,17 @@ module Game
     # reference implementation's own Show Picture (RPG2000 branch), not independently
     # confirmed against genuine RPG_RT under wine.
     def do_show_picture(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       id = cmd.param(0)
       return if id <= 0
       return if block_pending_picture_command
       @state.show_picture(id,
                           name: picture_name(cmd),
                           x: picture_coord(cmd, 2), y: picture_coord(cmd, 3),
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           zoom: cmd.param(5),
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           opacity: trans_to_opacity(cmd.param(6)),
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           use_transparent_color: cmd.param(7) != 0,
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           fixed_to_map: cmd.param(4) > 0,
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           red: cmd.param(8), green: cmd.param(9),
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           blue: cmd.param(10), saturation: cmd.param(11))
     end
 
@@ -5028,18 +4578,12 @@ module Game
     # resumes us.
     def do_move_picture(cmd)
       return if block_pending_picture_command
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       id = cmd.param(0)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       frames = cmd.param(14) * FRAMES_PER_TENTH
       @state.move_picture(id, picture_coord(cmd, 2), picture_coord(cmd, 3),
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           cmd.param(5), trans_to_opacity(cmd.param(6)),
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           cmd.param(8), cmd.param(9), cmd.param(10),
-                          # bc2cpp-reviewed: nomethod move_picture, nomethod param -- dead fallback (ADR 0226)
                           cmd.param(11), frames)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       return unless cmd.param(15) != 0
       @wait_kind = :picture
       @waiting = true
@@ -5048,7 +4592,6 @@ module Game
     # Erase Picture (11130): remove picture param0 from the screen.
     def do_erase_picture(cmd)
       return if block_pending_picture_command
-      # bc2cpp-reviewed: nomethod erase_picture, nomethod param -- dead fallback (ADR 0226)
       @state.erase_picture(cmd.param(0))
     end
 
@@ -5082,11 +4625,8 @@ module Game
     # across the visible screen (`Scene::Map#global_animation_targets`,
     # matching `BattleAnimationMap::DrawGlobal`).
     def do_show_battle_animation(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       @battle_animation = { animation: cmd.param(0), target: cmd.param(1),
-                            # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                             wait: cmd.param(2) != 0, global: cmd.param(3) != 0 }
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       if cmd.param(2) != 0
         @wait_kind = :animation
         @waiting = true
@@ -5098,7 +4638,6 @@ module Game
     # A picture coordinate: the literal param at `idx`, or the value of the
     # variable it names when the position-mode param (index 1) is non-zero.
     def picture_coord(cmd, idx)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       cmd.param(1) != 0 ? variables[cmd.param(idx)] : cmd.param(idx)
     end
 
@@ -5109,7 +4648,6 @@ module Game
 
     # The picture's file name (the command's string parameter), or ''.
     def picture_name(cmd)
-      # bc2cpp-reviewed: strict_hint ivar_accessor string -- reviewed before the source-annotation migration (ADR 0419)
       (cmd.string || '').to_s
     end
 
@@ -5129,11 +4667,8 @@ module Game
     # Snow at all, so a stray higher value should never linger on that
     # edition.
     def do_weather(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       type = cmd.param(0)
-      # bc2cpp-reviewed: nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
       type = 0 if !@state.party.rpg2003? && type > 2
-      # bc2cpp-reviewed: nomethod param, nomethod weather -- dead fallback (ADR 0226)
       @state.weather.set(type, [cmd.param(1), 2].min)
     end
 
@@ -5161,15 +4696,12 @@ module Game
     # `RGSS::Audio.bgm_fade` already expects milliseconds too --
     # `Scene::Menu`'s own End Game call passes `bgm_fade(400)` directly.
     def do_fadeout_bgm(cmd)
-      # bc2cpp-reviewed: nomethod bgm_looped= -- dead fallback (ADR 0226)
       @state.bgm_looped = false
       # Ported from a reference implementation (not independently confirmed
       # against genuine RPG_RT under wine): its BGM-fade routine always
       # sets a music-stopping flag alongside the fade itself -- see
       # Game::State#bgm_stopping's own doc comment for what this ungates.
-      # bc2cpp-reviewed: nomethod bgm_stopping= -- dead fallback (ADR 0226)
       @state.bgm_stopping = true
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       RGSS::Audio.bgm_fade(cmd.param(0))
     rescue StandardError => e
       $stderr.puts "[RPG2k] BGM fade-out failed: #{e.message}"
@@ -5183,18 +4715,13 @@ module Game
     # (which logs it) rather than silently dropped; playback itself is the one
     # part of the command that is not modelled.
     def do_play_movie(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       x = cmd.param(1)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       y = cmd.param(2)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       if cmd.param(0) != 0
         x = variables[x]
         y = variables[y]
       end
-      # bc2cpp-reviewed: nomethod string -- dead fallback (ADR 0226)
       @movie_request = { name: (cmd.string || '').to_s, x: x, y: y,
-                         # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                          width: cmd.param(3), height: cmd.param(4) }
     end
 
@@ -5202,9 +4729,7 @@ module Game
     # Memorized BGM can restore it (e.g. duck to a fanfare, then return). Nothing
     # playing memorises nothing. Non-blocking.
     def do_memorize_bgm(_cmd)
-      # bc2cpp-reviewed: nomethod current_bgm -- dead fallback (ADR 0226)
       cur = @state.current_bgm
-      # bc2cpp-reviewed: nomethod memorized_bgm= -- dead fallback (ADR 0226)
       @state.memorized_bgm = cur ? cur.dup : nil
     end
 
@@ -5220,19 +4745,13 @@ module Game
     # Also round-trips through a real Save/Continue (chunk 110,
     # `Game::State#to_lsd`/`.from_lsd`'s own citation).
     def do_set_teleport_target(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       map_id = cmd.param(1)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       if cmd.param(0) != 0
-        # bc2cpp-reviewed: nomethod teleport_targets -- dead fallback (ADR 0226)
         @state.teleport_targets.delete(map_id)
         return
       end
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       switch_id = cmd.param(4) != 0 ? cmd.param(5) : nil
-      # bc2cpp-reviewed: nomethod teleport_targets -- dead fallback (ADR 0226)
       @state.teleport_targets[map_id] =
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         { x: cmd.param(2), y: cmd.param(3), switch_id: switch_id }
     end
 
@@ -5244,12 +4763,9 @@ module Game
     # comment: `Game::Battle#cast_escape_skill`/`#escape_skill_available?`
     # already consume it, and it round-trips through a real Save/Continue too.
     def do_set_escape_target(cmd)
-      # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
       switch_id = cmd.param(3) != 0 ? cmd.param(4) : nil
       @state.escape_target =
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         { map_id: cmd.param(0), x: cmd.param(1), y: cmd.param(2),
-          # bc2cpp-reviewed: nomethod escape_target= -- dead fallback (ADR 0226)
           switch_id: switch_id }
     end
 
@@ -5260,7 +4776,6 @@ module Game
     # scene reloads the windowskin, and the override persists across Save /
     # Continue.
     def do_change_system_graphic(cmd)
-      # bc2cpp-reviewed: nomethod param, nomethod set_system_graphic -- dead fallback (ADR 0226)
       @state.set_system_graphic(cmd.string || '', cmd.param(1))
       @system_graphic_changed = true
     end
@@ -5276,11 +4791,8 @@ module Game
     # the parallax sprite mid-map.
     def do_change_parallax(cmd)
       @state.set_parallax(name: (cmd.string || '').to_s,
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           loop_x: cmd.param(0) != 0, loop_y: cmd.param(1) != 0,
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           auto_x: cmd.param(2) != 0, sx: cmd.param(3),
-                          # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
                           auto_y: cmd.param(4) != 0, sy: cmd.param(5))
       @parallax_changed = true
     end
@@ -5298,11 +4810,8 @@ module Game
     # .lsd Save/Continue now too (Game::State#to_lsd/.from_lsd, SAVE_SYSTEM
     # fields 72-74/79-82).
     def do_change_system_bgm(cmd)
-      # bc2cpp-reviewed: nomethod param, nomethod system_bgm -- dead fallback (ADR 0226)
       @state.system_bgm[cmd.param(0)] = {
-        # bc2cpp-reviewed: nomethod param, nomethod string -- dead fallback (ADR 0226)
         name: cmd.string, fadein: cmd.param(1), volume: cmd.param(2),
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         tempo: cmd.param(3), balance: cmd.param(4)
       }
     end
@@ -5315,11 +4824,8 @@ module Game
     # save fidelity, matching the system BGM -- all twelve slots round-trip
     # through a real .lsd Save/Continue too (SAVE_SYSTEM fields 91-102).
     def do_change_system_sfx(cmd)
-      # bc2cpp-reviewed: nomethod param, nomethod system_sfx -- dead fallback (ADR 0226)
       @state.system_sfx[cmd.param(0)] = {
-        # bc2cpp-reviewed: nomethod param, nomethod string -- dead fallback (ADR 0226)
         name: cmd.string, volume: cmd.param(1),
-        # bc2cpp-reviewed: nomethod param -- dead fallback (ADR 0226)
         tempo: cmd.param(2), balance: cmd.param(3)
       }
     end
@@ -5336,21 +4842,17 @@ module Game
     # same idiom (volume-in-place included) as `#play_audio`'s `:bgm` branch
     # just below.
     def do_play_memorized_bgm(_cmd)
-      # bc2cpp-reviewed: nomethod memorized_bgm -- dead fallback (ADR 0226)
       bgm = @state.memorized_bgm
       return if bgm.nil? || bgm[:name].nil? || bgm[:name].empty?
       # Gated on !#bgm_stopping too, same as #play_audio's :bgm branch --
       # `PlayMemorizedBGM` is a bare `BgmPlay` call, so it shares that
       # method's own `!data.music_stopping` restart gate (see
       # Game::State#bgm_stopping's own doc comment).
-      # bc2cpp-reviewed: nomethod current_bgm -- dead fallback (ADR 0226)
       same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == bgm[:name] &&
-                                   # bc2cpp-reviewed: nomethod bgm_stopping -- dead fallback (ADR 0226)
                                    !@state.bgm_stopping
       if same_file_already_playing
         RGSS::Audio.bgm_volume(bgm[:volume] || 100)
       else
-        # bc2cpp-reviewed: nomethod bgm_looped= -- dead fallback (ADR 0226)
         @state.bgm_looped = false
         # The memorized record's own fade-in (cycle #202) replays too, the
         # same whole-struct-carried-over idiom every other field here already
@@ -5368,11 +4870,9 @@ module Game
       # same-track path too, and the fresh-start path passes the whole
       # music struct straight to a new play call either way.
       RGSS::Audio.bgm_pan(bgm[:balance] || 50)
-      # bc2cpp-reviewed: nomethod current_bgm= -- dead fallback (ADR 0226)
       @state.current_bgm = bgm.dup
       # Cleared unconditionally, restart or not -- see #play_audio's own
       # matching reset.
-      # bc2cpp-reviewed: nomethod bgm_stopping= -- dead fallback (ADR 0226)
       @state.bgm_stopping = false
     rescue StandardError => e
       $stderr.puts "[RPG2k] memorized BGM playback failed: #{e.message}"
@@ -5380,7 +4880,6 @@ module Game
     end
 
     def play_audio(kind, cmd)
-      # bc2cpp-reviewed: strict_hint ivar_accessor string -- reviewed before the source-annotation migration (ADR 0419)
       name = cmd.string
       blank = name.nil? || name.empty?
       # Corrected from this method's own prior comment here, which had assumed
@@ -5398,13 +4897,11 @@ module Game
       if kind == :bgm
         if blank || name == '(OFF)'
           RGSS::Audio.bgm_stop
-          # bc2cpp-reviewed: nomethod current_bgm= -- dead fallback (ADR 0226)
           @state.current_bgm = nil
           # A reference implementation's own BGM-play routine clears
           # `data.music_stopping` unconditionally
           # at the very end, including this stop branch -- see Game::State
           # #bgm_stopping's own doc comment.
-          # bc2cpp-reviewed: nomethod bgm_stopping= -- dead fallback (ADR 0226)
           @state.bgm_stopping = false
           return
         end
@@ -5422,13 +4919,9 @@ module Game
         # fadein reads (do_change_system_bgm above) and Fade Out BGM's own
         # single parameter already is (see do_fadeout_bgm's own citation);
         # liblcf's schema gives it a plain :int type with no separate scale.
-        # bc2cpp-reviewed: nomethod param, nomethod parameters -- dead fallback (ADR 0226)
         fade_in = cmd.parameters.size > 0 ? cmd.param(0) : 0
-        # bc2cpp-reviewed: nomethod param, nomethod parameters -- dead fallback (ADR 0226)
         volume = cmd.parameters.size > 1 ? cmd.param(1) : 100
-        # bc2cpp-reviewed: nomethod param, nomethod parameters -- dead fallback (ADR 0226)
         pitch = cmd.parameters.size > 2 ? cmd.param(2) : 100
-        # bc2cpp-reviewed: nomethod param, nomethod parameters -- dead fallback (ADR 0226)
         balance = cmd.parameters.size > 3 ? cmd.param(3) : 50
         # BGM has a single channel, and this build special-cases re-triggering
         # Play BGM with the file that's already current: it does NOT break and
@@ -5454,9 +4947,7 @@ module Game
         # previous_music.name == bgm.name)`) -- a Fade Out BGM (11520) of this
         # exact track since it last started DOES force a fresh restart here,
         # matching `#bgm_stopping`'s own doc comment.
-        # bc2cpp-reviewed: nomethod current_bgm -- dead fallback (ADR 0226)
         same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == name &&
-                                     # bc2cpp-reviewed: nomethod bgm_stopping -- dead fallback (ADR 0226)
                                      !@state.bgm_stopping
         # Track what is playing so Memorize BGM can stash it -- this "current
         # system BGM regardless of whether playback succeeds" design, balance
@@ -5464,7 +4955,6 @@ module Game
         # BGM (a bare copy of the whole music struct verbatim),
         # not independently confirmed against genuine RPG_RT under wine.
         @state.current_bgm = { name: name, volume: volume, tempo: pitch, balance: balance,
-                               # bc2cpp-reviewed: nomethod current_bgm= -- dead fallback (ADR 0226)
                                fadein: fade_in }
         if same_file_already_playing
           # No restart happens here at all (see above), so there is nothing
@@ -5473,7 +4963,6 @@ module Game
           # parameter.
           RGSS::Audio.bgm_volume(volume)
         else
-          # bc2cpp-reviewed: nomethod bgm_looped= -- dead fallback (ADR 0226)
           @state.bgm_looped = false # a fresh track has not looped yet
           # `fade_in` (cycle #202): previously read off the command's own
           # parameter list and then dropped on the floor -- a configured
@@ -5485,7 +4974,6 @@ module Game
         end
         # Cleared unconditionally, restart or not -- `BgmPlay`'s own `data.
         # music_stopping = false;` runs after the if/else either way.
-        # bc2cpp-reviewed: nomethod bgm_stopping= -- dead fallback (ADR 0226)
         @state.bgm_stopping = false
         RGSS::Audio.bgm_pan(balance)
       else
@@ -5495,11 +4983,8 @@ module Game
         # native `pan` addition (see rgss_audio.hxx's own doc comment on the
         # backend's se_play, and RGSS::Audio.bgm_pan's identical balance
         # scale for BGM).
-        # bc2cpp-reviewed: nomethod param, nomethod parameters -- dead fallback (ADR 0226)
         volume = cmd.parameters.size > 0 ? cmd.param(0) : 100
-        # bc2cpp-reviewed: nomethod param, nomethod parameters -- dead fallback (ADR 0226)
         pitch = cmd.parameters.size > 1 ? cmd.param(1) : 100
-        # bc2cpp-reviewed: nomethod param, nomethod parameters -- dead fallback (ADR 0226)
         balance = cmd.parameters.size > 2 ? cmd.param(2) : 50
         RGSS::Audio.se_play(name, volume, pitch, balance)
       end

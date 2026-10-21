@@ -59,16 +59,12 @@ module Game
         case tag
         when EXT_TAG_WEATHER
           ints = ext_ints(body)
-          # bc2cpp-reviewed: nomethod weather -- dead fallback (ADR 0226)
           state.weather.set(ints[0] || 0, ints[1] || 0)
         when EXT_TAG_ENCOUNTER_TOTAL
-          # bc2cpp-reviewed: nomethod encounter_total= -- dead fallback (ADR 0226)
           state.encounter_total = ext_ints(body)[0] || 0
         when EXT_TAG_BOARDED
           id = ext_ints(body)[0] || 0
-          # bc2cpp-reviewed: nomethod boarded= -- dead fallback (ADR 0226)
           state.boarded = nil
-          # bc2cpp-reviewed: nomethod boarded= -- dead fallback (ADR 0226)
           Vehicle::TYPE_ID.each { |type, type_id| state.boarded = type if type_id == id }
         when EXT_TAG_FLASH
           io = StringIO.new(body)
@@ -76,7 +72,6 @@ module Game
                   LCF.read_ber(io), LCF.read_ber(io)]
           power = ext_double_at(io)
           state.player_flash = { red: ints[0], green: ints[1], blue: ints[2],
-                                 # bc2cpp-reviewed: nomethod player_flash= -- dead fallback (ADR 0226)
                                  power: power, frames: ints[3], total: ints[4] }
         when EXT_TAG_COMMON_PROGRESS
           pairs = ext_ints(body)
@@ -86,7 +81,6 @@ module Game
             progress[pairs[i]] = pairs[i + 1]
             i += 2
           end
-          # bc2cpp-reviewed: nomethod common_event_progress= -- dead fallback (ADR 0226)
           state.common_event_progress = progress
         when EXT_TAG_PICTURE_OPACITY
           io = StringIO.new(body)
@@ -97,7 +91,6 @@ module Game
             opacity = ext_double_at(io)
             has_target = LCF.read_ber(io) != 0
             topacity = has_target ? ext_double_at(io) : nil
-            # bc2cpp-reviewed: nomethod pictures -- dead fallback (ADR 0226)
             pic = state.pictures[id]
             pic.restore_legacy_lsd(name, opacity, topacity) if pic
           end
@@ -110,7 +103,6 @@ module Game
           ty = ext_double_at(io)
           step = ext_double_at(io)
           locked = LCF.read_ber(io) != 0
-          # bc2cpp-reviewed: nomethod screen -- dead fallback (ADR 0226)
           state.screen.load_h(pan_x: px, pan_y: py, pan_tx: tx, pan_ty: ty,
                               pan_step: step, pan_locked: locked)
         end

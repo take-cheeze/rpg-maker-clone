@@ -72,7 +72,6 @@ class RPG2k
         @window = Window.new window_x, window_y, window_width, window_height
         skin = load_windowskin
         @window.windowskin = skin
-        # bc2cpp-reviewed: nomethod open_animation -- dead fallback (ADR 0226)
         @window.open_animation(hide_title? ? 0 : OPEN_ANIM_FRAMES)
 
         # Render the (unchanging) menu labels once, in the windowskin's own
@@ -96,11 +95,9 @@ class RPG2k
         @menu_items.each_with_index do |item, index|
           y = index * LINE_HEIGHT
           if index == 1 && !@continue_available
-            # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
             contents.font.color = Color.new(128, 128, 128, 255)
             draw_system_text contents, 0, y, content_w, LINE_HEIGHT, item, skin, 3
           else
-            # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
             contents.font.color = Color.new(255, 255, 255, 255)
             draw_system_text contents, 0, y, content_w, LINE_HEIGHT, item, skin
           end
@@ -112,7 +109,6 @@ class RPG2k
       end
 
       def update
-        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @window.update
 
         # Holding Down/Up auto-repeats the cursor after the initial delay,
@@ -156,7 +152,6 @@ class RPG2k
             # instead.
             Audio.bgm_fade(800)
             play_system_se(SFX_DECISION)
-            # bc2cpp-reviewed: nomethod start_new_game -- dead fallback (ADR 0226)
             parent.start_new_game
           when 1  # Continue
             # A real player picks the slot themselves on the file-select list
@@ -207,7 +202,6 @@ class RPG2k
 
       def dispose
         @title.dispose
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @window.dispose
       end
 
@@ -294,7 +288,6 @@ class RPG2k
       # what provides, so the flag implies it. Guarded the same way as
       # #preview_map_id just above.
       def battle_troop
-        # bc2cpp-reviewed: nomethod headless_battle_troop -- dead fallback (ADR 0226)
         parent.headless_battle_troop
       rescue NameError
         nil
@@ -305,14 +298,12 @@ class RPG2k
       # needs the map up first, which New Game is what provides. Guarded the
       # same way as #preview_map_id/#battle_troop just above.
       def map_editor_flag?
-        # bc2cpp-reviewed: nomethod map_editor? -- dead fallback (ADR 0226)
         parent.map_editor?
       rescue NameError
         false
       end
 
       def chipset_editor_flag?
-        # bc2cpp-reviewed: nomethod chipset_editor? -- dead fallback (ADR 0226)
         parent.chipset_editor?
       rescue NameError
         false
@@ -339,7 +330,6 @@ class RPG2k
       # without a real parent (see scripts/rpg2k/scene_check.rb's
       # title_selector) answers false rather than raising.
       def continue_available?
-        # bc2cpp-reviewed: nomethod any_save_exists? -- dead fallback (ADR 0226)
         parent.any_save_exists?
       rescue NameError
         false
@@ -385,7 +375,6 @@ class RPG2k
 
       def refresh_cursor
         @window.cursor_rect =
-          # bc2cpp-reviewed: nomethod contents, nomethod width -- dead fallback (ADR 0226)
           Rect.new(0, @selected_index * LINE_HEIGHT, @window.contents.width,
                    LINE_HEIGHT)
       end

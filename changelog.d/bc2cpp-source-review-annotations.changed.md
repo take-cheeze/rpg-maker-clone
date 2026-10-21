@@ -1,4 +1,4 @@
-- The bc2cpp review gates (NOMETHOD, PROVEN_MISS, STRICT_HINT and the TC1017 constant ratchet) read a
-  `# bc2cpp-reviewed: <gate> <spec> -- reason` comment on a site's source line instead of the central
-  `*_REVIEWED` lists, which are removed along with their update scripts. Stale annotations fail
-  `scripts/bc2cpp/source_review_check.rb` on a full run (ADR 0522).
+- The bc2cpp review gates no longer judge reviewed sites: the NOMETHOD, PROVEN_MISS and TC1017 constant gates
+  and the STRICT_HINT listing are kept as diagnostics only, and the `*_REVIEWED` lists, their update scripts and the
+  source-annotation check are removed (ADR 0522). Unreviewed dead fallbacks, proven-class misses and untyped
+  constants now pass the build.

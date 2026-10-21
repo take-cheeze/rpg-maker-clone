@@ -79,19 +79,13 @@ class RPG2k
       ZOOM_MIN = 1
       ZOOM_MAX = 8
 
-      # bc2cpp-reviewed: constant RPG2k::Scene::MapViewer::PASSABLE_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       PASSABLE_COLOR = Color.new(64, 160, 64, 255)
-      # bc2cpp-reviewed: constant RPG2k::Scene::MapViewer::BLOCKED_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       BLOCKED_COLOR = Color.new(160, 48, 48, 255)
-      # bc2cpp-reviewed: constant RPG2k::Scene::MapViewer::UNKNOWN_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       UNKNOWN_COLOR = Color.new(96, 96, 96, 255)
       PLAYER_COLOR = Color.new(255, 255, 0, 255)
       EVENT_COLOR = Color.new(80, 200, 255, 255)
-      # bc2cpp-reviewed: constant RPG2k::Scene::MapViewer::CURSOR_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       CURSOR_COLOR = Color.new(255, 255, 255, 255)
-      # bc2cpp-reviewed: constant RPG2k::Scene::MapViewer::TEXT_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       TEXT_COLOR = Color.new(255, 255, 255, 255)
-      # bc2cpp-reviewed: constant RPG2k::Scene::MapViewer::HINT_COLOR -- read: untyped engine constant reviewed before the source-annotation migration (ADR 0491)
       HINT_COLOR = Color.new(200, 200, 200, 255)
 
       # `start_mode:` lets a caller that already knows it wants Edit (or
@@ -121,9 +115,7 @@ class RPG2k
       def initialize(parent, state, map: nil, start_mode: :pan, quit_on_close: false)
         super parent
         @state = state
-        # bc2cpp-reviewed: nomethod map -- dead fallback (ADR 0226)
         @map = map || state.map
-        # bc2cpp-reviewed: nomethod map -- dead fallback (ADR 0226)
         @live = @map.equal?(state.map)
         @quit_on_close = quit_on_close
         @chipset = build_chipset
@@ -158,7 +150,6 @@ class RPG2k
 
       def dispose
         @background.dispose if @background
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @window.dispose if @window
       end
 
@@ -256,7 +247,6 @@ class RPG2k
       # coordinate on a *different* map here, meaningless (and potentially out
       # of bounds) on this one.
       def cursor_start
-        # bc2cpp-reviewed: nomethod height, nomethod width, nomethod x, nomethod y -- dead fallback (ADR 0226)
         @live ? [@state.x, @state.y] : [@map.width / 2, @map.height / 2]
       end
 
@@ -288,20 +278,15 @@ class RPG2k
       # that ever multiplies by @zoom, to go from a tile coordinate to the
       # pixel one Bitmap#fill_rect/#draw_text want.
       def recompute_view
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @view_w = @contents.width / @zoom
-        # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
         @view_h = (@contents.height - HEADER_H - FOOTER_H) / @zoom
-        # bc2cpp-reviewed: nomethod height, nomethod width -- dead fallback (ADR 0226)
         @pannable = @map && (@map.width > @view_w || @map.height > @view_h)
       end
 
       def paint_cursor
         if @brush_layer == :lower
-          # bc2cpp-reviewed: nomethod set_lower -- dead fallback (ADR 0226)
           @map.set_lower(@cx, @cy, @brush)
         else
-          # bc2cpp-reviewed: nomethod set_upper -- dead fallback (ADR 0226)
           @map.set_upper(@cx, @cy, @brush)
         end
         @dirty = true
@@ -309,15 +294,12 @@ class RPG2k
       end
 
       def pick_brush
-        # bc2cpp-reviewed: nomethod lower, nomethod upper -- dead fallback (ADR 0226)
         @brush = @brush_layer == :lower ? @map.lower(@cx, @cy) : @map.upper(@cx, @cy)
         refresh
       end
 
       def save_to_disk
-        # bc2cpp-reviewed: nomethod sync_layers_to_unit -- dead fallback (ADR 0226)
         @map.sync_layers_to_unit
-        # bc2cpp-reviewed: nomethod id, nomethod map_path, nomethod unit -- dead fallback (ADR 0226)
         @map.unit.save_to(@parent.map_path(@map.id))
         @dirty = false
         refresh
@@ -329,9 +311,7 @@ class RPG2k
       # cursor is choosing a tile to inspect or warp to, not scrolling.
       def move_cursor
         moved = false
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         max_cx = @map.width - 1
-        # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
         max_cy = @map.height - 1
         if (Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && @cx.positive?
           @cx -= 1
@@ -367,15 +347,12 @@ class RPG2k
       # Direction 0 leaves the player's facing as it was, the same convention
       # Scene::ItemMenu/SkillMenu#queue_teleport use for their own warps.
       def teleport_to_cursor
-        # bc2cpp-reviewed: nomethod id, nomethod pending_teleport= -- dead fallback (ADR 0226)
         @state.pending_teleport = [@map.id, @cx, @cy, 0]
-        # bc2cpp-reviewed: nomethod pop_to_map -- dead fallback (ADR 0226)
         @parent.pop_to_map
       end
 
       def build_chipset
         return nil unless @map
-        # bc2cpp-reviewed: nomethod chipset_id -- dead fallback (ADR 0226)
         Game::ChipSet.new(@db, @map.chipset_id)
       rescue StandardError => e
         $stderr.puts "[RPG2k] map viewer chipset load failed, tiles shown as " \
@@ -407,13 +384,11 @@ class RPG2k
 
       def max_ox
         return 0 unless @map
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         [@map.width - @view_w, 0].max
       end
 
       def max_oy
         return 0 unless @map
-        # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
         [@map.height - @view_h, 0].max
       end
 
@@ -441,22 +416,18 @@ class RPG2k
       end
 
       def draw_header
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         @contents.font.color = TEXT_COLOR
         text = case @mode
                when :select then select_header_text
                when :edit then edit_header_text
                else player_header_text
                end
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, 0, @contents.width, HEADER_H, text
       end
 
       def player_header_text
         return 'No map loaded' unless @map
-        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         where = @live ? "x:#{@state.x} y:#{@state.y}" : '(browsing, not the live map)'
-        # bc2cpp-reviewed: nomethod height, nomethod id, nomethod width -- dead fallback (ADR 0226)
         "Map #{@map.id}  #{@map.width}x#{@map.height}  #{where}  zoom:#{@zoom}x"
       end
 
@@ -487,7 +458,6 @@ class RPG2k
       end
 
       def draw_footer
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         @contents.font.color = HINT_COLOR
         hint = case @mode
                when :select
@@ -516,14 +486,12 @@ class RPG2k
         return unless @map
         (0...@view_h).each do |vy|
           my = @oy + vy
-          # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
           break if my >= @map.height
           draw_tile_row(vy, my)
         end
       end
 
       def draw_tile_row(vy, my)
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         max_vx = [@view_w, @map.width - @ox].min
         run_start = 0
         run_color = nil
@@ -544,7 +512,6 @@ class RPG2k
 
       def tile_color(x, y)
         return UNKNOWN_COLOR unless @chipset
-        # bc2cpp-reviewed: nomethod landable_tile?, nomethod lower, nomethod upper -- dead fallback (ADR 0226)
         passable = @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
         passable ? PASSABLE_COLOR : BLOCKED_COLOR
       end
@@ -563,14 +530,12 @@ class RPG2k
       # until the map is re-entered.
       def each_event_position
         return unless @map
-        # bc2cpp-reviewed: nomethod unit -- dead fallback (ADR 0226)
         events = @map.unit[:events]
         return unless events
         # Only the live map's own events can have wandered from their authored
         # spawn -- Game::State#map_event_positions records the *current* map's
         # roaming, not every map's, so it says nothing about a map merely being
         # browsed here (see @live's own comment).
-        # bc2cpp-reviewed: nomethod map_event_positions -- dead fallback (ADR 0226)
         positions = @live ? (@state.map_event_positions || {}) : {}
         events.each do |id, ev|
           pos = positions[id]
@@ -585,7 +550,6 @@ class RPG2k
       # map the player is really on, if any.
       def draw_player
         return unless @live
-        # bc2cpp-reviewed: nomethod x, nomethod y -- dead fallback (ADR 0226)
         mark(@state.x, @state.y, PLAYER_COLOR)
       end
 

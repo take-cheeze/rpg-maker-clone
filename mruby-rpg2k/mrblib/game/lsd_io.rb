@@ -74,7 +74,6 @@ module Game
       timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
 
-      # bc2cpp-reviewed: nomethod leader -- dead fallback (ADR 0226)
       leader = @party.leader
       members = @party.actors
       # Chunk 100 (the file-select screen's own title/preview data) used to be
@@ -94,11 +93,8 @@ module Game
       title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
       title[1] = timestamp.to_f
       if leader
-        # bc2cpp-reviewed: strict_hint ivar_accessor name -- reviewed before the source-annotation migration (ADR 0419)
         title[11] = leader.name
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         title[12] = leader.level
-        # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
         title[13] = leader.hp
       end
       # Up to four party faces fill the file-screen portrait slots (21/22 ..
@@ -109,13 +105,11 @@ module Game
       members.each_index do |i|
         break if i >= face_fields.size
         nf, xf = face_fields[i]
-        # bc2cpp-reviewed: nomethod faceset_name -- dead fallback (ADR 0226)
         title[nf] = members[i].faceset_name
         # Elided at its own default (0) -- confirmed against a genuine
         # kk1.12 save under wine, whose leader's own FaceSet index was 0
         # and left field 22 (this member's own index slot) absent rather
         # than an explicit 0.
-        # bc2cpp-reviewed: nomethod faceset_index -- dead fallback (ADR 0226)
         idx = members[i].faceset_index
         title[xf] = idx if idx != 0
       end
@@ -210,16 +204,12 @@ module Game
       # SAVE_PARTY_ACTOR's schema.rb comment). Continuing a save never reads
       # this pair back (see .from_lsd's own citation) -- it is write-only
       # parity with what genuine RPG_RT itself puts here, not a restore path.
-      # bc2cpp-reviewed: nomethod charset_name -- dead fallback (ADR 0226)
       if leader && leader.charset_name && !leader.charset_name.empty?
-        # bc2cpp-reviewed: nomethod charset_name -- dead fallback (ADR 0226)
         hero[73] = leader.charset_name
-        # bc2cpp-reviewed: nomethod charset_index -- dead fallback (ADR 0226)
         hero[74] = leader.charset_index || 0
       end
       # Native camera coordinates are hero-relative sixteenths of pixels.
       # Right/down camera motion decreases them; see ADR 0400/0401.
-      # bc2cpp-reviewed: nomethod pan_save_data -- dead fallback (ADR 0226)
       px, py, tx, ty, step, locked = @screen.pan_save_data
       hero[111] = locked ? 0 : 1
       hero[112] = 2304 - (px * 16).round if px != 0
@@ -256,13 +246,9 @@ module Game
       { 105 => :boat, 106 => :ship, 107 => :airship }.each do |chunk, type|
         v = @vehicles[type]
         mv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
-        # bc2cpp-reviewed: nomethod map_id -- dead fallback (ADR 0226)
         mv[11] = v.map_id
-        # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
         mv[12] = v.x
-        # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
         mv[13] = v.y
-        # bc2cpp-reviewed: nomethod direction -- dead fallback (ADR 0226)
         dir_row = CharSet::DIR_ROW[v.direction] || 2
         mv[21] = dir_row
         mv[22] = dir_row
@@ -271,11 +257,8 @@ module Game
         mv[33] = 1
         mv[35] = 0
         mv[37] = Vehicle::DEFAULT_MOVE_SPEED[type]
-        # bc2cpp-reviewed: nomethod charset_name -- dead fallback (ADR 0226)
         if v.charset_name && !v.charset_name.empty?
-          # bc2cpp-reviewed: nomethod charset_name -- dead fallback (ADR 0226)
           mv[73] = v.charset_name
-          # bc2cpp-reviewed: nomethod charset_index -- dead fallback (ADR 0226)
           idx = v.charset_index || 0
           mv[74] = idx if idx != 0
         elsif db && LCF.field?(db, :system) && db[:system]
@@ -356,7 +339,6 @@ module Game
       # otherwise-default index/side/flip -- wrote only field 51 and left
       # 52-54 absent, confirming the four fields are gated *independently*,
       # not as one all-or-nothing group keyed on "is a face shown at all".
-      # bc2cpp-reviewed: nomethod face? -- dead fallback (ADR 0226)
       sys[51] = mc.face_name if mc.face?
       sys[52] = mc.face_index if mc.face_index != 0
       sys[53] = 1 if mc.face_right
@@ -465,11 +447,8 @@ module Game
         begin
           props = LCF.field?(map_tree, :map_properties) ? map_tree[:map_properties] : nil
           terrain_name = ''
-          # bc2cpp-reviewed: nomethod in_bounds? -- dead fallback (ADR 0226)
           if LCF.field?(db, :chipset) && LCF.field?(db, :terrain) && self.map.in_bounds?(@x, @y)
-            # bc2cpp-reviewed: nomethod chipset_id -- dead fallback (ADR 0226)
             chipset = ChipSet.new(db, self.map.chipset_id)
-            # bc2cpp-reviewed: nomethod lower, nomethod terrain -- dead fallback (ADR 0226)
             tid = chipset.terrain(self.map.lower(@x, @y))
             row = db[:terrain][tid]
             terrain_name = row[:background_name].to_s if row && LCF.field?(row, :background_name)
@@ -523,13 +502,11 @@ module Game
         # against a save whose leader/party actually had been renamed
         # (Nepheshel Save01) while silently diverging from genuine RPG_RT
         # for every other, untouched roster entry.
-        # bc2cpp-reviewed: nomethod name, nomethod name_changed? -- dead fallback (ADR 0226)
         e[1] = a.name_changed? ? a.name : "\x01"
         # Field 2 is the actor's current title, gated on #title_changed? the
         # same way -- confirmed against liblcf's SaveActor field table (see
         # SAVE_PARTY_ACTOR's comment in schema.rb) for the field id, and
         # against the same genuine kk1.12 save for the placeholder gating.
-        # bc2cpp-reviewed: nomethod title, nomethod title_changed? -- dead fallback (ADR 0226)
         e[2] = a.title_changed? ? a.title : "\x01"
         # A live Change Sprite Association (10630) override -- fields 11
         # (sprite_name) / 12 (sprite_id) / 13 (sprite_transparent), gated on
@@ -539,28 +516,17 @@ module Game
         # that pinned these fields down, and for why chunk 104's own hero-
         # record mirror (fields 73/74) is *not* what a genuine Continue
         # restores the sprite from.
-        # bc2cpp-reviewed: nomethod sprite_changed? -- dead fallback (ADR 0226)
         if a.sprite_changed?
-          # bc2cpp-reviewed: nomethod charset_name -- dead fallback (ADR 0226)
           e[11] = a.charset_name || ''
-          # bc2cpp-reviewed: nomethod charset_index -- dead fallback (ADR 0226)
           e[12] = a.charset_index || 0
-          # bc2cpp-reviewed: nomethod transparent -- dead fallback (ADR 0226)
           e[13] = 3 if a.transparent
         end
-        # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
         e[31] = a.level
-        # bc2cpp-reviewed: nomethod exp -- dead fallback (ADR 0226)
         e[32] = a.exp
-        # bc2cpp-reviewed: nomethod skills -- dead fallback (ADR 0226)
         e[51] = a.skills.size
-        # bc2cpp-reviewed: nomethod skills -- dead fallback (ADR 0226)
         e[52] = a.skills
-        # bc2cpp-reviewed: nomethod equipment -- dead fallback (ADR 0226)
         e[61] = a.equipment
-        # bc2cpp-reviewed: nomethod hp -- dead fallback (ADR 0226)
         e[71] = a.hp
-        # bc2cpp-reviewed: nomethod mp -- dead fallback (ADR 0226)
         e[72] = a.mp
         # Field 82 is a dense array, one slot per database state id
         # (`total_state_count` long), not a sparse list of only the
@@ -569,10 +535,8 @@ module Game
         # genuine save, the same "container present, contents sparse"
         # convention chunk 103's own 50-slot picture range already
         # established.
-        # bc2cpp-reviewed: nomethod total_state_count -- dead fallback (ADR 0226)
         n = a.total_state_count
         dense = Array.new(n, 0)
-        # bc2cpp-reviewed: nomethod states -- dead fallback (ADR 0226)
         a.states.each { |sid| dense[sid - 1] = 1 if sid >= 1 && sid <= n }
         e[81] = n
         e[82] = dense
@@ -582,7 +546,6 @@ module Game
         # value liblcf's own field default declares: `class_id != -1`
         # "changed at all", not merely "class_id > 0" -- Change Class to "no class"
         # (id 0) is itself a real, persisted change.
-        # bc2cpp-reviewed: nomethod class_changed?, nomethod class_id -- dead fallback (ADR 0226)
         e[90] = a.class_id if a.class_changed?
         # Field 80 (battle_commands) is written unconditionally -- liblcf's
         # own generator/csv/fields.csv declares its default as the literal
@@ -595,35 +558,26 @@ module Game
         # #battle_commands_changed? (matching a reference implementation's
         # own flag of the same name),
         # the actual "was this ever overridden" signal `.from_lsd` reads.
-        # bc2cpp-reviewed: nomethod battle_commands, nomethod battle_commands_changed? -- dead fallback (ADR 0226)
         e[80] = a.battle_commands_changed? ? a.battle_commands : BATTLE_COMMANDS_DEFAULT
-        # bc2cpp-reviewed: nomethod battle_commands_changed? -- dead fallback (ADR 0226)
         e[83] = true if a.battle_commands_changed?
         # RPG2003 battle row (0x5B/91, liblcf's `ChunkSaveActor::row`) --
         # only written off the front-row default, the same eliding-writer
         # convention `class_id`/`battle_commands` follow above, so an
         # RPG2000 save (or a 2003 save whose party never touched Row) never
         # gains the field.
-        # bc2cpp-reviewed: nomethod battle_row -- dead fallback (ADR 0226)
         e[91] = a.battle_row if a.battle_row != Actor::ROW_FRONT
         # A live mirror of the actor's own current class/database-derived
         # combat toggles -- see SAVE_PARTY_ACTOR's own schema.rb comment.
-        # bc2cpp-reviewed: nomethod double_hand? -- dead fallback (ADR 0226)
         e[92] = true if a.double_hand?
-        # bc2cpp-reviewed: nomethod equipment_fixed? -- dead fallback (ADR 0226)
         e[93] = true if a.equipment_fixed?
-        # bc2cpp-reviewed: nomethod force_ai? -- dead fallback (ADR 0226)
         e[94] = true if a.force_ai?
-        # bc2cpp-reviewed: nomethod strong_defence? -- dead fallback (ADR 0226)
         e[95] = true if a.strong_defence?
         # A live Change Parameters edit (#change_param) survives Save/
         # Continue too -- see SAVE_PARTY_ACTOR's own comment for the
         # genuine-RPG_RT verification. `@base_raw` is the curve plus this
         # modifier with no equipment folded in, so subtracting the curve
         # back out isolates the same delta #change_param itself computes.
-        # bc2cpp-reviewed: nomethod base_raw -- dead fallback (ADR 0226)
         raw = a.base_raw
-        # bc2cpp-reviewed: nomethod base_stats, nomethod level -- dead fallback (ADR 0226)
         curve = a.base_stats(a.level)
         # hp_mod/sp_mod (33/34) are written unconditionally, delta 0
         # included -- confirmed against a genuine kk1.12 save under wine,
@@ -638,7 +592,6 @@ module Game
           delta = raw[i + 2] - curve[i + 2]
           e[field] = delta if delta != 0
         end
-        # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
         actors[a.id] = e
       end
       save[108] = actors
@@ -667,7 +620,6 @@ module Game
       # Weather belongs to SaveScreen; the complete pan state lives on
       # SavePartyLocation rather than these screen translation fields.
       scr = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SCREEN })
-      # bc2cpp-reviewed: nomethod tint_save_data -- dead fallback (ADR 0226)
       finish, current, frames = @screen.tint_save_data
       scr[1] = finish[0] if finish[0] != Screen::NEUTRAL
       scr[2] = finish[1] if finish[1] != Screen::NEUTRAL
@@ -746,48 +698,31 @@ module Game
           # from an id that was never shown at all (which this loop leaves
           # as a fully field-less placeholder, `p` nil, matching cycle #154's
           # own finding unchanged).
-          # bc2cpp-reviewed: nomethod name -- dead fallback (ADR 0226)
           e[1] = p.name if p.shown?
-          # bc2cpp-reviewed: nomethod fixed_to_map -- dead fallback (ADR 0226)
           e[6] = true if p.fixed_to_map
-          # bc2cpp-reviewed: nomethod use_transparent_color -- dead fallback (ADR 0226)
           e[9] = true if p.use_transparent_color
-          # bc2cpp-reviewed: nomethod show_x -- dead fallback (ADR 0226)
           e[2] = p.show_x
-          # bc2cpp-reviewed: nomethod show_y -- dead fallback (ADR 0226)
           e[3] = p.show_y
-          # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
           e[4] = p.x
-          # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
           e[5] = p.y
           e[7] = p.zoom if p.zoom != 100
-          # bc2cpp-reviewed: nomethod to_h -- dead fallback (ADR 0226)
           cur_trans = 100.0 - Game.clamp(p.to_h[:opacity], 0, 255) * 100.0 / 255.0
           e[8] = cur_trans if cur_trans != 0
           # Field 18 (current_bot_trans, RPG2003-only) has no independent
           # value of its own here -- see SAVE_PICTURE's own schema.rb comment
           # -- so it mirrors field 8 (top == bottom).
           e[18] = cur_trans if cur_trans != 0
-          # bc2cpp-reviewed: nomethod red -- dead fallback (ADR 0226)
           e[11] = p.red if p.red != 100
-          # bc2cpp-reviewed: nomethod green -- dead fallback (ADR 0226)
           e[12] = p.green if p.green != 100
-          # bc2cpp-reviewed: nomethod blue -- dead fallback (ADR 0226)
           e[13] = p.blue if p.blue != 100
           e[14] = p.saturation if p.saturation != 100
           moving = p.moving?
-          # bc2cpp-reviewed: nomethod x -- dead fallback (ADR 0226)
           fx = moving ? p.finish_x : p.x
-          # bc2cpp-reviewed: nomethod y -- dead fallback (ADR 0226)
           fy = moving ? p.finish_y : p.y
           fzoom = moving ? p.finish_zoom : p.zoom
-          # bc2cpp-reviewed: nomethod opacity -- dead fallback (ADR 0226)
           fopacity = moving ? p.finish_opacity : p.opacity
-          # bc2cpp-reviewed: nomethod red -- dead fallback (ADR 0226)
           fred = moving ? p.finish_red : p.red
-          # bc2cpp-reviewed: nomethod green -- dead fallback (ADR 0226)
           fgreen = moving ? p.finish_green : p.green
-          # bc2cpp-reviewed: nomethod blue -- dead fallback (ADR 0226)
           fblue = moving ? p.finish_blue : p.blue
           fsat = moving ? p.finish_saturation : p.saturation
           e[31] = fx
@@ -814,7 +749,6 @@ module Game
       # comment. A genuine RPG_RT.exe requires both fields; writing only the
       # count (or, as this used to, cramming the roster into field 1 alone
       # and never writing field 2 at all) crashes it outright on load.
-      # bc2cpp-reviewed: nomethod id -- dead fallback (ADR 0226)
       party_ids = @party.actors.map { |a| a.id }
       inv[1] = party_ids.size
       inv[2] = party_ids
@@ -840,21 +774,13 @@ module Game
       # only at the literal never-touched value (not "close enough to
       # start") matches. #to_lsd previously wrote every one unconditionally.
       t1, t2 = @timers[0], @timers[1]
-      # bc2cpp-reviewed: nomethod frames -- dead fallback (ADR 0226)
       inv[23] = t1.frames if t1.frames != 0
-      # bc2cpp-reviewed: nomethod running -- dead fallback (ADR 0226)
       inv[24] = true if t1.running
-      # bc2cpp-reviewed: nomethod visible -- dead fallback (ADR 0226)
       inv[25] = true if t1.visible
-      # bc2cpp-reviewed: nomethod in_battle -- dead fallback (ADR 0226)
       inv[26] = true if t1.in_battle
-      # bc2cpp-reviewed: nomethod frames -- dead fallback (ADR 0226)
       inv[27] = t2.frames if t2.frames != 0
-      # bc2cpp-reviewed: nomethod running -- dead fallback (ADR 0226)
       inv[28] = true if t2.running
-      # bc2cpp-reviewed: nomethod visible -- dead fallback (ADR 0226)
       inv[29] = true if t2.visible
-      # bc2cpp-reviewed: nomethod in_battle -- dead fallback (ADR 0226)
       inv[30] = true if t2.in_battle
       inv[32] = @battle_count if @battle_count != 0
       inv[33] = @defeat_count if @defeat_count != 0
@@ -931,9 +857,7 @@ module Game
         if self.map
           hero_px = @x * TILE + TILE / 2
           hero_py = @y * TILE + TILE / 2
-          # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
           cam_x = Game.camera_offset(hero_px, SCREEN_W, self.map.width * TILE)
-          # bc2cpp-reviewed: nomethod height -- dead fallback (ADR 0226)
           cam_y = Game.camera_offset(hero_py, SCREEN_H, self.map.height * TILE)
           mapev[1] = cam_x * LCF::Schema::SCROLL_UNITS_PER_PIXEL
           mapev[2] = cam_y * LCF::Schema::SCROLL_UNITS_PER_PIXEL
@@ -1051,7 +975,6 @@ module Game
         return frames if frames
       end
       # Old engine saves wrapped the native execution state one extra time.
-      # bc2cpp-reviewed: nomethod to_lcf -- dead fallback (ADR 0226)
       legacy = LCF::Array1D.new(row.to_lcf, { elements: LCF::Schema::SAVE_LEGACY_FOREGROUND_EVENT })
       read_event_exec_frames(legacy[:execution_state])
     end
@@ -1275,11 +1198,8 @@ module Game
           # field default) means "never changed", not "class 0" -- Change
           # Class to "no class" is itself a real, persisted change.
           cid = sa[:class_id]
-          # bc2cpp-reviewed: nomethod restore_class -- dead fallback (ADR 0226)
           actor.restore_class(cid) if cid && cid != -1
-          # bc2cpp-reviewed: nomethod set_level -- dead fallback (ADR 0226)
           actor.set_level(sa[:level]) if sa[:level]
-          # bc2cpp-reviewed: nomethod exp= -- dead fallback (ADR 0226)
           actor.exp = sa[:exp] if sa[:exp]
           # A live Change Parameters edit (#change_param) -- #set_level just
           # above re-seeds @base/@base_raw from the level-derived baseline,
@@ -1296,14 +1216,10 @@ module Game
                   sa[:attack_mod] || 0, sa[:defense_mod] || 0,
                   sa[:spirit_mod] || 0, sa[:agility_mod] || 0]
           if mods.any? { |m| m != 0 }
-            # bc2cpp-reviewed: nomethod base_stats, nomethod level -- dead fallback (ADR 0226)
             curve = actor.base_stats(actor.level)
-            # bc2cpp-reviewed: nomethod restore_base -- dead fallback (ADR 0226)
             actor.restore_base(Array.new(curve.size) { |i| curve[i] + mods[i] })
           end
-          # bc2cpp-reviewed: nomethod equip -- dead fallback (ADR 0226)
           actor.equip(sa[:equipment]) if sa[:equipment]
-          # bc2cpp-reviewed: nomethod skills= -- dead fallback (ADR 0226)
           actor.skills = sa[:skills] if sa[:skills]
           # sa.states is the same dense, database-sized array #to_lsd now
           # writes (see Actor#total_state_count's own citation) -- a
@@ -1313,7 +1229,6 @@ module Game
           if sa[:states]
             ids = []
             sa[:states].each_index { |i| ids << (i + 1) if sa[:states][i] && sa[:states][i] != 0 }
-            # bc2cpp-reviewed: nomethod states= -- dead fallback (ADR 0226)
             actor.states = ids
           end
           # A live Change Battle Commands (or a Change Class, which also
@@ -1322,13 +1237,11 @@ module Game
           # "the field is
           # present", since an empty list is schema.rb's own declared
           # default rather than a real Change Battle Commands to nothing.
-          # bc2cpp-reviewed: nomethod battle_commands= -- dead fallback (ADR 0226)
           actor.battle_commands = sa[:battle_commands] if sa[:changed_battle_commands]
           # RPG2003 battle row (0x5B/91) -- the schema default (0/front)
           # restores the same as never having touched it, so no changed-flag
           # gating is needed the way battle_commands' own nil-vs-empty
           # ambiguity requires above.
-          # bc2cpp-reviewed: nomethod battle_row= -- dead fallback (ADR 0226)
           actor.battle_row = sa[:row] if LCF.field?(sa, :row)
           # A Change Actor Name override on *any* roster member, not just the
           # leader (whose name chunk 100's title also carries below). ADR
@@ -1347,7 +1260,6 @@ module Game
           # title -- so an empty string is applied, unlike actor_name above;
           # only the reserve-actor placeholder byte is skipped.
           tt = sa[:title]
-          # bc2cpp-reviewed: nomethod title= -- dead fallback (ADR 0226)
           actor.title = tt if tt && tt != "\x01"
           # A live Change Sprite Association override (chunk 108 fields
           # 11/12/13) -- what genuine RPG_RT.exe itself restores the on-map
@@ -1359,9 +1271,7 @@ module Game
           # writes it under; an absent field leaves the actor's own database
           # default charset (#initialize) untouched.
           sn = sa[:sprite_name]
-          # bc2cpp-reviewed: nomethod set_charset -- dead fallback (ADR 0226)
           actor.set_charset(sn, sa[:sprite_id] || 0) if sn
-          # bc2cpp-reviewed: nomethod transparent= -- dead fallback (ADR 0226)
           actor.transparent = (sa[:sprite_transparent] || 0) != 0 if sn
         end
         hp[aid] = sa[:hp] if sa[:hp]
@@ -1412,11 +1322,8 @@ module Game
       state.player_through = (hero[:through] || false) ? true : false
       # Vehicle locations (chunks 105 boat / 106 ship / 107 airship), each a
       # SAVE_MOVABLE; an absent chunk leaves that vehicle unplaced.
-      # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
       state.vehicle(:boat).load_movable(save[:boat])
-      # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
       state.vehicle(:ship).load_movable(save[:ship])
-      # bc2cpp-reviewed: nomethod vehicle -- dead fallback (ADR 0226)
       state.vehicle(:airship).load_movable(save[:airship])
       # Chunk 110 (SAVE_TARGET): every Set Teleport Target/Set Escape Target
       # destination, the same shape #to_lsd writes -- see that method's own
@@ -1511,7 +1418,6 @@ module Game
         sys[:battle_start_erase_transition], sys[:battle_start_show_transition],
         sys[:battle_end_erase_transition], sys[:battle_end_show_transition]
       ]
-      # bc2cpp-reviewed: nomethod seed_screen_transitions -- dead fallback (ADR 0226)
       state.seed_screen_transitions(db)
       # System windowskin / font override; an empty graphic means "use the
       # database default" (left unset).
@@ -1534,18 +1440,13 @@ module Game
       # disagree the real leader can be found in the roster by the title's
       # cached name and promoted, rather than cosmetically relabelled.
       title = save[100]
-      # bc2cpp-reviewed: nomethod leader -- dead fallback (ADR 0226)
       if title && party.leader
         nm = title[:hero_name]
-        # bc2cpp-reviewed: nomethod leader, strict_hint ivar_accessor name -- dead fallback (ADR 0226)
         if nm && !nm.empty? && nm != party.leader.name
-          # bc2cpp-reviewed: nomethod all -- dead fallback (ADR 0226)
           real_leader = party.roster.all.find { |a| a.name == nm }
           if real_leader
-            # bc2cpp-reviewed: nomethod promote_to_leader -- dead fallback (ADR 0226)
             party.promote_to_leader(real_leader)
           else
-            # bc2cpp-reviewed: nomethod leader, strict_hint ivar_accessor name= -- dead fallback (ADR 0226)
             party.leader.name = nm
           end
         end
@@ -1591,7 +1492,6 @@ module Game
                                     scr[:tint_finish_blue], scr[:tint_finish_sat]],
                                    [scr[:tint_current_red], scr[:tint_current_green],
                                     scr[:tint_current_blue], scr[:tint_current_sat]],
-                                   # bc2cpp-reviewed: nomethod restore_tint -- dead fallback (ADR 0226)
                                    scr[:tint_time_left])
         state.weather.set(scr[:weather], scr[:weather_strength])
       end
@@ -1615,21 +1515,13 @@ module Game
       # Both Timer Operation countdowns (inventory chunk 109 fields 23-30); a
       # save written before this landed simply omits them, leaving the fresh
       # `Timer.new` defaults #initialize already seeded in place.
-      # bc2cpp-reviewed: nomethod frames=, nomethod timer -- dead fallback (ADR 0226)
       state.timer(0).frames = inv[:timer1_frames] unless inv[:timer1_frames].nil?
-      # bc2cpp-reviewed: nomethod running=, nomethod timer -- dead fallback (ADR 0226)
       state.timer(0).running = inv[:timer1_active] unless inv[:timer1_active].nil?
-      # bc2cpp-reviewed: nomethod timer, nomethod visible= -- dead fallback (ADR 0226)
       state.timer(0).visible = inv[:timer1_visible] unless inv[:timer1_visible].nil?
-      # bc2cpp-reviewed: nomethod in_battle=, nomethod timer -- dead fallback (ADR 0226)
       state.timer(0).in_battle = inv[:timer1_battle] unless inv[:timer1_battle].nil?
-      # bc2cpp-reviewed: nomethod frames=, nomethod timer -- dead fallback (ADR 0226)
       state.timer(1).frames = inv[:timer2_frames] unless inv[:timer2_frames].nil?
-      # bc2cpp-reviewed: nomethod running=, nomethod timer -- dead fallback (ADR 0226)
       state.timer(1).running = inv[:timer2_active] unless inv[:timer2_active].nil?
-      # bc2cpp-reviewed: nomethod timer, nomethod visible= -- dead fallback (ADR 0226)
       state.timer(1).visible = inv[:timer2_visible] unless inv[:timer2_visible].nil?
-      # bc2cpp-reviewed: nomethod in_battle=, nomethod timer -- dead fallback (ADR 0226)
       state.timer(1).in_battle = inv[:timer2_battle] unless inv[:timer2_battle].nil?
       # Step counter and battle win/defeat/escape/victory tallies (inventory
       # chunk 109 fields 32-35/42); a save written before this landed simply
@@ -1832,7 +1724,6 @@ module Game
                                saturation: moving ? pic[:current_tone_saturation] : pic[:tone_saturation],
                                fixed_to_map: pic[:fixed_to_map],
                                use_transparent_color: pic[:use_transparent_color])
-        # bc2cpp-reviewed: nomethod erase_picture -- dead fallback (ADR 0226)
         state.erase_picture(id) if pic[:name].nil? || pic[:name].empty?
         next unless moving
         finish_trans = pic[:transparency]
@@ -1840,7 +1731,6 @@ module Game
                            pic[:zoom],
                            finish_trans ? Game.trans_to_opacity(finish_trans) : 255,
                            pic[:tone_red], pic[:tone_green], pic[:tone_blue],
-                           # bc2cpp-reviewed: nomethod move_picture -- dead fallback (ADR 0226)
                            pic[:tone_saturation], time_left)
       end
     end

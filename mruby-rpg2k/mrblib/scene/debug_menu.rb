@@ -98,7 +98,6 @@ class RPG2k
         # current map (so C still opens straight onto it unchanged, same as
         # before this existed), but Up/Down/L/R (see #update_map_page) can
         # step it to browse and open any other map's Scene::MapViewer instead.
-        # bc2cpp-reviewed: nomethod id, nomethod map -- dead fallback (ADR 0226)
         @map_id = @state.map ? @state.map.id : 1
         @editor = nil
         build_window
@@ -107,11 +106,8 @@ class RPG2k
       def dispose
         close_editor
         @background.dispose if @background
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @window.dispose if @window
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @left_window.dispose if @left_window
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @right_window.dispose if @right_window
       end
 
@@ -225,7 +221,6 @@ class RPG2k
 
       def max_id
         table = @mode == :switch ? db[:switch] : db[:variable]
-        # bc2cpp-reviewed: nomethod switches, nomethod variables -- dead fallback (ADR 0226)
         values = @mode == :switch ? @state.switches : @state.variables
         ids = [FLOOR_ID]
         # A project that never named a switch/variable in the editor (or, in
@@ -289,14 +284,11 @@ class RPG2k
       # is what's on screen next, the same way opening the Map Editor's
       # teleport does.
       def play_animation
-        # bc2cpp-reviewed: nomethod map_scene -- dead fallback (ADR 0226)
         scene = @parent.respond_to?(:map_scene) ? @parent.map_scene : nil
         return unless scene.respond_to?(:build_animation)
         target = scene.anim_target(SCREEN_W / 2, SCREEN_H / 2, height: nil, index: nil,
                                                                 flash_target: nil)
-        # bc2cpp-reviewed: nomethod map_animation= -- dead fallback (ADR 0226)
         scene.map_animation = scene.build_animation(@anim_id, [target], true)
-        # bc2cpp-reviewed: nomethod pop_to_map -- dead fallback (ADR 0226)
         @parent.pop_to_map
       end
 
@@ -310,7 +302,6 @@ class RPG2k
         end
         id = current_id
         if @mode == :switch
-          # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
           @state.switches[id] = !@state.switches[id]
           refresh
         else
@@ -327,14 +318,11 @@ class RPG2k
       # broken chipset load in Scene::MapViewer itself degrades rather than
       # raising into the debug menu.
       def open_map_viewer
-        # bc2cpp-reviewed: nomethod id, nomethod map -- dead fallback (ADR 0226)
         if @state.map && @map_id == @state.map.id
-          # bc2cpp-reviewed: nomethod map -- dead fallback (ADR 0226)
           @parent.push Scene::MapViewer.new(@parent, @state, map: @state.map)
           return
         end
         map = begin
-          # bc2cpp-reviewed: nomethod load_map -- dead fallback (ADR 0226)
           @parent.load_map(@map_id)
         rescue StandardError => e
           $stderr.puts "[RPG2k] map ##{@map_id} could not be loaded: #{e.message}"
@@ -359,9 +347,7 @@ class RPG2k
       # it stays exactly as it already was rather than guessing the bracket
       # applies there too.
       def row_value_text(id)
-        # bc2cpp-reviewed: nomethod variables -- dead fallback (ADR 0226)
         return @state.variables[id].to_s unless @mode == :switch
-        # bc2cpp-reviewed: nomethod switches -- dead fallback (ADR 0226)
         "[ #{@state.switches[id] ? 'ON' : 'OFF'} ]"
       end
 
@@ -410,7 +396,6 @@ class RPG2k
         @right_window.visible = switch_or_variable
         return refresh_switch_or_variable if switch_or_variable
         @contents.clear
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         @contents.font.color = Color.new(255, 255, 255, 255)
         return refresh_map_page if @mode == :map
         return refresh_chipset_page if @mode == :chipset
@@ -425,9 +410,7 @@ class RPG2k
       def refresh_switch_or_variable
         @left_contents.clear
         @right_contents.clear
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         @left_contents.font.color = Color.new(255, 255, 255, 255)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         @right_contents.font.color = Color.new(255, 255, 255, 255)
         prefix = @mode == :switch ? 'S' : 'V'
         screen_first = @page * SCREEN_SIZE + 1
@@ -437,7 +420,6 @@ class RPG2k
           block_last = [block_first + BLOCK_SIZE - 1, max_id].min
           y = b * LINE_H
           label = "#{prefix}[ #{id_label(block_first)}-#{id_label(block_last)} ]"
-          # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
           @left_contents.draw_text 0, y, @left_contents.width, LINE_H, label
         end
         block_first = screen_first + @block * BLOCK_SIZE
@@ -446,7 +428,6 @@ class RPG2k
           break if id > max_id
           y = r * LINE_H
           @right_contents.draw_text 0, y, NAME_COL_W, LINE_H, "#{id_label(id)}:#{row_name(id)}"
-          # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
           @right_contents.draw_text NAME_COL_W, y, @right_contents.width - NAME_COL_W, LINE_H,
                                     row_value_text(id), 2
         end
@@ -462,18 +443,13 @@ class RPG2k
       # the Switch/Variable pages last left behind.
       def refresh_map_page
         @window.cursor_rect = Rect.new(0, 0, 0, 0)
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, 0, @contents.width, LINE_H, 'Map'
-        # bc2cpp-reviewed: nomethod height, nomethod id, nomethod map, nomethod width, nomethod x, nomethod y -- dead fallback (ADR 0226)
         info = @state.map ? "Current: Map #{@state.map.id}  #{@state.map.width}x#{@state.map.height}  " \
                             "x:#{@state.x} y:#{@state.y}" : 'No map loaded'
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, LINE_H, @contents.width, LINE_H, info
         select_line = "Selected: ##{@map_id} #{map_name(@map_id)}"
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, LINE_H * 2, @contents.width, LINE_H, select_line
         hint = 'Up/Down:+-1  L/R:+-10  C:Open'
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, LINE_H * 3, @contents.width, LINE_H, hint
       end
 
@@ -489,25 +465,18 @@ class RPG2k
 
       def refresh_chipset_page
         @window.cursor_rect = Rect.new(0, 0, 0, 0)
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, 0, @contents.width, LINE_H, 'Chipset'
-        # bc2cpp-reviewed: nomethod chipset_id, nomethod map -- dead fallback (ADR 0226)
         id = @state.map ? @state.map.chipset_id : 1
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, LINE_H, @contents.width, LINE_H, "Current map's chipset: ##{id}"
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, LINE_H * 2, @contents.width, LINE_H, 'C: open chipset editor'
       end
 
       def refresh_animation_page
         @window.cursor_rect = Rect.new(0, 0, 0, 0)
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, 0, @contents.width, LINE_H, 'Animation'
         id_line = "##{@anim_id} #{animation_name(@anim_id)}"
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, LINE_H, @contents.width, LINE_H, id_line
         hint = 'Up/Down:+-1  L/R:+-10  C:Play'
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         @contents.draw_text 0, LINE_H * 2, @contents.width, LINE_H, hint
       end
 
@@ -537,13 +506,11 @@ class RPG2k
       # a genuine RPG2000 database (the same guard Game::Actor#rpg2003?/
       # Game::Party#rpg2003? already use for their own @db).
       def editor_digits
-        # bc2cpp-reviewed: nomethod party, nomethod rpg2003? -- dead fallback (ADR 0226)
         rpg2003 = @state.party.respond_to?(:rpg2003?) && @state.party.rpg2003?
         rpg2003 ? EDITOR_DIGITS_2K3 : EDITOR_DIGITS_2K
       end
 
       def open_editor(id)
-        # bc2cpp-reviewed: nomethod variables -- dead fallback (ADR 0226)
         v = @state.variables[id]
         @editor = { id: id, negative: v.negative?, digits: digits_of(v.abs), cursor: 0 }
         build_editor_window
@@ -581,7 +548,6 @@ class RPG2k
       def refresh_editor
         c = @editor_contents
         c.clear
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         sign = @editor[:negative] ? '-' : '+'
         c.draw_text 0, 0, c.width, LINE_H, sign + @editor[:digits].join, 1
@@ -592,7 +558,6 @@ class RPG2k
         if Input.trigger?(Input::B)
           close_editor
         elsif Input.trigger?(Input::C)
-          # bc2cpp-reviewed: nomethod variables -- dead fallback (ADR 0226)
           @state.variables[@editor[:id]] = editor_value
           close_editor
           refresh
@@ -614,7 +579,6 @@ class RPG2k
 
       def close_editor
         return unless @editor
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @editor_window.dispose if @editor_window
         @editor_window = nil
         @editor_contents = nil

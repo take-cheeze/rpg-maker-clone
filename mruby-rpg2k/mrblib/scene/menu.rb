@@ -142,23 +142,17 @@ class RPG2k
         # with no "Show Screen" involved, and RPG_RT never restores it when the
         # menu closes. An instant cut rather than #show's default fade, since
         # this snap happens the moment the menu opens, not over 35 frames.
-        # bc2cpp-reviewed: nomethod screen, nomethod show -- dead fallback (ADR 0226)
         @state.screen.show(Game::Transition::CUT_IN, 0)
         build_windows
       end
 
       def dispose
         close_message
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @confirm_help.dispose if @confirm_help
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @confirm_command.dispose if @confirm_command
         @background.dispose if @background
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @command.dispose if @command
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @status.dispose if @status
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @gold.dispose if @gold
       end
 
@@ -204,15 +198,10 @@ class RPG2k
         # blinking the way every other window-driven screen in this codebase
         # does (Scene::Title's own #update already does this for its one
         # window).
-        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @command.update if @command
-        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @status.update if @status
-        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @gold.update if @gold
-        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @confirm_help.update if @confirm_help
-        # bc2cpp-reviewed: nomethod update -- dead fallback (ADR 0226)
         @confirm_command.update if @confirm_command
         return drive_message if @message
         case @focus
@@ -257,7 +246,6 @@ class RPG2k
       # cancelling back to the command list or by successfully opening the
       # chosen scene.
       def update_actor_selection
-        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         party = @state.party.actors
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
@@ -278,7 +266,6 @@ class RPG2k
       end
 
       def confirm_actor_selection
-        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         actor = @state.party.actors[@actor_index]
         # A currently-restricted actor (asleep/paralysed) cannot be given a
         # Skill command at all -- ported from a reference implementation's
@@ -288,7 +275,6 @@ class RPG2k
         # and left in actor-selection focus on failure (matching that same
         # actor-selection handling's own early return there, buzzer instead
         # of decision), so the player can simply pick someone else.
-        # bc2cpp-reviewed: nomethod can_act? -- dead fallback (ADR 0226)
         if @pending_key == :skill && !actor.can_act?
           play_system_se(SFX_BUZZER)
           return
@@ -319,7 +305,6 @@ class RPG2k
           # Return on the last front-row member changed nothing at all, and
           # the same member moved as soon as somebody else was put back in
           # front.
-          # bc2cpp-reviewed: nomethod party, nomethod toggle_actor_row -- dead fallback (ADR 0226)
           @state.party.toggle_actor_row(actor) if @state.party.respond_to?(:toggle_actor_row)
         end
       end
@@ -401,7 +386,6 @@ class RPG2k
       # `wait_on` (ﾊﾞﾄﾙ/Wait), and a second Return restored the first frame
       # pixel for pixel (see #select_command's :wait branch).
       def wait_label
-        # bc2cpp-reviewed: nomethod atb_mode -- dead fallback (ADR 0226)
         @state.atb_mode == 1 ? term(:wait_on) : term(:wait_off)
       end
 
@@ -419,9 +403,7 @@ class RPG2k
         @status.z = 400
         @status.windowskin = @skin
         sc = Bitmap.new(SCREEN_W - cw - Window::BORDER * 2, SCREEN_H - Window::BORDER * 2)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         sc.font.color = Color.new(255, 255, 255, 255)
-        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         @state.party.actors.each_with_index do |a, i|
           y = i * STATUS_ROW_H
           draw_actor_face sc, a, 0, y
@@ -468,12 +450,10 @@ class RPG2k
       def draw_gold_window
         inner_w = GOLD_WINDOW_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, LINE_H)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         unit = term(:gold)
         unit_w = c.text_size(unit).width
         draw_system_text c, 0, 0, inner_w - unit_w, LINE_H,
-                         # bc2cpp-reviewed: nomethod gold, nomethod party -- dead fallback (ADR 0226)
                          @state.party.gold.to_s, @skin, 0, 2
         draw_system_text c, 0, 0, inner_w, LINE_H, unit, @skin, LABEL_COLOR, 2
         @gold.contents = c
@@ -481,7 +461,6 @@ class RPG2k
 
       def refresh_cursor
         @command.cursor_rect =
-          # bc2cpp-reviewed: nomethod contents, nomethod width -- dead fallback (ADR 0226)
           Rect.new(0, @index * LINE_H, @command.contents.width, LINE_H)
       end
 
@@ -554,14 +533,11 @@ class RPG2k
         draw_system_text sc, STATUS_TEXT_X, y2, w - STATUS_TEXT_X, LINE_H,
                          term(:level_short), @skin, LABEL_COLOR
         draw_system_text sc, STATUS_LEVEL_X, y2, w - STATUS_LEVEL_X, LINE_H,
-                         # bc2cpp-reviewed: nomethod level -- dead fallback (ADR 0226)
                          a.level.to_s, @skin
         draw_actor_state sc, a, STATUS_STATE_X, y2, w - STATUS_STATE_X, LINE_H, @skin
-        # bc2cpp-reviewed: nomethod display_max_hp, nomethod hp -- dead fallback (ADR 0226)
         draw_status_stat sc, y2, term(:hp_short), a.hp, a.display_max_hp, true
         y3 = line.call(2)
         draw_status_exp sc, a, y3
-        # bc2cpp-reviewed: nomethod display_max_mp, nomethod mp -- dead fallback (ADR 0226)
         draw_status_stat sc, y3, term(:mp_short), a.mp, a.display_max_mp, false
       end
 
@@ -587,9 +563,7 @@ class RPG2k
       # there is no next level (see the layout comment above).
       def draw_status_exp(sc, a, y)
         w = sc.width
-        # bc2cpp-reviewed: nomethod next_level_exp -- dead fallback (ADR 0226)
         nxt = a.next_level_exp
-        # bc2cpp-reviewed: nomethod exp -- dead fallback (ADR 0226)
         cur_s, nxt_s = nxt.nil? ? [STATUS_MAX_LEVEL_EXP, STATUS_MAX_LEVEL_EXP] : [a.exp.to_s, nxt.to_s]
         draw_system_text sc, STATUS_TEXT_X, y, w - STATUS_TEXT_X, LINE_H,
                          term(:exp_short), @skin, LABEL_COLOR
@@ -625,11 +599,9 @@ class RPG2k
       # graphic set or whose file failed to load, leaving just the text
       # columns #build_windows already draws.
       def draw_actor_face(bmp, actor, x, y)
-        # bc2cpp-reviewed: nomethod face_name -- dead fallback (ADR 0226)
         name = actor.respond_to?(:face_name) ? actor.face_name : nil
         sheet = load_face_bitmap(name)
         return unless sheet
-        # bc2cpp-reviewed: nomethod face_index -- dead fallback (ADR 0226)
         index = actor.respond_to?(:face_index) ? (actor.face_index || 0) : 0
         src = Rect.new((index % 4) * FACE_SIZE, (index / 4) * FACE_SIZE, FACE_SIZE, FACE_SIZE)
         bmp.blt x, y, sheet, src
@@ -643,7 +615,6 @@ class RPG2k
       # bitmap rather than per-row windows. Clears and re-draws the existing
       # contents bitmap in place, so the window object and cursor stay put.
       def redraw_command_labels
-        # bc2cpp-reviewed: nomethod contents -- dead fallback (ADR 0226)
         cc = @command.contents
         cc.clear
         draw_command_labels(cc)
@@ -663,11 +634,8 @@ class RPG2k
       # missing visual cue RPG_RT shows before the player even tries.
       def command_disabled?(key)
         case key
-        # bc2cpp-reviewed: nomethod save_access -- dead fallback (ADR 0226)
         when :save then !@state.save_access
-        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         when :order then @state.party.actors.size <= 1
-        # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
         when :item, :skill, :equip, :status, :row then @state.party.actors.empty?
         else false
         end
@@ -690,14 +658,10 @@ class RPG2k
         @commands.each_with_index do |(key, label), i|
           y = i * LINE_H
           if command_disabled?(key)
-            # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
             cc.font.color = Color.new(128, 128, 128, 255)
-            # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
             draw_system_text cc, 0, y, cc.width, LINE_H, label, @skin, 3
           else
-            # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
             cc.font.color = Color.new(255, 255, 255, 255)
-            # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
             draw_system_text cc, 0, y, cc.width, LINE_H, label, @skin
           end
         end
@@ -754,7 +718,6 @@ class RPG2k
         key, label = @commands[@index]
         case key
         when :item
-          # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
           if @state.party.actors.empty?
             play_system_se(SFX_BUZZER)
           else
@@ -779,7 +742,6 @@ class RPG2k
           # single-member party's Row toggle is still meaningful (front vs.
           # back matters for a solo character), so it is not specially
           # blocked here.
-          # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
           if @state.party.actors.empty?
             play_system_se(SFX_BUZZER)
           else
@@ -802,7 +764,6 @@ class RPG2k
           # could reach a solo party): it gates on the party having one or
           # fewer actors rather than the plain-empty check every other
           # command here uses.
-          # bc2cpp-reviewed: nomethod actors, nomethod party -- dead fallback (ADR 0226)
           if @state.party.actors.size <= 1
             play_system_se(SFX_BUZZER)
           else
@@ -825,7 +786,6 @@ class RPG2k
           # pixel-identical frame -- a plain two-state toggle with no scene
           # of its own.
           play_system_se(SFX_DECISION)
-          # bc2cpp-reviewed: nomethod atb_mode, nomethod atb_mode= -- dead fallback (ADR 0226)
           @state.atb_mode = @state.atb_mode == 1 ? 0 : 1
           @commands[@index] = [:wait, wait_label]
           redraw_command_labels
@@ -840,7 +800,6 @@ class RPG2k
           # this screen's own bleed-through fix turned out to be, but this
           # one only needed removing -- there was nothing to source instead,
           # matching RPG2000's own Term table, which has no slot for it.
-          # bc2cpp-reviewed: nomethod save_access -- dead fallback (ADR 0226)
           if @state.save_access
             play_system_se(SFX_DECISION)
             @parent.push Scene::SaveLoad.new(@parent, @state, :save)
@@ -923,7 +882,6 @@ class RPG2k
         @confirm_help.z = 500
         @confirm_help.windowskin = @skin
         hc = Bitmap.new(help_w - Window::BORDER * 2, LINE_H)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         hc.font.color = Color.new(255, 255, 255, 255)
         draw_system_text hc, 0, 0, hc.width, LINE_H, text, @skin
         @confirm_help.contents = hc
@@ -934,7 +892,6 @@ class RPG2k
         @confirm_command.z = 500
         @confirm_command.windowskin = @skin
         cc = Bitmap.new(cmd_w - Window::BORDER * 2, cmd_h - Window::BORDER * 2)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         cc.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |l, i|
           draw_system_text cc, 0, i * LINE_H, cc.width, LINE_H, l, @skin
@@ -945,7 +902,6 @@ class RPG2k
 
       def refresh_end_game_cursor
         @confirm_command.cursor_rect =
-          # bc2cpp-reviewed: nomethod contents, nomethod width -- dead fallback (ADR 0226)
           Rect.new(0, @confirm_index * LINE_H, @confirm_command.contents.width, LINE_H)
       end
 
@@ -969,7 +925,6 @@ class RPG2k
           play_system_se(SFX_DECISION)
           if @confirm_index == END_GAME_YES
             RGSS::Audio.bgm_fade(400)
-            # bc2cpp-reviewed: nomethod return_to_title -- dead fallback (ADR 0226)
             @parent.return_to_title
           else
             close_end_game_confirm
@@ -978,9 +933,7 @@ class RPG2k
       end
 
       def close_end_game_confirm
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @confirm_help.dispose if @confirm_help
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @confirm_command.dispose if @confirm_command
         @confirm_help = nil
         @confirm_command = nil
@@ -1001,7 +954,6 @@ class RPG2k
         win.z = 500
         win.windowskin = @skin
         c = Bitmap.new(w - Window::BORDER * 2, 14)
-        # bc2cpp-reviewed: nomethod color= -- dead fallback (ADR 0226)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, 14, text
         win.contents = c
@@ -1010,7 +962,6 @@ class RPG2k
 
       def close_message
         return unless @message
-        # bc2cpp-reviewed: nomethod dispose -- dead fallback (ADR 0226)
         @message[:window].dispose
         @message = nil
       end

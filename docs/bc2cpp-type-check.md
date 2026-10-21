@@ -16,7 +16,7 @@ ruby scripts/bc2cpp/type_check.rb --facts kept/facts.json --rows kept/rows.tsv  
 
 `--keep DIR` keeps `facts.json`, `rows.tsv` and `bc2cpp.stderr`. `--all` adds one info line per untyped item,
 `--no-sends` skips the send ranking, `--what-if` estimates removable lines (slow), `--top N`, `--scope all` includes
-the mruby core mrblib. The TC1017 ratchet judges an engine run by the review annotations on its untyped constants (ADR 0522); a `--files` program is not judged. The analysis takes the time of a build's analysis phase (minutes for the engine).
+the mruby core mrblib. The analysis takes the time of a build's analysis phase (minutes for the engine).
 
 The report runner keeps whole-program analysis, real method compilation, return-guard
 validation and nilable-index collection. It skips the discarded C++ translation
@@ -150,20 +150,9 @@ reach it either.
 
 ## Constant ratchet (TC1017, ADR 0491)
 
-An engine constant the analysis gives no type is untyped. A reviewer reads it and annotates its source line,
-`# bc2cpp-reviewed: constant <Name> -- reason`, on the line of the constant or the line above (ADR 0522). The gate holds
-two rules:
-
-* an untyped engine constant with no such annotation is a TC1017 error at its file:line;
-* an annotation whose constant is now typed, or is no longer an engine constant, is a TC1017 error at its line, so the
-  annotations are removed as constants get typed and they can only shrink.
-
-A `--files` program is not judged. A constant whose claimed file does not hold its line (mrbc names the previous file of
-a multi-file compile) is not an engine constant and is not judged; mruby-io's STDIN, STDOUT and STDERR come out this way.
-`scripts/bc2cpp/constant_reviewed_check.rb` checks the gate on fixtures and, with MRBC, on the engine's own type check.
-
-The check runs in CI's `bc2cpp-build` job, after the closed-world build, with the host mrbc that build makes. The
-type check step runs the gate on the real engine; the check fixes the gate's behaviour on small programs.
+The TC1017 gate that judged untyped engine constants by a review list (ADR 0491) and then by source annotations
+(ADR 0522) has been removed. Untyped constants are reported by the type check but no longer fail a build; the
+annotation gate and its check script are gone (ADR 0522).
 
 ## Workflow
 

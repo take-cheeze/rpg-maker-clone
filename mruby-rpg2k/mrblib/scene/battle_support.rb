@@ -78,9 +78,7 @@ class RPG2k
       # #wrap_text_to_width), one #draw_text call per line, each `line_h` px
       # apart starting at `y`.
       def draw_wrapped_hint(text, y, line_h)
-        # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
         wrap_text_to_width(@contents, text, @contents.width).each_with_index do |line, i|
-          # bc2cpp-reviewed: nomethod width -- dead fallback (ADR 0226)
           @contents.draw_text 0, y + i * line_h, @contents.width, line_h, line
         end
       end
