@@ -1,0 +1,1 @@
+- The bc2cpp compiler now reads the Proc call names (`call`, `yield`, `[]`, `===`) for its C++ `bc2cpp_cfunc_proc_call_p` guard from `sig/bc2cpp/declarations.rbs#core_proc_calls` instead of a hand-written list. The generated C is unchanged.
