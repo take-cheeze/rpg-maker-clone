@@ -1075,7 +1075,7 @@ Three shapes are worth naming because they are gaps rather than missing proofs:
 
 * **A local receiver that a fresh allocation or an inlined `select`/`map` collector
   produced.** `Game::State#to_lsd` alone holds 13 `empty?` sites of this kind;
-  `CHAINED_ARRAY_METHODS` already knows those calls return an Array, but
+  `block_result_array?` already knows those calls return an Array, but
   `exact_core_value_class` never asks.
 * **A method result whose receiver-specific return class exists but is refused.**
   `Game::Variables#to_h` returns `@data`, a Hash the class layout already knows;

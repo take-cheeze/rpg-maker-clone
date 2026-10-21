@@ -1,0 +1,1 @@
+- **bc2cpp** declares `Enumerator` as a generic class (`Enumerator[Elem, Return]`) in the project signatures, matching `Array`, so `Enumerator[untyped, untyped]` references resolve without relying on the core RBS.

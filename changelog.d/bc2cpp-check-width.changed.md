@@ -1,0 +1,1 @@
+- **bc2cpp CI** runs its checks four at a time instead of two, expected to cut the `bc2cpp-build` checks step from about 4.5 to about 2.3 minutes on the 4-vCPU runner. Profile in `docs/bc2cpp-ci-duration-profile.md` section 5.

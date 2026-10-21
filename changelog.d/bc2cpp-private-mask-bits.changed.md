@@ -1,0 +1,1 @@
+- Reduce compiler allocations when naming LCF masks and selecting frozen-table shapes by testing single bit positions.

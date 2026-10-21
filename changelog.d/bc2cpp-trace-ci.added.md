@@ -1,0 +1,1 @@
+- **bc2cpp** `.github/workflows/bc2cpp-trace.yml` runs on demand and nightly, not as a pull-request gate. It builds the closed-world `libmruby.a` with `BC2CPP_TRACE_TYPES=1`, runs Nepheshel New Game headlessly on it, and uploads the trace report, candidates, proposals and raw dump as the `bc2cpp-trace` artifact. Nothing is written into the repository (`docs/bc2cpp-trace-ci.md`).

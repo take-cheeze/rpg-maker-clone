@@ -8,6 +8,9 @@ set -uo pipefail
 #
 #     nix build -L '.?submodules=1#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
 #
+# The pipeline's status is this filter's unless the caller sets `pipefail`, so a
+# failed nix build would pass. Callers must set it.
+#
 # A `nix` call that asks for submodules -- `?submodules=1`, which only the
 # `flake` CI job needs (see flake.nix) -- hands each of this repo's submodules
 # to nix's own git fetcher. Nix builds
@@ -77,7 +80,7 @@ for pattern in "${patterns[@]}"; do
     args+=(-e "$pattern")
 done
 
-grep --line-buffered -v -E "${args[@]}"
+grep --line-buffered -a -v -E "${args[@]}"
 status=$?
 
 # grep exits 1 when it selected no lines. For a filter that only means the

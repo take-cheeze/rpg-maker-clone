@@ -1,0 +1,87 @@
+name: bc2cpp trace
+
+# Collects BC2CPP_TRACE_TYPES runtime types from a headless run of Nepheshel on the closed-world libmruby.a, and turns
+# them into candidates and proposals. It does not gate pull requests and writes nothing to the repository: the results
+# are uploaded as artifacts for review (docs/bc2cpp-trace-ci.md).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  trace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: >-
+            3rd/SDL 3rd/SDL_mixer 3rd/effekseer 3rd/gflags 3rd/ng-log
+            3rd/inicpp 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
+
+      - uses: nixbuild/nix-quick-install-action@v35
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-bc2cpp-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-bc2cpp-${{ runner.os }}-
+
+      - name: Set up development environment
+        run: ./scripts/nix/develop-export-env.bash .#bc2cpp
+
+      - name: Install the archive tool the Nepheshel download uses
+        run: sudo apt-get install -y unar
+
+      - name: Download Nepheshel
+        run: ./scripts/download/nepheshel.bash
+
+      # The closed world, built with the trace on: param_trace.rb instruments the generated code only in this build.
+      - name: Build the closed-world mruby with the trace on
+        timeout-minutes: 45
+        env:
+          RAKEOPT: -m -j4
+          BC2CPP_TRACE_TYPES: '1'
+        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-trace"
+
+      - name: Run Nepheshel headless and collect the trace
+        timeout-minutes: 30
+        env:
+          BC2CPP_HOST_FRAMES: '600'
+        run: |
+          env -u LD scripts/bc2cpp/trace_host.bash "$GITHUB_WORKSPACE/build-closed-trace"
+          rows=$(grep -c '^PARAM_\|^RETURN_' build-closed-trace/trace-host/param_trace.tsv || true)
+          echo "trace rows: $rows"
+          [ "$rows" -gt 0 ] || { echo "::error::the headless run wrote no trace rows"; exit 1; }
+
+      # The candidates and their report are for review; the proposals are the declarations the committed file does not
+      # already name. Both are written under the artifact directory, never into the checkout.
+      - name: Turn the trace into candidates, a report and proposals
+        run: |
+          out="$GITHUB_WORKSPACE/trace-out"
+          mkdir -p "$out"
+          dump=build-closed-trace/trace-host/param_trace.tsv
+          ruby scripts/bc2cpp/trace_types.rb report "$dump" > "$out/report.txt"
+          ruby scripts/bc2cpp/trace_types.rb candidates --out "$out/candidates.rbs" "$dump"
+          ruby scripts/bc2cpp/trace_merge.rb "$out/candidates.rbs" --out "$out/proposals.rbs"
+          cp "$dump" "$out/param_trace.tsv"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bc2cpp-trace
+          path: |
+            trace-out/
+            build-closed-trace/trace-host/run.log
+          if-no-files-found: error

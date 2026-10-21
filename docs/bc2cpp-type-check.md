@@ -280,6 +280,22 @@ signatures for the engine's native classes and the mruby-only core methods (a ha
 gem; not done here) and for the module-level helpers. Larger gems (mruby-rpg2k, mruby-rgss) additionally need the lcf and
 rgss native classes declared, so they would stop at hundreds of `NoMethod` until then. Full mruby-core RBS is out of scope.
 
+### Mask diagnostic allocations
+
+Numeric mask names reuse an immutable primitive name table. Class mask names
+reuse the existing registered-class snapshot and test integer bit positions,
+avoiding temporary wide integer intersections while preserving registration
+order. The snapshot follows numeric naming because a Symbol lookup can lazily
+register its class. Snapshot identity and size continue to follow class growth
+and probe rollback (ADR 0531). Negative masks, LCF kinds, private shape names and
+the text and mutability of returned strings retain their existing behavior.
+LCF kind and frozen-table membership also read their single bit positions,
+including sign-extended negative masks and shapes registered after earlier queries.
+No diagnostic result strings are cached. A warmed Ruby 4.0.5/YJIT full-engine
+comparison of the private-mask extension reduced compiler allocations from
+98,452,530 to 94,582,052 (3.9%); facts, receiver rows and report JSON were byte-identical.
+One profiled timing pair was 53.459s versus 52.101s; it is not a repeated speed benchmark.
+
 ## Shared reaching definitions
 
 Internal type, numeric and constant readers can request `shared: true` from the
@@ -289,3 +305,37 @@ Queries with diagnostics, mutable opaque sets or a saturated cache keep their
 existing fresh-result path. Query options, refusal causes and cache bounds are
 unchanged. `BC2CPP_IR_SHARED_DEFINITIONS=0` retains the copying path for comparison.
 See [ADR 0530](adr/0530-shared-reaching-definitions.md).
+
+## Closed-world opacity queries
+
+After construction finishes its source scans, each ClosedWorld caches the
+outside-source touch predicate for declared owners. Declaration, boot/synthetic
+owner, rebinding and dynamic-subclass guards still run on every query; only the
+finalized touch result is cached. Native source-inclusive questions retain their
+existing scan. A changed source universe requires a new world.
+`BC2CPP_CLOSED_OPACITY_INDEX=0` disables this cache for comparison.
+See [ADR 0534](adr/0534-bc2cpp-opacity-touch-cache.md).
+
+## Unchanged load states
+
+Numeric flow can share its incoming read-only state across repeated integer,
+literal, pool, self, nil and string loads when the effective mask, element bound,
+provenance and affected class tests are already unchanged. Oracle questions and
+write-union collection still run. A per-Program MOVE-reader index narrows the
+provenance checks; standalone transfer contexts retain their copying behavior.
+`BC2CPP_NUMERIC_LOAD_COPY_ELISION=0` restores the copying load path.
+See [ADR 0536](adr/0536-bc2cpp-unchanged-load-states.md).
+
+### Embedding compile probe state
+
+Embedding eligibility still compiles methods under isolated top-level state and
+keeps clean-result caches local to each compiler instance. The state key list is
+shared and restoration indexes saved values without temporary pairs. Nested
+probes and exceptions restore the immediate caller's original state objects
+(ADR 0202).
+
+A warmed Ruby 4.0.5/YJIT full-engine comparison reduced compiler allocations
+from 98,452,530 to 98,289,476 (163,054 fewer, 0.17%). Facts, receiver rows and
+report JSON were byte-identical. Profiled elapsed time was essentially unchanged
+(53.459s versus 53.405s). This reduces state-restoration overhead; the method
+bodies are still compiled to determine eligibility.

@@ -1,0 +1,1 @@
+- **bc2cpp closed world**: a `Struct`/`Class` constant that is only compared or named (`is_a?`, `==`, `name`, `to_s`, ...) keeps its member and superclass proof only while every definition of those names is native; a program or outside Ruby definition of one now refuses the closed world.

@@ -9716,7 +9716,7 @@ class RPG2k::Scene::MapWorld
 end
 class RPG2k::Scene::Menu
   def initialize: (RPG2k, Game::State) -> untyped
-  def build_commands: () -> Array[Array]
+  def build_commands: () -> untyped
   def build_gold_window: () -> untyped
   def build_windows: () -> untyped
   def command_disabled?: (untyped) -> untyped
@@ -9931,8 +9931,8 @@ module RPG2k
       # (`troop = Game::Troop.new(...)`), :events (Game::Interpreter.new), :allies/:foes (block `map`s) and
       # :pages_run (`{}`, also reset by `@ui[:pages_run] = {}`); `@ui[:enemy_sprites]`/`[:actor_sprites]` are nil or
       # `Array.new(n) { }`. The other keys hold method results or arithmetic the checker cannot trace: untyped.
-      @ui: { ?battle: Game::Battle, ?troop: Game::Troop, ?events: Game::Interpreter, ?allies: Array[untyped],
-             ?foes: Array[untyped], ?pages_run: Hash[untyped, untyped], ?enemy_sprites: Array[untyped]?,
+      @ui: { ?battle: Game::Battle, ?troop: Game::Troop, ?events: Game::Interpreter, ?allies: untyped,
+             ?foes: untyped, ?pages_run: Hash[untyped, untyped], ?enemy_sprites: Array[untyped]?,
              ?actor_sprites: Array[untyped]?,
              ?phase: untyped, ?options_shown: untyped, ?opt: untyped, ?actor_i: untyped, ?cmd: untyped,
              ?target_i: untyped, ?skill_i: untyped, ?item_i: untyped, ?ally_i: untyped, ?pending: untyped,
@@ -9975,10 +9975,10 @@ module RPG2k
       def teleport_targets: () -> Array
     end
     class Battle
-      def battle_commands: () -> Array
+      def battle_commands: () -> untyped
     end
     class Map
-      def shop_lines: () -> Array
+      def shop_lines: () -> untyped
     end
   end
 end
@@ -10506,6 +10506,9 @@ class Symbol < Object
   include Comparable
 end
 
+class Enumerator[unchecked out Elem, out Return] < Object
+end
+
 class Array[unchecked out Elem] < Object
 # ---- single-class traced types (trace_types.rb candidates over the 13 workloads, BC2CPP_TRACE_TYPES)
 # Only methods whose traced parameters and returns each name one class (no union), and that the sections above do not
@@ -10713,12 +10716,15 @@ end
 # (tools/bc2cpp/core_block_iterator_sigs.rb) and checked by scripts/bc2cpp/core_facts_rbs_check.rb. Each returns a new
 # Array or Hash whatever the block returns: mrblib/enum.rb's collect, find_all, partition (`[ary_T, ary_F]`) and reject
 # and mruby-enum-ext's group_by build `ary = []` or `h = {}`; Enumerable#sort_by answers Array#sort_by (`self.to_a`),
-# and filter_map is mruby-enum-ext's `ary`. Hash#reject (mrblib/hash.rb) builds `h = {}`. The bare call returns an
+# and filter_map is mruby-enum-ext's `ary`. Enumerable#select is find_all's alias (enum.rb). Hash#reject and Hash#select
+# (mrblib/hash.rb) build `h = {}`, so every Enumerable entry Hash overrides is declared under Hash as well: the lookup
+# in class_layout.rb (block_result_array?) falls through to Enumerable otherwise. The bare call returns an
 # Enumerator and is not declared here (core_results).
 # bc2cpp-native: core_block_iterators
 module Enumerable
   def map: () { (untyped) -> untyped } -> Array[untyped]
   def collect: () { (untyped) -> untyped } -> Array[untyped]
+  def select: () { (untyped) -> untyped } -> Array[untyped]
   def reject: () { (untyped) -> untyped } -> Array[untyped]
   def find_all: () { (untyped) -> untyped } -> Array[untyped]
   def partition: () { (untyped) -> untyped } -> Array[untyped]
@@ -10730,6 +10736,7 @@ end
 # bc2cpp-native: core_block_iterators
 class Hash[unchecked out K, unchecked out V] < Object
   def reject: () { (untyped) -> untyped } -> Hash[untyped, untyped]
+  def select: () { (untyped) -> untyped } -> Hash[untyped, untyped]
 end
 
 # ---- native: core_blockless_iterators

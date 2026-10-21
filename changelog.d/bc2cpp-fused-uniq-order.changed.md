@@ -1,0 +1,1 @@
+- **bc2cpp** no longer fuses `Array#uniq` with a key block into an inline loop: the fused form returned key-sorted order and deduplicated with `<=>` instead of keeping the first element per key in original order (`[3, 1, 2, 1].uniq { |x| x }` is `[3, 1, 2]`). `uniq` now stays an ordinary call.

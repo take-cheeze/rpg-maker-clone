@@ -10,7 +10,9 @@ return-kind inference, audited core and RGSS result declarations, hierarchy and
 block-parameter declarations, and generated direct-call RBS signatures. The
 suite shares loaded tables and RBS setup. Each malformed declaration still gets
 its own temporary signature file. Both suites run once through the coverage
-reporter in `ruby-checks`; neither needs mrbc, a native library or submodules.
+reporter in `ruby-checks`; neither needs mrbc or a native library. Both load
+`tools/bc2cpp/native_names.rb`, which reads the operator table from
+`3rd/mruby/lib/mruby/presym.rb`, so `ruby-checks` initializes `3rd/mruby` first.
 
 The reporter also schedules the previously unscheduled native arity check and
 clang AST return check. The latter prints a skip when clang is unavailable.

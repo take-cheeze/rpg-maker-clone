@@ -1040,6 +1040,9 @@
   compilation probes while keeping embedding eligibility and emitted registrations
   specific to each compilation. See [ADR 0528](docs/adr/0528-block-capture-index.md).
 
+- Mask diagnostics reuse immutable class-bit positions and primitive name tables
+  while preserving registration order and private shape names; see [type checking](docs/bc2cpp-type-check.md).
+
 - Numeric dataflow shares read-only first incoming states, avoiding redundant
   state-array copies while retaining independent updates; see [numeric class facts](docs/bc2cpp-ir-numeric-classes.md).
 
@@ -1428,6 +1431,16 @@
   Integer tag test on an argument the Fixnum proof covers, which removes the
   arm's only remaining by-name dispatch; see
   [native arm Integer guards](docs/bc2cpp-native-int-guards.md).
+  Compiler opacity queries reuse finalized outside-source touch results while
+  retaining live declaration and rebinding guards; see
+  [ADR 0534](docs/adr/0534-bc2cpp-opacity-touch-cache.md).
+  Embedding compile probes reuse a fixed state-key list and restore caller state
+  without temporary pairs; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
+  LCF and frozen-table mask diagnostics avoid temporary wide integer intersections;
+  see [mask diagnostics](docs/bc2cpp-type-check.md#mask-diagnostic-allocations).
+  Numeric flow shares unchanged load states while preserving metadata
+  invalidation and write tracking; see
+  [ADR 0536](docs/adr/0536-bc2cpp-unchanged-load-states.md).
   Selected core Ruby collection bodies now retain exact return classes across zero-argument calls,
   including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
   `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks
