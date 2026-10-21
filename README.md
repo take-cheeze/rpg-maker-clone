@@ -1033,6 +1033,9 @@
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
 
+- Numeric dataflow shares read-only first incoming states, avoiding redundant
+  state-array copies while retaining independent updates; see [numeric class facts](docs/bc2cpp-ir-numeric-classes.md).
+
 - Receiver unions reuse indexed class-bit members instead of scanning every
   registered class, with bounded decoding caches that follow lazy registration.
 
