@@ -1,0 +1,1 @@
+- **bc2cpp typing** lets internal read-only queries borrow frozen reaching-definition snapshots while preserving mutable public results and existing refusal behavior.

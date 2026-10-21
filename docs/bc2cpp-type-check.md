@@ -26,11 +26,19 @@ Repeated context class decoding is cached within one engine, with invalidation
 when numeric class bits or private container shapes are registered. See [ADR 0517](adr/0517-type-check-report-cost.md).
 
 Root context graphs retain their own admission and round budgets. Small leaf
-contexts reuse immutable evaluations at their normal solver turn; graphs with
-callee or effect dependencies still use the full evaluator. Reuse stays within
+contexts reuse immutable evaluations at their normal solver turn. Reuse stays within
 one context engine and is bounded to 128 snapshots of at most 4096 state cells.
 Set `BC2CPP_IR_LEAF_EVALUATIONS=0` for a comparison run. See
 [ADR 0518](adr/0518-reuse-leaf-context-evaluations.md).
+
+Within each root graph, an evaluated context is reused while every observed
+callee revision stays unchanged. Revisions include flow states, call results,
+literal shapes and return masks because transitive effect checks read callee
+states. Numeric-class or private-shape registration forces reevaluation. Solver
+order, graph admission, round limits and refusal behavior remain unchanged;
+dependency records are released when the root finishes. Set
+`BC2CPP_IR_CONTEXT_REEVALUATION=0` to compare full reevaluation. See
+[ADR 0527](adr/0527-unchanged-context-evaluations.md).
 
 Receiver union decoding indexes numeric class bits and visits only bits present
 in a receiver. Decoded unions are cached within one CodeGen instance, with a
@@ -282,3 +290,13 @@ register its class. Snapshot identity and size continue to follow class growth
 and probe rollback (ADR 0531). Negative masks, LCF kinds, private shape names and
 the text and mutability of returned strings retain their existing behavior.
 No diagnostic result strings are cached.
+
+## Shared reaching definitions
+
+Internal type, numeric and constant readers can request `shared: true` from the
+reaching-definition query. Cached results are frozen snapshots; callers must treat
+all results as read-only. Public calls still return independent mutable copies.
+Queries with diagnostics, mutable opaque sets or a saturated cache keep their
+existing fresh-result path. Query options, refusal causes and cache bounds are
+unchanged. `BC2CPP_IR_SHARED_DEFINITIONS=0` retains the copying path for comparison.
+See [ADR 0530](adr/0530-shared-reaching-definitions.md).

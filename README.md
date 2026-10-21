@@ -1029,6 +1029,9 @@
   values remain context-specific. Settled method lookup also shares ancestor paths,
   simple names and Ruby owner sets to reduce allocation pressure.
 
+- Context typing reuses evaluations while callee states and return masks remain
+  unchanged within one root graph, retaining the original solver budgets.
+
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
@@ -1689,6 +1692,9 @@
   exchange for real RAM saved on a constrained device — see
   [`docs/adr/0063-render-fps-scaled-bitmap-caches.md`](docs/adr/0063-render-fps-scaled-bitmap-caches.md).
   No effect at the default `60`.
+
+- Read-only IR consumers borrow frozen reaching-definition cache entries while
+  public callers retain independent mutable results.
 
 ### Build natively without Nix
 
