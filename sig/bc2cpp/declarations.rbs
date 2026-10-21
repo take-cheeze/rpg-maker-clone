@@ -10506,6 +10506,9 @@ class Symbol < Object
   include Comparable
 end
 
+class Enumerator[unchecked out Elem, out Return] < Object
+end
+
 class Array[unchecked out Elem] < Object
 # ---- single-class traced types (trace_types.rb candidates over the 13 workloads, BC2CPP_TRACE_TYPES)
 # Only methods whose traced parameters and returns each name one class (no union), and that the sections above do not
