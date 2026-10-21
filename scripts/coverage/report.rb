@@ -58,6 +58,7 @@ SOURCE_GLOBS = ['mruby-*/mrblib/**/*.rb'].freeze
 CHECKS = [
   { name: 'bc2cpp-class-arg-types', command: %w[scripts/bc2cpp/class_arg_types_check.rb] },
   { name: 'ci-check-registry', command: %w[scripts/ci/check_registry_check.rb] },
+  { name: 'bc2cpp-native-api-lists', command: %w[scripts/bc2cpp/native_api_lists_parity_check.rb] },
   { name: 'bc2cpp-class-hierarchy', command: %w[scripts/bc2cpp/class_hierarchy_check.rb] },
   { name: 'bc2cpp-conversion-returns', command: %w[scripts/bc2cpp/conversion_returns_check.rb] },
   { name: 'bc2cpp-param-trace-return', command: %w[scripts/bc2cpp/param_trace_return_check.rb] },
