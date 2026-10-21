@@ -326,6 +326,17 @@ provenance checks; standalone transfer contexts retain their copying behavior.
 `BC2CPP_NUMERIC_LOAD_COPY_ELISION=0` restores the copying load path.
 See [ADR 0536](adr/0536-bc2cpp-unchanged-load-states.md).
 
+### Ivar slot union fixed points
+
+Each numeric-flow run retains the last widened mask for each tracked ivar slot.
+When a call sees that same mask again, or the exact slot fact itself, its union
+with the run's fixed slot fact is already known. Reuse the mask while still
+invalidating provenance and class tests on every call. This retains one mask per
+slot and never shares oracle answers between runs. Standalone transfer contexts
+continue to read mutable slot facts without this cache.
+`BC2CPP_NUMERIC_SLOT_UNIONS=0` restores unconditional slot unions for comparison.
+See [ADR 0538](adr/0538-bc2cpp-slot-union-fixed-points.md).
+
 ### Embedding compile probe state
 
 Embedding eligibility still compiles methods under isolated top-level state and
