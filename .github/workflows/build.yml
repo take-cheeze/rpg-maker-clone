@@ -1125,9 +1125,10 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Shallow, mruby only: a full mruby clone for one .rb file is wasteful.
-      - name: Init mruby submodule
-        run: git submodule update --init --depth 1 3rd/mruby
+      # Shallow, and only the gems the closed-world gem closure reads (compiled_gems.rb
+      # bc2cpp_rake_dependencies): a full clone of each for one .rb file is wasteful.
+      - name: Init mruby submodules
+        run: git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio 3rd/mruby-marshal 3rd/mruby-onig-regexp
 
       # No test262-skip step here either; see the `build` job.
 
