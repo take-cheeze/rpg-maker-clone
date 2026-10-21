@@ -245,7 +245,7 @@ module FileTest
   def self.exists?: (untyped) -> bool
   def self.file?: (untyped) -> bool
   def self.pipe?: (untyped) -> bool
-  def self.size: (untyped) -> untyped
+  def self.size: (untyped) -> Integer
   def self.size?: (untyped) -> untyped
   def self.socket?: (untyped) -> bool
   def self.symlink?: (untyped) -> bool

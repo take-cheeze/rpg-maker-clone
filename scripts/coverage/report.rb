@@ -115,6 +115,8 @@ CHECKS = [
   { name: 'bc2cpp-native-results', command: %w[scripts/bc2cpp/native_results_check.rb] },
   { name: 'bc2cpp-native-arity', command: %w[scripts/bc2cpp/native_arity_check.rb] },
   { name: 'bc2cpp-native-ast-returns', command: %w[scripts/bc2cpp/native_ast_returns_check.rb] },
+  { name: 'bc2cpp-native-return-classes', command: %w[scripts/bc2cpp/native_return_classes_check.rb] },
+  { name: 'bc2cpp-native-rom-owners', command: %w[scripts/bc2cpp/native_rom_owners_check.rb] },
   # The generator's Prism parse memo (ADR 0416): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-ruby-parse-cache', command: %w[scripts/bc2cpp/ruby_parse_cache_check.rb] },
   # No CRuby-side lines of mrblib, but every scripts/**/*_check.rb rides here.

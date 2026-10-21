@@ -1,0 +1,1 @@
+- **bc2cpp**: the base RBS generator compiles native sources with `MRB_USE_BIGINT`, as the closed build does, so bignum arms of core bodies are analysed. `FileTest.size` now returns `Integer` in the base section.
