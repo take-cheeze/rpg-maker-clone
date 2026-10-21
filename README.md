@@ -1434,6 +1434,9 @@
   Compiler opacity queries reuse finalized outside-source touch results while
   retaining live declaration and rebinding guards; see
   [ADR 0534](docs/adr/0534-bc2cpp-opacity-touch-cache.md).
+  Numeric flow shares unchanged load states while preserving metadata
+  invalidation and write tracking; see
+  [ADR 0536](docs/adr/0536-bc2cpp-unchanged-load-states.md).
   Selected core Ruby collection bodies now retain exact return classes across zero-argument calls,
   including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
   `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks
