@@ -187,10 +187,20 @@ Two constant rows widen what the report can type. Both are report-only: codegen 
   is one the IR already binds. Any other foreign definition, and every foreign class or module name, still poisons. The
   value run keeps `foreign_const_names`, so `fixnum_names` is unchanged. `StringIO::READWRITE` (`READABLE | WRITABLE`) is
   typed this way.
-* The constructed-constant rows (`inferred:constructed`) judge a bare name's sites together: every site must construct the
-  same class (for example `Color.new`), and `ClosedWorld#static_constant_writes?` must show the name is written only by
-  those sites. A single-site name is judged as before. Because these hints feed `container_constants`, this does change
-  codegen for multi-site names; the hints stay guarded at dispatch (CLOSED_WORLD_VALUE_CONSTANT).
+* The constructed-constant rows (`inferred:constructed`) judge each qualified name by its own sites: every site of that
+  name must construct the same class (for example `Color.new`). `ClosedWorld#static_constant_writes?` must show the bare
+  name is written only by the program's SETCONST sites, counted across every scope. The other sites of the same bare
+  name (in any scope) must not be reachable from this one: `constant_scopes_unrelated?` (dispatch_targets.rb) requires
+  that neither owner encloses the other, and neither is among the other's ancestors (superclasses, included and
+  prepended modules, Object and its mixins). An ancestry it cannot model (an unresolved or reopened superclass, an
+  unresolved mixin) counts as related. A bare read from a scope reaches only its lexical chain and its ancestors, so
+  a related sibling could answer a read this site's hint covers, and the hint is then withheld. A single-site name is
+  judged as before.
+
+  Example: `TEXT_COLOR = Color.new(...)` in `ChipsetEditor` and `MapViewer`, plus `TEXT_COLOR = 0` in `EquipMenu` and
+  `SaveLoad`. All four sit in sibling subclasses of `Scene::Base`, none encloses another, so the two `Color` sites are
+  typed `RGSS::Color` and the two integer sites stay untyped. Because these hints feed `container_constants`, this does
+  change codegen for multi-site names; the hints stay guarded at dispatch (CLOSED_WORLD_VALUE_CONSTANT).
 
 ## Constant ratchet (TC1017, ADR 0491)
 
