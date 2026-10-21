@@ -201,6 +201,22 @@ Two constant rows widen what the report can type. Both are report-only: codegen 
   is one the IR already binds. Any other foreign definition, and every foreign class or module name, still poisons. The
   value run keeps `foreign_const_names`, so `fixnum_names` is unchanged. `StringIO::READWRITE` (`READABLE | WRITABLE`) is
   typed this way.
+* HASH_LOOKUP (class run only, `hash_lookup_safe`) types a lookup `NAME[k]` as Integer, so the bit-operator rule above
+  types `DIR_BIT[2] | DIR_BIT[4] | ...` and `Game::ChipSet::ALL_DIRS` (`inferred:integer-class`). The read is GETIDX
+  (mrbc's `x[k]`); a SEND `[]` is not modelled. It is proven when every binding of the bare name N is a frozen Hash
+  literal, `(literal).freeze`, with these properties:
+  * the freeze's receiver is one HASH node, and nothing between the HASH and the freeze can run a method or copy the
+    object (`Program#quiet_span?`, the container-literal proof), so the frozen table holds the literal's pairs;
+  * every key is an exact Integer literal (no duplicate) and every value an Integer literal (`literal_hash_keys`);
+  * k is one of the keys of every binding's table.
+  The gates are `Hash#[]` stock (`DeclaredConstants.stock_method?`), no non-core native `[]` on a Hash ancestor (its
+  owners read as CallFacts reads them: an unresolved owner refuses), no singleton method on an instance
+  (`exact_instances_singleton_free?`), and no native or foreign definition of N (the value run's poison set). An
+  Integer key needs no `eql?` / `hash` proof: mruby hashes and compares a fixnum key without dispatch
+  (3rd/mruby/src/hash.c). Any other shape (a variable key, a block, a missing key, a non-literal value, an unfrozen or
+  mutated literal, a non-Hash receiver) is not typed. The value run builds the nodes it built before (no HASH or GETIDX
+  node), so the Fixnum facts, the folded values and `container_constants` are unchanged; codegen reads none of this.
+  Checked by `scripts/bc2cpp/frozen_hash_lookup_check.rb`.
 * The constructed-constant rows (`inferred:constructed`) judge each qualified name by its own sites: every site of that
   name must construct the same class (for example `Color.new`). `ClosedWorld#static_constant_writes?` must show the bare
   name is written only by the program's SETCONST sites, counted across every scope. The other sites of the same bare
