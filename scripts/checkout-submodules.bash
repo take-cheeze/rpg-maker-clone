@@ -40,4 +40,13 @@ for path in ${paths}; do
 done
 
 echo "initializing: ${init[*]}"
-git submodule update --init --depth 1 -- "${init[@]}"
+# RECURSIVE=1 also initialises each submodule's own submodules (3rd/SDL_mixer's
+# external/ libraries). Nix's `?submodules=1` walk reads those too, so the
+# flake job sets it. quickjs-ng's test262 entry is `update = none`, so this
+# still leaves it out.
+recursive=()
+if [ "${RECURSIVE:-}" = 1 ]; then
+  recursive=(--recursive)
+fi
+
+git submodule update --init --depth 1 "${recursive[@]}" -- "${init[@]}"

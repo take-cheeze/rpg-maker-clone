@@ -3089,10 +3089,12 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Every submodule, not the build jobs' subset: the `?submodules=1` walk
-      # below reads each `.gitmodules` entry off disk, and an uninitialised
-      # 3rd/SDL makes it fail.
+      # Every submodule, nested ones too, not the build jobs' subset: the
+      # `?submodules=1` walk below reads each `.gitmodules` entry off disk, and
+      # an uninitialised 3rd/SDL or 3rd/SDL_mixer/external/flac makes it fail.
       - name: Init submodules
+        env:
+          RECURSIVE: 1
         run: ./scripts/checkout-submodules.bash
 
       # This is the one job that still fetches submodules (`?submodules=1` on
@@ -3130,8 +3132,13 @@ jobs:
       # build log line. Merging stderr into stdout is what lets one filter see
       # both; `-L`'s build logs stay untouched, they are prefixed with the
       # derivation name rather than looking like fetch output.
+      # `set -o pipefail` is explicit because this step's shell is `bash -e`,
+      # which does not set it: without it the pipeline's status would be the
+      # filter's, and a failed nix build would pass.
       - name: Build flake
-        run: nix build -L '.?submodules=1#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
+        run: |
+          set -o pipefail
+          nix build -L '.?submodules=1#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
 
   # Publish the WebAssembly page to GitHub Pages on every push to master. The
   # build carries no pthreads/SharedArrayBuffer, so it needs no COOP/COEP
