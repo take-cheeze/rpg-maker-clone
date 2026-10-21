@@ -26,11 +26,19 @@ Repeated context class decoding is cached within one engine, with invalidation
 when numeric class bits or private container shapes are registered. See [ADR 0517](adr/0517-type-check-report-cost.md).
 
 Root context graphs retain their own admission and round budgets. Small leaf
-contexts reuse immutable evaluations at their normal solver turn; graphs with
-callee or effect dependencies still use the full evaluator. Reuse stays within
+contexts reuse immutable evaluations at their normal solver turn. Reuse stays within
 one context engine and is bounded to 128 snapshots of at most 4096 state cells.
 Set `BC2CPP_IR_LEAF_EVALUATIONS=0` for a comparison run. See
 [ADR 0518](adr/0518-reuse-leaf-context-evaluations.md).
+
+Within each root graph, an evaluated context is reused while every observed
+callee revision stays unchanged. Revisions include flow states, call results,
+literal shapes and return masks because transitive effect checks read callee
+states. Numeric-class or private-shape registration forces reevaluation. Solver
+order, graph admission, round limits and refusal behavior remain unchanged;
+dependency records are released when the root finishes. Set
+`BC2CPP_IR_CONTEXT_REEVALUATION=0` to compare full reevaluation. See
+[ADR 0527](adr/0527-unchanged-context-evaluations.md).
 
 Receiver union decoding indexes numeric class bits and visits only bits present
 in a receiver. Decoded unions are cached within one CodeGen instance, with a
