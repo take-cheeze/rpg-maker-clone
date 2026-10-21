@@ -100,3 +100,22 @@ callbacks which write a record are in its own file, as `mruby`'s `mrb_iv_foreach
 Measured: `mrb_obj_inspect` and `mrb_exc_inspect` are String, and `mrb_inspect` is String through rule 3. `inspect`
 remains refused for `Range#inspect` (`range_inspect` returns the element's `inspect` result, which is dynamic); the
 decision whether a Ruby-level `inspect` returns String by Ruby's protocol is left open.
+
+## Follow-up: the join admits native names with outside Ruby definitions
+
+Date: 2026-10-21
+
+The join refused a native name whenever any native source spelled it (`name_fully_visible?`). That gate was too coarse:
+the native table already accounts for every registration of the name (NativeReturnClasses: each owner has one proven
+entry, and a computed or unknown owner refuses the name), so a native spelling adds no unaccounted definition. The
+join now uses `ClosedWorld#name_visible_to_native_table?`, which checks only what the table cannot see: an installer,
+a `method_missing` hook, a global refusal, and an outside Ruby definition.
+
+An outside Ruby definition of the name joins only when each one is audited to return the table's class. The audit is
+`tools/bc2cpp/foreign_string_results.rb`: a list of pinned mrblib files (SHA-256) with the names read in each, every one
+returning a String on every path (a literal, an interpolation or `String#%`). An edited file leaves the audit, and a
+definition not listed keeps its name refused. Audited String paths are checked by `native_return_sources_visible?`,
+the same rule ADR 0334 uses. Only `String` is audited; the Integer and Float names need no Ruby definition.
+
+Measured on the probe fixture (CxHolder calling `inspect`, `to_s`, `to_i`, `to_f` on an unknown receiver): all four join
+in the final pass, to String, String, Integer and Float. Before this, the final pass refused all four.
