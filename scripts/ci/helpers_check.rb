@@ -281,6 +281,9 @@ flake_steps = workflow.fetch('jobs').fetch('flake').fetch('steps')
 build_flake = flake_steps.find { |step| step['name'] == 'Build flake' }
 check.call('the flake job sets pipefail in its nix build step, not the runner default',
            build_flake && build_flake['run'].to_s.include?('set -o pipefail') && build_flake['run'].to_s.include?('drop-git-fetch-noise.bash'))
+flake_init = flake_steps.find { |step| step['name'] == 'Init submodules' }
+check.call('the flake job initialises nested submodules too (the ?submodules=1 walk reads them)',
+           flake_init && flake_init.dig('env', 'RECURSIVE').to_s == '1')
 
 puts(failures.empty? ? 'ci helpers check OK' : "FAILED: #{failures.size}")
 exit(failures.empty? ? 0 : 1)
