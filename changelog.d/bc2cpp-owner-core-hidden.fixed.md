@@ -1,0 +1,1 @@
+- **bc2cpp** closed-world owner calls now name the core Ruby definitions that a native method of the same name hides from the registry, such as mruby-io's `IO.open` beside `StringIO.open`. A `File.open` resolving to `IO.open` raised `closed-world owner violation` at run time; the owner list now includes it.
