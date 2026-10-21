@@ -19,8 +19,10 @@ clang AST return check. The latter prints a skip when clang is unavailable.
 `native_format_types_check.rb` runs in `bc2cpp-build`, where the mruby source
 submodule is available for its `class.c` conversion audit.
 
-`native_owner_map_check.rb` remains independent: it generates separate whole
-programs with mrbc and compares a kill-switch world with an archived base tree.
+`native_owner_map_check.rb` generates separate whole programs with mrbc, and checks
+the owner map's exact-class arms: the proven site gets its arm, each unsound
+definition withdraws it, and `BC2CPP_NATIVE_OWNER_MAP=0` gives the by-name send.
+Its generated-code part needs `MRBC`; without it the check prints a skip.
 `native_result_facts_check.rb` keeps its real-source mutation audit independent
 of the declaration tables, and its MRBC-generated worlds remain separate.
 Its dead-fallback assertions match complete no-method markers, including the

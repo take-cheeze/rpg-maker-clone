@@ -154,6 +154,8 @@ CHECKS = [
   # ADR 0302: the RGSS native result facts against the native sources, and the ClosedWorld questions;
   # the generated-code section skips here.
   { name: 'bc2cpp-native-result-facts', command: %w[scripts/bc2cpp/native_result_facts_check.rb] },
+  # ADR 0397: the owner map's exact-class arms and their kill switch; the generated-code section skips without MRBC.
+  { name: 'bc2cpp-native-owner-map', command: %w[scripts/bc2cpp/native_owner_map_check.rb] },
   # ADR 0311: the AREF transfer and the tuple shape on hand-built bytecode; the fixture sections skip here.
   { name: 'bc2cpp-tuple-return', command: %w[scripts/bc2cpp/tuple_return_check.rb] },
   # ADR 0416: the class-object resolver on hand-built bytecode; the fixture section skips here.
