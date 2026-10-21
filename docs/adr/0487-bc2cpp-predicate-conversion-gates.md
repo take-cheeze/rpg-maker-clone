@@ -28,6 +28,9 @@ error, not a build error, so a predicate rule enforced only through hints would 
   parameter is a build error (`ConversionReturns`, tools/bc2cpp/conversion_returns.rb). Their returns are declared as
   runtime-checked hints in a generated signature file, so a value of the wrong class raises `BC2cppHintViolation` when it
   runs, and a return the compiler proves costs no check.
+- Their optional parameters are declared `?T`, T the class of a literal default (`?untyped` otherwise). The checker
+  gives an optional parameter no hint (TC1005), so this declaration is documentation until optional positions are
+  checked at call sites (ADR 0456 covers only required ones).
 
 ## Consequences
 
