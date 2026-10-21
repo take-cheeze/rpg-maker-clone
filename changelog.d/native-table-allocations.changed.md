@@ -1,0 +1,1 @@
+- **bc2cpp** looks up native table markers without allocating on every comment and every enclosing declaration, cutting the generator's allocation count; generated output is unchanged.
