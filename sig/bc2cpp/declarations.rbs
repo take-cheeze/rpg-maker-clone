@@ -8300,6 +8300,17 @@ end
 class StopIteration < IndexError
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_symbol
+class Symbol
+  def capitalize: () -> untyped
+  def casecmp: (untyped) -> untyped
+  def casecmp?: (untyped) -> untyped
+  def downcase: () -> untyped
+  def empty?: () -> untyped
+  def upcase: () -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
