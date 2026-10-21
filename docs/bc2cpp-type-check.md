@@ -263,3 +263,13 @@ wants annotated, 4 argument mismatches from `untyped`-vs-inferred unions, 1 over
 signatures for the engine's native classes and the mruby-only core methods (a hand-written or generated set per native
 gem; not done here) and for the module-level helpers. Larger gems (mruby-rpg2k, mruby-rgss) additionally need the lcf and
 rgss native classes declared, so they would stop at hundreds of `NoMethod` until then. Full mruby-core RBS is out of scope.
+
+## Shared reaching definitions
+
+Internal type, numeric and constant readers can request `shared: true` from the
+reaching-definition query. Cached results are frozen snapshots; callers must treat
+all results as read-only. Public calls still return independent mutable copies.
+Queries with diagnostics, mutable opaque sets or a saturated cache keep their
+existing fresh-result path. Query options, refusal causes and cache bounds are
+unchanged. `BC2CPP_IR_SHARED_DEFINITIONS=0` retains the copying path for comparison.
+See [ADR 0530](adr/0530-shared-reaching-definitions.md).

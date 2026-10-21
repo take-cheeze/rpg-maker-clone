@@ -1683,6 +1683,9 @@
   [`docs/adr/0063-render-fps-scaled-bitmap-caches.md`](docs/adr/0063-render-fps-scaled-bitmap-caches.md).
   No effect at the default `60`.
 
+- Read-only IR consumers borrow frozen reaching-definition cache entries while
+  public callers retain independent mutable results.
+
 ### Build natively without Nix
 
 - The supported build is the Nix flake (`nix develop`), which pins every
