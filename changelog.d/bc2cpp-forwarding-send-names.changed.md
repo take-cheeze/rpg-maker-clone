@@ -1,0 +1,1 @@
+- The bc2cpp analyses YIELD_REACH, ESCAPE_ANALYSIS and BLOCK_SELF_WORLD now read the forwarding-send names (`send`, `__send__`, `public_send`) from one shared list, `SendNames::FORWARDING_SENDS` in `tools/bc2cpp/send_names.rb`, instead of three hand-copied lists. The names are unchanged, so the analyses behave as before.

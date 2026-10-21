@@ -1,0 +1,1 @@
+- **bc2cpp** checked the block-iterator method lists in `codegen_loop_regions.rb` against `sig/bc2cpp/declarations.rbs`. None is exactly what the RBS states, so they stay hand-written and each now says why. Generated output is unchanged.
