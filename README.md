@@ -1040,6 +1040,9 @@
   compilation probes while keeping embedding eligibility and emitted registrations
   specific to each compilation. See [ADR 0528](docs/adr/0528-block-capture-index.md).
 
+- Mask diagnostics reuse immutable class-bit positions and primitive name tables
+  while preserving registration order and private shape names; see [type checking](docs/bc2cpp-type-check.md).
+
 - Numeric dataflow shares read-only first incoming states, avoiding redundant
   state-array copies while retaining independent updates; see [numeric class facts](docs/bc2cpp-ir-numeric-classes.md).
 

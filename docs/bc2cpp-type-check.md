@@ -280,6 +280,17 @@ signatures for the engine's native classes and the mruby-only core methods (a ha
 gem; not done here) and for the module-level helpers. Larger gems (mruby-rpg2k, mruby-rgss) additionally need the lcf and
 rgss native classes declared, so they would stop at hundreds of `NoMethod` until then. Full mruby-core RBS is out of scope.
 
+### Mask diagnostic allocations
+
+Numeric mask names reuse an immutable primitive name table. Class mask names
+reuse the existing registered-class snapshot and test integer bit positions,
+avoiding temporary wide integer intersections while preserving registration
+order. The snapshot follows numeric naming because a Symbol lookup can lazily
+register its class. Snapshot identity and size continue to follow class growth
+and probe rollback (ADR 0531). Negative masks, LCF kinds, private shape names and
+the text and mutability of returned strings retain their existing behavior.
+No diagnostic result strings are cached.
+
 ## Shared reaching definitions
 
 Internal type, numeric and constant readers can request `shared: true` from the
