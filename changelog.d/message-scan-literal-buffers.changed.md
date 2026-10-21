@@ -1,0 +1,1 @@
+- **Message scan** starts its text buffers as mutable copies (`+''`), so the scanner stays correct if string literals become frozen. Output is unchanged.

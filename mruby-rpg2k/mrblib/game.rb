@@ -173,7 +173,7 @@ module Game
       instant_start = nil # character index where an open `\>` span began
       auto_close = false
       show_gold = false
-      cur = ''
+      cur = +''
       color = start_color
       count = 0 # visible characters emitted so far (pause positions index this)
       i = 0
@@ -231,7 +231,7 @@ module Game
               seg.color = color
               segs << seg
             end
-            cur = ''
+            cur = +''
             # An out-of-range index (>19, the highest real palette colour)
             # resets to colour 0 rather than staying out of range (believed
             # to apply to every ordinary RPG2000/2003 game, ported from a
