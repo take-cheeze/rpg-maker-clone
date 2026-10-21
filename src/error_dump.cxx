@@ -3,6 +3,7 @@
 // picks the block up.
 
 #include "error_dump.hxx"
+#include "mrb_array_access.hxx"
 
 #include <cstdio>
 #include <cstdlib>
@@ -147,10 +148,10 @@ std::string build(mrb_state* M, mrb_value exc, const char* where) {
     // innermost, which is where the exception was actually raised; keep that
     // order so a report reads like the trace people already know.
     const mrb_value bt = call(M, exc, "backtrace");
-    if (mrb_array_p(bt) && RARRAY_LEN(bt) > 0) {
+    if (mrb_array_p(bt) && ary_size(bt) > 0) {
       std::string trace = "trace (most recent call last):\n";
-      for (mrb_int i = RARRAY_LEN(bt) - 1; i >= 0; --i)
-        trace += "\t" + to_std_string(RARRAY_PTR(bt)[i]) + "\n";
+      for (mrb_int i = ary_size(bt) - 1; i >= 0; --i)
+        trace += "\t" + to_std_string(ary_items(bt)[i]) + "\n";
       r += "### Backtrace\n\n";
       append_fenced(r, trace);
     } else {

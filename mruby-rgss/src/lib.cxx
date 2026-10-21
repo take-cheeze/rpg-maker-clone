@@ -20,6 +20,7 @@
 #include <lvgl.h>
 
 #include "default_font.hxx"
+#include "mrb_array_access.hxx"
 #include "profiler.hxx"
 #include "rgss_construct.hxx"
 #include "shinonome.hxx"
@@ -2404,10 +2405,10 @@ mrb_value bmp_blt_quads(mrb_state* M, V self) {
   Bitmap& dst = bmp_self(M, self);
   Bitmap& sb = bmp_require(M, src);
   Rect rc;
-  const mrb_int n = RARRAY_LEN(quads_v);
+  const mrb_int n = ary_size(quads_v);
   for (mrb_int i = 0; i < n; ++i) {
     V qv = mrb_ary_ref(M, quads_v, i);
-    if (!mrb_array_p(qv) || RARRAY_LEN(qv) != 6)
+    if (!mrb_array_p(qv) || ary_size(qv) != 6)
       mrb_raisef(
           M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "RGSSError"),
           "blt_quads: each quad must be [qdx, qdy, sx, sy, w, h] (%S)", qv);
@@ -3083,7 +3084,7 @@ FontAttr read_font(mrb_state* M, V self) {
       nv = mrb_funcall(M, fv, "name", 0);
     if (mrb_string_p(nv)) {
       name.assign(RSTRING_PTR(nv), RSTRING_LEN(nv));
-    } else if (mrb_array_p(nv) && RARRAY_LEN(nv) > 0 &&
+    } else if (mrb_array_p(nv) && ary_size(nv) > 0 &&
                mrb_string_p(mrb_ary_ref(M, nv, 0))) {
       // RGSS accepts an array of family names; use the first.
       const V n0 = mrb_ary_ref(M, nv, 0);
@@ -3907,8 +3908,8 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
       const mrb_value objs = zorder_objs(M);
       const mrb_value live = mrb_ary_new(M);
       std::map<lv_obj_t*, std::multimap<mrb_int, lv_obj_t*>> by_parent;
-      for (mrb_int i = 0; i < RARRAY_LEN(objs); ++i) {
-        const mrb_value v = RARRAY_PTR(objs)[i];
+      for (mrb_int i = 0; i < ary_size(objs); ++i) {
+        const mrb_value v = ary_items(objs)[i];
         if (!DATA_PTR(v))
           continue;
         mrb_ary_push(M, live, v);
@@ -3934,8 +3935,8 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
       ProfilerScope _iscope("gfx.invalidate");
       const mrb_value roots = zorder_objs(M);
       const mrb_sym bitmap_sym = mrb_intern_lit(M, "@bitmap");
-      for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
-        const mrb_value v = RARRAY_PTR(roots)[i];
+      for (mrb_int i = 0; i < ary_size(roots); ++i) {
+        const mrb_value v = ary_items(roots)[i];
         lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(v));
         if (!obj)
           continue;
@@ -3957,8 +3958,8 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
       }
       // Second pass: clear the flags now that every referencing sprite is
       // marked.
-      for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
-        const mrb_value v = RARRAY_PTR(roots)[i];
+      for (mrb_int i = 0; i < ary_size(roots); ++i) {
+        const mrb_value v = ary_items(roots)[i];
         if (!DATA_PTR(v))
           continue;
         const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
@@ -5430,7 +5431,7 @@ std::vector<TilemapStrip> tilemap_strips(mrb_state* M, mrb_value self) {
   if (!mrb_hash_p(strips))
     return out;
   const mrb_value keys = mrb_hash_keys(M, strips);
-  for (mrb_int i = 0; i < RARRAY_LEN(keys); ++i) {
+  for (mrb_int i = 0; i < ary_size(keys); ++i) {
     const mrb_value k = mrb_ary_ref(M, keys, i);
     const mrb_value v = mrb_hash_get(M, strips, k);
     if (!mrb_test(v) || !DATA_PTR(v))
@@ -5456,7 +5457,7 @@ std::vector<TilemapStrip> tilemap_strips(mrb_state* M, mrb_value self) {
 bool vx_has_sheets(mrb_state* M, mrb_value bitmaps) {
   if (!mrb_array_p(bitmaps))
     return false;
-  for (mrb_int i = 0; i < RARRAY_LEN(bitmaps); ++i) {
+  for (mrb_int i = 0; i < ary_size(bitmaps); ++i) {
     const mrb_value b = mrb_ary_ref(M, bitmaps, i);
     if (mrb_test(b) && DATA_PTR(b))
       return true;
@@ -7214,8 +7215,8 @@ void vp_refresh_children(mrb_state* M, mrb_value self) {
   RClass* tilemap_class = mrb_class_get_under(M, rgss, "Tilemap");
 #endif  // !defined(WIO_TERMINAL)
   const mrb_value objs = zorder_objs(M);
-  for (mrb_int i = 0; i < RARRAY_LEN(objs); ++i) {
-    const mrb_value v = RARRAY_PTR(objs)[i];
+  for (mrb_int i = 0; i < ary_size(objs); ++i) {
+    const mrb_value v = ary_items(objs)[i];
     if (!DATA_PTR(v))
       continue;
     const mrb_value vp = mrb_iv_get(M, v, mrb_intern_lit(M, "@viewport"));
