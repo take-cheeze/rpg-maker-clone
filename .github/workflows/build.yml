@@ -1051,6 +1051,7 @@ jobs:
           ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
           ruby scripts/bc2cpp/decided_branch_check.rb
           ruby scripts/bc2cpp/arm_prune_check.rb
+          ruby scripts/bc2cpp/constant_argument_sites_check.rb
           ruby scripts/bc2cpp/class_bodies_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
           ruby scripts/bc2cpp/define_method_check.rb
