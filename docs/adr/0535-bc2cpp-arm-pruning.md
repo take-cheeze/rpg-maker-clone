@@ -4,7 +4,8 @@ Date: 2026-10-21
 
 ## Status
 
-Accepted. Stage A is on. Stage B is opt-in (`BC2CPP_PRUNE_ARMS=1`) and off by default.
+Accepted. Stage A is on. Stage B is on by default and turned off with `BC2CPP_PRUNE_ARMS=0`. Its default was switched on
+before the closed-world build and g++ compile of generated code had run, so CI on this change is the first full check of it.
 
 ## Context
 
