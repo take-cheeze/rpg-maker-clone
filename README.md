@@ -1040,6 +1040,11 @@
   compilation probes while keeping embedding eligibility and emitted registrations
   specific to each compilation. See [ADR 0528](docs/adr/0528-block-capture-index.md).
 
+- A literal Array of one to eight immediates that never leaves its method is kept in
+  a C++ buffer instead of a heap Array, when escape analysis and the element and use
+  checks prove it. `BC2CPP_STACK_TUPLES=0` disables it. See
+  [ADR 0545](docs/adr/0545-bc2cpp-stack-tuple-arrays.md).
+
 - Mask diagnostics reuse immutable class-bit positions and primitive name tables
   while preserving registration order and private shape names; see [type checking](docs/bc2cpp-type-check.md).
 

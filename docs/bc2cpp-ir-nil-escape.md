@@ -16,6 +16,7 @@ list, and who consumes their answers.
 | `tools/bc2cpp/codegen_escape.rb:29` (`block_proven_to_stay?`, called from `codegen_block_fallback.rb:364`) | ESCAPE_ANALYSIS | BLOCK_FALLBACK_PROVEN: whether a block's captured pointers may stay on the frame (codegen) |
 | `tools/bc2cpp/rbs_record_types.rb:581` (`name_captures_arg?`) | ESCAPE_ANALYSIS | RBS_RECORD_TYPES' interprocedural Hash scan (codegen: the RECORD_HASH table) |
 | `tools/bc2cpp/escape_report.rb` (`creation`, `captures?`) | ESCAPE_ANALYSIS | `BC2CPP_ESCAPE_REPORT` TSV (report only) |
+| `tools/bc2cpp/codegen_stack_tuples.rb` (`stack_tuple_site`, `creation`'s `tracked` set) | ESCAPE_ANALYSIS, reaching definitions | STACK_TUPLES (ADR 0545): a non-escaping literal Array of immediates is a C++ buffer; `BC2CPP_STACK_TUPLES=0` disables it |
 | `tools/bc2cpp/bc2cpp.rb:344` (`EscapeAnalysis::World.new`) | ESCAPE_ANALYSIS | builds the world; its definition scan feeds every query above |
 
 ## Raw-instruction walks
