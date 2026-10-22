@@ -310,10 +310,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # docs/adr/0210: on single-format builds the closed world is all the Ruby
   # there is, so the compiled gems may replace a proven-dead by-name fallback
   # with a raise (tools/bc2cpp/compiled_gems.rb re-checks the real gem list).
-  # ADR 0214: the same builds compile only tools/bc2cpp/hot_methods.txt to C++;
-  # BC2CPP_HOT_ONLY=0 turns it off for a whole build; nothing turns it on for a build that did not opt in.
-  closed_world = proc { enable_bc2cpp_hot_only }
-  conf.gem "#{MRUBY_ROOT}/../../mruby-lcf-compiled", &closed_world if bc2cpp
+  conf.gem "#{MRUBY_ROOT}/../../mruby-lcf-compiled" if bc2cpp
   # mruby-rgss owns the shared RGSS namespace (Bitmap, Sprite, Viewport, Window,
   # ...). Every maker gem below loads after it and *reopens* that namespace, so a
   # class one of them defines under RGSS replaces mruby-rgss's for the whole
@@ -324,15 +321,15 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # docs/adr/0139: same opt-in mechanism as mruby-lcf-compiled/
   # mruby-rpg2k-compiled above, this time for all 17 of RGSS::Sprite's
   # real bytecode-defined methods.
-  conf.gem "#{MRUBY_ROOT}/../../mruby-rgss-compiled", &closed_world if bc2cpp
+  conf.gem "#{MRUBY_ROOT}/../../mruby-rgss-compiled" if bc2cpp
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
   # docs/adr/0139's own follow-up: same opt-in mechanism, this time for 25
   # of Game::Picture's 26 real methods (everything but #initialize), plus
   # (docs/adr/0139) all 6 of Game::EnemyAction's own real methods.
-  conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k-compiled", &closed_world if bc2cpp
+  conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k-compiled" if bc2cpp
   # docs/adr/0264: mruby's own Ruby (core mrblib, numeric-ext, range-ext) compiled
   # by the same pipeline, methods listed in tools/bc2cpp/core_methods.txt only.
-  conf.gem "#{MRUBY_ROOT}/../../mruby-core-compiled", &closed_world if bc2cpp
+  conf.gem "#{MRUBY_ROOT}/../../mruby-core-compiled" if bc2cpp
   unless single_format_only
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"

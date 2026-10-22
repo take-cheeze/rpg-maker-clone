@@ -17,8 +17,6 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   spec.summary = 'Opt-in AOT-compiled C++ replacements for Game::Picture bytecode methods'
 
   add_dependency 'mruby-rpg2k'
-  # build_config.rb turns on BC2CPP_HOT_ONLY (docs/adr/0214) for the same builds.
-  extend Bc2cppHotOnlyOption
 
   # STALE_REQUIRE_RELATIVE_DEPS: bc2cpp.rb require_relative's several sibling
   # files (native_expression_devirt.rb, symbol_cache.rb, const_site_cache.rb,
@@ -91,7 +89,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   # the bootstrap mrbc exists (ADR 0228).
   file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
-                     BC2CPP_HOT_METHODS_PATH, BC2CPP_CORE_REFUSED_PATH, BC2CPP_SPECIALIZE_PLAN_PATH] do |t|
+                     BC2CPP_CORE_REFUSED_PATH] do |t|
     # SHARED_GENERATION (ADR 0464): with every other compiled gem of this build that is out of date, in one
     # bc2cpp.rb analysis (tools/bc2cpp/compiled_gems.rb bc2cpp_compiled_gem_job holds this gem's environment).
     Bc2cppCompiledGemGeneration.generate(spec, "#{dir}/..")

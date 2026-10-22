@@ -40,14 +40,6 @@ deferred:
     tier: review
     capabilities: []
     reason: Argument-driven deletion audit; requires the method names proposed for deletion.
-  scripts/bc2cpp/hot_only_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - core_library
-    - cxx
-    - native_sources
-    reason: Generated-world and runtime hot-only audit; not enabled in the PR gate.
   scripts/bc2cpp/impossible_as_error_check.rb:
     tier: runtime
     capabilities:
