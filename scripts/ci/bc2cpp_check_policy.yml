@@ -183,6 +183,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/callee_return_fold_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/constant_argument_sites_check.rb:
     tier: fast
     capabilities:
