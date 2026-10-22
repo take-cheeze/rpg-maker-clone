@@ -1160,8 +1160,7 @@
   A shared escape analysis (`tools/bc2cpp/escape_analysis.rb`) answers whether the value a creation site makes
   leaves its frame, with callee summaries over a closed world; its first consumer lets a literal block that captures
   locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything
-  that reaches it. `BC2CPP_ESCAPE_ANALYSIS=0` restores the earlier output; see
-  [`docs/adr/0316-bc2cpp-shared-escape-analysis.md`](docs/adr/0316-bc2cpp-shared-escape-analysis.md).
+  that reaches it. `BC2CPP_ESCAPE_ANALYSIS=0` restores the earlier output.
   The [Optcarrot benchmark](tools/optcarrot_probe/README.md) measures optimized
   mruby and bc2cpp builds by default; `OPTCARROT_DEBUG=1` selects the diagnostic
   build, with separate build directories for each mode.
@@ -1375,9 +1374,7 @@
   classes, which drops 63 by-name else arms of the wio build; `BC2CPP_CALL_FACTS=0` turns it off. Provable errors
   (no class answers, nil receiver, wrong argument count) were measured at 0 engine hits and are not a build error;
   `BC2CPP_REFINE_REPORT=FILE` and `BC2CPP_PROVABLE_ERROR_REPORT=FILE` write the reports that
-  `scripts/bc2cpp/refine_report.rb` aggregates. See
-  [`docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md`](docs/adr/0317-bc2cpp-provable-errors-and-call-facts.md)
-  and `scripts/bc2cpp/call_facts_check.rb`.
+  `scripts/bc2cpp/refine_report.rb` aggregates; see `scripts/bc2cpp/call_facts_check.rb`.
   `BC2CPP_BLOCK_SEND_REPORT=FILE` writes one row per block send (what keeps its dynamic `mrb_funcall_with_block`: an
   unproven receiver, no compiled callee, no direct entry) for `scripts/bc2cpp/block_send_report.rb`; the four levers it
   measured (SENDB call facts, `Array.new { }`, break/return direct entries, `delete`) reach 29 engine sends in all, below

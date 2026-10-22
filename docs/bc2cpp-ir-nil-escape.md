@@ -1,7 +1,7 @@
 # NIL_NARROWING and ESCAPE_ANALYSIS on the bytecode IR
 
 `tools/bc2cpp/nil_narrowing.rb` (NIL_NARROWING, ADR 0456) and
-`tools/bc2cpp/escape_analysis.rb` (ESCAPE_ANALYSIS, ADR 0316) are both standard
+`tools/bc2cpp/escape_analysis.rb` (ESCAPE_ANALYSIS) are both standard
 dataflow analyses. This page records which parts of them read the bytecode IR
 (`tools/bc2cpp/bytecode_ir*.rb`) and which read the raw `irep.instructions`
 list, and who consumes their answers.
