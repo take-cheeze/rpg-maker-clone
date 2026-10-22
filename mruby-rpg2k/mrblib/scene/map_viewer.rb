@@ -294,7 +294,9 @@ class RPG2k
       end
 
       def pick_brush
-        @brush = @brush_layer == :lower ? @map.lower(@cx, @cy) : @map.upper(@cx, @cy)
+        # #lower/#upper return nil off the map; keep the previous brush then.
+        id = @brush_layer == :lower ? @map.lower(@cx, @cy) : @map.upper(@cx, @cy)
+        @brush = id if id.is_a?(Integer)
         refresh
       end
 

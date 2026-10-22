@@ -27058,6 +27058,35 @@ check 'MapViewer Edit mode: CTRL picks up a tile as the brush, C paints it ' \
   eq 7000, st.map.lower(1, 0), 'and left the earlier lower-layer paint untouched'
 end
 
+check 'MapViewer Edit mode: CTRL on an off-map cell keeps the current brush, ' \
+     'and painting that cell does not raise' do
+  w = 6; h = 5
+  lower = Array.new(w * h, 0)
+  lower[0] = 7000 # tile (0, 0)
+  unit = FakeMapUnit.new(width: w, height: h, chipset_id: 1,
+                          lower_layer: lower, upper_layer: Array.new(w * h, 0), events: {})
+  st = menu_state
+  st.map = Game::Map.new(1, unit)
+  st.x = 0; st.y = 0
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+
+  RGSS::Input.triggered = [RGSS::Input::L]
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::CTRL]
+  scene.update
+  eq 7000, scene.instance_variable_get(:@brush), 'CTRL on (0, 0) picked up 7000'
+
+  scene.instance_variable_set(:@cx, w + 1) # one column past the right edge
+  RGSS::Input.triggered = [RGSS::Input::CTRL]
+  scene.update
+  eq 7000, scene.instance_variable_get(:@brush),
+     'CTRL on an off-map cell left the brush at 7000 instead of nil'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update # paint_cursor on the off-map cell: must not raise
+  ok true, 'painting the off-map cell completed without raising'
+end
+
 check 'MapViewer Edit mode R saves the map back to its .lmu path via the parent, ' \
      'and clears the unsaved-changes flag' do
   w = 6; h = 5
