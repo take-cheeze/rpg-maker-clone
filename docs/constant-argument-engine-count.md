@@ -13,28 +13,44 @@ mrblib sources. The analysis is report-only: nothing in the generated C++ change
   from literal arguments at a call site. ConstantFacts (ADR 0501) is not used.
 - The driver is a scratch script and is not committed.
 
-## Summary
+## Summary (current gate)
+
+Measured on `master` at `81709076` with the narrowed gate (see "Global gate" below).
 
 | Count | Value |
 | --- | ---: |
 | methods | 3669 |
 | with_constant_sites | 1637 |
-| single_tuple | 0 |
+| unresolved_methods | 531 |
+| single_tuple | 1245 |
 | pure | 91 |
-| pure_single_tuple | 0 |
-| jumps_in_single_tuple | 0 |
+| pure_single_tuple | 41 |
+| jumps_in_single_tuple | 2236 |
 | jumps_decided | 0 |
-| unresolved_global | true |
+| unresolved_global | false |
 | operator_gate_closed | false |
 
-`single_tuple` is 0 because `unresolved_global` is true, so every method is unresolved and `single` is never set.
+`jumps_decided` is 0 because the 634 single-tuple methods that have jumps all take zero arguments (`tuple=[]`), so no
+parameter test is decided by a constant. The earlier measurement at `fec4dbbd`, before the gate was narrowed, had
+`unresolved_global` true and `single_tuple` 0; the rows below are kept as that history.
+
+## Global gate
+
+The global refusal came from one site: the `define_method(n) { ... }` installers in the `ARRAY_FILES.each` and
+`EDITION_FILES[...].each` loops of `mruby-rpgvx/mrblib/rgss_data.rb` (lines 62, 65) and `mruby-rpgxp/mrblib/rgss_data.rb`
+(line 287). Their name is a block parameter, and LoopInstallers leaves all three loops unregistered, so each is a
+computed-name `define_method`. `unresolved_calls` made any computed-target send global.
+
+The gate now refuses a computed-target send only for the names `DynamicNames.universe` spells, the same universe the
+call-site proofs use (ADR 0279). Every method name the program never spells stays a candidate. Two gates stay global:
+a to_enum site with a computed name, and an alias AliasSites cannot decode.
 
 ## Refusal breakdown
 
 Methods with at least one constant call site (1637) are refused for these reasons. A method can have several.
 
-- **Unresolved (global):** 1637 of 1637. The engine has a computed-target dynamic send, which makes every method
-  unresolved. I did not identify the specific site. Named unresolved names also appear (`sort`, `update`, `initialize`,
+- **Unresolved (global):** 1637 of 1637 at `fec4dbbd`, before the gate was narrowed (see "Global gate" above). The
+  computed-name `define_method` loop installers were the only source. Named unresolved names also appear (`sort`, `update`, `initialize`,
   `private`, `public`, `module_function`, and the `__mrb_native_*` and `_rgss*` helpers), but the global flag is what
   refuses every method.
 - **Impure:** 1515 of the 1637. The most common impure ops are `GETIDX`, `SETIV`, `BLOCK`, `RETNIL`, `ARRAY`, `STRCAT`,
