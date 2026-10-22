@@ -183,6 +183,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/arm_prune_capture_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/param_fold_check.rb:
     tier: fast
     capabilities:

@@ -1056,6 +1056,7 @@ jobs:
           ruby scripts/bc2cpp/freeze_fold_check.rb
           ruby scripts/bc2cpp/arm_prune_check.rb
           ruby scripts/bc2cpp/arm_prune_block_check.rb
+          ruby scripts/bc2cpp/arm_prune_capture_check.rb
           ruby scripts/bc2cpp/param_fold_check.rb
           ruby scripts/bc2cpp/constant_argument_sites_check.rb
           ruby scripts/bc2cpp/class_bodies_check.rb
