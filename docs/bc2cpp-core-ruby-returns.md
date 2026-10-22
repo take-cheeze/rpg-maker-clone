@@ -151,3 +151,17 @@ Array/Hash/String/Range bodies are specialized for it exactly as for a literal
 block, and `list.reject(&:dead?).map { ... }` keeps an exact Array result. A block
 held in a local, a forwarded `&block` or a block chosen at run time still has no
 proof. `BC2CPP_CORE_RUBY_SYMBOL_BLOCKS=0` withdraws the Symbol case.
+
+## Query allocation control
+
+Core result queries reuse a frozen empty recursion set and zero-argument list,
+and compute the allowed core receiver mask once from `RETURN_CORE_CLASS`.
+Calls with positional arguments still read the current flow state into a fresh
+array; receiver selection, live exclusions and recursive specialization remain
+per query. An unknown receiver uses the same receiver-independent proof without
+first constructing an empty selection hash.
+
+`BC2CPP_CORE_RUBY_QUERY_SCRATCH=0` restores temporary input allocation for
+comparison runs. The host query check compares answers and the order of live
+queries across receiver unions, argument masks, recursion, refusals and switches.
+The type-check pipeline also compares complete facts and receiver rows.

@@ -1466,6 +1466,8 @@
   including literal blocks without `break`. This proves results of `map`, `select`, `reject`,
   `partition`, `tally` and `Hash#to_h` from their actual bytecode, while overrides and unknown blocks
   withdraw the proof. The same-tree Wio comparison removes five cached sites (2,858 to 2,853).
+  Check-phase queries share frozen empty inputs and a constant core receiver mask;
+  `BC2CPP_CORE_RUBY_QUERY_SCRATCH=0` restores temporary input allocation for comparisons.
   `BC2CPP_CORE_RUBY_RESULTS=0` disables it. See
   [`docs/bc2cpp-core-ruby-returns.md`](docs/bc2cpp-core-ruby-returns.md) and
   [`ADR 0338`](docs/adr/0338-bc2cpp-core-ruby-return-classes.md).
