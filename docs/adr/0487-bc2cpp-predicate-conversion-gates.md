@@ -42,3 +42,13 @@ error, not a build error, so a predicate rule enforced only through hints would 
   checked against its own body; the closed world does not allow redefining core methods.
 - The gate reads every `mrblib` and gem Ruby source, including mruby's core gems under `3rd/mruby/mrbgems`, so the
   whitelist covers those too.
+
+## Follow-up: the conversion set covers Ruby's explicit conversions
+
+Date: 2026-10-22
+
+The conversion gate now covers `inspect`, `to_i` and `to_f` as well, with the declared classes `String`, `Integer` and
+`Float`. The set is the `RETURNS` table in `tools/bc2cpp/conversion_returns.rb`, and each name gets its runtime-checked
+hint and the same parameter rule (optional positional only). Mruby's own Ruby is not hinted: a native-named core method
+(`File#inspect`, `Enumerator#inspect`) is hidden from the registry, so a hint for it would name no program method (TC1003).
+The parameter rule still applies to every source.

@@ -1434,14 +1434,21 @@
   Compiler opacity queries reuse finalized outside-source touch results while
   retaining live declaration and rebinding guards; see
   [ADR 0534](docs/adr/0534-bc2cpp-opacity-touch-cache.md).
+  Reaching-definition queries reuse immutable opaque-register key snapshots and
+  preserve caller-owned strings; see [query keys](docs/bc2cpp-type-check.md#reaching-definition-query-keys).
   Embedding compile probes reuse a fixed state-key list and restore caller state
   without temporary pairs. Eligibility probes also skip error-free register-text
   optimization while final emission retains it; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
   LCF and frozen-table mask diagnostics avoid temporary wide integer intersections;
   see [mask diagnostics](docs/bc2cpp-type-check.md#mask-diagnostic-allocations).
+  Compiler call-arity predicates read decoded operands without formatting argument counts.
+  Numeric-flow branch walks avoid temporary truthiness pairs while retaining oracle queries.
   Numeric flow shares unchanged load states while preserving metadata
   invalidation and write tracking; see
   [ADR 0536](docs/adr/0536-bc2cpp-unchanged-load-states.md).
+  Numeric flow also shares unchanged scalar result states, including constants,
+  arithmetic and index results, while retaining silent-call invalidation; see
+  [ADR 0541](docs/adr/0541-bc2cpp-unchanged-result-states.md).
   Numeric flow reuses each ivar slot's last widened mask during a run, avoiding
   repeated wide-mask unions while preserving call invalidation; see
   [ADR 0538](docs/adr/0538-bc2cpp-slot-union-fixed-points.md).

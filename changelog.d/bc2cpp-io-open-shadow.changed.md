@@ -1,0 +1,1 @@
+- **bc2cpp type check** now types `STDIN`, `STDOUT` and `STDERR` as `IO` (`inferred:io-open`) when they are a blockless `IO.open`. The IO binding model counts mruby-io's and mruby-stringio's plain `IO` defines and io.rb's root-level `class IO` as one binding, not a shadow. Covered by `scripts/bc2cpp/io_open_check.rb`.

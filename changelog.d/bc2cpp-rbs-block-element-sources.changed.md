@@ -1,0 +1,1 @@
+- **bc2cpp**: block iterator element sources (`map`, `collect`, `filter_map` from the block's return; Array's `select`, `reject`, `find_all`, `sort_by` from the receiver) are read from the RBS declarations instead of a name list (ADR 0540).

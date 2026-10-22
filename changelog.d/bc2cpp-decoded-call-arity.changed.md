@@ -1,0 +1,1 @@
+- Avoid formatting argument counts during compiler fixed-call and pure-splat classification.
