@@ -246,7 +246,7 @@ lv_display_t* psp_display_create(int32_t hor_res, int32_t ver_res) {
   // unrelated diagnostic code shifted the binary), LVGL and later flush_cb
   // calls write through it into unrelated memory instead, corrupting LVGL's
   // own TLSF pool -- which is what the original "block already marked as
-  // free" assert deeper in this ADR's P1 trail actually traced back to.
+  // free" assert deeper in the earlier bring-up trail actually traced back to.
   g_buf1.resize(buf_bytes);
   g_buf2.resize(buf_bytes);
   // Check the post-condition rather than trusting it. This toolchain has

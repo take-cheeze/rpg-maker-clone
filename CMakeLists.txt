@@ -103,7 +103,7 @@ elseif(ANDROID)
   # path an APK's native libs can resolve against at all) -- every SDL2 Android
   # app vendors the source and builds it as part of its own native library, the
   # same way app/android's Gradle project points its CMake build straight at
-  # this file. See docs/adr/0058-android-port.md.
+  # this file.
   #
   # Both build SHARED (their own CMakeLists.txt default): app/android's Java
   # SDLActivity subclass loads "libSDL2.so" and "libSDL2_mixer.so" before
@@ -271,11 +271,11 @@ add_subdirectory(3rd/uni-algo EXCLUDE_FROM_ALL)
 include(cmake/uni-algo-trim.cmake)
 rpg2k_trim_uni_algo()
 
-# quickjs-ng: the embedded JavaScript engine for RPG Maker MV support (see
-# docs/adr/0004-javascript-maker-mv-quickjs.md). Only the `qjs` static library
-# is needed — linking it also carries quickjs's own include directory and its
-# libm/pthreads dependencies transitively. Its CLI, examples, install rules and
-# tests are turned off so add_subdirectory only builds the library.
+# quickjs-ng: the embedded JavaScript engine for RPG Maker MV support. Only the
+# `qjs` static library is needed — linking it also carries quickjs's own include
+# directory and its libm/pthreads dependencies transitively. Its CLI, examples,
+# install rules and tests are turned off so add_subdirectory only builds the
+# library.
 set(QJS_ENABLE_INSTALL
     OFF
     CACHE BOOL "" FORCE)
@@ -287,21 +287,21 @@ set(BUILD_TESTING OFF)
 add_subdirectory(3rd/quickjs EXCLUDE_FROM_ALL)
 set(BUILD_TESTING ${old_build_testing})
 
-# EGL (surfaceless) + GLES2 back the RPG Maker MZ WebGL renderer
-# (mruby-mvjs/src/mvgl.cxx, ADR 0004 M6.3). A surfaceless EGL context renders
-# through llvmpipe into an FBO with no GPU or display, matching the software
-# LVGL pipeline. This is optional: where the libraries are absent (Emscripten
-# uses the browser's WebGL; a build without them, e.g. darwin) mvgl.cxx compiles
-# to inert stubs (its __has_include guard), so we only link them when found
-# rather than REQUIRE them. The apt and nix builds both provide them.
+# EGL (surfaceless) + GLES2 back the RPG Maker MZ WebGL renderer A surfaceless
+# EGL context renders through llvmpipe into an FBO with no GPU or display,
+# matching the software LVGL pipeline. This is optional: where the libraries are
+# absent (Emscripten uses the browser's WebGL; a build without them, e.g.
+# darwin) mvgl.cxx compiles to inert stubs (its __has_include guard), so we only
+# link them when found rather than REQUIRE them. The apt and nix builds both
+# provide them.
 #
 # Android also finds and links both here -- despite mvgl.cxx's own
 # !defined(__ANDROID__) guard keeping it off the real EGL desktop path (its
 # libEGL.so does not export eglGetPlatformDisplay, unlike the apt/nix Mesa
-# builds -- see mvgl.cxx and docs/adr/0058-android-port.md) -- because LVGL's
-# own OpenGL ES driver (3rd/lvgl/src/drivers/opengles, compiled unconditionally
-# the same __has_include-driven way the SDL driver above is) calls plain GLES2
-# entry points (glViewport, glClear, ...) that Android's real libGLESv2.so does
+# builds -- see mvgl.cxx) -- because LVGL's own OpenGL ES driver
+# (3rd/lvgl/src/drivers/opengles, compiled unconditionally the same
+# __has_include-driven way the SDL driver above is) calls plain GLES2 entry
+# points (glViewport, glClear, ...) that Android's real libGLESv2.so does
 # provide; only the desktop-EGL-1.5-specific symbol was ever missing.
 set(GL_LIBS "")
 if(NOT EMSCRIPTEN)
@@ -490,9 +490,9 @@ rpg2k_add_mruby(
   mruby-rpgvx
   mruby-wolf
   mruby-mvjs
-  # No *-compiled gem: bc2cpp compiles closed-world builds only (psp/wio/maix,
-  # docs/adr/0466), and every build this file makes loads or defines Ruby at
-  # runtime, so it is always the plain mruby build.
+  # No *-compiled gem: bc2cpp compiles closed-world builds only (psp/wio/maix),
+  # and every build this file makes loads or defines Ruby at runtime, so it is
+  # always the plain mruby build.
   MRB_OPTS
   BUILD_DIR=${MRUBY_BUILD_DIR}
   "CXX=${CMAKE_CXX_COMPILER_LAUNCHER} ${CMAKE_CXX_COMPILER}"
@@ -535,8 +535,7 @@ if(ANDROID)
   # src/main/android/SDL_android_main.c (linked below) is the real JNI entry
   # point Java calls; it forwards into this project's own renamed SDL_main
   # (src/main.cxx's ordinary `int main`, renamed by SDL.h's `#define main
-  # SDL_main` on every platform including this one -- see
-  # docs/adr/0058-android-port.md).
+  # SDL_main` on every platform including this one.
   add_library(${PROJECT_NAME} SHARED ${RPG_SOURCES})
 else()
   add_executable(${PROJECT_NAME} ${RPG_SOURCES})
@@ -691,8 +690,8 @@ if(EMSCRIPTEN)
     "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS']"
     # Pulls in Emscripten's IndexedDB-backed filesystem so src/shell.html can
     # mount FS.filesystems.IDBFS and call FS.syncfs -- persisting save data
-    # across reloads (see docs/adr/0064). Not linked by default even with
-    # FORCE_FILESYSTEM, which only guarantees the in-memory MEMFS backend.
+    # across reloads. Not linked by default even with FORCE_FILESYSTEM, which
+    # only guarantees the in-memory MEMFS backend.
     "-lidbfs.js"
     # src/shell.html mirrors saves into IDBFS by hooking
     # FS.trackingDelegate.onCloseFile. Emscripten compiles every
@@ -747,7 +746,6 @@ if(EMSCRIPTEN)
   # `/preview` deploys. scripts/pack-timidity-data.py splits them across as many
   # timidity*.data packages as the budget needs and emits a single timidity.js
   # loader for them, which src/shell.html pulls in ahead of the runtime script.
-  # See ADR 0031.
   #
   # Three settings, because the two callers want opposite things:
   #
@@ -882,7 +880,7 @@ enable_testing()
 # desktop build, meaningless for Emscripten (a browser runtime, not a host
 # executable) and for Android (an ARM/x86 .so a Gradle/Java host can't exec
 # either; the closest equivalent would be an instrumented run under adb/an
-# emulator, not wired up here -- see docs/adr/0058-android-port.md).
+# emulator, not wired up here).
 if(NOT EMSCRIPTEN AND NOT ANDROID)
   add_test(
     NAME mruby_test
@@ -918,11 +916,11 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
 
   # The shared map-walk core (app/shared/rpg2k_walk), the engine the iPod nano
   # 7G homebrew app and the Wio Terminal walk firmware both run. Neither device
-  # is reachable from CI -- no toolchain, no emulator, no board (ADR 61, ADR 7)
-  # -- but the core is plain C with no I/O, so the half that can be wrong in an
-  # interesting way (format parsing, the movement rule, camera clamping, layer
-  # compositing) runs here. It links nothing else, so it builds even where the
-  # engine's own dependencies are unavailable.
+  # is reachable from CI -- no toolchain, no emulator, no board -- but the core
+  # is plain C with no I/O, so the half that can be wrong in an interesting way
+  # (format parsing, the movement rule, camera clamping, layer compositing) runs
+  # here. It links nothing else, so it builds even where the engine's own
+  # dependencies are unavailable.
   add_executable(
     walk_core_test
     ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk/rpg2k_walk_core.c
@@ -932,12 +930,11 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
   add_test(NAME walk_core COMMAND walk_core_test)
 
   # A host-side implementation of the hb_raw_surface/hb_sdk subset the iPod nano
-  # 7G app calls (app/nano7/host, docs/adr/0102), linking
-  # app/nano7/rpg2k_walk/rpg2k_walk.c itself unmodified -- unlike walk_core
-  # above, this exercises the app's real entry points (hb_raw_init/
-  # hb_raw_frame), not just the platform-independent core behind them. Built
-  # here alongside walk_core_test (desktop only, like it), linking the same
-  # SDL2::SDL2 target src/main.cxx does.
+  # 7G app calls, linking app/nano7/rpg2k_walk/rpg2k_walk.c itself unmodified --
+  # unlike walk_core above, this exercises the app's real entry points
+  # (hb_raw_init/ hb_raw_frame), not just the platform-independent core behind
+  # them. Built here alongside walk_core_test (desktop only, like it), linking
+  # the same SDL2::SDL2 target src/main.cxx does.
   add_executable(
     nano7_walk_host
     ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk/rpg2k_walk_core.c
@@ -953,8 +950,8 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
   # nano7_walk_host headless against it and saves a BMP;
   # scripts/nano7/host_smoke_check.rb (a plain-Ruby BMP reader, no ImageMagick)
   # asserts the frame actually carries real map content rather than a blank/flat
-  # fill. Needs no display -- see docs/adr/0102 -- so unlike
-  # exe_open/render_probe below this needs no xvfb-run/--server-num.
+  # fill. Needs no display, so unlike exe_open/render_probe below this needs no
+  # xvfb-run/--server-num.
   add_test(
     NAME nano7_host_smoke
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/nano7/host_smoke.bash

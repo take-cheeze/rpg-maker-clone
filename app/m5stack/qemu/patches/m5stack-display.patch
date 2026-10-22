@@ -18,8 +18,8 @@ index 0000000..bb9b9f7
 @@ -0,0 +1,327 @@
 +/*
 + * ILI9341 4-wire SPI TFT panel, wired onto the ESP32 machine's VSPI
-+ * (SPI3) controller for the M5Stack Core (docs/adr/0157 in
-+ * take-cheeze/rpg-maker-clone, this fork's downstream user).
++ * (SPI3) controller for the M5Stack Core (take-cheeze/rpg-maker-clone,
++ * this fork's downstream user).
 + *
 + * Scope is deliberately narrow, mirroring that repo's own Renode
 + * peripheral (app/wio/renode/peripherals/Video/ILI9341_SPI.cs) rather than
@@ -529,9 +529,9 @@ index e000470..841b021 100644
 + * no per-board file the way most QEMU SoCs get one), so this is this
 + * fork's own downstream addition rather than anything upstream
 + * espressif/qemu carries. Purely additive: nothing here changes SPI3's
-+ * behaviour for a firmware that never talks to it. See
-+ * hw/display/esp32_ili9341.c and, in the consuming repo,
-+ * docs/adr/0157-m5stack-core-qemu-emulator.md. */
++ * behaviour for a firmware that never talks to it.
++ * See hw/display/esp32_ili9341.c.
++ */
 +static void esp32_machine_init_m5stack_display(Esp32SocState *ss)
 +{
 +    DeviceState *spi_master = DEVICE(&ss->spi[3]);

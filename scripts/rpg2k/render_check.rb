@@ -9,7 +9,7 @@
 # It pins the tile-id -> chipset source-rect mapping: block classification,
 # the single-chip blocks C/E/F, and the four 8x8 quarter assembly of the water
 # (A/B) and terrain (D) autotiles. This geometry is independently confirmed
-# pixel-identical against a genuine RPG_RT.exe under wine (ADR 0021: 0 of
+# pixel-identical against a genuine RPG_RT.exe under wine (0 of
 # 307200 differing pixels across three Nepheshel maps -- town, interior and
 # open-water -- with chipset layers, autotiles and upper/lower layering all
 # landing on RPG_RT's exact pixels). Every quad it produces must land inside
@@ -19,10 +19,10 @@
 
 lib = File.expand_path('../../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
-load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
-load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file
+load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(lib, 'game', 'legacy_lsd.rb')
-load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
+load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio
 
 L = Game::ChipsetLayout
 

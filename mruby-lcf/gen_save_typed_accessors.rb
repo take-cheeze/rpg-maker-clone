@@ -5,7 +5,7 @@
 # save schema (LCF::Schema::SAVE_DATA and every SAVE_* table it reaches), so
 # each saved field has a declared Ruby class (see SaveTyped.fits? in
 # mrblib/save_typed.rb for the mapping) and LCF::SaveData's reader can check
-# every field against it when a save is read (docs/adr/0400).
+# every field against it when a save is read.
 #
 # Usage:
 #   ruby mruby-lcf/gen_save_typed_accessors.rb [OUT]        # write (default: mrblib/save_typed_accessors.rb and save_typed_setters.rb)
@@ -147,11 +147,11 @@ module GenSaveTyped
   end
 
   # mrblib/save_typed_setters.rb: one typed writer per field, the write side of the
-  # readers above (docs/adr/0407). A writer checks the value's class against the
+  # readers above. A writer checks the value's class against the
   # field's schema type and stores it through LCF::Array1D#[]=, which encodes by the
   # schema, so the bytes written are exactly those of `rec[id] = value`. Field names
   # are Symbols (never String literals): a string literal in the generated
-  # code broke bc2cpp's static-dispatch proof in docs/adr/0400.
+  # code broke bc2cpp's static-dispatch proof.
   def generate_setters
     load_schema
     order, fields = tables

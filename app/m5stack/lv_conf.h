@@ -31,7 +31,7 @@
  * lv_free/lv_snprintf/string ops straight at the already-linked libc
  * versions, so this board's minimal canvas/image/label usage draws from
  * the same dynamic heap mruby uses instead of a second, statically-sized
- * one. See docs/adr/0112. */
+ * one. */
 #define LV_USE_STDLIB_MALLOC  LV_STDLIB_CLIB
 #define LV_USE_STDLIB_STRING  LV_STDLIB_CLIB
 #define LV_USE_STDLIB_SPRINTF LV_STDLIB_CLIB
@@ -54,7 +54,7 @@
  * display is plain RGB565 (m5stack.cxx's lv_display_set_color_format call, no
  * swap) and this HAL-only bring-up slice draws through lv_label/lv_image
  * alone, so byte-swapped RGB565, I1 and premultiplied ARGB8888 backends are
- * dead weight. See docs/adr/0114. */
+ * dead weight. */
 #define LV_DRAW_SW_SUPPORT_I1 0
 #define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED 0
 #define LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED 0

@@ -12,7 +12,7 @@ set -euo pipefail
 # to already be physically contiguous in the linked binary's import metadata,
 # which this project's main.cxx's own (entirely ordinary) control flow does
 # not satisfy -- see patches/psp-fixup-imports-jal-relocation-aware.patch's
-# own preamble and docs/adr/0047-psp-memory-budget.md's P1 for the full
+# own preamble for the full
 # story. Without this, the EBOOT links and packs fine but several genuine,
 # correctly-named PSP imports silently resolve to the wrong module at
 # runtime, which is what actually stopped this port's EBOOT from booting to

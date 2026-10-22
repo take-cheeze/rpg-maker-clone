@@ -533,7 +533,7 @@
         showCrash('Unhandled promise rejection', r && r.stack ? r.stack : String(r));
       });
 
-      // --- Save persistence (IndexedDB via Emscripten IDBFS, see ADR 0064) --
+      // --- Save persistence --
       // Every maker this build supports writes saves as plain files relative
       // to the game directory (/game here) -- the same place the loader just
       // unzipped the whole project into, and which is rebuilt from scratch on

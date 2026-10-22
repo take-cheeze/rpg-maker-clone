@@ -8,7 +8,7 @@
 // profiler -- it needs none of these headers (mruby.h's own declarations are
 // already forward-declared by profiler.hxx, "to avoid pulling <mruby.h> into
 // every includer", the same reasoning applies to LVGL/STL here). See that
-// #else branch's own comment for why, and docs/adr/0125.
+// #else branch's own comment for why.
 #if !defined(WIO_TERMINAL) && !defined(MAIX_BUILD)
 #include <mruby.h>
 #include <mruby/gc.h>
@@ -763,7 +763,7 @@ void profiler_init(mrb_state* M) {
 // float-to-string core), a std::map<std::string, SectionAgg>, and ten
 // mrb_define_module_function registrations, all reachable from
 // mruby-rgss/src/lib.cxx's own gem-init and main-loop calls whether or not
-// g_enabled is ever true. See docs/adr/0125.
+// g_enabled is ever true.
 //
 // This stand-in keeps every call site lib.cxx actually reaches on wio
 // working identically: #profiler_note_frame_drop / #profiler_note_idle (the

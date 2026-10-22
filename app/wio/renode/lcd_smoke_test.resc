@@ -1,4 +1,4 @@
-# A regression test for ILI9341_SPI (docs/adr/0094 P3), not the boot smoke
+# A regression test for ILI9341_SPI, not the boot smoke
 # test that boot.resc is -- drives the SERCOM7/LCD registers directly (no
 # firmware involved) to check CASET/PASET windowing, RAMWR auto-increment
 # addressing and RGB565 decode are all correct in isolation. Usage:

@@ -5,12 +5,12 @@
 # @upper are plain Arrays, and the save packs them through LCF.pack_int16.
 #
 # This pins the CURRENT (Array-backed) behaviour so that a later storage change
-# to std::vector<int16_t> (ADR 0544, staging step 1 -> 3) can be checked against
+# to std::vector<int16_t> can be checked against
 # it. Every expectation is either a value written by hand or a byte string
 # computed by hand from the pack rule: each id is masked to its low 16 bits and
 # written little-endian. Nothing here asserts the Array identity of the unit's
-# chunk 71/72 after a sync, because ADR 0544 deliberately changes that (the
-# unit gets a copy); the oracle pins values and saved bytes only.
+# chunk 71/72 after a sync, because the unit deliberately gets a copy; the
+# oracle pins values and saved bytes only.
 #
 # Usage: ruby scripts/rpg2k/layer_save_oracle_check.rb   (exits non-zero on any failure)
 

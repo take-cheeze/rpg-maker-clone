@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# ADR 0263: the RGSS natives whose bindings were split into a mrb_get_args
+# The RGSS natives whose bindings were split into a mrb_get_args
 # wrapper and a frame-independent `rgss::*_direct` entry point. The entry point
 # is what compiled code calls without a frame, so on the same objects it must
 # answer and change state exactly as the binding does. RGSS::DirectProbe
@@ -82,7 +82,6 @@ assert 'Table#_dump, ._load and the size readers: binding and direct entry point
 end
 
 # Bitmap#text_size has no direct entry point: its body reads the calling frame (REnv), so the generator refuses it
-# (ADR 0263).
 assert 'Bitmap#blur: binding and direct entry point agree' do
   b = RGSS::Bitmap.new(64, 24)
   b.set_pixel(1, 1, RGSS::Color.new(255, 255, 255, 255))
@@ -101,7 +100,7 @@ assert 'Bitmap#_init_size sets up the same bitmap through the binding and the di
   assert_equal by_binding.height, by_direct.height
 end
 
-# ADR 0281: the audio and tts primitives. No backend is installed in the test build, so both
+# The audio and tts primitives. No backend is installed in the test build, so both
 # paths are the graceful no-op and must still answer alike.
 assert 'Audio primitives without a backend: binding and direct entry point agree' do
   audio = RGSS::Audio

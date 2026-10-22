@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 # Split RGSS native bindings into a frame-independent direct entry point and a
-# thin mrb_get_args wrapper (ADR 0263).
+# thin mrb_get_args wrapper.
 #
 #   scripts/native/binding_split.rb report   classify every binding, write nothing
 #   scripts/native/binding_split.rb write    rewrite lib.cxx, the header and the

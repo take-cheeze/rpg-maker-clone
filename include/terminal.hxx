@@ -120,7 +120,7 @@ void terminal_append_console(std::string& s);
 // $stderr" convention).  Keeping the gem's half a bare function pointer,
 // rather than a direct call into ng-log, is what keeps mruby-rgss free of a
 // compile-time dependency on it -- the same reason the log console above is
-// split this way (see docs/adr/0005).  Builds that never install a hook --
+// split this way.  Builds that never install a hook --
 // mrbtest, the PSP and Wio Terminal targets -- leave it null, so the forward
 // is a harmless no-op and $stderr keeps behaving exactly as before there.
 

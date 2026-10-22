@@ -69,7 +69,7 @@ Dir.mktmpdir do |tmp|
   end
 end
 
-# Last in the chain, strip_wio_unreachable_methods.rb (ADR 0218) over the
+# Last in the chain, strip_wio_unreachable_methods.rb over the
 # rbfiles each wio mrbgem.rake keeps: the analysis must accept the sources
 # (no unreviewed computed send) and every strip must apply and parse.
 require_relative 'unreachable_methods'

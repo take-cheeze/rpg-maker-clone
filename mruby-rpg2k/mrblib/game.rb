@@ -72,7 +72,7 @@ module Game
   # `names` may be a Hash or any object responding to `[]`.
   module Message
     # #scan/#parse's own record shapes -- used to be bare Hash literals, then
-    # Structs; plain classes now (docs/adr/0215), so tools/bc2cpp/bc2cpp.rb
+    # Structs; plain classes now, so tools/bc2cpp/bc2cpp.rb
     # sees each accessor and keeps the Integer/Symbol/boolean fields as
     # typed struct fields. Every construction site below is a bare `.new`
     # plus one setter per field (see SCAN_STRUCT_CONSTRUCTION below), so the
@@ -469,8 +469,7 @@ module Game
   end
 
   # Geometry of the selection cursor RPG2000 draws inside a window, ported from
-  # a genuine RPG_RT frame (see scripts/compare/nepheshel-wine.bash and ADR
-  # 0021). The cursor art is a 32x32 block of the System windowskin with 8px
+  # a genuine RPG_RT frame (see scripts/compare/nepheshel-wine.bash). The cursor art is a 32x32 block of the System windowskin with 8px
   # corners; RPG_RT draws it around the selected row four pixels wider on each
   # side than the window's content area, but exactly the row's height — it is
   # *not* inflated vertically the way the horizontal axis is.
@@ -675,7 +674,7 @@ module Game
 
   # A battler's base stat / per-battle modifier for `key` (:atk, :def, :spi or
   # :agi) -- 0 for a fixture without it. Spelled as literal calls so bc2cpp
-  # sees every reader (closed-world lint, ADR 0212).
+  # sees every reader.
   def self.stat_of(b, key)
     v = case key
         when :atk then b.respond_to?(:atk) ? b.atk : 0
@@ -1609,7 +1608,7 @@ module Game
 
   # One party member, snapshotted from the database's actor (player) table.
   class Actor
-    # RPG2003 front/back row (ADR 0053). Lives here, not on Battle, because
+    # RPG2003 front/back row. Lives here, not on Battle, because
     # #battle_row=/#battle_row below and Party#toggle_actor_row's field-menu
     # Row command both need it whether or not a fight has ever started --
     # Battle's own copy is just an alias onto these same two values, kept for
@@ -1774,7 +1773,7 @@ module Game
       # comment and #to_lsd/.from_lsd's own citations for the full writeup.
       @sprite_changed = false
       @battle_commands = nil # lazily taken from the database on the first change
-      # RPG2003 battle front/back row (ADR 0053): purely runtime/save state,
+      # RPG2003 battle front/back row: purely runtime/save state,
       # never derived from the database's own `battle_x`/`battle_y` manual
       # placement -- a reference implementation seeds a fresh actor's
       # row/original-position from separate fields entirely, and
@@ -1891,7 +1890,7 @@ module Game
     # row -- the gate #to_lsd uses for chunk 108 fields 1/2, confirmed
     # against a genuine kk1.12 (RPG2003) save under wine: every actor in
     # that save's roster (no Change Actor Name/Title ever run against any of
-    # them) carried the "\x01" placeholder byte ADR 0014 already documents,
+    # them) carried the "\x01" placeholder byte (already documented),
     # not its own database name/title -- a value this codebase's own writer
     # used to ignore, unconditionally writing the actor's current (here,
     # untouched-from-default) name/title instead. This is a plain value
@@ -2454,7 +2453,7 @@ module Game
     # Condition event command all fail to cure a state a worn cursed item
     # is still actively forcing -- only taking the armor off actually
     # clears it.
-    # bc2cpp stopgap (docs/adr/0157): index loops, not block calls, so
+    # bc2cpp stopgap: index loops, not block calls, so
     # #full_heal compiles even before `permanent_states`' own flat_map
     # callee is wired into register.cxx (capability rounds ship the
     # compiler; coverage rounds wire later). Semantics identical to the
@@ -3262,7 +3261,7 @@ module Game
       @hp = @max_hp
       @mp = @max_mp
       clear_states
-      # bc2cpp stopgap (docs/adr/0157): index loop, see permanent_states.
+      # bc2cpp stopgap: index loop, see permanent_states.
       ids = permanent_states
       i = 0
       while i < ids.size
@@ -3605,14 +3604,14 @@ module Game
     # to repeat and how many times. nil until a battle page arms one. Stored on
     # the actor the way RPG_RT keeps it;
     # the battle resolution spends it -- Battle#combo_hits multiplies the hits
-    # of the armed command when it is the one the actor chose (ADR 0054).
+    # of the armed command when it is the one the actor chose.
     attr_reader :battle_combo
 
     # Enable Combo (event command 1007): make `command_id` repeat `multiple`
     # times when this actor uses it. Stored on the actor the way RPG_RT keeps it;
     # the combo is not decremented by a
     # use -- it stays armed for the whole fight until another Enable Combo
-    # overwrites it (ADR 0054).
+    # overwrites it.
     def set_battle_combo(command_id, multiple)
       @battle_combo = { command_id: command_id, multiple: multiple }
     end
@@ -3813,7 +3812,6 @@ module Game
   # The save format says the same thing: `Save<N>.lsd`'s chunk 108
   # (`SAVE_PARTY_ACTOR`) holds one entry per actor the party has *ever* held,
   # not one per current member, so a roster is what that table serialises.
-  # See ADR 0030.
   class Actors
     # Same single-object `LCF::Database` chain as `Actor#initialize` above --
     # see its own comment for the full trace. The only `Actors.new` site in
@@ -6319,7 +6317,7 @@ module Game
     # first place.
 
 
-    # The layers are LCF int16 arrays (ADR 0544): an id outside int16 would be
+    # The layers are LCF int16 arrays: an id outside int16 would be
     # masked to 16 bits on save, so it is refused here instead.
     def set_tile(layer, x, y, tile_id)
       return unless in_bounds?(x, y)

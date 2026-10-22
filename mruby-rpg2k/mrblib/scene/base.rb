@@ -99,7 +99,7 @@ class RPG2k
       # thresholded on each arrow's own glyph rect, gave 18 rising edges
       # spanning 0.4867s..11.8211s -- a mean on-to-on period of **0.6667s**,
       # exactly the 40 frames (20 on + 20 off) at RPG_RT's confirmed 60fps
-      # (ADR 0021) this constant already coded, with ~0.323s on runs and
+      # this constant already coded, with ~0.323s on runs and
       # ~0.332s off runs. The screen's two arrows share one phase: the up and
       # down arrows' rising edges were the *same* sample indices in that
       # burst, never offset. The field Item grid re-measured the same period

@@ -2,13 +2,12 @@
 # left dead: everything here is called only from mruby-rpg2k/mrblib/game/
 # battle.rb, mruby-rpg2k/mrblib/scene/battle.rb, mruby-rpg2k/mrblib/scene/
 # battle_rpg2k3.rb (already dropped from the wio build, see mrbgem.rake) or
-# mruby-rpg2k/mrblib/scene/map_viewer.rb (dropped for the same reason since
-# ADR 0097) -- confirmed by grepping every real (non-comment, non-CRuby-
+# mruby-rpg2k/mrblib/scene/map_viewer.rb (dropped for the same reason) -- confirmed by grepping every real (non-comment, non-CRuby-
 # test-script) call site of each method/class moved here before it moved.
 # `Dir.glob(...).sort` loads this file after mrblib/game.rb regardless of
 # target (`game.rb` < `game/battle_support.rb` lexically), so every one of
 # these reopened classes/modules already exists by the time this file's own
-# class bodies run. See docs/adr/0124-rpg2k-battle-only-helpers-trim.md.
+# class bodies run..
 
 module Game
   class Actor
@@ -391,7 +390,7 @@ module Game
     # so a vanilla skill is never row-adjusted -- only a basic attack (#to_hit /
     # #deal_attack on Game::Battle) is. A prior draft applied the same back-row
     # penalty a pre-reference guess had used for attacks; the reference settles
-    # it: skills are untouched by rows. See ADR 0053/0054.
+    # it: skills are untouched by rows..
     def skill_to_hit(sk, source, target)
       return skill_hit(sk, source) unless LCF.field?(sk, :failure_message) && sk[:failure_message] == 3
       # The physical formula is enemy-only: an ally/self-scoped skill (scope 2/3/4)
@@ -1602,7 +1601,7 @@ module Game
       # 2k branch of a reference implementation's own critical-hit-message
       # formatting returns the bare term.
       #
-      # ADR 0036 left this term unwired because which side keys it was
+      # This term was left unwired because which side keys it was
       # ambiguous from the test-bed data alone. A reference implementation's
       # own source was read as settling it the other way (keyed on the
       # target, the same way `actor_damaged`/`enemy_damaged` are) but that

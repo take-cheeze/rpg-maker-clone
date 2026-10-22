@@ -9,8 +9,7 @@
 # RGSS" -- mruby-rgss/mrblib/lib.rb) -- but RGSSData#open_archive still
 # unconditionally reads the *whole* packed archive into memory the moment it
 # finds one on disk, whether or not anything inside it ends up used. On a
-# RAM-constrained target like the PSP (~24 MB usable, see
-# docs/adr/0047-psp-memory-budget.md) that whole-archive read can exceed the
+# RAM-constrained target like the PSP (~24 MB usable) that whole-archive read can exceed the
 # entire budget by itself for a real released game. Unpacking once, offline,
 # and excluding the packed archive from that deployment avoids the read
 # entirely -- no interpreter or gem changes needed, since the loose-file path
@@ -27,7 +26,7 @@
 # which is what a PSP deployment wants: the loose tree lands exactly where
 # the loose-file-first loaders already look). Never touches the packed
 # archive itself -- removing it from a given deployment (so it is never
-# eagerly opened) is a separate, deliberate step; see the ADR.
+# eagerly opened) is a separate, deliberate step.
 
 require "fileutils"
 

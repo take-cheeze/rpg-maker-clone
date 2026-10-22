@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 # wio-only build step: strips $stderr.puts diagnostic statements out of a
-# copy of a .rb file before it reaches mrbc, the same way ADR 115/117/118
+# copy of a .rb file before it reaches mrbc, the same way other build steps
 # already strip mrbc/cc debug metadata -- these are unobservable on
 # env:wio_rgss_boot today (no serial console wired up) but still cost real
 # flash (a string-literal pool entry plus call/dispatch opcodes per site).
@@ -44,7 +44,7 @@ def find_stmt_removals(source)
           # statement) -- a call folded into a larger expression (a block
           # body on the same line as other code, say) is left alone; the
           # one such case in this codebase today is inside scene/battle.rb,
-          # already excluded from wio's own rbfiles entirely (ADR 107).
+          # already excluded from wio's own rbfiles entirely.
           if before.strip.empty?
             end_line = line_idx
             end_line += 1 while end_line < lines.length - 1 && lines[end_line].end_with?("\\")

@@ -8,9 +8,7 @@
  * app/nano7/qemu/nano7_qemu_shim.c's PL011/PL110/PMU MMIO). Sharing this file
  * is what keeps both "emulators" honouring the exact same clipping and
  * compositing rules -- a divergence here would quietly invalidate either
- * one's claim to reproduce the real device's rendering. See
- * docs/adr/0102-ipod-nano-7-host-emulator.md and
- * docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md.
+ * one's claim to reproduce the real device's rendering.
  *
  * Freestanding: no libc, matching app/shared/rpg2k_walk_core.c's own
  * constraint, since app/nano7/qemu links this for a bare-metal target with

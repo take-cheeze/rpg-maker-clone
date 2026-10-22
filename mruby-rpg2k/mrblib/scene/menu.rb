@@ -79,11 +79,11 @@ class RPG2k
       # way Skill/Equipment/Status are (see the class comment) -- picking an
       # actor there flips `Game::Actor#battle_row` via `Game::Party
       # #toggle_actor_row`, the field-menu counterpart to the in-battle Row
-      # command's `Game::Battle#toggle_row` (`scene/battle.rb`, ADR 0053).
+      # command's `Game::Battle#toggle_row`.
       # Wait (id 8) *is* modelled: it flips the
       # save-system `atb_mode` toggle (LSD chunk 140) that makes a gauge
       # battle's command menu freeze (wait) or keep running (active) -- the
-      # Wait-off (active) mode follow-up ADR 0054 named -- and its label
+      # Wait-off (active) mode follow-up named -- and its label
       # shows the *current* mode via the `wait_on` / `wait_off` terms, ported
       # from a reference implementation's own Wait row (a mode-check
       # expression selecting wait_on : wait_off), and #select_command's :wait

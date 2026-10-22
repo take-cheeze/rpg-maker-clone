@@ -1,7 +1,7 @@
 # The LCF file classes (LCF::Database/.ldb, LCF::MapTree/.lmt,
 # LCF::MapUnit/.lmu, LCF::SaveData/.lsd) and their shared LCF::File base.
 #
-# Split out of schema.rb (docs/adr/0109/0123): these are real, hand-written
+# Split out of schema.rb: these are real, hand-written
 # behavior -- #initialize's read path, #to_lcf's write path, #rpg2003?,
 # #terminate_root? -- not schema *data*, so they were never something
 # gen_schema_blob.rb's data-only generator should have owned. schema.rb
@@ -53,7 +53,7 @@ module LCF
     # #[]/#[]= accept both a chunk id and a Symbol field/section name). These
     # are the whole of a file's field access: `db[:system]`, `tree[:initial]`,
     # `save[:hero]`. There is no dotted `db.system` form and no catch-all
-    # forwarding of other names to the root (docs/adr/0213); a root method a
+    # forwarding of other names to the root; a root method a
     # caller needs through the file gets its own forwarder here.
     def [] idx ; @root[idx] end
     def []= idx, value ; @root[idx] = value end
@@ -130,7 +130,7 @@ module LCF
     def schema; LCF::Schema::SAVE_DATA end
 
     # A save read from a stream is checked field by field against its schema
-    # types before it is returned (docs/adr/0400): a field whose bytes do not
+    # types before it is returned: a field whose bytes do not
     # decode as its declared type raises LCF::SaveTypeError, naming the field.
     # A save built from scratch (no stream) has nothing to check yet.
     def initialize io = nil

@@ -2,9 +2,9 @@
 # Save<N>.lsd, from_lsd reads one back, and a genuine RPG_RT/editor-written
 # Save<N>.lsd loads through the same from_lsd. The .lsd is the only save format on
 # every build. New saves use native chunks; legacy chunk 200 is read only
-# (ADR 0401). See main.rb's #save_game/#load_save_state for the slot policy.
+# See main.rb's #save_game/#load_save_state for the slot policy.
 #
-# Ships on wio too (docs/adr/0399); the wio-only exclusion this file had is gone.
+# Ships on wio too; the wio-only exclusion this file had is gone.
 # `Dir.glob(...).sort` loads this file after mrblib/game.rb regardless of target
 # (`game.rb` < `game/lsd_io.rb` lexically), so Game::State already exists by the
 # time this file's own reopening runs.
@@ -51,7 +51,7 @@ module Game
     # found by stripping a real save down to exactly the chunks written here
     # (it still loaded, so nothing was missing), then swapping in one of ours at
     # a time until only the title chunk failed, then one field at a time within
-    # it. See ADR 0021.
+    # it.
     #
     # Both Timer Operation countdowns, the step counter, the battle tallies,
     # the latest battle's round count and every roster member's Change Actor
@@ -82,12 +82,12 @@ module Game
       # joining later through Change Party Member events, confirmed via a
       # genuine wine-driven capture (scripts/gen/lcf-save-wine.bash) taken
       # right after New Game -- with no chunk 100 at all rather than merely a
-      # zero timestamp. That is the exact same failure mode ADR 0021 already
+      # zero timestamp. That is the exact same failure mode already
       # fixed for a *populated* party (a zero OLE date reads as an empty file
       # slot and Continue silently refuses it): a missing chunk leaves
       # `timestamp` at its own no-default nil, not the schema's own implicit
       # 0.0, but nil is exactly as unloadable as 0. The timestamp -- the one
-      # field ADR 0021 actually pinned -- is now written unconditionally;
+      # field that fix actually pinned -- is now written unconditionally;
       # only the leader-specific name/level/hp fields, which have nothing to
       # read from an empty party, stay conditional.
       title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
@@ -209,7 +209,7 @@ module Game
         hero[74] = leader.charset_index || 0
       end
       # Native camera coordinates are hero-relative sixteenths of pixels.
-      # Right/down camera motion decreases them; see ADR 0400/0401.
+      # Right/down camera motion decreases them.
       px, py, tx, ty, step, locked = @screen.pan_save_data
       hero[111] = locked ? 0 : 1
       hero[112] = 2304 - (px * 16).round if px != 0
@@ -494,7 +494,7 @@ module Game
         e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
         # Field 1 is the actor's current name, but ONLY while it actually
         # differs from the database row (#name_changed?) -- an untouched
-        # actor writes the ADR 0014 "\x01" placeholder instead, confirmed
+        # actor writes the "\x01" placeholder instead, confirmed
         # against a genuine kk1.12 save under wine (see #name_changed?'s own
         # citation); a prior version of this line wrote the current name
         # unconditionally, which happens to equal the database default for
@@ -846,7 +846,7 @@ module Game
       # deriving it from the hero -- confirmed against the genuine runtime:
       # an edited save missing these fields drew the map's top-left corner,
       # not a hero-centred view, and a correct pair reproduced the exact same
-      # frame our own hero-centred renderer already draws (ADR 0021's
+      # frame our own hero-centred renderer already draws (the
       # "comparing an ordinary map" addendum). Omitted entirely on a State
       # with no map loaded (e.g. a fresh, unplayed save), the same "absent
       # means nothing to restore" rule the unplaced-vehicle chunks above use.
@@ -1074,7 +1074,7 @@ module Game
     # system_bgm (interpreter.rb) has stashed a Play BGM/Change System BGM
     # command's own fade-in milliseconds on the hash since fadein first
     # landed, but this encoder silently dropped it on every Save, the exact
-    # same class of gap as the picture/message fields ADR 0019 catalogues
+    # same class of gap as the picture/message fields catalogued
     # elsewhere in this file. Now written on the same "elide at the schema
     # default" idiom the other fields already use.
     def bgm_chunk(bgm)
@@ -1244,8 +1244,7 @@ module Game
           # ambiguity requires above.
           actor.battle_row = sa[:row] if LCF.field?(sa, :row)
           # A Change Actor Name override on *any* roster member, not just the
-          # leader (whose name chunk 100's title also carries below). ADR
-          # 0014 already flagged this field's other case when it was first
+          # leader (whose name chunk 100's title also carries below). Already flagged this field's other case when it was first
           # decoded: "reserve actors store only a placeholder" -- an actor
           # with no real override writes a single 0x01 byte here rather than
           # an empty string, matched against a genuine save under wine (every
@@ -1644,7 +1643,7 @@ module Game
     # re-shown by parallel events right after a load. That is true of a HUD and
     # false of a save taken mid-cutscene, where the event that showed the picture
     # has already run and will not run again: resuming Nepheshel's opening, the
-    # genuine RPG_RT drew the backdrop and we drew black. See ADR 0021.
+    # genuine RPG_RT drew the backdrop and we drew black.
     #
     # Zoom (field 33), transparency (34) and tone (41-44) are now restored too,
     # not just the name and centre position. The earlier version left these at

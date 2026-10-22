@@ -13,7 +13,7 @@
 # binary P6, 8 bits/channel, no comments -- not a general PPM reader.
 #
 # If a UART log is given as a second argument, also prints (does not assert
-# on -- see docs/adr/0103 for why these numbers are a comparative signal,
+# on -- these numbers are a comparative signal,
 # not a pass/fail threshold) the per-frame PMU cycle counts
 # app/nano7/qemu/nano7_qemu_shim.c logs, so a CI run's log carries real
 # numbers a human can compare across commits.

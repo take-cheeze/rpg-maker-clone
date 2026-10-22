@@ -15,7 +15,7 @@
 # Viewport, Window, …) — plain Ruby in the real player too, which is why they are
 # plain Ruby here, transcribed from the definitions published in the RGSS
 # Reference Manual so a game's own engine sees the behaviour it was written
-# against. See docs/adr/0029-rgss-script-host-by-default.md.
+# against..
 #
 # **Deliberate deviations from the published source**, all forced by this engine
 # rather than chosen:
@@ -27,7 +27,7 @@
 #     screen. Every `color.set` below is `self.color = RGSS::Color.new(...)`.
 #   * **A missing asset yields a blank 32x32 bitmap and a warning**, where RGSS
 #     raises. A game whose RTP is not installed must not die on its first
-#     graphic, and with no second engine to fall back to (ADR 0030) a raise here
+#     graphic, and with no second engine to fall back to a raise here
 #     would end the run.
 #   * **Fully-qualified `RGSS::` names**, so the file also loads under the CRuby
 #     harness (scripts/rpgxp/script_host_check.rb), which shims those classes.

@@ -1,8 +1,8 @@
 // The embedded JavaScript engine and host environment for RPG Maker MV support.
 //
-// This is the seam through which the rest of approach #2 (see
-// docs/adr/0004-javascript-maker-mv-quickjs.md) plugs in: it embeds quickjs-ng
-// and builds up the browser/host environment MV's own JavaScript expects.
+// This is the seam through which the rest of approach #2 plugs in: it embeds
+// quickjs-ng and builds up the browser/host environment MV's own JavaScript
+// expects.
 //
 //   M2: `MV::JS.eval` proves the engine runs.
 //   M3: a *persistent* host (one runtime/context reused across evals) plus the
@@ -114,8 +114,7 @@ JSValue js_read_file(JSContext* ctx,
 // because a string carries the bytes through UTF-8 and mangles the ones that
 // are not valid text. An encrypted asset is exactly that case — the engine
 // XHRs it with `responseType = "arraybuffer"`, decrypts it and hands the
-// plaintext to an Image, so every byte has to survive the trip. See ADR 0004
-// M6.3r.
+// plaintext to an Image, so every byte has to survive the trip.
 JSValue js_read_file_bytes(JSContext* ctx,
                            JSValueConst,
                            int argc,

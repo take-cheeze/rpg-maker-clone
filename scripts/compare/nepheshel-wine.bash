@@ -9,8 +9,7 @@
 # (scripts/rpg2k/render_check.rb) pin the *geometry* we ported, but they cannot
 # tell us that a window sits four pixels too low or that menu text is missing
 # the windowskin's colour gradient. Booting both runtimes on the same data and
-# diffing the frames can, and that is how the discrepancies fixed in
-# docs/adr/0021-nepheshel-render-parity-under-wine.md were found.
+# diffing the frames can, and that is how the discrepancies were found.
 #
 # Both runtimes are driven headlessly, each on its own Xvfb display at the same
 # 640x480 (RPG2000's 320x240 screen at 2x), fed the same key script, and

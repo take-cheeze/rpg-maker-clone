@@ -6,8 +6,8 @@ index 0000000..343521a
 @@ -0,0 +1,131 @@
 +/*
 + * M5Stack FACES kit "Gamepad Face" (aka Game Face), MEGA328-based, on the
-+ * ESP32 machine's internal I2C0 bus at address 0x08 (docs/adr/0157 in
-+ * take-cheeze/rpg-maker-clone, this fork's downstream user). Real M5Stack
++ * ESP32 machine's internal I2C0 bus at address 0x08 (take-cheeze/rpg-maker-clone,
++ * this fork's downstream user). Real M5Stack
 + * Core hardware wires this bus to GPIO21 (SDA) / GPIO22 (SCL); this QEMU
 + * I2C0 model has no GPIO-matrix pin routing of its own (see
 + * esp32_machine_init_i2c() in hw/xtensa/esp32.c, which already attaches a
@@ -18,7 +18,7 @@ index 0000000..343521a
 + * Modelled directly on the real MEGA328 firmware
 + * (github.com/m5stack/FACES-Firmware, GameBoy.ino, fetched and read
 + * directly rather than assumed -- this project's own culture, see
-+ * AGENTS.md and docs/adr/0157's own investigation): on every I2C read
++ * AGENTS.md): on every I2C read
 + * request it just returns the AVR's live PORTB snapshot (`Wire.write
 + * (PINB)`), with no register addressing and no write support at all --
 + * the real firmware never registers a Wire.onReceive() handler, so a

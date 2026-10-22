@@ -19,8 +19,7 @@
 # drives the loader over it: loose on disk, then repacked into the edition's
 # encrypted archive (Game.rgss2a / Game.rgss3a). A generated bed cannot prove a
 # field *name* (only real editor output can), which is why every name is
-# transcribed from the RGSS2/RGSS3 references — see
-# docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md. What it does prove is that the
+# transcribed from the RGSS2/RGSS3 references. What it does prove is that the
 # whole path works end to end and stays working.
 #
 # Point it at a real game and it checks that too, including an audit that every

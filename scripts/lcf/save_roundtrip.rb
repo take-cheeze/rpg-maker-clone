@@ -3,10 +3,10 @@
 #
 # Prove the LCF save-data *writer* against real Save<N>.lsd files.
 #
-# scripts/lcf/save_check.rb established that the read path (ADR 0009, the
+# scripts/lcf/save_check.rb established that the read path (the
 # `SAVE_DATA` schema) decodes a genuine RPG Maker 2000/2003 save. This harness
 # exercises the inverse -- LCF.write_ber / Array1D#to_lcf / Array2D#to_lcf /
-# File#to_lcf (ADR 0018) -- in two ways:
+# File#to_lcf -- in two ways:
 #
 #   1. Byte-exact round-trip: parse a real .lsd and re-serialise it; the bytes
 #      must equal the original file exactly. Because the reader keeps every

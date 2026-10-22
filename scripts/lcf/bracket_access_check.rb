@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 #
-# Regression check for LCF's `[]`-only field access (docs/adr/0213).
+# Regression check for LCF's `[]`-only field access.
 #
 # LCF::Array1D, LCF::Sections and LCF::File used to answer `row.hp_max`,
 # `tree.initial` and `db.actor` through method_missing, and

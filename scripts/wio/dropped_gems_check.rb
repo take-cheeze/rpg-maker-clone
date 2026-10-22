@@ -3,7 +3,7 @@
 # build_config.rb leaves mruby-kernel-ext and mruby-random out of the wio
 # cross build (docs/adr/0202), and swaps mruby-math for
 # app/wio/mruby-math-wio, which defines only the Math members listed in
-# MATH_PROVIDED below (docs/adr/0204). All three trims exist only for a
+# MATH_PROVIDED below. All three trims exist only for a
 # game's *own* Ruby (the RGSS script host), and wio ships mruby-rpg2k alone,
 # with no compiler/eval to run any. That holds only as long as none of the
 # gems wio *does* ship calls a method those gems provide -- and nothing else would notice if

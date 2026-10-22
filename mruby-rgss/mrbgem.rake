@@ -75,14 +75,14 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
 
   objs << objfile("#{build_dir}/shinonome")
 
-  # ADR 0417: RGSS::Tts (src/tts.cxx) forwards to a backend only the desktop
+  # RGSS::Tts (src/tts.cxx) forwards to a backend only the desktop
   # "host" build's executable can install (src/voicevox_tts.cxx). Elsewhere it
   # is a permanent no-op, so src/tts_off.cxx (an empty rgss_tts_define, so
   # lib.cxx stays untouched -- its digest is pinned by bc2cpp) takes its place:
   # no object, no registration, no RGSS::Tts constant.
   objs.delete(objfile("#{build_dir}/src/#{RgssTtsConfig.backend_possible?(build.name) ? 'tts_off' : 'tts'}"))
 
-  # docs/adr/0110/0112: build_config.rb's wio CrossBuild defaults both this
+  # build_config.rb's wio CrossBuild defaults both this
   # and SHINONOME_GOTHIC_SD_FILE (read directly from ENV by
   # gen_shinonome_data.rb itself, below) so a plain wio build gets the SD
   # offload without asking -- still a plain ENV-gated no-op for every other
@@ -91,7 +91,7 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # find_gothic_char binary-searches when the GOTHIC face isn't found in the
   # (then-empty) compiled-in array -- must agree with whatever real path a
   # game's SD-card deployment step actually writes gothic.bin to; that
-  # deployment step doesn't exist yet (ADR 110's own "what was not done"),
+  # deployment step doesn't exist yet,
   # so this fixes what the build produces, not how it reaches a real card.
   if ENV["RGSS_SHINONOME_GOTHIC_SD_PATH"]
     # mruby's own Command::Compiler#_run shells out via a single interpolated
@@ -110,10 +110,10 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
     ruby t.prereqs.first, chdir: build_dir
   end
 
-  # docs/adr/0144 (bounded proof, plain-instance-method owners only):
+  # Bounded proof, plain-instance-method owners only:
   # RGSS::Sprite -- all 17 of its real bc2cpp-registered methods.
   #
-  # docs/adr/0144's own dated follow-up section (this round) scales this to
+  # This scales it to
   # two more owners, real .singleton coverage included -- not
   # mruby-rgss-compiled's own full 14-owner `owners:` list
   # (tools/bc2cpp/compiled_gems.rb), still a deliberately bounded subset:
@@ -129,14 +129,13 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   #     top level (mruby-rgss/mrblib/error_report.rb) -- deliberately one of
   #     each real `.singleton` shape (SCLASS-nested DEFN vs. a bare DEFS),
   #     to exercise strip_wio_bc2cpp_stubs.rb's own new support against both
-  #     rather than just one. Gem-init-ordering correctness (this ADR's own
+  #     rather than just one. Gem-init-ordering correctness (the
   #     required per-owner check) was re-run for all three: grepped every
   #     mruby-rgss/src/*.cxx for a real `mrb_funcall` back into any of
   #     Window's 12 / Audio.singleton's 13 / ErrorReport.singleton's 6 real
   #     method names -- zero matches anywhere in the gem's own native
   #     sources (not just inside gem_init itself), so no live correctness
-  #     gap found for any of the three. See the ADR follow-up section for
-  #     the full per-owner writeup, including a real (but unrelated to this
+  #     gap found for any of the three. A real (but unrelated to this
   #     round's own three owners) `mrb_funcall(..., "press"/"release", ...)`
   #     found into RGSS::Input.singleton from wio_input_bridge.cxx's own
   #     per-frame poll -- a real *runtime* call path (Graphics.update, long
@@ -168,7 +167,7 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # #initialize privacy, not an explicit companion statement), Array 1
   # (include?) -- 34 real registered methods total across these 10 owners.
   #
-  # One real, notable discrepancy from docs/adr/0139's ".singleton owner
+  # One real, notable discrepancy from the ".singleton owner
   # support" follow-up on `RGSS::Bitmap.singleton`: it says
   # `self.failure_reason`'s own real body
   # was "not re-verified opcode-by-opcode" past confirming it reaches
@@ -179,12 +178,12 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # stderr (`RGSS__Bitmap_singleton_failure_reason_impl (RGSS::Bitmap.
   # singleton#failure_reason, arity 1)` inside the real "== compiled entry
   # points ==" section, not the "== skipped ==" one), not merely trusted
-  # from the TSV alone -- some intervening round between docs/adr/0139 and
+  # from the TSV alone -- some intervening round between that follow-up and
   # this one evidently closed the opcode gap that follow-up flagged as open.
   # Not a soundness concern for this round (the real registry, whatever it
   # says today, is what this mechanism has always trusted -- see
   # wio_registered_methods.rb's own file comment), just worth recording so
-  # a future reader of that ADR 0139 writeup isn't misled by it.
+  # a future reader isn't misled by it.
   #
   # Companion-statement hazard check (private/protected/public with an
   # explicit Symbol argument, alias_method, attr_reader/attr_accessor/
@@ -213,7 +212,7 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # anywhere in the gem (`array_sort.rb`'s own `alias_method
   # :_rgss_native_sort, :sort`/`:_rgss_native_sort!, :sort!` and `lib.rb`'s
   # own `alias_method :_rgss1_initialize, :initialize`; the effect probe's
-  # former `:_probe_update` pair is now a hook, ADR 0474) references a name (`sort`/
+  # former `:_probe_update` pair is now a hook) references a name (`sort`/
   # `sort!`/`initialize` on RGSS::Sprite, an existing, already-
   # regression-checked owner) that is not one of this round's own 34
   # registered names, so none of them are a hazard for this round's new

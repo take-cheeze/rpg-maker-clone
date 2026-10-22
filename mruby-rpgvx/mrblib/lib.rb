@@ -18,7 +18,7 @@
 # the shared RGSS script host when that is enabled. A reimplemented built-in
 # title/map flow (what mruby-rpg2k and mruby-rpgxp do) is not built yet; until it
 # is, a boot without the script host reports the pending runtime rather than
-# showing a blank window. See docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md.
+# showing a blank window.
 #
 # Deliberately free of load-time RGSS references so the pure logic here (edition
 # detection, path mapping) can be loaded and exercised under CRuby by
@@ -205,8 +205,7 @@ class RPGVX
 
   # Build the driver Fiber for the bundled scripts, so their blocking main loop
   # advances one frame per `main_loop` call (the web build's per-frame callback
-  # must get control back every frame). Shared with the XP runtime; see
-  # docs/adr/0023-rpgxp-script-host-frame-driver.md.
+  # must get control back every frame). Shared with the XP runtime.
   def setup_script_host_driver
     @host_fiber = RPGXP::ScriptHost.build_driver(@db)
   end

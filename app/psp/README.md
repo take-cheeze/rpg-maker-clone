@@ -7,8 +7,7 @@ on the Sony
 analog stick + ✕○△□/L/R/Start/Select, Memory Stick).
 
 This is additive to and independent of the desktop CMake build — building the
-EBOOT does not touch the desktop/wasm builds, and vice versa. The design is in
-[`docs/adr/0010-psp-port.md`](../../docs/adr/0010-psp-port.md).
+EBOOT does not touch the desktop/wasm builds, and vice versa.
 
 ## Status: HAL bring-up + the real RPG2k/XP/VX/VX Ace scene tree
 
@@ -62,8 +61,7 @@ What runs today:
   construction failed). Construction and a clean-exit-vs-crash exit are
   reported via the `RPG2K_PSP_GAME_START` and `RPG2K_PSP_GAME_STOP` markers
   below. mruby still opens with its own default allocator (plain `malloc`),
-  not routed through `lv_malloc` — ADR 0047's P2 remains open (see "Not yet
-  wired").
+  not routed through `lv_malloc` (see "Not yet wired").
 - `app/psp/lv_conf.h` — a PSP-tuned LVGL config (RGB565, a few-MB heap, no SIMD
   asm).
 
@@ -121,8 +119,7 @@ use of LVGL's own pool; `stack_free`/`stack_used_max` are
 `sceKernelGetThreadStackFreeSize`'s scan of the still-untouched (0xFF-filled)
 low end of the main thread's 256 KB stack and the deepest use seen so far —
 since a down-growing stack never restores those bytes, even a single sample is
-already a high-water mark (P5). All of them are real numbers for
-[ADR 0047](../../docs/adr/0047-psp-memory-budget.md)'s P1, captured from the
+already a high-water mark. All of them are real numbers, captured from the
 `psp-smoke` log rather than estimated, and now against a real game's usage
 once one is deployed to `kGameDir` instead of just the idle HAL's. CI's
 `psp-smoke` job boots the EBOOT under PPSSPP headless and checks that both
@@ -279,10 +276,7 @@ identical EBOOT under normal `ppsspp-headless` JIT mode produces
 `RPG2K_PSP_BOOT` → `RPG2K_PSP_MRUBY_OPEN ok` → `RPG2K_PSP_GAME_START
 none not_found` → a continuous `RPG2K_PSP_BRINGUP` heartbeat, running
 cleanly for over 850,000 frames with zero errors, stopped only by the
-test harness's own timeout. See
-[`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
-P1 for the full trail, including the eliminated theories along
-the way.
+test harness's own timeout.
 
 That state no longer reproduces on `master`. Boot now dies inside
 `mrb_open()` again, on a **tenth bug** — this one in the toolchain, not
@@ -476,7 +470,7 @@ The pieces below are scaffolded but **not** part of the EBOOT yet:
   equivalent of the desktop build's `--game_dir` flag or the browser build's
   runtime project loader, since the PSP EBOOT has no command line and no
   way to be told a different location after it starts.
-- **Validating ADR 0047's P2 numbers.** The mruby/LVGL allocator split itself
+- **Validating the arena's size.** The mruby/LVGL allocator split itself
   is decided and wired (mruby's whole heap lives in its own fixed arena, see
   `main.cxx`'s `mrb_basic_alloc_func` — LVGL's pool only aligns to 4 bytes on
   32-bit, too weak for mruby's word boxing, so sharing it is not an option
@@ -484,7 +478,7 @@ The pieces below are scaffolded but **not** part of the EBOOT yet:
   New Game pins the arena at ~12.0 MB steady-state under PPSSPP-headless
   (the title screen alone sits at ~4.3 MB), so the arena is 12 MB — 8 MB
   exhausted mid-map-load and the failed-allocation unwind corrupted VM state
-  (see ADR 0047's P2 follow-up), and 16 MB starves the shared newlib heap.
+ , and 16 MB starves the shared newlib heap.
   The `RPG2K_PSP_BRINGUP` heartbeat now reports the arena's own occupancy as
   `arena_used=` directly, next to free RAM and LVGL's pool high-water mark.
 - **Accelerated rendering.** The bring-up flushes with a CPU `memcpy` into the
@@ -497,15 +491,13 @@ CI has no project at `kGameDir`, so it only ever exercises the idle HAL —
 answering how the game's live heap, LVGL's pool and decoded assets actually
 fit inside the PSP's ~24 MB of RAM still needs a real game run on real
 hardware or an emulator with a Memory Stick image, not just CI's `psp-smoke`.
-[`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)
-works through that, including the P2 allocator split, which is now decided and
-wired: mruby's entire heap lives in a fixed 12 MB arena of its own
+The allocator split is decided and wired: mruby's entire heap lives in a fixed 12 MB arena of its own
 (`main.cxx`'s `mrb_basic_alloc_func`) rather than sharing LVGL's pool (whose
 TLSF only 4-byte-aligns on 32-bit — too weak for mruby's word boxing) or
 growing unbounded on plain malloc, so the interpreter OOMs into a catchable
 `NoMemoryError` instead of colliding with the decoded-bitmap heap. The size
 is measured, not guessed: Nepheshel's New Game pins steady-state usage at
-~12.0 MB (8 MB exhausted and corrupted mid-map; see ADR 0047's P2 follow-up),
+~12.0 MB,
 while 16 MB takes RAM the decoded-bitmap/newlib heap needs. `lv_conf.h`'s
 `LV_MEM_SIZE` therefore covers only LVGL's own widgets and internals, and the
 decoded bitmaps stay in a third, uncapped pool as before. That pool is 256 KB,
@@ -543,7 +535,6 @@ For a packed RPG Maker XP/VX/VX Ace title,
 [`scripts/rgssad/unpack.rb`](../../scripts/rgssad/unpack.rb) unpacks
 `Game.rgssad`/`.rgss2a`/`.rgss3a` into a loose file tree in place — the
 loose-file-first loaders already prefer it over the archive, so this avoids
-the whole-archive-resident-in-RAM read the packed form forces (see the ADR's
-Finding 2). Excluding the packed archive from a given PSP deployment, so it
+the whole-archive-resident-in-RAM read the packed form forces. Excluding the packed archive from a given PSP deployment, so it
 is never opened at all, is still a manual step the unpacker itself doesn't
 take for you.

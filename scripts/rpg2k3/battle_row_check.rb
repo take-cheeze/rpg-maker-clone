@@ -2,7 +2,7 @@
 # encoding: UTF-8
 #
 # Host-side unit checks for the RPG2003 front/back row battle mechanic
-# (ADR 0053 Phase 1, ported from a reference implementation's row-adjustment
+# (ported from a reference implementation's row-adjustment
 # and normal-attack accuracy/effect logic -- NOT independently
 # confirmed against genuine RPG_RT under wine). The row is an
 # RPG2003-only concept: it changes how the fight treats a battler -- a back-row
@@ -51,10 +51,10 @@ load File.join(lcf_lib, 'save_typed_accessors.rb')
 
 lib = File.expand_path('../../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
-load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
-load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file
+load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(lib, 'game', 'legacy_lsd.rb')
-load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
+load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio
 load File.join(lib, 'interpreter.rb')
 
 $failures = 0
@@ -205,7 +205,7 @@ end
 # front row, which is exactly `row_adjusted?`'s own offense-side trigger
 # condition (`ally?(battler) && row == ROW_FRONT`). Confirmed directly
 # against `row_adjusted?`'s own doc comment ("RPG_RT 2003's row mechanic")
-# and ADR 0053's Phase 1 note: this is an RPG2003-only mechanic, so an
+# and the mechanic's note: this is an RPG2003-only mechanic, so an
 # otherwise-identical RPG2000 battle (`rpg2003: false`, the default) must
 # deal the plain, un-adjusted 50 damage here, not 62 -- `row_adjusted?`
 # gates on `@rpg2003` first for exactly this reason.

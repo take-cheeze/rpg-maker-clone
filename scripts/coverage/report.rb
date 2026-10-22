@@ -5,8 +5,7 @@
 #
 # Almost all of the runtime is Ruby -- the LCF/RGSS data layers, the RPG2000
 # game logic and its scenes, the MV/MZ core -- and it is exercised by the
-# `scripts/**/*_check.rb` harnesses, which load those sources under CRuby (see
-# ADR 0049). This runs every one of those harnesses with CRuby's `Coverage`
+# `scripts/**/*_check.rb` harnesses, which load those sources under CRuby. This runs every one of those harnesses with CRuby's `Coverage`
 # stdlib switched on (scripts/coverage/hook.rb, injected through RUBYOPT),
 # merges the per-process results and reports which lines the checks reached:
 #
@@ -45,7 +44,7 @@ HOOK = File.join(__dir__, 'hook.rb')
 
 # The sources the report is about: the pure-Ruby engine libraries. The
 # harnesses under scripts/ are the tests, not the subject, so they are left
-# out; `src/**.cxx` is a different language and a different tool (see the ADR).
+# out; `src/**.cxx` is a different language and a different tool.
 SOURCE_GLOBS = ['mruby-*/mrblib/**/*.rb'].freeze
 
 # The host-side checks. The `ruby-checks` job in .github/workflows/build.yml runs
@@ -110,7 +109,7 @@ CHECKS = [
   { name: 'ci-helpers', command: %w[scripts/ci/helpers_check.rb] },
   # The maix-smoke boot-marker matcher's self-test: no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'maix-boot-marker', command: %w[scripts/maix/boot_marker_check.rb] },
-  # The generator's scan cache (ADR 0415): no mrblib lines, listed to mirror `ruby-checks`.
+  # The generator's scan cache: no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-scan-cache', command: %w[scripts/bc2cpp/scan_cache_check.rb] },
   { name: 'bc2cpp-native-registration', command: %w[scripts/bc2cpp/native_registration_check.rb] },
   { name: 'bc2cpp-native-results', command: %w[scripts/bc2cpp/native_results_check.rb] },
@@ -118,7 +117,7 @@ CHECKS = [
   { name: 'bc2cpp-native-ast-returns', command: %w[scripts/bc2cpp/native_ast_returns_check.rb] },
   { name: 'bc2cpp-native-return-classes', command: %w[scripts/bc2cpp/native_return_classes_check.rb] },
   { name: 'bc2cpp-native-rom-owners', command: %w[scripts/bc2cpp/native_rom_owners_check.rb] },
-  # The generator's Prism parse memo (ADR 0416): no mrblib lines, listed to mirror `ruby-checks`.
+  # The generator's Prism parse memo: no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-ruby-parse-cache', command: %w[scripts/bc2cpp/ruby_parse_cache_check.rb] },
   # No CRuby-side lines of mrblib, but every scripts/**/*_check.rb rides here.
   { name: 'native-binding-split', command: %w[scripts/native/binding_split_check.rb] },
@@ -126,42 +125,42 @@ CHECKS = [
   # through the RGSS compatibility layer (scripts/rgss/cruby_compat.rb), so the
   # RGSS mrblib lines its 87 assertions reach count here instead of reading 0%.
   { name: 'rgss-cruby-test',    command: %w[scripts/rgss/cruby_test_check.rb] },
-  # The host-only sections of the bc2cpp soundness checks (ADR 0261); the fixture
+  # The host-only sections of the bc2cpp soundness checks; the fixture
   # sections need mrbc and skip here.
   { name: 'bc2cpp-join-dominance', command: %w[scripts/bc2cpp/join_dominance_check.rb] },
   { name: 'bc2cpp-declared-return-guard', command: %w[scripts/bc2cpp/declared_return_guard_check.rb] },
-  # The host-only hand-built shapes of the register flow pass (ADR 0415).
+  # The host-only hand-built shapes of the register flow pass.
   { name: 'bc2cpp-register-flow', command: %w[scripts/bc2cpp/register_flow_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp/core_mixins_check.rb] },
-  # LEXICAL_CONST (ADR 0423): the fixtures need the host mrbc and skip without MRBC; no mrblib lines.
+  # LEXICAL_CONST: the fixtures need the host mrbc and skip without MRBC; no mrblib lines.
   { name: 'bc2cpp-lexical-const', command: %w[scripts/bc2cpp/lexical_const_check.rb] },
   { name: 'bc2cpp-constant-proofs', command: %w[scripts/bc2cpp/constant_proofs_check.rb] },
   { name: 'bc2cpp-typed-reflection', command: %w[scripts/bc2cpp/typed_reflection_check.rb] },
-  # Reads every schema field through the real LCF reader (ADR 0285).
+  # Reads every schema field through the real LCF reader.
   { name: 'bc2cpp-lcf-schema-oracle', command: %w[scripts/bc2cpp/lcf_schema_oracle_check.rb] },
-  # ADR 0294: the LCF row model against the real reader and the Array2D#[]= invariant; the compiled
+  # The LCF row model against the real reader and the Array2D#[]= invariant; the compiled
   # fixtures skip here.
   { name: 'bc2cpp-lcf-row-flow', command: %w[scripts/bc2cpp/lcf_row_flow_check.rb] },
-  # ADR 0276: NumericFlow on hand-built bytecode; the fixture sections skip here.
+  # NumericFlow on hand-built bytecode; the fixture sections skip here.
   { name: 'bc2cpp-numeric-operand', command: %w[scripts/bc2cpp/numeric_operand_check.rb] },
-  # ADR 0431: the Integer bit-operator result class on hand-built bytecode; no mrblib lines.
+  # The Integer bit-operator result class on hand-built bytecode; no mrblib lines.
   { name: 'bc2cpp-bitop-results', command: %w[scripts/bc2cpp/bitop_results_check.rb] },
-  # ADR 0524: the blockless Enumerable Enumerator result and the reserved bit that names no class (host only).
+  # The blockless Enumerable Enumerator result and the reserved bit that names no class (host only).
   { name: 'bc2cpp-enumerator-result', command: %w[scripts/bc2cpp/enumerator_result_check.rb] },
-  # ADR 0424: the Symbol class bit of frozen tables (the model half; the fixture half needs mrbc).
+  # The Symbol class bit of frozen tables (the model half; the fixture half needs mrbc).
   { name: 'bc2cpp-symbol-class', command: %w[scripts/bc2cpp/symbol_class_check.rb] },
-  # ADR 0429: the Symbol bit of a LOADSYM register and the Symbol class chain (the model half; the fixture half needs mrbc).
+  # The Symbol bit of a LOADSYM register and the Symbol class chain (the model half; the fixture half needs mrbc).
   { name: 'bc2cpp-loadsym-class', command: %w[scripts/bc2cpp/loadsym_class_check.rb] },
-  # ADR 0302: the RGSS native result facts against the native sources, and the ClosedWorld questions;
+  # The RGSS native result facts against the native sources, and the ClosedWorld questions;
   # the generated-code section skips here.
   { name: 'bc2cpp-native-result-facts', command: %w[scripts/bc2cpp/native_result_facts_check.rb] },
-  # ADR 0397: the owner map's exact-class arms and their kill switch; the generated-code section skips without MRBC.
+  # The owner map's exact-class arms and their kill switch; the generated-code section skips without MRBC.
   { name: 'bc2cpp-native-owner-map', command: %w[scripts/bc2cpp/native_owner_map_check.rb] },
-  # ADR 0311: the AREF transfer and the tuple shape on hand-built bytecode; the fixture sections skip here.
+  # The AREF transfer and the tuple shape on hand-built bytecode; the fixture sections skip here.
   { name: 'bc2cpp-tuple-return', command: %w[scripts/bc2cpp/tuple_return_check.rb] },
-  # ADR 0416: the class-object resolver on hand-built bytecode; the fixture section skips here.
+  # The class-object resolver on hand-built bytecode; the fixture section skips here.
   { name: 'bc2cpp-class-object-args', command: %w[scripts/bc2cpp/class_object_args_check.rb] },
-  # ADR 0425: the frozen-table slot class on hand-built bytecode; the compiled section needs mrbc and skips here.
+  # The frozen-table slot class on hand-built bytecode; the compiled section needs mrbc and skips here.
   { name: 'bc2cpp-frozen-slot', command: %w[scripts/bc2cpp/frozen_slot_check.rb] }
 ].freeze
 

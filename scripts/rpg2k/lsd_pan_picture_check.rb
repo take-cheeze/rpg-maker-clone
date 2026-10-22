@@ -2,7 +2,7 @@
 # encoding: UTF-8
 #
 # Host-side checks for native pan and picture saves (hero fields and chunk 103 of
-# Save<N>.lsd, see docs/adr/0399):
+# Save<N>.lsd):
 #
 #   1. The Pan Screen lock is written and restored.
 #   2. A Pan Screen scroll still in flight keeps its target and step, so it

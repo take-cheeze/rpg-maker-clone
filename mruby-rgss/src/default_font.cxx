@@ -20,10 +20,10 @@
 // is also never called on wio (only src/main.cxx's desktop entry point calls
 // it). So the whole directory-scan implementation below -- and the
 // std::vector<std::string>/std::string machinery it pulls in -- is provably
-// dead weight there, the same shape docs/adr/0125 already found and fixed
+// dead weight there, the same shape already found and fixed
 // for profiler.cxx; gated out here the same way, behind the same
 // WIO_TERMINAL macro terminal.cxx already uses (plus MAIX_BUILD for the
-// Amigo). See docs/adr/0126.
+// Amigo).
 
 #include "default_font.hxx"
 

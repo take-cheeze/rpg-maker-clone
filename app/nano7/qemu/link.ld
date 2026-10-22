@@ -12,10 +12,10 @@
  * doesn't stomp the live OS's compositor heap; RAW_SURFACE apps don't do
  * that). So rpg2k_walk.c's existing ~512 KiB .bss heuristic is a
  * conservative guess carried over from a different app kind, not the real
- * enforced limit for this one, and ADR 61 says as much directly: for a
+ * enforced limit for this one. For a
  * RELOC app, ".bss ... is free; only the code has to be tiny" -- the real,
- * empirically-tested ceiling (apps "hang or crash on launch" past it, per
- * ADR 61) is the ~500 KB PACKED .hbapp BLOB (.text + .rodata + the ABS32
+ * empirically-tested ceiling (apps "hang or crash on launch" past it)
+ * is the ~500 KB PACKED .hbapp BLOB (.text + .rodata + the ABS32
  * reloc table mkrelocapp.py emits from them) NanoApps' loader uploads and
  * execs, not .bss at all.
  *
@@ -26,7 +26,7 @@
  *               available here -- see scripts/nano7/qemu_build.bash).
  *   - `blobs`   the two exported map files, embedded as linked binary data
  *               (scripts/nano7/qemu_build.bash's objcopy step) because this
- *               target has no filesystem at all (docs/adr/0103). On real
+ *               target has no filesystem at all. On real
  *               hardware these are read from disk at runtime and are NOT
  *               part of the uploaded blob, so they get their own region,
  *               generously sized against RW_MAP_HEADER_BYTES et al's own
@@ -36,9 +36,8 @@
  *   - `app_bss` rpg2k_walk.c's and rpg2k_walk_core.c's own static buffers
  *               (s_map_raw, s_tiles, s_cell, ...) -- kept at the app's
  *               existing ~512 KiB self-imposed budget (matching its own
- *               MAP_MAX_W/MAP_MAX_H/MAX_TILES sizing) even though ADR 61
- *               says a RELOC app's .bss isn't really capped there, simply
- *               because that is what the app was actually engineered
+ *               MAP_MAX_W/MAP_MAX_H/MAX_TILES sizing) even though a RELOC app's .bss isn't really capped there,
+ *               simply because that is what the app was actually engineered
  *               against; this now enforces it at link time instead of
  *               leaving it as an unchecked comment.
  *   - `shadow_fb` app/nano7/shim_common/hb_fb_ops.c's framebuffer array --

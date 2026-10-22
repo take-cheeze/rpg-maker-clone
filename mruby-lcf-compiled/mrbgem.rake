@@ -3,9 +3,8 @@ require_relative '../tools/bc2cpp/compiled_gems'
 
 # Opt-in AOT-compiled C++ replacements for a hand-picked, provably-safe
 # subset of LCF::File/Database/MapTree/MapUnit/SaveData's own bytecode
-# methods (docs/adr/0139) -- header/schema/terminate_root?/rpg2003?/maker/
-# key?/to_lcf/#[]/#[]=, plus LCF::MoveCommand#initialize (docs/adr/0139's
-# own follow-up) -- generated at build time by tools/bc2cpp/bc2cpp.rb,
+# methods -- header/schema/terminate_root?/rpg2003?/maker/
+# key?/to_lcf/#[]/#[]=, plus LCF::MoveCommand#initialize -- generated at build time by tools/bc2cpp/bc2cpp.rb,
 # mruby's bytecode compiler still handles everything else this gem doesn't
 # override (LCF::File#initialize, #field?, #delete,
 # #save_to -- see bc2cpp's own SKIP_UNSUPPORTED output for exactly why each
@@ -15,7 +14,7 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # unsupported).
 #
 # This whole gem only exists in the build when RPGMAKER_BC2CPP is set on a
-# closed-world build (psp/wio/maix/closed, see build_config.rb; docs/adr/0466) -- it is
+# closed-world build -- it is
 # never part of the default build, and never of a desktop build.
 # Disabled, its one visible effect is that this directory exists on disk;
 # nothing in the default build tree references it.
@@ -48,7 +47,7 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   compiled_gems_rb = "#{dir}/../tools/bc2cpp/compiled_gems.rb"
   # The whole-program closed-world source set this run's registry is built
   # from -- NOT just mruby-lcf's own mrblib. Confirmed a real, load-bearing
-  # distinction while first wiring this up (docs/adr/0139): analyzed alone,
+  # distinction while first wiring this up: analyzed alone,
   # LCF::Database#rpg2003? looks like the only :rpg2003? definition
   # anywhere, but the real game also defines Game::Actor/Party/Battle
   # #rpg2003? -- 4 definitions, genuinely polymorphic. Feeding the whole
@@ -80,7 +79,7 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   #
   # mruby's own core (Array/Hash/String/Kernel/Symbol/...) is the exact
   # same kind of gap, just against the standard library instead of RGSS --
-  # see compiled_gems.rb's own core_native_srcs comment (ADR 0139 lists the
+  # see compiled_gems.rb's own core_native_srcs comment for the
   # further collisions this found: :delete, :puts, :resume, ...).
   #
   # external_gem_native_srcs (compiled_gems.rb) closes the same gap one
@@ -112,11 +111,11 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   generated = "#{build_dir}/lcf_compiled_gen.cpp"
 
   # bc2cpp.rb runs MRBC: without this edge `rake -m` can start codegen before
-  # the bootstrap mrbc exists (ADR 0228).
+  # the bootstrap mrbc exists.
   file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
                      BC2CPP_CORE_REFUSED_PATH] do |t|
-    # SHARED_GENERATION (ADR 0464): with every other compiled gem of this build that is out of date, in one
+    # SHARED_GENERATION: with every other compiled gem of this build that is out of date, in one
     # bc2cpp.rb analysis (tools/bc2cpp/compiled_gems.rb bc2cpp_compiled_gem_job holds this gem's environment).
     Bc2cppCompiledGemGeneration.generate(spec, "#{dir}/..")
   end

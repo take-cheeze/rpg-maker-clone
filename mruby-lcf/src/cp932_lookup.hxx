@@ -1,7 +1,7 @@
 #pragma once
 
-// Lookups over the tables cp932_to_unicode.rb generates (ADR 0217).
-// scripts/cp932_tables_check.rb compares both against ADR 0111's pair tables
+// Lookups over the tables cp932_to_unicode.rb generates.
+// scripts/cp932_tables_check.rb compares both against the reference pair tables
 // for every 16-bit input.
 
 #include "cp932.h"

@@ -3,8 +3,8 @@
 # than the precompiled-libs `framework = arduino` the Wio/Maix ports use --
 # see this directory's platformio.ini and README.md for why this port is a
 # separate, standalone PlatformIO project instead of another environment in
-# the repo root's platformio.ini. See docs/adr/0157 for why each option here
-# is required, not just preferred.
+# the repo root's platformio.ini. Each option here is required, not just
+# preferred.
 
 # framework-arduinoespressif32's own CMakeLists.txt hard-errors
 # ("esp32-arduino requires CONFIG_FREERTOS_HZ=1000") if this is left at the

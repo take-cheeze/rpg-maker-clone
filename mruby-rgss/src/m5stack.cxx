@@ -213,8 +213,7 @@ bool m5stack_audio_init(void) {
   // spiStartBus() would then genuinely reset that peripheral's registers
   // out from under TFT_eSPI, corrupting every display write from then on
   // (confirmed directly: without this, a QEMU display dump comes back
-  // mostly garbled colors instead of the intended black background -- see
-  // docs/adr/0157-m5stack-core-qemu-emulator.md's "Status, audio support").
+  // mostly garbled colors instead of the intended black background).
   // getSPIinstance() hands SD.begin() TFT_eSPI's own already-started
   // object, so its spi.begin() call is the no-op it should be.
   g_sd_available = SD.begin(kSdCsPin, g_tft.getSPIinstance());

@@ -707,7 +707,7 @@ fs::path vx_rtp_path(const fs::path& gd) {
 // Data/BasicData/Game.dat (the one file every unpacked project has
 // regardless of editor version, 2.x through 3.5+ all write it under the same
 // name), or a released game's packed Data.wolf (a DxLib DXA archive,
-// Wolf::DataWolf, ADR 0093). Mirrors Wolf::Project.project?
+// Wolf::DataWolf). Mirrors Wolf::Project.project?
 // (mruby-wolf/mrblib/data.rb), which the Ruby side re-checks once it has a
 // directory to build a Wolf::Project from, the same "loose tree or the
 // maker's own packed archive" shape is_xp_game below already has for
@@ -913,8 +913,8 @@ extern "C" void rgss_tts_shutdown(void);
 // rpg_maker_init_shared_gems for the gems every maker needs, and then only
 // the one maker-specific function the detected GameKind calls for --
 // rpg_maker_init_rpgvx_gem brings up mruby-rpgxp itself too, since RGSS2/3
-// extends RGSS. See docs/adr/0047's Finding 1 for the live-heap cost this
-// avoids paying for the makers a run never uses.
+// extends RGSS. Loading only the detected maker keeps the live heap free of
+// the makers a run never uses.
 extern "C" void rpg_maker_init_shared_gems(mrb_state* M);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* M);
 extern "C" void rpg_maker_init_rpgxp_gem(mrb_state* M);
@@ -1101,8 +1101,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
       // display was created at the 320x240 default. Resize it now, before the
       // runtime builds any screen-sized object: with a 320x240 canvas the XP
       // scenes draw off the edge -- the title's command window lands past the
-      // bottom and its centred text past the right (found by the browser
-      // check that ADR 0025 has since dropped; see docs/adr/0025). The canvas
+      // bottom and its centred text past the right. The canvas
       // follows the new resolution (LVGL resizes the SDL window on a
       // resolution change) and the page rescales it from there; the browser
       // display is never zoomed, see main() below.
@@ -1119,8 +1118,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
       // data/System.json). Mirrors MZ::REQUIRED_MARKERS. MZ shares MV's
       // embedded JS host but ships PIXI v5 (WebGL-only); the WebGL backend it
       // needs is not built yet, so this reports the pending state instead of
-      // the "no project found" error below (see mruby-mvjs/mrblib/mz.rb,
-      // docs/adr/0004 M6).
+      // the "no project found" error below (see mruby-mvjs/mrblib/mz.rb).
       error_dump_set_context("project", "RPG Maker MZ (js/rmmz_core.js)");
       game_obj = mrb_obj_new(M, mrb_class_get(M, "MZ"), 1, &em_args);
       break;
@@ -1219,7 +1217,7 @@ static bool script_host_env_enabled(const std::string& value) {
 // its command line, so this resets each one to its default and says why
 // whenever the run asked for it anyway. --rgss_script_host is deliberately
 // not touched: it is not a debug feature but the only way an RGSS game runs
-// at all (docs/adr/0029-rgss-script-host-by-default.md).
+// at all.
 //
 // --rpg2k_map_editor/--rpg2k_chipset_editor/--rpg2k_preview_animation are
 // ALSO deliberately not touched, unlike every other flag here: a released
@@ -1374,7 +1372,7 @@ int main(int argc, char** argv) {
   // original (larger) argc -- so it frees that duplicated pointer twice.
   // Confirmed with AddressSanitizer on a real device (double-free, both
   // stacks landing on this exact SDL_strdup/SDL_free pair) after
-  // docs/adr/0058-android-port.md's android-smoke investigation had chased
+  // the android-smoke investigation had chased
   // Scudo's downstream, much-later abort through several false leads
   // (an audio backend race, a report-file write) that never survived
   // testing. The copy's backing storage outlives this function (a local
@@ -2008,14 +2006,12 @@ int main(int argc, char** argv) {
     case GameKind::kMz:
       // RPG Maker MZ: a JavaScript game (js/rmmz_core.js) with a JSON database.
       // Shares MV's JS host but needs a WebGL backend (not built yet), so it
-      // reports the pending state. See mruby-mvjs/mrblib/mz.rb, docs/adr/0004
-      // M6.
+      // reports the pending state. See mruby-mvjs/mrblib/mz.rb.
       error_dump_set_context("project", "RPG Maker MZ (js/rmmz_core.js)");
       game_obj = mrb_obj_new(M, mrb_class_get(M, "MZ"), 1, &args);
       break;
     case GameKind::kMv:
       // RPG Maker MV: a JavaScript game (js/rpg_core.js) with a JSON database.
-      // See docs/adr/0004-javascript-maker-mv-quickjs.md.
       error_dump_set_context("project", "RPG Maker MV (js/rpg_core.js)");
       game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &args);
       break;
@@ -2026,8 +2022,7 @@ int main(int argc, char** argv) {
       // loads and the RGSS script host (the default path) runs the project's
       // own scripts; the built-in title/map flow is still to come, so a project
       // that ships no scripts — or a boot with RGSS_SCRIPT_HOST=0 — reports
-      // that. See mruby-rpgvx and
-      // docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md.
+      // that. See mruby-rpgvx.
       error_dump_set_context("project", "RPG Maker VX / VX Ace");
       game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &args);
       break;

@@ -3,8 +3,7 @@
 A from-scratch, non-mruby homebrew app that reads one map exported from a
 real RPG Maker 2000/2003 project and lets you walk around it on a jailbroken
 **iPod nano 7th generation**, using the [NanoApps](https://github.com/nfzerox/NanoApps)
-homebrew SDK. See `docs/adr/0061-ipod-nano-7-homebrew-map-walk.md` for why
-this is a separate minimal engine rather than the mruby/RGSS engine the rest
+homebrew SDK. This is a separate minimal engine rather than the mruby/RGSS engine the rest
 of this repo runs everywhere else, and for the full scope/limitations.
 
 **Scope**: tile rendering (including autotiles, and the water/block-C tiles
@@ -49,8 +48,7 @@ ruby scripts/export_nano7_map.rb \
 
 writes `map.bin` + `tiles.bin` to `OUT_DIR` (the format is described at the
 top of the exporter; `tiles.bin` is a palette-indexed tile atlas, 256 bytes
-per tile, whose colours live in `map.bin`'s own palette — see
-`docs/adr/0092`). `--target nano7` is the default; `--target wio` sizes the
+per tile, whose colours live in `map.bin`'s own palette). `--target nano7` is the default; `--target wio` sizes the
 same export for the Wio Terminal's smaller buffers instead. `scripts/export_nano7_map_check.rb`
 round-trips the exporter's output against its own invariants (no mruby or
 device needed) — run it after touching the exporter or this app's binary
@@ -64,8 +62,7 @@ in `rpg2k_walk.c`. Pick a smaller map if your project's start map is larger.
 
 NanoApps builds apps from inside its own checkout, and this app is two
 directories: the NanoApps half here, and the engine it runs
-(`app/shared/rpg2k_walk`, shared with the Wio Terminal walk firmware — see
-`docs/adr/0091`). One script stages both:
+(`app/shared/rpg2k_walk`, shared with the Wio Terminal walk firmware). One script stages both:
 
 ```sh
 scripts/stage_nano7_walk_app.bash /path/to/NanoApps
@@ -109,10 +106,9 @@ You don't need a jailbroken iPod or the NanoApps toolchain to see this app
 actually walk a real map: `app/nano7/host` links this file (`rpg2k_walk.c`)
 completely unmodified against a host implementation of the small
 `hb_raw_surface`/`hb_sdk` API it calls, built as part of this repo's normal
-CMake build (`nano7_walk_host`, wherever SDL2 already is). See
-`docs/adr/0102-ipod-nano-7-host-emulator.md` for why this is a host-side API
+CMake build (`nano7_walk_host`, wherever SDL2 already is). This is a host-side API
 harness rather than a full SoC emulator like the Wio Terminal's Renode
-platform (`docs/adr/0094`).
+platform.
 
 ```sh
 ruby scripts/export_nano7_map.rb --target nano7 \
@@ -133,7 +129,7 @@ useful to say about how expensive a frame is on the real device. For that,
 `arm-none-eabi-gcc -mcpu=cortex-a8` and boots it under `qemu-system-arm`'s
 `cortex-a8` core on a real PL110 display controller — a genuine (if
 approximate) ARM instruction stream and per-frame cycle count, not a
-fabricated one. See `docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md`.
+fabricated one.
 
 ```sh
 sudo apt-get install -y gcc-arm-none-eabi qemu-system-arm
@@ -160,8 +156,7 @@ at a time while held, blocked by the map's real passability data.
   approximation is what makes it look like sea; a detailed panorama will
   read as a flat colour.
 - Animation is the water autotiles, the block-C animated tiles and the
-  hero's own walk cycle, on RPG2000's own clocks (`docs/adr/0094`,
-  `docs/adr/0096`). Everything else an RPG2000 map animates — event
+  hero's own walk cycle, on RPG2000's own clocks. Everything else an RPG2000 map animates — event
   commands, pictures, weather — needs the interpreter and is out of scope.
   `--no-animate` freezes every tile if an export needs the atlas slots back
   (the hero still walks; its cycle costs no atlas slots, being a fixed
@@ -175,7 +170,7 @@ at a time while held, blocked by the map's real passability data.
 - **Map events draw as static sprites, never as anything more.** Only an
   event whose page is the one a fresh save's own page-selection rules would
   pick, and only if that page's graphic is a CharSet frame rather than a
-  chipset tile, exports at all (`docs/adr/0102`); one resting frame, in
+  chipset tile, exports at all; one resting frame, in
   whatever draw order the genuine renderer's own below/same/above-the-hero
   layering already gives it. No event command ever runs — no message boxes,
   no self-switches, no teleport, no shop or battle an event might trigger.

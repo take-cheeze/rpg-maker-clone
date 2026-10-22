@@ -18,7 +18,7 @@ set -eu -o pipefail
 #     src/voicevox_tts.cxx dlopen()s libvoicevox_core.so at run time, so no
 #     link-time dependency is added to the build).
 #   - VOICEVOX/onnxruntime-builder -- the ONNX Runtime build CORE dlopen()s in
-#     turn (CPU-only; see docs/adr for GPU scope).
+#     turn.
 #   - r9y9/open_jtalk -- the UTF-8 Open JTalk dictionary CORE's Japanese
 #     front-end (accent/pronunciation analysis) reads from.
 #   - VOICEVOX/voicevox_vvm -- Zundamon's "ノーマル" style (style id 3, the
@@ -33,7 +33,7 @@ set -eu -o pipefail
 #
 # IMPORTANT — licence: audio generated with this voice model must be credited
 # "VOICEVOX:ずんだもん" per assets/voicevox/models/TERMS.txt, whether the use
-# is commercial or not. See docs/adr for the full attribution note.
+# is commercial or not.
 #
 # Idempotent: re-running with the assets already in place does nothing. Pass
 # --force to re-download and overwrite.
@@ -146,7 +146,7 @@ cp -r "$work/dict/open_jtalk_dic_utf_8-1.11" "$dest/dict/"
 
 cp "$cache/0.vvm" "$dest/models/0.vvm"
 
-# Zundamon's usage terms (Japanese; see docs/adr for the English gist) travel
+# Zundamon's usage terms travel
 # with the model file, same as the FreePats/M+ licences travel with their
 # assets. Written here rather than fetched again: `voicevox_vvm`'s own
 # TERMS.txt is the release tag's tree, not a release asset, and browsing it

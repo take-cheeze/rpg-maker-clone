@@ -1152,8 +1152,7 @@ JSValue js_image_load(JSContext* ctx,
 // engine's own code is what undoes it: it XHRs the file as an ArrayBuffer,
 // decrypts it in JavaScript, wraps the plaintext in a Blob and hands the
 // resulting object URL to an Image. Nothing reaches the filesystem by name at
-// that point, so a loader that can only open a path cannot see the result. See
-// ADR 0004 M6.3r.
+// that point, so a loader that can only open a path cannot see the result.
 JSValue js_image_load_bytes(JSContext* ctx,
                             JSValueConst,
                             int argc,
