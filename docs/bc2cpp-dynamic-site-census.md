@@ -632,7 +632,7 @@ computed `new` sites" were constants inside `rescue`-covered methods that `agree
 `Bitmap.new(w, h)` Integer-tag sites do not come from constructor arguments: their `w`/`h` are failed numeric constants
 (`LINE_H`, `SCREEN_W`, `TILE`, `FACE_SIZE`), `Rect`/`Bitmap` native results, `Array#max` and `Window#width`.
 
-## Follow-up: where a value goes (ADR 0316)
+## Follow-up: where a value goes
 
 The census above counts by-name sends; this one counts creation sites (`LAMBDA`, `BLOCK`, `ARRAY`, `HASH`, `STRING`,
 `new`) and asks whether the value leaves the frame that made it, with the shared escape analysis
@@ -650,7 +650,7 @@ The census above counts by-name sends; this one counts creation sites (`LAMBDA`,
 | methods that newly compile with BLOCK_FALLBACK_PROVEN | 1 (`Array#combination`) |
 | `shipped.cxx` with `BC2CPP_ESCAPE_ANALYSIS=0` against master | byte-identical |
 
-## Follow-up: provable errors and post-call facts (ADR 0317)
+## Follow-up: provable errors and post-call facts
 
 `BC2CPP_PROVABLE_ERROR_REPORT=<tsv>` and `BC2CPP_REFINE_REPORT=<tsv>` (run with `BC2CPP_CALL_FACTS=0` to measure the
 potential), aggregated by `scripts/bc2cpp/refine_report.rb tsv [--list-bugs]`. Wio closed world, master `147fe7e6`:
@@ -750,9 +750,9 @@ Three ireps carry a prefix (class bodies of `LCF::Schema`, `RPG2k::Interpreter`,
 | `INDEX_EXACT` arms / `NUMERIC_OPERAND_PROOF` arms removed | 977 / 423 | 1,000 / 427 |
 | `bc2cpp_nomethod` sites / ivar pools / frozen table shapes | 4,380 / 187 / 49 | 4,380 / 187 / 49 |
 
-## Baseline after ADRs 0307-0317 (master cd86085f, 2026-10-02)
+## Baseline after the bc2cpp ADRs 0307 onward (master cd86085f, 2026-10-02)
 
-One tree, one set of numbers: the eleven PRs of ADRs 0307-0317 each measured their delta on a different master, so
+One tree, one set of numbers: the eleven PRs of bc2cpp ADRs 0307 onward each measured their delta on a different master, so
 their deltas overlap. Full tables (totals per scope, marginal contribution of every kill switch, receiver origins,
 why-kept ranking, next levers, CI shard timing, tool problems) are in `docs/bc2cpp-baseline-2026-10-02.md`. Wio closed
 world, `3rd/*` populated, default switches:
