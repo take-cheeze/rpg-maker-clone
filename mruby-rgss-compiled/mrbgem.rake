@@ -2,7 +2,7 @@ require 'shellwords'
 require_relative '../tools/bc2cpp/compiled_gems'
 
 # Opt-in AOT-compiled C++ replacements for all 17 of RGSS::Sprite's own
-# real bytecode-defined accessor methods (docs/adr/0139) -- the plain
+# real bytecode-defined accessor methods -- the plain
 # Ruby readers mruby-rgss/mrblib/lib.rb reopens the native Sprite class
 # with (`x`/`y`/`opacity`/`zoom_x`/`zoom_y`/`tone`/`color`/`src_rect`/...),
 # generated at build time by tools/bc2cpp/bc2cpp.rb. Sprite's own writers
@@ -11,7 +11,7 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # is -- nothing to compile or override for those.
 #
 # This whole gem only exists in the build when RPGMAKER_BC2CPP is set on a
-# closed-world build (psp/wio/maix/closed, see build_config.rb; docs/adr/0466) -- it is
+# closed-world build -- it is
 # never part of the default build, and never of a desktop build.
 MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   spec.license = 'MIT'
@@ -84,11 +84,11 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   generated = "#{build_dir}/rgss_compiled_gen.cpp"
 
   # bc2cpp.rb runs MRBC: without this edge `rake -m` can start codegen before
-  # the bootstrap mrbc exists (ADR 0228).
+  # the bootstrap mrbc exists.
   file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
                      BC2CPP_CORE_REFUSED_PATH] do |t|
-    # SHARED_GENERATION (ADR 0464): with every other compiled gem of this build that is out of date, in one
+    # SHARED_GENERATION: with every other compiled gem of this build that is out of date, in one
     # bc2cpp.rb analysis (tools/bc2cpp/compiled_gems.rb bc2cpp_compiled_gem_job holds this gem's environment).
     Bc2cppCompiledGemGeneration.generate(spec, "#{dir}/..")
   end

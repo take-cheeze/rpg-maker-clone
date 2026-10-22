@@ -894,7 +894,7 @@ module Wolf
     # entries ready for Bitmap#blt_quads -- dx/dy the pixel offset within the
     # destination tile_size square, sx/sy/w/h the source rect in the
     # autotile's own sheet. `frame` selects the (0-based) animation column;
-    # every real caller currently passes 0 -- see the ADR on why per-tile
+    # every real caller currently passes 0 -- per-tile
     # animation stepping is left as a follow-up rather than guessed at here.
     # A corner digit outside 0..4 (malformed map data, or wolfrpg-map-parser
     # decoding a file this reader has not seen) is skipped rather than
@@ -960,7 +960,7 @@ module Wolf
       File.exist?("#{dir}/#{BASIC}/Game.dat") || File.exist?("#{dir}/Data.wolf")
     end
 
-    # One seam for both backing stores (ADR, "one clean seam" over scattering
+    # One seam for both backing stores ("one clean seam" over scattering
     # `if packed? ... else ...` through every reader below): a loose project
     # sets @archive to nil and #read stays a plain File.read; a packed one
     # opens Data.wolf once here and every #read call after this becomes a

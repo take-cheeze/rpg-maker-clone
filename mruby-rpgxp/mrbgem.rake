@@ -11,7 +11,6 @@ MRuby::Gem::Specification.new('mruby-rpgxp') do |spec|
   # with Kernel#eval.
   add_dependency 'mruby-eval'
   # The script-host driver runs the scripts' blocking main loop inside a Fiber
-  # (docs/adr/0023-rpgxp-script-host-frame-driver.md).
   add_dependency 'mruby-fiber'
   # Kernel#exit / SystemExit — the stock Interpreter calls `exit` to abort on
   # runaway common-event recursion; the driver ends the game on it.

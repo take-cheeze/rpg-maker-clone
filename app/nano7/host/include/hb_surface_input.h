@@ -3,7 +3,7 @@
  * (nfzerox/NanoApps@80d439d) declaration-for-declaration, reformatted to
  * this repo's own clang-format style rather than kept byte-identical --
  * the touch-state struct every surface runtime (hb_raw_surface,
- * hb_lv_surface) shares. See docs/adr/0102 for why this
+ * hb_lv_surface) shares. This
  * host build reimplements the API this app runs against rather than
  * emulating the SoC/OS underneath the real SDK.
  */

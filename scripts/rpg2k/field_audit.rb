@@ -12,8 +12,6 @@
 # Every RPG2000 defect found by this method was invisible to the fixture suites,
 # for one reason each time: the fixtures encoded the same assumption as the code,
 # because they were written to match it. Only a real game's tables disagree.
-# See docs/adr/0031 (item and skill types), 0032 (state effects), 0033
-# (equipment), 0034 (terrain), 0035 (bush depth) and 0036 (the battle log).
 #
 # Usage:
 #   ruby scripts/rpg2k/field_audit.rb [GAME_DIR ...]

@@ -1,4 +1,4 @@
-// Test-only hook for mruby-rgss's mrbtest build (ADR 0263): RGSS::DirectProbe
+// Test-only hook for mruby-rgss's mrbtest build: RGSS::DirectProbe
 // calls a generated `rgss::*_direct` entry point by name, so
 // test/native_direct.rb can run a split binding and its direct entry point on
 // the same objects and compare. Never compiled into the game.

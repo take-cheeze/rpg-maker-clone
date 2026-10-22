@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
-# Check the RGSS native binding split (ADR 0263) without a compiler.
+# Check the RGSS native binding split without a compiler.
 #
 #   - the classifier and the rewrite, on a fixture translation unit
 #     (scripts/fixtures/native_binding_split) whose libclang facts are checked
@@ -177,7 +177,7 @@ check.call('two registrations of one name that disagree get no entry', entries.e
 # -- the tree ---------------------------------------------------------------------
 
 puts 'tree'
-# Every RGSS source with a generated block (lib.cxx, and the audio and tts sources since ADR 0281).
+# Every RGSS source with a generated block.
 rgss_sources = Dir[File.join(root, 'mruby-rgss/src/*.cxx')].sort.to_h { |path| [File.basename(path), File.read(path)] }
 lib = rgss_sources.values.join("\n")
 gen_header = File.read(File.join(root, NBS::HEADER_PATH))

@@ -13,8 +13,7 @@ natively (`m5stack-core-esp32`), so there is no custom `boards/*.json` here.
 
 **This directory is its own standalone PlatformIO project** (`platformio.ini`
 right here, not another environment in the repo root's) -- see that file's
-own header comment and `docs/adr/0157-m5stack-core-qemu-emulator.md` for
-why: this port needs `framework = arduino, espidf` ("Arduino as an ESP-IDF
+own header comment for why: this port needs `framework = arduino, espidf` ("Arduino as an ESP-IDF
 component"), and PlatformIO's ESP-IDF/CMake build mode takes over the
 *project root's* own `CMakeLists.txt` and cannot honor `build_src_filter` --
 both fatal to sharing the repo root's `platformio.ini`/`CMakeLists.txt`/
@@ -57,8 +56,7 @@ loading, the RGSSAD archive reader) is a separate, later piece of work.
 
 ## Emulation (QEMU, not Renode)
 
-See `docs/adr/0157-m5stack-core-qemu-emulator.md` for the full
-investigation. In short: **Renode ships no usable ESP32/Xtensa foundation at
+The short version: **Renode ships no usable ESP32/Xtensa foundation at
 all** (checked directly against `renode/renode` and
 `renode/renode-infrastructure` -- only one ESP32 peripheral,
 `UART.ESP32_UART`, and a bare `xtensa-sample-controller.repl` test stub).
@@ -102,8 +100,7 @@ setting) rather than PlatformIO's default precompiled-Arduino-libs mode,
 whose static libraries hit a real assert in their own SPI flash re-probe
 under this exact QEMU release (`do_core_init`,
 `esp_flash_init_default_chip() != ESP_OK`) that the from-source build does
-not -- see the ADR's "Status, revised" section for the full, initially-wrong
--then-corrected investigation (it first looked like an ESP-IDF version gap;
+not (it first looked like an ESP-IDF version gap;
 it wasn't -- both paths use the same 4.4.7).
 
 ## Emulation: display support
@@ -289,8 +286,7 @@ watching the ESP-IDF SD driver itself fail to select the card
 (`sdSelectCard(): Select Failed`) even though the file/filesystem side was
 correct. Bridging that gap (a `ssi-sd`-style SPI-mode SD device, the way
 QEMU's own generic boards do it) is possible but is new QEMU work, out of
-scope for this pass -- see `docs/adr/0157-m5stack-core-qemu-emulator.md`'s
-own "Status, audio support" section.
+scope for this pass.
 
 ## What the emulator still cannot show
 

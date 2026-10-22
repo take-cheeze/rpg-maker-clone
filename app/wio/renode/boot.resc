@@ -1,5 +1,5 @@
 # Boots one of this repos Wio Terminal firmwares under Renode far enough to
-# prove the CPU actually runs (P1/P2 of docs/adr/0094) rather than hanging on
+# prove the CPU actually runs rather than hanging on
 # an unstubbed clock-tree or SERCOM register. See app/wio/renode/README.md.
 #
 # Usage: pass -e "set elf_path @/path/to/firmware.elf" before including this,

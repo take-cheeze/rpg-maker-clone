@@ -227,7 +227,7 @@ def build_sfnt():
     # past the first segment and `stbtt_FindGlyphIndex` asserted on any
     # codepoint above 126 — a hard crash where the answer should have been
     # "no glyph". Nothing asked for one until Window_ShopNumber drew its
-    # multiplication sign (U+00D7). See ADR 0004 M6.3o.
+    # multiplication sign (U+00D7).
     #
     #   searchRange   = 2 * 2^floor(log2(segCount))
     #   entrySelector = floor(log2(segCount))

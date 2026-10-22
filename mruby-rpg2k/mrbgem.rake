@@ -24,7 +24,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   add_dependency 'mruby-enum-ext'
   add_dependency 'mruby-range-ext'
 
-  # ADR 0417: Zundamon narration (Scene::Map#speak_message) calls RGSS::Tts,
+  # Zundamon narration (Scene::Map#speak_message) calls RGSS::Tts,
   # which only the desktop "host" build can back. Every other build ships the
   # empty stand-in instead (appended last: Scene::Map is defined by then), so
   # no Ruby there names RGSS::Tts. This runs before every other rbfiles filter.
@@ -40,7 +40,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # RPG2k#test_play at every real call site (Scene::Map#try_open_debug_menu:
   # "return unless @parent.test_play") -- a released game never reaches any
   # of it. Measured by compiling mrblib with and without these three files
-  # (real `mrbc -g`, see docs/adr/0097-rpg2k-debug-tools-trim.md): 18,259 of
+  # 18,259 of
   # the 413,612 bytes mruby-rpg2k's mrblib compiles to (iseq+pool+syms) --
   # code no player-facing psp/wio binary calls. Same `%w[psp wio]` grouping
   # mruby-rgss's own mrbgem.rake already uses (that gem's pthread linking):
@@ -54,26 +54,24 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
     ]
   end
 
-  # docs/adr/0108's own real attempt: mruby-rpg2k is a pure-Ruby gem (its own
+  # An earlier attempt: mruby-rpg2k is a pure-Ruby gem (its own
   # src/rgss_ext.cxx is two empty gem_init/gem_final stubs -- everything real
   # is mrblib/*.rb), so in principle its entire compiled bytecode could live
   # on the SD card instead of the firmware, loaded once at boot via
-  # mrb_load_irep_buf the same way ADR 0099's own smoke test loads
+  # mrb_load_irep_buf the same way the smoke test loads
   # mruby-lcf's. RGSS_WIO_EXTERNAL_RPG2K, a no-op unless set, drops every one
   # of this gem's own rbfiles for *whichever* build it's set for (not just
-  # wio -- a host build with it set is exactly how the ADR's own host-side
+  # wio -- a host build with it set is exactly how the host-side
   # proof produces a "core + shared gems, no rpg2k Ruby" libmruby.a to load
   # a matching external .mrb into), superseding the narrower debug-tools/
-  # battle trims above wherever it's active. Not the default: see the ADR
-  # for why loading it back in on real wio hardware is the open, unresolved
+  # battle trims above wherever it's active. Not the default: loading it back in on real wio hardware is the open, unresolved
   # half of this attempt.
   if ENV['RGSS_WIO_EXTERNAL_RPG2K']
     spec.rbfiles = []
   elsif build.name == 'wio'
     # A live fight's own bytecode -- Game::Battle (the headless combat model,
     # split into its own file for exactly this exclusion), Scene::Battle and
-    # RPG2k3::Scene::Battle -- is 180,368 bytes on its own (docs/adr/0107's
-    # own real measurement: three separate mrbc compiles, summed), a sixth of
+    # RPG2k3::Scene::Battle -- is 180,368 bytes on its own (measured: three separate mrbc compiles, summed), a sixth of
     # the Wio Terminal's entire flash budget, for a feature most of any given
     # session never reaches (a save/load/menu-only play session, or this
     # port's own current boot-test firmware, which loads no game data and so
@@ -81,10 +79,10 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
     # *wio-only*, not psp -- PSP has real flash/storage headroom this board
     # does not, and dropping these files here does not yet come with any way
     # to get them back: no runtime loader reads them from the SD card the way
-    # ADR 0007's still-unbuilt P3 asset-streaming work would need to, so a
+    # the still-unbuilt P3 asset-streaming work would need to, so a
     # wio build with this exclusion cannot actually start a fight today. This
     # trim exists to prove the split is real and measure its actual cost, not
-    # to claim battle done as a wio feature -- see the ADR for what remains.
+    # to claim battle done as a wio feature.
     spec.rbfiles -= %W[
       #{dir}/mrblib/game/battle.rb
       #{dir}/mrblib/scene/battle.rb
@@ -97,7 +95,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # Game::Enemy, Game::EnemyAction, Game::EnemyAi, Game::BattlePage, Game::
   # States::BattleText, ...) that were only ever reachable from the three
   # files just excluded above -- confirmed by grepping every real call site
-  # of each before it moved, see docs/adr/0124-rpg2k-battle-only-helpers-trim.md.
+  # of each before it moved.
   # Excluded on exactly the same condition as those three files (psp keeps
   # battle, so psp keeps this too): a wio-only exclusion, not the psp/wio
   # debug-tools one above.
@@ -109,10 +107,10 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   end
 
   # game/lsd_io.rb (Game::State#to_lsd/.from_lsd and their exclusive helpers) ships on
-  # every build, wio included (docs/adr/0399): the Save<N>.lsd is the only save format,
+  # every build, wio included: the Save<N>.lsd is the only save format,
   # and Save/Continue need it. There is no wio-only exclusion of this file any more.
 
-  # docs/adr/0144: mruby-rgss/mrbgem.rake was, until this round, the ONLY
+  # mruby-rgss/mrbgem.rake was, until this round, the ONLY
   # caller of wio_strip_bc2cpp_stubs (4 owners: RGSS::Sprite, RGSS::Window,
   # RGSS::Audio.singleton, RGSS::ErrorReport.singleton) even though
   # tools/bc2cpp/compiled_gems.rb's own `mruby-rpg2k-compiled` entry already
@@ -147,7 +145,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   #
   #   - Game::Troop/Game::Enemy/Game::EnemyAction/Game::EnemyAi (all four
   #     real bc2cpp-registered owners too) are entirely defined in
-  #     mrblib/game/battle_support.rb (moved there by docs/adr/0124), which
+  #     mrblib/game/battle_support.rb, which
   #     the wio-only battle trim just below this comment already drops from
   #     spec.rbfiles outright -- confirmed directly (`grep -n '^class ' game/
   #     battle_support.rb`). Stripping their stub bodies would be a real
@@ -716,7 +714,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # before/after pair, so this noise cancels out of every reported delta
   # even though it means the absolute totals are approximate to within
   # about a dozen bytes, same "directionally trustworthy, not exact"
-  # caveat round 37's own `.singleton` follow-up ADR section already
+  # caveat round 37's own `.singleton` follow-up already
   # documents for this same proxy.)
   #
   # What round 38 deliberately did NOT do, and why (an honest scoping
@@ -877,7 +875,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # Ground truth (a real `wio_registered_methods.rb` run against
   # `mruby-rpg2k-compiled`, never hand-counted): 173 real registered
   # methods, confirming both round 38's own forward-looking count and
-  # ADR 0139's Game::Interpreter emission-owner writeup
+  # the Game::Interpreter emission-owner count
   # exactly ("173 of its own 207 real bytecode-defined methods... compile
   # clean"). `Game::Interpreter`'s own real class body is defined in
   # `mrblib/interpreter.rb` (confirmed directly, `grep -rn 'class
@@ -1048,7 +1046,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # Ground truth (a real `wio_registered_methods.rb` run against
   # `mruby-rpg2k-compiled`, never hand-counted): 223 real registered
   # methods, confirming both round 38's own forward-looking count and
-  # ADR 0139's RPG2k::Scene::Map emission-owner writeup
+  # the RPG2k::Scene::Map emission-owner count
   # exactly. Unlike every `Game::*` owner rounds 38-42 covered,
   # `RPG2k::Scene::Map` has no partial-owner reopening anywhere: a whole-gem
   # `grep -rn 'class Map'` finds exactly one real class body defining it,
@@ -1472,8 +1470,8 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # modulo the battle-file exclusions themselves, the same "100%" state
   # `mruby-rgss`/`mruby-lcf`'s own `owners:` lists have already reached.
   #
-  # Round 46: docs/adr/0147 (`.times`-block inlining) and 0148/0149/0150
-  # (optional/keyword/rest-argument support) unlocked 87 more real
+  # Round 46: `.times`-block inlining and optional/keyword/rest-argument support
+  # unlocked 87 more real
   # registered methods on owners this file already strips -- no `owners:`
   # change, only `mruby-rpg2k-compiled/src/register.cxx` gains entries
   # (ground truth: a real `wio_registered_methods.rb` run, never

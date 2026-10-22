@@ -92,7 +92,7 @@
               ]
               # libglvnd supplies the <EGL/egl.h> / <GLES2/gl2.h> headers and
               # the libEGL / libGLESv2 dispatch libraries the RPG Maker MZ
-              # renderer needs (mruby-mvjs/src/mvgl.cxx, ADR 0004 M6.3); the
+              # renderer needs; the
               # off-screen driver comes from mesa at run time via llvmpipeHook
               # above. With the headers present mvgl.cxx's __has_include guard
               # compiles the real backend instead of the inert stubs, so
@@ -148,7 +148,7 @@
           # the same postInstall: app/psp/CMakeLists.txt refuses to configure
           # against the stock one (it misorders imports so several genuine
           # PSP module imports silently resolve wrong at runtime -- see the
-          # patch preamble and ADR 0047's bug 11 trail), so a devshell whose
+          # patch preamble), so a devshell whose
           # SDK still carried it would fail loudly anyway. Building it inside
           # this derivation (rather than asking the shell hook to run the
           # script) keeps the sandbox honest: no network fetch of pspsdk at
@@ -247,7 +247,7 @@
           #
           # Carries several local patches on top of nixpkgs' build, all found
           # and root-caused while trying to read the PSP EBOOT's own boot log
-          # under PPSSPP-headless (see docs/adr/0047-psp-memory-budget.md and
+          # under PPSSPP-headless (see
           # app/psp/README.md); none are upstreamed to hrydgard/ppsspp yet,
           # so all of them are carried by the take-cheeze/ppsspp fork commit
           # this flake's own `ppsspp`/`ppsspp-headless` build
@@ -428,7 +428,7 @@
           };
 
           # libclang and its Python bindings, for scripts/native/binding_facts.py
-          # (ADR 0263): `nix develop .#clang -c ruby scripts/native/binding_split.rb check`.
+          # `nix develop .#clang -c ruby scripts/native/binding_split.rb check`.
           # Kept out of the default shell so nothing else pays for the LLVM
           # closure. The script also needs 3rd/ and a built mruby include
           # directory (RGSS_MRUBY_BUILD_DIR, default build/mruby/host).

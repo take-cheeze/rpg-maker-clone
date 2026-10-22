@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds a FAT-formatted disk image for the Wio Terminal Renode platform's
-# SD card model (docs/adr/0094 P4) and a ready-to-include .repl snippet
+# SD card model and a ready-to-include .repl snippet
 # that wires it onto sercom6_spi -- the emulated equivalent of exporting a
 # map and copying it onto a real microSD card
 # (app/wio/renode/README.md's other half is how scripts/wio/sd_upload.py

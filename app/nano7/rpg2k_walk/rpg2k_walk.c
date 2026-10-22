@@ -5,7 +5,7 @@
  * This is deliberately NOT the mruby/RGSS engine the rest of this repo runs
  * everywhere else (PSP, Wio Terminal, Android, browser): NanoApps caps a
  * compiled app image at roughly 500 KB, and this repo's mruby + RGSS/RPG2k
- * gem stack is tens of MB even stripped -- see docs/adr/0061. Instead, all
+ * gem stack is tens of MB even stripped. Instead, all
  * LCF parsing and chipset/autotile compositing happens once on the host via
  * scripts/export_nano7_map.rb, which writes two flat files this app reads
  * with hb_fs_read and hands to the shared walk core. No LCF, no BER, no
@@ -15,18 +15,18 @@
  * frame timing and the blitting. Everything portable -- the file format, the
  * movement rule, the camera, the per-cell compositing -- lives in
  * app/shared/rpg2k_walk/rpg2k_walk_core.c, which the Wio Terminal walk
- * firmware (app/wio/src/walk_main.cxx) runs too. See docs/adr/0091.
+ * firmware (app/wio/src/walk_main.cxx) runs too.
  *
- * Scope (see docs/adr/0061 for the full rationale): one static map, no
+ * Scope: one static map, no
  * interpreter/battle/menus. Water and the block-C animated tiles do
- * animate, on RPG2000's own two clocks (docs/adr/0094) -- the export asks
+ * animate, on RPG2000's own two clocks -- the export asks
  * mruby-rpg2k what those are, so this file only advances a counter and
  * redraws the cells the core says moved. The player is the project's own
  * initial party leader, drawn as their real CharSet sprite when one was
- * exported (docs/adr/0096) rather than a plain marker, walking RPG2000's own
+ * exported rather than a plain marker, walking RPG2000's own
  * cycle and turning to face a bump the same way the genuine renderer does.
  * A map event with a CharSet graphic on its own initially-active page draws
- * too, as a single static sprite (docs/adr/0102) -- its own walk cycle,
+ * too, as a single static sprite -- its own walk cycle,
  * move route and runtime graphic changes all need the interpreter and stay
  * out of scope, same as everything else events could otherwise do.
  * This walks a real map; it does not play the game.
@@ -49,17 +49,17 @@
  *
  * Sized to keep total .bss comfortably under the ~512 KB gap between BSS_VA
  * and LINK_VA in sdk/hb_app.mk (0x09200000..0x09280000). Correction, found
- * building docs/adr/0103's QEMU harness: that gap is specifically for
+ * building the QEMU harness: that gap is specifically for
  * LV_SURFACE apps sharing address space with the live compositor
  * (hb_app.mk's own comment: parking .bss there is so such an app doesn't
  * stomp the compositor's heap) -- this app builds RAW_SURFACE, i.e. RELOC,
  * whose .bss the resident instead gives "an operator-new arena" (same
  * file), not that fixed gap. So this was never actually the enforced
- * per-app ceiling it was assumed to be; the real, ADR-61-verified NanoApps
+ * per-app ceiling it was assumed to be; the real NanoApps
  * limit for a RELOC app is the ~500 KB packed .hbapp blob (code + reloc
  * table), which this file's own .text/.rodata sits nowhere near. The ~512
  * KB figure below is kept anyway as this app's own conservative,
- * self-imposed budget -- docs/adr/0103's app_bss linker region now enforces
+ * self-imposed budget -- the app_bss linker region now enforces
  * it at link time for the QEMU build, which is more than a comment ever
  * did -- not because it turned out to be a real hardware ceiling after all.
  * Raise with caution regardless: still unverified against real allocator
@@ -71,10 +71,9 @@
  * composited cell + 1,536 B of the hero's own composited frame + 1,536 B of
  * an event's own composited frame = ~171 KB, still well under the ~512 KB
  * gap. Both halves have shrunk in turn: the atlas twice (32-bit pixels to
- * 16-bit with the transparency fix, then one palette index per pixel,
- * docs/adr/0092) and the cell arrays once (2.5 bytes per cell,
- * docs/adr/0093), which is why the hero frames (docs/adr/0096) and the
- * event-sprite atlas (docs/adr/0102) -- fixed costs, not scaled by map
+ * 16-bit with the transparency fix, then one palette index per pixel)
+ * and the cell arrays once (2.5 bytes per cell), which is why the hero frames and the
+ * event-sprite atlas -- fixed costs, not scaled by map
  * size -- still leave these caps room to spare rather than needing to
  * grow. */
 #define MAP_MAX_W 128

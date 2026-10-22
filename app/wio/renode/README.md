@@ -1,6 +1,6 @@
 # Wio Terminal under Renode
 
-P1-P4 of [ADR 94](../../../docs/adr/0094-wio-terminal-renode-emulator.md): a
+A
 [Renode](https://renode.io) platform that boots this repo's real Wio
 Terminal firmware ELFs (`wio`, `wio_walk`, `wio_sd_upload`), reliably and
 fast, all the way to their own `loop()` -- instead of only compiling, as
@@ -36,8 +36,7 @@ still lacks (a DMA controller model) stops it short of a full render.
   encodes for a different real-hardware SPI quirk (a byte-swap specific to
   `TFT_eSPI`'s *scalar* single-pixel writes) than `to565_push()` does (the
   same board's *bulk*/DMA writes, what tiles use, and what `ILI9341_SPI`
-  was written to expect) -- see the colour-fix session this whole ADR
-  exists because of. This platform does not replicate that hardware quirk
+  was written to expect). This platform does not replicate that hardware quirk
   at all (there is nothing to correct for, on either path), so it only
   ever decodes one of the two encodings correctly. This is a known,
   understood cost of not modelling that specific quirk, not a fix TODO.
@@ -166,7 +165,7 @@ requested, or as the exact same PC on every sample if you call
 
 Two new Renode peripherals, written for this platform since nothing
 upstream models either (checked against the upstream C# source, not
-assumed -- see ADR 94's peripheral-feasibility table):
+assumed):
 
 - **`SPI/SAMD51_SERCOM_SPI.cs`**: a real SERCOM-in-SPI-mode controller.
   Replaces the four per-register `flipflop` stubs P2 used for SERCOM6/7

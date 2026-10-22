@@ -68,15 +68,15 @@ load File.join(root, 'mruby-lcf/mrblib/lcf_file.rb')
 load File.join(root, 'mruby-lcf/mrblib/save_typed.rb')
 load File.join(root, 'mruby-lcf/mrblib/save_typed_accessors.rb')
 load File.join(root, 'mruby-rpg2k/mrblib/game.rb')
-load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
-load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file
+load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(root, 'mruby-rpg2k/mrblib/game', 'legacy_lsd.rb')
-load File.join(root, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
+load File.join(root, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio
 load File.join(root, 'mruby-rpg2k/mrblib/interpreter.rb')
 
 # Forwards every call to the database. It once existed to route `db.system`
 # around CRuby's Kernel#system; LCF files have no dotted field access any more
-# (docs/adr/0213), and the runtime reads `db[:system]`, but the shim's
+# and the runtime reads `db[:system]`, but the shim's
 # respond-to-everything answer is kept so the soak runs exactly as before.
 class DbShim
   def initialize(db); @db = db; end

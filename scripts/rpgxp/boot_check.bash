@@ -14,7 +14,6 @@
 #
 # The engine aborts on an uncaught mruby exception, so simply running it is most
 # of the test. What is asserted beyond that is how far the game's own engine gets
-# (ADR 0030 -- there is no second engine to fall back to any more):
 #
 #   * `--rgss_host_move_test` taps confirm on the game's own title screen, then
 #     walks the party on its map. Every scene the game reaches is logged as

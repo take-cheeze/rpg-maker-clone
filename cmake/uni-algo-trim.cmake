@@ -15,8 +15,8 @@
 # tables account for 663 KB of a 2.24 MB `.rodata`, and the modules disabled
 # below are most of that. On the PSP that is live RAM, not just image size --
 # the loader maps every PT_LOAD segment of the EBOOT into the console's ~24 MB
-# at launch -- which makes it ADR 0047 (P6) work; it is also the `uni-algo` half
-# of ADR 0007's P2 lever for the Wio Terminal, whose 512 KB of internal flash
+# at launch -- which makes it a PSP memory-budget win; it is also the `uni-algo`
+# half of the Wio Terminal flash-budget lever, whose 512 KB of internal flash
 # cannot hold the full table set at all. Desktop and wasm get the same reduction
 # for free, since the modules are equally unused there.
 #

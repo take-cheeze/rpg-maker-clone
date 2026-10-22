@@ -45,7 +45,7 @@ assert "cp932 to unicode degrades on unmappable bytes instead of crashing" do
   assert_equal "�あ", LCF.cp932_to_utf8("\x82\x00\x82\xa0")
 end
 
-# ADR 0217's table layout: single bytes, the computed user-defined area, and
+# The table layout: single bytes, the computed user-defined area, and
 # best-fit code points that only encode. scripts/cp932_tables_check.rb covers
 # every input; these pin the real transcoders to it.
 assert "cp932 to unicode across the table layout" do
@@ -630,7 +630,7 @@ assert "LCF::SaveData decodes per-actor level/exp/skills/HP/MP (chunk 108)" do
   assert_nil save[:actors][1][:skills]
 end
 
-# ---- LCF binary format WRITER (inverse of the readers, ADR 0018) -----------
+# ---- LCF binary format WRITER -----------
 # uni-algo stand-in for the reverse transcoder, mirroring the cp932_to_utf8 the
 # harness relies on for reads; the writer only needs it for :string fields.
 module LCF
@@ -772,7 +772,7 @@ assert 'SaveData edit survives a write/reload round-trip' do
   assert_equal 2, reread[101][:save_count]
 end
 
-# ---- Build a save FROM SCRATCH (ADR 0019, Game::State#to_lsd) --------------
+# ---- Build a save FROM SCRATCH --------------
 # The writer above edits a save parsed from bytes; these exercise assembling a
 # save with no source file: int16 field encoding, an Array2D populated via #[]=,
 # and an empty SaveData built up chunk by chunk and read straight back.

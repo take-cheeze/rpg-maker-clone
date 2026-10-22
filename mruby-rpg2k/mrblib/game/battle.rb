@@ -1,9 +1,9 @@
 # Game::Battle -- split into its own file (mruby-rpg2k/mrbgem.rake) so
 # it, alongside scene/battle.rb and scene/battle_rpg2k3.rb, can be
 # excluded from the wio build's own compiled bytecode: at 81,230 bytes
-# on its own (docs/adr/0107's own real measurement), it is the single
+# on its own, it is the single
 # largest chunk of game.rb, for a feature (a live fight) most of a
-# session never touches. See docs/adr/0107-wio-battle-bytecode-split.md.
+# session never touches..
 
 module Game
   # A headless combat model driving both the live turn-based fight
@@ -23,8 +23,7 @@ module Game
     # implementation's row-adjustment and normal-attack formulas
     # describe (ported from that source, NOT independently confirmed against
     # genuine RPG_RT under wine) -- a back-row defender is harder to hit and takes
-    # reduced damage, a front-row actor deals more. See #row_adjusted? and ADR
-    # 0053 (the placement field that decides a battler's row for a given
+    # reduced damage, a front-row actor deals more. See #row_adjusted? (the placement field that decides a battler's row for a given
     # battle is the RPG2003 Battle Commands table, 0x1D, field 2).
     #
     # Aliases onto Game::Actor's own copy, not a second definition: this
@@ -53,7 +52,7 @@ module Game
                     :hit_rate, :state_ranks, :hidden, :battle_turn,
                     :actions, :charged, :enemy_id, :battler_name,
                     :battler_hue,
-                    # Equipment-granted combat modifiers (ADR 0033):
+                    # Equipment-granted combat modifiers:
                     # how many times a basic attack swings, whether it
                     # can be evaded, whether Defend halves twice, and
                     # whether skills cost half.
@@ -160,7 +159,7 @@ module Game
                      # every 2000 fight. `row` itself: attr_writer below,
                      # #row is its reader.
                      # The RPG2003 active-time (gauge) charge for this
-                     # battler (ADR 0053, Phase 2). 0..GAUGE_MAX; a
+                     # battler. 0..GAUGE_MAX; a
                      # battler whose gauge is full may act. Only the
                      # 2003 gauge presentation (battle_type 2) actually
                      # advances it -- RPG2000 (battle_type 0) and the
@@ -993,7 +992,7 @@ module Game
     end
 
     # The RPG2003 **Row** battle command: flip `ally` between front and back
-    # row (ADR 0053's row mechanic), refusing a front-row ally's toggle that
+    # row, refusing a front-row ally's toggle that
     # would leave the front row empty (#can_leave_front_row?). Returns
     # whether the row actually changed, so the scene can play the reference's
     # Buzzer SE instead of committing a turn when it did not. A successful
@@ -1145,7 +1144,7 @@ module Game
     # applies a flat 25 to the already agility-adjusted chance when the
     # *defender* is row-adjusted (`to_hit -= 25`), not the 50% multiplier a
     # pre-reference draft guessed here -- see #row_adjusted? for what
-    # "row-adjusted" means and the ADR 0053 note that originally flagged the
+    # "row-adjusted" means and the note that originally flagged the
     # multiplier as unconfirmed. The front/back row is an RPG2003-only
     # concept, so RPG2000 (which never sets a row) has no adjusted defender
     # and this term is a no-op there.
@@ -1189,7 +1188,7 @@ module Game
       end
     end
 
-    # RPG2003 active-time (gauge) battle timing (ADR 0053, Phase 2). The gauge
+    # RPG2003 active-time (gauge) battle timing. The gauge
     # is a 0..GAUGE_MAX charge each battler accumulates every frame; the moment
     # it is full the battler may act (see #ready_combatants). This is the
     # RPG2003 presentation-2 ("gauge") time system -- RPG2000 (battle_type 0)

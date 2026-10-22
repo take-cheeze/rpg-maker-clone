@@ -2,7 +2,7 @@
 # encoding: UTF-8
 #
 # Host-side unit checks for the RPG2003 active-time (gauge) battle timing
-# (ADR 0053, Phase 2). The gauge is an RPG2003 presentation-2 concept; this
+# The gauge is an RPG2003 presentation-2 concept; this
 # harness exercises the pure gauge-accumulation / ready-selection model in
 # mruby-rpg2k/mrblib/game.rb. RPG2000 (battle_type 0) and the 2003
 # traditional presentation (1) never advance the gauge.
@@ -45,10 +45,10 @@ load File.join(lcf_lib, 'save_typed_accessors.rb')
 
 lib = File.expand_path('../../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
-load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
-load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file
+load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(lib, 'game', 'legacy_lsd.rb')
-load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
+load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio
 load File.join(lib, 'interpreter.rb')
 
 $failures = 0

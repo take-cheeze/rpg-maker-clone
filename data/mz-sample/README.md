@@ -3,7 +3,7 @@
 A tiny, fully-controlled RPG Maker **MZ** project used to exercise the MZ path
 (`mruby-mvjs`, class `MZ`) — the embedded quickjs host running the real
 `rmmz_*` engine and PIXI v5 on the native surfaceless-EGL WebGL backend
-(`mruby-mvjs/src/mvgl.cxx` / `mvwebgl.cxx`, ADR 0004 M6.3).
+.
 
 ## What is committed vs fetched
 

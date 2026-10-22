@@ -25,19 +25,19 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
     ruby t.prereqs.first, chdir: build_dir
   end
 
-  # docs/adr/0109: mrblib/schema.rb's ~1,150 field descriptors, each its own
+  # mrblib/schema.rb's ~1,150 field descriptors, each its own
   # Hash-literal-construction bytecode sequence, measured at 45,293 bytes
   # (real `mrbc -g`) -- the single largest file in this gem. Replaced here
   # with a compact packed binary blob plus a small, constant-size decoder
   # (gen_schema_blob.rb), verified byte-for-byte behaviorally identical
   # (every constant, every nested/lazy field, every default, the two
-  # object-identity-sharing cases) against schema.rb by that ADR's own
-  # comparison script -- 23,878 bytes, a real 47% cut. ADR 109 only ever
-  # measured this against wio's own flash budget (15,624 bytes recovered on
+  # object-identity-sharing cases) against schema.rb by the
+  # comparison script -- 23,878 bytes, a real 47% cut. Measured only
+  # against wio's own flash budget (15,624 bytes recovered on
   # a real `env:wio_rgss_boot` relink); no other target is flash-constrained
   # enough to need it.
   #
-  # wio-only (docs/adr/0123): this swap used to apply to *every* build,
+  # wio-only: this swap used to apply to *every* build,
   # including the native "host" config `rake test` uses. That combined the
   # blob's runtime decoder with mrbtest's full 27-gem load (every maker gem
   # plus every test dependency at once, unlike any real shipped target,
@@ -62,7 +62,7 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   # `audio_probe`/`error_dump`, which exercise the real desktop binary
   # against real Nepheshel game data) was never affected.
   #
-  # Scoping the swap to wio -- the only target this ADR's own numbers ever
+  # Scoping the swap to wio -- the only target the measured numbers ever
   # justified it for -- sidesteps the bug entirely rather than chasing it
   # further: wio is cross-compiled and never runs through `rake test` (the
   # host build only exists there to produce `mrbc`), so the one target that
@@ -70,7 +70,7 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   # this failure mode. Every other target (host/desktop, wasm, psp,
   # android) goes back to `schema.rb`'s plain Hash literals -- the same
   # form the CRuby `scripts/**/*_check.rb` scripts already trust, and the one
-  # this ADR's own comparison script verified against byte-for-byte.
+  # the comparison script verified against byte-for-byte.
   #
   # schema.rb itself is untouched and stays the single source of truth
   # (every scripts/**/*_check.rb script `load`s it directly under CRuby, with
@@ -85,7 +85,7 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
     end
   end
 
-  # docs/adr/0407: the typed save writers (save_typed_setters.rb, 251 one-line
+  # The typed save writers (save_typed_setters.rb, 251 one-line
   # methods, plus save_typed_put.rb's helper) are about 22 KB of bytecode with the
   # host `mrbc` (no -g), well over the ~8 KB a flash-bound target can take for an
   # opt-in layer, and nothing the game runs calls them (Game::State#to_lsd writes
@@ -96,7 +96,7 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
     spec.rbfiles -= ["#{dir}/mrblib/save_typed_put.rb", "#{dir}/mrblib/save_typed_setters.rb"]
   end
 
-  # docs/adr/0144: mruby-rgss/mrbgem.rake was, until this round, the ONLY
+  # mruby-rgss/mrbgem.rake was, until this round, the ONLY
   # caller of wio_strip_bc2cpp_stubs; this round wires mruby-lcf up too,
   # alongside mruby-rpg2k's own first round (see that gem's own mrbgem.rake
   # for the shared methodology writeup). Unlike rpg2k, mruby-lcf-compiled's

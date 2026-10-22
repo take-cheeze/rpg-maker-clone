@@ -32,7 +32,7 @@
  * lv_free/lv_snprintf/string ops straight at the already-linked libc
  * versions, so this board's minimal canvas/image/label usage draws from
  * the same dynamic heap mruby uses instead of a second, statically-sized
- * one. See docs/adr/0112. */
+ * one. */
 #define LV_USE_STDLIB_MALLOC  LV_STDLIB_CLIB
 #define LV_USE_STDLIB_STRING  LV_STDLIB_CLIB
 #define LV_USE_STDLIB_SPRINTF LV_STDLIB_CLIB
@@ -64,7 +64,7 @@
  * weight here -- unlike A8/L8/AL88 (LVGL's own font-glyph and image-mask
  * decoding paths reach those internally, confirmed by grepping
  * 3rd/lvgl/src for each format outside this dispatcher) or RGB888/ARGB8888/
- * RGB565 (all three used directly above). See docs/adr/0114. */
+ * RGB565 (all three used directly above). */
 #define LV_DRAW_SW_SUPPORT_I1 0
 #define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED 0
 #define LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED 0
@@ -105,8 +105,7 @@
 /* lv_canvas/lv_image are the only widgets the real RGSS runtime needs (Sprite/
  * Viewport/Bitmap render through them) and are kept on to match the PSP
  * config. LV_USE_LABEL looked droppable too -- neither bring-up screen's own
- * status/key echo (rewritten to a background-color signal + Serial output,
- * docs/adr/0132) nor the real RGSS render path (which renders game text
+ * status/key echo nor the real RGSS render path (which renders game text
  * through this project's own shinonome/cp932 pipeline, never LVGL's) calls
  * lv_label_* any more -- but LV_USE_IMAGE itself hard-requires it: LVGL's own
  * lv_image.h #errors at compile time ("lv_img: lv_label is required") when

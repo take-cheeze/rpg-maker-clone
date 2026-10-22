@@ -206,7 +206,7 @@ module Game
     MAX_CALL_DEPTH = 1000
 
     # The wait-request records below used to be bare Hash literals, then
-    # Structs; they are plain classes now (docs/adr/0215). bc2cpp keeps a
+    # Structs; they are plain classes now. bc2cpp keeps a
     # plain class's ivars as typed struct fields (IVAR_ACCESS) and can see
     # its attr_accessors, where a Struct's members were runtime-created
     # native closures. Each construction site is a bare `.new` followed by
@@ -313,7 +313,7 @@ module Game
       # that names no flag. It is not named `[]`: bc2cpp would add this
       # class to the guard chain of every `[]` call whose receiver it cannot
       # type (about 1,500 of them), where a name only this class defines
-      # compiles to one guarded direct call (docs/adr/0215).
+      # compiles to one guarded direct call.
       def accepts?(key)
         case key
         when :decision then @decision
@@ -725,7 +725,7 @@ module Game
         cmd = @list[@index]
         @index += 1
         # A hard error naming the bad entry, not a NoMethodError deep inside a `do_*` handler. It is also the
-        # checked fact bc2cpp's RBS_CHECKED_PARAMS proves `execute(LCF::EventCommand)` from (IS_A_GUARD, ADR 0456).
+        # checked fact bc2cpp's RBS_CHECKED_PARAMS proves `execute(LCF::EventCommand)` from.
         raise TypeError, "event command #{@index - 1} is #{cmd.class}, not LCF::EventCommand" unless cmd.is_a?(LCF::EventCommand)
         execute cmd
         @frame_steps += step_cost(cmd.code)
@@ -2687,7 +2687,7 @@ module Game
     # in Nepheshel (7805 of them — Change Skills on actor 1 alone is 2871) names
     # an actor the game also dismisses, so treating a named target as
     # party-only silently dropped the lot whenever that actor was away. With
-    # actors persisting (ADR 0030) such a miss is permanent: the skill is never
+    # actors persisting such a miss is permanent: the skill is never
     # learned rather than being re-granted on the next rebuild.
     # The `<Game::Actor>` half is bc2cpp's own ELEMENT_CLASS_SUPPORT
     # element claim, and it narrows the long-standing `-> Array` above
@@ -3296,7 +3296,7 @@ module Game
     # Enable Combo (1007), RPG2003-only: arm actor param0's battle command param1
     # to repeat param2 times. Recorded on the actor; the battle resolution spends
     # it -- a combo'd attack or skill hits `multiple` times (Game::Battle
-    # #combo_hits, ADR 0054's combo work; ported from a reference
+    # #combo_hits, the combo work; ported from a reference
     # implementation, not independently confirmed against genuine
     # RPG_RT under wine).
     # The same ported/unconfirmed basis applies to that implementation's

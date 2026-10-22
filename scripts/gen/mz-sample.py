@@ -395,7 +395,7 @@ gen_iconset()
 # scene update, so nothing logs it. The scene never starts: a black,
 # unresponsive map where the message window will not open, the menu will not
 # open and the player will not move. A browser behaves the same way, so this was
-# the bed being unfaithful rather than the host being wrong. See ADR 0004 M6.3r.
+# the bed being unfaithful rather than the host being wrong.
 def gen_balloon():
     """The balloon icon sheet: 8 frames across, one row per balloon type."""
     cell, cols, rows = 48, 8, 10
@@ -438,7 +438,7 @@ gen_shadow()
 # has a `frames` array is drawn by `Sprite_AnimationMV` out of a plain sprite
 # sheet, while everything else goes to `Sprite_Animation`, which needs an
 # Effekseer runtime. That runtime is a WASM module `main.js` initialises, and
-# our host bypasses `main.js` (ADR 0004 M6.2), so `Graphics.effekseer` stays
+# our host bypasses `main.js`, so `Graphics.effekseer` stays
 # null and an Effekseer animation degrades to its timings alone — no visuals.
 # The MV-format path needs nothing but sprites and blend modes, so that is what
 # the bed authors and what the animation smoke exercises.
@@ -572,7 +572,7 @@ write("Classes.json", [None, {
         # ...and the armor type, which is a separate trait. `isEquipWtypeOk` and
         # `isEquipAtypeOk` are plain lookups in the actor's traits, so a piece of
         # equipment whose type nobody allows is simply never selectable — with
-        # no error to say why. See ADR 0004 M6.3q.
+        # no error to say why.
         {"code": 52, "dataId": 1, "value": 0},   # add armor type: General Armor
         {"code": 41, "dataId": 1, "value": 0},   # add skill type: Magic
         # Hit rate, and it is load-bearing rather than flavour. A physical
@@ -637,7 +637,7 @@ write("States.json", [None, {
 # the "start" phase). The fight is frozen before it begins. This is rmmz's own
 # behaviour, not something our host introduces — a browser breaks identically —
 # and the editor never writes an empty battlerName, so only a hand-authored bed
-# like this one can hit it. See ADR 0004 M6.3i.
+# like this one can hit it.
 ENEMY_NAME = "Slime"
 
 
@@ -779,7 +779,7 @@ write("Animations.json", [None, {
 # cross rather than a border room) so the captured frame cannot be confused
 # with map 1's, and it carries its own parallel event writing a different
 # variable, which is how the probe tells "the map id changed" from "the new
-# map actually loaded and is running". See ADR 0004 M6.3l.
+# map actually loaded and is running".
 write("MapInfos.json", [None, {
     "id": 1, "name": "Sample Map", "order": 1, "parentId": 0,
     "expanded": False, "scrollX": 0, "scrollY": 0,
@@ -838,7 +838,7 @@ def event_page(trigger, commands):
 #
 # Each writes a variable of its own so a probe can tell them apart, and the
 # parallel one is gated on switch 2 rather than switch 1 so it stays independent
-# of the save probe (which sets switch 1). See ADR 0004 M6.3m.
+# of the save probe (which sets switch 1).
 COMMON_PARALLEL_VAR, COMMON_PARALLEL_VALUE = 3, 11
 COMMON_CALLED_VAR, COMMON_CALLED_VALUE = 4, 22
 
@@ -908,7 +908,7 @@ second_map_event = {
 # the destination map keeps it out of everyone else's way, and a short
 # encounterStep means a handful of steps is enough — `makeEncounterCount` draws
 # `randomInt(n) + randomInt(n) + 1`, so with n = 2 an encounter is at most three
-# steps away. See ADR 0004 M6.3n.
+# steps away.
 write("Map002.json", {
     "autoplayBgm": False, "autoplayBgs": False,
     "bgm": sound(), "bgs": sound(),

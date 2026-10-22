@@ -563,7 +563,7 @@ end
 assert "Wolf::VarStore keys map event self-variables by current_map_id too, not event id alone" do
   # Two different maps' own event id spaces both start from small numbers
   # (0/1/2) and would otherwise collide -- the same reasoning
-  # Wolf::Interpreter#event_position's own identical fix (ADR 0089)
+  # Wolf::Interpreter#event_position's own identical fix
   # already applies to a map event's runtime position.
   store = Wolf::VarStore.new(WolfTestFakeProject.new)
   store.current_map_id = 100
@@ -1350,7 +1350,7 @@ end
 assert "Wolf::Interpreter#exec_set_move_route resolves \"this event\"/an explicit event id/the hero as SetMoveRoute(201)'s target" do
   # help/04ev_movesettingB.html's own documented target convention: >=0 an
   # event id, -1 this event, -2 the hero, -3..-7 a party member (a real
-  # target once ADR 0099's roster exists -- see the dedicated party-target
+  # target once the roster exists -- see the dedicated party-target
   # test right after this one; here the roster is empty, so -3 resolves to
   # a real, but member-less, slot and is a no-op).
   store = Wolf::VarStore.new(WolfTestFakeProject.new)

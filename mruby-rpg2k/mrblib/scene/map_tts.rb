@@ -1,9 +1,9 @@
-# Zundamon (ずんだもん) message-window narration (ADR 0046) -- the desktop
+# Zundamon (ずんだもん) message-window narration -- the desktop
 # build's Scene::Map#speak_message. Builds that can never have a VOICEVOX
 # backend (every target but the desktop "host" build, see
 # tools/rgss_tts_config.rb) drop this file and ship the empty
 # mrblib_limited/map_tts_off.rb in its place, so RGSS::Tts is neither
-# registered nor named by any Ruby there (ADR 0417). Loaded after map.rb (sorted
+# registered nor named by any Ruby there. Loaded after map.rb (sorted
 # rbfiles), which defines Scene::Map and calls #speak_message.
 class RPG2k
   module Scene

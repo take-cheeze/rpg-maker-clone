@@ -3,7 +3,7 @@
  * flash/16 KB bootloader reserved, 192 KB RAM) -- see
  * app/wio/renode/oversized_flash_debug.ld's own comment for the FLASH
  * side. RAM.LENGTH here is widened from the real 0x30000 (192 KB) to
- * 0x400000 (4 MB) so docs/adr/0135's real RAM-exhaustion crash (a real
+ * 0x400000 (4 MB) so the real RAM-exhaustion crash (a real
  * ATSAMD51 chip's own 192 KB does not fit wio_rgss_boot's own setup())
  * does not recur while measuring how much RAM setup() actually needs to
  * finish. Never flashable/loadable on a real board; pair only with

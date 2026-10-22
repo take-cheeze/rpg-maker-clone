@@ -30,10 +30,10 @@ EXPORTER = File.join(ROOT, 'scripts/export_nano7_map.rb')
 # Ruby) the same way scripts/rpg2k/render_check.rb already exercises
 # Game::ChipsetLayout standalone.
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game.rb')
-load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
-load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file
+load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'legacy_lsd.rb')
-load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
+load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio
 load File.join(ROOT, 'scripts/rgss/cruby_compat.rb')
 
 # Mirrors TARGETS in the exporter, which mirrors each firmware's buffers.
@@ -86,7 +86,7 @@ end
 # file the exporter reported using -- is what makes the "no opaque atlas pixel
 # is the colour key" check below a real regression test for the exporter
 # loading the chipset without RPG Maker's transparency flag, which baked that
-# colour into every transparent pixel (docs/adr/0061's known bug).
+# colour into every transparent pixel.
 def png_palette0(path)
   bytes = File.binread(path)
   return nil unless bytes[0, 8] == "\x89PNG\r\n\x1a\n".b

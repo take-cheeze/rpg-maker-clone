@@ -14,7 +14,7 @@
 # used to rebuild an actor from the database row on every add — so a dismissed
 # companion came back at level 1 with none of their EXP, skills or renaming.
 # A fixture check passes either way; only the real game's add/remove pairs show
-# how much of the game that covers. See docs/adr/0030-permanent-actor-roster.md.
+# how much of the game that covers.
 #
 # Usage:
 #   ruby scripts/rpg2k/testbed_logic_check.rb [GAME_DIR ...]
@@ -65,10 +65,10 @@ load File.join(root, 'mruby-lcf/mrblib/lcf_file.rb')
 load File.join(root, 'mruby-lcf/mrblib/save_typed.rb')
 load File.join(root, 'mruby-lcf/mrblib/save_typed_accessors.rb')
 load File.join(root, 'mruby-rpg2k/mrblib/game.rb')
-load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
-load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file
+load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(root, 'mruby-rpg2k/mrblib/game', 'legacy_lsd.rb')
-load File.join(root, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
+load File.join(root, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio
 load File.join(root, 'mruby-rpg2k/mrblib/interpreter.rb')
 
 # Database chunk ids used directly. `db.system` is unusable here — it resolves to
@@ -304,7 +304,7 @@ def check_game(dir)
       # delta with the variable at its harness default of 0, a name change
       # immediately undone by a second one) -- worth confirming they do not
       # raise, but not evidence of a lookup miss. Calling the interpreter's
-      # own resolution methods directly is the same check ADR 0030's fix
+      # own resolution methods directly is the same check the roster fix
       # actually guards (both already read `party.roster`, never
       # `party.actors`, precisely so an away actor keeps resolving) without
       # depending on incidental value churn to detect a regression there.
@@ -463,7 +463,7 @@ end
 # table. A state whose numbers the runtime never reads is a status that does
 # nothing — Blind not blinding, a blow never waking a sleeper, Silence not
 # silencing — and that is invisible to any fixture built from the same
-# assumption. See docs/adr/0032-state-effects.md.
+# assumption.
 def combatant(name, atk, dfn, agi, hp, states = [])
   c = Game::Battle::Combatant.new(name, atk, dfn, agi, hp, hp)
   c.states = states
@@ -832,8 +832,7 @@ end
 
 # Equipment-granted combat modifiers, against the real item and actor tables.
 # A weapon flag the runtime never reads is a weapon whose selling point does
-# nothing — a 二刀流 blade that swings once, a 必中 dagger that misses. See
-# docs/adr/0033-equipment-combat-modifiers.md.
+# nothing — a 二刀流 blade that swings once, a 必中 dagger that misses.
 def check_equipment(dir)
   name = File.basename(dir)
   db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))

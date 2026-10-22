@@ -223,7 +223,7 @@ module Wolf
     # strings) -- explicitly *not* the self-variable banks, the database,
     # or anything else `Wolf::SaveData`'s own module comment already
     # documents as out of scope for this reader's own deliberately partial
-    # save format (see docs/adr for the full save/load command). Each
+    # save format. Each
     # Hash's own default value (0/`""`) round-trips through `Marshal`
     # unchanged (mruby-marshal's own `ifnone` tag), so `#restore` only
     # needs to fall back to a fresh default-having Hash for a snapshot
@@ -243,7 +243,7 @@ module Wolf
     # Keyed by `[current_map_id, event_id]`, not `event_id` alone -- two
     # different maps' own event id spaces both start from small numbers
     # like 0/1/2 and would otherwise collide, the exact same reasoning
-    # `Wolf::Interpreter#event_position`'s own identical fix (ADR 0089)
+    # `Wolf::Interpreter#event_position`'s own identical fix
     # already applies to a map event's runtime *position*; this is its
     # counterpart for a map event's own self-variable *bank*.
     def map_event_self_bank(event_id)

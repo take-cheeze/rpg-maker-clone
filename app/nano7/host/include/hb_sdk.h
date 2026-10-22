@@ -3,8 +3,7 @@
  * (nfzerox/NanoApps@80d439d), covering only the declarations
  * app/nano7/rpg2k_walk/rpg2k_walk.c and app/shared/rpg2k_walk/rpg2k_walk_core.c
  * actually reference. Every signature and macro below is copied from the
- * real file, not guessed (see docs/adr/0102, which follows ADR 94's own
- * "read the real source, don't assume" discipline) -- this is NOT a
+ * real file, not guessed -- this is NOT a
  * reimplementation of the SDK's ~90-function surface, only the handful of
  * symbols this app's device source needs to compile and link.
  *
@@ -38,7 +37,7 @@ typedef uint32_t hb_color_t; /* 0x00RRGGBB, alpha unused */
  * non-faithful placeholder (a blocky per-character rectangle, not the real
  * 8x8 glyph bitmap font in NanoApps' sdk/generated/hb_glyphs.c) -- it only
  * ever draws this app's "no map to walk" error screen, never the
- * map-rendering path this harness exists to check. See docs/adr/0102. */
+ * map-rendering path this harness exists to check. */
 void hb_draw_str(int16_t x,
                  int16_t y,
                  const char* s,

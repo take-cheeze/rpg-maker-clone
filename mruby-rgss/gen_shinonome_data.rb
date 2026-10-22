@@ -45,7 +45,7 @@ end
 # allow-list for the "full" (JIS0208 kanji) font face below. Every RPG Maker
 # game's dialogue only ever touches a few hundred distinct kanji out of the
 # ~7000 JIS0208 defines; embedding the entire table on a target as flash-
-# constrained as the Wio Terminal (docs/adr/0104's own real measurement: the
+# constrained as the Wio Terminal (measured: the
 # unfiltered GOTHIC face alone is 165 KB, a third of the board's whole 496 KB
 # budget) means shipping thousands of glyphs no game exported today will ever
 # draw. This is the general mechanism; nothing calls it with a real file yet
@@ -60,7 +60,7 @@ if ENV["SHINONOME_GLYPH_TEXT_FILE"]
                         .each_codepoint.to_a.uniq.to_set
 end
 
-# docs/adr/0110/0112: a second, independent escape hatch (a no-op unless
+# A second, independent escape hatch (a no-op unless
 # set, same convention as SHINONOME_GLYPH_TEXT_FILE above -- build_config.rb
 # sets it by default for wio specifically, everywhere else it stays opt-in)
 # -- rather than

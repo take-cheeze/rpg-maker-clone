@@ -1,9 +1,9 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 #
-# Host-side checks for the .lsd-authoritative save (docs/adr/0395).
+# Host-side checks for the .lsd-authoritative save.
 #
-# New saves use native fields without chunk 200 (ADR 0401). Checks cover
+# New saves use native fields without chunk 200. Checks cover
 # representable state, documented precision limits, native field mutations,
 # legacy extension migration, foreground execution layout and save-slot policy.
 #

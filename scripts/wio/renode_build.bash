@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds a Renode binary with this repo's two new peripherals
 # (app/wio/renode/peripherals/) for the Wio Terminal platform's P3
-# (docs/adr/0094): SPI.SAMD51_SERCOM_SPI (a real SERCOM-in-SPI-mode
+# SPI.SAMD51_SERCOM_SPI (a real SERCOM-in-SPI-mode
 # controller -- nothing upstream models SERCOM in any mode) and
 # Video.ILI9341_SPI (an SPI-command-stream -> framebuffer model -- nothing
 # upstream models any SPI TFT). Also applies app/wio/renode/patches/

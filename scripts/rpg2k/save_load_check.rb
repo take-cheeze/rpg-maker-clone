@@ -55,10 +55,10 @@ load File.join(ROOT, 'mruby-lcf', 'mrblib', 'lcf.rb')
 load File.join(ROOT, 'mruby-lcf', 'mrblib', 'schema.rb')
 load File.join(ROOT, 'mruby-lcf', 'mrblib', 'lcf_file.rb')
 load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game.rb')
-load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
-load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'battle.rb') # Game::Battle now lives in its own file
+load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'legacy_lsd.rb')
-load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
+load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio
 
 $errors = 0
 def eq(expected, actual, msg)
@@ -167,7 +167,7 @@ def check_game(dir)
   # Shown pictures (chunk 103). A save taken mid-cutscene carries the pictures
   # that were on screen; they used to be dropped on load, which is why resuming
   # Nepheshel's opening drew a black screen where RPG_RT drew the backdrop
-  # (ADR 0021). Fields 31/32 are the centre position, identified by experiment
+  # Fields 31/32 are the centre position, identified by experiment
   # against the genuine runtime.
   #
   # Built here rather than read from the sample save, so this runs in CI too --
@@ -222,8 +222,8 @@ def check_game(dir)
   # The save's date must not be zero. RPG_RT reads a zero OLE date (1899-12-30)
   # as an empty file slot and silently refuses the save -- "Continue" simply does
   # nothing, with no error anywhere -- which is exactly what to_lsd used to write
-  # and why nothing it produced could be loaded by the genuine runtime (ADR
-  # 0021). Nothing else in the file screen's metadata has that effect, so this is
+  # and why nothing it produced could be loaded by the genuine runtime.
+  # Nothing else in the file screen's metadata has that effect, so this is
   # the one field worth pinning.
   stamp = state.to_lsd[100][1]
   eq true, !stamp.nil? && stamp > 0,
@@ -231,11 +231,11 @@ def check_game(dir)
   # A caller-supplied date still wins, so a deterministic export stays possible.
   eq 40000.0, state.to_lsd(1, 40000.0)[100][1], 'an explicit timestamp is kept'
 
-  # Writer round-trip (ADR 0019): serialise the runtime state back to a genuine
+  # Writer round-trip: serialise the runtime state back to a genuine
   # .lsd with State#to_lsd, re-read it with State.from_lsd, and confirm every
   # modelled field survives -- i.e. to_lsd is a faithful inverse of from_lsd.
   #
-  # Exercise the extended fields the export gained after ADR 0019 (message-window
+  # Exercise the extended fields the export gained (message-window
   # config, current/memorised BGM, the player-transparent flag, the access flags
   # and the leader's sprite/name overrides) by mutating the state to non-default
   # values first, so the round-trip proves they are written and read back.
@@ -256,7 +256,7 @@ def check_game(dir)
   state.teleport_access = true
   state.escape_access = true
   state.save_count = 7
-  # Wait ATB: the save-system toggle (LSD chunk 140, ADR 0054's follow-up).
+  # Wait ATB: the save-system toggle.
   # Set it non-default so the round-trip proves it is written and read back;
   # the default (0, active mode) is pinned by the scene check's fresh-state
   # assertion ("a fresh state starts in active mode").

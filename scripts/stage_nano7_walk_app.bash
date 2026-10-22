@@ -3,12 +3,11 @@
 set -eu -o pipefail
 
 # Stage the iPod nano 7G map-walk app into a NanoApps checkout, ready to
-# build there (see app/nano7/rpg2k_walk/README.md and docs/adr/0061).
+# build there.
 #
 # Two directories go into one: the NanoApps half of the app
 # (app/nano7/rpg2k_walk) and the shared engine core it runs
-# (app/shared/rpg2k_walk, which the Wio Terminal walk firmware runs too, see
-# docs/adr/0091). NanoApps builds an app from inside its own tree and
+# (app/shared/rpg2k_walk, which the Wio Terminal walk firmware runs too). NanoApps builds an app from inside its own tree and
 # sdk/hb_app.mk resolves SRCS relative to the app directory, so the core has
 # to be copied in beside the app rather than referenced where it lives.
 #

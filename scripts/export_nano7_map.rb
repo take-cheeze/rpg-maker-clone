@@ -4,9 +4,9 @@
 # Export one RPG Maker 2000/2003 map into the compact binary format the
 # iPod Nano 7th-gen homebrew app (app/nano7/rpg2k_walk) reads on-device.
 #
-# NanoApps (the N7G homebrew SDK, see docs/adr/0061) caps a compiled app
+# NanoApps caps a compiled app
 # image at roughly 500 KB, which rules out running this engine's mruby/RGSS
-# interpreter on the device (see the ADR). This script instead does the LCF
+# interpreter on the device. This script instead does the LCF
 # parsing and chipset compositing *once, on the host*, using the exact same
 # pure-Ruby sources the rest of this repo already loads under plain CRuby:
 #
@@ -27,13 +27,13 @@
 # so the on-device C code never parses LCF or composites autotiles: it reads
 # two flat files and indexes arrays.
 #
-# Limitations (see docs/adr/0061 for the full rationale):
+# Limitations:
 #   * one static map per export -- no map tree, no teleport/transitions.
 #   * animation is the water autotiles, the block-C animated tiles and the
 #     party leader's own walk cycle, at RPG2000's own rates -- the export
 #     asks Game::ChipsetLayout.anim_ab/.anim_c and Game::CharSet::WALK_
 #     PATTERNS what those are rather than restating them. A map event with a
-#     CharSet graphic on its own *initially-active* page (docs/adr/0102) draws
+#     CharSet graphic on its own *initially-active* page draws
 #     as a single static sprite -- its own walk cycle, move route and any
 #     runtime Change Graphic all need the interpreter and are out of scope,
 #     the same limit the hero sprite already carries. An event with a
@@ -144,10 +144,10 @@ load File.join(ROOT, 'mruby-lcf/mrblib/lcf_file.rb')
 load File.join(ROOT, 'mruby-lcf/mrblib/save_typed.rb')
 load File.join(ROOT, 'mruby-lcf/mrblib/save_typed_accessors.rb')
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game.rb')
-load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
-load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file
+load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'legacy_lsd.rb')
-load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
+load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio
 load File.join(ROOT, 'scripts/rgss/cruby_compat.rb')
 
 # The devices that run this export, and the buffers each one can afford.
@@ -595,12 +595,12 @@ hero_frames_bytes =
 # nothing has happened yet" state, the same source db[:system][:party] the hero
 # lookup above already draws from) carries a CharSet graphic: one
 # precomposited frame, the same way the hero's twelve are, not simulated
-# movement or an on-page move route's own Change Graphic (ADR 96's own "no
-# live game state" limit, extended from the hero to events -- see ADR 102).
+# movement or an on-page move route's own Change Graphic (the export has no
+# live game state).
 # An event whose active page has no CharSet -- blank, or a chipset-tile
 # ("chip") graphic instead (empty charset_name, graphic_index > 0,
 # Scene::Map#draw_event_tile) -- is not exported at all; both are a real,
-# separate follow-up (see the ADR).
+# separate follow-up.
 #
 # Frames are deduplicated the same way tile pixels are: many events commonly
 # share one NPC CharSet (58 distinct names project-wide in the Nepheshel test

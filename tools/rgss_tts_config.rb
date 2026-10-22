@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Which builds can ever have a RGSS::Tts backend (ADR 0417).
+# Which builds can ever have a RGSS::Tts backend.
 #
 # The only backend is src/voicevox_tts.cxx: VOICEVOX CORE dlopen()'d on a
 # Linux/macOS desktop executable that already links SDL_mixer (the root

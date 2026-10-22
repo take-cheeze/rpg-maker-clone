@@ -258,7 +258,7 @@ module LCF
   # party/vehicle positions). Sections are reachable by their schema name
   # through #[] (`tree[:initial]`); a non-Symbol index reaches into the first
   # section for convenience. There is no dotted `tree.initial` form: see
-  # Array1D#[] for why field access is `[]` only (docs/adr/0213).
+  # Array1D#[] for why field access is `[]` only.
   class Sections
     def initialize
       @by_name = {}
@@ -523,7 +523,7 @@ module LCF
   # DATABASE's own per-record-type `elements:` sub-schemas (schema.rb) are
   # `-> { {...} }` lambdas, not the hash literal directly -- building all ~930
   # fields' worth of nested Hash/Symbol objects at gem-load time is what
-  # raised a real NoMemoryError on the Wio's 192 KB SRAM (see docs/adr/0099).
+  # raised a real NoMemoryError on the Wio's 192 KB SRAM.
   # Resolved and cached in place on first real access, the same way
   # Array1D#[]/Array2D#[] already cache a chunk's *decoded value* rather than
   # re-running LCF.to_rb on every read -- this just extends that to the
@@ -545,7 +545,7 @@ module LCF
   #
   # This is the replacement for the `obj.respond_to?(:name)` guard callers
   # put in front of a field read while records answered fields through
-  # method_missing (docs/adr/0213): it gives that guard's exact answer for
+  # method_missing: it gives that guard's exact answer for
   # every receiver, an LCF record included, now that a record no longer
   # responds to its field names. Callers read the field itself with
   # `obj[:name]`.
@@ -629,8 +629,7 @@ module LCF
     # anything else is already a chunk id. This is the only way to read a
     # field by name: there is no dotted `row.field_name` form (it used to be
     # answered by method_missing, which kept every call whose receiver might
-    # be a record unprovable for bc2cpp's closed-world compile -- see
-    # docs/adr/0213). A name the record's schema does not declare resolves to
+    # be a record unprovable for bc2cpp's closed-world compile). A name the record's schema does not declare resolves to
     # a nil chunk id and raises, as the dotted form did.
     def [] idx
       idx = sym2idx[idx] if idx.is_a? Symbol
@@ -805,7 +804,7 @@ module LCF
 
     # Store an entry (an Array1D, or its already-serialised bytes) at id +idx+,
     # so an authored table can be assembled and written back out via #to_lcf.
-    # LCF_ROW_FLOW (ADR 0294): an entry of any other kind is re-read through this
+    # LCF_ROW_FLOW: an entry of any other kind is re-read through this
     # table's schema, so every stored entry is nil, bytes or an Array1D over its
     # own elements and `self[i]` has a schema the compiler can rely on.
     def []= idx, entry

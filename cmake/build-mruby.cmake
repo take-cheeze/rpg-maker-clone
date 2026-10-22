@@ -75,10 +75,9 @@ function(rpg2k_add_mruby)
     ${mruby_prefix}/include/*.h)
   list(APPEND mrb_files ${mruby_core})
 
-  # Real, confirmed gap found and fixed this round (docs/adr/0139's own bc2cpp
-  # bug-hunt sweep): tools/bc2cpp/bc2cpp.rb and tools/bc2cpp/compiled_gems.rb
-  # live outside every mrbgem directory entirely (this script's own doc comment
-  # above already explains why: this one tool feeds
+  # Gap fixed: tools/bc2cpp/bc2cpp.rb and tools/bc2cpp/compiled_gems.rb live
+  # outside every mrbgem directory entirely (this script's own doc comment above
+  # already explains why: this one tool feeds
   # mruby-lcf-compiled's/mruby-rpg2k-compiled's/ mruby-rgss-compiled's own
   # mrbgem.rake `file` rules, none of which are in a fixed, single gem's own
   # src/ or mrblib/ tree), so neither file was ever a member of `mrb_files`
@@ -143,8 +142,8 @@ function(rpg2k_add_mruby)
   add_dependencies(mruby mruby_build)
 
   # Only the gem-free host bootstrap mrbc (build_config.rb's `host_mrbc` task):
-  # what the bc2cpp CI check jobs need, without the whole libmruby (ADR 0228).
-  # Not in `all`; never build it concurrently with mruby_build (same build dir).
+  # what the bc2cpp CI check jobs need, without the whole libmruby. Not in
+  # `all`; never build it concurrently with mruby_build (same build dir).
   add_custom_target(
     mruby_host_mrbc
     COMMAND ${mruby_rake_command} host_mrbc

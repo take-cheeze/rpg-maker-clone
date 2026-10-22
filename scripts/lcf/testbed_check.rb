@@ -116,8 +116,7 @@ class Checker
   # the list at all (its editor has no such tab), mirroring the Classes-section
   # (chunk 30) assertion above. This is the cross-reference, plus the 2000
   # negative, that the structural pass in #walk and rpg2k3_battle_command_check
-  # .rb's top-level decode do not assert -- the "second form of evidence" ADR
-  # 0048 deferred, closing the gap the way every other 2003-specific table here
+  # .rb's top-level decode do not assert -- the "second form of evidence" (deferred), closing the gap the way every other 2003-specific table here
   # is closed.
   def check_battlecommands(db)
     if db.rpg2003?

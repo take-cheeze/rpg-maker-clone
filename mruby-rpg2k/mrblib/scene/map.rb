@@ -21,7 +21,7 @@ class RPG2k
       # One live map event's full per-frame state: identity/paging fields set
       # once by #build_event, plus render/movement fields updated every real
       # frame (#animate_event/#step_event/#walk_slide_step/...). Used to be a
-      # bare Hash literal, then a Struct; a plain class now (docs/adr/0215).
+      # bare Hash literal, then a Struct; a plain class now.
       # tools/bc2cpp/bc2cpp.rb sees the attr_accessors and keeps the
       # Integer/boolean fields as typed struct fields (IVAR_ACCESS), where a
       # Struct member was a runtime-created native closure it could not see.
@@ -460,7 +460,7 @@ class RPG2k
         # are diffed against the genuine runtime), and the foreground event
         # interpreter. Both are built here, before the first block or call on
         # `self` below, so no method can read either unassigned (bc2cpp's
-        # INIT_ASSIGNED rule, docs/adr/0456: MapWorld/VehicleWorld's checked
+        # INIT_ASSIGNED rule: MapWorld/VehicleWorld's checked
         # Game::Rng and drive_battle's Game::Interpreter rest on it). Neither
         # constructor reads anything the steps below set up.
         @rng = Game::Rng.new(0x2000)
@@ -551,8 +551,7 @@ class RPG2k
           # One VehicleWorld per type, wrapping #vehicle_passable? instead of the
           # hero's own on-foot #char_passable? -- see #force_vehicle_route.
           # A plain loop, not each_with_object: no block of its own, so `self`
-          # here is this section block's, which is this scene's (BLOCK_SELF,
-          # ADR 0456), with no uncompiled core iterator in between.
+          # here is this section block's, which is this scene's (BLOCK_SELF), with no uncompiled core iterator in between.
           types = Game::Vehicle::TYPES
           worlds = {}
           i = 0
@@ -1693,7 +1692,7 @@ class RPG2k
         # call site can only devirtualize into a callee's own compiled
         # `_impl`, and a Struct's #initialize is native, so the keyword form
         # dropped this whole per-frame-hot method out of AOT compilation.
-        # MapEventState is a plain class now (docs/adr/0215) whose
+        # MapEventState is a plain class now whose
         # #initialize takes no arguments; the setters below still write
         # every field #build_event owns before this returns.
         event = MapEventState.new
@@ -2342,7 +2341,7 @@ class RPG2k
         it = p[:interp]
         # Every @parallels record carries the Game::Interpreter its event's page
         # built; the check is what proves #drive_parallel_wait's typed parameter
-        # (IS_A_GUARD, ADR 0456) for a value read out of a Hash record.
+        # for a value read out of a Hash record.
         raise TypeError, "parallel process interpreter is #{it.class}, not Game::Interpreter" unless it.is_a?(Game::Interpreter)
         # Ported from a reference implementation's model, NOT independently
         # confirmed against genuine RPG_RT under wine: each Parallel Process
@@ -5578,8 +5577,7 @@ class RPG2k
         return if event_busy? && @battle.nil?
         return unless @parent.test_play
         return unless Input.trigger?(Input::F9)
-        # psp/wio builds drop debug_menu.rb (mruby-rpg2k/mrbgem.rake, docs/adr/
-        # 0097): Test Play never happens on those, but nothing else stops a
+        # psp/wio builds drop debug_menu.rb (mruby-rpg2k/mrbgem.rake): Test Play never happens on those, but nothing else stops a
         # future build flag from flipping @parent.test_play on regardless, so
         # this stays a no-op rather than a NameError if that ever happens.
         return unless defined?(Scene::DebugMenu)
@@ -6181,7 +6179,7 @@ class RPG2k
         # Fixed 320x80 panel flush to the screen's bottom-left corner, the
         # same panel the message window uses (MSG_WIN_W/MSG_WIN_H) -- not a
         # content-sized box inset 10px, the same stale anti-pattern already
-        # fixed for the message window (ADR 0021) and the shop list window.
+        # fixed for the message window and the shop list window.
         # Confirmed against genuine RPG_RT.exe under wine: a live Inn
         # prompt's border touches the screen's left, right and bottom edges
         # with no gap, at exactly this size -- this codebase's own
@@ -6283,7 +6281,7 @@ class RPG2k
 
       def open_shop(req, it = @interpreter)
         # `party` is POLY (Game::State's attr_reader, Game::Interpreter#party), so
-        # the check is what proves Game::Shop's typed parameter (IS_A_GUARD, ADR 0456).
+        # the check is what proves Game::Shop's typed parameter.
         party = @state.party
         raise TypeError, "shop party is #{party.class}, not Game::Party" unless party.is_a?(Game::Party)
         model = Game::Shop.new(db, party, req.goods,
@@ -6500,7 +6498,7 @@ class RPG2k
         # prompt window instead -- see #draw_shop_command_prompt.
         visible = @shop.screen == :command ? [] : (lines[@shop.scroll, SHOP_LIST_ROWS] || [])
         # Docks flush to the screen's left edge, not inset 10px -- the same
-        # stale anti-pattern ADR 0021 already diagnosed and fixed for the
+        # stale anti-pattern already diagnosed and fixed for the
         # message window ("300px wide, inset 10px" -> "fixed 320x80 at
         # x=0"), which this window never picked up. Full screen width on the
         # command menu and the sell list (no side panels); narrowed to leave
@@ -6608,7 +6606,7 @@ class RPG2k
       # The shopkeeper's own prompt/greeting line (#shop_header), now its own
       # full-width window at the screen's fixed bottom message slot -- reusing
       # the ordinary map message window's own MSG_WIN_W/MSG_WIN_H shape and
-      # bottom position (ADR 0021), which the shop screen's own capture
+      # bottom position, which the shop screen's own capture
       # (cycle #144) landed on exactly (native y=160, height 80). Replaces the
       # old "merged into the list window's own first row" shape #draw_shop
       # used before.
@@ -6826,7 +6824,7 @@ class RPG2k
       # --facing up --clear-scene`) and read the captured screenshot's raw
       # pixels directly (not eyeballed): the mystery band's icon is a
       # byte-for-byte match, modulo the wine capture's own RGB565
-      # quantisation (ADR 0021's own noted floor, ±1-3 per channel here), for
+      # quantisation, for
       # the System graphic's first droplet cell at (128, 16), 8x8, scaled 2x
       # by the capture pipeline itself -- Xvfb runs the reference at 640x480
       # while RPG2000's native resolution is SCREEN_W x SCREEN_H (320x240);
@@ -9024,7 +9022,7 @@ class RPG2k
         # the edition that added a per-picture "keep across map change" flag).
         # Without this, Nepheshel's opening leaves its full-screen credit
         # pictures on top of the first room and the map is never visible —
-        # exactly what the wine comparison showed (ADR 0021). Not for a
+        # exactly what the wine comparison showed. Not for a
         # Teleport/Escape skill's own warp, though — see `keep_pictures` above.
         @state.erase_all_pictures unless keep_pictures
         # A Change Parallax Background override does not survive a teleport
@@ -9166,7 +9164,7 @@ class RPG2k
 
       # RPG2000's message window is a fixed 320x80 panel pinned to the left edge
       # — it does not shrink to the message, and it does not inset from the
-      # screen. Measured off a genuine RPG_RT frame under wine (ADR 0021), and
+      # screen. Measured off a genuine RPG_RT frame under wine, and
       # re-measured for all three display positions in cycle #257 (a synthetic
       # autostart Show Message spliced onto a scratch copy of Nepheshel's
       # Map0012, driven on genuine RPG_RT.exe under wine): the window's own
@@ -9189,7 +9187,7 @@ class RPG2k
       # Confirmed against genuine RPG_RT.exe under wine (cycle #257): a
       # 40-glyph line burst-captured while it typed advanced in 24px (four
       # half-width glyph) steps every 0.0335s — 2.0 frames at RPG_RT's
-      # confirmed 60fps (ADR 0021), i.e. exactly two characters a frame.
+      # confirmed 60fps, i.e. exactly two characters a frame.
       MSG_REVEAL_SPEED = 2
       # RPG_RT unrolls the message window (and its `\$` gold window) open and
       # shut from its own horizontal centre line rather than popping it, except
@@ -9229,7 +9227,7 @@ class RPG2k
       MSG_CHOICE_INDENT = 12
       # The choice cursor is drawn 2px *inside* the contents area on each side
       # (native x 10..309 for a 320-wide window, height exactly MSG_LINE_H),
-      # not with the 4px overhang menu list cursors carry (ADR 0021) --
+      # not with the 4px overhang menu list cursors carry --
       # measured under wine, cycle #257.
       MSG_CURSOR_INSET = 2
 
@@ -9452,10 +9450,9 @@ class RPG2k
         set_choice_cursor if choice
       end
 
-      # #speak_message (Zundamon narration, ADR 0046) is defined per build, not
+      # #speak_message is defined per build, not
       # here: scene/map_tts.rb on the desktop build, which can have a VOICEVOX
       # backend, and the empty mrblib_limited/map_tts_off.rb on every other one
-      # (ADR 0417).
 
       # Append a Show Choices block's labels to the still-open message window
       # from a Show Text that immediately preceded it (RPG_RT keeps one window
@@ -9788,7 +9785,7 @@ class RPG2k
            sel < (page + 1) * MSG_LINES_PER_PAGE
           row = sel - page * MSG_LINES_PER_PAGE
           # Window#draw_cursor overhangs the rect it is handed by
-          # Game::WindowCursor::OVERHANG on each side (ADR 0021, measured for
+          # Game::WindowCursor::OVERHANG on each side (measured for
           # menu lists). The message window's own choice cursor does not
           # overhang at all -- it lands 2px *inside* the contents area on each
           # side (native x 10..309 for the 320-wide window, cycle #257) -- so
@@ -10774,7 +10771,7 @@ class RPG2k
         return nil unless v.placed? && v.map_id == @state.map_id
         @state.boarded == type ? player_pixel : [v.x * TILE, v.y * TILE]
       end
-      # Split into two statements (round 44, docs/adr/0144's own
+      # Split into two statements (round 44, the
       # wio_strip_bc2cpp_stubs series): the original single
       # `public :camera_position, :character_screen_position, :char_in_sight?`
       # named both bc2cpp-registered and non-registered methods together --
@@ -11147,7 +11144,7 @@ class RPG2k
         pics.keys.sort.each do |id|
           p = pics[id]
           # Checked before `#shown?`: a missing entry (nil) is a TypeError naming the id, not a NoMethodError on
-          # `shown?`. Also the checked fact for `draw_picture(Game::Picture, ...)` (IS_A_GUARD, ADR 0456).
+          # `shown?`. Also the checked fact for `draw_picture(Game::Picture, ...)`.
           raise TypeError, "picture #{id} is #{p.class}, not Game::Picture" unless p.is_a?(Game::Picture)
           draw_picture p, cam_x, cam_y if p.shown?
         end

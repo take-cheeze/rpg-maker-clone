@@ -3,9 +3,9 @@
 #
 # Analyse and smoke-test the LCF save-data loader against a real Save<N>.lsd.
 #
-# The database/map schemas (ADR 0002 / 0008) are exercised against downloaded
+# The database/map schemas are exercised against downloaded
 # test-bed games by scripts/lcf/testbed_check.rb, but the save-data schema
-# (ADR 0009, mruby-lcf/mrblib/schema.rb `SAVE_DATA`) was only ever run over
+# was only ever run over
 # synthetic blobs -- no real `.lsd` fixture was bundled. A running RPG Maker
 # 2000/2003 game writes a genuine Save<N>.lsd when the
 # player saves; this harness loads the exact mruby/CRuby-common parser sources
@@ -14,7 +14,7 @@
 #   * verifies the "LcfSaveData" header,
 #   * lists every top-level chunk actually present, flagging which are described
 #     by the schema and which are still UNDOCUMENTED (chunks 102, 109, 112, 113,
-#     114, 200 in practice -- see ADR 0009),
+#     114, 200 in practice),
 #   * recursively reads every declared field of the documented sections so a
 #     chunk whose bytes do not match its schema type raises here instead of at
 #     game runtime, and

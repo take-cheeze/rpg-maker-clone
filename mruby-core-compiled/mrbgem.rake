@@ -2,13 +2,12 @@ require 'shellwords'
 require_relative '../tools/bc2cpp/compiled_gems'
 
 # Opt-in AOT-compiled C++ replacements for the methods of mruby's own Ruby that
-# tools/bc2cpp/core_methods.rb lets compile (docs/adr/0264): the block-free
+# tools/bc2cpp/core_methods.rb lets compile: the block-free
 # methods of core mrblib, the core gems' mrblib and mruby-stringio/onig-regexp.
 # Registration is generated (bc2cpp_register_owner_methods), so there is no
 # hand-kept register list to drift.
 #
 # Only exists in the build when RPGMAKER_BC2CPP is set on a closed-world build
-# (psp/wio/maix/closed, build_config.rb; docs/adr/0466).
 MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   spec.license = 'MIT'
   spec.author = 'take-cheeze'
@@ -24,7 +23,7 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   # initialises a gem that depends on a maker directly right after that maker,
   # so the compiled core is registered only for an RPG2000/2003 run. The other
   # makers run game scripts whose blocks yield Fibers through core iterators
-  # (docs/adr/0023). The Fiber guard of ADR 0269 makes the compiled iterators hand
+  # A Fiber guard makes the compiled iterators hand
   # those calls to the bytecode, but no maker but RPG2000/2003 has been run with it.
   # The compiled bodies themselves are always linked, so compiled engine code
   # can still call them directly.
@@ -52,11 +51,11 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   generated = "#{build_dir}/core_compiled_gen.cpp"
 
   # bc2cpp.rb runs MRBC: without this edge `rake -m` can start codegen before
-  # the bootstrap mrbc exists (ADR 0228).
+  # the bootstrap mrbc exists.
   file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
                      BC2CPP_CORE_REFUSED_PATH] do |t|
-    # SHARED_GENERATION (ADR 0464): with every other compiled gem of this build that is out of date, in one
+    # SHARED_GENERATION: with every other compiled gem of this build that is out of date, in one
     # bc2cpp.rb analysis (tools/bc2cpp/compiled_gems.rb bc2cpp_compiled_gem_job holds this gem's environment).
     Bc2cppCompiledGemGeneration.generate(spec, "#{dir}/..")
   end

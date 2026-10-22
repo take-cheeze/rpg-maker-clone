@@ -5,7 +5,7 @@
 # on PIXI.js, and its database is `data/*.json`. Rather than reimplement that
 # logic in mruby, we embed a real JavaScript engine (quickjs-ng) and run the
 # game's own scripts unmodified, providing the browser/host environment they
-# expect. See docs/adr/0004-javascript-maker-mv-quickjs.md for the full design.
+# expect.
 #
 # This class is the thin Ruby orchestration layer. It knows how to recognise an
 # MV project and the order its scripts load, and it drives the boot handshake
@@ -70,7 +70,7 @@ class MV
 
   # The files that unambiguously mark a directory as an RPG Maker MV project:
   # the core engine script and the system database. (MZ uses `js/rmmz_core.js`
-  # instead and is a separate, later target — see ADR 0004, milestone M6.)
+  # instead and is a separate, later target.)
   REQUIRED_MARKERS = ["js/rpg_core.js", "data/System.json"].freeze
 
   # The MV engine scripts, in the exact order the stock `index.html` loads them:
@@ -341,8 +341,7 @@ class MV
     # Images need no equivalent call: AUDIO_BRIDGE_JS only overrides
     # AudioManager, so an encrypted image still takes the corescript's own
     # decrypt-in-JS route (XHR arraybuffer -> Decrypter.decryptImg -> Blob ->
-    # Image), which this project's host globals already support end to end (see
-    # ADR 0004 M6.3r). Audio is different *because* AUDIO_BRIDGE_JS exists:
+    # Image), which this project's host globals already support end to end. Audio is different *because* AUDIO_BRIDGE_JS exists:
     # AudioManager.playBgm/playSe are overridden to bypass MZ's WebAudio (whose
     # `fetch` this host leaves inert, see docs/TODO.md's M6.3c "Audio") and
     # queue a plain asset name for RGSS::Audio to play by filename instead --

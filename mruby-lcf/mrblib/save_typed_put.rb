@@ -1,4 +1,4 @@
-# The write side of the typed save records (docs/adr/0407): the one helper the
+# The write side of the typed save records: the one helper the
 # generated writers in save_typed_setters.rb call. Loads between
 # save_typed_accessors.rb and save_typed_setters.rb (mrblib files load sorted).
 #

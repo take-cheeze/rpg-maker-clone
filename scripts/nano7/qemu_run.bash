@@ -5,7 +5,7 @@ set -eu -o pipefail
 # Boot a nano7_walk_qemu.elf (scripts/nano7/qemu_build.bash) under
 # qemu-system-arm, capture its UART log, and screendump the real PL110
 # framebuffer once app/nano7/qemu/nano7_qemu_shim.c's own "NANO7-QEMU done"
-# marker appears in that log -- see docs/adr/0103.
+# marker appears in that log.
 #
 # Usage:
 #   scripts/nano7/qemu_run.bash ELF OUT_PPM OUT_UART_LOG [TIMEOUT_SECONDS]

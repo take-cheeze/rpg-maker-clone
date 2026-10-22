@@ -5,7 +5,7 @@ set -eu -o pipefail
 # Build app/nano7/qemu/nano7_walk_qemu.elf: the real
 # app/nano7/rpg2k_walk/rpg2k_walk.c, cross-compiled with the same
 # arm-none-eabi-gcc -mcpu=cortex-a8 NanoApps' own sdk/hb_app.mk uses, linked
-# against the bare-metal QEMU shim (docs/adr/0103) with one exported map's
+# against the bare-metal QEMU shim with one exported map's
 # map.bin/tiles.bin embedded directly into the image -- this target has no
 # filesystem at all, so there is nothing to copy onto at install time.
 #
@@ -39,7 +39,7 @@ cp "$tiles_bin" "$build/tiles.bin"
 
 # -mcpu=cortex-a8: the real device's own core (NanoApps' sdk/hb_app.mk uses
 # the same flag). -ffreestanding/-nostdlib: no libc, no OS -- this target
-# *is* the entire boot image, per docs/adr/0103.
+# *is* the entire boot image.
 cflags=(-mcpu=cortex-a8 -marm -ffreestanding -fno-builtin -nostdlib -O2 -Wall -Wextra
         -I"$root/app/nano7/host/include" -I"$root/app/shared/rpg2k_walk")
 
