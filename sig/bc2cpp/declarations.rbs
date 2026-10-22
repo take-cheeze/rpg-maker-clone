@@ -8286,6 +8286,11 @@ class Symbol
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_compar
+module Comparable
+  def clamp: (untyped, ?untyped) -> untyped
+end
+
 # bc2cpp-native: base_lcf
 module LCF
   def binstr: (untyped) -> untyped
