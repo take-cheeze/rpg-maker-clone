@@ -279,6 +279,17 @@ jobs:
         timeout-minutes: 10
         run: ./scripts/download/mz-corescript.bash
 
+      # Restore the pinned FreePats tarball so the download below is skipped on
+      # a cache hit. Keyed on the download script, which pins the version and
+      # sha256. Restored in the foreground, like the other download caches.
+      - name: cache freepats
+        uses: actions/cache@v6
+        id: freepats-cache
+        with:
+          path: assets/.freepats
+          key: freepats-${{ hashFiles('./scripts/download/freepats.bash') }}
+        timeout-minutes: 10
+
       # MIDI instrument patches for SDL_mixer's TiMidity synth. Not committed
       # (~32 MiB of samples), so fetch them here or the `timidity_patches` check
       # skips and any .mid the smoke tests touch plays silence.
@@ -1435,6 +1446,17 @@ jobs:
         background: true
         timeout-minutes: 10
         run: ./scripts/download/mv-corescript.bash
+
+      # Restore the pinned FreePats tarball so the download below is skipped on
+      # a cache hit. Keyed on the download script, which pins the version and
+      # sha256. Restored in the foreground, like the other download caches.
+      - name: cache freepats
+        uses: actions/cache@v6
+        id: freepats-cache
+        with:
+          path: assets/.freepats
+          key: freepats-${{ hashFiles('./scripts/download/freepats.bash') }}
+        timeout-minutes: 10
 
       # Instrument samples for the TiMidity decoder the port is built with
       # (-sSDL2_MIXER_FORMATS in CMakeLists.txt). They are packaged into
