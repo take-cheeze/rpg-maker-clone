@@ -4,7 +4,7 @@
  *
  * The two devices this core runs on -- an iPod nano 7G under NanoApps and a
  * Wio Terminal under Arduino -- are outside CI: no emulator, no board, and
- * for the nano no toolchain either (ADR 61, ADR 7). The core is plain C with
+ * for the nano no toolchain either. The core is plain C with
  * no I/O, so the half of those firmwares that can actually be wrong in an
  * interesting way (format parsing, the palette, the animation clocks, the
  * movement rule, camera clamping, layer compositing) is exactly the half a
@@ -600,7 +600,7 @@ static int hero_frame_matches(const uint16_t* out, int frame) {
   return 1;
 }
 
-/* The party leader's own CharSet (ADR 95): which of the 12 exported frames
+/* The party leader's own CharSet: which of the 12 exported frames
  * RPG2000's facing/walk-cycle rule picks, and that a hero-less export draws
  * nothing rather than something wrong. */
 static void test_hero(void) {
@@ -675,7 +675,7 @@ static void test_hero(void) {
         "the sprite's bottom is flush with its tile's");
 }
 
-/* Event sprites (ADR 102): a single precomposited frame each, picked once at
+/* Event sprites: a single precomposited frame each, picked once at
  * export time -- no live facing or walk cycle here, just an atlas lookup --
  * and drawn before or after the hero depending on layer and, for the
  * same-as-hero layer, row (Scene::Map's own event_target_buffer split). */

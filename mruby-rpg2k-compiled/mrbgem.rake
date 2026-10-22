@@ -2,14 +2,14 @@ require 'shellwords'
 require_relative '../tools/bc2cpp/compiled_gems'
 
 # Opt-in AOT-compiled C++ replacements for Game::Picture's own bytecode
-# methods (docs/adr/0139's own follow-up) -- 25 of its 26 real methods
+# methods -- 25 of its 26 real methods
 # (everything but #initialize, which takes optional arguments bc2cpp's
 # calling convention doesn't model), generated at build time by
 # tools/bc2cpp/bc2cpp.rb, mruby's bytecode compiler still handles
 # #initialize itself (and anything else this gem doesn't override).
 #
 # This whole gem only exists in the build when RPGMAKER_BC2CPP is set on a
-# closed-world build (psp/wio/maix/closed, see build_config.rb; docs/adr/0466) -- it is
+# closed-world build -- it is
 # never part of the default build, and never of a desktop build.
 MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   spec.license = 'MIT'
@@ -37,7 +37,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   # (no bc2cpp.rb/closed_world_srcs/native_srcs edit at all) should
   # invalidate an already-built generated file: caught for real merging a
   # round of parallel coverage-expansion work into an already-built tree
-  # (docs/adr/0139's own follow-up) -- `generated` was stale, silently
+  # -- `generated` was stale, silently
   # missing the round's own new owner, and g++ failed on an undeclared
   # `_impl` symbol only because register.cxx's own hand-written call site
   # for it happened to still be there.
@@ -86,11 +86,11 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   generated = "#{build_dir}/rpg2k_compiled_gen.cpp"
 
   # bc2cpp.rb runs MRBC: without this edge `rake -m` can start codegen before
-  # the bootstrap mrbc exists (ADR 0228).
+  # the bootstrap mrbc exists.
   file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
                      BC2CPP_CORE_REFUSED_PATH] do |t|
-    # SHARED_GENERATION (ADR 0464): with every other compiled gem of this build that is out of date, in one
+    # SHARED_GENERATION: with every other compiled gem of this build that is out of date, in one
     # bc2cpp.rb analysis (tools/bc2cpp/compiled_gems.rb bc2cpp_compiled_gem_job holds this gem's environment).
     Bc2cppCompiledGemGeneration.generate(spec, "#{dir}/..")
   end

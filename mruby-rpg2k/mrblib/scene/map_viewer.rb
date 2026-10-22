@@ -478,7 +478,7 @@ class RPG2k
       # tile in the viewport (up to view_w * view_h, tens of thousands on a
       # full-screen viewport), cheap enough under SDL to pass unnoticed but
       # slow enough under the --sixel/--iterm terminal backends (already
-      # paying per-frame encode cost, see ADR 0001/0003) to stall the whole
+      # paying per-frame encode cost) to stall the whole
       # engine for several seconds on open, and every single frame while a
       # pan key is held. Real chipset data is overwhelmingly made of same-
       # passability blocks (a room's floor, a wall run), so this is a large

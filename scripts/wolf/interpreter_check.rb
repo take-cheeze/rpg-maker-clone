@@ -14,7 +14,7 @@
 #
 # It does not (and cannot yet) assert *behavioural* correctness: there is no
 # genuine Game.exe to compare against in this engine's usual wine-diffing way
-# (see docs/adr/0064-wolf-rpg-editor-data-layer.md). What it can and does
+# What it can and does
 # assert is that the reconstructed command semantics do not crash or hang on
 # a real, large (27,356-command) Common Event corpus, and it reports which
 # "not implemented" command warnings fired, so a newly-added command handler

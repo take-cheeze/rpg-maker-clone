@@ -2,7 +2,7 @@
  * hb_raw_surface.h -- matches NanoApps' real sdk/hb_raw_surface.h
  * (nfzerox/NanoApps@80d439d) declaration-for-declaration, reformatted to
  * this repo's own clang-format style (pointer alignment, wrapping) rather
- * than kept byte-identical. See docs/adr/0102: this host build links
+ * than kept byte-identical. This host build links
  * app/nano7/rpg2k_walk/rpg2k_walk.c unmodified, so its declarations must
  * match the real header exactly. The "implement these in the app" functions
  * are rpg2k_walk.c's own; the "runtime API" functions are implemented by

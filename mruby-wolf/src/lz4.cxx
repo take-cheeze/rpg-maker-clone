@@ -12,8 +12,7 @@
 // event data compresses to many *short* matches, not few long ones), and an
 // earlier byte-at-a-time version of the same overlapping-match copy exhausted
 // LVGL's 512 MiB heap outright (`NoMemoryError`) on the same file before a
-// single-pass native loop replaced it. See
-// docs/adr/0064-wolf-rpg-editor-data-layer.md.
+// single-pass native loop replaced it.
 #include <mruby.h>
 #include <mruby/string.h>
 

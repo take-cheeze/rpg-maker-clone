@@ -8,7 +8,7 @@
 # (Nepheshel) by lcf_save_check.rb. Getting a *2003* save was the gap: the 2003
 # test games (mtf-meido-action, Song-of-the-Sea) open with a menu-disabled intro,
 # so the in-game Save cannot be reached without playing the scripted opening --
-# ADR 0013 deferred save-level 2003 validation for exactly this reason.
+# Save-level 2003 validation is deferred for exactly this reason.
 #
 # The way past it is EasyRPG Player's **test-play debug menu** (F9): its first
 # entry is "Save", which invokes the normal save scene from anywhere, ignoring

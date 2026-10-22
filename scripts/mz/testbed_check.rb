@@ -58,7 +58,7 @@ MZ_MIN_COMMAND_TERMS = 23
 # freem did — in which case `img/x.png` is on disk as `img/x.png_`, carrying a
 # 16-byte "RPGMV" header and with the original's first 16 bytes XORed against
 # `System.encryptionKey`. Without this, every asset check below reports a real
-# game's art as missing. See ADR 0004 M6.3r.
+# game's art as missing.
 #
 # `key` is the 16 key bytes, or nil for a plaintext project.
 def encryption_key(system)

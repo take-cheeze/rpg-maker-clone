@@ -1,7 +1,7 @@
 # The WOLF RPG Editor runtime shell: boots a project (mruby-wolf's Wolf::
 # data layer, wolf.rb / data.rb) into a walkable map, the same role
 # mruby-rpg2k's `class RPG2k` and mruby-rpgxp's `class RPGXP` play for their
-# makers. See docs/adr/0064-wolf-rpg-editor-data-layer.md.
+# makers.
 #
 # WOLF RPG Editor has no scripting language to host (unlike RGSS/RPG Maker
 # MV/MZ): a game's logic is entirely the fixed, numbered event-command set
@@ -36,8 +36,7 @@
 # Tiles are drawn from the tileset's own real ChipSet image (base chips read
 # straight off its 8-column sheet, autotiles quarter-tile-assembled per
 # Wolf::ChipLayout -- data.rb's own pure geometry counterpart to
-# mruby-rpg2k's `Game::ChipsetLayout`) -- see
-# docs/adr/0093-wolf-rpg-editor-chipset-tiles.md. A tileset/chip/autotile
+# mruby-rpg2k's `Game::ChipsetLayout`). A tileset/chip/autotile
 # slot with no image of its own (never assigned in TileSetData.dat, or the
 # file failed to load) falls back to the same flat colour blocks keyed by
 # TileSetData's passability flags (green passable, dark red blocked, blue
@@ -164,8 +163,8 @@ class WolfRPG
     # Party(270)'s own roster (Wolf::Interpreter#party_members): a
     # smaller, dimmer block than the hero's own so a formation is
     # visually distinguishable from a line of near-identical events, the
-    # same colour-block fidelity level the hero itself is still at (ADR
-    # 0093's real-ChipSet work only ever covered map tiles).
+    # same colour-block fidelity level the hero itself is still at (the
+    # real-ChipSet work only ever covered map tiles).
     PARTY_MEMBER = RGSS::Color.new(220, 170, 60, 255)
     SHAPE_COLOR = RGSS::Color.new(255, 255, 255, 255)
     SHAPE_SQUARE_FRAME_THICKNESS = 2
@@ -931,7 +930,7 @@ class WolfRPG
     # corner, composited via Wolf::ChipLayout.autotile_quads and one
     # #blt_quads dispatch (see mruby-rgss/src/lib.cxx's own comment on why
     # that batches rather than four separate #blt calls). Frame 0 always --
-    # per-tile animation stepping is left as a follow-up, see the ADR. Falls
+    # per-tile animation stepping is left as a follow-up. Falls
     # back to the flat AUTOTILE colour block when this slot has no image of
     # its own to assemble from.
     def draw_autotile(tx, ty, value)
@@ -999,7 +998,7 @@ class WolfRPG
       # fires on every real hero step, not just the ones a party actually
       # exists for -- #party_advance itself is a no-op with an empty
       # roster, the same "nothing to do without the feature this needs"
-      # shape ADR 0088 already established for Erase/WarpToHero.
+      # shape already established for Erase/WarpToHero.
       @interpreter.party_advance(prev_pos)
     end
 

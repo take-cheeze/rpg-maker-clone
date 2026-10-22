@@ -1,14 +1,13 @@
-// Real mruby+RGSS+LVGL boot test for the Wio Terminal (ADR 0103's own
-// follow-up, ADR 0007's P1 exit criteria): unlike app/wio/src/main.cxx's
+// Real mruby+RGSS+LVGL boot test for the Wio Terminal: unlike app/wio/src/main.cxx's
 // bring-up firmware ("proves the HAL... without the mruby interpreter"),
 // this one actually opens the real interpreter -- linking the wio-target
-// libmruby.a ADR 0103 first got building -- brings up the same RGSS/mruby-lcf
+// libmruby.a that first got building -- brings up the same RGSS/mruby-lcf
 // /mruby-rpg2k gem set a real game would run, then exercises the LVGL HAL
 // (wio.cxx, now compiled into libmruby.a itself rather than pulled in via
 // app/wio/src/wio_hal.cxx's bring-up shim) and the button scan through it.
 //
 // No game data is loaded -- that needs the SD-backed asset streaming rework
-// (ADR 0007's P3) libmruby.a alone does not touch. This proves the
+// libmruby.a alone does not touch. This proves the
 // *interpreter* boots on real silicon and can still draw and read input
 // through the same HAL the bring-up firmware already does, which is what P1
 // actually asks for.
@@ -152,7 +151,7 @@ void setup(void) {
   // happens to cross its threshold sometime during the main loop. A single
   // full sweep here, before `loop()` (Arduino's own main routine) starts,
   // reclaims it up front instead -- cheap (a one-time boot cost, not a
-  // per-frame one) and, since ADR 112, returned to the same newlib heap
+  // per-frame one) and returned to the same newlib heap
   // LVGL's own allocations now draw from too.
   mrb_full_gc(M);
 

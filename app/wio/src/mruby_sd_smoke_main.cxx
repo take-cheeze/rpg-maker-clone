@@ -1,10 +1,10 @@
-// Standalone smoke test for ADR 0099's mechanism (loading mrblib bytecode
-// from a file instead of embedding it) on real emulated hardware: reads a
+// Standalone smoke test for loading mrblib bytecode
+// from a file instead of embedding it on real emulated hardware: reads a
 // plain RITE binary (compiled from mruby-lcf's own mrblib/schema.rb +
 // lcf.rb, this project's actual code, not a synthetic stand-in) off the SD
 // card, loads it with mrb_load_irep_buf, and checks the resulting
-// LCF::Schema constants through mruby's own C API -- the same check ADR
-// 0099's host-side round-trip used, just retargeted to run on the board.
+// LCF::Schema constants through mruby's own C API -- the same check the
+// host-side round-trip used, just retargeted to run on the board.
 //
 // Deliberately links no gem at all, not even mruby-lcf's own C extension:
 // the file already carries mruby-lcf's compiled Ruby, and this only
@@ -18,8 +18,7 @@
 // they were not in fact distinguishable that way.
 //
 // VERIFIED (2026-09-08), on real emulated hardware, once two real bugs this
-// smoke test surfaced were worked around -- see docs/adr/0099's Consequences
-// for the full account and what's still open:
+// smoke test surfaced were worked around; what's still open:
 //   1. mrb_int size mismatch. build_config.rb's host mrbc defaults to
 //      MRB_INT64 (64-bit host -> MRB_64BIT -> MRB_INT64, mrbconf.h's own
 //      auto-detection), while psp/wio cross targets default to MRB_INT32.
@@ -33,9 +32,9 @@
 //      here with a scratch host mrbc forcing MRB_INT32 to match; not fixed
 //      in build_config.rb itself, since forcing 32-bit ints onto the
 //      shared host build affects desktop/wasm/android too and deserves its
-//      own real look, not a rushed one alongside this ADR.
+//      own real look, not a rushed one alongside this change.
 //   2. Real memory ceiling. mruby-lcf's schema.rb originally defined all 25
-//      record types (~930 fields total, ADR 0098's own count) as nested
+//      record types as nested
 //      hash literals executed in one shot; loading the *whole* file this
 //      way raised NoMemoryError on the Wio's 192 KB SRAM under a stock
 //      Arduino SAMD malloc arena.

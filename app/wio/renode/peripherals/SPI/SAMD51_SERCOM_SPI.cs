@@ -7,7 +7,7 @@
 // A SAMD51 SERCOM instance configured in SPI master mode. SERCOM is a
 // shared IP block (UART/SPI/I2C depending on CTRLA.MODE) -- this models the
 // SPI-mode register subset only, since that is all this repo's Wio Terminal
-// port (docs/adr/0094) needs: no upstream Renode peripheral covers SERCOM in
+// port needs: no upstream Renode peripheral covers SERCOM in
 // any mode (SPI.SAM_SPI is an unrelated classic SAM4/SAME70 peripheral,
 // checked against source rather than assumed).
 //

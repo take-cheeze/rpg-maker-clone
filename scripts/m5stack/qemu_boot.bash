@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Boots the M5Stack Core firmware (app/m5stack, env:m5stack) under
-# Espressif's own QEMU fork (docs/adr/0157-m5stack-core-qemu-emulator.md) --
+# Espressif's own QEMU fork --
 # a real ESP32 machine, not a from-scratch model, unlike Renode (which ships
-# no ESP32/Xtensa platform at all -- see that ADR's feasibility section).
+# no ESP32/Xtensa platform at all).
 #
 # Display support (app/m5stack/qemu/patches/m5stack-display.patch, built by
 # scripts/m5stack/qemu_build.bash) needs a from-source QEMU binary --
@@ -69,8 +69,7 @@
 # links hit a real assert in their own SPI flash re-probe under this exact
 # QEMU release (`do_core_init`, `esp_flash_init_default_chip() != ESP_OK`)
 # before Serial.begin() ever runs, while the exact same ESP-IDF version
-# (4.4.7) built from source as a component does not -- see docs/adr/0157's
-# "Status" section for the full isolation (a controlled comparison against a
+# (4.4.7) built from source as a component does not (a controlled comparison against a
 # plain ESP-IDF "hello world" ruled out this script's own QEMU/merge_bin/
 # eFuse setup, then a second comparison against the from-source component
 # build ruled out the IDF version itself, narrowing the fault to the

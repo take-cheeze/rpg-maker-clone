@@ -20,7 +20,7 @@
 # closely enough to notice a request silently dropped). Neither
 # scripts/rpg2k/scene_check.rb nor scripts/rpg2k/logic_check.rb can see this
 # class of bug at all, since both run these same sources under plain CRuby
-# (see docs/adr/0021-nepheshel-render-parity-under-wine.md's own two prior
+# (two prior
 # examples of a CRuby-invisible mruby divergence) -- this is a *static*
 # source check instead, so it catches the pattern itself rather than one
 # more behavioral symptom of it.

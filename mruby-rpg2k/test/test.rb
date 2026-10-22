@@ -1,6 +1,6 @@
 # Game::Transition.new/Game::Map.new (mruby-rpg2k/mrblib/game.rb) are the
 # real, concrete call sites tools/bc2cpp/bc2cpp.rb's own DIRECT_CONSTRUCT_
-# TARGETS devirtualizes (docs/adr/0139's own "generalized direct-construct"
+# TARGETS devirtualizes (the "generalized direct-construct"
 # follow-up, generalizing NATIVE_CONSTRUCT_TARGETS' own Rect/Color/Tone
 # mechanism from hand-written native C++ classes to ordinary bc2cpp-COMPILED
 # ones): under RPGMAKER_BC2CPP=1 (this build, when set) the compiled
@@ -73,8 +73,7 @@ end
 
 # A minimal duck-typed stand-in for LCF::MapUnit (mruby-lcf/mrblib/lcf.rb) --
 # Game::Map#initialize only ever reads `unit[:width]`/`[:height]`/
-# `[:chipset_id]`/`[:lower_layer]`/`[:upper_layer]` (LCF::Array1D#[], see
-# docs/adr/0213) on its own `unit` argument (mruby-rpg2k/mrblib/
+# `[:chipset_id]`/`[:lower_layer]`/`[:upper_layer]` (LCF::Array1D#[]) on its own `unit` argument (mruby-rpg2k/mrblib/
 # game.rb), so a real parsed .lmu file is not needed to exercise the exact
 # same construction shape RPG2k#load_map's own real `Game::Map.new id,
 # LCF::MapUnit.new(File.open(map_path(id)))` call site uses.
@@ -211,7 +210,7 @@ class RPG2kActorTestRow
     @initial_level = 1
   end
 
-  # LCF::Array1D#[] by field name (docs/adr/0213).
+  # LCF::Array1D#[] by field name.
   def [](name)
     send(name)
   end
@@ -223,7 +222,7 @@ class RPG2kActorTestDb
   end
   attr_reader :player
 
-  # LCF::File#[] by section name (docs/adr/0213).
+  # LCF::File#[] by section name.
   def [](name)
     send(name)
   end

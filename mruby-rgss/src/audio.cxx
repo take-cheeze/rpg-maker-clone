@@ -296,7 +296,7 @@ extern "C" void rgss_audio_frame(void) {
     g_backend.update();
 }
 
-// BEGIN native-binding-split (ADR 0263, generated)
+// BEGIN native-binding-split
 namespace rgss {
 
 [[maybe_unused]] static mrb_value native_split_compiled_out(mrb_state* M,

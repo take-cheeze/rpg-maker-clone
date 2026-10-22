@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract the facts scripts/native/binding_split.rb classifies (ADR 0263).
+"""Extract the facts scripts/native/binding_split.rb classifies.
 
 For every mrb_define_method / mrb_define_class_method /
 mrb_define_module_function registration in a translation unit of

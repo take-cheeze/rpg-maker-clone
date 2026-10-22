@@ -36,7 +36,7 @@ module RGSS
 
   # The mean R/G/B of the rendered frame, sampled on an 8px grid (a full
   # per-pixel walk through get_pixel would take seconds). nil when the backend
-  # cannot snapshot. This is the measurement ADR 0021 used to prove the RPG2000
+  # cannot snapshot. This is the measurement used to prove the RPG2000
   # fade reached the display, available to any caller now that
   # Graphics.snap_to_bitmap exists.
   #
@@ -970,7 +970,7 @@ module RGSS
   # advances the autotile animation (frames cycle through the wider autotile
   # bitmaps). `priorities=` routes priority >= 1 tiles to a separate "above" layer
   # that sorts over the characters (an interim flat approximation of RMXP's
-  # per-row priority — see docs/adr/0022-rpgxp-tilemap-priority-layering.md). This
+  # per-row priority). This
   # reopening keeps the plain readers, the `autotiles` slot array (which the
   # native renderer reads), and `flash_data` — still stored-only — so scripts run.
   class Tilemap
@@ -1428,8 +1428,7 @@ module RGSS
       end
 
       # Reverses RPG Maker MV/MZ's own asset-encryption scheme (see
-      # scripts/gen/mz-encrypted.py's `encrypt`, the reference this mirrors,
-      # and ADR 0004 M6.3r): a fixed 16-byte "RPGMV" header the real file never
+      # scripts/gen/mz-encrypted.py's `encrypt`, the reference this mirrors): a fixed 16-byte "RPGMV" header the real file never
       # had, then the file's own first 16 bytes XORed with the 16-byte key,
       # then the rest of the file verbatim. Unauthenticated obfuscation, not
       # encryption -- there is no integrity check, so a truncated or corrupt

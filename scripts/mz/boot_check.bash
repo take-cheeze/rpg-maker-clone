@@ -269,7 +269,7 @@ case "${MODE}" in
         # Game_Actor.paramPlus summing the equipped item's params into the stat
         # the rest of the engine reads. A slot can hold an object while the
         # number the player sees never moves, and from the slot's side those two
-        # look identical. See ADR 0004 M6.3q.
+        # look identical.
         grep -q '\[MZ-EQUIP\].*equipped=true' "${log}" ||
             fail "the weapon never went into the slot ([MZ-EQUIP] equipped=true)"
         grep -q '\[MZ-EQUIP\].*stronger=true' "${log}" ||
@@ -283,7 +283,7 @@ case "${MODE}" in
         # run that never moved the cursor takes the *other* branch and reports
         # picked=false with the value that branch wrote. `closed=true` adds that
         # the message window went away again rather than the map being left
-        # under a window nobody could dismiss. See ADR 0004 M6.3p.
+        # under a window nobody could dismiss.
         grep -q '\[MZ-MSGPLAY\].*choice_shown=true' "${log}" ||
             fail "the choice list never appeared ([MZ-MSGPLAY] choice_shown=true)"
         grep -q '\[MZ-MSGPLAY\].*picked=true' "${log}" ||
@@ -298,7 +298,7 @@ case "${MODE}" in
         # Window_ShopBuy's affordability test, Window_ShopNumber's arithmetic
         # and Scene_Shop.doBuy, none of which the menu's item path touches.
         # `returned=true` adds that the scene handed back to the map rather
-        # than trapping the player in the shop. See ADR 0004 M6.3o.
+        # than trapping the player in the shop.
         grep -q '\[MZ-SHOP\].*bought=true' "${log}" ||
             fail "nothing was bought in the shop ([MZ-SHOP] bought=true)"
         grep -q '\[MZ-SHOP\].*returned=true' "${log}" ||
@@ -309,7 +309,6 @@ case "${MODE}" in
         # battle can only have come from the map's own encounter list — the
         # engine deciding to fight rather than a game telling it to. The troop
         # check is what makes it the *map's* list rather than any battle at all.
-        # See ADR 0004 M6.3n.
         grep -q '\[MZ-ENC\].*encountered=true' "${log}" ||
             fail "walking never triggered a random encounter ([MZ-ENC] encountered=true)"
         grep -q '\[MZ-ENC\].*troop=1 ' "${log}" ||
@@ -321,7 +320,7 @@ case "${MODE}" in
         # Game_CommonEvent became active on its switch and its own interpreter
         # ran; `called=true` means command117 built a child interpreter inside
         # the map's and ran the called event through it. Both had no coverage
-        # while the bed's CommonEvents.json was empty. See ADR 0004 M6.3m.
+        # while the bed's CommonEvents.json was empty.
         grep -q '\[MZ-COMMON\].*parallel=true' "${log}" ||
             fail "the parallel common event never ran ([MZ-COMMON] parallel=true)"
         grep -q '\[MZ-COMMON\].*called=true' "${log}" ||
@@ -334,7 +333,7 @@ case "${MODE}" in
         # run, which is the difference between the id moving and the map having
         # been fetched, built and set running. A bed with one map never loaded a
         # second one, so `DataManager.loadMapData` and Scene_Map re-creating
-        # itself had no coverage at all. See ADR 0004 M6.3l.
+        # itself had no coverage at all.
         grep -q '\[MZ-XFER\].*moved=true' "${log}" ||
             fail "Transfer Player never changed the map ([MZ-XFER] moved=true)"
         grep -q '\[MZ-XFER\].*landed=true' "${log}" ||
@@ -405,7 +404,7 @@ case "${MODE}" in
         # window, BattleManager's turn order and the damage formula all working.
         # `ended=true` means the victory sequence ran and handed the scene back
         # to the map, rather than the fight stalling — which is exactly how this
-        # mode found the bed's battles frozen (see ADR 0004 M6.3i).
+        # mode found the bed's battles frozen.
         # A run cut off by --timeout_ms prints no report at all, and saying
         # "no attack ever damaged an enemy" about a fight that was still
         # swinging would be a lie about the cause. Separate the two.

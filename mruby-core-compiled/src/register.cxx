@@ -1,4 +1,4 @@
-// Installs the compiled bodies of mruby's own Ruby methods (docs/adr/0264).
+// Installs the compiled bodies of mruby's own Ruby methods.
 // Registration is generated: bc2cpp_register_owner_methods defines every entry
 // that compiled clean, with the visibility and aspec its entry wrapper reads,
 // so this file names no method. Every gem whose mrblib defines one of them

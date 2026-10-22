@@ -1,5 +1,5 @@
 // Swaps AOT-compiled C++ bodies in for all 17 of RGSS::Sprite's own real
-// bytecode-defined methods (docs/adr/0139) -- every plain Ruby reader
+// bytecode-defined methods -- every plain Ruby reader
 // mruby-rgss/mrblib/lib.rb reopens the native Sprite class with, made
 // possible by this same follow-up's own JMPNIL/LOADL opcode additions
 // (opacity/zoom_x/zoom_y's own `@ivar.nil? ? default : @ivar` shape) and
@@ -22,7 +22,7 @@
 // fine with Sprite's native RData payload (mruby/data.h: an RData carries
 // both a `data` pointer and a normal `iv` table).
 //
-// RGSS::Plane (docs/adr/0139's own follow-up, this gem's second owner)
+// RGSS::Plane
 // gets the same treatment for its own 6 real bytecode-defined methods
 // (opacity/zoom_x/zoom_y/blend_type/tone/color) -- plain Ruby readers
 // answering RGSS defaults for ivars only Plane's native #initialize
@@ -46,9 +46,8 @@
 // core class (`Array`) instead of an RGSS-namespaced one: the
 // owner-scope-first chain still finds it, only by falling all the way
 // through to its final unprotected Object-level `mrb_const_get` rather
-// than matching at the RGSS scope the way Tone/Color did (see
-// ADR 0139 (RGSS::Tilemap) for the regenerated-body
-// confirmation). `attr_reader :tileset, :map_data, :ox, :oy, :viewport,
+// than matching at the RGSS scope the way Tone/Color did.
+// `attr_reader :tileset, :map_data, :ox, :oy, :viewport,
 // :priorities, :flags` and `attr_accessor :flash_data` stay
 // native/uncompiled, as always. Tilemap has no #initialize of its own
 // either, so it hits the same drop_unsafe_embeddings class-level
@@ -56,7 +55,7 @@
 // own "classes needing MRB_SET_INSTANCE_TT" listing. Its one GETIV/SETIV
 // stays on the ordinary dynamic iv_tbl, same as Sprite and Plane.
 //
-// RGSS::Window (docs/adr/0139's own follow-up, this gem's third owner)
+// RGSS::Window
 // gets 12 of its own real bytecode-defined methods compiled: opacity/
 // back_opacity/active/pause/stretch/openness (the same `@ivar.nil? ?
 // default : @ivar` / `@ivar || false` reader shape as Sprite/Plane
@@ -119,10 +118,9 @@
 //
 // `class << self; attr_writer :extensions; def extensions; @extensions
 // || EXTENSIONS; end; end` and `def self.failure_reason(f)` both live
-// under the distinct pseudo-owner `RGSS::Bitmap.singleton` (SCLASS/SDEF,
-// this ADR's own established fix), never under `RGSS::Bitmap` itself.
+// under the distinct pseudo-owner `RGSS::Bitmap.singleton` (SCLASS/SDEF), never under `RGSS::Bitmap` itself.
 //
-// Follow-up (docs/adr/0139: ".singleton owner support"): both are now
+// Follow-up: both are now
 // real, compiled entry points -- `RGSS::Bitmap.singleton` was added to
 // this gem's own `owners:` (tools/bc2cpp/compiled_gems.rb), the first
 // `.singleton`-suffixed `owners:` entry anywhere in this project, made
@@ -132,7 +130,7 @@
 // mrbc's own SDEF opcode already carries -- see build_registry's own
 // SDEF case for the real bug this closed, confirmed live on exactly this
 // class's own `self.failure_reason`). `self.extensions` (an SCLASS-opened
-// body, already individually compilable via this ADR's own earlier SCLASS
+// body, already individually compilable via the earlier SCLASS
 // fix) compiles to the same `||`-default-array reader shape
 // `RGSS::Window#blend_type`/`#stretch` already ship
 // (`RGSS__Bitmap_singleton_extensions_impl`). `self.failure_reason(f)`
@@ -173,7 +171,7 @@
 // `alias_method :_rgss1_initialize, :initialize` right before
 // redefining #initialize, to keep the RGSS1 (XP) native initializer
 // reachable from the RGSS2/3 (VX/VX Ace) Ruby-level override below it --
-// a genuinely new shape for this ADR: `alias_method` is a plain
+// a genuinely new shape: `alias_method` is a plain
 // self-implicit `SSEND :alias_method` call, not the dedicated `alias`
 // keyword's own `OP_ALIAS` bytecode instruction, so it creates no TDEF/
 // DEF pair for `_rgss1_initialize` at all. bc2cpp's build_registry walks
@@ -205,13 +203,11 @@
 // diagnostic: RGSS::Window never appears in bc2cpp's own "classes needing
 // MRB_SET_INSTANCE_TT" listing. Every GETIV/SETIV below stays on the
 // ordinary dynamic iv_tbl, same as Sprite/Plane.
-// Follow-up (docs/adr/0139: "RGSS .singleton coverage cluster") -- five more
+// Follow-up -- five more
 // `.singleton`-owned classes join RGSS::Bitmap.singleton above:
 // RGSS.singleton, RGSS::Audio.singleton, RGSS::Input.singleton,
-// RGSS::ErrorReport.singleton, RGSS::Graphics.singleton (ADR 0139's
-// "RGSS .singleton coverage cluster" follow-up has the full per-class
-// compiled/skipped breakdown and diagnostic transcript; this comment covers
-// only what changes about *registering* them here). 38 real class methods
+// RGSS::ErrorReport.singleton, RGSS::Graphics.singleton; this comment covers
+// only what changes about *registering* them here. 38 real class methods
 // across the five, all via `mrb_define_class_method` for the same reason
 // RGSS::Bitmap.singleton's own two already are: every compiled body's `self`
 // is the owning module/class object itself, never an instance.
@@ -232,8 +228,7 @@
 // (resize_screen/brightness=/freeze): its 4th, `brightness_sprite`, is a
 // real, individually-compiled entry (its own `_impl` ships in
 // rgss_compiled_gen.cpp, and `brightness=`'s own body already calls it
-// directly -- see ADR 0139 for the real generated
-// call site) but is genuinely `private` in the real source (`class << self
+// directly) but is genuinely `private` in the real source (`class << self
 // ... private ... def brightness_sprite; ... end; end`) and mruby's public
 // API has no "private class method" registration entry point at all
 // (`mrb_define_class_method`/`_id` take no visibility flag, and no sibling
@@ -249,7 +244,7 @@
 //
 // Round 31 (".singleton/leftover mop-up") follow-up closes out
 // `RGSS::Font.singleton#exist?` -- the one `.singleton`-owned method this
-// ADR's own "RGSS::Font investigated, and NOT added" follow-up left open
+// "RGSS::Font investigated, and NOT added" follow-up left open
 // as a known-good candidate once `.singleton` emission became real.
 // Installed onto `font`'s own singleton class via
 // `mrb_define_class_method`, the identical reasoning every other
@@ -261,7 +256,7 @@
 // `RGSS::ErrorReport::Tee#initialize` is the one hand-registered entry below;
 // the generated owner-registration pass installs the finite `flush` wrapper
 // and the write methods that this build compiles. The wrapper no longer
-// forwards arbitrary methods through `method_missing`, which lets ADR 0210's
+// forwards arbitrary methods through `method_missing`, which lets the
 // closed-world proof remove the corresponding by-name fallbacks.
 //
 // `Array#include?` is a real bytecode reopening of the native, top-level
@@ -368,7 +363,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, bitmap, "font", RGSS__Bitmap_font, MRB_ARGS_NONE());
   mrb_define_method(M, bitmap, "font=", RGSS__Bitmap_font$3d, MRB_ARGS_REQ(1));
 
-  // RGSS::Bitmap.singleton (docs/adr/0139: ".singleton owner support") --
+  // RGSS::Bitmap.singleton --
   // this project's first `.singleton`-owned bc2cpp entries. Both are real
   // `class << self`/`def self.x` singleton methods (see
   // mruby-rgss/mrblib/lib.rb), installed onto `bitmap`'s own singleton
@@ -389,11 +384,10 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           RGSS__Bitmap_singleton_failure_reason,
                           MRB_ARGS_REQ(1));
 
-  // RGSS.singleton (docs/adr/0139: "RGSS .singleton coverage cluster") --
+  // RGSS.singleton --
   // installs onto `rgss` itself, declared at the very top of this function:
   // RGSS is both this gem's enclosing module and, for these 5 methods, a
-  // `.singleton` owner in its own right (see ADR 0139's "RGSS .singleton
-  // coverage cluster" follow-up for the full compiled/skipped breakdown).
+  // `.singleton` owner in its own right.
   mrb_define_class_method(M, rgss, "warn_once", RGSS_singleton_warn_once,
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, rgss, "warn_stub", RGSS_singleton_warn_stub,
@@ -471,8 +465,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   // repeat? all make same-owner self-implicit calls (to dir4/key_index
   // respectively) that MONO-devirtualize into direct C++ calls, also
   // confirmed directly against rgss_compiled_gen.cpp. `update` (the one
-  // method on this class that does not compile -- see ADR 0139's
-  // "RGSS .singleton coverage cluster" follow-up) stays on the interpreter,
+  // method on this class that does not compile) stays on the interpreter,
   // unregistered here, as always.
   RClass* input = mrb_module_get_under(M, rgss, "Input");
 

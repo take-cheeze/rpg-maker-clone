@@ -18,7 +18,7 @@
 // mruby-rgss/src/psp_input_bridge.cxx) once one is -- the same "host owns
 // the loop" shape the Emscripten and Wio builds use. Its per-second
 // heartbeat also reports real free-memory and LVGL-pool numbers (see the
-// RPG2K_PSP_BRINGUP marker below), which is ADR 0047's P1: measuring the
+// RPG2K_PSP_BRINGUP marker below), measuring the
 // HAL's own footprint on real hardware/an emulator, now against a real
 // game's usage once one is present at kGameDir instead of just the idle HAL.
 //
@@ -39,9 +39,9 @@
 // does not attempt), not a correctness or memory-safety one.
 //
 // mrb_open() here uses mruby's own default allocator (plain malloc) rather
-// than routing through lv_malloc the way the desktop build does -- ADR 0047's
-// P2 (share LVGL's pool vs. a separate arena) is now decided for this target
-// (see below): the interpreter's whole live heap is routed through a
+// than routing through lv_malloc the way the desktop build does -- sharing LVGL's
+// pool vs. a separate arena is decided for this target (see below): the
+// interpreter's whole live heap is routed through a
 // fixed-size arena of its own (mrb_basic_alloc_func) instead of LVGL's pool
 // -- which only aligns to 4 bytes on a 32-bit build, too weak for mruby's word
 // boxing, the same reason the wasm build opts out -- and instead of the
@@ -71,16 +71,15 @@
 PSP_MODULE_INFO("rpg2k", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 
-// ADR 0047's P5: the main-thread stack is an explicit, *verified* size rather
+// The main-thread stack is an explicit, *verified* size rather
 // than pspsdk's implicit default (which is what this EBOOT relied on while it
 // was an LVGL-only bring-up, before the interpreter and the real scene tree
 // were linked in). 256 KB is the size that already runs the real RPG2k scene
 // tree here; what makes it verified rather than guessed is the heartbeat
 // below, which reports how deep the interpreter has actually recursed into it
 // (stack_free / stack_used_max), so a deeper-recursing title shows up in the
-// numbers instead of as a crash. ADR 0007 flagged mruby's init-time recursion
-// as a stack risk on constrained targets; this is the measurement that closes
-// it for the PSP.
+// numbers instead of as a crash. mruby's init-time recursion is a stack risk on
+// constrained targets; this is the measurement that closes it for the PSP.
 //
 // The macro expands to a plain `unsigned int sce_newlib_stack_kb_size` that
 // pspsdk's crt0 reads when it creates the main thread, so it has to sit at
@@ -161,7 +160,7 @@ class StrBuf {
 
 lv_obj_t* g_status_label = nullptr;
 
-// ADR 0047's P2 (the mruby/LVGL allocator split), decided for this target:
+// The mruby/LVGL allocator split, decided for this target:
 // mruby gets its own bounded arena instead of sharing LVGL's pool or running
 // unbounded on plain malloc. Sharing LVGL's pool is not an option here the way
 // it is on desktop -- LVGL's builtin TLSF pool only aligns to 4 bytes on a
@@ -194,7 +193,7 @@ lv_obj_t* g_status_label = nullptr;
 // that day arriving.
 //
 // It arrived under CI: `psp-smoke-game`'s `.psp_ci_new_game` marker
-// (docs/adr/0047-psp-memory-budget.md's P1c) drives Nepheshel through a real
+// drives Nepheshel through a real
 // New Game into map 371, and `ppsspp-headless` segfaults deterministically
 // (byte-identical across three separate runs) once arena_used climbs to
 // 11,887,824 B -- 94.5% of the 12 MB ceiling. Tried spending 512 KiB of the
@@ -211,8 +210,7 @@ lv_obj_t* g_status_label = nullptr;
 // a real XP/VX project, or just more play time would hit the same wall
 // further out regardless of size) while permanently spending headroom the
 // newlib/sbrk heap may need. The actual fix is hardening the unwind path
-// itself, not raising this number -- out of scope for a PSP-port change;
-// see the ADR's P1c for the full trail.
+// itself, not raising this number -- out of scope for a PSP-port change.
 constexpr size_t kMrbArenaSize = 12u * 1024u * 1024u;
 alignas(16) uint8_t g_mrb_arena[kMrbArenaSize];
 
@@ -251,8 +249,7 @@ void mrb_arena_init();
 // g_bitmap_bytes_decoded/_blank, behind the Bitmap constructor/destructor/
 // operator= so every live buffer, whatever the current scene, is counted
 // automatically) -- this file's counterpart to mrb_arena_used() below for
-// the "third pool" docs/adr/0047-psp-memory-budget.md's Finding 3
-// identified: decoded pixels live in the plain C++ allocator, not the
+// the "third pool": decoded pixels live in the plain C++ allocator, not the
 // mruby arena, so they need their own instrumentation. Split decoded (real
 // asset pixels -- what mruby-rpg2k's LRUBitmapCache now bounds) from blank
 // (render targets, canvases, snapshots, and a clone's own copy) since the
@@ -528,8 +525,7 @@ void show_keys(uint64_t mask) {
 // Appends " t_us=N free=N maxfree=N lvgl_used=N lvgl_max=N stack_free=N
 // stack_used_max=N arena_used=N" -- the figure tail every RPG2K_PSP_*
 // diagnostic marker in this file carries (see the BRINGUP heartbeat below for
-// what each field means; ADR 0047 is the budget these exist to measure
-// against). t_us is sceKernelGetSystemTimeLow() -- microseconds on the
+// what each field means). t_us is sceKernelGetSystemTimeLow() -- microseconds on the
 // console's own free-running clock (the same source mruby-rgss/src/psp.cxx's
 // LVGL tick callback uses), not wall-clock time or time-since-process-start:
 // subtract one marker's t_us from a later one's to get an elapsed duration
@@ -614,7 +610,7 @@ void append_scene_name(StrBuf& sb, mrb_state* M, mrb_value game_obj) {
 // first RGSS call that touches the display (e.g. Sprite.new, via LVGL's
 // canvas creation) aborted the process; the abort path's own cleanup code
 // then calls strlen() on a boxed mruby value, which is the
-// sysclib_strlen(0x11e) crash ADR 0047's bug 10 was tracking.
+// sysclib_strlen(0x11e) crash.
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 
 // mruby 4.0 has no per-state allocator hook; a program overrides the global
@@ -662,9 +658,8 @@ int main(void) {
   // -- has happened yet, so arena_used is always 0 at this marker. Subtract
   // this from RPG2K_PSP_MRUBY_OPEN's own free= (or add up arena_used, which
   // is the more direct number: mrb_open() links every gem's mrblib in, the
-  // same "full gembox, no game loaded yet" state ADR 0047's Finding 1
-  // host-proxy measurement estimated at ~1.2-1.4 MB before a device number
-  // existed for it) to get mrb_open()'s real device cost.
+  // same "full gembox, no game loaded yet" state, which a host-proxy
+  // estimate put at ~1.2-1.4 MB before a device number existed for it) to get mrb_open()'s real device cost.
   {
     char buf[256];
     StrBuf sb(buf, sizeof(buf));
@@ -721,8 +716,8 @@ int main(void) {
     // relying on the rescue to catch their absence, the same as every other
     // undefined-optional-constant site in this file) sidesteps a separate,
     // deeper issue: raising the first real exception of the process's life
-    // here doesn't reliably unwind on this target -- see ADR 0047's bug-10
-    // follow-up finding -- so leaving these undefined crashes instead of
+    // here doesn't reliably unwind on this target, so leaving these undefined
+    // crashes instead of
     // being caught.
     //
     // RPG2K_NEW_GAME is the one exception: it is driven by whether a
@@ -736,7 +731,7 @@ int main(void) {
     // folder never carries this file (nothing in the editor or this
     // codebase's own packaging ever writes it), so every real player still
     // lands on an ordinary title screen; only CI's psp-smoke-game job
-    // creates it, to reach Scene::Map for ADR 0047's per-scene memory
+    // creates it, to reach Scene::Map for per-scene memory
     // numbers instead of measuring the idle title screen forever.
     const bool ci_new_game = path_exists(kGameDir, ".psp_ci_new_game");
     mrb_const_set(M, mrb_obj_value(M->object_class),
@@ -790,7 +785,7 @@ int main(void) {
     // (database, map tree, and -- for RPG2k -- Scene::Title) is fully built,
     // but the frame loop below has not run even once, so nothing has been
     // drawn or updated yet. This is "memory right before the title screen"
-    // (docs/adr/0047-psp-memory-budget.md): everything the load itself cost,
+    // everything the load itself cost,
     // with none of the per-frame steady-state drift the BRINGUP heartbeat
     // measures afterward.
     if (have_game) {
@@ -808,14 +803,14 @@ int main(void) {
   // roughly once a second. The CI smoke test asserts this marker appears,
   // proving the EBOOT not only boots but keeps pumping frames (see the
   // psp-smoke job in .github/workflows/build.yml). It also carries real
-  // memory numbers -- ADR 0047's P1 -- so the memory-budget estimates there
+  // memory numbers, so the memory-budget estimates there
   // get replaced with device measurements instead of staying host-proxy
   // guesses: sceKernelTotalFreeMemSize/sceKernelMaxFreeMemSize (pspsysmem.h)
   // for the PSP's ~24 MB user partition, and lv_mem_monitor for LVGL's own
   // pool (app/psp/lv_conf.h's 4 MB LV_MEM_SIZE) -- currently used and the
   // max_used high-water mark, which is the number that actually matters for
   // sizing that pool once the interpreter is linked. stack_free/stack_used_max
-  // are ADR 0047's P5, the same idea for the main-thread stack the module
+  // are the same idea applied to the main-thread stack the module
   // metadata above now sizes explicitly.
   for (uint32_t frame = 0;; ++frame) {
     if (have_game) {
@@ -852,7 +847,7 @@ int main(void) {
       mrb_full_gc(M);
     }
     if (frame % 200 == 0) {
-      // ADR 0047's P5. sceKernelGetThreadStackFreeSize scans the low (deep)
+      // sceKernelGetThreadStackFreeSize scans the low (deep)
       // end of the thread's stack for the 0xFF fill pspsdk leaves there at
       // creation and reports how much of it is still untouched. Because a
       // down-growing stack never restores those bytes to 0xFF once a frame has

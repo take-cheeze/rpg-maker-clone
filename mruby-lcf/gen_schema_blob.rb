@@ -4,7 +4,6 @@
 # Generates mrblib/schema.rb's runtime replacement: a compact packed binary
 # blob plus a small, constant-size decoder, instead of ~1,150 field
 # descriptors each compiled to their own Hash-literal-construction bytecode
-# (mrbc measured: 45,293 bytes for schema.rb alone -- see docs/adr/0109).
 #
 # schema.rb (this generator's *input*, never modified) stays the single
 # source of truth: it is plain, portable Ruby, loadable by CRuby (every
@@ -14,7 +13,7 @@
 # (not the Ruby source) into a compact binary table plus the string table
 # field/order names draw from.
 #
-# ADR 0099's own NoMemoryError finding (the split schema.rb's `elements:`
+# The NoMemoryError finding (the split schema.rb's `elements:`
 # lambdas encode) governs the split this generator preserves exactly: DATABASE's ~18
 # per-record-type field lists (each a `-> { {...} }` block in the source)
 # stay lazily resolved -- decoded from the blob into real Hash objects only

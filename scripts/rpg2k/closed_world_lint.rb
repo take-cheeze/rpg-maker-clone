@@ -185,7 +185,7 @@ def global_reassignment_offences(global_writes)
 end
 
 # Lints every closed-world gem file and compares the offences with the baseline.
-# Shared by the CLI below and by bc2cpp's closed-world cross-check (ADR 0368).
+# Shared by the CLI below and by bc2cpp's closed-world cross-check.
 def closed_world_lint_run(root: ROOT)
   files = GEMS.flat_map { |g| Dir[File.join(root, g, 'mrblib', '**', '*.rb')] }.sort
   offences = []

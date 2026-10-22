@@ -4,7 +4,7 @@
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
 //
-// A 4-wire SPI ILI9341/compatible TFT panel: docs/adr/0094 P3 for this
+// A 4-wire SPI ILI9341/compatible TFT panel for this
 // repo's Wio Terminal port. Attaches as an ISPIPeripheral to a
 // SAMD51_SERCOM_SPI controller and a GPIO input (number 0) carries the D/C
 // (data/command select) line -- a real pin on real hardware

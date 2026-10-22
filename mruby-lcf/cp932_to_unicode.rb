@@ -2,8 +2,8 @@
 # Generates cp932.cc / cp932.h, the CP932 <-> Unicode tables behind
 # LCF.cp932_to_utf8 / LCF.utf8_to_cp932, from the WCTABLE (Unicode -> CP932
 # best fit) section of Microsoft's bestfit932.txt ($cp932_table). The layout
-# and the lookups that read it (src/cp932_lookup.hxx) are ADR 0217;
-# scripts/cp932_tables_check.rb proves them equal to ADR 0111's pair tables.
+# and the lookups that read it live in src/cp932_lookup.hxx.
+# scripts/cp932_tables_check.rb proves them equal to the reference pair tables.
 #
 # Usage: cp932_to_unicode.rb [OUT_DIR]   (default: the current directory)
 
@@ -45,7 +45,7 @@ raise 'WCTABLE maps a Unicode code point twice' unless unicodes.uniq.size == uni
 raise 'WCTABLE maps U+FFFF, the unmapped-slot sentinel' if unicodes.include?(UNMAPPED)
 
 # Best fit is many-to-one (U+00C0..U+00C5 all encode to 'A'); decoding picks
-# the smallest code point, which is what ADR 0111's forward table held first.
+# the smallest code point, which is what the forward table held first.
 decode = {}
 table.each { |u, c| decode[c] = u if !decode.key?(c) || u < decode[c] }
 
@@ -140,7 +140,7 @@ File.write(File.join(out_dir, 'cp932.h'), <<~EOS)
   extern const std::pair<uint16_t, uint16_t> cp932_encode_extra[cp932_encode_extra_len];
 
   #ifndef CP932_NO_REVERSE_TABLE
-  // {unicode, cp932}, sorted by unicode (ADR 0111).
+  // {unicode, cp932}, sorted by unicode.
   constexpr size_t cp932_reverse_table_len = #{reverse.size};
   extern const std::pair<uint16_t, uint16_t> cp932_reverse_table[cp932_reverse_table_len];
   #endif

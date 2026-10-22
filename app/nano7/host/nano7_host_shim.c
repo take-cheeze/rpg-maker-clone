@@ -6,13 +6,13 @@
  * hb_draw_str are shared with app/nano7/qemu's bare-metal build -- see
  * app/nano7/shim_common/hb_fb_ops.c.
  *
- * See docs/adr/0102-ipod-nano-7-host-emulator.md for why this repo builds a
+ * This repo builds a
  * host implementation of the app's own API instead of emulating the real
  * device's Cortex-A8 SoC and proprietary OS underneath that API (unlike the
- * Wio Terminal's bare-metal Renode platform, docs/adr/0094, where modelling
- * the SoC *is* modelling the firmware's whole execution environment), and
- * docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md for app/nano7/qemu,
- * which -- unlike this file -- *does* run the real ARM Cortex-A8 instruction
+ * Wio Terminal's bare-metal Renode platform, where modelling
+ * the SoC *is* modelling the firmware's whole execution environment). The
+ * QEMU build in app/nano7/qemu, which -- unlike this file -- *does* run the
+ * real ARM Cortex-A8 instruction
  * stream, for a genuine (if approximate) CPU cost signal this file's native
  * host execution cannot give at all.
  *

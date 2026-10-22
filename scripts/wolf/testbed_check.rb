@@ -32,7 +32,7 @@ end
 module Wolf
   # Native (mruby-wolf/src/lz4.cxx) in the real build; this is CRuby's stand-in
   # for the host check, ported from that C++ implementation rather than kept
-  # as a second hand-maintained decoder. See docs/adr/0064's note on why the
+  # as a second hand-maintained decoder. The
   # naive interpreted version (many small String allocations per token) is
   # gone from mrblib entirely.
   module LZ4

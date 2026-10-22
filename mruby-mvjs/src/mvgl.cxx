@@ -26,8 +26,7 @@
 // build -- that Android's libEGL.so does not actually export that symbol,
 // which fails at link time ("undefined symbol: eglGetPlatformDisplay") rather
 // than the header-based #if catching it. RPG Maker MV/MZ's WebGL renderer was
-// never in scope for this port's first slice (docs/adr/0058-android-port.md,
-// matching the PSP port's own include_mvjs: false); a real fix needs
+// never in scope for this port's first slice (matching the PSP port's own include_mvjs: false); a real fix needs
 // Android's actual platform-window EGL integration (ANativeWindow), not this
 // desktop/Mesa-oriented surfaceless one.
 #if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__) && \

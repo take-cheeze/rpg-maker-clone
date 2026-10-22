@@ -2,13 +2,13 @@
  * nano7_qemu_shim -- the bare-metal-under-QEMU platform half of a
  * hb_raw_surface/hb_sdk implementation for app/nano7/rpg2k_walk/rpg2k_walk.c.
  *
- * Unlike app/nano7/host (docs/adr/0102), which runs the app natively on the
+ * Unlike app/nano7/host, which runs the app natively on the
  * build host with zero relation to real device timing, this target links
  * the app against the REAL arm-none-eabi-gcc -mcpu=cortex-a8 build (the
  * same compiler invocation NanoApps' own sdk/hb_app.mk uses) and boots it
  * under QEMU's `cortex-a8` CPU model on the `realview-pb-a8` machine -- a
  * real ARM Cortex-A8 instruction stream, not native host execution, giving
- * a genuine (if approximate -- see docs/adr/0103) CPU cost signal the host
+ * a genuine CPU cost signal the host
  * build cannot give at all. Framebuffer pixels land in real, guest-visible
  * RAM that a real PL110 CLCD controller model scans out, verified pixel-
  * correct against QEMU's own `screendump` (see scripts/nano7/qemu_run.bash).
@@ -17,7 +17,7 @@
  * app/nano7/shim_common/hb_fb_ops.c, shared with app/nano7/host. This file
  * supplies everything platform-specific instead: hb_fs_read (over two
  * linked-in binary blobs -- no filesystem, no SD card, deliberately out of
- * scope, see the ADR), hb_time_uptime_ms (a harness-advanced counter, same
+ * scope), hb_time_uptime_ms (a harness-advanced counter, same
  * convention as the host build's headless mode -- there is no real-time
  * clock peripheral wired up here either, on purpose), the PL011 UART used
  * only for this file's own progress/cycle-count log (never by the app,
@@ -81,7 +81,7 @@ static void uart_putdec(uint32_t v) {
  * (24bpp packed into a 32-bit word, matching HB_RGB's own 0x00RRGGBB
  * layout with zero per-pixel conversion) were verified pixel-correct via
  * QEMU `screendump` against a hand-drawn red/blue test pattern before this
- * file existed -- see docs/adr/0103. */
+ * file existed. */
 #define CLCD_BASE 0x10020000u
 #define CLCD_TIM0 (*(volatile uint32_t *)(CLCD_BASE + 0x00))
 #define CLCD_TIM1 (*(volatile uint32_t *)(CLCD_BASE + 0x04))
@@ -117,11 +117,11 @@ static void clcd_init(void) {
  * Verified against QEMU's cortex-a8 model directly before this file
  * existed: a busy-loop of N iterations gives a CCNT delta that scales
  * with N (roughly 10x for a 10x longer loop), so this is a real, working
- * counter under QEMU's TCG, not a stub that reads back zero. See
- * docs/adr/0103 for exactly what this number does and does not mean --
- * in short, a repeatable, comparable-across-builds proxy for CPU work,
+ * counter under QEMU's TCG, not a stub that reads back zero. This
+ * number is, in short, a repeatable,
+ * comparable-across-builds proxy for CPU work,
  * the same relative-signal role Renode's `machine EnableProfiler` plays
- * for the Wio Terminal (docs/adr/0094), not literal hardware nanoseconds. */
+ * for the Wio Terminal, not literal hardware nanoseconds. */
 static inline void pmu_enable(void) {
   uint32_t ctrl;
   __asm__ volatile("mrc p15, 0, %0, c9, c12, 0" : "=r"(ctrl));

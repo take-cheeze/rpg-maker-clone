@@ -13,7 +13,7 @@
 ** rather than needing a real stat()/lstat() the platform has neither of, and
 ** returns ENOSYS for the rest of the contract (locking, process spawning,
 ** symlinks, multiplexing) -- operations no game here ever reaches, the same
-** "drop what nothing calls" reasoning ADR 0098 already applied to onigmo.
+** "drop what nothing calls" reasoning already applied to onigmo.
 */
 
 #include <mruby.h>
@@ -153,7 +153,7 @@ int mrb_hal_io_unlink(mrb_state* mrb, const char* path) {
 
 /*
  * Everything below is real contract surface no game reachable from this
- * board's exporter/build (RPG2000/2003 only, ADR 0061/0091/0097) ever calls:
+ * board's exporter/build ever calls:
  * no process model, no symlinks, no advisory locking, no async I/O
  * multiplexing. Each returns ENOSYS rather than silently pretending to
  * succeed, so a call this HAL does not expect fails loudly instead of

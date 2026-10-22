@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds a QEMU binary with this repo's downstream device patches
 # (app/m5stack/qemu/patches/*.patch) for the M5Stack Core platform
-# (docs/adr/0157): ILI9341 display support and FACES kit Gamepad Face
+# ILI9341 display support and FACES kit Gamepad Face
 # support. Espressif's own qemu-xtensa release binaries are precompiled and
 # cannot pick up new C device models, so -- exactly like
 # scripts/wio/renode_build.bash does for Renode's two new peripherals --

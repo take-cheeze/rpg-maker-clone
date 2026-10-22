@@ -2,14 +2,14 @@
 # frozen_string_literal: true
 
 # Proves mruby-lcf's CP932 lookups (src/cp932_lookup.hxx over the tables
-# cp932_to_unicode.rb generates, ADR 0217) return exactly what ADR 0111's two
+# cp932_to_unicode.rb generates) return exactly what the reference's two
 # sorted pair tables returned, for all 65,536 inputs in both directions:
 # decode (CP932 code -> Unicode) and encode (Unicode -> CP932 code). Both
 # encode paths are checked: the reverse table desktop keeps, and the
 # decode-table scan wio uses (CP932_NO_REVERSE_TABLE). Also prints the host
 # timing of each path.
 #
-# The reference is ADR 0111's generator and lookups, reproduced below. With
+# The reference generator and lookups are reproduced below. With
 # --reference-generator FILE it instead runs that historical generator (e.g.
 # `git show 7ed1848e:mruby-lcf/cp932_to_unicode.rb > old.rb`) as the reference.
 #
@@ -36,7 +36,7 @@ end.parse!
 
 abort 'cp932 tables check: $cp932_table must point at bestfit932.txt' unless ENV['cp932_table'] && File.file?(ENV['cp932_table'])
 
-# ADR 0111's cp932_to_unicode.rb, minus the decorative comments: the forward
+# Reference cp932_to_unicode.rb, minus the decorative comments: the forward
 # table sorted by CP932 code and the reverse table by (unicode, cp932), both
 # as the original's string sort ordered them.
 def write_reference_tables(dir)

@@ -38,8 +38,7 @@
 #
 # .open (below) never reads the archive whole: it opens a seekable stream and
 # only reads the header plus each version's entry table, then seeks straight to
-# an entry's own bytes when #read asks for it by name. See docs/adr/0047-psp-
-# memory-budget.md Finding 2 for why that matters -- a released game routinely
+# an entry's own bytes when #read asks for it by name.: a released game routinely
 # packs this file past the size of the PSP's entire RAM budget by itself.
 
 class RPGXP
@@ -101,8 +100,7 @@ class RPGXP
     # Opens the archive for streaming, seekable reads (see #initialize) rather
     # than reading the whole file up front: a released XP/VX game routinely
     # packs tens of MB into this single file, comfortably larger than the
-    # PSP's entire ~24 MB budget by itself (docs/adr/0047-psp-memory-budget.md,
-    # Finding 2), so the old `File.read` here was a hard memory-budget
+    # PSP's entire ~24 MB budget by itself, so the old `File.read` here was a hard memory-budget
     # blocker for any archive bigger than what was left of RAM. The `File`
     # stays open for the archive object's lifetime (the same lifetime the
     # whole-buffer version kept its String alive for).

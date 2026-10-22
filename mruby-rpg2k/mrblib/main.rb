@@ -49,7 +49,7 @@ class RPG2k
     # RPG_RT.exe under wine from a genuine save, burst-captured while the
     # message sat paused -- the arrow's on/off runs and a 13-cycle average
     # full period of 0.654s land squarely on the 40-frame (20 on + 20 off)
-    # cycle this engine already coded, at RPG_RT's confirmed 60fps (ADR 0021),
+    # cycle this engine already coded, at RPG_RT's confirmed 60fps,
     # and it starts in the "on" phase the instant the window pauses, exactly
     # as coded here. See scripts/rpg2k/scene_check.rb's "pause arrow blinks
     # on a 20-frame-on/20-frame-off cycle" check.
@@ -565,8 +565,7 @@ class RPG2k
   # other window into this object's state can tag a diagnostic snapshot with
   # what the player was looking at -- the PSP bring-up heartbeat
   # (app/psp/main.cxx) uses this to attribute its per-second memory numbers to
-  # a scene instead of just a frame count; see
-  # docs/adr/0047-psp-memory-budget.md.
+  # a scene instead of just a frame count.
   # `.to_s`, not `.name`: `Class#name` lives in the mruby-class-ext gem, which
   # this project's build_config.rb never pulls in, so it raises NoMethodError
   # here (confirmed by a real psp-smoke-game CI run -- every heartbeat read
@@ -615,7 +614,7 @@ class RPG2k
     # #db_path): nothing can then read it unassigned, which bc2cpp's
     # INIT_ASSIGNED rule needs to prove `RPG2k#db` an LCF::Database for the
     # checked `Game::Party.new(@db)` / `Game::Shop.new(db, ...)` parameters
-    # (docs/adr/0456). Neither call reads @db, so the order changes nothing.
+    # Neither call reads @db, so the order changes nothing.
     @db = LCF::Database.new File.open RPG2k.db_path
     @test_play = args.include?('TestPlay') || native_test_play?
     @hide_title = args.include?('HideTitle')
@@ -1104,7 +1103,7 @@ class RPG2k
 
   # Path of an editor save slot, e.g. Save01.lsd. mruby here bundles no sprintf,
   # so the two-digit slot is zero-padded by hand. This is the one save file a slot
-  # has: the engine's own Save<N>.lsd (docs/adr/0395), on every build (docs/adr/0399).
+  # has: the engine's own Save<N>.lsd, on every build.
   def lsd_path slot = 1
     n = slot < 10 ? "0#{slot}" : "#{slot}"
     "#{GAME_DIR}/Save#{n}.lsd"
@@ -1131,8 +1130,8 @@ class RPG2k
     (1..MAX_SAVE_SLOTS).any? { |slot| save_exists?(slot) }
   end
 
-  # Persist the running game state to a slot as Save<slot>.lsd (docs/adr/0395, 0399).
-  # Native field precision follows ADR 0401. A failed write fails the save,
+  # Persist the running game state to a slot as Save<slot>.lsd.
+  # A failed write fails the save,
   # so the player is told rather than silently keeping an older slot.
   def save_game state, slot = 1
     state.save_count += 1 # RPG2000 counts each save; written into the .lsd
@@ -1147,8 +1146,8 @@ class RPG2k
   #
   # Reads Save<slot>.lsd through the modelled LCF save schema (Game::State.from_lsd).
   # Native fields are authoritative; LegacyLsd migrates marked old saves
-  # when loading (ADR 0402). Old
-  # Marshal `save<N>.mrb` saves are no longer read (docs/adr/0399).
+  # when loading. Old
+  # Marshal `save<N>.mrb` saves are no longer read.
   #
   # Shared by #continue_game (which needs the one slot the player picked, or slot 1
   # for the event-triggered Open Load Menu -- see Scene::Map #perform_event_load) and

@@ -3,11 +3,11 @@ module RPG2k3
     # RPG2003 battle scene. It subclasses the RPG2000 Scene::Battle so it
     # inherits the entire command / target-cursor / animation machinery --
     # which is already edition-agnostic, since the RPG2003 battle commands are
-    # ported (ADR 0048) and the database decode is id-driven. Only the *timing*
+    # ported and the database decode is id-driven. Only the *timing*
     # layer is overridden, keeping the 2000 battle completely untouched.
     #
     # For a gauge (active-time) presentation (battle_type 2) the fight runs on
-    # the per-combatant charge gauge (ADR 0053 Phase 2's model, driven by the
+    # the per-combatant charge gauge (the Phase 2 model, driven by the
     # per-frame turn cycle here): every combatant's gauge fills each frame, the
     # moment one is full decides *whose turn it is* instead of the 2000
     # sequential round order, and acting resets it so it refills. A

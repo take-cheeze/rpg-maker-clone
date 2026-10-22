@@ -28,7 +28,7 @@
 
 /* Built-in allocator with a static pool. Covers only LVGL's own widgets and
  * internals: mruby's heap lives in its own fixed arena (app/psp/main.cxx's
- * mrb_basic_alloc_func, ADR 0047's P2), decoded bitmaps live in the plain C
+ * mrb_basic_alloc_func), decoded bitmaps live in the plain C
  * heap, and the LVGL partial-render draw buffers are plain std::vector
  * (mruby-rgss/src/psp.cxx's g_buf1/g_buf2) -- none of that touches this pool,
  * so what is actually left for it to cover is just lv_obj_t/style/internal
@@ -78,8 +78,7 @@
  * specifically for LV_MEM_SIZE (above): unlike the mruby arena, which raises
  * a catchable NoMemoryError when its own fixed arena is exhausted, an
  * lv_malloc() failure here would otherwise just stop the EBOOT with nothing
- * in the log to say why -- exactly the class of bug ADR 0047 spent real
- * effort chasing down for this port. Route it through a marker-writing halt
+ * in the log to say why. Route it through a marker-writing halt
  * instead (mruby-rgss/src/psp.cxx's psp_lvgl_assert_halt) so a shrunk pool
  * that turns out too small is diagnosable from the heartbeat log rather than
  * indistinguishable from any other stall. */

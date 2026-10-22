@@ -28,7 +28,7 @@
  * lv_free/lv_snprintf/string ops straight at the already-linked libc
  * versions, so this board's minimal canvas/image/label usage draws from
  * the same dynamic heap mruby uses instead of a second, statically-sized
- * one. See docs/adr/0112. */
+ * one. */
 #define LV_USE_STDLIB_MALLOC  LV_STDLIB_CLIB
 #define LV_USE_STDLIB_STRING  LV_STDLIB_CLIB
 #define LV_USE_STDLIB_SPRINTF LV_STDLIB_CLIB
@@ -60,7 +60,7 @@
  * weight here -- unlike A8/L8/AL88 (LVGL's own font-glyph and image-mask
  * decoding paths reach those internally, confirmed by grepping
  * 3rd/lvgl/src for each format outside this dispatcher) or RGB888/ARGB8888/
- * RGB565 (all three used directly above). See docs/adr/0114. */
+ * RGB565 (all three used directly above). */
 #define LV_DRAW_SW_SUPPORT_I1 0
 #define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED 0
 #define LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED 0
@@ -77,7 +77,7 @@
  * with rotation+scale, opa+additive, subtractive, a clipping container, a
  * label, a filled box) with this lv_conf.h on the host both ways and
  * comparing snapshots: byte-identical, while adding a radius to one box
- * makes them differ. See docs/adr/0201. */
+ * makes them differ. */
 #define LV_DRAW_SW_COMPLEX 0
 
 /*====================
@@ -100,7 +100,7 @@
  * linked bytes, the largest single object in liblvgl.a. unscii 8 is LVGL's
  * own 1 bpp 8x8 ASCII face (~1.3 KB): the labels stay readable, just smaller
  * and unsmoothed. The label widget itself cannot go (see WIDGETS below), so
- * this is the part of its cost that can. See docs/adr/0200. */
+ * this is the part of its cost that can. */
 #define LV_FONT_MONTSERRAT_14 0
 #define LV_FONT_UNSCII_8 1
 #define LV_FONT_DEFAULT &lv_font_unscii_8
@@ -120,9 +120,7 @@
 /* lv_canvas/lv_image are the only widgets the real RGSS runtime needs (Sprite/
  * Viewport/Bitmap render through them) and are kept on to match the PSP
  * config. LV_USE_LABEL looked droppable too -- only the two bring-up screens'
- * own status/key-echo text calls lv_label_* (a rewrite of those to a
- * background-color signal + Serial output was drafted and reverted,
- * docs/adr/0132), never the real RGSS render path (which renders game text
+ * own status/key-echo text calls lv_label_*, never the real RGSS render path (which renders game text
  * through this project's own shinonome/cp932 pipeline, never LVGL's) -- but
  * LV_USE_IMAGE itself hard-requires it: LVGL's own
  * lv_image.h #errors at compile time ("lv_img: lv_label is required") when

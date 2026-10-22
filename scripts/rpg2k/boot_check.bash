@@ -12,7 +12,6 @@
 # (a documented no-op in mruby, so Game::ChipsetLayout's methods did not exist)
 # and `Enumerable#none?` (absent from this build's gem set). Both left the
 # New Game -> map path raising in the actual binary while every check passed.
-# See ADR 0021.
 #
 # The engine aborts on an uncaught mruby exception, so simply running it is most
 # of the test; `--rpg2k_new_game` selects New Game without input and logs the
@@ -102,7 +101,7 @@ done
 # really on screen. This pass asserts that marker (and that the battle scene
 # never raised), exercising the 2003 battle path -- scene routing, troop
 # sprites, actor sprites, the gauge-card status panel, per-frame gauge advance
-# -- end to end against real data (ADR 0053 Phase 3). Overridable so a
+# -- end to end against real data. Overridable so a
 # different project/troop can be driven instead.
 #
 # kk1.12 cannot stand in here either, for the same empty-default-party

@@ -5,7 +5,7 @@ plugins {
 android {
     namespace 'org.rpg2k.android'
     // Keep in lockstep with the NDK release this project has actually been
-    // built against (docs/adr/0058-android-port.md) rather than "whatever
+    // built against rather than "whatever
     // Gradle finds" -- a newer NDK silently changing codegen/ABI is exactly
     // the kind of drift the other ports (app/psp, platformio.ini) pin against
     // too.

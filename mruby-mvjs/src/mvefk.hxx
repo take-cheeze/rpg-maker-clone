@@ -10,7 +10,7 @@
 // GLES renderer into an mvgl::Context, independent of the JS/PIXI stack,
 // confirmed to produce real GPU draw calls and visible pixels. That was
 // deliberately staged ahead of wiring `MZ::EFFEKSEER_SHIM_JS`'s no-ops to
-// real native calls (ADR 0004's own recommendation): reconciling Effekseer's
+// real native calls: reconciling Effekseer's
 // GL state and matrix conventions against a real GLES driver, with no browser
 // reference to diff against in this headless environment, was the actual
 // risk there — proving it in isolation first meant a JS-bridge bug and a

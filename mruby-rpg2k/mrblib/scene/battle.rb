@@ -173,7 +173,7 @@ class RPG2k
                        # would delete it from Game::Battle's own bookkeeping
                        # array too, breaking the rejoin-reuses-the-same-
                        # Combatant guarantee #sync_allies_from_party depends
-                       # on (ADR 0050). The two arrays start with the same
+                       # on. The two arrays start with the same
                        # Combatant *objects* (so a lookup through either one
                        # sees the same battle-only state) but are free to
                        # diverge in which objects they each hold.
@@ -730,7 +730,7 @@ class RPG2k
       # Only grid table 0 is used -- the ordinary actor path indexes table_x 0
       # and table_y 0 (the other tables are the pincer/surround enemy paths this
       # runtime does not model). `row_x_offset` reads the `i`-th ally's own
-      # row (`Combatant#back_row?`, ADR 0053 -- the in-battle Row command is
+      # row (`Combatant#back_row?` -- the in-battle Row command is
       # what actually moves it off the front-row default): a half-width for
       # front, 0 for back, exactly the reference implementation's own
       # front-row-gets-half-width, back-row-gets-zero rule.
@@ -833,7 +833,7 @@ class RPG2k
       # resolves the same whether they are still a member or just left).
       # `Game::Battle`'s own roster (`@ui[:battle]`) is left alone --
       # its `sync_allies_from_party`/`out_of_play?`/`member` bookkeeping
-      # (ADR 0050) already reads correctly from the live party on its own
+      # already reads correctly from the live party on its own
       # schedule; this only updates what's drawn.
       def on_battle_party_changed(actor, added)
         return if @disposed
@@ -845,8 +845,8 @@ class RPG2k
       # An actor just (re)joined the fight: reuse their existing `Combatant`
       # if `Game::Battle` already has one (they left and are rejoining this
       # same fight, so the reused object keeps its accumulated battle-only
-      # state -- the same reuse-on-rejoin guarantee ADR 0050 gives the
-      # mechanics), or build a fresh one exactly the way
+      # state -- the same reuse-on-rejoin guarantee the mechanics give,
+      # or build a fresh one exactly the way
       # `Game::Battle#sync_allies_from_party` would on its own next sync --
       # pushed onto `@ui[:battle].allies` (not just returned) so that
       # later sync finds it already there and reuses it too, rather than the
@@ -1743,7 +1743,7 @@ class RPG2k
           advance_actor
         when :row
           # RPG2003's Row battle command: flip the acting ally's front/back
-          # row (ADR 0053), refused with a Buzzer if it would empty the front
+          # row, refused with a Buzzer if it would empty the front
           # row (`Game::Battle#toggle_row`/`#can_leave_front_row?`, ported
           # from a reference implementation's guard, not
           # independently confirmed against genuine RPG_RT under wine) --
@@ -3794,7 +3794,7 @@ class RPG2k
       # fills it from `System2` row 64 exactly like HP/SP: it reads empty the
       # instant a fight opens and runs to the full-fill tile as the charge
       # completes, measured frame by frame. `Combatant#gauge` is this
-      # runtime's own charge (0..`Game::Battle::GAUGE_MAX`, ADR 0053 Phase 2),
+      # runtime's own charge,
       # so it is drawn from that -- `respond_to?`-guarded for the bare
       # fixtures that carry no gauge model at all. NOTE the panel is only
       # rebuilt on `#refresh_battle_status`, not per frame, so unlike the real

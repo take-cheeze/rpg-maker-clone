@@ -139,8 +139,7 @@ uint64_t m5stack_input_scan(void);
 // traffic on the shared bus (including a plain SD card probe addressed to
 // its own, different CS line) still reaches the display model and
 // corrupts it, a QEMU display-model gap unrelated to the getSPIinstance()
-// fix above and out of scope to patch here (see
-// docs/adr/0157-m5stack-core-qemu-emulator.md's "Status, audio support").
+// fix above and out of scope to patch here.
 // Returns whether the card mounted; false is not fatal to the rest of the
 // HAL -- m5stack_audio_play_wav() below just fails gracefully with no card
 // present, the same "optional peripheral, not there" shape as the FACES
@@ -170,6 +169,5 @@ bool m5stack_audio_init(void);
 // delayMicroseconds() against the file's own declared sample rate -- no
 // I2S DMA or hardware timer yet, so it is not sample-accurate and blocks
 // the caller (LVGL, button scanning) for the file's whole duration. That is
-// a real, documented limitation of this first cut, not a hidden one -- see
-// the ADR for what a non-blocking, I2S-driven version would need instead.
+// a real, documented limitation of this first cut, not a hidden one.
 bool m5stack_audio_play_wav(const char* path);

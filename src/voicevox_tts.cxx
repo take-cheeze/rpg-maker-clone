@@ -30,7 +30,7 @@
 // below leaves the backend uninstalled. Android defines __linux__ but is not
 // such a build (no VOICEVOX CORE is shipped there, and the asset directory
 // is a host source path): its mruby-rgss has no tts.cxx either, so
-// rgss_tts_install_backend must not be referenced (ADR 0417,
+// rgss_tts_install_backend must not be referenced (see
 // tools/rgss_tts_config.rb).
 #if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__) && \
     (defined(__linux__) || defined(__APPLE__))

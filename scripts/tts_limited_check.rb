@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# ADR 0417: RGSS::Tts (Zundamon/VOICEVOX narration, ADR 0046) exists only where
+# RGSS::Tts exists only where
 # a backend can: the desktop "host" build. Every limited build (wio, maix, psp,
 # emscripten, android) must carry no RGSS::Tts native registration and no Ruby
 # naming it, and the desktop build must keep both, behaving as before.
@@ -20,7 +20,7 @@
 #   4. The bc2cpp closed-world source sets (compiled_gems.rb) agree with that
 #      per build.
 #   5. Scene::Map#speak_message: where Tts exists it behaves exactly as the
-#      pre-ADR-0417 method (reference copy below); in a limited build it is a
+#      original method (reference copy below); in a limited build it is a
 #      private no-op that never touches RGSS::Tts, even with one defined.
 #
 # --bc2cpp (nightly, needs a host mrbc, minutes): runs bc2cpp over the wio
@@ -168,7 +168,7 @@ map_rb = File.read(File.join(ROOT, 'mruby-rpg2k/mrblib/scene/map.rb'), encoding:
 check 'map.rb no longer defines or names RGSS::Tts', !map_rb.match?(/def speak_message|RGSS::Tts/)
 check 'map.rb still calls speak_message at both Show Text/Choices sites', map_rb.scan(/^\s*speak_message\(/).size == 2
 
-# Reference: the method exactly as it was before ADR 0417 (map.rb).
+# Reference: the original method (map.rb).
 REFERENCE = <<~'RUBY'
   class RPG2k
     module Scene
