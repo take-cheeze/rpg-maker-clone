@@ -380,6 +380,18 @@ provenance checks; standalone transfer contexts retain their copying behavior.
 `BC2CPP_NUMERIC_LOAD_COPY_ELISION=0` restores the copying load path.
 See [ADR 0536](adr/0536-bc2cpp-unchanged-load-states.md).
 
+### Unchanged scalar result states
+
+The same metadata checks also avoid copies for unchanged scalar result writes:
+constants, captured variables, keyword reads, exception values, arithmetic,
+indexing, collection builders and operations whose result is otherwise unknown.
+Every oracle question and write-union update still runs. If an operation can
+call Ruby implicitly, copy any shared incoming state before invalidating ivar
+facts, provenance and class tests. Calls and transfers that install aliases or
+class tests retain their existing paths. Standalone contexts retain copied
+results. `BC2CPP_NUMERIC_RESULT_COPY_ELISION=0` disables result sharing.
+See [ADR 0541](adr/0541-bc2cpp-unchanged-result-states.md).
+
 ### Ivar slot union fixed points
 
 Each numeric-flow run retains the last widened mask for each tracked ivar slot.
@@ -418,3 +430,56 @@ A warmed Ruby 4.0.5/YJIT full-engine comparison reduced compiler allocations
 from 94,426,399 to 88,482,065 (5,944,334 fewer, 6.3%). Facts, receiver rows and
 report JSON were byte-identical. Object-profiled elapsed time was 51.970s versus
 50.382s in one pair; this is not a repeated timing benchmark.
+
+### Reaching-definition query keys
+
+Repeated IR proof queries reuse a bounded snapshot of opaque register names when
+the input is an ordinary frozen Set containing only frozen Strings. Other frozen
+containers and sets with mutable members still rebuild their snapshots, and
+mutable containers and refusal diagnostics retain the uncached path. Register
+strings are copied only when inserting a new query key, preserving caller
+ownership and the existing canonical key order.
+
+Both the query-result cache and the opaque snapshot identity memo retain at most
+1024 entries per IR Program. Fresh result copies and shared immutable definitions
+keep their existing APIs. `BC2CPP_IR_QUERY_KEYS=0` restores per-query key copying.
+See [ADR 0542](adr/0542-bc2cpp-dataflow-query-keys.md).
+
+A warmed Ruby 4.0.5/YJIT full-engine comparison on base `4ccd606d` reduced
+allocations from 88,005,453 to 86,413,003 (1,592,450 fewer, 1.81%). Complete
+facts JSON, receiver TSV and report JSON were byte-identical. One object-profiled
+timing pair was 51.172s versus 50.805s; this does not establish a stable wall-time
+speedup.
+
+A warmed same-worktree Ruby 4.0.5/YJIT full-engine comparison on base
+`4ccd606d` used the original source as baseline, including the dispatch
+refactor's overhead in the optimized measurement. Allocations fell from
+88,001,416 to 87,685,717 (315,699 fewer, 0.36%); complete facts, receiver rows
+and report JSON were byte-identical. One object-profiled timing pair was
+52.381s versus 51.253s, which does not establish a stable wall-time speedup.
+
+### Decoded call-arity predicates
+
+Fixed-argument and pure-splat predicates classify the decoded positional count
+and keyword-presence flag directly. They preserve the distinction between an
+absent count, an explicit zero, a positional splat, and explicit keyword lists
+(including zero keywords), while avoiding repeated decimal String formatting.
+Printed operand accessors keep their existing behavior.
+
+A warmed original-source comparison on base `fc573f24` reduced compiler
+allocations from 86,523,931 to 85,647,384 (876,547 fewer, 1.01%). Facts, receiver
+rows and report JSON were byte-identical. One object-profiled timing pair was
+51.042s versus 49.988s; this is not a repeated speed benchmark.
+
+### Scalar branch truthiness facts
+
+Numeric-flow provenance walks consume definite and possible falsy masks as local
+values, avoiding an intermediate pair for every visited register. Each visit
+still asks the oracle for the current FalseClass bit; unknown false classes,
+branch kinds, alias narrowing and cycle handling retain their existing behavior.
+The standalone tuple-returning helper retains its original API.
+
+A warmed original-source comparison on base `fc573f24` reduced compiler
+allocations from 86,523,931 to 86,065,342 (458,589 fewer, 0.53%). Facts, receiver
+rows and report JSON were byte-identical. Timing is not used as evidence of a
+wall-time speedup.

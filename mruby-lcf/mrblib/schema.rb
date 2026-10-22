@@ -8,6 +8,10 @@
 # the reader does not decode yet; those are annotated with a descriptive type
 # (:int8_array / :int16_array / :int32_array / :event) so the layout is still
 # documented, matching the pre-existing :int16_array convention.
+#
+# An :int16_array field may carry `format:`, the String#unpack template its
+# elements are read with (default 's<*', signed little-endian; 'S<*' for
+# unsigned). The schema is the one source for it: LCF.int16_format reads it.
 module LCF
   module Schema
     # Every table is a plain Hash literal, defined before any table that
@@ -1728,7 +1732,7 @@ module LCF
       31 => { name: :level, type: :int, default: 1 },      # レベル
       32 => { name: :exp, type: :int, default: 0 },        # 経験値
       51 => { name: :skill_size, type: :int, default: 0 }, # 『特技』情報のデータ数
-      52 => { name: :skills, type: :int16_array },         # 習得特技 (uint16[])
+      52 => { name: :skills, type: :int16_array, format: 'S<*' },  # 習得特技 (uint16[])
       61 => { name: :equipment, type: :int16_array },      # 装備 [武器,盾,鎧,兜,装飾]
       71 => { name: :hp, type: :int },                     # 現在ＨＰ
       72 => { name: :mp, type: :int },                     # 現在ＭＰ
@@ -1744,7 +1748,7 @@ module LCF
       # nonzero" reconstruction is first-principles reasoning from that dense
       # shape, NOT independently confirmed against genuine RPG_RT under wine.
       81 => { name: :state_size, type: :int, default: 0 }, # 『状態』情報のデータ数
-      82 => { name: :states, type: :int16_array },         # 『状態』情報 (uint16[])
+      82 => { name: :states, type: :int16_array, format: 'S<*' },  # 『状態』情報 (uint16[])
 
       # RPG2003 Change Battle Commands (Game::Actor#battle_commands=):
       # `changed_battle_commands` (83) gates whether `battle_commands` (80)

@@ -1,0 +1,1 @@
+- Avoid intermediate truthiness pairs during numeric-flow branch and provenance narrowing.
