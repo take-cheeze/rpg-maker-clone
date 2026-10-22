@@ -60,4 +60,7 @@ applies them, before the generator.
 
 Time: each file's result is cached under `closed/analysis/kinds-cache` (keyed on
 the file, its flags, the analyzer's sources and the external kinds), and files run
-in `BC2CPP_TABLE_JOBS` workers (default 2). A rerun parses only what changed.
+in `BC2CPP_TABLE_JOBS` workers (default: the CPUs, up to 4). A rerun parses only
+what changed. The second pass parses a file again only when it looks up a name the
+first pass added to the external kinds; the rest keep their first-pass result.
+A cold run on 4 CPUs takes about 75 s (231 s with the old two-worker serial second pass).
