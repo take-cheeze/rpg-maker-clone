@@ -1185,6 +1185,9 @@
   to union literal and ENTER-created types conservatively across those paths.
   Declaration-aware queries also track required RBS arguments, including nullable,
   union and boolean types, while marking their reliance on signature contracts.
+  Report-only checks skip cleanup of discarded C++ text; context-check variants
+  reuse the report renderer while keeping fresh compiler subprocesses. See
+  [CI report work](docs/bc2cpp-type-check.md#report-only-ci-work).
   [IR feedback](docs/bc2cpp-ir-feedback.md) extends contracts to ivars and implicit
   self-call returns, reports unknown reasons and mismatches, and exports reviewable
   inferred return candidates with `type_check.rb --emit-rbs-suggestions DIR`.
