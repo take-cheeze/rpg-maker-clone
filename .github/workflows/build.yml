@@ -1072,6 +1072,7 @@ jobs:
           ruby scripts/bc2cpp/outside_owner_call_check.rb
           ruby scripts/bc2cpp/self_new_leaf_check.rb
           ruby scripts/bc2cpp/sealed_int16_local_check.rb
+          ruby scripts/bc2cpp/frozen_literal_persist_check.rb
           ruby scripts/bc2cpp/constructor_overloads_check.rb
           ruby scripts/bc2cpp/alias_method_check.rb
           ruby scripts/bc2cpp/core_facts_rbs_check.rb --require-mruby

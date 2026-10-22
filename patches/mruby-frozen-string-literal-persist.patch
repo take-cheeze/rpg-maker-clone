@@ -1,0 +1,492 @@
+mruby gap: `# frozen_string_literal: true` is not implemented. The parser ignores
+the magic comment, so every string literal is a fresh, unfrozen String. CRuby
+freezes them and shares one object per content per VM, so `"abc".frozen?` is
+true, a mutation raises FrozenError and two loads of the same literal are
+`equal?`. Code written for that (and the bc2cpp frozen-literal lowering,
+tools/bc2cpp/codegen_insn.rb) cannot be expressed on this mruby.
+
+This patch, recorded as docs/adr/0546-persistent-frozen-string-literals.md:
+
+  1. The lexer reads `frozen_string_literal: true|false` (case-insensitive,
+     `-` or `_`) in the comment lines before the first token. A magic
+     comment after code is ignored, as in CRuby.
+  2. An all-literal string in such a file compiles to OP_FSTRING. The opcode
+     is appended after STOP, so no existing opcode number moves: a file
+     without the comment compiles to byte-identical bytecode, and existing
+     .mrb files still load.
+  3. OP_FSTRING returns mrb_frozen_literal(mrb, bytes): the VM's one frozen
+     String for those bytes, kept in a hash on mrb_state that the GC marks.
+     The hash is not a global variable, so `global_variables` does not list it.
+  4. MRB_FL_OBJ_PERSISTENT marks a frozen String the sweep never frees before
+     mrb_close and the mark does not traverse. mrb_obj_set_persistent refuses
+     anything that could hold another collectable object: an unfrozen String,
+     a String of another class, or one with a fshared buffer. A persistent
+     String's singleton class is refused with FrozenError, since its class is
+     not marked. The flag is type-qualified because no bit is free for every
+     object type (classes use 17-19, envs 8-18).
+
+--- a/include/mruby.h
++++ b/include/mruby.h
+@@ -267,6 +267,10 @@
+   struct mrb_context *root_c;
+   struct iv_tbl *globals;                 /* global variable table */
+ 
++  /* Hash of persistent frozen string literals keyed by their bytes (mrb_frozen_literal,
++   * string.c); a GC root. Not a global variable, so `global_variables` does not list it. */
++  mrb_value frozen_literals;
++
+   struct RObject *exc;                    /* exception */
+ 
+   /* `$!` -- the exception a currently-executing rescue clause is handling.
+--- a/include/mruby/compile.h
++++ b/include/mruby/compile.h
+@@ -127,6 +127,9 @@
+   mrb_bool capture_errors:1;
+   mrb_bool no_ext_ops:1;
+   mrb_bool no_return_value:1;
++  /* `# frozen_string_literal: true` seen in the comments before the first token (ADR 0546). */
++  mrb_bool frozen_string_literal:1;
++  mrb_bool token_seen:1;
+   const struct RProc *upper;
+   struct mrb_parser_message error_buffer[10];
+   struct mrb_parser_message warn_buffer[10];
+--- a/include/mruby/gc.h
++++ b/include/mruby/gc.h
+@@ -75,6 +75,14 @@
+ MRB_API int mrb_gc_add_region(struct mrb_state *mrb, void *start, size_t size);
+ 
+ /*
++ * Makes a frozen String persistent (ADR 0546): the sweep leaves it alone until
++ * mrb_close, and the mark does not traverse it. Raises unless the String is
++ * frozen, of the String class and has no shared or fshared buffer, since those
++ * are the only references a String can hold to another collectable object.
++ */
++MRB_API void mrb_obj_set_persistent(struct mrb_state *mrb, mrb_value obj);
++
++/*
+  * Snapshot the GC's per-type live/allocation counters into caller-owned
+  * arrays of MRB_TT_MAXDEFINE size_t entries each (index by enum mrb_vtype,
+  * e.g. MRB_TT_STRING). live_out reports currently-live objects of that type;
+--- a/include/mruby/object.h
++++ b/include/mruby/object.h
+@@ -31,6 +31,12 @@
+ #define MRB_FL_OBJ_SHAPED (1 << 5)
+ #define MRB_OBJ_SHAPED_P(o) ((o)->tt == MRB_TT_OBJECT && ((o)->flags & MRB_FL_OBJ_SHAPED))
+ 
++/* A frozen String the sweep never frees before mrb_close (ADR 0546). The bit is
++   only read for MRB_TT_STRING: classes use bits 17-19 and envs 8-18, so no bit is
++   free for every type. Bit 11 is past the string flags (0-10). */
++#define MRB_FL_OBJ_PERSISTENT (1 << 11)
++#define MRB_OBJ_PERSISTENT_P(o) ((o)->tt == MRB_TT_STRING && ((o)->flags & MRB_FL_OBJ_PERSISTENT))
++
+ struct RObject {
+   MRB_OBJECT_HEADER;
+   struct iv_tbl *iv;
+--- a/include/mruby/ops.h
++++ b/include/mruby/ops.h
+@@ -131,3 +131,5 @@
+ OPCODE(EXT2,       Z)        /* make 2nd operand (b) 16bit */
+ OPCODE(EXT3,       Z)        /* make 1st and 2nd operands 16bit */
+ OPCODE(STOP,       Z)        /* stop VM */
++/* Appended, not inserted: every earlier opcode keeps its number, so existing bytecode still loads (ADR 0546). */
++OPCODE(FSTRING,    BB)       /* R[a] = frozen_literal(Pool[b]) (persistent; ADR 0546) */
+--- a/include/mruby/string.h
++++ b/include/mruby/string.h
+@@ -423,6 +423,14 @@
+ #define mrb_str_buf_cat(mrb, str, ptr, len) mrb_str_cat(mrb, str, ptr, len)
+ #define mrb_str_buf_append(mrb, str, str2) mrb_str_cat_str(mrb, str, str2)
+ 
++/*
++ * The frozen, persistent String for a `# frozen_string_literal: true` literal
++ * with these bytes (ADR 0546). One object per distinct content per mrb_state:
++ * the VM's table holds it, so the same literal answers equal? across calls and
++ * interpreted and bc2cpp-compiled code share it.
++ */
++MRB_API mrb_value mrb_frozen_literal(mrb_state *mrb, const char *p, mrb_int len);
++
+ MRB_END_DECL
+ 
+ #endif  /* MRUBY_STRING_H */
+--- a/mrbgems/mruby-compiler/core/codegen.c
++++ b/mrbgems/mruby-compiler/core/codegen.c
+@@ -953,7 +953,7 @@
+     case OP_LOADI8: case OP_LOADINEG:
+     case OP_LOADL: case OP_LOADSYM:
+     case OP_GETGV: case OP_GETSV: case OP_GETIV: case OP_GETCV:
+-    case OP_GETCONST: case OP_STRING:
++    case OP_GETCONST: case OP_STRING: case OP_FSTRING:
+     case OP_LAMBDA: case OP_BLOCK: case OP_METHOD: case OP_BLKPUSH:
+       if (data.a != src || data.a < s->nlocals) break;
+       rewind_pc(s);
+@@ -1244,6 +1244,9 @@
+ static int new_lit_str2(codegen_scope *s, const char *str1, mrb_int len1, const char *str2, mrb_int len2);
+ static int find_pool_str(codegen_scope *s, const char *str1, mrb_int len1, const char *str2, mrb_int len2);
+ static void gen_string(codegen_scope *s, node *list, int val);
++static mrb_bool str_list_literal_p(node *list);
++static void gen_frozen_string(codegen_scope *s, node *list);
++static mrb_bool frozen_literals_p(codegen_scope *s);
+ 
+ /*
+  * Reallocates or allocates memory for a string literal in the IREP's literal pool.
+@@ -3245,8 +3248,11 @@
+             segment_prev->cdr = NULL;
+           }
+ 
+-          /* Use gen_string for this segment */
+-          gen_string(s, segment_start, VAL);
++          /* Symbol arrays keep gen_string, whose OP_STRING gen_intern rewrites to SYMBOL. */
++          if (!sym && frozen_literals_p(s) && str_list_literal_p(segment_start))
++            gen_frozen_string(s, segment_start);
++          else
++            gen_string(s, segment_start, VAL);
+ 
+           /* Restore the original cdr */
+           if (segment_prev) {
+@@ -3566,6 +3572,74 @@
+ }
+ 
+ 
++/*
++ * ADR 0546: under `# frozen_string_literal: true` an all-literal string is one
++ * OP_FSTRING, the VM's persistent object for its bytes. An interpolated string
++ * stays a fresh String, as in Ruby.
++ */
++static mrb_bool
++str_list_literal_p(node *list)
++{
++  node *n = list;
++  while (n) {
++    node *elem = n->car;
++    if (!elem) break;
++    if (node_to_int(elem->car) < 0) return FALSE;
++    n = n->cdr;
++  }
++  return TRUE;
++}
++
++static void
++gen_frozen_string(codegen_scope *s, node *list)
++{
++  mrb_int total = 0;
++  node *n = list;
++  int off;
++
++  while (n) {
++    node *elem = n->car;
++    if (!elem) break;
++    total += node_to_int(elem->car);
++    n = n->cdr;
++  }
++  if (list && !list->cdr && list->car) {
++    node *elem = list->car;
++    const char *str = (char*)elem->cdr;
++    mrb_int len = node_to_int(elem->car);
++    if (!str) {str = ""; len = 0;}
++    off = new_lit_str(s, str, len);
++  }
++  else if (total == 0) {
++    off = new_lit_str(s, "", 0);
++  }
++  else {
++    /* Adjacent literal parts are joined first, so the pool holds one string. */
++    char *buf = (char*)mrb_malloc(s->mrb, (size_t)total);
++    mrb_int pos = 0;
++    for (n = list; n; n = n->cdr) {
++      node *elem = n->car;
++      mrb_int len;
++      if (!elem) break;
++      len = node_to_int(elem->car);
++      if (len > 0) {
++        memcpy(buf + pos, elem->cdr, (size_t)len);
++        pos += len;
++      }
++    }
++    off = new_lit_str(s, buf, total);
++    mrb_free(s->mrb, buf);
++  }
++  genop_2(s, OP_FSTRING, cursp(), off);
++  push();
++}
++
++static mrb_bool
++frozen_literals_p(codegen_scope *s)
++{
++  return s->parser && s->parser->frozen_string_literal;
++}
++
+ /* Handle variable-sized node types */
+ static void
+ codegen_call(codegen_scope *s, node *varnode, int val)
+@@ -5744,6 +5818,10 @@
+   struct mrb_ast_str_node *str_n = str_node(varnode);
+   node *list = str_n->list;
+ 
++  if (val && frozen_literals_p(s) && str_list_literal_p(list)) {
++    gen_frozen_string(s, list);
++    return;
++  }
+   /* Use common cons list string codegen */
+   gen_string(s, list, val);
+ }
+@@ -6086,6 +6164,10 @@
+ {
+   struct mrb_ast_heredoc_node *n = heredoc_node(varnode);
+   // Process heredoc doc field as cons list string
++  if (val && frozen_literals_p(s) && str_list_literal_p(n->info.doc)) {
++    gen_frozen_string(s, n->info.doc);
++    return;
++  }
+   gen_string(s, n->info.doc, val);
+ }
+ 
+--- a/mrbgems/mruby-compiler/core/parse.y
++++ b/mrbgems/mruby-compiler/core/parse.y
+@@ -5296,6 +5296,71 @@
+   }
+ }
+ 
++/* Lower-cases a key character and maps '-' to '_', so `frozen-string-literal` also matches. */
++static int
++magic_key_char(int c)
++{
++  if (c == '-') return '_';
++  if (c >= 'A' && c <= 'Z') return c - 'A' + 'a';
++  return c;
++}
++
++static mrb_bool
++magic_ident_char(int c)
++{
++  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
++}
++
++/* Sets p->frozen_string_literal from a `frozen_string_literal: true|false` in one comment line (ADR 0546). */
++static void
++frozen_magic_comment(parser_state *p, const char *s)
++{
++  static const char key[] = "frozen_string_literal";
++  const size_t klen = sizeof(key) - 1;
++
++  for (; *s; s++) {
++    size_t i = 0;
++    const char *v;
++
++    while (i < klen && s[i] && magic_key_char((unsigned char)s[i]) == key[i]) i++;
++    if (i != klen) continue;
++    v = s + klen;
++    while (*v == ' ' || *v == '\t') v++;
++    if (*v != ':') continue;
++    v++;
++    while (*v == ' ' || *v == '\t') v++;
++    if (magic_key_char((unsigned char)v[0]) == 't' && magic_key_char((unsigned char)v[1]) == 'r' &&
++        magic_key_char((unsigned char)v[2]) == 'u' && magic_key_char((unsigned char)v[3]) == 'e' &&
++        !magic_ident_char((unsigned char)v[4])) {
++      p->frozen_string_literal = TRUE;
++    }
++    else if (magic_key_char((unsigned char)v[0]) == 'f' && magic_key_char((unsigned char)v[1]) == 'a' &&
++             magic_key_char((unsigned char)v[2]) == 'l' && magic_key_char((unsigned char)v[3]) == 's' &&
++             magic_key_char((unsigned char)v[4]) == 'e' && !magic_ident_char((unsigned char)v[5])) {
++      p->frozen_string_literal = FALSE;
++    }
++    return;
++  }
++}
++
++/* Consumes one comment line. The line is read into a bounded buffer, so a magic comment
++ * must start within the first 255 bytes of its line. */
++static void
++comment_line(parser_state *p)
++{
++  char line[256];
++  size_t n = 0;
++  int c;
++
++  for (;;) {
++    c = nextc(p);
++    if (c < 0 || c == '\n') break;
++    if (n < sizeof(line) - 1) line[n++] = (char)c;
++  }
++  line[n] = '\0';
++  if (!p->token_seen) frozen_magic_comment(p, line);
++}
++
+ static int
+ peekc_n(parser_state *p, int n)
+ {
+@@ -6187,7 +6252,7 @@
+     goto retry;
+ 
+   case '#':     /* it's a comment */
+-    skip(p, '\n');
++    comment_line(p);
+     /* fall through */
+   case -2:      /* end of a file */
+   case '\n':
+@@ -6221,7 +6286,7 @@
+         space_seen = 1;
+         break;
+       case '#': /* comment as a whitespace */
+-        skip(p, '\n');
++        comment_line(p);
+         nlines++;
+         break;
+       case '.':
+@@ -7473,8 +7538,12 @@
+ static int
+ yylex(void *lval, void *lp, parser_state *p)
+ {
++  int t;
++
+   p->ylval = lval;
+-  return parser_yylex(p);
++  t = parser_yylex(p);
++  p->token_seen = TRUE;  /* comments lexed from here on no longer carry the magic (ADR 0546) */
++  return t;
+ }
+ 
+ static void
+--- a/src/class.c
++++ b/src/class.c
+@@ -355,6 +355,8 @@
+   struct RClass *c;
+ 
+   mrb_assert(o->c);
++  /* A persistent String's class is not marked (gc.c), so it must stay String. */
++  if (MRB_OBJ_PERSISTENT_P(o)) mrb_raise(mrb, E_FROZEN_ERROR, "can't modify frozen literal String");
+   if (o->c->tt == MRB_TT_SCLASS) return;
+   struct RClass *sc = MRB_OBJ_ALLOC(mrb, MRB_TT_SCLASS, mrb->class_class);
+   sc->flags |= MRB_FL_CLASS_IS_INHERITED;
+--- a/src/codedump.c
++++ b/src/codedump.c
+@@ -550,6 +550,14 @@
+       }
+       print_lv_a(mrb, irep, a, out);
+       break;
++    CASE(OP_FSTRING, BB):
++      mrb_assert((irep->pool[b].tt&IREP_TT_NFLAG)==0);
++      fprintf(out, "FSTRING\tR%d\tL[%d]", a, b);
++      if (irep->pool[b].u.str[0]) {
++        fprintf(out, "\t; %s", irep->pool[b].u.str);
++      }
++      print_lv_a(mrb, irep, a, out);
++      break;
+     CASE(OP_STRCAT, B):
+       fprintf(out, "STRCAT\tR%d\t(R%d)", a, a+1);
+       print_lv_a(mrb, irep, a, out);
+--- a/src/gc.c
++++ b/src/gc.c
+@@ -204,7 +204,8 @@
+ #define is_red(o) ((o)->gc_color == GC_RED)
+ #define flip_white_part(s) ((s)->current_white_part = other_white_part(s))
+ #define other_white_part(s) ((s)->current_white_part ^ GC_WHITES)
+-#define is_dead(s, o) (((o)->gc_color & other_white_part(s) & GC_WHITES) || (o)->tt == MRB_TT_FREE)
++/* A persistent String is never dead (ADR 0546): the generational sweep does not repaint it. */
++#define is_dead(s, o) ((((o)->gc_color & other_white_part(s) & GC_WHITES) || (o)->tt == MRB_TT_FREE) && !MRB_OBJ_PERSISTENT_P(o))
+ 
+ mrb_noreturn void mrb_raise_nomemory(mrb_state *mrb);
+ 
+@@ -329,6 +330,25 @@
+   return is_dead(gc, object);
+ }
+ 
++/* The refusals leave a persistent String no reference but its class, which the mark skips (ADR 0546). */
++MRB_API void
++mrb_obj_set_persistent(mrb_state *mrb, mrb_value obj)
++{
++  struct RBasic *b;
++
++  if (mrb_type(obj) != MRB_TT_STRING)
++    mrb_raise(mrb, E_ARGUMENT_ERROR, "only a String can be persistent");
++  b = mrb_basic_ptr(obj);
++  if (!b->frozen)
++    mrb_raise(mrb, E_ARGUMENT_ERROR, "a persistent String must be frozen");
++  /* A String has no ivar table here (variable.c obj_iv_p), so only its class and buffer can refer on. */
++  if (b->c != mrb->string_class)
++    mrb_raise(mrb, E_ARGUMENT_ERROR, "a persistent String must be of class String");
++  if (RSTR_FSHARED_P((struct RString*)b))
++    mrb_raise(mrb, E_ARGUMENT_ERROR, "a persistent String must not share a buffer");
++  b->flags |= MRB_FL_OBJ_PERSISTENT;
++}
++
+ static void
+ link_heap_page(mrb_gc *gc, mrb_heap_page *page)
+ {
+@@ -700,6 +720,8 @@
+ 
+   mrb_assert(is_gray(obj));
+   paint_black(obj);
++  /* A persistent String's only reference is its class, which is the permanent String class (ADR 0546). */
++  if (MRB_OBJ_PERSISTENT_P(obj)) return 0;
+   mrb_gc_mark(mrb, (struct RBasic*)obj->c);
+   switch (obj->tt) {
+   case MRB_TT_ICLASS:
+@@ -873,6 +895,7 @@
+ obj_free(mrb_state *mrb, struct RBasic *obj, mrb_bool end)
+ {
+   DEBUG(fprintf(stderr, "obj_free(%p,tt=%d)\n",obj,obj->tt));
++  if (end && MRB_OBJ_PERSISTENT_P(obj)) obj->flags &= ~MRB_FL_OBJ_PERSISTENT;
+   mrb->gc.tt_live[obj->tt]--;
+   switch (obj->tt) {
+   case MRB_TT_OBJECT:
+@@ -1037,6 +1060,7 @@
+   }
+ 
+   mrb_gc_mark_gv(mrb);
++  mrb_gc_mark_value(mrb, mrb->frozen_literals);
+   /* mark arena */
+   for (i=0,e=gc->arena_idx; i<e; i++) {
+     mrb_gc_mark(mrb, gc->arena[i]);
+--- a/src/string.c
++++ b/src/string.c
+@@ -12,6 +12,7 @@
+ #include <mruby.h>
+ #include <mruby/array.h>
+ #include <mruby/class.h>
++#include <mruby/hash.h>
+ #include <mruby/range.h>
+ #include <mruby/string.h>
+ #include <mruby/numeric.h>
+@@ -265,6 +266,24 @@
+   return mrb_obj_value(s);
+ }
+ 
++/* The table is keyed by the bytes' symbol: interning costs no String allocation per lookup (ADR 0546). */
++MRB_API mrb_value
++mrb_frozen_literal(mrb_state *mrb, const char *p, mrb_int len)
++{
++  mrb_value key, val;
++
++  if (!mrb_hash_p(mrb->frozen_literals)) {
++    mrb->frozen_literals = mrb_hash_new(mrb);
++  }
++  key = mrb_symbol_value(mrb_intern(mrb, p, (size_t)len));
++  val = mrb_hash_get(mrb, mrb->frozen_literals, key);
++  if (mrb_string_p(val)) return val;
++  val = mrb_obj_freeze(mrb, mrb_str_new(mrb, p, len));
++  mrb_obj_set_persistent(mrb, val);
++  mrb_hash_set(mrb, mrb->frozen_literals, key, val);
++  return val;
++}
++
+ static void
+ str_decref(mrb_state *mrb, mrb_shared_string *shared)
+ {
+--- a/src/vm.c
++++ b/src/vm.c
+@@ -3408,6 +3408,16 @@
+       NEXT;
+     }
+ 
++    CASE(OP_FSTRING, BB) {
++      /* Pool holds the bytes; the object is the VM's persistent one for them (ADR 0546). */
++      mrb_int len = irep->pool[b].tt >> 2;
++
++      mrb_assert((irep->pool[b].tt&IREP_TT_NFLAG)==0);
++      regs[a] = mrb_frozen_literal(mrb, irep->pool[b].u.str, len);
++      mrb_gc_arena_restore(mrb, ai);
++      NEXT;
++    }
++
+     CASE(OP_STRCAT, B) {
+       mrb_ensure_string_type(mrb, regs[a]);
+       mrb_str_concat(mrb, regs[a], regs[a+1]);

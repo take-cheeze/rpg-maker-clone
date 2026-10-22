@@ -303,6 +303,10 @@
   reimplementation can only ever reproduce the *default* scripts, and every game
   worth running customises them (see
   [`docs/adr/0030-rgss-only-the-games-own-engine.md`](docs/adr/0030-rgss-only-the-games-own-engine.md))
+- A script section (or any Ruby file the engine loads) that starts with
+  `# frozen_string_literal: true` gets CRuby's frozen string literals, on the
+  interpreter and in bc2cpp-compiled code alike; see
+  [`docs/frozen-string-literals.md`](docs/frozen-string-literals.md)
 - XP stores its whole database as Ruby `Marshal` dumps, which load straight
   through the bundled marshal reader into a typed `RPG::*` schema
   (`mruby-rpgxp`); the RGSS value types (`Table`, `Color`, `Tone`, `Rect`) are
