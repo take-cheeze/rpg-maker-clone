@@ -55,9 +55,8 @@
   frame, which shrinks flat tile/sprite regions substantially but spends CPU on
   encoding. Either way the backend targets a local PTY or SSH pipe, not a real
   serial UART
-- See `docs/adr/0001-terminal-gaming-sixel.md` and
-  `docs/adr/0003-terminal-gaming-iterm2.md` for the design rationale and a full
-  bandwidth breakdown
+- See the sixel and iTerm2 backend sources and their commit history for the design
+  rationale and a full bandwidth breakdown
 
 ### Profiling (`--profile`)
 - A built-in CPU/memory profiler for locating frame-time bottlenecks, off by

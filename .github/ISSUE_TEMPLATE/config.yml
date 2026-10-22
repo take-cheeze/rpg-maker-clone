@@ -7,4 +7,4 @@ contact_links:
     about: What engine:*, platform:*, component:*, type:* and status:* mean.
   - name: Contributor guide
     url: https://github.com/take-cheeze/rpg-maker-clone/blob/master/AGENTS.md
-    about: Branch, changelog fragment, ADR and pull request conventions.
+    about: Branch, changelog fragment and pull request conventions.

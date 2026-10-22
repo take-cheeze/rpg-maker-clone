@@ -51,8 +51,8 @@
           - "scripts/rgssad/asset_check.bash"
           - "docs/rpgxp-rgss-api-gap.md"
 
-# VX and VX Ace share one data layer (mruby-rpgvx serves RGSS2 and RGSS3, see
-# ADR 0024), so a change there lands on both editions.
+# VX and VX Ace share one data layer (mruby-rpgvx serves RGSS2 and RGSS3), so
+# a change there lands on both editions.
 "engine:vx":
   - changed-files:
       - any-glob-to-any-file:
@@ -104,7 +104,6 @@
           - "scripts/wolf/data_wolf_check.rb"
           - "scripts/wolf/interpreter_check.rb"
           - "scripts/wolf/testbed_check.rb"
-          - "docs/adr/0064-wolf-rpg-editor-data-layer.md"
 
 # --- platform --------------------------------------------------------------
 # platform:linux has no rules: the SDL sources it would match are the shared
@@ -160,7 +159,6 @@
       - any-glob-to-any-file:
           - "app/android/**"
           - "src/android*.cxx"
-          - "docs/adr/0058-android-port.md"
 
 "platform:wio":
   - changed-files:
@@ -171,7 +169,7 @@
           - "include/lv_conf.h"
           - "platformio.ini"
           # The minimal walk engine the wio_walk firmware runs is shared with
-          # the iPod nano 7G app (docs/adr/0091), so a change to it is a
+          # the iPod nano 7G app, so a change to it is a
           # change to this platform too.
           - "app/shared/rpg2k_walk/**"
 
