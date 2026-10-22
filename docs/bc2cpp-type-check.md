@@ -89,6 +89,30 @@ Only structural metadata survives probe rollback; region eligibility, layout che
 and generated registrations still run normally. Set `BC2CPP_BLOCK_CAPTURE_INDEX=0`
 to repeat the original walks. See [ADR 0528](adr/0528-block-capture-index.md).
 
+## Report-only CI work
+
+Type checks still compile real method bodies to validate declaration guards,
+unsupported bodies and nil-index diagnostics. When the resulting C++ is discarded,
+error-free methods without runtime-installed-name audits skip register-copy/dead-write
+cleanup and unused-nil-register removal. Error-bearing instruction texts retain
+register-flow processing, and runtime-installed-name audits retain both passes.
+Builds that emit C++ keep their normal cleanup. Set
+`BC2CPP_TYPE_CHECK_TEXT_PASSES=0` to restore cleanup in report-only runs.
+
+The context inference suite keeps its baseline on the CLI. Its variants each run
+a fresh compiler subprocess, then render the same report through `TypeCheckReport`
+in the test process, avoiding a second Ruby frontend process for every variant.
+All inference-switch and solver-budget comparisons remain. Set
+`BC2CPP_FIXTURE_DIRECT_REPORT=0` to restore the CLI for every variant; compiler-mutant
+runs using `BC2CPP_TOOLS_DIR` also retain the CLI. Report errors still fail the check.
+
+Warmed sequential local timing pairs on base `d5917fa5a` with Ruby 4.0.5/YJIT
+measured the complete MRBC context suite at 65.639s with both fast paths disabled
+and 61.583s enabled (6.18% less time). The full-engine `--no-sends` check measured
+49.593s and 48.981s (1.23% less). Context assertion output and full-engine facts
+and report JSON were byte-identical. These are single local pairs, not repeated
+CI benchmarks; the small no-sends timing difference needs CI confirmation.
+
 ## Output
 
 Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, so an editor problem matcher
