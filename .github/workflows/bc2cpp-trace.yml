@@ -28,7 +28,7 @@ jobs:
       - name: Init submodules
         env:
           SKIP_SUBMODULES: >-
-            3rd/SDL 3rd/SDL_mixer 3rd/effekseer 3rd/gflags 3rd/ng-log
+            3rd/effekseer 3rd/gflags 3rd/ng-log
             3rd/inicpp 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 

@@ -119,16 +119,26 @@ elseif(ANDROID)
   # CMakeLists.txt declares `option(BUILD_SHARED_LIBS ... ON)`, and option()
   # only seeds a cache entry that doesn't exist yet -- on a from-scratch
   # configure a plain set() here would lose to that option() call once
-  # add_subdirectory(3rd/SDL_mixer) below runs, and the *global* default this
-  # variable controls (every add_library() below that doesn't say STATIC/SHARED,
-  # including lvgl/gflags/ng-log/qjs/uni-algo further down) would stay ON
-  # instead of going back OFF afterwards -- confirmed the hard way: a first pass
-  # at this left every one of those shared too, nine .so files in the APK
-  # instead of the two this comment documents.
+  # FetchContent_MakeAvailable(SDL2_mixer) below runs, and the *global* default
+  # this variable controls (every add_library() below that doesn't say
+  # STATIC/SHARED, including lvgl/gflags/ng-log/qjs/uni-algo further down) would
+  # stay ON instead of going back OFF afterwards -- confirmed the hard way: a
+  # first pass at this left every one of those shared too, nine .so files in the
+  # APK instead of the two this comment documents.
   set(BUILD_SHARED_LIBS
       ON
       CACHE BOOL "" FORCE)
-  add_subdirectory(3rd/SDL EXCLUDE_FROM_ALL)
+  # SDL is not vendored: the Android build downloads the pinned release tarball
+  # at configure time. app/android/app/build.gradle downloads the same tarball
+  # and checks the same sha256 for the Java glue.
+  include(FetchContent)
+  FetchContent_Declare(
+    SDL2
+    URL https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz
+    URL_HASH
+      SHA256=5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(SDL2)
   # Match the codec set the Emscripten build ships (see its SDL2_MIXER_FORMATS
   # comment above): OGG Vorbis + MIDI. SDL2_mixer bundles its own stb_vorbis.h
   # and TiMidity decoders directly (src/codecs/{stb_vorbis,timidity}) -- no
@@ -164,7 +174,13 @@ elseif(ANDROID)
   set(SDL2MIXER_CMD
       OFF
       CACHE BOOL "" FORCE)
-  add_subdirectory(3rd/SDL_mixer EXCLUDE_FROM_ALL)
+  FetchContent_Declare(
+    SDL2_mixer
+    URL https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.2/SDL2_mixer-2.8.2.tar.gz
+    URL_HASH
+      SHA256=938dff531d00ace2296557a6599abe6f34599e2f34f0a4a08a397e2ccac8b8f7
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(SDL2_mixer)
   set(SDL2_MIXER_LIB SDL2_mixer::SDL2_mixer)
   # Back to static for everything below (lvgl, gflags, ng-log, qjs, uni-algo) --
   # matching the desktop build, which links all of those into the single
