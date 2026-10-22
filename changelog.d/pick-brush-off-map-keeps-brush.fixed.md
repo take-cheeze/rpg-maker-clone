@@ -1,0 +1,1 @@
+- **Map editor**: picking up an off-map cell (CTRL) keeps the current brush instead of setting it to nil.

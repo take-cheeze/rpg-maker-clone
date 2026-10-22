@@ -35,9 +35,9 @@ directly. Before opening one:
   really carries. `docs/labels.md` explains the taxonomy; the labels themselves
   are defined in `.github/labels.yml`, and adding one there is a normal part of
   a pull request.
-- **Record an ADR when the change is architectural.** New dependencies,
-  patterns, integrations or schema changes get a `docs/adr/` entry (see below),
-  and user-facing capabilities get matching `/docs` and `README.md` updates.
+- **Update the docs for user-facing capabilities.** They get matching `/docs`
+  and `README.md` updates. Explain design choices in the commit message or PR
+  body; the git history is the record.
 - **Run the tests you touched.** Build and run the Google Test / CTest suite
   (`cmake --build build -t test`) and any relevant `scripts/**/*_check.rb`
   validators before pushing.
@@ -59,16 +59,6 @@ directly. Before opening one:
   branch's convention), fix the conflicted files, re-run the checks you can, and
   push. Only ask when a conflict is genuinely ambiguous — both sides changed the
   same logic and picking one silently drops behavior.
-
-## Architecture Decision Records
-
-Create ADRs in /docs/adr for:
-
--   Major dependency changes
--   Architectural pattern changes
--   New integration patterns
--   Database schema changes
-    Follow template in /docs/adr/template.md
 
 ## Code Style & Patterns
 
@@ -113,7 +103,7 @@ v >= 0x8000_0000 ? v - 0x1_0000_0000 : v
 ```
 
 CI runs a 32-bit-`mrb_int` and a no-bigint libmruby only for the width-sensitive
-bc2cpp checks (`bc2cpp-width`, ADR 0300, `docs/ci.md`); a codec or any other
+bc2cpp checks (`bc2cpp-width`, `docs/ci.md`); a codec or any other
 Ruby is not run on one, so these bugs still pass the rest of CI and only show
 up in the deployed page. When you touch a codec, reason about the 32-bit case
 by hand.
@@ -147,17 +137,15 @@ modifiers there: `scripts/rpg2k/closed_world_lint.rb` fails on new ones (see
 `docs/rpg2k-closed-world-lint.md`). If a use is genuinely data-driven, allow it
 in place with `# rpg2k-lint:allow Cop/Name -- reason`.
 
-### Comments: explain why, briefly — history goes in the ADR
+### Comments: explain why, briefly — history goes in the git log
 
 - A comment says **why** the code is the way it is: the invariant it relies on,
   the soundness condition, the non-obvious constraint, the trap it avoids.
   Don't restate what the code does.
 - Keep it short — usually one to three lines. If the rationale needs more,
-  it belongs in an ADR (`docs/adr/`); reference it as `ADR 0123` next to the
-  code instead of repeating it.
+  put it in the feature's `/docs` page and link that page from the code.
 - No narratives: how a bug was found, what was measured, which run confirmed
-  it, dates, or "caught for real" stories go in the commit message, PR body or
-  ADR — not in the source.
+  it, dates, or "caught for real" stories go in the commit message or PR body — not in the source.
 - State a soundness condition once, where it is enforced; elsewhere refer to
   that place by name (`see compile_poly_small_n`), not by re-arguing it.
 - Tag names used by checks and greps (e.g. `POLY_SMALL_N`, `IVAR_ACCESS`,
@@ -193,4 +181,4 @@ in place with `# rpg2k-lint:allow Cop/Name -- reason`.
   inside mruby, where there is no `Coverage` — so the total is a floor, not a
   ceiling. When adding a check to the `ruby-checks` CI job, add it to the
   reporter's `CHECKS` list too, or its coverage goes unmeasured. See
-  `docs/coverage.md` and ADR 0049.
+  `docs/coverage.md`.
