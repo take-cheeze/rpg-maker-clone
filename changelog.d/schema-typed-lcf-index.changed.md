@@ -1,5 +1,4 @@
-- Internal: bc2cpp reads the schema for a literal-key read on an exact LCF file
-  (`unit[:lower_layer]` on `LCF::MapUnit`). When the schema field is an
-  Array, the read is an Array for class layout, so an ivar that stores it can
-  be typed. Nothing changes for other reads or for programs that do not use
-  these LCF files.
+- Internal: bc2cpp types an ivar stored from `unit[:key] || []` on an exact LCF
+  map unit as an Array when the schema says the field is an Array. The layer
+  ivars `Game::Map#@lower` and `@upper` were poisoned by this join before, and
+  now are typed. Other ivars and programs are unchanged.

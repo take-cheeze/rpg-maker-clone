@@ -100,6 +100,12 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/lcf_join_array_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
   scripts/bc2cpp/ir_soundness_classes_check.rb:
     tier: fast
     capabilities: []
