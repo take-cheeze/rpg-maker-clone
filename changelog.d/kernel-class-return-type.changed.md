@@ -1,1 +1,0 @@
-- bc2cpp: `Kernel#class` is declared to return `Class`, so `obj.class.to_s` no longer dispatches on an unknown receiver.
