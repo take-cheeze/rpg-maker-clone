@@ -67,7 +67,11 @@ Context call frames also index fixed receiver/argument registers and keyword-nam
 producers. This avoids repeated reaching-definition result copies and name decoding;
 values are read from the current context on every call. Splat, ambiguous and
 nonliteral keyword names keep their conservative refusals. Set
-`BC2CPP_IR_CALL_INDEX=0` to rebuild layouts. See
+`BC2CPP_IR_CALL_INDEX=0` to rebuild layouts. Frames share only frozen empty
+argument/keyword containers and allocate nonempty positional arrays directly.
+Every nonempty frame rereads current masks into fresh containers; zero and unknown
+masks, keyword overwrite order, and graph budgets retain their existing behavior.
+Set `BC2CPP_IR_FRAME_ALLOCATIONS=0` to restore the original frame construction. See
 [ADR 0521](adr/0521-context-call-layout-index.md).
 
 Method resolution indexes ordered ancestor paths, simple class names and Ruby

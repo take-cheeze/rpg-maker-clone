@@ -69,6 +69,9 @@ deferred:
     - cxx
     reason: Requires a full-core library and compiled-vs-interpreted fixture binaries.
 checks:
+  scripts/bc2cpp/core_ruby_query_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/ir_facts_check.rb:
     tier: fast
     capabilities: []
