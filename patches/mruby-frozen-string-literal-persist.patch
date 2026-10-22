@@ -420,14 +420,6 @@ This patch, recorded as docs/adr/0546-persistent-frozen-string-literals.md:
    mrb_gc_mark(mrb, (struct RBasic*)obj->c);
    switch (obj->tt) {
    case MRB_TT_ICLASS:
-@@ -873,6 +895,7 @@
- obj_free(mrb_state *mrb, struct RBasic *obj, mrb_bool end)
- {
-   DEBUG(fprintf(stderr, "obj_free(%p,tt=%d)\n",obj,obj->tt));
-+  if (end && MRB_OBJ_PERSISTENT_P(obj)) obj->flags &= ~MRB_FL_OBJ_PERSISTENT;
-   mrb->gc.tt_live[obj->tt]--;
-   switch (obj->tt) {
-   case MRB_TT_OBJECT:
 @@ -1037,6 +1060,7 @@
    }
  

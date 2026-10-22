@@ -92,7 +92,8 @@ follow:
   class stays `String`, which the mark skips.
 
 Teardown needs no special path: `mrb_gc_destroy` frees every heap slot through
-`obj_free(end=TRUE)`, which also clears the flag.
+`obj_free(end=TRUE)`. `free_heap` does not consult the flag, so nothing clears it at close,
+and `obj_free` does not read it either.
 
 **bc2cpp (tools/bc2cpp).** `insn_decoder.rb` decodes `FSTRING` to the `STRING`
 op with `Insn#frozen_literal` set, so every pass that reads String loads sees
