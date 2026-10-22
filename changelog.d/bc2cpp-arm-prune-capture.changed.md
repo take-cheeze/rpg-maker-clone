@@ -1,0 +1,1 @@
+- **bc2cpp**: arm pruning (stage B) now applies to methods with register flow on. An unreachable instruction's text is removed before the register-flow pass, so a method with no captured register is no longer refused. A method that captures a register keeps its refusal where its block-fallback glue or loop guard is emitted.

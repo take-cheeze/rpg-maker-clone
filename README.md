@@ -1442,6 +1442,7 @@
   LCF and frozen-table mask diagnostics avoid temporary wide integer intersections;
   see [mask diagnostics](docs/bc2cpp-type-check.md#mask-diagnostic-allocations).
   Compiler call-arity predicates read decoded operands without formatting argument counts.
+  Numeric-flow branch walks avoid temporary truthiness pairs while retaining oracle queries.
   Numeric flow shares unchanged load states while preserving metadata
   invalidation and write tracking; see
   [ADR 0536](docs/adr/0536-bc2cpp-unchanged-load-states.md).

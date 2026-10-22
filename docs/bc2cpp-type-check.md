@@ -470,3 +470,16 @@ A warmed original-source comparison on base `fc573f24` reduced compiler
 allocations from 86,523,931 to 85,647,384 (876,547 fewer, 1.01%). Facts, receiver
 rows and report JSON were byte-identical. One object-profiled timing pair was
 51.042s versus 49.988s; this is not a repeated speed benchmark.
+
+### Scalar branch truthiness facts
+
+Numeric-flow provenance walks consume definite and possible falsy masks as local
+values, avoiding an intermediate pair for every visited register. Each visit
+still asks the oracle for the current FalseClass bit; unknown false classes,
+branch kinds, alias narrowing and cycle handling retain their existing behavior.
+The standalone tuple-returning helper retains its original API.
+
+A warmed original-source comparison on base `fc573f24` reduced compiler
+allocations from 86,523,931 to 86,065,342 (458,589 fewer, 0.53%). Facts, receiver
+rows and report JSON were byte-identical. Timing is not used as evidence of a
+wall-time speedup.
