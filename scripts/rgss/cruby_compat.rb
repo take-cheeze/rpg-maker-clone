@@ -2390,7 +2390,7 @@ module RGSS
           lv_used_bytes: 0,
           sections: sections,
           # The native profiler (mruby-rgss/src/profiler.cxx) reads this from
-          # mruby's own GC counters (patches/mruby-gc-type-live-counts.patch),
+          # mruby's own GC counters (the pinned fork commit (mruby-gc-type-live-counts, docs/patch-fork-tracking.md)),
           # which have no CRuby equivalent -- stubbed empty like the other
           # native-only fields above rather than omitted.
           object_types: {}

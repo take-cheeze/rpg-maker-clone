@@ -10,12 +10,12 @@
 # tools/optcarrot_probe/README.md for what this is and isn't.
 #
 # MRBC must be built from a 3rd/mruby checkout with
-# patches/mruby-parser-dump-back-nth-ref.patch applied -- unpatched, mrbc's
+# the pinned fork commit (mruby-parser-dump-back-nth-ref) applied -- unpatched, mrbc's
 # own `-v` disassembly dump crashes outright on optcarrot's real
 # lib/optcarrot/opt.rb:74 (a `$'`/`$1` use), which this script cannot work
 # around from the outside (the crash is inside mrbc's own process, before
 # any output reaches this script). See that patch's own preamble.
-# patches/mruby-module-function-scope.patch is NOT needed for this script
+# the pinned fork commit (mruby-module-function-scope) is NOT needed for this script
 # specifically (verified) -- mrbc only compiles here, never runs the
 # result, so that runtime-only gap never gets exercised.
 #
@@ -35,8 +35,6 @@ BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
 MRBC = ENV['MRBC'] || 'mrbc'
 OPTCARROT_LIB = File.join(ROOT, '3rd/optcarrot/lib')
 MRUBY_DIR = File.join(ROOT, '3rd/mruby')
-PARSER_DUMP_PATCH = File.join(ROOT, 'patches/mruby-parser-dump-back-nth-ref.patch')
-APPLY_SCRIPT = File.join(ROOT, 'scripts/apply_mruby_patch.bash')
 
 unless Dir.exist?(OPTCARROT_LIB)
   abort "#{OPTCARROT_LIB} is empty -- run `git submodule update --init 3rd/optcarrot` first"
@@ -45,7 +43,6 @@ end
 # Idempotent safety net, same as build_bundle.rb's -- only actually fixes
 # anything if it runs BEFORE MRBC itself was built from this checkout (a
 # rebuild picks the patch up; an already-built MRBC binary does not).
-system(APPLY_SCRIPT, MRUBY_DIR, PARSER_DUMP_PATCH, exception: true) if Dir.exist?(MRUBY_DIR)
 
 # bc2cpp compiles closed-world programs only: the probe compiles the sealed benchmark world
 # whose outside sources are its build's mruby core and gems.

@@ -58,13 +58,14 @@ int64_t g_alloc_calls = 0;
 
 // ---- Per-type object counts -----------------------------------------------
 //
-// mrb_gc_type_counts() (patches/mruby-gc-type-live-counts.patch) reads out two
-// counters the GC itself now maintains per mrb_vtype: live objects and
-// cumulative allocations. Both are kept current by a single increment in
-// mrb_obj_alloc() and a single decrement in the sweep phase's obj_free(), so
-// reading them here is an O(MRB_TT_MAXDEFINE) memcpy -- no heap walk, no GC
-// triggered (unlike ObjectSpace.count_objects, which forces a full GC before
-// every call; see that patch's preamble for why that ruled it out here).
+// mrb_gc_type_counts() (the pinned fork commit (mruby-gc-type-live-counts,
+// docs/patch-fork-tracking.md)) reads out two counters the GC itself now
+// maintains per mrb_vtype: live objects and cumulative allocations. Both are
+// kept current by a single increment in mrb_obj_alloc() and a single decrement
+// in the sweep phase's obj_free(), so reading them here is an
+// O(MRB_TT_MAXDEFINE) memcpy -- no heap walk, no GC triggered (unlike
+// ObjectSpace.count_objects, which forces a full GC before every call; see that
+// patch's preamble for why that ruled it out here).
 //
 // report() and the trace writer below run off the C++ main loop, not a Ruby
 // call, so they have no mrb_state of their own; profiler_init() stashes the
@@ -666,8 +667,9 @@ mrb_value prof_stats(mrb_state* M, mrb_value) {
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "sections")), sections);
 
   // Object type breakdown -- straight off the GC's own per-type counters
-  // (mrb_gc_type_counts, patches/mruby-gc-type-live-counts.patch), not the
-  // top-eight-capped subset the stderr summary line shows.
+  // (mrb_gc_type_counts, the pinned fork commit (mruby-gc-type-live-counts,
+  // docs/patch-fork-tracking.md)), not the top-eight-capped subset the stderr
+  // summary line shows.
   mrb_value object_types = mrb_hash_new(M);
   size_t live[kNumTypes] = {};
   size_t allocs[kNumTypes] = {};

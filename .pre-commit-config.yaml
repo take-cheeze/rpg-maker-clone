@@ -9,7 +9,7 @@ repos:
     # originally-blank line is a single space (` `), which this hook would
     # otherwise "fix" by stripping, corrupting the patch (it would no longer
     # match the blank line it's meant to apply against). See
-    # patches/mruby-stringio-native-getbyte.patch, whose own context line 8 is
+    # the pinned fork commit (mruby-stringio-native-getbyte), whose own context line 8 is
     # exactly this.
     - id: trailing-whitespace
       exclude: "patches/.*\\.patch$"

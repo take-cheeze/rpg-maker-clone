@@ -13,7 +13,7 @@ set -euo pipefail
 # RPG2K_PSP_LVGL_ASSERT. The PSP cross-toolchain is not the variable: the two
 # pspdev installs' build manifests ($PSPDEV/build.txt) are byte-for-byte
 # identical, down to the same pspsdk commit this repo already pins in
-# patches/psp-fixup-imports-jal-relocation-aware.patch. What differs is the
+# the pinned fork commit (psp-fixup-imports-jal-relocation-aware, docs/patch-fork-tracking.md). What differs is the
 # host half of the build -- the native compiler that builds `mrbc` and mruby's
 # other host-side tools, glibc/nix here versus musl/Alpine there. So this
 # script is both the way to reproduce a CI EBOOT locally and the A/B control
@@ -123,7 +123,6 @@ PREPARED_TAG="$(
     docker image inspect --format '{{index .Id}}' "$BASE_IMAGE"
     echo "$APK_PACKAGES"
     cat "$REPO_ROOT/scripts/build/psp_fixup_imports.bash" \
-        "$REPO_ROOT/patches/psp-fixup-imports-jal-relocation-aware.patch" \
         "$REPO_ROOT/patches/psp-fixup-imports-config.h"
   } | sha256sum | cut -c1-16
 )"
@@ -146,8 +145,7 @@ else
   trap 'rm -rf "$CTX"' EXIT
   mkdir -p "$CTX/scripts/build" "$CTX/patches"
   cp "$REPO_ROOT/scripts/build/psp_fixup_imports.bash" "$CTX/scripts/build/"
-  cp "$REPO_ROOT/patches/psp-fixup-imports-jal-relocation-aware.patch" \
-     "$REPO_ROOT/patches/psp-fixup-imports-config.h" "$CTX/patches/"
+  cp "$REPO_ROOT/patches/psp-fixup-imports-config.h" "$CTX/patches/"
   cat > "$CTX/Dockerfile" <<DOCKERFILE
 FROM $BASE_IMAGE
 RUN apk add --no-cache $APK_PACKAGES
