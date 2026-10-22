@@ -34,7 +34,6 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
 
     add_dependency gem_name
   end
-  extend Bc2cppHotOnlyOption
 
   # Every tools/bc2cpp/*.rb, globbed: bc2cpp.rb require_relative's its siblings, and
   # a sibling edit must invalidate the generated file (see mruby-rgss-compiled).
@@ -56,7 +55,7 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   # the bootstrap mrbc exists (ADR 0228).
   file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
-                     BC2CPP_HOT_METHODS_PATH, BC2CPP_CORE_REFUSED_PATH, BC2CPP_SPECIALIZE_PLAN_PATH] do |t|
+                     BC2CPP_CORE_REFUSED_PATH] do |t|
     # SHARED_GENERATION (ADR 0464): with every other compiled gem of this build that is out of date, in one
     # bc2cpp.rb analysis (tools/bc2cpp/compiled_gems.rb bc2cpp_compiled_gem_job holds this gem's environment).
     Bc2cppCompiledGemGeneration.generate(spec, "#{dir}/..")

@@ -1142,17 +1142,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 // 39/39 here, 96/96 in mruby-rgss-compiled, 1240/1240 in mruby-rpg2k-compiled,
 // with no orphan -- no call below is the only registration of its method.
 //
-// They cannot simply be deleted, because a HOT-ONLY build does not compile 1229
-// of those 1375 callees at all. The generated call then installs a no-op
-// `bc2cpp_hot_only_excluded` overload instead, which does not reference the
-// real
-// `_impl`, so these calls are what keep the excluded symbols alive; removing
-// them unconditionally is a link error on every one of those methods.
-//
-// BC2CPP_HOT_ONLY_STUBS is defined by the generated file this register.cxx
-// #includes, and only on the hot-only path, so this guard selects between the
-// two builds with no second flag and the two cannot drift.
-#if !defined(BC2CPP_HOT_ONLY_STUBS)
   mrb_define_method(M, picture, "opacity", Game__Picture_opacity,
                     MRB_ARGS_NONE());
   mrb_define_method(M, picture, "x", Game__Picture_x, MRB_ARGS_NONE());
@@ -6164,10 +6153,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // the singleton methods whose call sites in Scene::Map#initialize,
   // #build_event and #rebuild_events_preserving_positions are bound by
   // CLOSED_WORLD_CONSTANT_OBJECT / MONO once their owners are emitted. Like
-  // every call in this guarded region they exist only in a full build: a
-  // hot-only build (wio, psp, maix) lists none of these methods in
-  // tools/bc2cpp/hot_methods.txt, so it compiles none of them and emits no
-  // code for these owners at all.
+  // every call in this guarded region they exist only where the owner is compiled.
   //
   // MoveRoute.from_page is further conditional inside a full build: its bare
   // `new(..., repeat:, skippable:)` is compiled only when the closed world
@@ -6236,7 +6222,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                           Game_singleton_trans_to_opacity, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, game, "camera_offset",
                           Game_singleton_camera_offset, MRB_ARGS_REQ(3));
-#endif  // BC2CPP_HOT_ONLY_STUBS
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {
