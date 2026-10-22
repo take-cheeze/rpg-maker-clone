@@ -1,0 +1,1 @@
+- **bc2cpp**: the shared index helpers are described by one table (`INDEX_KINDS`) instead of three constants; the generated C++ is unchanged, groundwork for more shared helpers (ADR 0541).
