@@ -2,7 +2,7 @@
 
 The vendored upstream code the build compiles is pinned to take-cheeze forks,
 and those fork commits carry the patches this project needs. The patch files
-no longer live in `patches/`, except for the ppsspp patches below.
+no longer live in `patches/`.
 
 ## What the build uses
 
@@ -11,8 +11,8 @@ no longer live in `patches/`, except for the ppsspp patches below.
   below. `.gitmodules` points at the forks. Nothing is applied at build time.
 - **pspsdk** (`scripts/build/psp_fixup_imports.bash`, `flake.nix`) builds
   psp-fixup-imports from the fork commit `723862d`.
-- **ppsspp** is still nixpkgs' copy. `flake.nix` applies the four ppsspp
-  patches in `patches/` on top of it, because that copy is not the fork.
+- **ppsspp** (`flake.nix`) builds `take-cheeze/ppsspp` at commit `70cb2fb`,
+  which is the v1.20.4 release plus the seven local patches.
 
 ## Branch conventions
 
@@ -20,7 +20,7 @@ no longer live in `patches/`, except for the ppsspp patches below.
   (submodule or flake), and carries the patches on top. This is what the build
   compiles.
 - **`rpg-maker-clone/patches`**: starts at the fork's default branch. Used for
-  ppsspp (not pinned), and for patches that do not apply to the pin.
+  patches that do not apply to the pin.
 - Each commit's message names the source patch it came from.
 
 ## Status by patch
@@ -75,22 +75,23 @@ branch. It is superseded by the pin branch.
   mattn's `master`, which is the same commit as the pin. mattn's repo itself is
   not pushed to.
 
-### take-cheeze/ppsspp (default branch, `rpg-maker-clone/patches` at `7bd75e5`)
+### take-cheeze/ppsspp (pin `v1.20.4`, `rpg-maker-clone/patches-pin` at `70cb2fb`)
 
-Applied on the default branch, since the build does not pin ppsspp (it uses
-nixpkgs' copy):
+The flake builds this commit. All seven patches apply in the flake's order, one
+commit each:
 
 - `ppsspp-lwmutex-workarea-validate`: **applied**.
-- `ppsspp-sceio-null-path-validate`: **applied**.
+- `ppsspp-mfic-mtic-interrupt-mask`: **applied**.
+- `ppsspp-x64analyzer-8bit-mov`: **applied**.
+- `ppsspp-sysclibforkernel-missing-functions`: **applied**.
 - `ppsspp-sysclib-memset-memmove-return-value`: **applied**.
 - `ppsspp-sysclib-strchr-strrchr`: **applied**.
-- `ppsspp-mfic-mtic-interrupt-mask`: **not applied**. It conflicts with the
-  current code and needs a manual port.
-- `ppsspp-sysclibforkernel-missing-functions`: **not applied**. Same reason.
-- `ppsspp-x64analyzer-8bit-mov`: **not applied**. Same reason.
+- `ppsspp-sceio-null-path-validate`: **applied**.
+
+The `rpg-maker-clone/patches` branch on the fork (`7bd75e5`) carries the first
+four on the fork's default branch. It is superseded by the pin branch.
 
 ## Remaining work
 
-- Port the three ppsspp patches listed as not applied.
-- Port the three ppsspp patches, then move the four applied ones off nixpkgs'
-  ppsspp so the flake builds the fork directly.
+- Confirm CI builds the flake's ppsspp from the fork commit (`flake` and
+  `psp-smoke` jobs). Nothing else is left to port.

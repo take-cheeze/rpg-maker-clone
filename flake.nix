@@ -249,9 +249,10 @@
           # and root-caused while trying to read the PSP EBOOT's own boot log
           # under PPSSPP-headless (see docs/adr/0047-psp-memory-budget.md and
           # app/psp/README.md); none are upstreamed to hrydgard/ppsspp yet,
-          # so all of them are applied here so this flake's own `ppsspp`/
-          # `ppsspp-headless` survive past them. patches/ has the full
-          # patches and each one's own note on when it is safe to drop.
+          # so all of them are carried by the take-cheeze/ppsspp fork commit
+          # this flake's own `ppsspp`/`ppsspp-headless` build
+          # (docs/patch-fork-tracking.md). Each patch's own note on when it is
+          # safe to drop lives in the fork's commit message.
           #
           #   - sceKernelCreateLwMutex (Core/HLE/sceKernelMutex.cpp)
           #     dereferences its caller-supplied workarea pointer without
@@ -297,15 +298,16 @@
           #     path builds a std::string from nullptr and terminates the
           #     host process -- the same class as the LwMutex bug above.
           ppsspp = pkgs.ppsspp.overrideAttrs (old: {
-            patches = (old.patches or [ ]) ++ [
-              ./patches/ppsspp-lwmutex-workarea-validate.patch
-              ./patches/ppsspp-mfic-mtic-interrupt-mask.patch
-              ./patches/ppsspp-x64analyzer-8bit-mov.patch
-              ./patches/ppsspp-sysclibforkernel-missing-functions.patch
-              ./patches/ppsspp-sysclib-memset-memmove-return-value.patch
-              ./patches/ppsspp-sysclib-strchr-strrchr.patch
-              ./patches/ppsspp-sceio-null-path-validate.patch
-            ];
+            # take-cheeze/ppsspp at the v1.20.4 release plus the seven local
+            # patches (branch rpg-maker-clone/patches-pin; see
+            # docs/patch-fork-tracking.md). Submodules are needed by the build.
+            src = pkgs.fetchFromGitHub {
+              owner = "take-cheeze";
+              repo = "ppsspp";
+              rev = "70cb2fb6a951ca77f111ea1f4f346ddea015962b";
+              fetchSubmodules = true;
+              hash = "sha256-K05f9673sVb/cb+2W04I3ijTsDMualC7yqU1ZeviwL4=";
+            };
           });
 
           # The Android SDK + NDK the Gradle build (app/android) compiles

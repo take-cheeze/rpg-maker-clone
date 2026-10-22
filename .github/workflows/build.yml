@@ -2654,7 +2654,7 @@ jobs:
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-ppsspp-${{ runner.os }}-${{ hashFiles('flake.*', 'patches/ppsspp-lwmutex-workarea-validate.patch') }}
+          primary-key: nix-ppsspp-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-ppsspp-${{ runner.os }}-
 
       - name: Fetch PPSSPP
@@ -2789,7 +2789,7 @@ jobs:
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-ppsspp-${{ runner.os }}-${{ hashFiles('flake.*', 'patches/ppsspp-lwmutex-workarea-validate.patch') }}
+          primary-key: nix-ppsspp-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-ppsspp-${{ runner.os }}-
 
       - name: Fetch PPSSPP

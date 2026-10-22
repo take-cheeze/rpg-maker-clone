@@ -154,14 +154,14 @@ completes**:
   `workareaPtr=0` turned that into a null-pointer write that segfaulted the
   *host* `ppsspp-headless` process rather than raising a guest-catchable
   error. Not yet upstreamed to `hrydgard/ppsspp`;
-  `patches/ppsspp-lwmutex-workarea-validate.patch` applies it locally.
+  the take-cheeze/ppsspp fork commit (ppsspp-lwmutex-workarea-validate) applies it locally.
 - Separately, PPSSPP's interpreter treated the Allegrex `mfic`/`mtic`
   instructions ("move from/to interrupt controller") as no-ops. pspsdk's own
   `pspSdkDisableInterrupts()`/`EnableInterrupts()` are built directly on
   those two instructions to guard its non-reentrant C-runtime state without
   syscall overhead; as no-ops, they gave no real protection, letting a
   timer/thread interrupt land mid-"critical section". Also not yet
-  upstreamed; `patches/ppsspp-mfic-mtic-interrupt-mask.patch` applies it
+  upstreamed; the take-cheeze/ppsspp fork commit (ppsspp-mfic-mtic-interrupt-mask) applies it
   locally, alongside the LwMutex one.
 - `app/psp/CMakeLists.txt` used to link `pspkernel` before `pspuser`. Both
   provide `sceKernelCreateCallback`/`sceKernelSleepThreadCB`/
@@ -237,7 +237,7 @@ near-null reads, which happen to match `mruby/boxing_word.h`'s special
 constants coincidentally rather than from any real type confusion, and
 the eventual fatal `strlen` call on garbage). Fixed by adding all four
 to PPSSPP's `SysclibForKernel` HLE table, matching its existing
-entries' style — `patches/ppsspp-sysclibforkernel-missing-functions.patch`.
+entries' style — the take-cheeze/ppsspp fork commit (ppsspp-sysclibforkernel-missing-functions).
 Verified: rebuilding PPSSPP with this patch drops the `Unknown syscall`
 count from ~90 to 1 and eliminates the `Bad memory access` flood
 entirely.
@@ -272,7 +272,7 @@ correctly returns `dst` — so GCC's optimization silently turned every
 `sysclib_memmove` had the identical bug, fixed alongside it. Fixed by
 adding the destination pointer as both functions' returned value,
 matching their sibling `sysclib_memcpy`/`sysclib_strcat` and the real C
-contract — `patches/ppsspp-sysclib-memset-memmove-return-value.patch`.
+contract — the take-cheeze/ppsspp fork commit (ppsspp-sysclib-memset-memmove-return-value).
 **Verified: this is the fix that gets the EBOOT booting to
 completion** — rebuilding PPSSPP with this patch and re-running the
 identical EBOOT under normal `ppsspp-headless` JIT mode produces
@@ -363,8 +363,8 @@ by measurement, are kept because the eliminations are still sound:
   argument against an HLE returning 0), so every sysclib function was
   re-audited: `memcpy`/`strcpy`/`strcat`/`strncpy` return their destination,
   `memset`/`memmove` do too via
-  `patches/ppsspp-sysclib-memset-memmove-return-value.patch`, and the four
-  added by `patches/ppsspp-sysclibforkernel-missing-functions.patch`
+  the take-cheeze/ppsspp fork commit (ppsspp-sysclib-memset-memmove-return-value), and the four
+  added by the take-cheeze/ppsspp fork commit (ppsspp-sysclibforkernel-missing-functions)
   (`tolower`/`strtoul`/`memchr`/`strncat`) are all correct. Not a recurrence.
 
 The failure mode changes when unrelated code shifts the binary -- the same
