@@ -27,10 +27,14 @@ ambiguous definitions and unsupported producers; no context graph decision is
 cached. Copy keyword strings before freezing them. Bytecode bodies must remain
 unchanged for the engine lifetime.
 
-Every frame reads the current node receiver and state, constructing fresh
-argument and keyword containers. In particular, bottom and unknown values are
+Every frame reads the current node receiver and state. Nonempty argument and
+keyword containers remain fresh; empty containers share frozen sentinels because
+frame consumers only read them. Nonempty positional frames allocate their array
+directly without an intermediate Range. In particular, bottom and unknown values are
 never retained in layouts. Graph admission, fixpoint rounds and effect traversal
 keep their existing limits. `BC2CPP_IR_CALL_INDEX=0` rebuilds layouts on each call.
+`BC2CPP_IR_FRAME_ALLOCATIONS=0` restores fresh empty containers and Range mapping
+for allocation comparison, independently of layout indexing.
 
 ## Consequences
 

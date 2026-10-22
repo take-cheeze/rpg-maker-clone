@@ -1446,6 +1446,9 @@
   optimization while final emission retains it; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
   LCF and frozen-table mask diagnostics avoid temporary wide integer intersections;
   see [mask diagnostics](docs/bc2cpp-type-check.md#mask-diagnostic-allocations).
+  Context call frames share frozen empty argument/keyword containers and allocate
+  nonempty positional arrays directly; inferred masks remain fresh per call. See
+  [context frames](docs/bc2cpp-type-check.md).
   Type-check context binding avoids temporary argument assembly for fixed positional
   methods while retaining fresh masks; see [context binding](docs/bc2cpp-type-check.md).
   Compiler call-arity predicates read decoded operands without formatting argument counts.
