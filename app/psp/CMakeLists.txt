@@ -103,7 +103,7 @@ if(NOT FIXUP_IMPORTS_PATCHED)
       "    bash ${REPO_ROOT_ABS}/scripts/build/psp_fixup_imports.bash\n"
       "then force a relink (rm ${CMAKE_CURRENT_BINARY_DIR}/rpg2k_psp), since "
       "replacing the tool does not by itself make anything rebuild. See "
-      "patches/psp-fixup-imports-jal-relocation-aware.patch.")
+      "the take-cheeze/pspsdk fork pin (docs/patch-fork-tracking.md).")
 endif()
 
 # pspsdk static libraries are built without gp-relative small-data addressing;

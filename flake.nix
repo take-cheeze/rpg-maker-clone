@@ -47,7 +47,7 @@
             # y.tab.c/lex.def) whenever a 3rd/mruby patch touches either
             # source -- a no-op on an ordinary build, since the checked-in
             # generated files are already newer, but load-bearing the moment
-            # one does (patches/mruby-defined-keyword.patch, the first to).
+            # one does (the pinned fork commit (mruby-defined-keyword, docs/patch-fork-tracking.md), the first to).
             nativeBuildInputs =
               with pkgs;
               [
@@ -156,11 +156,12 @@
           pspdev =
             let
               version = "20260801";
-              # The exact pspsdk commit the release tarball ships and the fixup
-              # patch was written against (see above).
+              # The take-cheeze/pspsdk fork commit that pins the release
+              # tarball's pspsdk (314b2083) plus the JAL-relocation-aware
+              # psp-fixup-imports change (docs/patch-fork-tracking.md).
               pspsdkFixupSrc = pkgs.fetchzip {
-                url = "https://github.com/pspdev/pspsdk/archive/314b2083f2e1eaf145fc5de342736336fe1f0148.tar.gz";
-                hash = "sha256-fy/PBRvol6G3o9nNlm+TLtUIJze9Xt/G+D4xYy4G6MM=";
+                url = "https://github.com/take-cheeze/pspsdk/archive/723862d4859f5bbfeaab3acf051084a09c71cbfb.tar.gz";
+                hash = "sha256-7BSI7GR/Kv8gLu/PesE7lpM2nc7yEVjelpZPAPeNNBU=";
               };
             in
             pkgs.stdenv.mkDerivation {
@@ -206,13 +207,12 @@
               '';
               postFixup = ''
                 # Compile the JAL-relocation-aware psp-fixup-imports from the
-                # pinned pspsdk sources plus this repo's patch, exactly the two
-                # steps scripts/build/psp_fixup_imports.bash performs on a
+                # pinned pspsdk fork commit, exactly the steps
+                # scripts/build/psp_fixup_imports.bash performs on a
                 # hand-installed SDK (its config.h note applies verbatim:
                 # tools/types.h includes config.h unguarded).
                 cp -r "${pspsdkFixupSrc}" ./fixup-src
                 chmod -R u+w ./fixup-src
-                patch -s -p1 -d ./fixup-src < ${./patches/psp-fixup-imports-jal-relocation-aware.patch}
                 cp ${./patches/psp-fixup-imports-config.h} ./fixup-src/config.h
                 cc -O2 -DHAVE_CONFIG_H \
                   -I./fixup-src -I./fixup-src/tools \

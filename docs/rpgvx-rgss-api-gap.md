@@ -510,7 +510,7 @@ is why the same error-log utility's `save(filename = nil, exception = $!)`
 TKG::ErrorLog.save(); raise; end` — received `exception = nil` and crashed
 on `exception.message`.
 
-Fixed by `patches/mruby-dollar-bang-scoped.patch` (that patch's own preamble
+Fixed by the pinned fork commit (mruby-dollar-bang-scoped) (that patch's own preamble
 has the full trail, including two earlier approaches that were tried and
 rejected: codegen-level save/restore around rescue bodies, which regressed
 the compiler's register allocation, and a sticky global that leaked into
@@ -755,9 +755,9 @@ own read/write symmetry check. Confirmed against real CRuby: `ruby -e
 
 Since this submodule tracks upstream `mruby/mruby` directly (no fork
 this project controls to carry the fix on), the fix ships as
-`patches/mruby-colon3-assign-setmcnst.patch` (one line:
+the pinned fork commit (mruby-colon3-assign-setmcnst) (one line:
 `gen_colon3_assign` now finishes with `OP_SETMCNST`), applied
-idempotently at build time by `scripts/apply_mruby_patch.bash` — the
+at build time — the
 same `patches/` + apply-script convention already used for the PSP
 toolchain's own patch. Verified against: a minimal synthetic repro
 matching the real semantics, the full mruby test suite (zero
@@ -778,7 +778,7 @@ one utility script's log fidelity. `$!` itself turned out to have a much
 smaller, VM-internal fix (see above); once that fix's `mrb->errinfo` field
 existed, the wrapping was never needed for `raise` either — `mrb_f_raise`'s
 zero-argument case now just re-raises `mrb->errinfo` directly when one is
-in scope. Both are fixed by `patches/mruby-dollar-bang-scoped.patch`.
+in scope. Both are fixed by the pinned fork commit (mruby-dollar-bang-scoped).
 
 **Found and fixed: with `$!` finally working, the same real VX Ace release's
 crash-reporter add-on stopped masking exceptions -- and the game hung for
@@ -850,7 +850,7 @@ past where the last one stopped:
   its state in place. `Game_Interpreter#marshal_load` is defined the real,
   standard way (an instance method), so calling it as a class method raised
   `NoMethodError: undefined method 'marshal_load' for Class`. Both fixes
-  ship together as `patches/mruby-marshal-dump-load-protocol.patch` (that
+  ship together as the pinned fork commit (mruby-marshal-dump-load-protocol) (that
   patch's own preamble has the full trail, including a CRuby confirmation of
   both directions and why this gem's own bundled test needed updating to the
   corrected protocol alongside the fix itself).
@@ -876,7 +876,7 @@ lookup with `defined?(SceneManager)`.
   `mrb_ast_defined_node` AST scaffolding already existed in
   `mrbgems/mruby-compiler/core/node.h` — but the lexer, grammar, and a real
   codegen were never wired up; `codegen_defined` was a stub that
-  unconditionally returned `nil`. `patches/mruby-defined-keyword.patch`
+  unconditionally returned `nil`. the pinned fork commit (mruby-defined-keyword)
   (that patch's own preamble has the full trail) adds the missing keyword
   to the lexer and grammar (using `not`'s own two forms — `not expr` and
   `not(expr)` — as the direct structural template, since real Ruby's
@@ -972,7 +972,7 @@ All seven sections above are done — item 1's flat "above characters" layer
 turned out to be correct RGSS2/RGSS3 behavior, not remaining polish (see its
 own entry: mkxp's `TilemapVX` puts it at a fixed z too, unlike XP's per-row
 `priorities`), so there is no follow-up item left there. Item 7's
-`$!`/bare-`raise` gap is now fixed too (`patches/mruby-dollar-bang-scoped.patch`,
+`$!`/bare-`raise` gap is now fixed too (the pinned fork commit (mruby-dollar-bang-scoped),
 above), so the same
 real release's own crash-reporter add-on now sees the actual exception
 instead of masking it behind an unrelated `NoMethodError`, and re-raises it

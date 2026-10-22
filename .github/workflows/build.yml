@@ -1258,11 +1258,6 @@ jobs:
           - name: mruby bare-hash-push check
             run: ruby scripts/mruby/bare_hash_push_check.rb
 
-          # patches/mruby-*.patch hunks must carry context: a zero-context hunk
-          # lands by line number and drifts when an earlier patch shifts the file.
-          - name: mruby patch context check
-            run: ruby scripts/mruby/patch_context_check.rb
-
           - name: bc2cpp native, RBS and definer checks
             run: |
               ruby scripts/bc2cpp/numeric_flow_speed_check.rb
@@ -1765,7 +1760,7 @@ jobs:
       - name: Install ruby/rake/gperf/bison
         # The mruby cross-build is driven by rake; gperf and bison regenerate
         # mruby-compiler's lexer/grammar when a patch touches either source
-        # (patches/mruby-defined-keyword.patch does) -- same reason the `psp`
+        # (the pinned fork commit (mruby-defined-keyword, docs/patch-fork-tracking.md) does) -- same reason the `psp`
         # job installs them.
         run: |
           sudo apt-get update -q
@@ -2567,7 +2562,7 @@ jobs:
         # (mrbgems/mruby-compiler/core/{keywords,parse.y} -> lex.def/
         # y.tab.c) whenever a patch touches either source -- normally a
         # no-op since the checked-in generated files are already newer, but
-        # patches/mruby-defined-keyword.patch touches both, and this bare
+        # the pinned fork commit (mruby-defined-keyword, docs/patch-fork-tracking.md) touches both, and this bare
         # container has neither tool by default (confirmed missing by a real
         # CI run, "sh: gperf: not found", once that patch first shipped).
         #

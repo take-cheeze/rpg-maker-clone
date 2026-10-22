@@ -195,7 +195,7 @@ upstream, not worth working around here.
   repoints them, the same relocation work a real ET_EXEC loader would do
   and this prebuilt-binary tool skips.
   `scripts/build/psp_fixup_imports.bash` fetches pspsdk at the pinned
-  commit `patches/psp-fixup-imports-jal-relocation-aware.patch` targets,
+  commit `the pinned fork commit (psp-fixup-imports-jal-relocation-aware, docs/patch-fork-tracking.md)` targets,
   applies it, and drops the rebuilt tool in place of the container's own —
   wired into the `psp` CI job ahead of `psp-cmake`/`cmake --build`. Not yet
   upstreamed to `pspdev/pspsdk`.
@@ -409,7 +409,7 @@ before calling `sceIoRemove`; the live `a0` was `0x00004a38` while `sp` was
 despite `_unlink` being the only static `jal` to that stub.
 
 Fixed by accepting `MIPS_OP_J` alongside `MIPS_OP_JAL` in
-`patches/psp-fixup-imports-jal-relocation-aware.patch`; the rewrite already
+`the pinned fork commit (psp-fixup-imports-jal-relocation-aware, docs/patch-fork-tracking.md)`; the rewrite already
 preserves the opcode field, so a `j` stays a `j`. Verified: `delay_cb`'s tail
 call now resolves to `sceKernelDelayThread`, the per-frame bogus `sceIoRemove`
 and `sceIoDread` calls drop to zero, and 212623 real delays are issued across

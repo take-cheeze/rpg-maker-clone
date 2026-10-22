@@ -979,7 +979,7 @@
   blocks and allocations/sec; the allocation counters need the native build).
   `types` is the mruby heap broken down by object type (Ruby class), most-live
   first and also capped at eight — a live population count straight off the
-  GC's own per-type counters (`patches/mruby-gc-type-live-counts.patch`), not
+  GC's own per-type counters (`the pinned fork commit (mruby-gc-type-live-counts, docs/patch-fork-tracking.md)`), not
   a sampled walk: no extra GC pass and no extra heap scan, so it costs nothing
   beyond the existing `--profile` overhead. `RGSS::Profiler.stats` exposes the
   uncapped breakdown as `:object_types` (a Hash of class name to `:live` and
@@ -1635,7 +1635,7 @@
   In a closed world where only core classes answer an operator, the helper's by-name else is a
   proven NoMethodError instead (`/ + * < <= > >= ^ >> round % -@`; ADR 0360-0364 and
   [`docs/adr/0367-bc2cpp-expose-misc-core-bodies.md`](docs/adr/0367-bc2cpp-expose-misc-core-bodies.md),
-  whose `patches/mruby-expose-misc-bodies.patch` exports the static `Float#%`, `String#-@` and
+  whose `the pinned fork commit (mruby-expose-misc-bodies, docs/patch-fork-tracking.md)` exports the static `Float#%`, `String#-@` and
   sprintf bodies the `%` and `-@` helpers call). A closed world that compiles mruby's own Ruby
   also closes `zero?`: a Numeric runs the compiled `Numeric#zero?`, `File`/`FileTest` raise the
   `File.zero?` argument error, the rest is a NoMethodError (`BC2CPP_CORE_COMPILED_ZERO=0` turns it

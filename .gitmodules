@@ -4,7 +4,7 @@
 	branch = "rpg-maker"
 [submodule "third_party/mruby"]
 	path = 3rd/mruby
-	url = https://github.com/mruby/mruby.git
+	url = https://github.com/take-cheeze/mruby.git
 [submodule "third_party/lvgl"]
 	path = 3rd/lvgl
 	url = https://github.com/lvgl/lvgl.git
@@ -23,7 +23,7 @@
 	url = https://github.com/take-cheeze/mruby-marshal.git
 [submodule "3rd/mruby-onig-regexp"]
 	path = 3rd/mruby-onig-regexp
-	url = https://github.com/mattn/mruby-onig-regexp.git
+	url = https://github.com/take-cheeze/mruby-onig-regexp.git
 [submodule "3rd/mruby-stringio"]
 	path = 3rd/mruby-stringio
 	url = https://github.com/take-cheeze/mruby-stringio.git

@@ -1249,7 +1249,7 @@ the census should read the stripped source instead).
 ## Follow-up: exported core bodies (ADR 0367)
 
 `bc2cpp_slow_mod` (138 generated callers, two by-name calls) and `bc2cpp_slow_neg_f` (71 callers, one) carry a closed
-form that calls bodies `patches/mruby-expose-misc-bodies.patch` exports (`Integer#%`, `Float#%`, `String#-@`, the
+form that calls bodies the pinned fork commit (mruby-expose-misc-bodies) exports (`Integer#%`, `Float#%`, `String#-@`, the
 sprintf formatter). Wio closed world, shipped pass, branch base `b4efe59e` (PR #2045's head) against the branch, the
 `#if` arm for Complex/Rational builds stripped from both runs as before:
 
@@ -1276,7 +1276,7 @@ reaching by-name dispatch, helper-held by-name calls go from 19 to 16 and `bc2cp
 
 ## Follow-up: exported collection bodies (ADR 0366)
 
-`patches/mruby-expose-collection-op-bodies.patch` exports `Array#-`, `#&`, `#|` (mruby-array-ext), `String#<<`
+the pinned fork commit (mruby-expose-collection-op-bodies) exports `Array#-`, `#&`, `#|` (mruby-array-ext), `String#<<`
 (mruby-string-ext) and `IO#<<` (mruby-io), and the `- & |` helpers now call them instead of dispatching by name.
 Wio closed world, shipped pass; "before" is master `da29f561` (ADR 0365 and 0367 merged) over an mruby tree with the
 misc and index patches only, "after" the branch over all three. The generated method bodies are identical (0 methods

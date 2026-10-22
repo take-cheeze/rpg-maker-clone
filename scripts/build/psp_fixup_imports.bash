@@ -11,7 +11,7 @@ set -euo pipefail
 # Why: the stock tool requires every call site referencing a given PSP module
 # to already be physically contiguous in the linked binary's import metadata,
 # which this project's main.cxx's own (entirely ordinary) control flow does
-# not satisfy -- see patches/psp-fixup-imports-jal-relocation-aware.patch's
+# not satisfy -- see the pinned fork commit (psp-fixup-imports-jal-relocation-aware, docs/patch-fork-tracking.md)'s
 # own preamble and docs/adr/0047-psp-memory-budget.md's P1 for the full
 # story. Without this, the EBOOT links and packs fine but several genuine,
 # correctly-named PSP imports silently resolve to the wrong module at
@@ -47,24 +47,21 @@ PATCHES_DIR="$REPO_ROOT/patches"
 PSPDEV_ROOT="${PSPDEV:-/usr/local/pspdev}"
 OUTPUT_PATH="${1:-$PSPDEV_ROOT/bin/psp-fixup-imports}"
 
-# Pinned in patches/psp-fixup-imports-jal-relocation-aware.patch's own
-# preamble too; keep the two in sync if this ever moves. Confirmed (by
-# disassembling and comparing object files) to match what pspdev/pspdev:latest's
-# own prebuilt psp-fixup-imports binary was built from at the time this was
-# written -- pspdev/pspdev is a moving `:latest` tag, so a future image update
-# could in principle drift from this pin; if the patch stops applying cleanly,
-# that drift is why.
-PSPSDK_COMMIT=314b2083f2e1eaf145fc5de342736336fe1f0148
+# The take-cheeze/pspsdk fork commit that is pspdev's pspsdk at 314b2083 plus
+# the JAL-relocation-aware psp-fixup-imports change (docs/patch-fork-tracking.md).
+# 314b2083 is what pspdev/pspdev:latest's own prebuilt psp-fixup-imports was
+# built from (confirmed by disassembling and comparing object files); pspdev is a
+# moving `:latest` tag, so a future image update could drift from it.
+PSPSDK_REPO=https://github.com/take-cheeze/pspsdk.git
+PSPSDK_COMMIT=723862d4859f5bbfeaab3acf051084a09c71cbfb
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 git init -q "$WORK_DIR"
-git -C "$WORK_DIR" remote add origin https://github.com/pspdev/pspsdk.git
+git -C "$WORK_DIR" remote add origin "$PSPSDK_REPO"
 git -C "$WORK_DIR" fetch -q --depth 1 origin "$PSPSDK_COMMIT"
 git -C "$WORK_DIR" checkout -q FETCH_HEAD
-
-patch -p1 -d "$WORK_DIR" < "$PATCHES_DIR/psp-fixup-imports-jal-relocation-aware.patch"
 
 # tools/types.h #includes "config.h" unconditionally (not HAVE_CONFIG_H-
 # guarded), so it has to be named exactly that on the include path -- copy
