@@ -27018,6 +27018,29 @@ check 'Game::Map#set_lower/#set_upper rewrite one cell directly, and ' \
   eq upper, unit.sets[72], 'and the upper array reached chunk 72'
 end
 
+check 'Game::Map#set_lower refuses a tile id outside int16 with a RangeError, and leaves the cell alone' do
+  w = 6; h = 5
+  unit = FakeMapUnit.new(width: w, height: h, chipset_id: 1,
+                          lower_layer: Array.new(w * h, 7), upper_layer: Array.new(w * h, 0), events: {})
+  map = Game::Map.new(1, unit)
+  rev_before = map.revision
+
+  refused = [32_768, -32_769, 70_000, nil].map do |bad|
+    begin
+      map.set_lower(1, 1, bad)
+      false
+    rescue RangeError
+      true
+    end
+  end
+  eq [true, true, true, true], refused, 'every out-of-int16 id (and nil) raises RangeError'
+  eq 7, map.lower(1, 1), 'the refused write leaves the cell unchanged'
+  eq rev_before, map.revision, 'a refused write does not bump the revision'
+
+  map.set_lower(1, 1, 32_767)
+  eq 32_767, map.lower(1, 1), 'the int16 maximum is accepted'
+end
+
 check 'MapViewer Edit mode: CTRL picks up a tile as the brush, C paints it ' \
      'elsewhere, and SHIFT swaps the active layer' do
   w = 6; h = 5

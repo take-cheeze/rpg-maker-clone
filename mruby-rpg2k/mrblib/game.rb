@@ -6319,8 +6319,13 @@ module Game
     # first place.
 
 
+    # The layers are LCF int16 arrays (ADR 0544): an id outside int16 would be
+    # masked to 16 bits on save, so it is refused here instead.
     def set_tile(layer, x, y, tile_id)
       return unless in_bounds?(x, y)
+      unless tile_id.is_a?(Integer) && tile_id >= -32_768 && tile_id <= 32_767
+        raise RangeError, "tile id #{tile_id.inspect} is outside int16 (-32768..32767)"
+      end
       layer[y * @width + x] = tile_id
       @revision += 1
     end
