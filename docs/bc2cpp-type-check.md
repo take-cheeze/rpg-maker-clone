@@ -55,7 +55,10 @@ new index. Set `BC2CPP_IR_PREPARED_CONTRACTS=0` to compare the unprepared path. 
 
 Context argument binding indexes immutable arity, keyword names and validated
 optional-entry jumps per bytecode body. Every binding still checks its current
-arguments and keywords and builds fresh masks and entry edges. Indexes live only
+arguments and keywords and builds fresh masks. Fixed positional layouts append the
+block slot directly and share frozen empty entry edges; optional, rest, post and
+keyword layouts retain the general binder. Set `BC2CPP_IR_FIXED_BINDINGS=0` to
+compare the general binder for all layouts. Indexes live only
 for one context engine; malformed layouts remain refused. Set
 `BC2CPP_IR_BINDING_INDEX=0` to compare rebuilding layouts on each bind. See
 [ADR 0520](adr/0520-context-binding-index.md).
