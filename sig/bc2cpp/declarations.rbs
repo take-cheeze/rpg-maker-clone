@@ -10425,7 +10425,7 @@ end
 module Kernel
   def raise: (?untyped exception, ?String message) -> bot
   def respond_to?: (Symbol name, ?bool include_all) -> bool
-  def class: () -> untyped
+  def class: () -> Class
 end
 
 # ---- native: core_enumerators
