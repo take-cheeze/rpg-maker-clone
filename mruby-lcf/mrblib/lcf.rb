@@ -318,7 +318,7 @@ module LCF
       raise "invalid bool size: #{d.size}" if d.size != 1
       return d.bytes[0] != 0
     when :int16_array
-      vals = d.unpack('s<*')
+      vals = d.unpack(int16_format(s))
       return vals unless s[:order]
       h = {}
       s[:order].each_with_index { |name, i| h[name] = vals[i] }
@@ -403,12 +403,19 @@ module LCF
     out.pack('C*')
   end
 
+  # The unpack template of an :int16_array field: the schema's `format:` (a full
+  # String#unpack template, e.g. 'S<*' for unsigned), else signed little-endian.
+  # The schema is the source; every reader of these fields goes through here.
+  def int16_format s
+    (s && s[:format]) || 's<*'
+  end
+
   # Encode an array of 16bit integers as packed little-endian bytes -- the
-  # inverse of `unpack('s<*')` (the :int16_array reader). Each value is masked to
-  # its low 16 bits, so the signed reinterpretation the reader applies
-  # round-trips exactly. Built byte-wise rather than via `pack('s<*')` so it does
-  # not depend on mruby-pack's endian-suffix pack support (the readers only rely
-  # on unpack). Used for the save's item-id, equipment and skill tables.
+  # inverse of the schema's :int16_array unpack format. Each value is masked to
+  # its low 16 bits, so the signed and unsigned readers round-trip exactly.
+  # Built byte-wise rather than via `pack('s<*')` so it does not depend on
+  # mruby-pack's endian-suffix pack support (the readers only rely on unpack).
+  # Used for the save's item-id, equipment and skill tables.
   def pack_int16 a
     out = []
     a.each do |v|
@@ -554,7 +561,7 @@ module LCF
                   :parse_event_commands, :encode_event_commands,
                   :parse_move_commands, :encode_move_commands,
                   :unpack_int32, :unpack_double, :pack_int32, :pack_int16,
-                  :pack_double, :encode, :binstr, :elements_of, :field?
+                  :pack_double, :encode, :binstr, :elements_of, :field?, :int16_format
 
   MODE = 2000 # 2003
 
@@ -659,7 +666,7 @@ module LCF
     # surfaces the first row. Returns nil when the chunk is absent.
     def int16_values idx
       d = @data[idx]
-      d && d.unpack('s<*')
+      d && d.unpack(LCF.int16_format(LCF.elements_of(@schema)[idx]))
     end
 
     # Drop a chunk entirely, so #to_lcf omits it rather than writing an empty

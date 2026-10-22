@@ -209,6 +209,25 @@ assert "LCF::Array1D#key? distinguishes an absent chunk from a present one" do
   assert_false row.key?(2)
 end
 
+assert "int16 unpack format comes from the schema: default signed, 'S<*' unsigned" do
+  # 0xffff then 1, little-endian: signed reads -1, the schema's 'S<*' reads 65535.
+  bytes = "\xff\xff\x01\x00"
+  assert_equal [-1, 1], LCF.to_rb(bytes, { type: :int16_array })
+  assert_equal [-1, 1], LCF.to_rb(bytes, { type: :int16_array, format: 's<*' })
+  assert_equal [65535, 1], LCF.to_rb(bytes, { type: :int16_array, format: 'S<*' })
+  # The encoder masks to 16 bits, so both readers see the same bytes back.
+  assert_equal bytes, LCF.encode([65535, 1], :int16_array)
+  assert_equal [65535, 1], LCF.to_rb(LCF.encode([65535, 1], :int16_array),
+                                     { type: :int16_array, format: 'S<*' })
+end
+
+assert "LCF::Array1D#int16_values uses the field's schema format" do
+  row = LCF::Array1D.new(
+    lcf_array1d([lcf_shorts_field(31, [-1, 1])]),
+    { elements: { 31 => { name: :raw, type: :int16_array, format: 'S<*' } } })
+  assert_equal [65535, 1], row.int16_values(31)
+end
+
 assert "LCF::Array1D#int16_values reads a raw short array past a named field read" do
   # Chunk 31 with a two-level parameter curve (six shorts per level); the named
   # `status` accessor only surfaces the first row, int16_values sees all of it.

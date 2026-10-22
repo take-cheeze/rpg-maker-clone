@@ -263,32 +263,6 @@ class IO
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_lcf
-module LCF
-  def binstr: (untyped) -> untyped
-  def elements_of: (untyped) -> untyped
-  def encode: (untyped, untyped) -> untyped
-  def encode_event_commands: (untyped) -> untyped
-  def encode_move_commands: (untyped) -> untyped
-  def exp_default: () -> untyped
-  def field?: (untyped, untyped) -> untyped
-  def level_max: () -> untyped
-  def npc_hp_max: () -> untyped
-  def pack_double: (untyped) -> untyped
-  def pack_int16: (untyped) -> untyped
-  def pack_int32: (untyped) -> untyped
-  def parse_event_commands: (untyped) -> untyped
-  def parse_move_commands: (untyped) -> untyped
-  def pc_hp_max: () -> untyped
-  def read_ber: (untyped) -> untyped
-  def read_section: (untyped, untyped) -> untyped
-  def to_rb: (untyped, untyped) -> untyped
-  def unpack_double: (untyped) -> untyped
-  def unpack_int32: (untyped) -> untyped
-  def var_max: () -> untyped
-  def var_min: () -> untyped
-  def write_ber: (untyped) -> untyped
-end
 
 # bc2cpp-native: base_lcf
 class LCF::Array1D
@@ -8309,6 +8283,35 @@ class Symbol
   def downcase: () -> untyped
   def empty?: () -> untyped
   def upcase: () -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_lcf
+module LCF
+  def binstr: (untyped) -> untyped
+  def elements_of: (untyped) -> untyped
+  def encode: (untyped, untyped) -> untyped
+  def encode_event_commands: (untyped) -> untyped
+  def encode_move_commands: (untyped) -> untyped
+  def exp_default: () -> untyped
+  def field?: (untyped, untyped) -> untyped
+  def int16_format: (untyped) -> untyped
+  def level_max: () -> untyped
+  def npc_hp_max: () -> untyped
+  def pack_double: (untyped) -> untyped
+  def pack_int16: (untyped) -> untyped
+  def pack_int32: (untyped) -> untyped
+  def parse_event_commands: (untyped) -> untyped
+  def parse_move_commands: (untyped) -> untyped
+  def pc_hp_max: () -> untyped
+  def read_ber: (untyped) -> untyped
+  def read_section: (untyped, untyped) -> untyped
+  def to_rb: (untyped, untyped) -> untyped
+  def unpack_double: (untyped) -> untyped
+  def unpack_int32: (untyped) -> untyped
+  def var_max: () -> untyped
+  def var_min: () -> untyped
+  def write_ber: (untyped) -> untyped
 end
 
 # ---- block_types.rbs
