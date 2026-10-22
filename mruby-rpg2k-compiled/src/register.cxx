@@ -1136,12 +1136,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   RClass* game = mrb_module_get(M, "Game");
   RClass* picture = mrb_class_get_under(M, game, "Picture");
 
-// DUPLICATE_REGISTRATIONS: every mrb_define_* below names a method that the
-// bc2cpp_register_owner_methods(M) call above already installs, so a full build
-// registers every one of them twice. Measured on the real wio closed world:
-// 39/39 here, 96/96 in mruby-rgss-compiled, 1240/1240 in mruby-rpg2k-compiled,
-// with no orphan -- no call below is the only registration of its method.
-//
+  // DUPLICATE_REGISTRATIONS: every mrb_define_* below names a method that the
+  // bc2cpp_register_owner_methods(M) call above already installs, so a full
+  // build registers every one of them twice. Measured on the real wio closed
+  // world: 39/39 here, 96/96 in mruby-rgss-compiled, 1240/1240 in
+  // mruby-rpg2k-compiled, with no orphan -- no call below is the only
+  // registration of its method.
+  //
   mrb_define_method(M, picture, "opacity", Game__Picture_opacity,
                     MRB_ARGS_NONE());
   mrb_define_method(M, picture, "x", Game__Picture_x, MRB_ARGS_NONE());
@@ -6153,7 +6154,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // the singleton methods whose call sites in Scene::Map#initialize,
   // #build_event and #rebuild_events_preserving_positions are bound by
   // CLOSED_WORLD_CONSTANT_OBJECT / MONO once their owners are emitted. Like
-  // every call in this guarded region they exist only where the owner is compiled.
+  // every call in this guarded region they exist only where the owner is
+  // compiled.
   //
   // MoveRoute.from_page is further conditional inside a full build: its bare
   // `new(..., repeat:, skippable:)` is compiled only when the closed world
