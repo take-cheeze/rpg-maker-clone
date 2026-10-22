@@ -30,8 +30,10 @@ exactly (an unresolved jump or handler target) is refused.
     braces do not balance.
   Refusals are counted in `CodeGen.arm_prune_refusals`.
 
-The analysis covers a method's own body only. A block body's registers are offset into its enclosing frame, so its
-reachability is not derived here; block bodies are left unchanged.
+The analysis covers a method's own body for stage B. Stage A also measures block bodies, at the register offset their
+emitter uses (`arm_prune_block_analysis`, keyed by label and offset): the standalone block emitter at offset 0, and the
+inlined bodies at their enclosing frame's offset. A decided jump is only decided at offset 0, so an inlined body
+contributes only its unconditional unreachable code. Stage B does not change block bodies.
 
 ## Consequences
 
@@ -47,5 +49,6 @@ reachability is not derived here; block bodies are left unchanged.
 ## Follow-up
 
 - Model register-flow capture so stage B applies to methods that register flow captures.
-- Extend the analysis to block bodies, using the block's own offset numbering.
+- Stage B for block bodies: needs the emitters of inlined bodies to drop text per instruction, and the labels a body's
+  loop region shares with its owner to be checked as the method case checks them. Not done.
 - Measure the engine count and turn stage B on only after the closed-world CI build and the differential runs pass with it.
