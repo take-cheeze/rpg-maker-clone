@@ -1,0 +1,1 @@
+- bc2cpp: a native method whose body returns `mrb_obj_value(mrb_obj_class(...))` is proven to return `Class`, so `Kernel#class` gives callers a known receiver class.
