@@ -80,14 +80,10 @@
               # context finds a driver on a plain (non-NixOS) CI runner and
               # MV::GL.smoke_test runs. Linux-only, like the backend itself.
               ++ lib.optionals stdenv.hostPlatform.isLinux [ mesa.llvmpipeHook ];
-            cp932_table = pkgs.fetchurl {
-              url = "https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt";
-              hash = "sha256-JhTP6jXDyGxB0zGYeTqEykTt7jzw7gATphpD+6Ts4zE=";
-            };
-            jis0208_table = pkgs.fetchurl {
-              url = "https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT";
-              hash = "sha256-HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc=";
-            };
+            # Vendored verbatim from unicode.org under data/unicode-mappings/
+            # (see its README.md for the source URLs and hashes).
+            cp932_table = ./data/unicode-mappings/bestfit932.txt;
+            jis0208_table = ./data/unicode-mappings/JIS0208.TXT;
             buildInputs =
               with pkgs;
               [

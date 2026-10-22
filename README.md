@@ -1749,9 +1749,9 @@
 
   It installs the SDL2 headers, initialises the `3rd/` submodules (empty in a
   plain clone), puts `rake` where `/bin/sh` can find it — mruby builds itself
-  with it — and fetches the two Unicode mapping tables the flake supplies through
-  `$cp932_table` / `$jis0208_table`, checking each against flake.nix's own
-  sha256 so the build consumes the bytes Nix would hand it. It then proves the
+  with it — and copies the two Unicode mapping tables the flake supplies through
+  `$cp932_table` / `$jis0208_table` from `data/unicode-mappings/`, checking each
+  against flake.nix's own sha256 so the build consumes the bytes Nix would hand it. It then proves the
   result works rather than just linking: `--rgss_effect_probe` under Xvfb, which
   measures real pixels, followed by both game boot checks on real project data.
 

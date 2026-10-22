@@ -17,15 +17,13 @@ for tool in ruby rake bison gperf; do
 done
 
 mkdir -p "$tables"
-# url, destination, and the sha256 flake.nix pins for it (base64, as Nix
-# prints) -- same bytes Nix would hand the build, not a lookalike. Keep the
-# pins in sync with the `psp` job in .github/workflows/build.yml, which
-# duplicates this fetch for its docker container.
+# Copies each table from data/unicode-mappings/ (vendored verbatim from
+# unicode.org) into $tables and checks it against the sha256 flake.nix pins
+# (base64, as Nix prints) -- same bytes Nix would hand the build, not a
+# lookalike. Keep the pins in sync with data/unicode-mappings/README.md.
 fetch_table() {
-  local url="$1" dest="$2" want="$3"
-  if [ ! -s "$dest" ]; then
-    curl -fsSL -o "$dest" "$url"
-  fi
+  local src="$1" dest="$2" want="$3"
+  cp "$src" "$dest"
   local got
   got="$(python3 -c 'import hashlib,base64,sys; print(base64.b64encode(hashlib.sha256(open(sys.argv[1],"rb").read()).digest()).decode())' "$dest")"
   if [ "$got" != "$want" ]; then
@@ -35,12 +33,10 @@ fetch_table() {
     exit 1
   fi
 }
-fetch_table \
-  'https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt' \
+fetch_table "$root/data/unicode-mappings/bestfit932.txt" \
   "$tables/bestfit932.txt" \
   'JhTP6jXDyGxB0zGYeTqEykTt7jzw7gATphpD+6Ts4zE='
-fetch_table \
-  'https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT' \
+fetch_table "$root/data/unicode-mappings/JIS0208.TXT" \
   "$tables/JIS0208.TXT" \
   'HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc='
 

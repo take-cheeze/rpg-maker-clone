@@ -18,8 +18,8 @@
 # installs them), and either PlatformIO's Kendryte toolchain (present after
 # any `pio run -e maix_amigo`, which build_config.rb prefers) or a
 # hand-installed riscv64-unknown-elf-gcc. CI's `maix` job installs all of
-# this; the Unicode tables below are fetched the same way the `psp` job
-# fetches them (same pins, same hashes).
+# this; the Unicode tables below are copied from data/unicode-mappings/ the
+# same way the `psp` job stages them (same pins, same hashes).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

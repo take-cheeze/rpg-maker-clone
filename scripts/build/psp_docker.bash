@@ -72,18 +72,16 @@ fi
 # mruby-lcf/cp932_to_unicode.rb and mruby-rgss/gen_shinonome_data.rb are
 # rake-time generators that read $cp932_table / $jis0208_table. The nix
 # devshell sets those from fetchurl derivations; a bare container has neither,
-# so fetch them here and verify against flake.nix's own sha256 pins -- same
-# approach, and the same two pins, as the `psp` CI job and
-# scripts/native/build-without-nix.bash. Downloading on the host rather than
-# in the container keeps them cached across runs, and Alpine ships no python3
-# to check the hash with anyway.
+# so copy the vendored copies from data/unicode-mappings/ here and verify them
+# against flake.nix's own sha256 pins -- same approach, and the same two pins,
+# as the `psp` CI job and scripts/native/build-without-nix.bash. Copying on the
+# host rather than in the container keeps the table path simple, and Alpine
+# ships no python3 to check the hash with anyway.
 echo "== Unicode mapping tables"
 mkdir -p "$TABLES_DIR"
 fetch_table() {
-  local url="$1" dest="$2" want="$3"
-  if [ ! -s "$dest" ]; then
-    curl -fsSL -o "$dest" "$url"
-  fi
+  local src="$1" dest="$2" want="$3"
+  cp "$src" "$dest"
   local got
   got="$(python3 -c 'import hashlib,base64,sys; print(base64.b64encode(hashlib.sha256(open(sys.argv[1],"rb").read()).digest()).decode())' "$dest")"
   if [ "$got" != "$want" ]; then
@@ -94,11 +92,9 @@ fetch_table() {
   fi
   echo "$(basename "$dest"): hash matches flake.nix"
 }
-fetch_table \
-  'https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt' \
+fetch_table "$REPO_ROOT/data/unicode-mappings/bestfit932.txt" \
   "$TABLES_DIR/bestfit932.txt" 'JhTP6jXDyGxB0zGYeTqEykTt7jzw7gATphpD+6Ts4zE='
-fetch_table \
-  'https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT' \
+fetch_table "$REPO_ROOT/data/unicode-mappings/JIS0208.TXT" \
   "$TABLES_DIR/JIS0208.TXT" 'HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc='
 
 # -q for the same reason the CI job passes it: an implicit pull from

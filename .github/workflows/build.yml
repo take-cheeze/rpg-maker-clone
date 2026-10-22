@@ -2513,7 +2513,7 @@ jobs:
             3rd/effekseer 3rd/inicpp 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
-      - name: Download Unicode mapping tables
+      - name: Copy vendored Unicode mapping tables
         # mruby-lcf/cp932_to_unicode.rb and mruby-rgss/gen_shinonome_data.rb
         # (both rake-time code generators, run as part of the psp mruby
         # cross-build below) read $cp932_table / $jis0208_table -- normally
@@ -2522,26 +2522,26 @@ jobs:
         # solves the same gap for a non-nix host build the same way: download
         # and verify against the flake's own sha256 pins, so the build
         # consumes the same bytes Nix would hand it, not a lookalike.
+        # The tables are vendored in data/unicode-mappings/, so this step only
+        # copies and verifies them -- no network.
         run: |
           mkdir -p .native-build-tables
-          fetch_table() {
-            local url="$1" dest="$2" want="$3"
-            curl -fsSL -o "$dest" "$url"
+          vendored_table() {
+            local src="$1" dest="$2" want="$3"
+            cp "$src" "$dest"
             local got
             got="$(python3 -c 'import hashlib,base64,sys; print(base64.b64encode(hashlib.sha256(open(sys.argv[1],"rb").read()).digest()).decode())' "$dest")"
             if [ "$got" != "$want" ]; then
               echo "hash mismatch for $dest" >&2
               echo "  flake.nix pins $want" >&2
-              echo "  downloaded     $got" >&2
+              echo "  vendored       $got" >&2
               exit 1
             fi
           }
-          fetch_table \
-            'https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt' \
+          vendored_table data/unicode-mappings/bestfit932.txt \
             .native-build-tables/bestfit932.txt \
             'JhTP6jXDyGxB0zGYeTqEykTt7jzw7gATphpD+6Ts4zE='
-          fetch_table \
-            'https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT' \
+          vendored_table data/unicode-mappings/JIS0208.TXT \
             .native-build-tables/JIS0208.TXT \
             'HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc='
 
@@ -2902,30 +2902,28 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      - name: Download Unicode mapping tables
+      - name: Copy vendored Unicode mapping tables
         # See the identical step in the `psp` job above -- same two rake-time
         # code generators, same $cp932_table/$jis0208_table gap outside the nix
         # devshell.
         run: |
           mkdir -p .native-build-tables
-          fetch_table() {
-            local url="$1" dest="$2" want="$3"
-            curl -fsSL -o "$dest" "$url"
+          vendored_table() {
+            local src="$1" dest="$2" want="$3"
+            cp "$src" "$dest"
             local got
             got="$(python3 -c 'import hashlib,base64,sys; print(base64.b64encode(hashlib.sha256(open(sys.argv[1],"rb").read()).digest()).decode())' "$dest")"
             if [ "$got" != "$want" ]; then
               echo "hash mismatch for $dest" >&2
               echo "  flake.nix pins $want" >&2
-              echo "  downloaded     $got" >&2
+              echo "  vendored       $got" >&2
               exit 1
             fi
           }
-          fetch_table \
-            'https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt' \
+          vendored_table data/unicode-mappings/bestfit932.txt \
             .native-build-tables/bestfit932.txt \
             'JhTP6jXDyGxB0zGYeTqEykTt7jzw7gATphpD+6Ts4zE='
-          fetch_table \
-            'https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT' \
+          vendored_table data/unicode-mappings/JIS0208.TXT \
             .native-build-tables/JIS0208.TXT \
             'HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc='
 
