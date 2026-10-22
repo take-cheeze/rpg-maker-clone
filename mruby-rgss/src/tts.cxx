@@ -61,7 +61,7 @@ extern "C" void rgss_tts_install_backend(const RgssTtsBackend* backend) {
     g_backend = RgssTtsBackend{};
 }
 
-// BEGIN native-binding-split
+// BEGIN native-binding-split (ADR 0263, generated)
 namespace rgss {
 
 [[maybe_unused]] static mrb_value native_split_compiled_out(mrb_state* M,

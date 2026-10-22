@@ -8335,7 +8335,7 @@ static mrb_value table_xsize_native_body(mrb_state* M, mrb_value self) {
   return mrb_fixnum_value(DataType<Table>::get(M, self).xsize);
 }
 
-// BEGIN native-binding-split
+// BEGIN native-binding-split (ADR 0263, generated)
 namespace rgss {
 
 [[maybe_unused]] static mrb_value native_split_compiled_out(mrb_state* M,

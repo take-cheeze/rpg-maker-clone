@@ -1,5 +1,5 @@
 // Fixture for scripts/native/binding_split_check.rb: one binding per outcome
-// of the classification. The facts next to it were produced with
+// of the classification (ADR 0263). The facts next to it were produced with
 //   scripts/native/binding_facts.py --config host|wio \
 //     scripts/fixtures/native_binding_split/bindings.cxx
 // and only change when this file does.
@@ -116,7 +116,7 @@ mrb_value off_wio_set(mrb_state* M, mrb_value self) {
 
 }  // namespace
 
-// A hand-written direct entry point and its binding.
+// A hand-written direct entry point (ADR 0253) and its binding.
 namespace rgss {
 mrb_value fixture_named_direct(mrb_state* M, mrb_value self, mrb_int v) {
   return mrb_fixnum_value(v);
