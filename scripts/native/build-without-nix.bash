@@ -20,10 +20,11 @@ set -euo pipefail
 #   4. Two Unicode mapping tables.         mruby-lcf/cp932_to_unicode.rb and
 #                                          mruby-rgss/gen_shinonome_data.rb read them
 #                                          from $cp932_table / $jis0208_table, which the
-#                                          flake sets from fetchurl. They are downloaded
-#                                          here and checked against the flake's own
-#                                          sha256 hashes, so the build consumes the same
-#                                          bytes Nix would hand it -- not a lookalike.
+#                                          flake sets from data/unicode-mappings/ (vendored
+#                                          from unicode.org). They are copied here and
+#                                          checked against the flake's own sha256 hashes,
+#                                          so the build consumes the same bytes Nix would
+#                                          hand it -- not a lookalike.
 #   5. `gperf` and `bison`.                This project's mruby-defined-keyword.patch
 #                                          touches mrbgems/mruby-compiler/core/keywords,
 #                                          forcing rake to regenerate lex.def/y.tab.c on
@@ -136,12 +137,11 @@ fi
 
 say "4/5 Unicode mapping tables"
 mkdir -p "$tables"
-# url, destination, and the sha256 flake.nix pins for it (base64, as Nix prints).
+# Copies each table from data/unicode-mappings/ (vendored verbatim from
+# unicode.org) and checks it against the sha256 flake.nix pins (base64, as Nix prints).
 fetch_table() {
-  local url="$1" dest="$2" want="$3"
-  if [ ! -s "$dest" ]; then
-    curl -fsSL -o "$dest" "$url"
-  fi
+  local src="$1" dest="$2" want="$3"
+  cp "$src" "$dest"
   local got
   got="$(python3 -c 'import hashlib,base64,sys; print(base64.b64encode(hashlib.sha256(open(sys.argv[1],"rb").read()).digest()).decode())' "$dest")"
   if [ "$got" != "$want" ]; then
@@ -152,11 +152,9 @@ fetch_table() {
   fi
   echo "$(basename "$dest"): hash matches flake.nix"
 }
-fetch_table \
-  'https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt' \
+fetch_table "$root/data/unicode-mappings/bestfit932.txt" \
   "$tables/bestfit932.txt" 'JhTP6jXDyGxB0zGYeTqEykTt7jzw7gATphpD+6Ts4zE='
-fetch_table \
-  'https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT' \
+fetch_table "$root/data/unicode-mappings/JIS0208.TXT" \
   "$tables/JIS0208.TXT" 'HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc='
 export cp932_table="$tables/bestfit932.txt"
 export jis0208_table="$tables/JIS0208.TXT"
