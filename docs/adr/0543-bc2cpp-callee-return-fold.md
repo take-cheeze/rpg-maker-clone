@@ -1,4 +1,4 @@
-# 0541. bc2cpp: decide a jump on a call that always returns a literal
+# 0543. bc2cpp: decide a jump on a call that always returns a literal
 
 Date: 2026-10-22
 
