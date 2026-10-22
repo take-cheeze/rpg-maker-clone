@@ -1441,6 +1441,7 @@
   optimization while final emission retains it; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
   LCF and frozen-table mask diagnostics avoid temporary wide integer intersections;
   see [mask diagnostics](docs/bc2cpp-type-check.md#mask-diagnostic-allocations).
+  Compiler call-arity predicates read decoded operands without formatting argument counts.
   Numeric-flow branch walks avoid temporary truthiness pairs while retaining oracle queries.
   Numeric flow shares unchanged load states while preserving metadata
   invalidation and write tracking; see

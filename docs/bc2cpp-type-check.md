@@ -458,6 +458,19 @@ refactor's overhead in the optimized measurement. Allocations fell from
 and report JSON were byte-identical. One object-profiled timing pair was
 52.381s versus 51.253s, which does not establish a stable wall-time speedup.
 
+### Decoded call-arity predicates
+
+Fixed-argument and pure-splat predicates classify the decoded positional count
+and keyword-presence flag directly. They preserve the distinction between an
+absent count, an explicit zero, a positional splat, and explicit keyword lists
+(including zero keywords), while avoiding repeated decimal String formatting.
+Printed operand accessors keep their existing behavior.
+
+A warmed original-source comparison on base `fc573f24` reduced compiler
+allocations from 86,523,931 to 85,647,384 (876,547 fewer, 1.01%). Facts, receiver
+rows and report JSON were byte-identical. One object-profiled timing pair was
+51.042s versus 49.988s; this is not a repeated speed benchmark.
+
 ### Scalar branch truthiness facts
 
 Numeric-flow provenance walks consume definite and possible falsy masks as local
