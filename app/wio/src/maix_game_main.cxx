@@ -32,6 +32,7 @@
 #include <mruby/variable.h>
 
 #include "maix.hxx"
+#include "mrb_array_access.hxx"
 
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display);
 extern "C" void rgss_maix_poll(mrb_state* M);
@@ -69,7 +70,7 @@ void report_exc(void) {
   // without needing a debugger attached to the board.
   mrb_value bt = mrb_funcall(g_mrb, exc, "backtrace", 0);
   if (!mrb_nil_p(bt)) {
-    mrb_int len = RARRAY_LEN(bt);
+    mrb_int len = ary_size(bt);
     for (mrb_int i = 0; i < len && i < 8; ++i) {
       mrb_value line = mrb_str_to_str(g_mrb, mrb_ary_ref(g_mrb, bt, i));
       Serial.print("maix-game   at ");

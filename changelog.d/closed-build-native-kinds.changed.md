@@ -1,0 +1,1 @@
+- The closed-world build generates the native return-kind table itself, so the bc2cpp run that builds the closed library uses the native conversion results (`inspect`, `to_s`, `to_i`, `to_f`) without a manual step.
