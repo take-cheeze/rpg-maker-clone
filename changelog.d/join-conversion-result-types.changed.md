@@ -1,0 +1,1 @@
+- The unknown-receiver join now types `inspect` and `to_s` as String and `to_i` and `to_f` as Integer and Float. A native name no longer loses its proof to a native source that spells it, and outside Ruby `inspect`/`to_s` definitions count when audited to return String (ADR 0537).

@@ -45,7 +45,8 @@ scripts/bc2cpp/ir_constant_facts_compare.rb compares the two.
     already does, by the same induction on assignment order.
   - admitted-only-in-IR (18): names that NUMERIC_CONSTANT_RANGES already types as Integer.
   - class (93): `.freeze`d literal Arrays and Hashes (86), and constructed RGSS::Color and RGSS::Rect
-    values (7). The IR does not model `.freeze` or constructors yet.
+    values (7). The IR does not model `.freeze` or constructors yet. (Status update, ADR 0536: a literal container's
+    `.freeze` is modelled; constructed values still need class identity.)
 - Stage 2: the IR decides three constant sets. CodeGen's Fixnum-admitted names (`integer_constants`) are the IR
   groups with class Integer and an exact value or an interval, so every name is inside the Fixnum margin.
   `integer_constant_values` (the GETCONST/GETMCNST fold) and `integer_constant_ranges` (the NUMERIC_CONSTANT_RANGES
