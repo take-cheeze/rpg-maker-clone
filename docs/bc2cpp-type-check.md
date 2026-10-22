@@ -380,6 +380,18 @@ provenance checks; standalone transfer contexts retain their copying behavior.
 `BC2CPP_NUMERIC_LOAD_COPY_ELISION=0` restores the copying load path.
 See [ADR 0536](adr/0536-bc2cpp-unchanged-load-states.md).
 
+### Unchanged scalar result states
+
+The same metadata checks also avoid copies for unchanged scalar result writes:
+constants, captured variables, keyword reads, exception values, arithmetic,
+indexing, collection builders and operations whose result is otherwise unknown.
+Every oracle question and write-union update still runs. If an operation can
+call Ruby implicitly, copy any shared incoming state before invalidating ivar
+facts, provenance and class tests. Calls and transfers that install aliases or
+class tests retain their existing paths. Standalone contexts retain copied
+results. `BC2CPP_NUMERIC_RESULT_COPY_ELISION=0` disables result sharing.
+See [ADR 0541](adr/0541-bc2cpp-unchanged-result-states.md).
+
 ### Ivar slot union fixed points
 
 Each numeric-flow run retains the last widened mask for each tracked ivar slot.
@@ -418,3 +430,10 @@ A warmed Ruby 4.0.5/YJIT full-engine comparison reduced compiler allocations
 from 94,426,399 to 88,482,065 (5,944,334 fewer, 6.3%). Facts, receiver rows and
 report JSON were byte-identical. Object-profiled elapsed time was 51.970s versus
 50.382s in one pair; this is not a repeated timing benchmark.
+
+A warmed same-worktree Ruby 4.0.5/YJIT full-engine comparison on base
+`4ccd606d` used the original source as baseline, including the dispatch
+refactor's overhead in the optimized measurement. Allocations fell from
+88,001,416 to 87,685,717 (315,699 fewer, 0.36%); complete facts, receiver rows
+and report JSON were byte-identical. One object-profiled timing pair was
+52.381s versus 51.253s, which does not establish a stable wall-time speedup.
