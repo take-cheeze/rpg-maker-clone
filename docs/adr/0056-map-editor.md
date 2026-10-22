@@ -45,7 +45,8 @@ step before a save actually reflects it.
   `#substitute_tile` already does so `Scene::Map`'s tile-cache invalidation
   picks it up. Reads (`#lower`/`#upper`, and so ordinary field rendering) see
   the edit immediately, since they already read the same arrays — no new
-  read path, no cache to invalidate beyond what already exists.
+  read path, no cache to invalidate beyond what already exists. An id outside
+  int16 (-32768..32767) raises `RangeError` and writes nothing (ADR 0544).
 - **`Game::Map#sync_layers_to_unit`**: pushes the (possibly-edited)
   `@lower`/`@upper` arrays back into `@unit` (the `LCF::MapUnit` `File`
   object every `Game::Map` already holds a reference to, per `RPG2k#load_map`)
