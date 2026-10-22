@@ -263,32 +263,6 @@ class IO
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_lcf
-module LCF
-  def binstr: (untyped) -> untyped
-  def elements_of: (untyped) -> untyped
-  def encode: (untyped, untyped) -> untyped
-  def encode_event_commands: (untyped) -> untyped
-  def encode_move_commands: (untyped) -> untyped
-  def exp_default: () -> untyped
-  def field?: (untyped, untyped) -> untyped
-  def level_max: () -> untyped
-  def npc_hp_max: () -> untyped
-  def pack_double: (untyped) -> untyped
-  def pack_int16: (untyped) -> untyped
-  def pack_int32: (untyped) -> untyped
-  def parse_event_commands: (untyped) -> untyped
-  def parse_move_commands: (untyped) -> untyped
-  def pc_hp_max: () -> untyped
-  def read_ber: (untyped) -> untyped
-  def read_section: (untyped, untyped) -> untyped
-  def to_rb: (untyped, untyped) -> untyped
-  def unpack_double: (untyped) -> untyped
-  def unpack_int32: (untyped) -> untyped
-  def var_max: () -> untyped
-  def var_min: () -> untyped
-  def write_ber: (untyped) -> untyped
-end
 
 # bc2cpp-native: base_lcf
 class LCF::Array1D
@@ -8311,6 +8285,40 @@ class Symbol
   def upcase: () -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_compar
+module Comparable
+  def clamp: (untyped, ?untyped) -> untyped
+end
+
+# bc2cpp-native: base_lcf
+module LCF
+  def binstr: (untyped) -> untyped
+  def elements_of: (untyped) -> untyped
+  def encode: (untyped, untyped) -> untyped
+  def encode_event_commands: (untyped) -> untyped
+  def encode_move_commands: (untyped) -> untyped
+  def exp_default: () -> untyped
+  def field?: (untyped, untyped) -> untyped
+  def int16_format: (untyped) -> untyped
+  def level_max: () -> untyped
+  def npc_hp_max: () -> untyped
+  def pack_double: (untyped) -> untyped
+  def pack_int16: (untyped) -> untyped
+  def pack_int32: (untyped) -> untyped
+  def parse_event_commands: (untyped) -> untyped
+  def parse_move_commands: (untyped) -> untyped
+  def pc_hp_max: () -> untyped
+  def read_ber: (untyped) -> untyped
+  def read_section: (untyped, untyped) -> untyped
+  def to_rb: (untyped, untyped) -> untyped
+  def unpack_double: (untyped) -> untyped
+  def unpack_int32: (untyped) -> untyped
+  def var_max: () -> untyped
+  def var_min: () -> untyped
+  def write_ber: (untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
@@ -10733,15 +10741,26 @@ end
 # Enumerator and is not declared here (core_results).
 # bc2cpp-native: core_block_iterators
 module Enumerable
-  def map: () { (untyped) -> untyped } -> Array[untyped]
-  def collect: () { (untyped) -> untyped } -> Array[untyped]
+  def map: [U] () { (untyped) -> U } -> Array[U]
+  def collect: [U] () { (untyped) -> U } -> Array[U]
   def select: () { (untyped) -> untyped } -> Array[untyped]
   def reject: () { (untyped) -> untyped } -> Array[untyped]
   def find_all: () { (untyped) -> untyped } -> Array[untyped]
   def partition: () { (untyped) -> untyped } -> Array[untyped]
-  def filter_map: () { (untyped) -> untyped } -> Array[untyped]
+  def filter_map: [U] () { (untyped) -> U } -> Array[U]
   def sort_by: () { (untyped) -> untyped } -> Array[untyped]
   def group_by: () { (untyped) -> untyped } -> Hash[untyped, untyped]
+end
+
+# bc2cpp-native: core_block_iterators
+# Array's own declarations of the iterators whose elements are the receiver's (Enumerable's find_all, reject, select and
+# sort_by bodies push the elements `each` yields, unchanged). The block receives one element, so the element type is the
+# class's Elem: the RBS names the receiver element, not a block return.
+class Array[unchecked out Elem] < Object
+  def select: () { (Elem) -> untyped } -> Array[Elem]
+  def reject: () { (Elem) -> untyped } -> Array[Elem]
+  def find_all: () { (Elem) -> untyped } -> Array[Elem]
+  def sort_by: () { (Elem) -> untyped } -> Array[Elem]
 end
 
 # bc2cpp-native: core_block_iterators

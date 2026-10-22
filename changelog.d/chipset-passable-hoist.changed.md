@@ -1,0 +1,1 @@
+- **RPG2k** `ChipSet#passable?` tests a per-object flag for an absent passability table instead of the table itself on every tile check, as `landable?` already does. Behaviour is unchanged.

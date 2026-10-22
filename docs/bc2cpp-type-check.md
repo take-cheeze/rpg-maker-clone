@@ -169,14 +169,68 @@ Four further constant producers come after the ones above, each consulted only w
   for String, and every non-core native `length` definer is one read as not String's: `STRING_LENGTH_NOT_STRING_NATIVES`
   lists four, so a new definer refuses the proof), and Integer#== is stock (`integer_ops_safe?`). An `==` on Integer
   returns true or false, so the value is `bool`, not Integer.
-`IO.open` is not typed (STDIN, STDOUT and STDERR stay untyped). mruby-io's `IO.open` (3rd/mruby/mrbgems/mruby-io/mrblib/io.rb)
-is `io = self.new(*args); return io unless block`, so a blockless call returns Class#new on IO: an IO, never nil. That is
-read from the source, not proven by a row. The proof stopped at `ClosedWorld#native_class_unshadowed?('IO')`, which is
-false in the closed world (its write-count model counts IO as shadowed); the other gates (no closed-world `open` on
-IO's singleton, `IO.new` stock, no non-core native `open`) hold. io.rb is a foreign Ruby source, so the registry has no
-`IO.open` (`send_result:open(unregistered)`), and its `STDIN = ...` lines also poison the Fixnum proof by name. Typing
-them needs that shadowing model reviewed; `IO` is not in `NATIVE_CONSTRUCT_TARGETS`, so `native_constructed_class` does not
-reach it either.
+* `inferred:io-open` types a constant whose every value is a blockless `IO.open(...)` (SEND or SEND0 named `open`, with
+  the constant IO as receiver; a SENDB carries a block and is not this) as `IO`. mruby-io's IO.open (io.rb:
+  `io = self.new(*args); return io unless block`) answers Class#new on IO when there is no block, so the value is an IO.
+  With a block it returns the block's value, so such a call is not typed. The gates are `IO_OPEN_SAFE`
+  (type_facts `io_open_safe?`): `ClosedWorld#native_class_unshadowed?('IO')`; no engine `open` defined on `IO.singleton`
+  and no prepend or unknown mixin on it; no non-core native `open`; and `new` stock (`class_new_is_stock?`). The row is
+  report-only: const_rows runs in the type check, and io_open_safe? is read there alone.
+
+  Why `native_class_unshadowed?('IO')` was false, and what changed. Its outside write count was 2, not the 1 the model
+  expects: mruby-io's io.c defines IO with `mrb_define_class_id(mrb, MRB_SYM(IO), mrb->object_class)` and mruby-stringio's
+  stringio.c with `mrb_define_class(mrb, "IO", mrb->object_class)`. A define with the same superclass returns the class
+  already bound, so these two bind one class; a different superclass raises at startup. The model also counted io.rb's
+  root-level `class IO` (a CLASS op, no superclass) as a program class declaration, though it only reopens the native
+  class. The count is now allowed when every outside write is a plain Object-superclass define (`@outside_plain_class_defines`),
+  and a root-level no-superclass CLASS op is not a declaration (`root_reopen?`; mruby runs the root irep with the Object
+  target class). A nested `class IO`, a `IO = ...` rebinding, a `const_set` or any second non-plain write still refuses.
+  Codegen: the predicate change reaches codegen only through infer_constructed_constant_classes for NATIVE_CONSTRUCT_TARGETS
+  names. Those are RGSS:: classes defined with mrb_define_class_under (not plain Object defines), with no top-level Ruby
+  reopen in the engine's closed-world sources, so their answer is unchanged; the engine run changed no typed row.
+  Checked by scripts/bc2cpp/io_open_check.rb (fixtures: blockless, block, redefined `open`, nested `class IO`, rebinding).
+  Not investigated: io.rb's irep is labelled `mruby-rpg2k/mrblib_limited/map_tts_off.rb` in the rows (a pre-existing file label
+  error), so the core-source filter does not drop it; the root-reopen rule is what keeps it harmless.
+
+Two constant rows widen what the report can type. Both are report-only: codegen reads the value proof and the
+`container_constants` map as before, except where noted below.
+
+* The integer-class rows (`inferred:integer-class`) come from a second `BytecodeIR::ConstantFacts` run whose poison is
+  `IntegerConstants.foreign_class_poison`. A foreign `NAME = <integer literal>` does not poison (it is an Integer
+  definition; the class proof needs no value), and a foreign `NAME = A | B` over bare names does not poison when its file
+  is one the IR already binds. Any other foreign definition, and every foreign class or module name, still poisons. The
+  value run keeps `foreign_const_names`, so `fixnum_names` is unchanged. `StringIO::READWRITE` (`READABLE | WRITABLE`) is
+  typed this way.
+* HASH_LOOKUP (class run only, `hash_lookup_safe`) types a lookup `NAME[k]` as Integer, so the bit-operator rule above
+  types `DIR_BIT[2] | DIR_BIT[4] | ...` and `Game::ChipSet::ALL_DIRS` (`inferred:integer-class`). The read is GETIDX
+  (mrbc's `x[k]`); a SEND `[]` is not modelled. It is proven when every binding of the bare name N is a frozen Hash
+  literal, `(literal).freeze`, with these properties:
+  * the freeze's receiver is one HASH node, and nothing between the HASH and the freeze can run a method or copy the
+    object (`Program#quiet_span?`, the container-literal proof), so the frozen table holds the literal's pairs;
+  * every key is an exact Integer literal (no duplicate) and every value an Integer literal (`literal_hash_keys`);
+  * k is one of the keys of every binding's table.
+  The gates are `Hash#[]` stock (`DeclaredConstants.stock_method?`), no non-core native `[]` on a Hash ancestor (its
+  owners read as CallFacts reads them: an unresolved owner refuses), no singleton method on an instance
+  (`exact_instances_singleton_free?`), and no native or foreign definition of N (the value run's poison set). An
+  Integer key needs no `eql?` / `hash` proof: mruby hashes and compares a fixnum key without dispatch
+  (3rd/mruby/src/hash.c). Any other shape (a variable key, a block, a missing key, a non-literal value, an unfrozen or
+  mutated literal, a non-Hash receiver) is not typed. The value run builds the nodes it built before (no HASH or GETIDX
+  node), so the Fixnum facts, the folded values and `container_constants` are unchanged; codegen reads none of this.
+  Checked by `scripts/bc2cpp/frozen_hash_lookup_check.rb`.
+* The constructed-constant rows (`inferred:constructed`) judge each qualified name by its own sites: every site of that
+  name must construct the same class (for example `Color.new`). `ClosedWorld#static_constant_writes?` must show the bare
+  name is written only by the program's SETCONST sites, counted across every scope. The other sites of the same bare
+  name (in any scope) must not be reachable from this one: `constant_scopes_unrelated?` (dispatch_targets.rb) requires
+  that neither owner encloses the other, and neither is among the other's ancestors (superclasses, included and
+  prepended modules, Object and its mixins). An ancestry it cannot model (an unresolved or reopened superclass, an
+  unresolved mixin) counts as related. A bare read from a scope reaches only its lexical chain and its ancestors, so
+  a related sibling could answer a read this site's hint covers, and the hint is then withheld. A single-site name is
+  judged as before.
+
+  Example: `TEXT_COLOR = Color.new(...)` in `ChipsetEditor` and `MapViewer`, plus `TEXT_COLOR = 0` in `EquipMenu` and
+  `SaveLoad`. All four sit in sibling subclasses of `Scene::Base`, none encloses another, so the two `Color` sites are
+  typed `RGSS::Color` and the two integer sites stay untyped. Because these hints feed `container_constants`, this does
+  change codegen for multi-site names; the hints stay guarded at dispatch (CLOSED_WORLD_VALUE_CONSTANT).
 
 ## Constant ratchet (TC1017, ADR 0491)
 
@@ -326,6 +380,18 @@ provenance checks; standalone transfer contexts retain their copying behavior.
 `BC2CPP_NUMERIC_LOAD_COPY_ELISION=0` restores the copying load path.
 See [ADR 0536](adr/0536-bc2cpp-unchanged-load-states.md).
 
+### Unchanged scalar result states
+
+The same metadata checks also avoid copies for unchanged scalar result writes:
+constants, captured variables, keyword reads, exception values, arithmetic,
+indexing, collection builders and operations whose result is otherwise unknown.
+Every oracle question and write-union update still runs. If an operation can
+call Ruby implicitly, copy any shared incoming state before invalidating ivar
+facts, provenance and class tests. Calls and transfers that install aliases or
+class tests retain their existing paths. Standalone contexts retain copied
+results. `BC2CPP_NUMERIC_RESULT_COPY_ELISION=0` disables result sharing.
+See [ADR 0541](adr/0541-bc2cpp-unchanged-result-states.md).
+
 ### Ivar slot union fixed points
 
 Each numeric-flow run retains the last widened mask for each tracked ivar slot.
@@ -364,3 +430,56 @@ A warmed Ruby 4.0.5/YJIT full-engine comparison reduced compiler allocations
 from 94,426,399 to 88,482,065 (5,944,334 fewer, 6.3%). Facts, receiver rows and
 report JSON were byte-identical. Object-profiled elapsed time was 51.970s versus
 50.382s in one pair; this is not a repeated timing benchmark.
+
+### Reaching-definition query keys
+
+Repeated IR proof queries reuse a bounded snapshot of opaque register names when
+the input is an ordinary frozen Set containing only frozen Strings. Other frozen
+containers and sets with mutable members still rebuild their snapshots, and
+mutable containers and refusal diagnostics retain the uncached path. Register
+strings are copied only when inserting a new query key, preserving caller
+ownership and the existing canonical key order.
+
+Both the query-result cache and the opaque snapshot identity memo retain at most
+1024 entries per IR Program. Fresh result copies and shared immutable definitions
+keep their existing APIs. `BC2CPP_IR_QUERY_KEYS=0` restores per-query key copying.
+See [ADR 0542](adr/0542-bc2cpp-dataflow-query-keys.md).
+
+A warmed Ruby 4.0.5/YJIT full-engine comparison on base `4ccd606d` reduced
+allocations from 88,005,453 to 86,413,003 (1,592,450 fewer, 1.81%). Complete
+facts JSON, receiver TSV and report JSON were byte-identical. One object-profiled
+timing pair was 51.172s versus 50.805s; this does not establish a stable wall-time
+speedup.
+
+A warmed same-worktree Ruby 4.0.5/YJIT full-engine comparison on base
+`4ccd606d` used the original source as baseline, including the dispatch
+refactor's overhead in the optimized measurement. Allocations fell from
+88,001,416 to 87,685,717 (315,699 fewer, 0.36%); complete facts, receiver rows
+and report JSON were byte-identical. One object-profiled timing pair was
+52.381s versus 51.253s, which does not establish a stable wall-time speedup.
+
+### Decoded call-arity predicates
+
+Fixed-argument and pure-splat predicates classify the decoded positional count
+and keyword-presence flag directly. They preserve the distinction between an
+absent count, an explicit zero, a positional splat, and explicit keyword lists
+(including zero keywords), while avoiding repeated decimal String formatting.
+Printed operand accessors keep their existing behavior.
+
+A warmed original-source comparison on base `fc573f24` reduced compiler
+allocations from 86,523,931 to 85,647,384 (876,547 fewer, 1.01%). Facts, receiver
+rows and report JSON were byte-identical. One object-profiled timing pair was
+51.042s versus 49.988s; this is not a repeated speed benchmark.
+
+### Scalar branch truthiness facts
+
+Numeric-flow provenance walks consume definite and possible falsy masks as local
+values, avoiding an intermediate pair for every visited register. Each visit
+still asks the oracle for the current FalseClass bit; unknown false classes,
+branch kinds, alias narrowing and cycle handling retain their existing behavior.
+The standalone tuple-returning helper retains its original API.
+
+A warmed original-source comparison on base `fc573f24` reduced compiler
+allocations from 86,523,931 to 86,065,342 (458,589 fewer, 0.53%). Facts, receiver
+rows and report JSON were byte-identical. Timing is not used as evidence of a
+wall-time speedup.

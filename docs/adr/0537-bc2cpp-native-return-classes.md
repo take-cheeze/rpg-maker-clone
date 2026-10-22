@@ -72,3 +72,50 @@ default build's join is unchanged.
 - Name-based rules remain for the constructors (`mrb_str_*`, `mrb_bint_*`),
   the `class_name_str` and `mrb_bint_to_s` contracts, and the `string_class` and
   `MRB_TT_STRING` guard names.
+
+## Follow-up: fields, nil tests and assignment guards
+
+Date: 2026-10-21
+
+`Kernel#inspect` (`mrb_obj_inspect`) returns a struct field behind a nil test, and `mrb_inspect` returns a value a
+string test makes a String, so the return analysis models three more facts. Each is a rule about the source, not a
+name list.
+
+1. **Fields.** A field read `x.f` of a struct the file defines has the join of every value the file stores into `f`
+   (`NativeAstReturns::FieldIndex`). The record's layout is known only to its file, so those stores are all the writes
+   its fields see. A whole-record copy, a by-value parameter, a file-scope object, or a declaration that is not a brace
+   initializer makes the record's fields unknown. A C++ class copy (`operator=`) is a store like `=`.
+2. **Nil tests.** A read proven non-nil drops the stores of a definitely-nil value (`mrb_nil_value()`). The proof is
+   a nil test of the same field read: `!nil(x.f)` in the branch where it is true, `nil(x.f)` where it is false. The test
+   is recognised in either value encoding (`(o).w == MRB_Qnil`, or `(o).tt == MRB_TT_FALSE && !fixnum(o)`), since
+   `mrb_nil_p` is a macro. The branch must not store to the field, and must not use the object bare (`&x`, a copy, a
+   pointer handed out), since either could change the field the test saw.
+3. **String assignments.** `if (!is_string(v)) v = <String>;` leaves `v` a String after the branch, when the branch
+   assigns `v` once, unconditionally, with a String. A conditional or a second assignment does not count.
+
+Trust boundary: a record defined in the file is opaque to other files, so its address reaches them only as `void *`.
+A write through that pointer by a memory operation in another file is not seen here; the analysis trusts that the
+callbacks which write a record are in its own file, as `mruby`'s `mrb_iv_foreach` users are.
+
+Measured: `mrb_obj_inspect` and `mrb_exc_inspect` are String, and `mrb_inspect` is String through rule 3. `inspect`
+remains refused for `Range#inspect` (`range_inspect` returns the element's `inspect` result, which is dynamic); the
+decision whether a Ruby-level `inspect` returns String by Ruby's protocol is left open.
+
+## Follow-up: the join admits native names with outside Ruby definitions
+
+Date: 2026-10-21
+
+The join refused a native name whenever any native source spelled it (`name_fully_visible?`). That gate was too coarse:
+the native table already accounts for every registration of the name (NativeReturnClasses: each owner has one proven
+entry, and a computed or unknown owner refuses the name), so a native spelling adds no unaccounted definition. The
+join now uses `ClosedWorld#name_visible_to_native_table?`, which checks only what the table cannot see: an installer,
+a `method_missing` hook, a global refusal, and an outside Ruby definition.
+
+An outside Ruby definition of the name joins only when each one is audited to return the table's class. The audit is
+`tools/bc2cpp/foreign_string_results.rb`: a list of pinned mrblib files (SHA-256) with the names read in each, every one
+returning a String on every path (a literal, an interpolation or `String#%`). An edited file leaves the audit, and a
+definition not listed keeps its name refused. Audited String paths are checked by `native_return_sources_visible?`,
+the same rule ADR 0334 uses. Only `String` is audited; the Integer and Float names need no Ruby definition.
+
+Measured on the probe fixture (CxHolder calling `inspect`, `to_s`, `to_i`, `to_f` on an unknown receiver): all four join
+in the final pass, to String, String, Integer and Float. Before this, the final pass refused all four.

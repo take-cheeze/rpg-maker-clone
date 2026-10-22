@@ -1,0 +1,1 @@
+- The native return-kind table (`native_fn_kinds.rb`) generates about three times faster on a cold cache: the second pass re-parses only the files that look up a name the first pass added, and the workers default to the CPU count (up to 4).

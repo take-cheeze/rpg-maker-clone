@@ -1,0 +1,1 @@
+- The bc2cpp type check no longer has a catch-all `rescue` in its constant-row builder that would silently return no constant rows on any error. The rescue never fired on the engine run, so it is removed; an unexpected error now stops the check instead of leaving every constant untyped without a trace.

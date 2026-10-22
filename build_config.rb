@@ -184,6 +184,10 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # The closed world's bc2cpp model (compiled_gems.rb) assumes Symbol includes
   # Comparable, so the closed build has to load the gem that declares it.
   conf.gem core: 'mruby-symbol-ext' if conf.name == 'closed'
+  # Comparable's methods (clamp, between?, the operators' Ruby bodies) come from
+  # mruby-compar-ext. The closed world's bc2cpp model (compiled_gems.rb) assumes
+  # Comparable is defined and its owner is compiled, so the closed build loads it.
+  conf.gem core: 'mruby-compar-ext' if conf.name == 'closed'
   # Fiber: the RGSS script host drives the game's bundled blocking main loop
   # (`$scene.main while $scene`) one frame at a time through a Fiber so the web
   # build's per-frame emscripten callback keeps control each frame. Not in the
