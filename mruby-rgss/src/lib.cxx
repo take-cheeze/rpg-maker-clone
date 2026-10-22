@@ -64,14 +64,15 @@ static inline dirent* readdir(DIR*) {
 #include <iostream>
 
 // The asset search this engine actually performs only ever tries .png,
-// .jpg/.jpeg, .bmp (via stb, all three formats an RPG Maker XP/VX RTP mixes) and .xyz (the custom
-// decoder below, not stb's). None of stb's other format decoders — GIF, PSD,
-// TGA, HDR, PIC, PNM — are reachable from any loader in this codebase
-// (confirmed by grep: no stbi__gif/psd/tga/hdr/pic/pnm-specific symbol is
-// referenced anywhere). Compiling them in cost real bytes for nothing: on the
-// PSP every PT_LOAD segment of the EBOOT is mapped into RAM at launch (same reasoning as the uni-algo trim),
-// so this is live RAM there, not just file/flash size, and it shrinks the
-// desktop/wasm/wio/android binaries for free the same way that trim did.
+// .jpg/.jpeg, .bmp (via stb, all three formats an RPG Maker XP/VX RTP mixes)
+// and .xyz (the custom decoder below, not stb's). None of stb's other format
+// decoders — GIF, PSD, TGA, HDR, PIC, PNM — are reachable from any loader in
+// this codebase (confirmed by grep: no stbi__gif/psd/tga/hdr/pic/pnm-specific
+// symbol is referenced anywhere). Compiling them in cost real bytes for
+// nothing: on the PSP every PT_LOAD segment of the EBOOT is mapped into RAM at
+// launch (same reasoning as the uni-algo trim), so this is live RAM there, not
+// just file/flash size, and it shrinks the desktop/wasm/wio/android binaries
+// for free the same way that trim did.
 #define STBI_NO_GIF
 #define STBI_NO_PSD
 #define STBI_NO_TGA
@@ -8932,8 +8933,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "bush_depth=", spr_set_bush_depth, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "flash", spr_flash, MRB_ARGS_REQ(2));
 
-#if !defined( \
-    WIO_TERMINAL)  // Plane: never instantiated by wio's Ruby
+#if !defined(WIO_TERMINAL)  // Plane: never instantiated by wio's Ruby
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   g_native_plane_class = plane;
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
@@ -9074,7 +9074,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "gradient_fill_rect", bmp_gradient_fill_rect,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(4));
   mrb_define_method(M, bmp, "hue_change", bmp_hue_change, MRB_ARGS_REQ(1));
-#endif                      // !defined(WIO_TERMINAL)
+#endif  // !defined(WIO_TERMINAL)
 #if !defined(WIO_TERMINAL)
   mrb_define_method(M, bmp, "blur", bmp_blur, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "radial_blur", bmp_radial_blur, MRB_ARGS_REQ(2));

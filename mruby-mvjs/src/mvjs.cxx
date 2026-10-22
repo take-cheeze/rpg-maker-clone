@@ -1,7 +1,8 @@
 // The embedded JavaScript engine and host environment for RPG Maker MV support.
 //
-// This is the seam through which the rest of approach #2 plugs in: it embeds quickjs-ng
-// and builds up the browser/host environment MV's own JavaScript expects.
+// This is the seam through which the rest of approach #2 plugs in: it embeds
+// quickjs-ng and builds up the browser/host environment MV's own JavaScript
+// expects.
 //
 //   M2: `MV::JS.eval` proves the engine runs.
 //   M3: a *persistent* host (one runtime/context reused across evals) plus the

@@ -118,7 +118,8 @@
 //
 // `class << self; attr_writer :extensions; def extensions; @extensions
 // || EXTENSIONS; end; end` and `def self.failure_reason(f)` both live
-// under the distinct pseudo-owner `RGSS::Bitmap.singleton` (SCLASS/SDEF), never under `RGSS::Bitmap` itself.
+// under the distinct pseudo-owner `RGSS::Bitmap.singleton` (SCLASS/SDEF), never
+// under `RGSS::Bitmap` itself.
 //
 // Follow-up: both are now
 // real, compiled entry points -- `RGSS::Bitmap.singleton` was added to

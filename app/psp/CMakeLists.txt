@@ -202,9 +202,9 @@ rpg2k_add_mruby(
   mruby-rpgvx
   mruby-wolf
   # The RPGMAKER_BC2CPP=1-only compiled gems (build_config.rb adds them to the
-  # closed-world psp/wio/maix builds). Listed so an edit to one
-  # (its hand-written src/register.cxx) re-runs rake on a plain incremental
-  # `cmake --build`.
+  # closed-world psp/wio/maix builds). Listed so an edit to one (its
+  # hand-written src/register.cxx) re-runs rake on a plain incremental `cmake
+  # --build`.
   mruby-lcf-compiled
   mruby-rpg2k-compiled
   mruby-rgss-compiled

@@ -1,10 +1,10 @@
-// Real mruby+RGSS+LVGL boot test for the Wio Terminal: unlike app/wio/src/main.cxx's
-// bring-up firmware ("proves the HAL... without the mruby interpreter"),
-// this one actually opens the real interpreter -- linking the wio-target
-// libmruby.a that first got building -- brings up the same RGSS/mruby-lcf
-// /mruby-rpg2k gem set a real game would run, then exercises the LVGL HAL
-// (wio.cxx, now compiled into libmruby.a itself rather than pulled in via
-// app/wio/src/wio_hal.cxx's bring-up shim) and the button scan through it.
+// Real mruby+RGSS+LVGL boot test for the Wio Terminal: unlike
+// app/wio/src/main.cxx's bring-up firmware ("proves the HAL... without the
+// mruby interpreter"), this one actually opens the real interpreter -- linking
+// the wio-target libmruby.a that first got building -- brings up the same
+// RGSS/mruby-lcf /mruby-rpg2k gem set a real game would run, then exercises the
+// LVGL HAL (wio.cxx, now compiled into libmruby.a itself rather than pulled in
+// via app/wio/src/wio_hal.cxx's bring-up shim) and the button scan through it.
 //
 // No game data is loaded -- that needs the SD-backed asset streaming rework
 // libmruby.a alone does not touch. This proves the

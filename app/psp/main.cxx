@@ -39,8 +39,8 @@
 // does not attempt), not a correctness or memory-safety one.
 //
 // mrb_open() here uses mruby's own default allocator (plain malloc) rather
-// than routing through lv_malloc the way the desktop build does -- sharing LVGL's
-// pool vs. a separate arena is decided for this target (see below): the
+// than routing through lv_malloc the way the desktop build does -- sharing
+// LVGL's pool vs. a separate arena is decided for this target (see below): the
 // interpreter's whole live heap is routed through a
 // fixed-size arena of its own (mrb_basic_alloc_func) instead of LVGL's pool
 // -- which only aligns to 4 bytes on a 32-bit build, too weak for mruby's word
@@ -525,15 +525,15 @@ void show_keys(uint64_t mask) {
 // Appends " t_us=N free=N maxfree=N lvgl_used=N lvgl_max=N stack_free=N
 // stack_used_max=N arena_used=N" -- the figure tail every RPG2K_PSP_*
 // diagnostic marker in this file carries (see the BRINGUP heartbeat below for
-// what each field means). t_us is sceKernelGetSystemTimeLow() -- microseconds on the
-// console's own free-running clock (the same source mruby-rgss/src/psp.cxx's
-// LVGL tick callback uses), not wall-clock time or time-since-process-start:
-// subtract one marker's t_us from a later one's to get an elapsed duration
-// between them (mrb_open cost, load-to-title-screen cost, ...) without this
-// file needing to know or care what "now" means beyond that. stack_used_max
-// is a parameter rather than recomputed here because only the periodic
-// heartbeat tracks a running maximum across many samples -- a one-shot
-// marker's own high-water mark is just its single sample (see
+// what each field means). t_us is sceKernelGetSystemTimeLow() -- microseconds
+// on the console's own free-running clock (the same source
+// mruby-rgss/src/psp.cxx's LVGL tick callback uses), not wall-clock time or
+// time-since-process-start: subtract one marker's t_us from a later one's to
+// get an elapsed duration between them (mrb_open cost, load-to-title-screen
+// cost, ...) without this file needing to know or care what "now" means beyond
+// that. stack_used_max is a parameter rather than recomputed here because only
+// the periodic heartbeat tracks a running maximum across many samples -- a
+// one-shot marker's own high-water mark is just its single sample (see
 // append_mem_snapshot below, which fills that in for one-shot callers).
 void append_mem_fields(StrBuf& sb, int stack_free, unsigned stack_used_max) {
   lv_mem_monitor_t mon;
@@ -659,7 +659,8 @@ int main(void) {
   // this from RPG2K_PSP_MRUBY_OPEN's own free= (or add up arena_used, which
   // is the more direct number: mrb_open() links every gem's mrblib in, the
   // same "full gembox, no game loaded yet" state, which a host-proxy
-  // estimate put at ~1.2-1.4 MB before a device number existed for it) to get mrb_open()'s real device cost.
+  // estimate put at ~1.2-1.4 MB before a device number existed for it) to get
+  // mrb_open()'s real device cost.
   {
     char buf[256];
     StrBuf sb(buf, sizeof(buf));

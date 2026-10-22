@@ -75,9 +75,9 @@ function(rpg2k_add_mruby)
     ${mruby_prefix}/include/*.h)
   list(APPEND mrb_files ${mruby_core})
 
-  # Gap fixed: tools/bc2cpp/bc2cpp.rb and tools/bc2cpp/compiled_gems.rb
-  # live outside every mrbgem directory entirely (this script's own doc comment
-  # above already explains why: this one tool feeds
+  # Gap fixed: tools/bc2cpp/bc2cpp.rb and tools/bc2cpp/compiled_gems.rb live
+  # outside every mrbgem directory entirely (this script's own doc comment above
+  # already explains why: this one tool feeds
   # mruby-lcf-compiled's/mruby-rpg2k-compiled's/ mruby-rgss-compiled's own
   # mrbgem.rake `file` rules, none of which are in a fixed, single gem's own
   # src/ or mrblib/ tree), so neither file was ever a member of `mrb_files`
@@ -209,12 +209,11 @@ function(rpg2k_add_mruby)
   # left; and mrb_open() cannot tell mrb_core_init_abort()'s deliberate
   # mrb->exc=NULL apart from genuine success, so an allocation failure early
   # enough in bootstrap lets it proceed into gem init on a half-initialized
-  # state instead of failing cleanly. Found chasing P1c
-  # though the repro did not reproduce
-  # P1c's own exact crash signature -- these are real, independently verified
-  # fixes, not a confirmed fix for P1c itself. Same patch-in-place treatment as
-  # the other mruby patches above, for the same reason (no fork of upstream
-  # mruby/mruby this project controls).
+  # state instead of failing cleanly. Found chasing P1c though the repro did not
+  # reproduce P1c's own exact crash signature -- these are real, independently
+  # verified fixes, not a confirmed fix for P1c itself. Same patch-in-place
+  # treatment as the other mruby patches above, for the same reason (no fork of
+  # upstream mruby/mruby this project controls).
   set(mruby_nomem_patch
       "${ARG_REPO_ROOT}/patches/mruby-nomemoryerror-reentrant-alloc.patch")
 
@@ -248,11 +247,11 @@ function(rpg2k_add_mruby)
   # most BSD/Darwin libcs, but this board's bare-metal arm-none-eabi newlib's
   # own sys/param.h defines PATHSIZE, not MAXPATHLEN, so the file fails to
   # compile outright (a real `MRUBY_TARGET=wio rake` run against PlatformIO's
-  # own toolchain-gccarmnoneeabi never got this far before). Adds the
-  # same `#ifndef MAXPATHLEN #define MAXPATHLEN 1024` fallback the file's own
-  # _WIN32 branch already carries a few lines up, just gated for any libc
-  # missing the macro rather than only Windows's. Same patch-in- place treatment
-  # as the other mruby patches above, for the same reason (no fork of upstream
+  # own toolchain-gccarmnoneeabi never got this far before). Adds the same
+  # `#ifndef MAXPATHLEN #define MAXPATHLEN 1024` fallback the file's own _WIN32
+  # branch already carries a few lines up, just gated for any libc missing the
+  # macro rather than only Windows's. Same patch-in- place treatment as the
+  # other mruby patches above, for the same reason (no fork of upstream
   # mruby/mruby this project controls).
   set(mruby_io_maxpathlen_patch
       "${ARG_REPO_ROOT}/patches/mruby-io-maxpathlen-fallback.patch")
@@ -303,24 +302,23 @@ function(rpg2k_add_mruby)
   set(mruby_stringio_prefix "${ARG_REPO_ROOT}/3rd/mruby-stringio")
 
   # mruby-marshal's own mrbgem.rake unconditionally add_dependency'd
-  # mruby-onig-regexp, silently defeating the psp/wio onigmo trim (the
-  # top-level conf.gem exclusion never stopped this unconditional
-  # dependency from pulling onigmo right back in) -- not noticed until a real
-  # end-to-end MRUBY_TARGET=wio build first ran to completion. Made conditional,
-  # paired with a marshal.cpp fix so Marshal.dump/load do not hard-require the
-  # Regexp class to exist at all once onigmo (which alone defines it) is really
-  # gone. Same project-owned-submodule, no-push-access reasoning as the
-  # mruby-stringio patch above: mruby-marshal is take-cheeze's own repo, but
-  # this session's access is scoped to rpg-maker-clone, so it is patched in
-  # place here instead.
+  # mruby-onig-regexp, silently defeating the psp/wio onigmo trim (the top-level
+  # conf.gem exclusion never stopped this unconditional dependency from pulling
+  # onigmo right back in) -- not noticed until a real end-to-end
+  # MRUBY_TARGET=wio build first ran to completion. Made conditional, paired
+  # with a marshal.cpp fix so Marshal.dump/load do not hard-require the Regexp
+  # class to exist at all once onigmo (which alone defines it) is really gone.
+  # Same project-owned-submodule, no-push-access reasoning as the mruby-stringio
+  # patch above: mruby-marshal is take-cheeze's own repo, but this session's
+  # access is scoped to rpg-maker-clone, so it is patched in place here instead.
   set(mruby_marshal_onigmo_patch
       "${ARG_REPO_ROOT}/patches/mruby-marshal-psp-wio-onigmo-optional.patch")
   set(mruby_marshal_prefix "${ARG_REPO_ROOT}/3rd/mruby-marshal")
 
-  # measurement-only escape hatch, a no-op unless
-  # MRUBY_FORCE_NO_CXX_EXCEPTION is set in the environment: mruby's own gem
-  # loader (lib/mruby/build/load_gems.rb) unconditionally calls
-  # enable_cxx_exception the moment any gem has a .cxx/.cpp/.cc source
+  # measurement-only escape hatch, a no-op unless MRUBY_FORCE_NO_CXX_EXCEPTION
+  # is set in the environment: mruby's own gem loader
+  # (lib/mruby/build/load_gems.rb) unconditionally calls enable_cxx_exception
+  # the moment any gem has a .cxx/.cpp/.cc source
   # (mruby-rgss/mruby-lcf/mruby-marshal all do here), which compiles mruby's own
   # core error.c/vm.c/gc.c as real C++ and implements Ruby's own begin/
   # rescue/ensure as real C++ throw/catch (src/throw.h) rather than setjmp/
@@ -328,9 +326,9 @@ function(rpg2k_add_mruby)
   # would leak any C++ object (std::string/std::vector, real ones exist on
   # mruby-rgss's own call stacks) left on the stack being unwound through. This
   # patch only adds the environment-variable check itself; it changes nothing
-  # for every normal build, on any target, where that variable is unset.
-  # Forcing no C++ exceptions saves measured flash but is a real correctness
-  # tradeoff this project has not decided to accept as the default.
+  # for every normal build, on any target, where that variable is unset. Forcing
+  # no C++ exceptions saves measured flash but is a real correctness tradeoff
+  # this project has not decided to accept as the default.
   set(mruby_force_no_cxx_exception_patch
       "${ARG_REPO_ROOT}/patches/mruby-force-no-cxx-exception-escape-hatch.patch"
   )
@@ -341,9 +339,9 @@ function(rpg2k_add_mruby)
       "${ARG_REPO_ROOT}/patches/mruby-onig-regexp-no-chdir.patch")
   set(mruby_onig_regexp_prefix "${ARG_REPO_ROOT}/3rd/mruby-onig-regexp")
 
-  # Flash/RAM trims for the static irep and presym data every build embeds
-  # The first two change no behaviour; the third
-  # only adds the MRB_NO_IREP_DEBUG option, which only the wio build defines.
+  # Flash/RAM trims for the static irep and presym data every build embeds The
+  # first two change no behaviour; the third only adds the MRB_NO_IREP_DEBUG
+  # option, which only the wio build defines.
   set(mruby_presym_compact_patch
       "${ARG_REPO_ROOT}/patches/mruby-presym-compact-table.patch")
   set(mruby_cdump_const_reps_patch
@@ -352,27 +350,26 @@ function(rpg2k_add_mruby)
       "${ARG_REPO_ROOT}/patches/mruby-no-irep-debug.patch")
 
   # Exports the bodies of Integer#%, Float#%, String#-@ and the sprintf
-  # formatter under `*_impl` names so bc2cpp's closed helpers can call them.
-  # The registered methods call the same bodies; behaviour is unchanged.
+  # formatter under `*_impl` names so bc2cpp's closed helpers can call them. The
+  # registered methods call the same bodies; behaviour is unchanged.
   set(mruby_expose_misc_bodies_patch
       "${ARG_REPO_ROOT}/patches/mruby-expose-misc-bodies.patch")
 
   # Frame-independent bodies of `[]` / `[]=` / `.[]` for bc2cpp's closed index
-  # helpers. Adds exported functions and routes the original
-  # methods through them; behaviour of interpreted code does not change.
+  # helpers. Adds exported functions and routes the original methods through
+  # them; behaviour of interpreted code does not change.
   set(mruby_expose_index_bodies_patch
       "${ARG_REPO_ROOT}/patches/mruby-expose-index-bodies.patch")
 
   # Exports the native bodies of Array#-, Array#&, Array#|, String#<< and IO#<<
-  # so bc2cpp's closed-world helpers can call them directly.
-  # Applied last: it edits array.c/string.c/io.c, which the patches above also
-  # touch.
+  # so bc2cpp's closed-world helpers can call them directly. Applied last: it
+  # edits array.c/string.c/io.c, which the patches above also touch.
   set(mruby_expose_collection_op_bodies_patch
       "${ARG_REPO_ROOT}/patches/mruby-expose-collection-op-bodies.patch")
 
-  # `# frozen_string_literal: true`: the magic comment,
-  # OP_FSTRING and the persistent frozen String it returns. Applied last: it
-  # edits the compiler, gc.c and string.c, which the patches above also touch.
+  # `# frozen_string_literal: true`: the magic comment, OP_FSTRING and the
+  # persistent frozen String it returns. Applied last: it edits the compiler,
+  # gc.c and string.c, which the patches above also touch.
   set(mruby_frozen_string_literal_patch
       "${ARG_REPO_ROOT}/patches/mruby-frozen-string-literal-persist.patch")
 
@@ -443,8 +440,8 @@ function(rpg2k_add_mruby)
   add_dependencies(mruby mruby_build)
 
   # Only the gem-free host bootstrap mrbc (build_config.rb's `host_mrbc` task):
-  # what the bc2cpp CI check jobs need, without the whole libmruby.
-  # Not in `all`; never build it concurrently with mruby_build (same build dir).
+  # what the bc2cpp CI check jobs need, without the whole libmruby. Not in
+  # `all`; never build it concurrently with mruby_build (same build dir).
   add_custom_target(
     mruby_host_mrbc
     COMMAND ${mruby_rake_command} host_mrbc
