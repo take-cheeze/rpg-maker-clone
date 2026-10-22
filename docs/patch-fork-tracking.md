@@ -28,7 +28,7 @@ no longer live in `patches/`.
 Status key: **applied** (commit on a tracking branch), **in pin** (already in
 the pinned commit, no commit needed), **not applied** (see the note).
 
-### take-cheeze/mruby (pin `67a569e`, `rpg-maker-clone/patches-pin` at `1316065`)
+### take-cheeze/mruby (pin `67a569e`, `rpg-maker-clone/patches-pin` at `eab0234`)
 
 Applied on the pin, in build order: `mruby-colon3-assign-setmcnst`,
 `mruby-dollar-bang-scoped`, `mruby-defined-keyword`, `mruby-module-function-scope`,
@@ -44,6 +44,13 @@ Applied on the pin, in build order: `mruby-colon3-assign-setmcnst`,
 - `mruby-io-direct-puts`: **in pin**.
 - `mruby-module-function-scope`: applied with `patch -p1` (the hunk headers do
   not satisfy `git apply`), as the build's apply script does.
+
+
+Regenerated files: the mruby-defined-keyword change edits `keywords` and
+`parse.y`, so its generated `lex.def` and `y.tab.c` are regenerated on the pin
+branch (`eab0234`). The build used to force that regeneration by applying the
+patch; the pinned tree has no such step, so the generated files must be
+committed up to date.
 
 ### take-cheeze/mruby-stringio (pin `41eb37e`, `rpg-maker-clone/patches-pin` at `c3a3e11`)
 
