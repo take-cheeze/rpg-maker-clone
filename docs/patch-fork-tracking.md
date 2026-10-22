@@ -43,7 +43,7 @@ Applied on the pin, in build order: `mruby-colon3-assign-setmcnst`,
 
 - `mruby-io-direct-puts`: **in pin**.
 - `mruby-module-function-scope`: applied with `patch -p1` (the hunk headers do
-  not satisfy `git apply`), as the build's apply script does.
+  not satisfy `git apply`). The build no longer applies patches.
 
 
 Regenerated files: the mruby-defined-keyword change edits `keywords` and
