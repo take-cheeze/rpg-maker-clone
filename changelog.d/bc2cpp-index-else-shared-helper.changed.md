@@ -1,1 +1,1 @@
-- **bc2cpp**: the else of a statically Array or Hash `[]` site calls the shared getidx helper instead of a by-name send, so 76 remaining dynamic sends in the shipped build are folded into one helper (ADR 0541).
+- **bc2cpp**: the else of a statically Array or Hash `[]` or `[]=` site calls the shared getidx or setidx helper instead of a by-name send, so the remaining dynamic sends in the shipped build fall from 746 to 635 (ADR 0541).

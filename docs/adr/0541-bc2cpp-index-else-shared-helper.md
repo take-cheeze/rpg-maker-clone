@@ -1,4 +1,4 @@
-# 0541. bc2cpp: the else of a static Array or Hash `[]` runs the shared getidx helper
+# 0541. bc2cpp: the else of a static Array or Hash `[]` and `[]=` runs the shared index helpers
 
 Date: 2026-10-22
 
@@ -19,7 +19,9 @@ world (INDEX_CLOSED, ADR 0365) answer every other class from a closed switch wit
 - The Array `else` (a non-fixnum key, or a receiver that is not an exact Array) and the Hash `else` (a non-Hash
   receiver) call `bc2cpp_getidx` through `CodeGen#index_else_statement`. The helper's arms repeat the same tests, so
   the result is the same call as before for every receiver.
-- When `[]` is devirt-blocked by a runtime definer, the statement stays the by-name `mrb_funcall`, as before.
+- The Array and Hash `else` of a static `[]=` (SETIDX) call `bc2cpp_setidx` through `CodeGen#index_set_else_statement`.
+  Its arms return the value as the `[]=` send does, so the result is unchanged.
+- When `[]` or `[]=` is devirt-blocked by a runtime definer, the statement stays the by-name `mrb_funcall`, as before.
 - INTEGER_TAG_ELSE (ADR 0394) still runs the Array body directly for an exact Array receiver and is unchanged.
 
 ## Consequences
@@ -30,4 +32,3 @@ world (INDEX_CLOSED, ADR 0365) answer every other class from a closed switch wit
 - Not verified at runtime. The closed library builds with the change. The index-related bc2cpp checks
   (`class_pools_check`, `dispatch_ir_trace_check`, `join_dominance_check`, `lcf_row_flow_check`) pass. The coverage
   summary still stops at its known label mismatch, after the shipped file is written.
-- `[]=` (setidx) has the same kind of else and is not changed here.
