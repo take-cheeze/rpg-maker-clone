@@ -1,0 +1,1 @@
+- Ruby's conversion methods `inspect`, `to_i` and `to_f` now join `to_s`, `to_str`, `to_int`, `to_ary` and `to_hash` in the build gate: each must take only optional positional parameters, and its return is checked at run time against its class.
