@@ -1,0 +1,1 @@
+- Map layers now have a behaviour oracle (`scripts/rpg2k/layer_save_oracle_check.rb`) that pins the current layer read, write, sync and chunk 71/72 save bytes, the baseline for the int16 layer storage change (ADR 0544).
