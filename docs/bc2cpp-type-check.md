@@ -431,6 +431,26 @@ from 94,426,399 to 88,482,065 (5,944,334 fewer, 6.3%). Facts, receiver rows and
 report JSON were byte-identical. Object-profiled elapsed time was 51.970s versus
 50.382s in one pair; this is not a repeated timing benchmark.
 
+### Reaching-definition query keys
+
+Repeated IR proof queries reuse a bounded snapshot of opaque register names when
+the input is an ordinary frozen Set containing only frozen Strings. Other frozen
+containers and sets with mutable members still rebuild their snapshots, and
+mutable containers and refusal diagnostics retain the uncached path. Register
+strings are copied only when inserting a new query key, preserving caller
+ownership and the existing canonical key order.
+
+Both the query-result cache and the opaque snapshot identity memo retain at most
+1024 entries per IR Program. Fresh result copies and shared immutable definitions
+keep their existing APIs. `BC2CPP_IR_QUERY_KEYS=0` restores per-query key copying.
+See [ADR 0542](adr/0542-bc2cpp-dataflow-query-keys.md).
+
+A warmed Ruby 4.0.5/YJIT full-engine comparison on base `4ccd606d` reduced
+allocations from 88,005,453 to 86,413,003 (1,592,450 fewer, 1.81%). Complete
+facts JSON, receiver TSV and report JSON were byte-identical. One object-profiled
+timing pair was 51.172s versus 50.805s; this does not establish a stable wall-time
+speedup.
+
 A warmed same-worktree Ruby 4.0.5/YJIT full-engine comparison on base
 `4ccd606d` used the original source as baseline, including the dispatch
 refactor's overhead in the optimized measurement. Allocations fell from

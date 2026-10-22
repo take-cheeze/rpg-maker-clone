@@ -1434,6 +1434,8 @@
   Compiler opacity queries reuse finalized outside-source touch results while
   retaining live declaration and rebinding guards; see
   [ADR 0534](docs/adr/0534-bc2cpp-opacity-touch-cache.md).
+  Reaching-definition queries reuse immutable opaque-register key snapshots and
+  preserve caller-owned strings; see [query keys](docs/bc2cpp-type-check.md#reaching-definition-query-keys).
   Embedding compile probes reuse a fixed state-key list and restore caller state
   without temporary pairs. Eligibility probes also skip error-free register-text
   optimization while final emission retains it; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
