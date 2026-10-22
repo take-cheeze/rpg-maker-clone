@@ -29,7 +29,7 @@ Some choices worth knowing:
   only matters for 2003 data is `engine:rpg2k3` even though it lands in
   `mruby-lcf`, which 2000 shares.
 - **`engine:vx` and `engine:vxace` travel together** by default: one data layer
-  serves RGSS2 and RGSS3 (ADR 0024). Drop one when a change really is
+  serves RGSS2 and RGSS3 (the RGSS2 and RGSS3 data layer). Drop one when a change really is
   Ace-only.
 - **Leave `platform:` off** unless the problem is target specific. Most changes
   are not.
