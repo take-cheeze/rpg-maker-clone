@@ -40,11 +40,10 @@ the analysis overlay in `closed/analysis/include` (presym IDs for every symbol t
 closed world's native sources name, and the Onigmo header; ADR 0539). The closed
 library does not compile against the overlay. Then:
 
-```bash
-scripts/bc2cpp/closed_build.bash build-closed-bc2cpp
-ruby scripts/bc2cpp/native_fn_kinds.rb build-closed-bc2cpp/closed > fn-kinds.tsv
-BC2CPP_NATIVE_FN_KINDS=$PWD/fn-kinds.tsv ...   # the bc2cpp run that should use it
-```
+`closed_build.bash` generates the table and uses it. Its first rake phase writes the presym list the overlay needs;
+then it writes `closed/analysis/fn-kinds.tsv`, deletes the generated `*_gen.cpp` files (rake does not track
+`BC2CPP_NATIVE_FN_KINDS`), and runs rake again so the closed world is generated with the table. To regenerate the
+table alone, run `ruby scripts/bc2cpp/native_fn_kinds.rb build-closed-bc2cpp/closed > fn-kinds.tsv`.
 
 The generator reads every native source the base generator reads and every
 source the closed world reads (without `test/` directories), each with its gem's
@@ -55,8 +54,8 @@ tree; the wio-only `io_hal.c` is outside the closed world.
 The analysis reads the sources as the build does, so the generator refuses to run
 until the mruby patches `standalone_prep.bash` applies are in `3rd/mruby`. Without
 them `profiler.cxx` (`mrb_gc_type_counts` comes from a patch) and `symbol.c` (whose
-table the compact form replaces) do not parse. Run `closed_build.bash`, which
-applies them, before the generator.
+table the compact form replaces) do not parse. `closed_build.bash` applies them
+before the generator runs.
 
 Time: each file's result is cached under `closed/analysis/kinds-cache` (keyed on
 the file, its flags, the analyzer's sources and the external kinds), and files run
