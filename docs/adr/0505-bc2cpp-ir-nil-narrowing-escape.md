@@ -15,7 +15,7 @@ backward (`copy_source`: up to 64 instructions, one MOVE hop, then
 missed copy chains, sibling copies and copies that reach a test through a
 join, and duplicated in instruction order what a dataflow state can carry.
 
-ESCAPE_ANALYSIS (ADR 0316) already flowed values over the IR's successors and
+ESCAPE_ANALYSIS already flowed values over the IR's successors and
 handler edges, but scanned `irep.instructions` for closures, definitions,
 block pushes and upvar reads.
 

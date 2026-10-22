@@ -9,11 +9,11 @@ Accepted
 ## Context
 
 A receiver's class set is proven by the exact-class flow (`NumericFlow`, ADR 0276/0289), the class pools (ADR 0296),
-the receiver unions (ADR 0348, 0352) and the post-call facts (ADR 0317). The flow already narrows by truthiness
+the receiver unions (ADR 0348, 0352) and the post-call facts. The flow already narrows by truthiness
 (`JMPIF`/`JMPNOT`/`JMPNIL`: `x` is not nil in `if x`, `x.nil?` in a condition is a `JMPNIL`), and ADR 0293 compiles
 `is_a?`, `kind_of?` and `===` to direct C calls. Nothing connected the two: the answer of a class test never changed
 what the flow knew about the variable it tested, so `if x.is_a?(Foo); x.bar; end` dispatched `bar` through the same
-chain as an unguarded `x.bar`. ADR 0317 says so (the flow "has no is_a?/respond_to? narrowing and no post-call narrowing").
+chain as an unguarded `x.bar`. The earlier notes say so (the flow "has no is_a?/respond_to? narrowing and no post-call narrowing").
 
 What was handled before this change, by form:
 
@@ -21,7 +21,7 @@ What was handled before this change, by form:
 | --- | --- |
 | `x` / `unless x` / `x ? a : b` (truthiness), `x.nil?` as a condition (`JMPNIL`) | narrowed the nil bit on each edge (existing) |
 | `x.nil?`, `!x`, `x.is_a?(C)`, `kind_of?`, `instance_of?`, `C === x`, `case x when C`, `x.respond_to?(:m)`, `x.class == C` as a value | not narrowed |
-| `x.m1` then `x.m2` | CALL_FACTS (ADR 0317) bounds the receiver of `m2` by the classes answering `m1`; unchanged |
+| `x.m1` then `x.m2` | CALL_FACTS bounds the receiver of `m2` by the classes answering `m1`; unchanged |
 | a receiver that is nil or one class | NILABLE_RECEIVER (ADR 0296): the non-nil arm is exact; unchanged |
 | `raise ... unless test` | not narrowed: the flow let `raise` return |
 | `a \|\| b`, `a && b` in a condition | not narrowed: the second branch is a branch on the register the first one tested, and the join threw the narrowing away |

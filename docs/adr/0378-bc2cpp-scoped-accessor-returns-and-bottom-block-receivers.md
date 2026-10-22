@@ -52,7 +52,7 @@ table would not. Kill switch `BC2CPP_SCOPED_ACCESSOR_RETURNS=0`.
 It changes no generated C++ of the wio build (shipped C++ identical with it off and on): every accessor name in the
 list above fails at its pool, not at the name. It is kept because the fixtures show names it would help (two classes
 with a reader of one name, a subclass overriding the reader) and it is the one place the exact-receiver flow reads
-a pool; ADR 0377 admits a sound, small change on its checks. Remove it if a later census still shows no site.
+a pool; A sound, small change may be admitted on its checks. Remove it if a later census still shows no site.
 
 ## Not claimed
 

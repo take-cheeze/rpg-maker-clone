@@ -14,7 +14,7 @@ a receiver proven to be a compiled user class does not stay by name only because
 exists. The shipped-pass census (`closed_world_kept`, 223 sends) lists 182 `core_or_native`, 29 `dynamic_install`, 9
 `singleton_definer`, 2 `unlisted_class`, 1 `opaque_definer`.
 
-The class-aware form already exists. ADR 0317 (`scoped` + `native_free`), ADR 0323 (`resolves_in_ruby?`,
+The class-aware form already exists. `scoped` + `native_free` (ADR 0323 neighbour), ADR 0323 (`resolves_in_ruby?`,
 instance-scoped installs and unknown definers) and ADR 0302 judge the gate against the receiver's proven set `S`
 instead of the whole name, for both the exact-class flow and the call facts. What this change measured is what is left
 and why.

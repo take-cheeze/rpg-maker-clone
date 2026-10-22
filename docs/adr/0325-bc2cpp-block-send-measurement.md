@@ -11,9 +11,9 @@ Accepted
 After ADR 0270, 0271, 0283, 0310 and 0314 a literal-block send (`x.each { }`, `x.map { }`) calls the compiled core body
 through an exact-class arm (`Array`, `Hash`, `Range`, `Integer`) and keeps the dynamic `mrb_funcall_with_block` as its
 else unless the receiver class is proven. The request was to remove more of those by-name sends in the engine gems with
-four levers, and to build the sound ones that remove at least 30 sends (the same cutoff ADR 0317 used):
+four levers, and to build the sound ones that remove at least 30 sends (the cutoff then in use):
 
-* (a) SENDB support in `CodeGen#receiver_instances` / CALL_FACTS (ADR 0317): post-call receiver facts for block sends.
+* (a) SENDB support in `CodeGen#receiver_instances` / CALL_FACTS: post-call receiver facts for block sends.
 * (b) `Array.new(n) { }` as a direct compiled call.
 * (c) a direct entry for blocks that `break` or `return` (ADR 0271 leaves them on the cfunc wrapper).
 * (d) `Hash#delete` / `Array#delete` direct entries (21 engine `delete` sends, 6 with a proven Hash receiver).
@@ -84,7 +84,7 @@ ivar 16, `loadnil` 10, `getmcnst` 9, self 6, arithmetic 6, Hash literal 4.
 
 Details that matter for risk:
 
-* (a) CALL_FACTS accepts only declared user classes (ADR 0317). Block sends are `each`, `map`, `select`...: names that
+* (a) CALL_FACTS accepts only declared user classes. Block sends are `each`, `map`, `select`...: names that
   Array, Hash and Range answer, so a fact such as `x.size` or `x.empty?` bounds the receiver to core classes (4 sites with
   `Array|Hash`, and `Array|Hash|String`) or to a mixed set that contains user classes with their own `each` (17). A
   user-class `each` with a block is compiled only as one resolved call (POLY chains do not carry a block,
@@ -113,7 +113,7 @@ Details that matter for risk:
 29 at their ceiling, only by building three unrelated mechanisms (an Array-constant loop helper, a break/return env
 layout, reading the class flow in CORE_EXACT_DIRECT plus an audited `Array#delete` entry) and each of them alone is 11 or less (a 0, b 11, c 8,
 d 10). A fifth, unlisted, widening (core-only fact sets, 4 sites) would take the sum to 33 and needs the subclass proof
-of ADR 0317's next-lever list. Removal per unit of risk is poor everywhere; no PR slice is separable above the cutoff.
+of the next-lever list. Removal per unit of risk is poor everywhere; no PR slice is separable above the cutoff.
 
 Shipped instead:
 

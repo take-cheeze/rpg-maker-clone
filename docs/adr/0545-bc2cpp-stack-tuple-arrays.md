@@ -13,7 +13,7 @@ a GC root for its lifetime, and an element store. Many literals are small tuples
 `[0, 0]`, `[nil, true]`) that never leave the method: they are read back with a literal index, stored into
 with a literal index, or measured with `size`. For those the heap object is pure overhead.
 
-ADR 0316 gives one escape verdict per creation site (`EscapeAnalysis::Analyzer#creation`, `tracked` = every
+The escape analysis gives one verdict per creation site (`EscapeAnalysis::Analyzer#creation`, `tracked` = every
 register that may hold the value). It does not say what a confined value may be replaced with, and it does
 not know the element classes. Placing a value on the C++ stack is not safe in general: mruby roots a GC object
 through the VM stack and the arena, and a C++ local holding a heap pointer is invisible to the collector. The
@@ -25,7 +25,7 @@ no GC mark, so a C++ array of them is an ordinary local.
 A literal Array of 1..8 elements is placed in a per-site C++ buffer, `mrb_value bc2cpp_tup<idx>[n]`, when
 every condition below holds. Each condition is checked and a failure refuses the site (the Array stays).
 
-1. **Escape.** `creation(irep, idx)` is non-escaping (ADR 0316).
+1. **Escape.** `creation(irep, idx)` is non-escaping.
 2. **No closures.** The irep builds no BLOCK or LAMBDA. A non-escaping closure can still read the frame's
    registers by pointer (`read_by_closures`), and the buffer is not a register.
 3. **No cycle.** The ARRAY is not on a CFG cycle (normal or handler edges). Then one frame creates it at most
@@ -69,7 +69,7 @@ read of an unallocated buffer.
 ### Kill switch
 
 `BC2CPP_STACK_TUPLES=0` returns every method to the earlier output byte for byte. It also requires
-`BC2CPP_ESCAPE_ANALYSIS` (ADR 0316): with the analysis off there is no verdict, so no plan.
+`BC2CPP_ESCAPE_ANALYSIS`: with the analysis off there is no verdict, so no plan.
 
 ## Consequences
 

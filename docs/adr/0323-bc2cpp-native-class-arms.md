@@ -11,7 +11,7 @@ Accepted
 ADR 0315 measured why 453 rpg2k guard-chain sites still dispatch by name and named three proofs a table or arm
 needs together: (1) a def inside `class << <class constant>` is a class-object definer, not an instance definer, (2)
 native and outside-Ruby definers are resolved per class, (3) the gates are judged against the proven receiver set
-`S` instead of the whole name. ADR 0317 added call facts (`S` from an earlier call on the same value) and measured
+`S` instead of the whole name. Call facts were added (`S` from an earlier call on the same value) and measured
 about 130 more sites bounded to sets with core or native members, which "need per-class native arms". ADR 0325 added
 that `Hash#delete` is mrblib Ruby, so a flow-proven Hash misses only because CORE_EXACT_DIRECT does not read the flow.
 

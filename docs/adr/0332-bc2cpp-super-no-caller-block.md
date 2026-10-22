@@ -29,7 +29,7 @@ block to a receiver that can be an instance of the owning class, none can
 arrive. `super_direct_call_allowed?` answers that per `Owner#name`:
 
 - `block_carrying_callers_of(name)` scans every compiled irep for a
-  block-carrying send of the name and asks CALL_FACTS (ADR 0317) which classes
+  block-carrying send of the name and asks CALL_FACTS which classes
   that receiver can provably hold;
 - `superclass_closure` closes a class over its subclasses, so a call proved to
   hold a *subclass* still counts as a possible caller;

@@ -12,7 +12,7 @@ The shared helpers (`bc2cpp_slow_*` ADR 0292, `bc2cpp_getidx`/`getidx0`/`setidx`
 hold 24 by-name calls that about 5,800 generated sites reach (`scripts/bc2cpp/dynamic_site_census.rb`, the
 "by-name calls held inside shared helpers" table). A call site cannot prove anything about the else of a helper
 shared by hundreds of sites, so the proof has to be about the world: which classes can answer the operator at
-all. `CallFacts::Answers#members(name)` (ADR 0317/0323) already computes that from the registry, the outside Ruby
+all. `CallFacts::Answers#members(name)` (ADR 0323) already computes that from the registry, the outside Ruby
 sources, the native registrations and the lookup paths of the core classes, and is nil for a name nothing bounds.
 
 Its answer for every helper name in the wio closed world (all three compiled gems, `SKIP_UNSUPPORTED=1`):

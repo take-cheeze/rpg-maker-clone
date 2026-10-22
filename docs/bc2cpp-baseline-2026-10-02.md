@@ -1,7 +1,7 @@
-# bc2cpp baseline after ADRs 0307-0317 (2026-10-02)
+# bc2cpp baseline after the bc2cpp ADRs 0307 onward (2026-10-02)
 
 One consistent measurement of the dynamic dispatch left in bc2cpp's generated C++, taken on a single tree after the
-eleven PRs of ADRs 0307-0317 landed. Each of those PRs measured its own delta on a different master commit, so the
+eleven PRs of bc2cpp ADRs 0307 onward landed. Each of those PRs measured its own delta on a different master commit, so the
 per-PR deltas overlap; here every number comes from the same tree, and the marginal contribution of each feature is
 measured by turning its kill switch off on that tree.
 
@@ -66,14 +66,14 @@ nearest preceding family marker, so a site counts in one family only. The rest o
 `NATIVE_CORE_DIRECT` 250, `NATIVE_DIRECT` 157, `POLY` 114, `CLOSED_WORLD_STABLE_CLASS` 108, `INDEX_EXACT` 100,
 `MONO` 84, `RGSS` 58, `ARRAY_PUSH` 32.
 
-### Kept else arms, interface tables, shipped by-name classes (ADR 0315, 0317)
+### Kept else arms, interface tables, shipped by-name classes (ADR 0315)
 
 * Explicit-receiver sends with a guard chain (rpg2k and Game owners): 5,618. By final else arm: `nomethod` 4,399,
   no dispatch left 766, **453 still dispatch by name** (419 kept else, 34
   `send`).
 * Kept-else sites in the engine gems (`refine` report): **375** with the facts on, 438 with `BC2CPP_CALL_FACTS=0`
   (the 63 difference is the whole of CALL_FACTS's effect on the `bc2cpp_send` total). The "462 -> 399 kept else
-  arms" in the ADR 0317 table counts generated lines, a different unit.
+  arms" in the CALL_FACTS table counts generated lines, a different unit.
 * Of the 453 by-name sites, 53 have a proven receiver class set and 400 do not.
 * Census category (rpg2k, 1,800 sites; exclusive): `core_tag_chain_else:receiver_other` 669, `rgss_native_exact_class_else`
   276, `core_tag_chain_else:receiver_is_ivar` 191, `closed_world_kept:core_or_native` 176, `closed_world_kept:singleton_definer`
@@ -95,9 +95,9 @@ reports on, no failure except one SIGTERM (see 6).
 | switch off (ADR) | `bc2cpp_send` | `mrb_funcall_with_block` | `bc2cpp_nomethod` | `nil_receiver` | `slow_*` | `getidx` | `setidx` | reach sites | `shipped.cxx` lines |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | **master** | 2,603 | 401 | 4,380 | 890 | 3,314 | 2,069 | 209 | 14,314 | 443,754 |
-| `CALL_FACTS` (0317) | 2,666 (+63) | 401 | 4,318 (-62) | 890 | 3,314 | 2,069 | 209 | 14,315 (+1) | 443,919 (+165) |
+| `CALL_FACTS` | 2,666 (+63) | 401 | 4,318 (-62) | 890 | 3,314 | 2,069 | 209 | 14,315 (+1) | 443,919 (+165) |
 | `CONSTRUCTOR_POOLS` (0313) | 2,604 (+1) | 401 | 4,372 (-8) | 890 | 3,314 | 2,094 (+25) | 209 | 14,332 (+18) | 443,726 (-28) |
-| `ESCAPE_ANALYSIS` (0316) | 2,600 (-3) | 400 (-1) | 4,380 | 890 | 3,309 (-5) | 2,066 (-3) | 209 | 14,302 (-12) | 443,374 (-380) |
+| `ESCAPE_ANALYSIS` | 2,600 (-3) | 400 (-1) | 4,380 | 890 | 3,309 (-5) | 2,066 (-3) | 209 | 14,302 (-12) | 443,374 (-380) |
 | `CORE_EXTEND` (0314) | 2,684 (+81) | 401 | 4,380 | 890 | 3,314 | 2,069 | 209 | 14,395 (+81) | 443,684 (-70) |
 | `TUPLE_RETURNS` (0311) | 2,603 | 401 | 4,380 | 890 | 3,355 (+41) | 2,069 | 209 | 14,355 (+41) | 443,886 (+132) |
 | `RETURN_ACCESSORS` (0309) | 2,616 (+13) | 402 (+1) | 4,429 (+49) | 881 (-9) | 3,314 | 2,105 (+36) | 219 (+10) | 14,414 (+100) | 444,187 (+433) |
@@ -235,7 +235,7 @@ literal-block sends, 402 call the compiled body directly (372 through exact-clas
 send as their else) and 46 are dynamic only. 35 have a `BLOCK_FALLBACK` marker within six lines (the block is built as an RProc) and
 4 an `EXPLICIT_BLOCK_ARG` marker (a rough text match, not a classification).
 
-### Escape analysis (`BC2CPP_ESCAPE_REPORT`, ADR 0316)
+### Escape analysis (`BC2CPP_ESCAPE_REPORT`)
 
 Methods that ship: 4,114 creation sites. Engine: Array 850 (46 confined), Hash 355 (42), String 1,413 (742),
 object 564 (3), block 669 (225), lambda 3 (1). 466 BLOCK_FALLBACK regions, 109 provably confined; block callees by RProc
@@ -244,7 +244,7 @@ sites / confined: `each` 206/38, `map` 44/0, `each_with_index` 44/0, `times` 10/
 
 ### Provable errors, interface lint, numeric roots
 
-* `BC2CPP_PROVABLE_ERROR_REPORT` (ADR 0317): 0 provable errors in the three engine gems (rpg2k: 2,753 proven, 8,692
+* `BC2CPP_PROVABLE_ERROR_REPORT`: 0 provable errors in the three engine gems (rpg2k: 2,753 proven, 8,692
   unproven sends; mruby-lcf has one `undefined_name` row).
 * Forward interface (sound): 37 by-name sites with an unproven receiver would lose their else (34 `nomethod`, 2 bare
   dispatch, 1 kept else); 1 kept-else removal in all. Backward interface (unsound upper bound): 114 sites, 53 kept-else.
@@ -320,7 +320,7 @@ reach, and the log tool returned only the last lines.
 * `scripts/bc2cpp/dynamic_site_census.rb` prints all-gems numbers only and does not count `getidx`/`setidx`/`guard_violation`
   or per-family chains per scope; the scope split and the family chain counts here come from a throwaway scan of the
   same `shipped.cxx` (function-name prefix), kept out of the repository (no new tooling in this PR).
-* `docs/bc2cpp-dynamic-site-census.md` ADR 0317 table says "kept else arms 462 -> 399"; the refine report's kept-else
+* `docs/bc2cpp-dynamic-site-census.md` CALL_FACTS table says "kept else arms 462 -> 399"; the refine report's kept-else
   site count is 438 -> 375. They differ in unit (generated lines versus sites); both are correct for their unit.
 * CHECKS that fail identically on clean master in this environment (class_pools, eqq_direct, io_puts_model,
   def_deletion_safety, resumable, lcf_row_flow, numeric_slow, closed_world, computed_send, unlisted_class_call,

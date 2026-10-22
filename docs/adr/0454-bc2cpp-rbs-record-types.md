@@ -59,7 +59,7 @@ escape), extended in a subclass with:
 an escape when it is a plain positional argument (no splat, keyword or block on the call, and not also the
 receiver) and, for EVERY definition the send's name can reach:
 
-1. ESCAPE_ANALYSIS (ADR 0316) says the callee does not capture that argument. The checker asks the installed
+1. ESCAPE_ANALYSIS says the callee does not capture that argument. The checker asks the installed
    EscapeAnalysis::World through `Analyzer#name_captures_arg?` with the argument class `Hash` (the record is a
    literal nothing can extend), so the callee's own sends on it resolve through Hash's ancestry rather than every
    definition of the name; the summary is memoised per class. A name the world cannot enumerate, a name with no

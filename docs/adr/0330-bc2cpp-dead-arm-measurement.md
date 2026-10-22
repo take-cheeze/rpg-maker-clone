@@ -11,7 +11,7 @@ Accepted
 The wio closed world ships 4,441 `bc2cpp_nomethod` arms (the else of a receiver-class chain that no class outside the
 chain answers, ADR 0210) and 879 `bc2cpp_nil_receiver` arms (the nil path of a receiver proven nil-or-one-class, ADR 0296).
 Each can only raise `NoMethodError`. ADR 0226 has a person review every `nomethod` key as "the receiver always has a
-listed class" (dead) or "a real missing method". ADR 0317 measured the provable errors (no class answers, nil receiver,
+listed class" (dead) or "a real missing method". The provable-error measurement covered (no class answers, nil receiver,
 wrong argument count, operators) at 0 engine hits and left them as warnings; ADR 0275 makes a proven-class miss a build
 error, with an empty `PROVEN_MISS_REVIEWED`.
 
@@ -69,12 +69,12 @@ check pins this) and `PROVEN_MISS` (0 sites) is the build error for it. The othe
 
 | Shape | Sites |
 | --- | ---: |
-| `partial_miss`, shape `all` (no proven class answers: the provable error of ADR 0317) | **0** |
+| `partial_miss`, shape `all` (no proven class answers: the provable error) | **0** |
 | `partial_miss`, shape `some` (a non-nil member of the proven set lacks the name) | 88, one cluster (below) |
 | `arity_all` (every Ruby definition of the name rejects the argument count, no native or foreign one answers) | **0** |
 | `arity_some` (some definition rejects: an upper bound of the direct entries the repo refuses on arity) | 606 (3 dead) |
 | `const_unresolved` (nothing in the engine, the wio sources or core defines the constant) | 14 rows, 11 names, all inside `rescue NameError` |
-| `ProvableErrorReport` (ADR 0317): operators, `Integer / 0`, nil receiver exactly nil, no class answers | 0 (its one row is an `undefined_name` the probe guard excludes) |
+| `ProvableErrorReport`: operators, `Integer / 0`, nil receiver exactly nil, no class answers | 0 (its one row is an `undefined_name` the probe guard excludes) |
 
 `arity_some` is a name-level bound, not a count of refusals: `new`, `initialize` and `update` are defined with several
 arities in different classes. The constants (`TEST_PLAY`, `RPG2K_NEW_GAME`, `RPG2K_PREVIEW_MAP`, `RPG2K_SCREEN_WIDTH`, ...) are defined by the
@@ -135,7 +135,7 @@ non-empty class and cannot be errors: the proof is "nil or K", not "nil".
 
 ## Consequences
 
-* The by-name census, the 0317 measurement and the 0226 review gain a per-site list with its origin; the next receiver
+* The by-name census, the CALL_FACTS measurement and the 0226 review gain a per-site list with its origin; the next receiver
   proof can be judged by how many (c) and (a) arms it removes, and the 647 ivar sites are the work list for a per-class ivar
   pool.
 * A sound lifecycle proof for those 647 sites would need, per scene class, "every reader is called only after the
