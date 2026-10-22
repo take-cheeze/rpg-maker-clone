@@ -1048,6 +1048,7 @@ jobs:
           ruby scripts/bc2cpp/struct_receiver_check.rb
           ruby scripts/bc2cpp/upvar_walks_check.rb
           ruby scripts/bc2cpp/constant_typing_check.rb
+          ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
           ruby scripts/bc2cpp/io_open_check.rb
           ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
           ruby scripts/bc2cpp/decided_branch_check.rb

@@ -156,6 +156,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/frozen_hash_lookup_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/bytecode_ir_constants_check.rb:
     tier: fast
     capabilities:
