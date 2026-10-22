@@ -1442,6 +1442,9 @@
   Numeric flow shares unchanged load states while preserving metadata
   invalidation and write tracking; see
   [ADR 0536](docs/adr/0536-bc2cpp-unchanged-load-states.md).
+  Numeric flow also shares unchanged scalar result states, including constants,
+  arithmetic and index results, while retaining silent-call invalidation; see
+  [ADR 0541](docs/adr/0541-bc2cpp-unchanged-result-states.md).
   Numeric flow reuses each ivar slot's last widened mask during a run, avoiding
   repeated wide-mask unions while preserving call invalidation; see
   [ADR 0538](docs/adr/0538-bc2cpp-slot-union-fixed-points.md).
