@@ -1443,6 +1443,8 @@
   Compiler opacity queries reuse finalized outside-source touch results while
   retaining live declaration and rebinding guards; see
   [ADR 0534](docs/adr/0534-bc2cpp-opacity-touch-cache.md).
+  Reaching-definition walks store a single visited register directly and promote
+  only when needed; see [visitation](docs/bc2cpp-type-check.md#reaching-definition-visitation).
   Reaching-definition queries reuse immutable opaque-register key snapshots and
   preserve caller-owned strings; see [query keys](docs/bc2cpp-type-check.md#reaching-definition-query-keys).
   Embedding compile probes reuse a fixed state-key list and restore caller state

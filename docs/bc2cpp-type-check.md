@@ -438,6 +438,23 @@ from 94,426,399 to 88,482,065 (5,944,334 fewer, 6.3%). Facts, receiver rows and
 report JSON were byte-identical. Object-profiled elapsed time was 51.970s versus
 50.382s in one pair; this is not a repeated timing benchmark.
 
+### Reaching-definition visitation
+
+Reaching-definition walks keep the first visited register directly per instruction,
+promoting it to a membership hash only when another register reaches that same
+instruction. The scratch state belongs to one walk; it does not cache proof answers.
+Traversal order, state counts, handler edges and refusal diagnostics are unchanged.
+Set `BC2CPP_IR_SCALAR_SEEN=0` to use a membership hash at every visited instruction.
+The IR fact checks compare definitions and refusal causes across both paths,
+including multi-register loops, handlers and state limits.
+
+A warmed full-project type-check comparison on base `f0b640fe4` under Ruby 4.0.5
+with YJIT reduced whole-compiler allocations from 81,915,523 to 80,217,127
+(1,698,396 fewer, 2.07%). Check-phase allocations fell from 15,025,250 to
+14,714,524. Facts JSON, receiver TSV and report JSON were byte-identical.
+Object-profiled elapsed times were 50.356s and 49.710s; one pair does not establish
+a stable wall-time speedup.
+
 ### Reaching-definition query keys
 
 Repeated IR proof queries reuse a bounded snapshot of opaque register names when
