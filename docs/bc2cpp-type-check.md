@@ -55,7 +55,10 @@ new index. Set `BC2CPP_IR_PREPARED_CONTRACTS=0` to compare the unprepared path. 
 
 Context argument binding indexes immutable arity, keyword names and validated
 optional-entry jumps per bytecode body. Every binding still checks its current
-arguments and keywords and builds fresh masks and entry edges. Indexes live only
+arguments and keywords and builds fresh masks. Fixed positional layouts append the
+block slot directly and share frozen empty entry edges; optional, rest, post and
+keyword layouts retain the general binder. Set `BC2CPP_IR_FIXED_BINDINGS=0` to
+compare the general binder for all layouts. Indexes live only
 for one context engine; malformed layouts remain refused. Set
 `BC2CPP_IR_BINDING_INDEX=0` to compare rebuilding layouts on each bind. See
 [ADR 0520](adr/0520-context-binding-index.md).
@@ -64,7 +67,11 @@ Context call frames also index fixed receiver/argument registers and keyword-nam
 producers. This avoids repeated reaching-definition result copies and name decoding;
 values are read from the current context on every call. Splat, ambiguous and
 nonliteral keyword names keep their conservative refusals. Set
-`BC2CPP_IR_CALL_INDEX=0` to rebuild layouts. See
+`BC2CPP_IR_CALL_INDEX=0` to rebuild layouts. Frames share only frozen empty
+argument/keyword containers and allocate nonempty positional arrays directly.
+Every nonempty frame rereads current masks into fresh containers; zero and unknown
+masks, keyword overwrite order, and graph budgets retain their existing behavior.
+Set `BC2CPP_IR_FRAME_ALLOCATIONS=0` to restore the original frame construction. See
 [ADR 0521](adr/0521-context-call-layout-index.md).
 
 Method resolution indexes ordered ancestor paths, simple class names and Ruby
