@@ -119,3 +119,16 @@ the same rule ADR 0334 uses. Only `String` is audited; the Integer and Float nam
 
 Measured on the probe fixture (CxHolder calling `inspect`, `to_s`, `to_i`, `to_f` on an unknown receiver): all four join
 in the final pass, to String, String, Integer and Float. Before this, the final pass refused all four.
+
+## Follow-up: the join types unknown-receiver native sends in return masks
+
+Date: 2026-10-22
+
+A send whose name the join proves returns one class (NATIVE_RETURN_CLASSES, or a Ruby definition the join admitted)
+now gets that class in the return mask when no receiver proof applies (`joined_send_class_bit`, codegen_return_classes.rb).
+The join proves the class for every receiver of the name, so an unknown receiver's send has it too. Only the bits
+NumericFlow has (Integer, Float, String, Array, Hash, Range) apply. `BC2CPP_JOINED_RETURN_MASKS=0` withdraws this.
+
+Measured on the closed world's TYPE_CHECK run: typed returns 1,220 to 1,267, typed ivars 574 to 588, typed parameters
+607 to 626, overall 45.4% to 46.5%. Untyped returns from native producers fall from 245 to 211. The closed build passes
+and the headless host runs 600 frames.

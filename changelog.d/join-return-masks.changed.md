@@ -1,0 +1,1 @@
+- Native return types now reach the return masks for sends on unknown receivers, when the join proves the name returns one class. Type coverage in the closed world rises from 45.4% to 46.5%, with no build or run change.
