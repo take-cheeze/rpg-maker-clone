@@ -204,7 +204,7 @@ jobs:
       # scripts/checkout-submodules.bash.
       - name: Init submodules
         env:
-          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+          SKIP_SUBMODULES: 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
       # No `Skip the quickjs test262 submodule` step here any more: it existed
@@ -939,7 +939,7 @@ jobs:
       - name: Init submodules
         env:
           SKIP_SUBMODULES: >-
-            3rd/SDL 3rd/SDL_mixer 3rd/effekseer 3rd/gflags 3rd/ng-log
+            3rd/effekseer 3rd/gflags 3rd/ng-log
             3rd/inicpp 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
@@ -1405,7 +1405,7 @@ jobs:
 
       - name: Init submodules
         env:
-          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+          SKIP_SUBMODULES: 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
       # No test262-skip step here either; see the `build` job.
@@ -1687,7 +1687,7 @@ jobs:
 
       - name: Init submodules
         env:
-          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+          SKIP_SUBMODULES: 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
       - uses: actions/setup-python@v7
@@ -1754,7 +1754,7 @@ jobs:
       - name: Init submodules
         env:
           SKIP_SUBMODULES: >-
-            3rd/SDL 3rd/SDL_mixer 3rd/effekseer 3rd/gflags 3rd/ng-log
+            3rd/effekseer 3rd/gflags 3rd/ng-log
             3rd/inicpp 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
@@ -2109,7 +2109,7 @@ jobs:
 
       - name: Init submodules
         env:
-          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+          SKIP_SUBMODULES: 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
       - uses: actions/setup-python@v7
@@ -2242,7 +2242,7 @@ jobs:
 
       - name: Init submodules
         env:
-          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+          SKIP_SUBMODULES: 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
       - uses: actions/setup-python@v7
@@ -2509,7 +2509,7 @@ jobs:
       - name: Init submodules
         env:
           SKIP_SUBMODULES: >-
-            3rd/SDL 3rd/SDL_mixer 3rd/gflags 3rd/ng-log
+            3rd/gflags 3rd/ng-log
             3rd/effekseer 3rd/inicpp 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 

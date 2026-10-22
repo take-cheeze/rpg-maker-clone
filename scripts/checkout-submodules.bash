@@ -3,17 +3,16 @@
 set -eu -o pipefail
 
 # Initializes every submodule this checkout declares except the ones named in
-# $SKIP_SUBMODULES (space-separated paths, e.g. "3rd/SDL 3rd/SDL_mixer").
+# $SKIP_SUBMODULES (space-separated paths, e.g. "3rd/optcarrot").
 #
 # actions/checkout's own `submodules: recursive` has no way to leave individual
 # entries out, so every job that used it cloned all sixteen -- including
-# 3rd/SDL and 3rd/SDL_mixer, two of the largest, on jobs that never build them:
-# CMakeLists.txt only `add_subdirectory(3rd/SDL...)`s under the Android branch
-# (no system SDL2 package exists for an APK to link against there); every
-# other target either `find_package(SDL2)`s a system/nix package (the native
-# `build`/`bc2cpp-*` jobs) or gets it as an Emscripten port (`wasm`,
-# `-sUSE_SDL=2`), and the PlatformIO-driven embedded ports (wio/maix/psp/
-# m5stack) never touch SDL at all. Same idea for 3rd/optcarrot: nothing in
+# the largest vendored trees, on jobs that never build them. SDL itself is not
+# a submodule any more: the Android branch of CMakeLists.txt downloads the
+# pinned release tarball at configure time. Every other target either
+# `find_package(SDL2)`s a system/nix package (the native `build`/`bc2cpp-*`
+# jobs) or gets it as an Emscripten port (`wasm`, `-sUSE_SDL=2`), and the
+# PlatformIO-driven embedded ports (wio/maix/psp/m5stack) never touch SDL. Same idea for 3rd/optcarrot: nothing in
 # CMakeLists.txt references it, and only the `bc2cpp-checks` jobs' Optcarrot
 # benchmark (tools/optcarrot_probe/) reads it.
 #
@@ -40,8 +39,8 @@ for path in ${paths}; do
 done
 
 echo "initializing: ${init[*]}"
-# RECURSIVE=1 also initialises each submodule's own submodules (3rd/SDL_mixer's
-# external/ libraries). Nix's `?submodules=1` walk reads those too, so the
+# RECURSIVE=1 also initialises each submodule's own submodules (e.g. the
+# external/ libraries of a vendored dependency). Nix's `?submodules=1` walk reads those too, so the
 # flake job sets it. quickjs-ng's test262 entry is `update = none`, so this
 # still leaves it out.
 recursive=()
