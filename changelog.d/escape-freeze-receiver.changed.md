@@ -1,0 +1,1 @@
+- **bc2cpp escape analysis** now models a native `freeze` as returning its receiver, so a frozen Array, Hash or String used only locally is proven confined. A Ruby `freeze` that keeps `self` still escapes.
