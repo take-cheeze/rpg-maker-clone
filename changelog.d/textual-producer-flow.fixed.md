@@ -1,0 +1,1 @@
+- **bc2cpp freeze receivers** no longer take a literal class from the textually last arm of a join: the producer of a value is named only when every reaching definition agrees.
