@@ -560,8 +560,11 @@ program method reopening `Array` that calls `size`). That is the one change to t
 self-call path: such sends were untyped and are now typed under the same four
 conditions. Other self-call results are unchanged.
 
-Required parameters of methods with optional ones, constants and nonlocal-return
-inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the type-check RBS,
+Required parameters of methods with optional ones and constants remain follow-up
+work. A method whose body has a nested block with a `return` (RETURN_BLK) is typed
+from its return-class mask, which joins the block's returns, and gets no IR return
+fact (`ir_type_feedback.rb` records none, so `trivial_return` does not read its own
+RETNIL as the whole answer). Inferred ivar candidates (`@ivar: T` in the type-check RBS,
 and the `ivars` rows of the facts file) are the union of every traced store
 across the ivar's numeric family: superclass, include and prepend links, since
 all of them share the slot. The candidate gains `nil` when some read may run
