@@ -124,6 +124,8 @@ CHECKS = [
   # Its hand-built-irep half (the compiled half needs mrbc, bc2cpp-build in build.yml): no mrblib lines.
   { name: 'bc2cpp-loop-element-writes', command: %w[scripts/bc2cpp/loop_element_writes_check.rb] },
   { name: 'bc2cpp-struct-receiver', command: %w[scripts/bc2cpp/struct_receiver_check.rb] },
+  # Its codegen and behaviour halves need mrbc and a full-core libmruby (the bc2cpp-build job); no mrblib lines.
+  { name: 'bc2cpp-skipped-direct-call', command: %w[scripts/bc2cpp/skipped_direct_call_check.rb] },
   { name: 'bc2cpp-receiver-origin-join', command: %w[scripts/bc2cpp/receiver_origin_join_check.rb] },
   { name: 'bc2cpp-upvar-walks', command: %w[scripts/bc2cpp/upvar_walks_check.rb] },
   { name: 'bc2cpp-irep-tree', command: %w[scripts/bc2cpp/irep_tree_check.rb] },
