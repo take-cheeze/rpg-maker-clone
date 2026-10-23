@@ -1,0 +1,1 @@
+- **bc2cpp** no longer emits a direct call into a skipped module body. A `super` that reaches its body through an included module now keeps its own `#error` and stays interpreted when the target body did not compile clean, so the generated file builds again. Clean targets are unchanged. Covered by `scripts/bc2cpp/skipped_direct_call_check.rb`.

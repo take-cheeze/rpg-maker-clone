@@ -56,3 +56,22 @@ a writable state must copy it first.
 report comparisons. It changes neither oracle calls nor the solver's worklist,
 and does not cache oracle answers or share inference across runs. Standalone
 `NumericFlow.join_state` callers still get a first-edge copy by default.
+
+## Literal operands of Integer loops
+
+`CodeGen#step_loop_literal` uses the same `BytecodeIR::Types#exact_at` proof as
+exact literal receiver queries. Every definition reaching a bound or increment
+must agree on one Integer literal value. MOVE aliases, agreeing branches and
+preserving loops can therefore supply a literal; disagreeing values, unknown
+entry values, nested-block writes and conflicting handler paths refuse it.
+
+The consumer still requires `abs(value) <= 0x3fff_ffff`, keeping the value within
+the fixnum range on every supported target. Pool integers are excluded by the
+shared exact proof. Zero remains a known literal but `recognize_step_regions`
+rejects it as an increment, preserving the original method's error behavior.
+When a bound is not a literal the existing Integer/fixnum guard path remains in
+use; an unknown increment does not get a guessed value.
+
+`scripts/bc2cpp/ir_facts_check.rb` exercises this consumer through the exact-type
+cases, including moves, joins, loops, handler disagreement, zero, pool integers
+and both sides of the positive and negative fixnum boundary.

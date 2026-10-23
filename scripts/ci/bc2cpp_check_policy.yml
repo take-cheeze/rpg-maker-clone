@@ -70,6 +70,12 @@ checks:
   scripts/bc2cpp/ir_facts_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/ir_binary_operands_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    host_phase: false
   scripts/bc2cpp/block_receiver_proof_check.rb:
     tier: fast
     capabilities:
@@ -115,6 +121,12 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/nonlocal_return_candidate_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
   scripts/bc2cpp/lcf_join_array_check.rb:
     tier: fast
     capabilities: []
@@ -136,6 +148,11 @@ checks:
     capabilities: []
     fixture_capabilities:
     - mrbc
+  scripts/bc2cpp/block_yielders_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
     - native_sources
   scripts/bc2cpp/ir_blocks_check.rb:
     tier: fast
@@ -152,6 +169,22 @@ checks:
     fixture_capabilities:
     - mrbc
     host_phase: false
+  scripts/bc2cpp/enum_target_flow_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+  scripts/bc2cpp/name_argument_flow_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    host_phase: false
+  scripts/bc2cpp/def_value_flow_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
   scripts/bc2cpp/symbol_flow_check.rb:
     tier: fast
     capabilities:
@@ -325,6 +358,22 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/array_literal_block_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/skipped_direct_call_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/send_arg_facts_check.rb:
     tier: runtime
     capabilities: []
     fixture_capabilities:
@@ -691,6 +740,11 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/block_yield_types_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
   scripts/bc2cpp/type_check_iterate_check.rb:
     tier: fast
     capabilities: []
@@ -707,6 +761,9 @@ checks:
     - mrbc
     - native_sources
   scripts/bc2cpp/explicit_receiver_override_contracts_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/module_includer_bound_check.rb:
     tier: fast
     capabilities: []
   scripts/bc2cpp/type_check_provenance_check.rb:

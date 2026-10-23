@@ -1,0 +1,1 @@
+- **bc2cpp** numeric-root diagnostics now take the instance-variable name for `GETIV` from the decoded instruction (`Insn#ivar`) instead of regex-matching the operand text. The emitted labels are unchanged.

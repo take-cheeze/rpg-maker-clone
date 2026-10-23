@@ -730,7 +730,9 @@ jobs:
           ruby scripts/bc2cpp/ir_context_results_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
           ruby scripts/bc2cpp/escape_receiver_flow_check.rb
+          ruby scripts/bc2cpp/skipped_direct_call_check.rb
           ruby scripts/bc2cpp/array_literal_block_check.rb
+          ruby scripts/bc2cpp/send_arg_facts_check.rb
           ruby scripts/bc2cpp/constant_typing_check.rb
           ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c ruby scripts/native/binding_split.rb check
@@ -744,16 +746,20 @@ jobs:
           ruby scripts/bc2cpp/define_method_check.rb
           ruby scripts/bc2cpp/generic_block_return_check.rb
           ruby scripts/bc2cpp/ir_block_protocols_check.rb
+          ruby scripts/bc2cpp/block_yielders_check.rb
           ruby scripts/bc2cpp/type_check_run_check.rb
+          ruby scripts/bc2cpp/block_yield_types_check.rb
           ruby scripts/bc2cpp/type_check_iterate_check.rb
           ruby scripts/bc2cpp/rbs_mixin_contracts_check.rb
           ruby scripts/bc2cpp/self_call_override_contracts_check.rb
           ruby scripts/bc2cpp/explicit_receiver_override_contracts_check.rb
+          ruby scripts/bc2cpp/module_includer_bound_check.rb
           ruby scripts/bc2cpp/lcf_join_array_check.rb
           ruby scripts/bc2cpp/alias_method_check.rb
           ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
           ruby scripts/bc2cpp/ir_ivar_types_check.rb
           ruby scripts/bc2cpp/ivar_candidates_check.rb
+          ruby scripts/bc2cpp/nonlocal_return_candidate_check.rb
           ruby scripts/bc2cpp/immediate_ivars_check.rb
           ruby scripts/bc2cpp/placement_harness_check.rb
           ruby scripts/bc2cpp/ir_entry_seeds_check.rb
@@ -767,6 +773,7 @@ jobs:
           ruby scripts/bc2cpp/block_receiver_proof_check.rb
           ruby scripts/bc2cpp/upvar_walks_check.rb
           ruby scripts/bc2cpp/irep_tree_check.rb
+          ruby scripts/bc2cpp/ir_binary_operands_check.rb
           ruby scripts/bc2cpp/param_trace_elements_check.rb
           ruby scripts/bc2cpp/arm_prune_block_check.rb
           ruby scripts/bc2cpp/param_fold_check.rb
@@ -789,6 +796,9 @@ jobs:
           ruby scripts/bc2cpp/promote_candidates_check.rb
           ruby scripts/bc2cpp/native_core_direct_wired_check.rb
           ruby scripts/bc2cpp/ir_join_soundness_check.rb
+          ruby scripts/bc2cpp/enum_target_flow_check.rb
+          ruby scripts/bc2cpp/name_argument_flow_check.rb
+          ruby scripts/bc2cpp/def_value_flow_check.rb
           ruby scripts/bc2cpp/symbol_flow_check.rb
           ruby scripts/bc2cpp/loop_element_writes_check.rb
           ruby scripts/bc2cpp/native_core_candidates_check.rb

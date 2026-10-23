@@ -1,0 +1,1 @@
+- **bc2cpp** analysis passes (lexical constants, ivar layout and poison causes, irep scans and cache, ivar types, call-graph types, integer constant ranges, core method tags) read instructions through the `BytecodeIR` helpers instead of the raw `irep.instructions` list. Generated output is unchanged.

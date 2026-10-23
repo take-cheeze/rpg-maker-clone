@@ -1042,6 +1042,8 @@
 - Constant-typing fixture variants reuse the report renderer while running each
   compiler in its own process; the positive case still exercises the report CLI.
 
+- Enumerator call indexing follows finite Symbol name sets through branches, moves, loops and handlers; see [enumerator target flow](docs/bc2cpp-enum-target-flow.md).
+- Legacy bc2cpp method definitions follow the actual method register through control flow; see [definition value flow](docs/bc2cpp-def-value-flow.md).
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
@@ -1186,8 +1188,18 @@
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
-  per-pass text scraping, including a reaching-definitions query
+  per-pass text scraping, with [binary fixtures that forbid text access](docs/bc2cpp-ir-instruction-checks.md)
+  checking the shared queries, including a reaching-definitions query
   (`BytecodeIR.reaching_definitions`) that answers through joins and loops.
+  [Method-name flow](docs/bc2cpp-name-argument-flow.md) keeps visibility and
+  removal effects precise through local aliases, branches, loops and handlers.
+  [Factory analysis](docs/bc2cpp-ir-factories.md) follows Class/Struct factory
+  aliases across control flow, recording all possible superclass and member names
+  while refusing unknown uses or escapes. Named Struct layouts preserve ordered
+  positional Symbol arguments through moves and joins; differing names retain
+  conservative accessor definitions without claiming a fixed storage layout.
+  [Class-body scope flow](docs/bc2cpp-class-scope-flow.md) requires every reaching
+  outer scope to agree before assigning a qualified class or module name.
   The return and receiver class proofs read a body's exits and returned-value
   definitions from the same IR ([return sites](docs/bc2cpp-ir-return-sites.md)).
   [IR value-class inference](docs/bc2cpp-ir-types.md) builds on these definitions
@@ -1224,7 +1236,9 @@
   [Contextual result summaries](docs/bc2cpp-ir-context-results.md) specialize
   callee returns by arguments, solve bounded recursive contexts, preserve ivars
   across read-only calls, and report frozen builder elements and audited native
-  direct-form results. RBS feedback retains optional and keyword contracts, and
+  direct-form results. Frozen builder proofs follow aliases through branch joins
+  and pure loops, refusing mutation, calls, capture and handlers. RBS feedback
+  retains optional and keyword contracts, and
   candidate RBS types rest, required keyword and block parameters from complete
   call-site joins (`BC2CPP_IR_ARGUMENT_TYPES=0` restores `untyped`).
   [Generic iterator block feedback](docs/bc2cpp-ir-block-types.md) carries Array
@@ -1517,7 +1531,9 @@
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
   `Integer#step`, `#upto` and `#downto` loops over literal or proven-Integer bounds are inlined
-  like `#times`; a bound that is an Integer but may be a bignum (`n.upto(n + 2)`) is inlined
+  like `#times`; [loop literals](docs/bc2cpp-ir-numeric-classes.md) follow aliases
+  and agreeing branch values through the shared exact-value proof, retaining the
+  fixnum limit for every target. A bound that may be a bignum (`n.upto(n + 2)`) is inlined
   behind one Fixnum test per loop, with the original call as the else branch
   ([`docs/adr/0287-bc2cpp-step-loop-fixnum-guard.md`](docs/adr/0287-bc2cpp-step-loop-fixnum-guard.md)).
   A method that a `Fiber.new { root; :done }` block calls and that reaches

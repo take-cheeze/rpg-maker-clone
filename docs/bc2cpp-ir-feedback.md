@@ -199,6 +199,32 @@ Compared:
   their classes are the values read. A module's ivar is never decided (it belongs to
   whichever class includes the module), and an ivar the candidate does not declare
   (`untyped`, or no declaration for that class) is counted as undeclared, not compared;
+- a block parameter (`bc2cpp_bargN` of a block body), against the `{ (T1, ..., Tn) -> U }`
+  block type the candidate declares for the method that yields to the body. The method is
+  the one the dump's `BLOCK_YIELD` row names (see the join below), so the body's rows are
+  never compared with another method's block. The i-th yielded argument is compared with
+  `Ti`, and only when the declared block is plain (n required positionals, no optional,
+  rest or keyword parameter) and the body takes the same n plain parameters: then the i-th
+  yielded argument is the i-th parameter. A body with another shape, a method with no
+  declared block, or a body the dump did not decide is counted and not compared.
+
+**Block join.** `tools/bc2cpp/block_yielders.rb` joins a block body to a yielding method
+at compile time, and the dump carries the result as one `BLOCK_YIELD` row per body:
+`BLOCK_YIELD  SYMBOL  BODY_IMPL  Owner#name  ARITY  ok`, or `-` for the key and the arity
+with the reason it is undecided. A body is joined to `M` only when all of these hold:
+
+- the body is the literal block of one `SENDB name`, and the block does not escape its
+  creating frame, its only use being that hand-off to `name`;
+- `name` has no native definition and exactly one definition in the program, which is
+  compiled and not core Ruby; no program `method_missing` exists;
+- `M` yields to its block and has no `&blk` parameter, and its block is only ever called,
+  never handed on, stored, or read from a closure.
+
+Any other body is undecided, with the reason in the row (`block_escapes`, `not_unique`,
+`native_name`, `yielder_block_param`, ...). A dump written before these rows has none, so
+its block bodies are counted as unjoined. Under `BC2CPP_ESCAPE_ANALYSIS=0` every body is
+undecided. `scripts/bc2cpp/block_yielders_check.rb` checks the rows on a real compile
+(needs `MRBC`).
 - a constant read, `GETCONST` or `GETMCNST`, against the `NAME: T` the candidate declares
   in the scope the read resolved to. The scope is the owner the closed-world lexical
   analysis proved (`LexicalConsts`, the same resolution the numeric constant groups use),
@@ -284,13 +310,10 @@ compared. A top-level `extend` belongs to `main`, which is no class, so it has n
 
 The trace cannot tell the check these things, so they are not compared:
 
-- block parameters. The trace has `block_arg` rows, but they are the parameters of
-  a block body, keyed by the body's own `_impl` (the method that yields to it is
-  not in the row), and the emitter declares a block type only as
-  `{ (*untyped) -> untyped }`, so there is no declared type to compare with. A
-  method's `&blk` value is not traced either (`bc2cpp_blk` is not a parameter row).
-  This stays a skip until the trace names the yielding method and the emitter
-  declares block parameter types;
+- block parameters the join does not decide, or whose method declares no block type
+  (the emitter writes `{ (*untyped) -> untyped }` unless the yield sites prove the parameter
+  classes, so only a candidate that declares a block type is compared). A method's `&blk` value
+  is not traced either (`bc2cpp_blk` is not a parameter row);
 - ivar reads that are not GETIV reads: stores (SETIV), reads through a synthesized
   attr accessor, and `instance_variable_get`. The check sees only the values the
   compiled GETIV reads hand back, so a wrong value that reaches an ivar only through
@@ -346,6 +369,26 @@ all known (a dynamic, foreign or poisoned name gets no join at all).
   is not recognized, so each refuses. A block typed `Proc` is written as a required
   block (`{ (*untyped) -> untyped }`); otherwise the block stays optional. A declared
   block signature keeps its optional block.
+- **Block parameters of a yielder** (the `{ (T1, ..., Tn) -> U }` type of a method that
+  yields): the classes of the values the method yields, proven by its own yield sites
+  (`tools/bc2cpp/block_yield_types.rb`, row `block_yield` of the facts, source
+  `inferred:yield-sites`). The emitter writes `{ (T1, ..., Tn) -> untyped }` with the
+  arity every yield passes and each position's classes; a position with no proven class
+  is `untyped`, and a position with two classes is their union. The block's return is
+  always `untyped`: the yield sites say nothing about what the block returns. The
+  proof, all of which must hold:
+  - the method is a plain yielder (the block is only called, see `BlockSelf`) with no
+    `&blk` parameter, and no `yield` in a nested block;
+  - every `yield` is a `BLKCALL` of the same argument count `n`: a splatted or keyword
+    yield, or a `call` on the block register, refuses;
+  - the classes of each yielded argument are proven at its site. A value that is still
+    the entry value of a required positional takes that parameter's inferred type (the
+    `inferred:*` row, so a declared parameter type is not used as a proof); any other
+    value takes the numeric-flow classes the argument join reads.
+  A method that is not typed keeps `{ (*untyped) -> untyped }`, and the row carries the
+  reason. A declared block signature is left as declared, so no `block_yield` row is
+  written for it. The gate does not compare these types yet (see
+  [runtime evidence](#runtime-evidence) on block parameters).
 
 The body analysis consumes the same joins, so a read of the parameter inside the method
 sees the type the call sites prove:
@@ -416,8 +459,12 @@ be. The rule, for a send of `name` in a method of `owner`:
   declared class whose ancestor chain reaches the module (the registry's
   `include` records, through modules that include it), together with those
   classes' descendants. A module nothing includes has no receiver, so it stays
-  untyped. The candidates are `ClosedWorld#known_includer_candidates`, which is
-  open when a native or outside Ruby source names the module.
+  untyped. The candidates are `ClosedWorld#known_includer_candidates`. It is
+  open when a foreign Ruby source spells the module, or when a non-core native
+  source can include a module the scan cannot name (the native rule below).
+  A native source that only defines or looks up the module's name does not
+  close it (`mrb_define_module`, `module_function`, `mrb_module_get` as a
+  lookup, a constant read).
 - Each receiver contributes the contract its own dispatch reaches (the first
   owner in its ancestor chain that declares `name`). A `:self` contract answers
   that receiver's class. The result is the union of those contributions.
@@ -427,12 +474,32 @@ be. The rule, for a send of `name` in a method of `owner`:
   `Base#via_self` is `Symbol | Integer`, never `Symbol` alone. A module
   `M` included by `A` (`greet` is `Symbol`) and `B` (`greet` is `Integer`) gives
   `M#via_mod` the same `Symbol | Integer`.
+- Native include rule (`ClosedWorld#known_includer_candidates`, facts from
+  `ClosedWorld.native_file_facts`, non-core natives only; core natives are the
+  Ruby-visible `include` methods, which the registry's include records cover).
+  The module is open when a non-core native source (a) has a method name it
+  dispatches (`mrb_funcall`, `_id`, `_argv`, `_with_block`, `check_funcall`) that
+  is computed, or is `include`, `prepend` or `extend`, (b) spells one of those
+  method names anywhere (a native `include` method), (c) calls an include-family
+  function (`mrb_include_module`, `mrb_prepend_module`, `mrb_extend_*`) whose
+  module argument is not a spelled lookup, or (d) writes a constant to a value
+  that could be a module object in a source that spells the module (a constant
+  alias). Case (a) resolves a name held in a local bound once to spelled names
+  (`mrb_sym`, or a `const char*` ternary of literals), or in a parameter of an
+  enclosing helper: every call of that helper, in the source that defines it
+  (or in every source, unless it is `static`), must pass a spelled name, and it
+  must not be used except as a call. A native include of the module by name is
+  refused by the existing dynamic-definition rule (`NATIVE_DYNAMIC`).
+  `module_owner` in `RbsSignatures.self_call_types` then refuses a send whose
+  name a program source (native or foreign Ruby) defines on any receiver: the
+  receiver set is the includers' instances, which the registry does not list
+  method by method.
 - The send is untyped (no declared result) when the set is open: no closed
   world, a subclass that may come from outside the program (`Class.new`, an
   outside definer, a wildcard), a module with no bounded includer set (an
   includer the registry cannot place, such as `include(*mods)`, a singleton
-  class's `include`, a native or outside source that names the module, or a
-  runtime `extend`, which closes the world), or a core ancestor that has core
+  class's `include`, a foreign Ruby source that spells the module, the native
+  rule below, or a runtime `extend`, which closes the world), or a core ancestor that has core
   subclasses (`Object`, `Numeric`) or is a module (`Kernel`), whose core instances
   the program does not declare. A core leaf is the exception (CORE_LEAF below). It
   is also untyped when a receiver's chain is unknown (an unknown mixin or a
@@ -517,8 +584,11 @@ program method reopening `Array` that calls `size`). That is the one change to t
 self-call path: such sends were untyped and are now typed under the same four
 conditions. Other self-call results are unchanged.
 
-Required parameters of methods with optional ones, constants and nonlocal-return
-inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the type-check RBS,
+Required parameters of methods with optional ones and constants remain follow-up
+work. A method whose body has a nested block with a `return` (RETURN_BLK) is typed
+from its return-class mask, which joins the block's returns, and gets no IR return
+fact (`ir_type_feedback.rb` records none, so `trivial_return` does not read its own
+RETNIL as the whole answer). Inferred ivar candidates (`@ivar: T` in the type-check RBS,
 and the `ivars` rows of the facts file) are the union of every traced store
 across the ivar's numeric family: superclass, include and prepend links, since
 all of them share the slot. The candidate gains `nil` when some read may run
@@ -527,7 +597,10 @@ owner that `numeric_ivar_assured?` does not clear. A read is store-first only
 when it sits in its owner's method body and every path from the entry passes a
 SETIV of the ivar before it (a must-store pass over that body's CFG, exception
 edges included). A self-call never counts as a store, so a read after one keeps
-`nil`; so does any read in a block. That check needs a closed world with no
+`nil`; so does any read in a block. When the ivar has no class-layout candidate
+(a numeric or bool slot, whose stores ClassLayout does not trace), the embedded
+IvarLayout type is the candidate's classes and gets the same nil (`IvarCandidates.with_nil`).
+That check needs a closed world with no
 `allocate` and a #initialize that assigns on every path before `self` escapes;
 where it cannot decide, `nil` is included. A store the analysis did not resolve,
 or an ivar touched by code no class owns (a module body), leaves the candidate
