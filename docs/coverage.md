@@ -99,6 +99,10 @@ rather than silently producing no report.
 CI passes `--require-needs`: the test beds are downloaded earlier in the job, so
 a check whose data is missing fails there instead of being reported as skipped.
 
+A test bed means a downloaded game. The committed `data/maix-hello` fixture is a
+synthetic `RPG_RT.ldb` and does not count (`scripts/coverage/test_bed.rb`), so the
+checks that need a real game skip without one instead of passing on an empty game.
+
 To make it a gate instead, pass a floor:
 
 ```sh

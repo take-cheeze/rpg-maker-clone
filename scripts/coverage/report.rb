@@ -42,6 +42,8 @@ require 'tmpdir'
 ROOT = File.expand_path('../..', __dir__)
 HOOK = File.join(__dir__, 'hook.rb')
 
+require_relative 'test_bed'
+
 # The sources the report is about: the pure-Ruby engine libraries. The
 # harnesses under scripts/ are the tests, not the subject, so they are left
 # out; `src/**.cxx` is a different language and a different tool.
@@ -174,7 +176,9 @@ CHECKS = [
   # The class-object resolver on hand-built bytecode; the fixture section skips here.
   { name: 'bc2cpp-class-object-args', command: %w[scripts/bc2cpp/class_object_args_check.rb] },
   # The frozen-table slot class on hand-built bytecode; the compiled section needs mrbc and skips here.
-  { name: 'bc2cpp-frozen-slot', command: %w[scripts/bc2cpp/frozen_slot_check.rb] }
+  { name: 'bc2cpp-frozen-slot', command: %w[scripts/bc2cpp/frozen_slot_check.rb] },
+  # The rpg2k_game predicate: the committed maix-hello fixture must not count as a test bed.
+  { name: 'coverage-test-bed', command: %w[scripts/coverage/test_bed_check.rb] }
 ].freeze
 
 # `needs:` predicates. A downloaded RPG2000/2003 game is the only prerequisite
@@ -183,7 +187,7 @@ REQUIREMENTS = {
   rpg2k_game: {
     description: 'a downloaded RPG2000/2003 test bed under data/ ' \
                  '(scripts/download/nepheshel.bash)',
-    met: -> { !Dir.glob(File.join(ROOT, 'data', '**', 'RPG_RT.ldb')).empty? }
+    met: -> { CoverageTestBed.rpg2k_game_present?(ROOT) }
   }
 }.freeze
 
