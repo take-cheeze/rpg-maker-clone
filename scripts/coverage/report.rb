@@ -80,6 +80,7 @@ CHECKS = [
   { name: 'bc2cpp-rbs-mixin-contracts', command: %w[scripts/bc2cpp/rbs_mixin_contracts_check.rb] },
   { name: 'bc2cpp-self-call-override-contracts', command: %w[scripts/bc2cpp/self_call_override_contracts_check.rb] },
   { name: 'bc2cpp-explicit-receiver-override-contracts', command: %w[scripts/bc2cpp/explicit_receiver_override_contracts_check.rb] },
+  { name: 'bc2cpp-module-includer-bound', command: %w[scripts/bc2cpp/module_includer_bound_check.rb] },
   { name: 'bc2cpp-numeric-roots-reaching', command: %w[scripts/bc2cpp/numeric_roots_reaching_check.rb] },
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },
@@ -162,6 +163,7 @@ CHECKS = [
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp/core_mixins_check.rb] },
   # LEXICAL_CONST: the fixtures need the host mrbc and skip without MRBC; no mrblib lines.
   { name: 'bc2cpp-lexical-const', command: %w[scripts/bc2cpp/lexical_const_check.rb] },
+  { name: 'bc2cpp-name-argument-flow', command: %w[scripts/bc2cpp/name_argument_flow_check.rb] },
   { name: 'bc2cpp-constant-proofs', command: %w[scripts/bc2cpp/constant_proofs_check.rb] },
   { name: 'bc2cpp-typed-reflection', command: %w[scripts/bc2cpp/typed_reflection_check.rb] },
   # Reads every schema field through the real LCF reader.
