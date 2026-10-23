@@ -337,7 +337,7 @@ end
 
 Supported: classes/modules; `def` with required positional parameters and one overload; `@ivar: T`; `attr_reader` /
 `attr_accessor name: T`; types `Integer`, `Symbol`, `Array`, `Hash`, `Array[C]`, `Hash[K, C]` and program classes.
-Accepted without a hint (TC1005 note): optional / rest / keyword / block parameters, `T?`, unions, `untyped`, `void`,
+A `*T` rest parameter is a hint for the body's element reads (no report row). Accepted without a hint (TC1005 note): optional / untyped rest / keyword / block parameters, `T?`, unions, `untyped`, `void`,
 `bool`, `self`, singleton methods, constants, aliases, mixins, visibility, other generics, a class the program does not
 define. Errors (TC1002): parse errors, overloaded `def`, other declaration kinds. A comment wins over a signature
 (TC1006); an unknown method is TC1003; a wrong parameter count TC1004. Both are errors (see ADR 0436): a stale or mis-sized annotation fails the check and the build, the same as a contradiction.
