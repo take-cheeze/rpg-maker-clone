@@ -556,7 +556,7 @@ report changes no generated code (`shipped.cxx` is byte-identical with it on).
 
 The `register_copy` and `direct_call_result` origins above are a text heuristic. The `origin=` on a `POLY_DIAG`
 line is join-aware: at a join it names every producer that reaches the receiver, as `join:a.b` (sorted), so
-`write_loadnil` alone means one nil producer. The label does not change dispatch; `receiver_class_unresolved`
+`write_loadnil` alone means one nil producer. A receiver the IR refuses (a rescue region) is `unproven.<walk label>`, which is not a complete set. The label does not change dispatch; `receiver_class_unresolved`
 sites stay as they were. To see the producing method, build with a tag on every by-name line and join the
 shipped sites to it:
 
