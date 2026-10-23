@@ -1,0 +1,1 @@
+- bc2cpp fixture checks no longer abort on the engine's `sig/bc2cpp/declarations.rbs`: their fixture programs define none of the engine's classes, so every declared member was an unusable signature (TC1003). They now check against no signature world, as the other fixture checks do.
