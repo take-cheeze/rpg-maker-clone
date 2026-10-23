@@ -22,7 +22,8 @@ ruby scripts/bc2cpp/type_check.rb --files game.rb \
 Set `MRBC` to the host compiler path when it is not on PATH. Use an absolute
 path when invoking the script from another directory. Candidate files are
 written only to the requested output directory; source signature files are
-not updated automatically. As with `--emit-rbs`, candidates also retain the
+not updated automatically; an accepted candidate is copied in by the reviewed
+[promotion step](bc2cpp-promote-candidates.md). As with `--emit-rbs`, candidates also retain the
 existing parameter, ivar, constant and method inventory. Existing types come
 from the standard whole-program facts; independently inferred IR returns
 replace return declarations in the candidate copy, including contradicted
