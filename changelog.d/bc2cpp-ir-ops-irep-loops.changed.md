@@ -1,0 +1,1 @@
+- **bc2cpp** loop installers, irep arity, insn operands, sealed int16 locals and call-site index now match opcodes through the shared `BytecodeIR::Ops` sets and `each_with_op` instead of raw opcode-name strings. Generated C++ is unchanged.
