@@ -1186,7 +1186,8 @@
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
-  per-pass text scraping, including a reaching-definitions query
+  per-pass text scraping, with [binary fixtures that forbid text access](docs/bc2cpp-ir-instruction-checks.md)
+  checking the shared queries, including a reaching-definitions query
   (`BytecodeIR.reaching_definitions`) that answers through joins and loops.
   [Factory analysis](docs/bc2cpp-ir-factories.md) follows Class/Struct factory
   aliases across control flow, recording all possible superclass and member names
