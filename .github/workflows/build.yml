@@ -732,6 +732,7 @@ jobs:
           ruby scripts/bc2cpp/escape_receiver_flow_check.rb
           ruby scripts/bc2cpp/skipped_direct_call_check.rb
           ruby scripts/bc2cpp/array_literal_block_check.rb
+          ruby scripts/bc2cpp/send_arg_facts_check.rb
           ruby scripts/bc2cpp/constant_typing_check.rb
           ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c ruby scripts/native/binding_split.rb check
@@ -745,7 +746,9 @@ jobs:
           ruby scripts/bc2cpp/define_method_check.rb
           ruby scripts/bc2cpp/generic_block_return_check.rb
           ruby scripts/bc2cpp/ir_block_protocols_check.rb
+          ruby scripts/bc2cpp/block_yielders_check.rb
           ruby scripts/bc2cpp/type_check_run_check.rb
+          ruby scripts/bc2cpp/block_yield_types_check.rb
           ruby scripts/bc2cpp/type_check_iterate_check.rb
           ruby scripts/bc2cpp/rbs_mixin_contracts_check.rb
           ruby scripts/bc2cpp/self_call_override_contracts_check.rb
@@ -778,6 +781,7 @@ jobs:
           ruby scripts/bc2cpp/receiver_origin_join_check.rb
           ruby scripts/bc2cpp/constant_argument_sites_check.rb
           ruby scripts/bc2cpp/native_member_tables_check.rb
+          ruby scripts/bc2cpp/native_callbacks_check.rb
           ruby scripts/bc2cpp/io_open_check.rb
           ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
           ruby scripts/bc2cpp/ir_soundness_classes_check.rb

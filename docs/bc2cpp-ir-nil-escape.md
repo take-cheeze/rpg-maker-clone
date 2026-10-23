@@ -94,7 +94,8 @@ audited tables in `escape_analysis.rb`:
 * `NATIVE_ARG_OK` (argument positions the natives keep none of, with the
   registering files and the Ruby methods the natives call with the argument).
   `==`, `equal?`, `eql?`, `is_a?`, `kind_of?`, `instance_of?`, `key?`,
-  `has_key?` and `section` are audited. A name whose natives call `to_str`,
+  `has_key?`, `section`, `pack` and `unpack` are audited (`pack`/`unpack` for an exact String
+  template only; see the census doc). A name whose natives call `to_str`,
   `coerce` or `<=>` on the argument stays unaudited; `+` (Rational's default
   branch calls `arg + self`, and the result is returned) and `<<` (`Array#<<`
   stores its argument) do too.

@@ -199,6 +199,32 @@ Compared:
   their classes are the values read. A module's ivar is never decided (it belongs to
   whichever class includes the module), and an ivar the candidate does not declare
   (`untyped`, or no declaration for that class) is counted as undeclared, not compared;
+- a block parameter (`bc2cpp_bargN` of a block body), against the `{ (T1, ..., Tn) -> U }`
+  block type the candidate declares for the method that yields to the body. The method is
+  the one the dump's `BLOCK_YIELD` row names (see the join below), so the body's rows are
+  never compared with another method's block. The i-th yielded argument is compared with
+  `Ti`, and only when the declared block is plain (n required positionals, no optional,
+  rest or keyword parameter) and the body takes the same n plain parameters: then the i-th
+  yielded argument is the i-th parameter. A body with another shape, a method with no
+  declared block, or a body the dump did not decide is counted and not compared.
+
+**Block join.** `tools/bc2cpp/block_yielders.rb` joins a block body to a yielding method
+at compile time, and the dump carries the result as one `BLOCK_YIELD` row per body:
+`BLOCK_YIELD  SYMBOL  BODY_IMPL  Owner#name  ARITY  ok`, or `-` for the key and the arity
+with the reason it is undecided. A body is joined to `M` only when all of these hold:
+
+- the body is the literal block of one `SENDB name`, and the block does not escape its
+  creating frame, its only use being that hand-off to `name`;
+- `name` has no native definition and exactly one definition in the program, which is
+  compiled and not core Ruby; no program `method_missing` exists;
+- `M` yields to its block and has no `&blk` parameter, and its block is only ever called,
+  never handed on, stored, or read from a closure.
+
+Any other body is undecided, with the reason in the row (`block_escapes`, `not_unique`,
+`native_name`, `yielder_block_param`, ...). A dump written before these rows has none, so
+its block bodies are counted as unjoined. Under `BC2CPP_ESCAPE_ANALYSIS=0` every body is
+undecided. `scripts/bc2cpp/block_yielders_check.rb` checks the rows on a real compile
+(needs `MRBC`).
 - a constant read, `GETCONST` or `GETMCNST`, against the `NAME: T` the candidate declares
   in the scope the read resolved to. The scope is the owner the closed-world lexical
   analysis proved (`LexicalConsts`, the same resolution the numeric constant groups use),
@@ -284,13 +310,10 @@ compared. A top-level `extend` belongs to `main`, which is no class, so it has n
 
 The trace cannot tell the check these things, so they are not compared:
 
-- block parameters. The trace has `block_arg` rows, but they are the parameters of
-  a block body, keyed by the body's own `_impl` (the method that yields to it is
-  not in the row), and the emitter declares a block type only as
-  `{ (*untyped) -> untyped }`, so there is no declared type to compare with. A
-  method's `&blk` value is not traced either (`bc2cpp_blk` is not a parameter row).
-  This stays a skip until the trace names the yielding method and the emitter
-  declares block parameter types;
+- block parameters the join does not decide, or whose method declares no block type
+  (the emitter writes `{ (*untyped) -> untyped }` unless the yield sites prove the parameter
+  classes, so only a candidate that declares a block type is compared). A method's `&blk` value
+  is not traced either (`bc2cpp_blk` is not a parameter row);
 - ivar reads that are not GETIV reads: stores (SETIV), reads through a synthesized
   attr accessor, and `instance_variable_get`. The check sees only the values the
   compiled GETIV reads hand back, so a wrong value that reaches an ivar only through
@@ -346,6 +369,26 @@ all known (a dynamic, foreign or poisoned name gets no join at all).
   is not recognized, so each refuses. A block typed `Proc` is written as a required
   block (`{ (*untyped) -> untyped }`); otherwise the block stays optional. A declared
   block signature keeps its optional block.
+- **Block parameters of a yielder** (the `{ (T1, ..., Tn) -> U }` type of a method that
+  yields): the classes of the values the method yields, proven by its own yield sites
+  (`tools/bc2cpp/block_yield_types.rb`, row `block_yield` of the facts, source
+  `inferred:yield-sites`). The emitter writes `{ (T1, ..., Tn) -> untyped }` with the
+  arity every yield passes and each position's classes; a position with no proven class
+  is `untyped`, and a position with two classes is their union. The block's return is
+  always `untyped`: the yield sites say nothing about what the block returns. The
+  proof, all of which must hold:
+  - the method is a plain yielder (the block is only called, see `BlockSelf`) with no
+    `&blk` parameter, and no `yield` in a nested block;
+  - every `yield` is a `BLKCALL` of the same argument count `n`: a splatted or keyword
+    yield, or a `call` on the block register, refuses;
+  - the classes of each yielded argument are proven at its site. A value that is still
+    the entry value of a required positional takes that parameter's inferred type (the
+    `inferred:*` row, so a declared parameter type is not used as a proof); any other
+    value takes the numeric-flow classes the argument join reads.
+  A method that is not typed keeps `{ (*untyped) -> untyped }`, and the row carries the
+  reason. A declared block signature is left as declared, so no `block_yield` row is
+  written for it. The gate does not compare these types yet (see
+  [runtime evidence](#runtime-evidence) on block parameters).
 
 The body analysis consumes the same joins, so a read of the parameter inside the method
 sees the type the call sites prove:

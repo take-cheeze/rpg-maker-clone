@@ -71,6 +71,7 @@ CHECKS = [
   { name: 'bc2cpp-rbs-suggestion-trace', command: %w[scripts/bc2cpp/rbs_suggestion_trace_check.rb] },
   { name: 'bc2cpp-core-ruby-query', command: %w[scripts/bc2cpp/core_ruby_query_check.rb] },
   { name: 'bc2cpp-type-check-run', command: %w[scripts/bc2cpp/type_check_run_check.rb] },
+  { name: 'bc2cpp-block-yield-types', command: %w[scripts/bc2cpp/block_yield_types_check.rb] },
   { name: 'bc2cpp-type-check-provenance', command: %w[scripts/bc2cpp/type_check_provenance_check.rb] },
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-blocks', command: %w[scripts/bc2cpp/ir_blocks_check.rb] },
@@ -87,6 +88,8 @@ CHECKS = [
   { name: 'bc2cpp-immediate-ivars', command: %w[scripts/bc2cpp/immediate_ivars_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
   { name: 'bc2cpp-array-literal-block', command: %w[scripts/bc2cpp/array_literal_block_check.rb] },
+  # Needs MRBC (and a full-core libmruby for its behaviour half); SKIPs without them.
+  { name: 'bc2cpp-send-arg-facts', command: %w[scripts/bc2cpp/send_arg_facts_check.rb] },
   # Needs MRBC and a full-core libmruby (SKIPs without them, so it adds no lines here until the bc2cpp job sets them).
   { name: 'bc2cpp-placement-harness', command: %w[scripts/bc2cpp/placement_harness_check.rb] },
   { name: 'bc2cpp-class-bodies', command: %w[scripts/bc2cpp/class_bodies_check.rb] },
