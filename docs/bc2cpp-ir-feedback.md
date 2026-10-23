@@ -160,8 +160,15 @@ read by the pinned RBS 4.
 
 Compared:
 
-- each required positional parameter (trace kind `req`, matched by position) and
-  each method return, except `initialize`;
+- each positional parameter, required (trace kind `req`) or optional (`opt`),
+  matched by position, and each method return, except `initialize`;
+- each keyword parameter, required (`kwreq`) or optional (`kwopt`), matched by
+  name (the C parameter is `bc2cpp_kwarg_NAME`). A value is traced only where the
+  caller gave it, so both kinds are real arguments;
+- a rest parameter's extra arguments: the `rest` row is the Array the call built,
+  and its elements (role `array`) are checked against the `T` of `*T`. A `rest`
+  row whose class is not `Array` is counted as `rest row(s) not an Array` and not
+  compared, since the index is then not that parameter;
 - the elements of a parameter or return declared `Array[T]` or `Hash[K, V]`: the
   `PARAM_ELEM_*` and `RETURN_ELEM_*` rows, by role (`array`, `key`, `value`);
 - singleton methods (`def self.x`), against the trace key `Owner.singleton#x`;
@@ -196,10 +203,18 @@ The trace cannot tell the check these things, so they are not compared:
   returns;
 - a singleton method reached through `extend` (the module's instance methods become
   the extending class's singleton methods, which the trace keys as
-  `Owner.singleton#x`; the check does not model it);
-- optional, rest, keyword and block parameters: this check does not match their
-  trace rows (an optional parameter may carry a call-site type, see above);
-- ivar and constant types, which are not traced;
+  `Owner.singleton#x`). The hierarchy rows (`class_hierarchy.rb`) record `INCLUDE`
+  and `PREPEND` only, and skip a mixin inside `class << self`, so the check does
+  not know which modules are `extend`-ed;
+- block parameters. The trace has `block_arg` rows, but they are the parameters of
+  a block body, keyed by the body's own `_impl` (the method that yields to it is
+  not in the row), and the emitter declares a block type only as
+  `{ (*untyped) -> untyped }`, so there is no declared type to compare with. A
+  method's `&blk` value is not traced either (`bc2cpp_blk` is not a parameter row).
+  This stays a skip until the trace names the yielding method and the emitter
+  declares block parameter types;
+- ivar and constant types: the dumps have PARAM, RETURN, ELSE and RECV rows only,
+  so ivars and constants are not recorded;
 - overloaded methods, which the candidate reader skips;
 - container elements past the first eight of each container (`BC2CPP_ELEM_SAMPLE`):
   the dump does not record them, so a wrong class there is not seen.
