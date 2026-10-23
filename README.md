@@ -1141,6 +1141,8 @@
   constant (`Klass.new`, `is_a?(Klass)`, `Klass === x`) logs a `[RPG2k]` guard violation
   and raises instead of dispatching; see
   [`docs/adr/0290-bc2cpp-guard-violation.md`](docs/adr/0290-bc2cpp-guard-violation.md).
+  The [soundness contract](docs/bc2cpp-soundness.md) limits which runtime errors compiled code may raise:
+  the error mruby would raise, or a named proof-violation error that is never silent.
   A literal-block send (`rows.each { }`) to an exact `Array`, `Hash`, `Range` or `Integer` calls the compiled
   core iterator directly, also when the block sits inside an inlined loop body, and drops its by-name fallback
   when the receiver class is proven and the block cannot reach a Fiber yield; see
