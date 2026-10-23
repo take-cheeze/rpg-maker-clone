@@ -174,7 +174,11 @@ Compared:
 - singleton methods (`def self.x`), against the trace key `Owner.singleton#x`;
 - a module method, against the observations of each class that includes the module.
   The class must be known to include it through `--hierarchy`; without that file the
-  observations are counted as undecided.
+  observations are counted as undecided;
+- a module method, against the singleton observations (`Owner.singleton#x`) of each
+  class that extends the module. A method of an extended module is the extending
+  class's singleton method, so its `self` return is not the module's. Without
+  `--hierarchy` those observations are counted as cannot decide.
 
 A site is skipped when it was not reached. An overflowed site (its class table was
 full, so its classes are unknown) is not compared; the summary counts every
@@ -190,22 +194,33 @@ module, or a native mixin, makes it undecided. Everything else is reported as
 undecided in the summary. A passing run is evidence about one recorded run, not a
 proof.
 
+The singleton lookup of an extending class is read the way Ruby orders it: the
+class's own singleton methods (`SDEF` rows) first, then the modules it extends, last
+applied first, then its superclass's singleton lookup. A module method's observation
+is accepted only when the module is reached before any other definer of the name.
+An own `def self.x` in front of it makes the observation the class's own method, so
+it is not compared. A dynamic extend (an `EXTEND` row whose module is `*`, from an
+argument the sources cannot name or an `extend` inside a `def`) is an unknown entry
+in front of the extended modules, so that class is cannot decide. An `EXTEND` row
+with `*` as its owner (an `extend` inside a block, or on an explicit receiver) makes
+every class's singleton lookup unknown.
+
 `--hierarchy` takes the rows `class_hierarchy.rb` writes: `CLASS`/`MODULE`,
-`SUPER`, `INCLUDE`/`PREPEND` (in application order) and `DEF` (including
-`define_method`, `alias` and `attr_*` names, and `*` for a computed name). The
-mixin rows come only from the sources it is given. A mixin it does not see (a file
-left out, an `included` hook, a `class_eval` string) leaves that class's module
-observations uncompared: a missed check, never a false failure.
+`SUPER`, `INCLUDE`/`PREPEND` (in application order), `EXTEND` (the `extend M` or
+`extend self` of a class body, and `include M` in `class << self`; in application
+order too), `DEF` (including `define_method`, `alias` and `attr_*` names, and `*`
+for a computed name) and `SDEF` (the singleton methods a body defines: `def self.x`,
+and the defs of a `class << self`). The mixin and extend rows come only from the
+sources it is given. A mixin it does not see (a file left out, an `included` hook, a
+`class_eval` string) leaves that class's module observations uncompared: a missed
+check, never a false failure. An `extend` it does not see is the same kind of gap: a
+module the rows miss cannot be attributed, so only the modules they do name are
+compared. A top-level `extend` belongs to `main`, which is no class, so it has no row.
 
 The trace cannot tell the check these things, so they are not compared:
 
 - the receiver of a singleton method: `self` is not traced, only its arguments and
   returns;
-- a singleton method reached through `extend` (the module's instance methods become
-  the extending class's singleton methods, which the trace keys as
-  `Owner.singleton#x`). The hierarchy rows (`class_hierarchy.rb`) record `INCLUDE`
-  and `PREPEND` only, and skip a mixin inside `class << self`, so the check does
-  not know which modules are `extend`-ed;
 - block parameters. The trace has `block_arg` rows, but they are the parameters of
   a block body, keyed by the body's own `_impl` (the method that yields to it is
   not in the row), and the emitter declares a block type only as
