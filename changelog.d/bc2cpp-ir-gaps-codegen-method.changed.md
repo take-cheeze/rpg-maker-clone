@@ -1,0 +1,1 @@
+- The bc2cpp code generators (`codegen.rb`, `codegen_method.rb`, `codegen_arm_prune.rb`, `codegen_block_param_call.rb`, `codegen_block_fallback.rb`) now read instruction lists through the bytecode IR helpers instead of scanning `irep.instructions` directly. The generated C++ is unchanged.
