@@ -794,6 +794,7 @@ jobs:
           ruby scripts/bc2cpp/promote_candidates_check.rb
           ruby scripts/bc2cpp/native_core_direct_wired_check.rb
           ruby scripts/bc2cpp/ir_join_soundness_check.rb
+          ruby scripts/bc2cpp/def_value_flow_check.rb
           ruby scripts/bc2cpp/symbol_flow_check.rb
           ruby scripts/bc2cpp/loop_element_writes_check.rb
           ruby scripts/bc2cpp/native_core_candidates_check.rb
