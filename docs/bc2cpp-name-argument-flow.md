@@ -21,9 +21,11 @@ avoids mixing operation names with method-name arguments at joins.
 Strings are mutable. Removal accepts a String literal only when its reaching
 load is in the adjacent argument-load sequence, with a strictly linear corridor into the call and no intervening effects,
 leaving no opportunity for an alias or call to mutate it. String locals, including joins of String literals,
-remain unknown. Packed/splat arrays retain the existing adjacent literal-Symbol
-recognizer; following their aliases requires a separate mutation and escape
-proof.
+remain unknown. Packed/splat arrays (15+ arguments, or `*names`) resolve through
+flow: the splat's only reaching writer is an `ARRAY` (or a `LOADNIL`/`ARYCAT`
+copy of one), its only read of the packed array is that splat, and each element
+has exactly one reaching Symbol load. Any second read, joined element or other
+writer leaves the call dynamic.
 
 Run the binary fixture regression check with:
 
