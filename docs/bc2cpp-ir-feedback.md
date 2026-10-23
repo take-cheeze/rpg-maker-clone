@@ -45,7 +45,8 @@ contract provenance and refusal reason. Statuses distinguish:
 Text output summarizes statuses and unknown reasons and lists inferred return
 suggestions. `--all` adds location-based unknown-query notes (`TC2004`).
 Wholly incompatible inferred returns or ivar stores produce errors (`TC1007`);
-partly overlapping sets produce warnings (`TC1008`). Subtype compatibility
+partly overlapping sets produce warnings (`TC1008`), unless trace evidence
+applies (below). Subtype compatibility
 uses the program hierarchy, recorded mixins and the primitive classes' core
 ancestry. Missing module or external-type relations leave `compatibility`
 unknown instead of creating a mismatch. These
@@ -59,11 +60,33 @@ produce an independent suggestion. New union-return facts also improve normal
 Complete contract-assisted return bounds appear with source `derived:contracts`
 and retain their dependency list. They are not independent RBS suggestions.
 
+### Trace evidence
+
+`type_check.rb --trace CANDIDATES.rbs` takes the candidates that
+`scripts/bc2cpp/trace_types.rb candidates` writes from `BC2CPP_TRACE_TYPES`
+dumps. A `possible_mismatch` return row whose method the trace observed only
+inside the contract is reported as `TC1009` (info), not `TC1008` (warning). The
+row gets `provenance: "trace"` and `trace_classes`, and its status stays
+`possible_mismatch`: a trace run is evidence from one run, not proof, so it
+never becomes `inferred` or `declared`.
+
+The join is by method (owner and instance method name). The trace records no
+file or line for a return, and the candidates leave out overflowed sites and
+untyped, interface or generic returns, so only a complete observation counts.
+Nil and bool in the candidates count as NilClass and TrueClass plus FalseClass;
+an expectation must name every such class. `mismatch` rows, ivar stores, block
+rows and singleton methods are never changed by trace evidence, so a class the
+static analysis excludes still raises `TC1007`. The implementation is
+`tools/bc2cpp/ir_trace_evidence.rb`; `scripts/bc2cpp/ir_trace_evidence_check.rb`
+is the host-only fixture check.
+
 ## Boundaries
 
 Facts remain nominal when declared; they cannot prove exact dispatch or
 native representation. Inference may over-approximate infeasible paths, so
-mixed sets are warnings rather than definite errors. Handler and closure
+mixed sets are warnings rather than definite errors, and trace evidence only
+lowers them to notes. Path-sensitive narrowing is not applied to these rows:
+`NilNarrowing` feeds the parameter checks, not the IR type query. Handler and closure
 barriers, frame clobbers and traversal budgets still refuse queries.
 
 Shared IREPs with ambiguous owners get no owner-specific contracts. Cyclic

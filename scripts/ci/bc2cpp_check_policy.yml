@@ -228,6 +228,12 @@ checks:
     fixture_capabilities: []
     fixture_gate: false
     reason: Host-only RBS comparison; the committed declarations are its only real input.
+  scripts/bc2cpp/ir_trace_evidence_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
+    fixture_gate: false
+    reason: Host-only; the facts and candidates are written by hand, so no mrbc is needed.
   scripts/bc2cpp/base_section_regen_check.rb:
     tier: fast
     capabilities: []
