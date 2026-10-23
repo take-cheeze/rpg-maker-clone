@@ -113,6 +113,38 @@ and 61.583s enabled (6.18% less time). The full-engine `--no-sends` check measur
 and report JSON were byte-identical. These are single local pairs, not repeated
 CI benchmarks; the small no-sends timing difference needs CI confirmation.
 
+### Shared context-suite setup
+
+The context suite batches its inference variants over the same input files and
+common configuration. The compiler loads its libraries, parses bytecode, scans
+native sources and computes the global facts and initial ivar layout once. Before
+constructing the first `CodeGen`, it forks one child per variant, sequentially.
+Each child receives its own controls and facts/error paths, then performs its own
+layout fixed points, inference, method compilation and report generation. The
+CLI baseline remains an independent run.
+
+An explicit control-key allowlist limits what may vary. An ENV guard is armed
+before compiler libraries load and rejects reads or writes of those controls,
+including bulk environment inspection, until the fork. A future prefix dependency
+on a variant switch fails the check instead of sharing an invalid result. Mutable
+prefix objects become private through fork copy-on-write; child changes never
+reach the parent or another variant. Parent report exit hooks do not run, while
+child exit hooks and failures retain their usual behavior. Children run one at a
+time so the existing four-worker CI schedule does not acquire more concurrent work.
+
+`BC2CPP_FIXTURE_SHARED_SETUP=0` restores independent compiler runs. Platforms
+without fork, compiler-mutant runs and custom `RUBYOPT` startup hooks also use
+independent runs. The source world and common configuration must remain unchanged
+for the duration of a batch. The backend's internal `--type-check-variants PLAN`
+protocol is limited to report-only mode and cannot be combined with `--units`.
+
+On base `6361abecb`, warmed sequential Ruby 4.0.5/YJIT runs measured the complete
+MRBC context suite at 60.427s and 60.989s with shared setup disabled, versus
+34.682s and 34.733s enabled (about 42.8% less time on average). The order was
+independent/shared/shared/independent after a discarded shared warm-up. All
+assertion output was byte-identical, with no other tests running during timing.
+These are local measurements; CI runner durations still need confirmation.
+
 ## Output
 
 Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, so an editor problem matcher
