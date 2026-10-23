@@ -74,6 +74,11 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/immediate_ivars_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
   scripts/bc2cpp/ir_context_results_check.rb:
     tier: fast
     capabilities: []
@@ -298,6 +303,14 @@ checks:
     fixture_capabilities:
     - native_sources
   scripts/bc2cpp/block_iterator_direct_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/escape_receiver_flow_check.rb:
     tier: runtime
     capabilities:
     - mrbc

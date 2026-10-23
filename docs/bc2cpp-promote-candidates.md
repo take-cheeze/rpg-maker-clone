@@ -14,6 +14,9 @@ ruby scripts/bc2cpp/promote_candidates.rb --write coverage/rbs-suggestions
 
 # Another target (default: sig/bc2cpp/declarations.rbs).
 ruby scripts/bc2cpp/promote_candidates.rb --target FILE CANDIDATE_DIR
+
+# Skip the constants DECLARED_CONSTANT_CHECK rejects (see "Constants" below).
+ruby scripts/bc2cpp/promote_candidates.rb --proofs PROOFS.json CANDIDATE_DIR
 ```
 
 Review the dry-run diff before `--write`; the write is the only step that changes a file.
@@ -27,6 +30,36 @@ Review the dry-run diff before `--write`; the write is the only step that change
   block, minus any line with a date; a candidate with no leading comment gets `# candidate: DIR/PATH`.
 - A new class is written with its candidate superclass. A class the target already declares is reopened without
   a superclass clause.
+
+## Constants and the TC1011 proof
+
+A candidate constant (`NAME: Integer`, `NAME: Array[T]`, `NAME: Klass`) becomes a declared constant once promoted,
+and then DECLARED_CONSTANT_CHECK checks its assignment at every bind. A declared `Integer` whose assignment the proof
+does not cover is a build error (TC1011, "the assigned value is not a proven Fixnum expression"). A promotion that
+adds such a constant would break the next build, so `--proofs` keeps it out.
+
+The verdicts come from the check itself, not from a second copy of the proof. bc2cpp runs
+`DeclaredConstants.verdicts` on the candidate directory's constants, as if they were declared, and writes one JSON
+file:
+
+```sh
+MRBC=path/to/mrbc BC2CPP_CONSTANT_PROOF_CANDIDATES=coverage/rbs-suggestions \
+  BC2CPP_CONSTANT_PROOF_OUT=coverage/proofs.json ruby scripts/bc2cpp/type_check.rb
+ruby scripts/bc2cpp/promote_candidates.rb --proofs coverage/proofs.json coverage/rbs-suggestions
+```
+
+The file is `{"version": 1, "candidates": DIR, "verdicts": {NAME: null | TC1011 message}}`. `null` means the check
+accepts the constant. The program's own diagnostics are unchanged: the probe only reads the candidates' entries.
+
+With `--proofs`, a constant is skipped when:
+
+- its verdict is a TC1011 message (listed as `TC1011: ...`);
+- it is an `Integer` or `Array` constant with no verdict (listed as `no proof fact`), since the check would read it
+  but the file does not cover it.
+
+Other constant types are not read by the check and are promoted as before. Without `--proofs` the dry run says that
+constants are not checked against TC1011. A proofs file that cannot be read, has another version, or was written for
+another directory is refused (exit 1, nothing written).
 
 ## What is skipped (and listed)
 
@@ -58,7 +91,11 @@ failure exits 1.
 `scripts/bc2cpp/promote_candidates_check.rb` is a host-only fixture check. It covers the dry run writing
 nothing, existing declarations staying as they are, untyped and undeclared members being skipped, the
 base-section and no-marker refusals, the unparseable-target refusal, the write's result (append-only, base
-section byte-identical, parses again), and a second write changing nothing. It needs neither `mrbc` nor the
-closed build.
+section byte-identical, parses again), a second write changing nothing, and the `--proofs` gate: a TC1011 verdict
+and a missing Integer or Array verdict are skipped, other constants are not gated, a bad proofs file is refused,
+and the write leaves the target unchanged on refusal. It needs neither `mrbc` nor the closed build.
+
+`DeclaredConstants.verdicts` is a thin wrapper over the declared-constant check, whose behavior
+`scripts/bc2cpp/constant_proofs_check.rb` covers (it needs `mrbc`). The wrapper itself has no fixture of its own.
 
 The implementation is `tools/bc2cpp/promote_candidates.rb`.

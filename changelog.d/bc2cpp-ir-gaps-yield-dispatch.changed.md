@@ -1,0 +1,1 @@
+- The bc2cpp yield-reach, static-dispatch registration, `define_method` site and block self-world analyses now read bytecode through the shared IR helpers instead of raw `irep.instructions` scans. Generated C++ is unchanged.
