@@ -88,6 +88,8 @@ CHECKS = [
   { name: 'bc2cpp-immediate-ivars', command: %w[scripts/bc2cpp/immediate_ivars_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
   { name: 'bc2cpp-array-literal-block', command: %w[scripts/bc2cpp/array_literal_block_check.rb] },
+  # Needs MRBC (and a full-core libmruby for its behaviour half); SKIPs without them.
+  { name: 'bc2cpp-send-arg-facts', command: %w[scripts/bc2cpp/send_arg_facts_check.rb] },
   # Needs MRBC and a full-core libmruby (SKIPs without them, so it adds no lines here until the bc2cpp job sets them).
   { name: 'bc2cpp-placement-harness', command: %w[scripts/bc2cpp/placement_harness_check.rb] },
   { name: 'bc2cpp-class-bodies', command: %w[scripts/bc2cpp/class_bodies_check.rb] },
