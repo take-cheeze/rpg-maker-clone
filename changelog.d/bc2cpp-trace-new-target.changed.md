@@ -1,0 +1,1 @@
+- The bc2cpp receiver-class trace (`trace_new_target`) now dispatches on named op sets from `BytecodeIR::Ops` and the new `tools/bc2cpp/bytecode_ir_receivers.rb` instead of literal opcode names. Generated C++ is unchanged.

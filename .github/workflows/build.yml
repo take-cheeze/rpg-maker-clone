@@ -621,10 +621,10 @@ jobs:
             ss/mz_battle.png
           if-no-files-found: warn
 
-  # Closed-world bc2cpp build: the four *-compiled gems are generated and
-  # compiled into a libmruby.a with C++ exceptions on. Native rather than the
-  # maix cross library, because the generated code throws and maix builds with
-  # -fno-exceptions. The RISC-V cross-compile is covered by the `maix` job.
+  # Closed-world bc2cpp build of the sealed RPG2000/2003 desktop host: the four
+  # *-compiled gems are generated and compiled into a native libmruby.a with C++
+  # exceptions on. Not a cross library: the generated code throws, and the maix
+  # cross build uses -fno-exceptions. The RISC-V cross-compile is covered by the `maix` job.
   # `bc2cpp` aggregates this job under the old status-check name.
   bc2cpp-build:
     if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
@@ -726,6 +726,7 @@ jobs:
           ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/bc2cpp-checks.sh" <<'CHECKS'
           # ci:parallel begin 4
           ruby scripts/bc2cpp/type_check.rb --no-sends
+          ruby scripts/bc2cpp/sealed_host_check.rb
           ruby scripts/bc2cpp/ir_context_results_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
           ruby scripts/bc2cpp/constant_typing_check.rb
@@ -745,6 +746,7 @@ jobs:
           ruby scripts/bc2cpp/type_check_iterate_check.rb
           ruby scripts/bc2cpp/rbs_mixin_contracts_check.rb
           ruby scripts/bc2cpp/self_call_override_contracts_check.rb
+          ruby scripts/bc2cpp/explicit_receiver_override_contracts_check.rb
           ruby scripts/bc2cpp/lcf_join_array_check.rb
           ruby scripts/bc2cpp/alias_method_check.rb
           ruby scripts/bc2cpp/frozen_hash_lookup_check.rb

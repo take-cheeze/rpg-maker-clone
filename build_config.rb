@@ -261,7 +261,8 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # game loading uses precompiled bytecode (the mrbc this same build already
   # produces), so nothing a shipped game runs needs this -- it can go again
   # once the smoke grows past string eval, same as everything else this
-  # slice carries only for the link proof. `closed` carries maix's gem set.
+  # slice carries only for the link proof. `closed` loads it too, for the
+  # bc2cpp source-loader check (tools/bc2cpp/compiled_gems.rb).
   conf.gem core: 'mruby-compiler' if %w[maix closed].include?(conf.name)
 
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
@@ -363,7 +364,7 @@ end
 # which function calls which of them. See src/main.cxx's "Deferred per-maker
 # gem init" section for the call side.
 def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
-  # single_format_only (psp/wio/maix, see rpg_maker_gems) compiles mruby-rpg2k
+  # single_format_only (psp/wio/maix/closed, see rpg_maker_gems) compiles mruby-rpg2k
   # alone -- the closure/dispatch machinery below still runs, generating a
   # trivial rpg_maker_init_rpg2k_gem with nothing to dispatch *between*, so
   # the two builds keep exactly one code path instead of a parallel
@@ -540,7 +541,7 @@ wio = ENV['MRUBY_TARGET'] == 'wio'
 maix = ENV['MRUBY_TARGET'] == 'maix'
 psp = ENV['MRUBY_TARGET'] == 'psp'
 android = ENV['MRUBY_TARGET'] == 'android'
-# Not a device: the maix closed world built natively for bc2cpp (its stanza below).
+# Not a device: the sealed RPG2000/2003 closed world built natively for bc2cpp (its stanza below).
 closed = ENV['MRUBY_TARGET'] == 'closed'
 cross = emscripten || wio || maix || psp || android
 

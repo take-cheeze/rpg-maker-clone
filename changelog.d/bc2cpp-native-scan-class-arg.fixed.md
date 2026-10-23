@@ -1,0 +1,1 @@
+- **bc2cpp** now recognises native registrations whose class argument is an `mrb_state` class field (`mrb_define_method_id(mrb, mrb->array_class, MRB_SYM(pack), ...)`). `Array#pack` and the other names registered that way were seen as unregistered, so a Ruby `def pack` could be devirtualised over the native method.

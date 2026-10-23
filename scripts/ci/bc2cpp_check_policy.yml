@@ -61,6 +61,9 @@ deferred:
     - cxx
     reason: Requires a full-core library and compiled-vs-interpreted fixture binaries.
 checks:
+  scripts/bc2cpp/sealed_host_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/core_ruby_query_check.rb:
     tier: fast
     capabilities: []
@@ -658,6 +661,9 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/explicit_receiver_override_contracts_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/type_check_provenance_check.rb:
     tier: fast
     capabilities: []

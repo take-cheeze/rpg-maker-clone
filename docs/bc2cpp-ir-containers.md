@@ -43,6 +43,11 @@ used to read from `irep.instructions` (ADR 0502):
 - `Program#straight_line`, `#adjacent_block_index`, `#each_source`,
   `#each_with_op`: the instruction-order questions, answered from the IR's
   predecessor sets.
+- `Program#constant_path(from, reg)` (`bytecode_ir_constant_path.rb`): the
+  `Array` / `Hash` / `String` constant a register was loaded from, as a
+  `BytecodeIR::ConstantPath`. It is a Program query because it is a pure
+  reaching-definition walk over the instruction list; `Irep#constant_path`
+  delegates to it.
 
 What the analyses decide on top of these facts:
 
@@ -55,7 +60,20 @@ What the analyses decide on top of these facts:
 - RecordHash classifies a stored value with the type layer's literal classes.
 - SEALED_HASH_IVAR reads its store literal, receiver and windows from the IR.
 
-Still outside the IR: `trace_new_target` (the receiver class trace the element
-scans try first), RecordHash's `Array.new` / `Hash.new` constructor check
-(`constant_path`) and the RBS record checker's `DeclScanner` overrides
-(`rbs_record_types.rb`).
+`trace_new_target` (`dispatch_targets.rb`), the receiver class trace the element
+scans try first, walks on the IR: `walk_writers`, `walk_dominating_writers`,
+`reaching_definitions` and `write_dominates?`. Its per-opcode arms dispatch on
+the named sets in `tools/bc2cpp/bytecode_ir_receivers.rb` (`BytecodeIR::Receivers`)
+and `BytecodeIR::Ops`, not on literal op names.
+
+Still outside the IR, and why:
+
+- `trace_new_target`'s arm bodies. They decide facts the instruction stream does
+  not hold: a `.new` receiver is a class only when the closed world names it
+  (`lexically_resolve_construct_target`, `construct_resolution_known?`,
+  `UniqueClassNames`), a constant's container value comes from
+  `container_constants`, and ivar, capture and return classes come from
+  `ivar_classes`, `capture_hints`, `class_layout`, `registry` and the return
+  proofs. These are program-level tables, not IR queries, so the walk keeps them
+  as arguments.
+- The RBS record checker's `DeclScanner` overrides (`rbs_record_types.rb`).

@@ -6,7 +6,8 @@ arguments, ivars and method returns, including nullable and union types.
 Ivar reads use the applicable owner/ancestor contract. An implicit call on
 `self` joins the contracts of every receiver class the program bounds (see
 **Implicit self-calls** below). An ordinary explicit receiver with known nominal bounds can also use its
-return contracts. An unknown receiver does not inherit a return contract
+return contracts, joined over the subclasses the program bounds (see
+**Explicit receivers** below). An unknown receiver does not inherit a return contract
 merely because its method name matches; an existing complete compiler proof
 can independently establish its result. See [call-result propagation](bc2cpp-ir-call-results.md).
 
@@ -175,11 +176,42 @@ Compared:
 - singleton methods (`def self.x`), against the trace key `Owner.singleton#x`;
 - a module method, against the observations of each class that includes the module.
   The class must be known to include it through `--hierarchy`; without that file the
-  observations are counted as undecided.
+  observations are counted as undecided;
+- a module method, against the singleton observations (`Owner.singleton#x`) of each
+  class that extends the module. A method of an extended module is the extending
+  class's singleton method, so its `self` return is not the module's. Without
+  `--hierarchy` those observations are counted as cannot decide;
+- an overloaded method whose definitions agree and whose trace shows one
+  implementation (see [overloaded methods](#overloaded-methods)).
 
 A site is skipped when it was not reached. An overflowed site (its class table was
 full, so its classes are unknown) is not compared; the summary counts every
 overflowed site and element slot in the trace, declared or not.
+
+### Overloaded methods
+
+A method key (`Owner#name`, or `Owner.singleton#name`) is overloaded when the
+candidates give it more than one definition (a class reopened with the same method,
+or an RBS method with several `|` overloads). The rule, stated once: a key is
+compared as one method when both hold, and skipped otherwise.
+
+1. Every candidate definition of the key declares the same RBS method type text.
+   Then whichever definition ran, the declared type is the same. Two definitions
+   that disagree fail this, and the key is skipped.
+2. The dump shows at most one implementation under the key: the distinct `fn`
+   values (the C `_impl` name) of its `PARAM_SITE` and `RETURN_SITE` rows that were
+   called. Two implementations mean the trace cannot tell which definition ran (a
+   `define_method` or `alias` installed a second one under the same key), so the key
+   is skipped.
+
+A module method's class keys (`Class#name`, `Class.singleton#name`) are decided the
+same way, by the definitions of the module method and the implementations under the
+class's key. A skip is counted in the summary as `overloaded comparison(s) skipped`
+and is never a contradiction. The count is per key that the rule refuses, whether or
+not the trace reached it. A definition the candidates do not list is invisible to
+the rule, as it is to the rest of the check. Rule 2 can refuse a method that has one
+definition when the dump records two `fn` names for it (for example two builds that
+name the same method differently); that is a missed check, not a false failure.
 
 A class is a contradiction only where the lookup order is complete: a core class
 (from `CoreHierarchySigs`), or a program class whose superclass chain reaches a
@@ -191,22 +223,33 @@ module, or a native mixin, makes it undecided. Everything else is reported as
 undecided in the summary. A passing run is evidence about one recorded run, not a
 proof.
 
+The singleton lookup of an extending class is read the way Ruby orders it: the
+class's own singleton methods (`SDEF` rows) first, then the modules it extends, last
+applied first, then its superclass's singleton lookup. A module method's observation
+is accepted only when the module is reached before any other definer of the name.
+An own `def self.x` in front of it makes the observation the class's own method, so
+it is not compared. A dynamic extend (an `EXTEND` row whose module is `*`, from an
+argument the sources cannot name or an `extend` inside a `def`) is an unknown entry
+in front of the extended modules, so that class is cannot decide. An `EXTEND` row
+with `*` as its owner (an `extend` inside a block, or on an explicit receiver) makes
+every class's singleton lookup unknown.
+
 `--hierarchy` takes the rows `class_hierarchy.rb` writes: `CLASS`/`MODULE`,
-`SUPER`, `INCLUDE`/`PREPEND` (in application order) and `DEF` (including
-`define_method`, `alias` and `attr_*` names, and `*` for a computed name). The
-mixin rows come only from the sources it is given. A mixin it does not see (a file
-left out, an `included` hook, a `class_eval` string) leaves that class's module
-observations uncompared: a missed check, never a false failure.
+`SUPER`, `INCLUDE`/`PREPEND` (in application order), `EXTEND` (the `extend M` or
+`extend self` of a class body, and `include M` in `class << self`; in application
+order too), `DEF` (including `define_method`, `alias` and `attr_*` names, and `*`
+for a computed name) and `SDEF` (the singleton methods a body defines: `def self.x`,
+and the defs of a `class << self`). The mixin and extend rows come only from the
+sources it is given. A mixin it does not see (a file left out, an `included` hook, a
+`class_eval` string) leaves that class's module observations uncompared: a missed
+check, never a false failure. An `extend` it does not see is the same kind of gap: a
+module the rows miss cannot be attributed, so only the modules they do name are
+compared. A top-level `extend` belongs to `main`, which is no class, so it has no row.
 
 The trace cannot tell the check these things, so they are not compared:
 
 - the receiver of a singleton method: `self` is not traced, only its arguments and
   returns;
-- a singleton method reached through `extend` (the module's instance methods become
-  the extending class's singleton methods, which the trace keys as
-  `Owner.singleton#x`). The hierarchy rows (`class_hierarchy.rb`) record `INCLUDE`
-  and `PREPEND` only, and skip a mixin inside `class << self`, so the check does
-  not know which modules are `extend`-ed;
 - block parameters. The trace has `block_arg` rows, but they are the parameters of
   a block body, keyed by the body's own `_impl` (the method that yields to it is
   not in the row), and the emitter declares a block type only as
@@ -216,7 +259,9 @@ The trace cannot tell the check these things, so they are not compared:
   declares block parameter types;
 - ivar and constant types: the dumps have PARAM, RETURN, ELSE and RECV rows only,
   so ivars and constants are not recorded;
-- overloaded methods, which the candidate reader skips;
+- overloaded methods the rule above refuses (definitions that disagree, or a trace
+  that shows two implementations under one key). Overloads whose definitions agree
+  and whose trace shows one implementation are compared;
 - container elements past the first eight of each container (`BC2CPP_ELEM_SAMPLE`):
   the dump does not record them, so a wrong class there is not seen.
 
@@ -247,10 +292,14 @@ all known (a dynamic, foreign or poisoned name gets no join at all).
   `rest_param` row carries `T`. A call that passes keywords refuses the join, and
   so does a call that passes no extra argument at all (there is no element to
   type). A rest parameter next to keyword parameters gets no join.
-- **Required keyword** (`k:`): the join of the value passed for `k` at every
-  reaching call. Each call must pass `k` as a literal keyword pair; a call that
-  omits it, or passes keywords through `**splat`, refuses the join. RBS writes
-  `k: T`. An optional keyword stays `?untyped`.
+- **Keyword** (`k:` or `k: default`): the join of the value passed for `k` at every
+  reaching call. A call passing keywords through `**splat`, or any unknown call
+  site, refuses the join. A required keyword (`k:`) also refuses a call that omits
+  it, and RBS writes `k: T`.
+- **Optional keyword** (`k: default`): a call that omits `k` binds the default, so
+  the join is the passed values plus the default's class. The default must be one
+  literal (`nil`, an Integer, a String, an array or hash literal); any other
+  expression refuses the join and the keyword stays `untyped`. RBS writes `?k: T`.
 - **Block** (`&blk`): the block is `Proc` only when every reaching call passes a
   literal block or lambda (`BLOCK`/`LAMBDA` producer in the block slot). A call with
   no block binds `nil`, and a Proc from a variable, a `proc` call or a `&` pass-through
@@ -265,8 +314,9 @@ sees the type the call sites prove:
   takes the element join. The join is withheld when the body could change the array: any
   read of it (or of a `MOVE` copy) other than an element read, a closure that captures
   it, a zero-argument `super` (which packs it), or a `binding`/`eval` call.
-- **Required keyword**: the `KARG` register takes the join. A declared keyword type wins
-  over the join.
+- **Keyword**: the `KARG` register takes the join. An optional keyword's join already
+  holds its default's class, so the register reads the join with no further check. A
+  declared keyword type wins over the join.
 - **Block**: the block register is `Proc` when the join proves it, in place of the nominal
   `Proc | nil`. A declared block signature withholds it, as the report row does.
 
@@ -331,11 +381,13 @@ be. The rule, for a send of `name` in a method of `owner`:
   outside definer, a wildcard), a module with no bounded includer set (an
   includer the registry cannot place, such as `include(*mods)`, a singleton
   class's `include`, a native or outside source that names the module, or a
-  runtime `extend`, which closes the world), or a core ancestor such as `Object` or `Kernel`, whose core
-  instances the program does not declare. It is also untyped when a receiver's
-  chain is unknown (an unknown mixin or a cycle) or does not reach the owner,
-  when a receiver or one of its ancestors is `prepend`ed, when a receiver runs
-  a `method_missing`, or when a receiver lacks a declared contract for `name`.
+  runtime `extend`, which closes the world), or a core ancestor that has core
+  subclasses (`Object`, `Numeric`) or is a module (`Kernel`), whose core instances
+  the program does not declare. A core leaf is the exception (CORE_LEAF below). It
+  is also untyped when a receiver's chain is unknown (an unknown mixin or a
+  cycle) or does not reach the owner, when a receiver or one of its ancestors is
+  `prepend`ed, when a receiver runs a `method_missing`, or when a receiver lacks a
+  declared contract for `name`.
 - Removal: a name the program may undefine or remove has no self-call contract
   at all. The program contains `undef_method NAME`, `remove_method NAME`, the
   `undef` keyword, or the same through `send`, `__send__` or `public_send` with
@@ -362,6 +414,54 @@ method reports it. This is the remaining removal limit. The rule is in
 and `IrContextResults#dispatch`. The fixtures are
 `scripts/bc2cpp/self_call_override_contracts_check.rb`, section (g) for the
 inferred call result.
+
+**Explicit receivers.** A send on a receiver with declared nominal bounds (an
+argument, ivar or element declared `Base`) dispatches on the runtime class,
+which may be any program subclass of `Base`. So the resolver joins the same
+receiver set as a self-call, per declared class: `self_receivers` for that
+class, then `self_call_types` for `name`. With `def use(o); o.greet; end` and
+`o: Base`, where `Child < Base` overrides `greet` to return `Integer`, the result
+is `Symbol | Integer`; the owner-only answer (`Symbol`) is no longer reported.
+With no override the owner's contract is kept. The send is untyped (refused as
+`call_receiver_unbounded:CLASS#NAME`) when the receiver set is open by the same
+rules as for self, including the absence of a closed world. A receiver class
+with no closed-world bound is therefore untyped even when no subclass exists:
+an outside subclass cannot be ruled out. Fixture:
+`scripts/bc2cpp/explicit_receiver_override_contracts_check.rb`.
+
+**Core roots (CORE_ROOT).** A declared core class with no core subclass in
+`CoreHierarchySigs` (a leaf: `Array`, `Hash`, `String`, `Range`, ...) is a bounded
+receiver. Its set is the class plus the program classes that name it as their
+superclass, read from the program's `class X < Array` lines since no `class Array`
+is needed. A core class with core subclasses (`Object`, `Numeric`) or a core module
+(`Kernel`, `Enumerable`) stays refused, since its instances include core classes
+the program does not list. The send keeps the core contract exactly when all four
+hold:
+
+- the receiver set is closed (the same checks as any bounded class: no outside
+  subclass, no dynamic or native subclass, no `method_missing`);
+- the program does not define the method name on the contract's owner
+  (`ClosedWorld#program_may_define?`: a Ruby definition outside the core mrblib, a
+  native or unknown definer, or a refusal); this covers a reopen of the core class
+  and a module prepended to it;
+- every class in the set dispatches to that same contract. A program subclass that
+  overrides the name leaves the send untyped (the override rule), even when the
+  override declares its own return. A subclass that does not override keeps the
+  core result.
+
+So `Array#size` is `Integer` with no program subclass, and with a subclass that
+does not override `size`. It is untyped when a subclass overrides `size`, when the
+program redefines `Array#size`, and when the set is open. The rule is
+`RbsSignatures.self_receivers` (`core_leaf?`) and `RbsSignatures.self_call_types`
+(`core_redefined:`). The bound is `ClosedWorld#known_receiver_subclasses`, which
+the RBS resolver reads; the codegen keeps `known_subclasses`, so generated code
+does not change. The fixtures are in
+`scripts/bc2cpp/explicit_receiver_override_contracts_check.rb`.
+
+The same rule applies to an implicit-self send whose owner is a core leaf (a
+program method reopening `Array` that calls `size`). That is the one change to the
+self-call path: such sends were untyped and are now typed under the same four
+conditions. Other self-call results are unchanged.
 
 Required parameters of methods with optional ones, constants and nonlocal-return
 inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the type-check RBS,
