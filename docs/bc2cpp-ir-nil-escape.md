@@ -70,8 +70,9 @@ disagreements. Its verdicts are therefore unchanged.
   decodes each operand from `source`, since the IR has no operand model.
   Reaching definitions answer a backward question for one register, which
   the forward flow of a value through many registers does not need.
-* The closure-tree walk (`closure_children`, `subtree_refs`) follows the
-  irep tree (`reps`) the IR does not model; only its op scans moved.
+* The closure-tree walk (`closure_children`, `subtree_refs`) goes through
+  `BytecodeIR::Tree`, which takes the ireps table explicitly because copied
+  subtrees are registered there and not in `Irep#tree`.
 
 ## Native method facts
 
@@ -82,9 +83,11 @@ audited tables in `escape_analysis.rb`:
 * `NATIVE_RECEIVER_OK` (receiver kept or not, `:fresh` / `:self`).
 * `NATIVE_ARG_OK` (argument positions the natives keep none of, with the
   registering files and the Ruby methods the natives call with the argument).
-  `==`, `equal?`, `eql?`, `is_a?`, `kind_of?`, `instance_of?`, `key?` and
-  `has_key?` are audited. A name whose natives call `to_str`, `coerce` or
-  `<=>` on the argument stays unaudited.
+  `==`, `equal?`, `eql?`, `is_a?`, `kind_of?`, `instance_of?`, `key?`,
+  `has_key?` and `section` are audited. A name whose natives call `to_str`,
+  `coerce` or `<=>` on the argument stays unaudited; `+` (Rational's default
+  branch calls `arg + self`, and the result is returned) and `<<` (`Array#<<`
+  stores its argument) do too.
 
 `NATIVE_ARG_OK` applies only when every `NATIVE_SRCS` registration of the name
 sits in an audited file, so a new native refuses the name. A callback on the

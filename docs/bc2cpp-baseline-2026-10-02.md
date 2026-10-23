@@ -1,5 +1,7 @@
 # bc2cpp baseline after the bc2cpp ADRs 0307 onward (2026-10-02)
 
+Historical: the measurements on this page were taken on the former maix/wio closed world, not the current closed world, which is the sealed RPG2000/2003 desktop host.
+
 One consistent measurement of the dynamic dispatch left in bc2cpp's generated C++, taken on a single tree after the
 eleven PRs of bc2cpp ADRs 0307 onward landed. Each of those PRs measured its own delta on a different master commit, so the
 per-PR deltas overlap; here every number comes from the same tree, and the marginal contribution of each feature is

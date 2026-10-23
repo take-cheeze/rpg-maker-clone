@@ -1,0 +1,1 @@
+- **bc2cpp type-check**: an inferred ivar candidate keeps `nil` when the program reads an ivar by a name the scan cannot see: a computed name in `send`, `instance_variable_get`, `attr_reader` or `define_method`, a Symbol passed as a method (`&:instance_variable_get`), or a string `eval`. A literal name only keeps `nil` for that ivar.

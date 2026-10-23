@@ -1,0 +1,1 @@
+- **bc2cpp**: `RGSS::Profiler.section` joins the `NATIVE_ARG_OK` table. Its name argument is only read and copied into the profiler's own key, so a value passed as the name stays confined. Both registrations (the real profiler and the WIO stub) sit in `mruby-rgss/src/profiler.cxx`; the other audited names and all receivers are unchanged.
