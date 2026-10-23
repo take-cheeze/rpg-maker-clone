@@ -355,8 +355,10 @@ enable the strict tier when it is available so a wrong signature fails loudly at
 `--emit-rbs-suggestions DIR` writes candidate RBS using independently inferred
 IR returns at every modeled exit. It can replace a contradicted return in the
 candidate copy; authored signature files stay separate. JSON includes
-`ir_feedback` and `rbs_suggestions`; text summarizes provenance and unknown
-reasons. Review the output, then pass it back with `--sig DIR`. See the
+`ir_feedback` and `rbs_suggestions`; text summarizes provenance and ranks
+unknown reasons by the files they hit. Each candidate method carries a
+`# bc2cpp: return from FILE:LINE (...)` comment naming its deciding IR exit.
+Review the output, then pass it back with `--sig DIR`. See the
 [feedback workflow and limitations](bc2cpp-ir-feedback.md).
 [Call-result propagation](bc2cpp-ir-call-results.md) supplies audited result
 proofs and typed-receiver RBS chains. Complete contract-assisted returns are
