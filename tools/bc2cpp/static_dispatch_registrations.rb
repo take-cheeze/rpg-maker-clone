@@ -53,6 +53,9 @@ require_relative 'bytecode_ir'
 require_relative 'bytecode_ir_containers'
 
 module StaticDispatchRegistrations
+  # Raised by a strict analysis when the receiver-blind fallback would apply (see load_phase).
+  class EngineLiveError < StandardError; end
+
   GEMS = %w[mruby-rpg2k-compiled mruby-lcf-compiled mruby-rgss-compiled].freeze
   # Ops::SEND plus LOADSYM, whose symbol operand is read as a method name.
   SEND_OPS = (BytecodeIR::Ops::SEND | %w[LOADSYM]).freeze
@@ -197,7 +200,7 @@ module StaticDispatchRegistrations
   # closed_only: the closed world's own program. Ruby test files, scripts/ and
   # tools/ are not linked into the shipped closed binary, so they add no
   # lookups to it. Native test sources stay: they are compiled into it.
-def outside_world_files(repo_root, closed_only: false, core_gems: nil, exclude_refs: closed_only)
+  def outside_world_files(repo_root, closed_only: false, core_gems: nil, exclude_refs: closed_only)
   closed = closed_world_mrblib_srcs(repo_root, core_gems: core_gems).map { |p| File.expand_path(p) }.to_set
     # scripts/ and the CI workflows are scanned whatever their extension: the
     # boot checks feed inline Ruby (heredocs in *.bash) to the real binary's
@@ -220,7 +223,7 @@ def outside_world_files(repo_root, closed_only: false, core_gems: nil, exclude_r
     [(ruby.map { |p| File.expand_path(p) }.to_set - closed).to_a.sort, native.map { |p| File.expand_path(p) }.uniq.sort]
   end
 
-def outside_world_tokens(repo_root, closed_only: false, core_gems: nil, exclude_refs: closed_only)
+  def outside_world_tokens(repo_root, closed_only: false, core_gems: nil, exclude_refs: closed_only)
   ruby, native = outside_world_files(repo_root, closed_only: closed_only, core_gems: core_gems, exclude_refs: exclude_refs)
     tokens = Set.new
     (ruby + native).each do |path|
@@ -238,8 +241,8 @@ def outside_world_tokens(repo_root, closed_only: false, core_gems: nil, exclude_
 
   # Runs bc2cpp.rb for each compiled gem and the closed-world parse; returns
   # everything eligibility needs.
-def analyze(repo_root, mrbc, unregistered: STATIC_DISPATCH_UNREGISTERED, closed_only: false, core_gems: nil,
-            exclude_refs: closed_only)
+  def analyze(repo_root, mrbc, unregistered: STATIC_DISPATCH_UNREGISTERED, closed_only: false, core_gems: nil,
+              exclude_refs: closed_only, strict: false)
     # Every gem, from one shared analysis.
     fresh = NeverCalledRegistrations.run_bc2cpp_full_many(GEMS, repo_root, mrbc)
     runs = GEMS.to_h do |gem|
@@ -336,7 +339,7 @@ def analyze(repo_root, mrbc, unregistered: STATIC_DISPATCH_UNREGISTERED, closed_
       end
     end
 
-    load_bodies, load_names = load_phase(ireps, body_of, method_of, overridden)
+    load_bodies, load_names = load_phase(ireps, body_of, method_of, overridden, strict: strict)
     dynamic.merge(load_names)
     fixpoint.call(dynamic, lambda do |label|
       m = method_of[label]
@@ -410,7 +413,7 @@ def analyze(repo_root, mrbc, unregistered: STATIC_DISPATCH_UNREGISTERED, closed_
   #     Rect/Array), any engine instance method too.
   # Name-matched, never owner-matched, within each kind: coarse, but always a
   # superset. Returns [runnable method-body labels, every name they send].
-  def load_phase(ireps, body_of, method_of, overridden)
+  def load_phase(ireps, body_of, method_of, overridden, strict: false)
     by_name = Hash.new { |h, k| h[k] = [] }
     body_of.each { |label, (owner, name)| by_name[name] << [label, owner] }
     singleton = ->(owner) { owner.end_with?('.singleton') }
@@ -464,7 +467,13 @@ def analyze(repo_root, mrbc, unregistered: STATIC_DISPATCH_UNREGISTERED, closed_
       end
       # An engine instance may exist at load after all: earlier filtering is
       # no longer sound, so fall back to the receiver-blind cascade entirely.
-      return load_phase_all_names(ireps, method_of, body_of) if engine_live
+      if engine_live
+        if strict
+          raise EngineLiveError, 'an instantiating send with an unknown or instance receiver may create an engine ' \
+                                 'instance at load time, so the receiver-blind fallback applies'
+        end
+        return load_phase_all_names(ireps, method_of, body_of)
+      end
     end
     [bodies, names]
   end
