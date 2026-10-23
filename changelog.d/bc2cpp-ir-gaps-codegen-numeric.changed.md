@@ -1,0 +1,1 @@
+- **bc2cpp**: the numeric codegen passes (ivars, returns, consts, proof, fixnum proof and arg shapes) read instructions through the bytecode IR helpers (`each_with_op`, `each_source`, `source_at`, `instructions_with_op`) instead of raw `irep.instructions` scans. The generated C++ is byte-identical.
