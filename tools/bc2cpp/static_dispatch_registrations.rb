@@ -519,7 +519,12 @@ if $PROGRAM_NAME == __FILE__
   core_arg = ARGV.find { |a| a.start_with?('--core-gems=') }
   core_gems = core_arg && core_arg.delete_prefix('--core-gems=').split(',').map(&:strip).reject(&:empty?)
   exclude_refs = closed_only || ARGV.include?('--exclude-scripts-tests')
-  abort '--write with --core-gems needs --closed-only (the closed world\'s own gem list)' if core_gems && ARGV.include?('--write') && !closed_only
+  # Writing with a custom core list is allowed only for the closed world's own list, or the canonical list
+  # that every non-closed target's core set is a subset of (the base table).
+  canonical = BC2CPP_CANONICAL_CORE_GEMS.sort
+  if core_gems && ARGV.include?('--write') && !closed_only && core_gems.sort != canonical
+    abort '--write with --core-gems needs --closed-only or the canonical core list'
+  end
   abort '--write with --exclude-scripts-tests needs --closed-only' if ARGV.include?('--write') && exclude_refs && !closed_only
   analysis = StaticDispatchRegistrations.analyze(repo_root, mrbc, closed_only: closed_only, core_gems: core_gems,
                                                  exclude_refs: exclude_refs)
