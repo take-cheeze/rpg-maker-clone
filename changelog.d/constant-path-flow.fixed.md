@@ -1,0 +1,1 @@
+- **bc2cpp constant paths** (`A::B`, `Fx::Inner`) used by the `.new` receiver, superclass and mixin resolvers now come from every reaching definition. A join of different constants (`c ? Array : Hash`) is refused instead of taking the textually last arm.
