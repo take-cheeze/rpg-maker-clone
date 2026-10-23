@@ -613,6 +613,13 @@ checks:
   scripts/bc2cpp/param_trace_return_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/param_trace_elements_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - core_library
+    - cxx
   scripts/bc2cpp/predicate_returns_check.rb:
     tier: fast
     capabilities: []
