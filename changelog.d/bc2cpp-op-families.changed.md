@@ -1,0 +1,1 @@
+- **bc2cpp** op-family tests (`start_with?('LOAD')`, `end_with?('0')`, `/\ALOADI_(\d)\z/` and the like) now test explicit sets in `BytecodeIR::Ops`, each built from the `InsnDecoder::FORMATS` opcode table. Generated C++ is unchanged.
