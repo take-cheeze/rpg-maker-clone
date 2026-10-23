@@ -1,0 +1,1 @@
+- **bc2cpp numeric-root reports** name the array index and element writers from the shared reaching definition, and leave a label unnamed where the definitions disagree.

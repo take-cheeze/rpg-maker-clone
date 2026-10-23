@@ -1,0 +1,1 @@
+- **bc2cpp probed names** are taken from the value reaching each probe send (`respond_to?`, `method_defined?` and similar), not from a Symbol loaded nearby. A probe whose name is not one proven Symbol keeps every proven miss, as before.
