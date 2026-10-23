@@ -1,0 +1,1 @@
+- **bc2cpp**: `readonly_call_effects.rb` drops the `LOADT`/`LOADF` names from its read-only op set. The decoder emits only `LOADTRUE`/`LOADFALSE`, so those names never matched; the set's behaviour is unchanged.

@@ -540,6 +540,15 @@ if(ANDROID)
 else()
   add_executable(${PROJECT_NAME} ${RPG_SOURCES})
 endif()
+# A sealed RPG2000/2003 host (the bc2cpp closed world): compiles out the
+# --script loader, the one path that runs arbitrary Ruby (src/main.cxx). OFF in
+# every shipped build.
+option(RPG2K_SEALED_HOST
+       "Build a sealed RPG2000/2003 host: no --script arbitrary-Ruby loader"
+       OFF)
+if(RPG2K_SEALED_HOST)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE RPG2K_SEALED_HOST)
+endif()
 target_link_libraries(
   ${PROJECT_NAME}
   mruby

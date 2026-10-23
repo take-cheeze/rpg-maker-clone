@@ -621,10 +621,10 @@ jobs:
             ss/mz_battle.png
           if-no-files-found: warn
 
-  # Closed-world bc2cpp build: the four *-compiled gems are generated and
-  # compiled into a libmruby.a with C++ exceptions on. Native rather than the
-  # maix cross library, because the generated code throws and maix builds with
-  # -fno-exceptions. The RISC-V cross-compile is covered by the `maix` job.
+  # Closed-world bc2cpp build of the sealed RPG2000/2003 desktop host: the four
+  # *-compiled gems are generated and compiled into a native libmruby.a with C++
+  # exceptions on. Not a cross library: the generated code throws, and the maix
+  # cross build uses -fno-exceptions. The RISC-V cross-compile is covered by the `maix` job.
   # `bc2cpp` aggregates this job under the old status-check name.
   bc2cpp-build:
     if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
@@ -761,6 +761,7 @@ jobs:
           ruby scripts/bc2cpp/arm_prune_capture_check.rb
           ruby scripts/bc2cpp/block_receiver_proof_check.rb
           ruby scripts/bc2cpp/upvar_walks_check.rb
+          ruby scripts/bc2cpp/irep_tree_check.rb
           ruby scripts/bc2cpp/arm_prune_block_check.rb
           ruby scripts/bc2cpp/param_fold_check.rb
           ruby scripts/bc2cpp/ir_blocks_check.rb

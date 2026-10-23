@@ -1,0 +1,1 @@
+- **bc2cpp** now matches the `LOADI*` and `SET*` opcode families against explicit sets in `BytecodeIR::Ops` instead of name prefixes and regexes. Generated output is unchanged.

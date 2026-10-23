@@ -383,7 +383,7 @@ Closed-world constant-object calls can also trace across branches when every
 forward edge either reaches the constant assignment or skips the call; a
 branch-selected receiver keeps ordinary dispatch.
 
-This report runs under the wio closed-world proof with the same gem map used by
+This report runs under the closed-world proof of the `closed` build with the same gem map used by
 the compiled gems. It allows the `NOMETHOD_REVIEWED` audit to report findings
 without aborting the measurement; that environment flag does not change
 generated code. The dispatch totals therefore describe closed-world output,

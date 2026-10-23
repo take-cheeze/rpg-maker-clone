@@ -1,0 +1,1 @@
+- The bc2cpp compiler's closure-tree walks (escape analysis `closure_children`, `subtree_refs`) now go through a `BytecodeIR::Tree` helper for the irep tree instead of reading `Irep#reps` directly. Generated C++ is unchanged.

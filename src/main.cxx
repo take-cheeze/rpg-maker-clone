@@ -1973,6 +1973,13 @@ int main(int argc, char** argv) {
   mrb_value game_obj = mrb_nil_value();
   // Record the detected maker for the crash report before the runtime is built
   // (see the same dispatch in rpg_start_game above).
+#ifdef RPG2K_SEALED_HOST
+  // A sealed host runs no Ruby but the game's own bytecode, so the
+  // arbitrary-Ruby loader below is compiled out (bc2cpp's closed-world guard
+  // honours this macro).
+  CHECK(FLAGS_script.empty())
+      << "--script loads arbitrary Ruby; this build is sealed";
+#else
   if (!FLAGS_script.empty()) {
     // An arbitrary Ruby file (dev/debug use, e.g. the boot-check scripts'
     // probes), not a game directory: which maker class(es) it touches, if
@@ -1994,6 +2001,7 @@ int main(int argc, char** argv) {
     CHECK_NO_EXC(M);
     return EXIT_SUCCESS;
   }
+#endif
 
   const GameKind kind = detect_game_kind(game_dir_path);
   init_maker_gem(M, kind);
