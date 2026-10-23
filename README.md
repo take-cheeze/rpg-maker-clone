@@ -1036,6 +1036,9 @@
 - Context typing reuses evaluations while callee states and return masks remain
   unchanged within one root graph, retaining the original solver budgets.
 
+- Constant-typing fixture variants reuse the report renderer while running each
+  compiler in its own process; the positive case still exercises the report CLI.
+
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
