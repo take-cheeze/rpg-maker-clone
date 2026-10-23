@@ -1,0 +1,1 @@
+- **bc2cpp** computed-name `send` expansion now has a host check (`scripts/bc2cpp/computed_send_check.rb`) covering the proven and refused name shapes and the `BC2CPP_COMPUTED_SEND=0` kill switch.
