@@ -10,7 +10,7 @@ The final generator retains all embedding and compilation checks. This saves
 work in fixtures and exploratory invocations that omit the outside-method scan;
 builds providing that scan follow the existing path.
 
-On x86_64 Linux with CRuby 3.4.9/YJIT, alternating full-source rpg2k generation
+On x86_64 Linux with CRuby 3.4.9 (historical; the bc2cpp jobs now use Ruby 4.0.5)/YJIT, alternating full-source rpg2k generation
 fell from 12.33/12.50 seconds to 10.74/10.67 seconds, with byte-identical C++.
 The benchmark used `closed_world_mrblib_srcs(root)`, `SKIP_UNSUPPORTED=1` and
 rpg2k owners, without outside-source overrides. The probe itself fell from

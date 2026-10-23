@@ -1,5 +1,7 @@
 # bc2cpp CI duration profile (2026-10-12)
 
+Historical: the measurements on this page were taken on the former maix/wio closed world, not the current closed world, which is the sealed RPG2000/2003 desktop host.
+
 This page records the measurements. The CI change that follows from them (section 3) is in this pull request; the
 generator fixes in sections 2 and 4 are separate pull requests (the exact regex and scan fixes, the scan cache of
 ADR 0415, and the `numeric_aliased_names` memo), each with its own numbers.
@@ -11,12 +13,10 @@ Ubuntu 24.04 sandbox with the same toolchain as the runner, no sccache; the loca
 
 ## 0. Profiling on a desktop host
 
-The canonical closed world the CI profiles is wio's (RPG2000/2003 only). A desktop
-host can run the same closed world for local profiling by setting
-`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` (ADR 0428): it builds the `host` target as a
-sealed RPG2000/2003-only world, so `bc2cpp` runs there too. This is test-only and
-cannot play XP/VX/Wolf/MV or arbitrary runtime Ruby; it exists so a machine with a
-display can profile without a cross toolchain.
+The closed world CI builds is now the sealed RPG2000/2003 desktop host's (the `closed` build; see
+[bc2cpp gate](ci.md#bc2cpp-gate)). The measurements below were taken on the former wio closed world.
+The `RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` switch (ADR 0428) that built `host` as a sealed world has
+been removed.
 
 ## 1. Where the time was
 
@@ -273,3 +273,26 @@ Scheduling is already close to the aggregate-work bound. Larger gains require
 reducing compiler or fixture work; adding workers inside a check would contend
 with the existing four commands. Refresh this order when the timing table
 changes substantially rather than treating these durations as permanent costs.
+
+## 7. Rerun on the flake's Ruby 4.0.5 (StackProf)
+
+The bc2cpp jobs run `nix develop .#bc2cpp`, whose `ruby_4_0` is 4.0.5 (see [ci.md](ci.md)). The closed world
+was rebuilt under that Ruby (`libmruby.a` and the host `mrbc` both built). One closed-world generator call on a
+one-method fixture, with `BC2CPP_NATIVE_FN_KINDS` set and no irep cache, took 4.34 s wall. That is not
+comparable with the 3.45 s above: the fixture ran with `BC2CPP_SIG_DIRS=` (empty), which skips loading
+`sig/`. With the default `sig/` the same call aborts with 1017 unusable-signature errors (`TC1003`), so the
+signature-free run is the only one this rerun could measure.
+
+StackProf (wall, 1 ms, through `RUBYOPT=-r`, so the generator child is included) of that call:
+
+| Frame | self % | total % |
+| --- | ---: | ---: |
+| `String#scan` | 38.4 | 50.0 |
+| `Kernel#require_relative` (loading the generator's own sources) | 4.3 | 24.1 |
+| `Prism.parse_file` | 3.5 | 4.2 |
+| `InsnDecoder::Decoder#body` | 0.3 | 0.7 |
+
+`String#scan` callers are the native-source scans: `NativeExpressionDevirt.macro_calls`,
+`UniqueClassNames.native_module_binding`, `NativeOwnerMap.build` and `outside_world_tokens`. The
+instruction decoder's name-keyed `case` (string dispatch) is under 1% of the call, so converting it to symbols
+could save at most that much. It is not worth changing on this evidence.

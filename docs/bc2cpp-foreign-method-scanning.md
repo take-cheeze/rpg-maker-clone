@@ -11,7 +11,7 @@ one world's analysis, and a new world reads current contents. Definition
 collection, path ordering, duplicate paths and absent-name results retain
 their previous behavior.
 
-A local CRuby 3.4.9 benchmark queried the first 300 sorted method names from
+A local CRuby 3.4.9 (historical; the bc2cpp jobs now use Ruby 4.0.5) benchmark queried the first 300 sorted method names from
 39 mruby core and core-gem Ruby files. Each of three alternating baseline and
 patched runs used a fresh world and cleared `RubyParseCache` before querying
 `outside_ruby_definer_paths`. Baseline times were 2.659, 2.627 and 2.529
