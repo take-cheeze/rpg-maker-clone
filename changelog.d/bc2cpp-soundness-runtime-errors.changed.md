@@ -1,0 +1,1 @@
+- **bc2cpp soundness** is now written down in [`docs/bc2cpp-soundness.md`](docs/bc2cpp-soundness.md): compiled code may raise the runtime error original mruby raises (same class and message), or a named proof-violation error that is never silent. The NOMETHOD_VERIFY page no longer cites check scripts that are not in the tree.

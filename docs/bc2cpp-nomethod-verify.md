@@ -5,7 +5,8 @@ A closed-world build (the `closed` desktop host's, or `psp`, `wio`, `maix` built
 proven dead into `bc2cpp_nomethod` (ADR 0210). In a normal build such a site
 dispatches, then raises `NoMethodError`, or a "closed-world proof violated"
 `RuntimeError` if the method exists after all (ADR 0262). Both are ordinary Ruby
-exceptions, which a game `rescue` can hide.
+exceptions, which a game `rescue` can hide. [bc2cpp soundness](bc2cpp-soundness.md)
+states which runtime errors compiled code may raise.
 
 Verify mode (ADR 0275) is an opt-in build in which reaching such a site is fatal:
 
@@ -48,9 +49,10 @@ mode changes nothing there.
 
 ## Checking the helper itself
 
-`scripts/bc2cpp/nomethod_verify_check.rb` builds the emitted helper against a real
-mruby core in both modes and asserts normal mode dispatches then raises, and
-verify mode aborts naming the site without running the method.
+`scripts/bc2cpp/impossible_as_error_check.rb` builds the emitted helper against a real
+mruby core. It checks that normal mode raises the ordinary `NoMethodError` when the
+proof holds, and the distinct `RuntimeError` when it does not. No check in this tree
+runs verify mode's abort path.
 
 ## Guard violations (ADR 0290)
 
@@ -62,5 +64,4 @@ stable class constant (`Klass.new`'s identity test, `is_a?(Klass)`'s class test,
 `-DBC2CPP_NOMETHOD_VERIFY` it prints `bc2cpp: NOMETHOD_VERIFY: guard violation
 reached: ...` and aborts. To restore the old dispatch for debugging, generate with
 `BC2CPP_GUARD_VIOLATION=0`, or compile with `-DBC2CPP_GUARD_VIOLATION_DISPATCH`.
-`scripts/bc2cpp/guard_violation_check.rb` builds the helper both ways against a real
-mruby.
+No check in this tree builds the guard-violation helper against mruby.
