@@ -295,8 +295,9 @@ be. The rule, for a send of `name` in a method of `owner`:
   `Base#via_self` is `Symbol | Integer`, never `Symbol` alone.
 - The send is untyped (no declared result) when the set is open: no closed
   world, a subclass that may come from outside the program (`Class.new`, an
-  outside definer, a wildcard), a module owner, or a core ancestor such as
-  `Object` or `Kernel`, whose core instances the program does not declare. It
+  outside definer, a wildcard), a module owner, or a core ancestor that has core
+  subclasses (`Object`, `Numeric`) or is a module (`Kernel`), whose core instances
+  the program does not declare. A core leaf is the exception (CORE_ROOT below). It
   is also untyped when a receiver's chain is unknown (an unknown mixin or a
   cycle) or does not reach the owner, when a receiver runs a `method_missing`,
   or when a receiver lacks a declared contract for `name`.
@@ -320,12 +321,39 @@ with no closed-world bound is therefore untyped even when no subclass exists:
 an outside subclass cannot be ruled out. Fixture:
 `scripts/bc2cpp/explicit_receiver_override_contracts_check.rb`.
 
-Declared core receivers (`Array`, `Hash`, ...) are refused by the same core
-ancestor rule as self-calls, because `core_receiver_owners` includes every core
-class. Their declared returns are therefore untyped now, where they were typed
-before. That is conservative but a precision loss; narrowing the core rule to
-proper ancestors of core classes is a separate follow-up, since it would also
-change self-call results.
+**Core roots (CORE_ROOT).** A declared core class with no core subclass in
+`CoreHierarchySigs` (a leaf: `Array`, `Hash`, `String`, `Range`, ...) is a bounded
+receiver. Its set is the class plus the program classes that name it as their
+superclass, read from the program's `class X < Array` lines since no `class Array`
+is needed. A core class with core subclasses (`Object`, `Numeric`) or a core module
+(`Kernel`, `Enumerable`) stays refused, since its instances include core classes
+the program does not list. The send keeps the core contract exactly when all four
+hold:
+
+- the receiver set is closed (the same checks as any bounded class: no outside
+  subclass, no dynamic or native subclass, no `method_missing`);
+- the program does not define the method name on the contract's owner
+  (`ClosedWorld#program_may_define?`: a Ruby definition outside the core mrblib, a
+  native or unknown definer, or a refusal); this covers a reopen of the core class
+  and a module prepended to it;
+- every class in the set dispatches to that same contract. A program subclass that
+  overrides the name leaves the send untyped (the override rule), even when the
+  override declares its own return. A subclass that does not override keeps the
+  core result.
+
+So `Array#size` is `Integer` with no program subclass, and with a subclass that
+does not override `size`. It is untyped when a subclass overrides `size`, when the
+program redefines `Array#size`, and when the set is open. The rule is
+`RbsSignatures.self_receivers` (`core_leaf?`) and `RbsSignatures.self_call_types`
+(`core_redefined:`). The bound is `ClosedWorld#known_receiver_subclasses`, which
+the RBS resolver reads; the codegen keeps `known_subclasses`, so generated code
+does not change. The fixtures are in
+`scripts/bc2cpp/explicit_receiver_override_contracts_check.rb`.
+
+The same rule applies to an implicit-self send whose owner is a core leaf (a
+program method reopening `Array` that calls `size`). That is the one change to the
+self-call path: such sends were untyped and are now typed under the same four
+conditions. Other self-call results are unchanged.
 
 Rest, keyword and block contracts in the body analysis, required parameters of
 methods with optional ones, constants and nonlocal-return inference remain
