@@ -257,9 +257,20 @@ all known (a dynamic, foreign or poisoned name gets no join at all).
   block (`{ (*untyped) -> untyped }`); otherwise the block stays optional. A declared
   block signature keeps its optional block.
 
-The body analysis does not yet consume these joins: the candidate RBS and the JSON
-rows carry them, and the IR argument facts still cover positional parameters only.
-`BC2CPP_IR_ARGUMENT_TYPES=0` restores `untyped` for all three.
+The body analysis consumes the same joins, so a read of the parameter inside the method
+sees the type the call sites prove:
+
+- **Rest**: the rest register holds an `Array`, and an element read of it (`items[i]`)
+  takes the element join. The join is withheld when the body could change the array: any
+  read of it (or of a `MOVE` copy) other than an element read, a closure that captures
+  it, a zero-argument `super` (which packs it), or a `binding`/`eval` call.
+- **Required keyword**: the `KARG` register takes the join. A declared keyword type wins
+  over the join.
+- **Block**: the block register is `Proc` when the join proves it, in place of the nominal
+  `Proc | nil`. A declared block signature withholds it, as the report row does.
+
+`BC2CPP_IR_ARGUMENT_TYPES=0` restores `untyped` for all three, in the body and in the rows.
+These facts feed the report and the candidate RBS only; the generated code does not read them.
 
 ## Boundaries
 
@@ -301,10 +312,8 @@ checked: with `Base#via_self` calling `greet`, and `Child < Base` overriding
 Fixing this needs the set of overriding descendants, which the lookup does not
 have, so it remains open.
 
-Rest, keyword and block contracts in the body analysis, required parameters of
-methods with optional ones, constants and nonlocal-return inference remain
-follow-up work (the call-site joins for rest, keyword and block parameters are
-described above). Inferred ivar candidates (`@ivar: T` in the type-check RBS,
+Required parameters of methods with optional ones, constants and nonlocal-return
+inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the type-check RBS,
 and the `ivars` rows of the facts file) are the union of every traced store
 across the ivar's numeric family: superclass, include and prepend links, since
 all of them share the slot. The candidate gains `nil` when some read may run
