@@ -293,8 +293,12 @@ described above). Inferred ivar candidates (`@ivar: T` in the type-check RBS,
 and the `ivars` rows of the facts file) are the union of every traced store
 across the ivar's numeric family: superclass, include and prepend links, since
 all of them share the slot. The candidate gains `nil` when some read may run
-before any store: a `@x = nil` store, or a reading owner that
-`numeric_ivar_assured?` does not clear. That check needs a closed world with no
+before any store: a `@x = nil` store, or a read that is not store-first in an
+owner that `numeric_ivar_assured?` does not clear. A read is store-first only
+when it sits in its owner's method body and every path from the entry passes a
+SETIV of the ivar before it (a must-store pass over that body's CFG, exception
+edges included). A self-call never counts as a store, so a read after one keeps
+`nil`; so does any read in a block. That check needs a closed world with no
 `allocate` and a #initialize that assigns on every path before `self` escapes;
 where it cannot decide, `nil` is included. A store the analysis did not resolve,
 or an ivar touched by code no class owns (a module body), leaves the candidate
@@ -302,6 +306,24 @@ unknown. The runtime layout is still the layout analysis's; only the candidate
 that is written and compared changes. Inferred ivar types continue to come from
 the existing whole-program layout analysis; observing one store does not
 establish the complete type of an ivar.
+
+Reflection that reads an ivar without a GETIV is not visible to the scan, so it
+turns the store-first proof off (the rule is `IvarCandidates.reflective_access`):
+
+- for every ivar, when the program has an `instance_variable_set` or
+  `remove_instance_variable` send (any name), a `LOADSYM` of a reflective name
+  (`send`, `method`, `&:instance_variable_get`, ...), a string `eval` (no
+  block), or an `instance_variable_get` / `attr*` / name-dispatch call (`send`,
+  `__send__`, `public_send`, `method`, `define_method`, ...) whose name operand
+  is not a literal Symbol or names a reflective method: no read is store-first
+  and nil stays on every candidate;
+- a literal `instance_variable_get(:@x)` or `attr_reader :x` does this for `@x`
+  (or `x`) only;
+- a name-dispatch call with a literal non-reflective name (`send(:greet)`)
+  changes nothing: the method it runs has its own body in the scan.
+
+`method_missing` adds no rule of its own: its body is a method the scan reads,
+and a name it reads through `instance_variable_get` is covered above.
 
 Run the signature, type-check and RBS-export checks with a host `MRBC`. The
 fixture suites compare guarded dispatch with `BC2CPP_STRICT_HINTS=0`.
