@@ -3,9 +3,11 @@
 The type-check workflow now connects RBS contracts, bytecode IR facts and
 reviewable RBS suggestions. It retains nominal contracts for required
 arguments, ivars and method returns, including nullable and union types.
-Ivar reads and implicit calls on `self` use the applicable owner/ancestor
-contract. An ordinary explicit receiver with known nominal bounds can also use its
-return contracts. An unknown receiver does not inherit a return contract
+Ivar reads use the applicable owner/ancestor contract. An implicit call on
+`self` joins the contracts of every receiver class the program bounds (see
+**Implicit self-calls** below). An ordinary explicit receiver with known nominal bounds can also use its
+return contracts, joined over the subclasses the program bounds (see
+**Explicit receivers** below). An unknown receiver does not inherit a return contract
 merely because its method name matches; an existing complete compiler proof
 can independently establish its result. See [call-result propagation](bc2cpp-ir-call-results.md).
 
@@ -178,11 +180,38 @@ Compared:
 - a module method, against the singleton observations (`Owner.singleton#x`) of each
   class that extends the module. A method of an extended module is the extending
   class's singleton method, so its `self` return is not the module's. Without
-  `--hierarchy` those observations are counted as cannot decide.
+  `--hierarchy` those observations are counted as cannot decide;
+- an overloaded method whose definitions agree and whose trace shows one
+  implementation (see [overloaded methods](#overloaded-methods)).
 
 A site is skipped when it was not reached. An overflowed site (its class table was
 full, so its classes are unknown) is not compared; the summary counts every
 overflowed site and element slot in the trace, declared or not.
+
+### Overloaded methods
+
+A method key (`Owner#name`, or `Owner.singleton#name`) is overloaded when the
+candidates give it more than one definition (a class reopened with the same method,
+or an RBS method with several `|` overloads). The rule, stated once: a key is
+compared as one method when both hold, and skipped otherwise.
+
+1. Every candidate definition of the key declares the same RBS method type text.
+   Then whichever definition ran, the declared type is the same. Two definitions
+   that disagree fail this, and the key is skipped.
+2. The dump shows at most one implementation under the key: the distinct `fn`
+   values (the C `_impl` name) of its `PARAM_SITE` and `RETURN_SITE` rows that were
+   called. Two implementations mean the trace cannot tell which definition ran (a
+   `define_method` or `alias` installed a second one under the same key), so the key
+   is skipped.
+
+A module method's class keys (`Class#name`, `Class.singleton#name`) are decided the
+same way, by the definitions of the module method and the implementations under the
+class's key. A skip is counted in the summary as `overloaded comparison(s) skipped`
+and is never a contradiction. The count is per key that the rule refuses, whether or
+not the trace reached it. A definition the candidates do not list is invisible to
+the rule, as it is to the rest of the check. Rule 2 can refuse a method that has one
+definition when the dump records two `fn` names for it (for example two builds that
+name the same method differently); that is a missed check, not a false failure.
 
 A class is a contradiction only where the lookup order is complete: a core class
 (from `CoreHierarchySigs`), or a program class whose superclass chain reaches a
@@ -230,7 +259,9 @@ The trace cannot tell the check these things, so they are not compared:
   declares block parameter types;
 - ivar and constant types: the dumps have PARAM, RETURN, ELSE and RECV rows only,
   so ivars and constants are not recorded;
-- overloaded methods, which the candidate reader skips;
+- overloaded methods the rule above refuses (definitions that disagree, or a trace
+  that shows two implementations under one key). Overloads whose definitions agree
+  and whose trace shows one implementation are compared;
 - container elements past the first eight of each container (`BC2CPP_ELEM_SAMPLE`):
   the dump does not record them, so a wrong class there is not seen.
 
@@ -324,13 +355,71 @@ proof) reaches the contract lookup. A call on an unproven receiver stays
 deliberately narrower than "single contract owner": that inference would
 assume a class the analysis has not proven.
 
-**Known gap: implicit self-calls.** An implicit `self` call takes the return
-contract of the method's own owner chain, not of the receiver's class. A
-subclass or includer that overrides the callee with a different contract is not
-checked: with `Base#via_self` calling `greet`, and `Child < Base` overriding
-`greet` to return `Integer`, `Child#via_self` is still reported as `Symbol`.
-Fixing this needs the set of overriding descendants, which the lookup does not
-have, so it remains open.
+**Implicit self-calls.** An implicit `self` send dispatches on the receiver's
+class, so its declared result is the join over every class the receiver can
+be. The rule, for a send of `name` in a method of `owner`:
+
+- The receiver set for a class owner is `ClosedWorld#known_subclasses(owner)`:
+  the owner and every program class that descends from it.
+- The receiver set for a module owner is the instances of its includers: each
+  declared class whose ancestor chain reaches the module (the registry's
+  `include` records, through modules that include it), together with those
+  classes' descendants. A module nothing includes has no receiver, so it stays
+  untyped. The candidates are `ClosedWorld#known_includer_candidates`, which is
+  open when a native or outside Ruby source names the module.
+- Each receiver contributes the contract its own dispatch reaches (the first
+  owner in its ancestor chain that declares `name`). A `:self` contract answers
+  that receiver's class. The result is the union of those contributions.
+- With no override anywhere in the set this is the owner's contract. With
+  `Base#via_self` calling `greet`, and `Child < Base` overriding `greet` to
+  return `Integer`, `Child`'s override joins `Base`'s `Symbol`, so
+  `Base#via_self` is `Symbol | Integer`, never `Symbol` alone. A module
+  `M` included by `A` (`greet` is `Symbol`) and `B` (`greet` is `Integer`) gives
+  `M#via_mod` the same `Symbol | Integer`.
+- The send is untyped (no declared result) when the set is open: no closed
+  world, a subclass that may come from outside the program (`Class.new`, an
+  outside definer, a wildcard), a module with no bounded includer set (an
+  includer the registry cannot place, such as `include(*mods)`, a singleton
+  class's `include`, a native or outside source that names the module, or a
+  runtime `extend`, which closes the world), or a core ancestor such as `Object` or `Kernel`, whose core
+  instances the program does not declare. It is also untyped when a receiver's
+  chain is unknown (an unknown mixin or a cycle) or does not reach the owner,
+  when a receiver or one of its ancestors is `prepend`ed, when a receiver runs
+  a `method_missing`, or when a receiver lacks a declared contract for `name`.
+- Removal: a name the program may undefine or remove has no self-call contract
+  at all. The program contains `undef_method NAME`, `remove_method NAME`, the
+  `undef` keyword, or the same through `send`, `__send__` or `public_send` with
+  a literal name, and any of them with a name that is not a literal (or a
+  computed target) marks every name. The scan does not attribute a removal to
+  a class, so a removal in any class counts, which covers the owner and every
+  subclass. This is `ClosedWorld#method_removed?`, applied by
+  `RbsSignatures.ir_types` (`removed:`).
+
+Explicit receivers do not use this rule, so the removal refusal does not reach
+them. The rule is in `RbsSignatures.self_receivers`,
+`RbsSignatures.module_receiver_classes` and `RbsSignatures.self_call_types`,
+and the fixture is `scripts/bc2cpp/self_call_override_contracts_check.rb`.
+
+**Explicit receivers.** A send on a receiver with declared nominal bounds (an
+argument, ivar or element declared `Base`) dispatches on the runtime class,
+which may be any program subclass of `Base`. So the resolver joins the same
+receiver set as a self-call, per declared class: `self_receivers` for that
+class, then `self_call_types` for `name`. With `def use(o); o.greet; end` and
+`o: Base`, where `Child < Base` overrides `greet` to return `Integer`, the result
+is `Symbol | Integer`; the owner-only answer (`Symbol`) is no longer reported.
+With no override the owner's contract is kept. The send is untyped (refused as
+`call_receiver_unbounded:CLASS#NAME`) when the receiver set is open by the same
+rules as for self, including the absence of a closed world. A receiver class
+with no closed-world bound is therefore untyped even when no subclass exists:
+an outside subclass cannot be ruled out. Fixture:
+`scripts/bc2cpp/explicit_receiver_override_contracts_check.rb`.
+
+Declared core receivers (`Array`, `Hash`, ...) are refused by the same core
+ancestor rule as self-calls, because `core_receiver_owners` includes every core
+class. Their declared returns are therefore untyped now, where they were typed
+before. That is conservative but a precision loss; narrowing the core rule to
+proper ancestors of core classes is a separate follow-up, since it would also
+change self-call results.
 
 Required parameters of methods with optional ones, constants and nonlocal-return
 inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the type-check RBS,
