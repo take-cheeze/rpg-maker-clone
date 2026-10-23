@@ -1,0 +1,1 @@
+- The bc2cpp `fallback_bodies` check compiles its fixture in the block-core world, so `n.times { }` is inlined as it is in the build, and its pins follow the closed world's symbol-table form and the guarded `times` arm.
