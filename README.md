@@ -1189,8 +1189,9 @@
   reuse the report renderer while keeping fresh compiler subprocesses. See
   [CI report work](docs/bc2cpp-type-check.md#report-only-ci-work).
   [IR feedback](docs/bc2cpp-ir-feedback.md) extends contracts to ivars and implicit
-  self-call returns, reports unknown reasons and mismatches, and exports reviewable
-  inferred return candidates with `type_check.rb --emit-rbs-suggestions DIR`.
+  self-call returns, ranks unknown reasons by the files they hit, reports mismatches,
+  and exports reviewable inferred return candidates, each method with a provenance
+  comment, with `type_check.rb --emit-rbs-suggestions DIR`.
   [Call-result propagation](docs/bc2cpp-ir-call-results.md) supplies audited compiler
   results and ordinary typed-receiver RBS return bounds through joins and call chains.
   `BC2CPP_IR_CALL_RESULTS=0` disables that reporting extension for comparison.
