@@ -1988,3 +1988,35 @@ Module-owned bodies (Enumerable 43 bodies and 2,156 lines for 11 includers, Comp
 cloned per includer: the sites are `to_enum` (no compiled target, 66 in all) and `each` funcalls that keep their funcall
 arm. What is left in the concrete-class owners is `to_enum` 39, and natives with no expression body (`replace` 10,
 `byteslice` 6, `delete` 4, `index` 3, `__empty_range?` 4).
+
+## Follow-up: send-argument facts for `pack` and `unpack`
+
+The escape report's largest blocker after `send_argument` is the argument of a native. A send that passes a tracked
+value as an argument is refused unless `NATIVE_ARG_OK` audits that position (see `bc2cpp-ir-nil-escape.md`).
+Rejections by name, from one instrumented census pass (each rejection is counted, so the counts exceed the number of
+sites): `puts` 414 (receiver unknown; the Ruby `puts` of `StringIO` and `RGSS::ErrorReport::Tee` is in the callee
+list), `raise` 224 (the message is kept by the exception), `new` 220 (`Class#new` forwards to `initialize`), `[]=` 144
+and `<<`/`push` 162 (stores), `+` 72 (receiver unknown; natives `coerce` the argument), `==` 54 (receiver is a
+`Comparable`, so the Ruby `Comparable#==` is a callee), `draw_text` 54 (RGSS natives), `pack` 40, `join` 10, `include?`
+4, `fetch` 2. The comparison operators have almost no tracked argument (`<=` and `>=` twice each, `<` and `>` never), so no
+comparison fact was added.
+
+`pack` and `unpack` are the chosen names. The template is read once (`prepare_tmpl`, `mrb_get_args "S"`) into a
+stack struct that dies with the call, and the results are fresh copies (`pack.c`). Only an exact `String` template is
+covered: any other class reaches `mrb_ensure_string_type`, which inspects it (`%Y`). The element conversions
+(`to_int`, `to_f`) run on the receiver's elements, and a template is among them only if it was stored in an array, a
+store the analysis already refuses. `unpack1` is registered by the same file but has no sites in the census, so it
+is left out. The by-name audit (`native_files_audited?`) holds, and no Ruby definition of either name appears in the
+reject log.
+
+| Measure (census, shipped pass) | Master | Branch | Delta |
+| --- | ---: | ---: | ---: |
+| `send_argument` escapes, all creation sites | 776 | 753 | -23 |
+| `send_argument` escapes, String sites | 598 | 575 | -23 |
+| confined String sites (engine) | 826 | 849 | +23 |
+| `shipped.cxx` | | | byte-identical |
+
+The receiver of `pack` (usually an array literal) still escapes with `send_receiver`, since `pack` has no
+`NATIVE_RECEIVER_OK` fact. The flipped sites do not change the shipped C++. Verified by
+`scripts/bc2cpp/send_arg_facts_check.rb`: the intended shapes are confined, a Ruby `pack` on an exact receiver, an
+unknown receiver and a user-class template keep their templates, and the compiled and interpreted runs agree.
