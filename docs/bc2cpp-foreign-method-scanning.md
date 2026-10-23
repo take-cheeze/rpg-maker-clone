@@ -27,3 +27,32 @@ and checks that a new world sees rewritten sources.
 Parser reuse assertions isolate the surrounding disk scan cache so a warm scan
 cannot bypass the parser under test. Validate cache checks with both cold and
 warm surrounding state.
+
+## Owner-scoped hidden definitions (ESCAPE_ANALYSIS)
+
+`foreign_method_names` gives only names, so a name that an interpreted mrblib
+defines anywhere (`initialize` in `Exception`, `Set`, `StringIO`, ...) was
+invisible to every class, and every `new` escaped. `foreign_method_owners`
+(`tools/bc2cpp/native_names.rb`) also records the lexical owner of each plain
+`def` in a class body or at top level. `EscapeAnalysis::World#defs_for` then
+treats such a name as unknown only for receivers whose ancestry has that owner,
+compared by last segment (an over-approximation). `defs_named`, which has no
+receiver class, still refuses the name.
+
+Refused for every name, because the owner or the name cannot be attributed:
+
+- a def in a block, a module, a singleton class (`class << self`), a `def self.x`
+  or another def's body;
+- an alias, an `attr_*` or a literal `define_method` (name-level, as before);
+- a computed-name definer outside a plain class body, a string or block-less
+  eval, a send of a definer name, and a non-constant `include`/`prepend`/`extend`
+  outside a forwarding `def include`;
+- a file the parser refuses.
+
+A computed-name definer in a plain class body is a wild owner: every name is
+relevant on that class. A hidden `include M` of a compiled module M refuses each
+name M defines. A hidden owner the tables cannot place (a hidden subclass) is
+relevant to a receiver set, but not to an exact receiver.
+
+`BC2CPP_ESCAPE_REPORT` writes each site's verdict. Zero-argument `new` (`SEND0`)
+is a `new` site too, so its constructor is checked like the others.
