@@ -1,0 +1,1 @@
+- **bc2cpp game-variable indexing** treats a receiver as self only when every value reaching the read is self. A join with another writer, or a value from the frame entry, no longer gets the game-variable element range.
