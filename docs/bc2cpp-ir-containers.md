@@ -43,6 +43,11 @@ used to read from `irep.instructions` (ADR 0502):
 - `Program#straight_line`, `#adjacent_block_index`, `#each_source`,
   `#each_with_op`: the instruction-order questions, answered from the IR's
   predecessor sets.
+- `Program#constant_path(from, reg)` (`bytecode_ir_constant_path.rb`): the
+  `Array` / `Hash` / `String` constant a register was loaded from, as a
+  `BytecodeIR::ConstantPath`. It is a Program query because it is a pure
+  reaching-definition walk over the instruction list; `Irep#constant_path`
+  delegates to it.
 
 What the analyses decide on top of these facts:
 
@@ -55,7 +60,9 @@ What the analyses decide on top of these facts:
 - RecordHash classifies a stored value with the type layer's literal classes.
 - SEALED_HASH_IVAR reads its store literal, receiver and windows from the IR.
 
+RecordHash's `Array.new` / `Hash.new` constructor check now calls
+`Program#constant_path` directly, so it is on the IR too.
+
 Still outside the IR: `trace_new_target` (the receiver class trace the element
-scans try first), RecordHash's `Array.new` / `Hash.new` constructor check
-(`constant_path`) and the RBS record checker's `DeclScanner` overrides
+scans try first) and the RBS record checker's `DeclScanner` overrides
 (`rbs_record_types.rb`).
