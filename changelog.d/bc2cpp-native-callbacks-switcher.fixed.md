@@ -1,0 +1,1 @@
+- **bc2cpp** native-callback scanner indexes the functions `DEFINE_SWITCHER` generates in mruby's `hash.c` (each function starts its own line), so closures that reach them are no longer left incomplete.
