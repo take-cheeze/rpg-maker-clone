@@ -358,7 +358,8 @@ candidate copy; authored signature files stay separate. JSON includes
 `ir_feedback` and `rbs_suggestions`; text summarizes provenance and ranks
 unknown reasons by the files they hit. Each candidate method carries a
 `# bc2cpp: return from FILE:LINE (...)` comment naming its deciding IR exit.
-Review the output, then pass it back with `--sig DIR`. See the
+Review the output, then pass it back with `--sig DIR`. `--iterate N` repeats the
+feedback for up to N rounds and writes the candidates only once they converge. See the
 [feedback workflow and limitations](bc2cpp-ir-feedback.md).
 [Call-result propagation](bc2cpp-ir-call-results.md) supplies audited result
 proofs and typed-receiver RBS chains. Complete contract-assisted returns are
