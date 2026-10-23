@@ -422,17 +422,20 @@ be. The rule, for a send of `name` in a method of `owner`:
   taken for that call, so the result is untyped. The call-graph argument seeds
   read the same results and inherit the refusal.
 
-The declared contract of an explicit receiver (`call_resolver`) does not use the
-removal rule; its inferred result does, as above. The return-class oracle that
-the code generator's proofs read (`CodeGen#return_class_send_mask`, keyed by
-name in `@rc_return`) is not refused: a method whose return is a send of a
-removed name keeps the body join in its own return class, and a call of that
-method reports it. This is the remaining removal limit. The rule is in
-`RbsSignatures.self_receivers`, `RbsSignatures.module_receiver_classes` and
-`RbsSignatures.self_call_types`, and in `CodeGen#bytecode_ir_call_result_classes`
-and `IrContextResults#dispatch`. The fixtures are
-`scripts/bc2cpp/self_call_override_contracts_check.rb`, section (g) for the
-inferred call result.
+The return-class oracle the code generator's proofs read
+(`CodeGen#return_class_send_mask`, keyed by name in `@rc_return`) refuses a send
+of a removed name the same way: it answers unknown, the table holds no entry for
+the name, and a method whose return is such a send takes no body join. The
+declared contract of an explicit receiver (`call_resolver`) is refused too: a
+removed name gets no contract on any explicit receiver, with cause
+`call_removed:NAME`. The rule is in `RbsSignatures.self_receivers`,
+`RbsSignatures.module_receiver_classes` and `RbsSignatures.self_call_types`, the
+explicit-receiver resolver in `RbsSignatures.ir_types`, and in
+`CodeGen#bytecode_ir_call_result_classes`, `CodeGen#return_class_send_mask` and
+`IrContextResults#dispatch`. The fixtures are
+`scripts/bc2cpp/self_call_override_contracts_check.rb`, sections (g) (the
+inferred call result) and (h) (the return-class oracle), and
+`scripts/bc2cpp/explicit_receiver_override_contracts_check.rb`, section (g).
 
 **Explicit receivers.** A send on a receiver with declared nominal bounds (an
 argument, ivar or element declared `Base`) dispatches on the runtime class,
