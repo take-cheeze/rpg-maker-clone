@@ -1,0 +1,1 @@
+- **bc2cpp** constant analysis (lexical constants, constant argument sites, static dispatch registrations) now matches opcodes through the shared bytecode IR op sets. Generated C++ is unchanged.
