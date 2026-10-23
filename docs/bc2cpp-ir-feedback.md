@@ -317,12 +317,25 @@ be. The rule, for a send of `name` in a method of `owner`:
   computed target) marks every name. The scan does not attribute a removal to
   a class, so a removal in any class counts, which covers the owner and every
   subclass. This is `ClosedWorld#method_removed?`, applied by
-  `RbsSignatures.ir_types` (`removed:`).
+  `RbsSignatures.ir_types` (`removed:`) to the declared self-call contract.
+- The same scan refuses the inferred call result (`BC2CPP_IR_CALL_RESULTS`,
+  the default) of every send of a removed name, with an explicit receiver or
+  an implicit self: `CodeGen#bytecode_ir_call_result_classes` answers unknown,
+  and so does `IrContextResults#dispatch`. The body join of the target is not
+  taken for that call, so the result is untyped. The call-graph argument seeds
+  read the same results and inherit the refusal.
 
-Explicit receivers do not use this rule, so the removal refusal does not reach
-them. The rule is in `RbsSignatures.self_receivers`,
-`RbsSignatures.module_receiver_classes` and `RbsSignatures.self_call_types`,
-and the fixture is `scripts/bc2cpp/self_call_override_contracts_check.rb`.
+The declared contract of an explicit receiver (`call_resolver`) does not use the
+removal rule; its inferred result does, as above. The return-class oracle that
+the code generator's proofs read (`CodeGen#return_class_send_mask`, keyed by
+name in `@rc_return`) is not refused: a method whose return is a send of a
+removed name keeps the body join in its own return class, and a call of that
+method reports it. This is the remaining removal limit. The rule is in
+`RbsSignatures.self_receivers`, `RbsSignatures.module_receiver_classes` and
+`RbsSignatures.self_call_types`, and in `CodeGen#bytecode_ir_call_result_classes`
+and `IrContextResults#dispatch`. The fixtures are
+`scripts/bc2cpp/self_call_override_contracts_check.rb`, section (g) for the
+inferred call result.
 
 Rest, keyword and block contracts in the body analysis, required parameters of
 methods with optional ones, constants and nonlocal-return inference remain
