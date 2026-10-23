@@ -730,6 +730,7 @@ jobs:
           ruby scripts/bc2cpp/ir_context_results_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
           ruby scripts/bc2cpp/escape_receiver_flow_check.rb
+          ruby scripts/bc2cpp/skipped_direct_call_check.rb
           ruby scripts/bc2cpp/array_literal_block_check.rb
           ruby scripts/bc2cpp/constant_typing_check.rb
           ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
