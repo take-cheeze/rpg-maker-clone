@@ -39,6 +39,7 @@
 [submodule "3rd/effekseer"]
 	path = 3rd/effekseer
 	url = https://github.com/effekseer/Effekseer.git
+	ignore = dirty
 [submodule "3rd/optcarrot"]
 	path = 3rd/optcarrot
 	url = https://github.com/mame/optcarrot.git
