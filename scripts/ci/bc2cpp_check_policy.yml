@@ -727,6 +727,9 @@ checks:
   scripts/bc2cpp/explicit_receiver_override_contracts_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/module_includer_bound_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/type_check_provenance_check.rb:
     tier: fast
     capabilities: []

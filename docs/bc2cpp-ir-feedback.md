@@ -459,8 +459,12 @@ be. The rule, for a send of `name` in a method of `owner`:
   declared class whose ancestor chain reaches the module (the registry's
   `include` records, through modules that include it), together with those
   classes' descendants. A module nothing includes has no receiver, so it stays
-  untyped. The candidates are `ClosedWorld#known_includer_candidates`, which is
-  open when a native or outside Ruby source names the module.
+  untyped. The candidates are `ClosedWorld#known_includer_candidates`. It is
+  open when a foreign Ruby source spells the module, or when a non-core native
+  source can include a module the scan cannot name (the native rule below).
+  A native source that only defines or looks up the module's name does not
+  close it (`mrb_define_module`, `module_function`, `mrb_module_get` as a
+  lookup, a constant read).
 - Each receiver contributes the contract its own dispatch reaches (the first
   owner in its ancestor chain that declares `name`). A `:self` contract answers
   that receiver's class. The result is the union of those contributions.
@@ -470,12 +474,32 @@ be. The rule, for a send of `name` in a method of `owner`:
   `Base#via_self` is `Symbol | Integer`, never `Symbol` alone. A module
   `M` included by `A` (`greet` is `Symbol`) and `B` (`greet` is `Integer`) gives
   `M#via_mod` the same `Symbol | Integer`.
+- Native include rule (`ClosedWorld#known_includer_candidates`, facts from
+  `ClosedWorld.native_file_facts`, non-core natives only; core natives are the
+  Ruby-visible `include` methods, which the registry's include records cover).
+  The module is open when a non-core native source (a) has a method name it
+  dispatches (`mrb_funcall`, `_id`, `_argv`, `_with_block`, `check_funcall`) that
+  is computed, or is `include`, `prepend` or `extend`, (b) spells one of those
+  method names anywhere (a native `include` method), (c) calls an include-family
+  function (`mrb_include_module`, `mrb_prepend_module`, `mrb_extend_*`) whose
+  module argument is not a spelled lookup, or (d) writes a constant to a value
+  that could be a module object in a source that spells the module (a constant
+  alias). Case (a) resolves a name held in a local bound once to spelled names
+  (`mrb_sym`, or a `const char*` ternary of literals), or in a parameter of an
+  enclosing helper: every call of that helper, in the source that defines it
+  (or in every source, unless it is `static`), must pass a spelled name, and it
+  must not be used except as a call. A native include of the module by name is
+  refused by the existing dynamic-definition rule (`NATIVE_DYNAMIC`).
+  `module_owner` in `RbsSignatures.self_call_types` then refuses a send whose
+  name a program source (native or foreign Ruby) defines on any receiver: the
+  receiver set is the includers' instances, which the registry does not list
+  method by method.
 - The send is untyped (no declared result) when the set is open: no closed
   world, a subclass that may come from outside the program (`Class.new`, an
   outside definer, a wildcard), a module with no bounded includer set (an
   includer the registry cannot place, such as `include(*mods)`, a singleton
-  class's `include`, a native or outside source that names the module, or a
-  runtime `extend`, which closes the world), or a core ancestor that has core
+  class's `include`, a foreign Ruby source that spells the module, the native
+  rule below, or a runtime `extend`, which closes the world), or a core ancestor that has core
   subclasses (`Object`, `Numeric`) or is a module (`Kernel`), whose core instances
   the program does not declare. A core leaf is the exception (CORE_LEAF below). It
   is also untyped when a receiver's chain is unknown (an unknown mixin or a
