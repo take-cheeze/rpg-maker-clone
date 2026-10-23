@@ -58,3 +58,18 @@ A foreign Ruby source (a file the closed world does not compile) refuses a name 
 opens a class or module inside another scope, or defines a top-level class the closed world does not know. A column-0
 `class X` that reopens a class already bound at top level (`class Array` in mruby's mrblib) leaves the binding alone,
 and a column-0 `class X < Y` defines X under Y (mruby's `NameError`, `StopIteration`), whose own includes stay unknown.
+
+### Native-only classes
+
+A class a native source defines once (`mrb_define_class_under(M, RGSS, "Rect", ...)`) and no Ruby source reopens
+reaches the unique-name table under its bare name (`Rect` to `RGSS::Rect`), so a `Rect.new` in an engine method
+resolves to that class. Its admission (`native_only_classes` in `tools/bc2cpp/unique_class_names.rb`) requires one
+native binding at one full path, no bytecode or Ruby class/module statement of that bare name, no SETCONST/SETMCNST
+in the bytecode or in the Ruby sources the build reads as bytecode, no foreign text assignment or class statement
+naming it, a unique scope for the full path, and no constant mutation the closed world cannot see (const_set,
+remove_const, eval, string instance_eval/class_eval/module_eval, a native mrb_const_set with a computed name, or
+mrb_load_*). Without the compiled Ruby sources nothing is admitted.
+
+The admitted constant then counts as stable, so a `.new` of it no longer needs the runtime class-identity guard and its
+mrb_funcall fallback. The alias form (`Rect = RGSS::Rect` in an interpreted file) is not admitted: the same proof
+refuses it, because the assignment is a write to the name.
