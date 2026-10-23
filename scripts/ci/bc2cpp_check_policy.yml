@@ -74,6 +74,11 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/immediate_ivars_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
   scripts/bc2cpp/ir_context_results_check.rb:
     tier: fast
     capabilities: []
