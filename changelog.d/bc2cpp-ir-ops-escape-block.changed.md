@@ -1,0 +1,1 @@
+- **bc2cpp** escape analysis, block self-world, alias sites, site origin table and IR block operands match opcodes through the shared `BytecodeIR::Ops` sets. Generated C++ and analysis output are unchanged.
