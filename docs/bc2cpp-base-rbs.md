@@ -38,7 +38,7 @@ Two alternating comparisons took 36.9/37.4 seconds on the baseline and
 27.1/26.6 seconds with two workers (26–29% less wall time). All 71 generated
 `.rbs` files and stderr diagnostics were byte-identical; report rows matched
 after normalizing output-directory paths.
-This comparison used CRuby 3.4.9, Clang 21.1.8 and the existing host build's
+This comparison used CRuby 3.4.9 (historical; the bc2cpp jobs now use Ruby 4.0.5), Clang 21.1.8 and the existing host build's
 headers. It excluded two native gems that failed preprocessing because
 `oniguruma.h` and `io_hal.h` were unavailable in that environment. These are
 base-generation timings, not bc2cpp compilation or game runtime timings.

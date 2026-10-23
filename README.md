@@ -1110,7 +1110,10 @@
 - The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) is closed-world
   only: it compiles the RPG2000/2003-only psp/wio/maix builds, whose only Ruby
   is the engine's own, and every other build (desktop, wasm, Android) stays the
-  plain mruby build ([ADR 0466](docs/adr/0466-bc2cpp-closed-world-only.md)). It generates
+  plain mruby build ([ADR 0466](docs/adr/0466-bc2cpp-closed-world-only.md)). The closed
+  world that CI's `bc2cpp-build` job checks is the sealed RPG2000/2003 desktop host
+  (`build_config.rb`'s `closed` build); the device builds are single-format too but are
+  not that closed world. It generates
   guarded native call paths from recognized mruby core C methods. It uses
   exact built-in class checks and keeps ordinary Ruby dispatch for subclasses,
   overrides and C bodies the generator cannot prove safe. Single-argument
