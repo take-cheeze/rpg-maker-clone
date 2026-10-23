@@ -745,6 +745,7 @@ jobs:
           ruby scripts/bc2cpp/generic_block_return_check.rb
           ruby scripts/bc2cpp/ir_block_protocols_check.rb
           ruby scripts/bc2cpp/type_check_run_check.rb
+          ruby scripts/bc2cpp/block_yield_types_check.rb
           ruby scripts/bc2cpp/type_check_iterate_check.rb
           ruby scripts/bc2cpp/rbs_mixin_contracts_check.rb
           ruby scripts/bc2cpp/self_call_override_contracts_check.rb

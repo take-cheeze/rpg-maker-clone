@@ -286,11 +286,11 @@ The trace cannot tell the check these things, so they are not compared:
 
 - block parameters. The trace has `block_arg` rows, but they are the parameters of
   a block body, keyed by the body's own `_impl` (the method that yields to it is
-  not in the row), and the emitter declares a block type only as
-  `{ (*untyped) -> untyped }`, so there is no declared type to compare with. A
-  method's `&blk` value is not traced either (`bc2cpp_blk` is not a parameter row).
-  This stays a skip until the trace names the yielding method and the emitter
-  declares block parameter types;
+  not in the row). The emitter now declares the classes of a yielder's block
+  parameters (`{ (T1, ..., Tn) -> untyped }`, see [block types](#rest-keyword-and-block-parameters)),
+  but the gate does not compare them yet: the trace does not name the yielding
+  method. A method's `&blk` value is not traced either (`bc2cpp_blk` is not a
+  parameter row). This stays a skip until the trace names the yielding method;
 - ivar reads that are not GETIV reads: stores (SETIV), reads through a synthesized
   attr accessor, and `instance_variable_get`. The check sees only the values the
   compiled GETIV reads hand back, so a wrong value that reaches an ivar only through
@@ -346,6 +346,26 @@ all known (a dynamic, foreign or poisoned name gets no join at all).
   is not recognized, so each refuses. A block typed `Proc` is written as a required
   block (`{ (*untyped) -> untyped }`); otherwise the block stays optional. A declared
   block signature keeps its optional block.
+- **Block parameters of a yielder** (the `{ (T1, ..., Tn) -> U }` type of a method that
+  yields): the classes of the values the method yields, proven by its own yield sites
+  (`tools/bc2cpp/block_yield_types.rb`, row `block_yield` of the facts, source
+  `inferred:yield-sites`). The emitter writes `{ (T1, ..., Tn) -> untyped }` with the
+  arity every yield passes and each position's classes; a position with no proven class
+  is `untyped`, and a position with two classes is their union. The block's return is
+  always `untyped`: the yield sites say nothing about what the block returns. The
+  proof, all of which must hold:
+  - the method is a plain yielder (the block is only called, see `BlockSelf`) with no
+    `&blk` parameter, and no `yield` in a nested block;
+  - every `yield` is a `BLKCALL` of the same argument count `n`: a splatted or keyword
+    yield, or a `call` on the block register, refuses;
+  - the classes of each yielded argument are proven at its site. A value that is still
+    the entry value of a required positional takes that parameter's inferred type (the
+    `inferred:*` row, so a declared parameter type is not used as a proof); any other
+    value takes the numeric-flow classes the argument join reads.
+  A method that is not typed keeps `{ (*untyped) -> untyped }`, and the row carries the
+  reason. A declared block signature is left as declared, so no `block_yield` row is
+  written for it. The gate does not compare these types yet (see
+  [runtime evidence](#runtime-evidence) on block parameters).
 
 The body analysis consumes the same joins, so a read of the parameter inside the method
 sees the type the call sites prove:
