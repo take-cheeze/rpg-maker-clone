@@ -324,7 +324,8 @@ enable the strict tier when it is available so a wrong signature fails loudly at
 IR returns at every modeled exit. It can replace a contradicted return in the
 candidate copy; authored signature files stay separate. JSON includes
 `ir_feedback` and `rbs_suggestions`; text summarizes provenance and unknown
-reasons. Review the output, then pass it back with `--sig DIR`. See the
+reasons. Review the output, then pass it back with `--sig DIR`. `--iterate N` repeats the
+feedback for up to N rounds and writes the candidates only once they converge. See the
 [feedback workflow and limitations](bc2cpp-ir-feedback.md).
 [Call-result propagation](bc2cpp-ir-call-results.md) supplies audited result
 proofs and typed-receiver RBS chains. Complete contract-assisted returns are

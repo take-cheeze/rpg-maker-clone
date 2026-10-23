@@ -26,7 +26,53 @@ not updated automatically. As with `--emit-rbs`, candidates also retain the
 existing parameter, ivar, constant and method inventory. Existing types come
 from the standard whole-program facts; independently inferred IR returns
 replace return declarations in the candidate copy, including contradicted
-ones. This is a review workflow, not an automatic fixed-point rewrite.
+ones. This is a review workflow; the default run does not feed its candidates back.
+
+## Fixed-point rounds (`--iterate N`)
+
+A return whose exits are derived through a callee's contract (`derived:contracts`)
+is not a suggestion in a single run: the callee's return is only a contract once
+it is declared. `--iterate N` closes that loop, opt-in and off by default:
+
+```sh
+ruby scripts/bc2cpp/type_check.rb --files game.rb --iterate 5 \
+  --emit-rbs-suggestions coverage/rbs-suggestions
+```
+
+- Round 1 runs the analysis under `--sig` alone and accepts the returns it can
+  infer from bytecode. Round `r` runs again with the round `r-1` accepted set as
+  one more signature directory, written to a scratch directory.
+- The loop stops when a round accepts exactly what it was given (converged), or
+  after `N` rounds (not converged). The report prints the round count and whether
+  it converged; with `--emit-rbs-suggestions` the candidates are written only when
+  the set converged. A non-converged set is not written, because its derived
+  types were computed under contracts from an earlier round.
+- Each round's candidates replace the previous ones rather than accumulating:
+  a suggestion whose contract was withdrawn cannot survive as a stale contract.
+- The candidate directory of a round holds only the accepted methods: parameters
+  are untyped, and there are no ivars or constants. Nothing else can become a
+  contract in a later round, including a derived type that was not accepted.
+
+**Acceptance rule.** A derived exit is accepted only when every contract it
+depends on is a return contract (`self-call:NAME` or `call-result:OWNER#NAME`)
+naming a method accepted in the previous round. Parameter, ivar, keyword and
+element contracts keep the method out, including those in your own signatures.
+That is stricter than the single-run workflow, which only omits the method.
+`self-call:NAME` names no owner, so it is accepted only when some previous-round
+method has that name and no user declaration does. A method the user already
+declares keeps its declaration and is never a suggestion. The rule is enforced in
+`accepted_exit?` and `return_contract_accepted?` in `tools/bc2cpp/type_check_iterate.rb`.
+
+**Cycles.** Round 1 has no candidates, so a derived exit cannot exist there and
+only inferred returns are accepted. Every later round is built from the previous
+one, so each accepted return traces back to an inferred exit or a user contract.
+Two methods whose returns depend only on each other (A on B, B on A) are never
+accepted from nothing; the loop converges in one round with neither. The loop stops
+only when a round reproduces its own input.
+
+Not verified here: the end-to-end run needs the host `mrbc`. The loop and its rule
+are exercised by `scripts/bc2cpp/type_check_iterate_check.rb` against a model of the
+analysis, not the real one.
 
 ## Feedback
 
