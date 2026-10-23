@@ -67,10 +67,15 @@ disagreements. Its verdicts are therefore unchanged.
   receiver and name, a conditional branch's tested register. The model builds
   them from the instruction's `source`, because `Program#decoded` carries only
   the op, branch kind, leading register and target. The op itself still comes
-  from `source.op`, and no other op is modelled yet.
+  from `source.op`. Operands of ops that neither pass reads are not modelled.
 * ESCAPE_ANALYSIS's frame flow was already a may-alias flow over the IR's
-  successors and handler edges; its per-op transfer (`Analyzer#step`) still
-  decodes each operand from `source`, since the IR has no operand model.
+  successors and handler edges. Its per-op transfer (`Analyzer#step` and the
+  send helpers it calls) reads its operands through `BytecodeIR::OperandModel`:
+  the leading and every register operand, the first register operand, a MOVE's
+  source, an APOST's post count, a send's receiver, name and argument counts,
+  an integer, a `src_and_literal` pair and a BLKPUSH's paren value. Each is the
+  `Insn` accessor's value, read from `source`. The op name and the instruction
+  address still come from `source` (`op`, `addr`), since they are not operands.
   Reaching definitions answer a backward question for one register, which
   the forward flow of a value through many registers does not need.
 * The closure-tree walk (`closure_children`, `subtree_refs`) goes through

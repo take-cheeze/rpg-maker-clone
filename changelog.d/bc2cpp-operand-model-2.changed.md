@@ -1,0 +1,1 @@
+- **bc2cpp** ESCAPE_ANALYSIS's per-op transfer reads its operands (registers, send receiver, method name and argument counts, integer and literal operands) through the IR operand model `BytecodeIR::OperandModel`. Generated C++ and analysis output are unchanged.
