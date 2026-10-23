@@ -143,6 +143,10 @@ checks:
     capabilities: []
     fixture_capabilities:
     - mrbc
+  scripts/bc2cpp/game_variables_receiver_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
   scripts/bc2cpp/ir_block_protocols_check.rb:
     tier: fast
     capabilities: []
