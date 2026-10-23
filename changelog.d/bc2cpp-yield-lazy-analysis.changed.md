@@ -1,0 +1,1 @@
+- **bc2cpp** runs the yield-reachability scan on the first query instead of at construction, so its facts can read the code generator's argument types.
