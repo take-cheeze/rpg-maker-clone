@@ -1024,6 +1024,9 @@
 
 ### Performance
 
+- The bc2cpp CI check queue starts longer checks first to reduce idle time at
+  the end of its four-worker group; all checks keep their existing assertions.
+
 - [Type checking](docs/bc2cpp-type-check.md) reuses context class decoding and skips
   discarded C++ assembly while retaining method compilation and report diagnostics.
   Reusable leaf evaluations avoid repeated context dataflow without sharing root
