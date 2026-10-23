@@ -60,9 +60,20 @@ What the analyses decide on top of these facts:
 - RecordHash classifies a stored value with the type layer's literal classes.
 - SEALED_HASH_IVAR reads its store literal, receiver and windows from the IR.
 
-RecordHash's `Array.new` / `Hash.new` constructor check now calls
-`Program#constant_path` directly, so it is on the IR too.
+`trace_new_target` (`dispatch_targets.rb`), the receiver class trace the element
+scans try first, walks on the IR: `walk_writers`, `walk_dominating_writers`,
+`reaching_definitions` and `write_dominates?`. Its per-opcode arms dispatch on
+the named sets in `tools/bc2cpp/bytecode_ir_receivers.rb` (`BytecodeIR::Receivers`)
+and `BytecodeIR::Ops`, not on literal op names.
 
-Still outside the IR: `trace_new_target` (the receiver class trace the element
-scans try first) and the RBS record checker's `DeclScanner` overrides
-(`rbs_record_types.rb`).
+Still outside the IR, and why:
+
+- `trace_new_target`'s arm bodies. They decide facts the instruction stream does
+  not hold: a `.new` receiver is a class only when the closed world names it
+  (`lexically_resolve_construct_target`, `construct_resolution_known?`,
+  `UniqueClassNames`), a constant's container value comes from
+  `container_constants`, and ivar, capture and return classes come from
+  `ivar_classes`, `capture_hints`, `class_layout`, `registry` and the return
+  proofs. These are program-level tables, not IR queries, so the walk keeps them
+  as arguments.
+- The RBS record checker's `DeclScanner` overrides (`rbs_record_types.rb`).
