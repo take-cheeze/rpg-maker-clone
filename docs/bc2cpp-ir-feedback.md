@@ -70,6 +70,47 @@ produce an independent suggestion. New union-return facts also improve normal
 Complete contract-assisted return bounds appear with source `derived:contracts`
 and retain their dependency list. They are not independent RBS suggestions.
 
+## Runtime evidence
+
+Checking a candidate with `--all` against the same sources cannot catch an
+over-claimed suggestion: it reruns the inference that wrote the candidate. Runtime
+evidence is the independent check. `scripts/bc2cpp/rbs_suggestion_trace_check.rb`
+compares a candidate directory with `BC2CPP_TRACE_TYPES` dumps (the rows
+`trace_types.rb` reads, see [trace merge](bc2cpp-trace-merge.md)) and prints one
+`[TRACE_CONTRADICTION]` line per contradiction:
+
+```sh
+bundle exec ruby scripts/bc2cpp/rbs_suggestion_trace_check.rb \
+  coverage/rbs-suggestions param_trace.tsv --hierarchy hierarchy.tsv
+```
+
+It exits 0 when every compared site is admitted, 1 on a contradiction and 2 on
+bad input. `--hierarchy` takes the `class_hierarchy.rb` rows of the program
+sources. With no arguments it runs its fixture self-test, which is what the
+`ruby-checks` coverage list runs. Use `bundle exec` locally: the core hierarchy is
+read by the pinned RBS 4.
+
+Compared: each required positional parameter (trace kind `req`, matched by
+position) and each method return, except `initialize`. A site is skipped when it
+was not reached or its class table overflowed, since its classes are then unknown.
+
+A class is a contradiction only where the lookup order is complete: a core class
+(from `CoreHierarchySigs`), or a program class whose superclass chain reaches a
+core class through `--hierarchy`. Modules are never decided, because a program may
+include one into a core class. Everything else is reported as undecided in the
+summary. A passing run is evidence about one recorded run, not a proof.
+
+The trace cannot tell the check these things, so they are not compared:
+
+- singleton methods (`trace_types.rb` keys methods by `Owner#name` and drops the rest);
+- optional, rest and keyword parameters: this check does not match their trace
+  rows (an optional parameter may carry a call-site type, see above);
+- ivar and constant types, which are not traced;
+- array elements and hash keys and values: the `PARAM_ELEM_*` rows exist, but
+  `TraceTypes::Candidates.read_dumps` does not read them;
+- module-versus-class kind and mixins for program code: `class_hierarchy.rb`
+  records superclasses and methods only.
+
 ## Optional parameters
 
 An optional parameter takes its type from the call sites the same way a required
