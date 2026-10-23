@@ -192,8 +192,8 @@ module StaticDispatchRegistrations
       # The engine's own Ruby. Core mrblib stays an outside source here (its sends
       # and names are dynamic references: outside_world_tokens), as before it was compiled.
       ireps, root = compile_ireps(closed_world_mrblib_srcs(repo_root, core_gems: core_gems), 'static_dispatch_probe', tmp)
-      registry, superclass_of = build_registry(ireps, root)
-      [ireps, registry, superclass_of]
+      registry, superclass_of, _consts, included, prepended, unknown = build_registry(ireps, root)
+      [ireps, registry, superclass_of, included, prepended, unknown]
     end
   end
 
@@ -250,7 +250,8 @@ module StaticDispatchRegistrations
       [gem, { gen: out, entries: NeverCalledRegistrations.parse_compiled_entries(err),
               hand: File.read(File.join(repo_root, gem, 'src', 'register.cxx'), encoding: 'UTF-8') }]
     end
-    ireps, registry, superclass_of = closed_world(repo_root, mrbc, core_gems: core_gems)
+    ireps, registry, superclass_of, included, prepended, unknown = closed_world(repo_root, mrbc, core_gems: core_gems)
+    ancestry = engine_ancestry(superclass_of, included, prepended, unknown)
     subclassed = subclassed_paths(repo_root, superclass_of, core_gems: core_gems)
 
     # Candidates: compiled entries still registered, plus ones already
@@ -339,7 +340,7 @@ module StaticDispatchRegistrations
       end
     end
 
-    load_bodies, load_names = load_phase(ireps, body_of, method_of, overridden, strict: strict)
+    load_bodies, load_names = load_phase(ireps, body_of, method_of, overridden, strict: strict, engine_ancestry: ancestry)
     dynamic.merge(load_names)
     fixpoint.call(dynamic, lambda do |label|
       m = method_of[label]
@@ -413,7 +414,7 @@ module StaticDispatchRegistrations
   #     Rect/Array), any engine instance method too.
   # Name-matched, never owner-matched, within each kind: coarse, but always a
   # superset. Returns [runnable method-body labels, every name they send].
-  def load_phase(ireps, body_of, method_of, overridden, strict: false)
+  def load_phase(ireps, body_of, method_of, overridden, strict: false, engine_ancestry: nil)
     by_name = Hash.new { |h, k| h[k] = [] }
     body_of.each { |label, (owner, name)| by_name[name] << [label, owner] }
     singleton = ->(owner) { owner.end_with?('.singleton') }
@@ -447,8 +448,7 @@ module StaticDispatchRegistrations
         names << name
         recv = recvs[idx]
         recv = self_kind if recv == :self
-        if INSTANTIATING.include?(name) &&
-           (recv == :unknown || recv == :instance || (recv.is_a?(Array) && instance_owners.include?(recv[1])))
+        if INSTANTIATING.include?(name) && instantiates_engine?(recv, m, body_of, engine_ancestry, instance_owners)
           engine_live = true
         end
         targets = by_name[name].select do |_l, owner|
@@ -476,6 +476,39 @@ module StaticDispatchRegistrations
       end
     end
     [bodies, names]
+  end
+
+  # Every engine class and its ancestors, as owner names: the superclass chain, the modules included or
+  # prepended along it, and the implicit Object. nil when a mixin cannot be resolved, so the caller keeps the
+  # conservative receiver test.
+  def engine_ancestry(superclass_of, included, prepended, unknown)
+    ancestry = Set['Object', 'BasicObject', 'Kernel']
+    pending = (superclass_of.keys + included.keys + prepended.keys).grep(ENGINE_RE)
+    seen = Set.new
+    until pending.empty?
+      name = pending.pop
+      next unless seen.add?(name)
+      return nil if unknown.include?(name)
+
+      ancestry << name
+      pending << superclass_of[name] if superclass_of[name].is_a?(String)
+      pending.concat(Array(included[name]) + Array(prepended[name]))
+    end
+    ancestry
+  end
+
+  # Whether an instantiating send can create an engine instance. An unknown receiver always can. A send on self
+  # inside a method can only when that method's class is an engine class or an ancestor of one: a core method
+  # calling dup on self makes a core instance otherwise.
+  def instantiates_engine?(recv, method_label, body_of, engine_ancestry, instance_owners)
+    return true if recv == :unknown
+    if recv == :instance
+      return true if engine_ancestry.nil? || method_label.nil?
+
+      owner = body_of[method_label][0]
+      return owner.match?(ENGINE_RE) || engine_ancestry.include?(owner)
+    end
+    recv.is_a?(Array) && instance_owners.include?(recv[1])
   end
 
   # The original, receiver-blind cascade -- the fallback the moment any
