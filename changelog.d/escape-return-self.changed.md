@@ -1,0 +1,1 @@
+- **Escape analysis** no longer treats a method whose only exit for its receiver is its return value as keeping the receiver. A chained call such as `obj.me.x` can now stay on the frame when `me` just returns `self`. A method that also stores, passes, or captures `self` (including returning it from a block or a Proc) still escapes.
