@@ -161,6 +161,8 @@ CHECKS = [
   { name: 'bc2cpp-enum-target-flow', command: %w[scripts/bc2cpp/enum_target_flow_check.rb] },
   { name: 'bc2cpp-def-value-flow', command: %w[scripts/bc2cpp/def_value_flow_check.rb] },
   { name: 'bc2cpp-register-flow', command: %w[scripts/bc2cpp/register_flow_check.rb] },
+  # The computed-name send expansion; its generated fixture needs the host mrbc and skips without it.
+  { name: 'bc2cpp-computed-send', command: %w[scripts/bc2cpp/computed_send_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp/core_mixins_check.rb] },
   # LEXICAL_CONST: the fixtures need the host mrbc and skip without MRBC; no mrblib lines.
   { name: 'bc2cpp-lexical-const', command: %w[scripts/bc2cpp/lexical_const_check.rb] },

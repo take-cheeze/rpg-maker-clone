@@ -2020,3 +2020,13 @@ The receiver of `pack` (usually an array literal) still escapes with `send_recei
 `NATIVE_RECEIVER_OK` fact. The flipped sites do not change the shipped C++. Verified by
 `scripts/bc2cpp/send_arg_facts_check.rb`: the intended shapes are confined, a Ruby `pack` on an exact receiver, an
 unknown receiver and a user-class template keep their templates, and the compiled and interpreted runs agree.
+
+## Computed-name sends (COMPUTED_SEND)
+
+A `__send__(name, ...)` whose name register provably holds one of a finite set of Symbols is expanded into a
+direct call per name (`tools/bc2cpp/codegen_computed_send.rb`, `computed_send_names.rb`). The proof follows
+reaching definitions, so copies and `case`/`?:` joins are covered. Proven: a frozen constant table of Symbols
+indexed by a register, a copy of that element, a join of Symbol literals and a frozen Hash table. Refused: a
+name that is a method parameter, a computed String, and a table element that is a constant rather than a Symbol
+literal. `scripts/bc2cpp/computed_send_check.rb` checks each shape against the generated C++, and
+`BC2CPP_COMPUTED_SEND=0` keeps every computed send by name.
