@@ -136,6 +136,11 @@ checks:
     capabilities: []
     fixture_capabilities:
     - mrbc
+  scripts/bc2cpp/block_yielders_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
     - native_sources
   scripts/bc2cpp/ir_blocks_check.rb:
     tier: fast
@@ -618,6 +623,11 @@ checks:
   scripts/bc2cpp/native_member_tables_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/native_callbacks_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - native_sources
   scripts/bc2cpp/native_registration_check.rb:
     tier: fast
     capabilities: []
