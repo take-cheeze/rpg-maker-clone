@@ -1,0 +1,1 @@
+- The bc2cpp `lcf_row_flow` check stages mruby-lcf's mrblib under `mruby-lcf/mrblib/` and keeps its fixture's `has_rows?` a provably bool predicate, so the predicate-returns whitelist entries match and the build gate passes.
