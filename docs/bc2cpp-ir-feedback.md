@@ -135,10 +135,20 @@ mixed sets are warnings rather than definite errors. Handler and closure
 barriers, frame clobbers and traversal budgets still refuse queries.
 
 Shared IREPs with ambiguous owners get no owner-specific contracts. Cyclic
-hierarchies supply no inherited contracts. Rest, keyword and block contracts,
-required parameters of methods with optional ones, unknown receiver contract
-lookup, module mixin contract lookup, constants and nonlocal-return inference
-remain follow-up work. Inferred ivar types
+hierarchies supply no inherited contracts. Rest, keyword and block
+contracts, required parameters of methods with optional ones, unknown receiver
+contract lookup, module mixin contract lookup, constants and nonlocal-return
+inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the
+type-check RBS, and the `ivars` rows of the facts file) are the union of every
+traced store across the ivar's numeric family: superclass, include and prepend
+links, since all of them share the slot. The candidate gains `nil` when some
+read may run before any store: a `@x = nil` store, or a reading owner that
+`numeric_ivar_assured?` does not clear. That check needs a closed world with no
+`allocate` and a #initialize that assigns on every path before `self` escapes;
+where it cannot decide, `nil` is included. A store the analysis did not resolve,
+or an ivar touched by code no class owns (a module body), leaves the candidate
+unknown. The runtime layout is still the layout analysis's; only the candidate
+that is written and compared changes. Inferred ivar types
 continue to come from the existing whole-program layout analysis; observing
 one store does not establish the complete type of an ivar.
 

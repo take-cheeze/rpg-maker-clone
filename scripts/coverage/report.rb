@@ -75,6 +75,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },
   { name: 'bc2cpp-ir-ivars', command: %w[scripts/bc2cpp/ir_ivar_types_check.rb] },
+  { name: 'bc2cpp-ivar-candidates', command: %w[scripts/bc2cpp/ivar_candidates_check.rb] },
   { name: 'bc2cpp-class-bodies', command: %w[scripts/bc2cpp/class_bodies_check.rb] },
   { name: 'bc2cpp-ir-soundness-classes', command: %w[scripts/bc2cpp/ir_soundness_classes_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
