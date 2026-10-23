@@ -1,0 +1,1 @@
+- **bc2cpp IR checks** compare cold queries on real RITE bytecode with disassembly text access forbidden, covering control flow, reaching definitions, return sources and exact classes.

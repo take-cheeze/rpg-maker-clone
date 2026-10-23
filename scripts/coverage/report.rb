@@ -76,6 +76,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-blocks', command: %w[scripts/bc2cpp/ir_blocks_check.rb] },
   { name: 'bc2cpp-ir-facts', command: %w[scripts/bc2cpp/ir_facts_check.rb] },
+  { name: 'bc2cpp-ir-binary-operands', command: %w[scripts/bc2cpp/ir_binary_operands_check.rb] },
   { name: 'bc2cpp-rbs-mixin-contracts', command: %w[scripts/bc2cpp/rbs_mixin_contracts_check.rb] },
   { name: 'bc2cpp-self-call-override-contracts', command: %w[scripts/bc2cpp/self_call_override_contracts_check.rb] },
   { name: 'bc2cpp-explicit-receiver-override-contracts', command: %w[scripts/bc2cpp/explicit_receiver_override_contracts_check.rb] },
@@ -123,6 +124,8 @@ CHECKS = [
   # Its hand-built-irep half (the compiled half needs mrbc, bc2cpp-build in build.yml): no mrblib lines.
   { name: 'bc2cpp-loop-element-writes', command: %w[scripts/bc2cpp/loop_element_writes_check.rb] },
   { name: 'bc2cpp-struct-receiver', command: %w[scripts/bc2cpp/struct_receiver_check.rb] },
+  # Its codegen and behaviour halves need mrbc and a full-core libmruby (the bc2cpp-build job); no mrblib lines.
+  { name: 'bc2cpp-skipped-direct-call', command: %w[scripts/bc2cpp/skipped_direct_call_check.rb] },
   { name: 'bc2cpp-receiver-origin-join', command: %w[scripts/bc2cpp/receiver_origin_join_check.rb] },
   { name: 'bc2cpp-upvar-walks', command: %w[scripts/bc2cpp/upvar_walks_check.rb] },
   { name: 'bc2cpp-irep-tree', command: %w[scripts/bc2cpp/irep_tree_check.rb] },
@@ -153,6 +156,7 @@ CHECKS = [
   { name: 'bc2cpp-join-dominance', command: %w[scripts/bc2cpp/join_dominance_check.rb] },
   { name: 'bc2cpp-declared-return-guard', command: %w[scripts/bc2cpp/declared_return_guard_check.rb] },
   # The host-only hand-built shapes of the register flow pass.
+  { name: 'bc2cpp-def-value-flow', command: %w[scripts/bc2cpp/def_value_flow_check.rb] },
   { name: 'bc2cpp-register-flow', command: %w[scripts/bc2cpp/register_flow_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp/core_mixins_check.rb] },
   # LEXICAL_CONST: the fixtures need the host mrbc and skip without MRBC; no mrblib lines.

@@ -28,3 +28,14 @@ must not be inferred by the shared helper. Argument, ivar and context checks sha
 while retaining their enabled/disabled analysis comparisons and separate worlds.
 This reorganization reduces duplicated setup, without combining those worlds
 or claiming a CI speedup from file-count changes.
+
+`MRBC=/path/to/mrbc ruby scripts/bc2cpp/ir_binary_operands_check.rb` compiles
+branches, a loop, exception recovery and a captured block to real RITE bytecode.
+It loads that binary into two independent trees, with disk caching disabled on
+the guarded copy. Before any IR queries run on that copy, access to instruction
+`args` and `raw` raises. Cold control-flow, reaching-definition, return-source
+and exact-class queries must agree with the ordinary tree. Positive Integer and
+Array proofs, unknown-value refusals and multiple reaching writers prevent a
+vacuous comparison. This checks those shared queries; it does not claim that
+every compiler pass or generated program has been proved equivalent.
+The check runs in the Ruby CI job and is registered with the coverage reporter.
