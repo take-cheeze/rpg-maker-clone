@@ -67,6 +67,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-trace-evidence', command: %w[scripts/bc2cpp/ir_trace_evidence_check.rb] },
   { name: 'bc2cpp-core-ruby-query', command: %w[scripts/bc2cpp/core_ruby_query_check.rb] },
   { name: 'bc2cpp-type-check-run', command: %w[scripts/bc2cpp/type_check_run_check.rb] },
+  { name: 'bc2cpp-type-check-provenance', command: %w[scripts/bc2cpp/type_check_provenance_check.rb] },
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-blocks', command: %w[scripts/bc2cpp/ir_blocks_check.rb] },
   { name: 'bc2cpp-ir-facts', command: %w[scripts/bc2cpp/ir_facts_check.rb] },
