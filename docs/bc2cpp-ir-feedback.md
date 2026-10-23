@@ -231,10 +231,14 @@ all known (a dynamic, foreign or poisoned name gets no join at all).
   `rest_param` row carries `T`. A call that passes keywords refuses the join, and
   so does a call that passes no extra argument at all (there is no element to
   type). A rest parameter next to keyword parameters gets no join.
-- **Required keyword** (`k:`): the join of the value passed for `k` at every
-  reaching call. Each call must pass `k` as a literal keyword pair; a call that
-  omits it, or passes keywords through `**splat`, refuses the join. RBS writes
-  `k: T`. An optional keyword stays `?untyped`.
+- **Keyword** (`k:` or `k: default`): the join of the value passed for `k` at every
+  reaching call. A call passing keywords through `**splat`, or any unknown call
+  site, refuses the join. A required keyword (`k:`) also refuses a call that omits
+  it, and RBS writes `k: T`.
+- **Optional keyword** (`k: default`): a call that omits `k` binds the default, so
+  the join is the passed values plus the default's class. The default must be one
+  literal (`nil`, an Integer, a String, an array or hash literal); any other
+  expression refuses the join and the keyword stays `untyped`. RBS writes `?k: T`.
 - **Block** (`&blk`): the block is `Proc` only when every reaching call passes a
   literal block or lambda (`BLOCK`/`LAMBDA` producer in the block slot). A call with
   no block binds `nil`, and a Proc from a variable, a `proc` call or a `&` pass-through
@@ -249,8 +253,9 @@ sees the type the call sites prove:
   takes the element join. The join is withheld when the body could change the array: any
   read of it (or of a `MOVE` copy) other than an element read, a closure that captures
   it, a zero-argument `super` (which packs it), or a `binding`/`eval` call.
-- **Required keyword**: the `KARG` register takes the join. A declared keyword type wins
-  over the join.
+- **Keyword**: the `KARG` register takes the join. An optional keyword's join already
+  holds its default's class, so the register reads the join with no further check. A
+  declared keyword type wins over the join.
 - **Block**: the block register is `Proc` when the join proves it, in place of the nominal
   `Proc | nil`. A declared block signature withholds it, as the report row does.
 
