@@ -29,8 +29,23 @@ an alias in a nested block conservatively sets `class_factory_escape`.
 Unresolved flow or an exhausted alias budget also refuses. `Data` construction
 remains unsupported. Packed/splatted arguments, keyword constructor calls,
 computed member names and mutable String member names conservatively refuse;
-no nearest-writer fallback is used. This does not extend the registry's separate
-recognition of named Struct layouts.
+no nearest-writer fallback is used.
+
+The registry separately proves named Struct layouts from actual positional
+argument registers. Each position must reach Symbol loads of one agreed name;
+locals, moves and equal-name branch arms preserve the declared order, including
+calls with `keyword_init:` and a block. Different Symbol arms publish no fixed
+storage layout but register every possible native reader and writer. Unknown
+positions publish no partial accessor list. Handler edges and captured-register
+writes participate in the reaching-definition query; an unproved handler merge
+refuses all member names. A refused Struct receiver query never falls back to the nearest writer. Block body methods retain
+their named or anonymous Struct owner even without a fixed layout. Naming a
+Struct requires an adjacent constant assignment entered only from its constructor;
+a branch join into that assignment cannot claim the last branch's layout.
+
+Packed members retain support for a single fresh ARRAY origin followed by a
+linear sequence of moves, literal loads and block creation, with no mutation,
+calls or escaping stores. Mutated or unresolved splats remain dynamic.
 
 The existing `scripts/bc2cpp/struct_receiver_check.rb` CI and coverage entry
 checks superclass/member joins, multiple constructors, loops, overwrites,
