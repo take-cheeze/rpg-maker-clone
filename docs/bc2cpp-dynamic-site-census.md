@@ -2009,12 +2009,12 @@ store the analysis already refuses. `unpack1` is registered by the same file but
 is left out. The by-name audit (`native_files_audited?`) holds, and no Ruby definition of either name appears in the
 reject log.
 
-| Measure (census, shipped pass) | Master | Branch | Delta |
+| Measure (census, shipped pass, master `4a7ceb5`) | Master | Branch | Delta |
 | --- | ---: | ---: | ---: |
-| `send_argument` escapes, all creation sites | 776 | 753 | -23 |
+| `send_argument` escapes, all kinds | 917 | 894 | -23 |
 | `send_argument` escapes, String sites | 598 | 575 | -23 |
 | confined String sites (engine) | 826 | 849 | +23 |
-| `shipped.cxx` | | | byte-identical |
+| `shipped.cxx` (paths normalised) | | | byte-identical |
 
 The receiver of `pack` (usually an array literal) still escapes with `send_receiver`, since `pack` has no
 `NATIVE_RECEIVER_OK` fact. The flipped sites do not change the shipped C++. Verified by
