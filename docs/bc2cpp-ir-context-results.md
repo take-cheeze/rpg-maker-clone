@@ -13,7 +13,16 @@ withdraws the graph's provisional results. `BC2CPP_IR_CONTEXT_MAX_CONTEXTS` and
 
 Transitive read-only Ruby call summaries can preserve ivar facts across calls.
 Fresh, frozen Array and Hash builders can carry element unions into indexing;
-mutable or escaped builders are refused. Disable these bridges separately with
+mutable or escaped builders are refused. The allocation must be the freeze
+receiver's only reaching origin. A bounded CFG walk permits moves, literal loads,
+branch joins and pure loops between allocation and freeze, checking every path
+before the freeze. Calls (including unrelated receivers), mutation through any
+alias, stores, capture, unknown operations, allocation re-entry, unresolved CFG
+targets and handler-bearing bodies refuse the shape. The walk also conservatively
+refuses effects on branches that exit without freezing; unreachable instructions
+do not interfere. Visiting more than 4,096 instructions withdraws the proof.
+The CFG proof is cached per body, allocation and freeze site, independently of
+context element masks. Disable these bridges separately with
 `BC2CPP_IR_EFFECT_SUMMARIES=0` and `BC2CPP_IR_CONTEXT_SHAPES=0`.
 
 Audited native direct expressions expose boolean, numeric and receiver results

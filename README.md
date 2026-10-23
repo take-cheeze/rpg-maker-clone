@@ -1224,7 +1224,9 @@
   [Contextual result summaries](docs/bc2cpp-ir-context-results.md) specialize
   callee returns by arguments, solve bounded recursive contexts, preserve ivars
   across read-only calls, and report frozen builder elements and audited native
-  direct-form results. RBS feedback retains optional and keyword contracts, and
+  direct-form results. Frozen builder proofs follow aliases through branch joins
+  and pure loops, refusing mutation, calls, capture and handlers. RBS feedback
+  retains optional and keyword contracts, and
   candidate RBS types rest, required keyword and block parameters from complete
   call-site joins (`BC2CPP_IR_ARGUMENT_TYPES=0` restores `untyped`).
   [Generic iterator block feedback](docs/bc2cpp-ir-block-types.md) carries Array
