@@ -73,6 +73,25 @@ disagreements. Its verdicts are therefore unchanged.
 * The closure-tree walk (`closure_children`, `subtree_refs`) follows the
   irep tree (`reps`) the IR does not model; only its op scans moved.
 
+## Native method facts
+
+A `SEND` hands its arguments and receiver to every definition of the name. A
+native (C) definition has no bytecode body, so its effect comes from two
+audited tables in `escape_analysis.rb`:
+
+* `NATIVE_RECEIVER_OK` (receiver kept or not, `:fresh` / `:self`).
+* `NATIVE_ARG_OK` (argument positions the natives keep none of, with the
+  registering files and the Ruby methods the natives call with the argument).
+  `==`, `equal?`, `eql?`, `is_a?`, `kind_of?`, `instance_of?`, `key?` and
+  `has_key?` are audited. A name whose natives call `to_str`, `coerce` or
+  `<=>` on the argument stays unaudited.
+
+`NATIVE_ARG_OK` applies only when every `NATIVE_SRCS` registration of the name
+sits in an audited file, so a new native refuses the name. A callback on the
+argument resolves on the argument's exact class when the analysis knows it
+(`value_class`), otherwise on every definition of the name. The `<native>`
+definitions are not Ruby callees, so they do not veto an audited name.
+
 ## Validation
 
 * `scripts/bc2cpp/join_dominance_check.rb` (now with copy-chain, sibling,
