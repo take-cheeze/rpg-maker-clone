@@ -1,0 +1,1 @@
+- **bc2cpp receivers** no longer take a constant from the straight-line write when a loop back-edge from after the send can rebind the receiver; the call falls back to the reaching-definition agreement.
