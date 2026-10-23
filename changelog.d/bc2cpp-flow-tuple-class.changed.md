@@ -1,0 +1,1 @@
+- **bc2cpp** now names the class an `EXEC` opens, and the call a tuple destructure reads, from the reaching definitions of the register instead of a fixed backward window. A class body whose register is rewritten before its `EXEC` is no longer named after the stale `CLASS`, and a `CLASS` further than four instructions before its `EXEC` is now found.

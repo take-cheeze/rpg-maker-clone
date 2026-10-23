@@ -1,0 +1,1 @@
+- **bc2cpp packed Symbol arguments** resolve through reaching definitions for 15+ argument and `*names` splats, refusing any array that is read or mutated elsewhere or whose elements are not one Symbol.

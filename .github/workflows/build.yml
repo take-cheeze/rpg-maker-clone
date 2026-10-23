@@ -789,6 +789,7 @@ jobs:
           ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
           ruby scripts/bc2cpp/ir_soundness_classes_check.rb
           ruby scripts/bc2cpp/numeric_roots_reaching_check.rb
+          ruby scripts/bc2cpp/game_variables_receiver_check.rb
           ruby scripts/bc2cpp/core_facts_rbs_check.rb --require-mruby
           ruby scripts/bc2cpp/trace_merge_check.rb
           ruby scripts/bc2cpp/ir_trace_evidence_check.rb
