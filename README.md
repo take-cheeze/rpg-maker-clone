@@ -1190,6 +1190,8 @@
   per-pass text scraping, with [binary fixtures that forbid text access](docs/bc2cpp-ir-instruction-checks.md)
   checking the shared queries, including a reaching-definitions query
   (`BytecodeIR.reaching_definitions`) that answers through joins and loops.
+  [Method-name flow](docs/bc2cpp-name-argument-flow.md) keeps visibility and
+  removal effects precise through local aliases, branches, loops and handlers.
   [Factory analysis](docs/bc2cpp-ir-factories.md) follows Class/Struct factory
   aliases across control flow, recording all possible superclass and member names
   while refusing unknown uses or escapes.
