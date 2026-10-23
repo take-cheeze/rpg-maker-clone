@@ -1,0 +1,1 @@
+- The bc2cpp analysis passes `unique_class_names`, `ivar_candidates`, `refine_report`, `codegen_block_self`, `send_root_report`, `receiver_proof_report`, `register_flow` and `readonly_call_effects` now read instructions through the BytecodeIR helpers (`each_with_op`, `each_source`, `source_at`) instead of indexing the raw irep. Generated output is unchanged.
