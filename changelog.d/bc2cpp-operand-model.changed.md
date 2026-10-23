@@ -1,0 +1,1 @@
+- **bc2cpp** NIL_NARROWING reads its operands (a MOVE's registers, a SEND's receiver and name, a conditional branch's tested register) through a new IR operand model, `BytecodeIR::OperandModel`. Generated C++ is unchanged.

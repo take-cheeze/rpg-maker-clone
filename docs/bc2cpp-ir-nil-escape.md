@@ -62,9 +62,12 @@ disagreements. Its verdicts are therefore unchanged.
 
 ## What stays outside the IR
 
-* NIL_NARROWING reads the operands it needs (a MOVE's source, a SEND's
-  name) from the IR instruction's `source`: `Program#decoded` carries only
-  the op, branch kind, leading register and target.
+* NIL_NARROWING reads its operands through `BytecodeIR::OperandModel`
+  (`tools/bc2cpp/bytecode_ir_operands.rb`): a MOVE's two registers, a SEND's
+  receiver and name, a conditional branch's tested register. The model builds
+  them from the instruction's `source`, because `Program#decoded` carries only
+  the op, branch kind, leading register and target. The op itself still comes
+  from `source.op`, and no other op is modelled yet.
 * ESCAPE_ANALYSIS's frame flow was already a may-alias flow over the IR's
   successors and handler edges; its per-op transfer (`Analyzer#step`) still
   decodes each operand from `source`, since the IR has no operand model.

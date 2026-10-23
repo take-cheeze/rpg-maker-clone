@@ -1,0 +1,1 @@
+- **bc2cpp**: `YieldReach::LEAD_READERS` is now written as an explicit difference from `BytecodeIR::Ops::LEAD_READ_ONLY`, with the reason for each op. Membership is unchanged; generated C++ is identical.

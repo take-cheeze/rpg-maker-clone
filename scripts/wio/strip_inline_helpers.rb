@@ -695,7 +695,7 @@ REWRITES = {
         expect_lines: 3 },
       { first: '    def return_from_call',
         last: '    end', # def return_from_call's own `end`
-        expect_lines: 5 },
+        expect_lines: 8 },
       { first: '    def do_message_options(cmd)',
         last: '    end', # def do_message_options's own `end`
         expect_lines: 8 },
