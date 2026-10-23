@@ -573,7 +573,10 @@ owner that `numeric_ivar_assured?` does not clear. A read is store-first only
 when it sits in its owner's method body and every path from the entry passes a
 SETIV of the ivar before it (a must-store pass over that body's CFG, exception
 edges included). A self-call never counts as a store, so a read after one keeps
-`nil`; so does any read in a block. That check needs a closed world with no
+`nil`; so does any read in a block. When the ivar has no class-layout candidate
+(a numeric or bool slot, whose stores ClassLayout does not trace), the embedded
+IvarLayout type is the candidate's classes and gets the same nil (`IvarCandidates.with_nil`).
+That check needs a closed world with no
 `allocate` and a #initialize that assigns on every path before `self` escapes;
 where it cannot decide, `nil` is included. A store the analysis did not resolve,
 or an ivar touched by code no class owns (a module body), leaves the candidate

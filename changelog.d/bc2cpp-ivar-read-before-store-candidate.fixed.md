@@ -1,0 +1,1 @@
+- bc2cpp type check: an ivar read before its first store (an embedded Integer or bool slot) now has `nil` in its candidate type.
