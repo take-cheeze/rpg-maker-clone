@@ -76,6 +76,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-blocks', command: %w[scripts/bc2cpp/ir_blocks_check.rb] },
   { name: 'bc2cpp-ir-facts', command: %w[scripts/bc2cpp/ir_facts_check.rb] },
+  { name: 'bc2cpp-ir-binary-operands', command: %w[scripts/bc2cpp/ir_binary_operands_check.rb] },
   { name: 'bc2cpp-rbs-mixin-contracts', command: %w[scripts/bc2cpp/rbs_mixin_contracts_check.rb] },
   { name: 'bc2cpp-self-call-override-contracts', command: %w[scripts/bc2cpp/self_call_override_contracts_check.rb] },
   { name: 'bc2cpp-explicit-receiver-override-contracts', command: %w[scripts/bc2cpp/explicit_receiver_override_contracts_check.rb] },
