@@ -1,0 +1,1 @@
+- The bc2cpp class, constructor, return-class and block codegen passes now read instructions through the bytecode IR helpers instead of scanning `irep.instructions` directly. The generated C++ is unchanged.
