@@ -1,0 +1,1 @@
+- bc2cpp type check: a method whose `return` is inside a block is no longer typed `nil` from its own fall-through.

@@ -115,6 +115,12 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/nonlocal_return_candidate_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
   scripts/bc2cpp/lcf_join_array_check.rb:
     tier: fast
     capabilities: []

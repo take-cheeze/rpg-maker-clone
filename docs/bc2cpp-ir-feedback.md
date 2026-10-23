@@ -560,8 +560,11 @@ program method reopening `Array` that calls `size`). That is the one change to t
 self-call path: such sends were untyped and are now typed under the same four
 conditions. Other self-call results are unchanged.
 
-Required parameters of methods with optional ones, constants and nonlocal-return
-inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the type-check RBS,
+Required parameters of methods with optional ones and constants remain follow-up
+work. A method whose body has a nested block with a `return` (RETURN_BLK) is typed
+from its return-class mask, which joins the block's returns, and gets no IR return
+fact (`ir_type_feedback.rb` records none, so `trivial_return` does not read its own
+RETNIL as the whole answer). Inferred ivar candidates (`@ivar: T` in the type-check RBS,
 and the `ivars` rows of the facts file) are the union of every traced store
 across the ivar's numeric family: superclass, include and prepend links, since
 all of them share the slot. The candidate gains `nil` when some read may run
@@ -570,7 +573,10 @@ owner that `numeric_ivar_assured?` does not clear. A read is store-first only
 when it sits in its owner's method body and every path from the entry passes a
 SETIV of the ivar before it (a must-store pass over that body's CFG, exception
 edges included). A self-call never counts as a store, so a read after one keeps
-`nil`; so does any read in a block. That check needs a closed world with no
+`nil`; so does any read in a block. When the ivar has no class-layout candidate
+(a numeric or bool slot, whose stores ClassLayout does not trace), the embedded
+IvarLayout type is the candidate's classes and gets the same nil (`IvarCandidates.with_nil`).
+That check needs a closed world with no
 `allocate` and a #initialize that assigns on every path before `self` escapes;
 where it cannot decide, `nil` is included. A store the analysis did not resolve,
 or an ivar touched by code no class owns (a module body), leaves the candidate
