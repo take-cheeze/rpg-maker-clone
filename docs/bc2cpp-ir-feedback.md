@@ -161,8 +161,15 @@ read by the pinned RBS 4.
 
 Compared:
 
-- each required positional parameter (trace kind `req`, matched by position) and
-  each method return, except `initialize`;
+- each positional parameter, required (trace kind `req`) or optional (`opt`),
+  matched by position, and each method return, except `initialize`;
+- each keyword parameter, required (`kwreq`) or optional (`kwopt`), matched by
+  name (the C parameter is `bc2cpp_kwarg_NAME`). A value is traced only where the
+  caller gave it, so both kinds are real arguments;
+- a rest parameter's extra arguments: the `rest` row is the Array the call built,
+  and its elements (role `array`) are checked against the `T` of `*T`. A `rest`
+  row whose class is not `Array` is counted as `rest row(s) not an Array` and not
+  compared, since the index is then not that parameter;
 - the elements of a parameter or return declared `Array[T]` or `Hash[K, V]`: the
   `PARAM_ELEM_*` and `RETURN_ELEM_*` rows, by role (`array`, `key`, `value`);
 - singleton methods (`def self.x`), against the trace key `Owner.singleton#x`;
@@ -197,10 +204,18 @@ The trace cannot tell the check these things, so they are not compared:
   returns;
 - a singleton method reached through `extend` (the module's instance methods become
   the extending class's singleton methods, which the trace keys as
-  `Owner.singleton#x`; the check does not model it);
-- optional, rest, keyword and block parameters: this check does not match their
-  trace rows (an optional parameter may carry a call-site type, see above);
-- ivar and constant types, which are not traced;
+  `Owner.singleton#x`). The hierarchy rows (`class_hierarchy.rb`) record `INCLUDE`
+  and `PREPEND` only, and skip a mixin inside `class << self`, so the check does
+  not know which modules are `extend`-ed;
+- block parameters. The trace has `block_arg` rows, but they are the parameters of
+  a block body, keyed by the body's own `_impl` (the method that yields to it is
+  not in the row), and the emitter declares a block type only as
+  `{ (*untyped) -> untyped }`, so there is no declared type to compare with. A
+  method's `&blk` value is not traced either (`bc2cpp_blk` is not a parameter row).
+  This stays a skip until the trace names the yielding method and the emitter
+  declares block parameter types;
+- ivar and constant types: the dumps have PARAM, RETURN, ELSE and RECV rows only,
+  so ivars and constants are not recorded;
 - overloaded methods, which the candidate reader skips;
 - container elements past the first eight of each container (`BC2CPP_ELEM_SAMPLE`):
   the dump does not record them, so a wrong class there is not seen.
@@ -243,9 +258,20 @@ all known (a dynamic, foreign or poisoned name gets no join at all).
   block (`{ (*untyped) -> untyped }`); otherwise the block stays optional. A declared
   block signature keeps its optional block.
 
-The body analysis does not yet consume these joins: the candidate RBS and the JSON
-rows carry them, and the IR argument facts still cover positional parameters only.
-`BC2CPP_IR_ARGUMENT_TYPES=0` restores `untyped` for all three.
+The body analysis consumes the same joins, so a read of the parameter inside the method
+sees the type the call sites prove:
+
+- **Rest**: the rest register holds an `Array`, and an element read of it (`items[i]`)
+  takes the element join. The join is withheld when the body could change the array: any
+  read of it (or of a `MOVE` copy) other than an element read, a closure that captures
+  it, a zero-argument `super` (which packs it), or a `binding`/`eval` call.
+- **Required keyword**: the `KARG` register takes the join. A declared keyword type wins
+  over the join.
+- **Block**: the block register is `Proc` when the join proves it, in place of the nominal
+  `Proc | nil`. A declared block signature withholds it, as the report row does.
+
+`BC2CPP_IR_ARGUMENT_TYPES=0` restores `untyped` for all three, in the body and in the rows.
+These facts feed the report and the candidate RBS only; the generated code does not read them.
 
 ## Boundaries
 
@@ -337,15 +363,17 @@ and `IrContextResults#dispatch`. The fixtures are
 `scripts/bc2cpp/self_call_override_contracts_check.rb`, section (g) for the
 inferred call result.
 
-Rest, keyword and block contracts in the body analysis, required parameters of
-methods with optional ones, constants and nonlocal-return inference remain
-follow-up work (the call-site joins for rest, keyword and block parameters are
-described above). Inferred ivar candidates (`@ivar: T` in the type-check RBS,
+Required parameters of methods with optional ones, constants and nonlocal-return
+inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the type-check RBS,
 and the `ivars` rows of the facts file) are the union of every traced store
 across the ivar's numeric family: superclass, include and prepend links, since
 all of them share the slot. The candidate gains `nil` when some read may run
-before any store: a `@x = nil` store, or a reading owner that
-`numeric_ivar_assured?` does not clear. That check needs a closed world with no
+before any store: a `@x = nil` store, or a read that is not store-first in an
+owner that `numeric_ivar_assured?` does not clear. A read is store-first only
+when it sits in its owner's method body and every path from the entry passes a
+SETIV of the ivar before it (a must-store pass over that body's CFG, exception
+edges included). A self-call never counts as a store, so a read after one keeps
+`nil`; so does any read in a block. That check needs a closed world with no
 `allocate` and a #initialize that assigns on every path before `self` escapes;
 where it cannot decide, `nil` is included. A store the analysis did not resolve,
 or an ivar touched by code no class owns (a module body), leaves the candidate
@@ -353,6 +381,24 @@ unknown. The runtime layout is still the layout analysis's; only the candidate
 that is written and compared changes. Inferred ivar types continue to come from
 the existing whole-program layout analysis; observing one store does not
 establish the complete type of an ivar.
+
+Reflection that reads an ivar without a GETIV is not visible to the scan, so it
+turns the store-first proof off (the rule is `IvarCandidates.reflective_access`):
+
+- for every ivar, when the program has an `instance_variable_set` or
+  `remove_instance_variable` send (any name), a `LOADSYM` of a reflective name
+  (`send`, `method`, `&:instance_variable_get`, ...), a string `eval` (no
+  block), or an `instance_variable_get` / `attr*` / name-dispatch call (`send`,
+  `__send__`, `public_send`, `method`, `define_method`, ...) whose name operand
+  is not a literal Symbol or names a reflective method: no read is store-first
+  and nil stays on every candidate;
+- a literal `instance_variable_get(:@x)` or `attr_reader :x` does this for `@x`
+  (or `x`) only;
+- a name-dispatch call with a literal non-reflective name (`send(:greet)`)
+  changes nothing: the method it runs has its own body in the scan.
+
+`method_missing` adds no rule of its own: its body is a method the scan reads,
+and a name it reads through `instance_variable_get` is covered above.
 
 Run the signature, type-check and RBS-export checks with a host `MRBC`. The
 fixture suites compare guarded dispatch with `BC2CPP_STRICT_HINTS=0`.

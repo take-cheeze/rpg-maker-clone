@@ -231,6 +231,12 @@ checks:
   scripts/bc2cpp/promote_candidates_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/irep_tree_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
+    fixture_gate: false
+    reason: Host-only hand-built irep fixtures; no mruby build is needed.
   scripts/bc2cpp/trace_merge_check.rb:
     tier: fast
     capabilities: []

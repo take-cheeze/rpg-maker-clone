@@ -1,0 +1,1 @@
+- **bc2cpp type-check**: an inferred ivar candidate no longer includes `nil` for a read that every path reaches only after a store of that ivar in the same method. A read after a self-call, in a block, or in a rescue of the store still adds `nil`, as does any `instance_variable_set` or `remove_instance_variable` name in the program.
