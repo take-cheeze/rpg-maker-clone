@@ -1188,6 +1188,9 @@
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
   per-pass text scraping, including a reaching-definitions query
   (`BytecodeIR.reaching_definitions`) that answers through joins and loops.
+  [Factory analysis](docs/bc2cpp-ir-factories.md) follows Class/Struct factory
+  aliases across control flow, recording all possible superclass and member names
+  while refusing unknown uses or escapes.
   The return and receiver class proofs read a body's exits and returned-value
   definitions from the same IR ([return sites](docs/bc2cpp-ir-return-sites.md)).
   [IR value-class inference](docs/bc2cpp-ir-types.md) builds on these definitions

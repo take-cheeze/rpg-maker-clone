@@ -1,0 +1,1 @@
+- **bc2cpp factory analysis** follows Class/Struct factory aliases across branches, loops and exception handlers, resolves all reaching superclass and Symbol member names, and refuses later escapes instead of stopping at the first use.
