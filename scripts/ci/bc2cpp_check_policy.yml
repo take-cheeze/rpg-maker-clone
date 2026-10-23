@@ -622,3 +622,6 @@ checks:
   scripts/bc2cpp/type_check_iterate_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/type_check_provenance_check.rb:
+    tier: fast
+    capabilities: []
