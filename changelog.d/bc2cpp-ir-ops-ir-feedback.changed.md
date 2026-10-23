@@ -1,0 +1,1 @@
+- **bc2cpp** type-feedback, context-result, yield, block-capture and type-fact passes now name their send and return opcode sets from `BytecodeIR::Ops` (a new `BLOCK_SEND` set for the block-carrying sends) and walk instructions with `each_with_op` / `instructions_with_op` instead of spelling opcode strings. Generated C++ and analysis output are unchanged.

@@ -1,59 +1,54 @@
-# This is a basic workflow to help you get started with Actions
+# CI for rpg-maker-clone: native and browser builds, bc2cpp, the device
+# firmwares and their emulator smokes, and the Pages / Cloudflare deploys.
+#
+# Conventions used throughout:
+# - Every checkout is quiet (`show-progress: false`) and drops its persisted
+#   credentials: nothing below runs an authenticated git command.
+# - Only `preview-gate`, `wasm` and `preview-cloudflare` take part in the
+#   `/preview` flow; every other job opts out with
+#   `github.event_name != 'issue_comment'`.
+# - Display-using smokes take a distinct `--server-num`, never `-a`, whose
+#   display probe is not atomic. Each step names its own number.
+#
+# Background on the device and emulator jobs lives in docs/ci.md and the
+# per-port READMEs under app/.
 
 name: CI
 
-# Controls when the action will run.
 on:
-  # Triggers the workflow on push or pull request events but only for the master branch
   push:
     branches: [ master ]
   pull_request:
     branches: [ master ]
 
-  # A merge queue builds each PR merged onto the latest master (plus the PRs
-  # queued ahead of it) and merges only if this workflow passes on that
-  # combination. Without this trigger a queued PR never gets its required
-  # checks. docs/ci.md says what the owner must enable.
+  # Builds each PR merged onto the latest master, plus the PRs queued ahead of
+  # it. Without this trigger a queued PR never gets its required checks.
   merge_group:
     types: [ checks_requested ]
 
-  # Lets a maintainer publish a Cloudflare Pages preview on demand by
-  # commenting `/preview` on a pull request. Only the `preview-gate`,
-  # `wasm` and `preview-cloudflare` jobs take part in this flow; every other
-  # job opts out with `github.event_name != 'issue_comment'`.
+  # `/preview` on a pull request publishes a Cloudflare Pages preview.
   issue_comment:
     types: [ created ]
 
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# A new push to a pull request supersedes the run still going for its previous
-# commit, so cancel it instead of queueing ~35 jobs behind the stale ones.
-# Everything else (master pushes, merge queue, dispatch, `/preview` comments)
-# gets a unique group and is never cancelled.
+# A new push to a pull request supersedes the run for its previous commit.
+# Everything else gets a unique group and is never cancelled.
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # Path-based gate for the `psp`/`psp-smoke`/`psp-smoke-game` pipeline below:
-  # those three jobs (a pspdev container cross-build plus two PPSSPP headless
-  # smokes) are among the slowest in this workflow, and touch nothing but
-  # app/psp, so a change with no bearing on the PSP port no longer pays for
-  # them. `workflow_dispatch` bypasses this filter entirely -- see those
-  # jobs' own `if:` -- so a manual run always builds everything.
+  # Path filters for jobs that should skip when their inputs did not change.
+  # `workflow_dispatch` ignores the psp filter (see the psp jobs' `if:`).
   changes:
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
     outputs:
       psp: ${{ steps.filter.outputs.psp }}
-      # Anything that can change a compiled result. Docs, changelog fragments and
-      # markdown cannot, so a PR that touches only those skips the bc2cpp jobs
-      # (the aggregate `bc2cpp` job accepts that skip, see there).
+      # Docs, changelog fragments and markdown cannot change a compiled result.
       code: ${{ steps.filter.outputs.code }}
-      # The Android, Maix and nano 7 device jobs run on a pull request only when one of their own
-      # files changed (a push to master, the merge queue and a manual run always run them).
+      # On a pull request these device jobs run only when their own files changed.
       android: ${{ steps.filter.outputs.android }}
       maix: ${{ steps.filter.outputs.maix }}
       nano7: ${{ steps.filter.outputs.nano7 }}
@@ -99,37 +94,23 @@ jobs:
               - 'scripts/download/nepheshel.bash'
               - '.github/workflows/build.yml'
 
-  # This workflow contains a single job called "build"
+  # Native desktop build, its test suite, and the in-game smokes.
   build:
-    # `/preview` comments only ever want the wasm page; skip the rest of CI.
     if: ${{ github.event_name != 'issue_comment' }}
-    # The type of runner that the job will run on
     runs-on: ubuntu-24.04
 
     env:
       SCCACHE_GHA_ENABLED: "true"
       ACTIONS_CACHE_SERVICE_V2: "on"
-      # sccache's GHA backend stores one cache blob per compilation unit, so
-      # every run that's allowed to write can mint a large number of small
-      # cache entries -- on a repo this commit-heavy, doing that on every PR
-      # and manual run (not just the pushes that actually update master)
-      # multiplies fast. Only a push to master grows the shared cache;
-      # every other trigger (pull_request, workflow_dispatch off master)
-      # still reads whatever master already wrote (so a warm sccache is
-      # still faster) but can't write new blobs of its own.
+      # sccache writes one cache blob per compilation unit, so only a push to
+      # master may write; other triggers read master's warm cache.
       SCCACHE_GHA_RW_MODE: >-
         ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master')
             && 'READ_WRITE' || 'READ_ONLY' }}
-      # Optional: routes the game-archive/asset downloads below through the
-      # CORS proxy's R2 cache (scripts/cors-proxy/, docs/cors-proxy.md) instead of the
-      # origin host, as a fallback for when the "cache test game" step below
-      # misses. Unset in forks and by default — scripts/cors-proxy-url.bash
-      # passes URLs through unchanged when this is empty. May carry a
-      # ?key=...&url= prefix (see AUTH_KEY in docs/cors-proxy.md), so it's a
-      # secret rather than a repository variable.
+      # Routes the game-archive downloads through the CORS proxy's R2 cache
+      # (docs/cors-proxy.md). Empty in forks, where URLs pass through unchanged.
       CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       - uses: nixbuild/nix-quick-install-action@v35
 
@@ -137,33 +118,19 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # Submodules are initialized by the step below instead of here (see
-          # its comment), so this job skips 3rd/SDL, 3rd/SDL_mixer and
-          # 3rd/optcarrot.
+          # Submodules are initialized below so this job skips 3rd/SDL,
+          # 3rd/SDL_mixer and 3rd/optcarrot.
           submodules: false
-          # Keep the checkout quiet. `show-progress` is what adds `--progress`
-          # to the fetch, which prints a "Receiving objects: NN%" line per
-          # update — a screenful of log before anything is built. Dropping the
-          # persisted credentials removes the other half: the post-job step
-          # otherwise walks all 14 submodules unsetting the `includeIf` config
-          # it added, ~10 `[command]git config ...` lines each. Nothing runs an
-          # authenticated git command after checkout (the download scripts
-          # clone public repositories), so both are pure noise. Same two
-          # settings on every checkout below.
           show-progress: false
           persist-credentials: false
 
-      # The runner rewrites GITHUB_EVENT_PATH before each step; background
-      # JavaScript actions can parse it while it is truncated. Keep cache
-      # actions in the foreground so they read a complete event payload.
+      # Cache actions stay in the foreground: background JavaScript actions
+      # read GITHUB_EVENT_PATH, which the runner truncates while steps run.
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
-        # Network-bound (talks to the GitHub Actions cache service): bound it
-        # so a stalled cache backend can't silently eat the job's whole budget
-        # instead of surfacing as a clear timeout.
         timeout-minutes: 15
       - name: cache rtp
         uses: actions/cache@v6
@@ -172,20 +139,15 @@ jobs:
           path: scripts/*.zip
           key: rtp-${{ hashFiles('./scripts/rtp/*install.bash') }}
           restore-keys: rtp-
-        # Network-bound cache restore; see "Restore and cache Nix store" above.
         timeout-minutes: 10
       - name: cache wine prefix
         uses: actions/cache@v6
         id: wine-prefix-cache
         with:
-          # rtp_install.bash / rtp_xp_install.bash default WINEPREFIX to
-          # $HOME/.wine and skip the wine RTP installer entirely once they
-          # find it already populated here, so a cache hit turns "Download
-          # RTP" into a couple of `ls` calls instead of two wine installs.
+          # The RTP installers skip the wine install once ~/.wine is populated.
           path: ~/.wine
           key: wine-prefix-${{ hashFiles('./scripts/rtp/*install.bash') }}
           restore-keys: wine-prefix-
-        # Network-bound cache restore; see "Restore and cache Nix store" above.
         timeout-minutes: 10
       - name: cache test game
         uses: actions/cache@v6
@@ -193,53 +155,26 @@ jobs:
         with:
           path: data
           key: game-${{ hashFiles('./scripts/download/*.bash', './scripts/gen/mv-sample.py', './scripts/gen/sample-font.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/fonts/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen/mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/audio/**', './data/mz-sample/fonts/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
-        # Network-bound cache restore; see "Restore and cache Nix store" above.
         timeout-minutes: 10
 
-      # find_package(SDL2 REQUIRED) resolves the nix devshell's system SDL2 on
-      # this target (CMakeLists.txt), so the vendored 3rd/SDL and
-      # 3rd/SDL_mixer submodules build nothing here -- only the Android job
-      # links the vendored copies (it has no system SDL2 package to find).
-      # 3rd/optcarrot is unreferenced by CMakeLists.txt entirely. See
-      # scripts/checkout-submodules.bash.
+      # The vendored SDL submodules are linked only by the Android build; here
+      # CMake finds the nix devshell's SDL2. See scripts/checkout-submodules.bash.
       - name: Init submodules
         env:
           SKIP_SUBMODULES: 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
-      # No `Skip the quickjs test262 submodule` step here any more: it existed
-      # only to keep nix's nested-`.gitmodules` walk off tc39/test262, and this
-      # job no longer triggers that walk — `nix develop` stopped fetching
-      # submodules when flake.nix dropped `self.submodules = true`. The `flake`
-      # job, the one that still asks for them, keeps the step.
-
-      # Realises the dev shell and exports its environment (PATH, compiler
-      # launchers, etc.) into $GITHUB_ENV / $GITHUB_PATH, so every later step
-      # below runs its command directly instead of going through
-      # `nix develop -c`.
+      # Realises the dev shell and exports PATH, compiler launchers, etc. into
+      # $GITHUB_ENV and $GITHUB_PATH, so later steps run commands directly.
       - run: ./scripts/nix/develop-export-env.bash
 
-      # The native compile is the long pole. Everything that does not feed the
-      # compiler — the RTP/game/MV downloads (network-bound) and pre-commit
-      # (lint) — is launched as a `background: true` step so it overlaps the
-      # build instead of running strictly before/after it. Each download script
-      # is idempotent (it skips work already present, e.g. on a cache hit), so
-      # the steps run unconditionally and no-op when their data is in place;
-      # that keeps them safe to `wait` on below (a skipped `if:` step is avoided
-      # so the wait always has a real step to join). Every write lands on a
-      # git-ignored path (build/, data/*, scripts/*.zip, the fetched MV engine
-      # files), so nothing here can race pre-commit's tracked-file `git diff`.
-      #
-      # None of these steps invoke `nix` any more (the dev-shell export above
-      # already put everything they need on $PATH), so they are plain
-      # commands and can run concurrently with no store-lock contention to
-      # worry about.
+      # The native compile is the long pole. The downloads and pre-commit run as
+      # `background: true` steps that overlap it. Each download is idempotent,
+      # so the steps run unconditionally. Every write lands on a git-ignored
+      # path, so nothing races pre-commit's `git diff`.
       - name: Download RTP
         id: dl-rtp
         background: true
-        # VX Ace's RTP alone is ~186 MiB (its BGM ships as .ogg, not .mid),
-        # against ~15-40 MiB for each of the other four; widened from 10
-        # minutes to give five sequential downloads + wine installs room.
         timeout-minutes: 20
         run: |
           ./scripts/rtp/install.bash
@@ -279,9 +214,6 @@ jobs:
         timeout-minutes: 10
         run: ./scripts/download/mz-corescript.bash
 
-      # Restore the pinned FreePats tarball so the download below is skipped on
-      # a cache hit. Keyed on the download script, which pins the version and
-      # sha256. Restored in the foreground, like the other download caches.
       - name: cache freepats
         uses: actions/cache@v6
         id: freepats-cache
@@ -290,8 +222,7 @@ jobs:
           key: freepats-${{ hashFiles('./scripts/download/freepats.bash') }}
         timeout-minutes: 10
 
-      # MIDI instrument patches for SDL_mixer's TiMidity synth. Not committed
-      # (~32 MiB of samples), so fetch them here or the `timidity_patches` check
+      # Not committed (~32 MiB). Without them the `timidity_patches` check
       # skips and any .mid the smoke tests touch plays silence.
       - name: Download MIDI patches
         id: dl-freepats
@@ -299,9 +230,7 @@ jobs:
         timeout-minutes: 10
         run: ./scripts/download/freepats.bash
 
-      # The fallback UI font for projects that ship none. Not committed
-      # (~1.7 MiB), so fetch it here or the `default_font` check skips and the
-      # XP/VX/MV smoke tests draw their windows with the 12px bitmap font.
+      # Fallback UI font for projects that ship none. Not committed (~1.7 MiB).
       - name: Download default font
         id: dl-default-font
         background: true
@@ -322,22 +251,15 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.11
 
-      # The dev shell's launcher is nixpkgs' sccache 0.15.0, whose GHA backend
-      # has no read-only mode (added in 0.16.0), so SCCACHE_GHA_RW_MODE was
-      # ignored and every pull request minted sccache blobs. Compile through
+      # The devshell's sccache has no read-only GHA mode, so compile through
       # the action's own sccache instead.
       - name: Use the sccache from sccache-action
         run: |
           echo "CMAKE_C_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
           echo "CMAKE_CXX_COMPILER_LAUNCHER=$SCCACHE_PATH" >> "$GITHUB_ENV"
 
-      # Runs while the background steps above are still in flight.
-      # -DENABLE_TIME_REPORT=ON (CMakeLists.txt) is this job's own opt-in --
-      # local/dev builds don't pay for it -- turning on GCC's
-      # -ftime-report-details for every compile below, so the build log the
-      # next step captures carries a per-file compiler-phase timing block the
-      # "compile-time report" step further down turns into a bottleneck-hint
-      # summary.
+      # ENABLE_TIME_REPORT adds -ftime-report-details so the log feeds the
+      # compile-time report step below.
       - name: cmake
         run: |
           cmake -S . -B build -GNinja -DENABLE_TIME_REPORT=ON
@@ -357,19 +279,13 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Reads the -ftime-report-details blocks the build step's log just
-      # captured (empty/absent on a fully-cached run, which is fine -- see
-      # the script's own comment) and appends a "slowest files/phases this
-      # run" table to the job summary, right alongside the sccache stats
-      # above. if: always() so a failed build still surfaces where its time
-      # actually went before it died.
+      # `if: always()` so a failed build still reports where its time went.
       - name: compile-time report
         if: always()
         run: ruby scripts/compile_time_report.rb build.log
 
-      # Barrier: block until lint and every download have finished before the
-      # checks that consume them. A failed background step (e.g. pre-commit)
-      # surfaces here and fails the job, exactly as it did when these ran inline.
+      # Barrier: lint and every download must finish before the checks below.
+      # A failed background step fails the job here.
       - name: Wait for lint and downloads
         wait:
           [pre-commit, dl-rtp, dl-game, dl-mv, dl-mv-sample, dl-mz-sample,
@@ -378,59 +294,12 @@ jobs:
       - name: Prepare screenshot dir
         run: mkdir -p ss
 
-      # Every post-build check here is independent and each is a separate,
-      # mostly IO-/timeout-bound process that reads the (now built) binary and
-      # the downloaded data read-only, so they run concurrently in one
-      # `parallel` group (implicit wait at the end). The Ruby-only checks that
-      # used to sit in this group (LCF, the RPG XP data/script-host checks,
-      # RPG2k's event soak/logic/testbed-logic checks) never touched the
-      # binary at all, so they moved to the `ruby-checks` job below, which
-      # skips `cmake`/`build` entirely and does not have to wait on it. The MV
-      # smoke tests stay non-blocking (continue-on-error) while the MV runtime
-      # is brought up; the required checks that remain here (the RPG2k/RPG XP
-      # real-game boot smokes, the RGSSAD packed-asset smoke and ctest) fail
-      # the group — and the job — if they fail. Each xvfb-run instance gets a
-      # fixed, distinct display number
-      # (--server-num) and a distinct screenshot path, so the concurrent runs
-      # never collide. `xvfb-run -a` (auto-picked display) is deliberately
-      # avoided: its server-number probe is not atomic, so concurrent -a runs
-      # can grab the same display, killing one Xvfb out from under its client
-      # ("XIO: fatal IO error"). Reserved numbers: exe_open=99,
-      # render_probe=98, audio_probe=97 and error_dump=96 (see those ctest
-      # tests in CMakeLists.txt, all run by the `test` step below); MV runs=100..108,
-      # the RPG2k
-      # real-game boot smoke=109..110, the MZ boot smoke=111, the RPG XP
-      # real-game boot smoke=112..119 (one per pass -- script host/battle/save
-      # on the editor bed plus script host on Pray for You, each its own step
-      # and its own display so they run concurrently rather than the four of
-      # them serially in one step; 116..119 stays free for another pass to be
-      # added without renumbering anything else), the RGSSAD packed-asset
-      # smoke=120..121 (two runs, one per arm of its A/B) and the RPG2k
-      # per-frame allocation regression check=122 below. Every
-      # smoke here must use a distinct --server-num (never `-a`), or its
-      # non-atomic probe can steal exe_open's display and fail that required
-      # check.
+      # Post-build checks run concurrently in one `parallel` group. The runner
+      # caps concurrency at about a dozen, so the long MZ play-out modes are
+      # listed first to claim a slot as soon as the barrier opens.
       #
-      # The inline smokes run through `scripts/quiet_alsa.bash`, which drops the
-      # "cannot find card '0'" wall a runner without a sound device produces on
-      # every engine start (the same three patterns the boot-check scripts
-      # already strip) while preserving the engine's exit status and its
-      # `[MV-*]` markers.
-      #
-      # This step group runs its members with a worker-count cap rather than
-      # true unlimited concurrency (observed ceiling: about a dozen in flight
-      # at once), so a step queues behind whatever is already running when its
-      # turn in this list comes up -- list position costs wall clock, not just
-      # instruction order. The MZ play-out modes (battle_play, encounter,
-      # equip, menu_play, message_play -- the ones below with a raised
-      # DEFAULT_TIMEOUT_MS in mz_boot_check.bash, because they drive a whole
-      # scene rather than only booting into it) are the longest-running steps
-      # in the group by a wide margin, so they are listed first: queued behind
-      # a dozen short checks, the slowest of them was the last thing still
-      # running, stretching the group's total time by however long it sat
-      # waiting for a slot it could have had immediately. Listed first, it
-      # claims a slot as soon as the barrier above opens and finishes
-      # overlapped with everything else instead of after it.
+      # Required steps fail the group and the job. The MV smokes and the MZ
+      # runtime bring-up are non-blocking (continue-on-error).
       - parallel:
           - name: MZ battle smoke test
             continue-on-error: true
@@ -438,42 +307,18 @@ jobs:
               MZ_MODE: battle
             run: ./scripts/mz/boot_check.bash 111
 
-          # Reaching Scene_Battle is a much smaller claim than combat working,
-          # and the gap between them is where MZ's battles were found frozen:
-          # the bed's enemy had an empty `battlerName`, so `Sprite_Enemy` never
-          # loaded a bitmap and `updateFrame` threw on every frame of every
-          # battle, taking out the rest of Scene_Battle.update. The smoke above
-          # stayed green throughout, because the scene is entered before the
-          # first broken update. This mode plays the fight out — confirm is
-          # tapped through the party/actor/target windows until an enemy takes
-          # damage and the victory sequence hands back to the map — and asserts
-          # `damaged=true ended=true`. The timeout is left
-          # to the script's per-mode default (this fight needs the most room of
-          # any mode, and an override here is what would silently cut it short
-          # on a slow runner); the run ends as soon as the probe reports, so the
-          # ceiling costs nothing when the fight is quick.
+          # Reaching Scene_Battle is weaker than a fight working. This mode plays
+          # the fight out and asserts `damaged=true ended=true`.
           - name: MZ battle-play smoke test
             continue-on-error: true
             env:
               MZ_MODE: battle_play
             run: ./scripts/mz/boot_check.bash 111
 
-          # Common events, which had no coverage at all: the bed's
-          # CommonEvents.json was empty, and the two kinds are separate
-          # machinery. A parallel common event runs on an interpreter
-          # Game_CommonEvent owns and Game_Map.updateEvents drives, and only
-          # while its switch is on; Call Common Event instead builds a child
-          # interpreter nested inside the calling one. The bed authors one of
-          # each and this step drives both, asserting each ran on its own.
-          # A random encounter: the engine deciding to fight, rather than a
-          # game telling it to. Every other battle here is started by a Battle
-          # Processing command; this one comes out of the map's own encounter
-          # list after the player takes a step, through
-          # Game_Player.updateEncounterCount and executeEncounter with no event
-          # involved. The bed's maps carried no encounter list at all, so the
-          # path had never run. It walks on the *second* map — map 1 has to stay
-          # encounter-free because the move probe walks there — which makes this
-          # the first step that drives two systems in one run.
+          # Common events, both kinds: parallel (Game_CommonEvent) and
+          # Call Common Event (a nested child interpreter).
+          # A random encounter from the map's encounter list, on map 2 (map 1
+          # must stay encounter-free for the move probe).
           - name: MZ encounter smoke test
             continue-on-error: true
             env:
@@ -486,16 +331,8 @@ jobs:
               MZ_MODE: common
             run: ./scripts/mz/boot_check.bash 111
 
-          # Scene_Equip, the last major scene nothing else here enters, and the
-          # one place a parameter is meant to change because of what an actor
-          # holds. The bed declared everything around equipment — five
-          # equipTypes, a weapon type, an armor type — while Weapons.json and
-          # Armors.json stayed empty, so no slot ever had anything to hold. It
-          # now authors a weapon and an armor, plus the armor-type trait the
-          # class was missing (isEquipAtypeOk is a plain trait lookup, so an
-          # armor nobody allows is silently unselectable). The check asserts
-          # `stronger=true`, not just that the slot filled: a slot can hold an
-          # object while the number the player sees never moves.
+          # Scene_Equip, asserting `stronger=true`: the slot filling is not
+          # enough, the displayed number must change too.
           - name: MZ equip smoke test
             continue-on-error: true
             env:
@@ -508,62 +345,31 @@ jobs:
               MZ_MODE: menu
             run: ./scripts/mz/boot_check.bash 111
 
-          # Opening Scene_Menu is the same size of claim as reaching
-          # Scene_Battle was — it holds the instant the scene is pushed, before
-          # its first update — and the step above had been green on a bed whose
-          # item database was empty, where the menu has nothing to do at all.
-          # This mode uses the menu: the party is given a Potion and the actor
-          # is wounded through event commands, then confirm walks the command
-          # window, the item category, the item list and the actor window, and
-          # cancel unwinds back to the map. It asserts `healed=true` (an item's
-          # effect reached an actor's HP), `used=true` (the inventory paid for
-          # it) and `returned=true` (the stack unwound).
+          # Opens the menu, uses a Potion, and unwinds. Asserts `healed`, `used`
+          # and `returned`.
           - name: MZ menu-play smoke test
             continue-on-error: true
             env:
               MZ_MODE: menu_play
             run: ./scripts/mz/boot_check.bash 111
 
-          # The MZ message smoke test asserts a window opened over the map,
-          # which says nothing about the window taking input, closing again, or the
-          # interpreter doing anything with the answer — the same
-          # scene-was-reached shape that hid the frozen battles. This mode shows
-          # a message and a two-way choice, pages the text through, moves the
-          # cursor to the *second* entry and confirms it, then checks which
-          # branch of the event ran. The first entry is the default, so a run
-          # that never moved the cursor takes the other branch and reports
-          # picked=false: "a choice was made" and "a window appeared" are told
-          # apart.
-          # The same bed with its assets **encrypted**, which is a different
-          # loading path rather than a variation on one: nothing is opened by
-          # name, the engine XHRs each asset, decrypts it in its own JavaScript
-          # and hands a Blob object URL to an Image. Both real games sampled
-          # while testing this shipped that way, and neither could load a single
-          # asset before M6.3r — a black screen in Scene_Boot. The encrypted
-          # project is derived here rather than committed, so the plain bed stays
-          # the one source of truth for its contents.
+          # The encrypted-assets path: assets are XHR'd and decrypted in JS, so
+          # it is a different loading path from the plain bed. The encrypted
+          # project is derived here, not committed.
           - name: MZ encrypted-assets smoke test
             continue-on-error: true
             run: ./scripts/mz/encrypted_check.bash 113
 
+          # Shows a message and a two-way choice, then picks the second entry.
+          # `picked=false` means the choice was never made.
           - name: MZ message-play smoke test
             continue-on-error: true
             env:
               MZ_MODE: message_play
             run: ./scripts/mz/boot_check.bash 111
 
-          # The animation path, which nothing else here touches. MZ picks
-          # between two animation systems by data shape: an animation carrying
-          # a `frames` array draws as sprites (Sprite_AnimationMV), anything
-          # else goes to Effekseer, whose WASM runtime this host never starts
-          # so an Effekseer animation would play its timings
-          # and no visuals at all. The bed authors an MV-format burst, and the
-          # check asserts `mv=true` (the reachable system was selected) and
-          # `played=true` (cell sprites were visible with a bitmap). It is also
-          # the only thing in this bed that asks the renderer for a blend mode
-          # other than normal alpha; the frame check below is what proves the
-          # burst reached the picture, since the log says `played=true` even
-          # when the art fails to resolve.
+          # Sprite-based MV animations (`frames` array), not Effekseer. Asserts
+          # `mv=true` and `played=true`; the frame check proves the art drew.
           - name: MZ animation smoke test
             continue-on-error: true
             env:
@@ -574,52 +380,22 @@ jobs:
             run: |
               cmake --build build -t test
 
-          # Boot the built engine on the real RPG2000/2003 test-beds and drive
-          # it past the title into the map with --rpg2k_new_game. The CRuby host
-          # checks above load the same game.rb/main.rb sources but cannot catch
-          # mruby/CRuby divergence (a bare `module_function` is a no-op in
-          # mruby, `Enumerable#none?` is absent), which had left the LCF map
-          # path raising on New Game while every check passed. Any uncaught
-          # mruby exception aborts the binary, so a non-zero exit or a missing
-          # [RPG2k-MAP] marker fails this step. It uses display 109 and up, one
-          # per game.
+          # Boots the real RPG2000/2003 test bed past the title into the map.
+          # The CRuby host checks cannot catch mruby/CRuby divergence.
           - name: RPG2k real-game boot smoke test
             run: ./scripts/rpg2k/boot_check.bash 109
 
-          # Regression guard for the RPG2000 map scene's per-frame mruby
-          # object churn (Array/Proc/env allocations/sec): boots the engine on
-          # Nepheshel, samples RGSS::Profiler's own cumulative per-type alloc
-          # counters (mirrored into the profiler trace as the
-          # `mruby_type_allocs` counter series) at two points in a steady
-          # window, and fails if the measured rate exceeds a ceiling set from
-          # this scene's own measured baseline (docs/profiling.md) -- a
-          # reverted per-frame optimization (see the script's own header for
-          # the list) shows up as a failing check instead of just a quieter
-          # frame budget nobody happens to notice. Display 122.
+          # Guards the RPG2000 map scene's per-frame mruby allocation rate
+          # against a ceiling taken from this scene's baseline (docs/profiling.md).
           - name: RPG2k per-frame allocation regression check
             env:
               SERVER_NUM: 122
             run: ./scripts/rpg2k/alloc_regression_check.rb
 
-          # The same guard for the RPG Maker XP runtime: the XP checks above run
-          # mruby-rpgxp's sources under CRuby, so only booting the real binary
-          # catches mruby/CRuby divergence. Each bed runs *its own* engine —
-          # there is no reimplemented flow any more: the check taps
-          # confirm on the game's own title screen, logs every scene it reaches
-          # as `[RPGXP-SCRIPTS]`/`[RPGXP-HOST-SCENE]`, walks the party on the
-          # editor bed's map (`[RPGXP-HOST-MOVE]`), opens that bed's own menu
-          # (`[RPGXP-HOST-MENU]`) and, in a pass each, fights in its own
-          # battle scene (`[RPGXP-HOST-BATTLE]`) and opens its own save screen
-          # (`[RPGXP-HOST-SAVE]`). Two beds: the editor-shaped OpenGame test bed
-          # (script host, battle and save passes) and the *released* Pray for
-          # You (Game.rgssad only, several maps; script host pass only — see
-          # rpgxp_boot_check.bash). Each pass is a full headless engine boot on
-          # CI's unaccelerated renderer, and running the four of them serially
-          # in one step used to be this smoke's whole cost. RPGXP_BOOT_PASS
-          # (see that script's usage comment) lets each run as its own step
-          # here instead, on its own reserved display (112..115 — see the
-          # reserved server-num map above), so they overlap with each other
-          # and with every other step in this group rather than adding up.
+          # RPG XP: each pass runs its own engine on a reserved display, so the
+          # passes overlap instead of adding up. The editor bed runs script
+          # host, battle and save. Pray for You (released, Game.rgssad only)
+          # runs script host alone. See rpgxp_boot_check.bash.
           - name: RPG XP real-game boot smoke test (script host, editor bed)
             env:
               RPGXP_BOOT_PASS: script_host
@@ -648,26 +424,14 @@ jobs:
               ./scripts/rpgxp/boot_check.bash 115 \
                 data/PrayforYou
 
-          # A released game keeps its Graphics/ inside the encrypted archive with
-          # nothing loose, so the native asset loaders have to read through it.
-          # Packs the same real test bed twice — with and without a title graphic
-          # in the archive — and asserts the engine finds it only when it is
-          # there, which is what makes the check non-vacuous. Displays 114-115.
+          # Packs the same bed with and without a title graphic inside the
+          # encrypted archive, and asserts the engine finds it only when present.
           - name: RGSSAD packed-asset smoke test
             run: ./scripts/rgssad/asset_check.bash 120
 
-          # Every MV screenshot step below budgets noticeably more than it used
-          # to (5-8s -> 15-30s): MV#present/#maybe_screenshot (mv.rb) used to
-          # blit a plain Canvas2D buffer that PIXI's auto-detected
-          # WebGLRenderer (mvwebgl.cxx made canvas.getContext('webgl') succeed,
-          # which every MV game now picks up too, not just MZ) never actually
-          # drew into, so every MV screenshot was silently the canvas' own
-          # untouched blank white -- cheap, and wrong. Reading the real frame
-          # back from the WebGL FBO every frame (present_gl/screenshot_gl, the
-          # same path MZ already paid for) costs real wall-clock time, roughly
-          # proportional to the 816x624 canvas rather than scene complexity,
-          # which is why even the asset-light data/mv-sample needs the same
-          # kind of bump as data/Lunatic-Core.
+          # MV screenshot and play steps. MV captures read back the WebGL FBO
+          # every frame, which costs time roughly proportional to the 816x624
+          # canvas, hence the longer budgets.
           - name: MV boot smoke test
             continue-on-error: true
             run: |
@@ -676,16 +440,8 @@ jobs:
                 --timeout_ms=15000 --game_dir data/Lunatic-Core --test_play \
                 --mv_screenshot=ss/mv_title.png
 
-          # Drive the real downloaded MV test bed (Lunatic-Core) past the title
-          # into actual play: New Game -> map, then hold a direction and log the
-          # player's start/end tile (`[MV-MOVE] ... moved=<bool>`) and capture a
-          # frame. The boot smoke above only reaches the title; this exercises
-          # the fuller real game's map / movement / render path (a real database,
-          # autotiles and character sheet the minimal sample can't cover). Like
-          # the MZ movement smoke, this greps the log for `moved=true` (a step
-          # that merely runs to completion cannot pass) — the process exit code
-          # alone previously let a stuck-tileset regression through unnoticed.
-          # Non-blocking, like the other MV smokes.
+          # New Game, then hold a direction. Passes only on `[MV-MOVE] moved=true`,
+          # since a clean exit alone let a stuck-tileset regression through.
           - name: MV real-game play smoke test
             continue-on-error: true
             run: |
@@ -705,43 +461,22 @@ jobs:
                 --timeout_ms=15000 --game_dir data/mv-sample --test_play \
                 --mv_new_game --mv_screenshot=ss/mv_sample.png
 
-          # Play RPG Maker MZ (M6.3c): the fetched rmmz corescript + PIXI v5 on
-          # the committed data/mz-sample project. The check asserts the boot
-          # reaches a real scene through the native surfaceless-EGL renderer
-          # (`[MZ-BOOT] booted to <scene>`, and not the Scene_Boot loading
-          # screen), that New Game gets to the start map (`[MZ-MAP]`) and that a
-          # held direction actually walks the player (`[MZ-MOVE] moved=true`),
-          # and it captures the frame to ss/mz_play.png. Non-blocking while the
-          # MZ runtime is brought up, like the MV smokes; display 111 (see the
-          # reserved server-num map above).
+          # RPG Maker MZ play smoke on the committed data/mz-sample project, via
+          # the native surfaceless-EGL renderer. Asserts the boot reaches a real
+          # scene, New Game reaches the start map, and the player moves.
           - name: MZ play smoke test
             continue-on-error: true
             run: ./scripts/mz/boot_check.bash 111
 
-          # The rest of the in-game paths, one run each (the same shape as the
-          # MV smokes above), all through the same no-X headless launcher the
-          # play smoke uses. Each mode asserts its own success line, so a probe
-          # that merely ran cannot pass: the message window has to open
-          # (`[MZ-MSG] busy=true window_open=true`), Scene_Menu has to be
-          # reached (`[MZ-MENU] reached_menu=true`), the asynchronous save chain
-          # has to settle with the slot written and read back (`[MZ-SAVE]`), and
-          # Battle Processing has to land in Scene_Battle (`[MZ-BTL]`).
-          # Non-blocking while the MZ runtime is brought up, like the MV smokes.
+          # The rest of the MZ in-game paths. Each mode asserts its own success line.
           - name: MZ message smoke test
             continue-on-error: true
             env:
               MZ_MODE: message
             run: ./scripts/mz/boot_check.bash 111
 
-          # The first thing here that leaves the start map. A bed with one map
-          # never loads a second one, so Transfer Player, Scene_Map re-creating
-          # itself, DataManager.loadMapData for a MapXXX.json that was not read
-          # at boot, and Game_Map.setupEvents for the arriving map all had no
-          # coverage. The bed gained a second map for it. Asserts `moved=true`
-          # (the map id changed), `landed=true` (the player is on the requested
-          # tile) and `arrived=true` — the destination's *own* parallel event
-          # having run, which is what separates the id moving from the map
-          # actually loading.
+          # Leaves the start map. Asserts the map id changed, the player landed,
+          # and the destination's own parallel event ran.
           - name: MZ transfer smoke test
             continue-on-error: true
             env:
@@ -754,12 +489,8 @@ jobs:
               MZ_MODE: save
             run: ./scripts/mz/boot_check.bash 111
 
-          # Run the battle smoke against the real bed (Lunatic-Core): it ships
-          # battlers and a battleback, so the captured Scene_Battle frame shows
-          # an actual battle (enemy + battle log) rather than the art-less
-          # sample's near-black screen. The step logs `[MV-BTL] reached_battle=
-          # <bool>`; a longer timeout lets New Game -> map -> the battle intro
-          # play out before the assertion.
+          # Battle against the real bed: Lunatic-Core ships battlers and a
+          # battleback, so the frame shows an actual battle.
           - name: MV battle smoke test
             continue-on-error: true
             run: |
@@ -787,10 +518,7 @@ jobs:
                 --timeout_ms=15000 --game_dir data/mv-sample --test_play \
                 --mv_new_game --mv_message_test --mv_screenshot=ss/mv_message.png
 
-          # Confirm the menu path works: New Game -> map, then open the party
-          # menu (Scene_Map's own callMenu) and log `[MV-MENU] reached_menu=
-          # <bool>`, capturing the rendered menu. Uses the committed sample
-          # (its windowskin frames the menu windows).
+          # Opens the party menu from Scene_Map and logs `[MV-MENU] reached_menu=`.
           - name: MV menu smoke test
             continue-on-error: true
             run: |
@@ -799,9 +527,7 @@ jobs:
                 --timeout_ms=15000 --game_dir data/mv-sample --test_play \
                 --mv_new_game --mv_menu_test --mv_screenshot=ss/mv_menu.png
 
-          # Confirm the save path works: New Game -> map, then a save+load
-          # round-trip through DataManager, logging `[MV-SAVE] saved=.. exists=..
-          # loaded=..`. Non-visual, so no screenshot.
+          # Save and load round-trip through DataManager. Non-visual.
           - name: MV save smoke test
             continue-on-error: true
             run: |
@@ -810,11 +536,8 @@ jobs:
                 --timeout_ms=6000 --game_dir data/mv-sample --test_play \
                 --mv_new_game --mv_save_test
 
-          # Confirm the audio path works: New Game -> map, then play the sample's
-          # authored SE through the AudioManager->RGSS::Audio bridge and log
-          # `[MV-AUDIO] op=.. dispatched=.. asset=..`. Non-visual, so no
-          # screenshot. (CI has no audio device, so this checks the op reaches
-          # RGSS::Audio and the asset resolves, not audible output.)
+          # Plays the sample's SE through AudioManager -> RGSS::Audio. CI has no
+          # audio device, so this checks the op dispatches, not that it is audible.
           - name: MV audio smoke test
             continue-on-error: true
             run: |
@@ -823,14 +546,8 @@ jobs:
                 --timeout_ms=6000 --game_dir data/mv-sample --test_play \
                 --mv_new_game --mv_audio_test
 
-      # The five MZ smokes above each assert their own frame in isolation (the
-      # boot check runs scripts/mz/frame_check.rb --frame on what it captured).
-      # The comparisons between modes need all five frames, so they run here,
-      # after the parallel group's implicit wait: the message frame against the
-      # plain map frame, the menu and battle frames against it, and the
-      # post-save frame back on it. Reads only ss/mz_*.png, and skips cleanly
-      # when the MZ engine was not fetched and the smokes wrote nothing.
-      # Non-blocking, like the MZ smokes it reads.
+      # Runs after the parallel group's implicit wait: compares the five MZ
+      # frames the smokes above wrote. Skips cleanly if none were written.
       - name: MZ frame check
         continue-on-error: true
         if: always()
@@ -904,25 +621,11 @@ jobs:
             ss/mz_battle.png
           if-no-files-found: warn
 
-  # bc2cpp compiles closed-world programs only: a build that loads
-  # or defines Ruby at runtime -- the desktop `host` engine with its XP/VX/Wolf/MV
-  # gems -- is always the plain mruby build. So this job builds a closed world
-  # with RPGMAKER_BC2CPP=1: build_config.rb's `closed` build, the maix closed
-  # world (single_format_only, RPG2000/2003 only, maix's gem set) compiled by the
-  # runner's own compiler, with the four *-compiled gems generated by bc2cpp in
-  # that closed world and compiled into its libmruby.a.
-  #
-  # Native, not the maix cross library: bc2cpp's generated C++ lowers block
-  # `break`, non-local `return` and `raise` with real C++ throw/catch, so it needs
-  # mruby's C++-exception mode (MRB_USE_CXX_EXCEPTION). maix compiles with
-  # -fno-exceptions because the Kendryte link drops .eh_frame and nothing could
-  # unwind on the device, so the generated code cannot compile there, and turning
-  # exceptions on for maix would build firmware that cannot unwind. This job
-  # covers the generation and the compilation of the generated code with
-  # exceptions; it does not cover the RISC-V cross-compile (the `maix` job builds
-  # that, without bc2cpp). No PlatformIO or cross toolchain is needed.
-  # Keeping it apart from the normal game build makes failures attributable to
-  # bc2cpp. `bc2cpp` aggregates it under the old status-check name.
+  # Closed-world bc2cpp build: the four *-compiled gems are generated and
+  # compiled into a libmruby.a with C++ exceptions on. Native rather than the
+  # maix cross library, because the generated code throws and maix builds with
+  # -fno-exceptions. The RISC-V cross-compile is covered by the `maix` job.
+  # `bc2cpp` aggregates this job under the old status-check name.
   bc2cpp-build:
     if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
     needs: changes
@@ -936,8 +639,7 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # The same submodule set as the `maix` job: the `closed` build (and the
-          # bootstrap host build that makes mrbc) reads nothing else.
+          # Same submodule set as the `maix` job.
           submodules: false
           show-progress: false
           persist-credentials: false
@@ -957,18 +659,14 @@ jobs:
           restore-prefixes-first-match: nix-bc2cpp-${{ runner.os }}-
 
       - name: Set up development environment
-        # The small bc2cpp shell avoids the game, graphics and Wine closures.
+        # The bc2cpp shell skips the game, graphics and Wine closures.
         run: ./scripts/nix/develop-export-env.bash .#bc2cpp
 
       - name: Verify host Ruby JIT
         run: ruby -e 'abort "YJIT is unavailable or disabled" unless RubyVM::YJIT.enabled?; puts RUBY_DESCRIPTION'
 
-      # The scan cache (docs/ci.md, "Scan cache") lives in the git-ignored
-      # build/bc2cpp-cache and is already reused by every generator process
-      # within one job. Persist it across runs too, so a warm cache skips the
-      # repeated native-source scans that dominate generator time. Entries are
-      # keyed on their own content digests, so a stale restore is recomputed
-      # rather than trusted.
+      # Persisted across runs. Entries are keyed on content digests, so a stale
+      # restore is recomputed rather than trusted (docs/ci.md, "Scan cache").
       - name: Cache bc2cpp scan cache
         uses: actions/cache@v6
         with:
@@ -976,8 +674,8 @@ jobs:
           key: bc2cpp-scan-cache-${{ hashFiles('tools/bc2cpp/*.rb') }}
           restore-keys: bc2cpp-scan-cache-
 
-      # The full-core libmruby the behavioural checks build once (fixture_runtime.rb, BC2CPP_FULL_BUILD_DIR):
-      # about two minutes to build, identical for the same 3rd/mruby commit and build scripts, so cache it across runs.
+      # Full-core libmruby used by the behavioural checks. Takes about two
+      # minutes, and depends only on the mruby pins and the build scripts.
       - name: Key for the full-core libmruby cache
         id: full-core-key
         run: |
@@ -991,12 +689,10 @@ jobs:
 
       - name: Build the closed-world mruby with bc2cpp
         timeout-minutes: 45
-        # `-m` makes rake schedule every prerequisite concurrently -- the four
-        # compiled gems' codegen and all C/C++ compiles.
+        # `-m` lets rake run every prerequisite concurrently.
         env:
           RAKEOPT: -m -j4
-        # The nix dev shell exports LD=ld; mruby's gcc toolchain would link mrbc with bare ld (no libc), so the
-        # build runs without it.
+        # The devshell exports LD=ld, which would link mrbc without libc.
         run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
 
       - name: Check the compiled gems are in the closed-world build
@@ -1005,9 +701,7 @@ jobs:
             ls build-closed-bc2cpp/closed/mrbgems/$gem/*_gen.cpp
           done
           ls -l build-closed-bc2cpp/closed/lib/libmruby.a
-          # Compiled with the exception mode the generated code needs: mruby's core
-          # is built through its error-cxx.cxx wrapper only under MRB_USE_CXX_EXCEPTION,
-          # and the generated code throws.
+          # libmruby must carry the C++ exception wrapper, since the generated code throws.
           ar t build-closed-bc2cpp/closed/lib/libmruby.a | grep -qx 'error-cxx.o'
           nm build-closed-bc2cpp/closed/lib/libmruby.a 2>/dev/null | grep -q ' U __cxa_throw$'
 
@@ -1022,77 +716,79 @@ jobs:
       - name: Check bc2cpp registrations
         run: ruby scripts/ci/check_registry.rb
 
-      # Four workers fill the 4-vCPU runner (the group's wall time is the sum of its commands over the
-      # width, docs/bc2cpp-ci-duration-profile.md section 5); the shared libraries above are read-only.
-      # timed_checks prints every command's log and propagates failures.
+      # Four workers fill the 4-vCPU runner. Longer checks start first so a
+      # large fixture does not land on the last worker. timed_checks prints
+      # each log and propagates failures.
       - name: Run bc2cpp checks
         timeout-minutes: 30
         run: |
           unset LD
           ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/bc2cpp-checks.sh" <<'CHECKS'
           # ci:parallel begin 4
-          ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
-          ruby scripts/bc2cpp/base_section_regen_check.rb
-          ruby scripts/bc2cpp/trace_merge_check.rb
-          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c ruby scripts/native/binding_split.rb check
           ruby scripts/bc2cpp/type_check.rb --no-sends
-          ruby scripts/bc2cpp/native_core_candidates_check.rb
-          ruby scripts/bc2cpp/native_core_direct_wired_check.rb
-          ruby scripts/bc2cpp/native_member_tables_check.rb
-          ruby scripts/bc2cpp/shared_generation_check.rb
-          ruby scripts/bc2cpp/constant_proofs_check.rb
-          ruby scripts/bc2cpp/block_receiver_proof_check.rb
-          ruby scripts/bc2cpp/type_check_run_check.rb
           ruby scripts/bc2cpp/ir_context_results_check.rb
-          ruby scripts/bc2cpp/ir_argument_types_check.rb
-          ruby scripts/bc2cpp/ir_entry_seeds_check.rb
-          ruby scripts/bc2cpp/ir_ivar_types_check.rb
-          ruby scripts/bc2cpp/lcf_join_array_check.rb
-          ruby scripts/bc2cpp/ir_soundness_classes_check.rb
-          ruby scripts/bc2cpp/numeric_roots_reaching_check.rb
-          ruby scripts/bc2cpp/ir_block_protocols_check.rb
-          ruby scripts/bc2cpp/symbol_flow_check.rb
-          ruby scripts/bc2cpp/struct_receiver_check.rb
-          ruby scripts/bc2cpp/upvar_walks_check.rb
-          ruby scripts/bc2cpp/constant_typing_check.rb
-          ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
-          ruby scripts/bc2cpp/io_open_check.rb
-          ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
-          ruby scripts/bc2cpp/decided_branch_check.rb
-          ruby scripts/bc2cpp/range_compare_fold_check.rb
-          ruby scripts/bc2cpp/decided_fold_count_check.rb
-          ruby scripts/bc2cpp/freeze_fold_check.rb
-          ruby scripts/bc2cpp/arm_prune_check.rb
-          ruby scripts/bc2cpp/arm_prune_block_check.rb
-          ruby scripts/bc2cpp/arm_prune_capture_check.rb
-          ruby scripts/bc2cpp/param_fold_check.rb
-          ruby scripts/bc2cpp/callee_return_fold_check.rb
-          ruby scripts/bc2cpp/constant_argument_sites_check.rb
-          ruby scripts/bc2cpp/class_bodies_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
-          ruby scripts/bc2cpp/define_method_check.rb
+          ruby scripts/bc2cpp/constant_typing_check.rb
+          ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
+          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c ruby scripts/native/binding_split.rb check
+          ruby scripts/bc2cpp/stack_tuples_check.rb
           ruby scripts/bc2cpp/block_self_world_check.rb
-          ruby scripts/bc2cpp/generic_block_return_check.rb
-          ruby scripts/bc2cpp/loop_element_writes_check.rb
-          ruby scripts/bc2cpp/ir_join_soundness_check.rb
-          ruby scripts/bc2cpp/ir_blocks_check.rb
           ruby scripts/bc2cpp/outside_owner_call_check.rb
+          ruby scripts/bc2cpp/frozen_literal_persist_check.rb
+          ruby scripts/bc2cpp/constructor_overloads_check.rb
+          ruby scripts/bc2cpp/ir_argument_types_check.rb
+          ruby scripts/bc2cpp/shared_generation_check.rb
+          ruby scripts/bc2cpp/define_method_check.rb
+          ruby scripts/bc2cpp/generic_block_return_check.rb
+          ruby scripts/bc2cpp/ir_block_protocols_check.rb
+          ruby scripts/bc2cpp/type_check_run_check.rb
+          ruby scripts/bc2cpp/type_check_iterate_check.rb
+          ruby scripts/bc2cpp/lcf_join_array_check.rb
+          ruby scripts/bc2cpp/alias_method_check.rb
+          ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
+          ruby scripts/bc2cpp/ir_ivar_types_check.rb
+          ruby scripts/bc2cpp/ivar_candidates_check.rb
+          ruby scripts/bc2cpp/ir_entry_seeds_check.rb
           ruby scripts/bc2cpp/self_new_leaf_check.rb
           ruby scripts/bc2cpp/sealed_int16_local_check.rb
-          ruby scripts/bc2cpp/frozen_literal_persist_check.rb
-          ruby scripts/bc2cpp/stack_tuples_check.rb
-          ruby scripts/bc2cpp/constructor_overloads_check.rb
-          ruby scripts/bc2cpp/alias_method_check.rb
+          ruby scripts/bc2cpp/freeze_fold_check.rb
+          ruby scripts/bc2cpp/callee_return_fold_check.rb
+          ruby scripts/bc2cpp/range_compare_fold_check.rb
+          ruby scripts/bc2cpp/constant_proofs_check.rb
+          ruby scripts/bc2cpp/arm_prune_capture_check.rb
+          ruby scripts/bc2cpp/block_receiver_proof_check.rb
+          ruby scripts/bc2cpp/upvar_walks_check.rb
+          ruby scripts/bc2cpp/arm_prune_block_check.rb
+          ruby scripts/bc2cpp/param_fold_check.rb
+          ruby scripts/bc2cpp/ir_blocks_check.rb
+          ruby scripts/bc2cpp/decided_branch_check.rb
+          ruby scripts/bc2cpp/arm_prune_check.rb
+          ruby scripts/bc2cpp/struct_receiver_check.rb
+          ruby scripts/bc2cpp/constant_argument_sites_check.rb
+          ruby scripts/bc2cpp/native_member_tables_check.rb
+          ruby scripts/bc2cpp/io_open_check.rb
+          ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
+          ruby scripts/bc2cpp/ir_soundness_classes_check.rb
+          ruby scripts/bc2cpp/numeric_roots_reaching_check.rb
           ruby scripts/bc2cpp/core_facts_rbs_check.rb --require-mruby
+          ruby scripts/bc2cpp/trace_merge_check.rb
+          ruby scripts/bc2cpp/base_section_regen_check.rb
+          ruby scripts/bc2cpp/promote_candidates_check.rb
+          ruby scripts/bc2cpp/native_core_direct_wired_check.rb
+          ruby scripts/bc2cpp/ir_join_soundness_check.rb
+          ruby scripts/bc2cpp/symbol_flow_check.rb
+          ruby scripts/bc2cpp/loop_element_writes_check.rb
+          ruby scripts/bc2cpp/native_core_candidates_check.rb
           ruby scripts/bc2cpp/native_format_types_check.rb
+          ruby scripts/bc2cpp/decided_fold_count_check.rb
+          ruby scripts/bc2cpp/class_bodies_check.rb
           # ci:parallel end
           CHECKS
           source "$RUNNER_TEMP/bc2cpp-checks.sh"
 
 
-  # The `bc2cpp` status check: success when `bc2cpp-build` succeeded. It keeps the name the old one-job
-  # `bc2cpp` reported, so a required check on `bc2cpp` needs no settings change.
-  # Deferred audits and fixture prerequisites are recorded by the check registry.
+  # Aggregate `bc2cpp` status check. Keeps the name of the old one-job `bc2cpp`,
+  # so a required check on it needs no settings change.
   bc2cpp:
     if: ${{ always() && github.event_name != 'issue_comment' }}
     needs: [changes, bc2cpp-build]
@@ -1104,53 +800,34 @@ jobs:
           BUILD: ${{ needs.bc2cpp-build.result }}
         run: |
           echo "code: $CODE, bc2cpp-build: $BUILD"
-          # Without code changes the build is skipped on purpose; anything else must succeed.
+          # A skipped build is fine only when no code changed.
           [ "$BUILD" = success ] || { [ "$CODE" != true ] && [ "$BUILD" = skipped ]; }
 
-  # Ruby-only checks split out of `build`: none of the steps below ever
-  # touches the compiled engine binary (they load the mruby-*/mrblib sources
-  # directly under CRuby), so unlike everything left in `build`'s `parallel:`
-  # group they do not need to wait on `cmake`/`build` -- the native compile
-  # that job's own comments call "the long pole". This job skips the C++
-  # toolchain entirely: no cmake, no sccache, no RTP/MV/MZ engine downloads,
-  # just checkout + the dev shell + the one game download these checks
-  # actually read (`download-*.bash` below; see rpg2k_command_soak.rb, the
-  # one script here that hard-fails rather than skips when it finds nothing
-  # under data/) + the checks themselves. It runs alongside `build`, not
-  # after it, so these checks report back in well under a minute instead of
-  # queueing behind several minutes of C++ compile first, and `build`'s own
-  # `parallel:` group has a few fewer steps competing for its worker slots.
+  # Ruby-only checks. They load the mruby-*/mrblib sources under CRuby, so
+  # they never need the C++ toolchain or the engine binary and run alongside
+  # `build` instead of behind it.
   ruby-checks:
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
 
     env:
-      # See the `build` job for what this is; the same game-archive downloads
-      # run here.
       CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}
-      # bc2cpp's host analysis (the checks below) runs under CRuby; YJIT
-      # accelerates it the same way it does in bc2cpp-build (docs/ci.md).
+      # The checks run under CRuby, where YJIT still helps (docs/ci.md).
       RUBY_YJIT_ENABLE: "1"
 
     steps:
       - uses: actions/checkout@v7
         with:
-          # Only 3rd/mruby is needed: tools/bc2cpp/native_names.rb derives its
-          # operator table from 3rd/mruby/lib/mruby/presym.rb. The other
-          # submodules stay uninitialized (the nix dev shell does not pull them
-          # either -- see flake.nix's own comment on dropping
-          # `self.submodules = true`).
+          # Only 3rd/mruby is read: tools/bc2cpp/native_names.rb derives its
+          # operator table from 3rd/mruby/lib/mruby/presym.rb.
           submodules: false
-          # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
 
-      # Shallow, and only the gems the closed-world gem closure reads (compiled_gems.rb
-      # bc2cpp_rake_dependencies): a full clone of each for one .rb file is wasteful.
+      # Shallow, and only the gems the closed-world closure reads
+      # (compiled_gems.rb bc2cpp_rake_dependencies).
       - name: Init mruby submodules
         run: git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio 3rd/mruby-marshal 3rd/mruby-onig-regexp
-
-      # No test262-skip step here either; see the `build` job.
 
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
@@ -1159,9 +836,6 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      # See the `build` job: realises the dev shell and exports its
-      # environment once so the steps below run their commands directly,
-      # with no further `nix` calls.
       - run: ./scripts/nix/develop-export-env.bash
 
       - name: cache test game
@@ -1184,7 +858,6 @@ jobs:
           ./scripts/download/monodori.bash
            ./scripts/download/wolfrpg-sample.bash
 
-      # Persist the bc2cpp scan cache across runs (see bc2cpp-build above).
       - name: Cache bc2cpp scan cache
         uses: actions/cache@v6
         with:
@@ -1193,31 +866,26 @@ jobs:
           restore-keys: bc2cpp-scan-cache-
 
       - parallel:
-          # Dynamic Ruby (method_missing, computed send, ...) in the code bc2cpp
-          # compiles as a closed world; new offences fail, fixed ones must leave
-          # the baseline.
+          # Dynamic Ruby in code bc2cpp compiles as a closed world. New offences
+          # fail, and fixed ones must leave the baseline.
           - name: RPG2k closed-world lint
             run: |
               ruby scripts/rpg2k/closed_world_lint_check.rb
               ruby scripts/rpg2k/closed_world_lint.rb
               ruby scripts/bc2cpp/lint_crosscheck_check.rb
 
-          # The whole-program fixed points run under a hard round limit; reaching it is a located error.
+          # Whole-program fixed points run under a hard round limit.
           - name: bc2cpp fixpoint bounds
             run: ruby scripts/bc2cpp/fixpoint_check.rb
 
-          # An outside Ruby `@name` in an instance method of `class C` poisons only C's family; blocks, modules,
-          # class bodies and strings stay global (tools/bc2cpp/outside_ruby_ivar_scopes.rb).
+          # Only C's own family is poisoned by an outside `@name` in its instance methods.
           - name: bc2cpp outside Ruby ivar scopes
             run: ruby scripts/bc2cpp/outside_ruby_ivar_scopes_check.rb
 
-          # RGSS::Tts (its native registration, its one Ruby call site) exists
-          # only in the desktop build; every limited target's gem config must drop it.
+          # RGSS::Tts exists only in the desktop build.
           - name: RGSS::Tts only in the build that can back it
             run: ruby scripts/tts_limited_check.rb
 
-          # The compact CP932 tables (and wio's scan encoder) must
-          # agree with the reference CP932 pair tables on every 16-bit input.
           - name: CP932 table lookups match the reference
             run: ruby scripts/cp932_tables_check.rb
 
@@ -1233,34 +901,19 @@ jobs:
           - name: RPG2003 battle gauge (active-time) check
             run: ruby scripts/rpg2k3/battle_gauge_check.rb
 
-          # WOLF RPG Editor data layer, driven over the editor's own official
-          # sample game (download-wolfrpg-sample.bash) -- every BasicData file
-          # plus every map in Data/MapData.
+          # Over the WOLF RPG Editor's official sample game.
           - name: WOLF RPG Editor test-bed check
             run: ruby scripts/wolf/testbed_check.rb
 
-          # WOLF RPG Editor event-command interpreter: drives every auto/
-          # parallel Common Event and, for every real map, every event's
-          # active page (auto/parallel stepped per frame, Confirm/Touch
-          # pages exercised once) over the same sample game, asserting
-          # nothing raises or hangs -- this is what caught three real
-          # infinite-loop bugs that the hand-built unit
-          # fixtures in mruby-wolf/test/wolf_test.rb never exercised.
+          # Drives every Common Event and every map event page, asserting that
+          # nothing raises or hangs. Caught three infinite loops that the
+          # hand-built unit fixtures missed.
           - name: WOLF RPG Editor interpreter soak check
             run: ruby scripts/wolf/interpreter_check.rb
 
-          # Static, maker-agnostic source scan across every mruby-*/mrblib tree:
-          # a bare, unbraced trailing keyword-style hash into Array#push/
-          # #unshift/#concat silently pushes nothing at all on this project's
-          # mruby (a builtin C-defined method has no declared keyword
-          # parameters, so mruby does not fall back to CRuby's "no keyword
-          # params declared -> treat it as one positional Hash" conversion),
-          # with no exception anywhere to catch it -- a class of bug the
-          # CRuby-hosted checks below cannot see at all, since they run these
-          # same sources unchanged under CRuby. Found via
-          # Interpreter#do_move_event silently no-op'ing (Nepheshel map 23
-          # event 29's own HiddenDoor investigation); see
-          # changelog.d/move-event-queue-bare-hash-push.fixed.md.
+          # A bare trailing keyword-style hash into Array#push/#unshift/#concat
+          # silently pushes nothing on this mruby, with no exception to catch.
+          # CRuby-hosted checks cannot see it, so this is a static scan.
           - name: mruby bare-hash-push check
             run: ruby scripts/mruby/bare_hash_push_check.rb
 
@@ -1275,30 +928,22 @@ jobs:
 
           - name: RPG2k game-logic checks
             run: |
-              # The .lsd-authoritative save (field by field against the live
-              # state, each chunk-200 record load-bearing, the save-slot policy).
+              # The .lsd save, checked field by field against the live state.
               ruby scripts/rpg2k/lsd_authoritative_check.rb
-              # The native pan lock, an in-flight pan, and a moving picture with a Float target opacity.
+              # Native pan lock, in-flight pan, and a moving picture with a Float opacity target.
               ruby scripts/rpg2k/lsd_pan_picture_check.rb
-              # The typed save read path and its generated accessors being
-              # current, then a save this engine did not write: unusual-but-valid loads,
-              # a mismatched field is a logged empty slot, truncation and corruption never crash.
+              # Typed save read path, plus saves this engine did not write: mismatches
+              # become logged empty slots, and corruption never crashes.
               ruby scripts/lcf_save_typed_check.rb
               ruby scripts/rpg2k/lsd_adversarial_check.rb
 
-      # Runs the host-side checks this job used to run as separate steps (the CHECKS list in
-      # scripts/coverage/report.rb), each one once, with CRuby's Coverage stdlib switched on, and
-      # reports the line coverage of `mruby-*/mrblib` per gem and per file — see
-      # docs/coverage.md. Report-only as far as the *number* goes: it lands in the job summary and
-      # in an artifact, and no floor is enforced (`--min-line-rate` exists for when one is wanted).
-      # `--require-needs`: the test beds were downloaded above, so a missing one fails the step
-      # rather than skipping its check. The step itself is not `continue-on-error`, so a failing
-      # check or a broken reporter is visible rather than a quietly missing report.
+      # Runs the host-side checks (the CHECKS list in scripts/coverage/report.rb)
+      # under CRuby's Coverage stdlib. Report-only: no floor is enforced.
+      # --require-needs fails if a test bed is missing. See docs/coverage.md.
       - name: Ruby coverage report
         run: ruby scripts/coverage/report.rb --require-needs
 
-      # `always()`: the reporter writes its files before it exits non-zero on a
-      # failed check, so the report is still worth publishing on a red run.
+      # Publish even on a red run: the reporter writes its files before exiting non-zero.
       - name: Upload Ruby coverage report
         if: always()
         continue-on-error: true
@@ -1310,16 +955,12 @@ jobs:
             coverage/coverage.json
           if-no-files-found: warn
 
-  # `/preview` command gate. Cloudflare previews are opt-in per pull request:
-  # they are published when someone with write access comments `/preview` on the
-  # PR, not automatically on every push to every PR. This job resolves that
-  # comment into the head commit the preview should build and acknowledges the
-  # command with a 👀 reaction, so it is visible that the run started.
+  # `/preview` gate. Cloudflare previews are opt-in: a write-access maintainer
+  # comments `/preview` on a PR. This job resolves the PR head and acknowledges
+  # the command with a 👀 reaction.
   #
-  # `issue_comment` runs on the base repo with access to the repository secrets
-  # even when the pull request comes from a fork, so the author check below is
-  # the security boundary: only OWNER / MEMBER / COLLABORATOR comments get past
-  # it. Anyone else's `/preview` is ignored — no build, no deploy.
+  # issue_comment runs with base-repo secrets even for fork PRs, so the author
+  # check in `if:` is the security boundary.
   preview-gate:
     if: >-
       ${{ github.event_name == 'issue_comment'
@@ -1327,19 +968,11 @@ jobs:
           && startsWith(github.event.comment.body, '/preview')
           && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
                       github.event.comment.author_association) }}
-    # Two `gh api` calls and nothing else — no checkout, no compiler, no build
-    # tools — so this runs on the small `ubuntu-slim` image (1 CPU, 5 GB RAM,
-    # 15-minute job cap) rather than a full-fat runner. `gh` and `jq` ship with
-    # the image. This is exactly the "issue operations / short-running job"
-    # shape that label is meant for, and it bills at a lower rate.
+    # Only two `gh api` calls, so the small ubuntu-slim image is enough.
     runs-on: ubuntu-slim
     permissions:
-      # Read the PR to find its head commit, and write the 👀 reaction on the
-      # comment. The reaction goes through `/issues/comments/{id}/reactions`,
-      # but this job only ever runs on a pull request's conversation comment
-      # (see the `if` above), and GitHub authorises those against the pull
-      # request the comment belongs to — `issues: write` is not enough, the
-      # POST 403s without `pull-requests: write`.
+      # The 👀 reaction on a PR conversation comment needs pull-requests: write;
+      # issues: write alone returns 403.
       pull-requests: write
     outputs:
       head-sha: ${{ steps.pr.outputs.head-sha }}
@@ -1355,20 +988,17 @@ jobs:
             --jq '"head-sha=\(.head.sha)"' >> "$GITHUB_OUTPUT"
 
       - name: Acknowledge the command
-        # The reaction is only a visible "the run started" hint, and this job is
-        # what gates the preview build and deploy. Don't let a failed ack cost
-        # someone their preview.
+        # A failed reaction must not cost the preview, which this job gates.
         continue-on-error: true
         run: |
           gh api --silent -X POST \
             "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID/reactions" \
             -f content=eyes
 
+  # Browser build (Emscripten). Also serves the `/preview` flow for the PR head.
   wasm:
-    # Builds the page for ordinary CI (push / pull request / manual run) and,
-    # on a `/preview` comment, for the commit that comment asked to preview.
-    # `preview-gate` is skipped outside the comment flow — which would skip this
-    # job along with it — so the condition spells both cases out.
+    # Outside the comment flow, preview-gate is skipped and would skip this job
+    # too, so the condition spells out both cases.
     needs: preview-gate
     if: >-
       ${{ !cancelled()
@@ -1376,31 +1006,22 @@ jobs:
               || needs.preview-gate.result == 'success') }}
     runs-on: ubuntu-24.04
     permissions:
-      # A `/preview` comment can ask for a fork's branch to be built, so keep
-      # the token read-only here; `preview-gate` limits who may ask.
+      # A /preview can build a fork's branch, so the token stays read-only.
       contents: read
     env:
-      # Cache emcc compilations across runs. sccache (used by the native build)
-      # does not understand emcc, so the wasm build uses ccache instead, which
-      # wraps emcc as a plain compiler. nixpkgs sets EM_CONFIG via the
-      # environment, so emcc does not pass --em-config on the command line and
-      # ccache does not bail out with "Multiple input files".
+      # ccache wraps emcc as a plain compiler. sccache does not understand emcc.
+      # nixpkgs sets EM_CONFIG in the environment, so ccache does not bail out.
       CCACHE_DIR: ${{ github.workspace }}/.ccache
-      # See the `build` job for what this is.
       CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # See the `build` job's "Init submodules" step -- CMakeLists.txt's
-          # `if(EMSCRIPTEN)` branch gets SDL2/SDL2_mixer from Emscripten's own
-          # ports (`-sUSE_SDL=2`), never from 3rd/SDL or 3rd/SDL_mixer, and
-          # nothing here reads 3rd/optcarrot.
+          # CMake's `if(EMSCRIPTEN)` branch takes SDL from Emscripten's ports, so no
+          # vendored SDL or optcarrot is read.
           submodules: false
-          # The PR head for a `/preview` comment; empty everywhere else, which
-          # is checkout's default of "the ref that triggered the workflow".
+          # The PR head for a /preview; empty elsewhere, which means the triggering ref.
           ref: ${{ needs.preview-gate.outputs.head-sha }}
-          # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
 
@@ -1409,8 +1030,6 @@ jobs:
           SKIP_SUBMODULES: 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
-      # No test262-skip step here either; see the `build` job.
-
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
@@ -1418,33 +1037,19 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      # See the `build` job: realises the dev shell and exports its
-      # environment once so the steps below — including the concurrent
-      # `background: true` ones — run their commands directly, with no
-      # further `nix` calls and therefore no store-lock contention between
-      # them.
+      # Background steps below run commands directly, with no `nix` calls,
+      # so there is no store-lock contention between them.
       - run: ./scripts/nix/develop-export-env.bash
 
-      # Fetch + build the MIT MV engine into the committed sample so it can be
-      # bundled into the page as a one-click preset (WASM_SAMPLE_DIR below).
-      # Like the `build` job's downloads, this is network-bound work that feeds
-      # nothing in the configure step, so it runs as a `background: true` step
-      # and overlaps the cache restores and `emcmake cmake` below instead of
-      # holding them up. WASM_SAMPLE_DIR is only consumed at *link* time (it
-      # becomes an emcc `--preload-file`, see CMakeLists.txt), and configure
-      # merely resolves the path of the committed data/mv-sample directory, so
-      # the barrier before `build` is early enough. The script is idempotent and
-      # writes only inside data/ (git-ignored engine files plus its
-      # data/.mv-corescript clone), so nothing here races the concurrent steps.
+      # Fetches and builds the MIT MV engine into the committed sample, for the
+      # one-click preset. It is packaged at link time, so the barrier before
+      # `build` is early enough.
       - name: Build MV sample engine
         id: mv-sample
         background: true
         timeout-minutes: 10
         run: ./scripts/download/mv-corescript.bash
 
-      # Restore the pinned FreePats tarball so the download below is skipped on
-      # a cache hit. Keyed on the download script, which pins the version and
-      # sha256. Restored in the foreground, like the other download caches.
       - name: cache freepats
         uses: actions/cache@v6
         id: freepats-cache
@@ -1453,59 +1058,35 @@ jobs:
           key: freepats-${{ hashFiles('./scripts/download/freepats.bash') }}
         timeout-minutes: 10
 
-      # Instrument samples for the TiMidity decoder the port is built with
-      # (-sSDL2_MIXER_FORMATS in CMakeLists.txt). They are packaged into
-      # index.data at link time by -DWASM_MIDI_PATCHES=ON below, so this is
-      # awaited by the pre-link barrier rather than the configure.
+      # Instrument samples for the TiMidity decoder (-sSDL2_MIXER_FORMATS).
+      # Packaged into index.data at link time (-DWASM_MIDI_PATCHES=ON).
       - name: Download MIDI patches
         id: freepats
         background: true
         timeout-minutes: 10
         run: ./scripts/download/freepats.bash
 
-      # The fallback UI font, packaged into index.data at link time by
-      # -DWASM_DEFAULT_FONT=ON below (so the pre-link barrier awaits it, not the
-      # configure). Without it a project loaded into the page that ships no font
-      # of its own renders every window at the bitmap font's fixed 12px.
+      # Packaged at link time (-DWASM_DEFAULT_FONT=ON). Without it, a project
+      # with no font of its own renders in the 12px bitmap font.
       - name: Download default font
         id: default-font
         background: true
         timeout-minutes: 5
         run: ./scripts/download/default-font.bash
 
-      # Keyed on the toolchain pin (flake.*), not github.run_id: the cached
-      # system libraries only change when the Emscripten/Nix pin does, so a
-      # run_id key -- unique every run, never an exact hit -- was saving a
-      # brand-new full copy of ~/.emscripten_cache on every single push/PR
-      # and never reusing any of them, flooding
-      # github.com/<repo>/actions/caches until GitHub's 10GB-per-repo cap
-      # started evicting older, still-useful caches (Nix store, RTP, wine
-      # prefix, game data) to make room. This key now matches "Restore and
-      # cache Nix store" above and gets a real exact-match hit on every run
-      # until the toolchain pin moves.
+      # Keyed on the toolchain pin rather than run_id: a unique key never gets an
+      # exact hit and fills the 10GB per-repo cache, evicting the caches the other
+      # jobs rely on.
       - uses: actions/cache@v6
         with:
           path: ~/.emscripten_cache
           key: ${{ runner.os }}-emcc-${{ hashFiles('flake.*') }}
           restore-keys: ${{ runner.os }}-emcc-
 
-      # Same run_id problem as the Emscripten cache above, but ccache's
-      # contents legitimately evolve with source changes, so it cannot use a
-      # toolchain-pin key the way that cache does. This used to key on
-      # github.sha instead, capping growth to one new cache per commit rather
-      # than one per workflow *run* -- but on a repo this commit-heavy, "one
-      # per commit" is still a fresh multi-hundred-MB entry on nearly every
-      # push, almost none of which ever gets an exact-match hit again (the
-      # next commit has a different sha), so they just piled up as dead
-      # weight -- flooding github.com/<repo>/actions/caches and evicting the
-      # Nix/RTP/wine/game caches above the same way the old emcc key did.
-      # Rotate on a week instead: every push in the same
-      # ISO week exact-matches the same key (ccache updates locally but the
-      # post-job save step is a no-op on an exact-match restore, since
-      # actions/cache cannot overwrite an existing entry), and
-      # `restore-keys` falls back to the most recent prior week's entry once
-      # the week rolls over. That bounds this to ~52 entries/year while still
-      # refreshing ccache's contents regularly.
+      # ccache contents change with the source, so it cannot use a toolchain key.
+      # It rotates weekly instead: a week's pushes share one entry, and
+      # restore-keys falls back to the previous week. That bounds growth to about
+      # 52 entries a year.
       - name: Cache period
         id: cache-period
         run: echo "value=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
@@ -1517,20 +1098,12 @@ jobs:
           key: wasm-ccache-${{ steps.cache-period.outputs.value }}
           restore-keys: wasm-ccache-
 
-      # Emscripten builds its system libraries (libc/libc++, and the -fexceptions
-      # variant this project forces) on the first emcc call, which costs ~50s of
-      # the configure step. The nixpkgs emscripten setup hook points EM_CACHE at
-      # an ephemeral temp dir, so that work is thrown away every run and the
-      # cached ~/.emscripten_cache is never written. Override EM_CACHE on the
-      # command itself (after the hook runs) so the libraries are built once and
-      # restored on later runs. It must be set for both configure and build,
-      # since emcc runs in both.
+      # Emscripten builds its system libraries on the first emcc call (~50s).
+      # The nixpkgs hook points EM_CACHE at a temp dir, so override it on the
+      # command so the libraries persist. It must be set for configure and build.
       - name: cmake
-        # CMAKE_<LANG>_COMPILER_LAUNCHER is initialised from the environment at
-        # configure time and stored in CMakeCache.txt, so setting ccache here is
-        # enough for it to wrap emcc during the build step too. This overrides
-        # the sccache launcher the devShell exports (sccache cannot cache emcc).
-        # WASM_SAMPLE_DIR bakes the MV sample into the page at /game_sample.
+        # The launcher is stored in CMakeCache.txt, so setting ccache here also
+        # covers the build step. It overrides the sccache the devShell exports.
         run: |
           env EM_CACHE="$HOME/.emscripten_cache" \
             CMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -1539,12 +1112,8 @@ jobs:
             -DWASM_SAMPLE_DIR=data/mv-sample \
             -DWASM_MIDI_PATCHES=ON \
             -DWASM_DEFAULT_FONT=ON
-          # cmake/emscripten-probe-cache.cmake records which branch it took. It
-          # falls back to probing whenever the Emscripten version moved, which
-          # is correct but costs ~100s, and the only other symptom is a slow
-          # step -- easy to read as noise. Say so instead. A warning, not an
-          # error: the fallback builds the same thing, it just wants a
-          # regeneration.
+          # Warn when the Emscripten probe pre-seed did not apply. The build still
+          # works, but it probes the toolchain the slow way (~100s).
           status="$(cat wasm-build/emscripten-probe-cache.status 2>/dev/null \
             || echo 'missing')"
           echo "Emscripten probe cache: $status"
@@ -1556,13 +1125,9 @@ jobs:
                  "see the header of that file." ;;
           esac
 
-      # Prove the pre-seeded answers still match what the toolchain reports. The
-      # version guard in the seed cannot see a sysroot that changed underneath
-      # the same Emscripten release, so this re-probes for real and diffs. That
-      # is the ~110s configure the seed exists to avoid, so it runs alongside
-      # the build instead of in front of it and costs no critical path; the
-      # barrier further down is what turns a drift into a failed job. It writes
-      # only to mktemp directories, so it cannot race the build.
+      # Re-probes the toolchain and diffs against the pre-seeded answers. The
+      # seed's version guard cannot see a sysroot change under the same release.
+      # It runs alongside the build, and the barrier below fails the job on drift.
       - name: Check the Emscripten probe cache
         id: probe-cache
         background: true
@@ -1570,10 +1135,7 @@ jobs:
           env EM_CACHE="$HOME/.emscripten_cache" \
             ./scripts/check_emscripten_probe_cache.bash
 
-      # Barrier: the link step packages data/mv-sample, the MIDI patch set and
-      # the default font into index.data, so all three must be in place before
-      # the build starts. A failed background fetch surfaces here and fails the
-      # job, exactly as it did when this ran inline.
+      # The link packages data/mv-sample, the MIDI patches and the default font.
       - name: Wait for the MV sample engine, MIDI patches and default font
         wait: [mv-sample, freepats, default-font]
 
@@ -1583,11 +1145,8 @@ jobs:
           env EM_CACHE="$HOME/.emscripten_cache" \
             cmake --build wasm-build
 
-      # A page that lost its patch set does not fail the build, it just goes
-      # quiet: MIDI is where nearly all RPG2000 BGM lives, and without the
-      # instruments a .mid does not even load. The preload's file table lands in
-      # index.js, so the deployed page can be asked directly whether it carries
-      # them rather than trusting that the flag above still reached the link.
+      # Without the patch set the page does not fail, it goes silent: nearly all
+      # RPG2000 BGM is MIDI. Checks the preload table in index.js directly.
       - name: Check the page carries the MIDI patch set
         run: |
           if ! grep -q '/timidity/timidity.cfg' wasm-build/timidity.js; then
@@ -1599,13 +1158,9 @@ jobs:
           echo "MIDI patch set present:"
           ls -la wasm-build/timidity*.data
 
-      # Cloudflare Pages, where `/preview` deploys, refuses any file over
-      # 25 MiB, and nothing before this notices: the build succeeds, the page
-      # works locally and on GitHub Pages (100 MiB per file), and only the
-      # preview deploy fails — which is how the patch set sat in index.data
-      # breaking every preview for a day. scripts/pack-timidity-data.py splits
-      # the patches to stay under that ceiling; this asserts the result, on
-      # exactly the files the deploy jobs publish.
+      # Cloudflare Pages rejects files over 25 MiB, and nothing else catches it:
+      # GitHub Pages allows 100 MiB, so only the preview deploy would fail.
+      # scripts/pack-timidity-data.py splits the patches to stay under the limit.
       - name: Check no published file exceeds Cloudflare's 25 MiB limit
         run: |
           limit=$((25 * 1024 * 1024))
@@ -1628,8 +1183,7 @@ jobs:
 
       - name: ccache stats
         if: always()
-        # `if: always()` can also land here with a background fetch still in
-        # flight, when the barrier above failed.
+        # Can run with a background fetch still in flight, if the barrier failed.
         run: |
           {
             echo "## ccache stats — wasm"
@@ -1639,24 +1193,16 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Barrier: a drifted probe cache means the page below was configured with
-      # stale answers, so surface it before the artifact is published.
+      # A drifted probe cache means the page was configured with stale answers.
       - name: Wait for the probe-cache check
         wait: [probe-cache]
 
+      # index.wasm.map enables source-mapped wasm stack traces. The timidity
+      # files carry the MIDI patch set, and dropping them would publish a page
+      # whose BGM is silent.
       - uses: actions/upload-artifact@v7
         with:
           name: wasm
-          # index.wasm.map lets the deployed page symbolicate wasm stack traces
-          # (the build links with -gsource-map); it is optional but harmless to
-          # ship. All paths sit under wasm-build/, so the artifact stores them at
-          # its root (index.html, index.js, index.wasm[.map]) — ready to publish
-          # as-is.
-          #
-          # timidity.js and its timidity*.data packages carry the MIDI patch set
-          # The page loads timidity.js ahead of the runtime, so
-          # dropping them here would not fail the deploy — it would just publish
-          # a page whose .mid BGM is silent.
           path: |
             wasm-build/index.html
             wasm-build/index.js
@@ -1666,33 +1212,21 @@ jobs:
             wasm-build/timidity.js
             wasm-build/timidity*.data
 
+  # Wio Terminal (SAMD51) firmwares, built with PlatformIO. Disabled until the
+  # bc2cpp cross-build path is more stable; `wio-renode` is disabled with it.
   wio:
-    # Build all three Wio Terminal (SAMD51) firmwares with PlatformIO. This is
-    # the external check for the port: this environment cannot cross-build or
-    # flash the board, so CI compiles it. `wio` is the bring-up firmware -- the
-    # display + input HAL and the Arduino sketch, with the mruby interpreter
-    # layered on in a later slice (see app/wio/README.md). `wio_walk` is the minimal,
-    # non-mruby map-walk firmware over the shared engine the iPod nano 7G app
-    # runs. `wio_sd_upload` is the throwaway serial-to-SD
-    # loader (app/wio/README.md's "No SD card reader?" section). The nano side
-    # of the shared walk engine has no CI toolchain at all, so this job is the
-    # only place any of the three firmwares is compiled -- the `wio-renode`
-    # job below additionally boots them.
-    #
-    # Temporarily disabled (along with `wio-renode` below)
-    # until the bc2cpp cross-build path is more stable.
+    # Builds all three Wio firmwares: `wio` (bring-up, display and input HAL),
+    # `wio_walk` (the non-mruby map walk shared with nano 7G), and
+    # `wio_sd_upload` (serial-to-SD loader). See app/wio/README.md.
     if: false
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # LVGL is vendored as a submodule and linked into the firmware.
-          # PlatformIO's own `wio`/`wio_walk`/`wio_sd_upload` envs never
-          # reference 3rd/SDL, 3rd/SDL_mixer or 3rd/optcarrot (see
-          # scripts/checkout-submodules.bash), so this job skips them too.
+          # PlatformIO's wio envs never reference 3rd/SDL, 3rd/SDL_mixer or
+          # 3rd/optcarrot. LVGL is vendored and linked, so it is still needed.
           submodules: false
-          # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
 
@@ -1715,9 +1249,7 @@ jobs:
           restore-keys: pio-${{ runner.os }}-
 
       - name: Install PlatformIO
-        # -q keeps pip to warnings and errors: the resolver's per-package
-        # "Collecting/Downloading/Installing" chatter says nothing a green step
-        # does not already say.
+        # -q leaves only warnings and errors in the log.
         run: pip install -q --disable-pip-version-check --upgrade platformio
 
       - name: Build firmware
@@ -1726,22 +1258,15 @@ jobs:
           pio run -e wio_walk 2>&1 | tee -a wio-build.log
           pio run -e wio_sd_upload 2>&1 | tee -a wio-build.log
 
-      # Turns the flash/RAM usage `pio run` already printed above into a job-
-      # summary table -- the Wio Terminal's flash/SRAM budget is tight enough that CI should
-      # surface it on every run. if: always() so a failed build still shows
-      # whichever environments got far enough to link before it died.
+      # Summarises the flash and SRAM budget, which is tight on this board.
       - name: wio size report
         if: always()
         run: ruby scripts/wio/size_report.rb wio-build.log
 
+  # Maix Amigo (Kendryte K210). Like the PSP job, this builds the P0 and
+  # game firmwares plus the `maix` mruby cross-build, so a patch or gem that
+  # stops cross-compiling breaks CI. `maix-smoke` boots them under Renode.
   maix:
-    # Build the Maix Amigo (Kendryte K210) port, PSP-pipeline style: the P0
-    # hello-world + LCD firmware with PlatformIO (see app/maix/README.md),
-    # plus the `maix` mruby cross-build (build_config.rb, driven by
-    # scripts/maix/mruby_build.bash) -- the interpreter the firmware links
-    # in a later slice, built here so a patch or gem that stops
-    # cross-compiling breaks CI the way the `psp` job does for its EBOOT.
-    # The `maix-smoke` job below boots the firmware under Renode.
     if: ${{ github.event_name != 'issue_comment' && (github.event_name != 'pull_request' || needs.changes.outputs.maix == 'true') }}
     needs: changes
     runs-on: ubuntu-24.04
@@ -1749,15 +1274,10 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # The mruby cross-build needs 3rd/mruby, 3rd/uni-algo, 3rd/stb,
-          # 3rd/lvgl, 3rd/quickjs, 3rd/mruby-marshal, 3rd/mruby-stringio,
-          # 3rd/mruby-onig-regexp (the host half configures it) and
-          # 3rd/mgem-list -- everything else (3rd/SDL, 3rd/SDL_mixer,
-          # 3rd/effekseer, 3rd/gflags, 3rd/ng-log, 3rd/inicpp, 3rd/optcarrot)
-          # goes unused by this job's PlatformIO envs and build_config.rb's
-          # `maix` cross-build, so the step below skips them.
+          # The mruby cross-build needs 3rd/mruby, uni-algo, stb, lvgl, quickjs,
+          # mruby-marshal, mruby-stringio, mruby-onig-regexp and mgem-list. The
+          # rest go unused by this job.
           submodules: false
-          # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
 
@@ -1773,19 +1293,15 @@ jobs:
           python-version: "3.x"
 
       - name: Install ruby/rake/gperf/bison
-        # The mruby cross-build is driven by rake; gperf and bison regenerate
-        # mruby-compiler's lexer/grammar when a patch touches either source
-        # (the pinned fork commit (mruby-defined-keyword, docs/patch-fork-tracking.md) does) -- same reason the `psp`
-        # job installs them.
+        # gperf and bison regenerate mruby-compiler's lexer and grammar when a
+        # patch touches their sources, as the pinned fork commit does.
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q ruby rake gperf bison
 
       - name: Cache PlatformIO
-        # This is also what installs the Kendryte riscv64 toolchain
-        # build_config.rb's maix cross build prefers
-        # (~/.platformio/packages/toolchain-kendryte210), so the mruby
-        # objects and the firmware link use the same compiler.
+        # Also installs the Kendryte toolchain that build_config.rb's maix
+        # cross-build prefers, so the mruby objects and firmware share a compiler.
         uses: actions/cache@v6
         with:
           path: |
@@ -1795,25 +1311,15 @@ jobs:
           restore-keys: pio-${{ runner.os }}-
 
       - name: Install PlatformIO
-        # -q keeps pip to warnings and errors: the resolver's per-package
-        # "Collecting/Downloading/Installing" chatter says nothing a green step
-        # does not already say.
         run: pip install -q --disable-pip-version-check --upgrade platformio
 
       - name: Build P0 firmware
-        # Installs the Kendryte platform + toolchain the cross-build below
-        # resolves from ~/.platformio (build_config.rb prefers it), and
-        # proves the bare toolchain produces a binary on its own.
+        # Also proves the bare toolchain produces a binary on its own.
         run: pio run -e maix_amigo
 
       - name: Upload P0 firmware
-        # Uploaded immediately, before any later `pio run` below: separate
-        # invocations prune each other's build directories (confirmed by a
-        # real CI run -- the first env's firmware.bin was gone at artifact
-        # time), so each env's outputs go safe the moment they exist, under
-        # their own artifact name. The binaries: flash a .bin with kflash
-        # (or boot/GDB an .elf) -- the PSP pipeline's EBOOT artifact, same
-        # idea.
+        # Each `pio run` prunes the others' build dirs, so each env is uploaded
+        # as soon as it exists. Flash the .bin with kflash, or debug the .elf.
         uses: actions/upload-artifact@v7
         with:
           name: maix-amigo-firmware
@@ -1823,26 +1329,19 @@ jobs:
           if-no-files-found: error
 
       - name: Build maix mruby cross lib + uni-algo
-        # The interpreter and Unicode tables the maix_rgss_boot firmware
-        # links below (platformio.ini's MAIX_MRUBY_BUILD_DIR /
-        # MAIX_UNIALGO_LIB_DIR pair). Same shape as the `psp` job's EBOOT
-        # driving its own cross-build: a patch/gem that stops
-        # cross-compiling breaks this job, not just the emulator one.
+        # The interpreter and Unicode tables the firmware links below.
         run: |
           scripts/maix/mruby_build.bash
           scripts/maix/unialgo_build.bash
 
       - name: Build mruby-linking firmware
-        # Links libmruby.a + libuni-algo.a + LVGL and boots the interpreter
-        # (see app/maix/README.md) -- the link itself is the measurement:
-        # pio prints the RAM/flash use, and the map below carries symbols.
+        # Linking is the measurement: pio prints RAM and flash use.
         env:
           MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
           MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
         run: pio run -e maix_rgss_boot
 
       - name: Upload mruby-linking firmware
-        # Same prune-proofing as the P0 upload above: safe immediately.
         uses: actions/upload-artifact@v7
         with:
           name: maix-rgss-boot-firmware
@@ -1853,25 +1352,20 @@ jobs:
           if-no-files-found: error
 
       - name: Check game data matches its generator
-        # data/maix-hello is committed (CI has no business regenerating
-        # test data with unpinned tools); this fails if the generator and
-        # the data drift apart, pointing at the one to re-run. README.md is
-        # hand-authored, not generated, so it is excluded from the diff.
+        # data/maix-hello is committed, since CI should not regenerate test data
+        # with unpinned tools. README.md is hand-written, so it is excluded.
         run: |
           ruby scripts/gen/maix-hello-game.rb /tmp/maixhello-check
           diff -r -x README.md /tmp/maixhello-check data/maix-hello && echo "maix-hello in sync"
 
       - name: Build game firmware
-        # Boots data/maix-hello to its title screen (see app/maix/README.md):
-        # display, input, interpreter, flash-resident game, one main_loop
-        # per Arduino loop() iteration.
+        # Boots data/maix-hello to its title screen (app/maix/README.md).
         env:
           MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
           MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
         run: pio run -e maix_game
 
       - name: Upload game firmware
-        # Same prune-proofing as the uploads above: safe immediately.
         uses: actions/upload-artifact@v7
         with:
           name: maix-game-firmware
@@ -1882,18 +1376,14 @@ jobs:
           if-no-files-found: error
 
       - name: Build SD-boot game firmware
-        # Same game firmware but reading game data from the microSD card
-        # (/sd/maixgame) instead of the flash-embedded copy (see the
-        # maix_game_sd environment): proves the SD-backed newlib layer and
-        # the GAME_DIR switch compile -- runtime proof needs a physical
-        # card (Renode models no SD controller).
+        # Reads the game from /sd/maixgame instead of flash. Runtime proof needs
+        # a physical card, since Renode models no SD controller.
         env:
           MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
           MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
         run: pio run -e maix_game_sd
 
       - name: Upload SD-boot game firmware
-        # Same prune-proofing as the uploads above: safe immediately.
         uses: actions/upload-artifact@v7
         with:
           name: maix-game-sd-firmware
@@ -1904,11 +1394,8 @@ jobs:
           if-no-files-found: error
 
       - name: Compile SD syscall layer
-        # maix_sd_syscalls.cxx is gate-off by default (see the file), so this
-        # rebuilds the boot env once with MAIX_WITH_SD to prove the real code
-        # compiles -- runtime proof needs a physical card (Renode models no
-        # SD controller). Placed after the uploads: like every other second
-        # invocation, it may prune the build dirs it does not need.
+        # The SD syscall file is gated off by default, so this rebuilds the boot
+        # env with MAIX_WITH_SD to prove it compiles. Runs after the uploads.
         env:
           MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
           MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
@@ -1916,9 +1403,7 @@ jobs:
         run: pio run -e maix_rgss_boot
 
       - name: Build SD uploader
-        # Throwaway serial-to-SD loader (see app/maix/README.md): no LVGL,
-        # no mruby, just Maixduino SD over SPI0. Uploaded immediately like
-        # every other env, for the same prune-proofing reason.
+        # Throwaway serial-to-SD loader (app/maix/README.md).
         run: pio run -e maix_sd_upload
 
       - name: Upload SD uploader
@@ -1930,24 +1415,16 @@ jobs:
             .pio/build/maix_sd_upload/firmware.elf
           if-no-files-found: error
 
+  # Headless Renode boots of the Maix firmwares, plus a pixel check on the LCD
+  # capture. Push only.
   maix-smoke:
-    # Headless run checks for the Maix Amigo firmwares: boot the mruby-linking
-    # maix_rgss_boot firmware under stock Renode (which ships the K210 SoC
-    # description -- dual RV64, UARTHS, CLINT, PLIC -- so no from-source
-    # emulator build the way `wio-renode` needs) and look for the bring-up
-    # markers: REACHED setup()/loop() hooks plus the mrb_open/eval lines the
-    # firmware's mruby probe prints over its Serial. Then boot the P0
-    # maix_amigo firmware the same way with LCD capture on, and replay its
-    # ST7789 stream into a framebuffer pixel check (see app/maix/README.md
-    # "LCD capture"). Asserts all of it.
     needs: maix
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
-          # Only scripts/ + app/maix/renode/ are read here (the firmware is
-          # rebuilt below, the emulator is downloaded) -- nothing from 3rd/.
+          # Only scripts/ and app/maix/renode/ are read here.
           submodules: false
           show-progress: false
           persist-credentials: false
@@ -1957,19 +1434,14 @@ jobs:
           python-version: "3.x"
 
       - name: Download firmware
-        # The maix_rgss_boot ELF the `maix` job linked (plus its map) --
-        # PSP-smoke's EBOOT download, same idea. No PlatformIO or rebuild
-        # here: the boot script only needs setup/loop symbol addresses,
-        # which come from riscv64-unknown-elf-nm below.
+        # The boot script needs only symbol addresses, so no PlatformIO here.
         uses: actions/download-artifact@v8
         with:
           name: maix-rgss-boot-firmware
           path: firmware
 
       - name: Install riscv nm
-        # scripts/maix/renode_boot.bash resolves setup()/loop() addresses
-        # with riscv64-unknown-elf-nm (PATH first, PlatformIO's toolchain
-        # as fallback -- absent in this job by design, so PATH must hit).
+        # The boot script resolves setup()/loop() with riscv64-unknown-elf-nm.
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q binutils-riscv64-unknown-elf
@@ -1977,18 +1449,14 @@ jobs:
       - name: Cache Renode
         uses: actions/cache@v6
         with:
-          # Keep in sync with the download below (single place stating the
-          # pinned release); the key also hashes the boot inputs, so a
-          # script/repl/model change re-runs against a fresh extract.
+          # The version here must match the download step. The key also hashes the
+          # boot inputs, so a script change re-extracts.
           path: /tmp/maix-renode
           key: renode-maix-${{ runner.os }}-1.17.0-${{ hashFiles('app/maix/renode/**', 'scripts/maix/renode_boot.bash') }}
 
       - name: Download Renode
-        # Stock release binary (linux-portable needs no .NET install); the
-        # K210 platform description it carries is what gets booted, so unlike
-        # `wio-renode` nothing is compiled here. The tree stays whole: the
-        # `renode` binary only runs next to its own platforms/scripts/dlls.
-        # (Version duplicated from the cache key above -- keep them in sync.)
+        # The portable release ships the K210 platform description, so nothing is
+        # compiled here. The binary only runs next to its own platforms and dlls.
         run: |
           if [ ! -x /tmp/maix-renode/renode_1.17.0-portable/renode ]; then
             mkdir -p /tmp/maix-renode
@@ -2004,26 +1472,17 @@ jobs:
           test -n "$elf" || { echo "::error::no firmware.elf in artifact:"; find firmware; exit 1; }
           out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode MAIX_SPI_LOG="$GITHUB_WORKSPACE/maix-spi-rgss.log" scripts/maix/renode_boot.bash "$elf")"
           echo "$out"
-          # The REACHED markers go through the matcher, not grep: a Renode
-          # [WARNING] record can land inside one (scripts/maix/boot_marker.rb).
+          # Markers go through the matcher, since a Renode [WARNING] can land inside one.
           echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED setup()" || { echo "::error::did not reach setup()"; exit 1; }
           echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
           echo "$out" | grep -q "mrb_open ok" || { echo "::error::mruby did not open"; exit 1; }
           echo "$out" | grep -q "eval -> maix-ruby-alive" || { echo "::error::mruby eval failed"; exit 1; }
 
       - name: Check red framebuffer
-        # The boot firmware paints solid red through LVGL itself before the
-        # pumps above return (see app/maix/README.md): the capture from that
-        # same run must decode to a red screen. Red arrives byte-swapped
-        # (the driver's SWAP_16), hence 00f8, not f800. 480x320 (not
-        # 320x240) and a lower fraction since app/maix/maix_display.cxx's
-        # panel-centering fix (PR #1747): the LVGL canvas is still 320x240,
-        # now legitimately centered in the full 480x320 panel with a
-        # cleared margin around it, diluting the red fraction of the whole
-        # captured frame. Measured directly under this same Renode setup
-        # (scripts/maix/renode_boot.bash) after that fix: match=0.375,
-        # distinct=2 -- both thresholds below with headroom, not at the
-        # exact measured value.
+        # The boot firmware paints solid red through LVGL before the pumps return.
+        # Red is byte-swapped on the wire (00f8). The panel is 480x320 with the
+        # 320x240 canvas centred, so the red fraction is diluted. Thresholds sit
+        # below the measured values, with headroom.
         run: |
           python3 scripts/maix/lcd_decode.py maix-spi-rgss.log maix-frame-rgss.ppm \
             --expect-color 00f8 --min-fraction 0.35 --min-colors 2 --expect-size 480x320
@@ -2035,11 +1494,8 @@ jobs:
           path: firmware-p0
 
       - name: Capture LCD frame under Renode
-        # Option C (see app/maix/README.md "LCD capture"): the DMA hook
-        # replays each LCD transfer into $MAIX_SPI_LOG with its live DC bit
-        # while the P0 firmware (which actually inits the panel, unlike the
-        # mruby boot above) runs, then the decoder below replays the ST7789
-        # stream into a framebuffer and checks it pixel by pixel.
+        # The DMA hook logs each LCD transfer with its DC bit to $MAIX_SPI_LOG.
+        # Only the P0 firmware inits the panel, so only it produces a real frame.
         run: |
           elf="$(find firmware-p0 -name firmware.elf | head -n 1)"
           test -n "$elf" || { echo "::error::no P0 firmware.elf in artifact:"; find firmware-p0; exit 1; }
@@ -2048,9 +1504,7 @@ jobs:
             scripts/maix/renode_boot.bash "$elf" 00:00:08
 
       - name: Decode LCD capture
-        # Exits nonzero (failing the job) when the frame is not a blue
-        # 320x240 screen carrying white text: the MAIX-LCD line it prints
-        # is the human-readable record.
+        # Fails unless the frame is a blue 320x240 screen with white text.
         run: |
           python3 scripts/maix/lcd_decode.py maix-spi.log maix-frame.ppm \
             --expect-color 001f --min-fraction 0.45 --min-colors 3 --expect-size 320x240
@@ -2062,10 +1516,8 @@ jobs:
           path: firmware-game
 
       - name: Boot game to title under Renode
-        # The payoff slice: a real (if tiny) game boots to its title screen
-        # -- scene marker on Serial plus the title pixels below. The game
-        # lives in flash (app/maix/embed_game.py), so no SD card is needed,
-        # which is also why this works at all under Renode.
+        # The game is embedded in flash (app/maix/embed_game.py), so no SD card
+        # is needed.
         run: |
           elf="$(find firmware-game -name firmware.elf | head -n 1)"
           test -n "$elf" || { echo "::error::no game firmware.elf in artifact:"; find firmware-game; exit 1; }
@@ -2075,44 +1527,25 @@ jobs:
           echo "$out" | grep -q "scene: RPG2k::Scene::Title" || { echo "::error::never reached title"; exit 1; }
 
       - name: Check title framebuffer
-        # Teal background (byte-swapped on the wire, hence 1004), white
-        # border and menu text, window shades: at least four distinct
-        # colors or the title UI did not really draw. 480x320 (not
-        # 320x240) and a lower fraction for the same panel-centering
-        # reason as the "Check red framebuffer" step above -- measured
-        # directly under this same Renode setup: match=0.339, distinct=8.
+        # Requires at least four distinct colours, so the title UI really drew.
+        # Thresholds follow the same panel-centring reasoning as the red check.
         run: |
           python3 scripts/maix/lcd_decode.py maix-spi-game.log maix-frame-game.ppm \
             --expect-color 1004 --min-fraction 0.30 --min-colors 4 --expect-size 480x320
 
+  # Boots the Wio firmwares under Renode, with the ILI9341 pixel regression
+  # and the SD tooling check. Disabled with `wio` above.
   wio-renode:
-    # Boots the three firmwares the `wio` job above compiles under Renode
-    # far enough to prove
-    # the CPU actually runs its own setup()/loop() rather than only
-    # compiling -- this is the "does this run in CI" question, answered for
-    # the parts that are fast and bounded. It also runs
-    # the ILI9341 display peripheral's own regression test
-    # (app/wio/renode/lcd_smoke_test.resc), an actual pixel-correctness
-    # check, not just a boot check.
-    #
-    # Not covered here: a full firmware-driven render (wio_walk reading a
-    # real SD card and drawing an actual map tile). Both wio and wio_walk's
-    # tile/frame push goes through SPIClass's DMA-driven bulk transfer
-    # (Adafruit_ZeroDMA), which this platform does not model yet (P2's
-    # DMAC gap, app/wio/renode/README.md) -- a real, understood, separate
-    # piece of work, not a performance concern like the two bugs below were.
-    #
-    # Temporarily disabled (see `wio` job above) until the bc2cpp cross-build
-    # path is more stable.
+    # Covers the CPU running setup()/loop() and the ILI9341 model's pixels.
+    # Not covered: a firmware-driven map render. wio_walk's tile pushes go
+    # through Adafruit_ZeroDMA, which this platform does not model yet.
     if: false
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # LVGL is vendored as a submodule and linked into the firmware. Same
-          # PlatformIO envs (wio/wio_walk/wio_sd_upload) as the `wio` job, so
-          # the same submodules go unused here; see its "Init submodules" step.
+          # Same PlatformIO envs as `wio`, so the same submodules go unused.
           submodules: false
           show-progress: false
           persist-credentials: false
@@ -2127,10 +1560,8 @@ jobs:
           python-version: "3.x"
       - uses: actions/setup-dotnet@v6
         with:
-          # Building Renode from source (below) needs the SDK; the portable
-          # release binary this repo's own dev docs point at for P1/P2-only
-          # use bundles just the runtime, which is not enough to compile a
-          # new peripheral into it.
+          # The portable Renode release bundles only the runtime, which cannot
+          # compile a new peripheral, so Renode is built from source below.
           dotnet-version: "8.0.x"
 
       - name: Cache PlatformIO
@@ -2152,9 +1583,8 @@ jobs:
           pio run -e wio_sd_upload
 
       - name: Install mtools/dosfstools/ImageMagick
-        # mtools/dosfstools: scripts/wio/renode_sdcard.bash's own smoke test
-        # below. ImageMagick: reading pixels back out of the ILI9341 model's
-        # PNG dump.
+        # mtools and dosfstools test renode_sdcard.bash. ImageMagick reads pixels
+        # from the ILI9341 model's PNG dump.
         run: sudo apt-get update -q && sudo apt-get install -y -q mtools dosfstools imagemagick
 
       - name: Cache the Renode build
@@ -2162,10 +1592,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/wio-renode-build
-          # Keyed on the pinned commit scripts/wio/renode_build.bash checks
-          # out and on the peripheral sources it copies in -- either
-          # changing invalidates the cache; nothing else does, so this is a
-          # cache hit on almost every run.
+          # Keyed on the pinned commit and the peripheral sources it copies in.
           key: wio-renode-${{ runner.os }}-${{ hashFiles('scripts/wio/renode_build.bash', 'app/wio/renode/peripherals/**') }}
 
       - name: Build Renode with the Wio Terminal peripherals
@@ -2181,8 +1608,7 @@ jobs:
             echo "::group::$env"
             out="$(scripts/wio/renode_boot.bash ".pio/build/$env/firmware.elf" "00:00:00.300")"
             echo "$out"
-            # The REACHED markers go through the matcher, not grep: a Renode
-            # [WARNING] record can land inside one (scripts/maix/boot_marker.rb).
+            # Markers go through the matcher, since a Renode [WARNING] can land inside one.
             echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED setup()" || { echo "::error::$env did not reach setup()"; exit 1; }
             echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED loop()" || { echo "::error::$env did not reach loop()"; exit 1; }
             echo "::endgroup::"
@@ -2195,10 +1621,8 @@ jobs:
           rm -f /tmp/wio_lcd_smoke_test.png
           "$RENODE_BIN" --disable-gui --console --plain \
             -e "include @app/wio/renode/lcd_smoke_test.resc" -e "quit" < /dev/null
-          # apt's "imagemagick" package on ubuntu-24.04 is IM6, which has no
-          # `magick` binary at all (that unified CLI is IM7-only, a separate
-          # package); IM7 installs, in turn, without the `convert` name.
-          # Support either.
+          # Ubuntu's `imagemagick` is IM6, which has no `magick` binary. IM7 has
+          # no `convert`. Accept either.
           im_convert=convert
           command -v magick >/dev/null 2>&1 && im_convert=magick
           check() {
@@ -2211,10 +1635,8 @@ jobs:
           check "20,0" "srgb(0,0,0)"    # outside the window, untouched
 
       - name: SD card image tooling smoke test
-        # scripts/wio/renode_sdcard.bash itself, not a firmware boot (see
-        # the job comment for why the full SD-backed boot is out of scope
-        # here): builds a real FAT image and confirms mtools can read back
-        # what it wrote.
+        # Tests renode_sdcard.bash itself, not a firmware boot: it builds a FAT
+        # image and checks mtools can read back what it wrote.
         run: |
           mkdir -p /tmp/wio_renode_sdcard_check
           echo hello > /tmp/wio_renode_sdcard_check_input.txt
@@ -2222,30 +1644,18 @@ jobs:
             /tmp/wio_renode_sdcard_check_input.txt:/RPG2kWalk/test.txt
           mdir -i /tmp/wio_renode_sdcard_check/sdcard.img ::/RPG2kWalk | grep -q test
 
+  # M5Stack Core (ESP32) P1 HAL firmware. It is a standalone PlatformIO project
+  # under app/m5stack, not an environment in the root platformio.ini: Arduino
+  # as an ESP-IDF component takes over the project root, which the shared
+  # project cannot allow. Disabled, along with `m5stack-qemu`.
   m5stack:
-    # Build the M5Stack Core (ESP32) P1 HAL bring-up firmware with
-    # PlatformIO. Unlike Wio/Maix,
-    # espressif32 ships this board natively, so there is no custom
-    # boards/*.json step here -- the same reason this job has no counterpart
-    # to maix's own "add_amigo_variant.py" step. app/m5stack is its own
-    # standalone PlatformIO project (not another environment in the repo
-    # root's platformio.ini -- see that directory's own platformio.ini for
-    # why: it builds Arduino as an ESP-IDF component, which takes over the
-    # project root's CMakeLists.txt and cannot honor build_src_filter,
-    # both fatal to sharing the root project the way Wio/Maix do), so every
-    # `pio` command here runs with app/m5stack as its working directory.
-    #
-    # Disabled: this job (and `m5stack-qemu` below, which needs its firmware
-    # artifact) does not currently run in CI.
     if: false
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # LVGL is vendored as a submodule and linked into the firmware; see
-          # the `wio` job's "Init submodules" step for what else this build
-          # never touches.
+          # LVGL is vendored and linked. See the `wio` job for what else is unused.
           submodules: false
           show-progress: false
           persist-credentials: false
@@ -2285,28 +1695,12 @@ jobs:
             app/m5stack/.pio/build/m5stack/bootloader.bin
             app/m5stack/.pio/build/m5stack/partitions.bin
 
+  # Boots the m5stack firmware under a QEMU built from source with the patches in
+  # app/m5stack/qemu/patches (Espressif's release cannot carry the display and
+  # gamepad devices). Checks the ILI9341 framebuffer and that a simulated FACES
+  # Gamepad Face reaches RGSS::Input. Disabled with `m5stack`.
   m5stack-qemu:
-    # Boots the m5stack firmware the job above compiles under Espressif's own
-    # QEMU fork, the same
-    # "does this run in CI" question wio-renode answers for the Wio Terminal.
-    # Asserts the real bar: the firmware's own setup() actually ran (LVGL +
-    # TFT_eSPI + button HAL init) and loop() scanned the buttons --
-    # scripts/m5stack/qemu_boot.bash greps the real "m5stack: setup
-    # complete" and "Keys: ..." lines out of the QEMU serial log, not just a
-    # boot banner. Getting here needed app/m5stack's own platformio.ini to
-    # build Arduino as an ESP-IDF component rather than PlatformIO's default
-    # precompiled-libs mode.
-    #
-    # Also builds QEMU from source with app/m5stack/qemu/patches/
-    # (scripts/m5stack/qemu_build.bash) -- Espressif's own prebuilt release
-    # cannot carry either of this fork's new downstream devices -- and
-    # checks two things beyond "the firmware ran": the actual rendered
-    # ILI9341 framebuffer (m5stack-display.patch), the same way wio-renode's
-    # own ILI9341 pixel checks answer it for the Wio Terminal; and a FACES
-    # kit Gamepad Face's buttons actually reaching RGSS::Input's bitmask
-    # through a simulated I2C device (m5stack-gamepad.patch).
     needs: m5stack
-    # Disabled along with `m5stack` above.
     if: false
     runs-on: ubuntu-24.04
     steps:
@@ -2331,10 +1725,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/m5stack-qemu-build
-          # Keyed on the pinned tag scripts/m5stack/qemu_build.bash checks
-          # out and on the patch it applies -- either changing invalidates
-          # the cache; nothing else does, so this is a cache hit on almost
-          # every run (mirrors wio-renode's own Renode build cache).
+          # Keyed on the pinned tag and the patches it applies.
           key: m5stack-qemu-build-${{ runner.os }}-${{ hashFiles('scripts/m5stack/qemu_build.bash', 'app/m5stack/qemu/patches/**') }}
 
       - name: Build QEMU with M5Stack display support
@@ -2347,14 +1738,10 @@ jobs:
           M5STACK_DISPLAY_DUMP: /tmp/m5stack_display.ppm
         run: scripts/m5stack/qemu_boot.bash app/m5stack/.pio/build/m5stack
 
+      # The dump file existing proves only that the device was reachable. This
+      # checks that the LVGL "Keys: A B C" label drew: a white background plus a
+      # second colour for the text.
       - name: Verify the display actually rendered
-        # A plain "the dump file exists" check (scripts/m5stack/qemu_boot.bash's
-        # own bar) only proves the device was reachable, not that real pixels
-        # landed in it -- an all-white (or otherwise uniform) framebuffer would
-        # still pass that bar. This additionally confirms the firmware's own
-        # LVGL "Keys: A B C" label actually drew: a majority-white background
-        # (LVGL's default screen bg) plus a real second color for the label
-        # text itself.
         run: |
           python3 - <<'EOF'
           import collections
@@ -2390,28 +1777,18 @@ jobs:
           assert non_white > 0, "no non-background (label text) pixels found"
           EOF
 
+      # A second boot, so the simulated Gamepad Face state is the only input.
+      # 0x7e is active-low: Up and Start held (bit layout in the patch's header).
       - name: Boot under QEMU with a Gamepad Face attached
-        # A second boot, not folded into the one above: M5STACK_GAMEPAD_STATE
-        # simulates a FACES kit Gamepad Face reporting Up+Start held for the
-        # whole run (0x7e -- active low, bit0 and bit7 clear; see
-        # hw/i2c/esp32_faces_gamepad.c's own header comment in
-        # app/m5stack/qemu/patches/m5stack-gamepad.patch for the bit layout)
-        # via this fork's own downstream I2C device, exercised through the
-        # real HAL's real I2C probe+read (mruby-rgss/src/m5stack.cxx), not a
-        # unit test of the device in isolation.
         env:
           M5STACK_QEMU_BIN: /tmp/m5stack-qemu-build/build/qemu-system-xtensa
           M5STACK_GAMEPAD_STATE: "7e"
           M5STACK_QEMU_CACHE_DIR: /tmp/m5stack-qemu-gamepad
         run: scripts/m5stack/qemu_boot.bash app/m5stack/.pio/build/m5stack
 
+      # Checks the whole input chain in the serial log: I2C probe and read, bit
+      # decode, RGSS key mask, and the "Keys: ..." line.
       - name: Verify the Gamepad Face input was actually read
-        # scripts/m5stack/qemu_boot.bash's own exit code only proves the
-        # firmware reached loop() -- not that the specific buttons this step
-        # injected made it all the way through I2C probe -> read -> bit
-        # decode -> RGSS key mask -> the "Keys: ..." status line. Check the
-        # real serial log for exactly that, the same "does it actually show
-        # up" bar the display check above holds itself to.
         run: |
           log=/tmp/m5stack-qemu-gamepad/serial.log
           keys_line="$(grep '^Keys:' "$log" | tail -1)"
@@ -2420,29 +1797,18 @@ jobs:
           echo "$keys_line" | grep -qw "Up" || { echo "::error::Up not reported (Gamepad Face D-pad not read)"; exit 1; }
           echo "$keys_line" | grep -qw "Start" || { echo "::error::Start not reported (Gamepad Face Select/Start not read)"; exit 1; }
 
+  # Boots the nano 7G walk app under qemu-system-arm's Cortex-A8 model. The PL110
+  # is a stock QEMU display, unlike the peripherals wio-renode needed. Checks a
+  # real rendered map and prints the PMU cycle count as a per-frame cost signal
+  # (not asserted: it is a comparison, not a threshold).
   nano7-qemu:
-    # A real ARM Cortex-A8 instruction stream for the iPod nano 7G walk app
-    # complementing app/nano7/host's native-host build
-    # builds app/nano7/rpg2k_walk/rpg2k_walk.c itself with the same
-    # arm-none-eabi-gcc -mcpu=cortex-a8 NanoApps' own sdk/hb_app.mk uses,
-    # boots it under qemu-system-arm's `cortex-a8` CPU model on the
-    # `realview-pb-a8` machine -- a real PL110 display controller QEMU
-    # already ships, not a new peripheral written for this repo the way
-    # `wio-renode` above needed two -- and checks both that the real PL110
-    # framebuffer shows a real rendered map (screendump, pixel-checked, the
-    # same way `wio-renode`'s lcd_smoke_test checks its own display model)
-    # and that the Cortex-A8 PMU's cycle counter gives a genuine, working
-    # per-frame cost signal (printed, not asserted on, because it is a
-    # comparative signal rather than a pass/fail threshold).
     if: ${{ github.event_name == 'push' }}
     needs: changes
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
-          # No submodule this job needs: it links only this repo's own
-          # app/nano7 and app/shared/rpg2k_walk sources against a bare-metal
-          # shim, nothing from 3rd/.
+          # Links only this repo's app/nano7 and app/shared sources against a shim.
           submodules: false
           show-progress: false
           persist-credentials: false
@@ -2462,6 +1828,7 @@ jobs:
             data/Nepheshel206beta/Nepheshel206Nbeta 1 /tmp/nano7_qemu_export
 
       - name: Build the Cortex-A8 image
+        # Compiles with the same -mcpu=cortex-a8 flags as NanoApps' sdk/hb_app.mk.
         run: |
           scripts/nano7/qemu_build.bash \
             /tmp/nano7_qemu_export/map.bin /tmp/nano7_qemu_export/tiles.bin \
@@ -2477,16 +1844,10 @@ jobs:
           grep "NANO7-QEMU" /tmp/nano7_qemu_uart.log || true
           ruby scripts/nano7/qemu_smoke_check.rb /tmp/nano7_qemu_frame.ppm /tmp/nano7_qemu_uart.log
 
+  # PSP EBOOT, built with the pspdev toolchain. Like the Wio job, this only
+  # compiles: no emulator runs here, so `psp-smoke` boots the EBOOT under PPSSPP.
+  # Gated on `changes`, so it runs only when app/psp changed or on a manual run.
   psp:
-    # Build the PSP EBOOT bring-up with the pspdev toolchain. Like the Wio job,
-    # this is the external check for the port's HAL: this environment cannot
-    # cross-build or flash a PSP, so CI compiles it. Builds the LVGL display +
-    # input HAL and the entry-point sketch into EBOOT.PBP; the mruby interpreter
-    # is layered on in a later slice (see app/psp/README.md).
-    #
-    # Gated on the `changes` job above: this build (and the two smoke jobs
-    # below that need its EBOOT) only runs when app/psp itself changed, or on
-    # a manual `workflow_dispatch` run, which always builds everything.
     needs: changes
     if: >-
       ${{ github.event_name != 'issue_comment' &&
@@ -2496,21 +1857,11 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # app/psp/CMakeLists.txt add_subdirectory()s only 3rd/lvgl and
-          # 3rd/uni-algo, and its psp mruby cross-build (build_config.rb) pulls
-          # in 3rd/mruby, 3rd/mruby-marshal, 3rd/mruby-onig-regexp,
-          # 3rd/mruby-stringio, 3rd/mgem-list (cmake/build-mruby.cmake, shared
-          # with the desktop build) and 3rd/stb (mruby-rgss's stbi_load_from_memory
-          # decode path, STBI_NO_STDIO below). It also needs 3rd/quickjs: rake's
-          # own bootstrap "host" sub-build (mrbc) always builds mruby-mvjs
-          # (rpg_maker_gems only gates that gem behind `single_format_only`,
-          # and conf.name is "host" there, never "psp") -- confirmed for real
-          # by a CI run failing on "fatal error: quickjs.h: No such file or
-          # directory" compiling mruby-mvjs's mvcanvas.cxx. It never touches
-          # 3rd/SDL, 3rd/SDL_mixer, 3rd/gflags, 3rd/ng-log, 3rd/effekseer or
-          # 3rd/inicpp.
+          # The psp mruby cross-build reads 3rd/mruby and its gems, 3rd/stb, and
+          # 3rd/lvgl and uni-algo for app/psp. It also needs 3rd/quickjs: rake's
+          # host bootstrap builds mruby-mvjs, which includes quickjs.h. The
+          # `single_format_only` gate does not cover it.
           submodules: false
-          # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
 
@@ -2522,16 +1873,10 @@ jobs:
         run: ./scripts/checkout-submodules.bash
 
       - name: Copy vendored Unicode mapping tables
-        # mruby-lcf/cp932_to_unicode.rb and mruby-rgss/gen_shinonome_data.rb
-        # (both rake-time code generators, run as part of the psp mruby
-        # cross-build below) read $cp932_table / $jis0208_table -- normally
-        # set by the nix devshell's fetchurl derivations (flake.nix), which
-        # this bare-container job does not have. scripts/native/build-without-nix.bash
-        # solves the same gap for a non-nix host build the same way: download
-        # and verify against the flake's own sha256 pins, so the build
-        # consumes the same bytes Nix would hand it, not a lookalike.
-        # The tables are vendored in data/unicode-mappings/, so this step only
-        # copies and verifies them -- no network.
+        # mruby-lcf and mruby-rgss rake-time generators read $cp932_table and
+        # $jis0208_table, normally set by the nix devshell's fetchurl derivations.
+        # Verify the vendored copies against the flake's sha256 pins instead, so
+        # the build consumes the same bytes Nix would.
         run: |
           mkdir -p .native-build-tables
           vendored_table() {
@@ -2554,44 +1899,17 @@ jobs:
             'HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc='
 
       - name: Build EBOOT (pspdev container)
-        # The pspdev image ships psp-gcc, cmake and the psp-cmake wrapper (which
-        # points CMake at the pspdev toolchain and provides create_pbp_file), but
-        # not Ruby and not a native (x86_64) compiler: the psp mruby cross-build
-        # (build_config.rb's `psp` MRuby::CrossBuild) is driven by `rake`,
-        # invoked from a CMake custom command (app/psp/CMakeLists.txt) exactly
-        # the way the desktop/wasm builds drive it from the root CMakeLists.txt
-        # -- but those run inside the nix devshell, which provides both; this
-        # container does not. Install them before configuring. The image's
-        # final stage is Alpine (github.com/pspdev/pspdev's own Dockerfile, not
-        # the archived pspdev/pspdev-docker repo, which is Ubuntu-based but
-        # unrelated to what actually publishes the pspdev/pspdev:latest tag) --
-        # apk, not apt-get. build-base is needed alongside psp-gcc: rake's
-        # MRuby::CrossBuild also builds a native "host" mruby (to produce mrbc,
-        # which then compiles the target .rb sources to bytecode), and that
-        # half runs the ambient `gcc`, not psp-gcc -- confirmed missing by a
-        # real CI run ("sh: gcc: not found") once Ruby alone was installed;
-        # `git` is for scripts/build/psp_fixup_imports.bash, below. `gperf`
-        # and `bison` regenerate mruby-compiler's lexer/grammar
-        # (mrbgems/mruby-compiler/core/{keywords,parse.y} -> lex.def/
-        # y.tab.c) whenever a patch touches either source -- normally a
-        # no-op since the checked-in generated files are already newer, but
-        # the pinned fork commit (mruby-defined-keyword, docs/patch-fork-tracking.md) touches both, and this bare
-        # container has neither tool by default (confirmed missing by a real
-        # CI run, "sh: gperf: not found", once that patch first shipped).
+        # The pspdev image has psp-gcc, cmake and psp-cmake, but no Ruby and no
+        # native gcc. rake's host sub-build needs gcc, and the mruby compiler's
+        # lexer and grammar need gperf and bison (the pinned fork commit
+        # regenerates them). git is for psp_fixup_imports.bash.
         #
-        # That script replaces $PSPDEV/bin/psp-fixup-imports (a host tool
-        # `cmake --build` invokes automatically after linking, as part of
-        # `create_pbp_file`, and resolves through that same variable) with a
-        # patched build before configuring. This image exports
-        # PSPDEV=/usr/local/pspdev, so that is the path it lands on here --
-        # see the script and patches/
-        # psp-fixup-imports-jal-relocation-aware.patch for why: the stock tool
-        # silently mis-links several of this EBOOT's own genuine PSP imports,
-        # which is what stops it booting to completion under PPSSPP-headless
+        # The script replaces $PSPDEV/bin/psp-fixup-imports, which `create_pbp_file`
+        # runs after linking, with a patched build. The stock tool mis-links some of
+        # this EBOOT's PSP imports, which stops it booting under PPSSPP-headless.
+        # The image is Alpine-based, so the package manager is apk.
         #
-        # Pull the image up front with -q: an implicit pull from `docker run`
-        # prints a per-layer download/extract progress block, which `-q`
-        # reduces to the resolved digest.
+        # -q reduces the per-layer pull progress to the resolved digest.
         run: |
           docker pull -q pspdev/pspdev:latest
           docker run --rm -v "$PWD:/src" -w /src \
@@ -2611,39 +1929,21 @@ jobs:
           path: build-psp/EBOOT.PBP
           if-no-files-found: error
 
+  # Headless PPSSPP run of the EBOOT. Asserts the boot marker and the per-second
+  # frame heartbeat, which proves the frame loop runs. Push only.
   psp-smoke:
-    # Headless run check for the PSP EBOOT: boot it under PPSSPP (software
-    # renderer) and look for the bring-up markers it writes via sceIoWrite --
-    # RPG2K_PSP_BOOT (a libc-free string literal, emitted before any init) and
-    # the per-second RPG2K_PSP_BRINGUP heartbeat. This exercises the EBOOT on an
-    # emulator, beyond the compile-only `psp` job. The emulator is nixpkgs'
-    # `packages.ppsspp` (see flake.nix) carrying one local patch, so it no
-    # longer matches what cache.nixos.org has prebuilt for the pinned channel
-    # -- every `nix build '.#ppsspp'` compiles PPSSPP from source rather than
-    # substituting a closure. The Nix store cache below (same
-    # `cache-nix-action` step every other job in this file uses) is what turns
-    # that from a from-source PPSSPP compile on every run into a one-time cost,
-    # replacing the hand-rolled tree cache PPSSPP used to be built from.
+    # The emulator is nixpkgs' `ppsspp` with a local patch, so it is built from
+    # source unless the Nix store cache has it. Hence the cache-nix-action step.
     #
-    # BLOCKING: this used to run with continue-on-error while PPSSPP's headless
-    # HLE only partially implemented pspsdk's libc stdio (printf/strlen
-    # resolved to firmware stubs), which the EBOOT's markers lean on, making
-    # capture flaky even when the EBOOT itself booted fine. The ten-bug trail
-    # in app/psp/README.md (five of them PPSSPP HLE/interpreter bugs, patched
-    # in patches/ and applied via this flake's own `packages.ppsspp`) fixed
-    # that, and the frame loop now runs for the whole timeout window (thousands
-    # of BRINGUP heartbeats per run), so the job asserts both markers and
-    # gates the build alongside `psp`.
+    # Blocking. The HLE gaps this once worked around are fixed by the patches
+    # in app/psp/README.md, so both markers are asserted.
     needs: psp
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
-          # flake.nix / flake.lock are all this job reads from the checkout --
-          # they are what pin the emulator -- so no submodules here (and hence
-          # no test262-skip step; see the `build` job). Same two quiet-checkout
-          # settings as every other checkout in this workflow.
+          # flake.nix and flake.lock pin the emulator. No submodules are needed.
           submodules: false
           show-progress: false
           persist-credentials: false
@@ -2656,13 +1956,9 @@ jobs:
 
       - uses: nixbuild/nix-quick-install-action@v35
 
-      # The patched `ppsspp` (see flake.nix) no longer matches nixpkgs'
-      # prebuilt closure, so every `nix build` here compiles PPSSPP from
-      # source -- a multi-minute C++ build -- unless the result is cached.
-      # Keyed on the patch alongside flake.*: the patch changes PPSSPP's
-      # output hash without touching either flake file, and a key that missed
-      # that would silently keep restoring the pre-patch closure's build
-      # instead of ever caching the patched one.
+      # The patch changes PPSSPP's output hash without touching the flake files,
+      # so the key includes the patch. Otherwise it would silently restore the
+      # unpatched build.
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
         with:
@@ -2670,45 +1966,27 @@ jobs:
           restore-prefixes-first-match: nix-ppsspp-${{ runner.os }}-
 
       - name: Fetch PPSSPP
-        # `packages.ppsspp` is nixpkgs' default (non-Qt) build, which configures
-        # with -DHEADLESS=ON and ships `bin/ppsspp-headless`; see flake.nix. The
-        # emulator finds its assets relative to its own store path, so unlike
-        # the old source tree it can be run from anywhere.
+        # The default (non-Qt) build ships bin/ppsspp-headless with HEADLESS=ON.
         run: nix build -L --out-link ppsspp '.#ppsspp'
 
       - name: Run headless smoke test
         run: |
           EBOOT="$GITHUB_WORKSPACE/eboot/EBOOT.PBP"
           ls -l "$EBOOT"
-          # The bring-up writes its markers with sceIoWrite(fd 1 and 2); PPSSPP
-          # logs those, but below the default headless level, so --log is needed
-          # to surface them (plain printf is an unimplemented HLE import under
-          # PPSSPP). --timeout ends the otherwise-infinite bring-up loop; `|| true`
-          # keeps its non-zero exit from masking the assertion below.
-          # (--screenshot is a compare-against input in headless, not an output.)
+          # sceIoWrite markers need --log to surface. --timeout ends the bring-up
+          # loop. `|| true` keeps its non-zero exit from masking the assertion below.
+          # --screenshot is an input to compare against in headless, not an output.
           #
-          # --log makes the emulator trace every HLE call, so the output goes to
-          # the log file rather than the console: the whole file is uploaded as
-          # the `psp-smoke` artifact below, and the lines that decide this step
-          # (the markers, or the tail when they are missing) are echoed here.
+          # --log traces every HLE call, so the output goes to a file, which is
+          # uploaded below.
           ./ppsspp/bin/ppsspp-headless --log --graphics=software --timeout=15 \
             "$EBOOT" > "$GITHUB_WORKSPACE/headless.log" 2>&1 || true
           echo "=== asserting the EBOOT booted and pumped frames ==="
-          # RPG2K_PSP_BOOT proves it booted with output captured; RPG2K_PSP_BRINGUP
-          # (the per-second heartbeat) additionally proves the frame loop runs --
-          # required separately, because BRINGUP was unreachable for weeks while
-          # the boot crashed before the first heartbeat, so a BOOT-only grep
-          # would have passed a build that never pumped a frame.
+          # BRINGUP is required separately: a BOOT-only grep would pass a build
+          # that crashed before its first frame.
           if grep -q 'RPG2K_PSP_BOOT' "$GITHUB_WORKSPACE/headless.log" &&
              grep -q 'RPG2K_PSP_BRINGUP' "$GITHUB_WORKSPACE/headless.log"; then
-            # Every RPG2K_PSP_* marker, not just BOOT/BRINGUP: the
-            # PRE_MRUBY_OPEN/MRUBY_OPEN pair (mrb_open()'s own memory/timing
-            # cost) and GAME_START/
-            # GAME_READY/GAME_STOP are otherwise only visible by pulling the
-            # `psp-smoke` artifact's full headless.log, which needs GitHub API
-            # access this job's own log does not. -10 covers every one-shot
-            # marker (there are at most a handful) plus a few BRINGUP
-            # heartbeats.
+            # Echo every one-shot marker, not just BOOT and BRINGUP, plus a few heartbeats.
             grep -E 'RPG2K_PSP_[A-Z_]+' "$GITHUB_WORKSPACE/headless.log" \
               | head -10
           else
@@ -2725,56 +2003,22 @@ jobs:
           path: headless.log
           if-no-files-found: warn
 
+  # `psp-smoke` with a real RPG2k project at the EBOOT's fixed Memory Stick path
+  # (kGameDir in app/psp/main.cxx). It is the first job to boot a real game on
+  # the PSP build and record memory numbers for the database, the map tree,
+  # Scene::Title, and steady-state Title.
+  #
+  # The `.psp_ci_new_game` marker makes Title auto-select New Game, which reaches
+  # Scene::Map. Menu and Battle need input scripting that does not exist yet.
+  #
+  # Nepheshel is the same test bed the desktop build already downloads.
+  #
+  # continue-on-error until it has run green for a while. Nepheshel's download
+  # host is also intermittent.
   psp-smoke-game:
-    # Same idea as `psp-smoke`, but with a real RPG2k project placed at the
-    # EBOOT's fixed Memory Stick path (app/psp/main.cxx's kGameDir,
-    # "ms0:/PSP/GAME/rpg2k") instead of nothing. `psp-smoke` above only ever
-    # exercises the idle HAL screen -- no game is ever detected there, so
-    # RPG2K_PSP_GAME_READY never fires and RPG2K_PSP_BRINGUP's scene= is
-    # always "none". This is the first CI job to boot a real game through the
-    # PSP build and capture what the memory budget needs: real device memory
-    # numbers for "the database and map
-    # tree loaded, Scene::Title built" (GAME_READY) and for steady-state
-    # Title (BRINGUP's scene=RPG2k::Scene::Title). This job also drops a
-    # `.psp_ci_new_game` marker file next to Nepheshel's own data --
-    # app/psp/main.cxx checks for it and, only when present, sets
-    # RPG2K_NEW_GAME true instead of its normal hardcoded false, which makes
-    # Scene::Title auto-select "New Game" with no input needed (the same
-    # mechanism src/main.cxx's own --rpg2k_new_game already drives on
-    # desktop). That reaches Scene::Map for real numbers too, not just
-    # Title -- Menu/Battle still need either a compile-time RPG2K_NEW_GAME
-    # replacement (a specific map/troop id, say) or real input scripting,
-    # neither of which exists yet, so this job's scope stops at Map.
-    #
-    # Nepheshel is the same RPG2000 test-bed the desktop `build` job's own
-    # "RPG2k real-game boot smoke test" step already downloads and boots, so
-    # no new fixture is introduced.
-    #
-    # Getting the game to where the EBOOT looks for it took one wrong turn
-    # worth recording: a `--memstick=DIR` flag looked right from PPSSPP's own
-    # source (Headless.cpp checks `cmdLineOptions.memStick.has_value()`), but
-    # the first real run showed PPSSPP's arg parser never consuming it as a
-    # flag at all -- it treated the whole `--memstick=...` string as another
-    # positional boot target and tried (and failed) to run it as one,
-    # confirmed by the emulator's own log ("Test init failed for
-    # --memstick=...", right next to the real EBOOT's own "Test timeout").
-    # hrydgard/ppsspp#20552 ("Allow Linux to change memstick directory") backs
-    # this up: as of this writing Linux headless has no working way to
-    # redirect the memstick location at all. What *is* real, quoted straight
-    # from Headless.cpp's own default-path branch (taken whenever no memstick
-    # override applies): non-Windows, non-Android headless runs default
-    # `g_Config.memStickDirectory` to `$HOME/.ppsspp`, creating it if it does
-    # not exist. So instead of trying to redirect it, this job just writes
-    # Nepheshel into that same default location ahead of time.
-    #
-    # continue-on-error: true for now. `psp-smoke` above used to run the same
-    # way while PPSSPP's headless HLE was still catching up (see its own
-    # comment) and was promoted once proven stable; this job is the same
-    # starting point for a real game specifically, which is new ground the
-    # idle path never covered, and Nepheshel's download host has its own
-    # known intermittency (see scripts/download/nepheshel.bash's neighbors'
-    # comments) unrelated to the EBOOT itself. Promote once this has run
-    # green for a while.
+    # `--memstick=DIR` does not work: PPSSPP's arg parser treats it as a boot target.
+    # Linux headless has no memstick override (hrydgard/ppsspp#20552). It defaults
+    # to $HOME/.ppsspp, so the game is written into that location directly.
     needs: [psp, psp-smoke]
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
@@ -2794,10 +2038,7 @@ jobs:
 
       - uses: nixbuild/nix-quick-install-action@v35
 
-      # Same cache key as `psp-smoke`'s identically-named step, so this job
-      # (which `needs: psp-smoke` and so always starts after it) reuses the
-      # Nix store that step already populated instead of compiling PPSSPP
-      # from source a second time.
+      # Same key as psp-smoke, so this job reuses the PPSSPP build that step made.
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
         with:
@@ -2808,53 +2049,30 @@ jobs:
         run: nix build -L --out-link ppsspp '.#ppsspp'
 
       - name: Download Nepheshel
-        # unar (download-nepheshel.bash's own unpacker) is a devShell package
-        # (flake.nix), and this job never enters the full devShell the way
-        # `nix-develop-export-env.bash` does for the desktop `build` job --
-        # pulling that whole closure in just for one archive tool would be
-        # wasteful here (and a bare `nixpkgs#unar` would resolve against
-        # whatever nixpkgs the ambient Nix registry defaults to, not this
-        # flake's own pinned one), so just apt-get the one package this needs,
-        # the same way the `android` job below installs its one-off `gperf`.
+        # unar is a devShell package, but entering the whole devShell for one
+        # archive tool is wasteful. apt installs just that package, as in `android`.
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q unar
           ./scripts/download/nepheshel.bash
 
       - name: Place Nepheshel at the EBOOT's fixed Memory Stick path
-        # $HOME/.ppsspp is headless's own default memstick root on Linux (see
-        # this job's own top comment) -- created it here ahead of time with
-        # the game already in place, rather than after the emulator creates
-        # it, so there is no race with PPSSPP's own first-run setup.
+        # Created before the emulator runs, so there is no race with its first-run setup.
         run: |
           memstick="$HOME/.ppsspp"
           gamedir="$memstick/PSP/GAME/rpg2k"
           mkdir -p "$gamedir"
           cp -r data/Nepheshel206beta/Nepheshel206Rbeta/. "$gamedir/"
-          # app/psp/main.cxx's own opt-in: only this marker's presence flips
-          # RPG2K_NEW_GAME true, so Scene::Title auto-selects New Game and
-          # this run reaches Scene::Map instead of sitting on the title
-          # screen -- see this job's own top comment.
+          # Only this marker's presence sets RPG2K_NEW_GAME true (app/psp/main.cxx).
           touch "$gamedir/.psp_ci_new_game"
 
       - name: Run headless with a real game
         run: |
           EBOOT="$GITHUB_WORKSPACE/eboot/EBOOT.PBP"
           ls -l "$EBOOT"
-          # Longer timeout than psp-smoke's idle-path 15s: a real database
-          # and map tree load (RPG_RT.ldb/.lmt) is real work the idle path
-          # never does.
-          # $status, not `|| true` on the invocation itself: a signal-killed
-          # exit (128 + signal number -- 139 for the SIGSEGV hit) must not be
-          # silently absorbed
-          # the way it was there -- that run segfaulted partway through
-          # Scene::Map and still reported success because only the marker-
-          # presence asserts below gated the job, with nothing checking
-          # whether the emulator itself survived. Checked as "$status" -ge
-          # 128, not "$status" -ne 0: a plain --timeout completion (this
-          # EBOOT never calls the syscall a real Headless.cpp test-success
-          # exit would want) is expected to exit nonzero on its own and
-          # must not be flagged as if it were a crash.
+          # A longer timeout than psp-smoke, since loading the database and map tree is real work.
+          # Capture the exit status instead of `|| true`, so a signal kill (>= 128)
+          # is not absorbed. A plain --timeout exit is expected to be nonzero.
           set +e
           ./ppsspp/bin/ppsspp-headless --log --graphics=software --timeout=45 \
             "$EBOOT" > "$GITHUB_WORKSPACE/headless-game.log" 2>&1
@@ -2867,11 +2085,7 @@ jobs:
           if grep -q 'RPG2K_PSP_BOOT' "$GITHUB_WORKSPACE/headless-game.log" &&
              grep -q 'RPG2K_PSP_GAME_START RPG2k ok' "$GITHUB_WORKSPACE/headless-game.log" &&
              grep -q 'RPG2K_PSP_BRINGUP' "$GITHUB_WORKSPACE/headless-game.log"; then
-            # 30, not 20: the .psp_ci_new_game marker (see this job's own top
-            # comment) makes Title auto-select New Game, which adds the
-            # [RPG2k-MAP] transition line and a run of BRINGUP heartbeats
-            # tagged scene=RPG2k::Scene::Map worth seeing in the job's own
-            # log, not just the uploaded artifact.
+            # 30 lines, to include the map transition and the scene=Map heartbeats.
             grep -E 'RPG2K_PSP_[A-Z_]+|\[RPG2k-MAP\]' "$GITHUB_WORKSPACE/headless-game.log" \
               | head -30
           else
@@ -2888,13 +2102,9 @@ jobs:
           path: headless-game.log
           if-no-files-found: warn
 
+  # Android debug APK. The `android-smoke` job below boots it on an emulator.
+  # See app/android/README.md.
   android:
-    # Build the Android debug APK (app/android). Like the Wio/PSP jobs, this is
-    # the external check for the port: cross-compiles mruby, LVGL,
-    # SDL2/SDL2_mixer, gflags, ng-log, uni-algo and quickjs-ng for arm64-v8a
-    # and packages them into a real APK via Gradle. It does not itself run the
-    # APK -- the `android-smoke` job below does that, on an emulator -- see
-    # app/android/README.md.
     if: ${{ github.event_name != 'issue_comment' && (github.event_name != 'pull_request' || needs.changes.outputs.android == 'true') }}
     needs: changes
     runs-on: ubuntu-24.04
@@ -2902,17 +2112,14 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # 3rd/SDL and 3rd/SDL_mixer (vendored -- Android has no system SDL2
-          # package) plus every submodule the desktop build also needs.
+          # Android has no system SDL2, so it builds the vendored 3rd/SDL and
+          # 3rd/SDL_mixer, plus every submodule the desktop build needs.
           submodules: recursive
-          # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
 
       - name: Copy vendored Unicode mapping tables
-        # See the identical step in the `psp` job above -- same two rake-time
-        # code generators, same $cp932_table/$jis0208_table gap outside the nix
-        # devshell.
+        # Same as the `psp` job's step of the same name.
         run: |
           mkdir -p .native-build-tables
           vendored_table() {
@@ -2934,9 +2141,7 @@ jobs:
             .native-build-tables/JIS0208.TXT \
             'HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc='
 
-      # gperf/bison regenerate mruby-compiler's lexer/grammar when a patch
-      # touches either source (see the `psp` job's identical comment); ubuntu
-      # runners ship bison but not gperf.
+      # Same gperf/bison reason as the `psp` job. Ubuntu ships bison but not gperf.
       - run: sudo apt-get update -q && sudo apt-get install -y -q gperf
 
       - uses: actions/setup-java@v6
@@ -2961,11 +2166,8 @@ jobs:
 
       - name: Build debug APK
         working-directory: app/android
-        # ANDROID_NDK_HOME is set here, not via this step's own `env:` block:
-        # ${{ env.* }} only resolves workflow/job-level `env:` entries, not the
-        # runner image's own preinstalled ANDROID_HOME -- exporting it from
-        # $ANDROID_HOME inside the shell is what actually sees the runner's
-        # real SDK path.
+        # ${{ env.* }} sees only workflow and job env, not the runner's own
+        # ANDROID_HOME. Export the NDK path from the shell instead.
         env:
           cp932_table: ${{ github.workspace }}/.native-build-tables/bestfit932.txt
           jis0208_table: ${{ github.workspace }}/.native-build-tables/JIS0208.TXT
@@ -2979,55 +2181,28 @@ jobs:
           path: app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
+  # Boots the APK on an emulator. Push only, since SDK downloads fail often on
+  # PRs; the `android` job still builds every PR.
+  #
+  # This is a boot-and-crash check, not a performance measurement. The
+  # emulator is x86_64 with ARM binary translation, and its frame times do not
+  # compare with the device numbers in docs/android-perf-followups.md.
+  #
+  # continue-on-error until it has run green for a while. Emulator first boots
+  # are flaky, and the image is not under this job's control.
   android-smoke:
-    # Boot the APK `android` just built, for real, on an emulator -- the same
-    # idea as `psp-smoke`/`psp-smoke-game` for the PSP EBOOT, closing the gap
-    # the `android` job's own comment used to describe. The app ships
-    # arm64-v8a native libraries only (app/android/app/build.gradle's
-    # `abiFilters`), and GitHub-hosted Linux runners only get KVM
-    # acceleration for an x86/x86_64 guest -- an arm64-v8a system image runs
-    # fully software-emulated and is far too slow to boot in a CI job -- so
-    # this targets an x86_64 `google_apis` image instead and leans on the
-    # Android Emulator's own ARM-binary translation (bundled with Google
-    # APIs images from API 28 on, which not by coincidence is also this
-    # app's own `minSdk` floor -- see that field's own comment) to run the
-    # arm64-v8a .so unmodified rather than needing a second, x86_64 native
-    # build.
-    #
-    # This is a *boot-and-crash* check, not a performance measurement: an
-    # x86_64-hosted, ARM-translated emulator's frame times mean nothing next
-    # to the C330 numbers that docs/android-perf-followups.md tracks --
-    # those still need a real device (see docs/android-perf-followups.md's
-    # "How to measure" section). What this job catches instead is the class
-    # of bug the `android` job's compile-only check cannot: a runtime crash,
-    # a missing asset lookup, a native abort that only shows up once
-    # Dalvik/ART actually loads the .so and SDL's Java glue drives main() --
-    # exactly the shape of the three real bugs found by hand before any device
-    # or emulator was available to this port.
-    #
-    # New and unproven, like `psp-smoke-game` was at first (see its own
-    # comment above): `continue-on-error: true` until this has run green for
-    # a while, since ARM-translation availability is an emulator/system-image
-    # detail this job does not control and CI emulators are a known source of
-    # first-boot flakiness.
     needs: android
-    # Emulator boot is flaky on pull requests (SDK downloads fail before any
-    # test runs); the APK build above still checks every PR.
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
     continue-on-error: true
     env:
-      # See the `build` job for what this is -- the same Nepheshel download
-      # runs here, and without it this job hits the real upstream host
-      # directly instead of the CORS proxy's R2 cache `build`/`ruby-checks`/
-      # `wasm` route their own Nepheshel downloads through.
+      # Without the proxy, this job would hit the upstream host directly.
       CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}
     steps:
       - uses: actions/checkout@v7
         with:
-          # Only scripts/android_smoke_check.bash, scripts/download-
-          # nepheshel.bash and this workflow file are read here -- no
-          # submodules, same reasoning as `psp-smoke`.
+          # Only scripts/android_smoke_check.bash, scripts/download/nepheshel.bash
+          # and this workflow file are read.
           submodules: false
           show-progress: false
           persist-credentials: false
@@ -3039,19 +2214,14 @@ jobs:
           path: apk
 
       - name: Download Nepheshel
-        # Same fixture and installer the desktop `build` job and
-        # `psp-smoke-game` already use; see the latter's own comment for why
-        # this is a plain apt-get rather than the full nix devShell.
+        # The same fixture and installer the `psp-smoke-game` job uses.
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q unar
           ./scripts/download/nepheshel.bash
 
       - name: Enable KVM group perms
-        # Standard boilerplate for reactivecircus/android-emulator-runner on
-        # a GitHub-hosted Linux runner: /dev/kvm exists but is root-only
-        # until a udev rule opens it to the `kvm` group the runner user is
-        # already in.
+        # /dev/kvm is root-only until a udev rule opens it to the runner's kvm group.
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -3072,9 +2242,7 @@ jobs:
           api-level: 30
           target: google_apis
           arch: x86_64
-          # -no-snapshot-save alongside the AVD cache above: this job never
-          # wants to persist a mid-boot snapshot back into the cached image,
-          # only the empty-AVD creation cost.
+          # Don't save a mid-boot snapshot back into the cached AVD.
           emulator-options: >-
             -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
             -camera-back none -no-snapshot-save
@@ -3092,48 +2260,38 @@ jobs:
             android-smoke-screenshot.png
           if-no-files-found: warn
 
+  # Flake build with every submodule walked. It is the only job that needs
+  # nested submodules on disk.
   flake:
     if: ${{ github.event_name != 'issue_comment' }}
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # `nix build`'s own `?submodules=1` walk (below) reads these off the
-          # local checkout, so unlike the other jobs this one genuinely needs
-          # them on disk -- but `packages.build` compiles the same
-          # CMakeLists.txt as the `build` job, which `find_package(SDL2)`s a
-          # nixpkgs package rather than building 3rd/SDL or 3rd/SDL_mixer, and
-          # nothing here reads 3rd/optcarrot either. See the `build` job's
-          # "Init submodules" step.
+          # `packages.build` compiles the same CMakeLists.txt as `build`, so the
+          # build's submodule subset is enough for it. The `?submodules=1` walk
+          # below is what needs the others on disk.
           submodules: false
-          # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
 
-      # Every submodule, nested ones too, not the build jobs' subset: the
-      # `?submodules=1` walk below reads each `.gitmodules` entry off disk, and
-      # an uninitialised 3rd/SDL or 3rd/SDL_mixer/external/flac makes it fail.
+      # Every submodule, nested too: the `?submodules=1` walk reads each
+      # .gitmodules entry from disk, and an uninitialised one makes it fail.
       - name: Init submodules
         env:
           RECURSIVE: 1
         run: ./scripts/checkout-submodules.bash
 
-      # This is the one job that still fetches submodules (`?submodules=1` on
-      # the `nix build` below), and the walk covers every entry of every nested
-      # `.gitmodules` — so drop quickjs-ng's unused test262 entry rather than
-      # cloning tc39/test262 to satisfy it.
+      # The walk covers every nested .gitmodules entry, so drop quickjs-ng's
+      # test262 entry rather than clone tc39/test262.
       - name: Skip the quickjs test262 submodule
         run: ./scripts/skip-quickjs-test262.bash
         env:
           CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
 
-      # The opt-out (`CLONE_TEST262=1`) leaves the submodule registered, so it
-      # has to be materialised for the walk to find it.
+      # With CLONE_TEST262=1 the submodule stays registered, so the walk needs it checked out.
       - name: Materialize quickjs test262 submodule for the flake build
         if: ${{ vars.CLONE_TEST262 == '1' }}
         run: git -C 3rd/quickjs -c submodule.test262.update=checkout submodule update --init --depth 1 test262
@@ -3145,41 +2303,26 @@ jobs:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
-      # `?submodules=1` is what puts the submodule sources in the store copy of
-      # this flake, which `packages.build` compiles. It is asked for here rather
-      # than declared in flake.nix, so that only this job pays for the walk --
-      # the three jobs that enter the dev shell build the checkout itself and
-      # never read nix's copy of it (see the comment in flake.nix).
+      # `?submodules=1` puts the submodule sources in the flake's store copy. Only
+      # this job asks for it, so the other jobs skip the walk.
       #
-      # Piped through the same ref-noise filter every `nix` call in this
-      # workflow uses (see e.g. scripts/nix/develop-export-env.bash): fetching
-      # the flake with submodules makes nix fetch each one with `refs/*:refs/*`
-      # and print a `* [new ref]` line per ref, ~15k of them ahead of the first
-      # build log line. Merging stderr into stdout is what lets one filter see
-      # both; `-L`'s build logs stay untouched, they are prefixed with the
-      # derivation name rather than looking like fetch output.
-      # `set -o pipefail` is explicit because this step's shell is `bash -e`,
-      # which does not set it: without it the pipeline's status would be the
-      # filter's, and a failed nix build would pass.
+      # The fetch prints a `* [new ref]` line per ref, which the filter drops.
+      # `set -o pipefail` is needed because bash -e does not set it, and without it
+      # a failed build would pass on the filter's status.
       - name: Build flake
         run: |
           set -o pipefail
           nix build -L '.?submodules=1#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
 
-  # Publish the WebAssembly page to GitHub Pages on every push to master. The
-  # build carries no pthreads/SharedArrayBuffer, so it needs no COOP/COEP
-  # headers and serves fine from Pages. Requires Settings → Pages → "Build and
-  # deployment" → Source = "GitHub Actions" to be enabled once for the repo.
+  # Publishes the WebAssembly page to GitHub Pages on master. No pthreads means
+  # no COOP/COEP headers are needed. Requires Settings → Pages → Source =
+  # "GitHub Actions" once for the repo.
   deploy-pages:
     needs: wasm
-    # `!cancelled()` is load-bearing, not decoration. A skip propagates down the
-    # whole `needs` chain, not just one link: `preview-gate` is skipped outside
-    # the `/preview` flow, and although `wasm` opts out of that with its own
-    # `!cancelled()` and runs to success, this job inherited the skip through it
-    # and never published. Every condition below was satisfied on those runs —
-    # it never got to evaluate them. A status-check function is what overrides
-    # the inherited skip, so the `wasm` result has to be spelled out explicitly
-    # once it is there (that is what `!cancelled()` gives up).
+    # `!cancelled()` is needed because a skip propagates down the `needs` chain.
+    # `preview-gate` is skipped outside /preview, and that skip reached this job
+    # through `wasm`, so it never published. The `wasm` result has to be checked
+    # explicitly.
     if: >-
       ${{ !cancelled() && needs.wasm.result == 'success'
           && github.event_name == 'push'
@@ -3189,8 +2332,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    # Serialise deploys so an older run can't overwrite a newer one; let the
-    # in-progress publish finish rather than cancelling it half-written.
+    # Serialise deploys. Don't cancel a publish that is already running.
     concurrency:
       group: github-pages
       cancel-in-progress: false
@@ -3204,13 +2346,8 @@ jobs:
           name: wasm
           path: site
 
-      # The full changelog lives in CHANGELOG.md at the repo root; render it
-      # into site/changelog/ as a sub-page rather than shipping raw Markdown.
-      # Checked out to its own path (not "."), since a default checkout here
-      # would `git clean` the site/ directory just downloaded above. Only
-      # CHANGELOG.md and the render script are needed, not the whole tree, so
-      # sparse checkout keeps this a few-second step even though deploy-pages
-      # otherwise never checks out the repo.
+      # Renders CHANGELOG.md into site/changelog/. The checkout goes to its own
+      # path, since a default checkout would `git clean` the site/ directory.
       - name: Fetch CHANGELOG.md
         uses: actions/checkout@v7
         with:
@@ -3232,31 +2369,22 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v5
 
-  # Publish a Cloudflare Pages preview deployment on request, so a pull request's
-  # build gets a shareable URL before it merges. Comment `/preview` on the PR to
-  # trigger it (see `preview-gate` above for who may). Requires two repo secrets
-  # — CLOUDFLARE_API_TOKEN (a token with the "Cloudflare Pages: Edit"
-  # permission) and CLOUDFLARE_ACCOUNT_ID — and a Cloudflare Pages project named
-  # "rpg-maker-clone" (create it once in the dashboard as a "Direct Upload"
-  # project). See docs/deploy.md for the one-time setup.
+  # Cloudflare Pages preview for a PR, on `/preview`. Needs the secrets
+  # CLOUDFLARE_API_TOKEN ("Cloudflare Pages: Edit") and CLOUDFLARE_ACCOUNT_ID, and
+  # a Direct Upload project named "rpg-maker-clone". See docs/deploy.md.
   preview-cloudflare:
-    # `preview-gate` only succeeds on a `/preview` comment, so depending on it
-    # is what keeps this job out of ordinary push / pull-request runs.
+    # preview-gate succeeds only on a /preview comment, which keeps this job out of normal runs.
     needs: [ preview-gate, wasm ]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
-    # Two `/preview` comments in a row would otherwise race to publish the same
-    # Pages project; queue them per PR instead. Not cancel-in-progress — a
-    # cancelled upload leaves a half-written deployment.
+    # Queue /preview runs per PR. Don't cancel, since a cancelled upload leaves a half-written deployment.
     concurrency:
       group: cloudflare-preview-${{ github.event.issue.number }}
       cancel-in-progress: false
-    # Job-level env can read secrets (job-level `if` cannot), so expose whether
-    # Cloudflare is configured to a step that gates the deploy. This keeps the
-    # job green when the optional Cloudflare setup hasn't been done yet, instead
-    # of failing on a missing secret.
+    # Job-level env can read secrets, and job-level `if` cannot. The steps below
+    # check whether Cloudflare is configured, so the job stays green when it is not.
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -3270,9 +2398,7 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Cloudflare secrets not set — skipping the preview deployment. See docs/deploy.md for the one-time setup."
           fi
-      # `/preview` is an explicit request, so say something when it cannot be
-      # honoured rather than leaving the comment answered by a 👀 and nothing
-      # else.
+      # An explicit /preview should get a reply, not just a 👀.
       - name: Report the missing setup on the PR
         if: steps.creds.outputs.configured != 'true'
         uses: marocchino/sticky-pull-request-comment@v3
@@ -3292,12 +2418,8 @@ jobs:
           name: wasm
           path: site
 
-      # Same changelog sub-page as `deploy-pages` (see its comment above), so
-      # a reviewer can check the rendered CHANGELOG.md in the preview before
-      # it ships. `ref` matches what the `wasm` job built (the PR head, not
-      # this event's own ref) so the preview always renders the same commit it
-      # deployed. Checked out to its own path, not "." -- a default checkout
-      # here would `git clean` the site/ directory just downloaded above.
+      # `ref` is the PR head, which is what the `wasm` job built. The preview then
+      # renders the same commit it deployed.
       - name: Fetch CHANGELOG.md
         if: steps.creds.outputs.configured == 'true'
         uses: actions/checkout@v7
@@ -3321,11 +2443,9 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          # Any --branch other than the project's production branch is published
-          # as a preview. `pr-<number>` is used rather than the PR's own branch
-          # name so a fork branch that happens to be called master cannot land
-          # on the production deployment, and so each PR keeps a stable
-          # preview URL across repeated `/preview` runs.
+          # A branch other than production is published as a preview. `pr-<number>`
+          # keeps a fork's branch named master off the production deployment, and
+          # gives each PR a stable URL.
           command: >-
             pages deploy site
             --project-name=rpg-maker-clone

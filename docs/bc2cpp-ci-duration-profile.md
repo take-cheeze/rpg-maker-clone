@@ -252,3 +252,24 @@ to revert to 2 if the step fails or slows down.
   other checks that read `BC2CPP_TOOL` use its directory as the tools directory, and `bc2cpp.rb` runs its main
   program only when `$PROGRAM_NAME == __FILE__`. A wrapper must live in `tools/bc2cpp/`, and it must set
   `$PROGRAM_NAME` before it `load`s the real file.
+
+## 6. PR check queue order
+
+The successful [run 39876792747](https://github.com/take-cheeze/rpg-maker-clone/actions/runs/39876792747)
+on 2026-10-23 ran 54 commands in the four-worker bc2cpp check group. Recorded
+command durations sum to 853.2 seconds, giving a 213.3-second lower bound at
+four workers. The step took about 217.4 seconds. Replaying its rounded command
+durations in workflow order gives 217.1 seconds; the last worker runs
+`stack_tuples_check.rb` from 179.0 to 217.1 seconds.
+
+The queue now starts longer commands first, ordered by that run's timing table.
+A replay with the same fixed durations finishes in 213.3 seconds, 3.8 seconds
+sooner. This is a scheduling estimate, not a measured CI speedup: contention and
+cache state can change individual durations. All 54 commands, their arguments,
+and the four-worker limit are unchanged. Short checks fill the tail rather
+than waiting ahead of a large fixture.
+
+Scheduling is already close to the aggregate-work bound. Larger gains require
+reducing compiler or fixture work; adding workers inside a check would contend
+with the existing four commands. Refresh this order when the timing table
+changes substantially rather than treating these durations as permanent costs.

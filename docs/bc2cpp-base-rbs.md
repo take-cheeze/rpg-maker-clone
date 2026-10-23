@@ -65,7 +65,8 @@ ruby scripts/bc2cpp/base_section_check.rb --write CLOSED_BUILD_DIR
 leaves the rest of the file byte for byte. A declaration the generator no longer
 writes is removed; one it writes and the file lacks is appended under its
 `# bc2cpp-native:` marker. The later sections (trace-derived and hand-written
-tables) have no generator and are not touched.
+tables) have no generator and are not touched. Candidates are promoted into the later sections
+with [promote_candidates.rb](bc2cpp-promote-candidates.md), which never writes the base section.
 
 `scripts/bc2cpp/base_section_regen_check.rb` tests the writer on the host, with
 fixture generator output and a round trip of the committed file, which must
