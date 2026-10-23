@@ -1,0 +1,1 @@
+- bc2cpp: `Class#to_s` has a direct native arm in the native-direct chain. Generated code does not change in by-name count yet; the by-name `else` remains.
