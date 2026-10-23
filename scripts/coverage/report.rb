@@ -157,6 +157,7 @@ CHECKS = [
   { name: 'bc2cpp-join-dominance', command: %w[scripts/bc2cpp/join_dominance_check.rb] },
   { name: 'bc2cpp-declared-return-guard', command: %w[scripts/bc2cpp/declared_return_guard_check.rb] },
   # The host-only hand-built shapes of the register flow pass.
+  { name: 'bc2cpp-enum-target-flow', command: %w[scripts/bc2cpp/enum_target_flow_check.rb] },
   { name: 'bc2cpp-def-value-flow', command: %w[scripts/bc2cpp/def_value_flow_check.rb] },
   { name: 'bc2cpp-register-flow', command: %w[scripts/bc2cpp/register_flow_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp/core_mixins_check.rb] },
