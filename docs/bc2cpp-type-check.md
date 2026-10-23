@@ -373,7 +373,7 @@ RBS suggestions continue to exclude them.
 
 `type_check.rb --emit-rbs DIR` writes the inferred types as RBS (ADR 0414), one file per class or module. Unknown types are
 `untyped`; an optional parameter is `?T` when its type is known (declared, or the join of call sites that all pass
-it; see [IR feedback](bc2cpp-ir-feedback.md#optional-parameters)) and `?untyped` otherwise; a rest parameter is `*T` and a keyword is `k: T` (`?k: T` when optional) when every reaching call supplies or omits it under the rules in [rest, keyword and block parameters](bc2cpp-ir-feedback.md#rest-keyword-and-block-parameters), else `untyped`; a block is required (`{ }`) when every reaching call passes a literal block, else optional (`?{ }`); CRuby's core RBS is
+it; see [IR feedback](bc2cpp-ir-feedback.md#optional-parameters)) and `?untyped` otherwise; a rest parameter is `*T` and a keyword is `k: T` (`?k: T` when optional) when every reaching call supplies or omits it under the rules in [rest, keyword and block parameters](bc2cpp-ir-feedback.md#rest-keyword-and-block-parameters), else `untyped`; a block is required (`{ }`) when every reaching call passes a literal block, else optional (`?{ }`), and its parameters are the classes a plain yielder's own yield sites prove (`{ (Integer, untyped) -> untyped }`, otherwise `{ (*untyped) -> untyped }`; see [block parameters](bc2cpp-ir-feedback.md#rest-keyword-and-block-parameters)); CRuby's core RBS is
 the base environment (classes it declares are not redeclared). The directory is not read as hints unless named in
 `BC2CPP_SIG_DIRS`; read back, it reports nothing, and a wrong edit is a located TC1001.
 
