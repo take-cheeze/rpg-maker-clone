@@ -42,7 +42,9 @@ end
 return contracts. Its fact records all three dependencies. Every receiver
 union member must have a matching contract; one missing member keeps the
 whole result unknown. Ancestor lookup uses the same program hierarchy as
-implicit self-call contracts. This does not prove an exact receiver or method
+implicit self-call contracts, and each declared receiver class joins the
+contracts of its bounded subclasses, as a self-call does (see **Explicit
+receivers** in [IR type feedback](bc2cpp-ir-feedback.md)). This does not prove an exact receiver or method
 identity and cannot justify unguarded native dispatch.
 
 Block-call results do not borrow normal RBS return contracts: `break` can

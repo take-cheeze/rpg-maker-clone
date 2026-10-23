@@ -6,7 +6,8 @@ arguments, ivars and method returns, including nullable and union types.
 Ivar reads use the applicable owner/ancestor contract. An implicit call on
 `self` joins the contracts of every receiver class the program bounds (see
 **Implicit self-calls** below). An ordinary explicit receiver with known nominal bounds can also use its
-return contracts. An unknown receiver does not inherit a return contract
+return contracts, joined over the subclasses the program bounds (see
+**Explicit receivers** below). An unknown receiver does not inherit a return contract
 merely because its method name matches; an existing complete compiler proof
 can independently establish its result. See [call-result propagation](bc2cpp-ir-call-results.md).
 
@@ -304,6 +305,27 @@ Not modelled: a subclass that removes `name` (`undef_method`, `remove_method`),
 which the receiver set does not see. Explicit receivers have the same limit.
 The rule is in `RbsSignatures.self_receivers` and `RbsSignatures.self_call_types`,
 and the fixture is `scripts/bc2cpp/self_call_override_contracts_check.rb`.
+
+**Explicit receivers.** A send on a receiver with declared nominal bounds (an
+argument, ivar or element declared `Base`) dispatches on the runtime class,
+which may be any program subclass of `Base`. So the resolver joins the same
+receiver set as a self-call, per declared class: `self_receivers` for that
+class, then `self_call_types` for `name`. With `def use(o); o.greet; end` and
+`o: Base`, where `Child < Base` overrides `greet` to return `Integer`, the result
+is `Symbol | Integer`; the owner-only answer (`Symbol`) is no longer reported.
+With no override the owner's contract is kept. The send is untyped (refused as
+`call_receiver_unbounded:CLASS#NAME`) when the receiver set is open by the same
+rules as for self, including the absence of a closed world. A receiver class
+with no closed-world bound is therefore untyped even when no subclass exists:
+an outside subclass cannot be ruled out. Fixture:
+`scripts/bc2cpp/explicit_receiver_override_contracts_check.rb`.
+
+Declared core receivers (`Array`, `Hash`, ...) are refused by the same core
+ancestor rule as self-calls, because `core_receiver_owners` includes every core
+class. Their declared returns are therefore untyped now, where they were typed
+before. That is conservative but a precision loss; narrowing the core rule to
+proper ancestors of core classes is a separate follow-up, since it would also
+change self-call results.
 
 Rest, keyword and block contracts in the body analysis, required parameters of
 methods with optional ones, constants and nonlocal-return inference remain
