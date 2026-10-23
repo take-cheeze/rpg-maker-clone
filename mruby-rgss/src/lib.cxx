@@ -8710,10 +8710,16 @@ mrb_value tone_to_s_direct(mrb_state* M, mrb_value self) {
   return tone_to_s(M, self);
 }
 
-// Module#to_s (3rd/mruby/src/class.c), the same body the Class#to_s method runs.
-mrb_value mrb_mod_to_s(mrb_state* M, mrb_value klass);
-mrb_value class_to_s_direct(mrb_state* M, mrb_value self) {
+// mruby's C symbol (3rd/mruby/src/class.c): extern "C" keeps the reference
+// unmangled, so it does not bind to rgss::mrb_mod_to_s. The RGSS-side
+// class_to_s wraps it so the forwarder calls a function these sources define
+// (binding_split_check.rb).
+extern "C" mrb_value mrb_mod_to_s(mrb_state* M, mrb_value klass);
+mrb_value class_to_s(mrb_state* M, mrb_value self) {
   return mrb_mod_to_s(M, self);
+}
+mrb_value class_to_s_direct(mrb_state* M, mrb_value self) {
+  return class_to_s(M, self);
 }
 
 mrb_value vp_ox_direct(mrb_state* M, mrb_value self) {

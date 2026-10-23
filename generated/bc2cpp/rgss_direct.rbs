@@ -2,6 +2,10 @@
 # Do not edit; change the table (scripts/native/binding_split.rb) and rerun the generator. Returns are untyped
 # here: the result kinds live in declarations.rbs#rgss_results.
 
+class Class
+  def to_s: () -> untyped
+end
+
 class RGSS
   def self.default_font_path: () -> untyped
   def self.mouse_pressed?: () -> untyped
