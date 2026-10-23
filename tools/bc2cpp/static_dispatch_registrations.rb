@@ -202,7 +202,9 @@ module StaticDispatchRegistrations
     # scripts/ and the CI workflows are scanned whatever their extension: the
     # boot checks feed inline Ruby (heredocs in *.bash) to the real binary's
     # `--script`, which runs it inside the same VM.
-    ruby = foreign_mrblib_srcs(repo_root) +
+    # Every core-gem mrblib is scanned as text here, including the ones compiled as program
+    # (foreign_mrblib_srcs skips those): their sends are names this analysis must see.
+    ruby = (foreign_mrblib_srcs(repo_root) + Dir["#{repo_root}/3rd/mruby/mrbgems/*/mrblib/**/*.rb"]).uniq +
            Dir["#{repo_root}/mruby-*/mrblib/**/*.rb"] +
            (closed_only ? [] : Dir["#{repo_root}/mruby-*/test/**/*.rb"] +
                                Dir["#{repo_root}/scripts/**/*"].select { |p| File.file?(p) } +
