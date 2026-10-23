@@ -1,0 +1,1 @@
+- **bc2cpp**: the closed-world scans read their neighbouring instructions through a shared `BytecodeIR::Window` API (`tools/bc2cpp/bytecode_ir_windows.rb`) instead of index arithmetic. Generated output is unchanged.

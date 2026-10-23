@@ -43,6 +43,11 @@ used to read from `irep.instructions` (ADR 0502):
 - `Program#straight_line`, `#adjacent_block_index`, `#each_source`,
   `#each_with_op`: the instruction-order questions, answered from the IR's
   predecessor sets.
+- `Program#constant_path(from, reg)` (`bytecode_ir_constant_path.rb`): the
+  `Array` / `Hash` / `String` constant a register was loaded from, as a
+  `BytecodeIR::ConstantPath`. It is a Program query because it is a pure
+  reaching-definition walk over the instruction list; `Irep#constant_path`
+  delegates to it.
 
 What the analyses decide on top of these facts:
 
@@ -71,5 +76,4 @@ Still outside the IR, and why:
   `ivar_classes`, `capture_hints`, `class_layout`, `registry` and the return
   proofs. These are program-level tables, not IR queries, so the walk keeps them
   as arguments.
-- RecordHash's `Array.new` / `Hash.new` constructor check (`constant_path`).
 - The RBS record checker's `DeclScanner` overrides (`rbs_record_types.rb`).

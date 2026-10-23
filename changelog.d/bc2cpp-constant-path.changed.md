@@ -1,0 +1,1 @@
+- **bc2cpp**: the ConstantPath query moved into the IR as `BytecodeIR::Program#constant_path` (`tools/bc2cpp/bytecode_ir_constant_path.rb`). `Irep#constant_path` and RecordHash's constructor check now delegate to it. No change to generated C++ or analysis output.

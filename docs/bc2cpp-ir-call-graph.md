@@ -31,9 +31,8 @@ many simple graph cases; unknown receiver edges still limit further gains.
 The native entries seed the same summary (ENTRY_SEEDS, see
 [ADR 0519](adr/0519-bc2cpp-entry-seeds.md)). The `initialize` of a maker
 (`RPG2k`, `RPGVX`, `RPGXP`, `MZ`, `MV`, `WolfRPG`) takes one Array at position 1.
-The wio entry (`app/wio/src/maix_game_main.cxx`, the closed world the type check
-analyses) and the desktop and browser entry (`src/main.cxx`) build it themselves
-and pass it to `mrb_obj_new`. The seed applies only while that construction is
+The desktop host's entry (`src/main.cxx`, the closed world the type check analyses) and the wio
+entry (`app/wio/src/maix_game_main.cxx`) build it themselves and pass it to `mrb_obj_new`. The seed applies only while that construction is
 the maker's whole entry: every native spelling of the name is such a construction,
 and no Ruby `new` or `super` reaches the body. Its parameter row keeps source
 `inferred:call-graph`. `BC2CPP_ENTRY_SEEDS=0` turns the seeds off. The `start`
