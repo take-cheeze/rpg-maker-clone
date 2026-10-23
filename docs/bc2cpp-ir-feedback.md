@@ -3,8 +3,9 @@
 The type-check workflow now connects RBS contracts, bytecode IR facts and
 reviewable RBS suggestions. It retains nominal contracts for required
 arguments, ivars and method returns, including nullable and union types.
-Ivar reads and implicit calls on `self` use the applicable owner/ancestor
-contract. An ordinary explicit receiver with known nominal bounds can also use its
+Ivar reads use the applicable owner/ancestor contract. An implicit call on
+`self` joins the contracts of every receiver class the program bounds (see
+**Implicit self-calls** below). An ordinary explicit receiver with known nominal bounds can also use its
 return contracts. An unknown receiver does not inherit a return contract
 merely because its method name matches; an existing complete compiler proof
 can independently establish its result. See [call-result propagation](bc2cpp-ir-call-results.md).
@@ -278,13 +279,31 @@ proof) reaches the contract lookup. A call on an unproven receiver stays
 deliberately narrower than "single contract owner": that inference would
 assume a class the analysis has not proven.
 
-**Known gap: implicit self-calls.** An implicit `self` call takes the return
-contract of the method's own owner chain, not of the receiver's class. A
-subclass or includer that overrides the callee with a different contract is not
-checked: with `Base#via_self` calling `greet`, and `Child < Base` overriding
-`greet` to return `Integer`, `Child#via_self` is still reported as `Symbol`.
-Fixing this needs the set of overriding descendants, which the lookup does not
-have, so it remains open.
+**Implicit self-calls.** An implicit `self` send dispatches on the receiver's
+class, so its declared result is the join over every class the receiver can
+be. The rule, for a send of `name` in a method of `owner`:
+
+- The receiver set is `ClosedWorld#known_subclasses(owner)`: the owner and every
+  program class that descends from it. A module owner is never bounded here.
+- Each receiver contributes the contract its own dispatch reaches (the first
+  owner in its ancestor chain that declares `name`). A `:self` contract answers
+  that receiver's class. The result is the union of those contributions.
+- With no override anywhere in the set this is the owner's contract. With
+  `Base#via_self` calling `greet`, and `Child < Base` overriding `greet` to
+  return `Integer`, `Child`'s override joins `Base`'s `Symbol`, so
+  `Base#via_self` is `Symbol | Integer`, never `Symbol` alone.
+- The send is untyped (no declared result) when the set is open: no closed
+  world, a subclass that may come from outside the program (`Class.new`, an
+  outside definer, a wildcard), a module owner, or a core ancestor such as
+  `Object` or `Kernel`, whose core instances the program does not declare. It
+  is also untyped when a receiver's chain is unknown (an unknown mixin or a
+  cycle) or does not reach the owner, when a receiver runs a `method_missing`,
+  or when a receiver lacks a declared contract for `name`.
+
+Not modelled: a subclass that removes `name` (`undef_method`, `remove_method`),
+which the receiver set does not see. Explicit receivers have the same limit.
+The rule is in `RbsSignatures.self_receivers` and `RbsSignatures.self_call_types`,
+and the fixture is `scripts/bc2cpp/self_call_override_contracts_check.rb`.
 
 Rest, keyword and block contracts in the body analysis, required parameters of
 methods with optional ones, constants and nonlocal-return inference remain

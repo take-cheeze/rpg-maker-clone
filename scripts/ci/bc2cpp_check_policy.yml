@@ -646,6 +646,12 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/self_call_override_contracts_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
   scripts/bc2cpp/type_check_provenance_check.rb:
     tier: fast
     capabilities: []
