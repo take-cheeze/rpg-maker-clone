@@ -189,8 +189,14 @@ inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the
 type-check RBS, and the `ivars` rows of the facts file) are the union of every
 traced store across the ivar's numeric family: superclass, include and prepend
 links, since all of them share the slot. The candidate gains `nil` when some
-read may run before any store: a `@x = nil` store, or a reading owner that
-`numeric_ivar_assured?` does not clear. That check needs a closed world with no
+read may run before any store: a `@x = nil` store, or a read that is not
+store-first in an owner that `numeric_ivar_assured?` does not clear. A read is
+store-first only when it sits in its owner's method body and every path from the
+entry passes a SETIV of the ivar before it (a must-store pass over that body's
+CFG, exception edges included). A self-call never counts as a store, so a read
+after one keeps `nil`; so does any read in a block. An `instance_variable_set` or
+`remove_instance_variable` name anywhere in the program turns the proof off. That
+check needs a closed world with no
 `allocate` and a #initialize that assigns on every path before `self` escapes;
 where it cannot decide, `nil` is included. A store the analysis did not resolve,
 or an ivar touched by code no class owns (a module body), leaves the candidate
