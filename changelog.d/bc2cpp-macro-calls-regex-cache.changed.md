@@ -1,0 +1,1 @@
+- **bc2cpp**: the native macro scanner (`NativeExpressionDevirt.macro_calls`) compiles each macro's call pattern once instead of once per call. Generated output is unchanged; the scan over the native sources is about 5% cheaper.
