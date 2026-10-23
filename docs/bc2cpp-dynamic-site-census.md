@@ -669,10 +669,9 @@ judged this way, and only for a placed class that is not a module (`block_captur
 
 Still "escapes": a receiver of unknown class or of two classes; a user `map`, `each` or subclass `each` that keeps its
 block; an Enumerable whose `each` keeps it; a block that stores the object or a closure over it; an object passed to
-an unknown callee; an Array literal receiver of `each` or `map`, because the no-block branch of `Array#each` returns
-`to_enum(:each)`, which keeps self, and the analysis does not branch on the block's presence. Covered by
-`scripts/bc2cpp/escape_receiver_flow_check.rb` (verdicts for the proven and refused shapes, and compiled against
-interpreted runs of the confined ones).
+an unknown callee. Covered by `scripts/bc2cpp/escape_receiver_flow_check.rb` (verdicts for the proven and refused shapes,
+and compiled against interpreted runs of the confined ones). The Array literal receiver of `each` and `map` is decided
+by the next follow-up.
 
 | Measure (base `origin/master` and this branch, the same census command in each tree) | Base | Branch |
 | --- | ---: | ---: |
@@ -693,6 +692,44 @@ every definition of a name. A user `map` that keeps its block (`def map(&b); @b 
 captures (`mrb_cptr_value(M, &r2)` in the generated code), so calling the kept block after the method returned reads the
 dead frame. The compiled run of such a program segfaults on `origin/master` too. The behaviour program of
 `scripts/bc2cpp/escape_receiver_flow_check.rb` has no such definition; its verdict program keeps them only for the verdict.
+
+## Follow-up: the block arm of a literal-block send
+
+An Array literal receiver of `each` or `map` (`[1, 2].each { }`) was still "escapes" after the receiver-class flow: the
+no-block branch of `Array#each` returns `to_enum(:each)`, which keeps self, and the analysis did not branch on the block's
+presence. Now a send whose block is the `BLOCK` made in its own frame (`SENDB`, or the implicit-self `SSENDB`) is judged
+with the block given:
+
+* `literal_block_send?` (`tools/bc2cpp/escape_analysis.rb`) proves the block is a Proc: the block register's only
+  reaching definition is a `BLOCK`. A variable, `&blk`, an optional value or several writers keep the by-name verdict,
+  and a `SEND` (no block) is never judged this way.
+* With the block given, a jump on the block slot's entry value (`unless block`) is decided, so the `to_enum` arm is not
+  walked (`block_test_successors`). A jump with a handler edge, or a write to the slot from this frame or a nested block,
+  is not decided. The same rule applies to the callee's `returns_self?`, so the result of the call is tracked only when
+  the block path can return self.
+* In a self-tracked run the frame's `self` is an instance of the run's exact class, so a closure of that frame is
+  judged on that class (`frame_self_klass`). This is what lets `Enumerable#collect`'s own `self.each { }` resolve on
+  `Array#each` rather than on every `each`.
+
+Still "escapes": a no-block `each` (the Enumerator holds the array); a block that stores its argument, or the receiver
+itself, in an outer array; a block passed as `&blk`, which is not a literal block; an array passed to an unknown method.
+Covered by `scripts/bc2cpp/array_literal_block_check.rb` (the verdicts above, and compiled against interpreted runs of
+the confined `each` and `map` and of the no-block path).
+
+| Measure (base `origin/master` and this branch, the same census command in each tree) | Base | Branch |
+| --- | ---: | ---: |
+| creation sites, all irep (6,581): confined | 1,367 | 1,440 |
+| of those, escapes turned confined / confined turned escapes | | 73 / 0 |
+| the 73 turned confined: array literals, by first reason (`send_receiver` / `send_argument`) | | 67 / 6 |
+| array literal sites with `send_receiver`, all irep | 223 | 67 |
+| of the 156 no longer `send_receiver`: confined / now escaping for a later reason | | 67 / 89 |
+| shipped methods (4,210 creation sites): engine `array` confined | 55 | 128 |
+| `shipped.cxx` (413,906 lines) | | byte-identical after normalising the checkout path |
+| `dynamic_site_census.rb` on that `shipped.cxx` (`bc2cpp_send` 835 in bodies, `mrb_funcall_with_block` 379) | same | same |
+
+The 89 keep escaping (they are not confined by this change): the walk now reaches their later reason (an argument, a
+return, an ivar store) instead of stopping at the `to_enum` arm. `coverage_report.rb` still exits 1 on both trees at its
+summary step (the known label mismatch); the escape TSV and `shipped.cxx` are written before it.
 
 ## Follow-up: the class of a `new` site
 
