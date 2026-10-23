@@ -38,7 +38,9 @@ calls with `keyword_init:` and a block. Different Symbol arms publish no fixed
 storage layout but register every possible native reader and writer. Unknown
 positions publish no partial accessor list. Handler edges and captured-register
 writes participate in the reaching-definition query; an unproved handler merge
-refuses all member names. A refused Struct receiver query never falls back to the nearest writer. Block body methods retain
+refuses all member names. Only explicit receiver sends recognize Struct; implicit
+sends ignore stale values in their call-frame receiver slot. A refused Struct receiver query never
+falls back to the nearest writer. Block body methods retain
 their named or anonymous Struct owner even without a fixed layout. Naming a
 Struct requires an adjacent constant assignment entered only from its constructor;
 a branch join into that assignment cannot claim the last branch's layout.
