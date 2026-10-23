@@ -283,6 +283,16 @@ sees the type the call sites prove:
   takes the element join. The join is withheld when the body could change the array: any
   read of it (or of a `MOVE` copy) other than an element read, a closure that captures
   it, a zero-argument `super` (which packs it), or a `binding`/`eval` call.
+  Where the join is absent or withheld, a declared `*T` in the signature types the
+  element read as `T` (with `nil` for an absent index, as for the join). That bound is
+  a signature contract, so only the declared query (`fact_at`) sees it, not the
+  undeclared one (`at`). The mutation and escape refusals withhold call-site facts only,
+  so they do not withdraw it; as for a declared `Array[T]` argument, the body's own
+  stores into the array are not checked against `T`. Only a positional-only rest (no
+  post, keyword or keyword-rest parameter) whose optional count matches the signature
+  declares it. With both the join and `*T`, the join is read, as it is for a required
+  parameter, so a disagreeing `*T` does not widen the body; the trace check still
+  compares `*T` with the observed elements.
 - **Keyword**: the `KARG` register takes the join. An optional keyword's join already
   holds its default's class, so the register reads the join with no further check. A
   declared keyword type wins over the join.
@@ -290,6 +300,7 @@ sees the type the call sites prove:
   `Proc | nil`. A declared block signature withholds it, as the report row does.
 
 `BC2CPP_IR_ARGUMENT_TYPES=0` restores `untyped` for all three, in the body and in the rows.
+A declared `*T` is not a join, so the switch does not withdraw it.
 These facts feed the report and the candidate RBS only; the generated code does not read them.
 
 ## Boundaries
