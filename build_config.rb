@@ -169,9 +169,9 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # only real caller (rgss_library.rb's Dir.glob patch) and it is already
   # excluded from wio's/maix's own single_format_only gem set below, so unlike the
   # desktop/android history above, there is no live NameError risk to guard
-  # against by keeping it. The native `closed` bc2cpp build (below) keeps it:
-  # its gem set is the desktop host's.
-  conf.gem core: 'mruby-dir' unless %w[wio maix].include?(conf.name)
+  # against by keeping it. The native `closed` bc2cpp build (below) leaves it
+  # out too: its gem set is the RPG2000/2003-only desktop host's.
+  conf.gem core: 'mruby-dir' unless %w[wio maix closed].include?(conf.name)
   conf.gem core: 'mruby-numeric-ext'
   # Range#cover? lives here, not in core Range. Five call sites in mruby-rpg2k
   # (Game::Shop#equip?, the special-item checks in game.rb / item_menu.rb)
@@ -284,9 +284,6 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # scanning), so nothing left needs it once they're gone.
   # `closed` is the sealed RPG2000/2003 desktop host, the native bc2cpp build (its stanza below).
   single_format_only = %w[psp wio maix closed].include?(conf.name)
-  # The device builds' gem set (no onig, which only the dropped formats use). `closed` keeps the desktop
-  # host's gem set and drops only the formats.
-  device_gems = %w[psp wio maix].include?(conf.name)
   # bc2cpp compiles closed-world programs only. RPGMAKER_BC2CPP=1
   # adds the compiled gems to the single-format builds, whose only Ruby is the
   # closed world; every other build (desktop, wasm, android, and the bootstrap
@@ -296,7 +293,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
 
   conf.gem "#{MRUBY_ROOT}/../mruby-onig-regexp" do
     bundle_onigmo
-  end unless device_gems
+  end unless single_format_only
 
   conf.gem "#{MRUBY_ROOT}/../../mruby-lcf"
   # An opt-in parallel build path -- RPGMAKER_BC2CPP=1
