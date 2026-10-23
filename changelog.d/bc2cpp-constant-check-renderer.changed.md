@@ -1,0 +1,1 @@
+- Reduce constant-typing check process overhead by reusing the report renderer across isolated compiler runs, keeping the positive CLI check.

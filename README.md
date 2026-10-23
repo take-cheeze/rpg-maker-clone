@@ -1036,6 +1036,9 @@
 - Context typing reuses evaluations while callee states and return masks remain
   unchanged within one root graph, retaining the original solver budgets.
 
+- Constant-typing fixture variants reuse the report renderer while running each
+  compiler in its own process; the positive case still exercises the report CLI.
+
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
   shape and control-flow soundness checks. Compiler fixtures remain isolated.
@@ -1186,7 +1189,8 @@
   Declaration-aware queries also track required RBS arguments, including nullable,
   union and boolean types, while marking their reliance on signature contracts.
   Report-only checks skip cleanup of discarded C++ text; context-check variants
-  reuse the report renderer while keeping fresh compiler subprocesses. See
+  reuse the report renderer. A guarded shared setup forks private inference
+  variants sequentially before constructing any compiler instance. See
   [CI report work](docs/bc2cpp-type-check.md#report-only-ci-work).
   [IR feedback](docs/bc2cpp-ir-feedback.md) extends contracts to ivars and implicit
   self-call returns, reports unknown reasons and mismatches, and exports reviewable
