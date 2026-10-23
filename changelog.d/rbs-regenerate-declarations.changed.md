@@ -1,0 +1,1 @@
+- The bc2cpp declarations in `sig/bc2cpp/declarations.rbs` were regenerated from the engine with the current type-check tooling: 1234 members the file did not declare yet were added as promoted candidates (`scripts/bc2cpp/promote_candidates.rb`). No existing declaration was changed.

@@ -11016,3 +11016,1594 @@ class Integer
   # bc2cpp-native: core_results
   def inspect: () -> String
 end
+
+# ---- promoted candidates: cand-emit-f4
+# candidate: cand-emit-f4/Game.rbs
+module Game
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  TILE: Integer
+end
+
+# candidate: cand-emit-f4/Game/Actor.rbs
+class Game::Actor
+  @battler_animation_override: Integer | nil
+  @class_changed: bool
+  @class_id: Integer
+  @class_row: nil | LCF::Array1D
+  @db_row: nil | LCF::Array1D
+  @face_index: Integer | nil
+  @face_name: String | nil
+  @id: Integer
+  @level: Integer
+  @row: Integer
+  @sprite_changed: bool
+  @transparent: bool
+  BATTLE_COMMAND_ATTACK: Integer
+  BATTLE_COMMAND_DEFENSE: Integer
+  BATTLE_COMMAND_ESCAPE: Integer
+  BATTLE_COMMAND_ITEM: Integer
+  BATTLE_COMMAND_SKILL: Integer
+  BATTLE_COMMAND_SPECIAL: Integer
+  BATTLE_COMMAND_SUBSKILL: Integer
+  CLASS_PARAM_HALF: Integer
+  CLASS_PARAM_NO_CHANGE: Integer
+  CLASS_PARAM_RESET_LEVEL: Integer
+  CLASS_PARAM_RESET_LV1: Integer
+  CLASS_SKILL_ADD: Integer
+  CLASS_SKILL_NO_CHANGE: Integer
+  CLASS_SKILL_RESET: Integer
+  DEATH_STATE: Integer
+  EXP_DEFAULT: Integer
+  EXP_MAX_2K: Integer
+  EXP_MAX_2K3: Integer
+  ITEM_WEAPON: Integer
+  MAX_EFFECTIVE_HP_2K: Integer
+  MAX_EFFECTIVE_HP_2K3: Integer
+  MAX_EFFECTIVE_MP: Integer
+  MAX_EFFECTIVE_STAT: Integer
+  PARAM_AGI: Integer
+  PARAM_ATK: Integer
+  PARAM_DEF: Integer
+  PARAM_INT: Integer
+  PARAM_MAX_HP: Integer
+  PARAM_MAX_MP: Integer
+  ROW_BACK: Integer
+  ROW_FRONT: Integer
+  SHIELD_SLOT: Integer
+  WEAPON_SLOT: Integer
+end
+
+# candidate: cand-emit-f4/Game/Backdrop.rbs
+module Game::Backdrop
+  TYPE_PARENT: Integer
+  TYPE_SPECIFIC: Integer
+  TYPE_TERRAIN: Integer
+end
+
+# candidate: cand-emit-f4/Game/Battle.rbs
+class Game::Battle
+  @escaped: bool
+  @force_flee: bool
+  @rpg2003: bool
+  @terminated: bool
+  DAMAGE_CAP_2K: Integer
+  DAMAGE_CAP_2K3: Integer
+  GAUGE_MAX: Integer
+  MAX_ROUNDS: Integer
+  MAX_STAT_BATTLE_VALUE: Integer
+  NORMAL_ATTACK_VARIANCE: Integer
+  RECOVER_CAP_2K: Integer
+  RECOVER_CAP_2K3: Integer
+  RESTRICTION_ATTACK_ALLY: Integer
+  RESTRICTION_ATTACK_ENEMY: Integer
+  RESTRICTION_DO_NOTHING: Integer
+  ROW_BACK: Integer
+  ROW_FRONT: Integer
+  ROW_HIT_PENALTY: Integer
+  STATE_PERSISTS_ON_MAP: Integer
+end
+
+# candidate: cand-emit-f4/Game/BattlePage.rbs
+module Game::BattlePage
+  ACTOR_HP: Integer
+  COMMAND_ACTOR: Integer
+  ENEMY_HP: Integer
+  FATIGUE: Integer
+  SWITCH_A: Integer
+  SWITCH_B: Integer
+  TURN: Integer
+  TURN_ACTOR: Integer
+  TURN_ENEMY: Integer
+  VARIABLE: Integer
+end
+
+# candidate: cand-emit-f4/Game/CharSet.rbs
+module Game::CharSet
+  HEIGHT: Integer
+  WIDTH: Integer
+end
+
+# candidate: cand-emit-f4/Game/Character.rbs
+class Game::Character
+  @animation_stopped: bool
+  @facing_locked: bool
+  @fixed_facing: bool
+  @jumped: bool
+  @layer: Integer
+  @move_frequency: Integer
+  @move_speed: Integer
+  @overlap_forbidden: bool
+  @through: bool
+  @transparency: Integer
+end
+
+# candidate: cand-emit-f4/Game/ChipSet.rbs
+class Game::ChipSet
+  ABOVE_BIT: Integer
+  ALL_DIRS: Integer
+  COUNTER_BIT: Integer
+end
+
+# candidate: cand-emit-f4/Game/ChipsetLayout.rbs
+module Game::ChipsetLayout
+  BLOCK_C: Integer
+  BLOCK_D: Integer
+  BLOCK_E: Integer
+  BLOCK_E_TILES: Integer
+  BLOCK_F: Integer
+  BLOCK_F_TILES: Integer
+  CHIPSET_H: Integer
+  CHIPSET_W: Integer
+  HTS: Integer
+  N: Integer
+  TS: Integer
+end
+
+# candidate: cand-emit-f4/Game/CommonEvent.rbs
+module Game::CommonEvent
+  AUTO_START: Integer
+  PARALLEL: Integer
+end
+
+# candidate: cand-emit-f4/Game/CommonEvent/CommonEventRecord.rbs
+class Game::CommonEvent::CommonEventRecord
+  @id: Integer
+end
+
+# candidate: cand-emit-f4/Game/Enemy.rbs
+class Game::Enemy
+  @flying_phase: Integer
+  @hidden: bool
+  @levitate: bool
+  @miss: bool
+  @transparent: bool
+end
+
+# candidate: cand-emit-f4/Game/EnemyAction.rbs
+class Game::EnemyAction
+  BASIC_ATTACK: Integer
+  BASIC_AUTODESTRUCT: Integer
+  BASIC_CHARGE: Integer
+  BASIC_DEFEND: Integer
+  BASIC_DUAL_ATTACK: Integer
+  BASIC_ESCAPE: Integer
+  BASIC_NOTHING: Integer
+  BASIC_OBSERVE: Integer
+  COND_ACTORS: Integer
+  COND_ALWAYS: Integer
+  COND_FATIGUE: Integer
+  COND_HP: Integer
+  COND_PARTY_LVL: Integer
+  COND_SP: Integer
+  COND_SWITCH: Integer
+  COND_TURN: Integer
+  KIND_BASIC: Integer
+  KIND_SKILL: Integer
+  KIND_TRANSFORM: Integer
+end
+
+# candidate: cand-emit-f4/Game/EventGraphic.rbs
+module Game::EventGraphic
+  CONTINUOUS: Integer
+  FIXED_CONTINUOUS: Integer
+  FIXED_GRAPHIC: Integer
+  FIXED_NON_CONTINUOUS: Integer
+  NON_CONTINUOUS: Integer
+  SPIN: Integer
+end
+
+# candidate: cand-emit-f4/Game/EventPage.rbs
+module Game::EventPage
+  ACTOR: Integer
+  ITEM: Integer
+  SWITCH_A: Integer
+  SWITCH_B: Integer
+  TIMER: Integer
+  TIMER2: Integer
+  VARIABLE: Integer
+end
+
+# candidate: cand-emit-f4/Game/Interpreter.rbs
+class Game::Interpreter
+  @actor_graphic_changed: bool
+  @battle_animation_pending: bool
+  @battle_request: Game::Interpreter::BattleRequest | nil
+  @choice_cancel_type: Integer
+  @erase_requested: bool
+  @face_owner: bool
+  @halt_movement_requested: bool
+  @inn_price: Integer
+  @inn_request: Game::Interpreter::InnRequest | nil
+  @input_digits: Integer
+  @input_variable: Integer?
+  @key_input_request: Game::Interpreter::KeyInputRequest | nil
+  @name_input_request: Game::Interpreter::NameInputRequest | nil
+  @parallax_changed: bool
+  @rng: Game::Rng | nil
+  @running: bool
+  @shop_request: Game::Interpreter::ShopRequest | nil
+  @system_graphic_changed: bool
+  @tiles_changed: bool
+  @tileset_request: Integer?
+  @vehicle_toggle_requested: bool
+  @wait_frames: Integer
+  @waiting: bool
+  CHAR_AIRSHIP: Integer
+  CHAR_BOAT: Integer
+  CHAR_PLAYER: Integer
+  CHAR_THIS_EVENT: Integer
+  FLASH_CHANNEL_SCALE: Integer
+  FLASH_SCALE: Integer
+  FRAMES_PER_TENTH: Integer
+  MAX_CALL_DEPTH: Integer
+  MAX_CHOICES: Integer
+  MAX_STEPS: Integer
+end
+
+# candidate: cand-emit-f4/Game/Interpreter/BattleRequest.rbs
+class Game::Interpreter::BattleRequest
+  @allow_escape: bool
+  @defeat_game_over: bool
+end
+
+# candidate: cand-emit-f4/Game/Interpreter/Cmd.rbs
+module Game::Interpreter::Cmd
+  BREAK_LOOP: Integer
+  CALL_COMMON_EVENT: Integer
+  CALL_EVENT: Integer
+  CHANGE_ACTOR_FACE: Integer
+  CHANGE_ACTOR_NAME: Integer
+  CHANGE_ACTOR_SPRITE: Integer
+  CHANGE_ACTOR_TITLE: Integer
+  CHANGE_BATTLE_BG: Integer
+  CHANGE_BATTLE_COMMANDS: Integer
+  CHANGE_CLASS: Integer
+  CHANGE_CONDITION: Integer
+  CHANGE_ENCOUNTER_RATE: Integer
+  CHANGE_EQUIP: Integer
+  CHANGE_ESCAPE_ACCESS: Integer
+  CHANGE_EVENT_LOCATION: Integer
+  CHANGE_EXP: Integer
+  CHANGE_FACE: Integer
+  CHANGE_GOLD: Integer
+  CHANGE_HP: Integer
+  CHANGE_ITEMS: Integer
+  CHANGE_LEVEL: Integer
+  CHANGE_MAP_TILESET: Integer
+  CHANGE_MENU_ACCESS: Integer
+  CHANGE_MONSTER_CONDITION: Integer
+  CHANGE_MONSTER_HP: Integer
+  CHANGE_MONSTER_MP: Integer
+  CHANGE_MP: Integer
+  CHANGE_PARALLAX: Integer
+  CHANGE_PARAM: Integer
+  CHANGE_PARTY: Integer
+  CHANGE_SAVE_ACCESS: Integer
+  CHANGE_SKILLS: Integer
+  CHANGE_SYSTEM_BGM: Integer
+  CHANGE_SYSTEM_GFX: Integer
+  CHANGE_SYSTEM_SFX: Integer
+  CHANGE_TELEPORT_ACCESS: Integer
+  CHANGE_TRANSITION: Integer
+  CHANGE_VEHICLE_GRAPHIC: Integer
+  CHOICE_END: Integer
+  CHOICE_OPTION: Integer
+  COMMENT: Integer
+  COMMENT_2: Integer
+  CONDITIONAL: Integer
+  CONDITIONAL_B: Integer
+  CONTROL_SWITCHES: Integer
+  CONTROL_VARS: Integer
+  DEFEAT_HANDLER: Integer
+  ELSE_BRANCH: Integer
+  ELSE_BRANCH_B: Integer
+  ENABLE_COMBO: Integer
+  END_BATTLE: Integer
+  END_BRANCH: Integer
+  END_BRANCH_B: Integer
+  END_EVENT: Integer
+  END_LOOP: Integer
+  ENEMY_ENCOUNTER: Integer
+  ENTER_EXIT_VEHICLE: Integer
+  ERASE_EVENT: Integer
+  ERASE_PICTURE: Integer
+  ERASE_SCREEN: Integer
+  ESCAPE_HANDLER: Integer
+  EXIT_GAME: Integer
+  FADEOUT_BGM: Integer
+  FLASH_SCREEN: Integer
+  FLASH_SPRITE: Integer
+  FORCE_FLEE: Integer
+  FULL_HEAL: Integer
+  GAME_OVER: Integer
+  HALT_ALL_MOVEMENT: Integer
+  INN_END: Integer
+  INN_NO_STAY: Integer
+  INN_STAY: Integer
+  INPUT_NUMBER: Integer
+  JUMP_TO_LABEL: Integer
+  KEY_INPUT_PROC: Integer
+  LABEL: Integer
+  LOOP: Integer
+  MEMORIZE_BGM: Integer
+  MEMORIZE_LOCATION: Integer
+  MESSAGE_2: Integer
+  MESSAGE_OPTIONS: Integer
+  MOVE_EVENT: Integer
+  MOVE_PICTURE: Integer
+  NAME_INPUT: Integer
+  OPEN_LOAD_MENU: Integer
+  OPEN_MAIN_MENU: Integer
+  OPEN_SAVE_MENU: Integer
+  OPEN_SHOP: Integer
+  OPEN_VIDEO_OPTIONS: Integer
+  PAN_SCREEN: Integer
+  PLAYER_VISIBILITY: Integer
+  PLAY_BGM: Integer
+  PLAY_MEMORIZED_BGM: Integer
+  PLAY_MOVIE: Integer
+  PLAY_SE: Integer
+  PROCEED_WITH_MOVEMENT: Integer
+  RECALL_LOCATION: Integer
+  RETURN_TO_TITLE: Integer
+  SET_ESCAPE_TARGET: Integer
+  SET_TELEPORT_TARGET: Integer
+  SET_VEHICLE_LOCATION: Integer
+  SHAKE_SCREEN: Integer
+  SHOP_END: Integer
+  SHOP_NO_TRANSACTION: Integer
+  SHOP_TRANSACTION: Integer
+  SHOW_BATTLE_ANIM: Integer
+  SHOW_BATTLE_ANIM_B: Integer
+  SHOW_CHOICES: Integer
+  SHOW_HIDDEN_MONSTER: Integer
+  SHOW_INN: Integer
+  SHOW_MESSAGE: Integer
+  SHOW_PICTURE: Integer
+  SHOW_SCREEN: Integer
+  SIMULATED_ATTACK: Integer
+  STORE_EVENT_ID: Integer
+  STORE_TERRAIN_ID: Integer
+  TELEPORT: Integer
+  TERMINATE_BATTLE: Integer
+  TILE_SUBSTITUTION: Integer
+  TIMER_OPERATION: Integer
+  TINT_SCREEN: Integer
+  TOGGLE_ATB_MODE: Integer
+  TOGGLE_FULLSCREEN: Integer
+  TRADE_EVENT_LOCATIONS: Integer
+  VICTORY_HANDLER: Integer
+  WAIT: Integer
+  WEATHER_EFFECTS: Integer
+end
+
+# candidate: cand-emit-f4/Game/Interpreter/DiagnosticPosition.rbs
+class Game::Interpreter::DiagnosticPosition
+  @call_depth: Integer
+  @index: Integer
+  @size: Integer
+end
+
+# candidate: cand-emit-f4/Game/Interpreter/InnRequest.rbs
+class Game::Interpreter::InnRequest
+  @can_afford: bool
+  @price: Integer
+  @prompt: bool
+  @type: Integer
+end
+
+# candidate: cand-emit-f4/Game/Interpreter/KeyInputAccepted.rbs
+class Game::Interpreter::KeyInputAccepted
+  @cancel: bool
+  @decision: bool
+  @down: bool
+  @left: bool
+  @numbers: bool
+  @operators: bool
+  @right: bool
+  @shift: bool
+  @up: bool
+end
+
+# candidate: cand-emit-f4/Game/Interpreter/KeyInputRequest.rbs
+class Game::Interpreter::KeyInputRequest
+  @wait: bool
+end
+
+# candidate: cand-emit-f4/Game/Interpreter/MoveCmd.rbs
+module Game::Interpreter::MoveCmd
+  CHANGE_GRAPHIC: Integer
+  PLAY_SOUND: Integer
+  SWITCH_OFF: Integer
+  SWITCH_ON: Integer
+end
+
+# candidate: cand-emit-f4/Game/Interpreter/NameInputRequest.rbs
+class Game::Interpreter::NameInputRequest
+  @actor_id: Integer
+  @charset: Integer
+end
+
+# candidate: cand-emit-f4/Game/Interpreter/ShopRequest.rbs
+class Game::Interpreter::ShopRequest
+  @allow_buy: bool
+  @allow_sell: bool
+  @mode: Integer
+  @type: Integer
+end
+
+# candidate: cand-emit-f4/Game/LegacyLsd.rbs
+module Game::LegacyLsd
+  EXT_TAG_BOARDED: Integer
+  EXT_TAG_COMMON_PROGRESS: Integer
+  EXT_TAG_ENCOUNTER_TOTAL: Integer
+  EXT_TAG_FLASH: Integer
+  EXT_TAG_PAN: Integer
+  EXT_TAG_PICTURE_OPACITY: Integer
+  EXT_TAG_VERSION: Integer
+  EXT_TAG_WEATHER: Integer
+  LSD_EXT_VERSION: Integer
+end
+
+# candidate: cand-emit-f4/Game/Map.rbs
+class Game::Map
+  @chipset_id: Integer
+  @id: Integer
+end
+
+# candidate: cand-emit-f4/Game/MapAccess.rbs
+module Game::MapAccess
+  TRISTATE_ALLOW: Integer
+  TRISTATE_FORBID: Integer
+  TRISTATE_PARENT: Integer
+end
+
+# candidate: cand-emit-f4/Game/MapBgm.rbs
+module Game::MapBgm
+  TYPE_NONE: Integer
+  TYPE_PARENT: Integer
+  TYPE_SPECIFIC: Integer
+end
+
+# candidate: cand-emit-f4/Game/Message/PauseMarker.rbs
+class Game::Message::PauseMarker
+  @at: Integer
+  @kind: Symbol
+end
+
+# candidate: cand-emit-f4/Game/Message/ScanResult.rbs
+class Game::Message::ScanResult
+  @auto_close: bool
+  @end_color: Integer
+  @length: Integer
+  @show_gold: bool
+end
+
+# candidate: cand-emit-f4/Game/Message/Segment.rbs
+class Game::Message::Segment
+  @color: Integer
+end
+
+# candidate: cand-emit-f4/Game/Message/SpeedMarker.rbs
+class Game::Message::SpeedMarker
+  @at: Integer
+  @speed: Integer
+end
+
+# candidate: cand-emit-f4/Game/MessageConfig.rbs
+class Game::MessageConfig
+  @continue_events: bool
+  @face_flipped: bool
+  @face_index: Integer
+  @face_right: bool
+  @position: Integer
+  @position_fixed: bool
+  @transparent: bool
+  POS_BOTTOM: Integer
+  POS_MIDDLE: Integer
+  POS_TOP: Integer
+end
+
+# candidate: cand-emit-f4/Game/MessagePalette.rbs
+module Game::MessagePalette
+  CELL: Integer
+  COLS: Integer
+  COUNT: Integer
+  SHADOW_OFFSET: Integer
+  SHADOW_X: Integer
+  SHADOW_Y: Integer
+  Y_OFFSET: Integer
+end
+
+# candidate: cand-emit-f4/Game/MoveRoute.rbs
+class Game::MoveRoute
+  @repeat: bool
+  @skippable: bool
+  BEGIN_JUMP: Integer
+  CHANGE_GRAPHIC: Integer
+  END_JUMP: Integer
+  FACE_AWAY_HERO: Integer
+  FACE_DOWN: Integer
+  FACE_HERO: Integer
+  FACE_LEFT: Integer
+  FACE_RANDOM: Integer
+  FACE_RIGHT: Integer
+  FACE_UP: Integer
+  FREQ_DOWN: Integer
+  FREQ_UP: Integer
+  LOCK_FACING: Integer
+  MOVE_AWAY_HERO: Integer
+  MOVE_DOWN: Integer
+  MOVE_DOWNLEFT: Integer
+  MOVE_DOWNRIGHT: Integer
+  MOVE_FORWARD: Integer
+  MOVE_LEFT: Integer
+  MOVE_RANDOM: Integer
+  MOVE_RIGHT: Integer
+  MOVE_TOWARD_HERO: Integer
+  MOVE_UP: Integer
+  MOVE_UPLEFT: Integer
+  MOVE_UPRIGHT: Integer
+  PLAY_SOUND: Integer
+  SPEED_DOWN: Integer
+  SPEED_UP: Integer
+  START_ANIM: Integer
+  STOP_ANIM: Integer
+  SWITCH_OFF: Integer
+  SWITCH_ON: Integer
+  THROUGH_OFF: Integer
+  THROUGH_ON: Integer
+  TRANSP_DOWN: Integer
+  TRANSP_UP: Integer
+  TURN_180: Integer
+  TURN_LEFT: Integer
+  TURN_RANDOM: Integer
+  TURN_RIGHT: Integer
+  UNLOCK_FACING: Integer
+  WAIT: Integer
+end
+
+# candidate: cand-emit-f4/Game/MoveType.rbs
+module Game::MoveType
+  AWAY: Integer
+  CUSTOM: Integer
+  HORIZONTAL: Integer
+  RANDOM: Integer
+  STATIONARY: Integer
+  TOWARD: Integer
+  VERTICAL: Integer
+end
+
+# candidate: cand-emit-f4/Game/NumberInput.rbs
+class Game::NumberInput
+  MAX_DIGITS: Integer
+end
+
+# candidate: cand-emit-f4/Game/Party.rbs
+class Game::Party
+  @leader_graphic_dirty: bool
+  @map_step_damaged: bool
+  @roster: Game::Actors | nil
+  ITEM_ACCESSORY: Integer
+  ITEM_ARMOR: Integer
+  ITEM_HELMET: Integer
+  ITEM_MEDICINE: Integer
+  ITEM_NORMAL: Integer
+  ITEM_SEED: Integer
+  ITEM_SHIELD: Integer
+  ITEM_SKILL_BOOK: Integer
+  ITEM_SPECIAL: Integer
+  ITEM_SWITCH: Integer
+  MAX_SIZE: Integer
+  SKILL_ESCAPE: Integer
+  SKILL_NORMAL: Integer
+  SKILL_SUBSKILL: Integer
+  SKILL_SWITCH: Integer
+  SKILL_TELEPORT: Integer
+end
+
+# candidate: cand-emit-f4/Game/Picture.rbs
+class Game::Picture
+  @fixed_to_map: bool
+  @shown: bool
+  @tblue: Integer
+  @tgreen: Integer
+  @tred: Integer
+  @tsat: Integer
+  @tx: Integer
+  @ty: Integer
+  @tzoom: Integer
+  @use_transparent_color: bool
+end
+
+# candidate: cand-emit-f4/Game/Rng.rbs
+class Game::Rng
+  PERIOD: Integer
+end
+
+# candidate: cand-emit-f4/Game/Screen.rbs
+class Game::Screen
+  @fade_target: Integer
+  @fade_transition: Integer
+  @flash_b: Integer
+  @flash_continuous: bool
+  @flash_g: Integer
+  @flash_power: Integer
+  @flash_r: Integer
+  @flash_total: Integer
+  @pan_locked: bool
+  @shake_continuous: bool
+  @transition: Game::Transition | nil
+  NEUTRAL: Integer
+  SHAKE_CONTINUOUS_FRAMES: Integer
+end
+
+# candidate: cand-emit-f4/Game/Shop.rbs
+class Game::Shop
+  @did_transaction: bool
+  ITEM_CAP: Integer
+end
+
+# candidate: cand-emit-f4/Game/State.rbs
+class Game::State
+  @atb_mode: Integer
+  @battle_count: Integer
+  @bgm_looped: bool
+  @bgm_stopping: bool
+  @defeat_count: Integer
+  @direction: Integer
+  @encounter_total: Integer
+  @escape_access: bool
+  @escape_count: Integer
+  @map_id: Integer
+  @menu_access: bool
+  @message_config: Game::MessageConfig | nil
+  @player_through: bool
+  @player_transparent: bool
+  @save_access: bool
+  @save_count: Integer
+  @screen: Game::Screen | nil
+  @switches: Game::Switches | nil
+  @teleport_access: bool
+  @variables: Game::Variables | nil
+  @weather: Game::Weather | nil
+  @win_count: Integer
+  @x: Integer
+  @y: Integer
+  MAX_PICTURE_ID: Integer
+  NO_CLOCK_TIMESTAMP: Numeric
+  OLE_EPOCH_OFFSET: Integer
+  SCREEN_TRANSITION_SLOTS: Integer
+  TILE_REPLACEMENT_SLOTS: Integer
+end
+
+# candidate: cand-emit-f4/Game/States.rbs
+module Game::States
+  CHANGE_TYPE_GAIN: Integer
+  CHANGE_TYPE_LOSE: Integer
+  CHANGE_TYPE_NOTHING: Integer
+  DEATH_ID: Integer
+  DEFAULT_ANIMATION_POSE: Integer
+  DEFAULT_COLOR: Integer
+  PERSISTS_ON_MAP: Integer
+  PRUNE_GAP: Integer
+end
+
+# candidate: cand-emit-f4/Game/States/BattleText.rbs
+module Game::States::BattleText
+  ALLY_PARTICLE: String
+  ENEMY_PARTICLE: String
+end
+
+# candidate: cand-emit-f4/Game/TextReveal.rbs
+class Game::TextReveal
+  @auto_close: bool
+  @total: Integer
+end
+
+# candidate: cand-emit-f4/Game/Timer.rbs
+class Game::Timer
+  @running: bool
+  FPS: Integer
+end
+
+# candidate: cand-emit-f4/Game/Transition.rbs
+class Game::Transition
+  @frames: Integer
+  @height: Integer
+  @style: Integer
+  @width: Integer
+  BLIND_BAND: Integer
+  BLIND_CLOSE: Integer
+  BLIND_OPEN: Integer
+  BLOCK_SHUFFLE_STRIDE: Integer
+  BLOCK_SIZE: Integer
+  BORDER_TO_CENTER_IN: Integer
+  BORDER_TO_CENTER_OUT: Integer
+  CENTER_TO_BORDER_IN: Integer
+  CENTER_TO_BORDER_OUT: Integer
+  CROSS_COMBINE: Integer
+  CROSS_DIVISION: Integer
+  CUT_IN: Integer
+  CUT_OUT: Integer
+  FADE_IN: Integer
+  FADE_OUT: Integer
+  HORIZONTAL_COMBINE: Integer
+  HORIZONTAL_DIVISION: Integer
+  HORIZONTAL_STRIPES_IN: Integer
+  HORIZONTAL_STRIPES_OUT: Integer
+  MAX_SETTING: Integer
+  MOSAIC_IN: Integer
+  MOSAIC_OUT: Integer
+  NONE: Integer
+  RANDOM_BLOCKS: Integer
+  RANDOM_BLOCKS_DOWN: Integer
+  RANDOM_BLOCKS_UP: Integer
+  SCROLL_DOWN_IN: Integer
+  SCROLL_DOWN_OUT: Integer
+  SCROLL_LEFT_IN: Integer
+  SCROLL_LEFT_OUT: Integer
+  SCROLL_RIGHT_IN: Integer
+  SCROLL_RIGHT_OUT: Integer
+  SCROLL_UP_IN: Integer
+  SCROLL_UP_OUT: Integer
+  STRIPE_COL_PITCH: Integer
+  STRIPE_H: Integer
+  STRIPE_PITCH: Integer
+  STRIPE_W: Integer
+  VERTICAL_COMBINE: Integer
+  VERTICAL_DIVISION: Integer
+  VERTICAL_STRIPES_IN: Integer
+  VERTICAL_STRIPES_OUT: Integer
+  WAVE_IN: Integer
+  WAVE_OUT: Integer
+  ZOOM_IN: Integer
+  ZOOM_OUT: Integer
+end
+
+# candidate: cand-emit-f4/Game/Troop.rbs
+class Game::Troop
+  @pages: nil | LCF::Array2D
+end
+
+# candidate: cand-emit-f4/Game/Variables.rbs
+class Game::Variables
+  MAX: Integer
+  MIN: Integer
+  RPG2003_MAX: Integer
+  RPG2003_MIN: Integer
+end
+
+# candidate: cand-emit-f4/Game/Vehicle.rbs
+class Game::Vehicle
+  @type: Symbol
+end
+
+# candidate: cand-emit-f4/Game/WindowCursor.rbs
+module Game::WindowCursor
+  CORNER: Integer
+  FRAME1_X: Integer
+  FRAME2_X: Integer
+  FRAME_Y: Integer
+  OVERHANG: Integer
+  SIZE: Integer
+end
+
+# candidate: cand-emit-f4/LCF.rbs
+module LCF
+  INT32_MASK: Numeric
+  INT32_SIGN_BIT: Numeric
+  INT32_WRAP: Numeric
+  MAX_CHUNK_ID: Integer
+  MODE: Integer
+  MOVE_CHANGE_GRAPHIC: Integer
+  MOVE_PLAY_SOUND: Integer
+  MOVE_SWITCH_OFF: Integer
+  MOVE_SWITCH_ON: Integer
+end
+
+# candidate: cand-emit-f4/LCF/Database.rbs
+class LCF::Database
+  @root: LCF::Array1D | LCF::Sections | nil
+end
+
+# candidate: cand-emit-f4/LCF/EventCommand.rbs
+class LCF::EventCommand
+  @code: Integer
+  @indent: Integer
+end
+
+# candidate: cand-emit-f4/LCF/File.rbs
+class LCF::File
+  @root: LCF::Array1D | LCF::Sections | nil
+end
+
+# candidate: cand-emit-f4/LCF/MoveCommand.rbs
+class LCF::MoveCommand
+  @command_id: Integer
+  @parameter_a: Integer
+  @parameter_b: Integer
+  @parameter_c: Integer
+end
+
+# candidate: cand-emit-f4/LCF/SaveData.rbs
+class LCF::SaveData
+  @root: LCF::Array1D | LCF::Sections | nil
+end
+
+# candidate: cand-emit-f4/LCF/Schema.rbs
+module LCF::Schema
+  SCROLL_UNITS_PER_PIXEL: Integer
+end
+
+# candidate: cand-emit-f4/LCF/Tree.rbs
+class LCF::Tree
+  @selected_id: Integer
+end
+
+# candidate: cand-emit-f4/RGSS/Audio.rbs
+module RGSS::Audio
+  def self.setup_midi: () ?{ (*untyped) -> untyped } -> nil
+end
+
+# candidate: cand-emit-f4/RGSS/ErrorReport.rbs
+module RGSS::ErrorReport
+  MAX_LINES: Integer
+  MAX_LINE_CHARS: Integer
+  PROBE_LOG_LINE: String
+  PROBE_MESSAGE: String
+end
+
+# candidate: cand-emit-f4/RGSS/Graphics.rbs
+module RGSS::Graphics
+  BRIGHTNESS_Z: Integer
+  TRANSITION_Z: Integer
+  def self.freeze: () ?{ (*untyped) -> untyped } -> nil
+end
+
+# candidate: cand-emit-f4/RGSS/Input.rbs
+module RGSS::Input
+  A: Integer
+  ALT: Integer
+  B: Integer
+  C: Integer
+  CTRL: Integer
+  DIVIDE: Integer
+  DOWN: Integer
+  F12: Integer
+  F5: Integer
+  F6: Integer
+  F7: Integer
+  F8: Integer
+  F9: Integer
+  L: Integer
+  LEFT: Integer
+  MINUS: Integer
+  MULTIPLY: Integer
+  N0: Integer
+  N1: Integer
+  N2: Integer
+  N3: Integer
+  N4: Integer
+  N5: Integer
+  N6: Integer
+  N7: Integer
+  N8: Integer
+  N9: Integer
+  PERIOD: Integer
+  PLUS: Integer
+  R: Integer
+  RIGHT: Integer
+  SHIFT: Integer
+  UP: Integer
+  X: Integer
+  Y: Integer
+  Z: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k.rbs
+class RPG2k
+  @btl_play_done: bool
+  @btl_play_started: bool
+  @db: LCF::Database | nil
+  @map_tree: LCF::MapTree | nil
+  BATTLE_PLAY_FRAMES: Integer
+  BATTLE_PLAY_TAP_PERIOD: Integer
+  BUG_REPORT_BEGIN: String
+  BUG_REPORT_END: String
+  HEIGHT: Integer
+  INI_TITLE_KEY: String
+  MAX_SAVE_SLOTS: Integer
+  WIDTH: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Base.rbs
+class RPG2k::Scene::Base
+  @state: nil | Game::State
+  FIELD_BACKDROP_X: Integer
+  FIELD_BACKDROP_Y: Integer
+  LIST_ARROW_BLINK_FRAMES: Integer
+  LIST_ARROW_H: Integer
+  LIST_ARROW_SRC_X: Integer
+  LIST_ARROW_W: Integer
+  LIST_DOWN_ARROW_SRC_Y: Integer
+  LIST_UP_ARROW_SRC_Y: Integer
+  SFX_ACTOR_DAMAGE: Integer
+  SFX_BATTLE: Integer
+  SFX_BUZZER: Integer
+  SFX_CANCEL: Integer
+  SFX_CURSOR: Integer
+  SFX_DECISION: Integer
+  SFX_DODGE: Integer
+  SFX_ENEMY_ATTACK: Integer
+  SFX_ENEMY_DAMAGE: Integer
+  SFX_ENEMY_DEATH: Integer
+  SFX_ESCAPE: Integer
+  SFX_ITEM: Integer
+  UTF8_AWARE_STRINGS: bool
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Battle.rbs
+class RPG2k::Scene::Battle
+  @disposed: bool
+  @owner: Game::Interpreter | nil
+  @rng: Game::Rng | nil
+  @state: nil | Game::State
+  ACTOR_BAD_STATUS_POSE: Integer
+  ACTOR_CHARSET_CELL: Integer
+  ACTOR_DEAD_POSE: Integer
+  ACTOR_DEFEND_POSE: Integer
+  ACTOR_FACE_HEIGHT: Integer
+  ACTOR_IDLE_POSE: Integer
+  ACTOR_POSE_TYPE_BATTLE: Integer
+  BATTLE_ANIM_FRAMES: Integer
+  BATTLE_CMD_W: Integer
+  BATTLE_ENCOUNTER_MSG_FRAMES: Integer
+  BATTLE_ENCOUNTER_MSG_LINE_FRAMES: Integer
+  BATTLE_ENCOUNTER_MSG_SKIP_FRAMES: Integer
+  BATTLE_EVENT_MSG_Y: Integer
+  BATTLE_LINE_H: Integer
+  BATTLE_LIST_ARROW_Z: Integer
+  BATTLE_LIST_COLUMN_MAX: Integer
+  BATTLE_PANEL_H: Integer
+  BATTLE_TARGET_W: Integer
+  BATTLE_VISIBLE_ROWS: Integer
+  FLYING_AMPLITUDE: Integer
+  FLYING_PERIOD: Integer
+  GRID_ELONGATION_DEFAULT: Integer
+  GRID_INCLINATION_DEFAULT: Integer
+  GRID_TOP_Y_DEFAULT: Integer
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  STATUS_HP_X: Integer
+  STATUS_MP_X: Integer
+  STATUS_NAME_X: Integer
+  STATUS_STATE_X: Integer
+  STAT_FIELD_W: Integer
+  STAT_LABEL_COLOR: Integer
+  STAT_LABEL_W: Integer
+  STAT_SLASH_W: Integer
+  TRANSPARENT_ENEMY_OPACITY: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/ChipsetEditor.rbs
+class RPG2k::Scene::ChipsetEditor
+  @background: RGSS::Sprite | nil
+  @chip: nil | LCF::Array1D
+  @chipset_id: Integer | nil
+  @contents: RGSS::Bitmap | nil
+  @dirty: bool
+  @parent: RPG2k | nil
+  @skin: RGSS::Bitmap | nil
+  @tab: Symbol
+  @window: RPG2k::Window | nil
+  CELL: Integer
+  COLS: Integer
+  FOOTER_H: Integer
+  LOWER_COUNT: Integer
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  UPPER_COUNT: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/DebugMenu.rbs
+class RPG2k::Scene::DebugMenu
+  @background: RGSS::Sprite | nil
+  @contents: RGSS::Bitmap | nil
+  @editor_contents: RGSS::Bitmap | nil
+  @editor_window: RPG2k::Window | nil
+  @focus: Symbol
+  @left_contents: RGSS::Bitmap | nil
+  @left_window: RPG2k::Window | nil
+  @parent: RPG2k | nil
+  @right_contents: RGSS::Bitmap | nil
+  @right_window: RPG2k::Window | nil
+  @skin: RGSS::Bitmap | nil
+  @window: RPG2k::Window | nil
+  BLOCK_SIZE: Integer
+  EDITOR_DIGITS_2K: Integer
+  EDITOR_DIGITS_2K3: Integer
+  FLOOR_ID: Integer
+  LEFT_W: Integer
+  LINE_H: Integer
+  NAME_COL_W: Integer
+  PAGE_SIZE: Integer
+  SCREEN_BLOCKS: Integer
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  SW_TOP: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/EquipMenu.rbs
+class RPG2k::Scene::EquipMenu
+  @cand_window: RPG2k::Window | nil
+  @desc_contents: RGSS::Bitmap | nil
+  @desc_window: RPG2k::Window | nil
+  @down_arrow: RGSS::Sprite | nil
+  @mode: Symbol
+  @parent: RPG2k | nil
+  @skin: RGSS::Bitmap | nil
+  @slot_window: RPG2k::Window | nil
+  @stats_window: RPG2k::Window | nil
+  @up_arrow: RGSS::Sprite | nil
+  ARROW_BLINK_FRAMES: Integer
+  ARROW_H: Integer
+  ARROW_SRC_X: Integer
+  ARROW_W: Integer
+  CAND_H: Integer
+  COLUMN_GAP: Integer
+  COLUMN_MAX: Integer
+  COUNT_NUM_W: Integer
+  COUNT_SEP_W: Integer
+  COUNT_W: Integer
+  DOWN_ARROW_SRC_Y: Integer
+  DOWN_COLOR: Integer
+  LABEL_COLOR: Integer
+  LINE_H: Integer
+  PANEL_Y: Integer
+  SAME_COLOR: Integer
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  SLOT_NAME_X: Integer
+  SLOT_W: Integer
+  STATS_W: Integer
+  STAT_ARROW: String
+  STAT_ARROW_W: Integer
+  STAT_ARROW_X: Integer
+  STAT_VALUE_R: Integer
+  TEXT_COLOR: Integer
+  UP_ARROW_SRC_Y: Integer
+  UP_COLOR: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/GameOver.rbs
+class RPG2k::Scene::GameOver
+  @picture: RGSS::Sprite | nil
+  SYSTEM_BGM_GAMEOVER: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/ItemMenu.rbs
+class RPG2k::Scene::ItemMenu
+  @desc_contents: RGSS::Bitmap | nil
+  @desc_window: RPG2k::Window | nil
+  @down_arrow: RGSS::Sprite | nil
+  @item_window: RPG2k::Window | nil
+  @mode: Symbol
+  @parent: RPG2k | nil
+  @skin: RGSS::Bitmap | nil
+  @target_lock: nil | Symbol
+  @target_window: RPG2k::Window | nil
+  @teleport_window: RPG2k::Window | nil
+  @up_arrow: RGSS::Sprite | nil
+  ARROW_BLINK_FRAMES: Integer
+  ARROW_H: Integer
+  ARROW_SRC_X: Integer
+  ARROW_W: Integer
+  COLUMN_GAP: Integer
+  COLUMN_MAX: Integer
+  COUNT_NUM_W: Integer
+  COUNT_SEP_W: Integer
+  COUNT_W: Integer
+  DOWN_ARROW_SRC_Y: Integer
+  LINE_H: Integer
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  TARGET_FACE_SIZE: Integer
+  TARGET_FACE_X: Integer
+  TARGET_LABEL_X: Integer
+  TARGET_ROW_H: Integer
+  TARGET_ROW_PITCH: Integer
+  TARGET_VALUE_X: Integer
+  TARGET_W: Integer
+  UP_ARROW_SRC_Y: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Map.rbs
+class RPG2k::Scene::Map
+  @airship_shadow: RGSS::Sprite | nil
+  @animation_bmp: RGSS::Bitmap | nil
+  @animation_cell_crop_buffer: RGSS::Bitmap | nil
+  @animation_sprite: RGSS::Sprite | nil
+  @bgm_pos_unavailable: bool
+  @chipset: nil | Game::ChipSet
+  @chipset_bmp: nil | RGSS::Bitmap
+  @disposed: bool
+  @fade_bmp: RGSS::Bitmap | nil
+  @fade_masked: bool
+  @fade_sprite: RGSS::Sprite | nil
+  @flash_bmp: RGSS::Bitmap | nil
+  @flash_buffer: RGSS::Bitmap | nil
+  @flash_out_buffer: RGSS::Bitmap | nil
+  @flash_sprite: RGSS::Sprite | nil
+  @inn_bgm_started: bool
+  @inn_fading_out: bool
+  @inn_waiting_bgm: bool
+  @interpreter: Game::Interpreter | nil
+  @layers_dirty: bool
+  @layers_visible: bool
+  @lower_bmp: RGSS::Bitmap | nil
+  @lower_sprite: RGSS::Sprite | nil
+  @lower_tiles: RGSS::Bitmap | nil
+  @map_viewport: RGSS::Viewport | nil
+  @moving: bool
+  @parallax_bmp: RGSS::Bitmap | nil
+  @parallax_img: RGSS::Bitmap | nil
+  @parallax_sprite: RGSS::Sprite | nil
+  @parent: RPG2k | nil
+  @picture_bmp: RGSS::Bitmap | nil
+  @picture_sprite: RGSS::Sprite | nil
+  @player_bmp: RGSS::Bitmap | nil
+  @player_char: Game::Character | nil
+  @player_forced_step: bool
+  @player_sprite: RGSS::Sprite | nil
+  @rng: Game::Rng | nil
+  @shop: RPG2k::Scene::Map::ShopState | nil
+  @swept_party_revision: Integer
+  @swept_timer2_seconds: Integer
+  @swept_timer_seconds: Integer
+  @tiles_built: bool
+  @tiles_chipset: Game::ChipSet | nil
+  @tiles_chipset_bmp: RGSS::Bitmap | nil
+  @tiles_uses_abf: bool
+  @tiles_uses_cf: bool
+  @upper_bmp: RGSS::Bitmap | nil
+  @upper_sprite: RGSS::Sprite | nil
+  @upper_tiles: RGSS::Bitmap | nil
+  @upper_viewport: RGSS::Viewport | nil
+  @weather_bmp: RGSS::Bitmap | nil
+  @weather_sprite: RGSS::Sprite | nil
+  AIRSHIP_ALTITUDE: Integer
+  ANIMATION_CACHE_BYTES: Integer
+  ANIMATION_CELL_TONE_CACHE_MAX: Integer
+  ANIM_CELL: Integer
+  ANIM_CELL_FRAMES: Integer
+  ANIM_FLASH_FRAMES: Integer
+  ANIM_MAP_TARGET_HEIGHT: Integer
+  ANIM_SE_MAX_FRAME: Integer
+  ANIM_SHAKE_FRAMES: Integer
+  ANIM_SHAKE_POWER: Integer
+  ANIM_SHAKE_SPEED: Integer
+  ANIM_SHEET_COLS: Integer
+  BACKDROP_CACHE_BYTES: Integer
+  BATTLECHARSET_CACHE_BYTES: Integer
+  CHARSET_CACHE_BYTES: Integer
+  COLS: Integer
+  CONSTRAINED_SCALE_FLOOR_DIVISOR: Integer
+  ENCOUNTER_CHANCE_SCALE: Integer
+  EVENT_DRAW_SIG_FIELDS: Integer
+  FACE_GAP: Integer
+  FACE_INSET: Integer
+  FACE_SIZE: Integer
+  INN_LINE_H: Integer
+  JUMP_STEP_UNITS: Integer
+  LAYER_ABOVE: Integer
+  LAYER_BELOW: Integer
+  LAYER_SAME: Integer
+  MAP_VIEWPORT_Z: Integer
+  MAX_COUNTER_REACH: Integer
+  MONSTER_CACHE_BYTES: Integer
+  MOVE_TARGET_AIRSHIP: Integer
+  MOVE_TARGET_BOAT: Integer
+  MOVE_TARGET_PLAYER: Integer
+  MOVE_TARGET_SHIP: Integer
+  MOVE_TARGET_THIS: Integer
+  MSG_ANIM_FRAMES: Integer
+  MSG_CHOICE_INDENT: Integer
+  MSG_CURSOR_INSET: Integer
+  MSG_LINES_PER_PAGE: Integer
+  MSG_LINE_H: Integer
+  MSG_PAUSE_FULL: Integer
+  MSG_PAUSE_QUARTER: Integer
+  MSG_REVEAL_SPEED: Integer
+  MSG_TEXT_RIGHT_MARGIN: Integer
+  MSG_WIN_H: Integer
+  MSG_WIN_W: Integer
+  NAME_CELL_H: Integer
+  NAME_CELL_W: Integer
+  NAME_COLS: Integer
+  NAME_FACE_WIN: Integer
+  NAME_FACE_X: Integer
+  NAME_FACE_Y: Integer
+  NAME_FIELD_CURSOR_W: Integer
+  NAME_FIELD_H: Integer
+  NAME_FIELD_ORIGIN: Integer
+  NAME_FIELD_SLOT_W: Integer
+  NAME_FIELD_W: Integer
+  NAME_FIELD_X: Integer
+  NAME_FIELD_Y: Integer
+  NAME_GRID_H: Integer
+  NAME_GRID_W: Integer
+  NAME_GRID_X: Integer
+  NAME_GRID_Y: Integer
+  NAME_KANA_CELL_H: Integer
+  NAME_KANA_COLS: Integer
+  NAME_KANA_COL_PITCH: Integer
+  NAME_KANA_GLYPH_W: Integer
+  NAME_KANA_HALF_GAP: Integer
+  NAME_KANA_LABEL_W: Integer
+  NAME_KANA_MAX: Integer
+  NAME_MAX: Integer
+  NUM_CELL: Integer
+  PICTURE_CACHE_BYTES: Integer
+  PICTURE_TONE_CACHE_MAX: Integer
+  ROWS: Integer
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  SHOP_GOLD_Y: Integer
+  SHOP_LINE_H: Integer
+  SHOP_LIST_ROWS: Integer
+  SHOP_PARTY_H: Integer
+  SHOP_QUANTITY_STEP: Integer
+  SHOP_STATUS_W: Integer
+  SHOP_STATUS_Y: Integer
+  SLIDE_UNITS: Integer
+  SYSTEM2_CACHE_BYTES: Integer
+  SYSTEM_BGM_BATTLE: Integer
+  SYSTEM_BGM_INN: Integer
+  SYSTEM_BGM_VICTORY: Integer
+  TILE: Integer
+  TIMER_COLON_SRC_X: Integer
+  TIMER_DIGIT_H: Integer
+  TIMER_DIGIT_SRC_X: Integer
+  TIMER_DIGIT_SRC_Y: Integer
+  TIMER_DIGIT_W: Integer
+  TIMER_INNER_H: Integer
+  TIMER_INNER_W: Integer
+  TRANSLUCENT_OPACITY: Integer
+  TRIGGER_ACTION: Integer
+  TRIGGER_AUTO_START: Integer
+  TRIGGER_EVENT_TOUCH: Integer
+  TRIGGER_PARALLEL: Integer
+  TRIGGER_PLAYER_TOUCH: Integer
+  WEATHER_RAIN: Integer
+  WEATHER_SNOW: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Map/LRUBitmapCache.rbs
+class RPG2k::Scene::Map::LRUBitmapCache
+  @capacity_bytes: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Map/MapEventState.rbs
+class RPG2k::Scene::Map::MapEventState
+  @anim_count: Integer
+  @anim_phase: Integer
+  @anim_type: Integer
+  @base_pattern: Integer
+  @disp_x: Integer
+  @disp_y: Integer
+  @guarded: bool
+  @id: Integer
+  @jumping: bool
+  @layer: Integer
+  @move_count: Integer
+  @move_timer: Integer
+  @move_type: Integer
+  @moving: bool
+  @overlap_forbidden: bool
+  @slide_frac: Integer
+  @translucent: bool
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Map/MessageState.rbs
+class RPG2k::Scene::Map::MessageState
+  @choice_start: Integer
+  @count: Integer
+  @face_x: Integer
+  @face_y: Integer
+  @inner_w: Integer
+  @page: Integer
+  @pages: Integer
+  @text_w: Integer
+  @text_x: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Map/ShopQuantity.rbs
+class RPG2k::Scene::Map::ShopQuantity
+  @count: Integer
+  @id: Integer
+  @max: Integer
+  @mode: Symbol
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Map/ShopState.rbs
+class RPG2k::Scene::Map::ShopState
+  @cmd_index: Integer
+  @index: Integer
+  @scroll: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/MapViewer.rbs
+class RPG2k::Scene::MapViewer
+  @background: RGSS::Sprite | nil
+  @brush: Integer | nil
+  @brush_layer: Symbol
+  @chipset: nil | Game::ChipSet
+  @contents: RGSS::Bitmap | nil
+  @dirty: bool
+  @mode: Symbol
+  @parent: RPG2k | nil
+  @skin: RGSS::Bitmap | nil
+  @window: RPG2k::Window | nil
+  CURSOR_MARGIN: Integer
+  FOOTER_H: Integer
+  PAN_STEP: Integer
+  ZOOM_MAX: Integer
+  ZOOM_MIN: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Menu.rbs
+class RPG2k::Scene::Menu
+  @background: RGSS::Sprite | nil
+  @command: RPG2k::Window | nil
+  @confirm_command: RPG2k::Window | nil
+  @confirm_help: RPG2k::Window | nil
+  @confirm_index: Integer
+  @focus: Symbol
+  @gold: RPG2k::Window | nil
+  @parent: RPG2k | nil
+  @skin: RGSS::Bitmap | nil
+  @status: RPG2k::Window | nil
+  END_GAME_GAP: Integer
+  END_GAME_NO: Integer
+  END_GAME_YES: Integer
+  FACE_SIZE: Integer
+  GOLD_WINDOW_H: Integer
+  GOLD_WINDOW_W: Integer
+  LABEL_COLOR: Integer
+  LEFT_COLUMN_W: Integer
+  LINE_H: Integer
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  STATUS_CURSOR_W: Integer
+  STATUS_CURSOR_X: Integer
+  STATUS_EXP_CUR_X: Integer
+  STATUS_EXP_FIELD_W: Integer
+  STATUS_EXP_NEXT_X: Integer
+  STATUS_EXP_SLASH_X: Integer
+  STATUS_LEVEL_X: Integer
+  STATUS_MAX_LEVEL_EXP: String
+  STATUS_ROW_H: Integer
+  STATUS_STATE_X: Integer
+  STATUS_STAT_CUR_W: Integer
+  STATUS_STAT_CUR_X: Integer
+  STATUS_STAT_LABEL_X: Integer
+  STATUS_STAT_MAX_X: Integer
+  STATUS_STAT_SLASH_X: Integer
+  STATUS_TEXT_X: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Order.rbs
+class RPG2k::Scene::Order
+  @confirm_index: Integer
+  @confirm_window: RPG2k::Window | nil
+  @focus: Symbol
+  @left_window: RPG2k::Window | nil
+  @parent: RPG2k | nil
+  @right_window: RPG2k::Window | nil
+  @skin: RGSS::Bitmap | nil
+  COLUMN_GAP: Integer
+  COLUMN_W: Integer
+  CONFIRM_LABEL: String
+  CONFIRM_W: Integer
+  CONFIRM_Y: Integer
+  LINE_H: Integer
+  LIST_X: Integer
+  MAX_PARTY_ROWS: Integer
+  REDO_LABEL: String
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/SaveLoad.rbs
+class RPG2k::Scene::SaveLoad
+  @background: RGSS::Sprite | nil
+  @down_arrow: RGSS::Sprite | nil
+  @header_window: RPG2k::Window | nil
+  @mode: Symbol
+  @parent: RPG2k | nil
+  @skin: RGSS::Bitmap | nil
+  @up_arrow: RGSS::Sprite | nil
+  ARROW_BLINK_FRAMES: Integer
+  ARROW_H: Integer
+  ARROW_SRC_X: Integer
+  ARROW_W: Integer
+  DISABLED_COLOR: Integer
+  DOWN_ARROW_SRC_Y: Integer
+  FACE_SIZE: Integer
+  FACE_SPACING: Integer
+  HP_LABEL_X: Integer
+  HP_X: Integer
+  LABEL_W: Integer
+  LEVEL_LABEL_X: Integer
+  LEVEL_X: Integer
+  LINE_H: Integer
+  MAX_SLOT_FACES: Integer
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  SLOT_BOX_H: Integer
+  SLOT_COUNT: Integer
+  SLOT_LINES: Integer
+  SLOT_TOP: Integer
+  STAT_LABEL_COLOR: Integer
+  TEXT_COLOR: Integer
+  UP_ARROW_SRC_Y: Integer
+  VISIBLE_SLOTS: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/SkillMenu.rbs
+class RPG2k::Scene::SkillMenu
+  @desc_contents: RGSS::Bitmap | nil
+  @desc_window: RPG2k::Window | nil
+  @down_arrow: RGSS::Sprite | nil
+  @mode: Symbol
+  @parent: RPG2k | nil
+  @skill_contents: RGSS::Bitmap | nil
+  @skill_window: RPG2k::Window | nil
+  @skin: RGSS::Bitmap | nil
+  @status_window: RPG2k::Window | nil
+  @target_lock: nil | Symbol
+  @target_window: RPG2k::Window | nil
+  @teleport_window: RPG2k::Window | nil
+  @up_arrow: RGSS::Sprite | nil
+  ARROW_BLINK_FRAMES: Integer
+  ARROW_H: Integer
+  ARROW_SRC_X: Integer
+  ARROW_W: Integer
+  CELL_CURSOR_W: Integer
+  COLUMN_MAX: Integer
+  COST_RIGHT: Integer
+  DOWN_ARROW_SRC_Y: Integer
+  DOWN_ARROW_Y: Integer
+  LEVEL_FIELD_W: Integer
+  LINE_H: Integer
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  STATUS_H: Integer
+  STATUS_HP_VALUE_X: Integer
+  STATUS_HP_X: Integer
+  STATUS_LEVEL_VALUE_X: Integer
+  STATUS_LEVEL_X: Integer
+  STATUS_MP_VALUE_X: Integer
+  STATUS_MP_X: Integer
+  STATUS_STATE_X: Integer
+  STAT_FIELD_W: Integer
+  STAT_PAIR_W: Integer
+  STAT_SLASH_W: Integer
+  TARGET_FACE_SIZE: Integer
+  TARGET_FACE_X: Integer
+  TARGET_LABEL_X: Integer
+  TARGET_ROW_H: Integer
+  TARGET_ROW_PITCH: Integer
+  TARGET_VALUE_X: Integer
+  TARGET_W: Integer
+  UP_ARROW_SRC_Y: Integer
+  UP_ARROW_Y: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/StatusMenu.rbs
+class RPG2k::Scene::StatusMenu
+  @actor_window: RPG2k::Window | nil
+  @equip_window: RPG2k::Window | nil
+  @gauge_window: RPG2k::Window | nil
+  @gold_window: RPG2k::Window | nil
+  @param_window: RPG2k::Window | nil
+  @parent: RPG2k | nil
+  @skin: RGSS::Bitmap | nil
+  ACTOR_WINDOW_H: Integer
+  ACTOR_WINDOW_W: Integer
+  CLASS_LABEL: String
+  CONDITION_LABEL: String
+  EQUIP_VALUE_X: Integer
+  EQUIP_WINDOW_H: Integer
+  FACE_SIZE: Integer
+  FIRST_PAIR_LINE: Integer
+  GAUGE_WINDOW_H: Integer
+  GOLD_WINDOW_H: Integer
+  LABEL_COLOR: Integer
+  LEVEL_LINE: Integer
+  LEVEL_VALUE_RIGHT: Integer
+  LINE_H: Integer
+  MAX_LEVEL_EXP: String
+  NAME_LABEL: String
+  PARAM_WINDOW_H: Integer
+  RIGHT_X: Integer
+  ROW_BACK_LABEL: String
+  ROW_FRONT_LABEL: String
+  ROW_LABEL_LINE: Integer
+  SCREEN_H: Integer
+  SCREEN_W: Integer
+  TITLE_LABEL: String
+  VALUE_CUR_RIGHT: Integer
+  VALUE_MAX_RIGHT: Integer
+  VALUE_SLASH_X: Integer
+  VALUE_X: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/Title.rbs
+class RPG2k::Scene::Title
+  @auto_started: bool
+  @title: RGSS::Sprite | nil
+  @window: RPG2k::Window | nil
+  BOTTOM_DEN: Integer
+  BOTTOM_NUM: Integer
+  LINE_HEIGHT: Integer
+  OPEN_ANIM_FRAMES: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k/Scene/VehicleWorld.rbs
+class RPG2k::Scene::VehicleWorld
+  @type: Symbol
+end
+
+# candidate: cand-emit-f4/RPG2k/Window.rbs
+class RPG2k::Window
+  @anim_closing: bool
+  @arrow_bmp: RGSS::Bitmap | nil
+  @arrow_sprite: RGSS::Sprite | nil
+  @contents_sprite: RGSS::Sprite | nil
+  @cursor_bmp: RGSS::Bitmap | nil
+  @cursor_sprite: RGSS::Sprite | nil
+  @pause: bool
+  @skin_bmp: RGSS::Bitmap | nil
+  @skin_sprite: RGSS::Sprite | nil
+  @transparent: bool
+  @viewport: RGSS::Viewport | nil
+  ARROW_BLINK_FRAMES: Integer
+  ARROW_H: Integer
+  ARROW_SRC_X: Integer
+  ARROW_SRC_Y: Integer
+  ARROW_W: Integer
+  ARROW_Z: Integer
+  BORDER: Integer
+  CONTENTS_Z: Integer
+  CURSOR_Z: Integer
+  DEFAULT_Z: Integer
+  SKIN_Z: Integer
+end
+
+# candidate: cand-emit-f4/RPG2k3/Scene/Battle.rbs
+class RPG2k3::Scene::Battle
+  @state: nil | Game::State
+end
