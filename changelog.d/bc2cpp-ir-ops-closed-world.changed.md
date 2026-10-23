@@ -1,0 +1,1 @@
+- **bc2cpp** closed-world analysis matches opcodes through the shared `BytecodeIR` op sets and helpers instead of raw string compares. Generated C++ is unchanged.

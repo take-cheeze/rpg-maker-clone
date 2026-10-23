@@ -16,7 +16,9 @@ ruby scripts/bc2cpp/type_check.rb --facts kept/facts.json --rows kept/rows.tsv  
 
 `--keep DIR` keeps `facts.json`, `rows.tsv` and `bc2cpp.stderr`. `--all` adds one info line per untyped item,
 `--no-sends` skips the send ranking, `--what-if` estimates removable lines (slow), `--top N`, `--scope all` includes
-the mruby core mrblib. The analysis takes the time of a build's analysis phase (minutes for the engine).
+the mruby core mrblib. `--trace FILE` reads trace candidates from `scripts/bc2cpp/trace_types.rb candidates` as
+runtime evidence for possible-mismatch returns (see [IR feedback](bc2cpp-ir-feedback.md#trace-evidence)). The analysis
+takes the time of a build's analysis phase (minutes for the engine).
 
 The report runner keeps whole-program analysis, real method compilation, return-guard
 validation and nilable-index collection. It skips the discarded C++ translation
@@ -157,6 +159,7 @@ Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, 
 | TC1003 | error | a signature names a method or ivar class the program lacks (a stale signature) |
 | TC1007 | error | an inferred IR return or ivar store is disjoint from its RBS nominal contract |
 | TC1008 | warning | an inferred IR may-set partly overlaps its RBS contract; path refinement is unresolved |
+| TC1009 | info | as TC1008, but `--trace` runtime evidence observed only contract classes for that return (evidence, not proof) |
 | TC1013 | error | a caller's argument is not proven to be the class an RBS parameter declares (ADR 0456) |
 | TC1014 | error | an RBS class parameter is refused: POLY, computed or outside-world name, splat caller (ADR 0456) |
 | TC1016 | error | an RBS `class C < S` names a superclass the program does not give C (ADR 0453) |
@@ -370,7 +373,7 @@ RBS suggestions continue to exclude them.
 
 `type_check.rb --emit-rbs DIR` writes the inferred types as RBS (ADR 0414), one file per class or module. Unknown types are
 `untyped`; an optional parameter is `?T` when its type is known (declared, or the join of call sites that all pass
-it; see [IR feedback](bc2cpp-ir-feedback.md#optional-parameters)) and `?untyped` otherwise; rest and keyword parameters are `untyped`; every method accepts an optional block; CRuby's core RBS is
+it; see [IR feedback](bc2cpp-ir-feedback.md#optional-parameters)) and `?untyped` otherwise; a rest parameter is `*T` and a required keyword is `k: T` when every reaching call supplies them (see [rest, keyword and block parameters](bc2cpp-ir-feedback.md#rest-keyword-and-block-parameters)), else `untyped`; optional keywords are `?untyped`; a block is required (`{ }`) when every reaching call passes a literal block, else optional (`?{ }`); CRuby's core RBS is
 the base environment (classes it declares are not redeclared). The directory is not read as hints unless named in
 `BC2CPP_SIG_DIRS`; read back, it reports nothing, and a wrong edit is a located TC1001.
 

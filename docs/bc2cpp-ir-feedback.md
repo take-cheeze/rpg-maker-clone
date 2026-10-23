@@ -95,7 +95,8 @@ reason lists the files it hits, so the top entry names the next producer worth
 modeling. The ranking is text-only; JSON keeps its shape. `--all` adds
 location-based unknown-query notes (`TC2004`).
 Wholly incompatible inferred returns or ivar stores produce errors (`TC1007`);
-partly overlapping sets produce warnings (`TC1008`). Subtype compatibility
+partly overlapping sets produce warnings (`TC1008`), unless trace evidence
+applies (below). Subtype compatibility
 uses the program hierarchy, recorded mixins and the primitive classes' core
 ancestry. Missing module or external-type relations leave `compatibility`
 unknown instead of creating a mismatch. These
@@ -117,6 +118,26 @@ produce an independent suggestion. New union-return facts also improve normal
 Complete contract-assisted return bounds appear with source `derived:contracts`
 and retain their dependency list. They are not independent RBS suggestions.
 
+### Trace evidence
+
+`type_check.rb --trace CANDIDATES.rbs` takes the candidates that
+`scripts/bc2cpp/trace_types.rb candidates` writes from `BC2CPP_TRACE_TYPES`
+dumps. A `possible_mismatch` return row whose method the trace observed only
+inside the contract is reported as `TC1009` (info), not `TC1008` (warning). The
+row gets `provenance: "trace"` and `trace_classes`, and its status stays
+`possible_mismatch`: a trace run is evidence from one run, not proof, so it
+never becomes `inferred` or `declared`.
+
+The join is by method (owner and instance method name). The trace records no
+file or line for a return, and the candidates leave out overflowed sites and
+untyped, interface or generic returns, so only a complete observation counts.
+Nil and bool in the candidates count as NilClass and TrueClass plus FalseClass;
+an expectation must name every such class. `mismatch` rows, ivar stores, block
+rows and singleton methods are never changed by trace evidence, so a class the
+static analysis excludes still raises `TC1007`. The implementation is
+`tools/bc2cpp/ir_trace_evidence.rb`; `scripts/bc2cpp/ir_trace_evidence_check.rb`
+is the host-only fixture check.
+
 ## Runtime evidence
 
 Checking a candidate with `--all` against the same sources cannot catch an
@@ -137,26 +158,51 @@ sources. With no arguments it runs its fixture self-test, which is what the
 `ruby-checks` coverage list runs. Use `bundle exec` locally: the core hierarchy is
 read by the pinned RBS 4.
 
-Compared: each required positional parameter (trace kind `req`, matched by
-position) and each method return, except `initialize`. A site is skipped when it
-was not reached or its class table overflowed, since its classes are then unknown.
+Compared:
+
+- each required positional parameter (trace kind `req`, matched by position) and
+  each method return, except `initialize`;
+- the elements of a parameter or return declared `Array[T]` or `Hash[K, V]`: the
+  `PARAM_ELEM_*` and `RETURN_ELEM_*` rows, by role (`array`, `key`, `value`);
+- singleton methods (`def self.x`), against the trace key `Owner.singleton#x`;
+- a module method, against the observations of each class that includes the module.
+  The class must be known to include it through `--hierarchy`; without that file the
+  observations are counted as undecided.
+
+A site is skipped when it was not reached. An overflowed site (its class table was
+full, so its classes are unknown) is not compared; the summary counts every
+overflowed site and element slot in the trace, declared or not.
 
 A class is a contradiction only where the lookup order is complete: a core class
 (from `CoreHierarchySigs`), or a program class whose superclass chain reaches a
-core class through `--hierarchy`. Modules are never decided, because a program may
-include one into a core class. Everything else is reported as undecided in the
-summary. A passing run is evidence about one recorded run, not a proof.
+core class through `--hierarchy`. A module is never a contradiction. A class that
+includes a module the candidate declares is admitted, anything else is undecided.
+A module method's observation on a class is accepted only when the lookup reaches
+the module before any other definer of the name; a core class in front of the
+module, or a native mixin, makes it undecided. Everything else is reported as
+undecided in the summary. A passing run is evidence about one recorded run, not a
+proof.
+
+`--hierarchy` takes the rows `class_hierarchy.rb` writes: `CLASS`/`MODULE`,
+`SUPER`, `INCLUDE`/`PREPEND` (in application order) and `DEF` (including
+`define_method`, `alias` and `attr_*` names, and `*` for a computed name). The
+mixin rows come only from the sources it is given. A mixin it does not see (a file
+left out, an `included` hook, a `class_eval` string) leaves that class's module
+observations uncompared: a missed check, never a false failure.
 
 The trace cannot tell the check these things, so they are not compared:
 
-- singleton methods (`trace_types.rb` keys methods by `Owner#name` and drops the rest);
-- optional, rest and keyword parameters: this check does not match their trace
-  rows (an optional parameter may carry a call-site type, see above);
+- the receiver of a singleton method: `self` is not traced, only its arguments and
+  returns;
+- a singleton method reached through `extend` (the module's instance methods become
+  the extending class's singleton methods, which the trace keys as
+  `Owner.singleton#x`; the check does not model it);
+- optional, rest, keyword and block parameters: this check does not match their
+  trace rows (an optional parameter may carry a call-site type, see above);
 - ivar and constant types, which are not traced;
-- array elements and hash keys and values: the `PARAM_ELEM_*` rows exist, but
-  `TraceTypes::Candidates.read_dumps` does not read them;
-- module-versus-class kind and mixins for program code: `class_hierarchy.rb`
-  records superclasses and methods only.
+- overloaded methods, which the candidate reader skips;
+- container elements past the first eight of each container (`BC2CPP_ELEM_SAMPLE`):
+  the dump does not record them, so a wrong class there is not seen.
 
 ## Optional parameters
 
@@ -174,30 +220,88 @@ bound. Methods with rest, post, keyword or block parameters get no optional
 join, and a required parameter of a method that also takes optional parameters
 still has no call-site type (its join needs the required-only shape).
 
+## Rest, keyword and block parameters
+
+These three kinds take their type from the complete call-site join as well, each
+under its own condition. The join is taken only when the reaching call sites are
+all known (a dynamic, foreign or poisoned name gets no join at all).
+
+- **Rest** (`*rest`): the element type is the join of every extra argument over
+  the reaching calls. RBS writes `*T` (the body sees `Array[T]`); the JSON
+  `rest_param` row carries `T`. A call that passes keywords refuses the join, and
+  so does a call that passes no extra argument at all (there is no element to
+  type). A rest parameter next to keyword parameters gets no join.
+- **Required keyword** (`k:`): the join of the value passed for `k` at every
+  reaching call. Each call must pass `k` as a literal keyword pair; a call that
+  omits it, or passes keywords through `**splat`, refuses the join. RBS writes
+  `k: T`. An optional keyword stays `?untyped`.
+- **Block** (`&blk`): the block is `Proc` only when every reaching call passes a
+  literal block or lambda (`BLOCK`/`LAMBDA` producer in the block slot). A call with
+  no block binds `nil`, and a Proc from a variable, a `proc` call or a `&` pass-through
+  is not recognized, so each refuses. A block typed `Proc` is written as a required
+  block (`{ (*untyped) -> untyped }`); otherwise the block stays optional. A declared
+  block signature keeps its optional block.
+
+The body analysis does not yet consume these joins: the candidate RBS and the JSON
+rows carry them, and the IR argument facts still cover positional parameters only.
+`BC2CPP_IR_ARGUMENT_TYPES=0` restores `untyped` for all three.
+
 ## Boundaries
 
 Facts remain nominal when declared; they cannot prove exact dispatch or
 native representation. Inference may over-approximate infeasible paths, so
-mixed sets are warnings rather than definite errors. Handler and closure
+mixed sets are warnings rather than definite errors, and trace evidence only
+lowers them to notes. Path-sensitive narrowing is not applied to these rows:
+`NilNarrowing` feeds the parameter checks, not the IR type query. Handler and closure
 barriers, frame clobbers and traversal budgets still refuse queries.
 
 Shared IREPs with ambiguous owners get no owner-specific contracts. Cyclic
-hierarchies supply no inherited contracts. Rest, keyword and block
-contracts, required parameters of methods with optional ones, unknown receiver
-contract lookup, module mixin contract lookup, constants and nonlocal-return
-inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the
-type-check RBS, and the `ivars` rows of the facts file) are the union of every
-traced store across the ivar's numeric family: superclass, include and prepend
-links, since all of them share the slot. The candidate gains `nil` when some
-read may run before any store: a `@x = nil` store, or a reading owner that
+hierarchies supply no inherited contracts.
+
+**Mixin lookup.** A return contract is found through the owner's mixin chain:
+included and prepended modules, nested includes, and modules that a superclass
+includes, in CRuby's order. A method defined in a module is found through the
+module's own declarations, so the chain is `prepend`, the class, `include`
+(last first), then the superclass. A module reached twice in that chain (two
+include paths, or a module the superclass already includes) supplies no
+contract: CRuby keeps it at its first insertion, and that depends on load order
+the static links do not record. `class Child < Base; include M; end` with
+`Base` also including `M` therefore refuses the call instead of returning
+`M#m`, which CRuby dispatches to `Base#m`. Unknown mixins and cycles refuse
+the same way. The fixture is `scripts/bc2cpp/rbs_mixin_contracts_check.rb`.
+
+**Unknown receivers.** A receiver whose class set is unknown does not use a
+return contract because its method name has one declaration in the program.
+Only a receiver the compiler proves (a declared argument, an existing complete
+proof) reaches the contract lookup. A call on an unproven receiver stays
+`unknown`, and its reason names the upstream producer. This rule is
+deliberately narrower than "single contract owner": that inference would
+assume a class the analysis has not proven.
+
+**Known gap: implicit self-calls.** An implicit `self` call takes the return
+contract of the method's own owner chain, not of the receiver's class. A
+subclass or includer that overrides the callee with a different contract is not
+checked: with `Base#via_self` calling `greet`, and `Child < Base` overriding
+`greet` to return `Integer`, `Child#via_self` is still reported as `Symbol`.
+Fixing this needs the set of overriding descendants, which the lookup does not
+have, so it remains open.
+
+Rest, keyword and block contracts in the body analysis, required parameters of
+methods with optional ones, constants and nonlocal-return inference remain
+follow-up work (the call-site joins for rest, keyword and block parameters are
+described above). Inferred ivar candidates (`@ivar: T` in the type-check RBS,
+and the `ivars` rows of the facts file) are the union of every traced store
+across the ivar's numeric family: superclass, include and prepend links, since
+all of them share the slot. The candidate gains `nil` when some read may run
+before any store: a `@x = nil` store, or a reading owner that
 `numeric_ivar_assured?` does not clear. That check needs a closed world with no
 `allocate` and a #initialize that assigns on every path before `self` escapes;
 where it cannot decide, `nil` is included. A store the analysis did not resolve,
 or an ivar touched by code no class owns (a module body), leaves the candidate
 unknown. The runtime layout is still the layout analysis's; only the candidate
-that is written and compared changes. Inferred ivar types
-continue to come from the existing whole-program layout analysis; observing
-one store does not establish the complete type of an ivar.
+that is written and compared changes. Inferred ivar types continue to come from
+the existing whole-program layout analysis; observing one store does not
+establish the complete type of an ivar.
 
 Run the signature, type-check and RBS-export checks with a host `MRBC`. The
 fixture suites compare guarded dispatch with `BC2CPP_STRICT_HINTS=0`.
