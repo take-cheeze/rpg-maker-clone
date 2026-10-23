@@ -43,6 +43,22 @@ headers. It excluded two native gems that failed preprocessing because
 `oniguruma.h` and `io_hal.h` were unavailable in that environment. These are
 base-generation timings, not bc2cpp compilation or game runtime timings.
 
+### Two versus four workers
+
+Four alternating runs of `base_rbs_all.rb --jobs N` over the whole repository
+(the `bc2cpp` Nix shell, CRuby 4.0.5, Clang 21.1.8) took 51.9 and 53.5 seconds
+with `--jobs 2` and 44.9 and 49.0 seconds with `--jobs 4`. user+sys was about
+38 seconds in every run. Peak summed RSS of the process tree was 2.03–2.12 GiB
+at either setting, sampled every 20 ms. All generated files, stdout and stderr
+were identical across the runs after normalizing the output directory. The host
+was shared with other agents (load average up to 6.7 on four cores), so the
+wall-time gap of about 11% is within this box's noise.
+
+The default stays at two. `base_section_check.rb` runs this generator inside
+the four-wide `ci:parallel` group in `.github/workflows/build.yml`, beside three
+other checks on a four-vCPU runner, and ADR 0510 bounds that concurrency. This
+measurement ran one generator alone and did not measure that footprint.
+
 Run `ruby scripts/bc2cpp/base_rbs_check.rb` to check scheduling, error handling
 and serial/parallel output equivalence. Its native fixture requires Clang.
 
