@@ -759,6 +759,7 @@ jobs:
           ruby scripts/bc2cpp/arm_prune_capture_check.rb
           ruby scripts/bc2cpp/block_receiver_proof_check.rb
           ruby scripts/bc2cpp/upvar_walks_check.rb
+          ruby scripts/bc2cpp/irep_tree_check.rb
           ruby scripts/bc2cpp/arm_prune_block_check.rb
           ruby scripts/bc2cpp/param_fold_check.rb
           ruby scripts/bc2cpp/ir_blocks_check.rb
