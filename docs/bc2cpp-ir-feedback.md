@@ -174,6 +174,16 @@ Compared:
 - the elements of a parameter or return declared `Array[T]` or `Hash[K, V]`: the
   `PARAM_ELEM_*` and `RETURN_ELEM_*` rows, by role (`array`, `key`, `value`);
 - singleton methods (`def self.x`), against the trace key `Owner.singleton#x`;
+- the receiver of a singleton method (its `self`, a `self` PARAM_SITE row). The
+  trace records the class object it ran on, so the receiver is compared with
+  `Owner`: the class itself, or a subclass whose superclass chain `--hierarchy`
+  reaches. A class outside that chain is a contradiction. A module owner, a
+  receiver that is not a class or module (recorded as `(non-class)`), a class the
+  hierarchy cannot place, or an overflowed receiver is counted in the summary
+  (`singleton receiver(s) compared`, `receiver class(es) undecided`, `overflowed
+  receiver(s) skipped`) and never a failure. A module method run through
+  `extend` is compared with its extending class's singleton methods only, so
+  its receiver is not compared;
 - a module method, against the observations of each class that includes the module.
   The class must be known to include it through `--hierarchy`; without that file the
   observations are counted as undecided;
@@ -248,8 +258,6 @@ compared. A top-level `extend` belongs to `main`, which is no class, so it has n
 
 The trace cannot tell the check these things, so they are not compared:
 
-- the receiver of a singleton method: `self` is not traced, only its arguments and
-  returns;
 - block parameters. The trace has `block_arg` rows, but they are the parameters of
   a block body, keyed by the body's own `_impl` (the method that yields to it is
   not in the row), and the emitter declares a block type only as
