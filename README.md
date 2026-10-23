@@ -1188,6 +1188,8 @@
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
   per-pass text scraping, including a reaching-definitions query
   (`BytecodeIR.reaching_definitions`) that answers through joins and loops.
+  [Method-name flow](docs/bc2cpp-name-argument-flow.md) keeps visibility and
+  removal effects precise through local aliases, branches, loops and handlers.
   The return and receiver class proofs read a body's exits and returned-value
   definitions from the same IR ([return sites](docs/bc2cpp-ir-return-sites.md)).
   [IR value-class inference](docs/bc2cpp-ir-types.md) builds on these definitions
