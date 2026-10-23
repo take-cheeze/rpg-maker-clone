@@ -1195,7 +1195,9 @@
   removal effects precise through local aliases, branches, loops and handlers.
   [Factory analysis](docs/bc2cpp-ir-factories.md) follows Class/Struct factory
   aliases across control flow, recording all possible superclass and member names
-  while refusing unknown uses or escapes.
+  while refusing unknown uses or escapes. Named Struct layouts preserve ordered
+  positional Symbol arguments through moves and joins; differing names retain
+  conservative accessor definitions without claiming a fixed storage layout.
   [Class-body scope flow](docs/bc2cpp-class-scope-flow.md) requires every reaching
   outer scope to agree before assigning a qualified class or module name.
   The return and receiver class proofs read a body's exits and returned-value
