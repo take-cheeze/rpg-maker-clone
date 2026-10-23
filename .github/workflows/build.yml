@@ -1049,6 +1049,7 @@ jobs:
           ruby scripts/bc2cpp/generic_block_return_check.rb
           ruby scripts/bc2cpp/ir_block_protocols_check.rb
           ruby scripts/bc2cpp/type_check_run_check.rb
+          ruby scripts/bc2cpp/type_check_iterate_check.rb
           ruby scripts/bc2cpp/lcf_join_array_check.rb
           ruby scripts/bc2cpp/alias_method_check.rb
           ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
