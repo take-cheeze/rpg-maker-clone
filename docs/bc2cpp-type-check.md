@@ -355,8 +355,10 @@ enable the strict tier when it is available so a wrong signature fails loudly at
 `--emit-rbs-suggestions DIR` writes candidate RBS using independently inferred
 IR returns at every modeled exit. It can replace a contradicted return in the
 candidate copy; authored signature files stay separate. JSON includes
-`ir_feedback` and `rbs_suggestions`; text summarizes provenance and unknown
-reasons. Review the output, then pass it back with `--sig DIR`. See the
+`ir_feedback` and `rbs_suggestions`; text summarizes provenance and ranks
+unknown reasons by the files they hit. Each candidate method carries a
+`# bc2cpp: return from FILE:LINE (...)` comment naming its deciding IR exit.
+Review the output, then pass it back with `--sig DIR`. See the
 [feedback workflow and limitations](bc2cpp-ir-feedback.md).
 [Call-result propagation](bc2cpp-ir-call-results.md) supplies audited result
 proofs and typed-receiver RBS chains. Complete contract-assisted returns are
@@ -366,7 +368,8 @@ RBS suggestions continue to exclude them.
 ## RBS output and Steep
 
 `type_check.rb --emit-rbs DIR` writes the inferred types as RBS (ADR 0414), one file per class or module. Unknown types are
-`untyped`; optional / rest / keyword parameters are `untyped`; every method accepts an optional block; CRuby's core RBS is
+`untyped`; an optional parameter is `?T` when its type is known (declared, or the join of call sites that all pass
+it; see [IR feedback](bc2cpp-ir-feedback.md#optional-parameters)) and `?untyped` otherwise; rest and keyword parameters are `untyped`; every method accepts an optional block; CRuby's core RBS is
 the base environment (classes it declares are not redeclared). The directory is not read as hints unless named in
 `BC2CPP_SIG_DIRS`; read back, it reports nothing, and a wrong edit is a located TC1001.
 

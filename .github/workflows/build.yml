@@ -1024,6 +1024,7 @@ jobs:
 
       # Four workers fill the 4-vCPU runner (the group's wall time is the sum of its commands over the
       # width, docs/bc2cpp-ci-duration-profile.md section 5); the shared libraries above are read-only.
+      # Start longer checks first to avoid leaving a large fixture on the last worker.
       # timed_checks prints every command's log and propagates failures.
       - name: Run bc2cpp checks
         timeout-minutes: 30
@@ -1031,61 +1032,61 @@ jobs:
           unset LD
           ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/bc2cpp-checks.sh" <<'CHECKS'
           # ci:parallel begin 4
-          ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
-          ruby scripts/bc2cpp/base_section_regen_check.rb
-          ruby scripts/bc2cpp/promote_candidates_check.rb
-          ruby scripts/bc2cpp/trace_merge_check.rb
-          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c ruby scripts/native/binding_split.rb check
           ruby scripts/bc2cpp/type_check.rb --no-sends
-          ruby scripts/bc2cpp/native_core_candidates_check.rb
-          ruby scripts/bc2cpp/native_core_direct_wired_check.rb
-          ruby scripts/bc2cpp/native_member_tables_check.rb
-          ruby scripts/bc2cpp/shared_generation_check.rb
-          ruby scripts/bc2cpp/constant_proofs_check.rb
-          ruby scripts/bc2cpp/block_receiver_proof_check.rb
-          ruby scripts/bc2cpp/type_check_run_check.rb
           ruby scripts/bc2cpp/ir_context_results_check.rb
-          ruby scripts/bc2cpp/ir_argument_types_check.rb
-          ruby scripts/bc2cpp/ir_entry_seeds_check.rb
-          ruby scripts/bc2cpp/ir_ivar_types_check.rb
-          ruby scripts/bc2cpp/lcf_join_array_check.rb
-          ruby scripts/bc2cpp/ir_soundness_classes_check.rb
-          ruby scripts/bc2cpp/numeric_roots_reaching_check.rb
-          ruby scripts/bc2cpp/ir_block_protocols_check.rb
-          ruby scripts/bc2cpp/symbol_flow_check.rb
-          ruby scripts/bc2cpp/struct_receiver_check.rb
-          ruby scripts/bc2cpp/upvar_walks_check.rb
-          ruby scripts/bc2cpp/constant_typing_check.rb
-          ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
-          ruby scripts/bc2cpp/io_open_check.rb
-          ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
-          ruby scripts/bc2cpp/decided_branch_check.rb
-          ruby scripts/bc2cpp/range_compare_fold_check.rb
-          ruby scripts/bc2cpp/decided_fold_count_check.rb
-          ruby scripts/bc2cpp/freeze_fold_check.rb
-          ruby scripts/bc2cpp/arm_prune_check.rb
-          ruby scripts/bc2cpp/arm_prune_block_check.rb
-          ruby scripts/bc2cpp/arm_prune_capture_check.rb
-          ruby scripts/bc2cpp/param_fold_check.rb
-          ruby scripts/bc2cpp/callee_return_fold_check.rb
-          ruby scripts/bc2cpp/constant_argument_sites_check.rb
-          ruby scripts/bc2cpp/class_bodies_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
-          ruby scripts/bc2cpp/define_method_check.rb
+          ruby scripts/bc2cpp/constant_typing_check.rb
+          ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
+          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c ruby scripts/native/binding_split.rb check
+          ruby scripts/bc2cpp/stack_tuples_check.rb
           ruby scripts/bc2cpp/block_self_world_check.rb
-          ruby scripts/bc2cpp/generic_block_return_check.rb
-          ruby scripts/bc2cpp/loop_element_writes_check.rb
-          ruby scripts/bc2cpp/ir_join_soundness_check.rb
-          ruby scripts/bc2cpp/ir_blocks_check.rb
           ruby scripts/bc2cpp/outside_owner_call_check.rb
+          ruby scripts/bc2cpp/frozen_literal_persist_check.rb
+          ruby scripts/bc2cpp/constructor_overloads_check.rb
+          ruby scripts/bc2cpp/ir_argument_types_check.rb
+          ruby scripts/bc2cpp/shared_generation_check.rb
+          ruby scripts/bc2cpp/define_method_check.rb
+          ruby scripts/bc2cpp/generic_block_return_check.rb
+          ruby scripts/bc2cpp/ir_block_protocols_check.rb
+          ruby scripts/bc2cpp/type_check_run_check.rb
+          ruby scripts/bc2cpp/lcf_join_array_check.rb
+          ruby scripts/bc2cpp/alias_method_check.rb
+          ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
+          ruby scripts/bc2cpp/ir_ivar_types_check.rb
+          ruby scripts/bc2cpp/ir_entry_seeds_check.rb
           ruby scripts/bc2cpp/self_new_leaf_check.rb
           ruby scripts/bc2cpp/sealed_int16_local_check.rb
-          ruby scripts/bc2cpp/frozen_literal_persist_check.rb
-          ruby scripts/bc2cpp/stack_tuples_check.rb
-          ruby scripts/bc2cpp/constructor_overloads_check.rb
-          ruby scripts/bc2cpp/alias_method_check.rb
+          ruby scripts/bc2cpp/freeze_fold_check.rb
+          ruby scripts/bc2cpp/callee_return_fold_check.rb
+          ruby scripts/bc2cpp/range_compare_fold_check.rb
+          ruby scripts/bc2cpp/constant_proofs_check.rb
+          ruby scripts/bc2cpp/arm_prune_capture_check.rb
+          ruby scripts/bc2cpp/block_receiver_proof_check.rb
+          ruby scripts/bc2cpp/upvar_walks_check.rb
+          ruby scripts/bc2cpp/arm_prune_block_check.rb
+          ruby scripts/bc2cpp/param_fold_check.rb
+          ruby scripts/bc2cpp/ir_blocks_check.rb
+          ruby scripts/bc2cpp/decided_branch_check.rb
+          ruby scripts/bc2cpp/arm_prune_check.rb
+          ruby scripts/bc2cpp/struct_receiver_check.rb
+          ruby scripts/bc2cpp/constant_argument_sites_check.rb
+          ruby scripts/bc2cpp/native_member_tables_check.rb
+          ruby scripts/bc2cpp/io_open_check.rb
+          ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
+          ruby scripts/bc2cpp/ir_soundness_classes_check.rb
+          ruby scripts/bc2cpp/numeric_roots_reaching_check.rb
           ruby scripts/bc2cpp/core_facts_rbs_check.rb --require-mruby
+          ruby scripts/bc2cpp/trace_merge_check.rb
+          ruby scripts/bc2cpp/base_section_regen_check.rb
+          ruby scripts/bc2cpp/promote_candidates_check.rb
+          ruby scripts/bc2cpp/native_core_direct_wired_check.rb
+          ruby scripts/bc2cpp/ir_join_soundness_check.rb
+          ruby scripts/bc2cpp/symbol_flow_check.rb
+          ruby scripts/bc2cpp/loop_element_writes_check.rb
+          ruby scripts/bc2cpp/native_core_candidates_check.rb
           ruby scripts/bc2cpp/native_format_types_check.rb
+          ruby scripts/bc2cpp/decided_fold_count_check.rb
+          ruby scripts/bc2cpp/class_bodies_check.rb
           # ci:parallel end
           CHECKS
           source "$RUNNER_TEMP/bc2cpp-checks.sh"
