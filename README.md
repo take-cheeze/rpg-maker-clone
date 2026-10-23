@@ -1042,6 +1042,7 @@
 - Constant-typing fixture variants reuse the report renderer while running each
   compiler in its own process; the positive case still exercises the report CLI.
 
+- Enumerator call indexing follows finite Symbol name sets through branches, moves, loops and handlers; see [enumerator target flow](docs/bc2cpp-enum-target-flow.md).
 - Legacy bc2cpp method definitions follow the actual method register through control flow; see [definition value flow](docs/bc2cpp-def-value-flow.md).
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container

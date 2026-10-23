@@ -169,6 +169,11 @@ checks:
     fixture_capabilities:
     - mrbc
     host_phase: false
+  scripts/bc2cpp/enum_target_flow_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
   scripts/bc2cpp/def_value_flow_check.rb:
     tier: fast
     capabilities: []
