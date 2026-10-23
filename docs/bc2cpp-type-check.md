@@ -563,3 +563,10 @@ A warmed original-source comparison on base `fc573f24` reduced compiler
 allocations from 86,523,931 to 86,065,342 (458,589 fewer, 0.53%). Facts, receiver
 rows and report JSON were byte-identical. Timing is not used as evidence of a
 wall-time speedup.
+
+The constant-typing regression check keeps its positive fixture on the report CLI.
+Its remaining closed worlds use `TypeCheckFixture.facts_report`, reusing only the
+report renderer in the check process. Each compiler still starts independently,
+so operator redefinitions and prepend cases cannot share analysis state. Set
+`BC2CPP_FIXTURE_DIRECT_REPORT=0` to run every case through the CLI for comparison;
+compiler-mutant runs also retain the CLI path.
