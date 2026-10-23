@@ -59,6 +59,22 @@ produce an independent suggestion. New union-return facts also improve normal
 Complete contract-assisted return bounds appear with source `derived:contracts`
 and retain their dependency list. They are not independent RBS suggestions.
 
+## Optional parameters
+
+An optional parameter takes its type from the call sites the same way a required
+one does, with one extra condition: every reaching call must pass it. A call that
+stops short binds the default, and the call-site join says nothing about that
+value, so the parameter stays `untyped` (`?untyped` in RBS). When every reaching
+call passes it, the join is the parameter's type: `--emit-rbs` writes `?Integer`
+(parenthesized when it is a union), the JSON `optional_params` row carries it with
+source `inferred:receiver-call-sites`, and the body analysis uses it as an argument
+fact. A declared optional type (`ir_optional_types` from a signature) still takes
+precedence. The result holds under the closed-world assumption bc2cpp already
+makes: no call the program can make omits the argument, so the default is never
+bound. Methods with rest, post, keyword or block parameters get no optional
+join, and a required parameter of a method that also takes optional parameters
+still has no call-site type (its join needs the required-only shape).
+
 ## Boundaries
 
 Facts remain nominal when declared; they cannot prove exact dispatch or
@@ -67,9 +83,10 @@ mixed sets are warnings rather than definite errors. Handler and closure
 barriers, frame clobbers and traversal budgets still refuse queries.
 
 Shared IREPs with ambiguous owners get no owner-specific contracts. Cyclic
-hierarchies supply no inherited contracts. Optional/rest/keyword/block
-contracts, unknown receiver contract lookup, module mixin contract lookup, constants
-and nonlocal-return inference remain follow-up work. Inferred ivar types
+hierarchies supply no inherited contracts. Rest, keyword and block contracts,
+required parameters of methods with optional ones, unknown receiver contract
+lookup, module mixin contract lookup, constants and nonlocal-return inference
+remain follow-up work. Inferred ivar types
 continue to come from the existing whole-program layout analysis; observing
 one store does not establish the complete type of an ivar.
 
