@@ -70,8 +70,9 @@ disagreements. Its verdicts are therefore unchanged.
   decodes each operand from `source`, since the IR has no operand model.
   Reaching definitions answer a backward question for one register, which
   the forward flow of a value through many registers does not need.
-* The closure-tree walk (`closure_children`, `subtree_refs`) follows the
-  irep tree (`reps`) the IR does not model; only its op scans moved.
+* The closure-tree walk (`closure_children`, `subtree_refs`) goes through
+  `BytecodeIR::Tree`, which takes the ireps table explicitly because copied
+  subtrees are registered there and not in `Irep#tree`.
 
 ## Native method facts
 
