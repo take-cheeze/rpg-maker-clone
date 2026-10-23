@@ -606,6 +606,9 @@ checks:
   scripts/bc2cpp/trace_types_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/rbs_suggestion_trace_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/native_core_candidates_check.rb:
     tier: fast
     capabilities: []
