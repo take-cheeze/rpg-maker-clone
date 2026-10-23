@@ -64,10 +64,14 @@ module NativeDirectFallback
     specs
   end
 
+  # The RGSS wrapper owners plus Class (Module#to_s, native_direct_table.rb). Class stays out of
+  # CodeGen::NATIVE_WRAPPER_CLASS_ACCESSORS: its other readers (instance receivers, setter pools) change with it.
+  NATIVE_DIRECT_CLASS_ACCESSORS = CodeGen::NATIVE_WRAPPER_CLASS_ACCESSORS.merge('Class' => 'native_class_class').freeze
+
   # Same conditions as native_wrapper_owner_safe?: one native registration, no
   # Ruby definition on the class, no mixin that could precede it.
   def native_direct_owner_safe?(name, owner)
-    return false unless @native_name_sources && CodeGen::NATIVE_WRAPPER_CLASS_ACCESSORS.key?(owner)
+    return false unless @native_name_sources && NATIVE_DIRECT_CLASS_ACCESSORS.key?(owner)
     return false unless rgss_native_registers?(name)
 
     defs = @registry[name]
@@ -131,7 +135,7 @@ module NativeDirectFallback
     # The class-tested branches below run only when no exact-core site matched (or matched a
     # class with no entry point), so there is no int_site to ask: they keep every tag test.
     branches = arms.group_by { |_, spec| spec }.map do |(function, kinds), owners|
-      check = owners.map { |owner, _| "bc2cpp_native_class == rgss::#{CodeGen::NATIVE_WRAPPER_CLASS_ACCESSORS.fetch(owner)}()" }
+      check = owners.map { |owner, _| "bc2cpp_native_class == rgss::#{NATIVE_DIRECT_CLASS_ACCESSORS.fetch(owner)}()" }
                     .join(' || ')
       if native_param_unbox_on?
         guards, call = native_param_unbox_call(name, d, recv, argv, function, kinds)

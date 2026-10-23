@@ -266,7 +266,8 @@ module NativeDirect
     "to_s" => {
       "RGSS::Rect" => ["rect_to_s_direct", []],
       "RGSS::Color" => ["color_to_s_direct", []],
-      "RGSS::Tone" => ["tone_to_s_direct", []]
+      "RGSS::Tone" => ["tone_to_s_direct", []],
+      "Class" => ["class_to_s_direct", []]
     },
     "tone" => {
       "RGSS::Viewport" => ["viewport_tone_direct", []],

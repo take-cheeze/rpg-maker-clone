@@ -710,6 +710,7 @@ namespace {
 RClass* g_native_rect_class = nullptr;
 RClass* g_native_color_class = nullptr;
 RClass* g_native_tone_class = nullptr;
+RClass* g_native_class_class = nullptr;
 RClass* g_native_sprite_class = nullptr;
 RClass* g_native_bitmap_class = nullptr;
 RClass* g_native_table_class = nullptr;
@@ -7604,6 +7605,9 @@ RClass* native_color_class(void) {
 RClass* native_tone_class(void) {
   return g_native_tone_class;
 }
+RClass* native_class_class(void) {
+  return g_native_class_class;
+}
 RClass* native_sprite_class(void) {
   return g_native_sprite_class;
 }
@@ -8720,6 +8724,12 @@ mrb_value tone_to_s_direct(mrb_state* M, mrb_value self) {
   return tone_to_s(M, self);
 }
 
+// Module#to_s (3rd/mruby/src/class.c), the same body the Class#to_s method runs.
+mrb_value mrb_mod_to_s(mrb_state* M, mrb_value klass);
+mrb_value class_to_s_direct(mrb_state* M, mrb_value self) {
+  return mrb_mod_to_s(M, self);
+}
+
 mrb_value vp_ox_direct(mrb_state* M, mrb_value self) {
   return vp_ox(M, self);
 }
@@ -9156,6 +9166,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* tone = mrb_define_class_under(M, m, "Tone", M->object_class);
   MRB_SET_INSTANCE_TT(tone, MRB_TT_DATA);
   g_native_tone_class = tone;
+  g_native_class_class = M->class_class;
   mrb_define_method(M, tone, "initialize", tone_init, MRB_ARGS_OPT(4));
 #if !defined(WIO_TERMINAL)  // Tone#dup/#clone: unused on wio (docs/adr/0132)
   mrb_define_method(M, tone, "initialize_copy", data_init_copy<Tone>,
@@ -9249,6 +9260,7 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   g_native_rect_class = nullptr;
   g_native_color_class = nullptr;
   g_native_tone_class = nullptr;
+  g_native_class_class = nullptr;
   g_native_sprite_class = nullptr;
   g_native_bitmap_class = nullptr;
   g_native_table_class = nullptr;

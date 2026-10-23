@@ -19,6 +19,7 @@ namespace rgss {
 RClass* native_rect_class(void);
 RClass* native_color_class(void);
 RClass* native_tone_class(void);
+RClass* native_class_class(void);
 RClass* native_sprite_class(void);
 RClass* native_bitmap_class(void);
 RClass* native_table_class(void);
