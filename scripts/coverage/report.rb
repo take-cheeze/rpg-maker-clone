@@ -63,6 +63,7 @@ CHECKS = [
   { name: 'bc2cpp-class-hierarchy', command: %w[scripts/bc2cpp/class_hierarchy_check.rb] },
   { name: 'bc2cpp-conversion-returns', command: %w[scripts/bc2cpp/conversion_returns_check.rb] },
   { name: 'bc2cpp-param-trace-return', command: %w[scripts/bc2cpp/param_trace_return_check.rb] },
+  { name: 'bc2cpp-param-trace-elements', command: %w[scripts/bc2cpp/param_trace_elements_check.rb] },
   { name: 'bc2cpp-predicate-returns', command: %w[scripts/bc2cpp/predicate_returns_check.rb] },
   { name: 'bc2cpp-recv-trace', command: %w[scripts/bc2cpp/recv_trace_check.rb] },
   { name: 'bc2cpp-trace-types', command: %w[scripts/bc2cpp/trace_types_check.rb] },

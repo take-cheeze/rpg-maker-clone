@@ -196,7 +196,8 @@ Compared:
 
 A site is skipped when it was not reached. An overflowed site (its class table was
 full, so its classes are unknown) is not compared; the summary counts every
-overflowed site and element slot in the trace, declared or not.
+overflowed site and element slot in the trace, declared or not. An element slot is
+overflowed too when its container held more elements than the sampler reads (below).
 
 ### Overloaded methods
 
@@ -270,8 +271,12 @@ The trace cannot tell the check these things, so they are not compared:
 - overloaded methods the rule above refuses (definitions that disagree, or a trace
   that shows two implementations under one key). Overloads whose definitions agree
   and whose trace shows one implementation are compared;
-- container elements past the first eight of each container (`BC2CPP_ELEM_SAMPLE`):
-  the dump does not record them, so a wrong class there is not seen.
+- container elements past the first 32 of each container (`BC2CPP_ELEM_SAMPLE`,
+  `ParamTrace::ELEM_SAMPLE`). The trace reads at most that many per Array (Hash
+  entries), and a larger container's tail is counted as overflow, so its slot is
+  never compared. The bound is a cost limit: each traced hit reads up to that many
+  elements, and a hit on a 1000-entry Hash also copies its key list. The sampler
+  cannot see a later element, so it reports the tail as unknown instead of a class.
 
 ## Optional parameters
 

@@ -1,0 +1,1 @@
+- **bc2cpp type trace** (`BC2CPP_TRACE_TYPES=1`) now samples the first 32 elements of an Array or entries of a Hash per container hit, up from 8. An element past the sample is counted as overflow, so its slot is never reported as complete and is left out of the candidates and the RBS comparison. Covered by `scripts/bc2cpp/param_trace_elements_check.rb`.
