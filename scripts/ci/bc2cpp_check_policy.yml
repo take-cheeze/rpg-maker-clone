@@ -305,6 +305,14 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/escape_receiver_flow_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/define_method_check.rb:
     tier: runtime
     capabilities:
