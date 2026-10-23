@@ -284,26 +284,45 @@ assume a class the analysis has not proven.
 class, so its declared result is the join over every class the receiver can
 be. The rule, for a send of `name` in a method of `owner`:
 
-- The receiver set is `ClosedWorld#known_subclasses(owner)`: the owner and every
-  program class that descends from it. A module owner is never bounded here.
+- The receiver set for a class owner is `ClosedWorld#known_subclasses(owner)`:
+  the owner and every program class that descends from it.
+- The receiver set for a module owner is the instances of its includers: each
+  declared class whose ancestor chain reaches the module (the registry's
+  `include` records, through modules that include it), together with those
+  classes' descendants. A module nothing includes has no receiver, so it stays
+  untyped. The candidates are `ClosedWorld#known_includer_candidates`, which is
+  open when a native or outside Ruby source names the module.
 - Each receiver contributes the contract its own dispatch reaches (the first
   owner in its ancestor chain that declares `name`). A `:self` contract answers
   that receiver's class. The result is the union of those contributions.
 - With no override anywhere in the set this is the owner's contract. With
   `Base#via_self` calling `greet`, and `Child < Base` overriding `greet` to
   return `Integer`, `Child`'s override joins `Base`'s `Symbol`, so
-  `Base#via_self` is `Symbol | Integer`, never `Symbol` alone.
+  `Base#via_self` is `Symbol | Integer`, never `Symbol` alone. A module
+  `M` included by `A` (`greet` is `Symbol`) and `B` (`greet` is `Integer`) gives
+  `M#via_mod` the same `Symbol | Integer`.
 - The send is untyped (no declared result) when the set is open: no closed
   world, a subclass that may come from outside the program (`Class.new`, an
-  outside definer, a wildcard), a module owner, or a core ancestor such as
-  `Object` or `Kernel`, whose core instances the program does not declare. It
-  is also untyped when a receiver's chain is unknown (an unknown mixin or a
-  cycle) or does not reach the owner, when a receiver runs a `method_missing`,
-  or when a receiver lacks a declared contract for `name`.
+  outside definer, a wildcard), a module with no bounded includer set (an
+  includer the registry cannot place, such as `include(*mods)`, a singleton
+  class's `include`, a native or outside source that names the module, or a
+  runtime `extend`, which closes the world), or a core ancestor such as `Object` or `Kernel`, whose core
+  instances the program does not declare. It is also untyped when a receiver's
+  chain is unknown (an unknown mixin or a cycle) or does not reach the owner,
+  when a receiver or one of its ancestors is `prepend`ed, when a receiver runs
+  a `method_missing`, or when a receiver lacks a declared contract for `name`.
+- Removal: a name the program may undefine or remove has no self-call contract
+  at all. The program contains `undef_method NAME`, `remove_method NAME`, the
+  `undef` keyword, or the same through `send`, `__send__` or `public_send` with
+  a literal name, and any of them with a name that is not a literal (or a
+  computed target) marks every name. The scan does not attribute a removal to
+  a class, so a removal in any class counts, which covers the owner and every
+  subclass. This is `ClosedWorld#method_removed?`, applied by
+  `RbsSignatures.ir_types` (`removed:`).
 
-Not modelled: a subclass that removes `name` (`undef_method`, `remove_method`),
-which the receiver set does not see. Explicit receivers have the same limit.
-The rule is in `RbsSignatures.self_receivers` and `RbsSignatures.self_call_types`,
+Explicit receivers do not use this rule, so the removal refusal does not reach
+them. The rule is in `RbsSignatures.self_receivers`,
+`RbsSignatures.module_receiver_classes` and `RbsSignatures.self_call_types`,
 and the fixture is `scripts/bc2cpp/self_call_override_contracts_check.rb`.
 
 **Explicit receivers.** A send on a receiver with declared nominal bounds (an
