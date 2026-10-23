@@ -10,13 +10,21 @@
 # (`"#{owner}_#{name}"` with every non-[A-Za-z0-9_] byte turned into `_`), so
 # a mismatch can only ever leave a line in place, never take the wrong one.
 #
-# Usage: ruby scripts/bc2cpp/prune_static_dispatch_registrations.rb
+# register.cxx is one hand-written file that every target links, so only a name every target leaves
+# unregistered may lose its line: the intersection of the base list and the closed build's list. Anything
+# else would break the target that still needs it.
+#
+# Usage: ruby scripts/bc2cpp/prune_static_dispatch_registrations.rb [--check]
+#   --check: report the lines that would be removed and exit 1 if any remain (no file is written).
 
 require_relative '../../tools/bc2cpp/static_dispatch_unregistered'
 require_relative '../../tools/bc2cpp/static_dispatch_registrations'
+require_relative '../../tools/bc2cpp/static_dispatch_unregistered_closed'
 
 root = File.expand_path('../..', __dir__)
-wanted = STATIC_DISPATCH_UNREGISTERED.to_set do |key|
+check = ARGV.include?('--check')
+shared = STATIC_DISPATCH_UNREGISTERED & STATIC_DISPATCH_UNREGISTERED_CLOSED
+wanted = shared.to_set do |key|
   owner, name = key.split('#', 2)
   [name, "#{owner}_#{name}".gsub(/[^a-zA-Z0-9_]/, '_')]
 end
@@ -33,6 +41,11 @@ StaticDispatchRegistrations::GEMS.each do |gem|
       line
     end
   end
-  File.write(path, out) unless out == src
+  File.write(path, out) unless check || out == src
 end
-puts "#{removed} hand registration line(s) removed"
+if check
+  abort "#{removed} hand registration line(s) still register a shared-unregistered name" if removed.positive?
+  puts 'no shared-unregistered hand registration lines'
+else
+  puts "#{removed} hand registration line(s) removed"
+end
