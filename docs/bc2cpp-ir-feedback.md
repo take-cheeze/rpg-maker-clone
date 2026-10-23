@@ -174,6 +174,32 @@ bound. Methods with rest, post, keyword or block parameters get no optional
 join, and a required parameter of a method that also takes optional parameters
 still has no call-site type (its join needs the required-only shape).
 
+## Rest, keyword and block parameters
+
+These three kinds take their type from the complete call-site join as well, each
+under its own condition. The join is taken only when the reaching call sites are
+all known (a dynamic, foreign or poisoned name gets no join at all).
+
+- **Rest** (`*rest`): the element type is the join of every extra argument over
+  the reaching calls. RBS writes `*T` (the body sees `Array[T]`); the JSON
+  `rest_param` row carries `T`. A call that passes keywords refuses the join, and
+  so does a call that passes no extra argument at all (there is no element to
+  type). A rest parameter next to keyword parameters gets no join.
+- **Required keyword** (`k:`): the join of the value passed for `k` at every
+  reaching call. Each call must pass `k` as a literal keyword pair; a call that
+  omits it, or passes keywords through `**splat`, refuses the join. RBS writes
+  `k: T`. An optional keyword stays `?untyped`.
+- **Block** (`&blk`): the block is `Proc` only when every reaching call passes a
+  literal block or lambda (`BLOCK`/`LAMBDA` producer in the block slot). A call with
+  no block binds `nil`, and a Proc from a variable, a `proc` call or a `&` pass-through
+  is not recognized, so each refuses. A block typed `Proc` is written as a required
+  block (`{ (*untyped) -> untyped }`); otherwise the block stays optional. A declared
+  block signature keeps its optional block.
+
+The body analysis does not yet consume these joins: the candidate RBS and the JSON
+rows carry them, and the IR argument facts still cover positional parameters only.
+`BC2CPP_IR_ARGUMENT_TYPES=0` restores `untyped` for all three.
+
 ## Boundaries
 
 Facts remain nominal when declared; they cannot prove exact dispatch or
@@ -212,20 +238,22 @@ checked: with `Base#via_self` calling `greet`, and `Child < Base` overriding
 Fixing this needs the set of overriding descendants, which the lookup does not
 have, so it remains open.
 
-Rest, keyword and block contracts, required parameters of methods with optional
-ones, constants and nonlocal-return inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the
-type-check RBS, and the `ivars` rows of the facts file) are the union of every
-traced store across the ivar's numeric family: superclass, include and prepend
-links, since all of them share the slot. The candidate gains `nil` when some
-read may run before any store: a `@x = nil` store, or a reading owner that
+Rest, keyword and block contracts in the body analysis, required parameters of
+methods with optional ones, constants and nonlocal-return inference remain
+follow-up work (the call-site joins for rest, keyword and block parameters are
+described above). Inferred ivar candidates (`@ivar: T` in the type-check RBS,
+and the `ivars` rows of the facts file) are the union of every traced store
+across the ivar's numeric family: superclass, include and prepend links, since
+all of them share the slot. The candidate gains `nil` when some read may run
+before any store: a `@x = nil` store, or a reading owner that
 `numeric_ivar_assured?` does not clear. That check needs a closed world with no
 `allocate` and a #initialize that assigns on every path before `self` escapes;
 where it cannot decide, `nil` is included. A store the analysis did not resolve,
 or an ivar touched by code no class owns (a module body), leaves the candidate
 unknown. The runtime layout is still the layout analysis's; only the candidate
-that is written and compared changes. Inferred ivar types
-continue to come from the existing whole-program layout analysis; observing
-one store does not establish the complete type of an ivar.
+that is written and compared changes. Inferred ivar types continue to come from
+the existing whole-program layout analysis; observing one store does not
+establish the complete type of an ivar.
 
 Run the signature, type-check and RBS-export checks with a host `MRBC`. The
 fixture suites compare guarded dispatch with `BC2CPP_STRICT_HINTS=0`.
