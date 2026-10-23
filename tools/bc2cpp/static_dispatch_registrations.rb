@@ -519,7 +519,7 @@ if $PROGRAM_NAME == __FILE__
   core_arg = ARGV.find { |a| a.start_with?('--core-gems=') }
   core_gems = core_arg && core_arg.delete_prefix('--core-gems=').split(',').map(&:strip).reject(&:empty?)
   exclude_refs = closed_only || ARGV.include?('--exclude-scripts-tests')
-  abort '--write is only for the default world; drop --core-gems to write' if core_gems && ARGV.include?('--write')
+  abort '--write with --core-gems needs --closed-only (the closed world\'s own gem list)' if core_gems && ARGV.include?('--write') && !closed_only
   abort '--write with --exclude-scripts-tests needs --closed-only' if ARGV.include?('--write') && exclude_refs && !closed_only
   analysis = StaticDispatchRegistrations.analyze(repo_root, mrbc, closed_only: closed_only, core_gems: core_gems,
                                                  exclude_refs: exclude_refs)
