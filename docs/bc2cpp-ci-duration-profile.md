@@ -1,5 +1,7 @@
 # bc2cpp CI duration profile (2026-10-12)
 
+Historical: the measurements on this page were taken on the former maix/wio closed world, not the current closed world, which is the sealed RPG2000/2003 desktop host.
+
 This page records the measurements. The CI change that follows from them (section 3) is in this pull request; the
 generator fixes in sections 2 and 4 are separate pull requests (the exact regex and scan fixes, the scan cache of
 ADR 0415, and the `numeric_aliased_names` memo), each with its own numbers.
@@ -11,12 +13,10 @@ Ubuntu 24.04 sandbox with the same toolchain as the runner, no sccache; the loca
 
 ## 0. Profiling on a desktop host
 
-The canonical closed world the CI profiles is wio's (RPG2000/2003 only). A desktop
-host can run the same closed world for local profiling by setting
-`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` (ADR 0428): it builds the `host` target as a
-sealed RPG2000/2003-only world, so `bc2cpp` runs there too. This is test-only and
-cannot play XP/VX/Wolf/MV or arbitrary runtime Ruby; it exists so a machine with a
-display can profile without a cross toolchain.
+The closed world CI builds is now the sealed RPG2000/2003 desktop host's (the `closed` build; see
+[bc2cpp gate](ci.md#bc2cpp-gate)). The measurements below were taken on the former wio closed world.
+The `RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` switch (ADR 0428) that built `host` as a sealed world has
+been removed.
 
 ## 1. Where the time was
 

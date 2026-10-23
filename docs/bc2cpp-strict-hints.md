@@ -41,18 +41,19 @@ and aborts. `-DBC2CPP_HINT_VIOLATION_LOG` (ADR 0428) is the survey mode: each di
 printed once as `bc2cpp: HINT_VIOLATION_LOG: <Class>#<name> at <site>` and the by-name send runs, so
 one workload run lists every wrong hint.
 
-bc2cpp compiles closed-world programs only (ADR 0466), and the closed world is built for
-wio/maix/psp, none of which runs here. The sealed desktop host of ADR 0428
-(`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1`) and `scripts/bc2cpp/strict_hints_verify.bash`, which ran
-the real workloads on it, were removed with every other open-world path: the desktop engine is the
-plain mruby build. A verify run needs a closed-world target that can run the workloads. mruby's
+bc2cpp compiles closed-world programs only (ADR 0466). The closed world is the sealed RPG2000/2003
+desktop host's `closed` build, which CI generates and compiles without running. The
+`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` switch of ADR 0428 and `scripts/bc2cpp/strict_hints_verify.bash`,
+which ran the real workloads on it, were removed with every other open-world path; the desktop `host`
+engine is still the plain mruby build. A verify run needs a closed-world target that can run the
+workloads. mruby's
 `rake test` does not test the compiled gems (they are initialised by the dispatch, not by
 `mrb_open`), and the CRuby checks never run compiled code.
 
 A violation is a wrong or incomplete hint: fix the inference or annotation, widen the hint class
 set if the extra class is legitimate, or fix the Ruby. A candidate-set family (`poly_small_n`,
 `poly_table`, `interface_table`) keeps the dispatch when a known class outside the set answers the
-name (`ClosedWorld#answered_outside?`), so on the wio world `all` forces what `1` forces.
+name (`ClosedWorld#answered_outside?`), so on the closed world `all` forces what `1` forces.
 `-DBC2CPP_HINT_VIOLATION_DISPATCH` (compile time, no regeneration) restores the by-name send
 silently to tell a wrong hint from another bug.
 

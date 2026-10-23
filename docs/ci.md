@@ -39,9 +39,10 @@ continue to select their backend through SDL's usual configuration.
 
 bc2cpp compiles closed-world programs only (ADR 0466), so `bc2cpp-build` builds a closed world:
 `build_config.rb`'s `closed` build (`MRUBY_TARGET=closed`, `scripts/bc2cpp/closed_build.bash`)
-with `RPGMAKER_BC2CPP=1`. It is the maix closed world compiled by the runner's own compiler:
-`single_format_only` (RPG2000/2003 only), maix's gem set (no `mruby-dir`, `mruby-compiler`,
-maix's mruby-io HAL) and maix's host sources as bc2cpp's native input. The four `*-compiled`
+with `RPGMAKER_BC2CPP=1`. It is the sealed RPG2000/2003 desktop host's closed world, compiled by the
+runner's own compiler: `single_format_only` (RPG2000/2003 only), the desktop host's gem set without
+the XP/VX/Wolf/MV gems and without `mruby-onig` and `mruby-dir`, and the desktop `src/` tree as
+bc2cpp's native input (`BC2CPP_CLOSED_WORLD_HOST_SRCS`). The four `*-compiled`
 gems are generated in that closed world and compiled into its `libmruby.a`, and the job then
 runs the type check (`scripts/bc2cpp/type_check.rb`) with that build's host `mrbc`.
 
@@ -142,11 +143,11 @@ and are never cancelled.
 
 ### Profiling bc2cpp on a desktop host
 
-`bc2cpp` is closed-world only, and CI profiles it on wio's world. For local
-profiling on a machine with a display, set
-`RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` (ADR 0428) to build `host` as a sealed
-RPG2000/2003-only world, so `bc2cpp` runs there without a cross toolchain.
-This is test-only and cannot play XP/VX/Wolf/MV or arbitrary runtime Ruby.
+`bc2cpp` is closed-world only, and CI builds the sealed RPG2000/2003 desktop host's closed world
+(see the [bc2cpp gate](#bc2cpp-gate) above). The sealed host, built with the CMake option
+`RPG2K_SEALED_HOST`, compiles out the `--script` loader, so it cannot play XP/VX/Wolf/MV or run
+arbitrary runtime Ruby. The `RPGMAKER_BC2CPP_CLOSED_WORLD_HOST=1` switch that built `host` as a
+sealed world has been removed.
 
 ### Behavioral installer fixtures
 

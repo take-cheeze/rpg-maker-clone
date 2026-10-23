@@ -1,6 +1,8 @@
 # bc2cpp dynamic-dispatch site census
 
-How much by-name dispatch is left in the C++ that bc2cpp generates for the wio
+Historical: the measurements on this page were taken on the former maix/wio closed world, not the current closed world, which is the sealed RPG2000/2003 desktop host.
+
+How much by-name dispatch is left in the C++ that bc2cpp generates for the former wio
 closed world, why each site is still dynamic, and what proof would remove it.
 `scripts/bc2cpp/dynamic_site_census.rb` reproduces every number below from the
 generated C++.
