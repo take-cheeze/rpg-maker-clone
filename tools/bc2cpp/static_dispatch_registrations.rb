@@ -197,7 +197,7 @@ module StaticDispatchRegistrations
   # closed_only: the closed world's own program. Ruby test files, scripts/ and
   # tools/ are not linked into the shipped closed binary, so they add no
   # lookups to it. Native test sources stay: they are compiled into it.
-  def outside_world_files(repo_root, closed_only: false)
+  def outside_world_files(repo_root, closed_only: false, exclude_refs: closed_only)
     closed = closed_world_mrblib_srcs(repo_root, core_gems: nil).map { |p| File.expand_path(p) }.to_set
     # scripts/ and the CI workflows are scanned whatever their extension: the
     # boot checks feed inline Ruby (heredocs in *.bash) to the real binary's
@@ -206,7 +206,7 @@ module StaticDispatchRegistrations
     # (foreign_mrblib_srcs skips those): their sends are names this analysis must see.
     ruby = (foreign_mrblib_srcs(repo_root) + Dir["#{repo_root}/3rd/mruby/mrbgems/*/mrblib/**/*.rb"]).uniq +
            Dir["#{repo_root}/mruby-*/mrblib/**/*.rb"] +
-           (closed_only ? [] : Dir["#{repo_root}/mruby-*/test/**/*.rb"] +
+           (exclude_refs ? [] : Dir["#{repo_root}/mruby-*/test/**/*.rb"] +
                                Dir["#{repo_root}/scripts/**/*"].select { |p| File.file?(p) } +
                                Dir["#{repo_root}/tools/**/*.rb"].reject { |p| p.include?('/tools/bc2cpp/') }) +
            Dir["#{repo_root}/.github/**/*"].select { |p| File.file?(p) }
@@ -220,8 +220,8 @@ module StaticDispatchRegistrations
     [(ruby.map { |p| File.expand_path(p) }.to_set - closed).to_a.sort, native.map { |p| File.expand_path(p) }.uniq.sort]
   end
 
-  def outside_world_tokens(repo_root, closed_only: false)
-    ruby, native = outside_world_files(repo_root, closed_only: closed_only)
+  def outside_world_tokens(repo_root, closed_only: false, exclude_refs: closed_only)
+    ruby, native = outside_world_files(repo_root, closed_only: closed_only, exclude_refs: exclude_refs)
     tokens = Set.new
     (ruby + native).each do |path|
       text = File.read(path, encoding: 'BINARY')
@@ -238,7 +238,8 @@ module StaticDispatchRegistrations
 
   # Runs bc2cpp.rb for each compiled gem and the closed-world parse; returns
   # everything eligibility needs.
-  def analyze(repo_root, mrbc, unregistered: STATIC_DISPATCH_UNREGISTERED, closed_only: false)
+  def analyze(repo_root, mrbc, unregistered: STATIC_DISPATCH_UNREGISTERED, closed_only: false,
+              exclude_refs: closed_only)
     # Every gem, from one shared analysis.
     fresh = NeverCalledRegistrations.run_bc2cpp_full_many(GEMS, repo_root, mrbc)
     runs = GEMS.to_h do |gem|
@@ -297,7 +298,7 @@ module StaticDispatchRegistrations
       dynamic.merge(c_literals(r[:gen], exempt: embed_guard_fallback_only(r[:gen], subclassed)))
              .merge(c_literals(r[:hand]))
     end
-    dynamic.merge(outside_world_tokens(repo_root, closed_only: closed_only))
+    dynamic.merge(outside_world_tokens(repo_root, closed_only: closed_only, exclude_refs: exclude_refs))
 
     # Which bytecode can run. No method body -- compiled or not -- runs as
     # bytecode except after a dynamic lookup of its own name: a direct C++ call
@@ -512,7 +513,11 @@ if $PROGRAM_NAME == __FILE__
   mrbc = ENV['MRBC'] || 'mrbc'
   # --closed-only: the list only the closed build uses (see static_dispatch_unregistered_closed.rb).
   closed_only = ARGV.include?('--closed-only')
-  analysis = StaticDispatchRegistrations.analyze(repo_root, mrbc, closed_only: closed_only)
+  # --exclude-scripts-tests drops Ruby test files, scripts/ and tools/ from the scan for any build
+  # (--closed-only does too). Only the closed world's table is written, and only with --closed-only.
+  exclude_refs = closed_only || ARGV.include?('--exclude-scripts-tests')
+  abort '--write with --exclude-scripts-tests needs --closed-only' if ARGV.include?('--write') && exclude_refs && !closed_only
+  analysis = StaticDispatchRegistrations.analyze(repo_root, mrbc, closed_only: closed_only, exclude_refs: exclude_refs)
   list = StaticDispatchRegistrations.eligible(analysis)
   warn "registered compiled entries: #{analysis[:registered].size}, statically-dispatched-only: #{list.size}"
   list.sort_by { |m| [m[:owner], m[:name]] }.each { |m| puts "#{m[:owner]}##{m[:name]}\t#{m[:entry]}\t#{m[:gem]}" }
