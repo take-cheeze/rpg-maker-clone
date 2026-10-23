@@ -753,6 +753,7 @@ jobs:
           ruby scripts/bc2cpp/rbs_mixin_contracts_check.rb
           ruby scripts/bc2cpp/self_call_override_contracts_check.rb
           ruby scripts/bc2cpp/explicit_receiver_override_contracts_check.rb
+          ruby scripts/bc2cpp/module_includer_bound_check.rb
           ruby scripts/bc2cpp/lcf_join_array_check.rb
           ruby scripts/bc2cpp/alias_method_check.rb
           ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
