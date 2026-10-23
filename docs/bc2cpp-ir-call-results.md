@@ -48,9 +48,11 @@ identity and cannot justify unguarded native dispatch.
 Block-call results do not borrow normal RBS return contracts: `break` can
 replace the call's result without being a normal return from its callee.
 Independent block results remain available when the compiler's block oracle
-proves them. Explicit `self` without an independent receiver proof, module
-mixin contract lookup, packed-receiver refinements and argument-dependent RBS
-return expressions remain follow-up work.
+proves them. Module mixin lookup (include, prepend, nested include, a superclass's include)
+is described in [IR feedback](bc2cpp-ir-feedback.md#boundaries); a module reached
+twice in the chain is refused. Explicit `self` without an independent receiver
+proof, packed-receiver refinements and argument-dependent RBS return expressions
+remain follow-up work.
 
 ## Bounds and reporting
 

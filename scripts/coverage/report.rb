@@ -72,6 +72,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-blocks', command: %w[scripts/bc2cpp/ir_blocks_check.rb] },
   { name: 'bc2cpp-ir-facts', command: %w[scripts/bc2cpp/ir_facts_check.rb] },
+  { name: 'bc2cpp-rbs-mixin-contracts', command: %w[scripts/bc2cpp/rbs_mixin_contracts_check.rb] },
   { name: 'bc2cpp-numeric-roots-reaching', command: %w[scripts/bc2cpp/numeric_roots_reaching_check.rb] },
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },

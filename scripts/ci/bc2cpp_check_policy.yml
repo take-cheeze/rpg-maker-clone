@@ -640,6 +640,12 @@ checks:
   scripts/bc2cpp/type_check_iterate_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/rbs_mixin_contracts_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
   scripts/bc2cpp/type_check_provenance_check.rb:
     tier: fast
     capabilities: []

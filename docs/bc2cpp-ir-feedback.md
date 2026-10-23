@@ -231,23 +231,52 @@ lowers them to notes. Path-sensitive narrowing is not applied to these rows:
 barriers, frame clobbers and traversal budgets still refuse queries.
 
 Shared IREPs with ambiguous owners get no owner-specific contracts. Cyclic
-hierarchies supply no inherited contracts. Rest, keyword and block contracts
-in the body analysis, required parameters of methods with optional ones, unknown
-receiver contract lookup, module mixin contract lookup, constants and
-nonlocal-return inference remain follow-up work (the call-site joins for rest,
-keyword and block parameters are described above). Inferred ivar candidates
-(`@ivar: T` in the type-check RBS, and the `ivars` rows of the facts file) are the
-union of every traced store across the ivar's numeric family: superclass, include
-and prepend links, since all of them share the slot. The candidate gains `nil`
-when some read may run before any store: a `@x = nil` store, or a reading owner
-that `numeric_ivar_assured?` does not clear. That check needs a closed world with
-no `allocate` and a #initialize that assigns on every path before `self` escapes;
+hierarchies supply no inherited contracts.
+
+**Mixin lookup.** A return contract is found through the owner's mixin chain:
+included and prepended modules, nested includes, and modules that a superclass
+includes, in CRuby's order. A method defined in a module is found through the
+module's own declarations, so the chain is `prepend`, the class, `include`
+(last first), then the superclass. A module reached twice in that chain (two
+include paths, or a module the superclass already includes) supplies no
+contract: CRuby keeps it at its first insertion, and that depends on load order
+the static links do not record. `class Child < Base; include M; end` with
+`Base` also including `M` therefore refuses the call instead of returning
+`M#m`, which CRuby dispatches to `Base#m`. Unknown mixins and cycles refuse
+the same way. The fixture is `scripts/bc2cpp/rbs_mixin_contracts_check.rb`.
+
+**Unknown receivers.** A receiver whose class set is unknown does not use a
+return contract because its method name has one declaration in the program.
+Only a receiver the compiler proves (a declared argument, an existing complete
+proof) reaches the contract lookup. A call on an unproven receiver stays
+`unknown`, and its reason names the upstream producer. This rule is
+deliberately narrower than "single contract owner": that inference would
+assume a class the analysis has not proven.
+
+**Known gap: implicit self-calls.** An implicit `self` call takes the return
+contract of the method's own owner chain, not of the receiver's class. A
+subclass or includer that overrides the callee with a different contract is not
+checked: with `Base#via_self` calling `greet`, and `Child < Base` overriding
+`greet` to return `Integer`, `Child#via_self` is still reported as `Symbol`.
+Fixing this needs the set of overriding descendants, which the lookup does not
+have, so it remains open.
+
+Rest, keyword and block contracts in the body analysis, required parameters of
+methods with optional ones, constants and nonlocal-return inference remain
+follow-up work (the call-site joins for rest, keyword and block parameters are
+described above). Inferred ivar candidates (`@ivar: T` in the type-check RBS,
+and the `ivars` rows of the facts file) are the union of every traced store
+across the ivar's numeric family: superclass, include and prepend links, since
+all of them share the slot. The candidate gains `nil` when some read may run
+before any store: a `@x = nil` store, or a reading owner that
+`numeric_ivar_assured?` does not clear. That check needs a closed world with no
+`allocate` and a #initialize that assigns on every path before `self` escapes;
 where it cannot decide, `nil` is included. A store the analysis did not resolve,
 or an ivar touched by code no class owns (a module body), leaves the candidate
 unknown. The runtime layout is still the layout analysis's; only the candidate
-that is written and compared changes. Inferred ivar types
-continue to come from the existing whole-program layout analysis; observing
-one store does not establish the complete type of an ivar.
+that is written and compared changes. Inferred ivar types continue to come from
+the existing whole-program layout analysis; observing one store does not
+establish the complete type of an ivar.
 
 Run the signature, type-check and RBS-export checks with a host `MRBC`. The
 fixture suites compare guarded dispatch with `BC2CPP_STRICT_HINTS=0`.
