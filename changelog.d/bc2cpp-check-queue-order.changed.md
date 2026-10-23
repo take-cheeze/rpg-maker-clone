@@ -1,0 +1,1 @@
+- Start longer bc2cpp CI checks first to reduce idle time at the end of the four-worker group, preserving every check and its arguments.
