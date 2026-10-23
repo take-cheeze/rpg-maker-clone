@@ -11098,8 +11098,6 @@ class Game::Battle
   RESTRICTION_ATTACK_ALLY: Integer
   RESTRICTION_ATTACK_ENEMY: Integer
   RESTRICTION_DO_NOTHING: Integer
-  ROW_BACK: Integer
-  ROW_FRONT: Integer
   ROW_HIT_PENALTY: Integer
   STATE_PERSISTS_ON_MAP: Integer
 end
@@ -11141,7 +11139,6 @@ end
 # candidate: cand-emit-f4/Game/ChipSet.rbs
 class Game::ChipSet
   ABOVE_BIT: Integer
-  ALL_DIRS: Integer
   COUNTER_BIT: Integer
 end
 
@@ -11692,7 +11689,6 @@ class Game::State
   @x: Integer
   @y: Integer
   MAX_PICTURE_ID: Integer
-  NO_CLOCK_TIMESTAMP: Numeric
   OLE_EPOCH_OFFSET: Integer
   SCREEN_TRANSITION_SLOTS: Integer
   TILE_REPLACEMENT_SLOTS: Integer
@@ -11812,9 +11808,6 @@ end
 
 # candidate: cand-emit-f4/LCF.rbs
 module LCF
-  INT32_MASK: Numeric
-  INT32_SIGN_BIT: Numeric
-  INT32_WRAP: Numeric
   MAX_CHUNK_ID: Integer
   MODE: Integer
   MOVE_CHANGE_GRAPHIC: Integer
@@ -11877,8 +11870,6 @@ end
 
 # candidate: cand-emit-f4/RGSS/Graphics.rbs
 module RGSS::Graphics
-  BRIGHTNESS_Z: Integer
-  TRANSITION_Z: Integer
   def self.freeze: () ?{ (*untyped) -> untyped } -> nil
 end
 
@@ -11943,10 +11934,6 @@ class RPG2k::Scene::Base
   @state: nil | Game::State
   FIELD_BACKDROP_X: Integer
   FIELD_BACKDROP_Y: Integer
-  LIST_ARROW_BLINK_FRAMES: Integer
-  LIST_ARROW_H: Integer
-  LIST_ARROW_SRC_X: Integer
-  LIST_ARROW_W: Integer
   LIST_DOWN_ARROW_SRC_Y: Integer
   LIST_UP_ARROW_SRC_Y: Integer
   SFX_ACTOR_DAMAGE: Integer
@@ -12067,10 +12054,6 @@ class RPG2k::Scene::EquipMenu
   @slot_window: RPG2k::Window | nil
   @stats_window: RPG2k::Window | nil
   @up_arrow: RGSS::Sprite | nil
-  ARROW_BLINK_FRAMES: Integer
-  ARROW_H: Integer
-  ARROW_SRC_X: Integer
-  ARROW_W: Integer
   CAND_H: Integer
   COLUMN_GAP: Integer
   COLUMN_MAX: Integer
@@ -12116,10 +12099,6 @@ class RPG2k::Scene::ItemMenu
   @target_window: RPG2k::Window | nil
   @teleport_window: RPG2k::Window | nil
   @up_arrow: RGSS::Sprite | nil
-  ARROW_BLINK_FRAMES: Integer
-  ARROW_H: Integer
-  ARROW_SRC_X: Integer
-  ARROW_W: Integer
   COLUMN_GAP: Integer
   COLUMN_MAX: Integer
   COUNT_NUM_W: Integer
@@ -12208,7 +12187,6 @@ class RPG2k::Scene::Map
   BACKDROP_CACHE_BYTES: Integer
   BATTLECHARSET_CACHE_BYTES: Integer
   CHARSET_CACHE_BYTES: Integer
-  COLS: Integer
   CONSTRAINED_SCALE_FLOOR_DIVISOR: Integer
   ENCOUNTER_CHANCE_SCALE: Integer
   EVENT_DRAW_SIG_FIELDS: Integer
@@ -12267,7 +12245,6 @@ class RPG2k::Scene::Map
   NUM_CELL: Integer
   PICTURE_CACHE_BYTES: Integer
   PICTURE_TONE_CACHE_MAX: Integer
-  ROWS: Integer
   SCREEN_H: Integer
   SCREEN_W: Integer
   SHOP_GOLD_Y: Integer
@@ -12277,12 +12254,10 @@ class RPG2k::Scene::Map
   SHOP_QUANTITY_STEP: Integer
   SHOP_STATUS_W: Integer
   SHOP_STATUS_Y: Integer
-  SLIDE_UNITS: Integer
   SYSTEM2_CACHE_BYTES: Integer
   SYSTEM_BGM_BATTLE: Integer
   SYSTEM_BGM_INN: Integer
   SYSTEM_BGM_VICTORY: Integer
-  TILE: Integer
   TIMER_COLON_SRC_X: Integer
   TIMER_DIGIT_H: Integer
   TIMER_DIGIT_SRC_X: Integer
@@ -12445,10 +12420,6 @@ class RPG2k::Scene::SaveLoad
   @parent: RPG2k | nil
   @skin: RGSS::Bitmap | nil
   @up_arrow: RGSS::Sprite | nil
-  ARROW_BLINK_FRAMES: Integer
-  ARROW_H: Integer
-  ARROW_SRC_X: Integer
-  ARROW_W: Integer
   DISABLED_COLOR: Integer
   DOWN_ARROW_SRC_Y: Integer
   FACE_SIZE: Integer
@@ -12465,11 +12436,9 @@ class RPG2k::Scene::SaveLoad
   SLOT_BOX_H: Integer
   SLOT_COUNT: Integer
   SLOT_LINES: Integer
-  SLOT_TOP: Integer
   STAT_LABEL_COLOR: Integer
   TEXT_COLOR: Integer
   UP_ARROW_SRC_Y: Integer
-  VISIBLE_SLOTS: Integer
 end
 
 # candidate: cand-emit-f4/RPG2k/Scene/SkillMenu.rbs
@@ -12487,15 +12456,10 @@ class RPG2k::Scene::SkillMenu
   @target_window: RPG2k::Window | nil
   @teleport_window: RPG2k::Window | nil
   @up_arrow: RGSS::Sprite | nil
-  ARROW_BLINK_FRAMES: Integer
-  ARROW_H: Integer
-  ARROW_SRC_X: Integer
-  ARROW_W: Integer
   CELL_CURSOR_W: Integer
   COLUMN_MAX: Integer
   COST_RIGHT: Integer
   DOWN_ARROW_SRC_Y: Integer
-  DOWN_ARROW_Y: Integer
   LEVEL_FIELD_W: Integer
   LINE_H: Integer
   SCREEN_H: Integer
