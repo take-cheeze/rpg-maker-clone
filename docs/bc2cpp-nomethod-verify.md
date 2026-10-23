@@ -1,6 +1,7 @@
 # Running the smoke suites with NOMETHOD_VERIFY
 
-A closed-world build (`psp`, `wio`, `maix`) compiles some guard-chain fallbacks
+A closed-world build (the `closed` desktop host's, or `psp`, `wio`, `maix` built with
+`RPGMAKER_BC2CPP=1`) compiles some guard-chain fallbacks
 proven dead into `bc2cpp_nomethod` (ADR 0210). In a normal build such a site
 dispatches, then raises `NoMethodError`, or a "closed-world proof violated"
 `RuntimeError` if the method exists after all (ADR 0262). Both are ordinary Ruby
@@ -41,7 +42,7 @@ the line above on stderr or the emulator's console. `abort()` needs a libc with
 `stderr`; on a target where that line is not visible, the emulator stopping at
 `abort` is the signal.
 
-The desktop and wasm builds use the interpreter fallbacks for the same Ruby and
+The desktop `host` and wasm builds use the interpreter fallbacks for the same Ruby and
 have no `bc2cpp_nomethod` sites (they are not closed-world builds), so verify
 mode changes nothing there.
 

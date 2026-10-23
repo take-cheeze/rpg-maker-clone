@@ -1,6 +1,8 @@
 # bc2cpp dynamic-dispatch site census
 
-How much by-name dispatch is left in the C++ that bc2cpp generates for the wio
+Historical: the measurements on this page were taken on the former maix/wio closed world, not the current closed world, which is the sealed RPG2000/2003 desktop host.
+
+How much by-name dispatch is left in the C++ that bc2cpp generates for the former wio
 closed world, why each site is still dynamic, and what proof would remove it.
 `scripts/bc2cpp/dynamic_site_census.rb` reproduces every number below from the
 generated C++.
@@ -649,6 +651,28 @@ The census above counts by-name sends; this one counts creation sites (`LAMBDA`,
 | constructors whose `self` does not leave | 51 of 82 |
 | methods that newly compile with BLOCK_FALLBACK_PROVEN | 1 (`Array#combination`) |
 | `shipped.cxx` with `BC2CPP_ESCAPE_ANALYSIS=0` against master | byte-identical |
+
+## Follow-up: the class of a `new` site
+
+`BC2CPP_ESCAPE_REPORT` gives each `new` send (`SEND0`/`SEND`/`SENDB` on `new`) the class it constructs, so the report can
+ask whether that class's `initialize` keeps `self`. The lookup took only a bare written name that the hierarchy tables
+declare exactly, so `Rect.new` inside `class RPG2k::Window` (the `RGSS::Rect` reached through `Object`'s included module)
+and `Scene::MapViewer.new` inside `RPG2k` were refused. It now also takes the receiver the compiler proves to be one stable
+class constant (`constant_object_owner`, the proof `CONSTRUCTOR_EXACT_CONSTANT` uses), and refuses a name the closed world
+rebinds (`Outer::Reset = Rebound` after `class Reset`). The two must agree; a receiver neither proves stays unknown.
+Report only: `creation` is called without a class everywhere else, so no generated code changes (the unit fixture's
+generated output is byte-identical). Engine `new` sites (662), base `3c9a389` against this branch, same census run:
+
+| Object-kind verdict (engine) | Before | After |
+| --- | ---: | ---: |
+| confined | 0 | 1 |
+| `initialize_unknown` | 570 | 255 |
+| `initialize_keeps_self` | 71 | 269 |
+| other escape reasons | 21 | 137 |
+
+The 255 still unknown: `Rect`, `Color`, `Tone` and `Table` (229 sites) are bound by an assigned alias in mruby-rpgxp
+(`Rect = RGSS::Rect`), which the whole-program unique-name proof refuses; 11 `StringIO` sites are a native class the
+hierarchy tables do not place; 15 receivers are refused by the dataflow or come from an upvalue or an argument.
 
 ## Follow-up: provable errors and post-call facts
 

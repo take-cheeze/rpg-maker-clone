@@ -1,0 +1,1 @@
+- **bc2cpp** analysis passes that scanned `irep.instructions` by opcode name (the call-site index's `def` lookup and the block-self yielder check's captured-slot scan) now use the shared `BytecodeIR` op helpers. Generated C++ is unchanged.

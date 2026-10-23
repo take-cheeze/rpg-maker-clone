@@ -15,7 +15,7 @@ arguments, so every two-argument constructor of the program was refused for that
 With the pass on, the receiver resolves to the class constants every caller of the helper passes
 (`table 100, Title, :title`), the sites join the constructors they can reach, and the others are no longer withdrawn.
 
-Measured on the shipped pass of the wio closed world (3rd/mruby patched as `cmake/build-mruby.cmake` does, host `mrbc`,
+Measured on the shipped pass of the former wio closed world (the closed world is now the sealed desktop host; 3rd/mruby patched as `cmake/build-mruby.cmake` does, host `mrbc`,
 `LANG=C.UTF-8`, `scripts/bc2cpp/coverage_report.rb` with `BC2CPP_COVERAGE_KEEP_DIR`; kill switch off against on):
 
 | | off | on |

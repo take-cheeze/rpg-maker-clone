@@ -1,0 +1,1 @@
+- **bc2cpp**: `ivar_poison_causes.rb` drops the `LOADT`/`LOADF` keys from its literal table. The decoder emits only `LOADTRUE`/`LOADFALSE`, so those keys never matched; the table's behaviour is unchanged.
