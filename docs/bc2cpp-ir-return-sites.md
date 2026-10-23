@@ -36,7 +36,7 @@ What stays a linear walk, and why:
 * `rescued_exception_receiver?` follows a handler's exception register back to its `EXCEPT`, a handler entry the
   normal-flow walk refuses at.
 * `receiver_trace_origin` names the producers that reach an unresolved receiver, for a diagnostic comment. At a join
-  it reports every producer as `join:a.b` (BytecodeIR reaching definitions); a query the IR refuses falls back to the
-  nearest textual writer.
+  it reports every producer as `join:a.b` (BytecodeIR reaching definitions). A query the IR refuses, such as a receiver
+  inside a rescue region, is labelled `unproven.<nearest textual writer>`: the label is a single writer, not a complete set.
 
 Run `ruby scripts/bc2cpp/ir_facts_check.rb` for the host-side regression checks.
