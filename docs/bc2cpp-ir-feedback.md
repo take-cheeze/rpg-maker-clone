@@ -178,11 +178,38 @@ Compared:
 - a module method, against the singleton observations (`Owner.singleton#x`) of each
   class that extends the module. A method of an extended module is the extending
   class's singleton method, so its `self` return is not the module's. Without
-  `--hierarchy` those observations are counted as cannot decide.
+  `--hierarchy` those observations are counted as cannot decide;
+- an overloaded method whose definitions agree and whose trace shows one
+  implementation (see [overloaded methods](#overloaded-methods)).
 
 A site is skipped when it was not reached. An overflowed site (its class table was
 full, so its classes are unknown) is not compared; the summary counts every
 overflowed site and element slot in the trace, declared or not.
+
+### Overloaded methods
+
+A method key (`Owner#name`, or `Owner.singleton#name`) is overloaded when the
+candidates give it more than one definition (a class reopened with the same method,
+or an RBS method with several `|` overloads). The rule, stated once: a key is
+compared as one method when both hold, and skipped otherwise.
+
+1. Every candidate definition of the key declares the same RBS method type text.
+   Then whichever definition ran, the declared type is the same. Two definitions
+   that disagree fail this, and the key is skipped.
+2. The dump shows at most one implementation under the key: the distinct `fn`
+   values (the C `_impl` name) of its `PARAM_SITE` and `RETURN_SITE` rows that were
+   called. Two implementations mean the trace cannot tell which definition ran (a
+   `define_method` or `alias` installed a second one under the same key), so the key
+   is skipped.
+
+A module method's class keys (`Class#name`, `Class.singleton#name`) are decided the
+same way, by the definitions of the module method and the implementations under the
+class's key. A skip is counted in the summary as `overloaded comparison(s) skipped`
+and is never a contradiction. The count is per key that the rule refuses, whether or
+not the trace reached it. A definition the candidates do not list is invisible to
+the rule, as it is to the rest of the check. Rule 2 can refuse a method that has one
+definition when the dump records two `fn` names for it (for example two builds that
+name the same method differently); that is a missed check, not a false failure.
 
 A class is a contradiction only where the lookup order is complete: a core class
 (from `CoreHierarchySigs`), or a program class whose superclass chain reaches a
@@ -230,7 +257,9 @@ The trace cannot tell the check these things, so they are not compared:
   declares block parameter types;
 - ivar and constant types: the dumps have PARAM, RETURN, ELSE and RECV rows only,
   so ivars and constants are not recorded;
-- overloaded methods, which the candidate reader skips;
+- overloaded methods the rule above refuses (definitions that disagree, or a trace
+  that shows two implementations under one key). Overloads whose definitions agree
+  and whose trace shows one implementation are compared;
 - container elements past the first eight of each container (`BC2CPP_ELEM_SAMPLE`):
   the dump does not record them, so a wrong class there is not seen.
 
