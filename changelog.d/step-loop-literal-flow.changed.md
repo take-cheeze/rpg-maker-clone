@@ -1,0 +1,1 @@
+- **bc2cpp Integer loops** resolve literal bounds and increments through shared exact-value flow across aliases, agreeing branches, loops and handlers, while preserving cross-target fixnum limits.

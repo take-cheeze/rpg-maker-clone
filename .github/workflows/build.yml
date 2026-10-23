@@ -753,6 +753,7 @@ jobs:
           ruby scripts/bc2cpp/rbs_mixin_contracts_check.rb
           ruby scripts/bc2cpp/self_call_override_contracts_check.rb
           ruby scripts/bc2cpp/explicit_receiver_override_contracts_check.rb
+          ruby scripts/bc2cpp/module_includer_bound_check.rb
           ruby scripts/bc2cpp/lcf_join_array_check.rb
           ruby scripts/bc2cpp/alias_method_check.rb
           ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
@@ -795,6 +796,7 @@ jobs:
           ruby scripts/bc2cpp/promote_candidates_check.rb
           ruby scripts/bc2cpp/native_core_direct_wired_check.rb
           ruby scripts/bc2cpp/ir_join_soundness_check.rb
+          ruby scripts/bc2cpp/name_argument_flow_check.rb
           ruby scripts/bc2cpp/def_value_flow_check.rb
           ruby scripts/bc2cpp/symbol_flow_check.rb
           ruby scripts/bc2cpp/loop_element_writes_check.rb
