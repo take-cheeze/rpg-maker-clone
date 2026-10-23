@@ -1,0 +1,1 @@
+- **bc2cpp** flow and ivar passes (register flow, nil narrowing, ivar layout, call facts and the block/call op sets) now name their opcode sets from the shared `BytecodeIR::Ops` table and walk instructions through `each_with_op`. Generated C++ is unchanged.
