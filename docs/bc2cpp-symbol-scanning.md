@@ -10,7 +10,7 @@ slot ordering, and nonliteral names remain untouched.
 The scan patterns are compiled once. This also avoids repeated UTF-8 character
 offset conversion when scanning long generated functions.
 
-A local CRuby 3.4.9/YJIT benchmark of 50,000 flat calls took 2.22 seconds for
+A local CRuby 3.4.9 (historical; the bc2cpp jobs now use Ruby 4.0.5)/YJIT benchmark of 50,000 flat calls took 2.22 seconds for
 rewriting and 0.97 seconds for slot collection before this change, versus
 0.14 and 0.06 seconds afterward. Output hashes matched. Full-source rpg2k
 generation improved from 12.51/12.47 seconds to 12.20/12.10 seconds in an
