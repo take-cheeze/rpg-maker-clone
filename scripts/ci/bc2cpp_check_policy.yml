@@ -151,6 +151,12 @@ checks:
     fixture_capabilities:
     - mrbc
     host_phase: false
+  scripts/bc2cpp/receiver_origin_join_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    host_phase: false
   scripts/bc2cpp/upvar_walks_check.rb:
     tier: fast
     capabilities: []

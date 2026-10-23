@@ -35,6 +35,8 @@ What stays a linear walk, and why:
   dominates (`write_dominates?`).
 * `rescued_exception_receiver?` follows a handler's exception register back to its `EXCEPT`, a handler entry the
   normal-flow walk refuses at.
-* `receiver_trace_origin` names the producer the linear receiver trace stopped at, for a diagnostic comment.
+* `receiver_trace_origin` names the producers that reach an unresolved receiver, for a diagnostic comment. At a join
+  it reports every producer as `join:a.b` (BytecodeIR reaching definitions); a query the IR refuses falls back to the
+  nearest textual writer.
 
 Run `ruby scripts/bc2cpp/ir_facts_check.rb` for the host-side regression checks.
