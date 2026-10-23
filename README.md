@@ -1524,7 +1524,9 @@
   call it without pushing a VM frame; see
   [`docs/adr/0271-bc2cpp-block-direct-entry.md`](docs/adr/0271-bc2cpp-block-direct-entry.md).
   `Integer#step`, `#upto` and `#downto` loops over literal or proven-Integer bounds are inlined
-  like `#times`; a bound that is an Integer but may be a bignum (`n.upto(n + 2)`) is inlined
+  like `#times`; [loop literals](docs/bc2cpp-ir-numeric-classes.md) follow aliases
+  and agreeing branch values through the shared exact-value proof, retaining the
+  fixnum limit for every target. A bound that may be a bignum (`n.upto(n + 2)`) is inlined
   behind one Fixnum test per loop, with the original call as the else branch
   ([`docs/adr/0287-bc2cpp-step-loop-fixnum-guard.md`](docs/adr/0287-bc2cpp-step-loop-fixnum-guard.md)).
   A method that a `Fiber.new { root; :done }` block calls and that reaches
