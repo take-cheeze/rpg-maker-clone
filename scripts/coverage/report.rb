@@ -65,6 +65,7 @@ CHECKS = [
   { name: 'bc2cpp-recv-trace', command: %w[scripts/bc2cpp/recv_trace_check.rb] },
   { name: 'bc2cpp-trace-types', command: %w[scripts/bc2cpp/trace_types_check.rb] },
   { name: 'bc2cpp-ir-trace-evidence', command: %w[scripts/bc2cpp/ir_trace_evidence_check.rb] },
+  { name: 'bc2cpp-rbs-suggestion-trace', command: %w[scripts/bc2cpp/rbs_suggestion_trace_check.rb] },
   { name: 'bc2cpp-core-ruby-query', command: %w[scripts/bc2cpp/core_ruby_query_check.rb] },
   { name: 'bc2cpp-type-check-run', command: %w[scripts/bc2cpp/type_check_run_check.rb] },
   { name: 'bc2cpp-type-check-provenance', command: %w[scripts/bc2cpp/type_check_provenance_check.rb] },
@@ -75,6 +76,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-block-protocols', command: %w[scripts/bc2cpp/ir_block_protocols_check.rb] },
   { name: 'bc2cpp-ir-arguments', command: %w[scripts/bc2cpp/ir_argument_types_check.rb] },
   { name: 'bc2cpp-ir-ivars', command: %w[scripts/bc2cpp/ir_ivar_types_check.rb] },
+  { name: 'bc2cpp-ivar-candidates', command: %w[scripts/bc2cpp/ivar_candidates_check.rb] },
   { name: 'bc2cpp-class-bodies', command: %w[scripts/bc2cpp/class_bodies_check.rb] },
   { name: 'bc2cpp-ir-soundness-classes', command: %w[scripts/bc2cpp/ir_soundness_classes_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
@@ -113,6 +115,8 @@ CHECKS = [
   { name: 'maix-boot-marker', command: %w[scripts/maix/boot_marker_check.rb] },
   # The generator's scan cache: no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-scan-cache', command: %w[scripts/bc2cpp/scan_cache_check.rb] },
+  # The candidate-promotion step (tools/bc2cpp/promote_candidates.rb): no mrblib lines, listed to mirror `ruby-checks`.
+  { name: 'bc2cpp-promote-candidates', command: %w[scripts/bc2cpp/promote_candidates_check.rb] },
   { name: 'bc2cpp-native-registration', command: %w[scripts/bc2cpp/native_registration_check.rb] },
   { name: 'bc2cpp-native-results', command: %w[scripts/bc2cpp/native_results_check.rb] },
   { name: 'bc2cpp-native-arity', command: %w[scripts/bc2cpp/native_arity_check.rb] },

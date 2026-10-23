@@ -95,6 +95,12 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/ivar_candidates_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
   scripts/bc2cpp/lcf_join_array_check.rb:
     tier: fast
     capabilities: []
@@ -222,6 +228,9 @@ checks:
     - native_sources
     - closed_build
     - clang
+  scripts/bc2cpp/promote_candidates_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/trace_merge_check.rb:
     tier: fast
     capabilities: []
@@ -612,6 +621,9 @@ checks:
   scripts/bc2cpp/trace_types_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/rbs_suggestion_trace_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/native_core_candidates_check.rb:
     tier: fast
     capabilities: []
@@ -625,6 +637,9 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/type_check_iterate_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/type_check_provenance_check.rb:
     tier: fast
     capabilities: []

@@ -22,11 +22,58 @@ ruby scripts/bc2cpp/type_check.rb --files game.rb \
 Set `MRBC` to the host compiler path when it is not on PATH. Use an absolute
 path when invoking the script from another directory. Candidate files are
 written only to the requested output directory; source signature files are
-not updated automatically. As with `--emit-rbs`, candidates also retain the
+not updated automatically; an accepted candidate is copied in by the reviewed
+[promotion step](bc2cpp-promote-candidates.md). As with `--emit-rbs`, candidates also retain the
 existing parameter, ivar, constant and method inventory. Existing types come
 from the standard whole-program facts; independently inferred IR returns
 replace return declarations in the candidate copy, including contradicted
-ones. This is a review workflow, not an automatic fixed-point rewrite.
+ones. This is a review workflow; the default run does not feed its candidates back.
+
+## Fixed-point rounds (`--iterate N`)
+
+A return whose exits are derived through a callee's contract (`derived:contracts`)
+is not a suggestion in a single run: the callee's return is only a contract once
+it is declared. `--iterate N` closes that loop, opt-in and off by default:
+
+```sh
+ruby scripts/bc2cpp/type_check.rb --files game.rb --iterate 5 \
+  --emit-rbs-suggestions coverage/rbs-suggestions
+```
+
+- Round 1 runs the analysis under `--sig` alone and accepts the returns it can
+  infer from bytecode. Round `r` runs again with the round `r-1` accepted set as
+  one more signature directory, written to a scratch directory.
+- The loop stops when a round accepts exactly what it was given (converged), or
+  after `N` rounds (not converged). The report prints the round count and whether
+  it converged; with `--emit-rbs-suggestions` the candidates are written only when
+  the set converged. A non-converged set is not written, because its derived
+  types were computed under contracts from an earlier round.
+- Each round's candidates replace the previous ones rather than accumulating:
+  a suggestion whose contract was withdrawn cannot survive as a stale contract.
+- The candidate directory of a round holds only the accepted methods: parameters
+  are untyped, and there are no ivars or constants. Nothing else can become a
+  contract in a later round, including a derived type that was not accepted.
+
+**Acceptance rule.** A derived exit is accepted only when every contract it
+depends on is a return contract (`self-call:NAME` or `call-result:OWNER#NAME`)
+naming a method accepted in the previous round. Parameter, ivar, keyword and
+element contracts keep the method out, including those in your own signatures.
+That is stricter than the single-run workflow, which only omits the method.
+`self-call:NAME` names no owner, so it is accepted only when some previous-round
+method has that name and no user declaration does. A method the user already
+declares keeps its declaration and is never a suggestion. The rule is enforced in
+`accepted_exit?` and `return_contract_accepted?` in `tools/bc2cpp/type_check_iterate.rb`.
+
+**Cycles.** Round 1 has no candidates, so a derived exit cannot exist there and
+only inferred returns are accepted. Every later round is built from the previous
+one, so each accepted return traces back to an inferred exit or a user contract.
+Two methods whose returns depend only on each other (A on B, B on A) are never
+accepted from nothing; the loop converges in one round with neither. The loop stops
+only when a round reproduces its own input.
+
+Not verified here: the end-to-end run needs the host `mrbc`. The loop and its rule
+are exercised by `scripts/bc2cpp/type_check_iterate_check.rb` against a model of the
+analysis, not the real one.
 
 ## Feedback
 
@@ -91,6 +138,47 @@ static analysis excludes still raises `TC1007`. The implementation is
 `tools/bc2cpp/ir_trace_evidence.rb`; `scripts/bc2cpp/ir_trace_evidence_check.rb`
 is the host-only fixture check.
 
+## Runtime evidence
+
+Checking a candidate with `--all` against the same sources cannot catch an
+over-claimed suggestion: it reruns the inference that wrote the candidate. Runtime
+evidence is the independent check. `scripts/bc2cpp/rbs_suggestion_trace_check.rb`
+compares a candidate directory with `BC2CPP_TRACE_TYPES` dumps (the rows
+`trace_types.rb` reads, see [trace merge](bc2cpp-trace-merge.md)) and prints one
+`[TRACE_CONTRADICTION]` line per contradiction:
+
+```sh
+bundle exec ruby scripts/bc2cpp/rbs_suggestion_trace_check.rb \
+  coverage/rbs-suggestions param_trace.tsv --hierarchy hierarchy.tsv
+```
+
+It exits 0 when every compared site is admitted, 1 on a contradiction and 2 on
+bad input. `--hierarchy` takes the `class_hierarchy.rb` rows of the program
+sources. With no arguments it runs its fixture self-test, which is what the
+`ruby-checks` coverage list runs. Use `bundle exec` locally: the core hierarchy is
+read by the pinned RBS 4.
+
+Compared: each required positional parameter (trace kind `req`, matched by
+position) and each method return, except `initialize`. A site is skipped when it
+was not reached or its class table overflowed, since its classes are then unknown.
+
+A class is a contradiction only where the lookup order is complete: a core class
+(from `CoreHierarchySigs`), or a program class whose superclass chain reaches a
+core class through `--hierarchy`. Modules are never decided, because a program may
+include one into a core class. Everything else is reported as undecided in the
+summary. A passing run is evidence about one recorded run, not a proof.
+
+The trace cannot tell the check these things, so they are not compared:
+
+- singleton methods (`trace_types.rb` keys methods by `Owner#name` and drops the rest);
+- optional, rest and keyword parameters: this check does not match their trace
+  rows (an optional parameter may carry a call-site type, see above);
+- ivar and constant types, which are not traced;
+- array elements and hash keys and values: the `PARAM_ELEM_*` rows exist, but
+  `TraceTypes::Candidates.read_dumps` does not read them;
+- module-versus-class kind and mixins for program code: `class_hierarchy.rb`
+  records superclasses and methods only.
+
 ## Optional parameters
 
 An optional parameter takes its type from the call sites the same way a required
@@ -117,10 +205,20 @@ lowers them to notes. Path-sensitive narrowing is not applied to these rows:
 barriers, frame clobbers and traversal budgets still refuse queries.
 
 Shared IREPs with ambiguous owners get no owner-specific contracts. Cyclic
-hierarchies supply no inherited contracts. Rest, keyword and block contracts,
-required parameters of methods with optional ones, unknown receiver contract
-lookup, module mixin contract lookup, constants and nonlocal-return inference
-remain follow-up work. Inferred ivar types
+hierarchies supply no inherited contracts. Rest, keyword and block
+contracts, required parameters of methods with optional ones, unknown receiver
+contract lookup, module mixin contract lookup, constants and nonlocal-return
+inference remain follow-up work. Inferred ivar candidates (`@ivar: T` in the
+type-check RBS, and the `ivars` rows of the facts file) are the union of every
+traced store across the ivar's numeric family: superclass, include and prepend
+links, since all of them share the slot. The candidate gains `nil` when some
+read may run before any store: a `@x = nil` store, or a reading owner that
+`numeric_ivar_assured?` does not clear. That check needs a closed world with no
+`allocate` and a #initialize that assigns on every path before `self` escapes;
+where it cannot decide, `nil` is included. A store the analysis did not resolve,
+or an ivar touched by code no class owns (a module body), leaves the candidate
+unknown. The runtime layout is still the layout analysis's; only the candidate
+that is written and compared changes. Inferred ivar types
 continue to come from the existing whole-program layout analysis; observing
 one store does not establish the complete type of an ivar.
 
