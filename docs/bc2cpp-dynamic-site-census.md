@@ -554,8 +554,11 @@ report changes no generated code (`shipped.cxx` is byte-identical with it on).
 
 ## Follow-up: which producer leaves a receiver unproven (ADR 0309)
 
-The `register_copy` and `direct_call_result` origins above are a text heuristic. To see the producing
-method, build with a tag on every by-name line and join the shipped sites to it:
+The `register_copy` and `direct_call_result` origins above are a text heuristic. The `origin=` on a `POLY_DIAG`
+line is join-aware: at a join it names every producer that reaches the receiver, as `join:a.b` (sorted), so
+`write_loadnil` alone means one nil producer. The label does not change dispatch; `receiver_class_unresolved`
+sites stay as they were. To see the producing method, build with a tag on every by-name line and join the
+shipped sites to it:
 
 ```sh
 MRBC=<host mrbc> BC2CPP_SEND_ROOT_REPORT=/tmp/keep/rows.tsv BC2CPP_COVERAGE_KEEP_DIR=/tmp/keep \
