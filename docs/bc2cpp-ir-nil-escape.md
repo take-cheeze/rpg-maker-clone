@@ -67,7 +67,7 @@ disagreements. Its verdicts are therefore unchanged.
   receiver and name, a conditional branch's tested register. The model builds
   them from the instruction's `source`, because `Program#decoded` carries only
   the op, branch kind, leading register and target. The op itself still comes
-  from `source.op`, and no other op is modelled yet.
+  from `source.op`. Operands of ops that neither pass reads are not modelled.
 * ESCAPE_ANALYSIS's frame flow was already a may-alias flow over the IR's
   successors and handler edges. Its per-op transfer (`Analyzer#step` and the
   send helpers it calls) reads its operands through `BytecodeIR::OperandModel`:
