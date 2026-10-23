@@ -388,9 +388,25 @@ module StaticDispatchRegistrations
     kinds.size == 1 ? kinds.first : :unknown
   end
 
+  # Whether entry register +reg+ is the rest parameter of +irep+'s ENTER spec (req + opt + 1 when rest > 0).
+  def rest_array_entry?(irep, reg)
+    enter = BytecodeIR.for(irep).instructions_with_op('ENTER').first
+    return false unless enter
+
+    fields = enter.enter_fields
+    return false unless fields.size == 8
+
+    req, opt, rest = fields.first(3).map(&:to_i)
+    rest.positive? && reg.to_i == req + opt + 1
+  end
+
   def definition_kind(irep, definition)
     # Only R0 is a known value at entry; an argument or a caller's local is not.
-    return definition.reg == '0' ? :self : :unknown if definition.entry?
+    if definition.entry?
+      return :self if definition.reg == '0'
+      # A rest parameter is always an Array: the ENTER spec names its register, and the VM fills it with one.
+      return rest_array_entry?(irep, definition.reg) ? :core : :unknown
+    end
 
     insn = BytecodeIR.for(irep).source_at(definition.index)
     case insn.op
