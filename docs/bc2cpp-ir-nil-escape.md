@@ -83,7 +83,9 @@ A `SEND` hands its arguments and receiver to every definition of the name. A
 native (C) definition has no bytecode body, so its effect comes from two
 audited tables in `escape_analysis.rb`:
 
-* `NATIVE_RECEIVER_OK` (receiver kept or not, `:fresh` / `:self`).
+* `NATIVE_RECEIVER_OK` (receiver kept or not, `:fresh` / `:self`). `freeze` is
+  `:self`: `mrb_obj_freeze` returns its receiver, and every registration is listed in
+  `NATIVE_MANIFEST`.
 * `NATIVE_ARG_OK` (argument positions the natives keep none of, with the
   registering files and the Ruby methods the natives call with the argument).
   `==`, `equal?`, `eql?`, `is_a?`, `kind_of?`, `instance_of?`, `key?`,
