@@ -189,7 +189,11 @@ See [ADR 0408](adr/0408-bc2cpp-ci-yjit.md) for measurements and the memory trade
 
 For a local comparison, run the same generator or check with
 `RUBY_YJIT_ENABLE=0` and `RUBY_YJIT_ENABLE=1`. The environment switch is documented
-in [Ruby's YJIT manual](https://docs.ruby-lang.org/en/3.4/yjit/yjit_md.html).
+in [Ruby's YJIT manual](https://docs.ruby-lang.org/en/4.0/yjit/yjit_md.html).
+
+The bc2cpp jobs run the Ruby that `flake.nix`'s `bc2cpp` dev shell provides (`ruby_4_0`,
+currently 4.0.5). `nix develop .#bc2cpp -c ruby -e 'puts RUBY_DESCRIPTION'` shows it.
+The version the measurements below used is named with each one.
 
 ### Repeated bytecode dataflow queries
 
@@ -205,7 +209,7 @@ fixpoint and covers mutation of caller-owned state. See
 The independent forward oracle in `bytecode_ir_dataflow_check.rb` shares
 frozen definition sets between states, copying only sets that grow at a join.
 It also keeps each pending instruction in the work queue once. A local
-CRuby 3.4.9/YJIT straight-line benchmark with 4,096 instructions and 130
+CRuby 3.4.9/YJIT (measured before the bc2cpp jobs moved to Ruby 4.0) straight-line benchmark with 4,096 instructions and 130
 registers fell from 0.59 seconds to 0.09 seconds for the forward oracle alone;
 all instruction/register states matched the earlier oracle. Backward-query
 cost and the optional whole-tree check's total duration are separate costs.

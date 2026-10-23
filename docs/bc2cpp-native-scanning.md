@@ -17,7 +17,7 @@ word, so this removes redundant regex attempts without changing captures.
 
 ## Measurement
 
-A local CRuby 3.4.9 comparison scanned the same 49 successfully preprocessed
+A local CRuby 3.4.9 (historical; the bc2cpp jobs now use Ruby 4.0.5) comparison scanned the same 49 successfully preprocessed
 native files (32,008,444 bytes) three times per implementation. Baseline times
 were 4.85, 5.05 and 5.04 seconds; optimized times were 1.92, 2.01 and 2.00
 seconds. Marshalled scan-result SHA-256 hashes matched on every run. This

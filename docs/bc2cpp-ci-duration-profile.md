@@ -273,3 +273,26 @@ Scheduling is already close to the aggregate-work bound. Larger gains require
 reducing compiler or fixture work; adding workers inside a check would contend
 with the existing four commands. Refresh this order when the timing table
 changes substantially rather than treating these durations as permanent costs.
+
+## 7. Rerun on the flake's Ruby 4.0.5 (StackProf)
+
+The bc2cpp jobs run `nix develop .#bc2cpp`, whose `ruby_4_0` is 4.0.5 (see [ci.md](ci.md)). The closed world
+was rebuilt under that Ruby (`libmruby.a` and the host `mrbc` both built). One closed-world generator call on a
+one-method fixture, with `BC2CPP_NATIVE_FN_KINDS` set and no irep cache, took 4.34 s wall. That is not
+comparable with the 3.45 s above: the fixture ran with `BC2CPP_SIG_DIRS=` (empty), which skips loading
+`sig/`. With the default `sig/` the same call aborts with 1017 unusable-signature errors (`TC1003`), so the
+signature-free run is the only one this rerun could measure.
+
+StackProf (wall, 1 ms, through `RUBYOPT=-r`, so the generator child is included) of that call:
+
+| Frame | self % | total % |
+| --- | ---: | ---: |
+| `String#scan` | 38.4 | 50.0 |
+| `Kernel#require_relative` (loading the generator's own sources) | 4.3 | 24.1 |
+| `Prism.parse_file` | 3.5 | 4.2 |
+| `InsnDecoder::Decoder#body` | 0.3 | 0.7 |
+
+`String#scan` callers are the native-source scans: `NativeExpressionDevirt.macro_calls`,
+`UniqueClassNames.native_module_binding`, `NativeOwnerMap.build` and `outside_world_tokens`. The
+instruction decoder's name-keyed `case` (string dispatch) is under 1% of the call, so converting it to symbols
+could save at most that much. It is not worth changing on this evidence.
