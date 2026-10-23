@@ -1,0 +1,1 @@
+- **bc2cpp inlined loops** no longer treat a Hash parameter as still the host argument after a write that reaches the block call through a loop back-edge, so the block does not get a Hash capture from it.
