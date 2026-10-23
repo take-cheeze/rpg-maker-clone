@@ -32,7 +32,9 @@ module WioStubCompiled
       next unless wanted.include?(key)
 
       # A rescue/ensure body is a BeginNode whose location starts at the header: left alone.
-      if node.end_keyword_loc.nil? || node.location.start_line == node.location.end_line || node.body.is_a?(Prism::BeginNode)
+      # Writers of instance variables stay: the RBS ivar declarations rely on them.
+      writes_ivar = node.body && node.body.breadth_first_search { |n| n.is_a?(Prism::InstanceVariableWriteNode) || n.is_a?(Prism::InstanceVariableOrWriteNode) || n.is_a?(Prism::InstanceVariableOperatorWriteNode) }
+      if writes_ivar || node.end_keyword_loc.nil? || node.location.start_line == node.location.end_line || node.body.is_a?(Prism::BeginNode)
         skipped += 1
         next
       end
