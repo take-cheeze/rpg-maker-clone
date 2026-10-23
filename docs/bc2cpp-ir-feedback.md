@@ -192,12 +192,23 @@ Compared:
   class's singleton method, so its `self` return is not the module's. Without
   `--hierarchy` those observations are counted as cannot decide;
 - an overloaded method whose definitions agree and whose trace shows one
-  implementation (see [overloaded methods](#overloaded-methods)).
+  implementation (see [overloaded methods](#overloaded-methods));
+- an ivar read, `@x`, against the `@x: T` the candidate declares in the class the
+  read's method is defined in. A read is traced where the compiled code reads the
+  ivar with a GETIV: the `IVAR_SITE` rows name the owner class and the ivar, and
+  their classes are the values read. A module's ivar is never decided (it belongs to
+  whichever class includes the module), and an ivar the candidate does not declare
+  (`untyped`, or no declaration for that class) is counted as undeclared, not compared.
 
 A site is skipped when it was not reached. An overflowed site (its class table was
 full, so its classes are unknown) is not compared; the summary counts every
-overflowed site and element slot in the trace, declared or not. An element slot is
+overflowed site, element slot and ivar read in the trace, declared or not. An element slot is
 overflowed too when its container held more elements than the sampler reads (below).
+
+Ivar reads come from the `IVAR_SITE` and `IVAR_CLASS` rows of a `BC2CPP_TRACE_TYPES=1`
+build. The rows are written only for a GETIV of a class the compiler knows (a singleton
+owner and an unknown `self` class get none). A dump without them (one recorded before
+they were added) reads as before, with no ivar observations.
 
 ### Overloaded methods
 
@@ -266,8 +277,13 @@ The trace cannot tell the check these things, so they are not compared:
   method's `&blk` value is not traced either (`bc2cpp_blk` is not a parameter row).
   This stays a skip until the trace names the yielding method and the emitter
   declares block parameter types;
-- ivar and constant types: the dumps have PARAM, RETURN, ELSE and RECV rows only,
-  so ivars and constants are not recorded;
+- ivar reads that are not GETIV reads: stores (SETIV), reads through a synthesized
+  attr accessor, and `instance_variable_get`. The check sees only the values the
+  compiled GETIV reads hand back, so a wrong value that reaches an ivar only through
+  one of those is not seen;
+- constant types. A constant read (GETCONST, GETMCNST) names the constant as written,
+  not the scope that resolved it, so a candidate `NAME: T` cannot be matched to the
+  observation (the same name can resolve to different constants in different scopes);
 - overloaded methods the rule above refuses (definitions that disagree, or a trace
   that shows two implementations under one key). Overloads whose definitions agree
   and whose trace shows one implementation are compared;
