@@ -7,3 +7,5 @@
   collects names, and resolves a `mrb_funcall` method name held in a
   `const char*` local, so the desktop entry no longer marks RPG2k opaque.
 - `RPG2k#initialize` loads `@db` first.
+- `3rd/effekseer` is ignored for dirty working-tree changes (`ignore = dirty` in
+  `.gitmodules`), so its local line-ending noise no longer blocks commits.
