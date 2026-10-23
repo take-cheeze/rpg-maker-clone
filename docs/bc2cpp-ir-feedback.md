@@ -137,26 +137,51 @@ sources. With no arguments it runs its fixture self-test, which is what the
 `ruby-checks` coverage list runs. Use `bundle exec` locally: the core hierarchy is
 read by the pinned RBS 4.
 
-Compared: each required positional parameter (trace kind `req`, matched by
-position) and each method return, except `initialize`. A site is skipped when it
-was not reached or its class table overflowed, since its classes are then unknown.
+Compared:
+
+- each required positional parameter (trace kind `req`, matched by position) and
+  each method return, except `initialize`;
+- the elements of a parameter or return declared `Array[T]` or `Hash[K, V]`: the
+  `PARAM_ELEM_*` and `RETURN_ELEM_*` rows, by role (`array`, `key`, `value`);
+- singleton methods (`def self.x`), against the trace key `Owner.singleton#x`;
+- a module method, against the observations of each class that includes the module.
+  The class must be known to include it through `--hierarchy`; without that file the
+  observations are counted as undecided.
+
+A site is skipped when it was not reached. An overflowed site (its class table was
+full, so its classes are unknown) is not compared; the summary counts every
+overflowed site and element slot in the trace, declared or not.
 
 A class is a contradiction only where the lookup order is complete: a core class
 (from `CoreHierarchySigs`), or a program class whose superclass chain reaches a
-core class through `--hierarchy`. Modules are never decided, because a program may
-include one into a core class. Everything else is reported as undecided in the
-summary. A passing run is evidence about one recorded run, not a proof.
+core class through `--hierarchy`. A module is never a contradiction. A class that
+includes a module the candidate declares is admitted, anything else is undecided.
+A module method's observation on a class is accepted only when the lookup reaches
+the module before any other definer of the name; a core class in front of the
+module, or a native mixin, makes it undecided. Everything else is reported as
+undecided in the summary. A passing run is evidence about one recorded run, not a
+proof.
+
+`--hierarchy` takes the rows `class_hierarchy.rb` writes: `CLASS`/`MODULE`,
+`SUPER`, `INCLUDE`/`PREPEND` (in application order) and `DEF` (including
+`define_method`, `alias` and `attr_*` names, and `*` for a computed name). The
+mixin rows come only from the sources it is given. A mixin it does not see (a file
+left out, an `included` hook, a `class_eval` string) leaves that class's module
+observations uncompared: a missed check, never a false failure.
 
 The trace cannot tell the check these things, so they are not compared:
 
-- singleton methods (`trace_types.rb` keys methods by `Owner#name` and drops the rest);
-- optional, rest and keyword parameters: this check does not match their trace
-  rows (an optional parameter may carry a call-site type, see above);
+- the receiver of a singleton method: `self` is not traced, only its arguments and
+  returns;
+- a singleton method reached through `extend` (the module's instance methods become
+  the extending class's singleton methods, which the trace keys as
+  `Owner.singleton#x`; the check does not model it);
+- optional, rest, keyword and block parameters: this check does not match their
+  trace rows (an optional parameter may carry a call-site type, see above);
 - ivar and constant types, which are not traced;
-- array elements and hash keys and values: the `PARAM_ELEM_*` rows exist, but
-  `TraceTypes::Candidates.read_dumps` does not read them;
-- module-versus-class kind and mixins for program code: `class_hierarchy.rb`
-  records superclasses and methods only.
+- overloaded methods, which the candidate reader skips;
+- container elements past the first eight of each container (`BC2CPP_ELEM_SAMPLE`):
+  the dump does not record them, so a wrong class there is not seen.
 
 ## Optional parameters
 
