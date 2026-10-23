@@ -17,11 +17,20 @@ arity, and a call without arguments still targets `each`.
 `enum_target` API returns a name only for singleton sets. Its consumer in
 `ConstantArgumentSites` therefore continues to refuse multi-name dynamic calls.
 
-Packed argument arrays remain unknown, including literal-looking prefixes.
-Resolving their first element requires proving aliases cannot mutate that element;
-a backward walk over array construction and append instructions does not establish
-that. Unknown packed sites conservatively reach every method with unknown arity.
-Mutable String names also remain unknown.
+Packed argument arrays retain a target only when reaching definitions find one
+fresh, nonempty literal prefix followed by head-preserving `ARYCAT`/`ARYPUSH`
+operations. The allocation-to-call corridor must have no alternate entry,
+including handler entries. Other instructions in it must be quiet and cannot
+read or write the packed register. This rejects aliases, stores, calls and
+replacement of the prefix. Nested reads and writes of that register also refuse
+the proof: `ARYCAT` can invoke a source object's `to_a`, which could otherwise
+access the array through a closure. The target comes from the first element's
+own reaching Symbol definitions at allocation time.
+
+This covers core `to_enum(:gsub, *args)` without making that call a caller of
+every method, which would invalidate unrelated sealed parameter contracts.
+Unproven packed sites still conservatively reach every method with unknown
+arity. Mutable String names remain unknown.
 
 The separate `enclosing_def_names` legacy `METHOD`/`DEF` association still uses
 adjacency. Migrating it requires representing a body installed under multiple
