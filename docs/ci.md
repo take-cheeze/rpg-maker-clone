@@ -70,7 +70,10 @@ toolchain, mruby and stringio revisions, build helpers and mruby patches.
 `BC2CPP_MRUBY_FULL` makes subsequent fixtures read the prepared library.
 The existing timed-check wrapper runs every check with at most four commands
 at once, retaining command logs, failure status and a timing table in the job
-summary. Base-section verification also writes the freshly generated base RBS
+summary. The bc2cpp group starts longer checks first using recent CI timings,
+leaving short checks to fill the final worker slots. Revisit the order after
+large timing changes; see the [duration profile](bc2cpp-ci-duration-profile.md#6-pr-check-queue-order).
+Base-section verification also writes the freshly generated base RBS
 under `build-closed-bc2cpp/base_rbs`, replacing a second generation pass.
 `base_section_check.rb --output DIR CLOSED_BUILD_DIR` requires an absent or
 empty output directory. `base_section_regen_check.rb` is the host-only diff test for the
