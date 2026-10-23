@@ -1,0 +1,1 @@
+- **bc2cpp `Array[T]` constants** accept a value only when every reaching assignment is a frozen array literal whose elements prove T. A join with a non-frozen arm, or with a literal of another element type, is refused.
