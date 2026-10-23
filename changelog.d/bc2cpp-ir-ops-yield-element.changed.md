@@ -1,0 +1,1 @@
+- **bc2cpp** internal: the yield-reach, element-layout, record-hash and dispatch-target passes now name opcode meanings through the shared `BytecodeIR::Ops` sets (new `BLOCK_SEND`, `SELF_SEND`, `RECEIVER_SEND`, `CLASS_MODULE`, `INDEX_READ`, `LITERAL_PROC`) instead of raw opcode-name lists. Generated C++ is unchanged.
