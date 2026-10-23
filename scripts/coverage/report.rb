@@ -111,6 +111,8 @@ CHECKS = [
   { name: 'maix-boot-marker', command: %w[scripts/maix/boot_marker_check.rb] },
   # The generator's scan cache: no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'bc2cpp-scan-cache', command: %w[scripts/bc2cpp/scan_cache_check.rb] },
+  # The candidate-promotion step (tools/bc2cpp/promote_candidates.rb): no mrblib lines, listed to mirror `ruby-checks`.
+  { name: 'bc2cpp-promote-candidates', command: %w[scripts/bc2cpp/promote_candidates_check.rb] },
   { name: 'bc2cpp-native-registration', command: %w[scripts/bc2cpp/native_registration_check.rb] },
   { name: 'bc2cpp-native-results', command: %w[scripts/bc2cpp/native_results_check.rb] },
   { name: 'bc2cpp-native-arity', command: %w[scripts/bc2cpp/native_arity_check.rb] },

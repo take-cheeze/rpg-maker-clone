@@ -222,6 +222,9 @@ checks:
     - native_sources
     - closed_build
     - clang
+  scripts/bc2cpp/promote_candidates_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/trace_merge_check.rb:
     tier: fast
     capabilities: []
