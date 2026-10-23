@@ -174,6 +174,16 @@ Compared:
 - the elements of a parameter or return declared `Array[T]` or `Hash[K, V]`: the
   `PARAM_ELEM_*` and `RETURN_ELEM_*` rows, by role (`array`, `key`, `value`);
 - singleton methods (`def self.x`), against the trace key `Owner.singleton#x`;
+- the receiver of a singleton method (its `self`, a `self` PARAM_SITE row). The
+  trace records the class object it ran on, so the receiver is compared with
+  `Owner`: the class itself, or a subclass whose superclass chain `--hierarchy`
+  reaches. A class outside that chain is a contradiction. A module owner, a
+  receiver that is not a class or module (recorded as `(non-class)`), a class the
+  hierarchy cannot place, or an overflowed receiver is counted in the summary
+  (`singleton receiver(s) compared`, `receiver class(es) undecided`, `overflowed
+  receiver(s) skipped`) and never a failure. A module method run through
+  `extend` is compared with its extending class's singleton methods only, so
+  its receiver is not compared;
 - a module method, against the observations of each class that includes the module.
   The class must be known to include it through `--hierarchy`; without that file the
   observations are counted as undecided;
@@ -259,8 +269,6 @@ compared. A top-level `extend` belongs to `main`, which is no class, so it has n
 
 The trace cannot tell the check these things, so they are not compared:
 
-- the receiver of a singleton method: `self` is not traced, only its arguments and
-  returns;
 - block parameters. The trace has `block_arg` rows, but they are the parameters of
   a block body, keyed by the body's own `_impl` (the method that yields to it is
   not in the row), and the emitter declares a block type only as
@@ -430,17 +438,20 @@ be. The rule, for a send of `name` in a method of `owner`:
   taken for that call, so the result is untyped. The call-graph argument seeds
   read the same results and inherit the refusal.
 
-The declared contract of an explicit receiver (`call_resolver`) does not use the
-removal rule; its inferred result does, as above. The return-class oracle that
-the code generator's proofs read (`CodeGen#return_class_send_mask`, keyed by
-name in `@rc_return`) is not refused: a method whose return is a send of a
-removed name keeps the body join in its own return class, and a call of that
-method reports it. This is the remaining removal limit. The rule is in
-`RbsSignatures.self_receivers`, `RbsSignatures.module_receiver_classes` and
-`RbsSignatures.self_call_types`, and in `CodeGen#bytecode_ir_call_result_classes`
-and `IrContextResults#dispatch`. The fixtures are
-`scripts/bc2cpp/self_call_override_contracts_check.rb`, section (g) for the
-inferred call result.
+The return-class oracle the code generator's proofs read
+(`CodeGen#return_class_send_mask`, keyed by name in `@rc_return`) refuses a send
+of a removed name the same way: it answers unknown, the table holds no entry for
+the name, and a method whose return is such a send takes no body join. The
+declared contract of an explicit receiver (`call_resolver`) is refused too: a
+removed name gets no contract on any explicit receiver, with cause
+`call_removed:NAME`. The rule is in `RbsSignatures.self_receivers`,
+`RbsSignatures.module_receiver_classes` and `RbsSignatures.self_call_types`, the
+explicit-receiver resolver in `RbsSignatures.ir_types`, and in
+`CodeGen#bytecode_ir_call_result_classes`, `CodeGen#return_class_send_mask` and
+`IrContextResults#dispatch`. The fixtures are
+`scripts/bc2cpp/self_call_override_contracts_check.rb`, sections (g) (the
+inferred call result) and (h) (the return-class oracle), and
+`scripts/bc2cpp/explicit_receiver_override_contracts_check.rb`, section (g).
 
 **Explicit receivers.** A send on a receiver with declared nominal bounds (an
 argument, ivar or element declared `Base`) dispatches on the runtime class,

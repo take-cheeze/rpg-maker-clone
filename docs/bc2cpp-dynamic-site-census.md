@@ -655,6 +655,45 @@ The census above counts by-name sends; this one counts creation sites (`LAMBDA`,
 | methods that newly compile with BLOCK_FALLBACK_PROVEN | 1 (`Array#combination`) |
 | `shipped.cxx` with `BC2CPP_ESCAPE_ANALYSIS=0` against master | byte-identical |
 
+## Follow-up: receiver-class flow for block sends
+
+Block sends on a receiver of one proven class were still judged by every definition of the name. Now a send whose
+receiver is exactly one class (the held tracked value, or a class set of one from the class flow) judges each callee
+of that class, and the callee's own calls on `self` resolve on that class too. `Enumerable#map`, `max_by`, `sum`,
+`group_by`, `max`, `any?`, `each_with_index` and the rest call `self.each`; that call was the by-name `each` set
+before, and five of its eleven definitions keep their block. The same self class also judges a held receiver's
+`[:self_keep]` summary, so `Array#each`'s own `length` no longer enumerates every `length`. Only plain `def`s in a
+class or module body (not a `Class.new { def }`, a `module_function` copy, an installed body or a singleton one) are
+judged this way, and only for a placed class that is not a module (`block_captures_as?`, `self_captures_as?`,
+`receiver_klasses` in `tools/bc2cpp/escape_analysis.rb`).
+
+Still "escapes": a receiver of unknown class or of two classes; a user `map`, `each` or subclass `each` that keeps its
+block; an Enumerable whose `each` keeps it; a block that stores the object or a closure over it; an object passed to
+an unknown callee; an Array literal receiver of `each` or `map`, because the no-block branch of `Array#each` returns
+`to_enum(:each)`, which keeps self, and the analysis does not branch on the block's presence. Covered by
+`scripts/bc2cpp/escape_receiver_flow_check.rb` (verdicts for the proven and refused shapes, and compiled against
+interpreted runs of the confined ones).
+
+| Measure (base `origin/master` and this branch, the same census command in each tree) | Base | Branch |
+| --- | ---: | ---: |
+| creation sites, all irep (6,581): confined | 1,274 | 1,367 |
+| of those, escapes turned confined / confined turned escapes | | 93 / 0 |
+| `send_block` escapes, all irep | 492 | 401 |
+| engine block sites confined, shipped (673) | 288 | 377 |
+| engine `array` / `hash` used only locally (stack candidates, count only), shipped | 54 / 44 | 55 / 45 |
+| `shipped.cxx` (425,016 lines) | | byte-identical after normalising the checkout path |
+
+The 93 are 91 blocks, one Array and one Hash. The shipped C++ does not change. The codegen effect is on names outside
+`BLOCK_FALLBACK_UPVAR_SAFE_METHODS` (`max_by`, `min_by`, `sum`, `group_by`, `max`): a fixture `max_by` block with captured
+locals now compiles as a BLOCK_FALLBACK with the frame's captured pointers, where the base emitted no fallback for it. The
+behaviour check runs those blocks compiled against the interpreted run.
+
+A gap this change did not touch, found while writing the check: `BLOCK_FALLBACK_UPVAR_SAFE_METHODS` is a claim about
+every definition of a name. A user `map` that keeps its block (`def map(&b); @b = b; self; end`) still gets the pointer
+captures (`mrb_cptr_value(M, &r2)` in the generated code), so calling the kept block after the method returned reads the
+dead frame. The compiled run of such a program segfaults on `origin/master` too. The behaviour program of
+`scripts/bc2cpp/escape_receiver_flow_check.rb` has no such definition; its verdict program keeps them only for the verdict.
+
 ## Follow-up: the class of a `new` site
 
 `BC2CPP_ESCAPE_REPORT` gives each `new` send (`SEND0`/`SEND`/`SENDB` on `new`) the class it constructs, so the report can
