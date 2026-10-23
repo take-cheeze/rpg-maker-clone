@@ -368,7 +368,8 @@ RBS suggestions continue to exclude them.
 ## RBS output and Steep
 
 `type_check.rb --emit-rbs DIR` writes the inferred types as RBS (ADR 0414), one file per class or module. Unknown types are
-`untyped`; optional / rest / keyword parameters are `untyped`; every method accepts an optional block; CRuby's core RBS is
+`untyped`; an optional parameter is `?T` when its type is known (declared, or the join of call sites that all pass
+it; see [IR feedback](bc2cpp-ir-feedback.md#optional-parameters)) and `?untyped` otherwise; rest and keyword parameters are `untyped`; every method accepts an optional block; CRuby's core RBS is
 the base environment (classes it declares are not redeclared). The directory is not read as hints unless named in
 `BC2CPP_SIG_DIRS`; read back, it reports nothing, and a wrong edit is a located TC1001.
 
