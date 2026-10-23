@@ -2,7 +2,7 @@
  * board's real ATSAMD51P19A has 512KB flash total (16KB reserved for the
  * bootloader, 507904 usable) -- this widens FLASH.LENGTH far past that so
  * a wio_rgss_boot build that currently overflows real flash (684080 bytes
- * over budget as of docs/adr/0135) can still link and boot under Renode
+ * over budget) can still link and boot under Renode
  * for live inspection. Never flashable to a real board; pair only with
  * app/wio/renode/wio_terminal_oversized_flash.repl and the
  * wio_rgss_boot_heapdbg PlatformIO environment (board_build.ldscript).
@@ -10,7 +10,7 @@
  * linker_scripts/gcc/flash_with_bootloader.ld with only the FLASH region's
  * LENGTH changed. This exact setup found two real bugs: the -flto
  * vector-table corruption and the RAM-exhaustion crash during rpg2k gem
- * init, both documented in docs/adr/0135.
+ * init.
  */
 MEMORY
 {

@@ -17,7 +17,7 @@ extern "C" {
 // chiefly lv_malloc() returning NULL because LV_MEM_SIZE's pool is exhausted.
 // The stock handler halts silently: nothing distinguishes that failure from
 // any other hang, which is exactly the class of bug this port spent real
-// effort chasing (ADR 0047). This one writes a libc-free marker via
+// effort chasing. This one writes a libc-free marker via
 // sceIoWrite -- the same reasoning app/psp/main.cxx's StrBuf/psp_write
 // already use, since pspsdk's sysclib_snprintf is not to be trusted here
 // either -- so the log names the failure before it halts. Defined in

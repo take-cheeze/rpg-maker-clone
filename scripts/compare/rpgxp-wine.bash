@@ -66,8 +66,7 @@
 #     ./scripts/download/prayforyou.bash
 #     ./scripts/compare/rpgxp-wine.bash data/PrayforYou ss/pfy
 # It ships its own Game.exe + RGSS103J.dll (the Japanese RGSS 1.03), so the same
-# wine prefix runs it. See docs/adr/0026-rpgxp-released-game-parity.md for what
-# that found.
+# wine prefix runs it.
 #
 # Usage: ./scripts/compare/rpgxp-wine.bash [game_dir] [out_dir]
 

@@ -7,7 +7,7 @@
 # by sending the same key script to each. That works for the title, but the two
 # desynchronise through Nepheshel's long *timed* opening -- pictures, panning
 # maps and waits -- so by the time the key script reaches the town map the two
-# are on different frames and the diff is meaningless. ADR 0021 recorded the fix:
+# are on different frames and the diff is meaningless. The fix:
 # get both to the same place by *loading a save* instead of by counting key
 # presses. Loading is not timed, so it cannot drift.
 #
@@ -20,7 +20,7 @@
 # and RPG_RT does load those now, but such a save holds only the five chunks
 # that model our runtime state -- no pictures, no map events, no vehicles -- so
 # it resumes into a valid but bare scene, which cannot be compared against the
-# real thing. See gen-rpg2k-save.rb and ADR 0021.
+# real thing. See gen-rpg2k-save.rb.
 #
 # Each runtime is then brought to the map without input:
 #   * ours with --rpg2k_continue (auto-selects Continue on the title screen);

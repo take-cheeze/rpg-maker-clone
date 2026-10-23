@@ -13,7 +13,7 @@
 #   scripts/maix/mruby_build.bash [BUILD_DIR, default ./build-maix-mruby]
 #
 # Needs on PATH: ruby, rake, a native C/C++ compiler (the host half), bison
-# and gperf (patches/mruby-defined-keyword.patch touches mruby-compiler's
+# and gperf (the pinned fork commit (mruby-defined-keyword, docs/patch-fork-tracking.md) touches mruby-compiler's
 # keywords, forcing lex.def to regenerate -- same reason the `psp` CI job
 # installs them), and either PlatformIO's Kendryte toolchain (present after
 # any `pio run -e maix_amigo`, which build_config.rb prefers) or a

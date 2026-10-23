@@ -61,10 +61,10 @@ load File.join(lcf_lib, 'save_typed_accessors.rb')
 
 lib = File.expand_path('../../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
-load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
-load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file
+load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(lib, 'game', 'legacy_lsd.rb')
-load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
+load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio
 load File.join(lib, 'interpreter.rb')
 
 # -- tiny test framework ------------------------------------------------------
@@ -92,7 +92,7 @@ def ok(cond, msg = 'expected truthy')
 end
 
 # Game::Message.scan/#parse/#visible_segments return Game::Message::Segment/
-# PauseMarker/SpeedMarker records -- plain classes (docs/adr/0215), which
+# PauseMarker/SpeedMarker records -- plain classes, which
 # compare by identity like any object, so the checks below build their
 # expected values with these helpers and #eq compares both sides through
 # #record_values, which turns each record into its field values.
@@ -141,7 +141,7 @@ end
 # -- fakes --------------------------------------------------------------------
 
 # The runtime reads an LCF record's fields as `row[:name]` (LCF::Array1D#[];
-# LCF has no dotted field access, docs/adr/0213). A stand-in record that keeps
+# LCF has no dotted field access). A stand-in record that keeps
 # its fields in plain readers includes this so the same read works on it.
 # Struct/OpenStruct fixtures already answer `[]` for their own members.
 module FixtureFields
@@ -4601,7 +4601,7 @@ check 'to_lsd/from_lsd round-trips a non-leader actor\'s Change Actor Name' do
   # Chunk 100 (the file-screen title) only ever carries the *leader's* name, so
   # a Change Actor Name on a companion used to have nowhere to land in the real
   # .lsd export -- only chunk 108 (SAVE_PARTY_ACTOR)'s per-actor field 1 does,
-  # and #to_lsd never wrote it. Confirmed against a real save in ADR 0014
+  # and #to_lsd never wrote it. Confirmed against a real save
   # (field 1's bytes matched the SAVE_TITLE hero_name exactly for the leader).
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
@@ -4921,11 +4921,11 @@ check 'to_lsd writes chunk 100 (with a real timestamp) even for a party ' \
   # right after New Game. #to_lsd used to write chunk 100 (the file-select
   # screen's title/preview data) only when @party.leader was truthy, so an
   # empty party wrote no chunk 100 at all -- not merely a zero timestamp in
-  # one, ADR 0021's own already-fixed case for a *populated* party (a zero
+  # one, the already-fixed case for a *populated* party (a zero
   # OLE date reads as an empty file slot and Continue silently refuses it).
   # An absent chunk leaves #from_lsd's own `timestamp` read at its schema
   # no-default nil rather than 0.0, but nil is exactly as unloadable as 0 by
-  # that same ADR 0021 finding -- so an empty-party save risked being
+  # that same finding -- so an empty-party save risked being
   # invisible to Continue the identical way, just via a different missing
   # value.
   players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
@@ -5001,14 +5001,11 @@ check 'to_lsd/from_lsd round-trips a Change Class back to "no class" (id 0)' do
   ok restored.class_changed?
 end
 
-# ADR 0020 mapped SAVE_MOVABLE's charset_index to liblcf tag 75, citing
-# "RPG::SaveSystem" -- but SaveSystem's own fields 73-75 are
-# battle_end_music/inn_music/current_music, unrelated to a character
-# graphic. The struct chunk 104 (hero) and 105-107 (vehicles) actually use is
-# SaveMapEventBase, whose sprite_id is tag 74; tag 75 there is `processed`,
-# an unrelated per-frame movement-scheduling flag. A same-engine round-trip
-# never caught this (both the writer and reader used the same wrong tag
-# consistently) -- only inspecting the actual on-disk tag number does.
+# SAVE_MOVABLE's charset_index is liblcf tag 74 (SaveMapEventBase's sprite_id),
+# the struct that chunks 104 (hero) and 105-107 (vehicles) use. Tag 75 there is
+# `processed`, an unrelated per-frame movement-scheduling flag. A same-engine
+# round-trip never catches a wrong tag (writer and reader agree); only the
+# on-disk tag number does.
 check 'to_lsd writes the leader/vehicle sprite index at the correct liblcf ' \
       'tag (SaveMapEventBase sprite_id, 74 -- not 75, which is `processed`)' do
   players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
@@ -5772,8 +5769,7 @@ check 'restore_pictures restores zoom, opacity and tone, not just name/position'
   # Picture#zoom, tone (41-44, "色調") are raw ints fed straight into Picture's
   # red/green/blue/saturation, and transparency (34, "透明度") is the same
   # 0 (opaque) .. 100 (clear) scale #trans_to_opacity already converts for the
-  # live command. `to_lsd` does not write chunk 103 yet (see ADR 0021's
-  # addendum), so this builds a synthetic chunk 103 entry directly rather than
+  # live command. `to_lsd` does not write chunk 103 yet, so this builds a synthetic chunk 103 entry directly rather than
   # round-tripping through our own writer.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
@@ -11384,17 +11380,12 @@ check 'player_transparent round-trips through the save' do
   eq true, Game::State.from_lsd(db, st.to_lsd).player_transparent
 end
 
-# ADR 0020 mapped player_transparent to SAVE_SYSTEM's own field 55, citing no
-# source -- but liblcf actually names that field `event_message_active`
-# (ShowMessage/ShowChoices/ShowNumberInput bookkeeping, generator/csv/
-# fields.csv), unrelated to transparency. The real home is SAVE_MOVABLE field
-# 24 (`SaveMapEventBase.transparency`) on the hero's own record (chunk 104).
-# The wrong mapping was self-masking: this engine's own to_lsd/from_lsd both
-# used field 55 consistently, so its own round-trip never caught it -- only
-# a genuine save (or inspecting the actual on-disk tag) would, since a real
-# save's field 55 (event_message_active) is often true on its own, unrelated
-# to whether the player is hidden, and would have made Continue permanently
-# hide the hero after any save taken with a message on screen.
+# player_transparent is SAVE_MOVABLE field 24 (`SaveMapEventBase.transparency`) on
+# the hero's own record (chunk 104). SAVE_SYSTEM field 55 is `event_message_active`
+# (ShowMessage/ShowChoices/ShowNumberInput bookkeeping, generator/csv/fields.csv),
+# often true on its own, so reading it as transparency would make Continue hide the
+# hero after any save taken with a message on screen. A same-engine round-trip cannot
+# catch the wrong field; only the on-disk field number does.
 check 'to_lsd writes player_transparent to the hero record (SAVE_MOVABLE ' \
       'field 24), not SAVE_SYSTEM field 55' do
   players = {
@@ -11853,8 +11844,7 @@ end
 check 'to_lsd writes the camera scroll (chunk 111 fields 1/2) from the ' \
       'hero position, not just when some other chunk-111 override is live' do
   # RPG_RT restores the camera from the save rather than deriving it from the
-  # hero -- confirmed against the genuine runtime (ADR 0021's "comparing an
-  # ordinary map" addendum): a save missing chunk 111 fields 1/2 drew the
+  # hero -- confirmed against the genuine runtime: a save missing chunk 111 fields 1/2 drew the
   # map's top-left corner regardless of the hero's tile, and the correct
   # 1/16-pixel pair reproduced the exact hero-centred frame this engine's own
   # renderer already draws. #to_lsd never wrote them at all -- worse, the
@@ -19235,7 +19225,7 @@ check 'battle: a sealing state blocks skills above its threshold' do
   eq false, bat.skill_sealed?(hero, nil), 'a missing skill row is not sealed'
 end
 
-# -- equipment-granted combat modifiers (ADR 0033) ----------------------------
+# -- equipment-granted combat modifiers ----------------------------
 #
 # A party built from a real database row, so the Actor -> Combatant plumbing that
 # carries these flags is what is under test, not a hand-set snapshot.
@@ -23335,7 +23325,7 @@ end
 
 # -- 二刀流 actors (double_hand) -----------------------------------------------
 # An actor (or RPG2003 class) trait that turns the *shield* slot into a
-# *second weapon* slot -- the flag ADR 0040 flagged as "left alone" (the
+# *second weapon* slot -- the flag marked "left alone" (the
 # opposite rule to two_handed above: that empties a hand, this fills it with
 # a weapon). 4 of Nepheshel's actors carry it and 1 of mtf-meido-action's.
 

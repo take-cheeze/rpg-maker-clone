@@ -37,7 +37,7 @@ set -euo pipefail
 # runtime's pure-Ruby sources under *CRuby*, which cannot see mruby/CRuby
 # divergence, and cannot see rendering at all. A native build reaches both --
 # `--rgss_effect_probe` measures real pixels, and the boot checks drive real game
-# data to the map. See docs/adr/0021 and 0022.
+# data to the map.
 #
 # Usage:
 #   scripts/native/build-without-nix.bash [BUILD_DIR]      # default: ./build

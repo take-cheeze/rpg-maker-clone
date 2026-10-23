@@ -3,7 +3,7 @@
 require 'set'
 require_relative 'bytecode_ir_ops'
 
-# REGISTER_FLOW (ADR 0415): copy propagation and dead register-write removal
+# REGISTER_FLOW: copy propagation and dead register-write removal
 # over one method's emitted instruction texts. Registers are the C++ locals
 # `rN`, so the text of an instruction is the exact definition of what it reads
 # and writes; the CFG is BytecodeIR's. Kill switch: BC2CPP_REGISTER_FLOW=0.
@@ -384,9 +384,7 @@ class RegisterFlow
   # --- copy propagation -------------------------------------------------------
 
   def propagate_copies
-    @insns.each_index do |i|
-      next unless @insns[i].op == 'MOVE'
-
+    @program.each_with_op('MOVE') do |_insn, i|
       match = /\A  r(\d+) = r(\d+);\n\z/.match(@texts[i]) or next
       dest = match[1].to_i
       src = match[2].to_i

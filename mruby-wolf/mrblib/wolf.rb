@@ -21,8 +21,7 @@
 # wolfrpg-map-parser crate (Rust, G1org1owo) -- plus the MIT-licensed Kaitai
 # Struct descriptions in djytw/wolf-rpg-formats, and then checked byte-for-byte
 # against the sample game the official editor package ships
-# (scripts/download/wolfrpg-sample.bash). See
-# docs/adr/0064-wolf-rpg-editor-data-layer.md.
+# (scripts/download/wolfrpg-sample.bash).
 module Wolf
   # Every WOLF RPG Editor version this layer knows how to read, by the marker
   # each file carries:
@@ -46,7 +45,7 @@ module Wolf
   # data is prohibited) explicitly excludes Pro-protected files from the
   # format-analysis permission its own 9.1 otherwise grants Game.dat/
   # CommonEvent.dat/TileSetData/the Database.dat and MapTree.dat families/
-  # .mps maps. See docs/adr/0095-wolf-rpg-editor-pro-protected.md for the
+  # .mps maps. The
   # history (a real, working decryptor was briefly shipped here, then
   # removed once this term was found).
   UTF8_MARK = 0x55

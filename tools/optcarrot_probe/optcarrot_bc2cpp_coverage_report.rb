@@ -13,7 +13,7 @@
 #
 # Usage: MRBC=path/to/host/mrbc ruby tools/optcarrot_probe/optcarrot_bc2cpp_coverage_report.rb
 # MRBC must be built from a 3rd/mruby checkout with
-# patches/mruby-parser-dump-back-nth-ref.patch applied -- see
+# the pinned fork commit (mruby-parser-dump-back-nth-ref) applied -- see
 # tools/optcarrot_probe/bc2cpp_probe.rb's own header for why.
 # Writes the report to stdout. Set BC2CPP_COVERAGE_REPORT_PATH to capture it
 # in a file; CI publishes it in the build job summary.
@@ -33,17 +33,14 @@ MRBC = ENV['MRBC'] || 'mrbc'
 REPORT_PATH = ENV['BC2CPP_COVERAGE_REPORT_PATH']
 OPTCARROT_LIB = File.join(ROOT, '3rd/optcarrot/lib')
 MRUBY_DIR = File.join(ROOT, '3rd/mruby')
-PARSER_DUMP_PATCH = File.join(ROOT, 'patches/mruby-parser-dump-back-nth-ref.patch')
-APPLY_SCRIPT = File.join(ROOT, 'scripts/apply_mruby_patch.bash')
 
 unless Dir.exist?(OPTCARROT_LIB)
   abort "#{OPTCARROT_LIB} is empty -- run `git submodule update --init 3rd/optcarrot` first"
 end
 
-system(APPLY_SCRIPT, MRUBY_DIR, PARSER_DUMP_PATCH, exception: true) if Dir.exist?(MRUBY_DIR)
 
-# docs/adr/0466: bc2cpp compiles closed-world programs only: the probe compiles the sealed benchmark world
-# (tools/optcarrot_probe/sealed_build.rb, ADR 0400), whose outside sources are its build's mruby core and gems.
+# bc2cpp compiles closed-world programs only: the probe compiles the sealed benchmark world
+# whose outside sources are its build's mruby core and gems.
 world_dir = Dir.mktmpdir('optcarrot-world-')
 at_exit { FileUtils.rm_rf(world_dir) }
 srcs, world_env = OptcarrotSealedBuild.bc2cpp_world(ROOT, world_dir)

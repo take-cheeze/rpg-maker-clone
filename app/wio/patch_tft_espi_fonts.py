@@ -10,7 +10,7 @@
 # (setTextFont/setFreeFont/loadFont appear nowhere in the repo), so it only
 # renders font 1 (GLCD). Fonts 2-8 still cost ~13.5 KB of glyph tables plus
 # their RLE renderer, kept alive because drawChar/drawString are virtual (the
-# vtable references them). See docs/adr/0199.
+# vtable references them).
 #
 # The library's own documented way to drop a font is commenting its #define
 # out of User_Setup.h, and that file cannot be overridden from build_flags in

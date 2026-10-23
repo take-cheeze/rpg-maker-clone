@@ -14,8 +14,8 @@
 # runs unmodified.
 #
 # It was built as the alternative to a reimplementation of RMXP's default engine
-# (docs/adr/0017-rpgxp-rgss-script-host.md), became the default boot path
-# (ADR 0029), and is now the **only** one: ADR 0030 removed the reimplementation,
+# became the default boot path
+# and is now the **only** one: the reimplementation was removed,
 # because reproducing the default scripts could never run the games that
 # customise them. A project that ships no scripts has nothing to run, and the
 # boot shell says so.
@@ -29,7 +29,7 @@ class RPGXP
     # Environment variable that switches the script host off. The host is on by
     # default, so this is an *opt-out*: set RGSS_SCRIPT_HOST to one of
     # DISABLED_VALUES and the project is loaded but not run — there is no second
-    # engine to run it with (ADR 0030), so this is a way to inspect a project, or
+    # engine to run it with, so this is a way to inspect a project, or
     # to boot past scripts that crash the engine, not a way to play one. The
     # native binary spells the same switch --norgss_script_host.
     ENABLED_ENV = "RGSS_SCRIPT_HOST".freeze
@@ -45,8 +45,7 @@ class RPGXP
     # True while the host's blocking `Main` runs inside the driver Fiber (see
     # RPGXP#setup_script_host_driver). The wrapped Graphics.update reads this to
     # decide whether to yield the fiber once per frame — so the flag is only ever
-    # set while a game is being driven, and nothing else yields. See
-    # docs/adr/0023-rpgxp-script-host-frame-driver.md.
+    # set while a game is being driven, and nothing else yields.
     @driving = false
     def self.driving?
       @driving
@@ -57,8 +56,7 @@ class RPGXP
     end
 
     # Whether to run the project's bundled scripts. **On by default**, and the
-    # only way a game runs: an RGSS project's scripts *are* its engine (ADR
-    # 0030). Only an explicit opt-out turns it off, from either of two places,
+    # only way a game runs: an RGSS project's scripts *are* its engine. Only an explicit opt-out turns it off, from either of two places,
     # because the two runtimes read their settings differently:
     #
     # **The `--rgss_script_host` flag** is the switch that works in a built
@@ -223,8 +221,7 @@ class RPGXP
     # scripts own their whole blocking main loop, so it runs inside a Fiber that
     # the wrapped Graphics.update below yields once per frame — the caller then
     # resumes it once per frame (see RPGXP#drive_script_host / RPGVX). Shared by
-    # every RGSS maker's boot shell; see
-    # docs/adr/0023-rpgxp-script-host-frame-driver.md.
+    # every RGSS maker's boot shell.
     def self.build_driver(db)
       install_graphics_yield
       Fiber.new do

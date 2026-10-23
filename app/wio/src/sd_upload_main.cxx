@@ -1,7 +1,7 @@
 // Wio Terminal firmware: a temporary loader that writes files to the
 // board's microSD card over the same USB-CDC serial connection used for
 // flashing, for dev machines with no card reader to pull the card into.
-// Not part of the port's roadmap (docs/adr/0007) -- it plays no role in
+// Not part of the port's roadmap -- it plays no role in
 // running a game -- and not meant to stay flashed: run it, push the exported
 // map with scripts/wio/sd_upload.py, then reflash wio_walk or wio.
 //

@@ -7,19 +7,16 @@
 #
 #   MRBC=path/to/host/mrbc ruby scripts/bc2cpp/constant_typing_check.rb
 
-require 'json'
-require 'open3'
 require 'set'
 require 'tmpdir'
 require_relative '../../tools/bc2cpp/bc2cpp'
+require_relative 'type_check_fixture'
 
 unless ENV['MRBC'] && File.executable?(ENV['MRBC'])
   puts 'SKIP constant_typing_check: MRBC is not set to a host mrbc'
   exit 0
 end
 
-ROOT = File.expand_path('../..', __dir__)
-TYPE_CHECK = File.join(ROOT, 'scripts/bc2cpp/type_check.rb')
 failures = []
 check = lambda do |what, condition|
   puts "  #{condition ? 'ok  ' : 'FAIL'} #{what}"
@@ -27,18 +24,21 @@ check = lambda do |what, condition|
 end
 
 # Empty signatures make fixture diagnostics meaningful: engine-only declarations do not belong to these programs.
-typed_rows = lambda do |source|
+typed_rows = lambda do |source, cli: false|
   Dir.mktmpdir('constant-typing') do |dir|
     rb = File.join(dir, 'fixture.rb')
     out = File.join(dir, 'facts.json')
     sig = File.join(dir, 'sig')
     Dir.mkdir(sig)
     File.write(rb, source)
-    stdout, stderr, status = Open3.capture3(RbConfig.ruby, TYPE_CHECK, '--files', rb, '--sig', sig,
-                                          '--no-sends', '--format', 'json', '--out', out, '-q')
-    raise "type_check failed (#{status.exitstatus}):\n#{stdout}#{stderr}" unless status.success?
-
-    JSON.parse(File.read(out)).fetch('constants')
+    report = if cli
+               TypeCheckFixture.report(dir, files: [rb], options: ['--sig', sig], out: out,
+                                       label: 'constant typing')
+             else
+               TypeCheckFixture.facts_report(dir, files: [rb], env: { 'BC2CPP_SIG_DIRS' => sig },
+                                             label: 'constant typing')
+             end
+    report.fetch('constants')
   end
 end
 container_rows = lambda do |rows|
@@ -120,7 +120,7 @@ RUBY
 puts '== shared end-to-end positives: containers and integer arithmetic'
 # This unknown receiver adds no method definitions, so it cannot withdraw the positive proofs.
 unknown_merge = "X_MERGE = $unproven.merge({ b: 2 })\n"
-positive_rows = typed_rows.call(BASE + positive + frozen + unknown_merge)
+positive_rows = typed_rows.call(BASE + positive + frozen + unknown_merge, cli: true)
 
 puts '== positives: stock owners, a foreign Ruby freeze'
 rows = container_rows.call(positive_rows)
@@ -188,7 +188,7 @@ analysis = lambda do |source|
     safe = IntegerConstantRanges.integer_ops_safe?(registry, included, prepended, unknown)
     # FREEZE_SELF: the same owner-scoped proof the build passes (bc2cpp.rb), not a copy of it.
     freeze_safe = DeclaredConstants.stock_method?('freeze', 'Integer', registry, included, prepended, unknown)
-    # The bytecode IR facts (ADR 0501 stages 2 and 4), with the gates the build passes (bc2cpp.rb).
+    # The bytecode IR facts, with the gates the build passes (bc2cpp.rb).
     ir = BytecodeIR::ConstantFacts.analyze(ireps, sites: sites, poisoned: Set.new, operators_safe: safe,
                                                   freeze_safe: freeze_safe, freeze_classes: Set.new)
     {
@@ -210,7 +210,7 @@ end
 puts '== positive: literals and named constants (exact values and intervals)'
 pos = analysis.call(positive)
 check.call('the operators are the core ones (no Ruby definition on Integer)', pos[:safe])
-# ADR 0501 stage 2: the IR intervals and Fixnum names are the proofs' own. The exact-value proof also admits a literal-only
+# The IR intervals and Fixnum names are the proofs' own. The exact-value proof also admits a literal-only
 # name outside the Fixnum margin (ZA_BIG, 1073741824), which the IR's Fixnum set leaves out on purpose: a Fixnum name is
 # inside the margin by construction.
 check.call('the IR intervals equal the interval proof (positive)', pos[:ir_ranges] == pos[:ranges])
@@ -237,7 +237,7 @@ check.call('ZA_SPAN is typed Integer', (r = row_for.call(rows, 'ZA_SPAN')) && r[
 half = row_for.call(rows, 'ZA_HALF')
 check.call('ZA_HALF (floor division) is typed Integer', half && half['type'] == 'Integer')
 range_only = row_for.call(rows, 'ZA_SLOT_RANGE')
-# The IR (ADR 0501) admits an interval-only name as a Fixnum constant, so its row comes from the integer-constant set.
+# The IR admits an interval-only name as a Fixnum constant, so its row comes from the integer-constant set.
 check.call('ZA_SLOT_RANGE (no single value, interval only) is typed Integer by inferred:integer-constant',
            range_only && range_only['type'] == 'Integer' && range_only['source'] == 'inferred:integer-constant')
 nonlit = row_for.call(rows, 'ZA_NONLIT')

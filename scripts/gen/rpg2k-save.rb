@@ -10,14 +10,14 @@
 # place. Driving them there by counting key presses does not work --
 # scripts/compare/nepheshel-wine.bash does exactly that, and the two
 # desynchronise through Nepheshel's long *timed* opening, which is why only the
-# title screen could be diffed pixel-for-pixel (ADR 0021). Loading a save is not
+# title screen could be diffed pixel-for-pixel. Loading a save is not
 # timed, so it cannot drift; this puts that save wherever the comparison needs
 # it.
 #
 # WHY IT EDITS A SAVE INSTEAD OF WRITING ONE: `Game::State#to_lsd` can emit a
 # Save<N>.lsd from nothing, and the genuine RPG_RT does load one now (it used to
 # refuse them -- the file-screen date defaulted to 0.0, which is 1899-12-30 on
-# the OLE scale and reads as an empty slot; see ADR 0021). But a to_lsd save
+# the OLE scale and reads as an empty slot). But a to_lsd save
 # carries only the five chunks that model our runtime state: no pictures, no map
 # events, no vehicles. It resumes into a valid but *bare* scene, which is no use
 # for comparing rendering against the real thing.

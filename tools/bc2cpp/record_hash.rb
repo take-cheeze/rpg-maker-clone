@@ -6,7 +6,7 @@ require_relative 'bytecode_ir'
 require_relative 'bytecode_ir_containers'
 require_relative 'ivar_layout'
 
-# RECORD_HASH_PROOF (docs/adr/0285): per-key value classes of a record-like
+# RECORD_HASH_PROOF: per-key value classes of a record-like
 # Hash held in an instance variable.
 #
 # A record slot is an ivar NAME (`@ui`), analysed across the whole closed
@@ -29,7 +29,7 @@ module RecordHash
     attr_accessor :table, :readers, :pool
 
     # BC2CPP_RECORD_HASH_TIER=trusted lets writers classified by the Array
-    # block-recognizer scan (tripwire-backed, ADR 0198) count too; the default
+    # block-recognizer scan count too; the default
     # admits only proofs.
     def consumer_tier
       ENV['BC2CPP_RECORD_HASH_TIER'] == 'trusted' ? :trusted : :strict
@@ -48,14 +48,12 @@ module RecordHash
   REFLECTION_SENDS = %w[instance_variable_get instance_variable_set remove_instance_variable
                         instance_variable_defined? each_object].freeze
   # Ops whose leading register is only written (no implicit reads).
-  WRITE_LEAD_ONLY = Set[
-    'LOADL', 'LOADSYM', 'LOADNIL', 'LOADTRUE', 'LOADFALSE', 'LOADSELF', 'GETGV', 'GETSV', 'GETIV',
-    'GETCV', 'GETCONST', 'GETMCNST', 'GETUPVAR', 'STRING', 'SYMBOL', 'LAMBDA', 'BLOCK', 'METHOD',
-    'OCLASS', 'TCLASS', 'EXCEPT', 'AREF', 'KEY_P', 'KARG', 'MOVE'
-  ].freeze
-  # Ops that read their leading register and leave it unchanged.
-  READ_LEAD_KEEP = Set['JMPIF', 'JMPNOT', 'JMPNIL', 'RETURN', 'RETURN_BLK', 'BREAK', 'RAISEIF', 'MATCHERR',
-                       'SETUPVAR', 'ASET'].freeze
+  WRITE_LEAD_ONLY = (BytecodeIR::Ops::PURE_LOAD | Set[
+    'GETGV', 'GETSV', 'GETIV', 'GETCV', 'GETCONST', 'GETMCNST', 'GETUPVAR', 'STRING', 'SYMBOL', 'LAMBDA', 'BLOCK',
+    'METHOD', 'OCLASS', 'TCLASS', 'EXCEPT', 'AREF', 'KEY_P', 'KARG'
+  ]).freeze
+  # Ops that read their leading register and leave it unchanged (LEAD_READ_ONLY plus ASET).
+  READ_LEAD_KEEP = (BytecodeIR::Ops::LEAD_READ_ONLY | Set['ASET']).freeze
   # Producers of a value that is provably not a Symbol; a key from one of them
   # can never alias a Symbol key.
   NON_SYMBOL_OPS = Set['LOADNIL', 'LOADTRUE', 'LOADFALSE', 'STRING', 'ARRAY', 'HASH', 'LOADL'].freeze
@@ -175,7 +173,7 @@ module RecordHash
 
   # Call-site pooling for the Symbol a method parameter can hold: every call
   # site of a single-definition method is enumerated (ENTRY_ARG_CALLSITE_PROOF's
-  # admission, ADR 0261 rules 1-8), so `def f(scroll_key: nil)` resolves to the
+  # admission), so `def f(scroll_key: nil)` resolves to the
   # Symbols its callers pass.
   class KeyPool
     ENTER_POSITIONAL_ONLY = ->(fields) { fields[1..].all?(&:zero?) }
@@ -192,7 +190,7 @@ module RecordHash
           name = insn.sym or next
 
           case insn.op
-          when 'SEND', 'SENDB', 'SSEND', 'SSENDB', 'SEND0', 'SSEND0' then @sites[name] << [irep, i]
+          when *BytecodeIR::Ops::SEND then @sites[name] << [irep, i]
           when 'DEF', 'SDEF', 'TDEF' then nil
           else @poisoned << name
           end
@@ -561,7 +559,7 @@ module RecordHash
         @stores << [keys, irep, k, val]
         # OP_SETIDX overwrites its receiver register with the assigned value.
         state - [recv]
-      when 'JMPIF', 'JMPNOT', 'JMPNIL'
+      when *BytecodeIR::CONDITIONAL_BRANCHES
         state
       when 'SETIV'
         return state unless state.include?(insn.regs.first.to_i)

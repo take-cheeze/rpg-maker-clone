@@ -1,4 +1,4 @@
-# The checked, typed read path for a Save<N>.lsd (docs/adr/0400).
+# The checked, typed read path for a Save<N>.lsd.
 #
 # Every saved field is read through one typed accessor, generated from
 # LCF::Schema by mruby-lcf/gen_save_typed_accessors.rb into

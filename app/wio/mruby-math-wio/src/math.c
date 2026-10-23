@@ -9,7 +9,7 @@
 ** the build links no compiler/eval -- and those only use Math::PI and
 ** Math.sin. scripts/wio/dropped_gems_check.rb fails CI if a wio-linked gem
 ** starts using any other Math member; add it here (mirroring
-** 3rd/mruby/mrbgems/mruby-math/src/math.c) when it does. See docs/adr/0204.
+** 3rd/mruby/mrbgems/mruby-math/src/math.c) when it does.
 */
 
 #include <math.h>

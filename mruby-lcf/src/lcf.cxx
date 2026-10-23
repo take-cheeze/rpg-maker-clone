@@ -50,7 +50,7 @@ mrb_value cp932_to_utf8(mrb_state* M, mrb_value self) {
 }
 
 // Inverse of cp932_to_utf8. The tables live in flash, never on the heap
-// (ADR 0111, 0217). A two-byte code is emitted big-endian, the order
+// A two-byte code is emitted big-endian, the order
 // cp932_to_utf8 reads it in.
 mrb_value utf8_to_cp932(mrb_state* M, mrb_value self) {
   const uint8_t* p;

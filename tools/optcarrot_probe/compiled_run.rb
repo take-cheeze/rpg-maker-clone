@@ -45,7 +45,7 @@ end
 # happens to call `Fiber.yield` directly. See both SUPPORT comments in
 # `bc2cpp.rb` and `tools/optcarrot_probe/README.md` for the full mechanism.
 # `Optcarrot::PPU` is back in `ONLY_OWNERS` below now that both fixes are
-# landed. ADR 0273 then went further: `main_loop`, the one method the
+# landed. Further, `main_loop`, the one method the
 # `Fiber.new` block calls, compiles as a resumable step function (the
 # yielding `wait_*` helpers are expanded into it and its `step` loops are
 # inlined), and the methods it calls that cannot reach `Fiber.yield` compile
@@ -162,7 +162,7 @@ def run_benchmark(label, command, chdir: nil)
 end
 
 # The .text a linked mruby actually contains, so a comparison is a code-size
-# measurement and not a guess from the generated C++ (ADR 0216's rule). `size -A`
+# measurement and not a guess from the generated C++. `size -A`
 # prints one "section size" per line; absent (non-ELF host) is nil, not 0.
 def text_size(binary)
   output, status = Open3.capture2e('size', '-A', binary)
@@ -284,7 +284,7 @@ Dir.mktmpdir('optcarrot-bc2cpp-') do |temp|
   output_dir = File.join(temp, 'gem', 'src')
   FileUtils.mkdir_p(scan_dir)
   FileUtils.mkdir_p(output_dir)
-  # docs/adr/0466: bc2cpp compiles closed-world programs only, so the benchmark always runs sealed (ADR 0400).
+  # bc2cpp compiles closed-world programs only, so the benchmark always runs sealed.
   benchmark_source, sealed_gems = OptcarrotSealedBuild.prepare(ROOT, temp, File.dirname(output_dir))
   sources = [benchmark_source]
   native_sources, foreign_sources = bc2cpp_closed_world_outside_srcs('optcarrot-probe', sealed_gems, ROOT)
@@ -368,7 +368,7 @@ Dir.mktmpdir('optcarrot-bc2cpp-') do |temp|
   owners = section_lines(scan_diagnostics, 'compiled entry points').filter_map do |line|
     line[/\(([^#]+)#/, 1]
   end.uniq
-  # SITE_PROFILE (ADR 0298): only the pass whose C++ is built gets the counters; the
+  # SITE_PROFILE: only the pass whose C++ is built gets the counters; the
   # binary dumps them to BC2CPP_SITE_PROFILE_OUT, so timings from such a run mean nothing.
   site_profile = ENV['BC2CPP_SITE_PROFILE']
   site_profile = nil if site_profile&.empty?
@@ -481,35 +481,10 @@ Dir.mktmpdir('optcarrot-bc2cpp-') do |temp|
       end
     VERIFY
   RUBY
-  # The generated C++ depends on this repo's own mruby patches, not just on
-  # upstream mruby: bc2cpp's VM_UNWIND_RESTORE helper reads
-  # `M->errinfo`/`M->errinfo_ci_depth`, which only patches/mruby-dollar-bang-
-  # scoped.patch adds to mrb_state (cmake/build-mruby.cmake applies it for the
-  # real build). Applying only the module-function patch -- what this used to
-  # do -- left `register.cxx` uncompilable ("'mrb_state' has no member named
-  # 'errinfo'"), so the probe could not link at all. Same set the real build
-  # uses, so the probe's mruby is the mruby bc2cpp is written against.
-  # mruby-vm-goto-table-void.patch: vm.c's computed-goto table is `const void *`; the C++ build (vm-cxx.cxx, EDG) needs
-  # `void *` for `goto *`. Same dispatch, only the element type changes.
-  # mruby-cxx-novolatile.patch: error.c's `volatile int err` in the C++ exception path; cproc (nfcxx's qbe backend)
-  # cannot store to a volatile object. The C++ exception path does not longjmp, so the volatile is not needed.
-  # mruby-rdata-ivar-slots.patch is required, not optional: without it the
-  # interpreted PPU reads embedded ivars out of an empty iv_tbl and crashes.
-  %w[
-    mruby-colon3-assign-setmcnst.patch
-    mruby-dollar-bang-scoped.patch
-    mruby-defined-keyword.patch
-    mruby-module-function-scope.patch
-    mruby-parser-dump-back-nth-ref.patch
-    mruby-nomemoryerror-reentrant-alloc.patch
-    mruby-gc-type-live-counts.patch
-    mruby-rdata-ivar-slots.patch
-    mruby-cxx-novolatile.patch
-    mruby-vm-goto-table-void.patch
-  ].each do |patch|
-    path = File.join(ROOT, 'patches', patch)
-    system(File.join(ROOT, 'scripts/apply_mruby_patch.bash'), MRUBY, path, exception: true)
-  end
+  # The generated C++ depends on this repo's own mruby patches (M->errinfo for
+  # VM_UNWIND_RESTORE, the rdata ivar slots, the goto-table element type). They
+  # live in the pinned 3rd/mruby fork commit, so the probe builds that tree as
+  # pinned and applies nothing here.
   # nix's dev shell exports LD=ld, and mruby's Linker takes its command
   # straight from the environment (build/command.rb:193, `ENV['LD'] || 'ld'`).
   # Raw `ld` adds no -lc and no startfiles, so the host mrbc's link dies with

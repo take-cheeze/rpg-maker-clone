@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Boots a Wio Terminal firmware ELF under Renode (docs/adr/0094) far enough
+# Boots a Wio Terminal firmware ELF under Renode far enough
 # to prove the CPU actually runs -- reaches its own setup()/loop() symbols --
 # rather than checking it only compiles, which is all CI does today.
 #

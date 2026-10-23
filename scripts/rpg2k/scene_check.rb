@@ -326,10 +326,10 @@ load File.join(lcf_lib, 'save_typed_accessors.rb')
 
 lib = File.expand_path('../../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
-load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
-load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file
+load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb
 load File.join(lib, 'game', 'legacy_lsd.rb')
-load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
+load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio
 load File.join(lib, 'interpreter.rb')
 load File.join(lib, 'main.rb')
 Dir[File.join(lib, 'scene', '*.rb')].sort.each { |path| load path }
@@ -1070,7 +1070,7 @@ check 'RPG2k::Window pause arrow blinks on a 20-frame-on/20-frame-off cycle, ' \
   # ~10 fps while the message sat paused. The pause arrow's on/off runs
   # measured ~0.20s / ~0.24s (coarse, ~0.1s sampling grain) and a full
   # on-to-on cycle averaged 0.654s over 13 cycles -- matching the 40-frame
-  # (20 on + 20 off) cycle at RPG_RT's confirmed 60fps (ADR 0021) far closer
+  # (20 on + 20 off) cycle at RPG_RT's confirmed 60fps far closer
   # than any other plausible frame count, and starting in the "on" phase the
   # instant the window paused, exactly as coded here. No fix needed; this
   # pins the now-confirmed-correct behaviour, which had no regression test.
@@ -14976,8 +14976,7 @@ end
 #
 # RPG_RT grays out Continue on the title screen when there is no save to
 # resume; `any_save_exists?` (main.rb) is the source of truth, routed through
-# Scene::Title's own `continue_available?` (ADR 0012, extended by ADR 0045 to
-# cover every slot rather than just slot 1). The cursor can still reach the
+# Scene::Title's own `continue_available?` (for every slot, not just slot 1). The cursor can still reach the
 # grayed-out entry, and confirming it is not silent -- it plays Buzzer
 # (ported from a reference implementation's own logic, NOT
 # independently confirmed against genuine RPG_RT under wine) rather than
@@ -15046,9 +15045,9 @@ end
 check 'a save exists: Continue is flagged available and its selection key opens ' \
       'the file-select screen' do
   # Continue used to call parent.continue_game straight from the title screen
-  # (ADR 0012); it now opens Scene::SaveLoad in :load mode instead, so the
+  # it now opens Scene::SaveLoad in :load mode instead, so the
   # player picks which of the MAX_SAVE_SLOTS slots to resume rather than
-  # always landing on slot 1 (ADR 0045).
+  # always landing on slot 1.
   parent = TitleParent.new(fake_db, nil, false, true)
   scene = RPG2k::Scene::Title.new(parent)
   ok scene.instance_variable_get(:@continue_available), 'Continue is flagged available'
@@ -15886,7 +15885,7 @@ end
 # The per-battler `source` the boundary page check runs with: a troop page
 # gated on `command_actor` fires when the *acting* battler chose the command
 # (Game::Battle#actor_command with the scene-passed #acting_battler) -- the
-# ADR 0054 follow-up that made the condition satisfiable at all. The
+# follow-up that made the condition satisfiable at all. The
 # model-side gating is pinned in rpg2k_logic_check.rb; this drives a real
 # gauge battle through the 2003 scene so the boundary check actually hands
 # the acting battler over.
@@ -17360,7 +17359,7 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   ok shop.status.nil?, 'the command menu highlights no single item -- no panel'
   # Confirmed against genuine RPG_RT.exe under wine: the command menu (no
   # side panels) fills the whole screen, flush to the left edge -- not the
-  # old inset-10px, 300px-wide box, the same stale anti-pattern ADR 0021
+  # old inset-10px, 300px-wide box, the same stale anti-pattern
   # already fixed for the message window.
   eq 0, shop.window.x, 'the list window is flush to the screen\'s left edge'
   eq RPG2k::Scene::Map::SCREEN_W, shop.window.width,
@@ -17565,7 +17564,7 @@ check 'Open Shop scene: the shopkeeper prompt is a fixed 320x80 panel at the ' \
       'screen\'s bottom message slot, not merged into the list window' do
   # Follow-up (cycle #144): confirmed against genuine RPG_RT.exe under wine --
   # reuses the ordinary map message window's own fixed shape/position
-  # (MSG_WIN_W/MSG_WIN_H, ADR 0021), which the shop's own ordinary prompt
+  # which the shop's own ordinary prompt
   # bar landed on exactly.
   ic = Game::Interpreter::Cmd
   db = fake_db
@@ -19000,7 +18999,7 @@ check 'DrawNumberSystem2 leading-zero cascade matches a reference implementation
   eq [[8, 9], [16, 9], [24, 9]], glyphs.call(999), 'three 9s, still no (blank) thousands cell'
 end
 
-# -- the active-time (gauge) turn cycle (ADR 0053 Phase 2, scene integration) --
+# -- the active-time (gauge) turn cycle --
 #
 # A gauge-presentation battle (battle_type 2, routed to RPG2k3::Scene::Battle
 # by `battle_scene_class`) replaces "whose turn is it" with "whose gauge is
@@ -19098,10 +19097,10 @@ end
 
 # -- Wait-off (active) mode: the command menu and the atb_mode toggle --------
 #
-# ADR 0054's follow-up: the gauge fight's Wait/active presentation. The toggle
+# The gauge fight's Wait/active presentation. The toggle
 # is the save-system `atb_mode` field (LSD chunk 140), flipped by the field
-# menu's Wait command -- *not* a Battle Commands database field, correcting
-# the ADR's own premise. In active mode (raw 0, the default) the gauges keep
+# menu's Wait command -- *not* a Battle Commands database field, correcting an
+# earlier assumption. In active mode (raw 0, the default) the gauges keep
 # filling while any command menu is open and a ready non-controllable
 # combatant's action interrupts the menu (ported from a reference implementation's
 # source, NOT independently confirmed against genuine RPG_RT under wine:
@@ -19225,7 +19224,7 @@ check 'an RPG2003 battle_type 0 (traditional) fight still runs the round machine
 end
 
 # -- mid-battle party roster sync: the screen (step 2 of the roster-sync ------
-# initiative; step 1, ADR 0050, fixed the mechanic -- Game::Battle now
+# initiative; step 1 fixed the mechanic -- Game::Battle now
 # re-derives its own turn order/targeting from the live party every round/
 # action) --------------------------------------------------------------------
 #
@@ -20626,7 +20625,7 @@ check 'Scene::Menu: an RPG2003 database drives the command list from ' \
   # order. Every id is modelled now: Row (6) toggles the picked actor's row
   # on the same actor-selection panel Skill/Equipment/Status use
   # (`Game::Party#toggle_actor_row`); Wait (8) -- the ATB toggle -- flips the
-  # save-system `atb_mode` field (ADR 0054's follow-up) and is offered with
+  # save-system `atb_mode` field and is offered with
   # its current-mode label; Order (7) has no battle-system dependency at all,
   # just party reordering; End Game is appended unconditionally, ported from
   # a reference implementation's own unconditional Quit push outside the customized
@@ -20981,7 +20980,7 @@ end
 # Scene::Menu's Save command and Scene::Title's Continue entry both used to
 # act on a single hardcoded slot directly; they now push this screen (in
 # :save / :load mode respectively) so the player picks from all
-# RPG2k::MAX_SAVE_SLOTS slots instead (ADR 0045). See the Continue checks
+# RPG2k::MAX_SAVE_SLOTS slots instead. See the Continue checks
 # above for the title-screen half of this wiring.
 
 check 'Scene::Menu: choosing Save opens Scene::SaveLoad in :save mode' do
@@ -25292,7 +25291,7 @@ check 'a healing tile never flashes the screen, unlike a damaging one' do
   ok !st.screen.flashing?, 'no flash for a heal, even though HP changed'
 end
 
-# -- footstep SE (RPG2003 歩行音, ADR 0034 follow-up) --------------------------
+# -- footstep SE --------------------------
 #
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: it plays terrain->footstep

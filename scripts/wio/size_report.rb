@@ -2,10 +2,9 @@
 # encoding: UTF-8
 #
 # Turns a captured `pio run` build log for the Wio Terminal firmwares into a
-# flash/RAM job-summary report -- this project's own ADR 91+ series (see
-# docs/adr/0091 onward) tracks the Wio Terminal's SAMD51 flash (512 KB) and
+# flash/RAM job-summary report -- the Wio Terminal's SAMD51 flash (512 KB) and
 # SRAM (192 KB) budget closely enough that CI should surface it on every run,
-# not just the real-relink numbers each individual ADR reports by hand.
+# not just the real-relink numbers each individual change reports by hand.
 #
 # PlatformIO's own `pio run` prints, right after linking each environment's
 # firmware.elf, a "Checking size .../firmware.elf" line followed by one

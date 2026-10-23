@@ -5,8 +5,8 @@ require 'set'
 require_relative 'receiver_proof_report_columns'
 require_relative 'type_check_rbs'
 
-# TYPE_CHECK (docs/adr/0412): turns the facts bc2cpp wrote (type_facts.rb) and, optionally, the receiver-proof rows
-# (BC2CPP_RECEIVER_PROOF_REPORT, ADR 0331) into the three outputs of scripts/bc2cpp/type_check.rb:
+# TYPE_CHECK: turns the facts bc2cpp wrote (type_facts.rb) and, optionally, the receiver-proof rows
+# into the three outputs of scripts/bc2cpp/type_check.rb:
 #
 #   text         a stable summary plus `file:line:col: severity: message [CODE]` diagnostics (what `tsc` and `ruby -c`
 #                print, so an editor's problem matcher reads them);
@@ -20,7 +20,7 @@ require_relative 'type_check_rbs'
 #   TC1004 warning  an annotation token bc2cpp ignores, or an annotation whose parameter count is not the method's
 #   TC1007 error    an inferred IR may-set is disjoint from a nominal RBS return/ivar contract
 #   TC1008 warning  an inferred IR may-set partly overlaps the contract
-#   TC1016 error    an RBS `class C < S` whose S is not the program's superclass of C (ADR 0453)
+#   TC1016 error    an RBS `class C < S` whose S is not the program's superclass of C
 #   TC2004 info     (--all) an IR query is unknown, with its refusal reason
 #   TC2001 info     (--all) a parameter has no type, with the reason bucket
 #   TC2002 info     (--all) a return has no type, with the reason bucket
@@ -290,7 +290,7 @@ module TypeCheckReport
     section.call('untyped ivars by reason (stage:ADR 0382 bucket)', s['ivar_reasons'], 14)
     feedback = Array(facts['ir_feedback']).select { |row| scope == 'all' || row['scope'] == scope }
     unless feedback.empty?
-      section.call('IR queries left unknown by reason', tally(feedback.select { |row| row['status'] == 'unknown' }.map { |row| row['reason'] }), 12)
+      out << unknown_reason_ranking(facts, scope: scope, limit: 12)
       out << "-- inferred RBS return suggestions (top #{top}) --\n"
       TypeCheckRbs.inferred_return_suggestions(facts, scope: scope).first(top).each do |row|
         out << "  #{row['owner']}##{row['method']} -> #{row['type']}\n"
@@ -309,6 +309,35 @@ module TypeCheckReport
       end
     end
     out
+  end
+
+  # Unknown IR queries grouped by refusal reason, most frequent first (ties by name). Each group keeps the files it
+  # hits, most frequent first, so the top reason names the next producer worth modeling and where it occurs.
+  def unknown_reasons(facts, scope: 'engine')
+    counts = Hash.new { |h, reason| h[reason] = Hash.new(0) }
+    Array(facts['ir_feedback']).each do |row|
+      next unless row['status'] == 'unknown' && (scope == 'all' || row['scope'] == scope)
+
+      reason = row['reason'].to_s.empty? ? '(none)' : row['reason']
+      counts[reason][row['file'] || '-'] += 1
+    end
+    counts.map do |reason, files|
+      { 'reason' => reason, 'count' => files.values.sum, 'files' => files.sort_by { |file, n| [-n, file] } }
+    end.sort_by { |group| [-group['count'], group['reason']] }
+  end
+
+  def unknown_reason_ranking(facts, scope: 'engine', limit: 12)
+    groups = unknown_reasons(facts, scope: scope)
+    out = +"-- IR queries left unknown, ranked by reason (count; files hit) --\n"
+    out << "       (none)\n" if groups.empty?
+    groups.first(limit).each do |group|
+      out << format("%6d  %s\n", group['count'], group['reason'])
+      shown = group['files'].first(3).map { |file, n| "#{file} (#{n})" }
+      more = group['files'].size - shown.size
+      out << "        in #{shown.join(', ')}#{", +#{more} more" if more.positive?}\n"
+    end
+    out << "       (+#{groups.size - limit} more reasons)\n" if groups.size > limit
+    out << "\n"
   end
 
   def tsv(facts, scope: 'engine')

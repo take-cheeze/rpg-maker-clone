@@ -2,7 +2,7 @@
 # encoding: UTF-8
 #
 # Host-side robustness checks for reading a Save<N>.lsd that this engine did not
-# write (docs/adr/0400: "no genuine .lsd is in the repository").
+# write.
 #
 # No genuine RPG_RT / EasyRPG save is reachable from the repo (none is committed,
 # and scripts/download/* fetch games, not saves), so the fixtures here are built

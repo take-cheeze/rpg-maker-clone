@@ -1,13 +1,13 @@
 // Swaps AOT-compiled C++ bodies in for a hand-picked, provably-safe subset
 // of LCF::File/Database/MapTree/MapUnit/SaveData's own bytecode methods
-// (docs/adr/0139), plus LCF::File#[]/#[]= (a later follow-up's own fix --
+// plus LCF::File#[]/#[]= (a later follow-up's own fix --
 // see this class's own registration block below for why these two were a
 // real, previously-missed coverage gap, not the pre-existing interpreted
 // fallback the rest of this paragraph describes), LCF::MoveCommand#initialize,
 // LCF::EventCommand#initialize/#param, LCF::Tree#initialize,
 // LCF::Sections's own 4 methods, LCF::Array1D's own 5 methods, and
 // LCF::Array2D's own 2 methods
-// (docs/adr/0139's own follow-ups, mruby-lcf/mrblib/lcf.rb). mruby-lcf
+// mruby-lcf
 // (this gem's own add_dependency) has already run its full gem init --
 // C hook *and* mrblib -- by the time this gem's own init runs
 // (mrbgems.rake sequences gem_funcs[] in dependency order, each entry
@@ -49,7 +49,7 @@
 // it), but confirmed live rather than assumed. @maps (an Array) was never
 // a Fixnum/Symbol candidate either way.
 //
-// LCF::Sections (mruby-lcf/mrblib/lcf.rb, docs/adr/0139's own follow-up)
+// LCF::Sections
 // -- holds the sequential sections of a multi-section file (currently
 // only LCF::MapTree's own Array-shaped schema), built once by
 // LCF::File#initialize whenever its own `schema` is an Array. All 4 of
@@ -58,7 +58,7 @@
 // all -- always private, same as every other compiled #initialize in
 // this project), #add, #key?, and #[] (its own `idx.is_a? Symbol` guard
 // is an ordinary POLY send into the native `is_a?`, needing no new
-// bc2cpp.rb opcode work). #field? (docs/adr/0213, added after this
+// bc2cpp.rb opcode work). #field? (added after this
 // block was written) is not registered and stays interpreted.
 // @by_name/@list are a Hash and an Array (never Fixnum/Symbol), so
 // nothing on this class is embeddable -- confirmed directly: it never
@@ -72,10 +72,9 @@
 // LCF::Sections above (9 real bytecode-defined methods, not 1-4), so only
 // 5 of them compile clean and are registered below: #[], #key?,
 // #int16_values, #delete, #[]= -- all public, pure mandatory arity, no
-// super, no block. See ADR 0139 (LCF::Array1D) for the full per-method
-// writeup, including exactly why each of the others (#initialize, #to_lcf,
+// super, no block. Each of the others (#initialize, #to_lcf,
 // #sym2idx, plus the native `attr_reader :schema`) stays interpreted;
-// #field? (ADR 0213, which also removed #method_missing/
+// #field? (which also removed #method_missing/
 // #respond_to_missing?) is simply not registered here: #initialize's own
 // `loop do ... end` and #sym2idx's
 // own `LCF.elements_of(@schema).each { |k, e| ... }` are both real
@@ -102,9 +101,8 @@
 // (lazily decodes and in-place caches a row's raw byte span into a real
 // `Array1D.new(entry, @schema)` on first access) and #[]= (a bare
 // `@data[idx] = entry` SETIDX, simpler than Array1D's own #[]=). Both
-// public, pure mandatory arity, no super, no block. See ADR 0139
-// (LCF::Array2D) for the full per-method writeup, including exactly why
-// the other 4 real methods (#initialize,
+// public, pure mandatory arity, no super, no block. The other 4 real methods
+// (#initialize,
 // #each, #to_lcf, #read_row_bytes) stay interpreted: #initialize's own
 // `(0...LCF.read_ber(s)).each do ... end` (a Range#each method call
 // taking a block -- NOT the same on-disk shape as Array1D#initialize's
@@ -182,7 +180,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   RClass* save_data = mrb_class_get_under(M, lcf, "SaveData");
   RClass* tree = mrb_class_get_under(M, lcf, "Tree");
 
-  // LCF::Tree (docs/adr/0139's own follow-up): one decoded map-tree section
+  // LCF::Tree: one decoded map-tree section
   // (the currently-selected map id plus the flat list of every map id in
   // tree order). #initialize is the ONLY real bytecode-defined method on
   // this class (`attr_reader :selected_id, :maps` stays native, uncompiled,
@@ -251,7 +249,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, event_command, "param", LCF__EventCommand_param,
                     MRB_ARGS_REQ(1));
 
-  // LCF::MoveCommand (docs/adr/0139's own follow-up): one decoded RPG2000
+  // LCF::MoveCommand: one decoded RPG2000
   // move-route command (a command id plus optional string/integer
   // parameters), mruby-lcf/mrblib/lcf.rb. Its own #initialize compiles
   // clean: 5 purely mandatory arguments, no super, no block.
@@ -297,7 +295,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // this file, #[]/#key?/#int16_values/#delete/#[]= carry no source-level
   // `private` and are not mruby's own always-private #initialize special
   // case). #initialize, #to_lcf, #field? and #sym2idx stay interpreted --
-  // see this file's own top comment and ADR 0139 (LCF::Array1D) for exactly
+  // see this file's own top comment for exactly
   // why each one does. No MRB_SET_INSTANCE_TT call belongs here: this
   // class never appears in bc2cpp's own "classes needing
   // MRB_SET_INSTANCE_TT" diagnostic (@data/@schema are never Fixnum/
@@ -315,7 +313,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // directly against the real diagnostic's own `== compiled entry
   // points ==` listing. #initialize, #each, #to_lcf, and the private
   // #read_row_bytes all stay interpreted -- see this file's own top
-  // comment and ADR 0139 (LCF::Array2D)
+  // comment
   // for exactly why each one does. No MRB_SET_INSTANCE_TT call belongs
   // here: this class never appears in bc2cpp's own "classes needing
   // MRB_SET_INSTANCE_TT" diagnostic (@data/@schema are never Fixnum/
@@ -327,7 +325,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // LCF::File#[]/#[]= (mruby-lcf/mrblib/lcf_file.rb: `def [] idx ; @root[idx]
   // end` / `def []= idx, value ; @root[idx] = value end`) were flagged as a
   // pre-existing gap by this project's own LCF::Array1D follow-up
-  // (docs/adr/0139): the `#error unhandled opcode BLOCK`-style diagnostics
+  // the `#error unhandled opcode BLOCK`-style diagnostics
   // that keep #initialize/#save_to
   // interpreted (see this file's own top comment) never applied to these
   // two -- both #[] and #[]= compile clean today, confirmed directly
@@ -379,8 +377,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, save_data, "schema", LCF__SaveData_schema,
                     MRB_ARGS_NONE());
 
-  // StringIO (docs/adr/0139's own round-31 ".singleton/leftover mop-up"
-  // follow-up) -- not a class this gem defines, but one this same file
+  // StringIO -- not a class this gem defines, but one this same file
   // (mruby-lcf/mrblib/lcf.rb, right above the `module LCF` body above)
   // reopens with one real bytecode-defined method, `#ungetbyte(substr)`
   // (an `Integer`-or-`String` argument normalized to a one-character

@@ -10,12 +10,12 @@ require_relative 'call_context_arguments'
 require_relative 'bytecode_ir_ops'
 require_relative 'bytecode_ir_returns'
 
-# CodeGen: RETURN_CLASS_TABLE (ADR 0289).
+# CodeGen: RETURN_CLASS_TABLE.
 #
-# A second run of NumericFlow whose oracle knows nothing outside the method except the class pools
-# of ADR 0295, so an exact class never rests on the numeric pools or a hint. Sources: literals, a provably fresh `Klass.new`
+# A second run of NumericFlow whose oracle knows nothing outside the method except the class pools,
+# so an exact class never rests on the numeric pools or a hint. Sources: literals, a provably fresh `Klass.new`
 # (exact_new_class_at) and calls of names in the return table, admitted as NUMERIC_RETURN_PROOF admits
-# them. Everything needs ClosedWorld#exact_instances_singleton_free? (ADR 0280).
+# them. Everything needs ClosedWorld#exact_instances_singleton_free?.
 class CodeGen
   CLASS_MEMBER_CACHE_LIMIT = 2048
   RETURN_CALL_OPS = %w[SEND SEND0 SSEND SSEND0].freeze
@@ -25,7 +25,7 @@ class CodeGen
   RETURN_BITLESS_CLASSES = %w[Array Hash String Range Integer Float NilClass Symbol TrueClass FalseClass].freeze
 
   # NumericFlow's oracle for the exact-class run: captured locals and literals pool nothing; arguments,
-  # ivars and constants know only what the class pools of ADR 0296 and ADR 0301 prove.
+  # ivars and constants know only what the class pools prove.
   class ExactOracle
     def initialize(codegen)
       @cg = codegen
@@ -263,11 +263,11 @@ class CodeGen
     # saw no cut while it was computed is a function of the settled tables alone, so its negative is kept too.
     @rc_scoped_cuts = 0
     # The numeric flow and the Fixnum proof ask for a register's class set; mid-fixpoint that would
-    # recurse into the flow still being built (NATIVE_RESULT_FACTS, ADR 0302).
+    # recurse into the flow still being built.
     @native_results_ready = true
   end
 
-  # SETTER_POOLS (ADR 0370): names the irep-wide alias rule withdraws although no aliasing operation spells them.
+  # SETTER_POOLS: names the irep-wide alias rule withdraws although no aliasing operation spells them.
   def checked_alias_name_candidates
     return Set.new unless @checked_pools_used
 
@@ -550,7 +550,7 @@ class CodeGen
     @core_new_exact[klass] = stable_standard_constructor_class?(klass) ? true : false
   end
 
-  # IR callers consume only complete, unguarded facts from the settled oracles (ADR 0443).
+  # IR callers consume only complete, unguarded facts from the settled oracles.
   def bytecode_ir_call_result_classes(irep, index)
     return nil unless @foreign_method_names && @closed_world&.exact_instances_singleton_free? && @native_results_ready && @rc_scoped_ready
 
@@ -586,6 +586,16 @@ class CodeGen
   # Exhaustive entry admission is retained; only the single-definition rule
   # is replaced by stable receiver-specific lookup. These facts never seed codegen.
   def bytecode_ir_argument_classes(definition, position, read: nil)
+    argument_classes_at_sites(definition, position, read: read, optional: false)
+  end
+
+  # Optional positionals (R[mandatory + 1 .. mandatory + optional]). Refused unless every reaching call passes the
+  # position: a call that omits it binds the default, so the call-site join says nothing about the parameter.
+  def bytecode_ir_optional_argument_classes(definition, position)
+    argument_classes_at_sites(definition, position, read: nil, optional: true)
+  end
+
+  def argument_classes_at_sites(definition, position, read:, optional:)
     return nil if ENV['BC2CPP_IR_ARGUMENT_TYPES'] == '0'
     return nil unless @foreign_method_names && @outside_tokens && @closed_world&.exact_instances_singleton_free?
     return nil unless @native_results_ready && @rc_scoped_ready
@@ -596,15 +606,16 @@ class CodeGen
     return nil if numeric_dynamically_named?(name)
 
     irep = @ireps[definition.irep]
-    return nil unless irep && pure_mandatory_arity?(irep)
+    return nil unless irep && (optional ? optional_positionals_only?(irep) : pure_mandatory_arity?(irep))
 
-    arity = mandatory_arity(irep)
-    return nil unless position.between?(1, arity)
+    mandatory = mandatory_arity(irep)
+    accepted = mandatory..(optional ? mandatory + optional_arity(irep) : mandatory)
+    return nil unless position.between?(1, accepted.end)
 
     sites, poisoned = entry_arg_call_index
     return nil if poisoned.include?(name) || sites[name].empty?
 
-    IrArgumentTypes.classes(definition, position, sites[name], arity: arity,
+    IrArgumentTypes.classes(definition, position, sites[name], arity: accepted,
                             receiver: ->(body, index, register) {
                               implicit = read && %w[SSEND SSEND0 SSENDB].include?(body.instructions[index].op)
                               read && !implicit ? read.call(body, index, register) : bytecode_ir_argument_receiver_classes(body, index, register)
@@ -642,7 +653,7 @@ class CodeGen
     end
   end
 
-  # Read-point facts retain slot invalidation and incoming-argument proofs (ADR 0444).
+  # Read-point facts retain slot invalidation and incoming-argument proofs.
   def bytecode_ir_source_classes(irep, index, reg)
     return nil unless @foreign_method_names && @closed_world&.exact_instances_singleton_free? && @native_results_ready && @rc_scoped_ready
     return nil unless reg.to_s.match?(/\A\d+\z/) && reg.to_i < irep.nregs
@@ -820,7 +831,7 @@ class CodeGen
   end
 
   # Nested returns use independent block flows; caller masks belong only to the
-  # method frame. Captured writes remain opaque (ADR 0353).
+  # method frame. Captured writes remain opaque.
   def return_class_context_def_mask(definition, receiver, arguments)
     body = @ireps.fetch(definition.irep)
     binding = CallContextArguments.bind(body, arguments)
@@ -885,7 +896,7 @@ class CodeGen
     return_class_def_mask(definition, scoped: true)
   end
 
-  # ADR 0335: initialize_copy's answer is discarded; only a fresh object's class survives.
+  # initialize_copy's answer is discarded; only a fresh object's class survives.
   def native_dup_result_safe?
     return @native_dup_result_safe if defined?(@native_dup_result_safe)
 
@@ -949,7 +960,7 @@ class CodeGen
     r = reg.to_i
     return nil if r >= irep.nregs.to_i || fixnum_proof_ctx(irep)[:upvars].include?(reg.to_s)
 
-    # The one register CHECKED_POOL_EXACT is compiling under its class test (ADR 0370).
+    # The one register CHECKED_POOL_EXACT is compiling under its class test.
     return @checked_pool_override[:klass] if @checked_pool_override && @checked_pool_override[:key] == [irep.label, idx, r]
 
     states = return_class_scoped_states(irep)
@@ -982,7 +993,7 @@ class CodeGen
     @nonnil_receiver = previous
   end
 
-  # 'Array' | 'Hash' | 'String' | 'Range' (a core class the ADR 0253/0257/0270 arms use), or nil.
+  # 'Array' | 'Hash' | 'String' | 'Range', or nil.
   def exact_flow_core_class(irep, idx, reg)
     klass = exact_flow_class(irep, idx, reg)
     klass if RETURN_CORE_CLASS.value?(klass)

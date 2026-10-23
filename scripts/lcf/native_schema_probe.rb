@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
-# Prepare an isolated RPG_RT save/schema probe; see docs/adr/0400.
+# Prepare an isolated RPG_RT save/schema probe.
 require 'stringio'
 require 'fileutils'
 

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative 'bytecode_ir_ops'
 require_relative 'core_mixins'
 require_relative 'core_defs'
 require_relative 'define_method_sites'
@@ -7,6 +8,9 @@ require_relative 'alias_sites'
 require_relative 'loop_installers'
 
 # Step 6: the whole-program class/method registry.
+
+# Implicit-self sends that take no block: SELF_SEND minus the block form.
+SSEND_NO_BLOCK_OPS = (BytecodeIR::Ops::SELF_SEND - BytecodeIR::Ops::BLOCK_SEND).freeze
 
 # The instructions that supply +reg+ to the read at +use+ on every path (BytecodeIR.reaching_definitions, MOVEs
 # followed), or nil when the IR cannot prove that set: a refused query, or a value from the frame's entry.
@@ -66,7 +70,7 @@ def detect_struct_new_members(irep, idx, insn, namespace)
   owner = namespace ? "#{namespace}::#{struct_name}" : struct_name
 
   scan_from = idx - 1
-  if %w[SENDB SSENDB].include?(insn.op)
+  if BytecodeIR::Ops::BLOCK_SEND.include?(insn.op)
     return nil unless irep.instructions[scan_from]&.op == 'BLOCK'
 
     scan_from -= 1
@@ -141,12 +145,12 @@ def build_registry(ireps, root_label)
   class_decls = Hash.new { |h, k| h[k] = [] }
   module_body_ivar_labels = Hash.new { |h, k| h[k] = [] }
   walked = Set.new
-  # CORE_ALIASES (ADR 0269): every `alias new old` of a class body, in walk order.
+  # CORE_ALIASES: every `alias new old` of a class body, in walk order.
   alias_sites = []
-  # LOOP_INSTALLERS (ADR 0304): [irep label, index, namespace, visibility] of each container loop
+  # LOOP_INSTALLERS: [irep label, index, namespace, visibility] of each container loop
   # in a body whose block sends attr_*; settled once the walk has seen every definition.
   loop_sites = []
-  # ALIAS_SITES (ADR 0474): how many alias copies the walk made (names their ireps), and the def labels a
+  # ALIAS_SITES: how many alias copies the walk made (names their ireps), and the def labels a
   # branch can skip, computed on the first alias that asks.
   alias_seq = 0
   conditional_labels = nil
@@ -204,15 +208,15 @@ def build_registry(ireps, root_label)
          respond_to_missing?].include?(method_name) ? :private : default_visibility
     end
 
-    irep.each_with_op('CLASS', 'MODULE', 'SCLASS', 'SETCONST', 'ALIAS', 'TDEF', 'SDEF', 'DEF', 'SEND0', 'SEND',
-                      'SSEND0', 'SSEND', 'SENDB', 'SSENDB') do |insn, idx|
+    irep.each_with_op('CLASS', 'MODULE', 'SCLASS', 'SETCONST', 'ALIAS', 'TDEF', 'SDEF', 'DEF',
+                      *BytecodeIR::Ops::SEND) do |insn, idx|
       case insn.op
       when 'CLASS', 'MODULE'
         # "CLASS R4 :Animal" / "MODULE R1 :Game" -- args "R4\t:Animal"
         reg = insn.reg_token
         name = insn.sym
         # Qualified name (Game::CharSet) so same-named nested classes stay distinct.
-        # ADR 0402: `class Outer::Name` / `module Outer::Name` (a compact definition)
+        # `class Outer::Name` / `module Outer::Name` (a compact definition)
         # is named by its resolved outer constant, not by the lexical namespace.
         outer_qualified = compact_outer_name(irep, idx, reg[/\d+/], namespace, module_names)
         opener_name = if outer_qualified
@@ -287,7 +291,7 @@ def build_registry(ireps, root_label)
         # into the wrong body (Game.clamp vs RPG2k::Scene::MapViewer#clamp). Adding a
         # def can only turn an unsound MONO into POLY, never lose a sound one.
         #
-        # I[c] is a real child irep, so it is recorded as `irep:` (docs/adr/0139);
+        # I[c] is a real child irep, so it is recorded as `irep:`;
         # with irep: nil the method could never become a compile target. That is safe
         # for every `d.irep` reader: natively_exposed? only compares against instance
         # owners from ivar_layout, never ".singleton" ones.
@@ -326,7 +330,7 @@ def build_registry(ireps, root_label)
 
         opener_idx = irep.previous_real_index(method_idx - 1)
         opener_insn = opener_idx >= 0 ? irep.instructions[opener_idx] : nil
-        next unless opener_insn && %w[TCLASS SCLASS].include?(opener_insn.op)
+        next unless opener_insn && BytecodeIR::Ops::TARGET_CLASS.include?(opener_insn.op)
 
         opener_reg = opener_insn.reg_token
         next unless opener_reg == reg
@@ -371,7 +375,7 @@ def build_registry(ireps, root_label)
           mixin_owner = namespace || 'Object'
           self_reg = insn.reg
           mixin_n = insn.argc
-          recognized = %w[SSEND SSEND0].include?(insn.op) && mixin_n == 1 && self_reg
+          recognized = SSEND_NO_BLOCK_OPS.include?(insn.op) && mixin_n == 1 && self_reg
           ref = recognized ? resolve_mixin_ref(irep, idx, (self_reg.to_i + 1).to_s) : nil
           if ref
             mixin_sites << { owner: mixin_owner, kind: name, namespace: namespace, ref: ref }
@@ -449,7 +453,7 @@ def build_registry(ireps, root_label)
           end
         end
       when 'SSENDB'
-        # DEFINE_METHOD_SITES (docs/adr/0288). Whether the program may trust the site is
+        # DEFINE_METHOD_SITES. Whether the program may trust the site is
         # decided after the closed world exists (demote_define_method_defs); until then
         # it is only a candidate that symbol_installed_names still counts as an installer.
         site = DefineMethodSites.site(irep, idx, ireps)
@@ -546,7 +550,7 @@ def build_registry(ireps, root_label)
       table = site[:kind] == 'include' ? included_modules : prepended_modules
       (table[site[:owner]] ||= []) << resolved
     elsif resolved.nil? && site[:kind] == 'include' && CoreMixins.core_mixin?(ref[:name])
-      # CORE_MIXINS (ADR 0261): no closed-world module of that name is in scope,
+      # CORE_MIXINS: no closed-world module of that name is in scope,
       # so the constant is mruby's own.
       (included_modules[site[:owner]] ||= []) << ref[:name]
     else
@@ -587,7 +591,7 @@ def resolve_superclass_ref(irep, before_idx, reg, namespace)
   end
 end
 
-# ADR 0402: the qualified name of a compact definition's outer constant, or nil.
+# The qualified name of a compact definition's outer constant, or nil.
 # `class Outer::Name` names its outer through a GETCONST (plus GETMCNST segments)
 # that is not the lexical self. A first segment at top level is taken as written.
 # Inside a namespace it resolves only to a module already walked in this file

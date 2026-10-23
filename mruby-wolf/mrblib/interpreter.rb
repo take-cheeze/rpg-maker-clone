@@ -4,7 +4,7 @@
 #
 # Confidence notes, since none of this can be verified against genuine
 # Game.exe in this engine's usual way (no wine/DxLib harness exists for WOLF
-# RPG Editor yet -- see docs/adr/0064): the *framing* (one command = a count
+# RPG Editor yet): the *framing* (one command = a count
 # byte, an int32 command id, N more int32 args, an indent byte, a string
 # array, an optional move-route) is proven -- the whole editor-bundled sample
 # game's 27,356 Common Event commands parse with nothing left over
@@ -197,7 +197,7 @@ module Wolf
     # own self-variable identity (for "this event" references), driven one
     # frame at a time from a Fiber so Wait can suspend without blocking
     # anything else -- the same shape mruby-rpgxp's ScriptHost driver uses
-    # for the RGSS makers' own blocking main loop (ADR 0023), applied here
+    # for the RGSS makers' own blocking main loop, applied here
     # per running event instead of once globally, since several Common
     # Events (parallel ones, plus whatever they call) can be live at once.
     class Run
@@ -788,7 +788,7 @@ module Wolf
     # auto/parallel pages the way it already drives Common Events, and
     # #event_at/#trigger_confirm/#trigger_touch (called from WolfRPG::MapScene)
     # know which map's events to look at. Set on every map load (including
-    # Teleport(130)'s own hero-target case, ADR 0080), but nothing clears
+    # Teleport(130)'s own hero-target case), but nothing clears
     # @map_runs on its own when it changes -- a revisited map's own events
     # simply restart fresh next time #update's own condition check finds
     # them (matching every other "an auto/parallel run restarts once its
@@ -809,7 +809,7 @@ module Wolf
     # site every caller of `current_map_id=` would otherwise need to
     # remember: `VarStore#map_event_self_bank`'s own per-map-event self-
     # variable banks need the exact same `[map id, event id]` keying
-    # `#event_position` already uses (ADR 0089), and `var_store` is the
+    # `#event_position` already uses, and `var_store` is the
     # one place that convention is decided, so it stays in sync with this
     # one assignment alone.
     attr_reader :current_map_id
@@ -1210,7 +1210,7 @@ module Wolf
     # SetVariable math earlier in the same Common Event, to values that
     # only make sense in this exact slot order, and the sample game's own
     # custom-drawn menus using the manual's documented shape-picture
-    # strings for their boxes/gradients/lines (see docs/adr/0067/0068).
+    # strings for their boxes/gradients/lines.
     # Only the plain "Base" layout (no range, no free-transform, and a
     # "Normal" zoom mode -- #exec_picture_show_or_move checks
     # `cmd.args.size` before trusting this at all, since a Move whose zoom
@@ -1358,7 +1358,7 @@ module Wolf
     # would need a diagonal passability model this reader does not have) and
     # every setter/toggle id (speed/frequency/graphic/opacity/height/sound/
     # variable/jump/approach-position, ids 32 and up) are left unimplemented
-    # too, rather than guessed -- see docs/adr/0069 for the full breakdown.
+    # too, rather than guessed.
     DIRECTION_DELTA = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] }.freeze
     # The reverse of DIRECTION_DELTA -- a plain literal rather than
     # `DIRECTION_DELTA.key(...)`, since `Hash#key` (the reverse-lookup
@@ -1378,7 +1378,7 @@ module Wolf
     # the same build's own comment, this engine's code deliberately avoids in
     # favour of a seeded LCG even where the gem *is* available, so a future
     # frame-by-frame diff against a genuine reference stays possible). WOLF RPG
-    # Editor has no such reference yet (docs/adr/0064), so reproducibility is
+    # Editor has no such reference yet, so reproducibility is
     # not load-bearing here the way it is for RPG2000's own move routes --
     # kept anyway for consistency, and because it sidesteps the missing-gem
     # trap entirely.
@@ -1430,7 +1430,7 @@ module Wolf
     # (help/04ev_movesettingB.html: ">=0 the event with that id, -1 this
     # event, -2 the hero (party leader), -3..-7 party member 1-5"). -3..-7
     # maps onto Party(270)'s own 1-based "1人目"-style companion numbering
-    # (ADR 0099) the same direction #resolve_character_pos already resolves
+    # the same direction #resolve_character_pos already resolves
     # it: target -3 is companion 1 (`#party_position(0)`), ..., -7 is
     # companion 5 (`#party_position(4)`) -- `#party_position`'s own arg is
     # 0-based, so `-target - 3` (not `#exec_party`'s own 1-based "member").
@@ -1455,7 +1455,7 @@ module Wolf
     # map -- Teleport(130) or SaveLoad(220)'s own Load, both of which
     # replace `current_map`/`current_map_id` without clearing this Hash --
     # finds its own events exactly where they were left, the "persistent
-    # per-map event state" both of those ADRs (0080/0087) already flagged
+    # per-map event state" that both earlier notes already flagged
     # as still missing. `current_map_id` is nil in a context with no real
     # map load at all (this method's own test suite, `scripts/wolf_
     # interpreter_check.rb`'s own map-event soak pass before any Teleport/
@@ -1889,7 +1889,7 @@ module Wolf
     # cannot distinguish either reading; runtime.rb's own
     # `#set_picture_shake` counts a displacement away from center as one
     # shake, the more literal reading of "指定回数だけ...揺らします",
-    # flagged as an assumption rather than a confirmed reading in the ADR.
+    # flagged as an assumption rather than a confirmed reading.
     # See runtime.rb's own `#set_picture_flicker`/`#set_picture_shake`/
     # `#update_picture_effects` for the persistent, per-frame-ticked state
     # these two still need, the same shape ChangeColor(151)'s
@@ -1996,7 +1996,7 @@ module Wolf
     # SetVariableEx(124)'s own already-cross-confirmed target convention
     # (>=0 an event id, -1 this event, -2 the hero, -3..-7 a party member).
     # `#resolve_character_pos` itself resolves a party-member target now
-    # (ADR 0099's own roster), but `sprite_key` here still only ever names
+    # but `sprite_key` here still only ever names
     # `:hero` or a real map event's own id -- `WolfRPG::MapScene#character_
     # sprite` (this command's own rendering seam) has no equivalent lookup
     # for a party slot, so a party-member target still logs and skips, for
@@ -2129,7 +2129,7 @@ module Wolf
     # たちは隊列を組んで歩かせることが可能です...パーティーはプレイヤー
     # キャラクターを含めて最大6人まで" (up to 6 party members total, the
     # hero plus up to PARTY_MAX_MEMBERS=5 "仲間"/companions walking in
-    # formation behind them). ADR 0088 left this whole feature
+    # formation behind them). This whole feature was left
     # unimplemented beyond two Special no-ops, for want of any roster to
     # act on; this builds that roster (`@party`/`@party_positions`, see
     # #initialize's own comment) and the operations real data + the
@@ -2166,7 +2166,7 @@ module Wolf
     #   `WarpPartyToHero`(2) (3 of this reader's 4 real Party calls,
     #   `CE#80`/`CE#39`) now act on the real roster (clearing it outright,
     #   or resetting every occupied slot's own position to the hero's
-    #   current one) instead of ADR 0088's own "nothing existed to
+    #   current one) instead of the earlier "nothing existed to
     #   act on anyway" no-ops. `PushCharactersToFront`(0) ("空白キャラが
     #   いた場合、その間を詰めます") compacts blank/removed gaps forward.
     #   `TurnOnPartyFollowing`(9)/`TurnOffPartyFollowing`(10) toggle
@@ -2180,7 +2180,7 @@ module Wolf
     #   real calls *and* would each need a genuinely new rendering/
     #   snapshot concept with no real-data shape to confirm a design
     #   against -- left unimplemented, the same "would be a visibly wrong
-    #   'did nothing' once a party exists" line ADR 0088 already drew.
+    #   'did nothing' once a party exists" line that was already drawn.
     #
     # Formation-following movement itself (#party_advance, called from
     # WolfRPG::MapScene#move_hero) is a plain follow-the-leader chain:
@@ -2189,8 +2189,8 @@ module Wolf
     # the position the slot ahead of it (or the hero, for slot 0) held
     # *before* this step, by induction, with no separate history-depth
     # buffer needed. Party-member graphics are drawn the same colour-block
-    # way the hero itself still is (ADR 0064's own real-ChipSet follow-up,
-    # ADR 0093, only ever covered map tiles, not character sprites) --
+    # way the hero itself still is (the real-ChipSet follow-up,
+    # which only ever covered map tiles, not character sprites) --
     # WolfRPG::MapScene's own #build_party_sprite/#update_party.
     PARTY_MAX_MEMBERS = 5
     PARTY_OP_REMOVE = 0
@@ -2644,7 +2644,7 @@ module Wolf
     end
 
     # `route_options`' own bit 0 ("動作を繰り返す", repeat -- cross-confirmed
-    # against the wolfrpg-map-parser crate's own `Options` struct, ADR 0069).
+    # against the wolfrpg-map-parser crate's own `Options` struct).
     def repeating_route?(page)
       ((page.route_options || 0) & 0x01) != 0
     end

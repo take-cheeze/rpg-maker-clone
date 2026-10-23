@@ -132,8 +132,8 @@ void loop(void) {
 }
 
 // env:m5stack builds Arduino as an ESP-IDF component (`framework = arduino,
-// espidf`), not plain `framework = arduino` -- see docs/adr/0157's own
-// follow-up: the precompiled Arduino static libs that plain mode links
+// espidf`), not plain `framework = arduino` -- the precompiled Arduino static
+// libs that plain mode links
 // against fail a real assert in their own SPI flash re-probe under QEMU
 // (do_core_init), while the exact same ESP-IDF version built from source as
 // a component does not, isolating the bug to the precompiled libs

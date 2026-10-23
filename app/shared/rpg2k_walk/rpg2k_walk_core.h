@@ -3,7 +3,7 @@
  * 2000/2003 map-walking engine.
  *
  * This is NOT the mruby/RGSS engine the rest of this repo runs (desktop,
- * browser, PSP, Android): it is the small from-scratch C engine of ADR 61,
+ * browser, PSP, Android): it is the small from-scratch C engine,
  * for devices where the interpreter and its gem stack cannot fit at all --
  * the iPod nano 7G's ~500 KB app-image ceiling, the Wio Terminal's 192 KB of
  * SRAM. All LCF parsing, autotile assembly, chipset compositing and

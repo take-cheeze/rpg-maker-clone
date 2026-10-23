@@ -41,7 +41,7 @@
 #     pins down what would otherwise be left to that.
 #
 # The graphic is loaded by the *game's own* Scene_Title, through
-# `RPG::Cache.title` -- there is no built-in title screen any more (ADR 0030) --
+# `RPG::Cache.title` -- there is no built-in title screen any more --
 # so this also exercises the whole host path. The engine aborts on an uncaught
 # mruby exception, so both runs reaching a second [RPGXP-HOST-SCENE] is part of
 # the test.

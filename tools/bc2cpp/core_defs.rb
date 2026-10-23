@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
 require 'set'
+require_relative 'bytecode_ir_ops'
 
-# CORE_DEFS (ADR 0264): what decides whether a definition from mruby's own Ruby
+# CORE_DEFS: what decides whether a definition from mruby's own Ruby
 # may be compiled and registered over the interpreter's. The registry walks a
 # class body as straight-line code; these two facts are where that is false.
 module CoreDefs
@@ -85,14 +86,14 @@ module CoreDefs
   end
 
   # Opcodes that build or forward a block, and the ENTER block field.
-  BLOCK_OPS = %w[BLKPUSH BLOCK LAMBDA SENDB SSENDB].freeze
+  BLOCK_OPS = (BytecodeIR::Ops::BLOCK_SEND | %w[BLKPUSH BLOCK LAMBDA]).freeze
 
   # Does the method body (or a block or lambda nested in it) take, build, yield to or
   # forward a block? Such a compiled frame stays on the C++ stack while the block
   # runs, and a `Fiber.yield` inside the block (the RGSS script host's
   # Graphics.update, an Enumerator#next) cannot cross it: mruby raises FiberError
   # for a yield through a C frame. The compiled entry of these "guarded" methods
-  # hands the call to the bytecode whenever a Fiber runs (CORE_BLOCK_GUARD, ADR 0269).
+  # hands the call to the bytecode whenever a Fiber runs.
   def touches_block?(irep, ireps)
     enter = irep.enter
     return true if enter && enter.enter_fields[6].to_i.positive?

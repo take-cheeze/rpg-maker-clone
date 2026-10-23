@@ -2,11 +2,12 @@
 
 require 'set'
 require_relative 'bytecode_ir'
+require_relative 'bytecode_ir_ops'
 
-# NIL_NARROWING (docs/adr/0456, third step): the registers that cannot hold nil at an instruction, because every path
+# NIL_NARROWING: the registers that cannot hold nil at an instruction, because every path
 # to it passes a test or a call that only a non-nil value survives.
 #
-# A forward must-analysis over the IR's normal and handler edges (BytecodeIR::Program; ADR 0505). The state at an
+# A forward must-analysis over the IR's normal and handler edges. The state at an
 # instruction is the set of facts proven on entry to it; the method entry proves none, a join keeps what every
 # incoming edge proves, and an instruction no path reaches proves everything (vacuously). A fact is a register proven
 # non-nil, a class fact [register, K], or an available copy [:copy, a, b] (a and b hold the same value). Along an edge
@@ -41,7 +42,8 @@ module NilNarrowing
   # The truthy edge of these is where an `is_a?` result held true (JMPNIL tests nil, not truth).
   TRUTH_TESTS = %w[JMPIF JMPNOT].freeze
   IS_A_NAMES = %w[is_a? kind_of?].freeze
-  RECEIVER_CALLS = %w[SEND SEND0 SENDB].freeze
+  # Sends with an explicit receiver: the SEND family minus the self-receiver forms (SSEND*), which nil can answer too.
+  RECEIVER_CALLS = (BytecodeIR::Ops::SEND - BytecodeIR::Ops::SELF_SEND).freeze
 
   # True when +reg+ (digits) cannot be nil on entry to instruction +idx+ of +irep+. +nil_unanswerable+ is a callable
   # answering whether nil cannot answer a method name (nil: no call narrows); +class_guard+ an object answering

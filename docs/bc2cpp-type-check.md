@@ -89,6 +89,62 @@ Only structural metadata survives probe rollback; region eligibility, layout che
 and generated registrations still run normally. Set `BC2CPP_BLOCK_CAPTURE_INDEX=0`
 to repeat the original walks. See [ADR 0528](adr/0528-block-capture-index.md).
 
+## Report-only CI work
+
+Type checks still compile real method bodies to validate declaration guards,
+unsupported bodies and nil-index diagnostics. When the resulting C++ is discarded,
+error-free methods without runtime-installed-name audits skip register-copy/dead-write
+cleanup and unused-nil-register removal. Error-bearing instruction texts retain
+register-flow processing, and runtime-installed-name audits retain both passes.
+Builds that emit C++ keep their normal cleanup. Set
+`BC2CPP_TYPE_CHECK_TEXT_PASSES=0` to restore cleanup in report-only runs.
+
+The context inference suite keeps its baseline on the CLI. Its variants each run
+a fresh compiler subprocess, then render the same report through `TypeCheckReport`
+in the test process, avoiding a second Ruby frontend process for every variant.
+All inference-switch and solver-budget comparisons remain. Set
+`BC2CPP_FIXTURE_DIRECT_REPORT=0` to restore the CLI for every variant; compiler-mutant
+runs using `BC2CPP_TOOLS_DIR` also retain the CLI. Report errors still fail the check.
+
+Warmed sequential local timing pairs on base `d5917fa5a` with Ruby 4.0.5/YJIT
+measured the complete MRBC context suite at 65.639s with both fast paths disabled
+and 61.583s enabled (6.18% less time). The full-engine `--no-sends` check measured
+49.593s and 48.981s (1.23% less). Context assertion output and full-engine facts
+and report JSON were byte-identical. These are single local pairs, not repeated
+CI benchmarks; the small no-sends timing difference needs CI confirmation.
+
+### Shared context-suite setup
+
+The context suite batches its inference variants over the same input files and
+common configuration. The compiler loads its libraries, parses bytecode, scans
+native sources and computes the global facts and initial ivar layout once. Before
+constructing the first `CodeGen`, it forks one child per variant, sequentially.
+Each child receives its own controls and facts/error paths, then performs its own
+layout fixed points, inference, method compilation and report generation. The
+CLI baseline remains an independent run.
+
+An explicit control-key allowlist limits what may vary. An ENV guard is armed
+before compiler libraries load and rejects reads or writes of those controls,
+including bulk environment inspection, until the fork. A future prefix dependency
+on a variant switch fails the check instead of sharing an invalid result. Mutable
+prefix objects become private through fork copy-on-write; child changes never
+reach the parent or another variant. Parent report exit hooks do not run, while
+child exit hooks and failures retain their usual behavior. Children run one at a
+time so the existing four-worker CI schedule does not acquire more concurrent work.
+
+`BC2CPP_FIXTURE_SHARED_SETUP=0` restores independent compiler runs. Platforms
+without fork, compiler-mutant runs and custom `RUBYOPT` startup hooks also use
+independent runs. The source world and common configuration must remain unchanged
+for the duration of a batch. The backend's internal `--type-check-variants PLAN`
+protocol is limited to report-only mode and cannot be combined with `--units`.
+
+On base `6361abecb`, warmed sequential Ruby 4.0.5/YJIT runs measured the complete
+MRBC context suite at 60.427s and 60.989s with shared setup disabled, versus
+34.682s and 34.733s enabled (about 42.8% less time on average). The order was
+independent/shared/shared/independent after a discarded shared warm-up. All
+assertion output was byte-identical, with no other tests running during timing.
+These are local measurements; CI runner durations still need confirmation.
+
 ## Output
 
 Diagnostics are `file:line:col: severity: message [CODE]`, sorted errors first, so an editor problem matcher
@@ -299,8 +355,11 @@ enable the strict tier when it is available so a wrong signature fails loudly at
 `--emit-rbs-suggestions DIR` writes candidate RBS using independently inferred
 IR returns at every modeled exit. It can replace a contradicted return in the
 candidate copy; authored signature files stay separate. JSON includes
-`ir_feedback` and `rbs_suggestions`; text summarizes provenance and unknown
-reasons. Review the output, then pass it back with `--sig DIR`. See the
+`ir_feedback` and `rbs_suggestions`; text summarizes provenance and ranks
+unknown reasons by the files they hit. Each candidate method carries a
+`# bc2cpp: return from FILE:LINE (...)` comment naming its deciding IR exit.
+Review the output, then pass it back with `--sig DIR`. `--iterate N` repeats the
+feedback for up to N rounds and writes the candidates only once they converge. See the
 [feedback workflow and limitations](bc2cpp-ir-feedback.md).
 [Call-result propagation](bc2cpp-ir-call-results.md) supplies audited result
 proofs and typed-receiver RBS chains. Complete contract-assisted returns are
@@ -310,7 +369,8 @@ RBS suggestions continue to exclude them.
 ## RBS output and Steep
 
 `type_check.rb --emit-rbs DIR` writes the inferred types as RBS (ADR 0414), one file per class or module. Unknown types are
-`untyped`; optional / rest / keyword parameters are `untyped`; every method accepts an optional block; CRuby's core RBS is
+`untyped`; an optional parameter is `?T` when its type is known (declared, or the join of call sites that all pass
+it; see [IR feedback](bc2cpp-ir-feedback.md#optional-parameters)) and `?untyped` otherwise; rest and keyword parameters are `untyped`; every method accepts an optional block; CRuby's core RBS is
 the base environment (classes it declares are not redeclared). The directory is not read as hints unless named in
 `BC2CPP_SIG_DIRS`; read back, it reports nothing, and a wrong edit is a located TC1001.
 
@@ -507,3 +567,10 @@ A warmed original-source comparison on base `fc573f24` reduced compiler
 allocations from 86,523,931 to 86,065,342 (458,589 fewer, 0.53%). Facts, receiver
 rows and report JSON were byte-identical. Timing is not used as evidence of a
 wall-time speedup.
+
+The constant-typing regression check keeps its positive fixture on the report CLI.
+Its remaining closed worlds use `TypeCheckFixture.facts_report`, reusing only the
+report renderer in the check process. Each compiler still starts independently,
+so operator redefinitions and prepend cases cannot share analysis state. Set
+`BC2CPP_FIXTURE_DIRECT_REPORT=0` to run every case through the CLI for comparison;
+compiler-mutant runs also retain the CLI path.

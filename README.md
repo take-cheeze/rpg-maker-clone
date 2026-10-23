@@ -979,7 +979,7 @@
   blocks and allocations/sec; the allocation counters need the native build).
   `types` is the mruby heap broken down by object type (Ruby class), most-live
   first and also capped at eight — a live population count straight off the
-  GC's own per-type counters (`patches/mruby-gc-type-live-counts.patch`), not
+  GC's own per-type counters (`the pinned fork commit (mruby-gc-type-live-counts, docs/patch-fork-tracking.md)`), not
   a sampled walk: no extra GC pass and no extra heap scan, so it costs nothing
   beyond the existing `--profile` overhead. `RGSS::Profiler.stats` exposes the
   uncapped breakdown as `:object_types` (a Hash of class name to `:live` and
@@ -1024,6 +1024,9 @@
 
 ### Performance
 
+- The bc2cpp CI check queue starts longer checks first to reduce idle time at
+  the end of its four-worker group; all checks keep their existing assertions.
+
 - [Type checking](docs/bc2cpp-type-check.md) reuses context class decoding and skips
   discarded C++ assembly while retaining method compilation and report diagnostics.
   Reusable leaf evaluations avoid repeated context dataflow without sharing root
@@ -1035,6 +1038,9 @@
 
 - Context typing reuses evaluations while callee states and return masks remain
   unchanged within one root graph, retaining the original solver budgets.
+
+- Constant-typing fixture variants reuse the report renderer while running each
+  compiler in its own process; the positive case still exercises the report CLI.
 
 - [IR instruction checks](docs/bc2cpp-ir-instruction-checks.md) share explicit
   bytecode construction and assertion reporting across exact-class, container
@@ -1185,9 +1191,15 @@
   to union literal and ENTER-created types conservatively across those paths.
   Declaration-aware queries also track required RBS arguments, including nullable,
   union and boolean types, while marking their reliance on signature contracts.
+  Report-only checks skip cleanup of discarded C++ text; context-check variants
+  reuse the report renderer. A guarded shared setup forks private inference
+  variants sequentially before constructing any compiler instance. See
+  [CI report work](docs/bc2cpp-type-check.md#report-only-ci-work).
   [IR feedback](docs/bc2cpp-ir-feedback.md) extends contracts to ivars and implicit
-  self-call returns, reports unknown reasons and mismatches, and exports reviewable
-  inferred return candidates with `type_check.rb --emit-rbs-suggestions DIR`.
+  self-call returns, ranks unknown reasons by the files they hit, reports mismatches,
+  and exports reviewable inferred return candidates, each method with a provenance
+  comment, with `type_check.rb --emit-rbs-suggestions DIR`; `--iterate N` feeds
+  accepted returns back for up to N rounds and writes them only once they converge.
   [Call-result propagation](docs/bc2cpp-ir-call-results.md) supplies audited compiler
   results and ordinary typed-receiver RBS return bounds through joins and call chains.
   `BC2CPP_IR_CALL_RESULTS=0` disables that reporting extension for comparison.
@@ -1635,7 +1647,7 @@
   In a closed world where only core classes answer an operator, the helper's by-name else is a
   proven NoMethodError instead (`/ + * < <= > >= ^ >> round % -@`; ADR 0360-0364 and
   [`docs/adr/0367-bc2cpp-expose-misc-core-bodies.md`](docs/adr/0367-bc2cpp-expose-misc-core-bodies.md),
-  whose `patches/mruby-expose-misc-bodies.patch` exports the static `Float#%`, `String#-@` and
+  whose `the pinned fork commit (mruby-expose-misc-bodies, docs/patch-fork-tracking.md)` exports the static `Float#%`, `String#-@` and
   sprintf bodies the `%` and `-@` helpers call). A closed world that compiles mruby's own Ruby
   also closes `zero?`: a Numeric runs the compiled `Numeric#zero?`, `File`/`FileTest` raise the
   `File.zero?` argument error, the rest is a NoMethodError (`BC2CPP_CORE_COMPILED_ZERO=0` turns it

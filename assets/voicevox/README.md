@@ -48,7 +48,7 @@ run time with `--zundamon_tts_style` (default 3, ノーマル/normal):
 | 5        | セクシー / sultry            |
 
 `--zundamon_tts_speed`/`_pitch`/`_intonation`/`_volume` further tune the
-AudioQuery scale factors VOICEVOX itself exposes (see `docs/adr/0046-…md`);
+AudioQuery scale factors VOICEVOX itself exposes;
 these apply on top of whichever style is selected. Reaching an entirely
 different VOICEVOX character (not just another Zundamon style) needs its own
 `.vvm`, which this script does not fetch.

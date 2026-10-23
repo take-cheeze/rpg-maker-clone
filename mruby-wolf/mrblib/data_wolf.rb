@@ -3,8 +3,7 @@
 # reader's structural template), but for a different container: a released
 # game ships its whole `Data/` tree (BasicData, MapData, ...) packed into one
 # encrypted `Data.wolf`, rather than as loose files on disk. `Wolf::Project`
-# only knew the loose tree before this; see the ADR this file implements
-# (docs/adr, search "wolf-rpg-editor-data-wolf") and docs/TODO.md's own
+# only knew the loose tree before this; see docs/TODO.md's own
 # "Packed releases" entry.
 #
 # `Data.wolf` is *not* a WOLF-specific format: it is a stock DxLib "DXA"
@@ -210,7 +209,7 @@ module Wolf
 
     # Opens the archive for streaming, seekable reads (see #initialize)
     # rather than reading it whole -- the same PSP-memory-budget reasoning
-    # rgssad.rb's own .open documents (docs/adr/0047-psp-memory-budget.md
+    # rgssad.rb's own .open documents (PSP memory budget
     # Finding 2): a released game's `Data.wolf` packs every map, chipset and
     # character sheet into one file, easily past the PSP's whole RAM budget.
     def self.open(path)

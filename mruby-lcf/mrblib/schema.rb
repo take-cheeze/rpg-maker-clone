@@ -1337,7 +1337,7 @@ module LCF
       # #player_transparent. It used to be smuggled into SAVE_SYSTEM's own
       # field 55 instead, which liblcf actually names `event_message_active`
       # (a flag ShowMessage/ShowChoices/ShowNumberInput set, unrelated to
-      # transparency at all) -- ADR 0020 declared it `:transparent` with no
+      # transparency at all) -- an earlier entry declared it `:transparent` with no
       # citation for the claim. Confirmed against the repo's own real save
       # fixture: `event_message_active` (55) decodes true on Nepheshel
       # Save01.lsd, which would have made Continue permanently hide the hero
@@ -1396,7 +1396,7 @@ module LCF
       # liblcf's `SaveMapEventBase` (generator/csv/fields.csv): `sprite_name`
       # 0x49 == 73, `sprite_id` 0x4A == 74. Field 75 (0x4B) is `processed`, an
       # unrelated per-frame flag ("has this event already taken its movement
-      # step this frame") -- ADR 0020 originally mapped charset_index to 75,
+      # step this frame") -- an earlier entry originally mapped charset_index to 75,
       # citing "liblcf's RPG::SaveSystem", but SaveSystem's own fields 73-75
       # are battle_end_music/inn_music/current_music, nothing to do with a
       # character graphic; SaveMapEventBase (the struct chunk 104/105-107
@@ -1423,7 +1423,7 @@ module LCF
       # flash_current_level/_time_left stayed absent -- so RPG_RT always
       # writes the RGB triple, defaulting to 0 rather than -1, and only adds
       # the level/time_left pair while a flash is actually in progress. The
-      # active-flash wire values are confirmed in ADR 0400; that capture
+      # active-flash wire values are confirmed by the RPG_RT capture; that capture
       # does not establish the entire decay curve.
       81 => { name: :flash_red, type: :int },
       82 => { name: :flash_green, type: :int },
@@ -1484,7 +1484,7 @@ module LCF
     }
 
     # Hero-only fields overlap vehicle and map-event ids; keep their types
-    # out of the shared movable layout. Wire evidence and units: ADR 0400.
+    # out of the shared movable layout.
     SAVE_PARTY_LOCATION = SAVE_MOVABLE.merge({
       101 => { name: :boarding, type: :bool, default: false },
       102 => { name: :aboard, type: :bool, default: false },
@@ -1766,7 +1766,7 @@ module LCF
       90 => { name: :class_id, type: :int, default: -1 }, # 職業ID (Change Class)
 
       # RPG2003 battle front/back row (Game::Actor#battle_row), toggled by the
-      # in-battle Row command (ADR 0053's row mechanic). liblcf's own
+      # in-battle Row command. liblcf's own
       # `ChunkSaveActor` enum (lsd/chunks.h) numbers this field 0x5B, right
       # after class_id (0x5A) and before the two_weapon/lock_equipment/
       # auto_battle/super_guard/battler_animation fields below -- 0
@@ -1836,7 +1836,7 @@ module LCF
     #
     # Fields 1/2 are the **camera scroll**, in 1/16 pixel: the top-left corner of
     # the view, not a tile and not a plain pixel count. They were identified by
-    # experiment against the genuine RPG_RT under wine (ADR 0021): resuming a
+    # experiment against the genuine RPG_RT under wine: resuming a
     # save whose hero was moved to map 1 tile (30,22) drew the map's *top-left*
     # corner whichever tile the hero was put on -- because the runtime restores
     # the view from here rather than deriving it from the hero -- and writing
@@ -1963,7 +1963,7 @@ module LCF
     # from-scratch round trip (encode a captured snapshot, decode it back,
     # confirm a fresh interpreter resumes and finishes identically -- see
     # `scripts/rpg2k/logic_check.rb`). Native command/cursor/wait bytes are
-    # also covered by the RPG_RT capture in ADR 0400.
+    # also covered by the RPG_RT capture.
     SAVE_COMMON_EVENT = {
       1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
     }
@@ -1987,7 +1987,7 @@ module LCF
     # Menu command (`Cmd::OPEN_SAVE_MENU`, 11910), which parks the
     # interpreter on a `:save_menu` wait rather than stopping it -- see
     # `Game::State#foreground_event_exec`'s own comment.
-    # Native chunk 113 is the execution state itself (ADR 0400/0401).
+    # Native chunk 113 is the execution state itself.
     SAVE_FOREGROUND_EVENT = SAVE_EVENT_EXEC_STATE
     SAVE_LEGACY_FOREGROUND_EVENT = {
       1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
@@ -2233,7 +2233,7 @@ module LCF
       # (gauges keep filling while a menu is open and a ready non-controllable
       # combatant interrupts it). This is a *save-system* runtime field, not a
       # Battle Commands database field -- liblcf's BattleCommands has no wait
-      # field at all, correcting the premise ADR 0054 recorded -- and it is
+      # field at all, correcting an earlier premise -- and it is
       # what the field menu's Wait command (id 8) flips. RPG2000 saves never
       # carry it (the chunk is 2003-only), so an absent chunk reads 0 (wait).
       140 => { name: :atb_mode, type: :int, default: 0 },
@@ -2256,7 +2256,7 @@ module LCF
       28 => { name: :face4_index, type: :int, default: 0 },
     }
 
-    # liblcf SaveScreen fields; native weather captures are recorded in ADR 0400.
+    # liblcf SaveScreen fields.
     SAVE_SCREEN = {
       1 => { name: :tint_finish_red, type: :int, default: 100 },
       2 => { name: :tint_finish_green, type: :int, default: 100 },
@@ -2290,8 +2290,7 @@ module LCF
 
     # https://w.atwiki.jp/rpg2kpsp/pages/13.html documents the LcfSaveData chunk
     # map. Chunks 109 (inventory) and 114 (common-event state), still marked
-    # unanalysed on that wiki, were identified against a real Save01.lsd (see
-    # ADR 0011). Chunk 102 (screen effects) is now handled for its tint fields
+    # unanalysed on that wiki, were identified against a real Save01.lsd. Chunk 102 (screen effects) is now handled for its tint fields
     # only (see SAVE_SCREEN above). Chunk 112 is liblcf's own `SavePanorama`
     # (generator/csv/fields.csv, top-level Save field 0x70) -- not "a one-byte
     # flag" as an earlier guess here had it (that byte is simply an empty
@@ -2324,7 +2323,7 @@ module LCF
         114 => { name: :common_events, type: :Array2D, elements: SAVE_COMMON_EVENT },
         # Read-only support for the marked extension in old engine saves.
         # New exports use native fields; unrelated chunk-200 bytes are ignored
-        # by Game::State and preserved by the raw LCF reader (ADR 0401).
+        # by Game::State and preserved by the raw LCF reader.
         200 => { name: :lsd_ext, type: :int8_array },
       }
     }

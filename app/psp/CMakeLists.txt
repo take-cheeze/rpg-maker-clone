@@ -3,7 +3,7 @@
 # This is additive to and independent of the desktop CMake build at the repo
 # root: it is a separate project rooted here, mirroring how platformio.ini keeps
 # the Wio firmware separate. Building it does not touch the desktop/wasm builds,
-# and vice versa. See app/psp/README.md and docs/adr/0010-psp-port.md.
+# and vice versa. See app/psp/README.md.
 #
 # It requires the pspdev toolchain (https://github.com/pspdev/pspdev), which
 # provides psp-gcc and the CMake toolchain file plus the create_pbp_file macro.
@@ -103,7 +103,7 @@ if(NOT FIXUP_IMPORTS_PATCHED)
       "    bash ${REPO_ROOT_ABS}/scripts/build/psp_fixup_imports.bash\n"
       "then force a relink (rm ${CMAKE_CURRENT_BINARY_DIR}/rpg2k_psp), since "
       "replacing the tool does not by itself make anything rebuild. See "
-      "patches/psp-fixup-imports-jal-relocation-aware.patch.")
+      "the take-cheeze/pspsdk fork pin (docs/patch-fork-tracking.md).")
 endif()
 
 # pspsdk static libraries are built without gp-relative small-data addressing;
@@ -202,9 +202,9 @@ rpg2k_add_mruby(
   mruby-rpgvx
   mruby-wolf
   # The RPGMAKER_BC2CPP=1-only compiled gems (build_config.rb adds them to the
-  # closed-world psp/wio/maix builds, docs/adr/0466). Listed so an edit to one
-  # (its hand-written src/register.cxx) re-runs rake on a plain incremental
-  # `cmake --build`.
+  # closed-world psp/wio/maix builds). Listed so an edit to one (its
+  # hand-written src/register.cxx) re-runs rake on a plain incremental `cmake
+  # --build`.
   mruby-lcf-compiled
   mruby-rpg2k-compiled
   mruby-rgss-compiled

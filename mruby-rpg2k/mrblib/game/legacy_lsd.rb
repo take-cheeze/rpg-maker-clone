@@ -1,7 +1,7 @@
-# Read-only migration of version-1 chunk 200 saves (ADR 0402).
+# Read-only migration of version-1 chunk 200 saves.
 module Game
   module LegacyLsd
-    # Read-only compatibility for saves written before ADR 0401. No new
+    # Read-only compatibility for saves written before the native field-precision change. No new
     # save emits this chunk. The leading version record distinguishes our
     # old payload from unrelated native/tooling chunk-200 data.
     EXT_TAG_VERSION = 0

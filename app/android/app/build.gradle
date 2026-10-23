@@ -2,10 +2,45 @@ plugins {
     id 'com.android.application'
 }
 
+// Pinned to the same SDL2 release as the root CMakeLists.txt ANDROID branch;
+// bump both together.
+def sdlVersion = '2.32.10'
+def sdlSha256 = '5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165'
+def sdlExtractDir = layout.buildDirectory.dir('sdl').get().asFile
+def sdlJavaDir = new File(sdlExtractDir, "SDL2-${sdlVersion}/android-project/app/src/main/java")
+
+// Download and extract the SDL2 release tarball at build time (SDL ships no
+// prebuilt Android binaries or Java-only artifact), verifying its sha256 first.
+tasks.register('fetchSdlJava') {
+    def tarball = new File(sdlExtractDir, "SDL2-${sdlVersion}.tar.gz")
+    outputs.dir(sdlExtractDir)
+    doLast {
+        if (!tarball.exists()) {
+            tarball.parentFile.mkdirs()
+            new URL("https://github.com/libsdl-org/SDL/releases/download/release-${sdlVersion}/SDL2-${sdlVersion}.tar.gz").withInputStream { input ->
+                tarball.withOutputStream { it << input }
+            }
+        }
+        def actual = java.security.MessageDigest.getInstance('SHA-256').digest(tarball.bytes).collect { String.format('%02x', it) }.join()
+        if (actual != sdlSha256) {
+            tarball.delete()
+            throw new GradleException("SDL2 ${sdlVersion} tarball sha256 mismatch: expected ${sdlSha256}, got ${actual}")
+        }
+        copy {
+            from tarTree(tarball)
+            into sdlExtractDir
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.named('preBuild') { dependsOn 'fetchSdlJava' }
+}
+
 android {
     namespace 'org.rpg2k.android'
     // Keep in lockstep with the NDK release this project has actually been
-    // built against (docs/adr/0058-android-port.md) rather than "whatever
+    // built against rather than "whatever
     // Gradle finds" -- a newer NDK silently changing codegen/ABI is exactly
     // the kind of drift the other ports (app/psp, platformio.ini) pin against
     // too.
@@ -73,12 +108,11 @@ android {
     sourceSets {
         main {
             // org.libsdl.app.SDLActivity et al -- SDL's own reusable Android
-            // Java glue, which only ships inside its android-project
-            // template (there is no separate java-only source dir in the SDL
-            // repo). Referenced from the vendored submodule rather than
-            // copied, so an SDL version bump carries its Java side along with
-            // the native side automatically.
-            java.srcDirs += ['../../../3rd/SDL/android-project/app/src/main/java']
+            // Java glue, which only ships inside its android-project template
+            // (there is no separate java-only source dir in the SDL repo). It
+            // comes from the same pinned release tarball the CMake ANDROID
+            // branch downloads; see fetchSdlJava below.
+            java.srcDirs += [sdlJavaDir]
         }
     }
 

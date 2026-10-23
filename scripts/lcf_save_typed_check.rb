@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 #
-# Host-side checks for the typed, checked save read path (docs/adr/0400).
+# Host-side checks for the typed, checked save read path.
 #
 # LCF::SaveData checks every field of a save against its schema type when the
 # save is read, and mruby-lcf/mrblib/save_typed_accessors.rb (generated) reads
@@ -15,7 +15,7 @@
 #      LCF::SaveTypeError naming the field, and a wrong class is refused too;
 #   5. a malformed chunk 113/114 execution-state stack is still tolerated (the
 #      read succeeds, and the frames read as nil), as it always was;
-#   6. the typed writers (docs/adr/0407): every field of every table, set through
+#   6. the typed writers: every field of every table, set through
 #      its generated writer, writes the same bytes as `rec[id] = value` (the schema
 #      encoder), a populated save read back through the readers and written out
 #      through the writers reproduces its bytes, and the generated writer file has no
@@ -222,7 +222,7 @@ check 'the typed frame has the shape restore_call_stack reads' do
   eq({ commands: [], current_command: 4, event_id: 9, triggered_by_decision_key: true }, frames[0], 'frame shape')
 end
 
-# -- the typed writers (docs/adr/0407) -----------------------------------------------------
+# -- the typed writers -----------------------------------------------------
 
 # A value of the Ruby class each schema type declares, distinct per depth.
 def sample_value(field, depth = 0)

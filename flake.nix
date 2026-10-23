@@ -47,7 +47,7 @@
             # y.tab.c/lex.def) whenever a 3rd/mruby patch touches either
             # source -- a no-op on an ordinary build, since the checked-in
             # generated files are already newer, but load-bearing the moment
-            # one does (patches/mruby-defined-keyword.patch, the first to).
+            # one does (the pinned fork commit (mruby-defined-keyword, docs/patch-fork-tracking.md), the first to).
             nativeBuildInputs =
               with pkgs;
               [
@@ -92,7 +92,7 @@
               ]
               # libglvnd supplies the <EGL/egl.h> / <GLES2/gl2.h> headers and
               # the libEGL / libGLESv2 dispatch libraries the RPG Maker MZ
-              # renderer needs (mruby-mvjs/src/mvgl.cxx, ADR 0004 M6.3); the
+              # renderer needs; the
               # off-screen driver comes from mesa at run time via llvmpipeHook
               # above. With the headers present mvgl.cxx's __has_include guard
               # compiles the real backend instead of the inert stubs, so
@@ -148,7 +148,7 @@
           # the same postInstall: app/psp/CMakeLists.txt refuses to configure
           # against the stock one (it misorders imports so several genuine
           # PSP module imports silently resolve wrong at runtime -- see the
-          # patch preamble and ADR 0047's bug 11 trail), so a devshell whose
+          # patch preamble), so a devshell whose
           # SDK still carried it would fail loudly anyway. Building it inside
           # this derivation (rather than asking the shell hook to run the
           # script) keeps the sandbox honest: no network fetch of pspsdk at
@@ -156,11 +156,12 @@
           pspdev =
             let
               version = "20260801";
-              # The exact pspsdk commit the release tarball ships and the fixup
-              # patch was written against (see above).
+              # The take-cheeze/pspsdk fork commit that pins the release
+              # tarball's pspsdk (314b2083) plus the JAL-relocation-aware
+              # psp-fixup-imports change (docs/patch-fork-tracking.md).
               pspsdkFixupSrc = pkgs.fetchzip {
-                url = "https://github.com/pspdev/pspsdk/archive/314b2083f2e1eaf145fc5de342736336fe1f0148.tar.gz";
-                hash = "sha256-fy/PBRvol6G3o9nNlm+TLtUIJze9Xt/G+D4xYy4G6MM=";
+                url = "https://github.com/take-cheeze/pspsdk/archive/723862d4859f5bbfeaab3acf051084a09c71cbfb.tar.gz";
+                hash = "sha256-7BSI7GR/Kv8gLu/PesE7lpM2nc7yEVjelpZPAPeNNBU=";
               };
             in
             pkgs.stdenv.mkDerivation {
@@ -206,13 +207,12 @@
               '';
               postFixup = ''
                 # Compile the JAL-relocation-aware psp-fixup-imports from the
-                # pinned pspsdk sources plus this repo's patch, exactly the two
-                # steps scripts/build/psp_fixup_imports.bash performs on a
+                # pinned pspsdk fork commit, exactly the steps
+                # scripts/build/psp_fixup_imports.bash performs on a
                 # hand-installed SDK (its config.h note applies verbatim:
                 # tools/types.h includes config.h unguarded).
                 cp -r "${pspsdkFixupSrc}" ./fixup-src
                 chmod -R u+w ./fixup-src
-                patch -s -p1 -d ./fixup-src < ${./patches/psp-fixup-imports-jal-relocation-aware.patch}
                 cp ${./patches/psp-fixup-imports-config.h} ./fixup-src/config.h
                 cc -O2 -DHAVE_CONFIG_H \
                   -I./fixup-src -I./fixup-src/tools \
@@ -247,11 +247,12 @@
           #
           # Carries several local patches on top of nixpkgs' build, all found
           # and root-caused while trying to read the PSP EBOOT's own boot log
-          # under PPSSPP-headless (see docs/adr/0047-psp-memory-budget.md and
+          # under PPSSPP-headless (see
           # app/psp/README.md); none are upstreamed to hrydgard/ppsspp yet,
-          # so all of them are applied here so this flake's own `ppsspp`/
-          # `ppsspp-headless` survive past them. patches/ has the full
-          # patches and each one's own note on when it is safe to drop.
+          # so all of them are carried by the take-cheeze/ppsspp fork commit
+          # this flake's own `ppsspp`/`ppsspp-headless` build
+          # (docs/patch-fork-tracking.md). Each patch's own note on when it is
+          # safe to drop lives in the fork's commit message.
           #
           #   - sceKernelCreateLwMutex (Core/HLE/sceKernelMutex.cpp)
           #     dereferences its caller-supplied workarea pointer without
@@ -297,15 +298,16 @@
           #     path builds a std::string from nullptr and terminates the
           #     host process -- the same class as the LwMutex bug above.
           ppsspp = pkgs.ppsspp.overrideAttrs (old: {
-            patches = (old.patches or [ ]) ++ [
-              ./patches/ppsspp-lwmutex-workarea-validate.patch
-              ./patches/ppsspp-mfic-mtic-interrupt-mask.patch
-              ./patches/ppsspp-x64analyzer-8bit-mov.patch
-              ./patches/ppsspp-sysclibforkernel-missing-functions.patch
-              ./patches/ppsspp-sysclib-memset-memmove-return-value.patch
-              ./patches/ppsspp-sysclib-strchr-strrchr.patch
-              ./patches/ppsspp-sceio-null-path-validate.patch
-            ];
+            # take-cheeze/ppsspp at the v1.20.4 release plus the seven local
+            # patches (branch rpg-maker-clone/patches-pin; see
+            # docs/patch-fork-tracking.md). Submodules are needed by the build.
+            src = pkgs.fetchFromGitHub {
+              owner = "take-cheeze";
+              repo = "ppsspp";
+              rev = "70cb2fb6a951ca77f111ea1f4f346ddea015962b";
+              fetchSubmodules = true;
+              hash = "sha256-K05f9673sVb/cb+2W04I3ijTsDMualC7yqU1ZeviwL4=";
+            };
           });
 
           # The Android SDK + NDK the Gradle build (app/android) compiles
@@ -426,7 +428,7 @@
           };
 
           # libclang and its Python bindings, for scripts/native/binding_facts.py
-          # (ADR 0263): `nix develop .#clang -c ruby scripts/native/binding_split.rb check`.
+          # `nix develop .#clang -c ruby scripts/native/binding_split.rb check`.
           # Kept out of the default shell so nothing else pays for the LLVM
           # closure. The script also needs 3rd/ and a built mruby include
           # directory (RGSS_MRUBY_BUILD_DIR, default build/mruby/host).

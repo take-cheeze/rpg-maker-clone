@@ -4,7 +4,7 @@ class RPG2k
     # the F9 debug menu's Chipset page. RPG Maker's own chipset editor is a
     # visual grid because passability is spatial data (which of 162 lower / 144
     # upper cells is walkable) -- exactly the "hard to edit with text" case
-    # `docs/adr/0055-lcf-text-convert.md` carved the map itself out for, and
+    # the map itself was carved out for, and
     # the chipset's passability table is the same shape of problem. Unlike
     # that map, though, this draws no real tile art either (same simplifying
     # choice Scene::MapViewer makes, see its own comment) -- each of the grid's

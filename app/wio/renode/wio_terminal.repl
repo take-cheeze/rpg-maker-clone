@@ -137,7 +137,7 @@ sercom7_spi: SPI.SAMD51_SERCOM_SPI @ sysbus 0x43000C00
 portc: GPIOPort.SAMD21_GPIO @ sysbus 0x41008100
     6 -> lcd@0
 
-// The 320x240 ILI9341 panel itself (docs/adr/0094 P3): a from-scratch
+// The 320x240 ILI9341 panel itself: a from-scratch
 // SPI-command-stream -> framebuffer model (nothing upstream models any
 // SPI TFT), scoped to exactly what this firmware's TFT_eSPI fork sends --
 // see app/wio/renode/README.md and the class's own comments for what it
@@ -145,7 +145,7 @@ portc: GPIOPort.SAMD21_GPIO @ sysbus 0x41008100
 // the Monitor dumps the current frame.
 lcd: Video.ILI9341_SPI @ sercom7_spi
 
-// The SD card (docs/adr/0094 P4): not modelled yet. Nothing is registered
+// The SD card: not modelled yet. Nothing is registered
 // on sercom6_spi, so SD.begin() behaves exactly as it does on real
 // hardware with an empty slot -- SPI writes complete (SAMD51_SERCOM_SPI
 // logs a warning and returns 0 with no device attached) but every command

@@ -30,9 +30,9 @@ require_relative 'bytecode_ir_containers'
 PRIMITIVE_ELEMENT_CLASSES = %w[Integer Hash String Symbol].freeze
 
 # ELEMENT_CLASS_SUPPORT: element class of the Array in `reg` at `idx`, joined
-# over every producer of the register (join_element_producers, ADR 0502). nil
+# over every producer of the register. nil
 # is always safe: the caller poisons the ivar. The strict hint tier forces
-# ELEMENT hints (ADR 0419), so `@a = c ? [A.new] : [B.new]` must not read one arm.
+# ELEMENT hints, so `@a = c ? [A.new] : [B.new]` must not read one arm.
 def array_element_source_scan(irep, idx, dest_reg, ctx, depth = 0)
   return nil if depth > 8
 
@@ -54,7 +54,7 @@ def array_element_source_scan(irep, idx, dest_reg, ctx, depth = 0)
       when 'GETIV'
         ivar = producer.insn.ivar
         ivar && ivar_element_hint(ctx[:owner], ivar, ctx)
-      when 'SEND', 'SEND0', 'SENDB', 'SSENDB', 'SSEND', 'SSEND0'
+      when *BytecodeIR::Ops::SEND
         send_element_class(irep, producer.index, producer.reg, producer.insn, ctx, depth)
       end
     end
@@ -88,10 +88,10 @@ def send_element_class(irep, i, reg, insn, ctx, depth)
   name = insn.sym
   return nil unless name
 
-  block_carrying = %w[SENDB SSENDB].include?(insn.op)
+  block_carrying = BytecodeIR::Ops::BLOCK_SEND.include?(insn.op)
   # SEND0/SSEND0 print no "n=": zero arguments.
   argc = insn.argc || 0
-  self_recv = %w[SSEND SSEND0 SSENDB].include?(insn.op)
+  self_recv = BytecodeIR::Ops::SELF_SEND.include?(insn.op)
 
   # A `-> Array<Klass>` annotation is trusted only when its irep is the only
   # definition of the name (else the call may reach another method).
@@ -686,7 +686,7 @@ class HashElementLayout
 end
 
 # ---------------------------------------------------------------------------
-# The element scans read the IR (ADR 0502): each joins over every producer of
+# The element scans read the IR: each joins over every producer of
 # the register (BytecodeIR.producers, through handler edges). All producers must
 # classify and agree, and a VACUOUS one (an empty literal) agrees with any class.
 # A refused dataflow answers nil. A container literal counts only when nothing
@@ -732,7 +732,7 @@ def element_producer_class(irep, producer, ctx, depth)
   return PRIMITIVE_ELEMENT_CLASSES.include?(literal) ? literal : nil if literal
 
   # `a[i]` is an index opcode, not SEND :[]. GETIDX reads R[a][R[a+1]], GETIDX0 R[b][0], AREF R[b][c].
-  if %w[GETIDX GETIDX0 AREF].include?(insn.op)
+  if BytecodeIR::Ops::INDEX_READ.include?(insn.op) || insn.op == 'AREF'
     recv = insn.op == 'GETIDX' ? producer.reg : insn.regs[1]
     return nil unless recv
 
@@ -743,7 +743,7 @@ def element_producer_class(irep, producer, ctx, depth)
 
     return receiver_scoped_return_class(irep, i, recv, '[]', ctx, depth)
   end
-  return nil unless %w[SEND SEND0 SENDB SSEND SSEND0 SSENDB].include?(insn.op)
+  return nil unless BytecodeIR::Ops::SEND.include?(insn.op)
 
   name = insn.sym
   return nil unless name
@@ -751,7 +751,7 @@ def element_producer_class(irep, producer, ctx, depth)
   annotated = ctx[:annotated_ret_class]&.call(name)
   return annotated if annotated
 
-  self_recv = %w[SSEND SSEND0 SSENDB].include?(insn.op)
+  self_recv = BytecodeIR::Ops::SELF_SEND.include?(insn.op)
   scoped = if self_recv
              sc = self_receiver_class(ctx)
              sc && class_scoped_return_class(sc, name, ctx, depth)

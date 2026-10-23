@@ -5,7 +5,7 @@
 GAME_DIR = "" unless Object.const_defined?(:GAME_DIR)
 RTP_DIR = "" unless Object.const_defined?(:RTP_DIR)
 
-# Regression test for patches/mruby-defined-keyword.patch: vendored mruby
+# Regression test for the pinned fork commit (mruby-defined-keyword, docs/patch-fork-tracking.md): vendored mruby
 # never implemented the `defined?` keyword at all -- neither the lexer nor
 # the grammar recognized it, so `defined?(Foo)` parsed as a plain method
 # call named `defined?` and raised NoMethodError. Found via a real VX Ace
@@ -82,7 +82,7 @@ assert "defined? matches real Ruby's answers for each expression shape" do
 end
 
 # Regression test for the vendored mruby VM bug fixed by
-# patches/mruby-dollar-bang-scoped.patch: `$!` (the exception a currently
+# the pinned fork commit (mruby-dollar-bang-scoped, docs/patch-fork-tracking.md): `$!` (the exception a currently
 # executing rescue clause is handling) was never implemented, so it always
 # read `nil` inside a rescue clause -- silently breaking any script (a real
 # VX Ace game's crash-reporter add-on, docs/rpgvx-rgss-api-gap.md item 7,
@@ -136,7 +136,7 @@ assert "a bare raise re-raises the exception $! currently holds" do
 end
 
 # Regression test for the vendored mruby compiler bug fixed by
-# patches/mruby-colon3-assign-setmcnst.patch: `::Const = value`, written from
+# the pinned fork commit (mruby-colon3-assign-setmcnst, docs/patch-fork-tracking.md): `::Const = value`, written from
 # inside a nested module, used to silently land on the enclosing module
 # instead of at the top level. Discovered because a real VX Ace game's
 # bundled add-on (docs/rpgvx-rgss-api-gap.md, item 7) relies on exactly this
@@ -203,7 +203,7 @@ assert "RGSS::Color equality and marshal" do
 end
 
 # Regression test for two real bugs in the vendored 3rd/mruby-marshal gem
-# (patches/mruby-marshal-dump-load-protocol.patch's own preamble has the
+# (the pinned fork commit (mruby-marshal-dump-load-protocol, docs/patch-fork-tracking.md)'s own preamble has the
 # full trail), both found via a real VX Ace game's own Game_Interpreter
 # (which defines a real, standards-conforming marshal_dump/marshal_load pair
 # to control what its own battle-start snapshot serializes --
@@ -1689,7 +1689,7 @@ assert "RGSS::Profiler aggregates frames and sections when enabled" do
     assert_true sections["work"][:avg_ms] >= 0.0
 
     # object_types comes straight off the GC's own per-type counters (see
-    # patches/mruby-gc-type-live-counts.patch), not a sampled/capped subset.
+    # the pinned fork commit (mruby-gc-type-live-counts, docs/patch-fork-tracking.md)), not a sampled/capped subset.
     # Under real mruby this is never empty -- the interpreter's own bootstrap
     # objects alone guarantee at least one live Object/Class/String -- but
     # this same file also runs under the CRuby compat harness
@@ -2795,7 +2795,7 @@ assert "an RPG2000 game's .bmp shadows a .png of the same base name" do
   end
 end
 
-# Regression test for patches/mruby-io-file-size-bigint.patch: upstream mruby's
+# Regression test for the pinned fork commit (mruby-io-file-size-bigint, docs/patch-fork-tracking.md): upstream mruby's
 # File#size answered a Float once st_size passed mrb_int (and raised under
 # MRB_NO_FLOAT); CRuby answers an Integer. With mruby-bigint linked the size is
 # a bignum. A sparse file keeps this cheap: truncate only sets st_size. It is

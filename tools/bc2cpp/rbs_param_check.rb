@@ -1,26 +1,27 @@
 # frozen_string_literal: true
 
 require 'set'
+require_relative 'bytecode_ir_ops'
 require_relative 'call_site_index'
 require_relative 'dynamic_names'
 require_relative 'native_names'
 require_relative 'closed_world'
 require_relative 'nil_narrowing'
 
-# RBS_CHECKED_PARAMS (docs/adr/0456): a class parameter type in an RBS signature is a checked fact, not a seed.
+# RBS_CHECKED_PARAMS: a class parameter type in an RBS signature is a checked fact, not a seed.
 #
 # `def m: (Game::State s) -> R` on a method the program defines feeds ClassAnnotations (the receiver class of `s`
 # inside the body). Before this check nothing compared it with the callers. Now, for every such parameter:
 #
-#   * every caller must be visible to the closed world: a name a computed send can reach (DynamicNames.universe,
-#     ADR 0279), a name outside code can call (outside_call_names), an operator, an aliased name, a packed
+#   * every caller must be visible to the closed world: a name a computed send can reach (DynamicNames.universe),
+#     a name outside code can call (outside_call_names), an operator, an aliased name, a packed
 #     (`f(*a)`, `f(*a, &b)`) or keyword caller refuses the declaration (TC1014 at the signature); a name nothing
 #     calls holds vacuously. Of a POLY name, each definition is checked at every site its arity admits. An
-#     `initialize` is checked at its CONSTRUCTOR_POOLS entries (`new` and `super` sites, ADR 0313) and refused
+#     `initialize` is checked at its CONSTRUCTOR_POOLS entries and refused
 #     when the pool refuses it;
 #   * every argument at such a site must trace to the declared class through the reaching definitions of its
 #     register (exception edges included): `Klass.new` (an unoverridden constructor of exactly that class), a call
-#     whose every definition has a checked `-> C` declaration (DECLARED_RETURN_CHECK, ADR 0455; a %a{bc2cpp:hint}
+#     whose every definition has a checked `-> C` declaration (DECLARED_RETURN_CHECK; a %a{bc2cpp:hint}
 #     one is checked at run time by its compiled body, DECLARED_RETURN_GUARD) or is an attr_reader of a proven slot, a parameter of the enclosing
 #     method whose signature declares that class, the same parameter read from a block through GETUPVAR when the
 #     method never reassigns it, `self` in a method of a class nothing inherits from, or an ivar every store of
@@ -32,7 +33,7 @@ require_relative 'nil_narrowing'
 #
 # A refused or unverified parameter is removed from the annotation tables, so a type check run (which does not
 # abort on errors) still never trusts it. Integer / Symbol / Array / Hash parameters are not checked here: their
-# consumers re-check the value (ADR 0413's embedded-SETIV TypeError and mrb_array_p tripwires).
+# consumers re-check the value.
 module RbsParamCheck
   MAX_DEPTH = 8
 
@@ -145,9 +146,7 @@ module RbsParamCheck
   # Both names of every `alias new old` (an ALIAS instruction; `alias_method` spells Symbols, DynamicNames).
   def alias_names(ireps)
     ireps.each_value.with_object(Set.new) do |irep, names|
-      irep.instructions.each do |insn|
-        next unless insn.op == 'ALIAS'
-
+      irep.each_with_op('ALIAS') do |insn, _index|
         names << insn.sym if insn.sym
         old = insn.first_of(:name)&.value
         names << old if old
@@ -209,7 +208,7 @@ module RbsParamCheck
     "a packed (splat) or keyword caller at #{display(ctx, irep.file)}:#{irep.instructions[idx].lineno}" if irep
   end
 
-  # An initialize is entered by `Klass.new` and `super`, never by a SEND of its name. CONSTRUCTOR_POOLS (ADR 0313)
+  # An initialize is entered by `Klass.new` and `super`, never by a SEND of its name. CONSTRUCTOR_POOLS
   # enumerates those entries in the closed world: every `new` whose receiver resolves (a class constant, the class's
   # own class object, a class-object parameter), every explicit `super` in a subclass initialize; and it refuses
   # the body when anything else may enter it (an unresolved `new` the arity admits, `send`/Symbol/alias naming
@@ -235,7 +234,7 @@ module RbsParamCheck
     sites, = gen.constructor_entry_sites(d.irep)
     sites.reject do |irep, idx, _dest, _argc, _owner|
       insn = irep.instructions[idx]
-      next false unless insn.sym == 'new' && insn.op.start_with?('SEND')
+      next false unless insn.sym == 'new' && BytecodeIR::Ops::REGISTER_RECEIVER_SEND.include?(insn.op)
 
       klass = trace_new_target(irep, idx + 1, insn.reg, {}, 0, nil, owner: ctx[:owner_of][irep.label])
       target = klass && gen.constructor_init_target(klass)
@@ -289,7 +288,7 @@ module RbsParamCheck
     CallSiteIndex.sites(ctx[:call_sites], name)
   end
 
-  # Removes the parameter's class seed, and its IR contract (ADR 0441), so nothing downstream reads it.
+  # Removes the parameter's class seed, and its IR contract, so nothing downstream reads it.
   def drop(ctx, label, pos)
     if (applied = ctx[:applied])
       [applied.ir_arg_types, applied.ir_arg_elements].each do |table|
@@ -393,9 +392,10 @@ module RbsParamCheck
       ivar_why(ctx, irep, insn.ivar, cls, depth)
     when 'GETUPVAR'
       upvar_why(ctx, irep, insn, cls)
-    when 'SEND', 'SEND0', 'SENDB', 'SSEND', 'SSEND0', 'SSENDB'
+    when *BytecodeIR::Ops::SEND
       name = insn.sym
-      return new_why(ctx, irep, definition.index, cls) if name == 'new' && insn.op.start_with?('SEND')
+      return new_why(ctx, irep, definition.index, cls) if name == 'new' &&
+                                                          BytecodeIR::Ops::REGISTER_RECEIVER_SEND.include?(insn.op)
 
       entry, body = ctx[:constructor_entries]&.block_return_site(irep, definition.index, insn)
       return block_value_why(ctx, body, name, cls, depth) if entry&.kind == :block_value
@@ -467,7 +467,7 @@ module RbsParamCheck
     entry_why(ctx, frame, reg, cls)
   end
 
-  # A checked `[T] ... { ... -> T } -> T` declaration (BLOCK_RETURNS, ADR 0475: `RGSS::Profiler.section(...) { ... }`)
+  # A checked `[T] ... { ... -> T } -> T` declaration (BLOCK_RETURNS: `RGSS::Profiler.section(...) { ... }`)
   # returns its literal block's value, and the block's exits are plain returns: every RETURN must be proven `cls`.
   def block_value_why(ctx, body, name, cls, depth)
     BytecodeIR.for(body).exits.each do |ex|
@@ -493,8 +493,7 @@ module RbsParamCheck
 
   # A call is `cls` when every definition of its name either has a checked `-> cls` declaration or is an
   # attr_reader whose slot the ivar rule proves `cls` (a call that runs none of them raises NoMethodError and
-  # returns nothing). A declaration counts when it is an entry of +declared_returns+: DECLARED_RETURN_CHECK (ADR
-  # 0455) aborts the build when a body does not prove it, and a %a{bc2cpp:hint} one raises at run time instead of
+  # returns nothing). A declaration counts when it is an entry of +declared_returns+: DECLARED_RETURN_CHECK aborts the build when a body does not prove it, and a %a{bc2cpp:hint} one raises at run time instead of
   # returning another type (DECLARED_RETURN_GUARD). A checked `-> cls?` gives a Nilable (the caller then needs
   # NIL_NARROWING at the use).
   def returns_why(ctx, name, cls, depth)

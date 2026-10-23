@@ -19,6 +19,15 @@ def mandatory_arity(irep)
   enter.enter_fields.first
 end
 
+# Mandatory and optional positionals only: rest, post, keyword, keyword-rest and block fields must be zero. Such a
+# def binds argument k to R[k] exactly when k was passed (vm.c OP_ENTER), so a call-site join can describe it.
+def optional_positionals_only?(irep)
+  enter = irep.enter
+  return true unless enter
+
+  enter.enter_fields[2..].all?(&:zero?)
+end
+
 # KEYWORD_HASH_POSITIONAL_OPTIONAL_ARG_SUPPORT: can this def receive `nk`
 # keyword pairs packed into one trailing positional Hash, with `total`
 # positionals? (see compile_keyword_hash_positional_send). Sound when ENTER has
@@ -131,9 +140,9 @@ end
 #   - `step`: this program's domain `def step` methods take no block and no
 #     `.step {` call site exists, so only Numeric#step is reachable.
 #   - `upto`, `downto`: no program definition takes a block; Integer/String#upto
-#     yield synchronously (STEP_LOOP_GUARD's fallback, ADR 0287).
+#     yield synchronously.
 #   - `each_line`: String#each_line (mrblib/string.rb) and IO/StringIO#each, which
-#     it aliases, only `block.call` while they run (BLOCK_ITERATOR_DIRECT, ADR 0472).
+#     it aliases, only `block.call` while they run.
 BLOCK_FALLBACK_UPVAR_SAFE_METHODS = %w[
   each each_with_index each_index each_key each_event_position
   times map select reject reject! delete_if

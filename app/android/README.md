@@ -8,8 +8,7 @@ APK does not touch the desktop/wasm builds, and vice versa. Its
 `externalNativeBuild` points straight at the repo root
 [`CMakeLists.txt`](../../CMakeLists.txt) (the same file the desktop/wasm
 builds use, with its own `ANDROID` branches doing the platform-specific work),
-so there is one build description, not a fork of it. The design is in
-[`docs/adr/0058-android-port.md`](../../docs/adr/0058-android-port.md).
+so there is one build description, not a fork of it.
 
 ## Status: runs on a real device
 
@@ -35,8 +34,8 @@ Three on-device findings shaped the code since the first bring-up commit:
   to logcat, so ng-log output and error reports vanished. `main.cxx` bridges
   fd 2 into logcat under the `RPG2K` tag as its first action.
 
-See ADR 58's Consequences for the full list of what remains
-bring-up-scope-only (MV/MZ rendering, one ABI, no project picker).
+What remains bring-up-scope-only is MV/MZ rendering, one ABI, and no
+project picker.
 
 ## Touch controls
 
@@ -153,7 +152,7 @@ cd app/android
 Install it with `adb install app/build/outputs/apk/debug/app-debug.apk`, then
 push an RPG Maker 2000/2003, XP, or VX/VX Ace project's files to this app's
 external-files directory — the Android equivalent of the PSP port's fixed
-Memory Stick path (ADR 10):
+Memory Stick path:
 
 ```sh
 adb push /path/to/game/. /sdcard/Android/data/org.rpg2k.android/files/game/
@@ -186,7 +185,6 @@ Two CI jobs cover this port (`.github/workflows/build.yml`):
   wrapper around it.
   - This is a **boot-and-crash** check, not a performance measurement: an
     emulator's frame times mean nothing next to real-device numbers. See
-    `docs/adr/0058-android-port.md` for those, and
     [`docs/android-perf-followups.md`](../docs/android-perf-followups.md) for
     what is still device-only.
   - The self-driving flags (`--test_play --rpg2k_new_game --timeout_ms=...`,
@@ -228,12 +226,10 @@ Two CI jobs cover this port (`.github/workflows/build.yml`):
   compiles to its inert-stub fallback on Android — its desktop/Mesa-oriented
   EGL surfaceless path calls a symbol (`eglGetPlatformDisplay`) Android's
   `libEGL.so` does not export. RPG2000/2003, XP and VX/VX Ace are unaffected.
-  See the ADR's Decision section.
 - **An in-app project picker/importer.** `adb push` to a fixed path is the
   only way to get a game onto the device right now (see Building above).
 - **More than one ABI.** Bring-up scope is `arm64-v8a` only
-  (`app/build.gradle`'s `abiFilters`). See the ADR's Decision section for what
-  widening this needs.
+  (`app/build.gradle`'s `abiFilters`).
 - **Signing/release packaging, a Play Store listing, ProGuard/R8 rules beyond
   the stock template.** `proguard-rules.pro` is currently empty;
   `buildTypes.release` exists but has not been exercised.

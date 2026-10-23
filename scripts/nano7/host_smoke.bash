@@ -2,7 +2,7 @@
 
 set -eu -o pipefail
 
-# Smoke test for app/nano7/host (docs/adr/0102): export a real map, run the
+# Smoke test for app/nano7/host: export a real map, run the
 # host build of the iPod nano 7G walk app against it, and check the result
 # actually shows a real map rather than a blank/flat frame.
 #

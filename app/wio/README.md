@@ -6,15 +6,13 @@ ATSAMD51: Cortex-M4F @120 MHz, 512 KB flash, 192 KB SRAM, 320×240 ILI9341 LCD,
 3 buttons + 5-way switch, microSD).
 
 This is additive to and independent of the desktop CMake build — building the
-firmware does not touch the desktop/wasm builds, and vice versa. The design and
-memory-budget analysis are in
-[`docs/adr/0007-wio-terminal-port.md`](../../docs/adr/0007-wio-terminal-port.md).
+firmware does not touch the desktop/wasm builds, and vice versa.
 
 ## Status: P1 — HAL bring-up
 
 The `wio` PlatformIO environment builds a **hardware bring-up firmware**: it
 stands up the LVGL display over the LCD and reads the buttons, without the mruby
-interpreter. It is the first slice of the roadmap in the ADR and exists to prove
+interpreter. It is the first slice of the roadmap and exists to prove
 the HAL compiles and runs on the board (and to get real flash/RAM numbers from
 CI's `size` output).
 
@@ -36,7 +34,7 @@ What runs today:
 pio run -e wio            # compile the bring-up firmware
 pio run -e wio -t upload  # flash a connected Wio Terminal
 pio run -e wio_sim -t upload  # ...or boot it in the Renode emulator instead
-                              # (docs/adr/0094; needs a Renode built by
+                              # (needs a Renode built by
                               # scripts/wio/renode_build.bash -- see
                               # app/wio/renode/README.md)
 ```
@@ -45,9 +43,9 @@ pio run -e wio_sim -t upload  # ...or boot it in the Renode emulator instead
 
 `pio run -e wio_walk` builds something different in kind: the **minimal,
 non-mruby map-walking engine** written for the iPod nano 7th generation
-(`docs/adr/0061`), on this board's LCD, SD card and 5-way switch. The engine
+, on this board's LCD, SD card and 5-way switch. The engine
 itself is shared source — `app/shared/rpg2k_walk/rpg2k_walk_core.c`, the same
-C the nano app runs (`docs/adr/0091`) — and `app/wio/src/walk_main.cxx` is
+C the nano app runs — and `app/wio/src/walk_main.cxx` is
 only the board wiring. It links **neither LVGL nor mruby**.
 
 It can run now, with none of the P2/P3 work above, because the interpreter's
@@ -67,16 +65,15 @@ atlas entries — about 127 KB of its 192 KB SRAM, including the hero and
 event-sprite atlases reserved unconditionally) and refuses a map that would
 not fit rather than writing one the firmware cannot load. That is the same
 map bound the iPod nano 7G takes: the format shrank to 2.5 bytes a cell
-(`docs/adr/0093`), so this board's cap doubled twice while its SRAM use went
+, so this board's cap doubled twice while its SRAM use went
 down. Hold a direction on
 the 5-way switch to walk; collision is the map's real passability data.
 
 **Scope, and status.** It walks one static map, with the water animating on
 RPG2000's own clock, the player drawn as the project's own initial party
-leader (`docs/adr/0094`, `docs/adr/0096`), and map events drawn as static
-sprites alongside it (`docs/adr/0102`) when either was exported: no event
-commands, no battle, no menus, no interpreter — see the ADRs before
-expecting a game.
+leader, and map events drawn as static
+sprites alongside it when either was exported: no event
+commands, no battle, no menus, no interpreter, so do not expect a game.
 CI compiles it (the `wio` job builds both environments) and the shared core
 has its own host test (the `walk_core` ctest). It has now run on real
 hardware — a real Nepheshel map, exported and copied to the card as above,
@@ -119,8 +116,7 @@ ruby scripts/wio/overflow_report.rb \
 ```
 
 CI's `wio-bc2cpp` job runs that on every push and posts the table to the job
-summary — advisory, since the overflow is expected, not a gate. See
-`docs/adr/0152`.
+summary — advisory, since the overflow is expected, not a gate.
 
 ## Not yet wired (later slices)
 
@@ -135,7 +131,7 @@ firmware:
 - **SD-backed assets.** `app/wio/src/sd_syscalls.cxx` routes newlib
   `_open`/`_read`/… to the microSD card (gated behind `WIO_WITH_SD`); it feeds
   `File.open`/`fopen` once mruby is linked.
-- **Fitting flash/RAM.** Per the ADR, the full gem set (onigmo, uni-algo, …)
+- **Fitting flash/RAM.** The full gem set (onigmo, uni-algo, …)
   likely overruns the 512 KB internal flash, and whole-file asset loading
   overruns SRAM. Gem trimming (P2) and streaming asset loading (P3) follow the
   measurements from this bring-up.

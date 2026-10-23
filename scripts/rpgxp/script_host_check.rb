@@ -2,7 +2,7 @@
 # encoding: UTF-8
 #
 # Feasibility + smoke check for the RPG Maker XP *script host* (the "run the
-# bundled RGSS scripts" path, ADR 0017), driven against a real test-bed project.
+# bundled RGSS scripts" path), driven against a real test-bed project.
 #
 # The native runtime boots an XP game by evaluating the ~90 Ruby sections in
 # Data/Scripts.rxdata in order (see mruby-rpgxp/mrblib/script_host.rb). The
@@ -222,7 +222,7 @@ class Checker
   end
 
   # The per-frame Fiber driver reads ScriptHost.driving? from the wrapped
-  # Graphics.update to decide whether to yield (ADR 0023). The wrapping needs the
+  # Graphics.update to decide whether to yield. The wrapping needs the
   # native runtime, but the flag itself is plain Ruby, so guard its default and
   # round-trip here.
   def check_driving_flag
@@ -568,7 +568,7 @@ class FakeErr
   def flush; end
 end
 
-# Project-independent: the host is the default boot path (ADR 0029), and
+# Project-independent: the host is the default boot path, and
 # RGSS_SCRIPT_HOST is the opt-out that restores the built-in flow. Guarding it
 # here as well as in mruby-rpgxp/test keeps the two spellings of the rule (the
 # CRuby harness and the built engine) from drifting apart.

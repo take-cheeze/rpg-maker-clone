@@ -3,7 +3,7 @@
 # MZ is the JavaScript maker family's newer member: like MV it is a *JavaScript*
 # application with a `data/*.json` database, and it runs on the same embedded
 # quickjs-ng host, host-global shims and IO/input bridges that MV already uses
-# (see mruby-mvjs and docs/adr/0004-javascript-maker-mv-quickjs.md). Two things
+# Two things
 # set it apart:
 #
 #   1. Its engine scripts are `js/rmmz_*.js` (not MV's `js/rpg_*.js`), loaded in
@@ -201,7 +201,7 @@ class MZ
   # eval `main.js`; it drives the load sequence itself (see #boot_probe and
   # `runnable_scripts`) and bypasses the Effekseer WASM init, which `main.js`
   # would otherwise gate the boot on — Effekseer only draws battle animations,
-  # so skipping it does not block reaching a scene (see ADR 0004 M6.2).
+  # so skipping it does not block reaching a scene.
   CORE_SCRIPTS = [
     "js/libs/pixi.js",
     "js/libs/pako.min.js",
@@ -918,7 +918,7 @@ class MZ
     # which of MZ's two animation systems the data selected —
     # `Spriteset_Base.isMVAnimation` picks the sprite-sheet path when the
     # animation has `frames`, and the Effekseer path otherwise, which needs a
-    # WASM runtime our host does not start (ADR 0004 M6.3h).
+    # WASM runtime our host does not start.
     def animation_state_js(id)
       "(function(){ var a = (typeof $dataAnimations !== 'undefined' && " \
       "$dataAnimations) ? $dataAnimations[#{id.to_i}] : null; " \
@@ -1634,7 +1634,7 @@ class MZ
   # of them. `Spriteset_Base.isMVAnimation` routes by data shape: an animation
   # carrying a `frames` array is drawn by `Sprite_AnimationMV` out of a sprite
   # sheet, anything else by `Sprite_Animation`, which plays through an Effekseer
-  # WASM runtime `main.js` starts and our host does not (ADR 0004 M6.2). So the
+  # WASM runtime `main.js` starts and our host does not. So the
   # reachable path is the MV-format one, and what it exercises that nothing else
   # here does is per-sprite blend modes — the bed's animation ends on an
   # additive frame for exactly that reason.

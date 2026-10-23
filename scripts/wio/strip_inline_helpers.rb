@@ -22,8 +22,7 @@
 # and only rewriting this specific, hand-verified set of call sites in a
 # wio-only build-time copy keeps both: full regression coverage everywhere,
 # and the flash win only where wio's own compiled build never reaches the
-# definition through anything but this one call site anyway. See
-# docs/adr/0129-wio-inline-single-caller-helpers.md.
+# definition through anything but this one call site anyway.
 #
 # Deletions are expressed as a first-line/last-line marker pair rather than
 # the full body text, and applied by line range: a whole method body is
@@ -35,12 +34,12 @@
 # call sites) stay simple exact-text swaps -- always one line, no
 # indentation-sensitive multi-line literal to get wrong.
 #
-# The regex/token-based general-automation attempt above (ADR 0129) failed
+# The regex/token-based general-automation attempt above failed
 # for real, reproducible reasons: wrong call-site line numbers, a naive
 # substring match confusing a `:symbol` literal for a real call, and
 # multi-line call continuations corrupting the splice. All three are a
-# location-finding problem, not a semantics one -- ADR 0131 rebuilds the
-# same generation step on `RubyVM::AbstractSyntaxTree` instead (real
+# location-finding problem, not a semantics one -- the
+# same generation step is rebuilt on `RubyVM::AbstractSyntaxTree` instead (real
 # per-node line/column spans, real node-type checks for CALL vs LIT,
 # `rescue`/`ensure` detection by node type rather than text search), and
 # every one of the entries it added below was re-verified through this

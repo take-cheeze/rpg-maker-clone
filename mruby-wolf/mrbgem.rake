@@ -25,7 +25,7 @@ MRuby::Gem::Specification.new('mruby-wolf') do |spec|
   # namespace every maker gem draws its rendering primitives from.
   add_dependency 'mruby-rgss'
   # interpreter.rb runs each live Common Event as its own Fiber (mirroring
-  # mruby-rpgxp's ScriptHost driver, ADR 0023) so a Wait command can suspend
+  # mruby-rpgxp's ScriptHost driver) so a Wait command can suspend
   # just that event without blocking the frame loop or any other event.
   add_dependency 'mruby-fiber'
   # save_data.rb's own Wolf::SaveData.write/.read (SaveVariable(222)/

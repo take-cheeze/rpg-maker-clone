@@ -6,7 +6,7 @@
 # reached Scene_Map, that `$gameMessage` is busy with `Window_Message` open,
 # that `Scene_Menu` was entered, that the save chain settled. None of that looks
 # at a pixel — which is how MZ spent a milestone passing every probe while the
-# captured PNGs were nearly empty (ADR 0004, M6.3e: `texSubImage2D` was a no-op
+# captured PNGs were nearly empty (`texSubImage2D` was a no-op
 # and `bufferData` dropped bare `ArrayBuffer`s, so the tile atlas, every window's
 # contents and every batched sprite were missing from frames the log called a
 # success). This script is the pixel half of those claims.
@@ -51,8 +51,7 @@
 #
 # This file used to carry a second bed-specific assumption — that the battle
 # frame is legitimately near-black, the sample shipping no battler art — and it
-# was wrong. The battle scene was throwing an exception every frame (ADR 0004
-# M6.3i), and the exemption written around the symptom was what let it keep
+# was wrong. The battle scene was throwing an exception every frame, and the exemption written around the symptom was what let it keep
 # doing so. Its removal is the general lesson: an exemption written to
 # accommodate a frame nobody understood is a place for a bug to live.
 #
@@ -212,7 +211,7 @@ MIN_COLOURS = 2
 #
 # This used to exempt `battle`, on the reading that its 82.1% near-black frame
 # was what a bed shipping no battler art looks like. That reading was wrong:
-# the scene was throwing every frame (ADR 0004 M6.3i — an enemy with an empty
+# the scene was throwing every frame (an enemy with an empty
 # `battlerName` leaves `Sprite_Enemy`'s bitmap undefined and `updateFrame`
 # reads `.width` off it), so the frame was dark because nothing after the
 # exception ran. With the bed fixed the battle frame is 57.7% dominant across

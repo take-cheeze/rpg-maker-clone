@@ -2,7 +2,7 @@
 # encoding: UTF-8
 # frozen_string_literal: true
 
-# Check ADR 0262: a "should not happen" path is an error, not a silent fallback.
+# Check that a "should not happen" path is an error, not a silent fallback.
 # Pure CRuby, no mrbc needed.
 #
 #   - compiler: an outside source that exists but cannot be read raises, a

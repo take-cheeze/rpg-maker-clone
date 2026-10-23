@@ -7,8 +7,8 @@
 # script host (script_host.rb), which evaluates them the way RGSS104E.dll does.
 #
 # There is no second engine any more. This runtime used to carry a
-# reimplementation of RMXP's default title/map/event flow (ADR 0010), written
-# before a game's own scripts could run; ADR 0030 removed it once they could,
+# reimplementation of RMXP's default title/map/event flow, written
+# before a game's own scripts could run; it was removed once they could,
 # because a reimplementation can only ever reproduce the *default* engine, while
 # every game that matters customises it. A project that ships no scripts now says
 # so rather than being played by a stand-in.
@@ -59,7 +59,7 @@ class RPGXP
     RGSS.asset_archive = @db.archive
     # The scripts own their whole blocking main loop; drive it one frame at a
     # time through a Fiber so the web build's per-frame callback still gets
-    # control back each frame (docs/adr/0023-rpgxp-script-host-frame-driver.md).
+    # control back each frame.
     setup_script_host_driver if ScriptHost.enabled? && @db.scripts?
   end
 

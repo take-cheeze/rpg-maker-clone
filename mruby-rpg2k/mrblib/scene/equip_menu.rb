@@ -520,7 +520,6 @@ class RPG2k
       # history for the summed-arrow this replaced) and never sharing a row
       # with any other stat.
       # STAT_DEFS' effective-stat method / actor accessor, as literal calls
-      # (closed-world lint, ADR 0212).
       def effective_stat(method, a)
         case method
         when :effective_atk then @state.party.effective_atk(a)

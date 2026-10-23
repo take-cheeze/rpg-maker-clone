@@ -2,8 +2,8 @@
 # encoding: UTF-8
 #
 # Regression guard for the RPG2003 battle-command data model — the one 2003
-# battle piece that is already implemented (ADR 0048) and the foundation the
-# RPG2003 battle scene mechanics (ADR 0053) build on. It loads a genuine 2003
+# battle piece that is already implemented and the foundation the
+# RPG2003 battle scene mechanics build on. It loads a genuine 2003
 # test bed (kk1.12, "Killer Knights") and proves the database-wide Battle
 # Commands table (chunk 0x1D) and its records decode: the table is present,
 # its `commands` list (field 10) carries named + typed records, and the

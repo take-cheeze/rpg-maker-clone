@@ -1,10 +1,10 @@
-// docs/adr/0135 diagnostic variant of wio_terminal.repl: identical except
+// Diagnostic variant of wio_terminal.repl: identical except
 // flash0's size below, widened from the real board's 0x80000 (512 KB) to
 // 2 MB, purely so a wio_rgss_boot build that currently exceeds the real
 // 507904-byte flash budget can still link and be loaded here for live
 // inspection (a real Renode boot-abort investigation is what actually
-// found the ADR 135 -flto vector-table bug and the RAM-exhaustion crash
-// during rpg2k gem init -- see that ADR). Never represents real hardware;
+// found the -flto vector-table bug and the RAM-exhaustion crash
+// during rpg2k gem init). Never represents real hardware;
 // pair only with app/wio/renode/oversized_flash_debug.ld and the
 // wio_rgss_boot_heapdbg PlatformIO environment, both diagnostic-only.
 cpu0: CPU.CortexM @ sysbus
@@ -146,7 +146,7 @@ sercom7_spi: SPI.SAMD51_SERCOM_SPI @ sysbus 0x43000C00
 portc: GPIOPort.SAMD21_GPIO @ sysbus 0x41008100
     6 -> lcd@0
 
-// The 320x240 ILI9341 panel itself (docs/adr/0094 P3): a from-scratch
+// The 320x240 ILI9341 panel itself: a from-scratch
 // SPI-command-stream -> framebuffer model (nothing upstream models any
 // SPI TFT), scoped to exactly what this firmware's TFT_eSPI fork sends --
 // see app/wio/renode/README.md and the class's own comments for what it
@@ -154,7 +154,7 @@ portc: GPIOPort.SAMD21_GPIO @ sysbus 0x41008100
 // the Monitor dumps the current frame.
 lcd: Video.ILI9341_SPI @ sercom7_spi
 
-// The SD card (docs/adr/0094 P4): not modelled yet. Nothing is registered
+// The SD card: not modelled yet. Nothing is registered
 // on sercom6_spi, so SD.begin() behaves exactly as it does on real
 // hardware with an empty slot -- SPI writes complete (SAMD51_SERCOM_SPI
 // logs a warning and returns 0 with no device attached) but every command

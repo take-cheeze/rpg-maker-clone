@@ -7,8 +7,7 @@ on the Sony
 analog stick + ✕○△□/L/R/Start/Select, Memory Stick).
 
 This is additive to and independent of the desktop CMake build — building the
-EBOOT does not touch the desktop/wasm builds, and vice versa. The design is in
-[`docs/adr/0010-psp-port.md`](../../docs/adr/0010-psp-port.md).
+EBOOT does not touch the desktop/wasm builds, and vice versa.
 
 ## Status: HAL bring-up + the real RPG2k/XP/VX/VX Ace scene tree
 
@@ -62,8 +61,7 @@ What runs today:
   construction failed). Construction and a clean-exit-vs-crash exit are
   reported via the `RPG2K_PSP_GAME_START` and `RPG2K_PSP_GAME_STOP` markers
   below. mruby still opens with its own default allocator (plain `malloc`),
-  not routed through `lv_malloc` — ADR 0047's P2 remains open (see "Not yet
-  wired").
+  not routed through `lv_malloc` (see "Not yet wired").
 - `app/psp/lv_conf.h` — a PSP-tuned LVGL config (RGB565, a few-MB heap, no SIMD
   asm).
 
@@ -121,8 +119,7 @@ use of LVGL's own pool; `stack_free`/`stack_used_max` are
 `sceKernelGetThreadStackFreeSize`'s scan of the still-untouched (0xFF-filled)
 low end of the main thread's 256 KB stack and the deepest use seen so far —
 since a down-growing stack never restores those bytes, even a single sample is
-already a high-water mark (P5). All of them are real numbers for
-[ADR 0047](../../docs/adr/0047-psp-memory-budget.md)'s P1, captured from the
+already a high-water mark. All of them are real numbers, captured from the
 `psp-smoke` log rather than estimated, and now against a real game's usage
 once one is deployed to `kGameDir` instead of just the idle HAL's. CI's
 `psp-smoke` job boots the EBOOT under PPSSPP headless and checks that both
@@ -154,14 +151,14 @@ completes**:
   `workareaPtr=0` turned that into a null-pointer write that segfaulted the
   *host* `ppsspp-headless` process rather than raising a guest-catchable
   error. Not yet upstreamed to `hrydgard/ppsspp`;
-  `patches/ppsspp-lwmutex-workarea-validate.patch` applies it locally.
+  the take-cheeze/ppsspp fork commit (ppsspp-lwmutex-workarea-validate) applies it locally.
 - Separately, PPSSPP's interpreter treated the Allegrex `mfic`/`mtic`
   instructions ("move from/to interrupt controller") as no-ops. pspsdk's own
   `pspSdkDisableInterrupts()`/`EnableInterrupts()` are built directly on
   those two instructions to guard its non-reentrant C-runtime state without
   syscall overhead; as no-ops, they gave no real protection, letting a
   timer/thread interrupt land mid-"critical section". Also not yet
-  upstreamed; `patches/ppsspp-mfic-mtic-interrupt-mask.patch` applies it
+  upstreamed; the take-cheeze/ppsspp fork commit (ppsspp-mfic-mtic-interrupt-mask) applies it
   locally, alongside the LwMutex one.
 - `app/psp/CMakeLists.txt` used to link `pspkernel` before `pspuser`. Both
   provide `sceKernelCreateCallback`/`sceKernelSleepThreadCB`/
@@ -195,7 +192,7 @@ upstream, not worth working around here.
   repoints them, the same relocation work a real ET_EXEC loader would do
   and this prebuilt-binary tool skips.
   `scripts/build/psp_fixup_imports.bash` fetches pspsdk at the pinned
-  commit `patches/psp-fixup-imports-jal-relocation-aware.patch` targets,
+  commit `the pinned fork commit (psp-fixup-imports-jal-relocation-aware, docs/patch-fork-tracking.md)` targets,
   applies it, and drops the rebuilt tool in place of the container's own —
   wired into the `psp` CI job ahead of `psp-cmake`/`cmake --build`. Not yet
   upstreamed to `pspdev/pspsdk`.
@@ -237,7 +234,7 @@ near-null reads, which happen to match `mruby/boxing_word.h`'s special
 constants coincidentally rather than from any real type confusion, and
 the eventual fatal `strlen` call on garbage). Fixed by adding all four
 to PPSSPP's `SysclibForKernel` HLE table, matching its existing
-entries' style — `patches/ppsspp-sysclibforkernel-missing-functions.patch`.
+entries' style — the take-cheeze/ppsspp fork commit (ppsspp-sysclibforkernel-missing-functions).
 Verified: rebuilding PPSSPP with this patch drops the `Unknown syscall`
 count from ~90 to 1 and eliminates the `Bad memory access` flood
 entirely.
@@ -272,17 +269,14 @@ correctly returns `dst` — so GCC's optimization silently turned every
 `sysclib_memmove` had the identical bug, fixed alongside it. Fixed by
 adding the destination pointer as both functions' returned value,
 matching their sibling `sysclib_memcpy`/`sysclib_strcat` and the real C
-contract — `patches/ppsspp-sysclib-memset-memmove-return-value.patch`.
+contract — the take-cheeze/ppsspp fork commit (ppsspp-sysclib-memset-memmove-return-value).
 **Verified: this is the fix that gets the EBOOT booting to
 completion** — rebuilding PPSSPP with this patch and re-running the
 identical EBOOT under normal `ppsspp-headless` JIT mode produces
 `RPG2K_PSP_BOOT` → `RPG2K_PSP_MRUBY_OPEN ok` → `RPG2K_PSP_GAME_START
 none not_found` → a continuous `RPG2K_PSP_BRINGUP` heartbeat, running
 cleanly for over 850,000 frames with zero errors, stopped only by the
-test harness's own timeout. See
-[`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
-P1 for the full trail, including the eliminated theories along
-the way.
+test harness's own timeout.
 
 That state no longer reproduces on `master`. Boot now dies inside
 `mrb_open()` again, on a **tenth bug** — this one in the toolchain, not
@@ -363,8 +357,8 @@ by measurement, are kept because the eliminations are still sound:
   argument against an HLE returning 0), so every sysclib function was
   re-audited: `memcpy`/`strcpy`/`strcat`/`strncpy` return their destination,
   `memset`/`memmove` do too via
-  `patches/ppsspp-sysclib-memset-memmove-return-value.patch`, and the four
-  added by `patches/ppsspp-sysclibforkernel-missing-functions.patch`
+  the take-cheeze/ppsspp fork commit (ppsspp-sysclib-memset-memmove-return-value), and the four
+  added by the take-cheeze/ppsspp fork commit (ppsspp-sysclibforkernel-missing-functions)
   (`tolower`/`strtoul`/`memchr`/`strncat`) are all correct. Not a recurrence.
 
 The failure mode changes when unrelated code shifts the binary -- the same
@@ -409,7 +403,7 @@ before calling `sceIoRemove`; the live `a0` was `0x00004a38` while `sp` was
 despite `_unlink` being the only static `jal` to that stub.
 
 Fixed by accepting `MIPS_OP_J` alongside `MIPS_OP_JAL` in
-`patches/psp-fixup-imports-jal-relocation-aware.patch`; the rewrite already
+`the pinned fork commit (psp-fixup-imports-jal-relocation-aware, docs/patch-fork-tracking.md)`; the rewrite already
 preserves the opcode field, so a `j` stays a `j`. Verified: `delay_cb`'s tail
 call now resolves to `sceKernelDelayThread`, the per-frame bogus `sceIoRemove`
 and `sceIoDread` calls drop to zero, and 212623 real delays are issued across
@@ -476,7 +470,7 @@ The pieces below are scaffolded but **not** part of the EBOOT yet:
   equivalent of the desktop build's `--game_dir` flag or the browser build's
   runtime project loader, since the PSP EBOOT has no command line and no
   way to be told a different location after it starts.
-- **Validating ADR 0047's P2 numbers.** The mruby/LVGL allocator split itself
+- **Validating the arena's size.** The mruby/LVGL allocator split itself
   is decided and wired (mruby's whole heap lives in its own fixed arena, see
   `main.cxx`'s `mrb_basic_alloc_func` — LVGL's pool only aligns to 4 bytes on
   32-bit, too weak for mruby's word boxing, so sharing it is not an option
@@ -484,7 +478,7 @@ The pieces below are scaffolded but **not** part of the EBOOT yet:
   New Game pins the arena at ~12.0 MB steady-state under PPSSPP-headless
   (the title screen alone sits at ~4.3 MB), so the arena is 12 MB — 8 MB
   exhausted mid-map-load and the failed-allocation unwind corrupted VM state
-  (see ADR 0047's P2 follow-up), and 16 MB starves the shared newlib heap.
+ , and 16 MB starves the shared newlib heap.
   The `RPG2K_PSP_BRINGUP` heartbeat now reports the arena's own occupancy as
   `arena_used=` directly, next to free RAM and LVGL's pool high-water mark.
 - **Accelerated rendering.** The bring-up flushes with a CPU `memcpy` into the
@@ -497,15 +491,13 @@ CI has no project at `kGameDir`, so it only ever exercises the idle HAL —
 answering how the game's live heap, LVGL's pool and decoded assets actually
 fit inside the PSP's ~24 MB of RAM still needs a real game run on real
 hardware or an emulator with a Memory Stick image, not just CI's `psp-smoke`.
-[`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)
-works through that, including the P2 allocator split, which is now decided and
-wired: mruby's entire heap lives in a fixed 12 MB arena of its own
+The allocator split is decided and wired: mruby's entire heap lives in a fixed 12 MB arena of its own
 (`main.cxx`'s `mrb_basic_alloc_func`) rather than sharing LVGL's pool (whose
 TLSF only 4-byte-aligns on 32-bit — too weak for mruby's word boxing) or
 growing unbounded on plain malloc, so the interpreter OOMs into a catchable
 `NoMemoryError` instead of colliding with the decoded-bitmap heap. The size
 is measured, not guessed: Nepheshel's New Game pins steady-state usage at
-~12.0 MB (8 MB exhausted and corrupted mid-map; see ADR 0047's P2 follow-up),
+~12.0 MB,
 while 16 MB takes RAM the decoded-bitmap/newlib heap needs. `lv_conf.h`'s
 `LV_MEM_SIZE` therefore covers only LVGL's own widgets and internals, and the
 decoded bitmaps stay in a third, uncapped pool as before. That pool is 256 KB,
@@ -543,7 +535,6 @@ For a packed RPG Maker XP/VX/VX Ace title,
 [`scripts/rgssad/unpack.rb`](../../scripts/rgssad/unpack.rb) unpacks
 `Game.rgssad`/`.rgss2a`/`.rgss3a` into a loose file tree in place — the
 loose-file-first loaders already prefer it over the archive, so this avoids
-the whole-archive-resident-in-RAM read the packed form forces (see the ADR's
-Finding 2). Excluding the packed archive from a given PSP deployment, so it
+the whole-archive-resident-in-RAM read the packed form forces. Excluding the packed archive from a given PSP deployment, so it
 is never opened at all, is still a manual step the unpacker itself doesn't
 take for you.

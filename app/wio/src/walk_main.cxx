@@ -1,11 +1,11 @@
 // Wio Terminal firmware: walk a real RPG Maker 2000/2003 map, with no mruby.
 //
-// The `wio` environment's roadmap (docs/adr/0007) puts the RPG2k runtime on
+// The `wio` environment's roadmap puts the RPG2k runtime on
 // this board by linking the interpreter and streaming assets off the SD card,
 // and stalls on the same wall every time: 192 KB of SRAM and 512 KB of
 // internal flash against a gem stack whose *assets alone* are read as
 // multi-megabyte strings today. This environment takes the other route, the
-// one the iPod nano 7G port had to take (docs/adr/0061, docs/adr/0091): move
+// one the iPod nano 7G port had to take: move
 // the whole engine to the host. scripts/export_nano7_map.rb does the LCF
 // parsing, autotile assembly, chipset compositing and passability resolution
 // once, with this repo's own pure-Ruby engine sources, and writes two flat
@@ -15,10 +15,10 @@
 // So this is a second, much smaller engine, not the `wio` env's firmware with
 // pieces disabled: no LVGL, no interpreter, no RGSS, and nothing this repo
 // builds for the desktop. It walks a map -- with its water animating on
-// RPG2000's own clock (docs/adr/0094), the player drawn as the project's own
-// initial party leader (docs/adr/0096) when one was exported, and any map
+// RPG2000's own clock, the player drawn as the project's own
+// initial party leader when one was exported, and any map
 // event with a CharSet graphic on its own initially-active page drawn as a
-// static sprite too (docs/adr/0102) -- but it does not play the game.
+// static sprite too -- but it does not play the game.
 //
 // Board half only, and all of it is here: the SD card, the LCD, the 5-way
 // switch, and the frame timing.
@@ -49,21 +49,21 @@ namespace {
 // reading past them, and the exporter's `--target wio` refuses to write one).
 //
 // SRAM is the whole budget here -- 192 KB, no external RAM, nothing to spill
-// to (docs/adr/0007's own headline constraint). These caps spend ~114.5 KB of
+// to. These caps spend ~114.5 KB of
 // it:
 //
 //   map.bin   29 + 256*2 + 192*5 + 1024*4 + 128*128*2.5 =  46,557 B
 //   tiles.bin      192*16*16 + 12*24*32 + 16*24*32       =  70,656 B
 //
-// (the 12*24*32 is the hero's own frames, docs/adr/0096; the 16*24*32 is the
-// event-sprite atlas, docs/adr/0102 -- both fixed costs whether or not a
+// (the 12*24*32 is the hero's own frames; the 16*24*32 is the
+// event-sprite atlas -- both fixed costs whether or not a
 // given export actually carries any, reserved unconditionally the same way
 // the nano app does) leaving ~77.5 KB for the Arduino core, the SD and LCD
 // drivers, the stack and this file's own statics. The map bound has doubled
 // twice as the format
 // shrank -- 64x64 when a tile pixel was 16-bit, 96x96 once it became a
-// palette index (docs/adr/0092), 128x128 now a cell costs 2.5 bytes rather
-// than 5 (docs/adr/0093) -- so this board now takes exactly the map sizes the
+// palette index, 128x128 now a cell costs 2.5 bytes rather
+// than 5 -- so this board now takes exactly the map sizes the
 // iPod nano 7G does, in less SRAM than 64x64 cost it two revisions ago. Only
 // the atlas cap still differs (192 here, 255 there). Still deliberately
 // conservative; raising it is a two-line change once a real build reports

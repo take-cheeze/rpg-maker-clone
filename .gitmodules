@@ -4,7 +4,7 @@
 	branch = "rpg-maker"
 [submodule "third_party/mruby"]
 	path = 3rd/mruby
-	url = https://github.com/mruby/mruby.git
+	url = https://github.com/take-cheeze/mruby.git
 [submodule "third_party/lvgl"]
 	path = 3rd/lvgl
 	url = https://github.com/lvgl/lvgl.git
@@ -23,7 +23,7 @@
 	url = https://github.com/take-cheeze/mruby-marshal.git
 [submodule "3rd/mruby-onig-regexp"]
 	path = 3rd/mruby-onig-regexp
-	url = https://github.com/mattn/mruby-onig-regexp.git
+	url = https://github.com/take-cheeze/mruby-onig-regexp.git
 [submodule "3rd/mruby-stringio"]
 	path = 3rd/mruby-stringio
 	url = https://github.com/take-cheeze/mruby-stringio.git
@@ -39,12 +39,6 @@
 [submodule "3rd/effekseer"]
 	path = 3rd/effekseer
 	url = https://github.com/effekseer/Effekseer.git
-[submodule "3rd/SDL"]
-	path = 3rd/SDL
-	url = https://github.com/libsdl-org/SDL.git
-[submodule "3rd/SDL_mixer"]
-	path = 3rd/SDL_mixer
-	url = https://github.com/libsdl-org/SDL_mixer.git
 [submodule "3rd/optcarrot"]
 	path = 3rd/optcarrot
 	url = https://github.com/mame/optcarrot.git

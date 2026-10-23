@@ -44,8 +44,7 @@
 # read the same fields.
 #
 # Field names and their nesting follow the RGSS2 / RGSS3 references (the VX and
-# VX Ace help files' "RPG module" chapters); see
-# docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md for the sourcing. Fields present
+# VX Ace help files' "RPG module" chapters). Fields present
 # in only one edition are marked `(VX)` or `(Ace)`.
 
 module RPG

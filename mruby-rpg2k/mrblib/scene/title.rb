@@ -217,7 +217,7 @@ class RPG2k
       # Each flag is read through its own `begin`/`rescue` rather than a helper
       # taking the constant's name: `Module#const_get` is not something this
       # runtime's mruby build is known to carry, and the whole point of these
-      # flags is catching mruby/CRuby divergence, not adding more (ADR 0021).
+      # flags is catching mruby/CRuby divergence, not adding more.
       def auto_select?
         return false if @auto_started
         if auto_new_game?

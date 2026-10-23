@@ -64,10 +64,10 @@ Getting there took:
    to load, for two regex-literal constants) -- solved by pulling in
    `3rd/mruby-onig-regexp`, which this project already vendors for its own
    build.
-4. **A real mruby core fix**, `../../patches/mruby-module-function-scope.patch`,
+4. **A real mruby core fix**, the pinned fork commit (mruby-module-function-scope),
    applied to `3rd/mruby` the same way (and with the same script,
-   `scripts/apply_mruby_patch.bash`) as this project's other
-   `patches/mruby-*.patch` files, and wired into the project's real build via
+   the pinned fork commit as this project's other
+   the pinned fork commits files, and wired into the project's real build via
    `cmake/build-mruby.cmake` -- this one is not probe-only. Bare
    `module_function` (the "everything defined from here on becomes a module
    function" scope form, called with no arguments) was a literal no-op stub
@@ -87,7 +87,7 @@ Getting there took:
    stub, since CRuby's true semantics require installing a *second* method
    (a public singleton copy) alongside the original, not just resolving one
    more visibility state.
-5. **A second real mruby core fix**, `../../patches/mruby-parser-dump-back-nth-ref.patch`,
+5. **A second real mruby core fix**, the pinned fork commit (mruby-parser-dump-back-nth-ref),
    also wired into `cmake/build-mruby.cmake`. `mrbc -v`'s own parse-tree dump
    printed garbage -- including, for optcarrot's real
    `lib/optcarrot/opt.rb:74` (`$1`/`$'`), an invalid UTF-8 byte -- for a
@@ -147,7 +147,7 @@ inert for the real project -- see below):
    disassembles to `SUPER Ra n=*` (a zsuper forwarding multiple explicit
    params via an ARGARY-built array) -- a real, different, still-
    unimplemented opcode shape, not a fact this allowlist gates at all.
-   (Superseded for that zsuper shape by ADR 0159's general `SUPER` support.)
+
 2. **A new `INTERN` opcode case**, unconditional (unlike `SUPER_TARGETS`,
    no whole-program fact to verify -- `OP_INTERN` is a pure, always-safe
    in-place String->Symbol conversion, `src/vm.c`'s own `mrb_ensure_
@@ -612,7 +612,7 @@ for `Array#last` reading a stale cached pointer from one `mrb_val_union(r3)`
 call while a different call for the identical `r3`, moments later, correctly
 returns the array's real, current pointer; that is a bc2cpp code-generation
 defect, not anything specific to Fiber adjacency, this repo's ivar-embedding
-work, or `patches/mruby-nomemoryerror-reentrant-alloc.patch` (checked and
+work, or the pinned fork commit (mruby-nomemoryerror-reentrant-alloc) (checked and
 ruled out, along with the pre-session `bc2cpp.rb`, as explained in
 `compiled_run.rb`'s own comment). `compiled_run.rb` now excludes
 `Optcarrot::CPU`/`NES`/`Video`/`APU` from `ONLY_OWNERS` too, alongside the
@@ -710,8 +710,8 @@ bundles (see [CPU dispatch](../../docs/optcarrot-cpu-dispatch.md)). Strict mode
 compiles the entire benchmark bundle, including shims and interpreted methods,
 and embeds it as gem bytecode. Its dedicated executable accepts only ROM and
 frame-count data. The build excludes source loaders, compiler and eval gems,
-validates its actual gem manifest, and scans the fixed host's native source
-(see [ADR 0403](../../docs/adr/0403-optcarrot-sealed-world.md)). These modes have
+validates its actual gem manifest, and scans the fixed host's native source.
+These modes have
 separate compiled target directories; neither is required for the default run.
 
 Use static dispatch alone for the measured FPS gain (median 34.64 to 63.90 wall
@@ -894,8 +894,7 @@ owner its own `embeds` diagnostic names, computed from the exact same
 diagnostic bc2cpp.rb itself prints -- "embeddable" and "installed" were
 always the same fact here, by construction, the identical guarantee a
 concurrent session's own `emit_owner_registrations` mechanism now
-provides by generation for the real gems (see `docs/adr/0185`-adjacent
-work). `compiled_run.rb` now sets `BC2CPP_SELF_REGISTERING=1`, which
+provides by generation for the real gems. `compiled_run.rb` now sets `BC2CPP_SELF_REGISTERING=1`, which
 tells bc2cpp.rb's driver to skip the allowlist entirely for this
 invocation (nothing in this closed world was ever on it anyway) and let
 every ivar `IvarLayout`/`drop_unsafe_embeddings` themselves already
@@ -1111,8 +1110,7 @@ next step" named just above -- but stratified, not a full joint fixpoint,
 mirroring `ClassLayout`/`ARRAY_RETURN_PROOF`'s own existing
 `ARRAY_RETURN_IVAR_HINT` two-level shape (that call site's own header
 explicitly rejects a full alternation as unjustified extra machinery for
-the measured payoff; the same argument applies here). See ADR 0187 for the
-full mechanism. Verified this exact tree's `optcarrot_bc2cpp_coverage_
+the measured payoff; the same argument applies here). Verified this exact tree's `optcarrot_bc2cpp_coverage_
 report.rb` output is byte-identical before and after -- `CPU`'s own
 register file still does not embed, and now with a confirmed reason rather
 than a guess: `fetch`/`peek16`/`peek` (what `@data`/`@addr`/`@_pc` actually
@@ -1292,7 +1290,7 @@ their two frame-boundary hooks are the classes that remain interpreted too.
 The compiler also includes `mruby/numeric.h` in generated C++, required for
 its integer and float conversion helpers.
 
-**Update (RData slot lookup, ADR 0232)**: with every embedded ivar in an RData
+**Update**: with every embedded ivar in an RData
 descriptor, the interpreted PPU (its Fiber loop stays interpreted) reads its
 own ivars through `rdata_ivar_slot`, which scanned the descriptor with
 `strlen`/`memcmp` per access. On a private, freshly patched tree (patch chain
@@ -1308,8 +1306,8 @@ these.
 ## Files
 
 - `build_bundle.rb` -- assembles a single runnable mruby script: applies
-  `patches/mruby-module-function-scope.patch` to `3rd/mruby` (via
-  `scripts/apply_mruby_patch.bash`, idempotent -- a safety net; the real
+  the pinned fork commit (mruby-module-function-scope) to `3rd/mruby` (via
+  the pinned fork commit, idempotent -- a safety net; the real
   build order below applies it before building mruby, not after), then
   concatenates `3rd/optcarrot`'s 9 core files (in the real dependency order,
   `require_relative` lines stripped since the concatenation IS the loading)
@@ -1318,14 +1316,14 @@ these.
   mechanical to regenerate, and stays in sync with whatever commit
   `3rd/optcarrot` is pinned to.
 - `shims.rb`, `shim_integer_aref.rb` -- the 5 stdlib shims, prepended to the bundle. The Integer shim is also
-  compiled by `compiled_run.rb` (ADR 0305).
+  compiled by `compiled_run.rb`.
 - `runner_tail.rb` -- headless `Optcarrot::NES.new(...).run` driver, appended
   to the bundle.
 - `bc2cpp_probe.rb` -- runs `tools/bc2cpp/bc2cpp.rb` against optcarrot's real
   source as its own closed world and prints the method-level coverage
   breakdown above (`MRBC=path/to/host/mrbc ruby
   tools/optcarrot_probe/bc2cpp_probe.rb`). Self-applies
-  `patches/mruby-parser-dump-back-nth-ref.patch` to `3rd/mruby` as a safety
+  the pinned fork commit (mruby-parser-dump-back-nth-ref) to `3rd/mruby` as a safety
   net, same caveat as `build_bundle.rb`'s own patch step (only actually
   fixes anything if MRBC hasn't been built yet from this checkout).
 - `mruby_build_config.rb` -- the `MRUBY_CONFIG` used to build a probe-only
@@ -1333,8 +1331,8 @@ these.
   part of the project's real build.
 - `compiled_run.rb` -- builds an isolated bc2cpp-enabled mruby and runs the
   headless checksum benchmark; build artifacts stay in a temporary directory.
-- `../../patches/mruby-module-function-scope.patch`,
-  `../../patches/mruby-parser-dump-back-nth-ref.patch` -- see points 4 and 5
+- the pinned fork commit (mruby-module-function-scope),
+  the pinned fork commit (mruby-parser-dump-back-nth-ref) -- see points 4 and 5
   above; both *are* part of the project's real build.
 
 ## Reproducing
@@ -1346,12 +1344,9 @@ git submodule update --init --depth 1 3rd/mruby 3rd/mruby-onig-regexp 3rd/optcar
 # Also needs gperf (the vendored mruby regenerates its keyword table with it)
 # and a C++ driver for the generated gem.
 
-# The probe applies the mruby patches its generated code needs itself (its
-# VM_UNWIND_RESTORE helper reads mrb_state::errinfo, which only
-# patches/mruby-dollar-bang-scoped.patch adds), so a bare host mrbc is enough
-# to RUN the bundle below; only the manual b/c2cpp runs need these two:
-./scripts/apply_mruby_patch.bash 3rd/mruby "$(pwd)/patches/mruby-module-function-scope.patch"
-./scripts/apply_mruby_patch.bash 3rd/mruby "$(pwd)/patches/mruby-parser-dump-back-nth-ref.patch"
+# 3rd/mruby is the pinned take-cheeze/mruby fork commit, which already carries
+# the mruby patches the generated code needs (docs/patch-fork-tracking.md), so
+# nothing is applied here.
 cd 3rd/mruby
 MRUBY_CONFIG=$(pwd)/../../tools/optcarrot_probe/mruby_build_config.rb rake -j"$(nproc)"
 cd -
@@ -1369,7 +1364,7 @@ MRBC=3rd/mruby/bin/mrbc ruby tools/optcarrot_probe/compiled_run.rb
 GPROF=1 GPROF_OUTPUT=/tmp/optcarrot-gprof MRBC=3rd/mruby/bin/mrbc ruby tools/optcarrot_probe/compiled_run.rb 180
 ```
 
-## Integer-or-nil A/B (ADR 0232)
+## Integer-or-nil A/B
 
 `compiled_run.rb` also accepts `OPTCARROT_FIXNUM_NIL_IVARS`, an exact
 `Owner#@ivar` list, to A/B the tagged Integer-or-nil embedding against
@@ -1395,9 +1390,9 @@ arena -- `gc_gray_rescan` at 31.6% of sampled time, from arena growth
 across devirtualized calls that never re-enter `mrb_vm_exec`. The union
 is infrastructure for nilable scalars, not an FPS win here.
 
-## Resumable `PPU#main_loop` (ADR 0273)
+## Resumable `PPU#main_loop`
 
-Until ADR 0273 every method the Fiber block reaches by same-class self sends was
+Previously every method the Fiber block reaches by same-class self sends was
 refused, so `PPU#main_loop`, its four `wait_*` helpers and the 35 methods they call
 (`render_pixel`, `open_name`, `load_tiles`, ...) all ran as bytecode. Now:
 
@@ -1483,7 +1478,7 @@ Sealed mode and `OPTCARROT_ORIGINAL_LUT=1` are refused for this experiment.
 The compiled build gets its own `irlut` target suffix. Run
 `MRBC=/path/to/mrbc ruby scripts/optcarrot/ppu_ir_lut_check.rb`; set
 `MRUBY_BUILD=/path/to/compatible/mruby/build` for the native equality and
-fallback test. See [ADR 0427](../../docs/adr/0427-optcarrot-ir-tile-lut.md).
+fallback test.
 
 The bootstrap method snapshots belong to the probe's single mruby VM per
 process. Embedding this helper in a process with multiple independent VMs

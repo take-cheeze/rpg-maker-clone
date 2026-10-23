@@ -6,8 +6,7 @@
 # smoke-tested against real projects by scripts/rpgxp/testbed_check.rb, and the
 # host against them by scripts/rpgxp/script_host_check.rb.
 #
-# This gem no longer carries a reimplementation of RMXP's default engine (ADR
-# 0030), so the tests that covered its title/map/interpreter went with it: what a
+# This gem no longer carries a reimplementation of RMXP's default engine, so the tests that covered its title/map/interpreter went with it: what a
 # game does is now the game's own scripts' business, and scripts/rpgxp_boot_check
 # .bash is what checks they run.
 
@@ -498,7 +497,7 @@ assert "RPG::Cache caches by path and stands in for what will not load" do
   assert_false RPG::Cache.picture("NoSuchPictureHere").equal?(missing)
 end
 
-# The host is the default boot path (ADR 0029): with neither the native binary's
+# The host is the default boot path: with neither the native binary's
 # RGSS_SCRIPT_HOST constant nor an opt-out in the environment, enabled? is true.
 # This runs in the *built* engine, which is where a divergence between the CRuby
 # harness and mruby would show — including ENV being absent here, which must
@@ -553,7 +552,7 @@ assert "Kernel#sprintf / #format / String#% are available for the script host" d
 end
 
 # The script host evals the game's scripts, runs their blocking Main inside a
-# Fiber (ADR 0023) and ends the game when one calls `exit` (raised as a catchable
+# Fiber and ends the game when one calls `exit` (raised as a catchable
 # SystemExit). Confirm all three gems are linked into the build — without
 # invoking `exit`, which would terminate the test runner.
 # Kernel#Integer(), from mruby-kernel-ext. Every RGSS game clamps its battler
