@@ -82,6 +82,8 @@ CHECKS = [
   { name: 'bc2cpp-ivar-candidates', command: %w[scripts/bc2cpp/ivar_candidates_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
   { name: 'bc2cpp-immediate-ivars', command: %w[scripts/bc2cpp/immediate_ivars_check.rb] },
+  # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
+  { name: 'bc2cpp-array-literal-block', command: %w[scripts/bc2cpp/array_literal_block_check.rb] },
   { name: 'bc2cpp-class-bodies', command: %w[scripts/bc2cpp/class_bodies_check.rb] },
   { name: 'bc2cpp-ir-soundness-classes', command: %w[scripts/bc2cpp/ir_soundness_classes_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
