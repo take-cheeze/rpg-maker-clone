@@ -1,0 +1,1 @@
+- **bc2cpp** labels an unresolved receiver `unproven.<writer>` in its `POLY_DIAG` `origin=` when the IR refuses the reaching-definitions query (a receiver inside a rescue region). Before, that refused site showed the nearest writer as if it were the only producer. Generated dispatch is unchanged. Covered by `scripts/bc2cpp/receiver_origin_join_check.rb`.

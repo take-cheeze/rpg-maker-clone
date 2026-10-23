@@ -51,7 +51,9 @@ not immediate. Labels in the reasons are irep labels, so read them with the `iva
 
 ## Tripwire and harness for any later placement
 
-These are the gates a stack or in-frame placement must pass before it is enabled. None of them exists as a gate yet.
+These are the gates a stack or in-frame placement must pass before it is enabled. The harness that runs them is
+[`bc2cpp-placement-harness.md`](bc2cpp-placement-harness.md) (`scripts/bc2cpp/placement_harness_check.rb`): gates 1 and 2
+run on the heap build, gate 3 as a smoke run, and the differential (gate 4) is a stub until placement exists. No placement is wired to them.
 
 1. **Frame-exit tripwire.** When a frame that placed an object returns, walk the live heap (the VM's object list, the
    roots and the registers of live frames) and fail on any pointer into the frame's stack range. An immediate-only
@@ -68,7 +70,7 @@ These are the gates a stack or in-frame placement must pass before it is enabled
    counts must differ only by the placed objects.
 
 The fixture set for these gates is the `ivars` rows of `scripts/bc2cpp/immediate_ivars_check.rb` (below), extended
-with runtime tests. No placement is wired to any of them yet.
+with runtime tests in `scripts/bc2cpp/placement_harness_check.rb`.
 
 ## Check
 

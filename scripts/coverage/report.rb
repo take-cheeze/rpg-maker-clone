@@ -42,6 +42,8 @@ require 'tmpdir'
 ROOT = File.expand_path('../..', __dir__)
 HOOK = File.join(__dir__, 'hook.rb')
 
+require_relative 'test_bed'
+
 # The sources the report is about: the pure-Ruby engine libraries. The
 # harnesses under scripts/ are the tests, not the subject, so they are left
 # out; `src/**.cxx` is a different language and a different tool.
@@ -61,6 +63,7 @@ CHECKS = [
   { name: 'bc2cpp-class-hierarchy', command: %w[scripts/bc2cpp/class_hierarchy_check.rb] },
   { name: 'bc2cpp-conversion-returns', command: %w[scripts/bc2cpp/conversion_returns_check.rb] },
   { name: 'bc2cpp-param-trace-return', command: %w[scripts/bc2cpp/param_trace_return_check.rb] },
+  { name: 'bc2cpp-param-trace-elements', command: %w[scripts/bc2cpp/param_trace_elements_check.rb] },
   { name: 'bc2cpp-predicate-returns', command: %w[scripts/bc2cpp/predicate_returns_check.rb] },
   { name: 'bc2cpp-recv-trace', command: %w[scripts/bc2cpp/recv_trace_check.rb] },
   { name: 'bc2cpp-trace-types', command: %w[scripts/bc2cpp/trace_types_check.rb] },
@@ -82,6 +85,10 @@ CHECKS = [
   { name: 'bc2cpp-ivar-candidates', command: %w[scripts/bc2cpp/ivar_candidates_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
   { name: 'bc2cpp-immediate-ivars', command: %w[scripts/bc2cpp/immediate_ivars_check.rb] },
+  # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
+  { name: 'bc2cpp-array-literal-block', command: %w[scripts/bc2cpp/array_literal_block_check.rb] },
+  # Needs MRBC and a full-core libmruby (SKIPs without them, so it adds no lines here until the bc2cpp job sets them).
+  { name: 'bc2cpp-placement-harness', command: %w[scripts/bc2cpp/placement_harness_check.rb] },
   { name: 'bc2cpp-class-bodies', command: %w[scripts/bc2cpp/class_bodies_check.rb] },
   { name: 'bc2cpp-ir-soundness-classes', command: %w[scripts/bc2cpp/ir_soundness_classes_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
@@ -174,7 +181,9 @@ CHECKS = [
   # The class-object resolver on hand-built bytecode; the fixture section skips here.
   { name: 'bc2cpp-class-object-args', command: %w[scripts/bc2cpp/class_object_args_check.rb] },
   # The frozen-table slot class on hand-built bytecode; the compiled section needs mrbc and skips here.
-  { name: 'bc2cpp-frozen-slot', command: %w[scripts/bc2cpp/frozen_slot_check.rb] }
+  { name: 'bc2cpp-frozen-slot', command: %w[scripts/bc2cpp/frozen_slot_check.rb] },
+  # The rpg2k_game predicate: the committed maix-hello fixture must not count as a test bed.
+  { name: 'coverage-test-bed', command: %w[scripts/coverage/test_bed_check.rb] }
 ].freeze
 
 # `needs:` predicates. A downloaded RPG2000/2003 game is the only prerequisite
@@ -183,7 +192,7 @@ REQUIREMENTS = {
   rpg2k_game: {
     description: 'a downloaded RPG2000/2003 test bed under data/ ' \
                  '(scripts/download/nepheshel.bash)',
-    met: -> { !Dir.glob(File.join(ROOT, 'data', '**', 'RPG_RT.ldb')).empty? }
+    met: -> { CoverageTestBed.rpg2k_game_present?(ROOT) }
   }
 }.freeze
 

@@ -1,0 +1,1 @@
+- **bc2cpp** audits the native constructor overloads faster: each source file's stripped text and class table are computed once per process, and a file without the registered name's literal is skipped. The generated output is unchanged.

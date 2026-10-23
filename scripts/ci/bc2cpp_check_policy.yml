@@ -79,6 +79,12 @@ checks:
     capabilities: []
     fixture_capabilities:
     - mrbc
+  scripts/bc2cpp/placement_harness_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - cxx
   scripts/bc2cpp/ir_context_results_check.rb:
     tier: fast
     capabilities: []
@@ -316,6 +322,14 @@ checks:
     - mrbc
     - native_sources
     fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/array_literal_block_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
     - full_library
     - cxx
   scripts/bc2cpp/define_method_check.rb:
@@ -626,6 +640,13 @@ checks:
   scripts/bc2cpp/param_trace_return_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/param_trace_elements_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - core_library
+    - cxx
   scripts/bc2cpp/predicate_returns_check.rb:
     tier: fast
     capabilities: []
