@@ -262,8 +262,9 @@ Every closed-world generator run is a new process that scans the same mruby and 
 scans are stored under a digest of the scanner sources, the Ruby version and the files they read, and loaded by the
 next process: `NativeExpressionDevirt.analyze`, `analyze_exact_class_expressions`, `outside_world_tokens`, the facts
 of `ClosedWorld#scan_native` (`closed_world.native`), the class registrations
-(`native_expression_devirt.class_registrations`, under `CallFacts::Answers#native_scan`) and the per-file
-registrations of `NativeDirect` (`native_direct.file_registrations`). The last three return plain data, and the
+(`native_expression_devirt.class_registrations`, under `CallFacts::Answers#native_scan`), the per-file owner map of
+`NativeOwnerMap.build` (`native_owner_map.file`) and the per-file registrations of `NativeDirect`
+(`native_direct.file_registrations`). The last three return plain data, and the
 instance state they used to fill is rebuilt by the caller from it. The cache is always on, with no environment
 switch: entries live in the checkout's git-ignored `build/bc2cpp-cache`, so the first generator run of a job fills it
 and every later run of that job (a `ci:parallel` group included) reads it. A checkout that is not cleaned keeps it
