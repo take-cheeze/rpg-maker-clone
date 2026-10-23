@@ -225,16 +225,30 @@ Any other body is undecided, with the reason in the row (`block_escapes`, `not_u
 its block bodies are counted as unjoined. Under `BC2CPP_ESCAPE_ANALYSIS=0` every body is
 undecided. `scripts/bc2cpp/block_yielders_check.rb` checks the rows on a real compile
 (needs `MRBC`).
+- a constant read, `GETCONST` or `GETMCNST`, against the `NAME: T` the candidate declares
+  in the scope the read resolved to. The scope is the owner the closed-world lexical
+  analysis proved (`LexicalConsts`, the same resolution the numeric constant groups use),
+  so the row is keyed `Owner::NAME`, or `NAME` at the top level. A read the analysis does
+  not prove is counted as unresolved and never compared; a proven owner the candidate
+  declares no `NAME` in is counted as undeclared.
 
 A site is skipped when it was not reached. An overflowed site (its class table was
 full, so its classes are unknown) is not compared; the summary counts every
-overflowed site, element slot and ivar read in the trace, declared or not. An element slot is
+overflowed site, element slot, ivar read and constant read in the trace, declared or not. An element slot is
 overflowed too when its container held more elements than the sampler reads (below).
 
 Ivar reads come from the `IVAR_SITE` and `IVAR_CLASS` rows of a `BC2CPP_TRACE_TYPES=1`
 build. The rows are written only for a GETIV of a class the compiler knows (a singleton
 owner and an unknown `self` class get none). A dump without them (one recorded before
 they were added) reads as before, with no ivar observations.
+
+Constant reads come from the `CONST_SITE` and `CONST_CLASS` rows of the same build. A
+`CONST_SITE` row is one read site: its fifth field is the resolved owner (`Owner::NAME`),
+or `-` when the read is unproven, and its sixth is the name as written. The owner is
+taken from `LexicalConsts.analyze` run on the closed world, through a memo of its own (so
+tracing does not change which closed-world state the numeric pass sees). Without a closed
+world, or for a read the analysis refuses, the owner is `-`. A dump without the rows
+reads as before, with no constant observations.
 
 ### Overloaded methods
 
@@ -304,9 +318,6 @@ The trace cannot tell the check these things, so they are not compared:
   attr accessor, and `instance_variable_get`. The check sees only the values the
   compiled GETIV reads hand back, so a wrong value that reaches an ivar only through
   one of those is not seen;
-- constant types. A constant read (GETCONST, GETMCNST) names the constant as written,
-  not the scope that resolved it, so a candidate `NAME: T` cannot be matched to the
-  observation (the same name can resolve to different constants in different scopes);
 - overloaded methods the rule above refuses (definitions that disagree, or a trace
   that shows two implementations under one key). Overloads whose definitions agree
   and whose trace shows one implementation are compared;
