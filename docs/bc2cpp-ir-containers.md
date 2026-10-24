@@ -5,6 +5,13 @@ variable can contain:
 
 - `RecordHash` (`tools/bc2cpp/record_hash.rb`, RECORD_HASH_PROOF, ADR 0285):
   per-key value classes of a Hash record with literal Symbol keys.
+  `@slot.update({k: v, ...})` and `merge!` with no block count as one store per
+  pair when the argument is a fresh Symbol-keyed literal (a `HASH` plus its
+  `HASHADD` chunks, in a region nothing else enters, leaves or reads it in);
+  `update`, `merge!` and `__merge` must keep core's definitions by the same owner
+  rule as `delete`, which does not match native C definitions by owner.
+  `BC2CPP_RECORD_HASH_UPDATE=0` treats the call as an escape again. Checked by
+  `scripts/bc2cpp/record_hash_update_check.rb`.
 - `ArrayElementLayout` / `HashElementLayout` (`tools/bc2cpp/element_layouts.rb`,
   ELEMENT_CLASS_SUPPORT / HASH_ELEMENT_SUPPORT): the one class every element
   of an Array ivar, or every value of a Hash ivar, has.
