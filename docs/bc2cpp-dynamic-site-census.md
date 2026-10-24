@@ -2071,3 +2071,18 @@ On the closed world the universe goes from 3,272 to 1,637 names. Switch on again
 guard violations, 63 more NILABLE_RECEIVER nil arms and 20 more `bc2cpp_nomethod` arms; generated lines go from
 410,280 to 409,466, no `#error`. 100 functions change, mostly in `RPG2k::Scene::Map` (44) and `Game::Interpreter`
 (31). `Game::Battle::Combatant#@states` stays CHECKED: `respond_to?(:states=)` spells its setter.
+
+## Follow-up: probe-only setter names (PROBE_ONLY in the call-site index)
+
+`respond_to?(:states=)` spelled `states=` as a Symbol literal, and `entry_arg_call_index` (ENTRY_ARG_CALLSITE_PROOF)
+counted every literal as a possible call, so the setter pools of the names probed this way stayed poisoned. A literal
+that `DynamicNames.probe_only?` proves only reaches `respond_to?`'s name argument is now neither a call site nor a
+poison, while no Ruby hook can route a probe's name; `probe_only?` also no longer counts a self send's R[a] (vm.c
+overwrites it with self) as a use. `BC2CPP_PROBE_CALL_INDEX=0` keeps every literal a poison; checked by
+`scripts/bc2cpp/dynamic_names_probe_check.rb`.
+
+On the closed world the poisoned setter pools go from 10 to 0 (`states=`, `agi_mod=`, `atb_gauge=`, `charged=`, ...)
+and `Game::Battle::Combatant#@charged` gains a class pool; by-name sends, class tests and guard violations do not
+change, three `[]` sites become direct `LCF::Array1D#[]` calls, and generated lines go from 410,039 to 410,042.
+`Combatant#@states` stays OPAQUE for its stored values, not its setter: `actor_states`'s `(a.states || []).dup`,
+`Game::States.prune`'s result and `b.states - [id]` all read `@states` back, a cycle the pools do not solve.
