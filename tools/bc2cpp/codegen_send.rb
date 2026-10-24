@@ -556,7 +556,8 @@ class CodeGen
     # Frame-independent RGSS entry points need only a native class identity
     # guard. Static tracing may narrow the common cases, but is not required for
     # these wrappers because every other receiver retains ordinary dispatch.
-    if n.zero? && (helpers = NATIVE_WRAPPER_ZERO_ARG_DIRECT[name])
+    if n.zero? && (helpers = NATIVE_WRAPPER_ZERO_ARG_DIRECT[name]) &&
+       !native_wrapper_receiver_typed_elsewhere?(irep, drawing_proof_idx, drawing_proof_reg, self_implicit)
       # `Graphics.update` / `Input.update` (or a bare `update` in Graphics' own `def self.x`): a stable
       # class/module constant receiver is no instance of the native classes below, so the module's own singleton
       # method is called directly instead.

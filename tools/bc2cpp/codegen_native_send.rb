@@ -126,6 +126,17 @@ class CodeGen
       Array(@prepended_modules[owner]).empty?
   end
 
+  # EXACT_FLOW_PAST_NATIVE_WRAPPER: the exact-class flow (EXACT_FLOW_USER_CLASS, the proof CLOSED_WORLD_EXACT_CLASS
+  # reads for `@desc_window.dispose`) proves the receiver is exactly a project class, none of the native wrapper
+  # classes. Its arms could never match, so the site skips them and the typed path makes the same exact direct call
+  # it makes for every other name, instead of the arms' poly table and owner-call tail.
+  def native_wrapper_receiver_typed_elsewhere?(irep, proof_idx, proof_reg, self_implicit)
+    return false if self_implicit || irep.nil? || proof_idx.nil? || !@closed_world
+
+    exact = exact_flow_user_class(irep, proof_idx, proof_reg)
+    exact.is_a?(String) && !NATIVE_WRAPPER_CLASS_ACCESSORS.key?(exact)
+  end
+
   # OWNERLESS_NATIVE_DISPATCH: the primitive gate; with the closed world in view (every engine body; a core
   # body compiles with it withheld) it also proves no external Ruby definition or dynamic installer can
   # replace this method.
