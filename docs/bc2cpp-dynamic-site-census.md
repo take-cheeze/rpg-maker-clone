@@ -2001,6 +2001,20 @@ name that is a method parameter, a computed String, and a table element that is 
 literal. `scripts/bc2cpp/computed_send_check.rb` checks each shape against the generated C++, and
 `BC2CPP_COMPUTED_SEND=0` keeps every computed send by name.
 
+`send` is treated like `__send__` when the closed world shows Kernel's native (mruby-metaprog) is its only
+definition.
+
+### Unproven names on self (COMPUTED_SEND_GUARDED)
+
+A computed send on `self` whose name the proof cannot bound still tries the likely names first. These are the
+names the class of `self` defines in bytecode, that the program spells as Symbols (`DynamicNames`), and whose
+arity accepts the call's argument count. Each one becomes a Symbol compare and a direct call, compiled as the
+literal send would be, and a name is kept only when that call is direct. Any other value, including a
+non-Symbol, takes the original send, so nothing is proven or assumed about the name. `send(*args)` reads the
+name and the arguments out of the packed Array and picks the arms by its length. Optcarrot's
+`send(*DISPATCH[@opcode])` and its wrappers' `send(mode, ...)`/`send(instr)` take this form. At most
+`GUARDED_MAX_ARMS` (96) names are tried per site. `BC2CPP_COMPUTED_SEND_GUARDED=0` turns the form off.
+
 ## Follow-up: literal-default optional constructor positions (CONSTRUCTOR_OPTIONALS)
 
 CONSTRUCTOR_POOLS pooled only the mandatory positions of an `initialize`, because a default could read a later
