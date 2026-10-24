@@ -2030,3 +2030,24 @@ indexed by a register, a copy of that element, a join of Symbol literals and a f
 name that is a method parameter, a computed String, and a table element that is a constant rather than a Symbol
 literal. `scripts/bc2cpp/computed_send_check.rb` checks each shape against the generated C++, and
 `BC2CPP_COMPUTED_SEND=0` keeps every computed send by name.
+
+## Follow-up: literal-default optional constructor positions (CONSTRUCTOR_OPTIONALS)
+
+CONSTRUCTOR_POOLS pooled only the mandatory positions of an `initialize`, because a default could read a later
+parameter's register before ENTER's caller value or its own default is there. `ctor:optional_position` was then the
+largest single cause in `BC2CPP_POOL_DROP_REPORT` (57 dropped pools). An optional position is now pooled when every
+default of that `initialize` is one literal load into its own register (`= nil`, `false`, `0`, `"x"`, a Symbol, read
+from the JMP table after ENTER). Each position joins only the sites that pass it, and the flow already routes an
+omitted position through its default. The positions stay out when no site passes them, or when the `initialize` has no
+keyword parameters and some site passes keywords, since ENTER appends those as one more positional Hash. An
+`initialize` without mandatory positions keeps refusing RBS_CHECKED_PARAMS and never reports `:no_sites` (ENTRY_SEEDS'
+"no Ruby caller"), because a zero-argument `new` is no site. `BC2CPP_CTOR_OPTIONALS=0` restores the old rule; checked by
+`scripts/bc2cpp/constructor_optionals_check.rb`.
+
+On the closed world, switch on against off on one tree: dropped pools 583 to 572 (`ctor:optional_position` 57 to
+49), ivar class pools 369 to 380, pooled constructors 45 to 50. The new pools include `Game::Battle#@rng` (exactly
+`Game::Rng`), its four boolean flags, `@ai`, `@attributes`, `@states` and three scenes' `@rng`. In the shipped C++, 98
+runtime class tests (`mrb_obj_class` arms) go, about 20 of them in `Game::Battle`'s random-number paths, with 8 more
+NILABLE_RECEIVER nil arms and 2 more guard violations; generated lines go from 410,097 to 409,923. By-name sends do
+not change (761 `bc2cpp_send`, 374 `mrb_funcall_with_block`). `Game::Battle::Combatant#@states` stays unpooled: its
+attr writer still makes the pool structural.
