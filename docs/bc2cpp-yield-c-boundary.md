@@ -17,7 +17,13 @@ The natives that run Ruby inside the VM, with no C frame between, are counted as
 (computed sends), `Proc#call` and `Method#call` (proc calls), `eval`/`instance_eval` (eval seeds) and
 `instance_exec`/`class_exec` (block executes).
 
-`BC2CPP_YIELD_C_BOUNDARY=0` counts native callbacks and stored-block reads as yield paths again.
+The same holds for which frames a Fiber can pass through (crossability): a method entered only from a native
+callback, such as an `initialize` run by `Class#new` (`mrb_instance_new` calls it with `mrb_funcall_with_block`),
+sits above that C frame, so a `Fiber.yield` below it raises before anything is suspended. A native call inside a
+Fiber therefore no longer makes the methods natives may call back crossable.
+
+`BC2CPP_YIELD_C_BOUNDARY=0` counts native callbacks and stored-block reads as yield paths, and as crossable
+edges, again.
 
 ## A computed send on self stays in self's class chain
 
@@ -29,6 +35,9 @@ reach any spelled method.
 A name assembled from string pieces at run time is outside the spelled set. If such a send reaches a method that
 yields across a compiled frame, the yield raises `FiberError` at that C frame instead of suspending: a loud error,
 never a silent one ([soundness contract](bc2cpp-soundness.md)).
+
+Crossability follows the same targets: a computed send inside a Fiber reaches the spelled names, and only self's
+chain when the receiver is `self`, instead of every method.
 
 `BC2CPP_YIELD_SPELLED_SENDS=0` lets every computed send reach every method again.
 
