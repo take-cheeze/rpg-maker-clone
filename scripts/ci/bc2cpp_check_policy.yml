@@ -263,6 +263,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/plain_yielder_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/arm_prune_check.rb:
     tier: fast
     capabilities:
