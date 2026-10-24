@@ -175,6 +175,15 @@ facts (no project definition, prepend or unknown mixin on the owner, no outside
 definer), so they ask the same world, as the `*rest` receiver arm does. A core
 body's receiver proof is itself a runtime class test, so the call stays behind it.
 
+An exact core receiver also gets the Kernel and BasicObject natives it inherits
+(`nil?`, `class`, `dup`, `equal?`, `is_a?`, `kind_of?`, `frozen?`, `freeze`;
+`NativeCoreDirect::INHERITED_ENTRIES`, INHERITED_CORE_DIRECT). Lookup walks the
+class, its mixins and then its superclasses, so such a native answers only when
+nothing earlier in that walk defines the name. `CodeGen#inherited_core_entry`
+refuses the call when there is a native registration or a compiled or outside
+Ruby definition earlier in the walk, a prepend, a project mixin that defines the
+name, or a runtime installer of it.
+
 When the flow proves a receiver is exactly a core class (FLOW_CORE_DIRECT), the
 send calls the compiled core body or, for a C method, the audited entry. That
 happens before any guard chain over project classes that define the same name:
