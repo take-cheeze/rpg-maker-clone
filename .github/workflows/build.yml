@@ -749,6 +749,7 @@ jobs:
           ruby scripts/bc2cpp/stack_tuples_check.rb
           ruby scripts/bc2cpp/block_self_world_check.rb
           ruby scripts/bc2cpp/outside_owner_call_check.rb
+          ruby scripts/bc2cpp/static_owner_dispatch_check.rb
           ruby scripts/bc2cpp/frozen_literal_persist_check.rb
           ruby scripts/bc2cpp/constructor_overloads_check.rb
           ruby scripts/bc2cpp/ir_argument_types_check.rb
