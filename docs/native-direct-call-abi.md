@@ -184,12 +184,14 @@ refuses the call when there is a native registration or a compiled or outside
 Ruby definition earlier in the walk, a prepend, a project mixin that defines the
 name, or a runtime installer of it.
 
-A receiver proven to be exactly a project or RGSS class gets the same entries
+A receiver proven to be exactly a project class gets the same entries
 (INHERITED_USER_DIRECT, `CodeGen#inherited_user_entry`). The walk goes up the
 superclass chain while each class has a stable constant, no definition of the
-name, nothing mixed in or prepended, and no outside definer. The first core class
-it reaches then takes the walk above. RGSS natives are registered without an
-owner the scan can attribute, so a name any of them registers is refused outright.
+name, nothing mixed in or prepended, and no outside definer. The superclass comes
+from `ClosedWorld#declared_parent`, which reads every `class` opener. A class with no
+superclass written continues at Object, unless native code binds its constant
+(an RGSS class such as `Bitmap`): its real superclass is then the one the native
+passed. The first core class the walk reaches then takes the walk above.
 
 When the flow proves a receiver is exactly a core class (FLOW_CORE_DIRECT), the
 send calls the compiled core body or, for a C method, the audited entry. That
