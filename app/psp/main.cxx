@@ -64,6 +64,7 @@
 #include <pspsysmem.h>
 #include <pspthreadman.h>
 
+#include "bc2cpp_entry.hxx"
 #include "psp.hxx"
 
 // Standard pspsdk module metadata for a user-mode EBOOT. THREAD_ATTR_VFPU keeps
@@ -587,7 +588,7 @@ void append_mem_snapshot(StrBuf& sb) {
 // to the caller -- mruby's GC gives no lifetime guarantee once the string
 // value itself is no longer reachable from this scope.
 void append_scene_name(StrBuf& sb, mrb_state* M, mrb_value game_obj) {
-  const mrb_value name = mrb_funcall(M, game_obj, "current_scene_name", 0);
+  const mrb_value name = bc2cpp_entry_RPG2k_current_scene_name(M, game_obj);
   if (M->exc) {
     M->exc = nullptr;
     sb.str("none");
@@ -823,7 +824,7 @@ int main(void) {
       // gfx_update) and polls the pad (rgss_psp_poll) -- so neither
       // lv_timer_handler() nor show_keys()/psp_input_scan() below are needed
       // while a game is driving its own frame.
-      mrb_funcall(M, game_obj, "main_loop", 0);
+      bc2cpp_entry_RPG2k_main_loop(M, game_obj);
       if (M->exc) {
         // MRB_EXC_EXIT_P distinguishes a clean Kernel#exit (RPG_RT's own
         // "Shutdown" title command, via mruby-exit) from an actual crash --
