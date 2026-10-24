@@ -7,6 +7,8 @@ class Array
   def delete: (untyped) -> untyped
   def index: (untyped) -> untyped
   def join: () -> untyped | (String?) -> untyped
+  def push: (untyped, untyped) -> untyped | (untyped, untyped, untyped) -> untyped | (untyped, untyped, untyped, untyped) -> untyped
+  def replace: (untyped) -> untyped
   def shift: () -> untyped
   def to_a: () -> untyped
 end
@@ -25,6 +27,9 @@ end
 
 class String
   def bytes: () -> untyped
+  def getbyte: (untyped) -> untyped
   def intern: () -> untyped
+  def to_i: (untyped) -> untyped
+  def to_s: () -> untyped
   def to_sym: () -> untyped
 end
