@@ -29,12 +29,14 @@ replace it:
 
 A compiled core body needs the root context, so the call sits behind
 `M->c == M->root_c`, with the by-name send as the else, as `BLOCK_CORE_DIRECT`'s
-arms do. `StringIO.open { |io| ... }` takes this path.
+arms do. `StringIO.open { |io| ... }` takes this path, and so does
+`File.open { |f| ... }`: `File < IO` in `core_hierarchy` leads the lookup to
+mruby-io's `IO.open`, which compiles since `ENSURE_NESTED_RESCUE`
+(`docs/bc2cpp-ensure-rescue.md`).
 
-`File.open { }` doesn't yet. Its lookup would reach `IO.open` (mruby-io's
-`io.rb`), which doesn't compile: a `rescue` inside its `ensure` isn't modelled
-(`recognize_ensure_region` takes one handler). `File` is also not in
-`core_hierarchy`.
+The receiver may also be written `::File` (`OCLASS` then `GETMCNST`, always
+the top-level constant), and the send may sit inside a `rescue` or `ensure`
+range: the receiver's definition is then read through the handler edges.
 
 ## Switch and check
 
@@ -42,4 +44,5 @@ arms do. `StringIO.open { |io| ... }` takes this path.
 `scripts/bc2cpp/class_method_block_check.rb` asserts the generated shapes and
 compares interpreted and compiled runs for captured writes, `break` and `next`,
 an exception in the block, a block the class method stores, `StringIO.open`
-closing its io when the block raises, `GC.stress`, and a Fiber.
+closing its io when the block raises, `File.open` in a plain body, a `rescue`
+body and as `::File`, `GC.stress`, and a Fiber.
