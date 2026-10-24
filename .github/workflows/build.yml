@@ -774,6 +774,7 @@ jobs:
           ruby scripts/bc2cpp/element_picks_check.rb
           ruby scripts/bc2cpp/sealed_hash_stores_check.rb
           ruby scripts/bc2cpp/nilable_class_tests_check.rb
+          ruby scripts/bc2cpp/optional_arg_pools_check.rb
           ruby scripts/bc2cpp/setter_name_closure_check.rb
           ruby scripts/bc2cpp/ir_ivar_types_check.rb
           ruby scripts/bc2cpp/ivar_candidates_check.rb
