@@ -8,7 +8,11 @@ ruby scripts/bc2cpp/base_rbs_all.rb --jobs 2 OUT_DIR CLOSED_BUILD_DIR
 
 `CLOSED_BUILD_DIR` supplies generated mruby headers. The output is base stubs
 under `OUT_DIR`, separate from the checked-in signature inputs. Native files
-need Clang and the headers their gems include. A gem that cannot preprocess
+need Clang and the headers their gems include. A gem's include path is its own
+`include/` and `include_paths`, then the `include/` of every gem its
+`add_dependency` names (transitively), as mruby's build exports them; the
+dependencies come last, so they only supply a header nothing earlier provides
+(`hal-wio-io` reads `io_hal.h` from `mruby-io`). A gem that cannot preprocess
 is listed as `native failed` in the report; AST-analysis failures retain the
 existing logged fallback to regex return analysis.
 
