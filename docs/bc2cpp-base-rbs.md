@@ -62,6 +62,25 @@ measurement ran one generator alone and did not measure that footprint.
 Run `ruby scripts/bc2cpp/base_rbs_check.rb` to check scheduling, error handling
 and serial/parallel output equivalence. Its native fixture requires Clang.
 
+## Native types
+
+A native declaration's parameters come from the function's one `mrb_get_args`
+format (`tools/bc2cpp/native_format_types.rb`: a type only where mruby checks
+the class). mruby-math's `get_float_arg` (`mrb_as_float(mrb, mrb_get_arg1(mrb))`)
+makes the same check as the `f` format, so it is typed the same, as `Numeric`.
+Otherwise the parameters fall back to the arity in the registration's aspec,
+untyped.
+
+The return type is the join of the function's returns: from the clang AST
+(`tools/bc2cpp/native_ast_returns.rb`), or else from the return text
+(`tools/bc2cpp/native_return_kinds.rb`). Only a return expression's outermost
+call names a kind, so `mrb_assoc_new(M, mrb_float_value(x), …)` is an `Array`.
+For these declarations a join of one kind and nil is optional (`String?`,
+`self?`). The compile-time kinds that `scripts/bc2cpp/native_fn_kinds.rb` writes
+keep single kinds: an optional join is unproven there. The compiler does not
+read these declarations (they give no program hint, TC1005), so they describe
+the native API rather than steer code generation.
+
 ## Base section in `sig/bc2cpp/declarations.rbs`
 
 The base section of the committed signature file (everything before
