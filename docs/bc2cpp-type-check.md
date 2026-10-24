@@ -459,12 +459,6 @@ through MOVE aliases and handler edges, is the name argument of `respond_to?(nam
 an escape into a container or a receiver position stays dynamic. `scripts/bc2cpp/dynamic_names_probe_check.rb`
 covers it.
 
-VISIBILITY_ONLY does the same for a Symbol literal whose every use is a name argument of `public`, `private` or
-`protected` sent to self in a class body (`public :char_passable?`): `mrb_mod_visibility` (class.c) only changes the
-named method's visibility, and the three natives return the module, so the name is neither called nor handed on. It is
-off while the program defines, aliases or spells any of the three, and `BC2CPP_VISIBILITY_LITERALS=0` turns it off;
-`scripts/bc2cpp/visibility_literal_pools_check.rb` covers it.
-
 ## Unchanged load states
 
 Numeric flow can share its incoming read-only state across repeated integer,
