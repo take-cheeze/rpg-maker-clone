@@ -1,0 +1,1 @@
+- **bc2cpp** computed sends on `self` whose name cannot be proven (`send(name, ...)`, `send(*args)`) now try the class's spelled method names as direct calls before falling back to the original send (COMPUTED_SEND_GUARDED); `send` is expanded like `__send__` when the closed world shows Kernel's native is its only definition. `BC2CPP_COMPUTED_SEND_GUARDED=0` turns it off.
