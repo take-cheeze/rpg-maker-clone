@@ -207,9 +207,11 @@ module is prepended into Integer (the owner-scoped `IntegerConstantRanges.intege
 `IntegerConstants` takes the same gate. A divisor interval that contains 0 has no interval. `scripts/bc2cpp/constant_typing_check.rb`
 covers these.
 
-A declared `X: Integer` (RBS, TC1011) feeds INTEGER_CONSTANT_PROOF only when every binding of the bare name `X` in the
-program evaluates to a Fixnum and no native or foreign Ruby definition binds `X` (`Float::MAX`, `Enumerable::NONE` keep
-`MAX` and `NONE` unproven). A binding that copies a same-named constant (`X = Window::X`, SELF_COPY) stores a value
+A declared `X: Integer` (RBS, TC1011) whose own assignment evaluates to a Fixnum feeds INTEGER_CONSTANT_PROOF for the
+reads that resolve to that definition the way the runtime does (LEXICAL_CONST: lexical scopes, then ancestors), so
+`Game::MoveRoute::TURN_LEFT` proves beside the Hash `Game::Character::TURN_LEFT`. The fact covers every read of the bare
+name only when every binding of `X` evaluates to a Fixnum. Neither holds when a native or foreign Ruby definition binds
+`X` (`Float::MAX`, `Enumerable::NONE` keep `MAX` and `NONE` unproven). A binding that copies a same-named constant (`X = Window::X`, SELF_COPY) stores a value
 another binding already stored, so it is left out of that union rather than refusing it as a cycle.
 `scripts/bc2cpp/constant_proofs_check.rb` covers this.
 
