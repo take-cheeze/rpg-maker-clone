@@ -10716,6 +10716,10 @@ class Array[unchecked out Elem] < Object
   def compact: () -> Array[untyped]
   # bc2cpp-native: core_results
   def join: (?String sep) -> String
+  # bc2cpp-native: core_results
+  def +: (Array[untyped] other) -> Array[untyped]
+  # bc2cpp-native: core_results
+  def -: (Array[untyped] other) -> Array[untyped]
 end
 
 class Hash[unchecked out K, unchecked out V] < Object
