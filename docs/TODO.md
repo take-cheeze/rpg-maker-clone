@@ -29604,7 +29604,7 @@ enemy id <id> not found in the database, degrading to a blank placeholder`
 diagnostic whenever `id` is truthy/positive but the lookup misses, guarded by
 the same `respond_to?(:enemy)` check `db_item`/`db_enemy_group` use so a bare
 test fixture with no `enemy` table at all stays silent. Placed in the
-constructor itself (rather than `Troop#member`, its one production call
+constructor itself (rather than `Troop#build_member`, its one production call
 site) so every construction path is covered, present and future. Covered by
 a new `scripts/rpg2k/logic_check.rb` check asserting the diagnostic fires
 both for a direct `Game::Enemy.new` call and for one reached through a real

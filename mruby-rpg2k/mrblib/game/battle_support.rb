@@ -1240,7 +1240,7 @@ module Game
       @name = row ? row[:name].to_s : ''
       @members = []
       # Array2D#each yields (id, entry); a plain Hash test double does the same.
-      row[:members].each { |_, m| @members << member(db, m) } if row && row[:members]
+      row[:members].each { |_, m| @members << build_member(db, m) } if row && row[:members]
       @pages = row && LCF.field?(row, :pages) ? row[:pages] : nil
       apply_appear_randomly(row, rng) if row && rng
       # Each levitating member's own `flying_phase` (see Enemy#flying_phase's
@@ -1318,7 +1318,7 @@ module Game
     # `Array#reject` always returns a fresh Array, never nil.
     def live_members; @members.reject(&:hidden) end
 
-    def member(db, m)
+    def build_member(db, m)
       Enemy.new(db, m[:enemy_id], m[:x], m[:y], m[:invisible])
     end
 

@@ -3991,12 +3991,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_OPT(2));
 
   // Game::Troop (mruby-rpg2k/mrblib/game/battle_support.rb).
-  // Only #member (`def member(db, m); Enemy.new(db, m.enemy_id, m.x, m.y,
-  // m.invisible); end`) compiles clean -- a plain 4-argument constructor
-  // call, no arithmetic, no block. #initialize (`rng = nil`, one optional
-  // argument) has the established non-mandatory-arity gap; #total_exp/
-  // #total_gold (`live_members.reduce(0) { |s, e| s + e.<field> }`) and
-  // #drops (`live_members.each_with_object([]) do |e, out| ... end`) each
+  // Only #build_member (`def build_member(db, m); Enemy.new(db,
+  // m.enemy_id, m.x, m.y, m.invisible); end`) compiles clean -- a plain
+  // 4-argument constructor call, no arithmetic, no block. #initialize (`rng =
+  // nil`, one optional argument) has the established non-mandatory-arity gap;
+  // #total_exp/ #total_gold (`live_members.reduce(0) { |s, e| s + e.<field> }`)
+  // and #drops (`live_members.each_with_object([]) do |e, out| ... end`) each
   // end in a genuine Ruby block (BLOCK/SENDB); #live_members
   // (`@members.reject(&:hidden)`) hits the very same SENDB gap through a
   // different real shape -- `&:symbol` block-pass shorthand compiles to a
@@ -4008,15 +4008,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // drop_unsafe_embeddings correctly refuses to embed any of this class's
   // own ivars (@id/@name/@members/@pages) -- confirmed directly against
   // the real generated output: Game::Troop does not appear in bc2cpp's own
-  // "classes needing MRB_SET_INSTANCE_TT" diagnostic, and #member's own
+  // "classes needing MRB_SET_INSTANCE_TT" diagnostic, and #build_member's own
   // compiled body never touches DATA_PTR(self) at all (it is a pure
   // function of its two arguments, self is copied to a register and never
-  // read again). #member is `private` (a bare `private` mid-class-body,
+  // read again). #build_member is `private` (a bare `private` mid-class-body,
   // in effect through the end of the class, also covering #live_members/
   // #apply_appear_randomly above), so it needs
   // mrb_define_private_method, not mrb_define_method.
   RClass* troop = mrb_class_get_under(M, game, "Troop");
-  mrb_define_private_method(M, troop, "member", Game__Troop_member,
+  mrb_define_private_method(M, troop, "build_member", Game__Troop_build_member,
                             MRB_ARGS_REQ(2));
 
   // Game::Vehicle (mruby-rpg2k/mrblib/game.rb) -- a boat/ship/airship's
