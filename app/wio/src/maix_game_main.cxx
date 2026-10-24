@@ -31,6 +31,7 @@
 #include <mruby/string.h>
 #include <mruby/variable.h>
 
+#include "bc2cpp_entry.hxx"
 #include "maix.hxx"
 #include "mrb_array_access.hxx"
 
@@ -45,7 +46,7 @@ bool g_failed = false;
 int g_frame = 0;
 
 void report_scene(void) {
-  mrb_value name = mrb_funcall(g_mrb, g_game, "current_scene_name", 0);
+  mrb_value name = bc2cpp_entry_RPG2k_current_scene_name(g_mrb, g_game);
   if (g_mrb->exc) {
     g_mrb->exc = nullptr;
     return;
@@ -164,7 +165,7 @@ void setup(void) {
 
 void loop(void) {
   if (g_mrb && !g_failed && !mrb_nil_p(g_game)) {
-    mrb_funcall(g_mrb, g_game, "main_loop", 0);
+    bc2cpp_entry_RPG2k_main_loop(g_mrb, g_game);
     if (g_mrb->exc) {
       report_exc();
       g_failed = true;
