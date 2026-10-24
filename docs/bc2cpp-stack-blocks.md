@@ -36,32 +36,31 @@ code still dispatches by name: the other arms and the by-name else take
 
 ## Coverage
 
+The proof reads every operand window the way the VM does. `reads_of` in
+`tools/bc2cpp/block_self.rb` gives the count-sized operators their exact
+registers (`ARRAY`, `ARRAY2`, `ARYPUSH`, `HASH`, `HASHADD`, `ARYCAT`, `HASHCAT`,
+`STRCAT`, `ARYSPLAT`). A send reads its receiver, then one Array for a splat or
+its positional arguments, then its keywords (one Hash for `**`), then its block.
+`scripts/bc2cpp/plain_yielder_check.rb` holds the accepting and the refusing
+cases for each shape.
+
 Closed world (`scripts/bc2cpp/closed_build.bash`, all four compiled gems):
 
-| Measure | Before | After |
-| --- | ---: | ---: |
-| block sites building the block in the frame | 0 | 220 |
-| of these, never allocating an `RProc` | 0 | 25 |
-| block sites always building a heap `RProc` | 438 | 218 |
+| Measure | Heap only | Frame-local | Exact windows |
+| --- | ---: | ---: | ---: |
+| block sites building the block in the frame | 0 | 220 | 288 |
+| of these, never allocating an `RProc` | 0 | 25 | 37 |
+| block sites always building a heap `RProc` | 438 | 218 | 150 |
 
-By callee: `Array#each` 142, `Enumerable#each_with_index` 111,
-`Integer#times` 21, `Array#each_index` 9, `Enumerable#each_with_object` 5,
-`Enumerable#uniq` 4, `Hash#each_key` 2, and one each of `Integer#downto`,
-`Hash#delete_if`, `Array#find` and `Array#collect!`.
+By callee: `Array#each` 142, `Hash#each` 127, `Enumerable#collect` 118,
+`Enumerable#each_with_index` 111, `find_all` 24, `Integer#times` 21,
+`Hash#select` 12, `Array#each_index` 9, `Enumerable#reject` 8, `all?` 8,
+`each_with_object` 5, `Hash#reject` 4, `Enumerable#uniq` 4, `count` 3, and a
+few more.
 
-The proof refuses the other common callees:
-
-- `Enumerable#collect`, `find_all` and `reject`, `Array#reject!`, and
-  `Hash#reject` and `select`: `reads_of` models an `ARRAY`/`HASH` operand
-  window as every register from the lowest one up, so the block register is in
-  it.
-- `Enumerable#any?`, `all?`, `count` and `detect`: they call the block with a
-  splat (`block.call(*val)`), whose `SEND n=*` the proof does not model.
-- `Hash#each`, `Range#each`, `Array#uniq` and `sort_by`: they pass the block on
-  to another method.
-
-Modelling those two operand shapes would extend the stack block to the first
-two groups.
+The proof still refuses the callees that pass their block on to another method:
+`Range#each` (to `__upto_endless`), `Array#uniq` (to `uniq!`) and
+`Enumerable#sort_by`.
 
 ## Switch and check
 
