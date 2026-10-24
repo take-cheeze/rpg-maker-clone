@@ -282,6 +282,9 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/audit_pins_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/setter_name_closure_check.rb:
     tier: fast
     capabilities:

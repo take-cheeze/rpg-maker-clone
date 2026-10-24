@@ -138,6 +138,16 @@ Removed paths and scheduled deferrals must leave the inventory. See the
 [tier and capability guide](bc2cpp-check-tiers.md) and
 [ADR 0513](adr/0513-bc2cpp-check-registration-audit.md).
 
+### Audit pins
+
+bc2cpp trusts a few hand-audited native and foreign-Ruby files (`NativeIvarScopes::FILES`,
+`NativeClassResults::FILES`, `ForeignStringResults::AUDITED`), each pinned by SHA-256. A file whose digest no
+longer matches silently drops out of its audit, which is safe but withdraws every fact it backs: an edit of
+`mruby-rgss/src/lib.cxx` or an mruby bump once turned off all native ivar scopes and the `to_s`/`split`/`bytes`
+result facts with nothing failing. `scripts/bc2cpp/audit_pins_check.rb` fails on such a file instead. Re-read the
+change against what the audit claims (the file's comment says which functions), then add the new digest; the
+`NativeClassResults` tables accept a list, so the old digest can stay.
+
 ### Superseded runs
 
 A push to a pull request cancels the run still going for that PR's previous
