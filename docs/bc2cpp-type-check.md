@@ -448,6 +448,17 @@ existing scan. A changed source universe requires a new world.
 `BC2CPP_CLOSED_OPACITY_INDEX=0` disables this cache for comparison.
 See [ADR 0534](adr/0534-bc2cpp-opacity-touch-cache.md).
 
+## Dynamic names and `respond_to?` probes
+
+The call-site proofs (ArgTypes, ENTRY_ARG_CALLSITE_PROOF, FIXNUM_RETURN_PROOF and others) refuse every name in
+`DynamicNames.universe`, which is each Symbol or identifier-shaped String literal of the program (TC1010 "spelled as
+a literal name"). PROBE_ONLY (`tools/bc2cpp/dynamic_names.rb`) leaves out a Symbol literal whose every use, followed
+through MOVE aliases and handler edges, is the name argument of `respond_to?(name)` or `respond_to?(name, all)`:
+`Kernel#respond_to?` only looks the name up. The rule is off while the program defines, aliases or spells
+`respond_to?` or `respond_to_missing?`, since a Ruby hook would receive the name. A literal that also reaches a send,
+an escape into a container or a receiver position stays dynamic. `scripts/bc2cpp/dynamic_names_probe_check.rb`
+covers it.
+
 ## Unchanged load states
 
 Numeric flow can share its incoming read-only state across repeated integer,
