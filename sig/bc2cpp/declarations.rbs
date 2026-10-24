@@ -10782,6 +10782,27 @@ class Struct < Object
   include Enumerable
 end
 
+# Classes core C defines (mrb_define_class_id under Object) whose mixins only C adds, so no Ruby declaration shows
+# them: mruby-io io.c includes Enumerable into IO, mruby-time time.c Comparable into Time.
+# bc2cpp-native: core_hierarchy
+class IO < Object
+  include Enumerable
+end
+
+# bc2cpp-native: core_hierarchy
+class Time < Object
+  include Comparable
+end
+
+# bc2cpp-native: core_hierarchy
+class Dir < Object
+end
+
+# mruby-onig-regexp's match data (mrb_define_class under Object).
+# bc2cpp-native: core_hierarchy
+class OnigMatchData < Object
+end
+
 # bc2cpp-native: core_predicates
 module Enumerable
   def any?: () -> bool | (untyped) -> bool | () { (untyped) -> untyped } -> bool
