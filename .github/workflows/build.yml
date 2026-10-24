@@ -732,6 +732,7 @@ jobs:
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
           ruby scripts/bc2cpp/explicit_block_arg_direct_check.rb
           ruby scripts/bc2cpp/stack_block_check.rb
+          ruby scripts/bc2cpp/ensure_nested_rescue_check.rb
           ruby scripts/bc2cpp/array_new_block_check.rb
           ruby scripts/bc2cpp/class_method_block_check.rb
           ruby scripts/bc2cpp/yield_c_boundary_check.rb
