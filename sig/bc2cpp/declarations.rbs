@@ -9532,8 +9532,9 @@ class Game::Actors
   # Runtime-checked: an `@all` Hash read; a nil id or an absent actor is nil.
   %a{bc2cpp:hint}
   def existing: (Integer) -> Game::Actor?
+  # Every value of `@all` is an `Actor.new` (#[] is its only writer).
   %a{bc2cpp:hint}
-  def all: () -> Array
+  def all: () -> Array[Game::Actor]
   %a{bc2cpp:hint}
   def each: () -> Array
 end
