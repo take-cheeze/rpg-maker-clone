@@ -207,6 +207,14 @@ module is prepended into Integer (the owner-scoped `IntegerConstantRanges.intege
 `IntegerConstants` takes the same gate. A divisor interval that contains 0 has no interval. `scripts/bc2cpp/constant_typing_check.rb`
 covers these.
 
+A declared `X: Integer` (RBS, TC1011) whose own assignment evaluates to a Fixnum feeds INTEGER_CONSTANT_PROOF for the
+reads that resolve to that definition the way the runtime does (LEXICAL_CONST: lexical scopes, then ancestors), so
+`Game::MoveRoute::TURN_LEFT` proves beside the Hash `Game::Character::TURN_LEFT`. The fact covers every read of the bare
+name only when every binding of `X` evaluates to a Fixnum. Neither holds when a native or foreign Ruby definition binds
+`X` (`Float::MAX`, `Enumerable::NONE` keep `MAX` and `NONE` unproven). A binding that copies a same-named constant (`X = Window::X`, SELF_COPY) stores a value
+another binding already stored, so it is left out of that union rather than refusing it as a cycle.
+`scripts/bc2cpp/constant_proofs_check.rb` covers this.
+
 FREEZE_SELF: `R.freeze` answers its receiver (Object#freeze), so a `.freeze` send has the receiver's type while `freeze` is
 stock on that class. The one proof is `DeclaredConstants.stock_method?('freeze', klass, ...)` (owners Integer, String,
 Array, Hash with their ancestors; no Ruby `freeze`, prepend or unresolved mixin on them). It is used in two places:
@@ -439,6 +447,17 @@ finalized touch result is cached. Native source-inclusive questions retain their
 existing scan. A changed source universe requires a new world.
 `BC2CPP_CLOSED_OPACITY_INDEX=0` disables this cache for comparison.
 See [ADR 0534](adr/0534-bc2cpp-opacity-touch-cache.md).
+
+## Dynamic names and `respond_to?` probes
+
+The call-site proofs (ArgTypes, ENTRY_ARG_CALLSITE_PROOF, FIXNUM_RETURN_PROOF and others) refuse every name in
+`DynamicNames.universe`, which is each Symbol or identifier-shaped String literal of the program (TC1010 "spelled as
+a literal name"). PROBE_ONLY (`tools/bc2cpp/dynamic_names.rb`) leaves out a Symbol literal whose every use, followed
+through MOVE aliases and handler edges, is the name argument of `respond_to?(name)` or `respond_to?(name, all)`:
+`Kernel#respond_to?` only looks the name up. The rule is off while the program defines, aliases or spells
+`respond_to?` or `respond_to_missing?`, since a Ruby hook would receive the name. A literal that also reaches a send,
+an escape into a container or a receiver position stays dynamic. `scripts/bc2cpp/dynamic_names_probe_check.rb`
+covers it.
 
 ## Unchanged load states
 

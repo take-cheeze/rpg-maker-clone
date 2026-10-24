@@ -147,8 +147,47 @@ candidates producer reports linkage from the AST, and the wired check reads each
 definition to confirm it. Candidates whose body has conditional compilation, and operator-named
 methods, are not wired: their frame verdict or their registration name is not
 checked by the audit. `scripts/bc2cpp/native_core_direct_wired_check.rb` fails if
-any generated entry stops verifying, since the audit would otherwise drop it
-silently.
+any generated or hand-audited entry stops verifying, since the audit would
+otherwise drop it silently. It audits the hand-audited entries against the full
+native source set of the closed world, because some of them pin bodies in mruby
+gems (`Array#compact` is `mruby-array-ext`'s).
+
+A hand-audited entry whose mruby function is `static`, or reads its arguments
+with `mrb_get_args`, calls a helper instead (`bc2cpp_ary_delete`,
+`bc2cpp_ary_index`, ...). The helper replays the function's block-less body over
+public macros and MRB_API functions, so it runs without a call frame. When the
+argument format converts its argument (`"i"`, `"A"`), the entry's argument guard
+admits only the values for which that conversion is the identity (a fixnum, an
+Array), and every other argument keeps the send.
+
+These are not hand-rewritten, because no exact frame-free version exists:
+`Array#inspect` writes `mrb->c->ci->mid` and its recursion guard walks the call
+stack, and methods that yield need a block frame. `String#replace`,
+`Hash#replace` and `String#index` call large `static` helpers with no public
+equivalent. The same holds for `String#__chars`, `#ord`, `#__codepoints`,
+`Array#__uniq` and `Hash#__compact` (`utf8code`, `ary_uniq_bang` and the hash
+table internals are `static`). `String#__lines` and `Range#__num_to_a` write
+`ci->mid`, which a call without a frame of its own would write into its caller's.
+
+The entries also apply inside compiled mruby core bodies. Those bodies compile
+with the closed world withheld, but an entry's safety rests only on program-wide
+facts (no project definition, prepend or unknown mixin on the owner, no outside
+definer), so they ask the same world, as the `*rest` receiver arm does. A core
+body's receiver proof is itself a runtime class test, so the call stays behind it.
+
+An exact core receiver also gets the Kernel and BasicObject natives it inherits
+(`nil?`, `class`, `dup`, `equal?`, `is_a?`, `kind_of?`, `frozen?`, `freeze`;
+`NativeCoreDirect::INHERITED_ENTRIES`, INHERITED_CORE_DIRECT). Lookup walks the
+class, its mixins and then its superclasses, so such a native answers only when
+nothing earlier in that walk defines the name. `CodeGen#inherited_core_entry`
+refuses the call when there is a native registration or a compiled or outside
+Ruby definition earlier in the walk, a prepend, a project mixin that defines the
+name, or a runtime installer of it.
+
+When the flow proves a receiver is exactly a core class (FLOW_CORE_DIRECT), the
+send calls the compiled core body or, for a C method, the audited entry. That
+happens before any guard chain over project classes that define the same name:
+an exact core receiver can take none of their arms.
 
 ## Where the generated artifacts come from
 

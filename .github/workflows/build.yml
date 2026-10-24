@@ -692,8 +692,9 @@ jobs:
         # `-m` lets rake run every prerequisite concurrently.
         env:
           RAKEOPT: -m -j4
-        # The devshell exports LD=ld, which would link mrbc without libc.
-        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
+        # The devshell exports LD=ld, which would link mrbc without libc. quiet_run prints the build's
+        # output only when it fails (docs/ci.md, "Quiet output").
+        run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
 
       - name: Check the compiled gems are in the closed-world build
         run: |
@@ -729,6 +730,8 @@ jobs:
           ruby scripts/bc2cpp/sealed_host_check.rb
           ruby scripts/bc2cpp/ir_context_results_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
+          ruby scripts/bc2cpp/explicit_block_arg_direct_check.rb
+          ruby scripts/bc2cpp/stack_block_check.rb
           ruby scripts/bc2cpp/module_function_scope_check.rb
           ruby scripts/bc2cpp/escape_receiver_flow_check.rb
           ruby scripts/bc2cpp/skipped_direct_call_check.rb
@@ -758,6 +761,10 @@ jobs:
           ruby scripts/bc2cpp/lcf_join_array_check.rb
           ruby scripts/bc2cpp/alias_method_check.rb
           ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
+          ruby scripts/bc2cpp/record_hash_update_check.rb
+          ruby scripts/bc2cpp/record_nilable_read_check.rb
+          ruby scripts/bc2cpp/constructor_optionals_check.rb
+          ruby scripts/bc2cpp/setter_name_closure_check.rb
           ruby scripts/bc2cpp/ir_ivar_types_check.rb
           ruby scripts/bc2cpp/ivar_candidates_check.rb
           ruby scripts/bc2cpp/nonlocal_return_candidate_check.rb
@@ -781,9 +788,11 @@ jobs:
           ruby scripts/bc2cpp/ir_blocks_check.rb
           ruby scripts/bc2cpp/decided_branch_check.rb
           ruby scripts/bc2cpp/arm_prune_check.rb
+          ruby scripts/bc2cpp/plain_yielder_check.rb
           ruby scripts/bc2cpp/struct_receiver_check.rb
           ruby scripts/bc2cpp/receiver_origin_join_check.rb
           ruby scripts/bc2cpp/constant_argument_sites_check.rb
+          ruby scripts/bc2cpp/dynamic_names_probe_check.rb
           ruby scripts/bc2cpp/native_member_tables_check.rb
           ruby scripts/bc2cpp/native_callbacks_check.rb
           ruby scripts/bc2cpp/io_open_check.rb

@@ -5,6 +5,13 @@ variable can contain:
 
 - `RecordHash` (`tools/bc2cpp/record_hash.rb`, RECORD_HASH_PROOF, ADR 0285):
   per-key value classes of a Hash record with literal Symbol keys.
+  `@slot.update({k: v, ...})` and `merge!` with no block count as one store per
+  pair when the argument is a fresh Symbol-keyed literal (a `HASH` plus its
+  `HASHADD` chunks, in a region nothing else enters, leaves or reads it in);
+  `update`, `merge!` and `__merge` must keep core's definitions by the same owner
+  rule as `delete`, which does not match native C definitions by owner.
+  `BC2CPP_RECORD_HASH_UPDATE=0` treats the call as an escape again. Checked by
+  `scripts/bc2cpp/record_hash_update_check.rb`.
 - `ArrayElementLayout` / `HashElementLayout` (`tools/bc2cpp/element_layouts.rb`,
   ELEMENT_CLASS_SUPPORT / HASH_ELEMENT_SUPPORT): the one class every element
   of an Array ivar, or every value of a Hash ivar, has.
@@ -18,6 +25,7 @@ variable can contain:
 | `bc2cpp.rb` (`RecordHash.analyze`, `RECORD_HASH` report) | slots, refusals | report; `RecordHash.table` for the consumers below |
 | `class_layout.rb` (`RecordHash.array_read?`) | `@ui[:key]` is a non-nil Array | codegen (ivar class `Array`) |
 | `codegen_record_hash.rb` (`record_hash_exact_class`, used by `codegen_send.rb`) | exact class of a record key | codegen (unguarded exact receiver) |
+| `codegen_record_hash.rb` (`record_index_mask`, RECORD_NILABLE_READ, via `ExactOracle#index_mask`) | a record key's Array/Hash/String classes, plus nil when the key can be absent | the exact-class flow, whose truthiness narrowing makes `@slot[:k] \|\| []` and `return unless x` exact and a plain read a NILABLE_RECEIVER; `BC2CPP_RECORD_NILABLE_READS=0` turns it off; checked by `scripts/bc2cpp/record_nilable_read_check.rb` |
 | `rbs_record_types.rb` (`DeclScanner < RecordHash::Scanner`, `literal_keys`, `read_slots`, `Poison`) | declared record verification | codegen (verified names join the table) and the type check |
 | `bc2cpp.rb` (`ArrayElementLayout.analyze` / `HashElementLayout.analyze`, `ELEM_HINT*` / `HASH_ELEM_HINT*` reports) | element tables | codegen (`CodeGen.new` element layouts) and report |
 | `codegen_receiver_facts.rb` (`proven_element_class`, `proven_hash_element_class`; used by `codegen_loop_regions.rb` and `codegen_block_fallback.rb`) | element class of a block receiver | codegen (inlined loop element calls) |

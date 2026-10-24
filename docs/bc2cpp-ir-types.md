@@ -68,3 +68,16 @@ The type-check report presents these bounds with source `signature`.
 [IR feedback](bc2cpp-ir-feedback.md) adds return/ivar compatibility diagnostics
 and reviewable inferred RBS suggestions; optimization hints are unchanged.
 See [ADR 0441](adr/0441-bc2cpp-ir-rbs-contracts.md).
+
+## Exact-class refusals
+
+`Types#exact_at` is the literal-only exact-class proof that generated code
+consumes (exact receivers, `===`, `times`, step loops). Like `at`, it accepts
+`refusal:`, a Hash that receives the first reason the proof failed:
+`producer:<OP>` for a reaching writer that is not a literal, `entry:<slot>` or
+`entry_value` for an entry value, `self_unknown` for R0 or `LOADSELF` without
+the caller's `self_class`, `class_join` when the definitions disagree,
+`container_mismatch` for a container op over another class, and the dataflow's
+own causes (`state_cap`, `query_guarded`, ...). The cause is diagnostic only:
+the answer and its cache are the same with or without it. Run
+`ruby scripts/bc2cpp/ir_facts_check.rb` for the fixture checks.
