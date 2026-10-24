@@ -557,6 +557,10 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/static_dispatch_scan_check.rb:
+    tier: fast
+    capabilities:
+    - native_sources
   scripts/bc2cpp/self_new_leaf_check.rb:
     tier: runtime
     capabilities:
