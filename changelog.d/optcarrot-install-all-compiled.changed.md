@@ -1,0 +1,1 @@
+- **optcarrot probe** benchmark installs every compiled entry point instead of a hand-kept list of Fiber-safe owners (bc2cpp now refuses the Fiber-unsafe methods itself), so `Optcarrot::PPU` and `Optcarrot::APU` run compiled: 180 frames take ~12.9 s against ~18.7 s interpreted, where the compiled build was previously no faster.
