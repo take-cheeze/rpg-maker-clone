@@ -412,7 +412,8 @@
             '';
           });
 
-          # Only host tools used by the closed-world bc2cpp gate.
+          # Only host tools used by the closed-world bc2cpp gate. `unar` is
+          # there for the Nepheshel download (scripts/download/nepheshel.bash).
           bc2cpp = pkgs.mkShell {
             packages = with pkgs; [
               ruby_4_0
@@ -424,6 +425,7 @@
               curl
               python3
               pkg-config
+              unar
             ];
           };
 

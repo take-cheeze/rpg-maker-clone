@@ -1,0 +1,1 @@
+- **CI:** the bc2cpp trace job gets `unar` from the flake's `bc2cpp` dev shell instead of `apt-get install unar`. The apt install failed when the runner's apt mirror served a stale `libunbound8` (404), which stopped the job before the Nepheshel download.

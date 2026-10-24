@@ -42,9 +42,6 @@ jobs:
       - name: Set up development environment
         run: ./scripts/nix/develop-export-env.bash .#bc2cpp
 
-      - name: Install the archive tool the Nepheshel download uses
-        run: sudo apt-get install -y unar
-
       - name: Download Nepheshel
         run: ./scripts/download/nepheshel.bash
 
