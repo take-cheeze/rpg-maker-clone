@@ -138,6 +138,9 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # Opt-in: a dead bc2cpp_nomethod site aborts
   # without dispatching. Off unless BC2CPP_NOMETHOD_VERIFY=1, so no shipped build changes.
   conf.cxx.defines << 'BC2CPP_NOMETHOD_VERIFY' if ENV['BC2CPP_NOMETHOD_VERIFY'] == '1'
+  # UNREGISTERED_VERIFY: every registration static_dispatch_unregistered*.rb drops is a stub that aborts when
+  # looked up by name (codegen_emit.rb). Off unless BC2CPP_UNREGISTERED_VERIFY=1.
+  conf.cxx.defines << 'BC2CPP_UNREGISTERED_VERIFY' if ENV['BC2CPP_UNREGISTERED_VERIFY'] == '1'
   # Opt-in: the strict-hint survey mode, each distinct violation logged once and dispatched.
   conf.cxx.defines << 'BC2CPP_HINT_VIOLATION_LOG' if ENV['BC2CPP_HINT_VIOLATION_LOG'] == '1'
 
