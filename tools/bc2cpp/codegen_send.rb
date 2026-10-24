@@ -1181,6 +1181,11 @@ class CodeGen
         end
       end
     end
+    # INHERITED_USER_DIRECT: an exact project or RGSS receiver whose lookup reaches a Kernel/BasicObject native.
+    if target.nil? && !self_implicit && exact_class && !via_element &&
+       (inherited = inherited_user_entry(exact_class, name, n))
+      return inherited_code_line(d, recv, name, argv, inherited, exact_class)
+    end
     # An RGSS native instance the flow proves exact (an ivar-held Bitmap, Sprite, Window ...) calls
     # its registered entry point directly.
     if target.nil? && !self_implicit && exact_via_flow && NATIVE_WRAPPER_CLASS_ACCESSORS.key?(exact_class) && irep && proof_idx

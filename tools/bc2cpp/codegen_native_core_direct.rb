@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'set'
 require_relative 'native_core_direct'
 require_relative 'core_hierarchy_sigs'
 
@@ -229,6 +230,34 @@ module NativeCoreDirectFallback
     return nil unless lookup.all? { |a| world.core_native_arm_safe?(name, a) }
 
     entry
+  end
+
+  # The same entry for an exact project or RGSS class: each class on the way up to the first core class has no
+  # definition of the name and nothing mixed in, and the core class's own walk (inherited_core_entry) decides the rest.
+  def inherited_user_entry(klass, name, arity)
+    @inherited_user_entries ||= {}
+    key = [klass, name, arity]
+    return @inherited_user_entries[key] if @inherited_user_entries.key?(key)
+
+    @inherited_user_entries[key] = inherited_user_entry_uncached(klass, name, arity)
+  end
+
+  def inherited_user_entry_uncached(klass, name, arity)
+    return nil unless @closed_world&.stable_class_constant?(klass)
+
+    seen = Set.new
+    loop do
+      return nil unless klass.is_a?(String) && seen.add?(klass)
+      return inherited_core_entry(klass, name, arity) if CoreHierarchySigs.declared_class?(klass)
+      return nil if @unknown_mixins.include?(klass) || !Array(@included_modules[klass]).empty? ||
+                    !Array(@prepended_modules[klass]).empty?
+      return nil if (@registry[name] || []).any? { |definition| definition.owner == klass }
+      return nil unless @closed_world.core_native_arm_safe?(name, klass)
+
+      # declared_parent reads every opener (a later `class X` reopen records :none) and refuses an opaque class.
+      parent = @closed_world.declared_parent(klass)
+      klass = parent == :none ? 'Object' : parent
+    end
   end
 
   def inherited_code_line(d, recv, name, argv, entry, klass)
