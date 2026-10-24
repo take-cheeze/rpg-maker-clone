@@ -45,6 +45,10 @@ the XP/VX/Wolf/MV gems and without `mruby-onig` and `mruby-dir`, and the desktop
 bc2cpp's native input (`BC2CPP_CLOSED_WORLD_HOST_SRCS`). The four `*-compiled`
 gems are generated in that closed world and compiled into its `libmruby.a`, and the job then
 runs the type check (`scripts/bc2cpp/type_check.rb`) with that build's host `mrbc`.
+The build compiles at `-O0`, so `closed_build.bash` drops Nix's `fortify` hardening flags for
+its rake runs. glibc's `_FORTIFY_SOURCE` needs optimization and would otherwise warn on every
+file. Nix's compiler wrapper appends its define after the command's flags, so a `-U` in
+`build_config.rb` cannot undo it.
 
 The build is native because bc2cpp's generated C++ lowers block `break`, non-local `return`
 and `raise` with real C++ throw/catch, which needs mruby's C++-exception mode
