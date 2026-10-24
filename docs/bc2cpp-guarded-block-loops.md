@@ -25,6 +25,12 @@ proof themselves (`guarded_plain_chain_arm?`):
   The first core definer on Array's chain is `Enumerable#inject`, which
   isn't compiled because it builds a lambda for the `inject(:sym)` form. The
   fold loop reproduces what `inject` does with an initial value and a block.
+- **`GUARDED_NATIVE_ARM`:** `index { }` on Array. `Array#index` is mruby's
+  native `mrb_ary_index_m`, the same loop, and nothing else may define
+  `index` on Array: no Ruby definition, prepend, installer, or native
+  registration outside mruby's `src/array.c` (`array_native_refusal`, the
+  proof `Array.new` inlining uses). The proven-Array loop needs the same
+  proof.
 
 ## A fold's initial value
 
@@ -38,6 +44,7 @@ the send). An unproven initial value keeps the send.
 
 `BC2CPP_GUARDED_BLOCK_INLINE=0` turns the guarded loops off.
 `scripts/bc2cpp/block_iterator_direct_check.rb` asserts the guarded
-`times` and `reduce` shapes and the refused Symbol and unproven initial
-values, and compares interpreted and compiled runs over Arrays (frozen
-included), a Range, a Hash and a user Enumerable.
+`times`, `reduce` and `index` shapes, the refused Symbol and unproven initial
+values, and that a program `Array#index` withdraws the index loops. It also
+compares interpreted and compiled runs over Arrays (frozen included), a
+Range, a Hash and a user Enumerable.

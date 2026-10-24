@@ -43,6 +43,10 @@ themselves (ROM method tables included), so a file that registers
 `initialize` only on other classes no longer counts. With `BC2CPP_NATIVE_OWNER_MAP=0` the old spelling test
 applies again.
 
+The same proof, by method name (`array_native_refusal`), also gates the
+inlined `ary.index { }` loop, since `Array#index` is native too
+(`mrb_ary_index_m`).
+
 ## Switch and check
 
 `BC2CPP_ARRAY_NEW_INLINE=0` keeps every site as a call.
