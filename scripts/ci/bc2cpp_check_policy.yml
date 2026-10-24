@@ -365,6 +365,13 @@ checks:
     capabilities: []
     fixture_capabilities:
     - native_sources
+  scripts/bc2cpp/stack_block_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/explicit_block_arg_direct_check.rb:
     tier: runtime
     capabilities:
