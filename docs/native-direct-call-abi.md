@@ -147,8 +147,20 @@ candidates producer reports linkage from the AST, and the wired check reads each
 definition to confirm it. Candidates whose body has conditional compilation, and operator-named
 methods, are not wired: their frame verdict or their registration name is not
 checked by the audit. `scripts/bc2cpp/native_core_direct_wired_check.rb` fails if
-any generated entry stops verifying, since the audit would otherwise drop it
-silently.
+any generated or hand-audited entry stops verifying, since the audit would
+otherwise drop it silently. It audits the hand-audited entries against the full
+native source set of the closed world, because some of them pin bodies in mruby
+gems (`Array#compact` is `mruby-array-ext`'s).
+
+A hand-audited entry whose mruby function is `static`, or reads its arguments
+with `mrb_get_args`, calls a helper instead (`bc2cpp_ary_delete`,
+`bc2cpp_ary_index`, ...). The helper replays the function's block-less body over
+public macros and MRB_API functions, so it runs without a call frame.
+
+When the flow proves a receiver is exactly a core class (FLOW_CORE_DIRECT), the
+send calls the compiled core body or, for a C method, the audited entry. That
+happens before any guard chain over project classes that define the same name:
+an exact core receiver can take none of their arms.
 
 ## Where the generated artifacts come from
 

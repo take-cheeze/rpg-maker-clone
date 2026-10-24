@@ -4,6 +4,7 @@
 class Array
   def __svalue: () -> untyped
   def compact: () -> untyped
+  def delete: (untyped) -> untyped
   def index: (untyped) -> untyped
   def join: () -> untyped | (String?) -> untyped
   def shift: () -> untyped
