@@ -14,6 +14,9 @@
 # aborts the step under `set -e` with its own status. An EXIT trap prints the table on success and on
 # failure alike (the command that failed is listed as FAILED with the time it ran).
 #
+# Only a failed command's output is printed (docs/ci.md, "Quiet output"): a passing one keeps just its
+# timing row and any `::error`/`::warning`/`::notice` workflow lines it wrote. CI_VERBOSE=1 prints all.
+#
 # Commands between `# ci:parallel begin [N]` and `# ci:parallel end` run at the same time, at most N at a time
 # (docs/ci.md, "Parallel groups"); everything else runs in order as before.
 #
@@ -25,12 +28,24 @@ PRELUDE = <<~'BASH'
   __ci_rows="$(mktemp)"
   __ci_label=
   __ci_start=
+  __ci_verbose="${CI_VERBOSE:-0}"
+  # A serial command writes to fd 4: its own log, or the step's stdout (saved as fd 3) under CI_VERBOSE=1.
+  # A duplicated descriptor, not /dev/fd/3, which reopens (and truncates) a stdout redirected to a file.
+  exec 3>&1
+  __ci_log="$(mktemp)"
   __ci_now() { date +%s.%N; }
-  __ci_begin() { __ci_label="$1"; __ci_start="$(__ci_now)"; }
+  # The workflow commands (annotations) of a passing command's log: the only part of it that is printed.
+  __ci_annotations() { grep -E '^::(error|warning|notice)( |::)' "$1" || true; }
+  __ci_begin() {
+    __ci_label="$1"
+    __ci_start="$(__ci_now)"
+    if [ "$__ci_verbose" = 1 ]; then exec 4>&3; else exec 4>"$__ci_log"; fi
+  }
   __ci_end() {
     local secs
     secs="$(awk -v a="$__ci_start" -v b="$(__ci_now)" 'BEGIN { printf "%.1f", b - a }')"
     printf '%s\t%s\t%s\n' "$secs" ok "$__ci_label" >> "$__ci_rows"
+    __ci_annotations "$__ci_log"
     __ci_label=
   }
   __ci_table() {
@@ -41,7 +56,12 @@ PRELUDE = <<~'BASH'
       local secs
       secs="$(awk -v a="$__ci_start" -v b="$(__ci_now)" 'BEGIN { printf "%.1f", b - a }')"
       printf '%s\t%s\t%s\n' "$secs" FAILED "$__ci_label" >> "$__ci_rows"
+      if [ "$__ci_verbose" != 1 ]; then
+        printf '== FAILED (exit %s, %ss): %s\n' "$status" "$secs" "$__ci_label"
+        cat "$__ci_log"
+      fi
     fi
+    rm -f "$__ci_log"
     local table
     table="$(sort -t "$(printf '\t')" -k1,1nr "$__ci_rows" |
       awk -F '\t' '{ total += $1; printf "%9s  %s%s\n", $1, ($2 == "FAILED" ? "FAILED  " : ""), $3 }
@@ -93,9 +113,13 @@ PRELUDE = <<~'BASH'
     for ((i = 0; i < __ci_par_n; i++)); do
       read -r rc secs < "$__ci_par_dir/$i.rc"
       if [ "$rc" = 0 ]; then
-        printf '::group::%s (%ss)\n' "${__ci_par_labels[$i]}" "$secs"
-        cat "$__ci_par_dir/$i.log"
-        printf '::endgroup::\n'
+        if [ "$__ci_verbose" = 1 ]; then
+          printf '::group::%s (%ss)\n' "${__ci_par_labels[$i]}" "$secs"
+          cat "$__ci_par_dir/$i.log"
+          printf '::endgroup::\n'
+        else
+          __ci_annotations "$__ci_par_dir/$i.log"
+        fi
         printf '%s\t%s\t%s\n' "$secs" ok "${__ci_par_labels[$i]}" >> "$__ci_rows"
       else
         printf '== FAILED (exit %s, %ss): %s\n' "$rc" "$secs" "${__ci_par_labels[$i]}"
@@ -173,7 +197,8 @@ commands($stdin.read).each do |line|
   elsif in_group
     puts "__ci_par_run #{Shellwords.escape(label(line))} #{Shellwords.escape(line)}"
   else
-    puts "__ci_begin #{Shellwords.escape(label(line))}", line, '__ci_end'
+    # A brace group, not a subshell: the command still runs in the step's own shell.
+    puts "__ci_begin #{Shellwords.escape(label(line))}", "{ #{line}", '} >&4 2>&1', '__ci_end'
   end
 end
 abort 'timed_checks: "ci:parallel begin" without an end' if in_group
