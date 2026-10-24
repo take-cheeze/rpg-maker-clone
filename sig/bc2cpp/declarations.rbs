@@ -7401,12 +7401,6 @@ class Win32API
   def initialize: (untyped, untyped, ?untyped, ?untyped) -> untyped
 end
 
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_sprintf
-class String
-  def %: (untyped) -> untyped
-end
-
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_sprintf
 class Kernel
@@ -8317,6 +8311,11 @@ module LCF
   def var_max: () -> untyped
   def var_min: () -> untyped
   def write_ber: (untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_sprintf
+class String
 end
 
 # ---- block_types.rbs

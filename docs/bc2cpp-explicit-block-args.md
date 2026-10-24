@@ -40,6 +40,14 @@ the pattern that swaps a lifted `bc2cpp_nomethod` else for the owner call
 missed the marker's ` @ site` suffix, so such a block send kept a proven
 NoMethodError; literal-block sites hit the same gap.
 
+The owner set is only as good as its sources. Besides the registry, the
+outside sources and `core_hidden_defs`, it scans the program's own core Ruby
+(`program_core_ruby_paths`): an alias of a native-named core method
+(`alias each_line each` in mruby-io's `IO`) and a core method the compile
+refuses (`Enumerator#each_with_index`) are in none of the others, and a
+receiver whose method resolves to an owner missing from the set raises
+`BC2cppGuardViolation`.
+
 ## Switch and check
 
 `BC2CPP_EXPLICIT_BLOCK_ARG_DIRECT=0` keeps every `&expr` site on
