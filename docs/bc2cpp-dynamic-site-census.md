@@ -2051,3 +2051,23 @@ runtime class tests (`mrb_obj_class` arms) go, about 20 of them in `Game::Battle
 NILABLE_RECEIVER nil arms and 2 more guard violations; generated lines go from 410,097 to 409,923. By-name sends do
 not change (761 `bc2cpp_send`, 374 `mrb_funcall_with_block`). `Game::Battle::Combatant#@states` stays unpooled: its
 attr writer still makes the pool structural.
+
+## Follow-up: setter names out of reach of computed sends (SETTER_NAME_CLOSURE)
+
+`DynamicNames.universe` used to add `stem=` for every spelled stem once any send computed its name, so every setter
+counted as callable by a name nobody spells and SETTER_POOLS stayed CHECKED (a class test and a guard violation).
+The closed world's only computed calls are core `Symbol#to_proc`, `Enumerable#inject` and `Enumerator#each`, plus
+five `attr_*` lists mrbc packs into a splat. `DynamicNames.setter_composition` now adds `stem=` only when a value
+naming a setter can exist without being spelled: an interpolated Symbol whose last piece is not a literal or ends
+in `=`, `to_sym`/`intern` outside the shape-keeping core methods, a method-name lister, a definition's name value
+used other than by a visibility call, a definition op or a self send's result slot, a computed calling send other
+than core `__send__` (send, public_send and method also take a String), or `to_enum`/`enum_for` with a
+non-literal name. When none applies, setter pools for setters the universe leaves out are proofs (no CHECKED).
+Natives handing Ruby a setter-name Symbol stay outside the model. `BC2CPP_SETTER_NAME_CLOSURE=0` restores the
+blanket rule; checked by `scripts/bc2cpp/setter_name_closure_check.rb`.
+
+On the closed world the universe goes from 3,272 to 1,637 names. Switch on against off on one tree: 2 `bc2cpp_send`
+(631 to 629) and 7 `mrb_funcall_with_block` (285 to 278) by-name sites and 114 runtime class tests go, with 14 fewer
+guard violations, 63 more NILABLE_RECEIVER nil arms and 20 more `bc2cpp_nomethod` arms; generated lines go from
+410,280 to 409,466, no `#error`. 100 functions change, mostly in `RPG2k::Scene::Map` (44) and `Game::Interpreter`
+(31). `Game::Battle::Combatant#@states` stays CHECKED: `respond_to?(:states=)` spells its setter.
