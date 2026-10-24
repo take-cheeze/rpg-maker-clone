@@ -2147,3 +2147,23 @@ Checked by `scripts/bc2cpp/nilable_class_tests_check.rb`. On the closed world, o
 | generated lines | 409,027 | 408,542 | 405,665 |
 
 No `#error`; `mrb_funcall_with_block` and guard violations do not change.
+
+## Follow-up: argument pools of methods with optional parameters (OPTIONAL_ARG_POOLS)
+
+Joining the shipped POLY_SMALL_N chains to the argument pools their receivers come from showed the pools of the
+top method by class tests, `Game::Battle#apply_skill_hit` (146 tests over 51 sites), dropping on `b` and `cmd`, which
+`apply_command(b, combo = 1)` and `apply_command_all(b, cmd, combo = 1)` hand on through their `combo.times` blocks.
+Neither caller had pools at all: admission rule 6 refused any method with an optional parameter. With no post
+parameter, OP_ENTER binds R[1..mand] from the first mand arguments whatever the count, so OPTIONAL_ARG_POOLS admits
+such a method for its mandatory positions, from sites passing mand to mand+opt arguments. The fixnum entry proof keeps
+the pure shape. `BC2CPP_OPTIONAL_ARG_POOLS=0`; `scripts/bc2cpp/optional_arg_pools_check.rb`.
+
+On the closed world, one tree, against `BC2CPP_OPTIONAL_ARG_POOLS=0`: 35 more argument pools (342 to 377; e.g.
+`apply_skill_hit`'s `cmd`, `Party#cast_escape_skill`'s state, `Scene::Base#draw_actor_state`'s bitmap), 54 fewer
+runtime class tests (7,644 to 7,590), 20 fewer POLY_SMALL_N chains (1,821 to 1,801), 49 more NILABLE_RECEIVER sites
+and 26 fewer generated lines; no `#error`, and by-name sends and guard violations do not change. `apply_skill_hit`'s
+battlers still drop: `target` is a `cmd[:target]` Hash read, and `b` comes from `apply_command`'s own callers.
+
+Symbol literals passed to `public`/`private` (`public :char_passable?`) also poison names for these proofs. Leaving
+them out changes no generated code, because `mruby-rpgxp` redefines both in Ruby and the freed names take their
+arguments from callers whose pools drop anyway.
