@@ -6416,15 +6416,15 @@ module Game
     # non-jump case, rotating #last_move_direction rather than the always-
     # cardinal @direction (see #last_move_direction's own citation for why
     # the two can diverge).
-    TURN_RIGHT = { 8 => 6, 6 => 2, 2 => 4, 4 => 8,
-                   [6, 8] => [6, 2], [6, 2] => [4, 2],
-                   [4, 2] => [4, 8], [4, 8] => [6, 8] }.freeze
-    TURN_LEFT  = { 8 => 4, 4 => 2, 2 => 6, 6 => 8,
-                   [6, 8] => [4, 8], [4, 8] => [4, 2],
-                   [4, 2] => [6, 2], [6, 2] => [6, 8] }.freeze
-    TURN_180   = { 8 => 2, 2 => 8, 4 => 6, 6 => 4,
-                   [6, 8] => [4, 2], [4, 2] => [6, 8],
-                   [6, 2] => [4, 8], [4, 8] => [6, 2] }.freeze
+    TURN_RIGHT_DIR = { 8 => 6, 6 => 2, 2 => 4, 4 => 8,
+                       [6, 8] => [6, 2], [6, 2] => [4, 2],
+                       [4, 2] => [4, 8], [4, 8] => [6, 8] }.freeze
+    TURN_LEFT_DIR  = { 8 => 4, 4 => 2, 2 => 6, 6 => 8,
+                       [6, 8] => [4, 8], [4, 8] => [4, 2],
+                       [4, 2] => [6, 2], [6, 2] => [6, 8] }.freeze
+    TURN_180_DIR   = { 8 => 2, 2 => 8, 4 => 6, 6 => 4,
+                       [6, 8] => [4, 2], [4, 2] => [6, 8],
+                       [6, 2] => [4, 8], [4, 8] => [6, 2] }.freeze
     # The four cardinal directions, indexable for random selection.
     CARDINALS = [2, 4, 6, 8].freeze
 
@@ -6651,7 +6651,7 @@ module Game
     # into it -- discarding any diagonal pair outright, rather than rotating
     # it, whenever a Turn Right/Left/180 (or Turn Random, which calls
     # #turn_right/#turn_left directly) followed a diagonal move-route
-    # sub-command. `TURN_RIGHT`/`TURN_LEFT`/`TURN_180` already carry the
+    # sub-command. `TURN_RIGHT_DIR`/`TURN_LEFT_DIR`/`TURN_180_DIR` already carry the
     # diagonal-pair keys `#jump_face_direction` needed for the identical
     # rotation inside a jump block, so the fix is the same one-line idiom:
     # look `@last_move_direction` itself up in the table (a plain cardinal
@@ -6660,18 +6660,18 @@ module Game
     # #last_move_direction's own citation) is untouched by this fix and
     # keeps rotating exactly as it already did.
     def turn_right
-      @direction = TURN_RIGHT[@direction] || @direction
-      @last_move_direction = TURN_RIGHT[@last_move_direction] || @last_move_direction
+      @direction = TURN_RIGHT_DIR[@direction] || @direction
+      @last_move_direction = TURN_RIGHT_DIR[@last_move_direction] || @last_move_direction
     end
 
     def turn_left
-      @direction = TURN_LEFT[@direction] || @direction
-      @last_move_direction = TURN_LEFT[@last_move_direction] || @last_move_direction
+      @direction = TURN_LEFT_DIR[@direction] || @direction
+      @last_move_direction = TURN_LEFT_DIR[@last_move_direction] || @last_move_direction
     end
 
     def turn_around
-      @direction = TURN_180[@direction] || @direction
-      @last_move_direction = TURN_180[@last_move_direction] || @last_move_direction
+      @direction = TURN_180_DIR[@direction] || @direction
+      @last_move_direction = TURN_180_DIR[@last_move_direction] || @last_move_direction
     end
 
     # Direction pointing from this character toward (tx, ty). ~~Ties (and
@@ -6698,7 +6698,7 @@ module Game
 
     # Direction pointing away from (tx, ty): the opposite of #direction_toward.
     def direction_away(tx, ty)
-      TURN_180[direction_toward(tx, ty)] || @direction
+      TURN_180_DIR[direction_toward(tx, ty)] || @direction
     end
   end
 
@@ -7185,7 +7185,7 @@ module Game
     # Random) right after a diagonal move in the same block used to be a
     # silent no-op: `dir` was the diagonal's own `[horizontal, vertical]`
     # pair by then (see #jump_move_direction above), and Character::
-    # TURN_RIGHT/TURN_LEFT/TURN_180 only had cardinal-int keys, so the hash
+    # TURN_RIGHT_DIR/TURN_LEFT_DIR/TURN_180_DIR only had cardinal-int keys, so the hash
     # lookup missed and `|| dir` left the pair completely unrotated -- a
     # following Move Forward kept walking the pre-turn diagonal instead of
     # the turned one. Fixed by keying those three hashes with the four
@@ -7195,12 +7195,12 @@ module Game
     def jump_face_direction(id, dir, character, world)
       case id
       when FACE_UP, FACE_RIGHT, FACE_DOWN, FACE_LEFT then FACE_DIR[id]
-      when TURN_RIGHT then Character::TURN_RIGHT[dir] || dir
-      when TURN_LEFT  then Character::TURN_LEFT[dir]  || dir
-      when TURN_180   then Character::TURN_180[dir]   || dir
+      when TURN_RIGHT then Character::TURN_RIGHT_DIR[dir] || dir
+      when TURN_LEFT  then Character::TURN_LEFT_DIR[dir]  || dir
+      when TURN_180   then Character::TURN_180_DIR[dir]   || dir
       when TURN_RANDOM
-        world.random(2).zero? ? (Character::TURN_LEFT[dir] || dir)
-                             : (Character::TURN_RIGHT[dir] || dir)
+        world.random(2).zero? ? (Character::TURN_LEFT_DIR[dir] || dir)
+                             : (Character::TURN_RIGHT_DIR[dir] || dir)
       when FACE_RANDOM then Character::CARDINALS[world.random(4)]
       when FACE_HERO then toward_hero(character, world)
       when FACE_AWAY_HERO then away_hero(character, world)
@@ -7302,7 +7302,7 @@ module Game
     # Its 90/180-degree turn helpers are themselves plain direction
     # remaps with no
     # passability check of their own -- exactly this codebase's own
-    # `Character::TURN_LEFT`/`TURN_RIGHT`/`TURN_180` hashes, confirmed to
+    # `Character::TURN_LEFT_DIR`/`TURN_RIGHT_DIR`/`TURN_180_DIR` hashes, confirmed to
     # match direction-for-direction (both rotate Up -> Left -> Down -> Right
     # -> Up for a left turn and the reverse for a right turn). Returns nil for
     # the skip draw -- already `#step_event`'s own sentinel for "no
@@ -7313,9 +7313,9 @@ module Game
     def self.random_direction(character, world)
       draw = world.random(10)
       return character.direction if draw < 3
-      return Character::TURN_LEFT[character.direction]  || character.direction if draw < 5
-      return Character::TURN_RIGHT[character.direction] || character.direction if draw < 7
-      return Character::TURN_180[character.direction]   || character.direction if draw == 7
+      return Character::TURN_LEFT_DIR[character.direction]  || character.direction if draw < 5
+      return Character::TURN_RIGHT_DIR[character.direction] || character.direction if draw < 7
+      return Character::TURN_180_DIR[character.direction]   || character.direction if draw == 7
       nil
     end
 

@@ -45,7 +45,7 @@ class RPG2k
       BLOCKED_COLOR = Color.new(160, 48, 48, 255)
       UNKNOWN_COLOR = Color.new(96, 96, 96, 255)
       CURSOR_COLOR = Color.new(255, 255, 255, 255)
-      TEXT_COLOR = Color.new(255, 255, 255, 255)
+      FONT_COLOR = Color.new(255, 255, 255, 255)
       HINT_COLOR = Color.new(200, 200, 200, 255)
 
       # `quit_on_close:` -- set by RPG2k#open_chipset_editor (the
@@ -194,7 +194,7 @@ class RPG2k
       end
 
       def draw_header
-        @contents.font.color = TEXT_COLOR
+        @contents.font.color = FONT_COLOR
         text = if !@chip
                  "Chipset ##{@chipset_id} not found in the database"
                else

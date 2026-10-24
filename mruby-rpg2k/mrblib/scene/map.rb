@@ -3104,7 +3104,7 @@ class RPG2k
         return false if blockers_at(x, y).any? { |b| b.layer == LAYER_SAME && !b.char.through }
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(x, y), @map.upper(x, y),
-                                 Game::Character::TURN_180[dir] || dir)
+                                 Game::Character::TURN_180_DIR[dir] || dir)
       end
 
       # Whether the airship may land on tile (x, y): the database terrain's
@@ -5408,7 +5408,7 @@ class RPG2k
       # own side, as RPG2000's per-direction passability does: the tile a
       # character is leaving must allow exit toward `dir`, and the tile it is
       # entering must allow entry from the opposite side (its own passability
-      # bit for `TURN_180[dir]`). A wall painted on either tile blocks the
+      # bit for `TURN_180_DIR[dir]`). A wall painted on either tile blocks the
       # crossing — checking only the destination (as this used to) missed a
       # chip whose *own* tile disallowed stepping off it, which is how
       # one-way ledges and railings are authored. The upper layer gets the
@@ -5435,7 +5435,7 @@ class RPG2k
         @chipset.passable_tile?(@map.lower(character.x, character.y),
                                  @map.upper(character.x, character.y), dir) &&
           @chipset.passable_tile?(@map.lower(nx, ny), @map.upper(nx, ny),
-                                   Game::Character::TURN_180[dir] || dir)
+                                   Game::Character::TURN_180_DIR[dir] || dir)
       end
       # Called by MapWorld (an external collaborator) with an explicit receiver.
       public :char_passable?
@@ -10670,7 +10670,7 @@ class RPG2k
         @chipset.passable_tile?(@map.lower(@state.x, @state.y),
                                  @map.upper(@state.x, @state.y), dir) &&
           @chipset.passable_tile?(@map.lower(x, y), @map.upper(x, y),
-                                   Game::Character::TURN_180[dir] || dir)
+                                   Game::Character::TURN_180_DIR[dir] || dir)
       end
 
       # Current player position in map pixels, interpolated during a step.

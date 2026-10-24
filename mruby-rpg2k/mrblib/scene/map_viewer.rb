@@ -85,7 +85,7 @@ class RPG2k
       PLAYER_COLOR = Color.new(255, 255, 0, 255)
       EVENT_COLOR = Color.new(80, 200, 255, 255)
       CURSOR_COLOR = Color.new(255, 255, 255, 255)
-      TEXT_COLOR = Color.new(255, 255, 255, 255)
+      FONT_COLOR = Color.new(255, 255, 255, 255)
       HINT_COLOR = Color.new(200, 200, 200, 255)
 
       # `start_mode:` lets a caller that already knows it wants Edit (or
@@ -418,7 +418,7 @@ class RPG2k
       end
 
       def draw_header
-        @contents.font.color = TEXT_COLOR
+        @contents.font.color = FONT_COLOR
         text = case @mode
                when :select then select_header_text
                when :edit then edit_header_text
