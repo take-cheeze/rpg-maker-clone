@@ -175,8 +175,6 @@ void writer_enqueue(const char* p, size_t n) {
   g_encode_buf.append(p, n);
 }
 
-void flush_encoder_to_stdout();
-
 // Drain accumulated chunks into `out`, clearing g_encode_buf and signaling the
 // writer thread.  Returns false if no frame was enqueued (writer busy or
 // nothing to enqueue).
@@ -255,32 +253,6 @@ void writer_entry() {
       }
       lock.lock();
     }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Direct-to-stdout encoder flush: writes the accumulated encoder buffer to
-// stdout.  Called after g_encode finishes building a complete sixel/OSC frame
-// so it reaches the terminal before flush_cb returns (no I/O blocking).
-// ---------------------------------------------------------------------------
-void flush_encoder_to_stdout() {
-  std::string buf;
-  {
-    std::lock_guard<std::mutex> lock(g_writer_mtx);
-    if (g_encode_buf.empty())
-      return;
-    buf = std::move(g_encode_buf);  // release lock before I/O
-  }
-
-  for (size_t off = 0; off < buf.size();) {
-    const ssize_t w =
-        ::write(STDOUT_FILENO, buf.data() + off, buf.size() - off);
-    if (w <= 0) {
-      if (w < 0 && errno == EINTR)
-        continue;
-      break;
-    }
-    off += static_cast<size_t>(w);
   }
 }
 
