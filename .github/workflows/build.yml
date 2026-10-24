@@ -692,8 +692,9 @@ jobs:
         # `-m` lets rake run every prerequisite concurrently.
         env:
           RAKEOPT: -m -j4
-        # The devshell exports LD=ld, which would link mrbc without libc.
-        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
+        # The devshell exports LD=ld, which would link mrbc without libc. quiet_run prints the build's
+        # output only when it fails (docs/ci.md, "Quiet output").
+        run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
 
       - name: Check the compiled gems are in the closed-world build
         run: |

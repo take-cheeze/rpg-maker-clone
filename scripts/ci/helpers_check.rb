@@ -163,7 +163,8 @@ Dir.mktmpdir do |dir|
   File.write(script, generated)
   summary = File.join(dir, 'summary.md')
   File.write(summary, '')
-  out, status = Open3.capture2e({ 'GITHUB_STEP_SUMMARY' => summary }, 'bash', '-eo', 'pipefail', '-c', ". #{script}")
+  out, status = Open3.capture2e({ 'GITHUB_STEP_SUMMARY' => summary, 'CI_VERBOSE' => '1' }, 'bash', '-eo', 'pipefail', '-c',
+                                ". #{script}")
   check.call('a failing command still fails the step with its own status', status.exitstatus == 3)
   check.call('the commands after the failure do not run', !out.include?('never'))
   check.call('the commands before it ran in the same shell (variables carried over)', out.include?('ran hi'))
@@ -179,6 +180,21 @@ Dir.mktmpdir do |dir|
   File.write(ok_script, Open3.capture2(RbConfig.ruby, File.join(__dir__, 'timed_checks.rb'), stdin_data: "echo one\necho two\n").first)
   out_ok, status_ok = Open3.capture2e('bash', '-eo', 'pipefail', '-c', ". #{ok_script}")
   check.call('a passing block exits 0 and still prints the table', status_ok.success? && out_ok.include?('== check timings') && out_ok.include?('total'))
+
+  # Quiet (the default): a passing command keeps only its annotations; the failing one is printed in full.
+  quiet_checks = "export GREETING=hi\necho \"ran $GREETING\"\necho '::warning::kept'\n" \
+                 "ruby -e 'puts \"fail-#{'$'}stdout\"; warn ENV[\"GREETING\"]; exit 3'\necho never\n"
+  File.write(script, Open3.capture2(RbConfig.ruby, File.join(__dir__, 'timed_checks.rb'), stdin_data: quiet_checks).first)
+  quiet, quiet_status = Open3.capture2e('bash', '-eo', 'pipefail', '-c', ". #{script}")
+  check.call('quiet: a passing command prints nothing but its annotations', !quiet.include?('ran hi') && quiet.include?('::warning::kept'))
+  check.call('quiet: the failing command is printed with its output and status, after the variables it relied on',
+             quiet.include?('== FAILED (exit 3') && quiet.include?('fail-$stdout') && quiet.lines.map(&:chomp).include?('hi'))
+  check.call('quiet: the step still fails with the command\'s own status and stops there',
+             quiet_status.exitstatus == 3 && !quiet.include?('never'))
+  stdout_file = File.join(dir, 'stdout.txt')
+  system({ 'CI_VERBOSE' => '1' }, 'bash', '-eo', 'pipefail', '-c', ". #{ok_script}", out: stdout_file, err: %i[child out])
+  check.call('CI_VERBOSE=1 with stdout in a file keeps every line (the output is not reopened and truncated)',
+             File.read(stdout_file).then { |t| t.include?("one\n") && t.include?("two\n") && t.include?('== check timings') })
 end
 
 Dir.mktmpdir do |dir|
@@ -199,7 +215,7 @@ run_checks = lambda do |dir, text, env = {}|
   generated, gen_status = Open3.capture2(env, RbConfig.ruby, File.join(__dir__, 'timed_checks.rb'), stdin_data: text)
   script = File.join(dir, "g#{rand(1_000_000)}.sh")
   File.write(script, generated)
-  out, status = Open3.capture2e('bash', '-eo', 'pipefail', '-c', ". #{script}")
+  out, status = Open3.capture2e(env, 'bash', '-eo', 'pipefail', '-c', ". #{script}")
   [out, status, gen_status]
 end
 
@@ -210,7 +226,8 @@ Dir.mktmpdir do |dir|
   body = (1..3).map { |i| job.call(i) }.join("\n")
 
   File.write(trace, '')
-  out, status, = run_checks.call(dir, "who=shell-var\n# ci:parallel begin 3\n#{body}\necho \"sees $who\"\n# ci:parallel end\necho after\n")
+  out, status, = run_checks.call(dir, "who=shell-var\n# ci:parallel begin 3\n#{body}\necho \"sees $who\"\n# ci:parallel end\necho after\n",
+                                { 'CI_VERBOSE' => '1' })
   events = File.readlines(trace, chomp: true)
   check.call('a group runs its commands at the same time (all started before the first ended)',
              events.first(3).all? { |e| e.start_with?('start') })
@@ -230,10 +247,17 @@ Dir.mktmpdir do |dir|
   widest = events.map { |e| live += e.start_with?('start') ? 1 : -1 }.max
   check.call('a group never runs more commands than its width (2)', widest == 2)
 
-  out, = run_checks.call(dir, "# ci:parallel begin\necho one\necho two\necho three\n# ci:parallel end\n", { 'CI_PARALLEL_JOBS' => '1' })
+  out, = run_checks.call(dir, "# ci:parallel begin\necho one\necho two\necho three\n# ci:parallel end\n",
+                         { 'CI_PARALLEL_JOBS' => '1', 'CI_VERBOSE' => '1' })
   check.call('CI_PARALLEL_JOBS sets the width when the marker has none', out.scan('::group::').size == 3)
 
-  out, status, = run_checks.call(dir, "# ci:parallel begin\necho ok-one\nruby -e 'warn \"boom\"; exit 7'\necho ok-two\n# ci:parallel end\necho never\n")
+  group = "# ci:parallel begin\necho ok-one\nruby -e 'warn \"boom\"; exit 7'\necho ok-two\necho '::notice::seen'\n" \
+          "# ci:parallel end\necho never\n"
+  quiet, = run_checks.call(dir, group)
+  check.call('quiet: a group prints the failing command and the passing ones\' annotations only',
+             quiet.include?('boom') && quiet.include?('FAILED (exit 7') && quiet.include?('::notice::seen') &&
+               !quiet.lines.map(&:chomp).include?('ok-one') && !quiet.include?('::group::'))
+  out, status, = run_checks.call(dir, group, { 'CI_VERBOSE' => '1' })
   check.call('a failing command in a group fails the step with its own status', status.exitstatus == 7)
   check.call('the other commands of the group are still reported, and the failure output is shown',
              out.include?('ok-one') && out.include?('ok-two') && out.include?('boom') && out.include?('FAILED (exit 7'))
@@ -257,6 +281,25 @@ Dir.mktmpdir do |dir|
     check.call("#{what} is refused when the script is generated", !gen_status.success?)
   end
 end
+
+# -- quiet_run.bash ---------------------------------------------------------------------------------
+puts '-- quiet run'
+quiet_run = File.expand_path('quiet_run.bash', __dir__)
+ok_out, ok_status = Open3.capture2e(quiet_run, 'bash', '-c', 'echo chatter; echo "a.c:1:1: warning: w"; echo "::warning::kept"')
+check.call('quiet_run: a passing command prints one summary line and its annotations, not its output',
+           ok_status.success? && !ok_out.lines.map(&:chomp).include?('chatter') && ok_out.include?('::warning::kept') &&
+             ok_out.include?('1 compiler warning(s)'))
+verbose_out, = Open3.capture2e({ 'CI_VERBOSE' => '1' }, quiet_run, 'bash', '-c', 'echo chatter')
+check.call('quiet_run: CI_VERBOSE=1 prints the output of a passing command', verbose_out.lines.map(&:chomp).include?('chatter'))
+bad_out, bad_status = Open3.capture2e({ 'QUIET_RUN_TAIL' => '1' }, quiet_run, 'bash', '-c', 'echo first; echo last; exit 6')
+check.call('quiet_run: a failing command keeps its status and prints its whole log, then its tail',
+           bad_status.exitstatus == 6 && bad_out.include?("::group::full output of") && bad_out.include?("first\n") &&
+             bad_out.include?('== FAILED (exit 6') && bad_out.end_with?("last\n"))
+build_step = workflow.fetch('jobs').fetch('bc2cpp-build').fetch('steps').find do |step|
+  step['name'] == 'Build the closed-world mruby with bc2cpp'
+end
+check.call('the bc2cpp-build build step runs through quiet_run.bash',
+           build_step && build_step['run'].to_s.include?('scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash'))
 
 # -- drop-git-fetch-noise.bash ---------------------------------------------------------------------
 puts '-- nix output filter'
