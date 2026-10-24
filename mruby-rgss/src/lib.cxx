@@ -4209,17 +4209,6 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
   return self;
 }
 
-// bc2cpp's own direct-construct entry point for `Sprite.new` /
-// `Sprite.new(viewport)` (see NATIVE_CONSTRUCT_TARGETS there and
-// include/rgss_construct.hxx): the same body as `spr_init`, but the
-// viewport arrives pre-resolved (the generated call site passes it
-// straight through) and the object itself is allocated here (Class#new's
-// own `self.allocate` step, which the direct path bypasses along with
-// the dispatch). Defined in namespace `rgss` at file scope below, next
-// to the other three constructors -- C++ resolves the call at link
-// time, so textual order is irrelevant.
-mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport);
-
 // Point the sprite's canvas at the bitmap it should display: the assigned
 // bitmap directly, or — when the sprite is mirrored — a horizontally-flipped
 // scratch copy (LVGL's lv_image has no flip, so mirroring is a software pass).
@@ -7700,6 +7689,11 @@ mrb_value dispose_direct(mrb_state* M, mrb_value self) {
   return obj_dispose(M, self);
 }
 
+// bc2cpp's direct-construct entry point for `Sprite.new` /
+// `Sprite.new(viewport)` (NATIVE_CONSTRUCT_TARGETS,
+// include/rgss_construct.hxx): the same body as `spr_init`, but the viewport
+// arrives pre-resolved and the object is allocated here (Class#new's own
+// `self.allocate` step, which the direct path bypasses).
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
   mrb_value self = mrb_obj_value(mrb_obj_alloc(M, MRB_TT_DATA, klass));
   lv_obj_t* p = lv_canvas_create(parent_object(M, viewport));
