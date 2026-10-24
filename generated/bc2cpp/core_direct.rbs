@@ -2,6 +2,7 @@
 # Do not edit; change the table and rerun the generator. Returns are untyped here: the result kinds live in declarations.rbs#core_results.
 
 class Array
+  def __fetch: (untyped, untyped, untyped) -> untyped
   def __svalue: () -> untyped
   def compact: () -> untyped
   def delete: (untyped) -> untyped
@@ -25,8 +26,13 @@ module Kernel
   def raise: (untyped) -> untyped | (untyped, untyped) -> untyped
 end
 
+class Range
+  def __empty_range?: (untyped, untyped, untyped) -> untyped
+end
+
 class String
   def bytes: () -> untyped
+  def byteslice: (untyped) -> untyped | (untyped, untyped) -> untyped
   def getbyte: (untyped) -> untyped
   def intern: () -> untyped
   def to_i: (untyped) -> untyped

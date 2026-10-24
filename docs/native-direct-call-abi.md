@@ -164,7 +164,16 @@ These are not hand-rewritten, because no exact frame-free version exists:
 `Array#inspect` writes `mrb->c->ci->mid` and its recursion guard walks the call
 stack, and methods that yield need a block frame. `String#replace`,
 `Hash#replace` and `String#index` call large `static` helpers with no public
-equivalent.
+equivalent. The same holds for `String#__chars`, `#ord`, `#__codepoints`,
+`Array#__uniq` and `Hash#__compact` (`utf8code`, `ary_uniq_bang` and the hash
+table internals are `static`). `String#__lines` and `Range#__num_to_a` write
+`ci->mid`, which a call without a frame of its own would write into its caller's.
+
+The entries also apply inside compiled mruby core bodies. Those bodies compile
+with the closed world withheld, but an entry's safety rests only on program-wide
+facts (no project definition, prepend or unknown mixin on the owner, no outside
+definer), so they ask the same world, as the `*rest` receiver arm does. A core
+body's receiver proof is itself a runtime class test, so the call stays behind it.
 
 When the flow proves a receiver is exactly a core class (FLOW_CORE_DIRECT), the
 send calls the compiled core body or, for a C method, the audited entry. That
