@@ -9,8 +9,9 @@ allocates an `RProc`, an `REnv` and a `malloc`'d copy of the env array.
 `STACK_BLOCK` builds that `RProc` and `REnv` in the caller's frame instead
 (`Bc2cppStackBlock`, in the runtime preamble of `tools/bc2cpp/bc2cpp.rb`), over
 the env array the site already has. A direct core arm
-(`BLOCK_CORE_DIRECT`, `codegen_block_core_direct.rb`) passes it when its
-compiled callee only calls its block. The heap `RProc` is built only where the
+(`BLOCK_CORE_DIRECT`, `codegen_block_core_direct.rb`) and a direct call to a
+compiled program method (`direct_call_block`, `codegen_arg_shapes.rb`) pass it
+when the callee only calls its block. The heap `RProc` is built only where the
 code still dispatches by name: the other arms and the by-name else take
 `bc2cpp_blk_heap_N()`, which allocates when that branch runs.
 
@@ -20,10 +21,15 @@ code still dispatches by name: the other arms and the by-name else take
   (`tools/bc2cpp/block_self.rb`) proves that the callee, and the blocks nested in
   it, only test, copy, `call` or `yield` the block, and never pass it as an
   argument or a block, return it, store it, or forward it with `super`.
-- **The VM never sees it.** In a compiled core body, `block.call` and `yield`
-  go to `bc2cpp_yield_argv`, which runs a non-strict `bc2cpp_block_thunk` proc
-  through its direct entry. A nested block of the callee reaches it only
-  through a captured slot, and calls it the same way.
+- **The VM never sees it.** In a compiled body, core or program, `block.call`
+  and `yield` go to `bc2cpp_yield_argv`, which runs a non-strict
+  `bc2cpp_block_thunk` proc through its direct entry. A nested block of the
+  callee reaches it only through a captured slot, and calls it the same way.
+- **The callee's nested blocks cannot keep it either.** A nested block that
+  holds the method's block (a `yield` in it, or a captured `&b`) is compiled
+  only when its own send is on the synchronous list or proven not to keep it
+  (`recognize_block_fallback_regions`). Otherwise the callee is not compiled
+  and the site has no direct call to pass the block to.
 - **The GC never touches it.** Both objects are coloured `MRB_GC_RED`, the
   colour mruby gives ROM objects. `mrb_gc_mark` and `mrb_field_write_barrier`
   skip red objects, so a red object is never gray-listed or swept, even if a
@@ -68,5 +74,6 @@ The proof still refuses the callees that pass their block on to another method:
 `scripts/bc2cpp/stack_block_check.rb` asserts the generated shapes and compares
 interpreted and compiled runs for captured-variable writes, nested callee
 blocks, `GC.start` and allocation inside the block, an exception raised
-through it, receivers that take the else, `GC.stress`, and the same calls
-inside a Fiber.
+through it, receivers that take the else, a program callee that yields, one
+that stores its block and one whose nested block is stored, `GC.stress`, and
+the same calls inside a Fiber.
