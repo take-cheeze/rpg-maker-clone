@@ -2086,3 +2086,28 @@ and `Game::Battle::Combatant#@charged` gains a class pool; by-name sends, class 
 change, three `[]` sites become direct `LCF::Array1D#[]` calls, and generated lines go from 410,039 to 410,042.
 `Combatant#@states` stays OPAQUE for its stored values, not its setter: `actor_states`'s `(a.states || []).dup`,
 `Game::States.prune`'s result and `b.states - [id]` all read `@states` back, a cycle the pools do not solve.
+
+## Follow-up: what drops `Combatant#@states` (OPERATOR_SENDS, SETTER_RECEIVER_FILTER, PACKED_NEW)
+
+The pools already grow as least fixpoints, so `@states` reading itself back was never the problem; each store whose
+value reads OTHER drops the pool on the pass that sees it. Three rules remove three such causes:
+
+- OPERATOR_SENDS: an ADD/SUB/MUL whose receiver can be no number is the one-argument send codegen compiles it as
+  (`compile_operator_fallback`), so the exact-class flow gives it that send's class. `Array#+` and `Array#-` get an
+  Array result through `NativeCoreDirect::RESULT_ENTRIES`, audited like the direct entries down to the allocation from
+  `M->array_class` but never called directly (their bodies are static). `BC2CPP_OPERATOR_SENDS=0`;
+  `scripts/bc2cpp/operator_sends_check.rb`.
+- SETTER_RECEIVER_FILTER: an ivar's setter pool joins only the `x=` sites whose receiver classes may reach its class
+  family (`site_receiver_classes`, as POLY_ARG_POOLS); a site no path has reached yet waits for a later pass.
+  `BC2CPP_SETTER_RECEIVER_FILTER=0`; `scripts/bc2cpp/setter_receiver_filter_check.rb`.
+- PACKED_NEW: mrbc passes more than 14 positionals as one Array (`ARRAY R(a+1) n`, `SEND Ra :new n=*`) and the callee's
+  ENTER unpacks it, so such a `new` is an n-positional constructor site read at the ARRAY. `Combatant.new` passes 22,
+  which refused every position of its initialize. `BC2CPP_CTOR_PACKED=0`; `scripts/bc2cpp/constructor_optionals_check.rb`.
+
+On the closed world, one tree, all three on against OPERATOR_SENDS off: 1 `mrb_funcall_with_block` (278 to 277) and 6
+runtime class tests (10,107 to 10,101) go, with 26 more NILABLE_RECEIVER nil arms; generated lines go from 409,581 to
+409,289, no `#error`. `Combatant#initialize` is pooled (8 argument pools) and 6 more `Combatant` ivars get class pools
+(`@command`, `@defending`, `@skip`, `@attr_ranks`, `@state_ranks`, `@state_turns`). SETTER_RECEIVER_FILTER alone changes
+no output. `@states` still drops: its `states` constructor argument is `actor_states(a)`, and `from_lsd` and
+`Party#apply_actor_meta` call `states=` on an element of an actor Array, whose class the exact-class flow does not
+carry.
