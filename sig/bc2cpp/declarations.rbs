@@ -3702,10 +3702,10 @@ class Game::Troop
   def members: () -> untyped
   def pages: () -> untyped
   def apply_appear_randomly: (untyped, untyped) -> untyped
+  def build_member: (untyped, untyped) -> untyped
   def drops: (untyped) -> untyped
   def initialize: (untyped, untyped, ?untyped) -> untyped
   def live_members: () -> untyped
-  def member: (untyped, untyped) -> untyped
   def total_exp: () -> untyped
   def total_gold: () -> untyped
 end
