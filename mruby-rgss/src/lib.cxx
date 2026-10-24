@@ -7689,10 +7689,11 @@ mrb_value dispose_direct(mrb_state* M, mrb_value self) {
   return obj_dispose(M, self);
 }
 
-// bc2cpp's direct-construct entry point for `Sprite.new` / `Sprite.new(viewport)`
-// (NATIVE_CONSTRUCT_TARGETS, include/rgss_construct.hxx): the same body as
-// `spr_init`, but the viewport arrives pre-resolved and the object is allocated
-// here (Class#new's own `self.allocate` step, which the direct path bypasses).
+// bc2cpp's direct-construct entry point for `Sprite.new` /
+// `Sprite.new(viewport)` (NATIVE_CONSTRUCT_TARGETS,
+// include/rgss_construct.hxx): the same body as `spr_init`, but the viewport
+// arrives pre-resolved and the object is allocated here (Class#new's own
+// `self.allocate` step, which the direct path bypasses).
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
   mrb_value self = mrb_obj_value(mrb_obj_alloc(M, MRB_TT_DATA, klass));
   lv_obj_t* p = lv_canvas_create(parent_object(M, viewport));
