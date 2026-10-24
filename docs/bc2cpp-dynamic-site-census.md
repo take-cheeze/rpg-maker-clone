@@ -2081,3 +2081,25 @@ runtime class tests (10,107 to 10,101) go, with 26 more NILABLE_RECEIVER nil arm
 no output. `@states` still drops: its `states` constructor argument is `actor_states(a)`, and `from_lsd` and
 `Party#apply_actor_meta` call `states=` on an element of an actor Array, whose class the exact-class flow does not
 carry.
+
+## Follow-up: pool-drop census corrections (EXACT_ARITH, report labels, `Troop#build_member`)
+
+The pool-drop report (`BC2CPP_POOL_DROP_REPORT=1`) ranked integer arithmetic (`addi` 30, `subi` 26, `add` 24, `div` 7)
+second among the blockers of the 561 dropped ivar class pools. The exact-class oracle answered `op_native?` false,
+so every `+ - * /` was OTHER there even on proven Integers. EXACT_ARITH asks the numeric flow's own gates
+(`numeric_op_native?`, `numeric_nil_raises?`); OPERATOR_SENDS still answers first for a receiver that can be no
+number. On the closed world 22 more ivar pools (79 pool lines, all INT or INT|NIL) hold and the shipped C++ is
+byte-identical: the numeric pools already proved those slots, and codegen reads those. Of the dropped pools that
+remain, about 44 are numeric-proven, so the census now mostly lists real gaps. `BC2CPP_EXACT_ARITH=0`;
+`scripts/bc2cpp/exact_arith_check.rb`.
+
+`send_root_entry_reason` still labelled every optional `initialize` position `ctor:optional_position` and every
+polymorphic name `method:poly`, the refusals from before CONSTRUCTOR_OPTIONALS and POLY_ARG_POOLS. An admitted
+position is now a dropped pool, so the report follows it to the values its sites pass (`ctor:optional_position`
+goes from 41 pools to 10, `via_ctor_arg:getidx` appears with 15).
+
+`Game::Troop#member` shared its name with a native spelling (Struct) and a `Combatant` accessor, so no argument pool
+of `member` was admitted and the `db` it passes to `Game::Enemy.new` had no class. Renamed `build_member`: the
+Enemy `db` position is pooled as `LCF::Database`, the stats read from the database row get class pools (10 Enemy
+ivars, 2 Combatant ivars), dropped pools go from 539 to 527, and the C++ loses 1 `mrb_funcall_with_block`, 2 class
+tests and 134 lines.
