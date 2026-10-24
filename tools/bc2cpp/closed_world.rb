@@ -715,6 +715,13 @@ class ClosedWorld
     instance_self?(klass)
   end
 
+  # Could outside code bind this class's constant (a native mrb_define_class_under, ...)? Such a class's superclass is
+  # the one the native passed, which a Ruby `class N` reopen without a superclass does not show.
+  def outside_bound_class?(full)
+    @global_refusal || @dynamic_constant_mutation || !full.is_a?(String) ||
+      @outside_constant_write_counts[simple(full)].positive?
+  end
+
   # NATIVE_RESULT_FACTS: a class a native defines (RGSS::Rect) is what its constant
   # names for the whole run. Exactly one outside write binds the simple name (the native
   # definition itself; a second define, const_set, const_remove or Ruby `Name =` makes two), no

@@ -254,8 +254,11 @@ module NativeCoreDirectFallback
       return nil if (@registry[name] || []).any? { |definition| definition.owner == klass }
       return nil unless @closed_world.core_native_arm_safe?(name, klass)
 
-      # declared_parent reads every opener (a later `class X` reopen records :none) and refuses an opaque class.
+      # declared_parent reads every opener (a later `class X` reopen records :none) and refuses an opaque class; an
+      # implicit superclass is Object only when no native defines the class with its own.
       parent = @closed_world.declared_parent(klass)
+      return nil if parent == :none && @closed_world.outside_bound_class?(klass)
+
       klass = parent == :none ? 'Object' : parent
     end
   end
