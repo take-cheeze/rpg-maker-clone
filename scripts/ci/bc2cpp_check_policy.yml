@@ -395,6 +395,11 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/module_function_scope_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    fixture_capabilities: []
   scripts/bc2cpp/escape_receiver_flow_check.rb:
     tier: runtime
     capabilities:

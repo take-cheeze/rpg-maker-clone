@@ -1,0 +1,1 @@
+- **bc2cpp** registry now models a bare `module_function`: every later def in the body gets its public singleton copy and a private instance method, so a compiled `Mod.name` call (optcarrot's `Driver.load`) no longer raises a closed-world owner violation. Checked by `scripts/bc2cpp/module_function_scope_check.rb`.
