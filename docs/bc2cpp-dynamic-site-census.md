@@ -2103,3 +2103,33 @@ of `member` was admitted and the `db` it passes to `Game::Enemy.new` had no clas
 Enemy `db` position is pooled as `LCF::Database`, the stats read from the database row get class pools (10 Enemy
 ivars, 2 Combatant ivars), dropped pools go from 539 to 527, and the C++ loses 1 `mrb_funcall_with_block`, 2 class
 tests and 134 lines.
+
+## Follow-up: where the runtime class tests come from (RUBY_EXACT_PAST_NATIVE_ARMS, NILABLE_CLASS_TESTS)
+
+Bucketing the 10,067 `mrb_obj_class` tests of the shipped C++ by the nearest preceding tag comment puts 59% in
+POLY_SMALL_N chains (a name several classes define, tested arm by arm), 11% in MONO_EMBED_GUARD and 9% in
+IVAR_ACCESSOR. Of the 2,158 chains, the most common names were `x`, `y`, `id`, `width`, `dispose`, `color=` and `hp`,
+and many sat on receivers the exact-class flow already proves (`@state.x`, `@state` exactly Game::State or nil).
+
+Two causes:
+
+- A zero-argument name an RGSS native also answers (`NATIVE_WRAPPER_ZERO_ARG_DIRECT`: `x`, `y`, `width`, `height`,
+  `dispose`, ...) went to the native-arm block before any receiver proof was read, and that block's fallback is the
+  chain. RUBY_EXACT_PAST_NATIVE_ARMS sends a receiver the flow proves to be one Ruby class (`ruby_exact_receiver?`)
+  past the native arms, which test only exact native classes, to the exact-class path. `BC2CPP_RUBY_EXACT_PAST_NATIVE=0`.
+- NILABLE_RECEIVER compiled the nil test and the exact-K path only when that shed a by-name dispatch. A chain whose
+  fallback raises (`bc2cpp_nomethod`) has none to shed, so a nil-or-K receiver kept its chain. NILABLE_CLASS_TESTS
+  also takes the nil test when it removes class tests and adds no dispatch. `BC2CPP_NILABLE_CLASS_TESTS=0`.
+
+Checked by `scripts/bc2cpp/nilable_class_tests_check.rb`. On the closed world, one tree each:
+
+| | before | RUBY_EXACT_PAST_NATIVE_ARMS | + NILABLE_CLASS_TESTS |
+|---|---|---|---|
+| `mrb_obj_class` class tests | 10,067 | 9,801 | 7,515 |
+| `bc2cpp_send` by-name sends | 104 | 39 | 39 |
+| POLY_SMALL_N chains | 2,158 | 2,145 | 1,824 |
+| NILABLE_RECEIVER sites | 715 | 718 | 1,591 |
+| `bc2cpp_nomethod` arms | 4,216 | 4,199 | 3,326 |
+| generated lines | 409,027 | 408,542 | 405,665 |
+
+No `#error`; `mrb_funcall_with_block` and guard violations do not change.
