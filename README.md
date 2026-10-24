@@ -1173,6 +1173,8 @@
   Sends that pass the block as an expression (`reject(&:dead?)`, `each(&block)`) call compiled callees and the core
   block arms directly, with the block converted by `#to_proc` as `OP_SENDB` does; see
   [`&expr` block sends](docs/bc2cpp-explicit-block-args.md).
+  A literal block passed to a core body that only calls it (`Array#each`, `each_with_index`, `times`) is built in
+  the caller's frame instead of on the heap; see [frame-local blocks](docs/bc2cpp-stack-blocks.md).
   A shared escape analysis (`tools/bc2cpp/escape_analysis.rb`) answers whether the value a creation site makes
   leaves its frame, with callee summaries over a closed world; its first consumer lets a literal block that captures
   locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything
