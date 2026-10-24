@@ -411,41 +411,14 @@ byte for byte. The ADR also holds the table of all 220 core-source methods and t
 
 ## Ranking by executed count
 
-The counts above weigh a start-up site like a frame-loop site. `SITE_PROFILE`
-(ADR 0298) counts executions instead. It is opt-in and changes no generated code
-unless `BC2CPP_SITE_PROFILE` is set.
-
-```sh
-# 1. Generate with counters; the site table lands in SITES/<OUT_SYMBOL>.sites.tsv.
-#    The mrbgem.rake builds forward the environment, so a game build needs only the export
-#    (delete the gem's generated *_gen.cpp so rake regenerates it).
-export BC2CPP_SITE_PROFILE=/tmp/sites
-# 2. Run the workload with BC2CPP_SITE_PROFILE_OUT=HITS; each process writes
-#    HITS/<symbol>.<pid>.hits at exit. The optcarrot benchmark builds and runs itself:
-MRBC=<host mrbc> BC2CPP_SITE_PROFILE=/tmp/sites BC2CPP_SITE_PROFILE_OUT=/tmp/hits \
-  ruby tools/optcarrot_probe/compiled_run.rb 180
-# 3. Rank (several --workload NAME=DIR pairs give a column each).
-ruby scripts/bc2cpp/dynamic_site_census.rb --rank /tmp/sites --workload optcarrot=/tmp/hits \
-  --top 30 [--tsv ranked.tsv]
-```
-
-* **Sites.** Every `bc2cpp_send(M, ...` and `mrb_funcall{,_id,_argv,_with_block}(M, ...`
-  call is rewritten to `(bc2cpp_site_hit_<symbol>(ID), fn)(M, ...)`. The by-name
-  dispatcher `bc2cpp_funcall_argv`, which every send ends in, is not counted, or each
-  send would count twice. `mrb_yield_argv` is a block call and is not counted.
-* **Keys.** A site is identified by `<symbol>` (the gem), the id, and the generated line
-  and enclosing function in the *uninstrumented* output (the counters add lines only in
-  a header, and a check proves peeling them gives the plain text back byte for byte).
-  The reason category is the census's own (`tools/bc2cpp/site_census.rb`), so the static
-  and executed tables agree on it.
-* **Stale builds.** Each hit file carries a digest of its site table, and the ranker
-  refuses a mismatch. The optcarrot runner removes its gem's objects first, because a kept
-  mruby build directory does not rebuild the gem when only its temp-dir sources change.
-* **What a hit is.** One call that reaches the site. For the else arm of a guard chain
-  that is a guard miss, not an execution of the method. A site inside a shared helper
-  counts every caller together; the table cannot say which caller sent the receiver.
-* **Not measured.** Timings of an instrumented binary mean nothing, the counters are not
-  atomic, and only the workloads actually run appear.
+The counts above weigh a start-up site like a frame-loop site. The tables below
+came from `SITE_PROFILE`, an opt-in counter that rewrote every by-name send and
+`mrb_funcall*` call in the generated code to count its executions, and from
+`dynamic_site_census.rb --rank`, which ranked the counts. Neither is in the tree
+any more (`BC2CPP_SITE_PROFILE` does nothing), so these results are historical
+and the runs cannot be repeated as written. A hit was one call that reached the
+site: for the else arm of a guard chain that is a guard miss, and a site in a
+shared helper counted all of its callers together.
 
 ### First measurement: optcarrot, 180 frames
 
@@ -476,7 +449,6 @@ are 84.9% of the hits.
 The lever column is an analysis of the generated C++ and the optcarrot source, not a
 measurement: nothing was built to confirm that a proof removes a site. Rows 1 and 3-15
 are the sites worth a proof; the sites after row 15 together run 35,206 times, 0.45% of the hits.
-`--rank` prints the same ranking, with a category-level lever per row, from any hit set.
 
 ### After ADR 0304 (loop-installed accessors)
 
@@ -506,9 +478,7 @@ of the static count.
   (`data/Nepheshel206beta`, `data/mtf-meido-action`, fetched by `scripts/download-*.bash`)
   and runs in CI (`rpg2k_boot_check.bash`). Neither the SDL build nor the games were
   available where this was written, so there is no game ranking, and the wio closed-world
-  sites above have no executed counts. The hook is the same `BC2CPP_SITE_PROFILE` export
-  before the build, then `BC2CPP_SITE_PROFILE_OUT` while the smoke runs; the three compiled
-  gems write one hit file each.
+  sites above have no executed counts.
 * **Per-caller counts for helper sites**, and any other workload (the MV and wio smokes).
 
 ## Element reads of mutable containers (ADR 0312)
@@ -580,8 +550,8 @@ dispatch (7,605 to 7,349), all removals. No remaining cause is above about 5% of
 ## Caveats
 
 * The static tables above count source sites, not executions. A site in a cold scene
-  weighs the same as one in the frame loop; the section "Ranking by executed count" is
-  the measurement that applies a profile.
+  weighs the same as one in the frame loop; the section "Ranking by executed count"
+  holds the (historical) executed counts.
 * The marker is the nearest preceding family comment within 25 lines and can be
   a neighbour's; the exclusive categories use position and guard shape first so
   they do not depend on it.
@@ -2071,3 +2041,18 @@ On the closed world the universe goes from 3,272 to 1,637 names. Switch on again
 guard violations, 63 more NILABLE_RECEIVER nil arms and 20 more `bc2cpp_nomethod` arms; generated lines go from
 410,280 to 409,466, no `#error`. 100 functions change, mostly in `RPG2k::Scene::Map` (44) and `Game::Interpreter`
 (31). `Game::Battle::Combatant#@states` stays CHECKED: `respond_to?(:states=)` spells its setter.
+
+## Follow-up: probe-only setter names (PROBE_ONLY in the call-site index)
+
+`respond_to?(:states=)` spelled `states=` as a Symbol literal, and `entry_arg_call_index` (ENTRY_ARG_CALLSITE_PROOF)
+counted every literal as a possible call, so the setter pools of the names probed this way stayed poisoned. A literal
+that `DynamicNames.probe_only?` proves only reaches `respond_to?`'s name argument is now neither a call site nor a
+poison, while no Ruby hook can route a probe's name; `probe_only?` also no longer counts a self send's R[a] (vm.c
+overwrites it with self) as a use. `BC2CPP_PROBE_CALL_INDEX=0` keeps every literal a poison; checked by
+`scripts/bc2cpp/dynamic_names_probe_check.rb`.
+
+On the closed world the poisoned setter pools go from 10 to 0 (`states=`, `agi_mod=`, `atb_gauge=`, `charged=`, ...)
+and `Game::Battle::Combatant#@charged` gains a class pool; by-name sends, class tests and guard violations do not
+change, three `[]` sites become direct `LCF::Array1D#[]` calls, and generated lines go from 410,039 to 410,042.
+`Combatant#@states` stays OPAQUE for its stored values, not its setter: `actor_states`'s `(a.states || []).dup`,
+`Game::States.prune`'s result and `b.states - [id]` all read `@states` back, a cycle the pools do not solve.
