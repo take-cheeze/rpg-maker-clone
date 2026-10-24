@@ -496,8 +496,8 @@ class RPG2k
         @stats_window.contents = c
       end
 
-      # RPG2000 term / equip-bonus field / actor-accessor / effective-stat
-      # method / state-flag quintuples for the four battle stats, in the
+      # RPG2000 term / equip-bonus field / actor-accessor / state-flag
+      # quadruples for the four battle stats, in the
       # order genuine RPG_RT draws them -- 攻撃力 / 防御力 / 精神力 / 敏捷性,
       # read straight off a wine capture of the real screen (cycle #250),
       # one row each, in that order, below the actor's name and nothing
@@ -505,10 +505,10 @@ class RPG2k
       # `term(:mind)`/`#int` name RPG2000's "Spirit" stat "Int" instead,
       # matching status_menu.rb.
       STAT_DEFS = [
-        [:attack, :atk_points1, :atk, :effective_atk, :affect_attack],
-        [:defense, :def_points1, :def, :effective_def, :affect_defense],
-        [:mind, :spi_points1, :int, :effective_int, :affect_spirit],
-        [:agility, :agi_points1, :agi, :effective_agi, :affect_agility]
+        [:attack, :atk_points1, :atk, :affect_attack],
+        [:defense, :def_points1, :def, :affect_defense],
+        [:mind, :spi_points1, :int, :affect_spirit],
+        [:agility, :agi_points1, :agi, :affect_agility]
       ].freeze
 
       # Four independent stat rows -- "term value →" while browsing the slot
@@ -519,12 +519,14 @@ class RPG2k
       # combined verdict for the whole item (see #build_cand_window's own
       # history for the summed-arrow this replaced) and never sharing a row
       # with any other stat.
-      # STAT_DEFS' effective-stat method / actor accessor, as literal calls
-      def effective_stat(method, a)
-        case method
-        when :effective_atk then @state.party.effective_atk(a)
-        when :effective_def then @state.party.effective_def(a)
-        when :effective_int then @state.party.effective_int(a)
+      # STAT_DEFS' effective stat / actor accessor, as literal calls. Keyed by
+      # the term, not a method-name Symbol: a name spelled as a Symbol loses its
+      # FIXNUM_RETURN_PROOF fact (tools/bc2cpp/dynamic_names.rb).
+      def effective_stat(term_key, a)
+        case term_key
+        when :attack then @state.party.effective_atk(a)
+        when :defense then @state.party.effective_def(a)
+        when :mind then @state.party.effective_int(a)
         else @state.party.effective_agi(a)
         end
       end
@@ -541,8 +543,7 @@ class RPG2k
       def draw_stat_row(c, a)
         previewing = @mode == :items
         cand_id = previewing ? candidates[@cand_index].first : nil
-        STAT_DEFS.each_with_index do |(term_key, field, accessor,
-                                        effective_method, stat_flag), i|
+        STAT_DEFS.each_with_index do |(term_key, field, accessor, stat_flag), i|
           y = LINE_H * (1 + i)
           # State-adjusted (halve/double), not the raw base+equip total --
           # ported from a reference implementation's own stat-drawing path,
@@ -554,7 +555,7 @@ class RPG2k
           # `Game::Party#effective_atk`/`#effective_def`/`#effective_int`/
           # `#effective_agi` already port this (built for skill formulas);
           # this screen never called them.
-          value = effective_stat(effective_method, a)
+          value = effective_stat(term_key, a)
           draw_system_text c, 0, y, STATS_W, LINE_H, term(term_key), @skin, LABEL_COLOR
           draw_system_text c, 0, y, STAT_VALUE_R, LINE_H, value.to_s, @skin, TEXT_COLOR, 2
           draw_system_text c, STAT_ARROW_X, y, STAT_ARROW_W, LINE_H, STAT_ARROW,

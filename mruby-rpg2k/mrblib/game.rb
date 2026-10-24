@@ -3558,7 +3558,9 @@ module Game
 
     # This actor's current RPG2003 battle row (ROW_FRONT / ROW_BACK), read by
     # Combatant.from_actor when a fight starts and written by the in-battle
-    # Row command / a restored save.
+    # Row command / a restored save. Duck-typed callers probe the writer
+    # (`respond_to?(:battle_row=)`), as for #atb_gauge: a Symbol spelling a
+    # reader costs its FIXNUM_RETURN_PROOF fact (tools/bc2cpp/dynamic_names.rb).
     def battle_row; @row; end
 
     def battle_row=(row); @row = row == ROW_BACK ? ROW_BACK : ROW_FRONT; end
@@ -4081,9 +4083,9 @@ module Game
     # regardless of whether the toggle actually took -- the caller's job, not
     # this method's; this only ever silently no-ops a refused toggle.
     def toggle_actor_row(actor)
-      return unless actor.respond_to?(:battle_row) && actor.respond_to?(:battle_row=)
+      return unless actor.respond_to?(:battle_row=) # see Actor#battle_row
       if actor.battle_row == Actor::ROW_FRONT
-        back_count = @actors.count { |a| a != actor && a.respond_to?(:battle_row) && a.battle_row == Actor::ROW_BACK }
+        back_count = @actors.count { |a| a != actor && a.respond_to?(:battle_row=) && a.battle_row == Actor::ROW_BACK }
         return if back_count >= @actors.size - 1
         actor.battle_row = Actor::ROW_BACK
       else

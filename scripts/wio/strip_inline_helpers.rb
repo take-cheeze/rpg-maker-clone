@@ -895,7 +895,7 @@ REWRITES = {
     ],
     substitutions: [
       { old: '        draw_battle_row c, a if rpg2003_party?',
-        new: '        (back = a.respond_to?(:battle_row) && a.battle_row == Game::Actor::ROW_BACK; ' \
+        new: '        (back = a.respond_to?(:battle_row=) && a.battle_row == Game::Actor::ROW_BACK; ' \
              'draw_system_text c, 0, ROW_LABEL_LINE * LINE_H, c.width, LINE_H, ' \
              'back ? ROW_BACK_LABEL : ROW_FRONT_LABEL, @skin, 0, 2) if rpg2003_party?' },
       { old: '        draw_gold

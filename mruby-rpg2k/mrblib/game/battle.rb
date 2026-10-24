@@ -414,12 +414,12 @@ module Game
       # those two independently of row, and `Calculate2k3BattlePosition`'s
       # `row_x_offset` only ever *reads* the already-set row back, for the
       # automatic-placement sprite's own on-screen X (still unmodelled here).
-      c.row = a.respond_to?(:battle_row) ? a.battle_row : ROW_FRONT
+      c.row = a.respond_to?(:battle_row=) ? a.battle_row : ROW_FRONT # see Actor#battle_row
       # RPG2003 active-time gauge: seeded from the actor's own persisted
       # #atb_gauge, the same way #row is -- see Actor#atb_gauge's own
       # citation for why RPG_RT carries this across fights instead of
       # starting every battle from empty.
-      c.gauge = a.respond_to?(:atb_gauge) ? a.atb_gauge : 0
+      c.gauge = a.respond_to?(:atb_gauge=) ? a.atb_gauge : 0 # see Actor#battle_row
       c
     end
 
