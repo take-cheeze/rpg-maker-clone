@@ -240,6 +240,18 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/operator_sends_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+  scripts/bc2cpp/setter_receiver_filter_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
   scripts/bc2cpp/setter_name_closure_check.rb:
     tier: fast
     capabilities:
