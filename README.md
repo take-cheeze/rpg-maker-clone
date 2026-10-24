@@ -1379,13 +1379,6 @@
   generic body (see
   [`docs/adr/0380-bc2cpp-entry-guarded-specialization.md`](docs/adr/0380-bc2cpp-entry-guarded-specialization.md) and
   `scripts/bc2cpp/entry_specialize_check.rb`).
-  `BC2CPP_SITE_PROFILE=DIR` builds count how often each remaining by-name `bc2cpp_send` and
-  `mrb_funcall*` site runs, and `scripts/bc2cpp/dynamic_site_census.rb --rank` ranks the sites by
-  executed hits with the reason each was kept dynamic; off by default and byte-identical when unset
-  (see
-  [`docs/adr/0298-bc2cpp-executed-site-profile.md`](docs/adr/0298-bc2cpp-executed-site-profile.md),
-  [`docs/bc2cpp-dynamic-site-census.md`](docs/bc2cpp-dynamic-site-census.md) and
-  `scripts/bc2cpp/site_profile_check.rb`).
   A computed-name `__send__` whose name is provably one of a finite Symbol set (a frozen constant table,
   a `case` or `?:` over Symbol literals) becomes direct per-name arms with a logged violation arm instead
   of a by-name lookup; `BC2CPP_COMPUTED_SEND=0` turns it off (see
