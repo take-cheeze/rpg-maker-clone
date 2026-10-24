@@ -224,6 +224,26 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/record_hash_update_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/record_nilable_read_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+  scripts/bc2cpp/constructor_optionals_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+  scripts/bc2cpp/setter_name_closure_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/bytecode_ir_constants_check.rb:
     tier: fast
     capabilities:
@@ -240,6 +260,10 @@ checks:
     tier: fast
     capabilities: []
   scripts/bc2cpp/freeze_fold_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/plain_yielder_check.rb:
     tier: fast
     capabilities:
     - mrbc
@@ -264,6 +288,10 @@ checks:
     capabilities:
     - mrbc
   scripts/bc2cpp/constant_argument_sites_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/dynamic_names_probe_check.rb:
     tier: fast
     capabilities:
     - mrbc
@@ -345,6 +373,20 @@ checks:
     capabilities: []
     fixture_capabilities:
     - native_sources
+  scripts/bc2cpp/stack_block_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/explicit_block_arg_direct_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/block_iterator_direct_check.rb:
     tier: runtime
     capabilities:

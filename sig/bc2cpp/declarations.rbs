@@ -7401,12 +7401,6 @@ class Win32API
   def initialize: (untyped, untyped, ?untyped, ?untyped) -> untyped
 end
 
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_sprintf
-class String
-  def %: (untyped) -> untyped
-end
-
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_sprintf
 class Kernel
@@ -8319,6 +8313,11 @@ module LCF
   def write_ber: (untyped) -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_sprintf
+class String
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
@@ -8940,8 +8939,9 @@ class Game::Interpreter
   def execute: (untyped) -> (Array | Integer | bool | nil)
   %a{bc2cpp:hint}
   def play_audio: (untyped, untyped) -> nil
+  # An op outside 0..2 falls out of the `case` with nil.
   %a{bc2cpp:hint}
-  def set_switch: (untyped, untyped) -> bool
+  def set_switch: (untyped, untyped) -> (bool | nil)
   %a{bc2cpp:hint}
   def trunc_div: (untyped, untyped) -> Integer
   %a{bc2cpp:hint}
@@ -8953,8 +8953,9 @@ end
 class Game::Transition
   @block_order: (Array[untyped] | nil)
   @erase: (bool)
+  # The `if` modifier is nil once the last frame is reached.
   %a{bc2cpp:hint}
-  def advance: () -> Integer
+  def advance: () -> (Integer | nil)
   %a{bc2cpp:hint}
   def black_alpha: () -> Integer
   def captured?: () -> untyped
@@ -9030,7 +9031,9 @@ end
 class RPG2k::Scene::ItemMenu
   def enter_target_confirm: ((Symbol | nil)) -> untyped
   def initialize: (RPG2k, Game::State) -> untyped
-  def build_arrow_sprite: (untyped, untyped) -> untyped
+  # Scene::Base#build_list_arrow_sprite's `Sprite.new`.
+  %a{bc2cpp:hint}
+  def build_arrow_sprite: (untyped, untyped) -> RGSS::Sprite
   def build_arrow_sprites: () -> untyped
   def build_desc_window: () -> untyped
   def choose_item: () -> untyped
@@ -9039,7 +9042,8 @@ class RPG2k::Scene::ItemMenu
   def item_col_w: () -> Integer
   %a{bc2cpp:hint}
   def items: () -> Array
-  def refresh_arrows: () -> untyped
+  %a{bc2cpp:hint}
+  def refresh_arrows: () -> (bool | nil)
   def refresh_desc: () -> untyped
   def tick_arrows: () -> untyped
   def update: () -> untyped
@@ -9144,8 +9148,9 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def auto_message_position: (untyped) -> Integer
   def blt_bushed: (untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+  # The rescue arm returns nil.
   %a{bc2cpp:hint}
-  def build_chipset: () -> Game::ChipSet
+  def build_chipset: () -> Game::ChipSet?
   %a{bc2cpp:hint}
   def build_event: (untyped, untyped, untyped, untyped) -> RPG2k::Scene::Map::MapEventState
   %a{bc2cpp:hint}
@@ -9345,12 +9350,17 @@ end
 class RPG2k::Scene::MapViewer
   @db: (nil | LCF::Database)
   def initialize: (RPG2k, Game::State) -> untyped
+  # nil with no map and from the rescue arm.
+  %a{bc2cpp:hint}
+  def build_chipset: () -> Game::ChipSet?
 end
 
 class RPG2k::Scene::SkillMenu
   def enter_target_confirm: ((nil | Symbol)) -> untyped
   def initialize: (RPG2k, Game::State) -> untyped
-  def build_arrow_sprite: (untyped, untyped) -> untyped
+  # Scene::Base#build_list_arrow_sprite's `Sprite.new`.
+  %a{bc2cpp:hint}
+  def build_arrow_sprite: (untyped, untyped) -> RGSS::Sprite
   def build_arrow_sprites: () -> untyped
   def build_desc_window: () -> untyped
   def build_skill_window: () -> untyped
@@ -9527,8 +9537,37 @@ class Game::Actors
   %a{bc2cpp:hint}
   def each: () -> Array
 end
+class Game::Battle
+  # Game.clamp of the stat, and #adjust_stat of that: Integer, as Game::Party's own.
+  %a{bc2cpp:hint}
+  def modified_stat: (untyped, untyped) -> Integer
+  %a{bc2cpp:hint}
+  def effective_agi: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def effective_atk: (untyped) -> Integer
+  %a{bc2cpp:hint}
+  def effective_def: (untyped) -> Integer
+end
+class Game::Battle::Combatant
+  %a{bc2cpp:hint}
+  def dead?: () -> bool
+  # The same body as Game::Actor's; Battle.from_actor / .from_enemy fill hp, max_hp, mp and max_mp.
+  %a{bc2cpp:hint}
+  def display_max_hp: () -> Integer
+  %a{bc2cpp:hint}
+  def display_max_mp: () -> Integer
+end
+class Game::Enemy
+  %a{bc2cpp:hint}
+  def attack_hit_rate: () -> Integer
+  %a{bc2cpp:hint}
+  def dead?: () -> bool
+end
 class Game::EnemyAi
   def initialize: (LCF::Database, Game::State) -> untyped
+  # nil when there is no switch table or the id is not positive.
+  %a{bc2cpp:hint}
+  def set_switch: (untyped, untyped) -> (bool | nil)
 end
 class Game::Map
   def initialize: (Integer, LCF::MapUnit) -> untyped
@@ -9683,7 +9722,8 @@ class RPG2k::Scene::EquipMenu
   def actor: () -> Game::Actor
   %a{bc2cpp:hint}
   def base_stat: (untyped, untyped) -> Integer
-  def build_arrow_sprite: (untyped) -> untyped
+  %a{bc2cpp:hint}
+  def build_arrow_sprite: (untyped) -> RGSS::Sprite
   def build_arrow_sprites: () -> untyped
   def build_desc_window: () -> untyped
   def build_slot_window: () -> untyped
@@ -9732,6 +9772,9 @@ class RPG2k::Scene::MapWorld
   def initialize: (RPG2k::Scene::Map, Game::Rng) -> untyped
   def play_sound: (String, untyped, untyped, untyped) -> untyped
   def passable?: (untyped, untyped) -> untyped
+  # Game::MoveRoute#execute passes a literal true or false.
+  %a{bc2cpp:hint}
+  def set_switch: (untyped, untyped) -> (bool | nil)
 end
 class RPG2k::Scene::Menu
   def initialize: (RPG2k, Game::State) -> untyped
@@ -9751,6 +9794,9 @@ class RPG2k::Scene::Menu
   def update_command: () -> untyped
   %a{bc2cpp:hint}
   def wait_term_for: (untyped, untyped) -> String
+  # Always nil (#close_message ends in `@message = nil`); declared as Scene::Map's.
+  %a{bc2cpp:hint}
+  def drive_message: () -> (bool | nil)
 end
 class RPG2k::Scene::Order
   def initialize: (RPG2k, Game::State) -> untyped
@@ -9779,7 +9825,8 @@ class RPG2k::Scene::SaveLoad
   def fixed_width_term: (untyped) -> untyped
   %a{bc2cpp:hint}
   def initial_index: () -> Integer
-  def refresh_arrows: () -> untyped
+  %a{bc2cpp:hint}
+  def refresh_arrows: () -> (bool | nil)
   %a{bc2cpp:hint}
   def refresh_slot_windows: () -> Array
   def tick_arrows: () -> untyped
@@ -9841,6 +9888,9 @@ class RPG2k::Scene::Title
 end
 class RPG2k::Scene::VehicleWorld
   def initialize: (RPG2k::Scene::Map, Game::Rng, Symbol) -> untyped
+  # As MapWorld#set_switch.
+  %a{bc2cpp:hint}
+  def set_switch: (untyped, untyped) -> (bool | nil)
 end
 
 # ---- magic_comments_padded.rbs
@@ -10069,9 +10119,9 @@ class Game::Screen
   def tint: () -> Array
   def flash_color: () -> Array
   def pan_offset: () -> Array
-  # Runtime-checked: the pan step is a by-name send.
+  # Runtime-checked: the pan step is a by-name send. #pan_step_for's `/ 16.0` makes it a Float.
   %a{bc2cpp:hint}
-  def update_pan: () -> Integer
+  def update_pan: () -> (Integer | Float)
   def busy?: () -> untyped
   %a{bc2cpp:hint}
   def erase: (untyped) -> Game::Transition
@@ -10182,6 +10232,9 @@ class Game::TextReveal
   def next_pause: () -> (Game::Message::PauseMarker | nil)
   %a{bc2cpp:hint}
   def pending_pause: () -> (Game::Message::PauseMarker | nil)
+  # nil while blocked on a pause.
+  %a{bc2cpp:hint}
+  def advance: (?untyped) -> (Integer | nil)
 end
 
 class Game::Variables
