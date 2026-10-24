@@ -3702,10 +3702,10 @@ class Game::Troop
   def members: () -> untyped
   def pages: () -> untyped
   def apply_appear_randomly: (untyped, untyped) -> untyped
+  def build_member: (untyped, untyped) -> untyped
   def drops: (untyped) -> untyped
   def initialize: (untyped, untyped, ?untyped) -> untyped
   def live_members: () -> untyped
-  def member: (untyped, untyped) -> untyped
   def total_exp: () -> untyped
   def total_gold: () -> untyped
 end
@@ -8318,6 +8318,13 @@ end
 class String
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_rgss
+class RGSS::HashArchive
+  def initialize: (untyped) -> untyped
+  def read: (untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
@@ -9529,11 +9536,11 @@ class Game::Actors
   # non-positive id, the miss and the rescue arm return nil, so the declaration is `Game::Actor?`.
   %a{bc2cpp:hint}
   def []: (Integer) -> Game::Actor?
-  # Runtime-checked: an `@all` Hash read; a nil id or an absent actor is nil.
-  %a{bc2cpp:hint}
+  # SEALED_HASH_STORES proves the `@all` read; a nil id or an absent actor is nil.
   def existing: (Integer) -> Game::Actor?
+  # Every value of `@all` is an `Actor.new` (#[] is its only writer).
   %a{bc2cpp:hint}
-  def all: () -> Array
+  def all: () -> Array[Game::Actor]
   %a{bc2cpp:hint}
   def each: () -> Array
 end

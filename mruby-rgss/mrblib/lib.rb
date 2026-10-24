@@ -34,6 +34,18 @@ module RGSS
     attr_accessor :asset_archive
   end
 
+  # An asset_archive over a Hash of name => bytes, for a probe that stands in a game's archive (audio_probe).
+  # A named class rather than a singleton `def obj.read`, so the closed world can name every `read` definer.
+  class HashArchive
+    def initialize(entries)
+      @entries = entries
+    end
+
+    def read(name)
+      @entries[name]
+    end
+  end
+
   # The mean R/G/B of the rendered frame, sampled on an 8px grid (a full
   # per-pixel walk through get_pixel would take seconds). nil when the backend
   # cannot snapshot. This is the measurement used to prove the RPG2000
@@ -540,12 +552,7 @@ module RGSS
     Graphics.update
     File.delete(path) if File.exist?(path)
 
-    archive = Object.new
-    entries = { "Audio/BGM/Probe.wav" => wav, "Audio/SE/Beep.wav" => wav }
-    archive.instance_variable_set(:@entries, entries)
-    def archive.read(name)
-      @entries[name]
-    end
+    archive = HashArchive.new({ "Audio/BGM/Probe.wav" => wav, "Audio/SE/Beep.wav" => wav })
     previous = asset_archive
     self.asset_archive = archive
     begin
