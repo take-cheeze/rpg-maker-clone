@@ -48,15 +48,15 @@ Closed world (`scripts/bc2cpp/closed_build.bash`, all four compiled gems):
 
 | Measure | Heap only | Frame-local | Exact windows |
 | --- | ---: | ---: | ---: |
-| block sites building the block in the frame | 0 | 220 | 288 |
+| block sites building the block in the frame | 0 | 220 | 309 |
 | of these, never allocating an `RProc` | 0 | 25 | 37 |
-| block sites always building a heap `RProc` | 438 | 218 | 150 |
+| block sites always building a heap `RProc` | 438 | 218 | 129 |
 
 By callee: `Array#each` 142, `Hash#each` 127, `Enumerable#collect` 118,
-`Enumerable#each_with_index` 111, `find_all` 24, `Integer#times` 21,
-`Hash#select` 12, `Array#each_index` 9, `Enumerable#reject` 8, `all?` 8,
-`each_with_object` 5, `Hash#reject` 4, `Enumerable#uniq` 4, `count` 3, and a
-few more.
+`Enumerable#each_with_index` 111, `Enumerable#any?` 54, `find_all` 24,
+`Integer#times` 21, `Hash#select` 12, `Array#each_index` 9,
+`Enumerable#reject` 8, `all?` 8, `each_with_object` 5, `Hash#reject` 4,
+`Enumerable#uniq` 4, and a few more.
 
 The proof still refuses the callees that pass their block on to another method:
 `Range#each` (to `__upto_endless`), `Array#uniq` (to `uniq!`) and
