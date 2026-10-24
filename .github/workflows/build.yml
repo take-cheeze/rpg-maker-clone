@@ -766,6 +766,7 @@ jobs:
           ruby scripts/bc2cpp/record_nilable_read_check.rb
           ruby scripts/bc2cpp/constructor_optionals_check.rb
           ruby scripts/bc2cpp/operator_sends_check.rb
+          ruby scripts/bc2cpp/setter_receiver_filter_check.rb
           ruby scripts/bc2cpp/setter_name_closure_check.rb
           ruby scripts/bc2cpp/ir_ivar_types_check.rb
           ruby scripts/bc2cpp/ivar_candidates_check.rb
