@@ -42,10 +42,10 @@ end
 class Dir
   def close: () -> nil
   def initialize: (String) -> self
-  def read: () -> untyped
-  def rewind: () -> untyped
-  def seek: (Numeric) -> untyped
-  def tell: () -> untyped
+  def read: () -> String?
+  def rewind: () -> self?
+  def seek: (Numeric) -> self?
+  def tell: () -> Integer?
   def self._chdir: (String) -> Integer
   def self.children: (String) -> Array
   def self.chroot: (String) -> Integer
@@ -246,7 +246,7 @@ module FileTest
   def self.file?: (untyped) -> bool
   def self.pipe?: (untyped) -> bool
   def self.size: (untyped) -> Integer
-  def self.size?: (untyped) -> untyped
+  def self.size?: (untyped) -> Integer?
   def self.socket?: (untyped) -> bool
   def self.symlink?: (untyped) -> bool
   def self.zero?: (untyped) -> bool
@@ -254,11 +254,11 @@ end
 
 # bc2cpp-native: base_io
 class IO
-  def self._pipe: () -> untyped
+  def self._pipe: () -> Array
   def self._popen: (untyped, ?untyped, ?untyped) -> untyped
   def self._sysclose: (Numeric) -> Integer
   def self.for_fd: (untyped, ?untyped, ?untyped) -> untyped
-  def self.select: (*untyped) -> untyped
+  def self.select: (*untyped) -> Array?
   def self.sysopen: (String, ?untyped, ?Numeric) -> Integer
 end
 
@@ -1083,58 +1083,58 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_math
 module Math
-  def acos: (untyped) -> Float
-  def acosh: (untyped) -> Float
-  def asin: (untyped) -> Float
-  def asinh: (untyped) -> Float
-  def atan: (untyped) -> Float
+  def acos: (Numeric) -> Float
+  def acosh: (Numeric) -> Float
+  def asin: (Numeric) -> Float
+  def asinh: (Numeric) -> Float
+  def atan: (Numeric) -> Float
   def atan2: (Numeric, Numeric) -> Float
-  def atanh: (untyped) -> Float
-  def cbrt: (untyped) -> Float
-  def cos: (untyped) -> Float
-  def cosh: (untyped) -> Float
-  def erf: (untyped) -> Float
-  def erfc: (untyped) -> Float
-  def exp: (untyped) -> Float
-  def expm1: (untyped) -> Float
-  def frexp: (untyped) -> Integer
+  def atanh: (Numeric) -> Float
+  def cbrt: (Numeric) -> Float
+  def cos: (Numeric) -> Float
+  def cosh: (Numeric) -> Float
+  def erf: (Numeric) -> Float
+  def erfc: (Numeric) -> Float
+  def exp: (Numeric) -> Float
+  def expm1: (Numeric) -> Float
+  def frexp: (Numeric) -> Array
   def hypot: (Numeric, Numeric) -> Float
   def ldexp: (Numeric, Numeric) -> Float
   def log: (Numeric, ?Numeric) -> Float
-  def log10: (untyped) -> Float
-  def log1p: (untyped) -> Float
-  def log2: (untyped) -> Float
-  def sin: (untyped) -> Float
-  def sinh: (untyped) -> Float
-  def sqrt: (untyped) -> Float
-  def tan: (untyped) -> Float
-  def tanh: (untyped) -> Float
-  def self.acos: (untyped) -> Float
-  def self.acosh: (untyped) -> Float
-  def self.asin: (untyped) -> Float
-  def self.asinh: (untyped) -> Float
-  def self.atan: (untyped) -> Float
+  def log10: (Numeric) -> Float
+  def log1p: (Numeric) -> Float
+  def log2: (Numeric) -> Float
+  def sin: (Numeric) -> Float
+  def sinh: (Numeric) -> Float
+  def sqrt: (Numeric) -> Float
+  def tan: (Numeric) -> Float
+  def tanh: (Numeric) -> Float
+  def self.acos: (Numeric) -> Float
+  def self.acosh: (Numeric) -> Float
+  def self.asin: (Numeric) -> Float
+  def self.asinh: (Numeric) -> Float
+  def self.atan: (Numeric) -> Float
   def self.atan2: (Numeric, Numeric) -> Float
-  def self.atanh: (untyped) -> Float
-  def self.cbrt: (untyped) -> Float
-  def self.cos: (untyped) -> Float
-  def self.cosh: (untyped) -> Float
-  def self.erf: (untyped) -> Float
-  def self.erfc: (untyped) -> Float
-  def self.exp: (untyped) -> Float
-  def self.expm1: (untyped) -> Float
-  def self.frexp: (untyped) -> Integer
+  def self.atanh: (Numeric) -> Float
+  def self.cbrt: (Numeric) -> Float
+  def self.cos: (Numeric) -> Float
+  def self.cosh: (Numeric) -> Float
+  def self.erf: (Numeric) -> Float
+  def self.erfc: (Numeric) -> Float
+  def self.exp: (Numeric) -> Float
+  def self.expm1: (Numeric) -> Float
+  def self.frexp: (Numeric) -> Array
   def self.hypot: (Numeric, Numeric) -> Float
   def self.ldexp: (Numeric, Numeric) -> Float
   def self.log: (Numeric, ?Numeric) -> Float
-  def self.log10: (untyped) -> Float
-  def self.log1p: (untyped) -> Float
-  def self.log2: (untyped) -> Float
-  def self.sin: (untyped) -> Float
-  def self.sinh: (untyped) -> Float
-  def self.sqrt: (untyped) -> Float
-  def self.tan: (untyped) -> Float
-  def self.tanh: (untyped) -> Float
+  def self.log10: (Numeric) -> Float
+  def self.log1p: (Numeric) -> Float
+  def self.log2: (Numeric) -> Float
+  def self.sin: (Numeric) -> Float
+  def self.sinh: (Numeric) -> Float
+  def self.sqrt: (Numeric) -> Float
+  def self.tan: (Numeric) -> Float
+  def self.tanh: (Numeric) -> Float
 end
 
 # bc2cpp-native: base_math
@@ -1307,21 +1307,21 @@ end
 # bc2cpp-native: base_mvjs
 class MV::Effekseer
   def self.available?: () -> bool
-  def self.smoke_test: (String, ?Numeric, ?Numeric, ?Numeric) -> untyped
+  def self.smoke_test: (String, ?Numeric, ?Numeric, ?Numeric) -> Integer?
 end
 
 # bc2cpp-native: base_mvjs
 class MV::Font
-  def self.pick: (String, ?String) -> untyped
+  def self.pick: (String, ?String) -> String?
   def self.preferred_filename=: (String) -> nil
-  def self.smoke_test: (String, ?Numeric, ?Numeric) -> untyped
-  def self.unpack_woff: (String) -> untyped
+  def self.smoke_test: (String, ?Numeric, ?Numeric) -> Array?
+  def self.unpack_woff: (String) -> String?
 end
 
 # bc2cpp-native: base_mvjs
 class MV::GL
   def self.available?: () -> bool
-  def self.smoke_test: () -> untyped
+  def self.smoke_test: () -> Array?
 end
 
 # bc2cpp-native: base_mvjs
@@ -1678,30 +1678,30 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_rgss
 module RGSS
-  def __log_bridge_write: (String) -> untyped
-  def default_font_path: () -> nil
+  def __log_bridge_write: (String) -> String?
+  def default_font_path: () -> String?
   def mouse_pressed?: () -> bool
   def mouse_x: () -> Integer
   def mouse_y: () -> Integer
   def to_nfd: (String) -> String
-  def window_title: () -> nil
+  def window_title: () -> String?
   def window_title=: (untyped) -> untyped
   def zlib_inflate: (String) -> String
-  def self.__log_bridge_write: (String) -> untyped
-  def self.default_font_path: () -> nil
+  def self.__log_bridge_write: (String) -> String?
+  def self.default_font_path: () -> String?
   def self.mouse_pressed?: () -> bool
   def self.mouse_x: () -> Integer
   def self.mouse_y: () -> Integer
   def self.to_nfd: (String) -> String
-  def self.window_title: () -> nil
+  def self.window_title: () -> String?
   def self.window_title=: (untyped) -> untyped
   def self.zlib_inflate: (String) -> String
 end
 
 # bc2cpp-native: base_rgss
 class RGSS::Bitmap
-  def _init_file: (String, ?untyped) -> untyped
-  def _init_memory: (String, ?untyped) -> untyped
+  def _init_file: (String, ?untyped) -> self?
+  def _init_memory: (String, ?untyped) -> self?
   def _init_size: (Numeric, Numeric) -> self
   def _transition_alpha: (untyped, Numeric, Numeric) -> bool
   def blend_text: (Numeric, Numeric, Numeric, Numeric, String, untyped, Numeric, Numeric, Numeric, Numeric, ?Numeric) -> self
@@ -1782,7 +1782,7 @@ class RGSS::Plane
   def ox=: (Numeric) -> self
   def oy=: (Numeric) -> self
   def tone=: (untyped) -> untyped
-  def visible: () -> bool
+  def visible: () -> untyped
   def visible=: (untyped) -> self
   def z=: (Numeric) -> self
   def zoom_x=: (Numeric) -> self
@@ -1805,7 +1805,7 @@ class RGSS::Sprite
   def src_rect=: (untyped) -> untyped
   def tone=: (untyped) -> untyped
   def update: () -> self
-  def visible: () -> bool
+  def visible: () -> untyped
   def visible=: (untyped) -> self
   def x=: (Numeric) -> self
   def y=: (Numeric) -> self
@@ -1840,7 +1840,7 @@ class RGSS::Tilemap
   def priorities=: (untyped) -> untyped
   def tileset=: (untyped) -> untyped
   def update: () -> self
-  def visible: () -> bool
+  def visible: () -> untyped
   def visible=: (untyped) -> self
   def z=: (Numeric) -> self
   def self.vx_table_leg_quads: (Numeric) -> Array
@@ -1882,7 +1882,7 @@ class RGSS::Viewport
   def tone: () -> RGSS::Tone
   def tone=: (untyped) -> untyped
   def update: () -> nil
-  def visible: () -> bool
+  def visible: () -> untyped
   def visible=: (untyped) -> self
   def z=: (Numeric) -> self
 end
@@ -1908,7 +1908,7 @@ class RGSS::Window
   def tone=: (untyped) -> untyped
   def update: () -> self
   def viewport=: (untyped) -> untyped
-  def visible: () -> bool
+  def visible: () -> untyped
   def visible=: (untyped) -> self
   def width=: (Numeric) -> self
   def windowskin=: (untyped) -> untyped
@@ -7410,10 +7410,10 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_sprintf
 class Kernel
-  def format: (*untyped) -> untyped
-  def sprintf: (*untyped) -> untyped
-  def self.format: (*untyped) -> untyped
-  def self.sprintf: (*untyped) -> untyped
+  def format: (*untyped) -> String?
+  def sprintf: (*untyped) -> String?
+  def self.format: (*untyped) -> String?
+  def self.sprintf: (*untyped) -> String?
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -7456,7 +7456,7 @@ class StringIO
   def close: () -> nil
   def closed?: () -> bool
   def eof?: () -> bool
-  def getbyte: () -> untyped
+  def getbyte: () -> Integer?
   def getc: (*untyped) -> String?
   def gets: (*untyped) -> untyped
   def initialize: (?String, ?String) -> self
