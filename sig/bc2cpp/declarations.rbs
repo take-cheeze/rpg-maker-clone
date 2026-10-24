@@ -10790,6 +10790,11 @@ class IO < Object
 end
 
 # bc2cpp-native: core_hierarchy
+# mruby-io file.c: `mrb_define_class(mrb, "File", io)`.
+class File < IO
+end
+
+# bc2cpp-native: core_hierarchy
 class Time < Object
   include Comparable
 end
