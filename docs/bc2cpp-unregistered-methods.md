@@ -12,7 +12,11 @@ name-level and its default answer is "dynamic". A name stays registered when
 any of these could look it up:
 
 - a send in bytecode that can run (a fixpoint, with the mrblib load phase
-  modelled separately);
+  modelled separately). A block of a registered compiled method runs as
+  bytecode only during the load phase, together with its method, because the
+  generated C++ makes only C procs. If any generated C++ builds a bytecode
+  proc (`mrb_proc_new`, `mrb_closure_new`), every such block counts as
+  runnable again;
 - a C string literal in the generated C++, outside the name's own
   registration. Two kinds of use don't count, because neither looks up a
   compiled method: the by-name fallback of a `MONO_EMBED_GUARD` on an owner
