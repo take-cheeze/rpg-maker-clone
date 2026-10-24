@@ -1,0 +1,1 @@
+- **bc2cpp** optcarrot probe's closed world now lists the core gems' mrblib (`mruby-array-ext` and the rest) as outside Ruby: the probe's program is its bundle alone, so `Array#fill` and every other core-Ruby method was in neither the program nor the outside set, and a compiled `@ram.fill(0xff)` raised a closed-world owner violation.
