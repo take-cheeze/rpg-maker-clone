@@ -1026,6 +1026,7 @@
 
 - Static owner dispatch recognizes boxed literal arguments as well as locals; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - Proven Ruby receivers bypass incompatible native drawing and setter guards; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
+- Record-hash reads propagate proven object classes through downstream class pools; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - Monomorphic embedded-object calls reuse exact receiver proofs to remove class guards; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - Audited core calls reuse Fixnum argument proofs to remove redundant guards; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - Stable class/module arguments remove redundant guards in `is_a?` and `kind_of?`; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).

@@ -2302,3 +2302,17 @@ with no `#error` in either output. These emitted counts exceed the source-site
 profile's candidates because block copies and checked non-nil contexts also
 benefit. Counts use saved on/off C++ because the census summary still expects
 the obsolete INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: constructed objects in record-hash read flow
+
+RECORD_OBJECT_READS extends RECORD_NILABLE_READ to object classes whose every
+listed record writer passes the existing `record_writer_exact_class` proof.
+That proof accepts literal heap objects or stable standard constructors; a
+factory call with an unproven result does not qualify. The resulting class bits
+flow through argument/return and ivar pools instead of helping only a local
+record receiver. Missing/deleted keys and explicit nil writers retain nil in
+the class set. Escaped records and unknown writers remain unproven, and numeric
+classes are not introduced into the exact flow by this rule.
+`BC2CPP_RECORD_OBJECT_READS=0` restores the previous read flow. The record-read
+fixture checks pooling, truthiness narrowing, deletion, nil stores, escapes and
+compiled-versus-interpreted values/errors.
