@@ -415,11 +415,17 @@ bool is_xp_game(const char* gd) {
 
 // The mruby class to construct and the LVGL display resolution to create for
 // it -- see the file-level comment on why this has to be each maker's own
-// native resolution, not the panel's.
+// native resolution, not the panel's. `make`, `main_loop` and `scene_name` are
+// that class's BC2CPP_ENTRY entries (include/bc2cpp_entry.hxx): RPG2k's call
+// the compiled bodies directly in a bc2cpp build; RPGXP's and RPGVX's are
+// always by name (no build compiles those gems).
 struct GameInfo {
   const char* class_name;
   int32_t width;
   int32_t height;
+  mrb_value (*make)(mrb_state*, mrb_int, const mrb_value*);
+  mrb_value (*main_loop)(mrb_state*, mrb_value);
+  mrb_value (*scene_name)(mrb_state*, mrb_value);
 };
 
 // RPG Maker 2000/2003's native screen size, matching src/main.cxx's --width/
@@ -437,9 +443,24 @@ constexpr int32_t kVxHeight = 416;
 // (whose own archives/data files the XP predicate would otherwise also
 // match), then XP. Returns nullptr if none matched -- the idle HAL bring-up.
 const GameInfo* detect_game(void) {
-  static const GameInfo kRpg2k{"RPG2k", kRpg2kWidth, kRpg2kHeight};
-  static const GameInfo kXp{"RPGXP", kXpWidth, kXpHeight};
-  static const GameInfo kVx{"RPGVX", kVxWidth, kVxHeight};
+  static const GameInfo kRpg2k{"RPG2k",
+                               kRpg2kWidth,
+                               kRpg2kHeight,
+                               bc2cpp_entry_RPG2k_new,
+                               bc2cpp_entry_RPG2k_main_loop,
+                               bc2cpp_entry_RPG2k_current_scene_name};
+  static const GameInfo kXp{"RPGXP",
+                            kXpWidth,
+                            kXpHeight,
+                            bc2cpp_entry_RPGXP_new,
+                            bc2cpp_entry_RPGXP_main_loop,
+                            bc2cpp_entry_RPGXP_current_scene_name};
+  static const GameInfo kVx{"RPGVX",
+                            kVxWidth,
+                            kVxHeight,
+                            bc2cpp_entry_RPGVX_new,
+                            bc2cpp_entry_RPGVX_main_loop,
+                            bc2cpp_entry_RPGVX_current_scene_name};
   if (path_exists(kGameDir, "RPG_RT.ldb"))
     return &kRpg2k;
   if (is_rpgvx_game(kGameDir))
@@ -587,8 +608,11 @@ void append_mem_snapshot(StrBuf& sb) {
 // copied out here, synchronously, rather than a raw pointer being handed back
 // to the caller -- mruby's GC gives no lifetime guarantee once the string
 // value itself is no longer reachable from this scope.
-void append_scene_name(StrBuf& sb, mrb_state* M, mrb_value game_obj) {
-  const mrb_value name = bc2cpp_entry_RPG2k_current_scene_name(M, game_obj);
+void append_scene_name(StrBuf& sb,
+                       mrb_state* M,
+                       const GameInfo* game_info,
+                       mrb_value game_obj) {
+  const mrb_value name = game_info->scene_name(M, game_obj);
   if (M->exc) {
     M->exc = nullptr;
     sb.str("none");
@@ -751,8 +775,7 @@ int main(void) {
       // No TestPlay/HideTitle words -- this build has no command line to
       // carry them on.
       const mrb_value args = mrb_ary_new(M);
-      game_obj =
-          mrb_obj_new(M, mrb_class_get(M, game_info->class_name), 1, &args);
+      game_obj = game_info->make(M, 1, &args);
       if (M->exc) {
         // Leaves no game running; falls through to the idle HAL loop below,
         // same as "not_found". The display stays sized for the maker whose
@@ -816,7 +839,8 @@ int main(void) {
   // metadata above now sizes explicitly.
   for (uint32_t frame = 0;; ++frame) {
     if (have_game) {
-      // RPG2k#main_loop (mruby-rpg2k/mrblib/main.rb) is the single-frame step
+      // The maker's #main_loop (RPG2k#main_loop, mruby-rpg2k/mrblib/main.rb;
+      // through game_info, its BC2CPP_ENTRY form) is the single-frame step
       // #start loops forever on desktop; driving it once per C++ frame here
       // instead keeps this loop, not mruby, in charge of the process, the
       // same shape src/main.cxx's rpg_start_game gives the browser. It calls
@@ -824,7 +848,7 @@ int main(void) {
       // gfx_update) and polls the pad (rgss_psp_poll) -- so neither
       // lv_timer_handler() nor show_keys()/psp_input_scan() below are needed
       // while a game is driving its own frame.
-      bc2cpp_entry_RPG2k_main_loop(M, game_obj);
+      game_info->main_loop(M, game_obj);
       if (M->exc) {
         // MRB_EXC_EXIT_P distinguishes a clean Kernel#exit (RPG_RT's own
         // "Shutdown" title command, via mruby-exit) from an actual crash --
@@ -873,7 +897,7 @@ int main(void) {
       sb.uint(frame);
       sb.str(" scene=");
       if (have_game)
-        append_scene_name(sb, M, game_obj);
+        append_scene_name(sb, M, game_info, game_obj);
       else
         sb.str("none");
       append_mem_fields(sb, stack_free, stack_used_max);
