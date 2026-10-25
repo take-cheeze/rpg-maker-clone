@@ -1,0 +1,1 @@
+- **bc2cpp** completes the opcode Symbol migration across compiler analyses and fixtures while preserving String name operands and report formats, fixing compiler and Ruby-check CI failures.
