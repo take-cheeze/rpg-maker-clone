@@ -37,7 +37,19 @@ any of these could look it up:
     (`MRB_SYM_Q(name)` and the like), and the arguments of macros that turn
     an argument into a name (`#param`, or passing it on to such a macro).
     A C local or field spelled like a method name looks nothing up;
-- one of mruby's protocol names.
+  - the workflows under `.github/` are skipped: their inline Ruby runs in
+    the desktop binary, and the closed library is linked only into
+    `trace_host.cxx`, which runs no script;
+  - core and external-gem Ruby under `3rd/` is read as bytecode, not text,
+    and so is the mrblib of the core gems compiled as program (array-ext,
+    enum-ext, struct, enumerator, ...), which no scan read before. A send
+    there counts only if its receiver may be an engine object. That rules
+    out a literal, a core constant, and self in a method of a core class
+    outside the engine classes' superclass chain. Self in a module, Object,
+    Kernel, Class or Module method, and any unknown value, still count.
+    Symbols, identifier-shaped strings and implicit operators always count.
+    A file with a reflective send (`__send__`, `instance_exec`,
+    `define_method`, ...) or a `method_missing` keeps the text rule;
 
 Only RPG2000/2003 internal owners qualify.
 
