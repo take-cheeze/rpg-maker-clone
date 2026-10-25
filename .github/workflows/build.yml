@@ -717,6 +717,33 @@ jobs:
       - name: Check bc2cpp registrations
         run: ruby scripts/ci/check_registry.rb
 
+      # Facts for the binding-split check: libclang extraction of every RGSS
+      # native binding, cached across runs. Entries are keyed on everything the
+      # extractor reads (Nix pin, mruby headers, RGSS sources and repo headers,
+      # generated build headers from build-closed-bc2cpp, the extractor itself)
+      # — but not on the classifier scripts, so a classifier-only change
+      # re-runs the check against fresh-or-identical facts. A hit skips `nix
+      # develop .#clang` and libclang entirely.
+      - name: Key for the native binding facts cache
+        id: binding-facts-key
+        run: |
+          echo "mruby=$(git rev-parse HEAD:3rd/mruby)" >> "$GITHUB_OUTPUT"
+          echo "unialgo=$(git rev-parse HEAD:3rd/uni-algo)" >> "$GITHUB_OUTPUT"
+          echo "build=$(find build-closed-bc2cpp/closed/include build-closed-bc2cpp/closed/mrbgems/mruby-rgss -type f 2>/dev/null | sort | xargs -r sha256sum | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Cache native binding facts
+        id: binding-facts
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/binding-facts
+          key: binding-facts-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.*') }}-${{ steps.binding-facts-key.outputs.mruby }}-${{ steps.binding-facts-key.outputs.unialgo }}-${{ hashFiles('mruby-rgss/src/**', 'include/**', 'scripts/native/binding_facts.py') }}-${{ steps.binding-facts-key.outputs.build }}
+          restore-keys: binding-facts-v1-${{ runner.os }}-${{ runner.arch }}-
+      - name: Extract native binding facts
+        if: steps.binding-facts.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/binding-facts"
+          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c python3 scripts/native/binding_facts.py --config host --out "$RUNNER_TEMP/binding-facts/facts_host.json"
+          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c python3 scripts/native/binding_facts.py --config closed --out "$RUNNER_TEMP/binding-facts/facts_closed.json"
+          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c python3 scripts/native/binding_facts.py --config emscripten --out "$RUNNER_TEMP/binding-facts/facts_emscripten.json"
       # Four workers fill the 4-vCPU runner. Longer checks start first so a
       # large fixture does not land on the last worker. timed_checks prints
       # each log and propagates failures.
@@ -744,8 +771,8 @@ jobs:
           ruby scripts/bc2cpp/array_literal_block_check.rb
           ruby scripts/bc2cpp/send_arg_facts_check.rb
           ruby scripts/bc2cpp/constant_typing_check.rb
-          ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs build-closed-bc2cpp/closed
-          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c ruby scripts/native/binding_split.rb check
+          ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs --jobs 4 build-closed-bc2cpp/closed
+          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host ruby scripts/native/binding_split.rb check --facts "$RUNNER_TEMP/binding-facts"
           ruby scripts/bc2cpp/stack_tuples_check.rb
           ruby scripts/bc2cpp/block_self_world_check.rb
           ruby scripts/bc2cpp/outside_owner_call_check.rb

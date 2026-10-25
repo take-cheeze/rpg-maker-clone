@@ -37,9 +37,13 @@ def extract(root, configs, dir)
   FileUtils.mkdir_p(dir)
   configs.to_h do |config|
     out = File.join(dir, "facts_#{config}.json")
-    _stdout, err, status = Open3.capture3('python3', File.join(ROOT, 'scripts/native/binding_facts.py'),
-                                          '--root', root, '--config', config, '--out', out)
-    abort "native_binding_facts.py failed for #{config}:\n#{err}" unless status.success?
+    if File.file?(out)
+      warn "native_binding_split: reusing cached #{out}"
+    else
+      _stdout, err, status = Open3.capture3('python3', File.join(ROOT, 'scripts/native/binding_facts.py'),
+                                            '--root', root, '--config', config, '--out', out)
+      abort "native_binding_facts.py failed for #{config}:\n#{err}" unless status.success?
+    end
     [config, out]
   end
 end
@@ -48,6 +52,11 @@ end
 State = Struct.new(:facts, :sources, :bindings, :problems, :units, :rejected)
 
 def load_state(root, options, scratch)
+  if options[:facts]
+    dir = File.expand_path(options[:facts])
+    missing = options[:configs].reject { |c| File.file?(File.join(dir, "facts_#{c}.json")) }
+    abort "native_binding_split: facts cache #{dir} is missing facts_#{missing.join(', facts_')}.json; re-run without --facts" unless missing.empty?
+  end
   paths =
     if options[:facts]
       options[:configs].to_h { |c| [c, File.join(options[:facts], "facts_#{c}.json")] }

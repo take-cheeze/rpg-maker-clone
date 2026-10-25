@@ -270,6 +270,22 @@ The closed build uses `rake -m -j4`. The fixture-library builder uses `rake -m`
 with a processor-based limit capped at 16; `-j` alone does not enable concurrent
 ordinary Rake prerequisites. See [ADR 0410](adr/0410-bc2cpp-test-rake-multitask.md).
 
+`base_section_check.rb` accepts `--jobs N` for its native preprocessing
+workers; CI passes 4 (the runner fills out alongside the other parallel
+checks). Local runs keep the default 2. If the step's timing table shows
+contention instead of a speedup, revert CI to 2 — one flag.
+
+The `binding_split.rb check` in `bc2cpp-build` reads cached libclang facts
+(`--facts`) instead of running the extraction. `actions/cache` holds
+`facts_<config>.json` keyed on the Nix pin, mruby/uni-algo revisions, RGSS
+sources, repo headers, the extractor and the closed build's generated headers;
+it deliberately excludes the classifier scripts, so a classifier-only change
+still runs the check (fresh-or-identical facts, same verdict). A missing file
+in the cache dir aborts with "re-run without --facts" rather than checking
+against a partial cache. Staleness is handled by the key: any input change
+misses and re-extracts. Inputs the key cannot see (system libclang headers via
+`-isystem`) are pinned by `flake.*` through the same Nix toolchain.
+
 ### Scan cache (ADRs 0415, 0462)
 
 Every closed-world generator run is a new process that scans the same mruby and gem C sources. The native-source

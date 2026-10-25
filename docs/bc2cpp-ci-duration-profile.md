@@ -274,6 +274,15 @@ reducing compiler or fixture work; adding workers inside a check would contend
 with the existing four commands. Refresh this order when the timing table
 changes substantially rather than treating these durations as permanent costs.
 
+### Budget variant collapse (ir_context_results_check)
+
+The check's per-budget matrix (each budget × base + 5 single-control variants,
+12 of its 20 variants) is collapsed to base + one combined all-controls-off
+variant per budget: 12 variants total. The controls disable independent
+optimizations, so a single control moving the budgeted report would also move
+the combined run. `BC2CPP_CONTEXT_BUDGET_SPLIT=1` restores the old 20-variant
+matrix with per-control attributions for debugging; CI runs the default.
+
 ## 7. Rerun on the flake's Ruby 4.0.5 (StackProf)
 
 The bc2cpp jobs run `nix develop .#bc2cpp`, whose `ruby_4_0` is 4.0.5 (see [ci.md](ci.md)). The closed world
