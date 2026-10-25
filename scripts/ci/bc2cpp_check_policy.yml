@@ -561,6 +561,8 @@ checks:
     tier: fast
     capabilities:
     - native_sources
+    fixture_capabilities:
+    - mrbc
   scripts/bc2cpp/self_new_leaf_check.rb:
     tier: runtime
     capabilities:
