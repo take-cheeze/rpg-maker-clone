@@ -1024,6 +1024,8 @@
 
 ### Performance
 
+- Compiler name operands share frozen String storage to reduce retained heap usage; see [name storage](docs/bc2cpp-name-storage.md).
+
 - Compiler opcode dispatch uses a shared Symbol vocabulary; name operands and reports keep their String format. See [opcode representation](docs/bc2cpp-opcode-symbols.md).
 
 - Pooled and interpolated Symbols retain their register types, and keyword presence tracks both boolean classes; see [Symbol class proofs](docs/bc2cpp-symbol-class.md).
