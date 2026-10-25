@@ -144,3 +144,13 @@ Integer branch (a precision regression: the unknown Symbol kept both edges); the
 * A frozen table refused for another reason allocates no Symbol bit, so a `LOADSYM` register stays OTHER there.
 * `NumericClasses.element_literal_mask` (formerly `LiteralElementProof`) gives a Symbol element of a non-frozen literal OTHER. TrueClass and FalseClass literals stay
   OTHER in the numeric flow.
+
+## Pooled Symbol registers
+
+The `SYMBOL` opcode interns a string pool entry, including elements of `%i[...]`.
+It now uses the same literal transfer as `LOADSYM` in both numeric and exact-class
+flows, matching the existing bytecode IR type. `BC2CPP_LOADSYM_CLASS=0` disables
+its numeric bit too; `BC2CPP_IMMEDIATE_CLASS_BITS=0` disables its exact-class bit.
+`INTERN` remains separate because it coerces an input value rather than reading a
+constant pool entry. The host checks in `loadsym_class_check.rb` cover both opcode
+forms, disabled bits, and this distinction.
