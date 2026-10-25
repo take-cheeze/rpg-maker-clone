@@ -151,6 +151,14 @@ The `SYMBOL` opcode interns a string pool entry, including elements of `%i[...]`
 It now uses the same literal transfer as `LOADSYM` in both numeric and exact-class
 flows, matching the existing bytecode IR type. `BC2CPP_LOADSYM_CLASS=0` disables
 its numeric bit too; `BC2CPP_IMMEDIATE_CLASS_BITS=0` disables its exact-class bit.
-`INTERN` remains separate because it coerces an input value rather than reading a
-constant pool entry. The host checks in `loadsym_class_check.rb` cover both opcode
+`INTERN` now carries the same Symbol result type on normal completion. Its
+existing String type check and exception behavior remain in the emitted code;
+`mrb_ensure_string_type` checks the input without calling a Ruby conversion. The host checks in `loadsym_class_check.rb` cover both opcode
 forms, disabled bits, and this distinction.
+
+Keyword-presence (`KEY_P`) results now carry the union of `TrueClass` and
+`FalseClass` in the IR and exact-class flow. This union cannot justify a single
+exact receiver class. Context-specific keyword-presence proofs still distinguish
+provided from omitted keywords. Numeric-flow boolean literals remain conservative,
+consistent with the numeric oracle's existing treatment of `LOADTRUE`/`LOADFALSE`.
+The context-results oracle shares the exact oracle's Symbol opcode mapping.

@@ -1,1 +1,1 @@
-- **bc2cpp** preserves pooled Symbol register types in numeric and exact-class flows, matching the bytecode IR.
+- **bc2cpp** preserves pooled and interpolated Symbol register types across compiler flows and tracks keyword-presence boolean results.
