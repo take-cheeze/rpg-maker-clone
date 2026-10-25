@@ -9327,8 +9327,6 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def record_foreground_event_exec: () -> (Hash | nil)
   %a{bc2cpp:hint}
-  def record_value: (untyped, untyped, untyped) -> (LCF::Array2D | bool)
-  %a{bc2cpp:hint}
   def refresh_player_graphic: () -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
   def update_closing_windows: () -> (Array | nil)
