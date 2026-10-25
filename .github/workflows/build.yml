@@ -740,6 +740,7 @@ jobs:
       - name: Extract native binding facts
         if: steps.binding-facts.outputs.cache-hit != 'true'
         run: |
+          mkdir -p "$RUNNER_TEMP/binding-facts"
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c python3 scripts/native/binding_facts.py --config host --out "$RUNNER_TEMP/binding-facts/facts_host.json"
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c python3 scripts/native/binding_facts.py --config closed --out "$RUNNER_TEMP/binding-facts/facts_closed.json"
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c python3 scripts/native/binding_facts.py --config emscripten --out "$RUNNER_TEMP/binding-facts/facts_emscripten.json"
