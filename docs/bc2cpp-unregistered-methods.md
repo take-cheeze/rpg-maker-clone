@@ -102,7 +102,17 @@ Use verify mode to run a game trace against the lists, for example
 `BC2CPP_UNREGISTERED_VERIFY=1 scripts/bc2cpp/closed_build.bash <dir>` and
 then `scripts/bc2cpp/trace_host.bash <dir> <game>`. Set
 `BC2CPP_HOST_BATTLE_TROOP=<troop id>` (and `BC2CPP_HOST_BATTLE_PLAY=1`) to
-open a battle after New Game and drive it.
+open a battle after New Game and drive it. Other scenes take scripted input:
+
+- `BC2CPP_HOST_KEYS="FRAME:KEY,..."` taps `RGSS::Input` keys (`C`, `B`,
+  `DOWN`, ...) before the given frames, for example to open the menu (`B`)
+  and enter a command.
+- `BC2CPP_HOST_PREVIEW_MAP=<map id>` starts New Game on that map. A map
+  without an opening event lets the menu open, and only some maps allow
+  saving.
+- `BC2CPP_HOST_CONTINUE=1` picks Continue on the title, which loads the save.
+
+Saving writes into the game directory, so trace a copy.
 
 `scripts/bc2cpp/unregistered_verify_check.rb` checks the emitted
 registrations, and checks both modes' runtime behaviour on a small host.
