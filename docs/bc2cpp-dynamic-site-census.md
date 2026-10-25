@@ -2255,3 +2255,26 @@ guards and owner-call fallbacks: `is_a?` fallbacks fall from 69 to 7 and
 410,490. Neither generated file has `#error`. Counts use saved C++ from
 on/off runs because the census formatter still expects the obsolete
 INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: proven Integer arguments of audited core calls
+
+NATIVE_CORE_EXACT reuses `native_int_arg_proven?` for the Integer arguments of
+`String#getbyte`, `String#to_i(base)`, `String#byteslice` and `Array#__fetch`.
+The Fixnum proof is narrower than their native Integer guard, so an exact
+receiver plus proven arguments needs no dispatch fallback. For a two-argument
+`byteslice` with only one argument proven, only the other argument is tested.
+The helpers retain bounds checks, radix validation and their original errors;
+unproven argument types retain the normal guarded path. Checked core-body
+receiver proofs admit only independent Integer literal proofs within the
+narrowest target Fixnum range; they retain the checked receiver guard.
+`BC2CPP_CORE_INT_ARG_PROOF=0` restores the old guards. The owner-set fixture
+compares compiled and interpreted values/errors, including invalid radices,
+non-Integer arguments and oversized integers.
+
+On the shipped closed world, the proof removes four Integer tests (3,730 to
+3,726), in `String#upto`, `String#__upto_endless`, `String#gsub` and
+`String#sub`. Two calls to `to_i(10)` become exact native calls, reducing
+native-owner fallback sites from 87 to 85. All 127 checked core receiver guards
+remain; owner-call sites stay at 1,670. Generated lines fall from 410,490 to
+410,478, with no `#error`. Counts use saved C++ because the census formatter
+still expects the obsolete INTEGER_CONSTANT_PROOF heading.
