@@ -2316,3 +2316,12 @@ classes are not introduced into the exact flow by this rule.
 `BC2CPP_RECORD_OBJECT_READS=0` restores the previous read flow. The record-read
 fixture checks pooling, truthiness narrowing, deletion, nil stores, escapes and
 compiled-versus-interpreted values/errors.
+
+On the synced shipped baseline `6f9b665b5`, on/off generation removes 246 class
+queries (7,112 to 6,866) and 35 owner-call sites (1,670 to 1,635). NILABLE_RECEIVER
+sites increase from 1,793 to 1,910, preserving missing/deleted-key behavior with
+explicit nil checks. Generated lines fall from 409,957 to 408,970; neither
+output has `#error`. Dropped class pools fall from 509 to 508. These figures are
+measured independently of NATIVE_EXACT_BEFORE_POLY and must not be added to its
+savings without a combined run. The census formatter still fails after saving
+the complete output on its obsolete INTEGER_CONSTANT_PROOF heading.
