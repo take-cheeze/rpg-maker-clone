@@ -750,6 +750,7 @@ jobs:
           ruby scripts/bc2cpp/block_self_world_check.rb
           ruby scripts/bc2cpp/outside_owner_call_check.rb
           ruby scripts/bc2cpp/static_owner_dispatch_check.rb
+          ruby scripts/bc2cpp/owner_set_direct_check.rb
           ruby scripts/bc2cpp/static_dispatch_scan_check.rb
           ruby scripts/bc2cpp/frozen_literal_persist_check.rb
           ruby scripts/bc2cpp/constructor_overloads_check.rb
