@@ -2278,3 +2278,27 @@ native-owner fallback sites from 87 to 85. All 127 checked core receiver guards
 remain; owner-call sites stay at 1,670. Generated lines fall from 410,490 to
 410,478, with no `#error`. Counts use saved C++ because the census formatter
 still expects the obsolete INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: exact receiver flow for monomorphic embedded-object calls
+
+MONO_EXACT_FLOW removes MONO_EMBED_GUARD when the existing exact receiver flow
+proves precisely the accepted target owner's class. It reads the original
+unshifted receiver register and requires an ordinary explicit receiver site;
+substituted receivers/arguments retain their previous paths. The exact-flow
+singleton and captured-register safety gates remain in force. A nilable flow
+qualifies only inside an already checked non-nil arm, so its nil behavior is
+preserved. A subclass or another class does not satisfy the owner identity.
+`BC2CPP_MONO_EXACT_FLOW=0` restores the guard. The nilable-class fixture checks
+normal, inlined-block and rescue calls, singleton-proof withdrawal, retained
+unknown/nil paths and compiled-versus-interpreted runtime results.
+
+On the shipped closed world, MONO_EMBED_GUARD sites fall from 1,074 to 831:
+243 MONO_EXACT_FLOW calls replace class guards and their unreachable nomethod
+fallbacks. `mrb_obj_class` queries fall from 7,355 to 7,112 and nomethod calls
+from 3,269 to 3,026. NILABLE_RECEIVER sites increase from 1,698 to 1,793:
+the now-cheaper non-nil arm makes 95 more explicit nil checks worthwhile.
+Owner-call sites remain at 1,670. Generated lines fall from 410,478 to 409,957,
+with no `#error` in either output. These emitted counts exceed the source-site
+profile's candidates because block copies and checked non-nil contexts also
+benefit. Counts use saved on/off C++ because the census summary still expects
+the obsolete INTEGER_CONSTANT_PROOF heading.
