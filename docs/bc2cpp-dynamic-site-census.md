@@ -2195,3 +2195,23 @@ exact-class `[]` arms for LCF owners. The owner-call fallbacks remain (1,950),
 and matching receivers avoid their method lookup. Neither generated file has
 `#error`. Counts come directly from the saved shipped C++ because the census
 summary still expects the obsolete INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: Ruby receivers before native wrappers with arguments
+
+RUBY_EXACT_PAST_NATIVE_ARMS also applies to the Bitmap drawing wrappers and the
+`openness=`, `opacity=` and `tone=` setters. When the flow proves the receiver is
+exactly a program-defined Ruby class outside the RGSS native classes, none of the
+native identity tests can match. The send proceeds to the existing Ruby dispatch
+proofs instead. Unproven receivers retain the native tests and fallback.
+`BC2CPP_RUBY_EXACT_PAST_NATIVE_ARGS=0` restores the argument-taking native arms;
+`BC2CPP_RUBY_EXACT_PAST_NATIVE=0` disables both this and the zero-argument rule.
+`scripts/bc2cpp/nilable_class_tests_check.rb` checks both switches, direct Ruby
+calls and the unproven-receiver fallback.
+
+On the current closed world, the argument-only switch produces byte-identical
+shipped C++: this extends compiler coverage but does not reduce that game's
+current dispatch count. The focused fixtures remove native class tests and
+fallback sends for eight proven Ruby call shapes. Both generated shipped files
+contain no `#error`. The report formatter currently fails after writing those
+files because its expected INTEGER_CONSTANT_PROOF diagnostic heading is absent;
+the comparison uses the saved C++ directly.
