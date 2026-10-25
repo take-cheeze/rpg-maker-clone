@@ -154,7 +154,7 @@ void setup(void) {
   // out a media-specific fault -- env:maix_game (flash-embedded data) is
   // unaffected and boots to the title screen.
   Serial.println("maix-game: RPG2k.new...");
-  g_game = mrb_obj_new(g_mrb, mrb_class_get(g_mrb, "RPG2k"), 1, &args);
+  g_game = bc2cpp_entry_RPG2k_new(g_mrb, 1, &args);
   if (g_mrb->exc) {
     report_exc();
     return;
