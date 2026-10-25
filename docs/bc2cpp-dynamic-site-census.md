@@ -2178,6 +2178,24 @@ proof. A block that can transfer control still keeps the root-context guard and
 its fallback. `scripts/bc2cpp/block_iterator_direct_check.rb` compares nested
 String iteration and break behavior against interpreted mruby.
 
+## Follow-up: boxed literals in static owner arms
+
+STATIC_OWNER_ARMS recognizes boxed Integer, boolean and nil literals as well as
+local variables in owner-call arguments. Calls such as `rows[0]` can therefore
+call compiled Ruby owners directly behind the existing exact-class tests;
+other receivers retain the original owner call. The accepted argument grammar
+excludes arbitrary expressions and allocations, and the arity and visibility
+checks are unchanged. `scripts/bc2cpp/static_owner_dispatch_check.rb` checks
+positive and negative integers, booleans and nil against interpreted mruby on
+inherited Ruby classes, singleton objects, native Arrays and nil receivers.
+
+On the current shipped closed world, STATIC_OWNER_ARMS sites increase from 210
+to 212: `Game::Picture#restore_legacy_lsd` and `Game::State#to_lsd` each gain six
+exact-class `[]` arms for LCF owners. The owner-call fallbacks remain (1,950),
+and matching receivers avoid their method lookup. Neither generated file has
+`#error`. Counts come directly from the saved shipped C++ because the census
+summary still expects the obsolete INTEGER_CONSTANT_PROOF heading.
+
 ## Follow-up: Ruby receivers before native wrappers with arguments
 
 RUBY_EXACT_PAST_NATIVE_ARMS also applies to the Bitmap drawing wrappers and the
