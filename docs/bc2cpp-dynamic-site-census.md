@@ -2167,3 +2167,13 @@ battlers still drop: `target` is a `cmd[:target]` Hash read, and `b` comes from 
 Symbol literals passed to `public`/`private` (`public :char_passable?`) also poison names for these proofs. Leaving
 them out changes no generated code, because `mruby-rpgxp` redefines both in Ruby and the freed names take their
 arguments from callers whose pools drop anyway.
+
+## Follow-up: nested block literal receivers
+
+BLOCK_ITERATOR_DIRECT reads the literal receiver from the original parent irep of a
+nested block, including String, Array, Hash and Range literals. When the program
+excludes singleton-method installation, these heap literals select one compiled
+core arm without a runtime class test. Integer literals retain their existing
+proof. A block that can transfer control still keeps the root-context guard and
+its fallback. `scripts/bc2cpp/block_iterator_direct_check.rb` compares nested
+String iteration and break behavior against interpreted mruby.
