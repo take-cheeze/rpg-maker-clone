@@ -2215,3 +2215,22 @@ fallback sends for eight proven Ruby call shapes. Both generated shipped files
 contain no `#error`. The report formatter currently fails after writing those
 files because its expected INTEGER_CONSTANT_PROOF diagnostic heading is absent;
 the comparison uses the saved C++ directly.
+
+## Follow-up: proven Symbol arguments to respond_to?
+
+SYMBOL_PROBE_DIRECT uses the IR's exact-literal type proof for the name argument
+of `respond_to?`, including Symbol-only control-flow joins and shifted registers
+inside inlined blocks. With OWNER_SET_DIRECT's existing audits and no overriding
+`respond_to?` or `respond_to_missing?`, a proven Symbol needs neither a type test
+nor the owner-call fallback. A world with bare BasicObject descendants keeps its
+Kernel receiver guard. Mixed String/Symbol arguments retain the original path.
+`BC2CPP_SYMBOL_PROBE_DIRECT=0` restores the argument guard; disabling
+OWNER_SET_DIRECT disables this proof too. The owner-set fixture compares
+interpreted and compiled behavior and checks withdrawal for Ruby overrides.
+
+On the shipped closed world, 217 Symbol probes use this proof: `respond_to?`
+owner-call fallbacks fall from 218 to 1, total owner-call sites from 1,950 to
+1,733, and Symbol type tests from 1,186 to 969. Generated lines fall from
+411,802 to 410,710; neither file has `#error`. These counts use the saved C++
+directly because the report formatter still expects the obsolete
+INTEGER_CONSTANT_PROOF heading.
