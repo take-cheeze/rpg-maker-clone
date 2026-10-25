@@ -26,7 +26,16 @@ any of these could look it up:
   dispatch on a receiver proven not to answer the name. The violation helpers
   raise without dispatching. The nil helper dispatches on `nil`;
 - `super`;
-- a string-pool literal or a `"#{x}_suffix"`-style fragment;
+- a string-pool literal or a `"#{x}_suffix"`-style fragment. For the closed
+  list, a literal counts as a fragment only when a load of it may reach a
+  built string. Each load is followed forward, through MOVE copies, closed
+  methods' parameters and return values, and array or hash literals and the
+  constants holding them. It stops being a fragment when every use only
+  compares it (`==`, `when`, `start_with?`), looks it up as a native hash
+  key, tests a constant list for it (`LIST.include?(x)`), or puts it into a
+  string that also gets a character no name has (a space, a colon). Any
+  other use keeps it a fragment: a store, a concatenation, an argument of a
+  method the trace doesn't know, or a use the flow query refuses;
 - a token in core, external or other-maker mrblib, tests, `scripts/`,
   `.github/`, `tools/` or native sources;
 - for the closed list only, a narrower outside scan:
@@ -57,7 +66,9 @@ The fragment and pool-literal rules also cover computed reflection: for
 example `LCF.field?`, which calls `obj.respond_to?(name)` with a field name
 from data, keeps every name that appears as a literal or fragment. A name
 built at runtime from pieces that appear nowhere as a literal is the one
-case this proof cannot see. Verify mode below exists to catch it.
+case this proof cannot see. So is a name taken back out of a built string
+(`"#{a}: #{b}".split(': ')`), which the closed fragment rule treats as
+never being a name. Verify mode below exists to catch both.
 
 ## The two lists
 
