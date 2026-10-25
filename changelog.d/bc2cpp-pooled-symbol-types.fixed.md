@@ -1,0 +1,1 @@
+- **bc2cpp** preserves pooled and interpolated Symbol register types across compiler flows and tracks keyword-presence boolean results.

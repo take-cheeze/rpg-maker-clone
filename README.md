@@ -1024,6 +1024,8 @@
 
 ### Performance
 
+- Pooled and interpolated Symbols retain their register types, and keyword presence tracks both boolean classes; see [Symbol class proofs](docs/bc2cpp-symbol-class.md).
+
 - Static owner dispatch recognizes boxed literal arguments as well as locals; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - Proven Ruby receivers bypass incompatible native drawing and setter guards; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - Record-hash reads propagate proven object classes through downstream class pools; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
