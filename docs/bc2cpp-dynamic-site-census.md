@@ -2302,3 +2302,27 @@ with no `#error` in either output. These emitted counts exceed the source-site
 profile's candidates because block copies and checked non-nil contexts also
 benefit. Counts use saved on/off C++ because the census summary still expects
 the obsolete INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: exact native receivers before Ruby class chains
+
+NATIVE_EXACT_BEFORE_POLY tries the existing NATIVE_DIRECT_EXACT plan before
+building a POLY_SMALL_N chain for an ordinary explicit receiver with an exact
+RGSS native-class proof. Ruby arms for other classes cannot match that receiver.
+The native registration, owner/mixin and argument-conversion gates are reused;
+an override withdraws the arm, and unproven receiver classes retain their chains.
+Substituted receivers or arguments are excluded. The native call still performs
+its existing coercions, including the Integer check/fallback when unboxing is
+disabled. `BC2CPP_NATIVE_EXACT_BEFORE_POLY=0` restores the original ordering.
+The nilable-class fixture checks native setters, shifted block code, unknown
+receivers, setter overrides and disabled-unboxing behavior.
+
+On the current shipped closed world, the reordered proof removes 32
+POLY_SMALL_N chains (1,766 to 1,734) and 73 `mrb_obj_class` queries (7,112 to
+7,039). Owner-call sites remain at 1,670: the eliminated branches preceded
+native calls that were already direct. Generated lines fall from 409,957 to
+409,631, with no `#error` in either output. Emitted counts include block copies
+and can exceed the profile's 26 source candidates. Counts use saved on/off C++
+because the census summary still expects the obsolete INTEGER_CONSTANT_PROOF
+heading. Indexed container results (42 blocked class pools in the profile)
+remain the next inference target; numeric guards still require independent
+width/range proofs.
