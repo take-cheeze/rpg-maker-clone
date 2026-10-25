@@ -1024,6 +1024,7 @@
 
 ### Performance
 
+- Proven Ruby receivers bypass incompatible native drawing and setter guards; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - Nested block iterator calls use proven literal receivers to remove redundant class tests; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - The bc2cpp CI check queue starts longer checks first to reduce idle time at
   the end of its four-worker group; all checks keep their existing assertions.
