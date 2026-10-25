@@ -2234,3 +2234,24 @@ owner-call fallbacks fall from 218 to 1, total owner-call sites from 1,950 to
 411,802 to 410,710; neither file has `#error`. These counts use the saved C++
 directly because the report formatter still expects the obsolete
 INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: stable class/module arguments to Kernel predicates
+
+KERNEL_DIRECT omits the class/module argument guard for `is_a?` and `kind_of?`
+when `stable_constant_register` proves the argument names a stable class or
+module. This reuses the binding proof already used for constructor identity;
+an annotation or class-name hint is insufficient. Dynamic arguments, non-class
+constants and reassigned bindings keep their type checks and error behavior.
+The audited Kernel-body and receiver proofs remain required, including the
+Kernel receiver guard in an unsealed BasicObject world.
+`BC2CPP_KERNEL_CLASS_ARG_PROOF=0` restores the argument guards. The owner-set
+fixture checks the disable switch, reassigned constants, overrides and runtime
+parity for valid and invalid arguments.
+
+On the current shipped closed world, enabling the proof removes 63 argument
+guards and owner-call fallbacks: `is_a?` fallbacks fall from 69 to 7 and
+`kind_of?` from 16 to 15. Total owner-call sites fall from 1,733 to 1,670,
+`mrb_class_p` tests from 181 to 118, and generated lines from 410,742 to
+410,490. Neither generated file has `#error`. Counts use saved C++ from
+on/off runs because the census formatter still expects the obsolete
+INTEGER_CONSTANT_PROOF heading.

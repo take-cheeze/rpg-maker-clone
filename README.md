@@ -1026,6 +1026,7 @@
 
 - Static owner dispatch recognizes boxed literal arguments as well as locals; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - Proven Ruby receivers bypass incompatible native drawing and setter guards; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
+- Stable class/module arguments remove redundant guards in `is_a?` and `kind_of?`; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - Proven Symbol names remove redundant guards and dispatch in `respond_to?`; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - Nested block iterator calls use proven literal receivers to remove redundant class tests; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - The bc2cpp CI check queue starts longer checks first to reduce idle time at
