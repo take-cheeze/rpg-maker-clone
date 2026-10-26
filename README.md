@@ -1024,6 +1024,8 @@
 
 ### Performance
 
+- Further compiler Array-allocation candidates, sequencing and validation gates are documented in the [optimization plan](docs/bc2cpp-array-allocation-plan.md). These changes are proposed.
+
 - LCF schema-kind membership checks use bit positions to avoid temporary large Integer intersections; see [LCF masks](docs/bc2cpp-lcf-mask-performance.md).
 
 - Inline-loop scope checks scan brace bytes without temporary character Strings; see [register output](docs/bc2cpp-register-output.md).
