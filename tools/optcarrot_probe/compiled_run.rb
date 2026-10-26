@@ -21,6 +21,14 @@ PROBE_MRBC = ENV['MRBC'] || File.join(MRUBY, 'bin/mrbc')
 FRAMES = Integer(ARGV.fetch(0, '180'))
 ROM = ARGV.fetch(1, File.join(ROOT, '3rd/optcarrot/examples/Lan_Master.nes'))
 GRAY_STACK_SIZE = Integer(ENV.fetch('OPTCARROT_GRAY_STACK_SIZE', '16384'), 10)
+# The CRuby reference: Ruby 4.0 with YJIT, the fastest CRuby measured on this benchmark (Ruby 3.3 has no YJIT
+# compiled in, so its own run is not a JIT baseline). OPTCARROT_CRUBY names another Ruby binary; it must have YJIT.
+CRUBY_REFERENCE = [ENV.fetch('OPTCARROT_CRUBY', 'ruby'), '--yjit'].freeze
+
+# The reference Ruby loads its own gems, so it runs outside the runner's Bundler environment (RUBYOPT, RUBYLIB, GEM_*).
+def unbundled(&block)
+  defined?(Bundler) ? Bundler.with_unbundled_env(&block) : yield
+end
 unless (1024..262_144).cover?(GRAY_STACK_SIZE)
   abort 'OPTCARROT_GRAY_STACK_SIZE must be between 1024 and 262144 pointers'
 end
@@ -386,7 +394,16 @@ Dir.mktmpdir('optcarrot-bc2cpp-') do |temp|
   puts "bc2cpp installed #{count} compiled methods; " \
        "CPU#run=#{cpu_run_mode}; PPU#run=#{ppu_run_mode}; PPU#main_loop=#{ppu_loop_mode}"
   benchmarks = []
-  benchmarks << run_benchmark('CRuby', [RbConfig.ruby, cruby_bundle, ROM, FRAMES.to_s])
+  version_out, version_err, version_status = unbundled do
+    Open3.capture3(*CRUBY_REFERENCE, '-e', 'print RUBY_VERSION, " ", defined?(RubyVM::YJIT) ? 1 : 0')
+  end
+  cruby_version, yjit_flag = version_out.split
+  unless version_status.success?
+    abort "#{CRUBY_REFERENCE.first} is not usable (#{version_err.lines.first}): set OPTCARROT_CRUBY"
+  end
+  abort "#{CRUBY_REFERENCE.first} has no YJIT: set OPTCARROT_CRUBY to a Ruby built with it" unless yjit_flag == '1'
+  cruby_argv = [*CRUBY_REFERENCE, cruby_bundle, ROM, FRAMES.to_s]
+  benchmarks << unbundled { run_benchmark("CRuby #{cruby_version} +YJIT", cruby_argv) }
   profile_dir = File.join(temp, 'profile')
   interpreted_profile_dir = File.join(profile_dir, 'interpreted')
   compiled_profile_dir = File.join(profile_dir, 'compiled')

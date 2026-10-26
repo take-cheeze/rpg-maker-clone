@@ -24,11 +24,11 @@ using its real, unmodified upstream source, and produces the exact same
 checksum as unmodified CRuby (`59662`), so the emulation itself is
 behaviorally correct, not just crash-free.
 
-Latest local 180-frame wall times from the comparative runner: CRuby ~4.5s,
-interpreted mruby ~12.8s, and bc2cpp ~3.7s (varies by machine); CI
+Latest local 180-frame wall times from the comparative runner: CRuby 4.0 with
+YJIT ~1.6s, interpreted mruby ~16s, and bc2cpp ~4.4s (varies by machine); CI
 publishes each run's numbers and relative slowdown in the job summary. All
 three produce checksum `59662`. `compiled_run.rb` installs every compiled
-entry point (398 methods): bc2cpp itself refuses the methods a `Fiber.yield`
+entry point (567 methods): bc2cpp itself refuses the methods a `Fiber.yield`
 can cross ([yield analysis](../../docs/bc2cpp-yield-c-boundary.md)), and
 `PPU#main_loop` is a resumable step function driven from the interpreted
 Fiber block (see "Resumable `PPU#main_loop`" at the end). The runner used to
@@ -1356,8 +1356,9 @@ ruby tools/optcarrot_probe/build_bundle.rb /tmp/full_probe.rb
 # bc2cpp coverage (needs only the parser-dump patch above):
 MRBC=3rd/mruby/bin/mrbc ruby tools/optcarrot_probe/bc2cpp_probe.rb
 MRBC=3rd/mruby/bin/mrbc ruby tools/optcarrot_probe/optcarrot_bc2cpp_coverage_report.rb
-# Run the compiled headless checksum benchmark in a temporary build:
-MRBC=3rd/mruby/bin/mrbc ruby tools/optcarrot_probe/compiled_run.rb
+# Run the compiled headless checksum benchmark in a temporary build. Its CRuby reference is Ruby 4.0 with YJIT;
+# OPTCARROT_CRUBY names that binary (the runner aborts on a Ruby built without YJIT):
+MRBC=3rd/mruby/bin/mrbc OPTCARROT_CRUBY=/path/to/ruby-4.0/bin/ruby ruby tools/optcarrot_probe/compiled_run.rb
 # Profile both mruby modes with gprof (requires GCC/binutils gprof):
 GPROF=1 GPROF_OUTPUT=/tmp/optcarrot-gprof MRBC=3rd/mruby/bin/mrbc ruby tools/optcarrot_probe/compiled_run.rb 180
 ```
