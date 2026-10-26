@@ -45,3 +45,21 @@ this one refuses.
 the exact universe of a literal table, each premise's refusal and each escape (an argument, a
 receiver, `Cpu::TABLE`, a written element, the writer named as data, a `concat` entry, a splat
 writer call and `send(:x, *TABLE[i])`). The bc2cpp job runs it.
+
+## Instruction-indexed read memo
+
+Forward reads for `(instruction, register)` pairs are memoized per irep object in a two-level
+table: the outer table is keyed by instruction index, the inner by register. A flat `[idx, reg]`
+tuple key allocates an Array on every lookup, including hot hits; the index and the caller's
+register key the same entries with no per-query container. Cached empty answers stay distinct
+from absent entries via the inner table's key, and `BC2CPP_SYMBOL_FLOW_MEMO=0` restores
+unmemoized computation for comparison. The 1,024-query bound counts logical queries and evicts
+oldest-first, dropping a whole instruction bucket at a time; eviction only re-runs a pure
+recomputation. The check covers entry reuse, bucket sharing, empty-vs-absent, memo-off
+equivalence, the bound and post-eviction recomputation.
+
+Two serial warm-cache Ruby 4.0.5/YJIT whole-engine comparisons reduced allocations from
+68,334,480 to 68,169,839 (164,641 fewer, 0.24%) and from 68,333,554 to 68,168,848
+(164,706 fewer, 0.24%). Generated C++ and diagnostic logs matched after checkout-root and
+timing-line normalization. Wall time moved 48.020s to 48.943s and 49.135s to 49.216s;
+these runs do not establish a stable elapsed-time gain.

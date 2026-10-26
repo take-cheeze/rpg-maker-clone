@@ -1503,6 +1503,8 @@
   only when needed; see [visitation](docs/bc2cpp-type-check.md#reaching-definition-visitation).
   Reaching-definition queries reuse immutable opaque-register key snapshots and
   preserve caller-owned strings; see [query keys](docs/bc2cpp-type-check.md#reaching-definition-query-keys).
+  Symbol-read memo lookups avoid per-query tuple keys with instruction-indexed
+  register entries; see [read memo](docs/bc2cpp-ir-symbol-flow.md#instruction-indexed-read-memo).
   Embedding compile probes reuse a fixed state-key list and restore caller state
   without temporary pairs. Eligibility probes also skip error-free register-text
   optimization while final emission retains it; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
