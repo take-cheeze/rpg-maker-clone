@@ -1,0 +1,1 @@
+- Read argument-register spans as primitive Integer counts in bc2cpp escape and block analyses, avoiding a temporary argument-shape Struct per escape query.
