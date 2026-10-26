@@ -60,7 +60,12 @@ any of these could look it up:
     A file with a reflective send (`__send__`, `instance_exec`,
     `define_method`, ...) or a `method_missing` keeps the text rule;
 
-Only RPG2000/2003 internal owners qualify.
+Only RPG2000/2003 internal owners qualify (`Game`, `RPG2k`, `RPG2k3`,
+`LCF`). RGSS classes are the scripting API an RPGXP/VX game's own scripts
+call, so the open list leaves them registered. The closed list also takes
+RGSS owners and the engine modules' own singletons (`Game.singleton`): the
+closed build is RPG2000/2003 only, and those games carry no Ruby. Reopened
+core classes (`Array`, `StringIO`) never qualify.
 
 The fragment and pool-literal rules also cover computed reflection: for
 example `LCF.field?`, which calls `obj.respond_to?(name)` with a field name
@@ -83,7 +88,34 @@ Regenerate them with:
 ```sh
 MRBC=<host mrbc> ruby tools/bc2cpp/static_dispatch_registrations.rb --write
 MRBC=<host mrbc> ruby tools/bc2cpp/static_dispatch_registrations.rb --closed-only --write
+ruby scripts/bc2cpp/prune_static_dispatch_registrations.rb            # open list: removes hand lines
+ruby scripts/bc2cpp/prune_static_dispatch_registrations.rb --closed   # closed list: guards hand lines
 ```
+
+Repeat the `--closed-only --write` step until the list stops growing:
+each dropped registration removes generated code that mentioned other names.
+
+### Hand-written registrations
+
+The generator registers only some owners (the wired embeddings and the core
+owners). Every other compiled method is registered by a hand-written line in
+its gem's `src/register.cxx`, and those lines run in every build. The open
+list's lines are simply deleted. A closed-list line is wrapped instead:
+
+```cpp
+#ifndef BC2CPP_UNREGISTERED_Game__Picture_finish_zoom
+  mrb_define_method(M, picture, "finish_zoom", Game__Picture_finish_zoom, ...);
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, picture, "finish_zoom", bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#endif
+```
+
+The generated code, which `register.cxx` includes, defines
+`BC2CPP_UNREGISTERED_<entry>` for each entry the build's list leaves out.
+Without this, a closed-listed name with a hand line stayed registered in
+the closed build, and verify mode's stub was overwritten by the real
+method. `static_dispatch_scan_check.rb` runs `--closed --check`, which
+fails when a listed line is unguarded or a guarded one is no longer listed.
 
 The probe generates its C++ with `BC2CPP_BUILD_NAME=closed`, so the names
 already on the closed list are missing from its registrations.

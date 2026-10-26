@@ -348,32 +348,67 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, file, "[]=", LCF__File_$5b$5d$3d, MRB_ARGS_REQ(2));
   mrb_define_method(M, file, "key?", LCF__File_key$3f, MRB_ARGS_REQ(1));
   mrb_define_method(M, file, "to_lcf", LCF__File_to_lcf, MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_LCF__File_header
   mrb_define_method(M, file, "header", LCF__File_header, MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, file, "header", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, file, "schema", LCF__File_schema, MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_LCF__File_terminate_root$3f
   mrb_define_method(M, file, "terminate_root?", LCF__File_terminate_root$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, file, "terminate_root?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 
+#ifndef BC2CPP_UNREGISTERED_LCF__Database_header
   mrb_define_method(M, database, "header", LCF__Database_header,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, database, "header", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, database, "schema", LCF__Database_schema,
                     MRB_ARGS_NONE());
   mrb_define_method(M, database, "rpg2003?", LCF__Database_rpg2003$3f,
                     MRB_ARGS_NONE());
 
+#ifndef BC2CPP_UNREGISTERED_LCF__MapTree_header
   mrb_define_method(M, map_tree, "header", LCF__MapTree_header,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, map_tree, "header", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, map_tree, "schema", LCF__MapTree_schema,
                     MRB_ARGS_NONE());
 
+#ifndef BC2CPP_UNREGISTERED_LCF__MapUnit_header
   mrb_define_method(M, map_unit, "header", LCF__MapUnit_header,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, map_unit, "header", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, map_unit, "schema", LCF__MapUnit_schema,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_LCF__MapUnit_terminate_root$3f
   mrb_define_method(M, map_unit, "terminate_root?",
                     LCF__MapUnit_terminate_root$3f, MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, map_unit, "terminate_root?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 
+#ifndef BC2CPP_UNREGISTERED_LCF__SaveData_header
   mrb_define_method(M, save_data, "header", LCF__SaveData_header,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, save_data, "header", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, save_data, "schema", LCF__SaveData_schema,
                     MRB_ARGS_NONE());
 
