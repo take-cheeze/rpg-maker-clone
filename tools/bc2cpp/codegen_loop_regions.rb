@@ -157,7 +157,11 @@ class CodeGen
                                 program = BytecodeIR.for(irep)
                                 program.each_source.any? do |insn, i|
                                   next true if BytecodeIR::Ops::SEND.include?(insn.op) && LOOP_STOP_SENDS.include?(insn.sym)
-                                  next false unless %i[GETCONST GETMCNST].include?(insn.op) && insn.sym == 'StopIteration'
+                                  name = case insn.op
+                                         when :GETCONST then insn.const_name
+                                         when :GETMCNST then insn.mcnst_name
+                                         end
+                                  next false unless name.to_s.split('::').last == 'StopIteration'
 
                                   program.source_at(i + 1)&.op != :RESCUE
                                 end

@@ -5,7 +5,8 @@
 # parameterless block becomes a native `for (;;)`, its `break` a jump instead of a thrown bc2cpp_block_break.
 #
 #   1. placement: each POSITIVE_INLINED method has the loop and neither a Kernel#loop call nor a thrown break; a
-#      block parameter, a program that sends Enumerator#next and a class with its own `loop` keep the call (so do a
+#      block parameter, a program that sends Enumerator#next or raises StopIteration and a class with its own `loop`
+#      keep the call (so do a
 #      loop nested in an inlined body, which the nested pass refuses for its BREAK, and a body with an `ensure`, as
 #      for every inlined block); BC2CPP_LOOP_INLINE=0 inlines none.
 #   2. parity, interpreted against compiled: break values, `next`, a return from the block, a raise, nested loops
@@ -139,6 +140,21 @@ STOPS = <<~RUBY
   end
 RUBY
 
+# A program that raises StopIteration itself ends a loop with its result.
+RAISES = <<~RUBY
+  class LoopRaises
+    def stopped(n)
+      i = 0
+      v = loop do
+        i += 1
+        raise StopIteration if i == n
+      end
+      [v, i]
+    end
+  end
+RUBY
+RAISES_EXPECTED = { 'LoopRaises.new.stopped(3)' => '[nil, 3]' }.freeze
+
 # A program-defined `loop` is not Kernel#loop.
 OWN = <<~RUBY
   class LoopOwn
@@ -185,6 +201,7 @@ fixtures = [
   ['positive', POSITIVE, %w[LoopPos], POSITIVE_EXPECTED],
   ['param', PARAM, %w[LoopParam], PARAM_EXPECTED],
   ['stops', STOPS, %w[LoopStops], nil],
+  ['raises', RAISES, %w[LoopRaises], RAISES_EXPECTED],
   ['own', OWN, %w[LoopOwn], OWN_EXPECTED]
 ]
 
@@ -205,6 +222,8 @@ Dir.mktmpdir('loop-inline') do |dir|
              !method_chunk(generated['param'][1], 'LoopParam', 'counted').include?('for (;;)'))
   check.call('LoopStops#drained (the program sends #next) keeps the call',
              !method_chunk(generated['stops'][1], 'LoopStops', 'drained').include?('for (;;)'))
+  check.call('LoopRaises#stopped (the program raises StopIteration) keeps the call',
+             !method_chunk(generated['raises'][1], 'LoopRaises', 'stopped').include?('for (;;)'))
   check.call('LoopOwn#run (a program-defined loop) keeps the call',
              !method_chunk(generated['own'][1], 'LoopOwn', 'run').include?('for (;;)'))
 
