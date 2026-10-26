@@ -564,6 +564,27 @@ refactor's overhead in the optimized measurement. Allocations fell from
 and report JSON were byte-identical. One object-profiled timing pair was
 52.381s versus 51.253s, which does not establish a stable wall-time speedup.
 
+### Shared reaching definitions in the Fixnum proof
+
+The Fixnum proof's backward walk borrows frozen cached reaching-definition
+results instead of copying the result Array and its Definition objects per
+query. The walk only reads each definition's entry/index/register, so sharing
+is sound; mutable opaque inputs and the query-result bound keep their existing
+behavior, and `BC2CPP_IR_SHARED_DEFINITIONS=0` restores fresh copies. An
+attribution run over the whole-engine workload showed this walk is 95% of all
+remaining default-copy queries (31,817 of 33,521); the other default-copy
+callers pass refusal diagnostics (uncacheable by design) or run a few hundred
+queries.
+
+Two serial warm-cache Ruby 4.0.5/YJIT whole-engine comparisons reduced
+allocations from 65,687,904 to 65,617,689 (70,215 fewer, 0.11%) and from
+65,687,969 to 65,618,489 (69,480 fewer, 0.11%). A sharing-disabled pass on the
+candidate allocates 66,586,946, confirming the borrow path is what saves.
+Generated C++ (SHA256 7c49ffbcd2282675 after checkout-root normalization) and
+diagnostic logs matched across all five runs after timing-line/root
+normalization. Wall time moved 48.163s to 47.796s and 48.679s to 47.885s;
+these runs do not establish a stable elapsed-time gain.
+
 ### Decoded call-arity predicates
 
 Fixed-argument and pure-splat predicates classify the decoded positional count

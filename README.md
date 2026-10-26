@@ -1504,6 +1504,8 @@
   only when needed; see [visitation](docs/bc2cpp-type-check.md#reaching-definition-visitation).
   Reaching-definition queries reuse immutable opaque-register key snapshots and
   preserve caller-owned strings; see [query keys](docs/bc2cpp-type-check.md#reaching-definition-query-keys).
+  The Fixnum proof walk borrows shared definitions instead of copying results;
+  see [shared definitions](docs/bc2cpp-type-check.md#shared-reaching-definitions-in-the-fixnum-proof).
   Embedding compile probes reuse a fixed state-key list and restore caller state
   without temporary pairs. Eligibility probes also skip error-free register-text
   optimization while final emission retains it; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
