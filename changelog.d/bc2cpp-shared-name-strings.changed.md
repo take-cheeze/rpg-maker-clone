@@ -1,0 +1,1 @@
+- **bc2cpp** shares frozen method, variable and constant-name operand Strings across instructions, including restored decoded caches, reducing retained compiler heap usage without changing identifier types.

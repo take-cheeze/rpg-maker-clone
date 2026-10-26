@@ -27,6 +27,33 @@ conditional nil locals and captured locals. Its native-argument case checks
 fixnum, float and bool boxing. The full compiled-core mruby suite checks the
 remaining core methods and Fiber behavior.
 
+## Inline block scope scanning
+
+Before pruning declarations in an inline-loop snippet, `single_block?` checks
+that the snippet is one braced scope. It masks quoted String and character
+literals, then scans brace bytes with `String#getbyte`, preserving nested-block
+and early-closing-scope decisions without allocating a String per character.
+ASCII brace bytes are unambiguous in the generated UTF-8 text. The scope rule,
+literal masking and generated output remain unchanged.
+
+`register_flow_check.rb` compares the byte scanner with its previous character
+scanner on randomized snippets, tests quoted braces and UTF-8, and checks that
+allocations do not grow with snippet length.
+
+Two alternating baseline/candidate whole-engine generator comparisons on Ruby
+4.0.5 + YJIT (desktop closed world, all compiled owners, hot-only disabled) gave:
+
+| Run | Baseline wall | Byte-scan wall | Baseline objects | Byte-scan objects |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 49.099 s | 48.547 s | 75,292,402 | 69,544,639 |
+| 2 | 49.080 s | 48.228 s | 75,293,664 | 69,544,158 |
+
+This removes about 5.75 million allocations per generation (7.6%). Elapsed time
+fell by 1.1–1.7% in these local shared-host runs. Generated C++ and diagnostics
+were identical after normalizing checkout paths and removing diagnostic timing
+lines. Warmups were excluded; native and Ruby workload input hashes matched.
+These numbers exclude C++ compilation and game runtime.
+
 ## Dead copies and constant loads (REGISTER_FLOW)
 
 The step above only removes declarations. A second pass, `RegisterFlow`
@@ -140,3 +167,12 @@ The goto-off build is byte-identical to the same tree before the change. With
 the model on, 39 emitted method functions differ; every one has the optional-
 argument switch in its goto-off text, and the 246 other newly accepted methods
 keep their text (the copy and write counts above come from those 39).
+
+## Numeric register boundaries
+
+Optional-parameter signature reports query contracts using Integer register IDs,
+matching the signature loader. Resumable `Fiber.yield` interception also keeps
+receiver IDs numeric when subtracting an inlined helper's register offset before
+tracing the original body. Converting either ID to a String loses the contract
+lookup or raises when indexing the writer table. `typed_immediates_check.rb`
+covers both boundaries, including inlined offsets and an unrelated receiver.

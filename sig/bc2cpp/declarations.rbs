@@ -8929,10 +8929,6 @@ class Game::Interpreter
   %a{bc2cpp:hint}
   def do_conditional: (untyped) -> (Integer | nil)
   %a{bc2cpp:hint}
-  def do_control_switches: (untyped) -> bool
-  %a{bc2cpp:hint}
-  def do_control_vars: (untyped) -> Integer
-  %a{bc2cpp:hint}
   def do_fadeout_bgm: (untyped) -> nil
   %a{bc2cpp:hint}
   def do_proceed_with_movement: (untyped) -> bool
@@ -9160,8 +9156,6 @@ class RPG2k::Scene::Map
   def build_chipset: () -> Game::ChipSet?
   %a{bc2cpp:hint}
   def build_event: (untyped, untyped, untyped, untyped) -> RPG2k::Scene::Map::MapEventState
-  %a{bc2cpp:hint}
-  def build_events: () -> Array
   def build_parallels: () -> untyped
   %a{bc2cpp:hint}
   def build_resolver: () -> RPG2k::Scene::EventResolver
@@ -9297,8 +9291,6 @@ class RPG2k::Scene::Map
   %a{bc2cpp:hint}
   def apply_interpreter_requests: (untyped, untyped) -> nil
   %a{bc2cpp:hint}
-  def apply_location_requests: (untyped, untyped) -> nil
-  %a{bc2cpp:hint}
   def apply_move_requests: (untyped, untyped) -> (Array | nil)
   %a{bc2cpp:hint}
   def apply_sprite_flash_requests: (untyped, untyped) -> nil
@@ -9320,8 +9312,6 @@ class RPG2k::Scene::Map
   def new_parallel: (untyped, untyped, untyped, untyped) -> Hash
   %a{bc2cpp:hint}
   def note_anim_input: (untyped) -> (Symbol | nil)
-  %a{bc2cpp:hint}
-  def page_field: (untyped, untyped) -> (Array | Integer | String | bool)
   %a{bc2cpp:hint}
   def rebuild_tile_cache: (untyped, untyped, untyped, untyped) -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
@@ -10129,8 +10119,6 @@ class Game::Screen
   def update_pan: () -> (Integer | Float)
   def busy?: () -> untyped
   %a{bc2cpp:hint}
-  def erase: (untyped) -> Game::Transition
-  %a{bc2cpp:hint}
   def fade_level: () -> Integer
   def fading?: () -> untyped
   def flashing?: () -> untyped
@@ -10148,8 +10136,6 @@ class Game::Screen
   def tinting?: () -> untyped
   def update: () -> untyped
   def update_flash: () -> untyped
-  %a{bc2cpp:hint}
-  def approach: (untyped, untyped, untyped) -> Integer
   %a{bc2cpp:hint}
   def fade_to: (untyped, untyped, untyped, untyped) -> (Game::Transition | nil)
   %a{bc2cpp:hint}

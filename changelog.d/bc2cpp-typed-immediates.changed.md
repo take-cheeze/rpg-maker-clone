@@ -1,0 +1,1 @@
+- **bc2cpp** keeps decoded immediate operands as Integers through constant and range analysis, avoiding temporary numeric Strings while preserving overflow tiers and target-width proof limits.

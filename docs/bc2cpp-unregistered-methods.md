@@ -26,7 +26,16 @@ any of these could look it up:
   dispatch on a receiver proven not to answer the name. The violation helpers
   raise without dispatching. The nil helper dispatches on `nil`;
 - `super`;
-- a string-pool literal or a `"#{x}_suffix"`-style fragment;
+- a string-pool literal or a `"#{x}_suffix"`-style fragment. For the closed
+  list, a literal counts as a fragment only when a load of it may reach a
+  built string. Each load is followed forward, through MOVE copies, closed
+  methods' parameters and return values, and array or hash literals and the
+  constants holding them. It stops being a fragment when every use only
+  compares it (`==`, `when`, `start_with?`), looks it up as a native hash
+  key, tests a constant list for it (`LIST.include?(x)`), or puts it into a
+  string that also gets a character no name has (a space, a colon). Any
+  other use keeps it a fragment: a store, a concatenation, an argument of a
+  method the trace doesn't know, or a use the flow query refuses;
 - a token in core, external or other-maker mrblib, tests, `scripts/`,
   `.github/`, `tools/` or native sources;
 - for the closed list only, a narrower outside scan:
@@ -57,7 +66,9 @@ The fragment and pool-literal rules also cover computed reflection: for
 example `LCF.field?`, which calls `obj.respond_to?(name)` with a field name
 from data, keeps every name that appears as a literal or fragment. A name
 built at runtime from pieces that appear nowhere as a literal is the one
-case this proof cannot see. Verify mode below exists to catch it.
+case this proof cannot see. So is a name taken back out of a built string
+(`"#{a}: #{b}".split(': ')`), which the closed fragment rule treats as
+never being a name. Verify mode below exists to catch both.
 
 ## The two lists
 
@@ -102,7 +113,17 @@ Use verify mode to run a game trace against the lists, for example
 `BC2CPP_UNREGISTERED_VERIFY=1 scripts/bc2cpp/closed_build.bash <dir>` and
 then `scripts/bc2cpp/trace_host.bash <dir> <game>`. Set
 `BC2CPP_HOST_BATTLE_TROOP=<troop id>` (and `BC2CPP_HOST_BATTLE_PLAY=1`) to
-open a battle after New Game and drive it.
+open a battle after New Game and drive it. Other scenes take scripted input:
+
+- `BC2CPP_HOST_KEYS="FRAME:KEY,..."` taps `RGSS::Input` keys (`C`, `B`,
+  `DOWN`, ...) before the given frames, for example to open the menu (`B`)
+  and enter a command.
+- `BC2CPP_HOST_PREVIEW_MAP=<map id>` starts New Game on that map. A map
+  without an opening event lets the menu open, and only some maps allow
+  saving.
+- `BC2CPP_HOST_CONTINUE=1` picks Continue on the title, which loads the save.
+
+Saving writes into the game directory, so trace a copy.
 
 `scripts/bc2cpp/unregistered_verify_check.rb` checks the emitted
 registrations, and checks both modes' runtime behaviour on a small host.

@@ -2167,3 +2167,185 @@ battlers still drop: `target` is a `cmd[:target]` Hash read, and `b` comes from 
 Symbol literals passed to `public`/`private` (`public :char_passable?`) also poison names for these proofs. Leaving
 them out changes no generated code, because `mruby-rpgxp` redefines both in Ruby and the freed names take their
 arguments from callers whose pools drop anyway.
+
+## Follow-up: nested block literal receivers
+
+BLOCK_ITERATOR_DIRECT reads the literal receiver from the original parent irep of a
+nested block, including String, Array, Hash and Range literals. When the program
+excludes singleton-method installation, these heap literals select one compiled
+core arm without a runtime class test. Integer literals retain their existing
+proof. A block that can transfer control still keeps the root-context guard and
+its fallback. `scripts/bc2cpp/block_iterator_direct_check.rb` compares nested
+String iteration and break behavior against interpreted mruby.
+
+## Follow-up: boxed literals in static owner arms
+
+STATIC_OWNER_ARMS recognizes boxed Integer, boolean and nil literals as well as
+local variables in owner-call arguments. Calls such as `rows[0]` can therefore
+call compiled Ruby owners directly behind the existing exact-class tests;
+other receivers retain the original owner call. The accepted argument grammar
+excludes arbitrary expressions and allocations, and the arity and visibility
+checks are unchanged. `scripts/bc2cpp/static_owner_dispatch_check.rb` checks
+positive and negative integers, booleans and nil against interpreted mruby on
+inherited Ruby classes, singleton objects, native Arrays and nil receivers.
+
+On the current shipped closed world, STATIC_OWNER_ARMS sites increase from 210
+to 212: `Game::Picture#restore_legacy_lsd` and `Game::State#to_lsd` each gain six
+exact-class `[]` arms for LCF owners. The owner-call fallbacks remain (1,950),
+and matching receivers avoid their method lookup. Neither generated file has
+`#error`. Counts come directly from the saved shipped C++ because the census
+summary still expects the obsolete INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: Ruby receivers before native wrappers with arguments
+
+RUBY_EXACT_PAST_NATIVE_ARMS also applies to the Bitmap drawing wrappers and the
+`openness=`, `opacity=` and `tone=` setters. When the flow proves the receiver is
+exactly a program-defined Ruby class outside the RGSS native classes, none of the
+native identity tests can match. The send proceeds to the existing Ruby dispatch
+proofs instead. Unproven receivers retain the native tests and fallback.
+`BC2CPP_RUBY_EXACT_PAST_NATIVE_ARGS=0` restores the argument-taking native arms;
+`BC2CPP_RUBY_EXACT_PAST_NATIVE=0` disables both this and the zero-argument rule.
+`scripts/bc2cpp/nilable_class_tests_check.rb` checks both switches, direct Ruby
+calls and the unproven-receiver fallback.
+
+On the current closed world, the argument-only switch produces byte-identical
+shipped C++: this extends compiler coverage but does not reduce that game's
+current dispatch count. The focused fixtures remove native class tests and
+fallback sends for eight proven Ruby call shapes. Both generated shipped files
+contain no `#error`. The report formatter currently fails after writing those
+files because its expected INTEGER_CONSTANT_PROOF diagnostic heading is absent;
+the comparison uses the saved C++ directly.
+
+## Follow-up: proven Symbol arguments to respond_to?
+
+SYMBOL_PROBE_DIRECT uses the IR's exact-literal type proof for the name argument
+of `respond_to?`, including Symbol-only control-flow joins and shifted registers
+inside inlined blocks. With OWNER_SET_DIRECT's existing audits and no overriding
+`respond_to?` or `respond_to_missing?`, a proven Symbol needs neither a type test
+nor the owner-call fallback. A world with bare BasicObject descendants keeps its
+Kernel receiver guard. Mixed String/Symbol arguments retain the original path.
+`BC2CPP_SYMBOL_PROBE_DIRECT=0` restores the argument guard; disabling
+OWNER_SET_DIRECT disables this proof too. The owner-set fixture compares
+interpreted and compiled behavior and checks withdrawal for Ruby overrides.
+
+On the shipped closed world, 217 Symbol probes use this proof: `respond_to?`
+owner-call fallbacks fall from 218 to 1, total owner-call sites from 1,950 to
+1,733, and Symbol type tests from 1,186 to 969. Generated lines fall from
+411,802 to 410,710; neither file has `#error`. These counts use the saved C++
+directly because the report formatter still expects the obsolete
+INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: stable class/module arguments to Kernel predicates
+
+KERNEL_DIRECT omits the class/module argument guard for `is_a?` and `kind_of?`
+when `stable_constant_register` proves the argument names a stable class or
+module. This reuses the binding proof already used for constructor identity;
+an annotation or class-name hint is insufficient. Dynamic arguments, non-class
+constants and reassigned bindings keep their type checks and error behavior.
+The audited Kernel-body and receiver proofs remain required, including the
+Kernel receiver guard in an unsealed BasicObject world.
+`BC2CPP_KERNEL_CLASS_ARG_PROOF=0` restores the argument guards. The owner-set
+fixture checks the disable switch, reassigned constants, overrides and runtime
+parity for valid and invalid arguments.
+
+On the current shipped closed world, enabling the proof removes 63 argument
+guards and owner-call fallbacks: `is_a?` fallbacks fall from 69 to 7 and
+`kind_of?` from 16 to 15. Total owner-call sites fall from 1,733 to 1,670,
+`mrb_class_p` tests from 181 to 118, and generated lines from 410,742 to
+410,490. Neither generated file has `#error`. Counts use saved C++ from
+on/off runs because the census formatter still expects the obsolete
+INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: proven Integer arguments of audited core calls
+
+NATIVE_CORE_EXACT reuses `native_int_arg_proven?` for the Integer arguments of
+`String#getbyte`, `String#to_i(base)`, `String#byteslice` and `Array#__fetch`.
+The Fixnum proof is narrower than their native Integer guard, so an exact
+receiver plus proven arguments needs no dispatch fallback. For a two-argument
+`byteslice` with only one argument proven, only the other argument is tested.
+The helpers retain bounds checks, radix validation and their original errors;
+unproven argument types retain the normal guarded path. Checked core-body
+receiver proofs admit only independent Integer literal proofs within the
+narrowest target Fixnum range; they retain the checked receiver guard.
+`BC2CPP_CORE_INT_ARG_PROOF=0` restores the old guards. The owner-set fixture
+compares compiled and interpreted values/errors, including invalid radices,
+non-Integer arguments and oversized integers.
+
+On the shipped closed world, the proof removes four Integer tests (3,730 to
+3,726), in `String#upto`, `String#__upto_endless`, `String#gsub` and
+`String#sub`. Two calls to `to_i(10)` become exact native calls, reducing
+native-owner fallback sites from 87 to 85. All 127 checked core receiver guards
+remain; owner-call sites stay at 1,670. Generated lines fall from 410,490 to
+410,478, with no `#error`. Counts use saved C++ because the census formatter
+still expects the obsolete INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: exact receiver flow for monomorphic embedded-object calls
+
+MONO_EXACT_FLOW removes MONO_EMBED_GUARD when the existing exact receiver flow
+proves precisely the accepted target owner's class. It reads the original
+unshifted receiver register and requires an ordinary explicit receiver site;
+substituted receivers/arguments retain their previous paths. The exact-flow
+singleton and captured-register safety gates remain in force. A nilable flow
+qualifies only inside an already checked non-nil arm, so its nil behavior is
+preserved. A subclass or another class does not satisfy the owner identity.
+`BC2CPP_MONO_EXACT_FLOW=0` restores the guard. The nilable-class fixture checks
+normal, inlined-block and rescue calls, singleton-proof withdrawal, retained
+unknown/nil paths and compiled-versus-interpreted runtime results.
+
+On the shipped closed world, MONO_EMBED_GUARD sites fall from 1,074 to 831:
+243 MONO_EXACT_FLOW calls replace class guards and their unreachable nomethod
+fallbacks. `mrb_obj_class` queries fall from 7,355 to 7,112 and nomethod calls
+from 3,269 to 3,026. NILABLE_RECEIVER sites increase from 1,698 to 1,793:
+the now-cheaper non-nil arm makes 95 more explicit nil checks worthwhile.
+Owner-call sites remain at 1,670. Generated lines fall from 410,478 to 409,957,
+with no `#error` in either output. These emitted counts exceed the source-site
+profile's candidates because block copies and checked non-nil contexts also
+benefit. Counts use saved on/off C++ because the census summary still expects
+the obsolete INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: constructed objects in record-hash read flow
+
+RECORD_OBJECT_READS extends RECORD_NILABLE_READ to object classes whose every
+listed record writer passes the existing `record_writer_exact_class` proof.
+That proof accepts literal heap objects or stable standard constructors; a
+factory call with an unproven result does not qualify. The resulting class bits
+flow through argument/return and ivar pools instead of helping only a local
+record receiver. Missing/deleted keys and explicit nil writers retain nil in
+the class set. Escaped records and unknown writers remain unproven, and numeric
+classes are not introduced into the exact flow by this rule.
+`BC2CPP_RECORD_OBJECT_READS=0` restores the previous read flow. The record-read
+fixture checks pooling, truthiness narrowing, deletion, nil stores, escapes and
+compiled-versus-interpreted values/errors.
+
+On the synced shipped baseline `6f9b665b5`, on/off generation removes 246 class
+queries (7,112 to 6,866) and 35 owner-call sites (1,670 to 1,635). NILABLE_RECEIVER
+sites increase from 1,793 to 1,910, preserving missing/deleted-key behavior with
+explicit nil checks. Generated lines fall from 409,957 to 408,970; neither
+output has `#error`. Dropped class pools fall from 509 to 508. These figures are
+measured independently of NATIVE_EXACT_BEFORE_POLY and must not be added to its
+savings without a combined run. The census formatter still fails after saving
+the complete output on its obsolete INTEGER_CONSTANT_PROOF heading.
+
+## Follow-up: exact native receivers before Ruby class chains
+
+NATIVE_EXACT_BEFORE_POLY tries the existing NATIVE_DIRECT_EXACT plan before
+building a POLY_SMALL_N chain for an ordinary explicit receiver with an exact
+RGSS native-class proof. Ruby arms for other classes cannot match that receiver.
+The native registration, owner/mixin and argument-conversion gates are reused;
+an override withdraws the arm, and unproven receiver classes retain their chains.
+Substituted receivers or arguments are excluded. The native call still performs
+its existing coercions, including the Integer check/fallback when unboxing is
+disabled. `BC2CPP_NATIVE_EXACT_BEFORE_POLY=0` restores the original ordering.
+The nilable-class fixture checks native setters, shifted block code, unknown
+receivers, setter overrides and disabled-unboxing behavior.
+
+On the current shipped closed world, the reordered proof removes 32
+POLY_SMALL_N chains (1,766 to 1,734) and 73 `mrb_obj_class` queries (7,112 to
+7,039). Owner-call sites remain at 1,670: the eliminated branches preceded
+native calls that were already direct. Generated lines fall from 409,957 to
+409,631, with no `#error` in either output. Emitted counts include block copies
+and can exceed the profile's 26 source candidates. Counts use saved on/off C++
+because the census summary still expects the obsolete INTEGER_CONSTANT_PROOF
+heading. Indexed container results (42 blocked class pools in the profile)
+remain the next inference target; numeric guards still require independent
+width/range proofs.

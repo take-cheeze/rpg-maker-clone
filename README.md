@@ -1024,6 +1024,32 @@
 
 ### Performance
 
+- Symbol and factory value walks reuse immutable instruction read-register lists; see [symbol flow](docs/bc2cpp-ir-symbol-flow.md).
+- Further compiler Array-allocation candidates, sequencing and validation gates are documented in the [optimization plan](docs/bc2cpp-array-allocation-plan.md). These changes are proposed.
+
+- LCF schema-kind membership checks use bit positions to avoid temporary large Integer intersections; see [LCF masks](docs/bc2cpp-lcf-mask-performance.md).
+
+- Inline-loop scope checks scan brace bytes without temporary character Strings; see [register output](docs/bc2cpp-register-output.md).
+
+- Constant analysis shares frozen builtin class sets to avoid repeated singleton allocations; see [constant facts](docs/bc2cpp-ir-constant-facts.md).
+
+- Compiler name operands share frozen String storage, and operand lookup indexes are shared by schema to reduce heap allocations; see [name storage](docs/bc2cpp-name-storage.md).
+
+- Compiler opcode dispatch uses a shared Symbol vocabulary; name operands and reports keep their String format. See [opcode representation](docs/bc2cpp-opcode-symbols.md).
+- Compiler argument counts stay numeric through analysis and dispatch, with explicit keyword/splat flags; see [typed call counts](docs/bc2cpp-typed-argc.md). Argument-register span queries use primitive Integer readers to avoid temporary shape objects.
+
+- Pooled and interpolated Symbols retain their register types, and keyword presence tracks both boolean classes; see [Symbol class proofs](docs/bc2cpp-symbol-class.md).
+
+- Immediate operand analyses use decoded Integers without temporary numeric Strings; see [typed immediates](docs/bc2cpp-typed-immediates.md).
+- Static owner dispatch recognizes boxed literal arguments as well as locals; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
+- Proven Ruby receivers bypass incompatible native drawing and setter guards; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
+- Record-hash reads propagate proven object classes through downstream class pools; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
+- Proven native receivers bypass incompatible Ruby dispatch arms; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
+- Monomorphic embedded-object calls reuse exact receiver proofs to remove class guards; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
+- Audited core calls reuse Fixnum argument proofs to remove redundant guards; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
+- Stable class/module arguments remove redundant guards in `is_a?` and `kind_of?`; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
+- Proven Symbol names remove redundant guards and dispatch in `respond_to?`; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
+- Nested block iterator calls use proven literal receivers to remove redundant class tests; see [dynamic dispatch proofs](docs/bc2cpp-dynamic-site-census.md).
 - The bc2cpp CI check queue starts longer checks first to reduce idle time at
   the end of its four-worker group; all checks keep their existing assertions.
 
@@ -1035,6 +1061,8 @@
   and call-site keyword layouts are indexed per bytecode body while argument
   values remain context-specific. Settled method lookup also shares ancestor paths,
   simple names and Ruby owner sets to reduce allocation pressure.
+  IR-to-RBS class-name lookups reuse the Symbol's frozen spelling instead of
+  allocating temporary Strings; see [class-name boundaries](docs/bc2cpp-class-name-boundaries.md).
 
 - Context typing reuses evaluations while callee states and return masks remain
   unchanged within one root graph, retaining the original solver budgets.
@@ -1095,7 +1123,8 @@
   required compiler fixtures. Existing deferred audits have explicit reasons.
 
 - bc2cpp shares foreign Ruby method-name scans across closed-world proof queries,
-  avoiding a repeated AST walk for every queried name. See
+  avoiding a repeated AST walk for every queried name. Its name visitors dispatch
+  on Prism's existing Symbols to avoid temporary Strings for ordinary calls. See
   [foreign method scanning](docs/bc2cpp-foreign-method-scanning.md) for measurements.
 
 - [Native-result proofs](docs/bc2cpp-native-result-performance.md) reuse immutable
@@ -1475,6 +1504,14 @@
   only when needed; see [visitation](docs/bc2cpp-type-check.md#reaching-definition-visitation).
   Reaching-definition queries reuse immutable opaque-register key snapshots and
   preserve caller-owned strings; see [query keys](docs/bc2cpp-type-check.md#reaching-definition-query-keys).
+  Empty opaque-register Sets share one frozen key snapshot and the snapshot
+  memo admits Set subclasses; see [empty snapshots](docs/bc2cpp-type-check.md#shared-empty-opaque-snapshots).
+  Symbol-read memo lookups avoid per-query tuple keys with instruction-indexed
+  register entries; see [read memo](docs/bc2cpp-ir-symbol-flow.md#instruction-indexed-read-memo).
+  Factory and fragment forward-use walks share one flat work-stack core;
+  see [forward-use walk](docs/bc2cpp-ir-symbol-flow.md#shared-forward-use-walk).
+  The Fixnum proof walk borrows shared definitions instead of copying results;
+  see [shared definitions](docs/bc2cpp-type-check.md#shared-reaching-definitions-in-the-fixnum-proof).
   Embedding compile probes reuse a fixed state-key list and restore caller state
   without temporary pairs. Eligibility probes also skip error-free register-text
   optimization while final emission retains it; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
@@ -1539,7 +1576,7 @@
   A method that a `Fiber.new { root; :done }` block calls and that reaches
   `Fiber.yield` (through `while` loops, those inlined loops and tiny yielding helpers expanded at
   their call sites) is compiled as a resumable step function over a GC-marked heap frame
-  with slots only for actual register identifiers (diagnostic and literal text cannot inflate
+  with numeric receiver tracing through inlined helper register offsets and slots only for actual register identifiers (diagnostic and literal text cannot inflate
   the frame), driven by a few lines of bytecode so `Fiber.yield` never has a compiled frame
   beneath it; a root that does not qualify stays interpreted and bc2cpp logs why. See
   [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md)
@@ -1588,7 +1625,7 @@
   instances of one class makes `@ui[:battle].step_action` an unguarded exact-class call, and a
   non-nil Array key feeds the inlined Array loops. Any other use of the Hash (passing it on, `merge!`,
   `dup`, `send`, `Marshal`, a computed key) refuses the ivar. See
-  [`docs/adr/0285-bc2cpp-record-hash-typing.md`](docs/adr/0285-bc2cpp-record-hash-typing.md).
+  [`docs/adr/0285-bc2cpp-record-hash-typing.md`](docs/adr/0285-bc2cpp-record-hash-typing.md). Record-hash alias scans keep register IDs numeric and reuse operand register arrays.
   The LCF schema table (`tools/bc2cpp/lcf_schema_oracle.rb`) now drives a whole-program class flow
   (`LCF_ROW_FLOW`): a value proven to be a `LCF::Database`, a table or a row makes `db[:x][i][:y]` exact-class,
   guard-free direct calls, and a field read gets its schema class. `LCF::Array2D#[]=` keeps only nil, bytes
@@ -1685,6 +1722,8 @@
   `BC2CPP_CLASS_NARROWING=0` turns it off (byte-identical to the tree without it); see
   [`docs/adr/0375-bc2cpp-class-narrowing.md`](docs/adr/0375-bc2cpp-class-narrowing.md) and
   `scripts/bc2cpp/class_narrowing_check.rb`.
+  Class-test caches use per-IREP Integer-indexed tables to avoid allocating a
+  tuple key on each query; see [site cache storage](docs/bc2cpp-site-cache-storage.md).
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in

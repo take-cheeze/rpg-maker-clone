@@ -1,0 +1,1 @@
+- Keep optional-parameter report lookups and resumable Fiber receiver tracing keyed by Integer registers, preserving signature types and avoiding String indexing errors.

@@ -1,0 +1,1 @@
+- **bc2cpp** reuses frozen class-name spellings at the IR/RBS boundary, avoiding temporary lookup Strings while preserving prepared and direct contract results.
