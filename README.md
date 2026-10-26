@@ -1504,6 +1504,8 @@
   only when needed; see [visitation](docs/bc2cpp-type-check.md#reaching-definition-visitation).
   Reaching-definition queries reuse immutable opaque-register key snapshots and
   preserve caller-owned strings; see [query keys](docs/bc2cpp-type-check.md#reaching-definition-query-keys).
+  Symbol-read memo lookups avoid per-query tuple keys with instruction-indexed
+  register entries; see [read memo](docs/bc2cpp-ir-symbol-flow.md#instruction-indexed-read-memo).
   The Fixnum proof walk borrows shared definitions instead of copying results;
   see [shared definitions](docs/bc2cpp-type-check.md#shared-reaching-definitions-in-the-fixnum-proof).
   Embedding compile probes reuse a fixed state-key list and restore caller state
