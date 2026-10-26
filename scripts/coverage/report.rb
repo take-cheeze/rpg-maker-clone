@@ -200,7 +200,8 @@ CHECKS = [
   { name: 'bc2cpp-frozen-slot', command: %w[scripts/bc2cpp/frozen_slot_check.rb] },
   # The rpg2k_game predicate: the committed maix-hello fixture must not count as a test bed.
   { name: 'coverage-test-bed', command: %w[scripts/coverage/test_bed_check.rb] },
-  { name: 'optcarrot-class-body-hoist', command: %w[scripts/optcarrot/class_body_hoist_check.rb] }
+  { name: 'optcarrot-class-body-hoist', command: %w[scripts/optcarrot/class_body_hoist_check.rb] },
+  { name: 'optcarrot-cruby-runs', command: %w[scripts/optcarrot/cruby_runs_check.rb] }
 ].freeze
 
 # `needs:` predicates. A downloaded RPG2000/2003 game is the only prerequisite

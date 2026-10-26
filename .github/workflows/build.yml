@@ -1004,6 +1004,10 @@ jobs:
           - name: optcarrot class-body hoist check
             run: ruby scripts/optcarrot/class_body_hoist_check.rb
 
+          # Which reference Rubies the optcarrot benchmark times (interpreter, YJIT, optional TruffleRuby).
+          - name: optcarrot reference runs check
+            run: ruby scripts/optcarrot/cruby_runs_check.rb
+
           - name: bc2cpp native, RBS and definer checks
             run: |
               ruby scripts/bc2cpp/name_strings_check.rb
