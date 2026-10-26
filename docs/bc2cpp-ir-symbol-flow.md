@@ -29,6 +29,22 @@ by `CPU.op`.
 The universe is the union of the stored values' sets, so names that only appear elsewhere in the
 class body are no longer included.
 
+## Flat factory work stacks
+
+`FactoryFlow.uses` follows `MOVE` aliases over normal and handler edges with a flat work
+stack: each entry pushes its origin and register separately, and visited states are tracked
+per origin, so no per-state pair Array is built for traversal or duplicate suppression.
+LIFO order, duplicate suppression, result insertion order and the alias-budget refusal match
+the pair-based walk. Returned use pairs keep their representation, and ordered results
+compare equal, not just as Sets. The struct-receiver check covers entry reuse order, budgets
+at and below the visited-state count, loops, `MOVE` aliases, handler reads and overwrites.
+
+Two serial warm-cache Ruby 4.0.5/YJIT whole-engine comparisons reduced allocations from
+68,332,683 to 68,130,207 (202,476 fewer, 0.30%) and from 68,333,890 to 68,130,686
+(203,204 fewer, 0.30%). Generated C++ and diagnostic logs matched after checkout-root
+and timing-line normalization. Wall time moved 48.096s to 48.880s and 49.450s to
+49.760s; these runs do not establish a stable elapsed-time gain.
+
 ## What it does not cover
 
 - A name built at run time and passed to `const_get`, `send` or `method` can still reach the table
