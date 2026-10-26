@@ -61,6 +61,11 @@ deferred:
     - cxx
     reason: Requires a full-core library and compiled-vs-interpreted fixture binaries.
 checks:
+  scripts/bc2cpp/typed_immediates_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
   scripts/bc2cpp/name_strings_check.rb:
     tier: fast
     capabilities: []

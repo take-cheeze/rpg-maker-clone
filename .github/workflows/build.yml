@@ -826,6 +826,7 @@ jobs:
           ruby scripts/bc2cpp/upvar_walks_check.rb
           ruby scripts/bc2cpp/irep_tree_check.rb
           ruby scripts/bc2cpp/ir_binary_operands_check.rb
+          ruby scripts/bc2cpp/typed_immediates_check.rb
           ruby scripts/bc2cpp/name_strings_check.rb
           ruby scripts/bc2cpp/param_trace_elements_check.rb
           ruby scripts/bc2cpp/arm_prune_block_check.rb
