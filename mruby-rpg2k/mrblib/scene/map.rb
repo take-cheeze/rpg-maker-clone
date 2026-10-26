@@ -3804,7 +3804,7 @@ class RPG2k
         # the hop is visible; an ordinary step only when the tile changed.
         reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy || ch.jumped
       rescue StandardError => ex
-        $stderr.puts "[RPG2k] event ##{e[:id]} movement failed: #{ex.message}"
+        $stderr.puts "[RPG2k] event ##{e.id} movement failed: #{ex.message}"
         nil
       end
 
@@ -11663,7 +11663,7 @@ class RPG2k
           draw_event_tile(e, bmp, cam_x, cam_y, opacity)
         end
       rescue StandardError => ex
-        $stderr.puts "[RPG2k] event ##{e[:id]} draw failed: #{ex.message}"
+        $stderr.puts "[RPG2k] event ##{e.id} draw failed: #{ex.message}"
       end
 
       # Which tile buffer an event composits into, per its page layer and (for
