@@ -78,6 +78,7 @@ CHECKS = [
   { name: 'bc2cpp-ir-facts', command: %w[scripts/bc2cpp/ir_facts_check.rb] },
   { name: 'bc2cpp-typed-argc', command: %w[scripts/bc2cpp/typed_argc_check.rb] },
   { name: 'bc2cpp-name-strings', command: %w[scripts/bc2cpp/name_strings_check.rb] },
+  { name: 'bc2cpp-typed-immediates', command: %w[scripts/bc2cpp/typed_immediates_check.rb] },
   { name: 'bc2cpp-ir-binary-operands', command: %w[scripts/bc2cpp/ir_binary_operands_check.rb] },
   { name: 'bc2cpp-rbs-mixin-contracts', command: %w[scripts/bc2cpp/rbs_mixin_contracts_check.rb] },
   { name: 'bc2cpp-self-call-override-contracts', command: %w[scripts/bc2cpp/self_call_override_contracts_check.rb] },
