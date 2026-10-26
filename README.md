@@ -1026,7 +1026,7 @@
 
 - Constant analysis shares frozen builtin class sets to avoid repeated singleton allocations; see [constant facts](docs/bc2cpp-ir-constant-facts.md).
 
-- Compiler name operands share frozen String storage to reduce retained heap usage; see [name storage](docs/bc2cpp-name-storage.md).
+- Compiler name operands share frozen String storage, and operand lookup indexes are shared by schema to reduce heap allocations; see [name storage](docs/bc2cpp-name-storage.md).
 
 - Compiler opcode dispatch uses a shared Symbol vocabulary; name operands and reports keep their String format. See [opcode representation](docs/bc2cpp-opcode-symbols.md).
 - Compiler argument counts stay numeric through analysis and dispatch, with explicit keyword/splat flags; see [typed call counts](docs/bc2cpp-typed-argc.md).

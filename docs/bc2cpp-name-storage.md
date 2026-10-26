@@ -35,3 +35,16 @@ both runs decoded the same source list. These figures describe retained Strings
 at the decoded-IREP stage, rather than peak RSS or the complete compiler's heap.
 They exclude potential additional sharing of derived ivar names, registry keys,
 source paths and diagnostic text.
+
+## Operand lookup indexes
+
+Instructions share frozen kind-to-position indexes by operand schema instead of
+allocating a kind-to-operand Hash for every instruction. Each lookup still reads
+that instruction's own operand values. Custom operand lists that do not match
+the opcode schema use an allocation-free scan; duplicate kinds return the first
+operand, and missing kinds return nil. Cache restoration rebuilds the shared
+index through the normal operand installation path.
+
+A host Ruby probe parsing and installing 100,000 synthetic SEND instructions
+reduced allocations from 2,900,045 to 2,800,047 (about 3.4%). This measures operand
+parsing and installation, not the complete compiler or runtime game heap.
