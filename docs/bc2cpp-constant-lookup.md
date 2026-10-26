@@ -9,9 +9,34 @@ the same helper. Top-level Object lookups remain direct calls.
 The helper reconstructs the complete scope path before searching it, preserving
 errors for missing enclosing scopes. It uses the existing non-raising probes
 for intermediate scopes and the ordinary raising lookup for the Object
-fallback. Constant values are not cached: reassignment remains visible, and
+fallback. The helper itself caches nothing: reassignment remains visible, and
 mruby's arena continues to protect values allocated while resolving the path.
-The existing proven class-constant cache uses this helper on its slow path.
+The proven per-site caches below use this helper on their slow path.
+
+## Per-site constant cache (CONST_SITE_CACHE)
+
+A bare constant whose one binding the closed world can prove never changes is
+read from a per-site slot after its first lookup. `tools/bc2cpp/const_site_cache.rb`
+holds the proofs; the same rules apply to both kinds:
+
+- **Class/module values** (`StableClassConstants`): exactly one `class`/`module`
+  statement for the name, no SETCONST/SETMCNST of it, no native or foreign
+  definition, and no `const_set`/`remove_const` in the program. Only a class or
+  module result is stored.
+- **Other values** (`StableValueConstants`, CONST_VALUE_CACHE): exactly one
+  SETCONST/SETMCNST of the bare name, no class/module statement, and no native or
+  foreign definition, under the same `const_set`/`remove_const` refusal. Any
+  value the one binding holds is stored. This covers constants bound by a
+  computed masgn such as optcarrot's `CLK_1, ... = (1..8).map { ... }`, which
+  no literal fold admits.
+
+Both proofs are keyed by the bare name, so two bindings of the same name in
+different scopes disqualify it. A failed lookup raises before anything is
+stored, and a read before the binding runs also raises, so it is never cached.
+
+Effect on the optcarrot probe: `const_get` calls fell from about 1.36 million
+over 20 frames to under 18 thousand, and frame-loop instructions dropped from
+1.76 G to 1.42 G (`callgrind`, 19-frame difference).
 
 `ruby scripts/bc2cpp/const_lookup_check.rb` checks helper sharing, lexical
 shadowing, outer and Object fallbacks, reassignment, missing constants and GC
