@@ -1504,6 +1504,8 @@
   only when needed; see [visitation](docs/bc2cpp-type-check.md#reaching-definition-visitation).
   Reaching-definition queries reuse immutable opaque-register key snapshots and
   preserve caller-owned strings; see [query keys](docs/bc2cpp-type-check.md#reaching-definition-query-keys).
+  Empty opaque-register Sets share one frozen key snapshot and the snapshot
+  memo admits Set subclasses; see [empty snapshots](docs/bc2cpp-type-check.md#shared-empty-opaque-snapshots).
   Symbol-read memo lookups avoid per-query tuple keys with instruction-indexed
   register entries; see [read memo](docs/bc2cpp-ir-symbol-flow.md#instruction-indexed-read-memo).
   Factory and fragment forward-use walks share one flat work-stack core;
