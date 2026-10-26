@@ -1,0 +1,1 @@
+- Document proposed bc2cpp Array-allocation optimizations, with correctness constraints, measurement requirements and validation plans for each candidate.

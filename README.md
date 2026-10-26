@@ -1025,6 +1025,9 @@
 ### Performance
 
 - Symbol and factory value walks reuse immutable instruction read-register lists; see [symbol flow](docs/bc2cpp-ir-symbol-flow.md).
+- Further compiler Array-allocation candidates, sequencing and validation gates are documented in the [optimization plan](docs/bc2cpp-array-allocation-plan.md). These changes are proposed.
+
+- LCF schema-kind membership checks use bit positions to avoid temporary large Integer intersections; see [LCF masks](docs/bc2cpp-lcf-mask-performance.md).
 
 - Inline-loop scope checks scan brace bytes without temporary character Strings; see [register output](docs/bc2cpp-register-output.md).
 
