@@ -1,0 +1,1 @@
+- **bc2cpp** keeps call argument counts numeric through analyses and dispatch, using explicit keyword/splat flags instead of formatting and reparsing count Strings.
