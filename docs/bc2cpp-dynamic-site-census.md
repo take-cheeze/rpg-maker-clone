@@ -2015,6 +2015,16 @@ name and the arguments out of the packed Array and picks the arms by its length.
 `send(*DISPATCH[@opcode])` and its wrappers' `send(mode, ...)`/`send(instr)` take this form. At most
 `GUARDED_MAX_ARMS` (96) names are tried per site. `BC2CPP_COMPUTED_SEND_GUARDED=0` turns the form off.
 
+SPLAT_SHARED: `send(*list)` compiles to `LOADNIL R; ...; ARYCAT R (S); SSEND`, and ARYCAT copies `S` into a new
+Array on every call. When the guarded splat takes the send, the method loop (`codegen_method.rb`) hands it the
+ARYCAT's text instead (`splat_shared_pair?`). The send then reads the name and the arguments from `S` in place when
+`S` is an Array no longer than the longest arm's list and every element is an immediate, which needs no GC root once
+read. Any other `S` is copied first, as ARYCAT did, and the original send always gets its copy. The pair is taken
+only when the list register still holds its LOADNIL's nil (the instructions between write only registers above it),
+nothing jumps into the three instructions, no glue or prefix covers them, and the send's text is the guarded
+expansion itself. Optcarrot's `send(*DISPATCH[@opcode])` stops allocating an Array per emulated instruction, which
+removes the steady-state GC: 180 frames went from 3.47 s to 3.10 s wall. `BC2CPP_SPLAT_SHARED=0` keeps the copy.
+
 ## Follow-up: literal-default optional constructor positions (CONSTRUCTOR_OPTIONALS)
 
 CONSTRUCTOR_POOLS pooled only the mandatory positions of an `initialize`, because a default could read a later
