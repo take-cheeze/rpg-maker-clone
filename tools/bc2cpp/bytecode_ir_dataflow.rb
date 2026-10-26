@@ -277,7 +277,8 @@ module BytecodeIR
       return compute_write_dominates?(w, use, reg, opaque_regs: opaque_regs) if opaque_regs && !opaque_regs.frozen?
 
       @write_dominates_cache ||= {}
-      opaque_key = opaque_regs&.sort&.freeze
+      @compact_dataflow_keys = ENV['BC2CPP_IR_QUERY_KEYS'] != '0' if @compact_dataflow_keys.nil?
+      opaque_key = reaching_opaque_key(opaque_regs)
       key = [w, use, reg, opaque_key]
       unless @write_dominates_cache.key?(key)
         result = compute_write_dominates?(w, use, reg, opaque_regs: opaque_regs)
