@@ -30,3 +30,16 @@ On Ruby 4.0.5, 100,000 reads of a warmed `n=3|nk=2` instruction through the old
 `OperandModel.argc_spec` path allocated 100,002: one result object per query, with
 the two temporary count Strings eliminated. This is an accessor microbenchmark,
 not a whole-compiler peak-memory or timing measurement.
+
+## Primitive argument-register spans
+
+`Insn#positional_slots` and `#keyword_slots` return Integer register counts
+without constructing an `ArgcSpec`. Escape analysis, block operand lookup and
+block-self analysis use these readers directly. Absent counts consume no slots,
+packed splats consume one slot, and fixed keyword pairs consume two slots each.
+`OperandModel.argc_spec` remains available when callers need the full shape.
+
+A host Ruby probe reading both slot counts 100,000 times allocated 100,023 objects
+through the `ArgcSpec` path and 9 through the primitive readers, including cold
+method overhead. This removes one temporary Struct per escape-analysis span
+query; the resulting pair returned by `argument_slots` still allocates an Array.

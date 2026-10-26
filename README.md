@@ -1027,7 +1027,7 @@
 - Compiler name operands share frozen String storage to reduce retained heap usage; see [name storage](docs/bc2cpp-name-storage.md).
 
 - Compiler opcode dispatch uses a shared Symbol vocabulary; name operands and reports keep their String format. See [opcode representation](docs/bc2cpp-opcode-symbols.md).
-- Compiler argument counts stay numeric through analysis and dispatch, with explicit keyword/splat flags; see [typed call counts](docs/bc2cpp-typed-argc.md).
+- Compiler argument counts stay numeric through analysis and dispatch, with explicit keyword/splat flags; see [typed call counts](docs/bc2cpp-typed-argc.md). Argument-register span queries use primitive Integer readers to avoid temporary shape objects.
 
 - Pooled and interpolated Symbols retain their register types, and keyword presence tracks both boolean classes; see [Symbol class proofs](docs/bc2cpp-symbol-class.md).
 
