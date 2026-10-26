@@ -564,6 +564,29 @@ refactor's overhead in the optimized measurement. Allocations fell from
 and report JSON were byte-identical. One object-profiled timing pair was
 52.381s versus 51.253s, which does not establish a stable wall-time speedup.
 
+### Shared empty opaque snapshots
+
+An attribution run showed 92% of opaque-register key sorts are over empty
+Sets (686k of 744k), one fresh Array per query. Distinct empty Sets now share
+one frozen snapshot while nil stays distinct. Of the non-empty queries, 99.7%
+repeat the same Set object per Program (the irep's own upvar set); the
+identity memo admits them via `is_a?(Set)` instead of `instance_of?(Set)`,
+which never matched the dev-time `StrictKeySet` subclass and left the memo
+empty — every repeat re-sorted. A frozen `StrictKeySet` holds only Integers by
+construction, so the deep-immutability invariant is unchanged. Dominance
+queries route through the same helper instead of sorting per query.
+
+Two serial warm-cache Ruby 4.0.5/YJIT whole-engine comparisons reduced
+allocations from 65,251,114 to 63,714,250 (1,536,864 fewer, 2.36%) and from
+65,251,169 to 63,713,087 (1,538,082 fewer, 2.36%). A sharing-disabled pass on
+the candidate allocates 63,880,170 and matches output, confirming the shared
+paths. Generated C++ (SHA256 7c49ffbcd2282675 after checkout-root
+normalization, same digest as the series) and diagnostic logs matched across
+all five runs after timing-line/root normalization. Wall time moved 47.632s to
+48.768s and 48.292s to 47.303s; these runs do not establish a stable
+elapsed-time gain. This supersedes the rejected dominance-key attempt, whose
+memo never engaged because of the subclass gate.
+
 ### Shared reaching definitions in the Fixnum proof
 
 The Fixnum proof's backward walk borrows frozen cached reaching-definition
