@@ -1024,6 +1024,8 @@
 
 ### Performance
 
+- LCF schema-kind membership checks use bit positions to avoid temporary large Integer intersections; see [LCF masks](docs/bc2cpp-lcf-mask-performance.md).
+
 - Constant analysis shares frozen builtin class sets to avoid repeated singleton allocations; see [constant facts](docs/bc2cpp-ir-constant-facts.md).
 
 - Compiler name operands share frozen String storage, and operand lookup indexes are shared by schema to reduce heap allocations; see [name storage](docs/bc2cpp-name-storage.md).
