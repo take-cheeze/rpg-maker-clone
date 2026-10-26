@@ -1704,6 +1704,8 @@
   `BC2CPP_CLASS_NARROWING=0` turns it off (byte-identical to the tree without it); see
   [`docs/adr/0375-bc2cpp-class-narrowing.md`](docs/adr/0375-bc2cpp-class-narrowing.md) and
   `scripts/bc2cpp/class_narrowing_check.rb`.
+  Class-test caches use per-IREP Integer-indexed tables to avoid allocating a
+  tuple key on each query; see [site cache storage](docs/bc2cpp-site-cache-storage.md).
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
