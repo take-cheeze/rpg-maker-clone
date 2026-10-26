@@ -775,6 +775,7 @@ jobs:
           ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs --jobs 4 build-closed-bc2cpp/closed
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host ruby scripts/native/binding_split.rb check --facts "$RUNNER_TEMP/binding-facts"
           ruby scripts/bc2cpp/stack_tuples_check.rb
+          ruby scripts/bc2cpp/loop_inline_check.rb
           ruby scripts/bc2cpp/block_self_world_check.rb
           ruby scripts/bc2cpp/outside_owner_call_check.rb
           ruby scripts/bc2cpp/static_owner_dispatch_check.rb

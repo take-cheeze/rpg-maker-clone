@@ -274,6 +274,29 @@ class CodeGen
     out
   end
 
+  # LOOP_INLINE: the inlined loop for one `loop do ... end` region, or nil if the body is not clean. Kernel#loop
+  # ends only by `break` (its value goes to the destination), a return or a raise, so nothing follows the `for`.
+  def emit_loop_inline(region, irep, d)
+    block_irep = region[:block_irep]
+    offset = irep.nregs
+    addr = region[:block_addr]
+    iter_label = "Lbc2cpp_loop_iter_#{addr}"
+    break_label = "Lbc2cpp_loop_end_#{addr}"
+    body = compile_inline_block_body(region, irep, d, iter_label, break_label: break_label)
+    return nil unless body
+
+    out = String.new
+    out << "  {\n"
+    out << "    for (;;) {\n"
+    out << inline_block_frame(block_irep, offset)
+    out << body
+    out << "      #{iter_label}:;\n"
+    out << "    }\n"
+    out << "    #{break_label}:;\n"
+    out << "  }\n"
+    out
+  end
+
   # EACH_BLOCK_SUPPORT: the inlined loop for one `ary.each` region (nil if not
   # clean). Differences from times:
   #   - LIVE length: `i < ary_size(recv)` every iteration, as array.c does;

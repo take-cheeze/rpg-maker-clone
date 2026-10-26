@@ -113,6 +113,57 @@ class CodeGen
     regions
   end
 
+  # LOOP_INLINE: inline `loop do BODY end` as a native `for (;;)`. Kernel#loop is `while true; yield; end` with
+  # `rescue StopIteration => e; e.result` (mruby/mrblib/kernel.rb); a `break` in a block that stays a call throws
+  # bc2cpp_block_break through it, a C++ exception per break. Inlined, BREAK is a jump past the loop, `next` a jump
+  # to the next iteration and RETURN_BLK a plain return, as for #each.
+  # Shape: `SSENDB Ra :loop n=0` right after `BLOCK R(a+1) I[k]`, I[k] taking no parameter and not forwarding the
+  # method's block. Only in program ireps (core Ruby may lean on loop's StopIteration rescue) and where
+  # loop_inline_world_safe? holds. BC2CPP_LOOP_INLINE=0 turns it off.
+  def recognize_loop_regions(irep)
+    return [] if ENV['BC2CPP_LOOP_INLINE'] == '0' || loop_inline_core_irep?(irep) || !loop_inline_world_safe?
+
+    regions = []
+    each_block_site(irep, send_ops: %i[SSENDB], layout: named_layout('loop')) do |insn, _idx, block_insn, dest_reg, block_irep|
+      next unless mandatory_arity(block_irep).zero? && pure_mandatory_arity?(block_irep)
+
+      needs_blk = block_blk_needs(block_irep)
+      next unless needs_blk && needs_blk.empty?
+
+      regions << { block_addr: block_insn.addr, sendb_addr: insn.addr, dest_reg: dest_reg, block_irep: block_irep }
+    end
+    regions
+  end
+
+  # LOOP_INLINE's soundness condition: `loop` resolves to Kernel#loop everywhere (no other definition), and its
+  # StopIteration rescue never fires. A StopIteration only starts in Enumerator#next / #peek / #next_values /
+  # #peek_values or inside a Lazy enumerator (core mrblib rescues the ones it raises itself, enumerator.rb and
+  # lazy.rb), or from program code naming the class. So no program irep may send one of LOOP_STOP_SENDS or read
+  # StopIteration other than as the class a RESCUE tests.
+  LOOP_STOP_SENDS = %w[next peek next_values peek_values lazy].to_set.freeze
+
+  # Core and external-gem Ruby: under 3rd/, however the build spelled the path.
+  def loop_inline_core_irep?(irep)
+    irep.file.to_s.match?(%r{(?:\A|/)3rd/})
+  end
+
+  def loop_inline_world_safe?
+    return @loop_inline_world_safe if defined?(@loop_inline_world_safe)
+
+    @loop_inline_world_safe = (@registry['loop'] || []).all? { |d| d.owner == 'Kernel' } &&
+                              @ireps.each_value.none? do |irep|
+                                next false if loop_inline_core_irep?(irep)
+
+                                program = BytecodeIR.for(irep)
+                                program.each_source.any? do |insn, i|
+                                  next true if BytecodeIR::Ops::SEND.include?(insn.op) && LOOP_STOP_SENDS.include?(insn.sym)
+                                  next false unless %i[GETCONST GETMCNST].include?(insn.op) && insn.sym == 'StopIteration'
+
+                                  program.source_at(i + 1)&.op != :RESCUE
+                                end
+                              end
+  end
+
   # Is the receiver of the `times` send at `idx` a Fixnum on every path (an Integer literal, or
   # FIXNUM_OPERAND_PROOF for the method's own registers)?
   def times_fixnum_receiver?(irep, idx, dest_reg)
