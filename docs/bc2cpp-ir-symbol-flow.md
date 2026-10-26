@@ -97,3 +97,34 @@ Two serial warm-cache Ruby 4.0.5/YJIT whole-engine comparisons reduced allocatio
 (164,706 fewer, 0.24%). Generated C++ and diagnostic logs matched after checkout-root and
 timing-line normalization. Wall time moved 48.020s to 48.943s and 49.135s to 49.216s;
 these runs do not establish a stable elapsed-time gain.
+
+## Shared forward-use walk
+
+`FactoryFlow.uses` and the two fragment escape walks (`uses_escape?`,
+`container_uses_escape?`) share one core, `IrSymbolFlow.follow_forward_uses`:
+a flat work stack with per-origin visited data follows `MOVE` copies over
+normal and handler edges, yielding each non-`MOVE` use to a block. A falsy
+block value continues the walk; a truthy one stops it and is returned, except a
+`Follow`, which continues from that use with a same-value `SEND` result
+(`freeze`/`dup`/`clone`, whose escape checks run in the block first). The core
+returns nil on a refused reads query or an exceeded visit budget, false when
+the walk completes. Factory collection, escape conservatism (a refused query
+escapes), LIFO order, result insertion order, the alias-budget refusal and
+ordered-result equality are unchanged; `compute_exact`'s backward walk over
+reaching definitions stays separate.
+
+The struct-receiver check covers walk order, budgets at and below the
+visited-state count, loops, `MOVE` aliases, handler reads and overwrites. The
+fragment scan covers same-value sends through frozen and duped collections,
+plus all prior pure-use, membership, concatenation, return and unknown-method
+cases.
+
+Two serial warm-cache Ruby 4.0.5/YJIT whole-engine comparisons (baseline with
+the instruction-indexed read memo) reduced allocations from 65,453,771 to
+65,251,795 (201,976 fewer, 0.31%) and from 65,455,211 to 65,251,279 (203,932
+fewer, 0.31%). Generated C++ (SHA256 7c49ffbcd2282675 after checkout-root
+normalization, same digest as the series) and diagnostic logs matched after
+timing-line/root normalization. Wall time moved 47.774s to 48.998s and 49.083s
+to 48.144s; these runs do not establish a stable elapsed-time gain. This
+supersedes the standalone flat-stack change: the factory walk keeps its shape
+and measured saving, and both escape walks join the same core.

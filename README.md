@@ -1506,6 +1506,8 @@
   preserve caller-owned strings; see [query keys](docs/bc2cpp-type-check.md#reaching-definition-query-keys).
   Symbol-read memo lookups avoid per-query tuple keys with instruction-indexed
   register entries; see [read memo](docs/bc2cpp-ir-symbol-flow.md#instruction-indexed-read-memo).
+  Factory and fragment forward-use walks share one flat work-stack core;
+  see [forward-use walk](docs/bc2cpp-ir-symbol-flow.md#shared-forward-use-walk).
   The Fixnum proof walk borrows shared definitions instead of copying results;
   see [shared definitions](docs/bc2cpp-type-check.md#shared-reaching-definitions-in-the-fixnum-proof).
   Embedding compile probes reuse a fixed state-key list and restore caller state
