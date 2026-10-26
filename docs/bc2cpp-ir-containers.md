@@ -85,3 +85,8 @@ Still outside the IR, and why:
   proofs. These are program-level tables, not IR queries, so the walk keeps them
   as arguments.
 - The RBS record checker's `DeclScanner` overrides (`rbs_record_types.rb`).
+
+Record-hash alias scanning consumes the Integer registers exposed by the operand
+layer directly. It does not rebuild those register arrays with `map(&:to_i)`.
+HASHADD chunks also retain Integer key registers, matching the initial HASH
+literal and avoiding numeric String construction during long-literal scans.
