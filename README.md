@@ -1204,6 +1204,8 @@
   [`&expr` block sends](docs/bc2cpp-explicit-block-args.md).
   A literal block passed to a core body that only calls it (`Array#each`, `each_with_index`, `times`) is built in
   the caller's frame instead of on the heap; see [frame-local blocks](docs/bc2cpp-stack-blocks.md).
+  `(a..b).map { |i| ... }` over Integer literals is an inlined counted loop, also inside a nested block's compiled
+  body; see [Range#map loops](docs/bc2cpp-range-map-inline.md).
   A shared escape analysis (`tools/bc2cpp/escape_analysis.rb`) answers whether the value a creation site makes
   leaves its frame, with callee summaries over a closed world; its first consumer lets a literal block that captures
   locals go to a callee outside the by-name allowlist when the callee provably keeps neither the block nor anything
