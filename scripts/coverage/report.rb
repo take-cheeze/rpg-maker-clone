@@ -99,6 +99,7 @@ CHECKS = [
   # Needs MRBC and a full-core libmruby (SKIPs without them, so it adds no lines here until the bc2cpp job sets them).
   { name: 'bc2cpp-placement-harness', command: %w[scripts/bc2cpp/placement_harness_check.rb] },
   { name: 'bc2cpp-class-bodies', command: %w[scripts/bc2cpp/class_bodies_check.rb] },
+  { name: 'bc2cpp-const-site-cache', command: %w[scripts/bc2cpp/const_site_cache_check.rb] },
   { name: 'bc2cpp-ir-soundness-classes', command: %w[scripts/bc2cpp/ir_soundness_classes_check.rb] },
   # Needs MRBC (SKIPs without it, so it adds no lines here until the bc2cpp job sets it).
   { name: 'bc2cpp-ir-join-soundness', command: %w[scripts/bc2cpp/ir_join_soundness_check.rb] },

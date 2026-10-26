@@ -361,6 +361,12 @@ checks:
     fixture_capabilities:
     - mrbc
     host_phase: false
+  scripts/bc2cpp/const_site_cache_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    host_phase: false
   scripts/bc2cpp/ir_join_soundness_check.rb:
     tier: fast
     capabilities: []
