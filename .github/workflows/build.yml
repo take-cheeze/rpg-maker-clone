@@ -827,6 +827,7 @@ jobs:
           ruby scripts/bc2cpp/irep_tree_check.rb
           ruby scripts/bc2cpp/ir_binary_operands_check.rb
           ruby scripts/bc2cpp/name_strings_check.rb
+          ruby scripts/bc2cpp/typed_argc_check.rb
           ruby scripts/bc2cpp/param_trace_elements_check.rb
           ruby scripts/bc2cpp/arm_prune_block_check.rb
           ruby scripts/bc2cpp/param_fold_check.rb
@@ -999,6 +1000,7 @@ jobs:
           - name: bc2cpp native, RBS and definer checks
             run: |
               ruby scripts/bc2cpp/name_strings_check.rb
+              ruby scripts/bc2cpp/typed_argc_check.rb
               ruby scripts/bc2cpp/numeric_flow_speed_check.rb
               ruby scripts/bc2cpp/element_type_check.rb
               ruby scripts/bc2cpp/core_facts_rbs_check.rb
