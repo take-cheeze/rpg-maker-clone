@@ -1050,6 +1050,8 @@
   and call-site keyword layouts are indexed per bytecode body while argument
   values remain context-specific. Settled method lookup also shares ancestor paths,
   simple names and Ruby owner sets to reduce allocation pressure.
+  IR-to-RBS class-name lookups reuse the Symbol's frozen spelling instead of
+  allocating temporary Strings; see [class-name boundaries](docs/bc2cpp-class-name-boundaries.md).
 
 - Context typing reuses evaluations while callee states and return masks remain
   unchanged within one root graph, retaining the original solver budgets.
