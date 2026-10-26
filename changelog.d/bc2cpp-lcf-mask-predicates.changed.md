@@ -1,0 +1,1 @@
+- Avoid temporary large Integer intersections in LCF schema-kind membership checks, retaining foreign-class and nil behavior.
