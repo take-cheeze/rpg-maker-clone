@@ -66,6 +66,11 @@ checks:
     capabilities: []
     fixture_capabilities:
     - mrbc
+  scripts/bc2cpp/typed_argc_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
   scripts/bc2cpp/name_strings_check.rb:
     tier: fast
     capabilities: []
