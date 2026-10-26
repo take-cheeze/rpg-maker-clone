@@ -28,6 +28,30 @@ Parser reuse assertions isolate the surrounding disk scan cache so a warm scan
 cannot bypass the parser under test. Validate cache checks with both cold and
 warm surrounding state.
 
+## Symbol dispatch inside visitors
+
+`ForeignDefNames` and `HiddenRubyOwnerScan` compare Prism call names directly as
+Symbols against fixed installer, eval, mixin and reflective-send vocabularies.
+Prism already supplies these Symbols, so an ordinary call needs no temporary
+String merely to decide whether it can define a method. Collected method names
+remain Strings. Reflective send targets also stay text comparisons, avoiding
+interning arbitrary source literals or changing scanner output APIs.
+
+A Ruby 4.0.5 probe parsed 41 real foreign mrblib files once, warmed both visitors,
+then measured 20 complete visitor passes with `GC.stat(:total_allocated_objects)`.
+Parser work and disk caches were outside the measurement:
+
+| Visitor | Original allocations | Symbol dispatch allocations | Original seconds | Symbol dispatch seconds |
+| --- | ---: | ---: | ---: | ---: |
+| `ForeignDefNames` | 54,433 | 10,366 | 0.0273 | 0.0199 |
+| `HiddenRubyOwnerScan` | 96,532 | 52,934 | 0.0255 | 0.0231 |
+
+Both visitors produced identical outputs to their original implementations on
+all 41 files. These measurements cover AST visitors, not total compiler or game
+runtime performance. `ruby_parse_cache_check.rb` additionally covers all accessor
+spellings, aliases, literal definers, String and Symbol reflective targets,
+forwarded mixins, and computed instance/singleton definers.
+
 ## Owner-scoped hidden definitions (ESCAPE_ANALYSIS)
 
 `foreign_method_names` gives only names, so a name that an interpreted mrblib
