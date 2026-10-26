@@ -999,6 +999,10 @@ jobs:
           - name: mruby bare-hash-push check
             run: ruby scripts/mruby/bare_hash_push_check.rb
 
+          # The optcarrot probe's class-body initializer hoist must keep what CRuby builds.
+          - name: optcarrot class-body hoist check
+            run: ruby scripts/optcarrot/class_body_hoist_check.rb
+
           - name: bc2cpp native, RBS and definer checks
             run: |
               ruby scripts/bc2cpp/name_strings_check.rb
