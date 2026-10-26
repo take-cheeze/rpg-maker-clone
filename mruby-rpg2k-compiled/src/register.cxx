@@ -1223,8 +1223,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #endif
   mrb_define_method(M, picture, "move_to", Game__Picture_move_to,
                     MRB_ARGS_REQ(9));
+#ifndef BC2CPP_UNREGISTERED_Game__Picture_moving$3f
   mrb_define_method(M, picture, "moving?", Game__Picture_moving$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, picture, "moving?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_erase$21
   mrb_define_method(M, picture, "erase!", Game__Picture_erase$21,
                     MRB_ARGS_NONE());
@@ -1258,12 +1263,27 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   RClass* enemy_action = mrb_class_get_under(M, game, "EnemyAction");
   mrb_define_private_method(M, enemy_action, "initialize",
                             Game__EnemyAction_initialize, MRB_ARGS_REQ(1));
+#ifndef BC2CPP_UNREGISTERED_Game__EnemyAction_skill$3f
   mrb_define_method(M, enemy_action, "skill?", Game__EnemyAction_skill$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, enemy_action, "skill?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__EnemyAction_transform$3f
   mrb_define_method(M, enemy_action, "transform?",
                     Game__EnemyAction_transform$3f, MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, enemy_action, "transform?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__EnemyAction_basic$3f
   mrb_define_method(M, enemy_action, "basic?", Game__EnemyAction_basic$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, enemy_action, "basic?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 
   // Game::Screen: 39 of
   // its 43 real bytecode-defined methods compile clean. Unlike Game::Picture/
@@ -1409,8 +1429,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, screen, "pan_offset", bc2cpp_unregistered_stub,
                     MRB_ARGS_ANY());
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Screen_pan_locked$3f
   mrb_define_method(M, screen, "pan_locked?", Game__Screen_pan_locked$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, screen, "pan_locked?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_panning$3f
   mrb_define_method(M, screen, "panning?", Game__Screen_panning$3f,
                     MRB_ARGS_NONE());
@@ -1589,8 +1614,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "windowskin=", RPG2k__Window_windowskin$3d,
                     MRB_ARGS_REQ(1));
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Window_transparent$3d
   mrb_define_method(M, window, "transparent=", RPG2k__Window_transparent$3d,
                     MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, window, "transparent=", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, window, "contents=", RPG2k__Window_contents$3d,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "cursor_rect=", RPG2k__Window_cursor_rect$3d,
@@ -1896,8 +1926,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, transition, "captured?", bc2cpp_unregistered_stub,
                     MRB_ARGS_ANY());
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Transition_zoom$3f
   mrb_define_method(M, transition, "zoom?", Game__Transition_zoom$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, transition, "zoom?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_mosaic$3f
   mrb_define_method(M, transition, "mosaic?", Game__Transition_mosaic$3f,
                     MRB_ARGS_NONE());
@@ -2049,8 +2084,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, actor, "set_charset", bc2cpp_unregistered_stub,
                     MRB_ARGS_ANY());
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_sprite_changed$3f
   mrb_define_method(M, actor, "sprite_changed?", Game__Actor_sprite_changed$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, actor, "sprite_changed?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_name_changed$3f
   mrb_define_method(M, actor, "name_changed?", Game__Actor_name_changed$3f,
                     MRB_ARGS_NONE());
@@ -2105,7 +2145,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_ANY());
 #endif
   mrb_define_method(M, actor, "dead?", Game__Actor_dead$3f, MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_state$3f
   mrb_define_method(M, actor, "state?", Game__Actor_state$3f, MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, actor, "state?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_state_persists_type$3f
   mrb_define_method(M, actor, "state_persists_type?",
                     Game__Actor_state_persists_type$3f, MRB_ARGS_REQ(1));
@@ -2169,8 +2214,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, actor, "double_hand?", Game__Actor_double_hand$3f,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_equipment_fixed$3f
   mrb_define_method(M, actor, "equipment_fixed?",
                     Game__Actor_equipment_fixed$3f, MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, actor, "equipment_fixed?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_slot_cursed$3f
   mrb_define_method(M, actor, "slot_cursed?", Game__Actor_slot_cursed$3f,
                     MRB_ARGS_REQ(1));
@@ -2324,17 +2374,27 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // now correctly refuses to compile rather than silently dropping the
   // keyword (the dropped default, `preserve_mod: true`, was never what this
   // real call site actually meant).
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_class_changed$3f
   mrb_define_method(M, actor, "class_changed?", Game__Actor_class_changed$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, actor, "class_changed?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, actor, "battle_row", Game__Actor_battle_row,
                     MRB_ARGS_NONE());
   mrb_define_method(M, actor, "battle_row=", Game__Actor_battle_row$3d,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, actor, "atb_gauge", Game__Actor_atb_gauge,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_battle_commands$3d
   mrb_define_method(M, actor,
                     "battle_commands=", Game__Actor_battle_commands$3d,
                     MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, actor, "battle_commands=", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_battle_commands_changed$3f
   mrb_define_method(M, actor, "battle_commands_changed?",
                     Game__Actor_battle_commands_changed$3f, MRB_ARGS_NONE());
@@ -2442,8 +2502,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, actor, "class_row_for", bc2cpp_unregistered_stub,
                     MRB_ARGS_ANY());
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_two_handed$3f
   mrb_define_method(M, actor, "two_handed?", Game__Actor_two_handed$3f,
                     MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, actor, "two_handed?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 
   // Game::Party (see this file's
   // own top comment for the full opcode/bug-fix story) -- party-wide item/
@@ -2571,8 +2636,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, party, "alternate_battle_layout?",
                     Game__Party_alternate_battle_layout$3f, MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Party_death_handler$3f
   mrb_define_method(M, party, "death_handler?", Game__Party_death_handler$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, party, "death_handler?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_death_handler_event
   mrb_define_method(M, party, "death_handler_event",
                     Game__Party_death_handler_event, MRB_ARGS_NONE());
@@ -3180,8 +3250,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, battle, "finished?", bc2cpp_unregistered_stub,
                     MRB_ARGS_ANY());
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Battle_escaped$3f
   mrb_define_method(M, battle, "escaped?", Game__Battle_escaped$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, battle, "escaped?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, battle, "turn", Game__Battle_turn, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_acting_battler
   mrb_define_method(M, battle, "acting_battler", Game__Battle_acting_battler,
@@ -3216,8 +3291,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #endif
   mrb_define_method(M, battle, "terminate", Game__Battle_terminate,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Battle_terminated$3f
   mrb_define_method(M, battle, "terminated?", Game__Battle_terminated$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, battle, "terminated?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, battle, "run", Game__Battle_run, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_command_attack
   mrb_define_method(M, battle, "command_attack", Game__Battle_command_attack,
@@ -3247,8 +3327,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, battle, "toggle_row", bc2cpp_unregistered_stub,
                     MRB_ARGS_ANY());
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Battle_first_strike$3f
   mrb_define_method(M, battle, "first_strike?", Game__Battle_first_strike$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, battle, "first_strike?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_row_adjusted$3f
   mrb_define_method(M, battle, "row_adjusted?", Game__Battle_row_adjusted$3f,
                     MRB_ARGS_REQ(2));
@@ -3351,8 +3436,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, battle, "state_def", bc2cpp_unregistered_stub,
                     MRB_ARGS_ANY());
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Battle_ally$3f
   mrb_define_private_method(M, battle, "ally?", Game__Battle_ally$3f,
                             MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, battle, "ally?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_state_field
   mrb_define_private_method(M, battle, "state_field", Game__Battle_state_field,
                             MRB_ARGS_REQ(2));
@@ -3453,8 +3543,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, battle, "queue_single_auto_battle_skill",
                     bc2cpp_unregistered_stub, MRB_ARGS_ANY());
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Battle_critical$3f
   mrb_define_private_method(M, battle, "critical?", Game__Battle_critical$3f,
                             MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, battle, "critical?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_hits$3f
   mrb_define_private_method(M, battle, "hits?", Game__Battle_hits$3f,
                             MRB_ARGS_REQ(2));
@@ -3678,8 +3773,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, combatant, "int", Game__Battle__Combatant_int,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_state$3f
   mrb_define_method(M, combatant, "state?", Game__Battle__Combatant_state$3f,
                     MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, combatant, "state?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_back_row$3f
   mrb_define_method(M, combatant, "back_row?",
                     Game__Battle__Combatant_back_row$3f, MRB_ARGS_NONE());
@@ -4601,8 +4701,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 
   mrb_define_private_method(M, state, "initialize", Game__State_initialize,
                             MRB_ARGS_REQ(4));
+#ifndef BC2CPP_UNREGISTERED_Game__State_map_id$3d
   mrb_define_method(M, state, "map_id=", Game__State_map_id$3d,
                     MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, state, "map_id=", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_set_parallax
   mrb_define_method(M, state, "set_parallax", Game__State_set_parallax,
                     MRB_ARGS_REQ(1));
@@ -4618,8 +4723,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_ANY());
 #endif
   mrb_define_method(M, state, "vehicle", Game__State_vehicle, MRB_ARGS_REQ(1));
+#ifndef BC2CPP_UNREGISTERED_Game__State_boarded$3f
   mrb_define_method(M, state, "boarded?", Game__State_boarded$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, state, "boarded?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_walk_step
   mrb_define_method(M, state, "walk_step", Game__State_walk_step,
                     MRB_ARGS_NONE());
@@ -4843,8 +4953,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, move_route, "repeat?", Game__MoveRoute_repeat$3f,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__MoveRoute_skippable$3f
   mrb_define_method(M, move_route, "skippable?", Game__MoveRoute_skippable$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, move_route, "skippable?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, move_route, "step", Game__MoveRoute_step,
                     MRB_ARGS_REQ(2));
 
@@ -5123,8 +5238,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #endif
   mrb_define_method(M, character, "face", Game__Character_face,
                     MRB_ARGS_REQ(1));
+#ifndef BC2CPP_UNREGISTERED_Game__Character_face$21
   mrb_define_method(M, character, "face!", Game__Character_face$21,
                     MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, character, "face!", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, character, "move", Game__Character_move,
                     MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_Game__Character_jump
@@ -5284,10 +5404,20 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // the real source (confirmed directly, not guessed from bc2cpp's own
   // diagnostic), so every method below is `mrb_define_method`.
   RClass* shop = mrb_class_get_under(M, game, "Shop");
+#ifndef BC2CPP_UNREGISTERED_Game__Shop_allow_buy$3f
   mrb_define_method(M, shop, "allow_buy?", Game__Shop_allow_buy$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, shop, "allow_buy?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Shop_allow_sell$3f
   mrb_define_method(M, shop, "allow_sell?", Game__Shop_allow_sell$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, shop, "allow_sell?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, shop, "price", Game__Shop_price, MRB_ARGS_REQ(1));
   // #name collides by bare name with mruby core's own Symbol#name/
   // Class#name (registered via `symbol_rom_entries`'s own MRB_MT_ENTRY
@@ -5301,7 +5431,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, shop, "name", Game__Shop_name, MRB_ARGS_REQ(1));
   mrb_define_method(M, shop, "description", Game__Shop_description,
                     MRB_ARGS_REQ(1));
+#ifndef BC2CPP_UNREGISTERED_Game__Shop_equip$3f
   mrb_define_method(M, shop, "equip?", Game__Shop_equip$3f, MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, shop, "equip?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Shop_sell_price
   mrb_define_method(M, shop, "sell_price", Game__Shop_sell_price,
                     MRB_ARGS_REQ(1));
@@ -5451,8 +5586,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #endif
   mrb_define_method(M, enemy_ai, "skill_helps_troop?",
                     Game__EnemyAi_skill_helps_troop$3f, MRB_ARGS_REQ(3));
+#ifndef BC2CPP_UNREGISTERED_Game__EnemyAi_switch$3f
   mrb_define_method(M, enemy_ai, "switch?", Game__EnemyAi_switch$3f,
                     MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, enemy_ai, "switch?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__EnemyAi_set_switch
   mrb_define_method(M, enemy_ai, "set_switch", Game__EnemyAi_set_switch,
                     MRB_ARGS_REQ(2));
@@ -5947,8 +6087,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // registration line at all. Reuses the `game` RClass* declared at the
   // top of this function.
   RClass* text_reveal = mrb_class_get_under(M, game, "TextReveal");
+#ifndef BC2CPP_UNREGISTERED_Game__TextReveal_auto_close$3f
   mrb_define_method(M, text_reveal, "auto_close?",
                     Game__TextReveal_auto_close$3f, MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, text_reveal, "auto_close?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
   mrb_define_method(M, text_reveal, "done?", Game__TextReveal_done$3f,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__TextReveal_reveal_all
@@ -6887,8 +7032,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   g_direct_construct_game_message_config_class = message_config;
   mrb_define_private_method(M, message_config, "initialize",
                             Game__MessageConfig_initialize, MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__MessageConfig_face$3f
   mrb_define_method(M, message_config, "face?", Game__MessageConfig_face$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, message_config, "face?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__MessageConfig_clear_face
   mrb_define_method(M, message_config, "clear_face",
                     Game__MessageConfig_clear_face, MRB_ARGS_NONE());
@@ -7137,8 +7287,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             Game__Interpreter_variables, MRB_ARGS_NONE());
   mrb_define_method(M, interpreter, "running?", Game__Interpreter_running$3f,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Interpreter_waiting$3f
   mrb_define_method(M, interpreter, "waiting?", Game__Interpreter_waiting$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, interpreter, "waiting?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_move_route_requests
   mrb_define_method(M, interpreter, "take_move_route_requests",
                     Game__Interpreter_take_move_route_requests,
@@ -9748,9 +9903,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, event_graphic, "continuous?",
                           bc2cpp_unregistered_stub, MRB_ARGS_ANY());
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__EventGraphic_singleton_animated$3f
   mrb_define_class_method(M, event_graphic, "animated?",
                           Game__EventGraphic_singleton_animated$3f,
                           MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_class_method(M, event_graphic, "animated?",
+                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__EventGraphic_singleton_pattern_column
   mrb_define_class_method(M, event_graphic, "pattern_column",
                           Game__EventGraphic_singleton_pattern_column,
@@ -9977,8 +10137,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #endif
   mrb_define_method(M, rpg2k, "current_scene_name", RPG2k_current_scene_name,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_RPG2k_show_title$3f
   mrb_define_method(M, rpg2k, "show_title?", RPG2k_show_title$3f,
                     MRB_ARGS_NONE());
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, rpg2k, "show_title?", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k_boot_title_or_new_game
   mrb_define_method(M, rpg2k, "boot_title_or_new_game",
                     RPG2k_boot_title_or_new_game, MRB_ARGS_NONE());
@@ -10119,15 +10284,30 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // flags).
   RClass* map_access = mrb_module_get_under(M, game, "MapAccess");
 
+#ifndef BC2CPP_UNREGISTERED_Game__MapAccess_singleton_save_allowed$3f
   mrb_define_class_method(M, map_access, "save_allowed?",
                           Game__MapAccess_singleton_save_allowed$3f,
                           MRB_ARGS_REQ(2));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_class_method(M, map_access, "save_allowed?",
+                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__MapAccess_singleton_teleport_allowed$3f
   mrb_define_class_method(M, map_access, "teleport_allowed?",
                           Game__MapAccess_singleton_teleport_allowed$3f,
                           MRB_ARGS_REQ(2));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_class_method(M, map_access, "teleport_allowed?",
+                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__MapAccess_singleton_escape_allowed$3f
   mrb_define_class_method(M, map_access, "escape_allowed?",
                           Game__MapAccess_singleton_escape_allowed$3f,
                           MRB_ARGS_REQ(2));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_class_method(M, map_access, "escape_allowed?",
+                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__MapAccess_singleton_allowed$3f
   mrb_define_class_method(M, map_access, "allowed?",
                           Game__MapAccess_singleton_allowed$3f,
@@ -10230,9 +10410,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, battle_page, "check_turns",
                           bc2cpp_unregistered_stub, MRB_ARGS_ANY());
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__BattlePage_singleton_active$3f
   mrb_define_class_method(M, battle_page, "active?",
                           Game__BattlePage_singleton_active$3f,
                           MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_class_method(M, battle_page, "active?", bc2cpp_unregistered_stub,
+                          MRB_ARGS_ANY());
+#endif
 
   // Game::WindowCursor.singleton -- its one real method (mruby-rpg2k/
   // mrblib/game.rb: `#dest_rect`, the selection cursor's own destination
@@ -10268,9 +10453,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 
   mrb_define_class_method(M, event_page, "compare",
                           Game__EventPage_singleton_compare, MRB_ARGS_REQ(3));
+#ifndef BC2CPP_UNREGISTERED_Game__EventPage_singleton_active$3f
   mrb_define_class_method(M, event_page, "active?",
                           Game__EventPage_singleton_active$3f,
                           MRB_ARGS_REQ(4) | MRB_ARGS_OPT(2));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_class_method(M, event_page, "active?", bc2cpp_unregistered_stub,
+                          MRB_ARGS_ANY());
+#endif
 
   // Game::CharSet.singleton -- its one real method (mruby-rpg2k/mrblib/
   // game.rb: `#frame_rect`, a charset sprite sheet's own per-frame source

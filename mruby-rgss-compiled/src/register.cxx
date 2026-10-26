@@ -402,7 +402,12 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   RClass* bitmap = mrb_class_get_under(M, rgss, "Bitmap");
 
   mrb_define_method(M, bitmap, "font", RGSS__Bitmap_font, MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_RGSS__Bitmap_font$3d
   mrb_define_method(M, bitmap, "font=", RGSS__Bitmap_font$3d, MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_method(M, bitmap, "font=", bc2cpp_unregistered_stub,
+                    MRB_ARGS_ANY());
+#endif
 
   // RGSS::Bitmap.singleton --
   // this project's first `.singleton`-owned bc2cpp entries. Both are real
@@ -616,10 +621,20 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, input, "release", RGSS__Input_singleton_release,
                           MRB_ARGS_REQ(1));
+#ifndef BC2CPP_UNREGISTERED_RGSS__Input_singleton_press$3f
   mrb_define_class_method(M, input, "press?", RGSS__Input_singleton_press$3f,
                           MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_class_method(M, input, "press?", bc2cpp_unregistered_stub,
+                          MRB_ARGS_ANY());
+#endif
+#ifndef BC2CPP_UNREGISTERED_RGSS__Input_singleton_trigger$3f
   mrb_define_class_method(M, input, "trigger?",
                           RGSS__Input_singleton_trigger$3f, MRB_ARGS_REQ(1));
+#elif defined(BC2CPP_UNREGISTERED_VERIFY)
+  mrb_define_class_method(M, input, "trigger?", bc2cpp_unregistered_stub,
+                          MRB_ARGS_ANY());
+#endif
   mrb_define_class_method(M, input, "repeat?", RGSS__Input_singleton_repeat$3f,
                           MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_RGSS__Input_singleton_dir4
