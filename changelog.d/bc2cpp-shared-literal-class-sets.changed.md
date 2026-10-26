@@ -1,0 +1,1 @@
+- Share frozen builtin literal class sets in bc2cpp constant analysis, avoiding repeated singleton Set allocations during class queries and Integer proofs.
