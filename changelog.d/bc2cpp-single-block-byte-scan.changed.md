@@ -1,0 +1,1 @@
+- Avoid per-character String allocations when bc2cpp checks inline-loop snippets for a single braced scope, preserving literal masking and scope decisions.
