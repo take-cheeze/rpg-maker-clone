@@ -1114,7 +1114,8 @@
   required compiler fixtures. Existing deferred audits have explicit reasons.
 
 - bc2cpp shares foreign Ruby method-name scans across closed-world proof queries,
-  avoiding a repeated AST walk for every queried name. See
+  avoiding a repeated AST walk for every queried name. Its name visitors dispatch
+  on Prism's existing Symbols to avoid temporary Strings for ordinary calls. See
   [foreign method scanning](docs/bc2cpp-foreign-method-scanning.md) for measurements.
 
 - [Native-result proofs](docs/bc2cpp-native-result-performance.md) reuse immutable
