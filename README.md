@@ -1607,7 +1607,7 @@
   instances of one class makes `@ui[:battle].step_action` an unguarded exact-class call, and a
   non-nil Array key feeds the inlined Array loops. Any other use of the Hash (passing it on, `merge!`,
   `dup`, `send`, `Marshal`, a computed key) refuses the ivar. See
-  [`docs/adr/0285-bc2cpp-record-hash-typing.md`](docs/adr/0285-bc2cpp-record-hash-typing.md).
+  [`docs/adr/0285-bc2cpp-record-hash-typing.md`](docs/adr/0285-bc2cpp-record-hash-typing.md). Record-hash alias scans keep register IDs numeric and reuse operand register arrays.
   The LCF schema table (`tools/bc2cpp/lcf_schema_oracle.rb`) now drives a whole-program class flow
   (`LCF_ROW_FLOW`): a value proven to be a `LCF::Database`, a table or a row makes `db[:x][i][:y]` exact-class,
   guard-free direct calls, and a field read gets its schema class. `LCF::Array2D#[]=` keeps only nil, bytes

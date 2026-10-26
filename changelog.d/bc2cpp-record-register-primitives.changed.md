@@ -1,0 +1,1 @@
+- Keep record-hash scanner registers numeric through HASHADD tracking and reuse operand register arrays instead of allocating converted copies.
