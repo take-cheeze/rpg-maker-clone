@@ -1,0 +1,1 @@
+- Share bc2cpp operand lookup indexes by schema, removing one Hash allocation per ordinary decoded or synthetic instruction.
