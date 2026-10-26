@@ -59,6 +59,15 @@ any of these could look it up:
     Symbols, identifier-shaped strings and implicit operators always count.
     A file with a reflective send (`__send__`, `instance_exec`,
     `define_method`, ...) or a `method_missing` keeps the text rule;
+  - a setter, predicate or bang name (`x=`, `x?`, `x!`) stays registered
+    because of its base name `x` only when `x` was read as text: a text
+    scan reads `obj.x = 1` as `x`, and a naming macro may append the suffix
+    itself. A name from bytecode or a C string literal is the exact name
+    looked up, so `done` being dynamic no longer keeps `done?`. If a
+    one-character literal `"="`, `"?"` or `"!"` may reach a built string
+    (the fragment rule above), `"#{x}="` could build the suffixed name from
+    any base, and the old rule (every dynamic base) comes back. The full
+    list keeps the old rule;
 
 Only RPG2000/2003 internal owners qualify (`Game`, `RPG2k`, `RPG2k3`,
 `LCF`). RGSS classes are the scripting API an RPGXP/VX game's own scripts
