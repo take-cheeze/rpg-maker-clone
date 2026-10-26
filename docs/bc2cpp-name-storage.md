@@ -18,7 +18,9 @@ to the operand schema already invalidate the decoded-cache fingerprint.
 
 `scripts/bc2cpp/name_strings_check.rb` verifies sharing, caller ownership, encoding,
 non-name operands, synthetic instructions and cache restoration. With `MRBC` set,
-it also checks repeated names produced by binary decoding.
+it also checks repeated names produced by binary decoding. CI runs the host checks
+in the Ruby job and the binary checks in the compiler job; both phases are
+classified in `scripts/ci/bc2cpp_check_policy.yml`.
 
 ## Retained heap measurement
 

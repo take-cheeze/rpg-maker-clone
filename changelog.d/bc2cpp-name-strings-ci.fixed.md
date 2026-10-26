@@ -1,0 +1,1 @@
+- **CI** declares name-storage check prerequisites and runs its binary-decoding checks in the compiler job, fixing the check-registry failure.
