@@ -1024,6 +1024,7 @@
 
 ### Performance
 
+- Symbol and factory value walks reuse immutable instruction read-register lists; see [symbol flow](docs/bc2cpp-ir-symbol-flow.md).
 - Further compiler Array-allocation candidates, sequencing and validation gates are documented in the [optimization plan](docs/bc2cpp-array-allocation-plan.md). These changes are proposed.
 
 - LCF schema-kind membership checks use bit positions to avoid temporary large Integer intersections; see [LCF masks](docs/bc2cpp-lcf-mask-performance.md).
@@ -1505,6 +1506,8 @@
   preserve caller-owned strings; see [query keys](docs/bc2cpp-type-check.md#reaching-definition-query-keys).
   Factory use walks traverse with a flat work stack and per-origin visited sets;
   see [factory work stacks](docs/bc2cpp-ir-symbol-flow.md#flat-factory-work-stacks).
+  The Fixnum proof walk borrows shared definitions instead of copying results;
+  see [shared definitions](docs/bc2cpp-type-check.md#shared-reaching-definitions-in-the-fixnum-proof).
   Embedding compile probes reuse a fixed state-key list and restore caller state
   without temporary pairs. Eligibility probes also skip error-free register-text
   optimization while final emission retains it; see [probe state](docs/bc2cpp-type-check.md#embedding-compile-probe-state).
