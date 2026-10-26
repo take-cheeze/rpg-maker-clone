@@ -1024,6 +1024,8 @@
 
 ### Performance
 
+- Further compiler Array-allocation candidates, sequencing and validation gates are documented in the [optimization plan](docs/bc2cpp-array-allocation-plan.md). These changes are proposed.
+
 - Inline-loop scope checks scan brace bytes without temporary character Strings; see [register output](docs/bc2cpp-register-output.md).
 
 - Constant analysis shares frozen builtin class sets to avoid repeated singleton allocations; see [constant facts](docs/bc2cpp-ir-constant-facts.md).
