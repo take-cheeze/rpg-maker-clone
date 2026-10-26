@@ -1,10 +1,11 @@
 # Plans for further bc2cpp Array allocation reductions
 
 Status: proposed, not implemented. Each independently useful change gets its own
-branch and PR. Start from current master and account for pending
+branch and PR. Start from current master and account for
 [PR #2874](https://github.com/take-cheeze/rpg-maker-clone/pull/2874) (instruction read
 lists) and [PR #2875](https://github.com/take-cheeze/rpg-maker-clone/pull/2875) (LCF
-mask predicates); do not reimplement those changes or mix their savings into a new
+mask predicates). If a prerequisite is not merged, record an explicit combined
+checkout. Do not reimplement those changes or mix their savings into a new
 candidate's measurements.
 
 The previous allocation profile identifies possible sites, not guaranteed savings.
