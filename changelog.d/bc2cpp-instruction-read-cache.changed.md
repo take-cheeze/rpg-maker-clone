@@ -1,0 +1,1 @@
+- Reuse frozen per-instruction read-register lists during symbol and factory value walks, avoiding repeated temporary read collections while preserving query and handler behavior.

@@ -46,6 +46,40 @@ the exact universe of a literal table, each premise's refusal and each escape (a
 receiver, `Cpu::TABLE`, a written element, the writer named as data, a `concat` entry, a splat
 writer call and `send(:x, *TABLE[i])`). The bc2cpp job runs it.
 
+## Instruction-read reuse
+
+When following different values through one body, `value_reads_compute` reuses a
+frozen read-register list for each visited instruction. The cache belongs to that
+body's immutable `BytecodeIR::Program`, is indexed by instruction position, and
+is bounded by the instruction count. It does not cache a value walk, alias
+budget, handler decision or captured-register decision. Equal labels in different
+bodies cannot share this metadata.
+
+`BC2CPP_SYMBOL_READS_CACHE=0` restores reconstruction of the read lists for
+comparison. The public `reads` helper still returns its ordinary result. Existing
+value-query caching is independent. The bytecode and register count must remain
+unchanged while its Program is in use, as required by the other IR caches.
+
+`symbol_flow_check.rb` covers distinct origins, frozen instruction-aligned lists,
+body isolation and repeated-walk allocation counts, comparing query results with
+the instruction cache disabled. Existing factory and dynamic-name fixtures check
+normal/handler flow and conservative refusals.
+
+Two alternating warm-cache comparisons on Ruby 4.0.5 + YJIT, using the desktop
+closed whole-engine source set with all compiled owners and hot-only disabled:
+
+| Run | Baseline wall | Read-cache wall | Baseline objects | Read-cache objects |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 49.668 s | 49.206 s | 75,292,525 | 72,644,169 |
+| 2 | 48.871 s | 48.937 s | 75,292,584 | 72,644,377 |
+
+This removes about 2.65 million allocations per generation (3.52%). The timing
+changes go in opposite directions, so these local runs do not demonstrate a
+consistent elapsed-time improvement. Generated C++ and diagnostics match after
+normalizing checkout paths and stripping diagnostic timing lines; workload input
+hashes match. The baseline is commit `8d7a15765`, before the separate inline-scope
+byte scan. These measurements exclude C++ compilation and game runtime.
+
 ## Instruction-indexed read memo
 
 Forward reads for `(instruction, register)` pairs are memoized per irep object in a two-level
