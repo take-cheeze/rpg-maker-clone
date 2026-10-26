@@ -564,6 +564,23 @@ refactor's overhead in the optimized measurement. Allocations fell from
 and report JSON were byte-identical. One object-profiled timing pair was
 52.381s versus 51.253s, which does not establish a stable wall-time speedup.
 
+### Dominance query opaque keys
+
+Join-dominance queries reuse the same canonical opaque-register key snapshots
+as reaching-definition queries instead of sorting and freezing a fresh snapshot
+per query. Mutable opaque inputs keep the uncached path, explicitly empty and
+absent inputs stay distinct, and `BC2CPP_IR_QUERY_KEYS=0` restores per-query
+key copying for both query kinds. The dominance control initializes on first
+use, so a dominance-first Program behaves like a reaching-definition-first one.
+
+Two serial warm-cache Ruby 4.0.5/YJIT whole-engine comparisons reduced
+allocations from 75,292,726 to 68,332,463 (6,960,263 fewer, 9.25%) and from
+75,292,530 to 68,332,871 (6,959,659 fewer, 9.25%). Generated C++ matched
+(SHA256 7c49ffbcd22826756bc170de9f283ca97bcf9a0d26cc42d832c1e065e3f5fe after
+normalizing checkout roots) and diagnostic logs matched after timing-line and
+root normalization. Wall time moved 49.324s to 49.348s and 48.178s to 48.556s;
+these runs do not establish a stable elapsed-time gain.
+
 ### Decoded call-arity predicates
 
 Fixed-argument and pure-splat predicates classify the decoded positional count
