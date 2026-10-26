@@ -280,4 +280,21 @@ suite.compile('factory = Class; copy = factory; copy.new(Object); nil') do |irep
              FactoryFlow.uses(body, index, body.instructions[index].reg, max_aliases: 0).nil?)
 end
 
+# Flat factory work stack: traversal pairs are pushed separately with
+# per-origin visited data, so no per-state pair Array is built. LIFO order,
+# duplicate suppression, result insertion order and budget refusal are unchanged.
+suite.compile('factory = Class; copy = factory; copy.new(Object); nil') do |ireps, root|
+  body = ireps.fetch(root)
+  index = body.instructions.index { |i| i.op == :GETCONST && i.const_name == 'Class' }
+  reg = body.instructions[index].reg
+  first = FactoryFlow.uses(body, index, reg)
+  check.call('a flat-stack walk finds the same uses in the same order',
+             first.to_a == FactoryFlow.uses(body, index, reg).to_a)
+  exact = first.size + body.instructions.length
+  check.call('a budget at the visited-state count still answers',
+             !FactoryFlow.uses(body, index, reg, max_aliases: exact).nil?)
+  check.call('a budget below the visited-state count refuses',
+             FactoryFlow.uses(body, index, reg, max_aliases: 1).nil?)
+end
+
 suite.finish!
