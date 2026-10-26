@@ -140,3 +140,12 @@ The goto-off build is byte-identical to the same tree before the change. With
 the model on, 39 emitted method functions differ; every one has the optional-
 argument switch in its goto-off text, and the 246 other newly accepted methods
 keep their text (the copy and write counts above come from those 39).
+
+## Numeric register boundaries
+
+Optional-parameter signature reports query contracts using Integer register IDs,
+matching the signature loader. Resumable `Fiber.yield` interception also keeps
+receiver IDs numeric when subtracting an inlined helper's register offset before
+tracing the original body. Converting either ID to a String loses the contract
+lookup or raises when indexing the writer table. `typed_immediates_check.rb`
+covers both boundaries, including inlined offsets and an unrelated receiver.
