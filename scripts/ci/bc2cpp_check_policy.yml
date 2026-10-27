@@ -460,6 +460,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/core_definer_mono_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/integer_bit_aref_check.rb:
     tier: runtime
     capabilities:
