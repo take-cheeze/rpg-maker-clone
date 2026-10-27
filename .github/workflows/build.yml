@@ -801,6 +801,7 @@ jobs:
           ruby scripts/bc2cpp/shard_output_check.rb
           ruby scripts/bc2cpp/yield_c_boundary_check.rb
           ruby scripts/bc2cpp/module_function_scope_check.rb
+          ruby scripts/bc2cpp/compiled_owners_check.rb
           ruby scripts/bc2cpp/escape_receiver_flow_check.rb
           ruby scripts/bc2cpp/skipped_direct_call_check.rb
           ruby scripts/bc2cpp/array_literal_block_check.rb
