@@ -1113,9 +1113,13 @@ if closed
   MRuby::Build.new('closed') do |conf|
     toolchain :gcc
 
-    # enable_debug's -O0 stays: this build is compiled to be checked, never run for speed, and the
-    # generated files are large.
+    # enable_debug's -O0 stays: this build is compiled to be checked, and the generated files are large.
+    # BC2CPP_CLOSED_OPTIMIZE=1 drops it (leaving mruby's default -O3) for timing and profiling runs
+    # (scripts/bc2cpp/trace_host.bash).
     enable_debug
+    if ENV['BC2CPP_CLOSED_OPTIMIZE'] == '1'
+      [conf.cc, conf.cxx].each { |t| t.flags = t.flags.flatten.delete_if { |v| v == '-O0' } }
+    end
     # The C++ exception mode the generated code assumes (load_gems.rb would also turn it on for the
     # gems' .cxx sources; this says so outright).
     enable_cxx_exception

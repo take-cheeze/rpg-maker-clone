@@ -55,6 +55,25 @@ Inspect the dump with the existing tool:
 ruby scripts/bc2cpp/trace_types.rb report BUILD_DIR/trace-host/param_trace.tsv
 ```
 
+## Timing and profiling
+
+The host defines `NO_RENDER_WAIT`, so `Graphics.update` does not pace frames to 60 fps (`mruby-rgss/src/lib.cxx`).
+Every game timer runs off `frame_count`, so the frames are the ones a paced run plays, and a timed run measures work
+rather than the sleep.
+
+The `closed` build compiles at -O0 so the large generated files build quickly. For timing or profiling,
+`BC2CPP_CLOSED_OPTIMIZE=1 scripts/bc2cpp/closed_build.bash DIR` drops enable_debug's -O0, leaving mruby's default
+-O3 (`build_config.rb`). Then, for example:
+
+```bash
+BC2CPP_HOST_FRAMES=1 scripts/bc2cpp/trace_host.bash DIR   # builds DIR/trace-host/trace_host
+BC2CPP_HOST_BATTLE_TROOP=1 BC2CPP_HOST_BATTLE_PLAY=1 \
+  valgrind --tool=callgrind DIR/trace-host/trace_host data/Nepheshel206beta/Nepheshel206Rbeta 1200
+```
+
+A one-frame run is boot, title, New Game and the first map (mostly LCF parsing); subtracting it from a longer run
+leaves the per-frame work.
+
 ## Results (this host, 4 cores)
 
 - Plain closed build: `built .../closed/lib/libmruby.a`; the traced build
