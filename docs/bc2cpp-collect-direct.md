@@ -54,12 +54,7 @@ takes the by-name path. `BC2CPP_COLLECT_DIRECT=0` keeps the
 `Enumerable#collect` call.
 
 `scripts/bc2cpp/collect_direct_check.rb` compares interpreted and compiled
-runs. It also covers two small changes made in the same pass:
-
-- `NEQ_INTEGER_PAIR` (`codegen_native_send.rb`): `!=` on two Integers compares
-  them directly. `BasicObject#!=` is `!(self == other)` with `OP_EQ`, which
-  compares two Integers without a send; `mrb_equal` got the same answer through
-  a by-name `==` call whenever the values differed.
-- `POLY_IMMEDIATE_TAG` (`codegen_ivar_poly.rb`): a `POLY_SMALL_N` chain tests
-  an Integer, Float or Symbol arm by its type tag, ahead of the arms that read
-  the receiver's class.
+runs. The startup also gains from `NEQ_INTEGER_PAIR` and `POLY_INTEGER_TAG`
+([bc2cpp-array-write-inline.md](bc2cpp-array-write-inline.md)): the TILE_LUT
+loop's `x != 0` and the probe's `Integer#[]` shim, so the check keeps
+behaviour cases for both.
