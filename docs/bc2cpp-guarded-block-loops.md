@@ -9,6 +9,17 @@ behind a run-time exact-class test (`mrb_array_p(r) && class == Array`), and
 the ordinary send stays behind it as the else. Every other receiver (a
 subclass, a Hash, nil, a user class) dispatches exactly as before.
 
+## A nil receiver of an unguarded loop
+
+The "proven" class of an unguarded loop can come from an ivar's class hint
+(`@list = []` in some method). An ivar that no path has assigned yet is nil.
+In front of its type tripwire, each loop therefore tests nil and runs the
+send's own NoMethodError there (`bc2cpp_nil_receiver`, INLINE_NIL_RECEIVER),
+so `@list.each { }` on an unset `@list` raises what the interpreter raises.
+That holds when no nil method has the name (`nil_unanswerable?`); otherwise
+the tripwire stays. `scripts/bc2cpp/inline_nil_receiver_check.rb` covers the
+Array and Hash loops.
+
 ## The arm gate
 
 A guarded loop is sound only if it does what the send would do for that

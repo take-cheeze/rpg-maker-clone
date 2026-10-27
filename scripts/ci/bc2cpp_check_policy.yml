@@ -467,7 +467,35 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/core_definer_mono_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/integer_bit_aref_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/array_hash_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/integer_fast_arms_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/bigint_slow_arms_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -496,6 +524,13 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/range_map_inline_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/inline_nil_receiver_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -531,6 +566,30 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/block_iterator_direct_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/kernel_loop_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/const_lexical_order_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/const_bindings_check.rb:
     tier: runtime
     capabilities:
     - mrbc

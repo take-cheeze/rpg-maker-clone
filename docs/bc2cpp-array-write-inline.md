@@ -26,13 +26,13 @@ call it used before.
   `ary_rotate_bang` and `rev`. The call is a mirror,
   `bc2cpp_ary_rotate_bang`. The exact-Array arm sits in front of the owner
   call, which stays the else for every other receiver or argument.
-- **NEQ_INTEGER_PAIR** (tools/bc2cpp/codegen_native_send.rb). `!=` is
-  `!mrb_equal`, which sends `Integer#==` for every pair of Integers that are
-  not identical. Two Integers are now compared inline before `mrb_equal`, but
-  only when the closed world proves `Integer#==` is still numeric.c's
-  `int_equal` (`integer_eq_native?`). If the program defines its own
-  `Integer#==`, prepends a module to Integer or installs `==` dynamically, the
-  site keeps plain `!mrb_equal`.
+- **NEQ_OP_EQ** (`compile_neq_op_eq`, tools/bc2cpp/codegen_native_send.rb).
+  `BasicObject#!=` is class.c's bytecode `!(self == other)`, so it answers what
+  `OP_EQ` answers. Two Integers, or an Integer/Float pair, are compared in
+  place. A Ruby `Integer#==` or `Float#==` does not change that, because
+  `OP_EQ` ignores it. Identity and the Symbol shortcut come next. A bigint
+  receiver sends `==`, and every other operand keeps `!mrb_equal`. Plain
+  `!mrb_equal` sent a reopened `Integer#==` that the interpreter never calls.
 - **POLY_INTEGER_TAG** (`compile_poly_small_n`,
   tools/bc2cpp/codegen_ivar_poly.rb). In a POLY_SMALL_N chain that has an
   Integer arm, the receiver's class is read once, as `M->integer_class` for an
