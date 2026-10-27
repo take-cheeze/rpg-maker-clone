@@ -101,6 +101,8 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   # (its #include of their *_decls.h needs that file to exist by compile
   # time; see the sibling file's own comment for why this stays a DAG).
   file "#{dir}/src/register.cxx" => [generated, *other_generated]
+  # BC2CPP_SHARDS (docs/bc2cpp-shards.md): the rest of the generated code, compiled beside register.cxx.
+  bc2cpp_compiled_gem_shards(spec, generated, other_generated)
   cxx.include_paths << build_dir
   cxx.defines << 'BC2CPP_FAIL_FAST_TYPE' if BC2CPP_FAIL_FAST_TYPE
   # include/rgss_construct.hxx for bc2cpp's own emitted

@@ -670,6 +670,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/shard_output_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/explicit_block_arg_direct_check.rb:
     tier: runtime
     capabilities:
