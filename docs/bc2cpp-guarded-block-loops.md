@@ -20,6 +20,18 @@ That holds when no nil method has the name (`nil_unanswerable?`); otherwise
 the tripwire stays. `scripts/bc2cpp/inline_nil_receiver_check.rb` covers the
 Array and Hash loops.
 
+## A Range's bounds
+
+`(a..b).each { }` with a receiver proven a Range is still only half
+proven: the counter loop needs Integer bounds, and `('a'..'c')`,
+`(1..2.5)` or a bigint bound iterate through `Range#each`'s other paths.
+So that loop is a guarded one too (`RANGE_EACH_GUARD`,
+`range_each_guarded_glue`): it runs when the bounds are Integers, and any
+other Range jumps to the ordinary send behind it. A method with no place
+for that send (a resumable body, a rescue try body) keeps the send alone.
+`scripts/bc2cpp/range_each_guard_check.rb` compares interpreted and
+compiled runs over String, Float, bigint and Integer bounds.
+
 ## The arm gate
 
 A guarded loop is sound only if it does what the send would do for that
