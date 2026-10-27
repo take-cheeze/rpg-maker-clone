@@ -3,7 +3,9 @@
 A compiled method needs a method-table entry only if something can look it up
 by name at runtime. When every caller reaches it through a direct `_impl` call
 in generated C++, bc2cpp leaves it out of the table: no `mrb_define_method`
-call, and no `mrb_get_args` wrapper kept alive for it.
+call, and no `mrb_get_args` wrapper kept alive for it. The gem's mrblib has
+already defined the method as bytecode (or as an `attr_*` accessor) by then,
+so the generated registration removes that definition too.
 
 ## What decides it
 
@@ -138,8 +140,11 @@ Every compiled method is registered by the generated
 `bc2cpp_gem_init` and `bc2cpp_gem_final`, and
 `static_dispatch_scan_check.rb` fails if one registers a method by hand. An
 entry the build's list leaves out gets `bc2cpp_left_out` instead of its
-registration. In verify mode that registers the stub below. In a plain closed
-build it records the entry for `respond_to?` (see "Symbols" above).
+registration. In verify mode that registers the stub below, over the mrblib
+definition. In any other build it removes the definition, if the owner itself
+holds one (an inherited one belongs to another entry, and every entry of a
+listed name is listed). A plain closed build also records the entry for
+`respond_to?` (see "Symbols" above).
 
 The probe generates its C++ with `BC2CPP_BUILD_NAME=closed`, so the names
 on either list are missing from its registrations. Every run therefore

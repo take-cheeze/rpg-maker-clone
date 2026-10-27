@@ -1272,6 +1272,8 @@
   [inline Integer arms](docs/bc2cpp-integer-fast-arms.md) ahead of their generic paths.
   `n[i]` on a Fixnum is an [inline bit read](docs/bc2cpp-integer-bit-aref.md) when
   the program's only `Integer#[]` is `(self >> i) & 1`.
+  The compiler's own type, class and bounds guards carry
+  [branch hints](docs/bc2cpp-branch-hints.md) (`BC2CPP_BRANCH_HINTS=0` compares).
   `hash` on an exact Array of Fixnums (an Array Hash key) is
   [computed natively](docs/bc2cpp-array-hash.md) with the interpreter's value.
   A `freeze` of a core iterator's result on a literal keeps embedded ivar stores free of the
