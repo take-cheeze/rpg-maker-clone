@@ -39,8 +39,8 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   # round of parallel coverage-expansion work into an already-built tree
   # -- `generated` was stale, silently
   # missing the round's own new owner, and g++ failed on an undeclared
-  # `_impl` symbol only because register.cxx's own hand-written call site
-  # for it happened to still be there.
+  # `_impl` symbol only because a hand-written register.cxx call site
+  # (since replaced by the generated registration) still named it.
   compiled_gems_rb = "#{dir}/../tools/bc2cpp/compiled_gems.rb"
   # Whole-program closed-world source set -- same reasoning as
   # mruby-lcf-compiled/mrbgem.rake's own comment: bc2cpp's MONO/POLY

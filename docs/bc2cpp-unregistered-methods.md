@@ -3,7 +3,9 @@
 A compiled method needs a method-table entry only if something can look it up
 by name at runtime. When every caller reaches it through a direct `_impl` call
 in generated C++, bc2cpp leaves it out of the table: no `mrb_define_method`
-call, and no `mrb_get_args` wrapper kept alive for it.
+call, and no `mrb_get_args` wrapper kept alive for it. The gem's mrblib has
+already defined the method as bytecode (or as an `attr_*` accessor) by then,
+so the generated registration removes that definition too.
 
 ## What decides it
 
@@ -125,43 +127,30 @@ Regenerate them with:
 ```sh
 MRBC=<host mrbc> ruby tools/bc2cpp/static_dispatch_registrations.rb --write
 MRBC=<host mrbc> ruby tools/bc2cpp/static_dispatch_registrations.rb --closed-only --write
-ruby scripts/bc2cpp/prune_static_dispatch_registrations.rb            # open list: removes hand lines
-ruby scripts/bc2cpp/prune_static_dispatch_registrations.rb --closed   # closed list: guards hand lines
 ```
 
 Repeat the `--closed-only --write` step until the list stops growing:
 each dropped registration removes generated code that mentioned other names.
 
-### Hand-written registrations
+### Generated registration only
 
-The generator registers only some owners (the wired embeddings and the core
-owners). Every other compiled method is registered by a hand-written line in
-its gem's `src/register.cxx`, and those lines run in every build. The open
-list's lines are simply deleted. A closed-list line is wrapped instead:
-
-```cpp
-#ifndef BC2CPP_UNREGISTERED_Game__Picture_finish_zoom
-  mrb_define_method(M, picture, "finish_zoom", Game__Picture_finish_zoom, ...);
-#else
-  bc2cpp_left_out(M, picture, "finish_zoom", false);
-#endif
-```
-
-The generated code, which `register.cxx` includes, defines
-`BC2CPP_UNREGISTERED_<entry>` for each entry the build's list leaves out,
-and `bc2cpp_left_out` (the generated registration calls it too). In verify
-mode it registers the stub below. In a plain closed build it records the
-entry for `respond_to?` (see "Symbols" below).
-Without this, a closed-listed name with a hand line stayed registered in
-the closed build, and verify mode's stub was overwritten by the real
-method. `static_dispatch_scan_check.rb` runs `--closed --check`, which
-fails when a listed line is unguarded or a guarded one is no longer listed.
+Every compiled method is registered by the generated
+`bc2cpp_register_owner_methods`, the same in every build. Each compiled gem's
+`src/register.cxx` only includes the generated file and calls its
+`bc2cpp_gem_init` and `bc2cpp_gem_final`, and
+`static_dispatch_scan_check.rb` fails if one registers a method by hand. An
+entry the build's list leaves out gets `bc2cpp_left_out` instead of its
+registration. In verify mode that registers the stub below, over the mrblib
+definition. In any other build it removes the definition, if the owner itself
+holds one (an inherited one belongs to another entry, and every entry of a
+listed name is listed). A plain closed build also records the entry for
+`respond_to?` (see "Symbols" above).
 
 The probe generates its C++ with `BC2CPP_BUILD_NAME=closed`, so the names
-already on the closed list are missing from its registrations.
-`--closed-only` therefore counts both lists as already unregistered. If it
-did not, a rerun would drop every name on the closed list from the candidate
-set and write a shorter list than the one checked in.
+on either list are missing from its registrations. Every run therefore
+counts both lists as already unregistered. If it did not, a rerun would drop
+those names from the candidate set and write a shorter list than the one
+checked in.
 
 `BC2CPP_UNREGISTERED_EXTRA="Owner#name,..."` adds more names for a single
 generation. It is meant for check fixtures, which have no place in the

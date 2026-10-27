@@ -48,3 +48,14 @@ class already below a switched one (`INSTANCE_TT_SUBCLASSES`, a heap walk
 taken only when a switched class has a subclass at all). The fixture checks
 keep libmruby's `MRB_DEBUG`, so `mrb_data_init`'s type assertion watches
 this; `scripts/bc2cpp/self_new_leaf_check.rb` covers `SN_ANON`.
+
+## The storage guard (EMBED_INIT_GUARD)
+
+An owner embeds only if its `#initialize` compiles cleanly, because that compiled body is what allocates the struct
+(`mrb_data_init`) before any other compiled method reads `DATA_PTR(self)`. The choice is made from a cleanliness probe
+(`compiles_clean?`) before the final compile, so the final output is checked too
+(`tools/bc2cpp/embed_init_guard.rb`, run in `bc2cpp.rb` after `compile_all`). For each embedding owner the run emits,
+the guard requires its compiled `#initialize` to be present, free of `#error` (so `SKIP_UNSUPPORTED` would not drop
+it) and to contain the storage line. Otherwise the build fails with `EMBED_INIT_GUARD`: an interpreted
+`#initialize` would leave the object a plain one, and the compiled methods would read memory that is not there.
+`scripts/bc2cpp/embed_init_guard_check.rb` checks the guard's cases and a fixture class that embeds.
