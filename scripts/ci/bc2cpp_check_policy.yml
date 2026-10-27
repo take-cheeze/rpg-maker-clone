@@ -748,6 +748,11 @@ checks:
     capabilities:
     - mrbc
     fixture_capabilities: []
+  scripts/bc2cpp/compiled_owners_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    fixture_capabilities: []
   scripts/bc2cpp/escape_receiver_flow_check.rb:
     tier: runtime
     capabilities:
