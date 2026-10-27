@@ -10,8 +10,15 @@
 #include "core_compiled_gen.cpp"
 
 extern "C" void mrb_mruby_core_compiled_gem_init(mrb_state* M) {
+  // VM_CACHE_LIFETIME: the constant and class slots read without an mrb_state check, and the game's deferred gem
+  // init never runs gem_final, so a new VM clears them here (docs/bc2cpp-constant-lookup.md).
+  bc2cpp_reset_const_site_cache();
+  bc2cpp_reset_owner_classes();
   bc2cpp_set_instance_tts(M);
   bc2cpp_register_owner_methods(M);
 }
 
-extern "C" void mrb_mruby_core_compiled_gem_final(mrb_state*) {}
+extern "C" void mrb_mruby_core_compiled_gem_final(mrb_state*) {
+  bc2cpp_reset_const_site_cache();
+  bc2cpp_reset_owner_classes();
+}

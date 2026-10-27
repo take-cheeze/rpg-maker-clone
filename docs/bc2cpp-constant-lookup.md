@@ -114,6 +114,31 @@ unchanged.
 read inside a rescue range is cached, and runs reads from every scope interpreted and compiled, before and after a
 declared binding is made, comparing the output.
 
+## Slot lifetime (VM_CACHE_LIFETIME)
+
+The CONST_SITE_CACHE, CONST_BINDING_CACHE and OWNER_CLASS_CACHE slots are file-scope statics holding one VM's values.
+A hit is an inline slot load (`bc2cpp_cconst_N`, `bc2cpp_mcnst_N`, `bc2cpp_owner_class_N`) with no `mrb_state`
+compare; only the out-of-line fill (`bc2cpp_cconst_fill_N`, `bc2cpp_mcnst_fill_N`, `bc2cpp_owner_class_lookup`) looks
+at the VM. A GETMCNST slot is keyed by the receiver's `RClass*`, since only a class or module receiver is stored.
+
+The slots are cleared (`bc2cpp_reset_const_site_cache`, `bc2cpp_reset_owner_classes`) at each compiled gem's
+`gem_init` and `gem_final`, and by `scripts/bc2cpp/fixture_runtime.rb` after each VM it closes. The init reset is the
+one the game relies on: its deferred per-maker gem init (`rpg_maker_gem_dispatch` in `build_config.rb`) calls the
+gems' init functions without registering their finals, so `gem_final` never runs there. A new VM therefore never reads
+a pointer from an earlier one, even at the same address.
+
+Two live VMs running compiled code at once are not supported, as for the `g_direct_construct_*` globals in
+`mruby-rpg2k-compiled/src/register.cxx`: every host (`src/main.cxx`, `scripts/bc2cpp/trace_host.cxx`, `app/psp`,
+`app/wio`) opens one VM at a time, and mrbtest never loads the compiled gems (they are only in the single-format bc2cpp
+builds, which do not enable tests). A fill records its VM and stops with `mrb_bug` when another VM is still recorded,
+so such a run fails loudly at its first miss rather than reading the other VM's values.
+
+Effect on the Nepheshel trace host (closed build, New Game plus a played battle, same output): the 1-frame load went
+from 379.12 M to 377.40 M instructions, and the 1,200-frame run spent 13.7 M fewer instructions (0.76% of 1.79 G) outside
+LVGL. The 1,200-frame totals vary by several million instructions between runs of one binary, because LVGL's refresh
+follows the wall-clock tick, so the comparison leaves the LVGL functions out (their sum varied by up to 5.8 M between
+runs of the same binary). The trace host's text grew by 150 KB (1.2%).
+
 ## Constant definitions in the numeric and class pools
 
 The numeric proof and the class pools (ADR 0276, 0296, 0301) read a constant's class set from the definitions it

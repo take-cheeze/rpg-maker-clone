@@ -1121,6 +1121,10 @@ RClass* Game__Battle_compiled_class(void) {
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
+  // VM_CACHE_LIFETIME: the constant and class slots read without an mrb_state check, and the game's deferred gem
+  // init never runs gem_final, so a new VM clears them here (docs/bc2cpp-constant-lookup.md).
+  bc2cpp_reset_const_site_cache();
+  bc2cpp_reset_owner_classes();
   // INSTANCE_TT_SETUP: every embedding class this build's ivar analysis lists.
   bc2cpp_set_instance_tts(M);
   // OWNER_METHOD_REGISTRATION: install every compiled entry point of a wired
