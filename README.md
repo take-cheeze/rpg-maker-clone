@@ -1264,6 +1264,8 @@
   [container elements](docs/bc2cpp-ir-elements.md) with contract provenance.
   A base class and subclasses that each have ivars share the base's
   [embedded struct](docs/bc2cpp-embed-families.md) (`BC2CPP_EMBED_FAMILIES=0` compares).
+  A read of an embedded ivar that every constructor assigns skips its unset-slot test outside the
+  [construction reach](docs/bc2cpp-slot-assured.md) (`BC2CPP_SLOT_ASSURED=0` compares).
   Array push, element and same-length slice stores, `rotate!`, Integer `!=` and
   Integer `[]` arms take [inline fast paths](docs/bc2cpp-array-write-inline.md).
   `==` and `%` by a constant power of two take
