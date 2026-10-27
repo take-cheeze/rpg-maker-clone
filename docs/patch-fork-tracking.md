@@ -45,6 +45,23 @@ Applied on the pin, in build order: `mruby-colon3-assign-setmcnst`,
 - `mruby-module-function-scope`: applied with `patch -p1` (the hunk headers do
   not satisfy `git apply`). The build no longer applies patches.
 
+Pending, one commit each on top of the current submodule commit `28d07a9`
+(`git format-patch` series, in this order); `3rd/mruby` is bumped once they
+are on the fork:
+
+- `mruby-int-equal-bigint`: **not applied (pending fork push)**. `Integer#==`
+  read a bigint receiver with `mrb_integer()`, so `(1 << 64) == 0` was true;
+  a bigint receiver now compares through `mrb_bint_cmp`, and `Float#==` takes
+  a bigint argument the same way.
+- `mruby-cmpnum-heap-integer`: **not applied (pending fork push)**. Integers
+  past the inline fixnum range (heap `MRB_TT_INTEGER`) were compared as
+  doubles by `cmpnum`, read with `mrb_fixnum` by `Array#sort` and the
+  `MRB_NO_FLOAT` `OP_CMP`, and hashed as bigints as Hash keys; all now use
+  `mrb_integer_p` / `mrb_integer`.
+- `mruby-hash-array-key-eql`: **not applied (pending fork push)**. Array Hash
+  keys are compared in C when every `eql?` involved is a builtin body, and
+  through `mrb_eql` otherwise.
+
 
 Regenerated files: the mruby-defined-keyword change edits `keywords` and
 `parse.y`, so its generated `lex.def` and `y.tab.c` are regenerated on the pin
