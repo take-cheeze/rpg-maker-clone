@@ -9,7 +9,9 @@
 
 #include "core_compiled_gen.cpp"
 
-extern "C" void mrb_mruby_core_compiled_gem_init(mrb_state* M) { bc2cpp_gem_init(M); }
+extern "C" void mrb_mruby_core_compiled_gem_init(mrb_state* M) {
+  bc2cpp_gem_init(M);
+}
 
 extern "C" void mrb_mruby_core_compiled_gem_final(mrb_state*) {
   bc2cpp_gem_final();
