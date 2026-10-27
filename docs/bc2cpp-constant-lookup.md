@@ -83,6 +83,12 @@ A `Scope::NAME` read (GETMCNST) of a name with only immutable bindings, from a r
 constant on every path, caches per site with the receiver it was read from: a binding in the receiver's own table is
 the one `mrb_const_get` returns, and it never changes. A receiver whose own table lacks the name is not stored.
 
+Effect on the closed RPG2000 world: 1,017 names qualify. Uncached scope walks in `rpg2k_compiled_gen.cpp` fell
+from 968 sites to 668, and uncached `Scope::NAME` lookups from 607 to 196 (lcf 13 to 0). On the Nepheshel trace
+host (New Game plus a played battle, 1,200 frames) the run went from 1.760 G to 1.693 G instructions with the same
+output; the 1-frame load is unchanged. The sites left are mostly names a native source also binds (`Window`,
+`Bitmap`, the core exception classes), which this analysis refuses.
+
 `scripts/bc2cpp/const_bindings_check.rb` checks which names qualify, and runs reads from every scope interpreted and
 compiled, before and after a declared binding is made, comparing the output.
 
