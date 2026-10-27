@@ -774,6 +774,7 @@ jobs:
           ruby scripts/bc2cpp/array_times_result_check.rb
           ruby scripts/bc2cpp/core_definer_mono_check.rb
           ruby scripts/bc2cpp/integer_fast_arms_check.rb
+          ruby scripts/bc2cpp/tagged_fixnum_check.rb
           ruby scripts/bc2cpp/bigint_slow_arms_check.rb
           ruby scripts/bc2cpp/array_write_inline_check.rb
           ruby scripts/bc2cpp/rotate_small_shift_check.rb
