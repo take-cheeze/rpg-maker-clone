@@ -70,7 +70,16 @@ scene class still ran the scope walk at every read. `ConstBindings` (`tools/bc2c
 binding of such a name instead, with its owner path, when each one is made once and never changed: every
 class/module statement for the name opens a known path, every SETCONST of it sits in a body that runs once (the root
 or a class/module body with no backward branch) under a known lexical scope, each path is bound once, and nothing
-else binds it (no SETMCNST, no native or foreign definition, the same `const_set`/`remove_const` refusal).
+else binds it (no SETMCNST, no native value constant, no foreign definition, the same `const_set`/`remove_const`
+refusal).
+
+A native class or module definition (`mrb_define_class_under(M, rgss, "Window", ...)`) is one more owner when its
+outer scope can be named: made at gem init and never rebound, it is as fixed as a class statement. The outer is a
+module the same function defines with `mrb_define_module(M, "X")` or looks up with `mrb_module_get`/`mrb_class_get(M,
+"X")`, directly or through a parameter its callers pass (a prototype is not a call); a lookup names X only when X's
+one binding is at the top level. A native value constant (`mrb_define_const`, `mrb_const_set`) still refuses its
+name, and a project source that binds a name the scan cannot read refuses every name (mruby's own C is trusted, as
+in the closed-world scan).
 
 Once all of those bindings exist, a read's answer is fixed: the scopes it walks and their superclasses do not change,
 and no binding is left to appear. The site's helper therefore stores its result only when every owner holds the
@@ -81,16 +90,29 @@ is refused when an owner is prepended or included anywhere but Object, when more
 
 A `Scope::NAME` read (GETMCNST) of a name with only immutable bindings, from a receiver that is `::` or an immutable
 constant on every path, caches per site with the receiver it was read from: a binding in the receiver's own table is
-the one `mrb_const_get` returns, and it never changes. A receiver whose own table lacks the name is not stored.
+the one `mrb_const_get` returns, and it never changes. A receiver whose own table lacks the name is not stored. Inside a
+`begin`/`rescue` range the dataflow refuses to name the receiver's writer; there the `A::B` chain still qualifies when
+the instruction just before the read wrote the receiver from a constant and nothing else (no jump, no handler) enters
+between them. In an inlined body the instruction's registers are shifted, so the writer is looked up at the
+unshifted register.
 
-Effect on the closed RPG2000 world: 1,017 names qualify. Uncached scope walks in `rpg2k_compiled_gen.cpp` fell
-from 968 sites to 668, and uncached `Scope::NAME` lookups from 607 to 196 (lcf 13 to 0). On the Nepheshel trace
-host (New Game plus a played battle, 1,200 frames) the run went from 1.760 G to 1.693 G instructions with the same
-output; the 1-frame load is unchanged. The sites left are mostly names a native source also binds (`Window`,
-`Bitmap`, the core exception classes), which this analysis refuses.
+Effect on the closed RPG2000 world, counting the reads in method bodies of `rpg2k_compiled_gen.cpp` that still run
+the full lookup (a cache helper's own slow path is not counted):
 
-`scripts/bc2cpp/const_bindings_check.rb` checks which names qualify, and runs reads from every scope interpreted and
-compiled, before and after a declared binding is made, comparing the output.
+| | scope walks | `Scope::NAME` lookups |
+|---|---|---|
+| before the binding cache | 600 | 607 |
+| with it (Ruby bindings only) | 210 | 196 |
+| native class owners and the rescue-range receiver | 46 | 7 |
+
+What remains is a name a foreign Ruby source also binds (`NameError`, 21 sites) and native value constants (`GAME_DIR`,
+the `RPG2K_*` switches, `Math::PI`). On the Nepheshel trace host (New Game plus a played battle, 1,200 frames) the
+Ruby-binding step took the run from 1.760 G to 1.693 G instructions with the same output; the 1-frame load is
+unchanged.
+
+`scripts/bc2cpp/const_bindings_check.rb` checks which names qualify (native owners and lookups included), that a scoped
+read inside a rescue range is cached, and runs reads from every scope interpreted and compiled, before and after a
+declared binding is made, comparing the output.
 
 ## Constant definitions in the numeric and class pools
 
