@@ -1264,6 +1264,8 @@
   [container elements](docs/bc2cpp-ir-elements.md) with contract provenance.
   A base class and subclasses that each have ivars share the base's
   [embedded struct](docs/bc2cpp-embed-families.md) (`BC2CPP_EMBED_FAMILIES=0` compares).
+  `==`, `!=` and `%` by a constant power of two take
+  [inline Integer arms](docs/bc2cpp-integer-fast-arms.md) ahead of their generic paths.
   The [container shape analyses](docs/bc2cpp-ir-containers.md) (Hash records,
   element layouts, sealed Hash ivars) read the IR's producers and literals.
   [RBS self returns and mixin lookup](docs/bc2cpp-ir-rbs-features.md) extend nominal
