@@ -146,6 +146,15 @@ holds one (an inherited one belongs to another entry, and every entry of a
 listed name is listed). A plain closed build also records the entry for
 `respond_to?` (see "Symbols" above).
 
+`bc2cpp_register_owner_methods` runs two halves in order:
+`bc2cpp_register_core_owner_methods` (the core owners and the wired
+embeddings) and `bc2cpp_register_program_owner_methods` (every other owner).
+The core half looks up no program class, so a program that needs the compiled
+core methods before its own class bodies run can install it first. The
+optcarrot probe's `install_prelude!` does that, and its `install!` runs the
+program half later. `scripts/bc2cpp/registration_split_check.rb` checks the
+split.
+
 The probe generates its C++ with `BC2CPP_BUILD_NAME=closed`, so the names
 on either list are missing from its registrations. Every run therefore
 counts both lists as already unregistered. If it did not, a rerun would drop
