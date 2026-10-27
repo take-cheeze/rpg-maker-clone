@@ -266,6 +266,13 @@ covering the Nix pin, contributing submodules, build helpers and patches.
 must invalidate it when those inputs change. CI prepares it once before the
 parallel group and exports `BC2CPP_MRUBY_FULL` to the fixture checks.
 
+A fixture linked against that library is compiled with the library's own `-D`
+flags, the `MRUBY_CFLAGS` of `lib/libmruby.flags.mak`
+(`Bc2cppFixtureRuntime.library_defines`). The generated bigint arms sit under
+`MRB_USE_BIGINT`, as a real build compiles them with the gem defines; without
+the define a bigint operand took a helper's proven-dead fallback instead
+(`scripts/bc2cpp/bigint_slow_arms_check.rb`).
+
 The closed build uses `rake -m -j4`. The fixture-library builder uses `rake -m`
 with a processor-based limit capped at 16; `-j` alone does not enable concurrent
 ordinary Rake prerequisites. See [ADR 0410](adr/0410-bc2cpp-test-rake-multitask.md).
