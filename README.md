@@ -1268,6 +1268,10 @@
   Integer `[]` arms take [inline fast paths](docs/bc2cpp-array-write-inline.md).
   `==` and `%` by a constant power of two take
   [inline Integer arms](docs/bc2cpp-integer-fast-arms.md) ahead of their generic paths.
+  `n[i]` on a Fixnum is an [inline bit read](docs/bc2cpp-integer-bit-aref.md) when
+  the program's only `Integer#[]` is `(self >> i) & 1`.
+  `hash` on an exact Array of Fixnums (an Array Hash key) is
+  [computed natively](docs/bc2cpp-array-hash.md) with the interpreter's value.
   A `freeze` of a core iterator's result on a literal keeps embedded ivar stores free of the
   [frozen test](docs/bc2cpp-fresh-freeze.md) (`BC2CPP_FRESH_FREEZE=0` compares).
   The [container shape analyses](docs/bc2cpp-ir-containers.md) (Hash records,
