@@ -296,16 +296,19 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   // mruby-rpg2k-compiled, with no orphan -- no call below is the only
   // registration of its method.
   //
+#ifndef BC2CPP_UNREGISTERED_RGSS__Sprite_opacity
   mrb_define_method(M, sprite, "opacity", RGSS__Sprite_opacity,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, sprite, "opacity", false);
+#endif
   mrb_define_method(M, sprite, "zoom_x", RGSS__Sprite_zoom_x, MRB_ARGS_NONE());
   mrb_define_method(M, sprite, "zoom_y", RGSS__Sprite_zoom_y, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RGSS__Sprite_blend_type
   mrb_define_method(M, sprite, "blend_type", RGSS__Sprite_blend_type,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, sprite, "blend_type", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, sprite, "blend_type", false);
 #endif
   mrb_define_method(M, sprite, "tone", RGSS__Sprite_tone, MRB_ARGS_NONE());
   mrb_define_method(M, sprite, "color", RGSS__Sprite_color, MRB_ARGS_NONE());
@@ -319,31 +322,36 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, sprite, "angle", RGSS__Sprite_angle, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RGSS__Sprite_mirror
   mrb_define_method(M, sprite, "mirror", RGSS__Sprite_mirror, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, sprite, "mirror", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, sprite, "mirror", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RGSS__Sprite_bush_depth
   mrb_define_method(M, sprite, "bush_depth", RGSS__Sprite_bush_depth,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, sprite, "bush_depth", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Sprite_src_rect
   mrb_define_method(M, sprite, "src_rect", RGSS__Sprite_src_rect,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, sprite, "src_rect", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, sprite, "src_rect", false);
 #endif
 
   RClass* plane = mrb_class_get_under(M, rgss, "Plane");
 
+#ifndef BC2CPP_UNREGISTERED_RGSS__Plane_opacity
   mrb_define_method(M, plane, "opacity", RGSS__Plane_opacity, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, plane, "opacity", false);
+#endif
   mrb_define_method(M, plane, "zoom_x", RGSS__Plane_zoom_x, MRB_ARGS_NONE());
   mrb_define_method(M, plane, "zoom_y", RGSS__Plane_zoom_y, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RGSS__Plane_blend_type
   mrb_define_method(M, plane, "blend_type", RGSS__Plane_blend_type,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, plane, "blend_type", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, plane, "blend_type", false);
 #endif
   mrb_define_method(M, plane, "tone", RGSS__Plane_tone, MRB_ARGS_NONE());
   mrb_define_method(M, plane, "color", RGSS__Plane_color, MRB_ARGS_NONE());
@@ -353,60 +361,87 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RGSS__Tilemap_autotiles
   mrb_define_method(M, tilemap, "autotiles", RGSS__Tilemap_autotiles,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, tilemap, "autotiles", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, tilemap, "autotiles", false);
 #endif
 
   RClass* window = mrb_class_get_under(M, rgss, "Window");
 
+#ifndef BC2CPP_UNREGISTERED_RGSS__Window_opacity
   mrb_define_method(M, window, "opacity", RGSS__Window_opacity,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, window, "opacity", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Window_back_opacity
   mrb_define_method(M, window, "back_opacity", RGSS__Window_back_opacity,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "back_opacity", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "back_opacity", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RGSS__Window_cursor_rect
   mrb_define_method(M, window, "cursor_rect", RGSS__Window_cursor_rect,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, window, "cursor_rect", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_RGSS__Window_active
   mrb_define_method(M, window, "active", RGSS__Window_active, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, window, "active", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_RGSS__Window_pause
   mrb_define_method(M, window, "pause", RGSS__Window_pause, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, window, "pause", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Window_stretch
   mrb_define_method(M, window, "stretch", RGSS__Window_stretch,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "stretch", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "stretch", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Window_openness
   mrb_define_method(M, window, "openness", RGSS__Window_openness,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "openness", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "openness", false);
 #endif
   mrb_define_method(M, window, "open?", RGSS__Window_open$3f, MRB_ARGS_NONE());
   mrb_define_method(M, window, "close?", RGSS__Window_close$3f,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_RGSS__Window_padding
   mrb_define_method(M, window, "padding", RGSS__Window_padding,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, window, "padding", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_RGSS__Window_padding_bottom
   mrb_define_method(M, window, "padding_bottom", RGSS__Window_padding_bottom,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, window, "padding_bottom", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_RGSS__Window_arrows_visible
   mrb_define_method(M, window, "arrows_visible", RGSS__Window_arrows_visible,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, window, "arrows_visible", false);
+#endif
   mrb_define_private_method(M, window, "initialize", RGSS__Window_initialize,
                             MRB_ARGS_OPT(4));
 
   RClass* bitmap = mrb_class_get_under(M, rgss, "Bitmap");
 
+#ifndef BC2CPP_UNREGISTERED_RGSS__Bitmap_font
   mrb_define_method(M, bitmap, "font", RGSS__Bitmap_font, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, bitmap, "font", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Bitmap_font$3d
   mrb_define_method(M, bitmap, "font=", RGSS__Bitmap_font$3d, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, bitmap, "font=", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, bitmap, "font=", false);
 #endif
 
   // RGSS::Bitmap.singleton --
@@ -424,15 +459,18 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   // mrb_define_class_method resolves the receiver's own singleton class
   // internally, so no separate RClass* is needed even though this is a
   // structurally different method table from font/font='s own.
+#ifndef BC2CPP_UNREGISTERED_RGSS__Bitmap_singleton_extensions
   mrb_define_class_method(M, bitmap, "extensions",
                           RGSS__Bitmap_singleton_extensions, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, bitmap, "extensions", true);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Bitmap_singleton_failure_reason
   mrb_define_class_method(M, bitmap, "failure_reason",
                           RGSS__Bitmap_singleton_failure_reason,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, bitmap, "failure_reason", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, bitmap, "failure_reason", true);
 #endif
 
   // RGSS.singleton --
@@ -454,25 +492,22 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RGSS_singleton__comparison_sign
   mrb_define_class_method(M, rgss, "_comparison_sign",
                           RGSS_singleton__comparison_sign, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, rgss, "_comparison_sign", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rgss, "_comparison_sign", true);
 #endif
   mrb_define_class_method(M, rgss, "frame_mean", RGSS_singleton_frame_mean,
                           MRB_ARGS_OPT(4));
 #ifndef BC2CPP_UNREGISTERED_RGSS_singleton_probe_wav
   mrb_define_class_method(M, rgss, "probe_wav", RGSS_singleton_probe_wav,
                           MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, rgss, "probe_wav", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rgss, "probe_wav", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS_singleton_wait_for_bgm_pos
   mrb_define_class_method(M, rgss, "wait_for_bgm_pos",
                           RGSS_singleton_wait_for_bgm_pos, MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, rgss, "wait_for_bgm_pos", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rgss, "wait_for_bgm_pos", true);
 #endif
 
   // RGSS::Audio.singleton -- 13 real class methods, every one a plain
@@ -489,117 +524,105 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_bgm_volume
   mrb_define_class_method(M, audio, "bgm_volume",
                           RGSS__Audio_singleton_bgm_volume, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "bgm_volume", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "bgm_volume", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_bgm_pan
   mrb_define_class_method(M, audio, "bgm_pan", RGSS__Audio_singleton_bgm_pan,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "bgm_pan", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "bgm_pan", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_bgm_stop
   mrb_define_class_method(M, audio, "bgm_stop", RGSS__Audio_singleton_bgm_stop,
                           MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "bgm_stop", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "bgm_stop", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_bgm_fade
   mrb_define_class_method(M, audio, "bgm_fade", RGSS__Audio_singleton_bgm_fade,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "bgm_fade", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "bgm_fade", true);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_bgm_pos
   mrb_define_class_method(M, audio, "bgm_pos", RGSS__Audio_singleton_bgm_pos,
                           MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, audio, "bgm_pos", true);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_bgs_stop
   mrb_define_class_method(M, audio, "bgs_stop", RGSS__Audio_singleton_bgs_stop,
                           MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "bgs_stop", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "bgs_stop", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_bgs_fade
   mrb_define_class_method(M, audio, "bgs_fade", RGSS__Audio_singleton_bgs_fade,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "bgs_fade", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "bgs_fade", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_bgs_pos
   mrb_define_class_method(M, audio, "bgs_pos", RGSS__Audio_singleton_bgs_pos,
                           MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "bgs_pos", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "bgs_pos", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_me_stop
   mrb_define_class_method(M, audio, "me_stop", RGSS__Audio_singleton_me_stop,
                           MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "me_stop", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "me_stop", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_me_fade
   mrb_define_class_method(M, audio, "me_fade", RGSS__Audio_singleton_me_fade,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "me_fade", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "me_fade", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_se_stop
   mrb_define_class_method(M, audio, "se_stop", RGSS__Audio_singleton_se_stop,
                           MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "se_stop", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "se_stop", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_midi_available$3f
   mrb_define_class_method(M, audio, "midi_available?",
                           RGSS__Audio_singleton_midi_available$3f,
                           MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "midi_available?", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "midi_available?", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_setup_midi
   mrb_define_class_method(M, audio, "setup_midi",
                           RGSS__Audio_singleton_setup_midi, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "setup_midi", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "setup_midi", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_bgm_play
   mrb_define_class_method(M, audio, "bgm_play", RGSS__Audio_singleton_bgm_play,
                           MRB_ARGS_REQ(1) | MRB_ARGS_OPT(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "bgm_play", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "bgm_play", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_bgs_play
   mrb_define_class_method(M, audio, "bgs_play", RGSS__Audio_singleton_bgs_play,
                           MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "bgs_play", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "bgs_play", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_me_play
   mrb_define_class_method(M, audio, "me_play", RGSS__Audio_singleton_me_play,
                           MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "me_play", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "me_play", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Audio_singleton_se_play
   mrb_define_class_method(M, audio, "se_play", RGSS__Audio_singleton_se_play,
                           MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, audio, "se_play", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, audio, "se_play", true);
 #endif
 
   // RGSS::Input.singleton -- 11 real class methods. `key_index` and
@@ -624,32 +647,28 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RGSS__Input_singleton_press$3f
   mrb_define_class_method(M, input, "press?", RGSS__Input_singleton_press$3f,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, input, "press?", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, input, "press?", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Input_singleton_trigger$3f
   mrb_define_class_method(M, input, "trigger?",
                           RGSS__Input_singleton_trigger$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, input, "trigger?", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, input, "trigger?", true);
 #endif
   mrb_define_class_method(M, input, "repeat?", RGSS__Input_singleton_repeat$3f,
                           MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_RGSS__Input_singleton_dir4
   mrb_define_class_method(M, input, "dir4", RGSS__Input_singleton_dir4,
                           MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, input, "dir4", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, input, "dir4", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RGSS__Input_singleton_dir8
   mrb_define_class_method(M, input, "dir8", RGSS__Input_singleton_dir8,
                           MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, input, "dir8", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, input, "dir8", true);
 #endif
   mrb_define_class_method(M, input, "mouse_x", RGSS__Input_singleton_mouse_x,
                           MRB_ARGS_NONE());
@@ -675,9 +694,8 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RGSS__ErrorReport_singleton_record
   mrb_define_class_method(M, error_report, "record",
                           RGSS__ErrorReport_singleton_record, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, error_report, "record", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, error_report, "record", true);
 #endif
   mrb_define_class_method(M, error_report, "clear",
                           RGSS__ErrorReport_singleton_clear, MRB_ARGS_NONE());
@@ -707,9 +725,8 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, graphics, "resize_screen",
                           RGSS__Graphics_singleton_resize_screen,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, graphics, "resize_screen",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, graphics, "resize_screen", true);
 #endif
   mrb_define_class_method(M, graphics,
                           "brightness=", RGSS__Graphics_singleton_brightness$3d,
@@ -719,21 +736,23 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RGSS__Graphics_singleton_render_fps
   mrb_define_class_method(M, graphics, "render_fps",
                           RGSS__Graphics_singleton_render_fps, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, graphics, "render_fps", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, graphics, "render_fps", true);
 #endif
   mrb_define_class_method(M, graphics, "transition",
                           RGSS__Graphics_singleton_transition, MRB_ARGS_OPT(3));
 #ifndef BC2CPP_UNREGISTERED_RGSS__Graphics_singleton_fadeout
   mrb_define_class_method(M, graphics, "fadeout",
                           RGSS__Graphics_singleton_fadeout, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, graphics, "fadeout", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, graphics, "fadeout", true);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RGSS__Graphics_singleton_fadein
   mrb_define_class_method(M, graphics, "fadein",
                           RGSS__Graphics_singleton_fadein, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, graphics, "fadein", true);
+#endif
 
   // RGSS::Font.singleton -- its one real method (mruby-rgss/mrblib/lib.rb:
   // `self.exist?(name)`, a `class << self ... end`-opened bare `true`
