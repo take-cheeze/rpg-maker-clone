@@ -1403,6 +1403,8 @@
   `scripts/bc2cpp/class_pools_check.rb` and `scripts/bc2cpp/guard_hint_report.rb`.
   An `eval` no definition answers, and a computed `instance_variable_set` on the implicit self, no longer
   turn that ivar proof off for the whole program; see [ivar proof scope](docs/bc2cpp-numeric-ivar-scope.md).
+  A method whose `while` ends in `break`/`next` and has no `rescue`/`ensure` is now
+  [modelled by that proof](docs/bc2cpp-numeric-jmpuw.md) too (`BC2CPP_NUMERIC_JMPUW=0` compares).
   The same exact-receiver proof now reaches every arm wrapper of a send (the registered-expression chains
   of `size`/`empty?`/`first`, the tail of a POLY chain, the `core_or_native` fallbacks), and constants
   join the pools (`LIST = [...].freeze` is exactly an Array wherever it is read, unless a `const_missing`
