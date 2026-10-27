@@ -1,17 +1,20 @@
 # Generated lexical constant lookup
 
-Bare constants in compiled methods search the owner's lexical scopes from
-innermost to outermost, then Object. The generator shares one C++ helper per
-owner path rather than repeating the path reconstruction and search at every
-GETCONST instruction. Different constant names pass their interned symbol to
-the same helper. Top-level Object lookups remain direct calls.
+A bare constant in a compiled method is looked up in the order of mruby's `mrb_vm_const_get`
+(`3rd/mruby/src/variable.c`): the own table of each lexical scope, innermost first and Object last, then the
+ancestors of the innermost scope (for a module, Object's chain after its own), and finally `const_missing` on the
+innermost scope. The owner's nesting stands in for the lexical chain (`Game::Character` gives Game::Character, Game,
+then Object). An outer scope's own constant therefore wins over a superclass's: in `module Outer; W = 1; class Sub <
+Base; def w = W` the read is `Outer::W` even when `Base::W` exists, and a top-level `W` wins over `Base::W` in a
+top-level `class Sub < Base`. The generator shares one C++ helper per owner path rather than repeating the path
+reconstruction and search at every GETCONST instruction; different names pass their interned symbol to the same
+helper. Top-level Object lookups remain direct `mrb_const_get` calls.
 
-The helper reconstructs the complete scope path before searching it, preserving
-errors for missing enclosing scopes. It uses the existing non-raising probes
-for intermediate scopes and the ordinary raising lookup for the Object
-fallback. The helper itself caches nothing: reassignment remains visible, and
-mruby's arena continues to protect values allocated while resolving the path.
-The proven per-site caches below use this helper on their slow path.
+The helper reconstructs the complete scope path before searching it, so a missing enclosing scope still raises. A
+miss in one table is answered without raising (`mrb_iv_defined` on the class); only a name found nowhere reaches the
+raising `mrb_const_get`. The helper caches nothing: reassignment stays visible. The proven per-site caches below use
+it on their slow path. `scripts/bc2cpp/const_lexical_order_check.rb` runs reads where these steps disagree,
+interpreted and compiled, and compares the results.
 
 ## Per-site constant cache (CONST_SITE_CACHE)
 
@@ -51,11 +54,6 @@ frames) the run went from 5.36 G to 5.14 G instructions, the same output.
 Effect on the optcarrot probe: `const_get` calls fell from about 1.36 million
 over 20 frames to under 18 thousand, and frame-loop instructions dropped from
 1.76 G to 1.42 G (`callgrind`, 19-frame difference).
-
-`ruby scripts/bc2cpp/const_lookup_check.rb` checks helper sharing, lexical
-shadowing, outer and Object fallbacks, reassignment, missing constants and GC
-against a real mruby library. Set `BC2CPP_MRUBY_CORE` to a built mrbc directory
-containing `include/` and `lib/libmruby_core.a` to run the behavioral checks.
 
 A full RPG2k source sample decreased from 19,695,404 to 17,099,986 bytes
 (13.2%), and from 386,389 to 336,973 lines (12.8%). It contains 4,874
