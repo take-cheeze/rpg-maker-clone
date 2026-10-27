@@ -763,6 +763,7 @@ jobs:
           ruby scripts/bc2cpp/explicit_block_arg_direct_check.rb
           ruby scripts/bc2cpp/stack_block_check.rb
           ruby scripts/bc2cpp/embed_family_check.rb
+          ruby scripts/bc2cpp/embed_init_guard_check.rb
           ruby scripts/bc2cpp/integer_bit_aref_check.rb
           ruby scripts/bc2cpp/array_hash_check.rb
           ruby scripts/bc2cpp/slot_assured_check.rb

@@ -8,10 +8,8 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # mruby's bytecode compiler still handles everything else this gem doesn't
 # override (LCF::File#initialize, #field?, #delete,
 # #save_to -- see bc2cpp's own SKIP_UNSUPPORTED output for exactly why each
-# one stays interpreted; LCF::File#[]/#[]= *do* compile clean -- see
-# mruby-lcf-compiled/src/register.cxx's own registration block for why
-# they were a real, previously-missed coverage gap rather than genuinely
-# unsupported).
+# one stays interpreted; LCF::File#[]/#[]= *do* compile clean and are
+# registered by the generated bc2cpp_register_owner_methods).
 #
 # This whole gem only exists in the build when RPGMAKER_BC2CPP is set on a
 # closed-world build -- it is
