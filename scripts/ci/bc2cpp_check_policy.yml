@@ -481,6 +481,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/transpose_direct_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/array_times_result_check.rb:
     tier: runtime
     capabilities:
