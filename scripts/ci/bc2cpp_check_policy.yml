@@ -544,6 +544,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/unsigned_index_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/fresh_freeze_check.rb:
     tier: runtime
     capabilities:
