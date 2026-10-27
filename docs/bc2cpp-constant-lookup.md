@@ -1,17 +1,20 @@
 # Generated lexical constant lookup
 
-Bare constants in compiled methods search the owner's lexical scopes from
-innermost to outermost, then Object. The generator shares one C++ helper per
-owner path rather than repeating the path reconstruction and search at every
-GETCONST instruction. Different constant names pass their interned symbol to
-the same helper. Top-level Object lookups remain direct calls.
+A bare constant in a compiled method is looked up in the order of mruby's `mrb_vm_const_get`
+(`3rd/mruby/src/variable.c`): the own table of each lexical scope, innermost first and Object last, then the
+ancestors of the innermost scope (for a module, Object's chain after its own), and finally `const_missing` on the
+innermost scope. The owner's nesting stands in for the lexical chain (`Game::Character` gives Game::Character, Game,
+then Object). An outer scope's own constant therefore wins over a superclass's: in `module Outer; W = 1; class Sub <
+Base; def w = W` the read is `Outer::W` even when `Base::W` exists, and a top-level `W` wins over `Base::W` in a
+top-level `class Sub < Base`. The generator shares one C++ helper per owner path rather than repeating the path
+reconstruction and search at every GETCONST instruction; different names pass their interned symbol to the same
+helper. Top-level Object lookups remain direct `mrb_const_get` calls.
 
-The helper reconstructs the complete scope path before searching it, preserving
-errors for missing enclosing scopes. It uses the existing non-raising probes
-for intermediate scopes and the ordinary raising lookup for the Object
-fallback. The helper itself caches nothing: reassignment remains visible, and
-mruby's arena continues to protect values allocated while resolving the path.
-The proven per-site caches below use this helper on their slow path.
+The helper reconstructs the complete scope path before searching it, so a missing enclosing scope still raises. A
+miss in one table is answered without raising (`mrb_iv_defined` on the class); only a name found nowhere reaches the
+raising `mrb_const_get`. The helper caches nothing: reassignment stays visible. The proven per-site caches below use
+it on their slow path. `scripts/bc2cpp/const_lexical_order_check.rb` runs reads where these steps disagree,
+interpreted and compiled, and compares the results.
 
 ## Per-site constant cache (CONST_SITE_CACHE)
 
@@ -52,11 +55,6 @@ Effect on the optcarrot probe: `const_get` calls fell from about 1.36 million
 over 20 frames to under 18 thousand, and frame-loop instructions dropped from
 1.76 G to 1.42 G (`callgrind`, 19-frame difference).
 
-`ruby scripts/bc2cpp/const_lookup_check.rb` checks helper sharing, lexical
-shadowing, outer and Object fallbacks, reassignment, missing constants and GC
-against a real mruby library. Set `BC2CPP_MRUBY_CORE` to a built mrbc directory
-containing `include/` and `lib/libmruby_core.a` to run the behavioral checks.
-
 A full RPG2k source sample decreased from 19,695,404 to 17,099,986 bytes
 (13.2%), and from 386,389 to 336,973 lines (12.8%). It contains 4,874
 lookup calls sharing 92 owner helpers. This is a source-size measurement;
@@ -64,6 +62,35 @@ GCC 15.2 at `-O0` also reduced the object from 12,834,984 to 10,416,752
 bytes (18.8%), with its text section decreasing from 9,583,112 to 7,576,386
 bytes (20.9%). Optimized binary size and runtime performance depend on the
 C++ compiler's inlining decisions.
+
+## Names bound at several paths (CONST_BINDING_CACHE)
+
+The proofs above are keyed by the bare name, so `Window` (`RGSS::Window` and `RPG2k::Window`) or a `SCREEN_W` in every
+scene class still ran the scope walk at every read. `ConstBindings` (`tools/bc2cpp/const_site_cache.rb`) lists every
+binding of such a name instead, with its owner path, when each one is made once and never changed: every
+class/module statement for the name opens a known path, every SETCONST of it sits in a body that runs once (the root
+or a class/module body with no backward branch) under a known lexical scope, each path is bound once, and nothing
+else binds it (no SETMCNST, no native or foreign definition, the same `const_set`/`remove_const` refusal).
+
+Once all of those bindings exist, a read's answer is fixed: the scopes it walks and their superclasses do not change,
+and no binding is left to appear. The site's helper therefore stores its result only when every owner holds the
+name in its own table (`bc2cpp_const_path_has`), and when the owner's own scope path exists; a read before a
+binding is made keeps running the full lookup. An include could still reorder what an ancestor walk finds, so a name
+is refused when an owner is prepended or included anywhere but Object, when more than one owner is mixed into Object
+(Kernel counts), or when any mixin is unresolved. The scope path's segments must themselves be immutable names.
+
+A `Scope::NAME` read (GETMCNST) of a name with only immutable bindings, from a receiver that is `::` or an immutable
+constant on every path, caches per site with the receiver it was read from: a binding in the receiver's own table is
+the one `mrb_const_get` returns, and it never changes. A receiver whose own table lacks the name is not stored.
+
+Effect on the closed RPG2000 world: 1,017 names qualify. Uncached scope walks in `rpg2k_compiled_gen.cpp` fell
+from 968 sites to 668, and uncached `Scope::NAME` lookups from 607 to 196 (lcf 13 to 0). On the Nepheshel trace
+host (New Game plus a played battle, 1,200 frames) the run went from 1.760 G to 1.693 G instructions with the same
+output; the 1-frame load is unchanged. The sites left are mostly names a native source also binds (`Window`,
+`Bitmap`, the core exception classes), which this analysis refuses.
+
+`scripts/bc2cpp/const_bindings_check.rb` checks which names qualify, and runs reads from every scope interpreted and
+compiled, before and after a declared binding is made, comparing the output.
 
 ## Constant definitions in the numeric and class pools
 
