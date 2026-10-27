@@ -1291,6 +1291,8 @@
   stays bit-identical (`BC2CPP_SPLAT_ROW_MEMO=0` compares).
   A devirtualized call to an embedded ivar's `attr_reader` [reads the field in place](docs/bc2cpp-attr-reader-inline.md)
   behind a class-pointer test (`BC2CPP_ATTR_READER_INLINE=0` compares).
+  Every exact-class guard [reads the receiver's class inline](docs/bc2cpp-class-read-inline.md) instead of calling
+  `mrb_obj_class` (`BC2CPP_CLASS_READ_INLINE=0` compares).
   A resumable (Fiber-yielding) method's step function keeps its registers in
   [C++ locals between yields](docs/bc2cpp-resumable-locals.md) (`BC2CPP_RESUMABLE_LOCALS=0` compares).
   The [container shape analyses](docs/bc2cpp-ir-containers.md) (Hash records,

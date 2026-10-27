@@ -26,12 +26,9 @@ thousand times a frame.
   (`ivar_get_code`) writes the reader's body at the call site. The expression comes from one helper,
   `embedded_reader_value`, that also writes the synthesized reader, so the two cannot drift apart. That includes
   SLOT_ASSURED's bare read (`docs/bc2cpp-slot-assured.md`). The site is tagged `/* ATTR_READER_INLINE */`.
-- **The guard.** An IVAR_ACCESSOR site, or a POLY_SMALL_N arm whose target is an inlined reader, tests the object's
-  own class pointer first:
-  `(!mrb_immediate_p(r) && mrb_obj_ptr(r)->c == Config) || Config == mrb_obj_class(M, r)`.
-  `Config` is a real class. A heap object whose `c` is `Config` therefore has `mrb_obj_class == Config`, so the
-  first test only skips the call. An immediate, a singleton class or another class falls through to the old
-  compare. A chain whose arms share one hoisted `mrb_obj_class` (INHERITED_GUARD, POLY_INTEGER_TAG) keeps it.
+- **The guard.** It is `bc2cpp_class_is`, the inline exact-class test every compiled guard now shares
+  (CLASS_READ_INLINE, `docs/bc2cpp-class-read-inline.md`), so the `mrb_obj_class` call is gone too for a
+  plain-class receiver.
 
 ## Why it is sound
 
