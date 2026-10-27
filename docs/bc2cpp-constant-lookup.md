@@ -63,6 +63,29 @@ bytes (18.8%), with its text section decreasing from 9,583,112 to 7,576,386
 bytes (20.9%). Optimized binary size and runtime performance depend on the
 C++ compiler's inlining decisions.
 
+## Names bound at several paths (CONST_BINDING_CACHE)
+
+The proofs above are keyed by the bare name, so `Window` (`RGSS::Window` and `RPG2k::Window`) or a `SCREEN_W` in every
+scene class still ran the scope walk at every read. `ConstBindings` (`tools/bc2cpp/const_site_cache.rb`) lists every
+binding of such a name instead, with its owner path, when each one is made once and never changed: every
+class/module statement for the name opens a known path, every SETCONST of it sits in a body that runs once (the root
+or a class/module body with no backward branch) under a known lexical scope, each path is bound once, and nothing
+else binds it (no SETMCNST, no native or foreign definition, the same `const_set`/`remove_const` refusal).
+
+Once all of those bindings exist, a read's answer is fixed: the scopes it walks and their superclasses do not change,
+and no binding is left to appear. The site's helper therefore stores its result only when every owner holds the
+name in its own table (`bc2cpp_const_path_has`), and when the owner's own scope path exists; a read before a
+binding is made keeps running the full lookup. An include could still reorder what an ancestor walk finds, so a name
+is refused when an owner is prepended or included anywhere but Object, when more than one owner is mixed into Object
+(Kernel counts), or when any mixin is unresolved. The scope path's segments must themselves be immutable names.
+
+A `Scope::NAME` read (GETMCNST) of a name with only immutable bindings, from a receiver that is `::` or an immutable
+constant on every path, caches per site with the receiver it was read from: a binding in the receiver's own table is
+the one `mrb_const_get` returns, and it never changes. A receiver whose own table lacks the name is not stored.
+
+`scripts/bc2cpp/const_bindings_check.rb` checks which names qualify, and runs reads from every scope interpreted and
+compiled, before and after a declared binding is made, comparing the output.
+
 ## Constant definitions in the numeric and class pools
 
 The numeric proof and the class pools (ADR 0276, 0296, 0301) read a constant's class set from the definitions it
