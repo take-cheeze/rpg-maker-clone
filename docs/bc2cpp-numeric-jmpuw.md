@@ -38,9 +38,10 @@ no unboxed `mrb_int` register representation. A Fixnum proof drops a tag test, a
 
 In optcarrot the hot registers of `main_loop` hold `@hclk` and `@hclk_target`, and this change still proves neither:
 
-- `@hclk += 1` reads an ivar whose entry mask includes nil (`reset`, not `initialize`, assigns it), and
-  `nil_class_operator_names` lists `+` as a nil operator. It scans any native file that mentions `nil_class`,
-  and `mruby-rational` defines `nil.to_r` next to `Rational#+`.
+- `@hclk += 1` reads an ivar whose entry mask includes nil (`reset`, not `initialize`, assigns it). The old
+  file-level nil-operator scan listed `+` because `mruby-rational` defines `nil.to_r` next to `Rational#+`. The
+  scan now reads each registration's owner and `@hclk` is proven
+  ([NIL_NATIVE_ANSWERS](bc2cpp-nil-native-answers.md)).
 - `@hclk_target` and `@vclk` are assigned by destructuring the frozen `DUMMY_FRAME`/`BOOT_FRAME` Arrays, and from
   `PPU#sync`'s argument. Neither of those values is typed.
 - An Integer proof also covers a bigint. Only a Fixnum interval would drop the tag tests of `@hclk += 1` and

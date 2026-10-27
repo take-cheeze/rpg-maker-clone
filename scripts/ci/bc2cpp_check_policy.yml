@@ -607,6 +607,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/nil_native_answers_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/ensure_nested_rescue_check.rb:
     tier: runtime
     capabilities:

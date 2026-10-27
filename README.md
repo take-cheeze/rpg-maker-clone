@@ -1413,6 +1413,8 @@
   turn that ivar proof off for the whole program; see [ivar proof scope](docs/bc2cpp-numeric-ivar-scope.md).
   A method whose `while` ends in `break`/`next` and has no `rescue`/`ensure` is now
   [modelled by that proof](docs/bc2cpp-numeric-jmpuw.md) too (`BC2CPP_NUMERIC_JMPUW=0` compares).
+  A may-be-nil `@x += 1` proves "nil raises" from the owner of each native registration on nil's lookup path,
+  not from every file that mentions `nil_class`; see [nil native answers](docs/bc2cpp-nil-native-answers.md).
   The same exact-receiver proof now reaches every arm wrapper of a send (the registered-expression chains
   of `size`/`empty?`/`first`, the tail of a POLY chain, the `core_or_native` fallbacks), and constants
   join the pools (`LIST = [...].freeze` is exactly an Array wherever it is read, unless a `const_missing`
