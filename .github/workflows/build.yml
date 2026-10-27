@@ -779,6 +779,7 @@ jobs:
           ruby scripts/bc2cpp/branch_hints_check.rb
           ruby scripts/bc2cpp/hot_inline_check.rb
           ruby scripts/bc2cpp/fresh_freeze_check.rb
+          ruby scripts/bc2cpp/splat_row_memo_check.rb
           ruby scripts/bc2cpp/resumable_locals_check.rb
           ruby scripts/bc2cpp/ensure_nested_rescue_check.rb
           ruby scripts/bc2cpp/array_new_block_check.rb

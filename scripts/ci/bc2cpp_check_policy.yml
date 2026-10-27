@@ -565,6 +565,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/splat_row_memo_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/resumable_locals_check.rb:
     tier: runtime
     capabilities:
