@@ -36,3 +36,15 @@ folding them cut the 1800-frame run from 8.9 s to 8.0 s.
 `MRBC=path/to/mrbc ruby scripts/bc2cpp/embed_family_check.rb` checks the
 generated struct and the refusals. It also compares interpreted and compiled
 runs over reflection, `dup`, `GC.stress` and a `Fiber`.
+
+## Instance type
+
+An embedding class's instances must be `MRB_TT_DATA`, which
+`bc2cpp_set_instance_tts` sets at each compiled gem's init. A class copies
+its superclass's instance type when it is created, and a gem's mrblib loads
+before that init runs, so a subclass made there (`Class.new(C)` in a class
+body) would keep `MRB_TT_OBJECT`. The setup therefore also switches every
+class already below a switched one (`INSTANCE_TT_SUBCLASSES`, a heap walk
+taken only when a switched class has a subclass at all). The fixture checks
+keep libmruby's `MRB_DEBUG`, so `mrb_data_init`'s type assertion watches
+this; `scripts/bc2cpp/self_new_leaf_check.rb` covers `SN_ANON`.
