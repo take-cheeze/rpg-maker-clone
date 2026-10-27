@@ -28,7 +28,7 @@ no longer live in `patches/`.
 Status key: **applied** (commit on a tracking branch), **in pin** (already in
 the pinned commit, no commit needed), **not applied** (see the note).
 
-### take-cheeze/mruby (pin `67a569e`, `rpg-maker-clone/patches-pin` at `eab0234`)
+### take-cheeze/mruby (pin `9153127`, branch `claude/numeric-exact-compare-r5t2`)
 
 Applied on the pin, in build order: `mruby-colon3-assign-setmcnst`,
 `mruby-dollar-bang-scoped`, `mruby-defined-keyword`, `mruby-module-function-scope`,
@@ -44,6 +44,23 @@ Applied on the pin, in build order: `mruby-colon3-assign-setmcnst`,
 - `mruby-io-direct-puts`: **in pin**.
 - `mruby-module-function-scope`: applied with `patch -p1` (the hunk headers do
   not satisfy `git apply`). The build no longer applies patches.
+
+The pin has since moved forward on `claude/*` branches of the fork, each
+starting at the previous pin. The latest, `claude/numeric-exact-compare-r5t2`,
+adds three commits on top of `905ee07`:
+
+- `mruby-int-equal-bigint`: **applied**. `Integer#==` read a bigint receiver
+  with `mrb_integer()`, so `(1 << 64) == 0` was true; a bigint receiver now
+  compares through `mrb_bint_cmp`, and `Float#==` takes a bigint argument the
+  same way.
+- `mruby-cmpnum-heap-integer`: **applied**. Integers past the inline fixnum
+  range (heap `MRB_TT_INTEGER`) were compared as doubles by `cmpnum`, read
+  with `mrb_fixnum` by `Array#sort` and the `MRB_NO_FLOAT` `OP_CMP`, and
+  hashed as bigints as Hash keys; all now use `mrb_integer_p` /
+  `mrb_integer`.
+- `mruby-hash-array-key-eql`: **applied**. Array Hash keys are compared in C
+  when every `eql?` involved is a builtin body, and through `mrb_eql`
+  otherwise.
 
 
 Regenerated files: the mruby-defined-keyword change edits `keywords` and
