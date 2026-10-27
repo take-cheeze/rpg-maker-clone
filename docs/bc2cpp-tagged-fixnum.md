@@ -19,7 +19,7 @@ With `A = 2a + 1` and `B = 2b + 1` the boxed words of two Fixnums:
 | pair test | `A & B & 1` | the Fixnum tag is the low bit alone (`WORDBOX_FIXNUM_MASK == 1`) |
 | `a + b` | `A + (B - 1)` = `2(a+b) + 1` | signed word overflow ⇔ `a + b` outside the Fixnum range |
 | `a - b` | `A - (B - 1)` = `2(a-b) + 1` | same |
-| `a * b` | `(A - 1) * (B >> 1) + 1` = `2ab + 1` | `2ab` overflows ⇔ `ab` outside the Fixnum range; `2ab` is even, so the `+ 1` cannot overflow |
+| `a * b` | `((A - 1) * (B >> 1)) \| 1` = `2ab + 1` | `2ab` overflows ⇔ `ab` outside the Fixnum range; `2ab` is even, so the `\| 1` is the `+ 1` and cannot overflow |
 | `a + k`, `a - k` | as `+`/`-` with `B = mrb_fixnum_value(k)` | a constant, so `B - 1 = 2k` folds |
 | `<, <=, >, >=, ==, !=` | the same compare on `(intptr_t)A`, `(intptr_t)B` | `x ↦ 2x + 1` is strictly increasing |
 | `a & b`, `a \| b` | `A & B`, `A \| B` | both tag bits are 1, and the operation keeps the 1 |
@@ -32,6 +32,21 @@ the Fixnum range is exactly the word range shifted right by one bit
 word operation overflows, the register still holds the left operand, and
 `mrb_num_add` / `_sub` / `_mul` produces the heap Integer or bigint the
 interpreter would, as before.
+
+### The tag bit of a result (FIXNUM_TAG_BIT)
+
+The word `A + (B - 1)` is already odd, but GCC does not carry that through
+`__builtin_add_overflow`. Without it, the immediate test that
+`mrb_field_write_barrier_value` makes on a stored result (`(w & 7) != 0`)
+stays in the code as a branch, one per `@ivar += n`. So the `+` and `-`
+helpers store `w | 1`, which leaves the value unchanged and lets the
+compiler fold that test, and `*` writes its `+ 1` as `| 1` for the same
+reason.
+
+On the optcarrot probe this removes about 175K conditional branches and
+146K instructions per frame (−0.6%); the tile LUT initializer at startup
+gains 4.7M instructions (+0.4% of startup), where the extra `or` has no
+test to fold.
 
 ## Where the word form is used
 
