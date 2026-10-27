@@ -1281,6 +1281,8 @@
   [computed natively](docs/bc2cpp-array-hash.md) with the interpreter's value.
   The per-element Array helpers are [always inlined](docs/bc2cpp-hot-inline.md) outside `-Os` builds,
   and their bound test is [one unsigned compare](docs/bc2cpp-unsigned-index.md).
+  Fixnum `+ - * & | ^` and the compares work on the
+  [tagged word](docs/bc2cpp-tagged-fixnum.md) under word boxing (`-DBC2CPP_TAGGED_FIXNUM=0` compares).
   A `freeze` of a core iterator's result on a literal keeps embedded ivar stores free of the
   [frozen test](docs/bc2cpp-fresh-freeze.md) (`BC2CPP_FRESH_FREEZE=0` compares).
   A resumable (Fiber-yielding) method's step function keeps its registers in

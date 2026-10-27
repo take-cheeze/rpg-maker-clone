@@ -11,7 +11,9 @@ compiled runs.
 Integers. For Integers, `mrb_obj_eq` is the same as comparing their values. So
 the compiled code now checks for an Integer pair first and compares the values
 directly. Every other operand still goes through identity, the Symbol shortcut
-and the numeric/`==` chain, in the same order as before.
+and the numeric/`==` chain, in the same order as before. Two Fixnums are tested
+even earlier and compared on their boxed words; see
+[bc2cpp-tagged-fixnum.md](bc2cpp-tagged-fixnum.md).
 
 ## `!=` (NEQ_OP_EQ)
 
