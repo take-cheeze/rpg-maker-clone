@@ -84,6 +84,34 @@ case this proof cannot see. So is a name taken back out of a built string
 (`"#{a}: #{b}".split(': ')`), which the closed fragment rule treats as
 never being a name. Verify mode below exists to catch both.
 
+## Symbols
+
+By default every `:name` literal counts as a lookup of `name`, since a
+Symbol can be handed to `send`. Most are hash keys, `when` labels or
+`respond_to?` arguments. For the closed list,
+`tools/bc2cpp/static_dispatch_symbol_uses.rb` checks that every call in the
+closed bytecode that takes a method name passes a literal: `send`,
+`method`, `define_method`, `inject` / `reduce`, `to_enum` / `enum_for`,
+`instance_eval` and the like, and the block of any call (`&:name` runs
+`Symbol#to_proc`). A block may also be a block literal, `nil` or the
+caller's own block. When that holds, a Symbol from anywhere else never
+reaches such a call, so only the literals at those calls name a method:
+
+- a `LOADSYM` elsewhere in bytecode is not a lookup;
+- in the generated C++, a symbol that is only made into a value
+  (`mrb_symbol_value`), compared, or used as a keyword name is not a lookup;
+- a call that lists methods (`methods`, `instance_methods`,
+  `method_defined?`, ...) or an `undef` refuses the whole rule.
+
+`respond_to?` is the one name-taking method left out of that list. The
+closed build answers it for left-out methods too: `bc2cpp_left_out` records
+each left-out entry's class in a table shared by every compiled gem. The
+generated `mrb_respond_to` and a `Kernel#respond_to?` installed over mruby's
+own consult it after the method table. mruby's `respond_to?` ignores
+visibility, and the rule refuses `undef`, so "the receiver is a kind of an
+owner of the entry" is the whole answer. Natives look methods up only by
+names they spell, which the outside scan already counts.
+
 ## The two lists
 
 - `static_dispatch_unregistered.rb`: names safe in every build.
@@ -114,13 +142,16 @@ list's lines are simply deleted. A closed-list line is wrapped instead:
 ```cpp
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_finish_zoom
   mrb_define_method(M, picture, "finish_zoom", Game__Picture_finish_zoom, ...);
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "finish_zoom", bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "finish_zoom", false);
 #endif
 ```
 
 The generated code, which `register.cxx` includes, defines
-`BC2CPP_UNREGISTERED_<entry>` for each entry the build's list leaves out.
+`BC2CPP_UNREGISTERED_<entry>` for each entry the build's list leaves out,
+and `bc2cpp_left_out` (the generated registration calls it too). In verify
+mode it registers the stub below. In a plain closed build it records the
+entry for `respond_to?` (see "Symbols" below).
 Without this, a closed-listed name with a hand line stayed registered in
 the closed build, and verify mode's stub was overwritten by the real
 method. `static_dispatch_scan_check.rb` runs `--closed --check`, which

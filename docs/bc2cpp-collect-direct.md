@@ -48,13 +48,34 @@ The arm is used only when:
 - the source text of both core definitions, read from their own files on every
   compile, is still the text above (`COLLECT_DIRECT_BODIES`).
 
+## The per-element yield
+
+`COLLECT_YIELD_HOIST` keeps the per-element step of the loop short.
+`bc2cpp_yield_argv` tests whether the block is a compiled block on every
+call. Inside the helper, `blk` cannot change, so the helper makes that test
+once before the loop and then calls the block's direct entry for each element.
+Any other block goes through `mrb_yield_argv`, the same fallback
+`bc2cpp_yield_argv` uses.
+
+The GC arena also stays small. `bc2cpp_yield_argv` restored the arena and then
+re-protected each result, so a 65,536-element map left 65,536 arena slots. The
+helper now saves the arena after it allocates the result Array. It stores each
+result into the Array and only then cuts the arena back. Every value is
+therefore held by the arena or by the Array.
+
+The result Array has no other reference until the helper returns, so it is
+never shared or frozen. A store into spare capacity is a plain slot write plus
+the write barrier; anything else goes through `mrb_ary_push`.
+
 The arm keeps the original guards (the exact-class test and, where the block
 may yield, the root-context test), so a subclass instance or a Fiber still
 takes the by-name path. `BC2CPP_COLLECT_DIRECT=0` keeps the
 `Enumerable#collect` call.
 
-`scripts/bc2cpp/collect_direct_check.rb` compares interpreted and compiled
-runs. The startup also gains from `NEQ_OP_EQ` and `POLY_INTEGER_TAG`
+`scripts/bc2cpp/collect_direct_check.rb` checks the helper's shape: the block
+test comes before the loop, and the arena is cut back after each store. It
+also compares interpreted and compiled runs, including a `GC.stress` map whose
+block allocates. The startup also gains from `NEQ_OP_EQ` and `POLY_INTEGER_TAG`
 ([bc2cpp-array-write-inline.md](bc2cpp-array-write-inline.md)): the TILE_LUT
 loop's `x != 0` and the probe's `Integer#[]` shim, so the check keeps
 behaviour cases for both.
