@@ -29,8 +29,19 @@ So that loop is a guarded one too (`RANGE_EACH_GUARD`,
 `range_each_guarded_glue`): it runs when the bounds are Integers, and any
 other Range jumps to the ordinary send behind it. A method with no place
 for that send (a resumable body, a rescue try body) keeps the send alone.
+
+An inclusive end at `MRB_INT_MAX` takes the send as well
+(`RANGE_EACH_INT_MAX`). There mrblib's `lim = last + 1` is a bigint, and
+mruby's `cmpnum` compares a non-Fixnum Integer with a bigint as two
+doubles, so with a 64-bit `mrb_int` the interpreter's `i < lim` turns false
+about 512 below the end: `(MAX - 2..MAX).each` yields nothing. The counter
+loop's exact `i <= MAX` would yield three elements, so the send keeps the
+interpreter's answer. An exclusive end, or any other Integer end, compares
+two `mrb_int`s exactly on both sides.
+
 `scripts/bc2cpp/range_each_guard_check.rb` compares interpreted and
-compiled runs over String, Float, bigint and Integer bounds.
+compiled runs over String, Float, bigint and Integer bounds, including the
+Fixnum and `mrb_int` edges.
 
 ## The arm gate
 

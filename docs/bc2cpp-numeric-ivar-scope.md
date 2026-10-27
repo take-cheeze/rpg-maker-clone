@@ -67,5 +67,5 @@ The gain is mostly the `@output_pixels << ...` push in `PPU#render_pixel`, now o
 (`render_pixel` and `bc2cpp_ary_push` together drop by 2.03M), and `CPU#run` (0.72M). GCC also stops inlining
 `bc2cpp_ary_entry` into its callers, which gives back 1.65M as an outlined function. Many hot ivars (`@hclk`,
 `@bg_pixels`) still have no pool. Their writers read constants or call methods the pools do not model, or they
-are written in the resumable `main_loop`, which the numeric flow does not model. `BC2CPP_POOL_DROP_REPORT=1`
-lists those causes.
+are written in the resumable `main_loop`, which the numeric flow did not model until
+[JMPUW_PLAIN](bc2cpp-numeric-jmpuw.md). `BC2CPP_POOL_DROP_REPORT=1` lists those causes.

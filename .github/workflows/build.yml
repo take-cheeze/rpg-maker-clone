@@ -759,6 +759,7 @@ jobs:
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
           ruby scripts/bc2cpp/kernel_loop_check.rb
           ruby scripts/bc2cpp/const_lexical_order_check.rb
+          ruby scripts/bc2cpp/zsuper_optional_check.rb
           ruby scripts/bc2cpp/const_bindings_check.rb
           ruby scripts/bc2cpp/explicit_block_arg_direct_check.rb
           ruby scripts/bc2cpp/stack_block_check.rb
@@ -774,13 +775,17 @@ jobs:
           ruby scripts/bc2cpp/array_times_result_check.rb
           ruby scripts/bc2cpp/core_definer_mono_check.rb
           ruby scripts/bc2cpp/integer_fast_arms_check.rb
+          ruby scripts/bc2cpp/tagged_fixnum_check.rb
           ruby scripts/bc2cpp/bigint_slow_arms_check.rb
           ruby scripts/bc2cpp/array_write_inline_check.rb
+          ruby scripts/bc2cpp/rotate_small_shift_check.rb
           ruby scripts/bc2cpp/branch_hints_check.rb
           ruby scripts/bc2cpp/hot_inline_check.rb
+          ruby scripts/bc2cpp/unsigned_index_check.rb
           ruby scripts/bc2cpp/fresh_freeze_check.rb
           ruby scripts/bc2cpp/splat_row_memo_check.rb
           ruby scripts/bc2cpp/resumable_locals_check.rb
+          ruby scripts/bc2cpp/numeric_jmpuw_check.rb
           ruby scripts/bc2cpp/ensure_nested_rescue_check.rb
           ruby scripts/bc2cpp/array_new_block_check.rb
           ruby scripts/bc2cpp/range_map_inline_check.rb

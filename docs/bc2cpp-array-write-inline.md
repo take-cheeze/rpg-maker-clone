@@ -26,6 +26,22 @@ call it used before.
   `ary_rotate_bang` and `rev`. The call is a mirror,
   `bc2cpp_ary_rotate_bang`. The exact-Array arm sits in front of the owner
   call, which stays the else for every other receiver or argument.
+- **ROTATE_SMALL_SHIFT** (same mirror). After `mrb_ary_modify` (unshare, frozen
+  check, write barrier) and mruby's count normalization, `idx == 0` returns
+  at once. A left shift `idx` whose short side, `idx` or `len - idx`, is at
+  most `BC2CPP_ROTATE_SMALL_MAX` (16) values goes through a stack buffer:
+  copy the short side out, `memmove` the rest, copy it back. This gives the
+  same order as mruby's triple reversal (`rev` three times, about len swaps),
+  which still handles longer shifts. Swapping the halves of an even split in
+  place measured no better on optcarrot than the buffer, so there is no
+  separate arm for it. The values
+  stay in the same array, so no write barrier is needed beyond the one
+  `mrb_ary_modify` already did, the same as mruby. optcarrot's
+  `@bg_pixels.rotate!(8)` (len 16) takes the buffered path.
+  `scripts/bc2cpp/rotate_small_shift_check.rb` compares interpreted and
+  compiled runs for every shift of short and long arrays, both signs and past
+  `len`, plus empty, frozen, shared and dup'd receivers, non-Integer and
+  bigint counts, and GC.stress.
 - **NEQ_OP_EQ** (`compile_neq_op_eq`, tools/bc2cpp/codegen_native_send.rb).
   `BasicObject#!=` is class.c's bytecode `!(self == other)`, so it answers what
   `OP_EQ` answers. Two Integers, or an Integer/Float pair, are compared in

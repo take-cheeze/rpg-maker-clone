@@ -530,6 +530,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/tagged_fixnum_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/bigint_slow_arms_check.rb:
     tier: runtime
     capabilities:
@@ -544,6 +551,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/rotate_small_shift_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/branch_hints_check.rb:
     tier: runtime
     capabilities:
@@ -552,6 +566,13 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/hot_inline_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/unsigned_index_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -573,6 +594,13 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/resumable_locals_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/numeric_jmpuw_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -673,6 +701,14 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/const_lexical_order_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/zsuper_optional_check.rb:
     tier: runtime
     capabilities:
     - mrbc

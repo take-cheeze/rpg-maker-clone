@@ -1279,7 +1279,10 @@
   [branch hints](docs/bc2cpp-branch-hints.md) (`BC2CPP_BRANCH_HINTS=0` compares).
   `hash` on an exact Array of Fixnums (an Array Hash key) is
   [computed natively](docs/bc2cpp-array-hash.md) with the interpreter's value.
-  The per-element Array helpers are [always inlined](docs/bc2cpp-hot-inline.md) outside `-Os` builds.
+  The per-element Array helpers are [always inlined](docs/bc2cpp-hot-inline.md) outside `-Os` builds,
+  and their bound test is [one unsigned compare](docs/bc2cpp-unsigned-index.md).
+  Fixnum `+ - * & | ^` and the compares work on the
+  [tagged word](docs/bc2cpp-tagged-fixnum.md) under word boxing (`-DBC2CPP_TAGGED_FIXNUM=0` compares).
   A `freeze` of a core iterator's result on a literal keeps embedded ivar stores free of the
   [frozen test](docs/bc2cpp-fresh-freeze.md) (`BC2CPP_FRESH_FREEZE=0` compares).
   A guarded `send(*table[i])` [remembers each row's arm](docs/bc2cpp-splat-row-memo.md) while the row
@@ -1404,6 +1407,8 @@
   `scripts/bc2cpp/class_pools_check.rb` and `scripts/bc2cpp/guard_hint_report.rb`.
   An `eval` no definition answers, and a computed `instance_variable_set` on the implicit self, no longer
   turn that ivar proof off for the whole program; see [ivar proof scope](docs/bc2cpp-numeric-ivar-scope.md).
+  A method whose `while` ends in `break`/`next` and has no `rescue`/`ensure` is now
+  [modelled by that proof](docs/bc2cpp-numeric-jmpuw.md) too (`BC2CPP_NUMERIC_JMPUW=0` compares).
   The same exact-receiver proof now reaches every arm wrapper of a send (the registered-expression chains
   of `size`/`empty?`/`first`, the tail of a POLY chain, the `core_or_native` fallbacks), and constants
   join the pools (`LIST = [...].freeze` is exactly an Array wherever it is read, unless a `const_missing`
