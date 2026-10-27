@@ -19,10 +19,16 @@ A bare constant whose one binding the closed world can prove never changes is
 read from a per-site slot after its first lookup. `tools/bc2cpp/const_site_cache.rb`
 holds the proofs; the same rules apply to both kinds:
 
-- **Class/module values** (`StableClassConstants`): exactly one `class`/`module`
-  statement for the name, no SETCONST/SETMCNST of it, no native or foreign
-  definition, and no `const_set`/`remove_const` in the program. Only a class or
-  module result is stored.
+- **Class/module values** (`StableClassConstants`): every `class`/`module`
+  statement for the name opens the same qualified path, no SETCONST/SETMCNST of
+  it, no native or foreign definition, and no `const_set`/`remove_const` in the
+  program. Only a class or module result is stored. The paths come from
+  `UniqueClassNames.bytecode_class_paths`, which walks the class bodies from the
+  root irep. A statement whose outer scope it cannot name counts as an unknown
+  path and refuses the name. Reopening a module at its own path finds the one
+  constant and binds nothing new, so `module LCF` in every file of mruby-lcf and
+  `module RPG2k` in every scene file no longer disqualify those names. Without
+  the root irep the rule is exactly one statement, as it was.
 - **Other values** (`StableValueConstants`, CONST_VALUE_CACHE): exactly one
   SETCONST/SETMCNST of the bare name, no class/module statement, and no native or
   foreign definition, under the same `const_set`/`remove_const` refusal. Any
@@ -31,8 +37,16 @@ holds the proofs; the same rules apply to both kinds:
   no literal fold admits.
 
 Both proofs are keyed by the bare name, so two bindings of the same name in
-different scopes disqualify it. A failed lookup raises before anything is
+different scopes (`RGSS::Window` and `RPG2k::Window`, or a `SCREEN_W` in each
+scene class) disqualify it. A failed lookup raises before anything is
 stored, and a read before the binding runs also raises, so it is never cached.
+
+Effect on the closed RPG2000 world: reads that walk the lexical scope chain on
+every execution fell from 1,734 sites to 968 in `rpg2k_compiled_gen.cpp` and from
+69 to 39 in `lcf_compiled_gen.cpp`. On the headless Nepheshel host
+([trace host](bc2cpp-trace-host.md), New Game plus a played battle, 1,200
+frames) the run went from 5.36 G to 5.14 G instructions, the same output.
+`scripts/bc2cpp/const_site_cache_check.rb` checks the proof.
 
 Effect on the optcarrot probe: `const_get` calls fell from about 1.36 million
 over 20 frames to under 18 thousand, and frame-loop instructions dropped from

@@ -866,6 +866,7 @@ jobs:
           ruby scripts/bc2cpp/native_format_types_check.rb
           ruby scripts/bc2cpp/decided_fold_count_check.rb
           ruby scripts/bc2cpp/class_bodies_check.rb
+          ruby scripts/bc2cpp/const_site_cache_check.rb
           # ci:parallel end
           CHECKS
           source "$RUNNER_TEMP/bc2cpp-checks.sh"
