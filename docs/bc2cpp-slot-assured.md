@@ -34,11 +34,14 @@ establishes three facts:
    finished its `#initialize`. So does every object a Method or block made during construction can reach, unless
    that `#initialize` raised. In that case only construction-reach code can still run on the object, and its
    reads keep the test.
-3. **Nothing makes an instance another way or unassigns a slot.** The world never names `allocate` or
-   `remove_instance_variable`, and `new` is not redefined. String `eval` (and the String forms of
+3. **Nothing makes an instance another way, unassigns a slot or changes what the construction calls.** The
+   world never names `allocate` or `remove_instance_variable` (also counting the names computed sends can carry,
+   `DynamicNames`), and `new` is not redefined. String `eval` (and the String forms of
    `instance_eval`/`class_eval`/`module_eval`) and `ObjectSpace.each_object` are either undefined or never
-   named. No outside source spells a family class, and no native source spells `@x`. `Marshal.load` of data
-   that no constructed object dumped is outside the model, as it is for every embedded ivar.
+   named. No outside source spells a family class, an ancestor that `#initialize` or its `super` resolves
+   through, or `@x`. A self-call whose name has a computed definer, or that a `remove_method`/`undef_method`/
+   `undef` can reach, refuses the family. `Marshal.load` of data that no constructed object dumped is outside
+   the model, as it is for every embedded ivar.
 
 A read in an irep outside the construction reach therefore needs no test, and a read inside it keeps the test.
 The synthesized `attr_reader` of an embedded ivar is treated the same way: it skips the test when no
