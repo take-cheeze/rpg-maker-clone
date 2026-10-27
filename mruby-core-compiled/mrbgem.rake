@@ -64,6 +64,8 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   # gems' *_decls.h, so it waits on their codegen (not the reverse: that would be
   # a cycle).
   file "#{dir}/src/register.cxx" => [generated, *other_generated]
+  # BC2CPP_SHARDS (docs/bc2cpp-shards.md): the rest of the generated code, compiled beside register.cxx.
+  bc2cpp_compiled_gem_shards(spec, generated, other_generated)
   cxx.include_paths << build_dir
   cxx.defines << 'BC2CPP_FAIL_FAST_TYPE' if BC2CPP_FAIL_FAST_TYPE
   # include/rgss_construct.hxx for bc2cpp's own emitted NATIVE_CONSTRUCT_TARGETS decls.
