@@ -1137,8 +1137,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // mruby-rpg2k-compiled, with no orphan -- no call below is the only
   // registration of its method.
   //
+#ifndef BC2CPP_UNREGISTERED_Game__Picture_opacity
   mrb_define_method(M, picture, "opacity", Game__Picture_opacity,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, picture, "opacity", false);
+#endif
   mrb_define_method(M, picture, "x", Game__Picture_x, MRB_ARGS_NONE());
   mrb_define_method(M, picture, "y", Game__Picture_y, MRB_ARGS_NONE());
   mrb_define_method(M, picture, "to_h", Game__Picture_to_h, MRB_ARGS_NONE());
@@ -1155,7 +1159,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(2));
   mrb_define_method(M, picture, "update", Game__Picture_update,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Picture_zoom
   mrb_define_method(M, picture, "zoom", Game__Picture_zoom, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, picture, "zoom", false);
+#endif
   mrb_define_method(M, picture, "red", Game__Picture_red, MRB_ARGS_NONE());
   mrb_define_method(M, picture, "green", Game__Picture_green, MRB_ARGS_NONE());
   mrb_define_method(M, picture, "blue", Game__Picture_blue, MRB_ARGS_NONE());
@@ -1166,83 +1174,72 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_finish_zoom
   mrb_define_method(M, picture, "finish_zoom", Game__Picture_finish_zoom,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "finish_zoom", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "finish_zoom", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_finish_opacity
   mrb_define_method(M, picture, "finish_opacity", Game__Picture_finish_opacity,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "finish_opacity", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "finish_opacity", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_finish_red
   mrb_define_method(M, picture, "finish_red", Game__Picture_finish_red,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "finish_red", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "finish_red", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_finish_green
   mrb_define_method(M, picture, "finish_green", Game__Picture_finish_green,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "finish_green", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "finish_green", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_finish_blue
   mrb_define_method(M, picture, "finish_blue", Game__Picture_finish_blue,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "finish_blue", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "finish_blue", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_finish_saturation
   mrb_define_method(M, picture, "finish_saturation",
                     Game__Picture_finish_saturation, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "finish_saturation", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "finish_saturation", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_frames_left
   mrb_define_method(M, picture, "frames_left", Game__Picture_frames_left,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "frames_left", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "frames_left", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Picture_saturation
   mrb_define_method(M, picture, "saturation", Game__Picture_saturation,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, picture, "saturation", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_shown$3f
   mrb_define_method(M, picture, "shown?", Game__Picture_shown$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "shown?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "shown?", false);
 #endif
   mrb_define_method(M, picture, "move_to", Game__Picture_move_to,
                     MRB_ARGS_REQ(9));
-#ifndef BC2CPP_UNREGISTERED_Game__Picture_moving$3f
   mrb_define_method(M, picture, "moving?", Game__Picture_moving$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "moving?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
-#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_erase$21
   mrb_define_method(M, picture, "erase!", Game__Picture_erase$21,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "erase!", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "erase!", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Picture_finish_move
   mrb_define_private_method(M, picture, "finish_move",
                             Game__Picture_finish_move, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, picture, "finish_move", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, picture, "finish_move", false);
 #endif
   mrb_define_private_method(M, picture, "initialize", Game__Picture_initialize,
                             MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
@@ -1266,23 +1263,20 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__EnemyAction_skill$3f
   mrb_define_method(M, enemy_action, "skill?", Game__EnemyAction_skill$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, enemy_action, "skill?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, enemy_action, "skill?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__EnemyAction_transform$3f
   mrb_define_method(M, enemy_action, "transform?",
                     Game__EnemyAction_transform$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, enemy_action, "transform?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, enemy_action, "transform?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__EnemyAction_basic$3f
   mrb_define_method(M, enemy_action, "basic?", Game__EnemyAction_basic$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, enemy_action, "basic?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, enemy_action, "basic?", false);
 #endif
 
   // Game::Screen: 39 of
@@ -1377,167 +1371,148 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_load_h
   mrb_define_method(M, screen, "load_h", Game__Screen_load_h, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "load_h", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "load_h", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_tint
   mrb_define_method(M, screen, "tint", Game__Screen_tint, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "tint", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "tint", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_tinting$3f
   mrb_define_method(M, screen, "tinting?", Game__Screen_tinting$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "tinting?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "tinting?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_shake_offset
   mrb_define_method(M, screen, "shake_offset", Game__Screen_shake_offset,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "shake_offset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "shake_offset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_shaking$3f
   mrb_define_method(M, screen, "shaking?", Game__Screen_shaking$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "shaking?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "shaking?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_flash_color
   mrb_define_method(M, screen, "flash_color", Game__Screen_flash_color,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "flash_color", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "flash_color", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_flashing$3f
   mrb_define_method(M, screen, "flashing?", Game__Screen_flashing$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "flashing?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "flashing?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_pan_offset
   mrb_define_method(M, screen, "pan_offset", Game__Screen_pan_offset,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "pan_offset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "pan_offset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_pan_locked$3f
   mrb_define_method(M, screen, "pan_locked?", Game__Screen_pan_locked$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "pan_locked?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "pan_locked?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_panning$3f
   mrb_define_method(M, screen, "panning?", Game__Screen_panning$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "panning?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "panning?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_fade_level
   mrb_define_method(M, screen, "fade_level", Game__Screen_fade_level,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "fade_level", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "fade_level", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_fade_transition
   mrb_define_method(M, screen, "fade_transition", Game__Screen_fade_transition,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "fade_transition", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "fade_transition", false);
 #endif
   mrb_define_method(M, screen, "transition", Game__Screen_transition,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_fading$3f
   mrb_define_method(M, screen, "fading?", Game__Screen_fading$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "fading?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "fading?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_erased$3f
   mrb_define_method(M, screen, "erased?", Game__Screen_erased$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "erased?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "erased?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_busy$3f
   mrb_define_method(M, screen, "busy?", Game__Screen_busy$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "busy?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "busy?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_tint_to
   mrb_define_method(M, screen, "tint_to", Game__Screen_tint_to,
                     MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "tint_to", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "tint_to", false);
 #endif
   mrb_define_method(M, screen, "tint_save_data", Game__Screen_tint_save_data,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_shake
   mrb_define_method(M, screen, "shake", Game__Screen_shake, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "shake", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "shake", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_shake_begin
   mrb_define_method(M, screen, "shake_begin", Game__Screen_shake_begin,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "shake_begin", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "shake_begin", false);
 #endif
   mrb_define_method(M, screen, "flash", Game__Screen_flash, MRB_ARGS_REQ(5));
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_flash_begin
   mrb_define_method(M, screen, "flash_begin", Game__Screen_flash_begin,
                     MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "flash_begin", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "flash_begin", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_flash_end
   mrb_define_method(M, screen, "flash_end", Game__Screen_flash_end,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "flash_end", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "flash_end", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_pan_reset
   mrb_define_method(M, screen, "pan_reset", Game__Screen_pan_reset,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "pan_reset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "pan_reset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_pan_lock
   mrb_define_method(M, screen, "pan_lock", Game__Screen_pan_lock,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "pan_lock", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "pan_lock", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_pan_unlock
   mrb_define_method(M, screen, "pan_unlock", Game__Screen_pan_unlock,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "pan_unlock", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "pan_unlock", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Screen_pan
   mrb_define_method(M, screen, "pan", Game__Screen_pan, MRB_ARGS_REQ(3));
+#else
+  bc2cpp_left_out(M, screen, "pan", false);
+#endif
   mrb_define_method(M, screen, "update", Game__Screen_update, MRB_ARGS_NONE());
 
   // Everything from here down is `private` in the real interpreted source
@@ -1549,37 +1524,32 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_fade_to
   mrb_define_private_method(M, screen, "fade_to", Game__Screen_fade_to,
                             MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "fade_to", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "fade_to", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_update_pan
   mrb_define_private_method(M, screen, "update_pan", Game__Screen_update_pan,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "update_pan", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "update_pan", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_update_flash
   mrb_define_private_method(M, screen, "update_flash",
                             Game__Screen_update_flash, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "update_flash", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "update_flash", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_approach
   mrb_define_private_method(M, screen, "approach", Game__Screen_approach,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "approach", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "approach", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Screen_erase
   mrb_define_method(M, screen, "erase", Game__Screen_erase,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, screen, "erase", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, screen, "erase", false);
 #endif
   mrb_define_method(M, screen, "show", Game__Screen_show,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
@@ -1617,9 +1587,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_transparent$3d
   mrb_define_method(M, window, "transparent=", RPG2k__Window_transparent$3d,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "transparent=", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "transparent=", false);
 #endif
   mrb_define_method(M, window, "contents=", RPG2k__Window_contents$3d,
                     MRB_ARGS_REQ(1));
@@ -1632,30 +1601,26 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_open_animation
   mrb_define_method(M, window, "open_animation", RPG2k__Window_open_animation,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "open_animation", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "open_animation", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_close_animation
   mrb_define_method(M, window, "close_animation", RPG2k__Window_close_animation,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "close_animation", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "close_animation", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_opening$3f
   mrb_define_method(M, window, "opening?", RPG2k__Window_opening$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "opening?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "opening?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_closing$3f
   mrb_define_method(M, window, "closing?", RPG2k__Window_closing$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "closing?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "closing?", false);
 #endif
   mrb_define_method(M, window, "pause=", RPG2k__Window_pause$3d,
                     MRB_ARGS_REQ(1));
@@ -1664,114 +1629,99 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_update_rect
   mrb_define_private_method(M, window, "update_rect", RPG2k__Window_update_rect,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "update_rect", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "update_rect", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_allocate_skin
   mrb_define_private_method(M, window, "allocate_skin",
                             RPG2k__Window_allocate_skin, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "allocate_skin", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "allocate_skin", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_position_arrow
   mrb_define_private_method(M, window, "position_arrow",
                             RPG2k__Window_position_arrow, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "position_arrow", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "position_arrow", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_draw_arrow
   mrb_define_private_method(M, window, "draw_arrow", RPG2k__Window_draw_arrow,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "draw_arrow", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "draw_arrow", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_draw_arrow_visibility
   mrb_define_private_method(M, window, "draw_arrow_visibility",
                             RPG2k__Window_draw_arrow_visibility,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "draw_arrow_visibility",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "draw_arrow_visibility", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_fully_open$3f
   mrb_define_private_method(M, window, "fully_open?",
                             RPG2k__Window_fully_open$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "fully_open?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "fully_open?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_drawn_height
   mrb_define_private_method(M, window, "drawn_height",
                             RPG2k__Window_drawn_height, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "drawn_height", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "drawn_height", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_redraw_for_animation
   mrb_define_private_method(M, window, "redraw_for_animation",
                             RPG2k__Window_redraw_for_animation,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "redraw_for_animation", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "redraw_for_animation", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_draw_skin
   mrb_define_private_method(M, window, "draw_skin", RPG2k__Window_draw_skin,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "draw_skin", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "draw_skin", false);
 #endif
   mrb_define_private_method(M, window, "draw_background",
                             RPG2k__Window_draw_background, MRB_ARGS_REQ(2));
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_draw_frame
   mrb_define_private_method(M, window, "draw_frame", RPG2k__Window_draw_frame,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "draw_frame", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "draw_frame", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_draw_fallback
   mrb_define_private_method(M, window, "draw_fallback",
                             RPG2k__Window_draw_fallback, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "draw_fallback", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "draw_fallback", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_draw_cursor
   mrb_define_private_method(M, window, "draw_cursor", RPG2k__Window_draw_cursor,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "draw_cursor", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "draw_cursor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_draw_cursor_skin
   mrb_define_private_method(M, window, "draw_cursor_skin",
                             RPG2k__Window_draw_cursor_skin, MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "draw_cursor_skin", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "draw_cursor_skin", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_draw_cursor_fallback
   mrb_define_private_method(M, window, "draw_cursor_fallback",
                             RPG2k__Window_draw_cursor_fallback,
                             MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "draw_cursor_fallback", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "draw_cursor_fallback", false);
 #endif
   mrb_define_private_method(M, window, "initialize", RPG2k__Window_initialize,
                             MRB_ARGS_OPT(4));
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Window_draw_arrow_fallback
   mrb_define_private_method(M, window, "draw_arrow_fallback",
                             RPG2k__Window_draw_arrow_fallback, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, window, "draw_arrow_fallback", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window, "draw_arrow_fallback", false);
 #endif
 
   // Game::Transition (mruby-rpg2k/mrblib/
@@ -1894,100 +1844,86 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_advance
   mrb_define_method(M, transition, "advance", Game__Transition_advance,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "advance", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "advance", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_uniform$3f
   mrb_define_method(M, transition, "uniform?", Game__Transition_uniform$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "uniform?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "uniform?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_black_alpha
   mrb_define_method(M, transition, "black_alpha", Game__Transition_black_alpha,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "black_alpha", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "black_alpha", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_visible_rects
   mrb_define_method(M, transition, "visible_rects",
                     Game__Transition_visible_rects, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "visible_rects", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "visible_rects", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_captured$3f
   mrb_define_method(M, transition, "captured?", Game__Transition_captured$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "captured?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "captured?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_zoom$3f
   mrb_define_method(M, transition, "zoom?", Game__Transition_zoom$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "zoom?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "zoom?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_mosaic$3f
   mrb_define_method(M, transition, "mosaic?", Game__Transition_mosaic$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "mosaic?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "mosaic?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_wave$3f
   mrb_define_method(M, transition, "wave?", Game__Transition_wave$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "wave?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "wave?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_mosaic_block_size
   mrb_define_method(M, transition, "mosaic_block_size",
                     Game__Transition_mosaic_block_size, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "mosaic_block_size",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "mosaic_block_size", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_wave_params
   mrb_define_method(M, transition, "wave_params", Game__Transition_wave_params,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "wave_params", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "wave_params", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_capture_ops
   mrb_define_method(M, transition, "capture_ops", Game__Transition_capture_ops,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "capture_ops", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "capture_ops", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_random_blocks$3f
   mrb_define_method(M, transition, "random_blocks?",
                     Game__Transition_random_blocks$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "random_blocks?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "random_blocks?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_new_block_rects
   mrb_define_method(M, transition, "new_block_rects",
                     Game__Transition_new_block_rects, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "new_block_rects", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "new_block_rects", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_revealed_block_rects
   mrb_define_method(M, transition, "revealed_block_rects",
                     Game__Transition_revealed_block_rects, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "revealed_block_rects",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "revealed_block_rects", false);
 #endif
 
   // Everything from here down is `private` in the real interpreted source
@@ -1996,39 +1932,38 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_span
   mrb_define_private_method(M, transition, "span", Game__Transition_span,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "span", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "span", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_frame_ratio
   mrb_define_private_method(M, transition, "frame_ratio",
                             Game__Transition_frame_ratio, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "frame_ratio", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "frame_ratio", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_scroll_offset
   mrb_define_private_method(M, transition, "scroll_offset",
                             Game__Transition_scroll_offset, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "scroll_offset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "scroll_offset", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Transition_half
   mrb_define_private_method(M, transition, "half", Game__Transition_half,
                             MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, transition, "half", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_cross_split_ops
   mrb_define_private_method(M, transition, "cross_split_ops",
                             Game__Transition_cross_split_ops, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "cross_split_ops", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "cross_split_ops", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_zoom_rect
   mrb_define_private_method(M, transition, "zoom_rect",
                             Game__Transition_zoom_rect, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, transition, "zoom_rect", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "zoom_rect", false);
 #endif
   mrb_define_private_method(M, transition, "around", Game__Transition_around,
                             MRB_ARGS_REQ(1));
@@ -2064,53 +1999,46 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_display_max_hp
   mrb_define_method(M, actor, "display_max_hp", Game__Actor_display_max_hp,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "display_max_hp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "display_max_hp", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_display_max_mp
   mrb_define_method(M, actor, "display_max_mp", Game__Actor_display_max_mp,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "display_max_mp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "display_max_mp", false);
 #endif
   mrb_define_method(M, actor, "class_name", Game__Actor_class_name,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_set_charset
   mrb_define_method(M, actor, "set_charset", Game__Actor_set_charset,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "set_charset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "set_charset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_sprite_changed$3f
   mrb_define_method(M, actor, "sprite_changed?", Game__Actor_sprite_changed$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "sprite_changed?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "sprite_changed?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_name_changed$3f
   mrb_define_method(M, actor, "name_changed?", Game__Actor_name_changed$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "name_changed?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "name_changed?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_title_changed$3f
   mrb_define_method(M, actor, "title_changed?", Game__Actor_title_changed$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "title_changed?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "title_changed?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_total_state_count
   mrb_define_method(M, actor, "total_state_count",
                     Game__Actor_total_state_count, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "total_state_count", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "total_state_count", false);
 #endif
   mrb_define_method(M, actor, "faceset_name", Game__Actor_faceset_name,
                     MRB_ARGS_NONE());
@@ -2119,129 +2047,137 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_set_faceset
   mrb_define_method(M, actor, "set_faceset", Game__Actor_set_faceset,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "set_faceset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "set_faceset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_knows_skill$3f
   mrb_define_method(M, actor, "knows_skill?", Game__Actor_knows_skill$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "knows_skill?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "knows_skill?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_learn_skill
   mrb_define_method(M, actor, "learn_skill", Game__Actor_learn_skill,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "learn_skill", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "learn_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_forget_skill
   mrb_define_method(M, actor, "forget_skill", Game__Actor_forget_skill,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "forget_skill", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "forget_skill", false);
 #endif
   mrb_define_method(M, actor, "dead?", Game__Actor_dead$3f, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_state$3f
   mrb_define_method(M, actor, "state?", Game__Actor_state$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "state?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "state?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_state_persists_type$3f
   mrb_define_method(M, actor, "state_persists_type?",
                     Game__Actor_state_persists_type$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "state_persists_type?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "state_persists_type?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_equipped$3f
   mrb_define_method(M, actor, "equipped?", Game__Actor_equipped$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "equipped?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "equipped?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_free_two_handed_slot
   mrb_define_method(M, actor, "free_two_handed_slot",
                     Game__Actor_free_two_handed_slot, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "free_two_handed_slot", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "free_two_handed_slot", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_recompute_stats
   mrb_define_method(M, actor, "recompute_stats", Game__Actor_recompute_stats,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "recompute_stats", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "recompute_stats", false);
 #endif
   mrb_define_method(M, actor, "rpg2003?", Game__Actor_rpg2003$3f,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_max_hp_cap
   mrb_define_method(M, actor, "max_hp_cap", Game__Actor_max_hp_cap,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "max_hp_cap", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "max_hp_cap", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_dual_attack$3f
   mrb_define_method(M, actor, "dual_attack?", Game__Actor_dual_attack$3f,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "dual_attack?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_weapon_attack_multiplier
   mrb_define_method(M, actor, "weapon_attack_multiplier",
                     Game__Actor_weapon_attack_multiplier, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "weapon_attack_multiplier",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "weapon_attack_multiplier", false);
 #endif
   mrb_define_method(M, actor, "swing_weapon_data",
                     Game__Actor_swing_weapon_data, MRB_ARGS_REQ(1));
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_half_sp_cost$3f
   mrb_define_method(M, actor, "half_sp_cost?", Game__Actor_half_sp_cost$3f,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "half_sp_cost?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_prevents_terrain_damage$3f
   mrb_define_method(M, actor, "prevents_terrain_damage?",
                     Game__Actor_prevents_terrain_damage$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "prevents_terrain_damage?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "prevents_terrain_damage?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_strong_defence$3f
   mrb_define_method(M, actor, "strong_defence?", Game__Actor_strong_defence$3f,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "strong_defence?", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_force_ai$3f
   mrb_define_method(M, actor, "force_ai?", Game__Actor_force_ai$3f,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "force_ai?", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_double_hand$3f
   mrb_define_method(M, actor, "double_hand?", Game__Actor_double_hand$3f,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "double_hand?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_equipment_fixed$3f
   mrb_define_method(M, actor, "equipment_fixed?",
                     Game__Actor_equipment_fixed$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "equipment_fixed?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "equipment_fixed?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_slot_cursed$3f
   mrb_define_method(M, actor, "slot_cursed?", Game__Actor_slot_cursed$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "slot_cursed?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "slot_cursed?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_exp_max
   mrb_define_method(M, actor, "exp_max", Game__Actor_exp_max, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "exp_max", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "exp_max", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_max_level
   mrb_define_method(M, actor, "max_level", Game__Actor_max_level,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "max_level", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_exp_for_level
   mrb_define_method(M, actor, "exp_for_level", Game__Actor_exp_for_level,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "exp_for_level", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "exp_for_level", false);
 #endif
   // #set_exp is the one method this round's own full-sweep re-check (see
   // this file's own top comment -- the Game::Party round)
@@ -2251,81 +2187,78 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // compile clean now, not 75.
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_set_exp
   mrb_define_method(M, actor, "set_exp", Game__Actor_set_exp, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "set_exp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "set_exp", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_gain_exp
   mrb_define_method(M, actor, "gain_exp", Game__Actor_gain_exp,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "gain_exp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "gain_exp", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_next_level_exp
   mrb_define_method(M, actor, "next_level_exp", Game__Actor_next_level_exp,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "next_level_exp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "next_level_exp", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_exp_to_next
   mrb_define_method(M, actor, "exp_to_next", Game__Actor_exp_to_next,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "exp_to_next", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "exp_to_next", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_change_level_by
   mrb_define_method(M, actor, "change_level_by", Game__Actor_change_level_by,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "change_level_by", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "change_level_by", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_crit_chance
   mrb_define_method(M, actor, "crit_chance", Game__Actor_crit_chance,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "crit_chance", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_weapon_crit_chance
   mrb_define_method(M, actor, "weapon_crit_chance",
                     Game__Actor_weapon_crit_chance, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "weapon_crit_chance", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "weapon_crit_chance", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_set_hp
   mrb_define_method(M, actor, "set_hp", Game__Actor_set_hp, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "set_hp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "set_hp", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_add_state
   mrb_define_method(M, actor, "add_state", Game__Actor_add_state,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(1, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "add_state", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "add_state", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_remove_state
   mrb_define_method(M, actor, "remove_state", Game__Actor_remove_state,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(1, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "remove_state", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "remove_state", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_equip
   mrb_define_method(M, actor, "equip", Game__Actor_equip, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, actor, "equip", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_equip_item
   mrb_define_method(M, actor, "equip_item", Game__Actor_equip_item,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "equip_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "equip_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_change_hp
   mrb_define_method(M, actor, "change_hp", Game__Actor_change_hp,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "change_hp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "change_hp", false);
 #endif
   // #knock_out! is NOT registered here -- tools/bc2cpp/bc2cpp.rb's own
   // compile_send fix (see that file's top comment on the real,
@@ -2339,35 +2272,39 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_state_table
   mrb_define_method(M, actor, "state_table", Game__Actor_state_table,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "state_table", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "state_table", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_change_mp
   mrb_define_method(M, actor, "change_mp", Game__Actor_change_mp,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "change_mp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "change_mp", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_change_param
   mrb_define_method(M, actor, "change_param", Game__Actor_change_param,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "change_param", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "change_param", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_base_param_limit
   mrb_define_method(M, actor, "base_param_limit", Game__Actor_base_param_limit,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "base_param_limit", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "base_param_limit", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_battle_commands
   mrb_define_method(M, actor, "battle_commands", Game__Actor_battle_commands,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "battle_commands", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_battle_command_row
   mrb_define_method(M, actor, "battle_command_row",
                     Game__Actor_battle_command_row, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, actor, "battle_command_row", false);
+#endif
   // #restore_class is NOT registered here for the same reason #knock_out!
   // above isn't -- its own body calls `set_level(@level, preserve_mod:
   // false)`, a real keyword-argument call site bc2cpp's own compile_send fix
@@ -2377,46 +2314,62 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_class_changed$3f
   mrb_define_method(M, actor, "class_changed?", Game__Actor_class_changed$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "class_changed?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "class_changed?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_battle_row
   mrb_define_method(M, actor, "battle_row", Game__Actor_battle_row,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "battle_row", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_battle_row$3d
   mrb_define_method(M, actor, "battle_row=", Game__Actor_battle_row$3d,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, actor, "battle_row=", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_atb_gauge
   mrb_define_method(M, actor, "atb_gauge", Game__Actor_atb_gauge,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "atb_gauge", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_battle_commands$3d
   mrb_define_method(M, actor,
                     "battle_commands=", Game__Actor_battle_commands$3d,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "battle_commands=", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "battle_commands=", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_battle_commands_changed$3f
   mrb_define_method(M, actor, "battle_commands_changed?",
                     Game__Actor_battle_commands_changed$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "battle_commands_changed?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "battle_commands_changed?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_set_battle_combo
   mrb_define_method(M, actor, "set_battle_combo", Game__Actor_set_battle_combo,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "set_battle_combo", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "set_battle_combo", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_rename_skill$3f
   mrb_define_method(M, actor, "rename_skill?", Game__Actor_rename_skill$3f,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "rename_skill?", false);
+#endif
   mrb_define_method(M, actor, "battle_x", Game__Actor_battle_x,
                     MRB_ARGS_NONE());
   mrb_define_method(M, actor, "battle_y", Game__Actor_battle_y,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_battler_animation_id
   mrb_define_method(M, actor, "battler_animation_id",
                     Game__Actor_battler_animation_id, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "battler_animation_id", false);
+#endif
 
   // 9 of the 13 real methods mruby-rpg2k/mrblib/game/battle_support.rb's
   // own `class Actor` reopening adds (see this block's own intro comment
@@ -2445,20 +2398,48 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // on any of these four, none of which ever gets far enough into codegen
   // to need a dispatch-mode decision at all.
   mrb_define_method(M, actor, "alive?", Game__Actor_alive$3f, MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_attack_animation_id
   mrb_define_method(M, actor, "attack_animation_id",
                     Game__Actor_attack_animation_id, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "attack_animation_id", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_ignores_evasion$3f
   mrb_define_method(M, actor, "ignores_evasion?",
                     Game__Actor_ignores_evasion$3f, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "ignores_evasion?", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_attack_all$3f
   mrb_define_method(M, actor, "attack_all?", Game__Actor_attack_all$3f,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "attack_all?", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_preemptive$3f
   mrb_define_method(M, actor, "preemptive?", Game__Actor_preemptive$3f,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "preemptive?", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_weapon_sp_cost
   mrb_define_method(M, actor, "weapon_sp_cost", Game__Actor_weapon_sp_cost,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "weapon_sp_cost", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_atb_gauge$3d
   mrb_define_method(M, actor, "atb_gauge=", Game__Actor_atb_gauge$3d,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, actor, "atb_gauge=", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Actor_clear_battle_combo
   mrb_define_method(M, actor, "clear_battle_combo",
                     Game__Actor_clear_battle_combo, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, actor, "clear_battle_combo", false);
+#endif
   mrb_define_method(M, actor, "skill_command_name",
                     Game__Actor_skill_command_name, MRB_ARGS_NONE());
 
@@ -2470,44 +2451,38 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_class_battle_commands
   mrb_define_private_method(M, actor, "class_battle_commands",
                             Game__Actor_class_battle_commands, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "class_battle_commands", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "class_battle_commands", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_db_exp_param
   mrb_define_private_method(M, actor, "db_exp_param", Game__Actor_db_exp_param,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "db_exp_param", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "db_exp_param", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_curve_row
   mrb_define_private_method(M, actor, "curve_row", Game__Actor_curve_row,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "curve_row", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "curve_row", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_set_class_id
   mrb_define_private_method(M, actor, "set_class_id", Game__Actor_set_class_id,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "set_class_id", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "set_class_id", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_class_row_for
   mrb_define_private_method(M, actor, "class_row_for",
                             Game__Actor_class_row_for, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "class_row_for", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "class_row_for", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Actor_two_handed$3f
   mrb_define_method(M, actor, "two_handed?", Game__Actor_two_handed$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, actor, "two_handed?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, actor, "two_handed?", false);
 #endif
 
   // Game::Party (see this file's
@@ -2558,495 +2533,507 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Party_apply_actor_meta
   mrb_define_method(M, party, "apply_actor_meta", Game__Party_apply_actor_meta,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "apply_actor_meta", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "apply_actor_meta", false);
 #endif
   mrb_define_method(M, party, "size", Game__Party_size, MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Party_leader
   mrb_define_method(M, party, "leader", Game__Party_leader, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, party, "leader", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_take_leader_graphic_dirty
   mrb_define_method(M, party, "take_leader_graphic_dirty",
                     Game__Party_take_leader_graphic_dirty, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, party, "take_leader_graphic_dirty", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_include_actor$3f
   mrb_define_method(M, party, "include_actor?", Game__Party_include_actor$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "include_actor?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "include_actor?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_actor_by_id
   mrb_define_method(M, party, "actor_by_id", Game__Party_actor_by_id,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "actor_by_id", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "actor_by_id", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_any_alive$3f
   mrb_define_method(M, party, "any_alive?", Game__Party_any_alive$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "any_alive?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "any_alive?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_all_dead$3f
   mrb_define_method(M, party, "all_dead?", Game__Party_all_dead$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "all_dead?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "all_dead?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_map_step_damaged$3f
   mrb_define_method(M, party, "map_step_damaged?",
                     Game__Party_map_step_damaged$3f, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, party, "map_step_damaged?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_add_actor
   mrb_define_method(M, party, "add_actor", Game__Party_add_actor,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "add_actor", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "add_actor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_promote_to_leader
   mrb_define_method(M, party, "promote_to_leader",
                     Game__Party_promote_to_leader, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "promote_to_leader", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "promote_to_leader", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_item_count
   mrb_define_method(M, party, "item_count", Game__Party_item_count,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, party, "item_count", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_gain_gold
   mrb_define_method(M, party, "gain_gold", Game__Party_gain_gold,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "gain_gold", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "gain_gold", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_db_item
   mrb_define_method(M, party, "db_item", Game__Party_db_item, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "db_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "db_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_db_enemy_group
   mrb_define_method(M, party, "db_enemy_group", Game__Party_db_enemy_group,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "db_enemy_group", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "db_enemy_group", false);
 #endif
   mrb_define_method(M, party, "rpg2003?", Game__Party_rpg2003$3f,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Party_alternate_battle_layout$3f
   mrb_define_method(M, party, "alternate_battle_layout?",
                     Game__Party_alternate_battle_layout$3f, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, party, "alternate_battle_layout?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_death_handler$3f
   mrb_define_method(M, party, "death_handler?", Game__Party_death_handler$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "death_handler?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "death_handler?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_death_handler_event
   mrb_define_method(M, party, "death_handler_event",
                     Game__Party_death_handler_event, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "death_handler_event", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "death_handler_event", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_death_handler_teleport
   mrb_define_method(M, party, "death_handler_teleport",
                     Game__Party_death_handler_teleport, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "death_handler_teleport",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "death_handler_teleport", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_item_field_occasion$3f
   mrb_define_method(M, party, "item_field_occasion?",
                     Game__Party_item_field_occasion$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "item_field_occasion?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "item_field_occasion?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_switch_item$3f
   mrb_define_method(M, party, "switch_item?", Game__Party_switch_item$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "switch_item?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "switch_item?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_use_switch_item
   mrb_define_method(M, party, "use_switch_item", Game__Party_use_switch_item,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "use_switch_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "use_switch_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_item_recovery
   mrb_define_method(M, party, "item_recovery", Game__Party_item_recovery,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "item_recovery", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "item_recovery", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_item_cured_states
   mrb_define_method(M, party, "item_cured_states",
                     Game__Party_item_cured_states, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "item_cured_states", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "item_cured_states", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_ko_only_blocked$3f
   mrb_define_method(M, party, "ko_only_blocked?",
                     Game__Party_ko_only_blocked$3f, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "ko_only_blocked?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "ko_only_blocked?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_item_usable_by$3f
   mrb_define_method(M, party, "item_usable_by?", Game__Party_item_usable_by$3f,
                     MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, party, "item_usable_by?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_item_usable_by_class$3f
   mrb_define_method(M, party, "item_usable_by_class?",
                     Game__Party_item_usable_by_class$3f, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "item_usable_by_class?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "item_usable_by_class?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_consume_item_use
   mrb_define_method(M, party, "consume_item_use", Game__Party_consume_item_use,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "consume_item_use", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "consume_item_use", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_use_special_item
   mrb_define_method(M, party, "use_special_item", Game__Party_use_special_item,
                     MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "use_special_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "use_special_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_use_equip_skill_item
   mrb_define_method(M, party, "use_equip_skill_item",
                     Game__Party_use_equip_skill_item, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "use_equip_skill_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "use_equip_skill_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_use_special_escape_item
   mrb_define_method(M, party, "use_special_escape_item",
                     Game__Party_use_special_escape_item, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "use_special_escape_item",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "use_special_escape_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_use_special_teleport_item
   mrb_define_method(M, party, "use_special_teleport_item",
                     Game__Party_use_special_teleport_item, MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "use_special_teleport_item",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "use_special_teleport_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_use_special_switch_item
   mrb_define_method(M, party, "use_special_switch_item",
                     Game__Party_use_special_switch_item, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "use_special_switch_item",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "use_special_switch_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_use_skill_book
   mrb_define_method(M, party, "use_skill_book", Game__Party_use_skill_book,
                     MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "use_skill_book", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "use_skill_book", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_seed_boosts
   mrb_define_method(M, party, "seed_boosts", Game__Party_seed_boosts,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "seed_boosts", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "seed_boosts", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_equip_slot_for
   mrb_define_method(M, party, "equip_slot_for", Game__Party_equip_slot_for,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "equip_slot_for", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "equip_slot_for", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_equip_candidate_for$3f
   mrb_define_method(M, party, "equip_candidate_for?",
                     Game__Party_equip_candidate_for$3f, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "equip_candidate_for?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "equip_candidate_for?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_equip_by_class$3f
   mrb_define_method(M, party, "equip_by_class?", Game__Party_equip_by_class$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "equip_by_class?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "equip_by_class?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_swap_equipment_through_bag
   mrb_define_private_method(M, party, "swap_equipment_through_bag",
                             Game__Party_swap_equipment_through_bag,
                             MRB_ARGS_REQ(3));
+#else
+  bc2cpp_left_out(M, party, "swap_equipment_through_bag", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_equip_item_from_bag
   mrb_define_method(M, party, "equip_item_from_bag",
                     Game__Party_equip_item_from_bag, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "equip_item_from_bag", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "equip_item_from_bag", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_db_skill
   mrb_define_method(M, party, "db_skill", Game__Party_db_skill,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "db_skill", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "db_skill", false);
 #endif
   mrb_define_method(M, party, "term", Game__Party_term, MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_Game__Party_state_table
   mrb_define_method(M, party, "state_table", Game__Party_state_table,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "state_table", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "state_table", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_skill_cost
   mrb_define_method(M, party, "skill_cost", Game__Party_skill_cost,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "skill_cost", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "skill_cost", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_escape_skill_available$3f
   mrb_define_method(M, party, "escape_skill_available?",
                     Game__Party_escape_skill_available$3f, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, party, "escape_skill_available?", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_teleport_skill_available$3f
   mrb_define_method(M, party, "teleport_skill_available?",
                     Game__Party_teleport_skill_available$3f, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, party, "teleport_skill_available?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_flying$3f
   mrb_define_method(M, party, "flying?", Game__Party_flying$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "flying?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "flying?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_unsupported_field_skill$3f
   mrb_define_method(M, party, "unsupported_field_skill?",
                     Game__Party_unsupported_field_skill$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "unsupported_field_skill?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "unsupported_field_skill?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_field_occasion$3f
   mrb_define_method(M, party, "field_occasion?", Game__Party_field_occasion$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "field_occasion?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "field_occasion?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_switch_skill$3f
   mrb_define_method(M, party, "switch_skill?", Game__Party_switch_skill$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "switch_skill?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "switch_skill?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_can_cast$3f
   mrb_define_method(M, party, "can_cast?", Game__Party_can_cast$3f,
                     MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, party, "can_cast?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_attribute_weapon_type$3f
   mrb_define_method(M, party, "attribute_weapon_type?",
                     Game__Party_attribute_weapon_type$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "attribute_weapon_type?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "attribute_weapon_type?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_adjust_stat
   mrb_define_method(M, party, "adjust_stat", Game__Party_adjust_stat,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "adjust_stat", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "adjust_stat", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_effective_atk
   mrb_define_method(M, party, "effective_atk", Game__Party_effective_atk,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, party, "effective_atk", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_effective_int
   mrb_define_method(M, party, "effective_int", Game__Party_effective_int,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, party, "effective_int", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_effective_def
   mrb_define_method(M, party, "effective_def", Game__Party_effective_def,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, party, "effective_def", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_effective_spi
   mrb_define_method(M, party, "effective_spi", Game__Party_effective_spi,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "effective_spi", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "effective_spi", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_effective_agi
   mrb_define_method(M, party, "effective_agi", Game__Party_effective_agi,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, party, "effective_agi", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_skill_effect
   mrb_define_method(M, party, "skill_effect", Game__Party_skill_effect,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "skill_effect", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "skill_effect", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_skill_defence_term
   mrb_define_method(M, party, "skill_defence_term",
                     Game__Party_skill_defence_term, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "skill_defence_term", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "skill_defence_term", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_skill_targets
   mrb_define_method(M, party, "skill_targets", Game__Party_skill_targets,
                     MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "skill_targets", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "skill_targets", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_skill_cured_states
   mrb_define_method(M, party, "skill_cured_states",
                     Game__Party_skill_cured_states, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "skill_cured_states", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "skill_cured_states", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_skill_inflicted_states
   mrb_define_method(M, party, "skill_inflicted_states",
                     Game__Party_skill_inflicted_states, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "skill_inflicted_states",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "skill_inflicted_states", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_gauge_battle_layout$3f
   mrb_define_method(M, party, "gauge_battle_layout?",
                     Game__Party_gauge_battle_layout$3f, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, party, "gauge_battle_layout?", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_automatic_battle_placement$3f
   mrb_define_method(M, party, "automatic_battle_placement?",
                     Game__Party_automatic_battle_placement$3f, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, party, "automatic_battle_placement?", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_battle_skill$3f
   mrb_define_method(M, party, "battle_skill?", Game__Party_battle_skill$3f,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, party, "battle_skill?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_battle_occasion$3f
   mrb_define_method(M, party, "battle_occasion?",
                     Game__Party_battle_occasion$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "battle_occasion?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "battle_occasion?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_battle_skill_target
   mrb_define_method(M, party, "battle_skill_target",
                     Game__Party_battle_skill_target, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "battle_skill_target", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "battle_skill_target", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_skill_to_hit
   mrb_define_method(M, party, "skill_to_hit", Game__Party_skill_to_hit,
                     MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "skill_to_hit", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "skill_to_hit", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_state_hit_ratio
   mrb_define_method(M, party, "state_hit_ratio", Game__Party_state_hit_ratio,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "state_hit_ratio", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "state_hit_ratio", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_skill_attr_shift
   mrb_define_method(M, party, "skill_attr_shift", Game__Party_skill_attr_shift,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "skill_attr_shift", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "skill_attr_shift", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_skill_invoking_item$3f
   mrb_define_method(M, party, "skill_invoking_item?",
                     Game__Party_skill_invoking_item$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "skill_invoking_item?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "skill_invoking_item?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_battle_usable$3f
   mrb_define_method(M, party, "battle_usable?", Game__Party_battle_usable$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "battle_usable?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "battle_usable?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_battle_item_command
   mrb_define_method(M, party, "battle_item_command",
                     Game__Party_battle_item_command, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "battle_item_command", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "battle_item_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_item_all_allies$3f
   mrb_define_method(M, party, "item_all_allies?",
                     Game__Party_item_all_allies$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "item_all_allies?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "item_all_allies?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_battle_skill_command
   mrb_define_method(M, party, "battle_skill_command",
                     Game__Party_battle_skill_command,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(1, 0));
+#else
+  bc2cpp_left_out(M, party, "battle_skill_command", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_gain_item
   mrb_define_method(M, party, "gain_item", Game__Party_gain_item,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "gain_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "gain_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_lose_item
   mrb_define_method(M, party, "lose_item", Game__Party_lose_item,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "lose_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "lose_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_field_usable$3f
   mrb_define_method(M, party, "field_usable?", Game__Party_field_usable$3f,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "field_usable?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "field_usable?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Party_use_item
   mrb_define_method(M, party, "use_item", Game__Party_use_item,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+#else
+  bc2cpp_left_out(M, party, "use_item", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_equip_from_bag
   mrb_define_method(M, party, "equip_from_bag", Game__Party_equip_from_bag,
                     MRB_ARGS_REQ(2) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "equip_from_bag", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "equip_from_bag", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_unequip_to_bag
   mrb_define_method(M, party, "unequip_to_bag", Game__Party_unequip_to_bag,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "unequip_to_bag", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "unequip_to_bag", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_cast_escape_skill
   mrb_define_method(M, party, "cast_escape_skill",
                     Game__Party_cast_escape_skill,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "cast_escape_skill", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "cast_escape_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_cast_teleport_skill
   mrb_define_method(M, party, "cast_teleport_skill",
                     Game__Party_cast_teleport_skill,
                     MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "cast_teleport_skill", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "cast_teleport_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Party_cast_switch_skill
   mrb_define_method(M, party, "cast_switch_skill",
                     Game__Party_cast_switch_skill,
                     MRB_ARGS_REQ(2) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, party, "cast_switch_skill", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "cast_switch_skill", false);
 #endif
 
   // RPG2k::Scene::MapViewer (mruby-rpg2k/mrblib/scene/map_viewer.rb) -- the F9
@@ -3096,89 +3083,82 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_viewer, "update_pan",
                             RPG2k__Scene__MapViewer_update_pan,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "update_pan", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "update_pan", false);
 #endif
   mrb_define_private_method(M, map_viewer, "close",
                             RPG2k__Scene__MapViewer_close, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_set_zoom
   mrb_define_private_method(M, map_viewer, "set_zoom",
                             RPG2k__Scene__MapViewer_set_zoom, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "set_zoom", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "set_zoom", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_pan
   mrb_define_private_method(M, map_viewer, "pan", RPG2k__Scene__MapViewer_pan,
                             MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_viewer, "pan", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_clamp
   mrb_define_private_method(M, map_viewer, "clamp",
                             RPG2k__Scene__MapViewer_clamp, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "clamp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "clamp", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_refresh
   mrb_define_private_method(M, map_viewer, "refresh",
                             RPG2k__Scene__MapViewer_refresh, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "refresh", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "refresh", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_select_header_text
   mrb_define_private_method(M, map_viewer, "select_header_text",
                             RPG2k__Scene__MapViewer_select_header_text,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "select_header_text",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "select_header_text", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_draw_footer
   mrb_define_private_method(M, map_viewer, "draw_footer",
                             RPG2k__Scene__MapViewer_draw_footer,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "draw_footer", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "draw_footer", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_tile_color
   mrb_define_private_method(M, map_viewer, "tile_color",
                             RPG2k__Scene__MapViewer_tile_color,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "tile_color", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "tile_color", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_mark
   mrb_define_private_method(M, map_viewer, "mark", RPG2k__Scene__MapViewer_mark,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "mark", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "mark", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_draw_cursor
   mrb_define_private_method(M, map_viewer, "draw_cursor",
                             RPG2k__Scene__MapViewer_draw_cursor,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "draw_cursor", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "draw_cursor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_save_to_disk
   mrb_define_private_method(M, map_viewer, "save_to_disk",
                             RPG2k__Scene__MapViewer_save_to_disk,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "save_to_disk", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "save_to_disk", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapViewer_build_chipset
   mrb_define_private_method(M, map_viewer, "build_chipset",
                             RPG2k__Scene__MapViewer_build_chipset,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_viewer, "build_chipset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_viewer, "build_chipset", false);
 #endif
 
   // Game::Battle (mruby-rpg2k/mrblib/
@@ -3232,38 +3212,33 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_damage_cap
   mrb_define_method(M, battle, "damage_cap", Game__Battle_damage_cap,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "damage_cap", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "damage_cap", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_recover_cap
   mrb_define_method(M, battle, "recover_cap", Game__Battle_recover_cap,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "recover_cap", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "recover_cap", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_finished$3f
   mrb_define_method(M, battle, "finished?", Game__Battle_finished$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "finished?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "finished?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_escaped$3f
   mrb_define_method(M, battle, "escaped?", Game__Battle_escaped$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "escaped?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "escaped?", false);
 #endif
   mrb_define_method(M, battle, "turn", Game__Battle_turn, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_acting_battler
   mrb_define_method(M, battle, "acting_battler", Game__Battle_acting_battler,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "acting_battler", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "acting_battler", false);
 #endif
   mrb_define_method(M, battle, "enemy", Game__Battle_enemy, MRB_ARGS_REQ(1));
   mrb_define_method(M, battle, "rpg2003?", Game__Battle_rpg2003$3f,
@@ -3271,157 +3246,148 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_force_flee_party
   mrb_define_method(M, battle, "force_flee_party",
                     Game__Battle_force_flee_party, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "force_flee_party", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "force_flee_party", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_force_flee$3f
   mrb_define_method(M, battle, "force_flee?", Game__Battle_force_flee$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "force_flee?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "force_flee?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_flee_enemy
   mrb_define_method(M, battle, "flee_enemy", Game__Battle_flee_enemy,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "flee_enemy", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "flee_enemy", false);
 #endif
   mrb_define_method(M, battle, "terminate", Game__Battle_terminate,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_terminated$3f
   mrb_define_method(M, battle, "terminated?", Game__Battle_terminated$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "terminated?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "terminated?", false);
 #endif
   mrb_define_method(M, battle, "run", Game__Battle_run, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_command_attack
   mrb_define_method(M, battle, "command_attack", Game__Battle_command_attack,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "command_attack", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "command_attack", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_command_defend
   mrb_define_method(M, battle, "command_defend", Game__Battle_command_defend,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "command_defend", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "command_defend", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_command_skip
   mrb_define_method(M, battle, "command_skip", Game__Battle_command_skip,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "command_skip", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "command_skip", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_toggle_row
   mrb_define_method(M, battle, "toggle_row", Game__Battle_toggle_row,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "toggle_row", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "toggle_row", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_first_strike$3f
   mrb_define_method(M, battle, "first_strike?", Game__Battle_first_strike$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "first_strike?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "first_strike?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_row_adjusted$3f
   mrb_define_method(M, battle, "row_adjusted?", Game__Battle_row_adjusted$3f,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "row_adjusted?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "row_adjusted?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_all_combatants
   mrb_define_method(M, battle, "all_combatants", Game__Battle_all_combatants,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "all_combatants", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "all_combatants", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_pop_ready
   mrb_define_method(M, battle, "pop_ready", Game__Battle_pop_ready,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "pop_ready", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "pop_ready", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_begin_gauge_turn
   mrb_define_method(M, battle, "begin_gauge_turn",
                     Game__Battle_begin_gauge_turn, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "begin_gauge_turn", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "begin_gauge_turn", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_to_hit
   mrb_define_method(M, battle, "to_hit", Game__Battle_to_hit, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "to_hit", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "to_hit", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_state_hit_ratio
   mrb_define_method(M, battle, "state_hit_ratio", Game__Battle_state_hit_ratio,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "state_hit_ratio", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "state_hit_ratio", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_adjust_stat
   mrb_define_method(M, battle, "adjust_stat", Game__Battle_adjust_stat,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "adjust_stat", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "adjust_stat", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Battle_effective_atk
   mrb_define_method(M, battle, "effective_atk", Game__Battle_effective_atk,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, battle, "effective_atk", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Battle_effective_def
   mrb_define_method(M, battle, "effective_def", Game__Battle_effective_def,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, battle, "effective_def", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_effective_spi
   mrb_define_method(M, battle, "effective_spi", Game__Battle_effective_spi,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "effective_spi", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "effective_spi", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Battle_effective_agi
   mrb_define_method(M, battle, "effective_agi", Game__Battle_effective_agi,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, battle, "effective_agi", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_run_round
   mrb_define_method(M, battle, "run_round", Game__Battle_run_round,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "run_round", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "run_round", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_begin_round
   mrb_define_method(M, battle, "begin_round", Game__Battle_begin_round,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "begin_round", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "begin_round", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_pending_empty$3f
   mrb_define_method(M, battle, "pending_empty?", Game__Battle_pending_empty$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "pending_empty?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "pending_empty?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_command_restricted$3f
   mrb_define_method(M, battle, "command_restricted?",
                     Game__Battle_command_restricted$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "command_restricted?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "command_restricted?", false);
 #endif
 
   // Everything from here down is `private` in the real interpreted source
@@ -3432,66 +3398,57 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_state_def
   mrb_define_private_method(M, battle, "state_def", Game__Battle_state_def,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "state_def", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "state_def", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_ally$3f
   mrb_define_private_method(M, battle, "ally?", Game__Battle_ally$3f,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "ally?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "ally?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_state_field
   mrb_define_private_method(M, battle, "state_field", Game__Battle_state_field,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "state_field", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "state_field", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_slip_stat
   mrb_define_private_method(M, battle, "slip_stat", Game__Battle_slip_stat,
                             MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "slip_stat", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "slip_stat", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_recovers_from_state$3f
   mrb_define_private_method(M, battle, "recovers_from_state?",
                             Game__Battle_recovers_from_state$3f,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "recovers_from_state?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "recovers_from_state?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_preemptive_boost$3f
   mrb_define_private_method(M, battle, "preemptive_boost?",
                             Game__Battle_preemptive_boost$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "preemptive_boost?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "preemptive_boost?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_strike
   mrb_define_private_method(M, battle, "strike", Game__Battle_strike,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "strike", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "strike", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_combo_hits
   mrb_define_private_method(M, battle, "combo_hits", Game__Battle_combo_hits,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "combo_hits", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "combo_hits", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_perform_enemy_action
   mrb_define_private_method(M, battle, "perform_enemy_action",
                             Game__Battle_perform_enemy_action, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "perform_enemy_action", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "perform_enemy_action", false);
 #endif
   // #enemy_basic_action is NOT registered here -- tools/bc2cpp/bc2cpp.rb's
   // own compile_send fix (see that file's top comment) now correctly
@@ -3505,17 +3462,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_skill_command_hash
   mrb_define_private_method(M, battle, "skill_command_hash",
                             Game__Battle_skill_command_hash, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "skill_command_hash", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "skill_command_hash", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_enemy_transform_action
   mrb_define_private_method(M, battle, "enemy_transform_action",
                             Game__Battle_enemy_transform_action,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "enemy_transform_action",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "enemy_transform_action", false);
 #endif
   // #enemy_fallback_attack is NOT registered here for the same reason
   // #enemy_basic_action above isn't -- its own body also calls
@@ -3524,103 +3479,89 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, battle, "auto_battle_heal_rank",
                             Game__Battle_auto_battle_heal_rank,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "auto_battle_heal_rank",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "auto_battle_heal_rank", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_auto_battle_raw_cost
   mrb_define_private_method(M, battle, "auto_battle_raw_cost",
                             Game__Battle_auto_battle_raw_cost, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "auto_battle_raw_cost", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "auto_battle_raw_cost", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_queue_single_auto_battle_skill
   mrb_define_private_method(M, battle, "queue_single_auto_battle_skill",
                             Game__Battle_queue_single_auto_battle_skill,
                             MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "queue_single_auto_battle_skill",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "queue_single_auto_battle_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_critical$3f
   mrb_define_private_method(M, battle, "critical?", Game__Battle_critical$3f,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "critical?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "critical?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_hits$3f
   mrb_define_private_method(M, battle, "hits?", Game__Battle_hits$3f,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "hits?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "hits?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_skill_effect_hits$3f
   mrb_define_private_method(M, battle, "skill_effect_hits?",
                             Game__Battle_skill_effect_hits$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "skill_effect_hits?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "skill_effect_hits?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_varied
   mrb_define_private_method(M, battle, "varied", Game__Battle_varied,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "varied", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "varied", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_attr_rate
   mrb_define_private_method(M, battle, "attr_rate", Game__Battle_attr_rate,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "attr_rate", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "attr_rate", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_attribute_physical$3f
   mrb_define_private_method(M, battle, "attribute_physical?",
                             Game__Battle_attribute_physical$3f,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "attribute_physical?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "attribute_physical?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_state_flag
   mrb_define_private_method(M, battle, "state_flag", Game__Battle_state_flag,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "state_flag", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "state_flag", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_attack_target
   mrb_define_private_method(M, battle, "attack_target",
                             Game__Battle_attack_target, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "attack_target", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "attack_target", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_command_targets_dead_ok$3f
   mrb_define_private_method(M, battle, "command_targets_dead_ok?",
                             Game__Battle_command_targets_dead_ok$3f,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "command_targets_dead_ok?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "command_targets_dead_ok?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_state_rate
   mrb_define_private_method(M, battle, "state_rate", Game__Battle_state_rate,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "state_rate", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "state_rate", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_state_susceptibility
   mrb_define_private_method(M, battle, "state_susceptibility",
                             Game__Battle_state_susceptibility, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "state_susceptibility", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "state_susceptibility", false);
 #endif
   // #inflict_state is NOT registered here for the same reason
   // #enemy_basic_action/#enemy_fallback_attack above aren't -- its own body
@@ -3630,8 +3571,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // dropped `keep:` argument used to mean a real permanently-protected
   // state (e.g. an innate racial trait modeled as a state) could be silently
   // pruned away as if no exemption list existed at all.
+#ifndef BC2CPP_UNREGISTERED_Game__Battle_cure_state
   mrb_define_method(M, battle, "cure_state", Game__Battle_cure_state,
                     MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, battle, "cure_state", false);
+#endif
   mrb_define_method(M, battle, "enemy_turn", Game__Battle_enemy_turn,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   mrb_define_method(M, battle, "actor_turn", Game__Battle_actor_turn,
@@ -3641,39 +3586,34 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_attempt_escape
   mrb_define_method(M, battle, "attempt_escape", Game__Battle_attempt_escape,
                     MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "attempt_escape", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "attempt_escape", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_command_skill
   mrb_define_method(M, battle, "command_skill", Game__Battle_command_skill,
                     MRB_ARGS_REQ(2) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(19, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "command_skill", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "command_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_command_skill_all
   mrb_define_method(M, battle, "command_skill_all",
                     Game__Battle_command_skill_all,
                     MRB_ARGS_REQ(2) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(16, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "command_skill_all", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "command_skill_all", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_command_item
   mrb_define_method(M, battle, "command_item", Game__Battle_command_item,
                     MRB_ARGS_REQ(2) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(6, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "command_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "command_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_command_item_all
   mrb_define_method(M, battle, "command_item_all",
                     Game__Battle_command_item_all,
                     MRB_ARGS_REQ(2) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(3, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle, "command_item_all", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "command_item_all", false);
 #endif
 
   // Game::Battle::Combatant (mruby-rpg2k/mrblib/game/battle.rb) --
@@ -3727,45 +3667,57 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // `Game::Battle` methods above, confirmed in the real regenerated
   // output.
   RClass* combatant = mrb_class_get_under(M, battle, "Combatant");
+#ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_atk_states
   mrb_define_method(M, combatant, "atk_states",
                     Game__Battle__Combatant_atk_states, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, combatant, "atk_states", false);
+#endif
   mrb_define_method(M, combatant, "row", Game__Battle__Combatant_row,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_gauge
   mrb_define_method(M, combatant, "gauge", Game__Battle__Combatant_gauge,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, combatant, "gauge", false);
+#endif
   mrb_define_method(M, combatant, "dead?", Game__Battle__Combatant_dead$3f,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_display_max_hp
   mrb_define_method(M, combatant, "display_max_hp",
                     Game__Battle__Combatant_display_max_hp, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, combatant, "display_max_hp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, combatant, "display_max_hp", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_display_max_mp
   mrb_define_method(M, combatant, "display_max_mp",
                     Game__Battle__Combatant_display_max_mp, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, combatant, "display_max_mp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, combatant, "display_max_mp", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_strike_count
   mrb_define_method(M, combatant, "strike_count",
                     Game__Battle__Combatant_strike_count, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, combatant, "strike_count", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_half_sp_cost$3f
   mrb_define_method(M, combatant, "half_sp_cost?",
                     Game__Battle__Combatant_half_sp_cost$3f, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, combatant, "half_sp_cost?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_turns_taken
   mrb_define_method(M, combatant, "turns_taken",
                     Game__Battle__Combatant_turns_taken, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, combatant, "turns_taken", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, combatant, "turns_taken", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_next_battle_turn
   mrb_define_method(M, combatant, "next_battle_turn",
                     Game__Battle__Combatant_next_battle_turn, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, combatant, "next_battle_turn", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, combatant, "next_battle_turn", false);
 #endif
   mrb_define_method(M, combatant, "out_of_play?",
                     Game__Battle__Combatant_out_of_play$3f, MRB_ARGS_NONE());
@@ -3776,24 +3728,17 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_state$3f
   mrb_define_method(M, combatant, "state?", Game__Battle__Combatant_state$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, combatant, "state?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, combatant, "state?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_back_row$3f
   mrb_define_method(M, combatant, "back_row?",
                     Game__Battle__Combatant_back_row$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, combatant, "back_row?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, combatant, "back_row?", false);
 #endif
-#ifndef BC2CPP_UNREGISTERED_Game__Battle__Combatant_gauge_full$3f
   mrb_define_method(M, combatant, "gauge_full?",
                     Game__Battle__Combatant_gauge_full$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, combatant, "gauge_full?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
-#endif
 
   // RPG2k::Scene::ItemMenu (mruby-rpg2k/mrblib/scene/item_menu.rb) -- the
   // field/battle item-use menu. 41 of its own 47 real bytecode-defined
@@ -3835,62 +3780,59 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_refresh_arrows
   mrb_define_method(M, item_menu, "refresh_arrows",
                     RPG2k__Scene__ItemMenu_refresh_arrows, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "refresh_arrows", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "refresh_arrows", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_item_row_count
   mrb_define_method(M, item_menu, "item_row_count",
                     RPG2k__Scene__ItemMenu_item_row_count, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "item_row_count", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "item_row_count", false);
 #endif
 
   // Everything from here down is `private` in the real interpreted source
   // (mruby-rpg2k/mrblib/scene/item_menu.rb line 198, in effect through the
   // end of the class body).
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_items
   mrb_define_private_method(M, item_menu, "items", RPG2k__Scene__ItemMenu_items,
                             MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, item_menu, "items", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_invalidate_items
   mrb_define_private_method(M, item_menu, "invalidate_items",
                             RPG2k__Scene__ItemMenu_invalidate_items,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "invalidate_items", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "invalidate_items", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_update_items
   mrb_define_private_method(M, item_menu, "update_items",
                             RPG2k__Scene__ItemMenu_update_items,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "update_items", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "update_items", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_choose_item
   mrb_define_private_method(M, item_menu, "choose_item",
                             RPG2k__Scene__ItemMenu_choose_item,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "choose_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "choose_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_prompt_item_target
   mrb_define_private_method(M, item_menu, "prompt_item_target",
                             RPG2k__Scene__ItemMenu_prompt_item_target,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "prompt_item_target",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "prompt_item_target", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_enter_target_confirm
   mrb_define_private_method(M, item_menu, "enter_target_confirm",
                             RPG2k__Scene__ItemMenu_enter_target_confirm,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "enter_target_confirm",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "enter_target_confirm", false);
 #endif
   mrb_define_private_method(M, item_menu, "leader_target_index",
                             RPG2k__Scene__ItemMenu_leader_target_index,
@@ -3899,25 +3841,22 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, item_menu, "apply_switch_item",
                             RPG2k__Scene__ItemMenu_apply_switch_item,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "apply_switch_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "apply_switch_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_queue_teleport
   mrb_define_private_method(M, item_menu, "queue_teleport",
                             RPG2k__Scene__ItemMenu_queue_teleport,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "queue_teleport", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "queue_teleport", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_update_teleport_target
   mrb_define_private_method(M, item_menu, "update_teleport_target",
                             RPG2k__Scene__ItemMenu_update_teleport_target,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "update_teleport_target",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "update_teleport_target", false);
 #endif
   mrb_define_private_method(M, item_menu, "map_display_name",
                             RPG2k__Scene__ItemMenu_map_display_name,
@@ -3925,32 +3864,28 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_apply_item
   mrb_define_private_method(M, item_menu, "apply_item",
                             RPG2k__Scene__ItemMenu_apply_item, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "apply_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "apply_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_left_panel_w
   mrb_define_private_method(M, item_menu, "left_panel_w",
                             RPG2k__Scene__ItemMenu_left_panel_w,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "left_panel_w", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "left_panel_w", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_build_desc_window
   mrb_define_private_method(M, item_menu, "build_desc_window",
                             RPG2k__Scene__ItemMenu_build_desc_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "build_desc_window", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "build_desc_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_item_col_w
   mrb_define_private_method(M, item_menu, "item_col_w",
                             RPG2k__Scene__ItemMenu_item_col_w, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "item_col_w", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "item_col_w", false);
 #endif
   mrb_define_private_method(M, item_menu, "item_col_x",
                             RPG2k__Scene__ItemMenu_item_col_x, MRB_ARGS_REQ(1));
@@ -3958,31 +3893,32 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, item_menu, "build_possessed_window",
                             RPG2k__Scene__ItemMenu_build_possessed_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "build_possessed_window",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "build_possessed_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_draw_target_face
   mrb_define_private_method(M, item_menu, "draw_target_face",
                             RPG2k__Scene__ItemMenu_draw_target_face,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "draw_target_face", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "draw_target_face", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_refresh_target_cursor
   mrb_define_private_method(M, item_menu, "refresh_target_cursor",
                             RPG2k__Scene__ItemMenu_refresh_target_cursor,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, item_menu, "refresh_target_cursor",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, item_menu, "refresh_target_cursor", false);
 #endif
   mrb_define_private_method(M, item_menu, "initialize",
                             RPG2k__Scene__ItemMenu_initialize, MRB_ARGS_REQ(2));
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ItemMenu_load_face_bitmap
   mrb_define_private_method(M, item_menu, "load_face_bitmap",
                             RPG2k__Scene__ItemMenu_load_face_bitmap,
                             MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, item_menu, "load_face_bitmap", false);
+#endif
 
   // RPG2k::Scene::SkillMenu (mruby-rpg2k/mrblib/scene/skill_menu.rb) -- the
   // field/battle skill-use menu (skill list scrolling/selection, target
@@ -4029,12 +3965,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_caster
   mrb_define_private_method(M, skill_menu, "caster",
                             RPG2k__Scene__SkillMenu_caster, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "caster", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "caster", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_skills
   mrb_define_private_method(M, skill_menu, "skills",
                             RPG2k__Scene__SkillMenu_skills, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, skill_menu, "skills", false);
+#endif
   mrb_define_private_method(M, skill_menu, "skill_name",
                             RPG2k__Scene__SkillMenu_skill_name,
                             MRB_ARGS_REQ(1));
@@ -4042,168 +3981,152 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, skill_menu, "update_skills",
                             RPG2k__Scene__SkillMenu_update_skills,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "update_skills", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "update_skills", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_move_skill_cursor
   mrb_define_private_method(M, skill_menu, "move_skill_cursor",
                             RPG2k__Scene__SkillMenu_move_skill_cursor,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "move_skill_cursor",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "move_skill_cursor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_choose_skill
   mrb_define_private_method(M, skill_menu, "choose_skill",
                             RPG2k__Scene__SkillMenu_choose_skill,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "choose_skill", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "choose_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_enter_target_confirm
   mrb_define_private_method(M, skill_menu, "enter_target_confirm",
                             RPG2k__Scene__SkillMenu_enter_target_confirm,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "enter_target_confirm",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "enter_target_confirm", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_apply_skill
   mrb_define_private_method(M, skill_menu, "apply_skill",
                             RPG2k__Scene__SkillMenu_apply_skill,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "apply_skill", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "apply_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_apply_switch_skill
   mrb_define_private_method(M, skill_menu, "apply_switch_skill",
                             RPG2k__Scene__SkillMenu_apply_switch_skill,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "apply_switch_skill",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "apply_switch_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_leave_target
   mrb_define_private_method(M, skill_menu, "leave_target",
                             RPG2k__Scene__SkillMenu_leave_target,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "leave_target", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "leave_target", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_update_teleport_target
   mrb_define_private_method(M, skill_menu, "update_teleport_target",
                             RPG2k__Scene__SkillMenu_update_teleport_target,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "update_teleport_target",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "update_teleport_target", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_apply_escape_skill
   mrb_define_private_method(M, skill_menu, "apply_escape_skill",
                             RPG2k__Scene__SkillMenu_apply_escape_skill,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "apply_escape_skill",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "apply_escape_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_queue_teleport
   mrb_define_private_method(M, skill_menu, "queue_teleport",
                             RPG2k__Scene__SkillMenu_queue_teleport,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "queue_teleport", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "queue_teleport", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_left_panel_w
   mrb_define_private_method(M, skill_menu, "left_panel_w",
                             RPG2k__Scene__SkillMenu_left_panel_w,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "left_panel_w", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "left_panel_w", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_build_desc_window
   mrb_define_private_method(M, skill_menu, "build_desc_window",
                             RPG2k__Scene__SkillMenu_build_desc_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "build_desc_window",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "build_desc_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_build_status_window
   mrb_define_private_method(M, skill_menu, "build_status_window",
                             RPG2k__Scene__SkillMenu_build_status_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "build_status_window",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "build_status_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_draw_stat_pair
   mrb_define_private_method(M, skill_menu, "draw_stat_pair",
                             RPG2k__Scene__SkillMenu_draw_stat_pair,
                             MRB_ARGS_REQ(6));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "draw_stat_pair", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "draw_stat_pair", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_build_skill_window
   mrb_define_private_method(M, skill_menu, "build_skill_window",
                             RPG2k__Scene__SkillMenu_build_skill_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "build_skill_window",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "build_skill_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_build_mp_cost_window
   mrb_define_private_method(M, skill_menu, "build_mp_cost_window",
                             RPG2k__Scene__SkillMenu_build_mp_cost_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "build_mp_cost_window",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "build_mp_cost_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_total_rows
   mrb_define_private_method(M, skill_menu, "total_rows",
                             RPG2k__Scene__SkillMenu_total_rows,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "total_rows", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "total_rows", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_refresh_arrows
   mrb_define_private_method(M, skill_menu, "refresh_arrows",
                             RPG2k__Scene__SkillMenu_refresh_arrows,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "refresh_arrows", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "refresh_arrows", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_draw_target_face
   mrb_define_private_method(M, skill_menu, "draw_target_face",
                             RPG2k__Scene__SkillMenu_draw_target_face,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "draw_target_face", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "draw_target_face", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_refresh_target_cursor
   mrb_define_private_method(M, skill_menu, "refresh_target_cursor",
                             RPG2k__Scene__SkillMenu_refresh_target_cursor,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, skill_menu, "refresh_target_cursor",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, skill_menu, "refresh_target_cursor", false);
 #endif
   mrb_define_private_method(M, skill_menu, "map_display_name",
                             RPG2k__Scene__SkillMenu_map_display_name,
                             MRB_ARGS_REQ(1));
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SkillMenu_load_face_bitmap
   mrb_define_private_method(M, skill_menu, "load_face_bitmap",
                             RPG2k__Scene__SkillMenu_load_face_bitmap,
                             MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, skill_menu, "load_face_bitmap", false);
+#endif
 
   // RPG2k::Scene::DebugMenu (mruby-rpg2k/mrblib/scene/debug_menu.rb) -- the F9
   // debug menu itself: Switch/Variable block-and-row editing (two genuine
@@ -4277,25 +4200,22 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__DebugMenu_refresh
   mrb_define_private_method(M, debug_menu, "refresh",
                             RPG2k__Scene__DebugMenu_refresh, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, debug_menu, "refresh", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, debug_menu, "refresh", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__DebugMenu_cycle_mode
   mrb_define_private_method(M, debug_menu, "cycle_mode",
                             RPG2k__Scene__DebugMenu_cycle_mode,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, debug_menu, "cycle_mode", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, debug_menu, "cycle_mode", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__DebugMenu_update_animation
   mrb_define_private_method(M, debug_menu, "update_animation",
                             RPG2k__Scene__DebugMenu_update_animation,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, debug_menu, "update_animation", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, debug_menu, "update_animation", false);
 #endif
   // #play_animation is NOT registered here for the same reason -- its own
   // body calls `scene.anim_target(x, y, height: nil, index: nil,
@@ -4310,9 +4230,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, debug_menu, "row_value_text",
                             RPG2k__Scene__DebugMenu_row_value_text,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, debug_menu, "row_value_text", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, debug_menu, "row_value_text", false);
 #endif
   mrb_define_private_method(M, debug_menu, "map_name",
                             RPG2k__Scene__DebugMenu_map_name, MRB_ARGS_REQ(1));
@@ -4323,9 +4242,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, debug_menu, "editor_digits",
                             RPG2k__Scene__DebugMenu_editor_digits,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, debug_menu, "editor_digits", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, debug_menu, "editor_digits", false);
 #endif
   mrb_define_private_method(M, debug_menu, "initialize",
                             RPG2k__Scene__DebugMenu_initialize,
@@ -4365,9 +4283,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, equip_menu, "refresh_arrows",
                             RPG2k__Scene__EquipMenu_refresh_arrows,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "refresh_arrows", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "refresh_arrows", false);
 #endif
   mrb_define_private_method(M, equip_menu, "item_name",
                             RPG2k__Scene__EquipMenu_item_name, MRB_ARGS_REQ(1));
@@ -4375,17 +4292,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, equip_menu, "build_desc_window",
                             RPG2k__Scene__EquipMenu_build_desc_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "build_desc_window",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "build_desc_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_update_items
   mrb_define_private_method(M, equip_menu, "update_items",
                             RPG2k__Scene__EquipMenu_update_items,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "update_items", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "update_items", false);
 #endif
   mrb_define_private_method(M, equip_menu, "actor",
                             RPG2k__Scene__EquipMenu_actor, MRB_ARGS_NONE());
@@ -4393,81 +4308,71 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, equip_menu, "update_slots",
                             RPG2k__Scene__EquipMenu_update_slots,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "update_slots", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "update_slots", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_move_slot_cursor
   mrb_define_private_method(M, equip_menu, "move_slot_cursor",
                             RPG2k__Scene__EquipMenu_move_slot_cursor,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "move_slot_cursor", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "move_slot_cursor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_candidates
   mrb_define_private_method(M, equip_menu, "candidates",
                             RPG2k__Scene__EquipMenu_candidates,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "candidates", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "candidates", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_cand_row_count
   mrb_define_private_method(M, equip_menu, "cand_row_count",
                             RPG2k__Scene__EquipMenu_cand_row_count,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "cand_row_count", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "cand_row_count", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_apply_choice
   mrb_define_private_method(M, equip_menu, "apply_choice",
                             RPG2k__Scene__EquipMenu_apply_choice,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "apply_choice", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "apply_choice", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_leave_items
   mrb_define_private_method(M, equip_menu, "leave_items",
                             RPG2k__Scene__EquipMenu_leave_items,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "leave_items", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "leave_items", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_rebuild_for_actor
   mrb_define_private_method(M, equip_menu, "rebuild_for_actor",
                             RPG2k__Scene__EquipMenu_rebuild_for_actor,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "rebuild_for_actor",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "rebuild_for_actor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_other_hand_item
   mrb_define_private_method(M, equip_menu, "other_hand_item",
                             RPG2k__Scene__EquipMenu_other_hand_item,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "other_hand_item", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "other_hand_item", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_stat_field_delta
   mrb_define_private_method(M, equip_menu, "stat_field_delta",
                             RPG2k__Scene__EquipMenu_stat_field_delta,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "stat_field_delta", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "stat_field_delta", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_cand_col_w
   mrb_define_private_method(M, equip_menu, "cand_col_w",
                             RPG2k__Scene__EquipMenu_cand_col_w,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "cand_col_w", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "cand_col_w", false);
 #endif
   mrb_define_private_method(M, equip_menu, "cand_col_x",
                             RPG2k__Scene__EquipMenu_cand_col_x,
@@ -4476,17 +4381,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, equip_menu, "refresh_cand_cursor",
                             RPG2k__Scene__EquipMenu_refresh_cand_cursor,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "refresh_cand_cursor",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "refresh_cand_cursor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EquipMenu_draw_arrow_fallback
   mrb_define_private_method(M, equip_menu, "draw_arrow_fallback",
                             RPG2k__Scene__EquipMenu_draw_arrow_fallback,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, equip_menu, "draw_arrow_fallback",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, equip_menu, "draw_arrow_fallback", false);
 #endif
 
   // RPG2k::Scene::Menu (mruby-rpg2k/mrblib/scene/menu.rb) -- the field
@@ -4524,140 +4427,131 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_update_command
   mrb_define_private_method(M, menu, "update_command",
                             RPG2k__Scene__Menu_update_command, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "update_command", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "update_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_update_actor_selection
   mrb_define_private_method(M, menu, "update_actor_selection",
                             RPG2k__Scene__Menu_update_actor_selection,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "update_actor_selection", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "update_actor_selection", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_confirm_actor_selection
   mrb_define_private_method(M, menu, "confirm_actor_selection",
                             RPG2k__Scene__Menu_confirm_actor_selection,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "confirm_actor_selection",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "confirm_actor_selection", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_leave_actor_selection
   mrb_define_private_method(M, menu, "leave_actor_selection",
                             RPG2k__Scene__Menu_leave_actor_selection,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "leave_actor_selection", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "leave_actor_selection", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_wait_term_for
   mrb_define_private_method(M, menu, "wait_term_for",
                             RPG2k__Scene__Menu_wait_term_for, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "wait_term_for", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "wait_term_for", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_wait_label
   mrb_define_private_method(M, menu, "wait_label",
                             RPG2k__Scene__Menu_wait_label, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "wait_label", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "wait_label", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_build_gold_window
   mrb_define_private_method(M, menu, "build_gold_window",
                             RPG2k__Scene__Menu_build_gold_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "build_gold_window", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "build_gold_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_draw_gold_window
   mrb_define_private_method(M, menu, "draw_gold_window",
                             RPG2k__Scene__Menu_draw_gold_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "draw_gold_window", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "draw_gold_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_command_disabled$3f
   mrb_define_private_method(M, menu, "command_disabled?",
                             RPG2k__Scene__Menu_command_disabled$3f,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "command_disabled?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "command_disabled?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_refresh_status_cursor
   mrb_define_private_method(M, menu, "refresh_status_cursor",
                             RPG2k__Scene__Menu_refresh_status_cursor,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "refresh_status_cursor", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "refresh_status_cursor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_select_command
   mrb_define_private_method(M, menu, "select_command",
                             RPG2k__Scene__Menu_select_command, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "select_command", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "select_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_open_end_game_confirm
   mrb_define_private_method(M, menu, "open_end_game_confirm",
                             RPG2k__Scene__Menu_open_end_game_confirm,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "open_end_game_confirm", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "open_end_game_confirm", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_refresh_end_game_cursor
   mrb_define_private_method(M, menu, "refresh_end_game_cursor",
                             RPG2k__Scene__Menu_refresh_end_game_cursor,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "refresh_end_game_cursor",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "refresh_end_game_cursor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_update_end_game_confirm
   mrb_define_private_method(M, menu, "update_end_game_confirm",
                             RPG2k__Scene__Menu_update_end_game_confirm,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "update_end_game_confirm",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "update_end_game_confirm", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_close_end_game_confirm
   mrb_define_private_method(M, menu, "close_end_game_confirm",
                             RPG2k__Scene__Menu_close_end_game_confirm,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "close_end_game_confirm", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "close_end_game_confirm", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_drive_message
   mrb_define_private_method(M, menu, "drive_message",
                             RPG2k__Scene__Menu_drive_message, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "drive_message", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "drive_message", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_show_message
   mrb_define_private_method(M, menu, "show_message",
                             RPG2k__Scene__Menu_show_message, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, menu, "show_message", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_close_message
   mrb_define_private_method(M, menu, "close_message",
                             RPG2k__Scene__Menu_close_message, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, menu, "close_message", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, menu, "close_message", false);
 #endif
   mrb_define_private_method(M, menu, "initialize",
                             RPG2k__Scene__Menu_initialize, MRB_ARGS_REQ(2));
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Menu_load_face_bitmap
   mrb_define_private_method(M, menu, "load_face_bitmap",
                             RPG2k__Scene__Menu_load_face_bitmap,
                             MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, menu, "load_face_bitmap", false);
+#endif
 
   // Game::State (mruby-rpg2k/mrblib/game.rb, reopened by mruby-rpg2k/mrblib/
   // game/lsd_io.rb) -- see this file's own top comment for the real gap
@@ -4704,133 +4598,123 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__State_map_id$3d
   mrb_define_method(M, state, "map_id=", Game__State_map_id$3d,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "map_id=", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "map_id=", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_set_parallax
   mrb_define_method(M, state, "set_parallax", Game__State_set_parallax,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "set_parallax", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "set_parallax", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_clear_parallax
   mrb_define_method(M, state, "clear_parallax", Game__State_clear_parallax,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "clear_parallax", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "clear_parallax", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__State_vehicle
   mrb_define_method(M, state, "vehicle", Game__State_vehicle, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, state, "vehicle", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_boarded$3f
   mrb_define_method(M, state, "boarded?", Game__State_boarded$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "boarded?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "boarded?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_walk_step
   mrb_define_method(M, state, "walk_step", Game__State_walk_step,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "walk_step", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "walk_step", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_show_picture
   mrb_define_method(M, state, "show_picture", Game__State_show_picture,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "show_picture", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "show_picture", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_erase_picture
   mrb_define_method(M, state, "erase_picture", Game__State_erase_picture,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "erase_picture", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "erase_picture", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_timer_seconds
   mrb_define_method(M, state, "timer_seconds", Game__State_timer_seconds,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "timer_seconds", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "timer_seconds", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_timer_display_text
   mrb_define_method(M, state, "timer_display_text",
                     Game__State_timer_display_text, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "timer_display_text", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "timer_display_text", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_timer2_seconds
   mrb_define_method(M, state, "timer2_seconds", Game__State_timer2_seconds,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "timer2_seconds", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "timer2_seconds", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_timer_frames
   mrb_define_method(M, state, "timer_frames", Game__State_timer_frames,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "timer_frames", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "timer_frames", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_timer_frames$3d
   mrb_define_method(M, state, "timer_frames=", Game__State_timer_frames$3d,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "timer_frames=", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "timer_frames=", false);
 #endif
   mrb_define_method(M, state, "timer_running", Game__State_timer_running,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__State_timer_running$3d
   mrb_define_method(M, state, "timer_running=", Game__State_timer_running$3d,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "timer_running=", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "timer_running=", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_timer_visible
   mrb_define_method(M, state, "timer_visible", Game__State_timer_visible,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "timer_visible", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "timer_visible", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_timer_visible$3d
   mrb_define_method(M, state, "timer_visible=", Game__State_timer_visible$3d,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "timer_visible=", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "timer_visible=", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_set_screen_transition
   mrb_define_method(M, state, "set_screen_transition",
                     Game__State_set_screen_transition, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "set_screen_transition", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "set_screen_transition", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_bgm_chunk
   mrb_define_method(M, state, "bgm_chunk", Game__State_bgm_chunk,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "bgm_chunk", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "bgm_chunk", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_se_chunk
   mrb_define_method(M, state, "se_chunk", Game__State_se_chunk,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, state, "se_chunk", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "se_chunk", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__State_timer
   mrb_define_method(M, state, "timer", Game__State_timer, MRB_ARGS_OPT(1));
+#else
+  bc2cpp_left_out(M, state, "timer", false);
+#endif
 
   // RPG2k::Scene::StatusMenu (mruby-rpg2k/mrblib/scene/status_menu.rb) --
   // the field per-character status detail screen (stats, equipped gear,
@@ -4878,9 +4762,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__StatusMenu_windows
   mrb_define_private_method(M, status_menu, "windows",
                             RPG2k__Scene__StatusMenu_windows, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, status_menu, "windows", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, status_menu, "windows", false);
 #endif
   mrb_define_private_method(M, status_menu, "item_name",
                             RPG2k__Scene__StatusMenu_item_name,
@@ -4889,44 +4772,43 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, status_menu, "new_contents",
                             RPG2k__Scene__StatusMenu_new_contents,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, status_menu, "new_contents", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, status_menu, "new_contents", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__StatusMenu_refresh
   mrb_define_private_method(M, status_menu, "refresh",
                             RPG2k__Scene__StatusMenu_refresh, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, status_menu, "refresh", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, status_menu, "refresh", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__StatusMenu_draw_gold
   mrb_define_private_method(M, status_menu, "draw_gold",
                             RPG2k__Scene__StatusMenu_draw_gold,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, status_menu, "draw_gold", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, status_menu, "draw_gold", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__StatusMenu_rpg2003_party$3f
   mrb_define_private_method(M, status_menu, "rpg2003_party?",
                             RPG2k__Scene__StatusMenu_rpg2003_party$3f,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, status_menu, "rpg2003_party?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, status_menu, "rpg2003_party?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__StatusMenu_draw_battle_row
   mrb_define_private_method(M, status_menu, "draw_battle_row",
                             RPG2k__Scene__StatusMenu_draw_battle_row,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, status_menu, "draw_battle_row", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, status_menu, "draw_battle_row", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__StatusMenu_load_face_bitmap
   mrb_define_private_method(M, status_menu, "load_face_bitmap",
                             RPG2k__Scene__StatusMenu_load_face_bitmap,
                             MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, status_menu, "load_face_bitmap", false);
+#endif
 
   // Game::MoveRoute (mruby-rpg2k/mrblib/game.rb) -- the RPG2000 "Set Move
   // Route" event-command engine. 18 of its own 19 real bytecode-defined
@@ -4956,9 +4838,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__MoveRoute_skippable$3f
   mrb_define_method(M, move_route, "skippable?", Game__MoveRoute_skippable$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, move_route, "skippable?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, move_route, "skippable?", false);
 #endif
   mrb_define_method(M, move_route, "step", Game__MoveRoute_step,
                     MRB_ARGS_REQ(2));
@@ -4969,23 +4850,20 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__MoveRoute_execute
   mrb_define_private_method(M, move_route, "execute", Game__MoveRoute_execute,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, move_route, "execute", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, move_route, "execute", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MoveRoute_do_move
   mrb_define_private_method(M, move_route, "do_move", Game__MoveRoute_do_move,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, move_route, "do_move", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, move_route, "do_move", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MoveRoute_do_diagonal_dir
   mrb_define_private_method(M, move_route, "do_diagonal_dir",
                             Game__MoveRoute_do_diagonal_dir, MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, move_route, "do_diagonal_dir", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, move_route, "do_diagonal_dir", false);
 #endif
   mrb_define_private_method(
       M, move_route, "initialize", Game__MoveRoute_initialize,
@@ -5028,41 +4906,36 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, chipset_editor, "toggle_passable",
                             RPG2k__Scene__ChipsetEditor_toggle_passable,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, chipset_editor, "toggle_passable",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chipset_editor, "toggle_passable", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ChipsetEditor_refresh
   mrb_define_private_method(M, chipset_editor, "refresh",
                             RPG2k__Scene__ChipsetEditor_refresh,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, chipset_editor, "refresh", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chipset_editor, "refresh", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ChipsetEditor_draw_footer
   mrb_define_private_method(M, chipset_editor, "draw_footer",
                             RPG2k__Scene__ChipsetEditor_draw_footer,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, chipset_editor, "draw_footer", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chipset_editor, "draw_footer", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ChipsetEditor_draw_cursor
   mrb_define_private_method(M, chipset_editor, "draw_cursor",
                             RPG2k__Scene__ChipsetEditor_draw_cursor,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, chipset_editor, "draw_cursor", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chipset_editor, "draw_cursor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__ChipsetEditor_save_to_disk
   mrb_define_private_method(M, chipset_editor, "save_to_disk",
                             RPG2k__Scene__ChipsetEditor_save_to_disk,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, chipset_editor, "save_to_disk", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chipset_editor, "save_to_disk", false);
 #endif
 
   // RPG2k::Scene::Base (mruby-rpg2k/mrblib/scene/base.rb, reopened by
@@ -5121,103 +4994,89 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_utf8_chars
   mrb_define_method(M, base, "utf8_chars", RPG2k__Scene__Base_utf8_chars,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "utf8_chars", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "utf8_chars", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_utf8_chars_bytewise
   mrb_define_method(M, base, "utf8_chars_bytewise",
                     RPG2k__Scene__Base_utf8_chars_bytewise, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "utf8_chars_bytewise", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "utf8_chars_bytewise", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_state_table
   mrb_define_method(M, base, "state_table", RPG2k__Scene__Base_state_table,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "state_table", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "state_table", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_state_display
   mrb_define_method(M, base, "state_display", RPG2k__Scene__Base_state_display,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "state_display", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "state_display", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_value_font_color
   mrb_define_method(M, base, "value_font_color",
                     RPG2k__Scene__Base_value_font_color, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "value_font_color", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "value_font_color", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_draw_stat_segment
   mrb_define_method(M, base, "draw_stat_segment",
                     RPG2k__Scene__Base_draw_stat_segment, MRB_ARGS_REQ(10));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "draw_stat_segment", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "draw_stat_segment", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_normal_status_term
   mrb_define_method(M, base, "normal_status_term",
                     RPG2k__Scene__Base_normal_status_term, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "normal_status_term", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "normal_status_term", false);
 #endif
   mrb_define_method(M, base, "term", RPG2k__Scene__Base_term, MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_system_se
   mrb_define_method(M, base, "system_se", RPG2k__Scene__Base_system_se,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "system_se", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "system_se", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_make_windowskin
   mrb_define_method(M, base, "make_windowskin",
                     RPG2k__Scene__Base_make_windowskin, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "make_windowskin", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "make_windowskin", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_play_system_se
   mrb_define_method(M, base, "play_system_se",
                     RPG2k__Scene__Base_play_system_se, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "play_system_se", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "play_system_se", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_screen_width
   mrb_define_method(M, base, "screen_width", RPG2k__Scene__Base_screen_width,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "screen_width", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "screen_width", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_screen_height
   mrb_define_method(M, base, "screen_height", RPG2k__Scene__Base_screen_height,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "screen_height", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "screen_height", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_draw_system_text
   mrb_define_method(M, base, "draw_system_text",
                     RPG2k__Scene__Base_draw_system_text,
                     MRB_ARGS_REQ(7) | MRB_ARGS_OPT(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "draw_system_text", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "draw_system_text", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Base_draw_actor_state
   mrb_define_method(M, base, "draw_actor_state",
                     RPG2k__Scene__Base_draw_actor_state,
                     MRB_ARGS_REQ(7) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, base, "draw_actor_state", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, base, "draw_actor_state", false);
 #endif
 
   // Game::Character (mruby-rpg2k/mrblib/game.rb) -- see this file's own
@@ -5232,69 +5091,64 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Character_set_graphic
   mrb_define_method(M, character, "set_graphic", Game__Character_set_graphic,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, character, "set_graphic", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, character, "set_graphic", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Character_face
   mrb_define_method(M, character, "face", Game__Character_face,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, character, "face", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Character_face$21
   mrb_define_method(M, character, "face!", Game__Character_face$21,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, character, "face!", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, character, "face!", false);
 #endif
   mrb_define_method(M, character, "move", Game__Character_move,
                     MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_Game__Character_jump
   mrb_define_method(M, character, "jump", Game__Character_jump,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, character, "jump", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, character, "jump", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Character_move_diagonal
   mrb_define_method(M, character, "move_diagonal",
                     Game__Character_move_diagonal, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, character, "move_diagonal", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, character, "move_diagonal", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Character_turn_right
   mrb_define_method(M, character, "turn_right", Game__Character_turn_right,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, character, "turn_right", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, character, "turn_right", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Character_turn_left
   mrb_define_method(M, character, "turn_left", Game__Character_turn_left,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, character, "turn_left", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, character, "turn_left", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Character_turn_around
   mrb_define_method(M, character, "turn_around", Game__Character_turn_around,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, character, "turn_around", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, character, "turn_around", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Character_direction_toward
   mrb_define_method(M, character, "direction_toward",
                     Game__Character_direction_toward, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, character, "direction_toward", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, character, "direction_toward", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Character_direction_away
   mrb_define_method(M, character, "direction_away",
                     Game__Character_direction_away, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, character, "direction_away", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, character, "direction_away", false);
 #endif
   mrb_define_private_method(M, character, "initialize",
                             Game__Character_initialize, MRB_ARGS_OPT(3));
@@ -5312,60 +5166,57 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, save_load, "refresh_arrows",
                             RPG2k__Scene__SaveLoad_refresh_arrows,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, save_load, "refresh_arrows", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, save_load, "refresh_arrows", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SaveLoad_move_selection
   mrb_define_private_method(M, save_load, "move_selection",
                             RPG2k__Scene__SaveLoad_move_selection,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, save_load, "move_selection", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, save_load, "move_selection", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SaveLoad_confirm_selection
   mrb_define_private_method(M, save_load, "confirm_selection",
                             RPG2k__Scene__SaveLoad_confirm_selection,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, save_load, "confirm_selection", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, save_load, "confirm_selection", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SaveLoad_build_header_window
   mrb_define_private_method(M, save_load, "build_header_window",
                             RPG2k__Scene__SaveLoad_build_header_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, save_load, "build_header_window",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, save_load, "build_header_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SaveLoad_build_face_cell
   mrb_define_private_method(M, save_load, "build_face_cell",
                             RPG2k__Scene__SaveLoad_build_face_cell,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, save_load, "build_face_cell", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, save_load, "build_face_cell", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SaveLoad_load_face_bitmap
   mrb_define_private_method(M, save_load, "load_face_bitmap",
                             RPG2k__Scene__SaveLoad_load_face_bitmap,
                             MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, save_load, "load_face_bitmap", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SaveLoad_slot_timestamp
   mrb_define_private_method(M, save_load, "slot_timestamp",
                             RPG2k__Scene__SaveLoad_slot_timestamp,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, save_load, "slot_timestamp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, save_load, "slot_timestamp", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__SaveLoad_draw_arrow_fallback
   mrb_define_private_method(M, save_load, "draw_arrow_fallback",
                             RPG2k__Scene__SaveLoad_draw_arrow_fallback,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, save_load, "draw_arrow_fallback",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, save_load, "draw_arrow_fallback", false);
 #endif
 
   // RPG2k::Scene::Order (mruby-rpg2k/mrblib/scene/order.rb) -- see this
@@ -5384,17 +5235,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Order_enter_confirm
   mrb_define_private_method(M, order, "enter_confirm",
                             RPG2k__Scene__Order_enter_confirm, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, order, "enter_confirm", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, order, "enter_confirm", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Order_refresh_confirm_cursor
   mrb_define_private_method(M, order, "refresh_confirm_cursor",
                             RPG2k__Scene__Order_refresh_confirm_cursor,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, order, "refresh_confirm_cursor",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, order, "refresh_confirm_cursor", false);
 #endif
 
   // Game::Shop (mruby-rpg2k/mrblib/game.rb) -- see this file's own top
@@ -5407,18 +5256,20 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Shop_allow_buy$3f
   mrb_define_method(M, shop, "allow_buy?", Game__Shop_allow_buy$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, shop, "allow_buy?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, shop, "allow_buy?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Shop_allow_sell$3f
   mrb_define_method(M, shop, "allow_sell?", Game__Shop_allow_sell$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, shop, "allow_sell?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, shop, "allow_sell?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Shop_price
   mrb_define_method(M, shop, "price", Game__Shop_price, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, shop, "price", false);
+#endif
   // #name collides by bare name with mruby core's own Symbol#name/
   // Class#name (registered via `symbol_rom_entries`'s own MRB_MT_ENTRY
   // table, src/symbol.c -- invisible without NATIVE_SRCS pointed at
@@ -5429,46 +5280,44 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // bc2cpp's own whole-program diagnostic confirms it correctly refuses to
   // do (":name" reports POLY, 2 defs: Game::Shop, <native>).
   mrb_define_method(M, shop, "name", Game__Shop_name, MRB_ARGS_REQ(1));
+#ifndef BC2CPP_UNREGISTERED_Game__Shop_description
   mrb_define_method(M, shop, "description", Game__Shop_description,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, shop, "description", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Shop_equip$3f
   mrb_define_method(M, shop, "equip?", Game__Shop_equip$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, shop, "equip?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, shop, "equip?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Shop_sell_price
   mrb_define_method(M, shop, "sell_price", Game__Shop_sell_price,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, shop, "sell_price", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, shop, "sell_price", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Shop_sellable$3f
   mrb_define_method(M, shop, "sellable?", Game__Shop_sellable$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, shop, "sellable?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, shop, "sellable?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Shop_sellable_items
   mrb_define_method(M, shop, "sellable_items", Game__Shop_sellable_items,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, shop, "sellable_items", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, shop, "sellable_items", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Shop_max_buy
   mrb_define_method(M, shop, "max_buy", Game__Shop_max_buy, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, shop, "max_buy", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, shop, "max_buy", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Shop_max_sell
   mrb_define_method(M, shop, "max_sell", Game__Shop_max_sell, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, shop, "max_sell", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, shop, "max_sell", false);
 #endif
   mrb_define_method(M, shop, "buy", Game__Shop_buy,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
@@ -5509,41 +5358,44 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Map_sync_layers_to_unit
   mrb_define_method(M, map, "sync_layers_to_unit",
                     Game__Map_sync_layers_to_unit, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map, "sync_layers_to_unit", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map, "sync_layers_to_unit", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Map_in_bounds$3f
   mrb_define_method(M, map, "in_bounds?", Game__Map_in_bounds$3f,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map, "in_bounds?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map, "in_bounds?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Map_lower
   mrb_define_method(M, map, "lower", Game__Map_lower, MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, map, "lower", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Map_upper
   mrb_define_method(M, map, "upper", Game__Map_upper, MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, map, "upper", false);
+#endif
   mrb_define_method(M, map, "substituted?", Game__Map_substituted$3f,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Map_substitution_snapshot
   mrb_define_method(M, map, "substitution_snapshot",
                     Game__Map_substitution_snapshot, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map, "substitution_snapshot", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map, "substitution_snapshot", false);
 #endif
   mrb_define_method(M, map, "restore_substitutions",
                     Game__Map_restore_substitutions, MRB_ARGS_REQ(2));
 #ifndef BC2CPP_UNREGISTERED_Game__Map_set_lower
   mrb_define_method(M, map, "set_lower", Game__Map_set_lower, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map, "set_lower", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map, "set_lower", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Map_set_upper
   mrb_define_method(M, map, "set_upper", Game__Map_set_upper, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map, "set_upper", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map, "set_upper", false);
 #endif
   // #set_tile/#tile are both `private` in the real interpreted source (a
   // bare `private` mid-class-body in game.rb's own reopening, in effect
@@ -5552,8 +5404,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // established the need for.
 #ifndef BC2CPP_UNREGISTERED_Game__Map_tile
   mrb_define_private_method(M, map, "tile", Game__Map_tile, MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map, "tile", bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map, "tile", false);
 #endif
 
   // Game::EnemyAi (mruby-rpg2k/mrblib/game/battle_support.rb) -- see this
@@ -5575,30 +5427,35 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   RClass* enemy_ai = mrb_class_get_under(M, game, "EnemyAi");
   mrb_define_private_method(M, enemy_ai, "initialize", Game__EnemyAi_initialize,
                             MRB_ARGS_REQ(2));
+#ifndef BC2CPP_UNREGISTERED_Game__EnemyAi_skill
   mrb_define_method(M, enemy_ai, "skill", Game__EnemyAi_skill, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, enemy_ai, "skill", false);
+#endif
   mrb_define_method(M, enemy_ai, "enemy", Game__EnemyAi_enemy, MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_Game__EnemyAi_skill_command
   mrb_define_method(M, enemy_ai, "skill_command", Game__EnemyAi_skill_command,
                     MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, enemy_ai, "skill_command", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, enemy_ai, "skill_command", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__EnemyAi_skill_helps_troop$3f
   mrb_define_method(M, enemy_ai, "skill_helps_troop?",
                     Game__EnemyAi_skill_helps_troop$3f, MRB_ARGS_REQ(3));
+#else
+  bc2cpp_left_out(M, enemy_ai, "skill_helps_troop?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__EnemyAi_switch$3f
   mrb_define_method(M, enemy_ai, "switch?", Game__EnemyAi_switch$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, enemy_ai, "switch?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, enemy_ai, "switch?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__EnemyAi_set_switch
   mrb_define_method(M, enemy_ai, "set_switch", Game__EnemyAi_set_switch,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, enemy_ai, "set_switch", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, enemy_ai, "set_switch", false);
 #endif
   // #party_level is NOT registered here -- its own body ends in a real
   // `actors.each { |a| ... }` block (BLOCK/SENDB), an already-established
@@ -5658,53 +5515,64 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // private section in this file uses) -- the same real visibility check
   // this file's own Game::Picture#step/#finish_move bug
   // already established the need for.
+#ifndef BC2CPP_UNREGISTERED_Game__ChipSet_upper_flags
   mrb_define_private_method(M, chip_set, "upper_flags",
                             Game__ChipSet_upper_flags, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, chip_set, "upper_flags", false);
+#endif
   // ATTR_STRUCT_DEVIRT: overrides `attr_reader`'s own plain, iv_tbl-based
   // #animation_type/#animation_speed -- see this block's own top comment.
+#ifndef BC2CPP_UNREGISTERED_Game__ChipSet_animation_type
   mrb_define_method(M, chip_set, "animation_type", Game__ChipSet_animation_type,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, chip_set, "animation_type", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__ChipSet_animation_speed
   mrb_define_method(M, chip_set, "animation_speed",
                     Game__ChipSet_animation_speed, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, chip_set, "animation_speed", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__ChipSet_elevated$3f
   mrb_define_method(M, chip_set, "elevated?", Game__ChipSet_elevated$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, chip_set, "elevated?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chip_set, "elevated?", false);
 #endif
   mrb_define_method(M, chip_set, "passable?", Game__ChipSet_passable$3f,
                     MRB_ARGS_REQ(2));
 #ifndef BC2CPP_UNREGISTERED_Game__ChipSet_landable$3f
   mrb_define_method(M, chip_set, "landable?", Game__ChipSet_landable$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, chip_set, "landable?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chip_set, "landable?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__ChipSet_counter$3f
   mrb_define_method(M, chip_set, "counter?", Game__ChipSet_counter$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, chip_set, "counter?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chip_set, "counter?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__ChipSet_passable_tile$3f
   mrb_define_method(M, chip_set, "passable_tile?",
                     Game__ChipSet_passable_tile$3f, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, chip_set, "passable_tile?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chip_set, "passable_tile?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__ChipSet_landable_tile$3f
   mrb_define_method(M, chip_set, "landable_tile?",
                     Game__ChipSet_landable_tile$3f, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, chip_set, "landable_tile?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chip_set, "landable_tile?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__ChipSet_terrain
   mrb_define_method(M, chip_set, "terrain", Game__ChipSet_terrain,
                     MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, chip_set, "terrain", false);
+#endif
 
   // Game::Timer (mruby-rpg2k/mrblib/game.rb) -- see this file's own top
   // comment for the real gap breakdown (#start/#tick/#drawn?'s own
@@ -5733,18 +5601,16 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, timer, "stop", Game__Timer_stop, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Timer_seconds
   mrb_define_method(M, timer, "seconds", Game__Timer_seconds, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, timer, "seconds", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, timer, "seconds", false);
 #endif
   mrb_define_method(M, timer, "start", Game__Timer_start,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   mrb_define_method(M, timer, "tick", Game__Timer_tick, MRB_ARGS_OPT(1));
 #ifndef BC2CPP_UNREGISTERED_Game__Timer_drawn$3f
   mrb_define_method(M, timer, "drawn?", Game__Timer_drawn$3f, MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, timer, "drawn?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, timer, "drawn?", false);
 #endif
 
   // Game::Switches (mruby-rpg2k/mrblib/game.rb) -- the 1-indexed boolean
@@ -5789,16 +5655,19 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             Game__Switches_initialize, MRB_ARGS_NONE());
   // ATTR_STRUCT_DEVIRT: overrides `attr_reader`'s own plain, iv_tbl-based
   // #revision -- see this block's own top comment.
+#ifndef BC2CPP_UNREGISTERED_Game__Switches_revision
   mrb_define_method(M, switches, "revision", Game__Switches_revision,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, switches, "revision", false);
+#endif
   mrb_define_method(M, switches, "[]", Game__Switches_$5b$5d, MRB_ARGS_REQ(1));
   mrb_define_method(M, switches, "[]=", Game__Switches_$5b$5d$3d,
                     MRB_ARGS_REQ(2));
 #ifndef BC2CPP_UNREGISTERED_Game__Switches_flip
   mrb_define_method(M, switches, "flip", Game__Switches_flip, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, switches, "flip", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, switches, "flip", false);
 #endif
   mrb_define_method(M, switches, "to_h", Game__Switches_to_h, MRB_ARGS_NONE());
   mrb_define_method(M, switches, "replace", Game__Switches_replace,
@@ -5806,9 +5675,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Switches_clear_dirty
   mrb_define_method(M, switches, "clear_dirty", Game__Switches_clear_dirty,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, switches, "clear_dirty", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, switches, "clear_dirty", false);
 #endif
 
   // Game::Variables (same file, immediately below Switches) -- the
@@ -5839,9 +5707,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Variables_clear_dirty
   mrb_define_method(M, variables, "clear_dirty", Game__Variables_clear_dirty,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, variables, "clear_dirty", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, variables, "clear_dirty", false);
 #endif
   mrb_define_private_method(M, variables, "initialize",
                             Game__Variables_initialize, MRB_ARGS_OPT(1));
@@ -5868,32 +5735,28 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, title, "move_selection",
                             RPG2k__Scene__Title_move_selection,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, title, "move_selection", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, title, "move_selection", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Title_auto_select$3f
   mrb_define_private_method(M, title, "auto_select?",
                             RPG2k__Scene__Title_auto_select$3f,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, title, "auto_select?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, title, "auto_select?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Title_auto_new_game$3f
   mrb_define_private_method(M, title, "auto_new_game?",
                             RPG2k__Scene__Title_auto_new_game$3f,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, title, "auto_new_game?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, title, "auto_new_game?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Title_hide_title$3f
   mrb_define_private_method(M, title, "hide_title?",
                             RPG2k__Scene__Title_hide_title$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, title, "hide_title?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, title, "hide_title?", false);
 #endif
   mrb_define_private_method(M, title, "preview_map_id",
                             RPG2k__Scene__Title_preview_map_id,
@@ -5902,40 +5765,35 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, title, "preview_animation_id",
                             RPG2k__Scene__Title_preview_animation_id,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, title, "preview_animation_id", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, title, "preview_animation_id", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Title_load_windowskin
   mrb_define_private_method(M, title, "load_windowskin",
                             RPG2k__Scene__Title_load_windowskin,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, title, "load_windowskin", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, title, "load_windowskin", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Title_battle_troop
   mrb_define_private_method(M, title, "battle_troop",
                             RPG2k__Scene__Title_battle_troop, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, title, "battle_troop", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, title, "battle_troop", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Title_continue_available$3f
   mrb_define_private_method(M, title, "continue_available?",
                             RPG2k__Scene__Title_continue_available$3f,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, title, "continue_available?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, title, "continue_available?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Title_play_title_bgm
   mrb_define_private_method(M, title, "play_title_bgm",
                             RPG2k__Scene__Title_play_title_bgm,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, title, "play_title_bgm", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, title, "play_title_bgm", false);
 #endif
 
   // RPG2k::Scene::MapWorld (mruby-rpg2k/mrblib/scene/base.rb) -- see this
@@ -5956,39 +5814,34 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapWorld_can_land$3f
   mrb_define_method(M, map_world, "can_land?",
                     RPG2k__Scene__MapWorld_can_land$3f, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_world, "can_land?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_world, "can_land?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapWorld_hero_position
   mrb_define_method(M, map_world, "hero_position",
                     RPG2k__Scene__MapWorld_hero_position, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_world, "hero_position", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_world, "hero_position", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapWorld_in_sight$3f
   mrb_define_method(M, map_world, "in_sight?",
                     RPG2k__Scene__MapWorld_in_sight$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_world, "in_sight?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_world, "in_sight?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapWorld_set_switch
   mrb_define_method(M, map_world, "set_switch",
                     RPG2k__Scene__MapWorld_set_switch, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_world, "set_switch", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_world, "set_switch", false);
 #endif
   mrb_define_method(M, map_world, "random", RPG2k__Scene__MapWorld_random,
                     MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__MapWorld_play_sound
   mrb_define_method(M, map_world, "play_sound",
                     RPG2k__Scene__MapWorld_play_sound, MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_world, "play_sound", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_world, "play_sound", false);
 #endif
 
   // RPG2k::Scene::VehicleWorld (mruby-rpg2k/mrblib/scene/base.rb) -- see
@@ -6010,32 +5863,28 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__VehicleWorld_can_land$3f
   mrb_define_method(M, vehicle_world, "can_land?",
                     RPG2k__Scene__VehicleWorld_can_land$3f, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, vehicle_world, "can_land?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, vehicle_world, "can_land?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__VehicleWorld_hero_position
   mrb_define_method(M, vehicle_world, "hero_position",
                     RPG2k__Scene__VehicleWorld_hero_position, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, vehicle_world, "hero_position", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, vehicle_world, "hero_position", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__VehicleWorld_set_switch
   mrb_define_method(M, vehicle_world, "set_switch",
                     RPG2k__Scene__VehicleWorld_set_switch, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, vehicle_world, "set_switch", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, vehicle_world, "set_switch", false);
 #endif
   mrb_define_method(M, vehicle_world, "random",
                     RPG2k__Scene__VehicleWorld_random, MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__VehicleWorld_play_sound
   mrb_define_method(M, vehicle_world, "play_sound",
                     RPG2k__Scene__VehicleWorld_play_sound, MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, vehicle_world, "play_sound", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, vehicle_world, "play_sound", false);
 #endif
 
   // RPG2k::Scene::EventResolver (same file, right below MapWorld/
@@ -6064,17 +5913,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, event_resolver, "common_event_commands",
                     RPG2k__Scene__EventResolver_common_event_commands,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, event_resolver, "common_event_commands",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, event_resolver, "common_event_commands", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__EventResolver_map_event_commands
   mrb_define_method(M, event_resolver, "map_event_commands",
                     RPG2k__Scene__EventResolver_map_event_commands,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, event_resolver, "map_event_commands",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, event_resolver, "map_event_commands", false);
 #endif
 
   // Game::TextReveal (mruby-rpg2k/mrblib/game.rb) -- see this file's own
@@ -6090,46 +5937,40 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__TextReveal_auto_close$3f
   mrb_define_method(M, text_reveal, "auto_close?",
                     Game__TextReveal_auto_close$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, text_reveal, "auto_close?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, text_reveal, "auto_close?", false);
 #endif
   mrb_define_method(M, text_reveal, "done?", Game__TextReveal_done$3f,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__TextReveal_reveal_all
   mrb_define_method(M, text_reveal, "reveal_all", Game__TextReveal_reveal_all,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, text_reveal, "reveal_all", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, text_reveal, "reveal_all", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__TextReveal_next_pause
   mrb_define_method(M, text_reveal, "next_pause", Game__TextReveal_next_pause,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, text_reveal, "next_pause", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, text_reveal, "next_pause", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__TextReveal_pending_pause
   mrb_define_method(M, text_reveal, "pending_pause",
                     Game__TextReveal_pending_pause, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, text_reveal, "pending_pause", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, text_reveal, "pending_pause", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__TextReveal_release_pause
   mrb_define_method(M, text_reveal, "release_pause",
                     Game__TextReveal_release_pause, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, text_reveal, "release_pause", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, text_reveal, "release_pause", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__TextReveal_advance
   mrb_define_method(M, text_reveal, "advance", Game__TextReveal_advance,
                     MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, text_reveal, "advance", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, text_reveal, "advance", false);
 #endif
 
   // Game::NumberInput (mruby-rpg2k/mrblib/game.rb) -- the digit-cursor
@@ -6170,23 +6011,20 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__NumberInput_digit
   mrb_define_method(M, number_input, "digit", Game__NumberInput_digit,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, number_input, "digit", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, number_input, "digit", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__NumberInput_inc
   mrb_define_method(M, number_input, "inc", Game__NumberInput_inc,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, number_input, "inc", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, number_input, "inc", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__NumberInput_dec
   mrb_define_method(M, number_input, "dec", Game__NumberInput_dec,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, number_input, "dec", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, number_input, "dec", false);
 #endif
   mrb_define_method(M, number_input, "left", Game__NumberInput_left,
                     MRB_ARGS_NONE());
@@ -6216,9 +6054,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, game_over, "gameover_bgm_override",
                             RPG2k__Scene__GameOver_gameover_bgm_override,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, game_over, "gameover_bgm_override",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, game_over, "gameover_bgm_override", false);
 #endif
   mrb_define_private_method(M, game_over, "database_gameover_bgm",
                             RPG2k__Scene__GameOver_database_gameover_bgm,
@@ -6227,9 +6064,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, game_over, "play_gameover_bgm",
                             RPG2k__Scene__GameOver_play_gameover_bgm,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, game_over, "play_gameover_bgm", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, game_over, "play_gameover_bgm", false);
 #endif
 
   // Game::Actors (mruby-rpg2k/mrblib/game.rb) -- the actor-cache/lookup
@@ -6287,15 +6123,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   RClass* rng = mrb_class_get_under(M, game, "Rng");
 #ifndef BC2CPP_UNREGISTERED_Game__Rng_next_int
   mrb_define_method(M, rng, "next_int", Game__Rng_next_int, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rng, "next_int", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rng, "next_int", false);
 #endif
   mrb_define_method(M, rng, "random", Game__Rng_random, MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_Game__Rng_scaled
   mrb_define_method(M, rng, "scaled", Game__Rng_scaled, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rng, "scaled", bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rng, "scaled", false);
 #endif
   mrb_define_private_method(M, rng, "initialize", Game__Rng_initialize,
                             MRB_ARGS_OPT(1));
@@ -6352,9 +6187,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Troop_build_member
   mrb_define_private_method(M, troop, "build_member", Game__Troop_build_member,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, troop, "build_member", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, troop, "build_member", false);
 #endif
 
   // Game::Vehicle (mruby-rpg2k/mrblib/game.rb) -- a boat/ship/airship's
@@ -6379,16 +6213,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Vehicle_placed$3f
   mrb_define_method(M, vehicle, "placed?", Game__Vehicle_placed$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, vehicle, "placed?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, vehicle, "placed?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Vehicle_load_movable
   mrb_define_method(M, vehicle, "load_movable", Game__Vehicle_load_movable,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, vehicle, "load_movable", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, vehicle, "load_movable", false);
 #endif
   mrb_define_private_method(M, vehicle, "initialize", Game__Vehicle_initialize,
                             MRB_ARGS_REQ(1) | MRB_ARGS_OPT(4));
@@ -6427,15 +6259,18 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // three methods below are plain `mrb_define_method`. Reuses the `game`
   // RClass* declared at the top of this function.
   RClass* enemy = mrb_class_get_under(M, game, "Enemy");
+#ifndef BC2CPP_UNREGISTERED_Game__Enemy_attack_hit_rate
   mrb_define_method(M, enemy, "attack_hit_rate", Game__Enemy_attack_hit_rate,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, enemy, "attack_hit_rate", false);
+#endif
   mrb_define_method(M, enemy, "dead?", Game__Enemy_dead$3f, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Enemy_reseed_rewards
   mrb_define_method(M, enemy, "reseed_rewards", Game__Enemy_reseed_rewards,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, enemy, "reseed_rewards", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, enemy, "reseed_rewards", false);
 #endif
 
   // RPG2k::Scene::Battle (mruby-rpg2k/mrblib/scene/battle.rb) -- the RPG2000
@@ -6474,134 +6309,126 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // module, and Base's own gem init has already fully run by the time this
   // one does (see this file's own top comment).
   RClass* battle_base = mrb_class_get_under(M, scene, "Battle");
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_windowskin
   mrb_define_method(M, battle_base, "windowskin",
                     RPG2k__Scene__Battle_windowskin, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, battle_base, "windowskin", false);
+#endif
   mrb_define_method(M, battle_base, "update", RPG2k__Scene__Battle_update,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_drive_battle_encounter_message
   mrb_define_method(M, battle_base, "drive_battle_encounter_message",
                     RPG2k__Scene__Battle_drive_battle_encounter_message,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "drive_battle_encounter_message",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "drive_battle_encounter_message", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_settle_already_finished_battle
   mrb_define_method(M, battle_base, "settle_already_finished_battle",
                     RPG2k__Scene__Battle_settle_already_finished_battle,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "settle_already_finished_battle",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "settle_already_finished_battle", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battler_z
   mrb_define_method(M, battle_base, "battler_z", RPG2k__Scene__Battle_battler_z,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battler_z", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battler_z", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_flying_offset
   mrb_define_method(M, battle_base, "flying_offset",
                     RPG2k__Scene__Battle_flying_offset, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "flying_offset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "flying_offset", false);
 #endif
   mrb_define_method(M, battle_base, "battler_y", RPG2k__Scene__Battle_battler_y,
                     MRB_ARGS_REQ(2));
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battler_opacity
   mrb_define_method(M, battle_base, "battler_opacity",
                     RPG2k__Scene__Battle_battler_opacity, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battler_opacity", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battler_opacity", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_actor_sprite_z
   mrb_define_method(M, battle_base, "actor_sprite_z",
                     RPG2k__Scene__Battle_actor_sprite_z, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "actor_sprite_z", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "actor_sprite_z", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_automatic_battle_position
   mrb_define_method(M, battle_base, "automatic_battle_position",
                     RPG2k__Scene__Battle_automatic_battle_position,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "automatic_battle_position",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "automatic_battle_position", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battle_grid_position
   mrb_define_method(M, battle_base, "battle_grid_position",
                     RPG2k__Scene__Battle_battle_grid_position, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battle_grid_position",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battle_grid_position", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_on_battle_party_changed
   mrb_define_method(M, battle_base, "on_battle_party_changed",
                     RPG2k__Scene__Battle_on_battle_party_changed,
                     MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, battle_base, "on_battle_party_changed", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_encounter_backdrop
   mrb_define_method(M, battle_base, "encounter_backdrop",
                     RPG2k__Scene__Battle_encounter_backdrop, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "encounter_backdrop",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "encounter_backdrop", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_flat_battle_back
   mrb_define_method(M, battle_base, "flat_battle_back",
                     RPG2k__Scene__Battle_flat_battle_back, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "flat_battle_back",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "flat_battle_back", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_placeholder_battler
   mrb_define_method(M, battle_base, "placeholder_battler",
                     RPG2k__Scene__Battle_placeholder_battler, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "placeholder_battler",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "placeholder_battler", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_rebuild_battler_sprite
   mrb_define_method(M, battle_base, "rebuild_battler_sprite",
                     RPG2k__Scene__Battle_rebuild_battler_sprite,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "rebuild_battler_sprite",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "rebuild_battler_sprite", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_sync_troop_member_rewards
   mrb_define_method(M, battle_base, "sync_troop_member_rewards",
                     RPG2k__Scene__Battle_sync_troop_member_rewards,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "sync_troop_member_rewards",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "sync_troop_member_rewards", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_current_actor
   mrb_define_method(M, battle_base, "current_actor",
                     RPG2k__Scene__Battle_current_actor, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "current_actor", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "current_actor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_row_command_available$3f
   mrb_define_method(M, battle_base, "row_command_available?",
                     RPG2k__Scene__Battle_row_command_available$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "row_command_available?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "row_command_available?", false);
 #endif
   mrb_define_method(M, battle_base, "drive_battle_command",
                     RPG2k__Scene__Battle_drive_battle_command, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battle_option_rows
   mrb_define_method(M, battle_base, "battle_option_rows",
                     RPG2k__Scene__Battle_battle_option_rows, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battle_option_rows",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battle_option_rows", false);
 #endif
   mrb_define_method(M, battle_base, "enter_command_phase",
                     RPG2k__Scene__Battle_enter_command_phase, MRB_ARGS_NONE());
@@ -6611,23 +6438,20 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, battle_base, "select_battle_command",
                     RPG2k__Scene__Battle_select_battle_command,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "select_battle_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "select_battle_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_drive_battle_target
   mrb_define_method(M, battle_base, "drive_battle_target",
                     RPG2k__Scene__Battle_drive_battle_target, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "drive_battle_target",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "drive_battle_target", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_pending_skill$3f
   mrb_define_method(M, battle_base, "pending_skill?",
                     RPG2k__Scene__Battle_pending_skill$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "pending_skill?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "pending_skill?", false);
 #endif
   mrb_define_method(M, battle_base, "move_battle_list_index",
                     RPG2k__Scene__Battle_move_battle_list_index,
@@ -6635,47 +6459,41 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_drive_battle_skill
   mrb_define_method(M, battle_base, "drive_battle_skill",
                     RPG2k__Scene__Battle_drive_battle_skill, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "drive_battle_skill",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "drive_battle_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battle_skill_unavailable$3f
   mrb_define_method(M, battle_base, "battle_skill_unavailable?",
                     RPG2k__Scene__Battle_battle_skill_unavailable$3f,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battle_skill_unavailable?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battle_skill_unavailable?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_confirm_battle_skill
   mrb_define_method(M, battle_base, "confirm_battle_skill",
                     RPG2k__Scene__Battle_confirm_battle_skill, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "confirm_battle_skill",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "confirm_battle_skill", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_drive_battle_item
   mrb_define_method(M, battle_base, "drive_battle_item",
                     RPG2k__Scene__Battle_drive_battle_item, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "drive_battle_item",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "drive_battle_item", false);
 #endif
   mrb_define_method(M, battle_base, "advance_actor",
                     RPG2k__Scene__Battle_advance_actor, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_open_next_command
   mrb_define_method(M, battle_base, "open_next_command",
                     RPG2k__Scene__Battle_open_next_command, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "open_next_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "open_next_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_force_ai_actor$3f
   mrb_define_method(M, battle_base, "force_ai_actor?",
                     RPG2k__Scene__Battle_force_ai_actor$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "force_ai_actor?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "force_ai_actor?", false);
 #endif
   mrb_define_method(M, battle_base, "prev_commandable_actor_index",
                     RPG2k__Scene__Battle_prev_commandable_actor_index,
@@ -6683,17 +6501,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_drive_battle_animate
   mrb_define_method(M, battle_base, "drive_battle_animate",
                     RPG2k__Scene__Battle_drive_battle_animate, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "drive_battle_animate",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "drive_battle_animate", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battle_animation_playing$3f
   mrb_define_method(M, battle_base, "battle_animation_playing?",
                     RPG2k__Scene__Battle_battle_animation_playing$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battle_animation_playing?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battle_animation_playing?", false);
 #endif
   mrb_define_method(M, battle_base, "battle_animation_id",
                     RPG2k__Scene__Battle_battle_animation_id, MRB_ARGS_REQ(1));
@@ -6701,177 +6517,158 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, battle_base, "battle_animation_pixel",
                     RPG2k__Scene__Battle_battle_animation_pixel,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battle_animation_pixel",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battle_animation_pixel", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_drive_battle_event_wait
   mrb_define_method(M, battle_base, "drive_battle_event_wait",
                     RPG2k__Scene__Battle_drive_battle_event_wait,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "drive_battle_event_wait",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "drive_battle_event_wait", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_reveal_battle_monster
   mrb_define_method(M, battle_base, "reveal_battle_monster",
                     RPG2k__Scene__Battle_reveal_battle_monster,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "reveal_battle_monster",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "reveal_battle_monster", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_remove_fled_monster
   mrb_define_method(M, battle_base, "remove_fled_monster",
                     RPG2k__Scene__Battle_remove_fled_monster, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "remove_fled_monster",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "remove_fled_monster", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_play_monster_kill_se
   mrb_define_method(M, battle_base, "play_monster_kill_se",
                     RPG2k__Scene__Battle_play_monster_kill_se, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "play_monster_kill_se",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "play_monster_kill_se", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_finish_battle
   mrb_define_method(M, battle_base, "finish_battle",
                     RPG2k__Scene__Battle_finish_battle, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "finish_battle", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "finish_battle", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_skill_achieved_nothing$3f
   mrb_define_method(M, battle_base, "skill_achieved_nothing?",
                     RPG2k__Scene__Battle_skill_achieved_nothing$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "skill_achieved_nothing?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "skill_achieved_nothing?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battle_action_lines
   mrb_define_method(M, battle_base, "battle_action_lines",
                     RPG2k__Scene__Battle_battle_action_lines, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battle_action_lines",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battle_action_lines", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battle_level_up_message
   mrb_define_method(M, battle_base, "battle_level_up_message",
                     RPG2k__Scene__Battle_battle_level_up_message,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battle_level_up_message",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battle_level_up_message", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battle_skill_learned_message
   mrb_define_method(M, battle_base, "battle_skill_learned_message",
                     RPG2k__Scene__Battle_battle_skill_learned_message,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battle_skill_learned_message",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battle_skill_learned_message", false);
 #endif
   mrb_define_method(M, battle_base, "battle_status_x",
                     RPG2k__Scene__Battle_battle_status_x, MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_gauge_battle_layout$3f
   mrb_define_method(M, battle_base, "gauge_battle_layout?",
                     RPG2k__Scene__Battle_gauge_battle_layout$3f,
                     MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, battle_base, "gauge_battle_layout?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battle_status_row
   mrb_define_method(M, battle_base, "battle_status_row",
                     RPG2k__Scene__Battle_battle_status_row, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battle_status_row",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battle_status_row", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_battle_state_segment
   mrb_define_method(M, battle_base, "battle_state_segment",
                     RPG2k__Scene__Battle_battle_state_segment, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "battle_state_segment",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "battle_state_segment", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_draw_battle_gauge_face
   mrb_define_method(M, battle_base, "draw_battle_gauge_face",
                     RPG2k__Scene__Battle_draw_battle_gauge_face,
                     MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "draw_battle_gauge_face",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "draw_battle_gauge_face", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_draw_gauge_system2
   mrb_define_method(M, battle_base, "draw_gauge_system2",
                     RPG2k__Scene__Battle_draw_gauge_system2, MRB_ARGS_REQ(7));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "draw_gauge_system2",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "draw_gauge_system2", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_draw_number_system2
   mrb_define_method(M, battle_base, "draw_number_system2",
                     RPG2k__Scene__Battle_draw_number_system2, MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "draw_number_system2",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "draw_number_system2", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_tick_battle_list_arrows
   mrb_define_method(M, battle_base, "tick_battle_list_arrows",
                     RPG2k__Scene__Battle_tick_battle_list_arrows,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "tick_battle_list_arrows",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "tick_battle_list_arrows", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_show_battle_action
   mrb_define_method(M, battle_base, "show_battle_action",
                     RPG2k__Scene__Battle_show_battle_action, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "show_battle_action",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "show_battle_action", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_play_battle_action_se
   mrb_define_method(M, battle_base, "play_battle_action_se",
                     RPG2k__Scene__Battle_play_battle_action_se,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "play_battle_action_se",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "play_battle_action_se", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_state_label
   mrb_define_method(M, battle_base, "state_label",
                     RPG2k__Scene__Battle_state_label, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "state_label", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "state_label", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_dispose_battle_sprite
   mrb_define_method(M, battle_base, "dispose_battle_sprite",
                     RPG2k__Scene__Battle_dispose_battle_sprite,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "dispose_battle_sprite",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "dispose_battle_sprite", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_clear_target_flash
   mrb_define_method(M, battle_base, "clear_target_flash",
                     RPG2k__Scene__Battle_clear_target_flash, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "clear_target_flash",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "clear_target_flash", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_fire_target_flash
   mrb_define_method(M, battle_base, "fire_target_flash",
                     RPG2k__Scene__Battle_fire_target_flash, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "fire_target_flash",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "fire_target_flash", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_fire_target_shake
   mrb_define_method(M, battle_base, "fire_target_shake",
                     RPG2k__Scene__Battle_fire_target_shake, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "fire_target_shake",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "fire_target_shake", false);
 #endif
   mrb_define_private_method(M, battle_base, "initialize",
                             RPG2k__Scene__Battle_initialize, MRB_ARGS_REQ(3));
@@ -6879,24 +6676,21 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, battle_base, "build_actor_sprite",
                     RPG2k__Scene__Battle_build_actor_sprite,
                     MRB_ARGS_REQ(2) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(3, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "build_actor_sprite",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "build_actor_sprite", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_build_battle_back
   mrb_define_method(M, battle_base, "build_battle_back",
                     RPG2k__Scene__Battle_build_battle_back, MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "build_battle_back",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "build_battle_back", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Battle_start_battle_animation
   mrb_define_method(M, battle_base, "start_battle_animation",
                     RPG2k__Scene__Battle_start_battle_animation,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_base, "start_battle_animation",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_base, "start_battle_animation", false);
 #endif
 
   // RPG2k3::Scene::Battle (mruby-rpg2k/mrblib/scene/battle_rpg2k3.rb) -- the
@@ -6954,23 +6748,20 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k3__Scene__Battle_gauge_battle$3f
   mrb_define_method(M, battle_2k3, "gauge_battle?",
                     RPG2k3__Scene__Battle_gauge_battle$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_2k3, "gauge_battle?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_2k3, "gauge_battle?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k3__Scene__Battle_drive_battle_atb
   mrb_define_method(M, battle_2k3, "drive_battle_atb",
                     RPG2k3__Scene__Battle_drive_battle_atb, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_2k3, "drive_battle_atb", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_2k3, "drive_battle_atb", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k3__Scene__Battle_controllable$3f
   mrb_define_method(M, battle_2k3, "controllable?",
                     RPG2k3__Scene__Battle_controllable$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, battle_2k3, "controllable?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_2k3, "controllable?", false);
 #endif
   mrb_define_method(M, battle_2k3, "update", RPG2k3__Scene__Battle_update,
                     MRB_ARGS_NONE());
@@ -7035,16 +6826,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__MessageConfig_face$3f
   mrb_define_method(M, message_config, "face?", Game__MessageConfig_face$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, message_config, "face?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, message_config, "face?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MessageConfig_clear_face
   mrb_define_method(M, message_config, "clear_face",
                     Game__MessageConfig_clear_face, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, message_config, "clear_face", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, message_config, "clear_face", false);
 #endif
 
   // Game::Interpreter (mruby-rpg2k/mrblib/
@@ -7231,30 +7020,26 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_finished$3f
   mrb_define_method(M, interpreter, "finished?", Game__Interpreter_finished$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "finished?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "finished?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_set_switch
   mrb_define_private_method(M, interpreter, "set_switch",
                             Game__Interpreter_set_switch, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "set_switch", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "set_switch", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_revealed_monsters
   mrb_define_method(M, interpreter, "take_revealed_monsters",
                     Game__Interpreter_take_revealed_monsters, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_revealed_monsters",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_revealed_monsters", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_fled_monsters
   mrb_define_method(M, interpreter, "take_fled_monsters",
                     Game__Interpreter_take_fled_monsters, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_fled_monsters",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_fled_monsters", false);
 #endif
   mrb_define_method(M, interpreter, "take_battle_background",
                     Game__Interpreter_take_battle_background, MRB_ARGS_NONE());
@@ -7262,16 +7047,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, interpreter, "trans_to_opacity",
                             Game__Interpreter_trans_to_opacity,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "trans_to_opacity",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "trans_to_opacity", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_execute
   mrb_define_private_method(M, interpreter, "execute",
                             Game__Interpreter_execute, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "execute", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "execute", false);
 #endif
   mrb_define_private_method(M, interpreter, "compare",
                             Game__Interpreter_compare, MRB_ARGS_REQ(3));
@@ -7279,10 +7062,18 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, interpreter, "stop", Game__Interpreter_stop,
                     MRB_ARGS_NONE());
+#ifndef BC2CPP_UNREGISTERED_Game__Interpreter_party
   mrb_define_private_method(M, interpreter, "party", Game__Interpreter_party,
                             MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, interpreter, "party", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__Interpreter_switches
   mrb_define_private_method(M, interpreter, "switches",
                             Game__Interpreter_switches, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, interpreter, "switches", false);
+#endif
   mrb_define_private_method(M, interpreter, "variables",
                             Game__Interpreter_variables, MRB_ARGS_NONE());
   mrb_define_method(M, interpreter, "running?", Game__Interpreter_running$3f,
@@ -7290,356 +7081,312 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_waiting$3f
   mrb_define_method(M, interpreter, "waiting?", Game__Interpreter_waiting$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "waiting?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "waiting?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_move_route_requests
   mrb_define_method(M, interpreter, "take_move_route_requests",
                     Game__Interpreter_take_move_route_requests,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_move_route_requests",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_move_route_requests", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_location_requests
   mrb_define_method(M, interpreter, "take_location_requests",
                     Game__Interpreter_take_location_requests, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_location_requests",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_location_requests", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_erase_request
   mrb_define_method(M, interpreter, "take_erase_request",
                     Game__Interpreter_take_erase_request, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_erase_request",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_erase_request", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_tileset_request
   mrb_define_method(M, interpreter, "take_tileset_request",
                     Game__Interpreter_take_tileset_request, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_tileset_request",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_tileset_request", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_parallax_request
   mrb_define_method(M, interpreter, "take_parallax_request",
                     Game__Interpreter_take_parallax_request, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_parallax_request",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_parallax_request", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_halt_movement_request
   mrb_define_method(M, interpreter, "take_halt_movement_request",
                     Game__Interpreter_take_halt_movement_request,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_halt_movement_request",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_halt_movement_request", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_actor_graphic_changed
   mrb_define_method(M, interpreter, "take_actor_graphic_changed",
                     Game__Interpreter_take_actor_graphic_changed,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_actor_graphic_changed",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_actor_graphic_changed", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_system_graphic_changed
   mrb_define_method(M, interpreter, "take_system_graphic_changed",
                     Game__Interpreter_take_system_graphic_changed,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_system_graphic_changed",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_system_graphic_changed", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_tiles_changed
   mrb_define_method(M, interpreter, "take_tiles_changed",
                     Game__Interpreter_take_tiles_changed, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_tiles_changed",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_tiles_changed", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_vehicle_toggle_request
   mrb_define_method(M, interpreter, "take_vehicle_toggle_request",
                     Game__Interpreter_take_vehicle_toggle_request,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_vehicle_toggle_request",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_vehicle_toggle_request", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_movie_request
   mrb_define_method(M, interpreter, "take_movie_request",
                     Game__Interpreter_take_movie_request, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_movie_request",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_movie_request", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_take_sprite_flash_requests
   mrb_define_method(M, interpreter, "take_sprite_flash_requests",
                     Game__Interpreter_take_sprite_flash_requests,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "take_sprite_flash_requests",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "take_sprite_flash_requests", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_reset_frame_steps
   mrb_define_method(M, interpreter, "reset_frame_steps",
                     Game__Interpreter_reset_frame_steps, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "reset_frame_steps",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "reset_frame_steps", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_step_cost
   mrb_define_method(M, interpreter, "step_cost", Game__Interpreter_step_cost,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "step_cost", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "step_cost", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_return_from_call
   mrb_define_method(M, interpreter, "return_from_call",
                     Game__Interpreter_return_from_call, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "return_from_call",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "return_from_call", false);
 #endif
   mrb_define_method(M, interpreter, "resumable_index",
                     Game__Interpreter_resumable_index, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_call_stack_snapshot
   mrb_define_method(M, interpreter, "call_stack_snapshot",
                     Game__Interpreter_call_stack_snapshot, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "call_stack_snapshot",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "call_stack_snapshot", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_start_at
   mrb_define_method(M, interpreter, "start_at", Game__Interpreter_start_at,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "start_at", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "start_at", false);
 #endif
   mrb_define_method(M, interpreter, "resume", Game__Interpreter_resume,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_choose
   mrb_define_method(M, interpreter, "choose", Game__Interpreter_choose,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "choose", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "choose", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_choice_cancellable$3f
   mrb_define_method(M, interpreter, "choice_cancellable?",
                     Game__Interpreter_choice_cancellable$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "choice_cancellable?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "choice_cancellable?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_cancel_choice
   mrb_define_method(M, interpreter, "cancel_choice",
                     Game__Interpreter_cancel_choice, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "cancel_choice", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "cancel_choice", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_resume_number
   mrb_define_method(M, interpreter, "resume_number",
                     Game__Interpreter_resume_number, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "resume_number", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "resume_number", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_resume_name_input
   mrb_define_method(M, interpreter, "resume_name_input",
                     Game__Interpreter_resume_name_input, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "resume_name_input",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "resume_name_input", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_resume_key_input
   mrb_define_method(M, interpreter, "resume_key_input",
                     Game__Interpreter_resume_key_input, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "resume_key_input",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "resume_key_input", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_resume_shop
   mrb_define_method(M, interpreter, "resume_shop",
                     Game__Interpreter_resume_shop, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "resume_shop", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "resume_shop", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_resume_battle
   mrb_define_method(M, interpreter, "resume_battle",
                     Game__Interpreter_resume_battle, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "resume_battle", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "resume_battle", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_call_event
   mrb_define_private_method(M, interpreter, "do_call_event",
                             Game__Interpreter_do_call_event, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_call_event", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_call_event", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_character_ref
   mrb_define_private_method(M, interpreter, "character_ref",
                             Game__Interpreter_character_ref, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "character_ref", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "character_ref", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_consume
   mrb_define_private_method(M, interpreter, "consume",
                             Game__Interpreter_consume, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "consume", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "consume", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_message_options
   mrb_define_private_method(M, interpreter, "do_message_options",
                             Game__Interpreter_do_message_options,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_message_options",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_message_options", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_change_face
   mrb_define_private_method(M, interpreter, "do_change_face",
                             Game__Interpreter_do_change_face, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_change_face", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_change_face", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_key_input
   mrb_define_private_method(M, interpreter, "do_key_input",
                             Game__Interpreter_do_key_input, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_key_input", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_key_input", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_enemy_encounter
   mrb_define_private_method(M, interpreter, "do_enemy_encounter",
                             Game__Interpreter_do_enemy_encounter,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_enemy_encounter",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_enemy_encounter", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_skip_invalid_troop
   mrb_define_private_method(M, interpreter, "skip_invalid_troop",
                             Game__Interpreter_skip_invalid_troop,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "skip_invalid_troop",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "skip_invalid_troop", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Interpreter_start_death_handler
   mrb_define_method(M, interpreter, "start_death_handler",
                     Game__Interpreter_start_death_handler, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, interpreter, "start_death_handler", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_range
   mrb_define_private_method(M, interpreter, "range", Game__Interpreter_range,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "range", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "range", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_event_operand
   mrb_define_private_method(M, interpreter, "event_operand",
                             Game__Interpreter_event_operand, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "event_operand", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "event_operand", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_vehicle_operand
   mrb_define_private_method(M, interpreter, "vehicle_operand",
                             Game__Interpreter_vehicle_operand, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "vehicle_operand", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "vehicle_operand", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_screen_operand
   mrb_define_private_method(M, interpreter, "screen_operand",
                             Game__Interpreter_screen_operand, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "screen_operand", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "screen_operand", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_apply
   mrb_define_private_method(M, interpreter, "apply", Game__Interpreter_apply,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "apply", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "apply", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_trunc_div
   mrb_define_private_method(M, interpreter, "trunc_div",
                             Game__Interpreter_trunc_div, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "trunc_div", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "trunc_div", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_trunc_mod
   mrb_define_private_method(M, interpreter, "trunc_mod",
                             Game__Interpreter_trunc_mod, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "trunc_mod", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "trunc_mod", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_change_party
   mrb_define_private_method(M, interpreter, "do_change_party",
                             Game__Interpreter_do_change_party, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_change_party", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_change_party", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_check_game_over
   mrb_define_private_method(M, interpreter, "check_game_over",
                             Game__Interpreter_check_game_over, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "check_game_over", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "check_game_over", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_level_up_message
   mrb_define_private_method(M, interpreter, "level_up_message",
                             Game__Interpreter_level_up_message,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "level_up_message",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "level_up_message", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_skill_learned_message
   mrb_define_private_method(M, interpreter, "skill_learned_message",
                             Game__Interpreter_skill_learned_message,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "skill_learned_message",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "skill_learned_message", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_stat_targets
   mrb_define_private_method(M, interpreter, "stat_targets",
                             Game__Interpreter_stat_targets, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "stat_targets", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "stat_targets", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_simulated_attack_variance
   mrb_define_private_method(M, interpreter, "simulated_attack_variance",
                             Game__Interpreter_simulated_attack_variance,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "simulated_attack_variance",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "simulated_attack_variance", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_identity_target
   mrb_define_private_method(M, interpreter, "identity_target",
                             Game__Interpreter_identity_target, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "identity_target", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "identity_target", false);
 #endif
   mrb_define_private_method(M, interpreter, "do_change_actor_name",
                             Game__Interpreter_do_change_actor_name,
@@ -7648,310 +7395,271 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, interpreter, "do_show_hidden_monster",
                             Game__Interpreter_do_show_hidden_monster,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_show_hidden_monster",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_show_hidden_monster", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_force_flee
   mrb_define_private_method(M, interpreter, "do_force_flee",
                             Game__Interpreter_do_force_flee, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_force_flee", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_force_flee", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_enable_combo
   mrb_define_private_method(M, interpreter, "do_enable_combo",
                             Game__Interpreter_do_enable_combo, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_enable_combo", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_enable_combo", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_change_battle_bg
   mrb_define_private_method(M, interpreter, "do_change_battle_bg",
                             Game__Interpreter_do_change_battle_bg,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_change_battle_bg",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_change_battle_bg", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_show_battle_animation_b
   mrb_define_private_method(M, interpreter, "do_show_battle_animation_b",
                             Game__Interpreter_do_show_battle_animation_b,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_show_battle_animation_b",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_show_battle_animation_b", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_terminate_battle
   mrb_define_private_method(M, interpreter, "do_terminate_battle",
                             Game__Interpreter_do_terminate_battle,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_terminate_battle",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_terminate_battle", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_conditional_battle
   mrb_define_private_method(M, interpreter, "do_conditional_battle",
                             Game__Interpreter_do_conditional_battle,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_conditional_battle",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_conditional_battle", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_eval_battle_condition
   mrb_define_private_method(M, interpreter, "eval_battle_condition",
                             Game__Interpreter_eval_battle_condition,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "eval_battle_condition",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "eval_battle_condition", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_battle_actor_condition
   mrb_define_private_method(M, interpreter, "battle_actor_condition",
                             Game__Interpreter_battle_actor_condition,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "battle_actor_condition",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "battle_actor_condition", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_battle_enemy_condition
   mrb_define_private_method(M, interpreter, "battle_enemy_condition",
                             Game__Interpreter_battle_enemy_condition,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "battle_enemy_condition",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "battle_enemy_condition", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_battle_command_condition
   mrb_define_private_method(M, interpreter, "battle_command_condition",
                             Game__Interpreter_battle_command_condition,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "battle_command_condition",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "battle_command_condition", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_battle_target_enemy_condition
   mrb_define_private_method(M, interpreter, "battle_target_enemy_condition",
                             Game__Interpreter_battle_target_enemy_condition,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "battle_target_enemy_condition",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "battle_target_enemy_condition", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_conditional
   mrb_define_private_method(M, interpreter, "do_conditional",
                             Game__Interpreter_do_conditional, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_conditional", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_conditional", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_character_facing
   mrb_define_private_method(M, interpreter, "character_facing",
                             Game__Interpreter_character_facing,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "character_facing",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "character_facing", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_actor_condition
   mrb_define_private_method(M, interpreter, "actor_condition",
                             Game__Interpreter_actor_condition, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "actor_condition", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "actor_condition", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_teleport
   mrb_define_private_method(M, interpreter, "do_teleport",
                             Game__Interpreter_do_teleport, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_teleport", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_teleport", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_teleport_facing
   mrb_define_private_method(M, interpreter, "teleport_facing",
                             Game__Interpreter_teleport_facing, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "teleport_facing", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "teleport_facing", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_recall_location
   mrb_define_private_method(M, interpreter, "do_recall_location",
                             Game__Interpreter_do_recall_location,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_recall_location",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_recall_location", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_move_event
   mrb_define_private_method(M, interpreter, "do_move_event",
                             Game__Interpreter_do_move_event, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_move_event", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_move_event", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_decode_move_route
   mrb_define_private_method(M, interpreter, "decode_move_route",
                             Game__Interpreter_decode_move_route,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "decode_move_route",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "decode_move_route", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_wait
   mrb_define_private_method(M, interpreter, "do_wait",
                             Game__Interpreter_do_wait, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_wait", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_wait", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_player_visibility
   mrb_define_private_method(M, interpreter, "do_player_visibility",
                             Game__Interpreter_do_player_visibility,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_player_visibility",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_player_visibility", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_flash_sprite
   mrb_define_private_method(M, interpreter, "do_flash_sprite",
                             Game__Interpreter_do_flash_sprite, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_flash_sprite", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_flash_sprite", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_open_main_menu
   mrb_define_private_method(M, interpreter, "do_open_main_menu",
                             Game__Interpreter_do_open_main_menu,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_open_main_menu",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_open_main_menu", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_open_load_menu
   mrb_define_private_method(M, interpreter, "do_open_load_menu",
                             Game__Interpreter_do_open_load_menu,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_open_load_menu",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_open_load_menu", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_exit_game
   mrb_define_private_method(M, interpreter, "do_exit_game",
                             Game__Interpreter_do_exit_game, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_exit_game", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_exit_game", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_toggle_atb_mode
   mrb_define_private_method(M, interpreter, "do_toggle_atb_mode",
                             Game__Interpreter_do_toggle_atb_mode,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_toggle_atb_mode",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_toggle_atb_mode", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_toggle_fullscreen
   mrb_define_private_method(M, interpreter, "do_toggle_fullscreen",
                             Game__Interpreter_do_toggle_fullscreen,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_toggle_fullscreen",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_toggle_fullscreen", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_open_video_options
   mrb_define_private_method(M, interpreter, "do_open_video_options",
                             Game__Interpreter_do_open_video_options,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_open_video_options",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_open_video_options", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_shake_screen
   mrb_define_private_method(M, interpreter, "do_shake_screen",
                             Game__Interpreter_do_shake_screen, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_shake_screen", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_shake_screen", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_message_window_blocks_command$3f
   mrb_define_private_method(M, interpreter, "message_window_blocks_command?",
                             Game__Interpreter_message_window_blocks_command$3f,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "message_window_blocks_command?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "message_window_blocks_command?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_block_pending_picture_command
   mrb_define_private_method(M, interpreter, "block_pending_picture_command",
                             Game__Interpreter_block_pending_picture_command,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "block_pending_picture_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "block_pending_picture_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_block_pending_teleport_command
   mrb_define_private_method(M, interpreter, "block_pending_teleport_command",
                             Game__Interpreter_block_pending_teleport_command,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "block_pending_teleport_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "block_pending_teleport_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_block_pending_screen_command
   mrb_define_private_method(M, interpreter, "block_pending_screen_command",
                             Game__Interpreter_block_pending_screen_command,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "block_pending_screen_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "block_pending_screen_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_block_pending_battle_command
   mrb_define_private_method(M, interpreter, "block_pending_battle_command",
                             Game__Interpreter_block_pending_battle_command,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "block_pending_battle_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "block_pending_battle_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_block_pending_exp_level_command
   mrb_define_private_method(M, interpreter, "block_pending_exp_level_command",
                             Game__Interpreter_block_pending_exp_level_command,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "block_pending_exp_level_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "block_pending_exp_level_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_block_pending_key_input_command
   mrb_define_private_method(M, interpreter, "block_pending_key_input_command",
                             Game__Interpreter_block_pending_key_input_command,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "block_pending_key_input_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "block_pending_key_input_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_block_pending_message_config_command
   mrb_define_private_method(
       M, interpreter, "block_pending_message_config_command",
       Game__Interpreter_block_pending_message_config_command, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "block_pending_message_config_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "block_pending_message_config_command",
+                  false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_erase_picture
   mrb_define_private_method(M, interpreter, "do_erase_picture",
                             Game__Interpreter_do_erase_picture,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_erase_picture",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_erase_picture", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_show_battle_animation
   mrb_define_private_method(M, interpreter, "do_show_battle_animation",
                             Game__Interpreter_do_show_battle_animation,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_show_battle_animation",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_show_battle_animation", false);
 #endif
   mrb_define_private_method(M, interpreter, "picture_name",
                             Game__Interpreter_picture_name, MRB_ARGS_REQ(1));
@@ -7959,59 +7667,57 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, interpreter, "do_change_system_bgm",
                             Game__Interpreter_do_change_system_bgm,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_change_system_bgm",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_change_system_bgm", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_call_common_event
   mrb_define_private_method(M, interpreter, "do_call_common_event",
                             Game__Interpreter_do_call_common_event,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_call_common_event",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_call_common_event", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_common_event_commands
   mrb_define_private_method(M, interpreter, "common_event_commands",
                             Game__Interpreter_common_event_commands,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "common_event_commands",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "common_event_commands", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_block_pending_message_config_command
   mrb_define_private_method(
       M, interpreter, "block_pending_message_config_command",
       Game__Interpreter_block_pending_message_config_command, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "block_pending_message_config_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "block_pending_message_config_command",
+                  false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_do_play_memorized_bgm
   mrb_define_private_method(M, interpreter, "do_play_memorized_bgm",
                             Game__Interpreter_do_play_memorized_bgm,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "do_play_memorized_bgm",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "do_play_memorized_bgm", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_play_audio
   mrb_define_private_method(M, interpreter, "play_audio",
                             Game__Interpreter_play_audio, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "play_audio", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "play_audio", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Interpreter_resolve_call
   mrb_define_private_method(M, interpreter, "resolve_call",
                             Game__Interpreter_resolve_call, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, interpreter, "resolve_call", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, interpreter, "resolve_call", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__Interpreter_start_random_battle
   mrb_define_method(M, interpreter, "start_random_battle",
                     Game__Interpreter_start_random_battle,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(2, 0));
+#else
+  bc2cpp_left_out(M, interpreter, "start_random_battle", false);
+#endif
 
   // RPG2k::Scene::Map (round 29 follow-up, mruby-rpg2k/mrblib/scene/map.rb)
   // -- the main gameplay screen: tile/character/event rendering, the
@@ -8235,174 +7941,164 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_clamp_speed
   mrb_define_method(M, map_scene, "clamp_speed", RPG2k__Scene__Map_clamp_speed,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "clamp_speed", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "clamp_speed", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_walk_slide_step
   mrb_define_method(M, map_scene, "walk_slide_step",
                     RPG2k__Scene__Map_walk_slide_step, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "walk_slide_step", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "walk_slide_step", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_jump_slide_step
   mrb_define_method(M, map_scene, "jump_slide_step",
                     RPG2k__Scene__Map_jump_slide_step, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "jump_slide_step", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "jump_slide_step", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_anim_frame_period
   mrb_define_method(M, map_scene, "anim_frame_period",
                     RPG2k__Scene__Map_anim_frame_period, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "anim_frame_period", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "anim_frame_period", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_anim_continuous_period
   mrb_define_method(M, map_scene, "anim_continuous_period",
                     RPG2k__Scene__Map_anim_continuous_period, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "anim_continuous_period",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "anim_continuous_period", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_anim_spin_period
   mrb_define_method(M, map_scene, "anim_spin_period",
                     RPG2k__Scene__Map_anim_spin_period, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "anim_spin_period", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "anim_spin_period", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_advance_slide
   mrb_define_method(M, map_scene, "advance_slide",
                     RPG2k__Scene__Map_advance_slide, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "advance_slide", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "advance_slide", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_setup_screen_overlay
   mrb_define_private_method(M, map_scene, "setup_screen_overlay",
                             RPG2k__Scene__Map_setup_screen_overlay,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "setup_screen_overlay",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "setup_screen_overlay", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_update_screen_overlay
   mrb_define_private_method(M, map_scene, "update_screen_overlay",
                             RPG2k__Scene__Map_update_screen_overlay,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "update_screen_overlay",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "update_screen_overlay", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_release_transition_capture
   mrb_define_private_method(M, map_scene, "release_transition_capture",
                             RPG2k__Scene__Map_release_transition_capture,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "release_transition_capture",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "release_transition_capture", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_reset_fade_bitmap
   mrb_define_private_method(M, map_scene, "reset_fade_bitmap",
                             RPG2k__Scene__Map_reset_fade_bitmap,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "reset_fade_bitmap", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "reset_fade_bitmap", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_weather_particle_count
   mrb_define_private_method(M, map_scene, "weather_particle_count",
                             RPG2k__Scene__Map_weather_particle_count,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "weather_particle_count",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "weather_particle_count", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_weather_particle
   mrb_define_private_method(M, map_scene, "draw_weather_particle",
                             RPG2k__Scene__Map_draw_weather_particle,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_weather_particle",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_weather_particle", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_weather_drift
   mrb_define_private_method(M, map_scene, "weather_drift",
                             RPG2k__Scene__Map_weather_drift, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "weather_drift", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "weather_drift", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_current_map_tone
   mrb_define_private_method(M, map_scene, "current_map_tone",
                             RPG2k__Scene__Map_current_map_tone,
                             MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "current_map_tone", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_setup_pictures
   mrb_define_private_method(M, map_scene, "setup_pictures",
                             RPG2k__Scene__Map_setup_pictures, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "setup_pictures", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "setup_pictures", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_rebuild_chipset
   mrb_define_method(M, map_scene, "rebuild_chipset",
                     RPG2k__Scene__Map_rebuild_chipset, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "rebuild_chipset", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_record_map_event_positions
   mrb_define_private_method(M, map_scene, "record_map_event_positions",
                             RPG2k__Scene__Map_record_map_event_positions,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "record_map_event_positions",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "record_map_event_positions", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_record_foreground_event_exec
   mrb_define_private_method(M, map_scene, "record_foreground_event_exec",
                             RPG2k__Scene__Map_record_foreground_event_exec,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "record_foreground_event_exec",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "record_foreground_event_exec", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_record_tile_substitutions
   mrb_define_private_method(M, map_scene, "record_tile_substitutions",
                             RPG2k__Scene__Map_record_tile_substitutions,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "record_tile_substitutions",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "record_tile_substitutions", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_index_event_tile
   mrb_define_private_method(M, map_scene, "index_event_tile",
                             RPG2k__Scene__Map_index_event_tile,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "index_event_tile", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "index_event_tile", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_blockers_at
   mrb_define_private_method(M, map_scene, "blockers_at",
                             RPG2k__Scene__Map_blockers_at, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "blockers_at", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "blockers_at", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_event_busy$3f
   mrb_define_private_method(M, map_scene, "event_busy?",
                             RPG2k__Scene__Map_event_busy$3f, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "event_busy?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "event_busy?", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_message_window_open$3f
   mrb_define_method(M, map_scene, "message_window_open?",
                     RPG2k__Scene__Map_message_window_open$3f, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "message_window_open?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_events_move_during_message$3f
   mrb_define_private_method(M, map_scene, "events_move_during_message?",
                             RPG2k__Scene__Map_events_move_during_message$3f,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "events_move_during_message?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "events_move_during_message?", false);
 #endif
   mrb_define_private_method(M, map_scene, "parallels_paused?",
                             RPG2k__Scene__Map_parallels_paused$3f,
@@ -8411,18 +8107,16 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "common_gate_open?",
                             RPG2k__Scene__Map_common_gate_open$3f,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "common_gate_open?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "common_gate_open?", false);
 #endif
   mrb_define_private_method(M, map_scene, "new_parallel",
                             RPG2k__Scene__Map_new_parallel, MRB_ARGS_REQ(4));
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_step_parallels
   mrb_define_private_method(M, map_scene, "step_parallels",
                             RPG2k__Scene__Map_step_parallels, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "step_parallels", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "step_parallels", false);
 #endif
   mrb_define_private_method(M, map_scene, "step_battle_owner_parallel",
                             RPG2k__Scene__Map_step_battle_owner_parallel,
@@ -8431,159 +8125,155 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "record_parallel_progress",
                             RPG2k__Scene__Map_record_parallel_progress,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "record_parallel_progress",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "record_parallel_progress", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_event_at
   mrb_define_private_method(M, map_scene, "event_at",
                             RPG2k__Scene__Map_event_at, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "event_at", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "event_at", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_actionable$3f
   mrb_define_private_method(M, map_scene, "actionable?",
                             RPG2k__Scene__Map_actionable$3f, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "actionable?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "actionable?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_touch_trigger$3f
   mrb_define_private_method(M, map_scene, "touch_trigger?",
                             RPG2k__Scene__Map_touch_trigger$3f,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "touch_trigger?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "touch_trigger?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_counter_tile$3f
   mrb_define_private_method(M, map_scene, "counter_tile?",
                             RPG2k__Scene__Map_counter_tile$3f, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "counter_tile?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "counter_tile?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_try_board_vehicle
   mrb_define_private_method(M, map_scene, "try_board_vehicle",
                             RPG2k__Scene__Map_try_board_vehicle,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "try_board_vehicle", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "try_board_vehicle", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_board_as
   mrb_define_private_method(M, map_scene, "board_as",
                             RPG2k__Scene__Map_board_as, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "board_as", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "board_as", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_disembark_vehicle
   mrb_define_private_method(M, map_scene, "disembark_vehicle",
                             RPG2k__Scene__Map_disembark_vehicle,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "disembark_vehicle", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "disembark_vehicle", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_play_bgm
   mrb_define_private_method(M, map_scene, "play_bgm",
                             RPG2k__Scene__Map_play_bgm, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "play_bgm", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "play_bgm", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_play_bgm_or_stop
   mrb_define_private_method(M, map_scene, "play_bgm_or_stop",
                             RPG2k__Scene__Map_play_bgm_or_stop,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "play_bgm_or_stop", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "play_bgm_or_stop", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_battle_bgm
   mrb_define_private_method(M, map_scene, "battle_bgm",
                             RPG2k__Scene__Map_battle_bgm, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "battle_bgm", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_victory_bgm
   mrb_define_private_method(M, map_scene, "victory_bgm",
                             RPG2k__Scene__Map_victory_bgm, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "victory_bgm", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "victory_bgm", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_inn_bgm
   mrb_define_private_method(M, map_scene, "inn_bgm", RPG2k__Scene__Map_inn_bgm,
                             MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "inn_bgm", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_vehicle_bgm
   mrb_define_private_method(M, map_scene, "vehicle_bgm",
                             RPG2k__Scene__Map_vehicle_bgm, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "vehicle_bgm", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "vehicle_bgm", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_follow_vehicle
   mrb_define_private_method(M, map_scene, "follow_vehicle",
                             RPG2k__Scene__Map_follow_vehicle, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "follow_vehicle", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "follow_vehicle", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_vehicle_char_passable$3f
   mrb_define_method(M, map_scene, "vehicle_char_passable?",
                     RPG2k__Scene__Map_vehicle_char_passable$3f,
                     MRB_ARGS_REQ(3));
+#else
+  bc2cpp_left_out(M, map_scene, "vehicle_char_passable?", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_vehicle_char_can_land$3f
   mrb_define_method(M, map_scene, "vehicle_char_can_land?",
                     RPG2k__Scene__Map_vehicle_char_can_land$3f,
                     MRB_ARGS_REQ(4));
+#else
+  bc2cpp_left_out(M, map_scene, "vehicle_char_can_land?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_warn_stale_terrain
   mrb_define_private_method(M, map_scene, "warn_stale_terrain",
                             RPG2k__Scene__Map_warn_stale_terrain,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "warn_stale_terrain",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "warn_stale_terrain", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_animate_events
   mrb_define_private_method(M, map_scene, "animate_events",
                             RPG2k__Scene__Map_animate_events, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "animate_events", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "animate_events", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_event_sliding$3f
   mrb_define_private_method(M, map_scene, "event_sliding?",
                             RPG2k__Scene__Map_event_sliding$3f,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "event_sliding?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "event_sliding?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_reoccupy
   mrb_define_private_method(M, map_scene, "reoccupy",
                             RPG2k__Scene__Map_reoccupy, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "reoccupy", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "reoccupy", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_event_jump_offset
   mrb_define_private_method(M, map_scene, "event_jump_offset",
                             RPG2k__Scene__Map_event_jump_offset,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "event_jump_offset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "event_jump_offset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_jump_offset_for
   mrb_define_private_method(M, map_scene, "jump_offset_for",
                             RPG2k__Scene__Map_jump_offset_for, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "jump_offset_for", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "jump_offset_for", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_event_pixel
   mrb_define_private_method(M, map_scene, "event_pixel",
                             RPG2k__Scene__Map_event_pixel, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "event_pixel", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "event_pixel", false);
 #endif
   mrb_define_private_method(M, map_scene, "event_pixel_x",
                             RPG2k__Scene__Map_event_pixel_x, MRB_ARGS_REQ(1));
@@ -8592,316 +8282,284 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_rev
   mrb_define_private_method(M, map_scene, "rev", RPG2k__Scene__Map_rev,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "rev", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "rev", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_reload_windowskin
   mrb_define_private_method(M, map_scene, "reload_windowskin",
                             RPG2k__Scene__Map_reload_windowskin,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "reload_windowskin", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "reload_windowskin", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_player_hidden$3f
   mrb_define_private_method(M, map_scene, "player_hidden?",
                             RPG2k__Scene__Map_player_hidden$3f,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "player_hidden?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "player_hidden?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_player_translucent$3f
   mrb_define_private_method(M, map_scene, "player_translucent?",
                             RPG2k__Scene__Map_player_translucent$3f,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "player_translucent?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "player_translucent?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_apply_player_visibility
   mrb_define_private_method(M, map_scene, "apply_player_visibility",
                             RPG2k__Scene__Map_apply_player_visibility,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "apply_player_visibility",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "apply_player_visibility", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_apply_tile_substitution
   mrb_define_private_method(M, map_scene, "apply_tile_substitution",
                             RPG2k__Scene__Map_apply_tile_substitution,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "apply_tile_substitution",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "apply_tile_substitution", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_apply_battle_animation_request
   mrb_define_private_method(M, map_scene, "apply_battle_animation_request",
                             RPG2k__Scene__Map_apply_battle_animation_request,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "apply_battle_animation_request",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "apply_battle_animation_request", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_sprite_flashing$3f
   mrb_define_private_method(M, map_scene, "sprite_flashing?",
                             RPG2k__Scene__Map_sprite_flashing$3f,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "sprite_flashing?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "sprite_flashing?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_flash_buffer
   mrb_define_private_method(M, map_scene, "flash_buffer",
                             RPG2k__Scene__Map_flash_buffer, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "flash_buffer", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "flash_buffer", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_flash_out_buffer
   mrb_define_private_method(M, map_scene, "flash_out_buffer",
                             RPG2k__Scene__Map_flash_out_buffer,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "flash_out_buffer", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "flash_out_buffer", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_apply_location_request
   mrb_define_private_method(M, map_scene, "apply_location_request",
                             RPG2k__Scene__Map_apply_location_request,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "apply_location_request",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "apply_location_request", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_force_event_route
   mrb_define_private_method(M, map_scene, "force_event_route",
                             RPG2k__Scene__Map_force_event_route,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "force_event_route", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "force_event_route", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_force_vehicle_route
   mrb_define_private_method(M, map_scene, "force_vehicle_route",
                             RPG2k__Scene__Map_force_vehicle_route,
                             MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "force_vehicle_route",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "force_vehicle_route", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_sync_player_route_to_state
   mrb_define_private_method(M, map_scene, "sync_player_route_to_state",
                             RPG2k__Scene__Map_sync_player_route_to_state,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "sync_player_route_to_state",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "sync_player_route_to_state", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_start_player_route
   mrb_define_private_method(M, map_scene, "start_player_route",
                             RPG2k__Scene__Map_start_player_route,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "start_player_route",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "start_player_route", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_step_player_route
   mrb_define_private_method(M, map_scene, "step_player_route",
                             RPG2k__Scene__Map_step_player_route,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "step_player_route", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "step_player_route", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_start_player_slide
   mrb_define_private_method(M, map_scene, "start_player_slide",
                             RPG2k__Scene__Map_start_player_slide,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "start_player_slide",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "start_player_slide", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_player_slide_step
   mrb_define_private_method(M, map_scene, "player_slide_step",
                             RPG2k__Scene__Map_player_slide_step,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "player_slide_step", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "player_slide_step", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_advance_player_slide
   mrb_define_private_method(M, map_scene, "advance_player_slide",
                             RPG2k__Scene__Map_advance_player_slide,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "advance_player_slide",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "advance_player_slide", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_player_jump_offset
   mrb_define_private_method(M, map_scene, "player_jump_offset",
                             RPG2k__Scene__Map_player_jump_offset,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "player_jump_offset",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "player_jump_offset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_valid_move_freq
   mrb_define_private_method(M, map_scene, "valid_move_freq",
                             RPG2k__Scene__Map_valid_move_freq, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "valid_move_freq", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "valid_move_freq", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_terrain_id
   mrb_define_method(M, map_scene, "terrain_id", RPG2k__Scene__Map_terrain_id,
                     MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, map_scene, "terrain_id", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_try_open_menu
   mrb_define_private_method(M, map_scene, "try_open_menu",
                             RPG2k__Scene__Map_try_open_menu, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "try_open_menu", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "try_open_menu", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_drive_event
   mrb_define_private_method(M, map_scene, "drive_event",
                             RPG2k__Scene__Map_drive_event, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "drive_event", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "drive_event", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_apply_interpreter_requests
   mrb_define_private_method(M, map_scene, "apply_interpreter_requests",
                             RPG2k__Scene__Map_apply_interpreter_requests,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "apply_interpreter_requests",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "apply_interpreter_requests", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_drive_key_input
   mrb_define_private_method(M, map_scene, "drive_key_input",
                             RPG2k__Scene__Map_drive_key_input, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "drive_key_input", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "drive_key_input", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_key_input_hit$3f
   mrb_define_private_method(M, map_scene, "key_input_hit?",
                             RPG2k__Scene__Map_key_input_hit$3f,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "key_input_hit?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "key_input_hit?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_shop_gold_term
   mrb_define_private_method(M, map_scene, "shop_gold_term",
                             RPG2k__Scene__Map_shop_gold_term, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "shop_gold_term", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "shop_gold_term", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_build_shop_gold_window
   mrb_define_private_method(M, map_scene, "build_shop_gold_window",
                             RPG2k__Scene__Map_build_shop_gold_window,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "build_shop_gold_window",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "build_shop_gold_window", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_shop_list_min_inner_h
   mrb_define_private_method(M, map_scene, "shop_list_min_inner_h",
                             RPG2k__Scene__Map_shop_list_min_inner_h,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "shop_list_min_inner_h",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "shop_list_min_inner_h", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_shop_prompt
   mrb_define_private_method(M, map_scene, "draw_shop_prompt",
                             RPG2k__Scene__Map_draw_shop_prompt,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_shop_prompt", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_shop_prompt", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_shop_status
   mrb_define_private_method(M, map_scene, "draw_shop_status",
                             RPG2k__Scene__Map_draw_shop_status,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_shop_status", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_shop_status", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_shop_party
   mrb_define_private_method(M, map_scene, "draw_shop_party",
                             RPG2k__Scene__Map_draw_shop_party, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_shop_party", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_shop_party", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_drive_shop_command
   mrb_define_private_method(M, map_scene, "drive_shop_command",
                             RPG2k__Scene__Map_drive_shop_command,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "drive_shop_command",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "drive_shop_command", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_drive_shop_list
   mrb_define_private_method(M, map_scene, "drive_shop_list",
                             RPG2k__Scene__Map_drive_shop_list, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "drive_shop_list", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "drive_shop_list", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_open_shop_quantity
   mrb_define_private_method(M, map_scene, "open_shop_quantity",
                             RPG2k__Scene__Map_open_shop_quantity,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "open_shop_quantity",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "open_shop_quantity", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_drive_shop_quantity
   mrb_define_private_method(M, map_scene, "drive_shop_quantity",
                             RPG2k__Scene__Map_drive_shop_quantity,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "drive_shop_quantity",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "drive_shop_quantity", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_close_shop_quantity
   mrb_define_private_method(M, map_scene, "close_shop_quantity",
                             RPG2k__Scene__Map_close_shop_quantity,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "close_shop_quantity",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "close_shop_quantity", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_shop_move_cursor
   mrb_define_private_method(M, map_scene, "shop_move_cursor",
                             RPG2k__Scene__Map_shop_move_cursor,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "shop_move_cursor", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "shop_move_cursor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_shop_switch
   mrb_define_private_method(M, map_scene, "shop_switch",
                             RPG2k__Scene__Map_shop_switch, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "shop_switch", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "shop_switch", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_leave_shop
   mrb_define_private_method(M, map_scene, "leave_shop",
                             RPG2k__Scene__Map_leave_shop, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "leave_shop", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "leave_shop", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_close_battle
   mrb_define_private_method(M, map_scene, "close_battle",
                             RPG2k__Scene__Map_close_battle, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "close_battle", false);
+#endif
   // #active_battle (a bare `@battle` reader, public via a retroactive
   // `public :active_battle` right after its own `def`, mruby-rpg2k/mrblib/
   // scene/map.rb) was a genuine, previously-missed registration gap this
@@ -8924,175 +8582,175 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // dispatch to `.active_battle` (an uncompiled caller, `#send`, ...), which
   // stayed on the interpreter until now -- a real, if narrow, coverage
   // fix rather than a correctness one.
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_active_battle
   mrb_define_method(M, map_scene, "active_battle",
                     RPG2k__Scene__Map_active_battle, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "active_battle", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_apply_map_access
   mrb_define_private_method(M, map_scene, "apply_map_access",
                             RPG2k__Scene__Map_apply_map_access,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "apply_map_access", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "apply_map_access", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_terrain_backdrop
   mrb_define_private_method(M, map_scene, "terrain_backdrop",
                             RPG2k__Scene__Map_terrain_backdrop,
                             MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, map_scene, "terrain_backdrop", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_commit_name_input
   mrb_define_private_method(M, map_scene, "commit_name_input",
                             RPG2k__Scene__Map_commit_name_input,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "commit_name_input", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "commit_name_input", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_kana_cell_rect
   mrb_define_private_method(M, map_scene, "kana_cell_rect",
                             RPG2k__Scene__Map_kana_cell_rect, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "kana_cell_rect", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "kana_cell_rect", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_close_name_input
   mrb_define_private_method(M, map_scene, "close_name_input",
                             RPG2k__Scene__Map_close_name_input,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "close_name_input", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "close_name_input", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_drive_map_animation
   mrb_define_private_method(M, map_scene, "drive_map_animation",
                             RPG2k__Scene__Map_drive_map_animation,
                             MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, map_scene, "drive_map_animation", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_init_map_animation_this_frame
   mrb_define_private_method(M, map_scene, "init_map_animation_this_frame",
                             RPG2k__Scene__Map_init_map_animation_this_frame,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "init_map_animation_this_frame",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "init_map_animation_this_frame", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_step_ownerless_map_animation
   mrb_define_private_method(M, map_scene, "step_ownerless_map_animation",
                             RPG2k__Scene__Map_step_ownerless_map_animation,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "step_ownerless_map_animation",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "step_ownerless_map_animation", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_missing_animation_wait
   mrb_define_private_method(M, map_scene, "missing_animation_wait",
                             RPG2k__Scene__Map_missing_animation_wait,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "missing_animation_wait",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "missing_animation_wait", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_step_map_animation
   mrb_define_private_method(M, map_scene, "step_map_animation",
                             RPG2k__Scene__Map_step_map_animation,
                             MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "step_map_animation", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_hold_animation_screen_flash
   mrb_define_private_method(M, map_scene, "hold_animation_screen_flash",
                             RPG2k__Scene__Map_hold_animation_screen_flash,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "hold_animation_screen_flash",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "hold_animation_screen_flash", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_clear_map_target_flash
   mrb_define_private_method(M, map_scene, "clear_map_target_flash",
                             RPG2k__Scene__Map_clear_map_target_flash,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "clear_map_target_flash",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "clear_map_target_flash", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_step_animation_wait
   mrb_define_private_method(M, map_scene, "step_animation_wait",
                             RPG2k__Scene__Map_step_animation_wait,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "step_animation_wait",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "step_animation_wait", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_fire_map_target_flash
   mrb_define_private_method(M, map_scene, "fire_map_target_flash",
                             RPG2k__Scene__Map_fire_map_target_flash,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "fire_map_target_flash",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "fire_map_target_flash", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_animation_position_offset
   mrb_define_private_method(M, map_scene, "animation_position_offset",
                             RPG2k__Scene__Map_animation_position_offset,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "animation_position_offset",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "animation_position_offset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_animation_cell_opacity
   mrb_define_private_method(M, map_scene, "animation_cell_opacity",
                             RPG2k__Scene__Map_animation_cell_opacity,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "animation_cell_opacity",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "animation_cell_opacity", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_animation_cell_zoom
   mrb_define_private_method(M, map_scene, "animation_cell_zoom",
                             RPG2k__Scene__Map_animation_cell_zoom,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "animation_cell_zoom",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "animation_cell_zoom", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_animation_cell_tone
   mrb_define_private_method(M, map_scene, "animation_cell_tone",
                             RPG2k__Scene__Map_animation_cell_tone,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "animation_cell_tone",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "animation_cell_tone", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_animation_cell_crop_buffer
   mrb_define_private_method(M, map_scene, "animation_cell_crop_buffer",
                             RPG2k__Scene__Map_animation_cell_crop_buffer,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "animation_cell_crop_buffer",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "animation_cell_crop_buffer", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_drive_wait
   mrb_define_private_method(M, map_scene, "drive_wait",
                             RPG2k__Scene__Map_drive_wait, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "drive_wait", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "drive_wait", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_drive_wait_key_enter
   mrb_define_private_method(M, map_scene, "drive_wait_key_enter",
                             RPG2k__Scene__Map_drive_wait_key_enter,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "drive_wait_key_enter",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "drive_wait_key_enter", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_frames_from_tenths
   mrb_define_private_method(M, map_scene, "frames_from_tenths",
                             RPG2k__Scene__Map_frames_from_tenths,
                             MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, map_scene, "frames_from_tenths", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_roster_actor
   mrb_define_private_method(M, map_scene, "roster_actor",
                             RPG2k__Scene__Map_roster_actor, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "roster_actor", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "roster_actor", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_party_leader
   mrb_define_private_method(M, map_scene, "party_leader",
                             RPG2k__Scene__Map_party_leader, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "party_leader", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "party_leader", false);
 #endif
   mrb_define_private_method(M, map_scene, "speak_message",
                             RPG2k__Scene__Map_speak_message, MRB_ARGS_REQ(1));
@@ -9100,9 +8758,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "apply_pending_choice_lines",
                             RPG2k__Scene__Map_apply_pending_choice_lines,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "apply_pending_choice_lines",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "apply_pending_choice_lines", false);
 #endif
   mrb_define_private_method(M, map_scene, "message_window_y",
                             RPG2k__Scene__Map_message_window_y,
@@ -9111,314 +8768,280 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "auto_message_position",
                             RPG2k__Scene__Map_auto_message_position,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "auto_message_position",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "auto_message_position", false);
 #endif
   mrb_define_private_method(M, map_scene, "hero_screen_y",
                             RPG2k__Scene__Map_hero_screen_y, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_load_face
   mrb_define_private_method(M, map_scene, "load_face",
                             RPG2k__Scene__Map_load_face, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "load_face", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "load_face", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_choice_row_indent
   mrb_define_private_method(M, map_scene, "choice_row_indent",
                             RPG2k__Scene__Map_choice_row_indent,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "choice_row_indent", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "choice_row_indent", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_message_run
   mrb_define_private_method(M, map_scene, "draw_message_run",
                             RPG2k__Scene__Map_draw_message_run,
                             MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_message_run", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_message_run", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_message_color
   mrb_define_private_method(M, map_scene, "message_color",
                             RPG2k__Scene__Map_message_color, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "message_color", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "message_color", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_drive_message
   mrb_define_private_method(M, map_scene, "drive_message",
                             RPG2k__Scene__Map_drive_message, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "drive_message", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "drive_message", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_drive_text_message
   mrb_define_private_method(M, map_scene, "drive_text_message",
                             RPG2k__Scene__Map_drive_text_message,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "drive_text_message",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "drive_text_message", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_player_intended_target
   mrb_define_private_method(M, map_scene, "player_intended_target",
                             RPG2k__Scene__Map_player_intended_target,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "player_intended_target",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "player_intended_target", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_step_movement
   mrb_define_private_method(M, map_scene, "step_movement",
                             RPG2k__Scene__Map_step_movement, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "step_movement", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "step_movement", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_current_encounter_steps
   mrb_define_private_method(M, map_scene, "current_encounter_steps",
                             RPG2k__Scene__Map_current_encounter_steps,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "current_encounter_steps",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "current_encounter_steps", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_map_node_properties
   mrb_define_private_method(M, map_scene, "map_node_properties",
                             RPG2k__Scene__Map_map_node_properties,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "map_node_properties",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "map_node_properties", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_troop_allowed_on_terrain$3f
   mrb_define_private_method(M, map_scene, "troop_allowed_on_terrain?",
                             RPG2k__Scene__Map_troop_allowed_on_terrain$3f,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "troop_allowed_on_terrain?",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "troop_allowed_on_terrain?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_debug_through$3f
   mrb_define_private_method(M, map_scene, "debug_through?",
                             RPG2k__Scene__Map_debug_through$3f,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "debug_through?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "debug_through?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_target_tile
   mrb_define_private_method(M, map_scene, "target_tile",
                             RPG2k__Scene__Map_target_tile, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "target_tile", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "target_tile", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_player_pixel
   mrb_define_private_method(M, map_scene, "player_pixel",
                             RPG2k__Scene__Map_player_pixel, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "player_pixel", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "player_pixel", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_char_in_sight$3f
   mrb_define_method(M, map_scene, "char_in_sight?",
                     RPG2k__Scene__Map_char_in_sight$3f, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, map_scene, "char_in_sight?", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_timer
   mrb_define_method(M, map_scene, "draw_timer", RPG2k__Scene__Map_draw_timer,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_timer", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_timer", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_one_timer
   mrb_define_method(M, map_scene, "draw_one_timer",
                     RPG2k__Scene__Map_draw_one_timer, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_one_timer", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_one_timer", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_build_timer_sprite
   mrb_define_method(M, map_scene, "build_timer_sprite",
                     RPG2k__Scene__Map_build_timer_sprite, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "build_timer_sprite",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "build_timer_sprite", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_vehicle_frame
   mrb_define_method(M, map_scene, "draw_vehicle_frame",
                     RPG2k__Scene__Map_draw_vehicle_frame, MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_vehicle_frame",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_vehicle_frame", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_vehicle_charset
   mrb_define_method(M, map_scene, "vehicle_charset",
                     RPG2k__Scene__Map_vehicle_charset, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "vehicle_charset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "vehicle_charset", false);
 #endif
   mrb_define_method(M, map_scene, "vehicle_charset_index",
                     RPG2k__Scene__Map_vehicle_charset_index, MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_toned$3f
   mrb_define_method(M, map_scene, "toned?", RPG2k__Scene__Map_toned$3f,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "toned?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "toned?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_parallax_tiles
   mrb_define_method(M, map_scene, "parallax_tiles",
                     RPG2k__Scene__Map_parallax_tiles, MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "parallax_tiles", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "parallax_tiles", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_layers
   mrb_define_method(M, map_scene, "draw_layers", RPG2k__Scene__Map_draw_layers,
                     MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_layers", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_layers", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_store_event_draw_sig
   mrb_define_method(M, map_scene, "store_event_draw_sig",
                     RPG2k__Scene__Map_store_event_draw_sig, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "store_event_draw_sig",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "store_event_draw_sig", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_tile_cache_valid$3f
   mrb_define_method(M, map_scene, "tile_cache_valid?",
                     RPG2k__Scene__Map_tile_cache_valid$3f, MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "tile_cache_valid?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "tile_cache_valid?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_invalidate_tile_cache
   mrb_define_method(M, map_scene, "invalidate_tile_cache",
                     RPG2k__Scene__Map_invalidate_tile_cache, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "invalidate_tile_cache",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "invalidate_tile_cache", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_event_target_buffer
   mrb_define_method(M, map_scene, "event_target_buffer",
                     RPG2k__Scene__Map_event_target_buffer, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "event_target_buffer",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "event_target_buffer", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_event_charset
   mrb_define_method(M, map_scene, "draw_event_charset",
                     RPG2k__Scene__Map_draw_event_charset, MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_event_charset",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_event_charset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_event_tile
   mrb_define_method(M, map_scene, "draw_event_tile",
                     RPG2k__Scene__Map_draw_event_tile, MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_event_tile", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_event_tile", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_player_draw_charset
   mrb_define_method(M, map_scene, "player_draw_charset",
                     RPG2k__Scene__Map_player_draw_charset, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "player_draw_charset",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "player_draw_charset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_player_walk_pattern
   mrb_define_method(M, map_scene, "player_walk_pattern",
                     RPG2k__Scene__Map_player_walk_pattern, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "player_walk_pattern",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "player_walk_pattern", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_player_frame
   mrb_define_method(M, map_scene, "draw_player_frame",
                     RPG2k__Scene__Map_draw_player_frame, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_player_frame", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_player_frame", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_blt_bushed
   mrb_define_method(M, map_scene, "blt_bushed", RPG2k__Scene__Map_blt_bushed,
                     MRB_ARGS_REQ(7));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "blt_bushed", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "blt_bushed", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_player_bush_depth
   mrb_define_method(M, map_scene, "player_bush_depth",
                     RPG2k__Scene__Map_player_bush_depth, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "player_bush_depth", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "player_bush_depth", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_bush_pixels_at
   mrb_define_method(M, map_scene, "bush_pixels_at",
                     RPG2k__Scene__Map_bush_pixels_at, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "bush_pixels_at", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "bush_pixels_at", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_bush_depth_at
   mrb_define_method(M, map_scene, "bush_depth_at",
                     RPG2k__Scene__Map_bush_depth_at, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "bush_depth_at", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "bush_depth_at", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_tile_color
   mrb_define_method(M, map_scene, "tile_color", RPG2k__Scene__Map_tile_color,
                     MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "tile_color", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "tile_color", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_load_face_bitmap
   mrb_define_private_method(M, map_scene, "load_face_bitmap",
                             RPG2k__Scene__Map_load_face_bitmap,
                             MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, map_scene, "load_face_bitmap", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_constrained_scale
   mrb_define_method(M, map_scene, "constrained_scale",
                     RPG2k__Scene__Map_constrained_scale, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "constrained_scale", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "constrained_scale", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_update_map_tone
   mrb_define_private_method(M, map_scene, "update_map_tone",
                             RPG2k__Scene__Map_update_map_tone, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "update_map_tone", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "update_map_tone", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_build_chipset
   mrb_define_private_method(M, map_scene, "build_chipset",
                             RPG2k__Scene__Map_build_chipset, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "build_chipset", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "build_chipset", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_load_chipset_graphic
   mrb_define_private_method(M, map_scene, "load_chipset_graphic",
                             RPG2k__Scene__Map_load_chipset_graphic,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "load_chipset_graphic",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "load_chipset_graphic", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_load_windowskin
   mrb_define_private_method(M, map_scene, "load_windowskin",
                             RPG2k__Scene__Map_load_windowskin, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "load_windowskin", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "load_windowskin", false);
 #endif
   mrb_define_private_method(M, map_scene, "step_parallel",
                             RPG2k__Scene__Map_step_parallel, MRB_ARGS_REQ(1));
@@ -9426,85 +9049,96 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "play_vehicle_bgm",
                             RPG2k__Scene__Map_play_vehicle_bgm,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "play_vehicle_bgm", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "play_vehicle_bgm", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_restore_pre_vehicle_bgm
   mrb_define_private_method(M, map_scene, "restore_pre_vehicle_bgm",
                             RPG2k__Scene__Map_restore_pre_vehicle_bgm,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "restore_pre_vehicle_bgm",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "restore_pre_vehicle_bgm", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_play_battle_bgm
   mrb_define_private_method(M, map_scene, "play_battle_bgm",
                             RPG2k__Scene__Map_play_battle_bgm, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "play_battle_bgm", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_play_victory_bgm
   mrb_define_private_method(M, map_scene, "play_victory_bgm",
                             RPG2k__Scene__Map_play_victory_bgm,
                             MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "play_victory_bgm", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_restore_pre_battle_bgm
   mrb_define_private_method(M, map_scene, "restore_pre_battle_bgm",
                             RPG2k__Scene__Map_restore_pre_battle_bgm,
                             MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "restore_pre_battle_bgm", false);
+#endif
   mrb_define_private_method(M, map_scene, "music_name",
                             RPG2k__Scene__Map_music_name, MRB_ARGS_REQ(1));
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_terrain_row_at
   mrb_define_private_method(M, map_scene, "terrain_row_at",
                             RPG2k__Scene__Map_terrain_row_at, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "terrain_row_at", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "terrain_row_at", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_refresh_event_pages
   mrb_define_private_method(M, map_scene, "refresh_event_pages",
                             RPG2k__Scene__Map_refresh_event_pages,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "refresh_event_pages",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "refresh_event_pages", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_watch_bgm_loop
   mrb_define_private_method(M, map_scene, "watch_bgm_loop",
                             RPG2k__Scene__Map_watch_bgm_loop, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "watch_bgm_loop", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "watch_bgm_loop", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_step_forced_event
   mrb_define_private_method(M, map_scene, "step_forced_event",
                             RPG2k__Scene__Map_step_forced_event,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "step_forced_event", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "step_forced_event", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_map_properties
   mrb_define_private_method(M, map_scene, "map_properties",
                             RPG2k__Scene__Map_map_properties, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, map_scene, "map_properties", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_resume_saved_bgm
   mrb_define_private_method(M, map_scene, "resume_saved_bgm",
                             RPG2k__Scene__Map_resume_saved_bgm,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "resume_saved_bgm", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "resume_saved_bgm", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_backdrop_for_terrain_id
   mrb_define_private_method(M, map_scene, "backdrop_for_terrain_id",
                             RPG2k__Scene__Map_backdrop_for_terrain_id,
                             MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, map_scene, "backdrop_for_terrain_id", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_animation_row
   mrb_define_private_method(M, map_scene, "animation_row",
                             RPG2k__Scene__Map_animation_row, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "animation_row", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "animation_row", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_blit_animation_cell
   mrb_define_private_method(M, map_scene, "blit_animation_cell",
                             RPG2k__Scene__Map_blit_animation_cell,
                             MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "blit_animation_cell",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "blit_animation_cell", false);
 #endif
   mrb_define_private_method(M, map_scene, "actor_name",
                             RPG2k__Scene__Map_actor_name, MRB_ARGS_REQ(1));
@@ -9512,130 +9146,126 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "play_terrain_footstep_se",
                             RPG2k__Scene__Map_play_terrain_footstep_se,
                             MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "play_terrain_footstep_se",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "play_terrain_footstep_se", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_picture
   mrb_define_private_method(M, map_scene, "draw_picture",
                             RPG2k__Scene__Map_draw_picture, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_picture", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_picture", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_event
   mrb_define_private_method(M, map_scene, "draw_event",
                             RPG2k__Scene__Map_draw_event, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_event", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_event", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_draw_weather
   mrb_define_private_method(M, map_scene, "draw_weather",
                             RPG2k__Scene__Map_draw_weather, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "draw_weather", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "draw_weather", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_build_event
   mrb_define_private_method(
       M, map_scene, "build_event", RPG2k__Scene__Map_build_event,
       MRB_ARGS_REQ(4) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(1, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "build_event", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "build_event", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_start_event
   mrb_define_private_method(M, map_scene, "start_event",
                             RPG2k__Scene__Map_start_event,
                             MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "start_event", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "start_event", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_move_autonomous
   mrb_define_private_method(
       M, map_scene, "move_autonomous", RPG2k__Scene__Map_move_autonomous,
       MRB_ARGS_REQ(2) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(1, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "move_autonomous", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "move_autonomous", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_anim_target
   mrb_define_private_method(
       M, map_scene, "anim_target", RPG2k__Scene__Map_anim_target,
       MRB_ARGS_REQ(2) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(3, 0));
+#else
+  bc2cpp_left_out(M, map_scene, "anim_target", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_build_face_cell
   mrb_define_private_method(M, map_scene, "build_face_cell",
                             RPG2k__Scene__Map_build_face_cell, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "build_face_cell", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "build_face_cell", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_close_message
   mrb_define_private_method(
       M, map_scene, "close_message", RPG2k__Scene__Map_close_message,
       MRB_ARGS_REQ(0) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(1, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "close_message", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "close_message", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_open_number_input
   mrb_define_private_method(
       M, map_scene, "open_number_input", RPG2k__Scene__Map_open_number_input,
       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(1, 0));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "open_number_input", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "open_number_input", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_terrain_step_damage
   mrb_define_private_method(M, map_scene, "terrain_step_damage",
                             RPG2k__Scene__Map_terrain_step_damage,
                             MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "terrain_step_damage",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "terrain_step_damage", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_camera_position
   mrb_define_private_method(M, map_scene, "camera_position",
                             RPG2k__Scene__Map_camera_position, MRB_ARGS_OPT(2));
+#else
+  bc2cpp_left_out(M, map_scene, "camera_position", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_event_bush_depth
   mrb_define_private_method(M, map_scene, "event_bush_depth",
                             RPG2k__Scene__Map_event_bush_depth,
                             MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "event_bush_depth", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "event_bush_depth", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_check_random_encounter
   mrb_define_private_method(M, map_scene, "check_random_encounter",
                             RPG2k__Scene__Map_check_random_encounter,
                             MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "check_random_encounter",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "check_random_encounter", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_headless_battle
   mrb_define_method(M, map_scene, "headless_battle",
                     RPG2k__Scene__Map_headless_battle, MRB_ARGS_REQ(1));
+#else
+  bc2cpp_left_out(M, map_scene, "headless_battle", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_start_map_animation
   mrb_define_private_method(M, map_scene, "start_map_animation",
                             RPG2k__Scene__Map_start_map_animation,
                             MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "start_map_animation",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "start_map_animation", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_step_events
   mrb_define_private_method(M, map_scene, "step_events",
                             RPG2k__Scene__Map_step_events, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "step_events", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "step_events", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k__Scene__Map_step_event
   mrb_define_private_method(M, map_scene, "step_event",
                             RPG2k__Scene__Map_step_event, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, map_scene, "step_event", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_scene, "step_event", false);
 #endif
 
   // Game::States.singleton -- 13 of Game::States's own 16 real
@@ -9660,25 +9290,22 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, states, "inflict_message",
                           Game__States_singleton_inflict_message,
                           MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, states, "inflict_message",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, states, "inflict_message", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States_singleton_recovery_message
   mrb_define_class_method(M, states, "recovery_message",
                           Game__States_singleton_recovery_message,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, states, "recovery_message",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, states, "recovery_message", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States_singleton_already_message
   mrb_define_class_method(M, states, "already_message",
                           Game__States_singleton_already_message,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, states, "already_message",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, states, "already_message", true);
 #endif
   mrb_define_class_method(M, states, "field", Game__States_singleton_field,
                           MRB_ARGS_REQ(3));
@@ -9686,23 +9313,20 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, states, "compose_message",
                           Game__States_singleton_compose_message,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, states, "compose_message",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, states, "compose_message", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States_singleton_int_field
   mrb_define_class_method(M, states, "int_field",
                           Game__States_singleton_int_field, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, states, "int_field", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, states, "int_field", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States_singleton_priority_of
   mrb_define_class_method(M, states, "priority_of",
                           Game__States_singleton_priority_of, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, states, "priority_of", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, states, "priority_of", true);
 #endif
   mrb_define_class_method(M, states, "color", Game__States_singleton_color,
                           MRB_ARGS_REQ(2));
@@ -9710,16 +9334,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, states, "map_step_drain",
                           Game__States_singleton_map_step_drain,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, states, "map_step_drain", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, states, "map_step_drain", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States_singleton_drain
   mrb_define_class_method(M, states, "drain", Game__States_singleton_drain,
                           MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, states, "drain", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, states, "drain", true);
 #endif
   mrb_define_class_method(M, states, "row", Game__States_singleton_row,
                           MRB_ARGS_REQ(2));
@@ -9747,78 +9369,82 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, battle_text, "action",
                           Game__States__BattleText_singleton_action,
                           MRB_ARGS_REQ(3));
+#ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_damage
   mrb_define_class_method(M, battle_text, "damage",
                           Game__States__BattleText_singleton_damage,
                           MRB_ARGS_REQ(4));
+#else
+  bc2cpp_left_out(M, battle_text, "damage", true);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_undamaged
   mrb_define_class_method(M, battle_text, "undamaged",
                           Game__States__BattleText_singleton_undamaged,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle_text, "undamaged", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_text, "undamaged", true);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_critical
   mrb_define_class_method(M, battle_text, "critical",
                           Game__States__BattleText_singleton_critical,
                           MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, battle_text, "critical", true);
+#endif
+#ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_dodge
   mrb_define_class_method(M, battle_text, "dodge",
                           Game__States__BattleText_singleton_dodge,
                           MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, battle_text, "dodge", true);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_skill_start
   mrb_define_class_method(M, battle_text, "skill_start",
                           Game__States__BattleText_singleton_skill_start,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle_text, "skill_start",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_text, "skill_start", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_item_start
   mrb_define_class_method(M, battle_text, "item_start",
                           Game__States__BattleText_singleton_item_start,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle_text, "item_start",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_text, "item_start", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_recovered
   mrb_define_class_method(M, battle_text, "recovered",
                           Game__States__BattleText_singleton_recovered,
                           MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle_text, "recovered", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_text, "recovered", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_absorbed
   mrb_define_class_method(M, battle_text, "absorbed",
                           Game__States__BattleText_singleton_absorbed,
                           MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle_text, "absorbed", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_text, "absorbed", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_skill_failure
   mrb_define_class_method(M, battle_text, "skill_failure",
                           Game__States__BattleText_singleton_skill_failure,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle_text, "skill_failure",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_text, "skill_failure", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_parameter_change
   mrb_define_class_method(M, battle_text, "parameter_change",
                           Game__States__BattleText_singleton_parameter_change,
                           MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle_text, "parameter_change",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_text, "parameter_change", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__States__BattleText_singleton_attribute_shift
   mrb_define_class_method(M, battle_text, "attribute_shift",
                           Game__States__BattleText_singleton_attribute_shift,
                           MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle_text, "attribute_shift",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_text, "attribute_shift", true);
 #endif
 
   // Game::ChipsetLayout.singleton -- 10 of its own 14 real methods
@@ -9833,17 +9459,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, chipset_layout, "anim_ab",
                           Game__ChipsetLayout_singleton_anim_ab,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, chipset_layout, "anim_ab",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chipset_layout, "anim_ab", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__ChipsetLayout_singleton_anim_c
   mrb_define_class_method(M, chipset_layout, "anim_c",
                           Game__ChipsetLayout_singleton_anim_c,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, chipset_layout, "anim_c", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chipset_layout, "anim_c", true);
 #endif
   mrb_define_class_method(M, chipset_layout, "block",
                           Game__ChipsetLayout_singleton_block, MRB_ARGS_REQ(1));
@@ -9851,27 +9475,28 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, chipset_layout, "upper_blank?",
                           Game__ChipsetLayout_singleton_upper_blank$3f,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, chipset_layout, "upper_blank?",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chipset_layout, "upper_blank?", true);
 #endif
+#ifndef BC2CPP_UNREGISTERED_Game__ChipsetLayout_singleton_full
   mrb_define_class_method(M, chipset_layout, "full",
                           Game__ChipsetLayout_singleton_full, MRB_ARGS_REQ(2));
+#else
+  bc2cpp_left_out(M, chipset_layout, "full", true);
+#endif
 #ifndef BC2CPP_UNREGISTERED_Game__ChipsetLayout_singleton_event_tile_rect
   mrb_define_class_method(M, chipset_layout, "event_tile_rect",
                           Game__ChipsetLayout_singleton_event_tile_rect,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, chipset_layout, "event_tile_rect",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chipset_layout, "event_tile_rect", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__ChipsetLayout_singleton_quads
   mrb_define_class_method(M, chipset_layout, "quads",
                           Game__ChipsetLayout_singleton_quads,
                           MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, chipset_layout, "quads", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, chipset_layout, "quads", true);
 #endif
 
   // Game::EventGraphic.singleton -- all 9 of its own real methods
@@ -9883,49 +9508,43 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, event_graphic, "numpad_direction",
                           Game__EventGraphic_singleton_numpad_direction,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, event_graphic, "numpad_direction",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, event_graphic, "numpad_direction", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__EventGraphic_singleton_fixed_direction$3f
   mrb_define_class_method(M, event_graphic, "fixed_direction?",
                           Game__EventGraphic_singleton_fixed_direction$3f,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, event_graphic, "fixed_direction?",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, event_graphic, "fixed_direction?", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__EventGraphic_singleton_continuous$3f
   mrb_define_class_method(M, event_graphic, "continuous?",
                           Game__EventGraphic_singleton_continuous$3f,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, event_graphic, "continuous?",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, event_graphic, "continuous?", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__EventGraphic_singleton_animated$3f
   mrb_define_class_method(M, event_graphic, "animated?",
                           Game__EventGraphic_singleton_animated$3f,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, event_graphic, "animated?",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, event_graphic, "animated?", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__EventGraphic_singleton_pattern_column
   mrb_define_class_method(M, event_graphic, "pattern_column",
                           Game__EventGraphic_singleton_pattern_column,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, event_graphic, "pattern_column",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, event_graphic, "pattern_column", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__EventGraphic_singleton_spin_direction
   mrb_define_class_method(M, event_graphic, "spin_direction",
                           Game__EventGraphic_singleton_spin_direction,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, event_graphic, "spin_direction",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, event_graphic, "spin_direction", true);
 #endif
   mrb_define_class_method(M, event_graphic, "frame",
                           Game__EventGraphic_singleton_frame, MRB_ARGS_REQ(6));
@@ -9933,9 +9552,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, event_graphic, "frame_dir",
                           Game__EventGraphic_singleton_frame_dir,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, event_graphic, "frame_dir",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, event_graphic, "frame_dir", true);
 #endif
 
   // The cheaper "already-owned class, add its own .singleton half too"
@@ -9954,32 +9572,28 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_singleton_actor_states
   mrb_define_class_method(M, battle, "actor_states",
                           Game__Battle_singleton_actor_states, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle, "actor_states", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "actor_states", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_singleton_hit_rate_of
   mrb_define_class_method(M, battle, "hit_rate_of",
                           Game__Battle_singleton_hit_rate_of, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle, "hit_rate_of", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "hit_rate_of", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_singleton_state_ranks_of
   mrb_define_class_method(M, battle, "state_ranks_of",
                           Game__Battle_singleton_state_ranks_of,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle, "state_ranks_of", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "state_ranks_of", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Battle_singleton_attack_damage
   mrb_define_class_method(M, battle, "attack_damage",
                           Game__Battle_singleton_attack_damage,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle, "attack_damage", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle, "attack_damage", true);
 #endif
 
   // Game::Transition.singleton -- 6 of its own real methods
@@ -9991,33 +9605,29 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, transition, "erase_style",
                           Game__Transition_singleton_erase_style,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, transition, "erase_style",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "erase_style", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_singleton_show_style
   mrb_define_class_method(M, transition, "show_style",
                           Game__Transition_singleton_show_style,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, transition, "show_style", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "show_style", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_singleton_default_frames
   mrb_define_class_method(M, transition, "default_frames",
                           Game__Transition_singleton_default_frames,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, transition, "default_frames",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "default_frames", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Transition_singleton_block_grid
   mrb_define_class_method(M, transition, "block_grid",
                           Game__Transition_singleton_block_grid,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, transition, "block_grid", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, transition, "block_grid", true);
 #endif
 
   // Game::State.singleton -- both of its own real methods
@@ -10026,16 +9636,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, state, "bgm_from_chunk",
                           Game__State_singleton_bgm_from_chunk,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, state, "bgm_from_chunk", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "bgm_from_chunk", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__State_singleton_se_from_chunk
   mrb_define_class_method(M, state, "se_from_chunk",
                           Game__State_singleton_se_from_chunk, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, state, "se_from_chunk", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, state, "se_from_chunk", true);
 #endif
 
   // Game::Party.singleton -- both of its own real methods
@@ -10044,9 +9652,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, party, "usable_flag?",
                           Game__Party_singleton_usable_flag$3f,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, party, "usable_flag?", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, party, "usable_flag?", true);
 #endif
 
   // Game::Character.singleton -- its one real method (mruby-rpg2k/mrblib/
@@ -10054,9 +9661,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Character_singleton_step_tile
   mrb_define_class_method(M, character, "step_tile",
                           Game__Character_singleton_step_tile, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, character, "step_tile", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, character, "step_tile", true);
 #endif
 
   // Game::ChipSet.singleton -- its one real method (mruby-rpg2k/mrblib/
@@ -10131,101 +9737,100 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_RPG2k_hide_title$3f
   mrb_define_method(M, rpg2k, "hide_title?", RPG2k_hide_title$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "hide_title?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "hide_title?", false);
 #endif
   mrb_define_method(M, rpg2k, "current_scene_name", RPG2k_current_scene_name,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RPG2k_show_title$3f
   mrb_define_method(M, rpg2k, "show_title?", RPG2k_show_title$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "show_title?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "show_title?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k_boot_title_or_new_game
   mrb_define_method(M, rpg2k, "boot_title_or_new_game",
                     RPG2k_boot_title_or_new_game, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "boot_title_or_new_game",
-                    bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "boot_title_or_new_game", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k_push_title_screen
   mrb_define_method(M, rpg2k, "push_title_screen", RPG2k_push_title_screen,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "push_title_screen", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "push_title_screen", false);
 #endif
   mrb_define_method(M, rpg2k, "push", RPG2k_push, MRB_ARGS_REQ(1));
   mrb_define_method(M, rpg2k, "pop", RPG2k_pop, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RPG2k_pop_to_map
   mrb_define_method(M, rpg2k, "pop_to_map", RPG2k_pop_to_map, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "pop_to_map", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "pop_to_map", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k_map_scene
   mrb_define_method(M, rpg2k, "map_scene", RPG2k_map_scene, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, rpg2k, "map_scene", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k_map_path
   mrb_define_method(M, rpg2k, "map_path", RPG2k_map_path, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "map_path", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "map_path", false);
 #endif
   mrb_define_method(M, rpg2k, "db_path", RPG2k_db_path, MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RPG2k_load_map
   mrb_define_method(M, rpg2k, "load_map", RPG2k_load_map, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "load_map", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "load_map", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k_bug_report_stamp
   mrb_define_method(M, rpg2k, "bug_report_stamp", RPG2k_bug_report_stamp,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "bug_report_stamp", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "bug_report_stamp", false);
 #endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k_native_test_play$3f
   mrb_define_private_method(M, rpg2k, "native_test_play?",
                             RPG2k_native_test_play$3f, MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, rpg2k, "native_test_play?", false);
+#endif
+#ifndef BC2CPP_UNREGISTERED_RPG2k_default_title
   mrb_define_private_method(M, rpg2k, "default_title", RPG2k_default_title,
                             MRB_ARGS_NONE());
+#else
+  bc2cpp_left_out(M, rpg2k, "default_title", false);
+#endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k_headless_battle_troop
   mrb_define_method(M, rpg2k, "headless_battle_troop",
                     RPG2k_headless_battle_troop, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "headless_battle_troop", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "headless_battle_troop", false);
 #endif
   mrb_define_method(M, rpg2k, "preview_map_id", RPG2k_preview_map_id,
                     MRB_ARGS_NONE());
 #ifndef BC2CPP_UNREGISTERED_RPG2k_map_editor$3f
   mrb_define_method(M, rpg2k, "map_editor?", RPG2k_map_editor$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "map_editor?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "map_editor?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k_chipset_editor$3f
   mrb_define_method(M, rpg2k, "chipset_editor?", RPG2k_chipset_editor$3f,
                     MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "chipset_editor?", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "chipset_editor?", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k_preview_animation_id
   mrb_define_method(M, rpg2k, "preview_animation_id",
                     RPG2k_preview_animation_id, MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "preview_animation_id", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "preview_animation_id", false);
 #endif
 #ifndef BC2CPP_UNREGISTERED_RPG2k_lsd_path
   mrb_define_method(M, rpg2k, "lsd_path", RPG2k_lsd_path, MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_method(M, rpg2k, "lsd_path", bc2cpp_unregistered_stub,
-                    MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, rpg2k, "lsd_path", false);
 #endif
   // Round 31 (".singleton/leftover mop-up") follow-up: the remaining small
   // `.singleton` scraps a real, unrestricted diagnostic run found but
@@ -10246,9 +9851,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, scene, "battle_scene_class",
                           RPG2k__Scene_singleton_battle_scene_class,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, scene, "battle_scene_class",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, scene, "battle_scene_class", true);
 #endif
 
   // Game::MoveType.singleton -- 4 real methods (mruby-rpg2k/mrblib/
@@ -10259,24 +9863,21 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, move_type, "next_direction",
                           Game__MoveType_singleton_next_direction,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, move_type, "next_direction",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, move_type, "next_direction", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MoveType_singleton_toward_away_direction
   mrb_define_class_method(M, move_type, "toward_away_direction",
                           Game__MoveType_singleton_toward_away_direction,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, move_type, "toward_away_direction",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, move_type, "toward_away_direction", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MoveType_singleton_bounce
   mrb_define_class_method(M, move_type, "bounce",
                           Game__MoveType_singleton_bounce, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, move_type, "bounce", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, move_type, "bounce", true);
 #endif
 
   // Game::MapAccess.singleton -- 4 real methods (mruby-rpg2k/mrblib/
@@ -10288,33 +9889,29 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, map_access, "save_allowed?",
                           Game__MapAccess_singleton_save_allowed$3f,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, map_access, "save_allowed?",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_access, "save_allowed?", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MapAccess_singleton_teleport_allowed$3f
   mrb_define_class_method(M, map_access, "teleport_allowed?",
                           Game__MapAccess_singleton_teleport_allowed$3f,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, map_access, "teleport_allowed?",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_access, "teleport_allowed?", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MapAccess_singleton_escape_allowed$3f
   mrb_define_class_method(M, map_access, "escape_allowed?",
                           Game__MapAccess_singleton_escape_allowed$3f,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, map_access, "escape_allowed?",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_access, "escape_allowed?", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MapAccess_singleton_allowed$3f
   mrb_define_class_method(M, map_access, "allowed?",
                           Game__MapAccess_singleton_allowed$3f,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, map_access, "allowed?", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_access, "allowed?", true);
 #endif
 
   // Game::Parallax.singleton -- 3 real methods (mruby-rpg2k/mrblib/
@@ -10325,25 +9922,22 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, parallax, "autoscroll_px",
                           Game__Parallax_singleton_autoscroll_px,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, parallax, "autoscroll_px",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, parallax, "autoscroll_px", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Parallax_singleton_axis_offset
   mrb_define_class_method(M, parallax, "axis_offset",
                           Game__Parallax_singleton_axis_offset,
                           MRB_ARGS_REQ(8));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, parallax, "axis_offset", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, parallax, "axis_offset", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Parallax_singleton_anchored_offset
   mrb_define_class_method(M, parallax, "anchored_offset",
                           Game__Parallax_singleton_anchored_offset,
                           MRB_ARGS_REQ(4));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, parallax, "anchored_offset",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, parallax, "anchored_offset", true);
 #endif
 
   // Game::MessagePalette.singleton -- 3 real methods (mruby-rpg2k/mrblib/
@@ -10355,25 +9949,22 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, message_palette, "valid?",
                           Game__MessagePalette_singleton_valid$3f,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, message_palette, "valid?",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, message_palette, "valid?", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MessagePalette_singleton_cell_origin
   mrb_define_class_method(M, message_palette, "cell_origin",
                           Game__MessagePalette_singleton_cell_origin,
                           MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, message_palette, "cell_origin",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, message_palette, "cell_origin", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MessagePalette_singleton_shadow_origin
   mrb_define_class_method(M, message_palette, "shadow_origin",
                           Game__MessagePalette_singleton_shadow_origin,
                           MRB_ARGS_NONE());
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, message_palette, "shadow_origin",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, message_palette, "shadow_origin", true);
 #endif
 
   // Game::MapBgm.singleton -- 2 real methods (mruby-rpg2k/mrblib/game.rb:
@@ -10385,16 +9976,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__MapBgm_singleton_int_field
   mrb_define_class_method(M, map_bgm, "int_field",
                           Game__MapBgm_singleton_int_field, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, map_bgm, "int_field", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_bgm, "int_field", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MapBgm_singleton_chunk_for
   mrb_define_class_method(M, map_bgm, "chunk_for",
                           Game__MapBgm_singleton_chunk_for, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, map_bgm, "chunk_for", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, map_bgm, "chunk_for", true);
 #endif
 
   // Game::BattlePage.singleton -- 2 real methods (mruby-rpg2k/mrblib/
@@ -10406,17 +9995,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, battle_page, "check_turns",
                           Game__BattlePage_singleton_check_turns,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle_page, "check_turns",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_page, "check_turns", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__BattlePage_singleton_active$3f
   mrb_define_class_method(M, battle_page, "active?",
                           Game__BattlePage_singleton_active$3f,
                           MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, battle_page, "active?", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, battle_page, "active?", true);
 #endif
 
   // Game::WindowCursor.singleton -- its one real method (mruby-rpg2k/
@@ -10428,9 +10015,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, window_cursor, "dest_rect",
                           Game__WindowCursor_singleton_dest_rect,
                           MRB_ARGS_REQ(5));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, window_cursor, "dest_rect",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, window_cursor, "dest_rect", true);
 #endif
 
   // Game::Message.singleton -- its one real method (mruby-rpg2k/mrblib/
@@ -10440,9 +10026,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Message_singleton_parse
   mrb_define_class_method(M, message, "parse", Game__Message_singleton_parse,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, message, "parse", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, message, "parse", true);
 #endif
   mrb_define_class_method(M, message, "scan", Game__Message_singleton_scan,
                           MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
@@ -10457,9 +10042,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, event_page, "active?",
                           Game__EventPage_singleton_active$3f,
                           MRB_ARGS_REQ(4) | MRB_ARGS_OPT(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, event_page, "active?", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, event_page, "active?", true);
 #endif
 
   // Game::CharSet.singleton -- its one real method (mruby-rpg2k/mrblib/
@@ -10470,25 +10054,22 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__CharSet_singleton_frame_rect
   mrb_define_class_method(M, char_set, "frame_rect",
                           Game__CharSet_singleton_frame_rect, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, char_set, "frame_rect", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, char_set, "frame_rect", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__CharSet_singleton_bush_pixels
   mrb_define_class_method(M, char_set, "bush_pixels",
                           Game__CharSet_singleton_bush_pixels,
                           MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, char_set, "bush_pixels", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, char_set, "bush_pixels", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__CharSet_singleton_bush_opacity
   mrb_define_class_method(M, char_set, "bush_opacity",
                           Game__CharSet_singleton_bush_opacity,
                           MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, char_set, "bush_opacity", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, char_set, "bush_opacity", true);
 #endif
 
   // Game::Backdrop.singleton -- its one real method (mruby-rpg2k/mrblib/
@@ -10499,17 +10080,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game__Backdrop_singleton_int_field
   mrb_define_class_method(M, backdrop, "int_field",
                           Game__Backdrop_singleton_int_field, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, backdrop, "int_field", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, backdrop, "int_field", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__Backdrop_singleton_name_for
   mrb_define_class_method(M, backdrop, "name_for",
                           Game__Backdrop_singleton_name_for,
                           MRB_ARGS_REQ(2) | MRB_ARGS_OPT(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, backdrop, "name_for", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, backdrop, "name_for", true);
 #endif
 
   // Game::CommonEvent.singleton and Game::MoveRoute.singleton:
@@ -10533,26 +10112,23 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, common_event, "eligible",
                           Game__CommonEvent_singleton_eligible,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, common_event, "eligible", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, common_event, "eligible", true);
 #endif
 #ifndef BC2CPP_SKIPPED_Game__MoveRoute_singleton_from_page
 #ifndef BC2CPP_UNREGISTERED_Game__MoveRoute_singleton_from_page
   mrb_define_class_method(M, move_route, "from_page",
                           Game__MoveRoute_singleton_from_page, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, move_route, "from_page", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, move_route, "from_page", true);
 #endif
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game__MoveRoute_singleton_same_route$3f
   mrb_define_class_method(M, move_route, "same_route?",
                           Game__MoveRoute_singleton_same_route$3f,
                           MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, move_route, "same_route?",
-                          bc2cpp_unregistered_stub, MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, move_route, "same_route?", true);
 #endif
 
   // RPG2k::Scene::Map::LRUBitmapCache (mruby-rpg2k/mrblib/scene/map.rb) --
@@ -10596,30 +10172,26 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 #ifndef BC2CPP_UNREGISTERED_Game_singleton_clamp
   mrb_define_class_method(M, game, "clamp", Game_singleton_clamp,
                           MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, game, "clamp", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, game, "clamp", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game_singleton_round_half_even
   mrb_define_class_method(M, game, "round_half_even",
                           Game_singleton_round_half_even, MRB_ARGS_REQ(2));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, game, "round_half_even", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, game, "round_half_even", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game_singleton_trans_to_opacity
   mrb_define_class_method(M, game, "trans_to_opacity",
                           Game_singleton_trans_to_opacity, MRB_ARGS_REQ(1));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, game, "trans_to_opacity", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, game, "trans_to_opacity", true);
 #endif
 #ifndef BC2CPP_UNREGISTERED_Game_singleton_camera_offset
   mrb_define_class_method(M, game, "camera_offset",
                           Game_singleton_camera_offset, MRB_ARGS_REQ(3));
-#elif defined(BC2CPP_UNREGISTERED_VERIFY)
-  mrb_define_class_method(M, game, "camera_offset", bc2cpp_unregistered_stub,
-                          MRB_ARGS_ANY());
+#else
+  bc2cpp_left_out(M, game, "camera_offset", true);
 #endif
 }
 

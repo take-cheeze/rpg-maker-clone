@@ -1268,6 +1268,8 @@
   Integer `[]` arms take [inline fast paths](docs/bc2cpp-array-write-inline.md).
   `==` and `%` by a constant power of two take
   [inline Integer arms](docs/bc2cpp-integer-fast-arms.md) ahead of their generic paths.
+  `n[i]` on a Fixnum is an [inline bit read](docs/bc2cpp-integer-bit-aref.md) when
+  the program's only `Integer#[]` is `(self >> i) & 1`.
   The [container shape analyses](docs/bc2cpp-ir-containers.md) (Hash records,
   element layouts, sealed Hash ivars) read the IR's producers and literals.
   [RBS self returns and mixin lookup](docs/bc2cpp-ir-rbs-features.md) extend nominal
