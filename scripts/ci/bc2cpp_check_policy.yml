@@ -481,6 +481,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/range_collect_direct_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/transpose_direct_check.rb:
     tier: runtime
     capabilities:

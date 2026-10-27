@@ -769,6 +769,7 @@ jobs:
           ruby scripts/bc2cpp/slot_assured_check.rb
           ruby scripts/bc2cpp/numeric_ivar_scope_check.rb
           ruby scripts/bc2cpp/collect_direct_check.rb
+          ruby scripts/bc2cpp/range_collect_direct_check.rb
           ruby scripts/bc2cpp/transpose_direct_check.rb
           ruby scripts/bc2cpp/array_times_result_check.rb
           ruby scripts/bc2cpp/core_definer_mono_check.rb
