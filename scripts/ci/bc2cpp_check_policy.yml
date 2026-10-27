@@ -537,6 +537,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/rotate_small_shift_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/branch_hints_check.rb:
     tier: runtime
     capabilities:
