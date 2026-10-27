@@ -460,6 +460,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/numeric_ivar_scope_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/collect_direct_check.rb:
     tier: runtime
     capabilities:
@@ -510,13 +517,6 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/fresh_freeze_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    - full_library
-    - cxx
-  scripts/bc2cpp/numeric_ivar_scope_check.rb:
     tier: runtime
     capabilities:
     - mrbc
