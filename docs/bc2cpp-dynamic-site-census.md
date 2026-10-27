@@ -2024,6 +2024,7 @@ only when the list register still holds its LOADNIL's nil (the instructions betw
 nothing jumps into the three instructions, no glue or prefix covers them, and the send's text is the guarded
 expansion itself. Optcarrot's `send(*DISPATCH[@opcode])` stops allocating an Array per emulated instruction, which
 removes the steady-state GC: 180 frames went from 3.47 s to 3.10 s wall. `BC2CPP_SPLAT_SHARED=0` keeps the copy.
+A `send(*table[i])` also remembers its arm per index (SPLAT_ROW_MEMO, `docs/bc2cpp-splat-row-memo.md`).
 
 ## Follow-up: literal-default optional constructor positions (CONSTRUCTOR_OPTIONALS)
 
