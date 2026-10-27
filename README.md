@@ -1383,6 +1383,8 @@
   receiver is proven exactly its guard class becomes a guard-free direct call; see
   [`docs/adr/0289-bc2cpp-return-class-table.md`](docs/adr/0289-bc2cpp-return-class-table.md) and
   `scripts/bc2cpp/return_class_check.rb`.
+  `[x] * n` with an Integer `n` [is an exact Array to that flow](docs/bc2cpp-array-times-result.md)
+  (`BC2CPP_ARRAY_TIMES_RESULT=0` compares).
   Class pools carry the same exact classes across methods: an ivar every writer of the closed world
   gives one class, and an argument every visible call site passes one class to. A receiver proven
   nil-or-one-class (`@ui = nil` then `@ui = {}`) takes one `nil?` test and the exact path, and
