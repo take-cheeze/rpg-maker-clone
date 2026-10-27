@@ -757,11 +757,14 @@ jobs:
           ruby scripts/bc2cpp/sealed_host_check.rb
           ruby scripts/bc2cpp/ir_context_results_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
+          ruby scripts/bc2cpp/kernel_loop_check.rb
+          ruby scripts/bc2cpp/const_lexical_order_check.rb
+          ruby scripts/bc2cpp/const_bindings_check.rb
           ruby scripts/bc2cpp/explicit_block_arg_direct_check.rb
           ruby scripts/bc2cpp/stack_block_check.rb
           ruby scripts/bc2cpp/embed_family_check.rb
-          ruby scripts/bc2cpp/collect_direct_check.rb
           ruby scripts/bc2cpp/array_hash_check.rb
+          ruby scripts/bc2cpp/collect_direct_check.rb
           ruby scripts/bc2cpp/integer_fast_arms_check.rb
           ruby scripts/bc2cpp/array_write_inline_check.rb
           ruby scripts/bc2cpp/ensure_nested_rescue_check.rb

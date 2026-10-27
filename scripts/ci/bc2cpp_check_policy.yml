@@ -453,14 +453,14 @@ checks:
     - native_sources
     - full_library
     - cxx
-  scripts/bc2cpp/array_hash_check.rb:
+  scripts/bc2cpp/collect_direct_check.rb:
     tier: runtime
     capabilities:
     - mrbc
     - native_sources
     - full_library
     - cxx
-  scripts/bc2cpp/collect_direct_check.rb:
+  scripts/bc2cpp/array_hash_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -531,6 +531,30 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/block_iterator_direct_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/kernel_loop_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/const_lexical_order_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/const_bindings_check.rb:
     tier: runtime
     capabilities:
     - mrbc
