@@ -48,6 +48,13 @@ The arm is used only when:
 - the source text of both core definitions, read from their own files on every
   compile, is still the text above (`COLLECT_DIRECT_BODIES`).
 
+The helper always yields, so it covers only the `block` arm of
+`Enumerable#collect`. A block argument that is not the site's own literal
+block can be nil (`map(&nil)`, or an absent `&b` passed on), and there the
+call is `mrb_nil_p(blk) ? Enumerable_collect_impl(...) : bc2cpp_ary_collect(...)`:
+the compiled body's `return to_enum(:collect) unless block` answers nil with
+the Enumerator the interpreter returns.
+
 ## The per-element yield
 
 `COLLECT_YIELD_HOIST` keeps the per-element step of the loop short.
