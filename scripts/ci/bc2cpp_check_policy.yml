@@ -446,6 +446,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/embed_init_guard_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    host_phase: false
   scripts/bc2cpp/embed_family_check.rb:
     tier: runtime
     capabilities:
