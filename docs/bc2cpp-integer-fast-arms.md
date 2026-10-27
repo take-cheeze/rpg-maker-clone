@@ -1,6 +1,6 @@
 # Integer fast arms for `==`, `!=` and `%`
 
-Three bc2cpp arms compute Integer results inline, ahead of the generic paths
+bc2cpp arms compute Integer results inline, ahead of the generic paths
 that stay in place for every other operand. All three are checked by
 `scripts/bc2cpp/integer_fast_arms_check.rb`, which compares interpreted and
 compiled runs.
@@ -13,20 +13,12 @@ the compiled code now checks for an Integer pair first and compares the values
 directly. Every other operand still goes through identity, the Symbol shortcut
 and the numeric/`==` chain, in the same order as before.
 
-## `!=` (NEQ_INTEGER_PAIR, `integer_eq_native?` in tools/bc2cpp/codegen_native_send.rb)
+## `!=` (NEQ_INTEGER_PAIR)
 
-`!=` compiles to `!mrb_equal(a, b)`. When the two Integers differ,
-`mrb_equal` falls through to `mrb_funcall(a, :==, b)`, which costs several
-hundred instructions to return `false`. The compiled code now compares two
-Integers directly, but only if the closed world proves that `Integer#==` is
-still the native `int_equal`. That proof needs all of the following:
-
-- there is no Ruby `Integer#==`;
-- no module is prepended to Integer and Integer has no unresolved mixin;
-- nothing installs a `==` dynamically.
-
-If any of these fails (for example, a program reopens `Integer#==`), the
-site keeps the plain `!mrb_equal` call.
+The Integer-pair arm for `!=`, with its `integer_eq_native?` proof, is
+described in [bc2cpp-array-write-inline.md](bc2cpp-array-write-inline.md).
+This page's check still runs `!=` over the same operands, in a default world
+and in one that reopens `Integer#==`.
 
 ## `%` by a constant power of two (MOD_POW2_CONSTANT, FIXNUM_BINARY in tools/bc2cpp/codegen_send.rb)
 
@@ -38,7 +30,7 @@ modulo runs.
 
 ## Effect
 
-On the optcarrot probe (Lan_Master, callgrind, frames 2–21), per-frame
-instructions fall from 54.76M to 50.40M (−8.0%). Of that, `!=` accounts for
-about −3.9M (most of it the `@hclk != 255` test in `PPU#main_loop`), and `%`
-for about −0.5M.
+On the optcarrot probe (Lan_Master, callgrind, frames 2–21), the three arms
+together took per-frame instructions from 54.76M to 50.40M (−8.0%). `!=`
+accounted for about −3.9M of that and now lands with the array write fast
+paths; `%` accounted for about −0.5M.

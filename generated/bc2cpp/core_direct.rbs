@@ -10,6 +10,7 @@ class Array
   def join: () -> untyped | (String?) -> untyped
   def push: (untyped, untyped) -> untyped | (untyped, untyped, untyped) -> untyped | (untyped, untyped, untyped, untyped) -> untyped
   def replace: (untyped) -> untyped
+  def rotate!: () -> untyped | (untyped) -> untyped
   def shift: () -> untyped
   def to_a: () -> untyped
 end

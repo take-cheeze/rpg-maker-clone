@@ -761,6 +761,7 @@ jobs:
           ruby scripts/bc2cpp/stack_block_check.rb
           ruby scripts/bc2cpp/embed_family_check.rb
           ruby scripts/bc2cpp/integer_fast_arms_check.rb
+          ruby scripts/bc2cpp/array_write_inline_check.rb
           ruby scripts/bc2cpp/ensure_nested_rescue_check.rb
           ruby scripts/bc2cpp/array_new_block_check.rb
           ruby scripts/bc2cpp/range_map_inline_check.rb
