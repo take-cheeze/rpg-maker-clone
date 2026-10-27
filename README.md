@@ -1270,6 +1270,8 @@
   [inline Integer arms](docs/bc2cpp-integer-fast-arms.md) ahead of their generic paths.
   `n[i]` on a Fixnum is an [inline bit read](docs/bc2cpp-integer-bit-aref.md) when
   the program's only `Integer#[]` is `(self >> i) & 1`.
+  `hash` on an exact Array of Fixnums (an Array Hash key) is
+  [computed natively](docs/bc2cpp-array-hash.md) with the interpreter's value.
   The [container shape analyses](docs/bc2cpp-ir-containers.md) (Hash records,
   element layouts, sealed Hash ivars) read the IR's producers and literals.
   [RBS self returns and mixin lookup](docs/bc2cpp-ir-rbs-features.md) extend nominal
