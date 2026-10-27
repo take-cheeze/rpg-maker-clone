@@ -42,7 +42,10 @@ library does not compile against the overlay. Then:
 
 `closed_build.bash` generates the table and uses it. Its first rake phase writes the presym list the overlay needs;
 then it writes `closed/analysis/fn-kinds.tsv`, deletes the generated `*_gen.cpp` files (rake does not track
-`BC2CPP_NATIVE_FN_KINDS`), and runs rake again so the closed world is generated with the table. To regenerate the
+`BC2CPP_NATIVE_FN_KINDS`), and runs rake again so the closed world is generated with the table. The presym list only
+needs every source to preprocess, so the first phase runs with `BC2CPP_STUB_GENERATION=1`: the compiled gems'
+outputs (`*_gen.cpp`, `*_decls.h`, `*_entry.h`) are empty marked stubs instead of a full bc2cpp run, which phase 2
+would discard. The table is the same either way: the analysis reads its own presym overlay, not the closed list. To regenerate the
 table alone, run `ruby scripts/bc2cpp/native_fn_kinds.rb build-closed-bc2cpp/closed > fn-kinds.tsv`.
 
 The generator reads every native source the base generator reads and every
