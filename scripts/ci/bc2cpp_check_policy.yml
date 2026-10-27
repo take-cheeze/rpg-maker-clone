@@ -453,13 +453,6 @@ checks:
     - native_sources
     - full_library
     - cxx
-  scripts/bc2cpp/fresh_freeze_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    - full_library
-    - cxx
   scripts/bc2cpp/collect_direct_check.rb:
     tier: runtime
     capabilities:
@@ -475,6 +468,13 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/array_write_inline_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/fresh_freeze_check.rb:
     tier: runtime
     capabilities:
     - mrbc
