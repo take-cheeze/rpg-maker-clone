@@ -1274,6 +1274,8 @@
   the program's only `Integer#[]` is `(self >> i) & 1`.
   `hash` on an exact Array of Fixnums (an Array Hash key) is
   [computed natively](docs/bc2cpp-array-hash.md) with the interpreter's value.
+  A `freeze` of a core iterator's result on a literal keeps embedded ivar stores free of the
+  [frozen test](docs/bc2cpp-fresh-freeze.md) (`BC2CPP_FRESH_FREEZE=0` compares).
   The [container shape analyses](docs/bc2cpp-ir-containers.md) (Hash records,
   element layouts, sealed Hash ivars) read the IR's producers and literals.
   [RBS self returns and mixin lookup](docs/bc2cpp-ir-rbs-features.md) extend nominal
