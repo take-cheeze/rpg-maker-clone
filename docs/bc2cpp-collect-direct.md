@@ -75,7 +75,7 @@ takes the by-name path. `BC2CPP_COLLECT_DIRECT=0` keeps the
 `scripts/bc2cpp/collect_direct_check.rb` checks the helper's shape: the block
 test comes before the loop, and the arena is cut back after each store. It
 also compares interpreted and compiled runs, including a `GC.stress` map whose
-block allocates. The startup also gains from `NEQ_INTEGER_PAIR` and `POLY_INTEGER_TAG`
+block allocates. The startup also gains from `NEQ_OP_EQ` and `POLY_INTEGER_TAG`
 ([bc2cpp-array-write-inline.md](bc2cpp-array-write-inline.md)): the TILE_LUT
 loop's `x != 0` and the probe's `Integer#[]` shim, so the check keeps
 behaviour cases for both.
