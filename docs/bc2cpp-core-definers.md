@@ -29,7 +29,15 @@ as `FLIP :name`.
 A name the registry does not list gets no placeholder. Its core-only proofs
 (COLLECT_DIRECT, GUARDED_BLOCK_INLINE, BLOCK_CORE_DIRECT, ...) are unchanged.
 
-`scripts/bc2cpp/core_definer_mono_check.rb` covers this. It checks
+A singleton method of a constant that holds no class (`LIST = []` and
+`def LIST.find_all`) is registered under the owner `LIST.singleton`. Once the
+name is POLY, its owner call lists that owner. `bc2cpp_owner_listed`
+(tools/bc2cpp/symbol_cache.rb) used to accept only the singleton class of a
+class or module. It now also matches a listed `Const.singleton` when the
+constant holds the receiver itself, so `LIST.find_all { }` runs the singleton
+method and raises no owner violation.
+
+`scripts/bc2cpp/core_definer_mono_check.rb` covers both. It checks
 subclass-only `map`, `collect`, `reject`, `each_with_index`, `sort_by` and
-`Hash#each_pair`, and a mixed-in `select`. It runs them with the core mrblib
-compiled and with it outside.
+`Hash#each_pair`, a mixed-in `select` and two singleton `find_all`s. It runs
+them with the core mrblib compiled and with it outside.
