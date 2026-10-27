@@ -635,6 +635,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/class_read_inline_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/range_map_inline_check.rb:
     tier: runtime
     capabilities:
