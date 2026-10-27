@@ -13,12 +13,16 @@ the compiled code now checks for an Integer pair first and compares the values
 directly. Every other operand still goes through identity, the Symbol shortcut
 and the numeric/`==` chain, in the same order as before.
 
-## `!=` (NEQ_INTEGER_PAIR)
+## `!=` (NEQ_OP_EQ)
 
-The Integer-pair arm for `!=`, with its `integer_eq_native?` proof, is
-described in [bc2cpp-array-write-inline.md](bc2cpp-array-write-inline.md).
-This page's check still runs `!=` over the same operands, in a default world
-and in one that reopens `Integer#==`.
+`!=` follows `OP_EQ`, as described in
+[bc2cpp-array-write-inline.md](bc2cpp-array-write-inline.md). Its Integer-pair
+arm therefore stays in a world that reopens `Integer#==`. This page's check
+runs `!=` over the same operands, bigints included, in a default world and in
+one that reopens `Integer#==`. In that world, `mrb_equal(2**62, 2**62 + 1)`
+sends the reopened `==`, whose `super` reaches `Comparable#==`. There the
+pinned `Integer#<=>` compares the two non-fixnum Integers as doubles and
+answers 0, so the plain `!mrb_equal` form called them equal.
 
 ## `%` by a constant power of two (MOD_POW2_CONSTANT, FIXNUM_BINARY in tools/bc2cpp/codegen_send.rb)
 
