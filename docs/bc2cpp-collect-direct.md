@@ -86,3 +86,66 @@ block allocates. The startup also gains from `NEQ_OP_EQ` and `POLY_INTEGER_TAG`
 ([bc2cpp-array-write-inline.md](bc2cpp-array-write-inline.md)): the TILE_LUT
 loop's `x != 0` and the probe's `Integer#[]` shim, so the check keeps
 behaviour cases for both.
+
+## Range map and each
+
+`RANGE_COLLECT_DIRECT` does the same for an exact `Range`. A literal-block
+`map`/`collect` or `each` whose `BLOCK_CORE_DIRECT` arm names core
+`Enumerable#collect` or core `Range#each` calls
+
+```cpp
+r = bc2cpp_range_int_p(M, r) ? bc2cpp_range_collect(M, r, blk) : Enumerable_collect_impl(M, r, blk);
+r = bc2cpp_range_int_p(M, r) ? bc2cpp_range_each(M, r, blk) : Range_each_impl(M, r, blk);
+```
+
+These are the sites the inlined Range loops leave alone: bounds that are not
+literals (`(0...n).map`, a Range argument), or a Range loop inside a block
+that is itself inlined into an outer loop (optcarrot's
+`[1, 6].map { |s| (0..0x7fff).map { |bits| ... } }`). Without the helper,
+each element went through `Range#each`, `Enumerable#collect`'s `|*val|`
+block and `block.call(*val)`: two Arrays and two block calls per element.
+
+`Range#each`'s Integer branch is
+
+```ruby
+lim = last
+lim += 1 unless exclude_end?
+i = val
+while i < lim
+  block.call(i)
+  i += 1
+end
+```
+
+and the helpers run the same `i` from `begin` through `end` (or below it), with
+the bounds and `exclude_end?` read once. `bc2cpp_range_int_p` takes the helper
+only when both bounds are Integers. Any other Range takes the compiled body:
+Float, String or bigint bounds, an endless Range, and an inclusive end at
+`MRB_INT_MAX` (where the Ruby body's `lim += 1` leaves `mrb_int` and its loop
+is not this one).
+
+The block is always the site's own literal block, so it is never nil or a
+lambda and `block.call(i)` is the plain yield the helper makes; a site with
+any other block expression keeps the compiled call. Neither helper keeps the
+block, so they take the frame-local block (`docs/bc2cpp-stack-blocks.md`)
+where the site built one. `break`, `next`, a method `return` and exceptions
+leave the helper exactly as they leave the compiled bodies.
+
+The arm is used only when, besides the `BLOCK_CORE_DIRECT` proof:
+
+- `Range#each` begins with the text above, through its Integer branch
+  (`COLLECT_DIRECT_PREFIXES`, read from `range.rb` on every compile);
+- the names that branch calls (`begin`, `end`, `kind_of?`, `nil?`,
+  `exclude_end?`, `call`) have no program Ruby definition on any owner, no
+  dynamic installer or outside definer, no other core Ruby definition, and no
+  native registration on the classes they resolve through other than mruby's
+  own `src/*.c` (`range_each_core?`).
+
+The exact-class and root-context tests of the arm stay, so a Range subclass
+and a Fiber still dispatch by name. `BC2CPP_RANGE_COLLECT_DIRECT=0` (or
+`BC2CPP_COLLECT_DIRECT=0`) keeps the compiled calls.
+`scripts/bc2cpp/range_collect_direct_check.rb` asserts the arms, the
+helper's shape and the withdrawals, and compares interpreted and compiled runs
+over inclusive, exclusive, empty, reversed, negative, `MRB_INT_MAX`-edge,
+Float, String, bigint, endless and subclass Ranges, with `break`, `next`,
+`return`, an exception, block arities, outer locals, `GC.stress` and a Fiber.
