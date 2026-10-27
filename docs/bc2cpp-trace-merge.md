@@ -7,7 +7,7 @@ and are not loaded. `scripts/bc2cpp/trace_merge.rb` compares them with `sig/bc2c
 ruby scripts/bc2cpp/trace_merge.rb CANDIDATES.rbs
 ```
 
-It writes the candidates the file does not already declare to `generated/bc2cpp/trace_proposals.rbs`, and reports:
+It writes the candidates the file does not already declare to `build/trace_proposals.rbs` (git-ignored; `--out FILE` picks another path), and reports:
 
 - **already declared** with the same signature: skipped;
 - **conflicting**: a method declared with a different signature. The declaration is kept and the candidate is

@@ -194,8 +194,6 @@ an exact core receiver can take none of their arms.
 | Artifact | Generator |
 |---|---|
 | `include/rgss_native_direct.hxx`, the forwarder block in `lib.cxx`, `tools/bc2cpp/native_direct_table.rb`, `mruby-rgss/test/native_direct_probe.inc` | `scripts/native/binding_split.rb write` |
-| `generated/bc2cpp/rgss_direct.rbs` | `scripts/bc2cpp/native_rgss_direct_sigs.rb` |
-| `generated/bc2cpp/core_direct.rbs` | `scripts/bc2cpp/native_core_direct_sigs.rb` |
 
 `binding_split.rb check` fails when the committed files differ from what the
 generator would write, and runs in the bc2cpp checks. The generator needs libclang's
