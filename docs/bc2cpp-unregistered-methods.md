@@ -42,7 +42,11 @@ any of these could look it up:
   fragment: a store, an interned Symbol (`:"#{type}_name"`), an argument of
   a method the trace doesn't know, or a use the flow query refuses. Engine
   code that needs per-kind field names spells them in a table
-  (`Game::Vehicle::SYSTEM_NAME_FIELD`) rather than building them;
+  (`Game::Vehicle::SYSTEM_NAME_FIELD`) rather than building them. The closed
+  list asks the same of an identifier-shaped literal itself (IDENT_USES),
+  once SYMBOL_USES has proven every lookup in the closed bytecode takes a
+  literal name: otherwise a compared literal could be what a computed
+  `send(x)` looks up;
 - a token in core, external or other-maker mrblib, tests, `scripts/`,
   `.github/`, `tools/` or native sources;
 - for the closed list only, a narrower outside scan:
