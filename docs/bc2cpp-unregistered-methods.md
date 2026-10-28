@@ -383,8 +383,11 @@ lists the group in `STATIC_DISPATCH_CORE_LEFT_OUT` only when the proof holds
   class, instance variables (by class family), parameters (union of the callers'
   arguments, by name and argument count), results (by name, and TOP when a core
   or native method has the name), self, captured variables and rescued
-  exceptions. Anything else (an element, a block parameter, a native result, a
-  refused reaching-definitions query) is TOP and is never proven.
+  exceptions. A call with a literal block to a method whose every definition is
+  a checked `{ ... } -> T` declaration of `sig/bc2cpp` (BlockReturns:
+  `RGSS::Profiler.section`, `then`) has the class of the block's value. Anything
+  else (an element, a block parameter, a native result, any other call that
+  yields, a refused reaching-definitions query) is TOP and is never proven.
 - **Other ways in.** An engine `to_enum` or Enumerator constant; a Symbol that
   names a creator and reaches a lookup (`map(&:each)`, `send(:select)`); any
   lookup that takes a computed name; a native that spells a creator name
@@ -398,16 +401,11 @@ holds the rule to fixtures in both directions.
 
 On the engine as it stands the proof does not hold, so the group stays in the
 tables. Of the 637 engine and 110 core sites it checks, 682 are settled by a block
-or an argument and 39 by the receiver's class (the `step`, `index`, `select` and
+or an argument and 59 by the receiver's class (the `step`, `index`, `select` and
 `map` sites of engine classes that define the name themselves: `Picture#step`,
-`@shop.index`, `Game::EventPage.select`, ...). 26 sites are not, from three places
-the model cannot type:
+`@shop.index`, `Game::EventPage.select`, `@state.map`, ...). 6 sites are not,
+from two places whose receiver the model cannot type:
 
-- `RPG2k#start_new_game` (`main.rb`) takes `state` from `RGSS::Profiler.section {
-  ... }`, a native that yields, so the Scene's `@state` and the 20 `state.map` /
-  `@state.map` reads (`Game::State#map`, `Enumerable#map` when blockless) are
-  untyped. A local assigned inside the block (`state = nil; section { state = ...
-  }`) types it.
 - `Scene::Map#run_route_step` receives `@vehicle_routes[type]`, an element of a
   Hash: `route.index` and `route.step` (4 sites) cannot be told from
   `Array#index` and `Numeric#step`. Reading the cursor and stepping through
@@ -418,7 +416,7 @@ the model cannot type:
   block, so every `chunk` site needs its receiver. Naming the accessor
   `lcf_chunk` removes them.
 
-With those three edits the proof holds and the 15 entries leave the table.
+With those two edits the proof holds and the 15 entries leave the table.
 
 #### Device builds
 
