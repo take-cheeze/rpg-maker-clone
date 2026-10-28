@@ -99,9 +99,10 @@ function(rpg2k_add_mruby)
   # loudly, and would have let this round's own `Game.singleton` addition (and
   # any future one) look verified without ever actually being exercised.
   # `tools/bc2cpp/mrb_files.rb` doesn't exist -- there's no third file this tool
-  # reads at build time beyond these two.
-  # compiled_gems.yml is the compiled gems' table (owners source, OUT_SYMBOL), read by compiled_gems.rb.
-  file(GLOB bc2cpp_files CONFIGURE_DEPENDS ${ARG_REPO_ROOT}/tools/bc2cpp/*.rb ${ARG_REPO_ROOT}/tools/bc2cpp/compiled_gems.yml)
+  # reads at build time beyond these two. compiled_gems.yml is the compiled
+  # gems' table (owners source, OUT_SYMBOL), read by compiled_gems.rb.
+  file(GLOB bc2cpp_files CONFIGURE_DEPENDS ${ARG_REPO_ROOT}/tools/bc2cpp/*.rb
+       ${ARG_REPO_ROOT}/tools/bc2cpp/compiled_gems.yml)
   list(APPEND mrb_files ${bc2cpp_files})
 
   set(mrb_opts
