@@ -418,6 +418,10 @@ written so it can:
   `Enumerable#chunk` makes an Enumerator even with a block, so every `chunk` site
   needs its receiver. The accessor is `lcf_chunk` now.
 
+`STATIC_DISPATCH_CORE_LEFT_OUT` grows by those 15 and `Enumerator#with_object`, which the name
+scan kept; the closed host's method table (`BC2CPP_HOST_MT_COUNT`, `host_sweep.bash`) goes from
+1290 to 1272 entries.
+
 A blockless `index`, `step`, `map`, `chunk` or any other iterator name on a receiver
 the model cannot type fails the proof from here on and puts the whole group back in
 the tables; `scripts/bc2cpp/core_enumerator_free_report.rb` names the site.
