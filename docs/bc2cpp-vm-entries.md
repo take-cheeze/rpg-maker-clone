@@ -197,3 +197,46 @@ is replaced by this one.
  Folding the two computed constants to data and dropping the visibility statements on defs the build
   leaves out takes the boot set from 330 to 316 starts (measured on the class-structure branch, before this
   refresh's base).
+
+## Hash#to_proc in the method table (kept)
+
+`Hash#to_proc` (`MRB_MT_ENTRY(hash_to_proc, MRB_SYM(to_proc), ...)` in
+`3rd/mruby/mrbgems/mruby-hash-ext/src/hash_ext.c`, fork pin `95f8c40`) is not a
+CORE_NATIVE_CANDIDATES entry: `to_proc` is in `StaticDispatchRegistrations::ALWAYS_DYNAMIC`.
+Nothing about it is removed here.
+
+Block-operand sites in the engine Ruby that pass a non-literal block (`&x`):
+
+| Site | Operand |
+| --- | --- |
+| `mruby-rpgxp/mrblib/rgss_library.rb:401` `results.each(&block)` | block parameter of `self.glob` (line 392) |
+| `mruby-rpg2k/mrblib/game.rb:3891` `all.each(&blk)` | block parameter of `each` |
+| `mruby-rpg2k/mrblib/game.rb:4028` `@actors.each(&blk)` | block parameter of `each` |
+
+No engine Ruby sends `to_proc`. Native `mrb_funcall_with_block` calls pass only the
+native's own block, a Proc, or nil (`class.c:4286`, `proc.c:316`, `symbol.c:1051`,
+the `new` helper in `codegen_index_closed.rb:141`), and compiled block operands are the
+register the block-operand proof reads.
+
+The argument for unreachability: `block_operand_symbols` in `block_self_world.rb`
+accepts a non-literal operand only as LOADSYM, LOADNIL, BLOCK/LAMBDA or a captured
+block parameter, and returns `:unknown` on a `to_proc` send anywhere. So a block
+parameter carries a value a caller's operand already passed, and by induction each
+block value is a Proc, nil or a Symbol. `ensure_block` (`vm.c:784`) converts only
+non-Proc, non-nil values, so it calls `Symbol#to_proc` and never `Hash#to_proc`.
+
+What stops the strip today:
+
+- The fact is computed in codegen (`bc2cpp.rb`, after `BlockSelfWorld.analyze`), but the
+  exclusion list is built earlier, in `bc2cpp_core_mt_exclude` (`build_config.rb`), from
+  `CoreNativeCandidates.reachable`, which has no block-operand input.
+- `CoreNativeCandidates` is receiver-blind. The name `to_proc` is reached from the
+  `ALWAYS_DYNAMIC` seed, `vm.c:784`'s `MRB_SYM(to_proc)`, and the generated
+  `mrb_intern_lit(M, "to_proc")` at `codegen_block_fallback.rb:1292`. Symbol's entry must
+  stay (the Symbol conversion looks `to_proc` up on Symbol), so the rule has to become
+  per receiver: Hash's `to_proc` is candidate only when the block fact holds and no
+  explicit `to_proc` name remains.
+- The closed build has not been run here, so the fact on the real closed world is
+  unmeasured.
+
+The fork needs no change for this.
