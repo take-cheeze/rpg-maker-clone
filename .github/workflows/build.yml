@@ -48,9 +48,7 @@ jobs:
       psp: ${{ steps.filter.outputs.psp }}
       # Docs, changelog fragments and markdown cannot change a compiled result.
       code: ${{ steps.filter.outputs.code }}
-      # On a pull request these device jobs run only when their own files changed.
-      android: ${{ steps.filter.outputs.android }}
-      maix: ${{ steps.filter.outputs.maix }}
+      # On a pull request nano7-qemu runs only when its own files changed.
       nano7: ${{ steps.filter.outputs.nano7 }}
     steps:
       - uses: actions/checkout@v7
@@ -71,20 +69,6 @@ jobs:
               - '!changelog.d/**'
               - '!**/*.md'
               - '.github/**'
-            android:
-              - 'app/android/**'
-              - 'scripts/android_smoke_check.bash'
-              - 'CMakeLists.txt'
-              - 'cmake/**'
-              - 'build_config.rb'
-              - '.github/workflows/build.yml'
-            maix:
-              - 'app/maix/**'
-              - 'app/shared/**'
-              - 'scripts/maix/**'
-              - 'scripts/gen/maix-hello-game.rb'
-              - 'build_config.rb'
-              - '.github/workflows/build.yml'
             nano7:
               - 'app/nano7/**'
               - 'app/shared/**'
@@ -1398,7 +1382,8 @@ jobs:
   # game firmwares plus the `maix` mruby cross-build, so a patch or gem that
   # stops cross-compiling breaks CI. `maix-smoke` boots them under Renode.
   maix:
-    if: ${{ github.event_name != 'issue_comment' && (github.event_name != 'pull_request' || needs.changes.outputs.maix == 'true') }}
+    # Not on a pull request (docs/ci.md, "Device jobs"): the merge queue and the push to master build it.
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'pull_request' }}
     needs: changes
     runs-on: ubuntu-24.04
     steps:
@@ -1981,7 +1966,7 @@ jobs:
   psp:
     needs: changes
     if: >-
-      ${{ github.event_name != 'issue_comment' &&
+      ${{ github.event_name != 'issue_comment' && github.event_name != 'pull_request' &&
           (github.event_name == 'workflow_dispatch' || needs.changes.outputs.psp == 'true') }}
     runs-on: ubuntu-24.04
     steps:
@@ -2236,7 +2221,8 @@ jobs:
   # Android debug APK. The `android-smoke` job below boots it on an emulator.
   # See app/android/README.md.
   android:
-    if: ${{ github.event_name != 'issue_comment' && (github.event_name != 'pull_request' || needs.changes.outputs.android == 'true') }}
+    # Not on a pull request (docs/ci.md, "Device jobs"): the merge queue and the push to master build it.
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'pull_request' }}
     needs: changes
     runs-on: ubuntu-24.04
     steps:
