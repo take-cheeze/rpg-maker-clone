@@ -144,13 +144,16 @@ module RGSS
     Graphics.update
     cleared = frame_mean
 
-    mid = nil
-    Graphics.transition_frame_hook = -> { mid ||= frame_mean }
+    # The hook keeps its sample on RGSS rather than in a local: a lambda that outlives this frame and writes a
+    # captured local stays bytecode, and the whole probe with it.
+    @probe_mid = nil
+    Graphics.transition_frame_hook = -> { @probe_mid ||= frame_mean }
     begin
       Graphics.transition(4)
     ensure
       Graphics.transition_frame_hook = nil
     end
+    mid = @probe_mid
     after = frame_mean
 
     # The transition-*graphic* form: a still that gives way in the shape of a
