@@ -132,31 +132,6 @@ class FiberError < StandardError
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_hash
-class Hash
-  def <: (untyped) -> untyped
-  def <=: (untyped) -> untyped
-  def >: (untyped) -> untyped
-  def >=: (untyped) -> untyped
-  def compact: () -> untyped
-  def compact!: () -> untyped
-  def delete_if: () -> untyped
-  def dig: (untyped, *untyped) -> untyped
-  def fetch: (untyped, ?untyped) -> untyped
-  def fetch_values: (*untyped) -> untyped
-  def flatten: (?untyped) -> untyped
-  def invert: () -> untyped
-  def keep_if: () -> untyped
-  def merge!: (*untyped) -> untyped
-  def to_h: () -> untyped
-  def to_proc: () -> untyped
-  def transform_keys: () -> untyped
-  def transform_keys!: () -> untyped
-  def transform_values: () -> untyped
-  def transform_values!: () -> untyped
-end
-
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_io
 class EOFError < IOError
 end
@@ -8340,6 +8315,30 @@ class Game::MoveRoute
   def toward_hero: (untyped, untyped) -> untyped
   def self.from_page: (untyped) -> untyped
   def self.same_route?: (untyped, untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_hash
+class Hash
+  def <: (untyped) -> untyped
+  def <=: (untyped) -> untyped
+  def >: (untyped) -> untyped
+  def >=: (untyped) -> untyped
+  def compact: () -> untyped
+  def compact!: () -> untyped
+  def delete_if: () -> untyped
+  def dig: (untyped, *untyped) -> untyped
+  def fetch: (untyped, ?untyped) -> untyped
+  def fetch_values: (*untyped) -> untyped
+  def flatten: (?untyped) -> untyped
+  def invert: () -> untyped
+  def keep_if: () -> untyped
+  def merge!: (*untyped) -> untyped
+  def to_h: () -> untyped
+  def transform_keys: () -> untyped
+  def transform_keys!: () -> untyped
+  def transform_values: () -> untyped
+  def transform_values!: () -> untyped
 end
 
 # ---- block_types.rbs

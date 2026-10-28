@@ -25,6 +25,7 @@ body's starts minus 50 times its boot starts.
 | `Enumerable#inject` (method and its `each` block) | 720 | 720 | the fork's `inject` without the lambda (see below) |
 | `Proc#call` (and `Proc#[]`) | 563 | 554 | the `default:` lambdas below took 9; the fork's `proc_call` cfunc takes the rest (the method was an `OP_CALL` bytecode body; the procs it calls are counted on their own rows) |
 | `BasicObject#!=` | not counted | not counted | the fork's `bob_neq` cfunc (it was an `OP_EQ` bytecode body); not run by the sweep, so no count |
+| `Hash#to_proc` (method and its lambda) | not counted | not counted | the fork's native `Hash#to_proc` (`claude/hash-to-proc-native`); no scenario converts a Hash, so no count |
 | `LCF::Schema` `elements:` lambdas | 78 | 78 | not yet |
 | `LCF::Schema` `default:` lambdas | 9 | 0 | Symbol defaults (`LCF.edition_default`) |
 | `Class#new`, `File#initialize` | 14 | 14 | not yet (mruby-io's `File.open`) |
@@ -80,6 +81,18 @@ is about 305 bodies.
   Differences from the Ruby lambda: `arity` is -1 (was -2) and `parameters` is
   empty, because a cfunc proc has no aspec; the argument-count message is
   "expected 1+" (was "expected 1").
+- **`Hash#to_proc`** was mruby-hash-ext's `->x{self[x]}`, a lambda returned to
+  its caller, so it stayed bytecode (the last method of the Symbol#to_proc kind).
+  `src/hash_ext.c` now makes a strict cfunc proc with the Hash in its env that reads
+  it with `[]` (a subclass's `[]`, the default value and the default proc apply)
+  and takes exactly one argument, as the lambda did (`mrb_get_args "o"`). Same
+  difference as `Symbol#to_proc`: `arity` is -1 (was 1) and `parameters` is empty.
+  `block_self_world.rb` cuts the one registration line that spells `to_proc` from
+  `hash_ext.c` before its blanket native scan (the file sends a fixed `[]`, no
+  computed name and no block).
+  The method table keeps its entry (it is a ROM entry now); the bytecode entries
+  of the table go from 4 to 3 (`Class#new`, `File#initialize`,
+  `Enumerator::Yielder#<<`).
 - **`Enumerable#inject` / `reduce` (720 starts).** mruby's method builds a lambda
   for a Symbol argument, and a core method that builds a lambda stays bytecode
   (`CoreDefs.builds_lambda?`), so every engine `reduce(0) { ... }` runs the method,
