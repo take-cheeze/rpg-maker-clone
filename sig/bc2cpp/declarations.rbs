@@ -8328,6 +8328,16 @@ module LCF
   def write_ber: (untyped) -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_rgss
+class NameError < StandardError
+  def initialize: (?untyped, ?untyped) -> untyped
+end
+# bc2cpp-native: base_rgss
+class NoMethodError < NameError
+  def initialize: (?untyped, ?untyped, ?untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
