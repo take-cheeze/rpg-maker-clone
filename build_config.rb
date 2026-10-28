@@ -121,6 +121,32 @@ def wio_strip_clock(spec)
   end
 end
 
+# MRBLIB_STUBS (tools/bc2cpp/mrblib_stubs.rb): in a build with compiled gems, the engine gem's mrblib is a build-time
+# copy in which each compiled method that never runs as bytecode has an empty body. Call it last in the spec block:
+# it replaces every rbfiles entry. The compiled gems' generation writes the manifests it reads.
+def bc2cpp_stub_mrblib(spec)
+  names = spec.build.gems.map(&:name)
+  return unless names.any? { |name| name.end_with?('-compiled') }
+
+  require_relative 'tools/bc2cpp/compiled_gems'
+  compiled = BC2CPP_COMPILED_GEMS.select { |name, _| names.include?(name) }
+  dirs = compiled.map { |name, g| ["#{spec.build.build_dir}/mrbgems/#{name}", g[:out_symbol]] }
+  manifests = dirs.map { |dir, symbol| MrblibStubs.manifest_path(dir, symbol) }
+  generated = dirs.map { |dir, symbol| "#{dir}/#{symbol}_gen.cpp" }
+  stubs_rb = File.expand_path('tools/bc2cpp/mrblib_stubs.rb', __dir__)
+  out_dir = "#{spec.build_dir}/mrblib_stubs"
+  spec.rbfiles = spec.rbfiles.map do |src|
+    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
+    out = "#{out_dir}/#{rel}"
+    # The generation that writes a gem's code writes its manifest too.
+    file out => [src, stubs_rb, *generated] do
+      FileUtils.mkdir_p File.dirname(out), verbose: true
+      MrblibStubs.write_stubbed(src, out, manifests)
+    end
+    out
+  end
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded

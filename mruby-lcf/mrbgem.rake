@@ -177,4 +177,5 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   # bytes total, before this gem's own wio_strip_debug_rbfiles pass runs.
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
+  bc2cpp_stub_mrblib(spec)
 end
