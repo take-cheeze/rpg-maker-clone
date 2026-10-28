@@ -18,7 +18,8 @@ The natives that run Ruby inside the VM, with no C frame between, are counted as
 `instance_exec`/`class_exec` (block executes).
 
 The same holds for which frames a Fiber can pass through (crossability): a method entered only from a native
-callback, such as an `initialize` run by `Class#new` (`mrb_instance_new` calls it with `mrb_funcall_with_block`),
+callback, such as an `initialize` run by `Class#new` (the fork's native `class_new_instance` sends it with `mrb_funcall_send`;
+it was a bytecode body that ran `initialize` inside the VM, with no C frame, until `claude/class-new-cfunc`),
 sits above that C frame, so a `Fiber.yield` below it raises before anything is suspended. A native call inside a
 Fiber therefore no longer makes the methods natives may call back crossable.
 
