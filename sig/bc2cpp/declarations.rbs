@@ -137,17 +137,6 @@ class EOFError < IOError
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_io
-class File < IO
-  def path: () -> untyped
-  def path=: (untyped) -> untyped
-  def atime: () -> untyped
-  def ctime: () -> untyped
-  def initialize: (untyped, ?untyped, ?untyped) -> untyped
-  def inspect: () -> untyped
-  def mtime: () -> untyped
-  def self.foreach: (untyped) -> untyped
-end
 
 # bc2cpp-native: base_io
 module File::Constants
@@ -8339,6 +8328,18 @@ class Hash
   def transform_keys!: () -> untyped
   def transform_values: () -> untyped
   def transform_values!: () -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_io
+class File < IO
+  def path: () -> untyped
+  def path=: (untyped) -> untyped
+  def atime: () -> untyped
+  def ctime: () -> untyped
+  def inspect: () -> untyped
+  def mtime: () -> untyped
+  def self.foreach: (untyped) -> untyped
 end
 
 # ---- block_types.rbs
