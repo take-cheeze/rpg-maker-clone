@@ -9,7 +9,7 @@ rest. bc2cpp's method compiler has no case for any of those opcodes, so every bo
 | part | what it is | when it runs |
 | --- | --- | --- |
 | residual | the mrblib text with the compiled statements blanked (newlines kept: line numbers and backtraces are unchanged) | first, as bytecode, in the base gem's init |
-| compiled load | `bc2cpp_load_<symbol>(M)`, generated C++ | first thing in the `*-compiled` gem's `gem_init`, before the compiled methods are registered |
+| compiled load | `bc2cpp_load_<symbol>(M)`: a byte program and one decoder (below) | first thing in the `*-compiled` gem's `gem_init`, before the compiled methods are registered |
 
 `ClassBodyScan` (`tools/bc2cpp/class_body_scan.rb`) sorts every statement of every body. In the closed world's 278
 bodies there is no DSL call and no proc statement; what blocks is 6 `mruby-io` runtime globals, one core `if`, and four
@@ -49,14 +49,42 @@ compiled statement therefore sees every residual def, whatever the source order 
 The source order is the world's: gems in build order, files in order, statements in order. `class_body_check.rb` has
 both shapes in its fixture (`Cb::Redef`); unfixed, the equivalence run recurses.
 
-## Constant tables
+## The class program
 
-A run of adjacent constants whose values are data (numbers, strings, symbols, arrays, hashes, ranges, other constants)
-is one byte table and one call of `bc2cpp_ld_consts`: a name and a value per constant, set in order. The engine has some
-900 of them (opcode and id tables), which as one call each were more than half of the load code. An Integer is a
-zigzag varint of at most 32 bits; a wider one is not data (above). A first version read it into an `unsigned` and made
-`LCF::INT32_WRAP` 2147483648, so every negative number read from a file came out as `2**31 - 3` (a parallax speed of -3
-shifted by that on the 5902nd frame of the New Game run); `class_body_check.rb` holds the edges and a negative.
+The statements of the bodies are not C++ calls, they are bytes (`LoadCompile.program`): one array per gem and one
+decoder, `bc2cpp_ld_run`, that walks it. A call per statement was most of the load's code (a nesting is three calls and
+a scope, an `attr_accessor` a symbol per name); a statement is now a few bytes.
+
+| op | what it runs |
+| --- | --- |
+| `CLASS`, `MODULE` | `mrb_vm_define_class`/`mrb_vm_define_module` for a name, a base (the body's class, `Object` or an expression) and a superclass; then the body's own ops, up to its `END` |
+| `SCLASS` | `class << self`, then its ops |
+| `CONST` | a run of constants: a name and a value each, set in order with the arena given back after each |
+| `IVAR` | a class-level `@x = value` |
+| `SEND`, `SENDN` | a send with the body's class as receiver: `include`, `extend`, `prepend`, `attr_*`, `alias_method` (an `alias` is one), `private :a`, ...; `SENDN` takes Symbol arguments as names alone |
+| `FN` | a statement kept as C++ of its own (below) |
+
+A value is a *blob*: nil, true, false, Integer, Float, Symbol, String (frozen or not), Array (with splat), Hash, Range,
+a constant looked up lexically (`A`, `A::B`, `::A`), `.freeze` and, since the program, any other pure call
+(`Color.new(1, 2, 3, 4)`, `OTHER.merge(...)`: receiver, name and up to 8 arguments, sent as `OP_SEND` would). Names and
+verbs are indexes into one string pool, so the program holds no Ruby method name as a C string (the registration
+proof reads C++ string literals as uses). An Integer is a zigzag varint of at most 32 bits; a wider one is not data
+(above). A first version read it into an `unsigned` and made `LCF::INT32_WRAP` 2147483648, so every negative number read
+from a file came out as `2**31 - 3` (a parallax speed of -3 shifted by that on the 5902nd frame of the New Game run);
+`class_body_check.rb` holds the edges and a negative. The decoder reads 64 bits there, so a 32-bit `mrb_int` target
+(wasm, wio) and a 64-bit one decode the same bytes.
+
+Order is the source order: the program is one stream per gem, the files in load order, and `LoadCompile.order!`
+(above) has already decided which statements are in it. What the program cannot say stays a C++ statement of its own,
+called by an `FN` op in its place, so nothing is all-or-nothing:
+
+- a world that defines a hook (`inherited`, `included`, `extended`, `prepended`, `append_features`, `prepend_features`,
+  `extend_object`, `method_added`, `singleton_method_added`, ...) keeps the statements the hook observes (a class with a
+  superclass; `include`/`extend`/`prepend`; `attr_*`, `alias`, `alias_method`) as C++ statements, and never drops the
+  hook defs, which must exist when those statements run (`HOOK_DEFS`, `legacy?`). The program makes the same calls the
+  VM would and so would run the hook too; keeping them apart is the cautious reading of "preserve the hooks", and the
+  engine defines none, so nothing is C++ per statement today;
+- a send of more than 64 names, a call of more than 8 arguments.
 
 ## What stays bytecode
 
@@ -146,7 +174,37 @@ classes; `class_body_check.rb` now checks that no body is deleted in `defs`.
 At `-Os` that is about 58 KB more text for 49 KB less irep: statement compilation is not size-neutral. Before the
 constant tables it was 123 KB of load code. The size is the price of the bytecode bodies leaving the boot; what is
 left is mostly the nesting and mixin calls, each a C++ call sequence where an irep has one instruction. Folding those
-to a byte program with one interpreter, as the constants are, is the next step if the text matters.
+to a byte program with one interpreter, as the constants are, is the next step if the text matters (done: below).
+
+## Measured: the class program (closed build, clang 18, `-Os` standalone; master 40d3bd3)
+
+The compiled load of the three engine gems, generated from the real mrblib with every stub-proof def dropped and
+compiled alone (`clang++ -Os -std=c++17 -fexceptions -DMRB_USE_CXX_EXCEPTION`, `size`):
+
+| | per-statement C++ | program |
+| --- | --- | --- |
+| lcf | 20,964 B | 15,594 B |
+| rgss | 8,751 B | 5,927 B |
+| rpg2k | 73,450 B | 38,236 B |
+| text (code and `.rodata`) | 103,165 B | 59,757 B (-43,408) |
+| data (`.data.rel.ro`: the name tables' pointers) | 3,920 B | 0 |
+
+Each gem's translation unit carries its own copy of the decoder (about 2.7 KB of code); the rest is `.rodata`: the
+byte tables and the string pool, which are the same data as before. The 49 KB of irep the load replaces is now paid
+back by about 10 KB more text instead of 58 KB.
+
+The whole closed `libmruby.a` (clang 18, `-O0`, the same tree before and after):
+
+| | per-statement C++ (master 40d3bd3) | program |
+| --- | --- | --- |
+| text | 24,682,233 B | 24,594,753 B (-87,480) |
+| data | 1,055,837 B | 1,052,573 B (-3,264) |
+| boot VM starts (`mrb_vm_exec` from C / `OP_EXEC` / `OP_SEND` into bytecode / `OP_CALL`, `OP_BLKCALL`) | 56 / 182 / 23 / 69 = 330 | 56 / 182 / 23 / 69 = 330 |
+| method table | 1,285 entries | 1,285 entries |
+| host sweep (7 scenarios, 543 maps) | passes | passes |
+
+The VM starts do not move: the statements ran as C++ already, the program runs the same calls in the same order. The
+win is code size.
 
 Boot VM starts, counted as `docs/bc2cpp-vm-entries.md` describes (a 1-frame run and a 150-frame run give the same
 numbers: nothing enters the VM after boot on a plain map):
