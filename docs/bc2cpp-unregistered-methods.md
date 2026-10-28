@@ -47,7 +47,10 @@ any of these could look it up:
   - a native file contributes only its string literals, its presym operands
     (`MRB_SYM_Q(name)` and the like), and the arguments of macros that turn
     an argument into a name (`#param`, or passing it on to such a macro).
-    A C local or field spelled like a method name looks nothing up;
+    A C local or field spelled like a method name looks nothing up, and
+    neither does the name argument of a registration call
+    (`mrb_define_method(M, c, "name", ...)` and the other defining calls): it
+    defines the name. An alias's two names still count;
   - the workflows under `.github/` are skipped: their inline Ruby runs in
     the desktop binary, and the closed library is linked only into
     `trace_host.cxx`, which runs no script;
@@ -161,6 +164,22 @@ core methods before its own class bodies run can install it first. The
 optcarrot probe's `install_prelude!` does that, and its `install!` runs the
 program half later. `scripts/bc2cpp/registration_split_check.rb` checks the
 split.
+
+### Native methods
+
+The closed list also covers native methods: a C/C++ registration made with
+`mrb_define_method` and the other defining calls, on an engine owner whose
+class `NativeOwnerMap` resolves (in practice RGSS's C++ classes). The owner's
+compiled gem (the one whose `native_namespaces` holds its top namespace)
+calls `bc2cpp_left_out` for each listed one, so it is removed like a left-out
+compiled entry. It looks the class up first and skips it when the build does
+not define it. A native is no candidate when Ruby defines the same name on
+its owner (the removal would take the Ruby method), when a native alias or
+undef names it there, or when the owner has a registration with a computed
+name.
+
+mruby's own natives mostly sit in ROM method tables (`MRB_MT_ENTRY`), which
+are not candidates: removing one at run time adds a tombstone entry in RAM.
 
 The probe generates its C++ with `BC2CPP_BUILD_NAME=closed`, so the names
 on either list are missing from its registrations. Every run therefore
