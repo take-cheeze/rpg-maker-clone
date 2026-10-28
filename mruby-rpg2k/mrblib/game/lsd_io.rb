@@ -262,8 +262,8 @@ module Game
           idx = v.charset_index || 0
           mv[74] = idx if idx != 0
         elsif db && LCF.field?(db, :system) && db[:system]
-          name_field = :"#{type}_name"
-          index_field = :"#{type}_index"
+          name_field = Vehicle::SYSTEM_NAME_FIELD[type]
+          index_field = Vehicle::SYSTEM_INDEX_FIELD[type]
           name = LCF.field?(db[:system], name_field) ? db[:system][name_field] : nil
           if name && !name.to_s.empty?
             mv[73] = name.to_s
