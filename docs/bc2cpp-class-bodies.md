@@ -80,3 +80,7 @@ stay presyms. A probe built against a fixed presym header does not get it.
 Static irep data of the engine gems (`rite -g`): 3,149 ireps / 439,646 B today, 382 / 89,619 with the compiled load,
 406 / 149,418 with defs only. At `-Os` the load code is about 125 KB (blobs and helpers included) against the data it
 replaces, so statement compilation is roughly size-neutral; the size comes from not installing the defs.
+
+`defs` (the default), built and booted after merging master: `libmruby.a` data 1,071,325 B, `mrb_open` 10 ms, the same
+1,241 probes as `off`. Before `defs` kept every body header there, a build that deleted a whole body booted without its
+classes; `class_body_check.rb` now checks that no body is deleted in `defs`.
