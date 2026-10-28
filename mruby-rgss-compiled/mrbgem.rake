@@ -40,6 +40,8 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   # mruby-rpg2k-compiled/mrbgem.rake's own comment for the real bug this
   # caught.
   compiled_gems_rb = "#{dir}/../tools/bc2cpp/compiled_gems.rb"
+  # The gem table itself (owners source, OUT_SYMBOL) is data in this file; editing it must regenerate too.
+  compiled_gems_yml = "#{dir}/../tools/bc2cpp/compiled_gems.yml"
   # Whole-program closed-world source set -- same reasoning as
   # mruby-lcf-compiled/mrbgem.rake's own comment: bc2cpp's MONO/POLY
   # devirtualization decisions need to see every gem that could define a
@@ -85,7 +87,7 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
 
   # bc2cpp.rb runs MRBC: without this edge `rake -m` can start codegen before
   # the bootstrap mrbc exists.
-  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
+  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, compiled_gems_yml, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
                      BC2CPP_CORE_REFUSED_PATH] do |t|
     # SHARED_GENERATION: with every other compiled gem of this build that is out of date, in one

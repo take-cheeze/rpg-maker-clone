@@ -38,6 +38,8 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   # a sibling edit must invalidate the generated file (see mruby-rgss-compiled).
   bc2cpp_tool_srcs = Dir["#{dir}/../tools/bc2cpp/*.rb"]
   compiled_gems_rb = "#{dir}/../tools/bc2cpp/compiled_gems.rb"
+  # The gem table itself (owners source, OUT_SYMBOL) is data in this file; editing it must regenerate too.
+  compiled_gems_yml = "#{dir}/../tools/bc2cpp/compiled_gems.yml"
   # The same closed world every compiled gem reads: the core files first, then
   # mruby-rpg2k/lcf/rgss (compiled_gems.rb closed_world_mrblib_srcs).
   closed_world_prereqs = bc2cpp_closed_world_prerequisites("#{dir}/..")
@@ -52,7 +54,7 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
 
   # bc2cpp.rb runs MRBC: without this edge `rake -m` can start codegen before
   # the bootstrap mrbc exists.
-  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
+  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, compiled_gems_yml, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
                      BC2CPP_CORE_REFUSED_PATH] do |t|
     # SHARED_GENERATION: with every other compiled gem of this build that is out of date, in one
