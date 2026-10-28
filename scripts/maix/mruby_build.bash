@@ -27,6 +27,15 @@ build_dir="${1:-$root/build-maix-mruby}"
 # Tools, Unicode tables and mruby patches (shared with the `closed` build).
 # shellcheck source=scripts/mruby/standalone_prep.bash
 . "$root/scripts/mruby/standalone_prep.bash"
+# The cross build leaves the core ROM entries the closed-list proof lists out of its method tables
+# (build_config.rb, bc2cpp_core_mt_exclude), so it needs the proof's output. CI's `bc2cpp-lists` job computes it
+# (it needs Ruby with Prism, which this script's toolchain lacks); locally, in the nix `bc2cpp` shell:
+#   export BC2CPP_STATIC_DISPATCH_LISTS="$(scripts/bc2cpp/static_dispatch_lists.bash)"
+if [ -z "${BC2CPP_STATIC_DISPATCH_LISTS:-}" ] || [ ! -f "$BC2CPP_STATIC_DISPATCH_LISTS" ]; then
+  echo "error: BC2CPP_STATIC_DISPATCH_LISTS must name the static dispatch lists file" >&2
+  echo "  (scripts/bc2cpp/static_dispatch_lists.bash; docs/bc2cpp-unregistered-methods.md, \"Device builds\")" >&2
+  exit 1
+fi
 # Keep mruby's own core off the real-C++-exception path (see build_config.rb's
 # maix stanza): the Kendryte link drops every .eh_frame section, so a
 # throw/catch-based MRB_TRY cannot unwind and the first rescued Ruby
