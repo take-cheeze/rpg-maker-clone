@@ -28,7 +28,8 @@ body's starts minus 50 times its boot starts.
 | `Hash#to_proc` (method and its lambda) | not counted | not counted | the fork's native `Hash#to_proc` (`claude/hash-to-proc-native`); no scenario converts a Hash, so no count |
 | `LCF::Schema` `elements:` lambdas | 78 | 78 | not yet |
 | `LCF::Schema` `default:` lambdas | 9 | 0 | Symbol defaults (`LCF.edition_default`) |
-| `Class#new`, `File#initialize` | 14 | 14 | not yet (mruby-io's `File.open`) |
+| `Class#new` (with `File#initialize`) | 14 | not recounted | the fork's native `Class#new` (`claude/class-new-cfunc`) |
+| `File#initialize` | in the 14 | not recounted | the fork's native `File#initialize` (`claude/file-initialize-cfunc`) |
 
 Without the sort alias that is 2104 starts before and 2086 after. The boot set
 is about 305 bodies.
@@ -81,6 +82,29 @@ is about 305 bodies.
   Differences from the Ruby lambda: `arity` is -1 (was -2) and `parameters` is
   empty, because a cfunc proc has no aspec; the argument-count message is
   "expected 1+" (was "expected 1").
+- **`File#initialize`** (mruby-io's `File.open`, through `IO.open`'s `self.new`) was a Ruby
+  method of `mrblib/file.rb` whose explicit-argument `super(fd, mode)` the core compile
+  refused (`unhandled opcode SUPER`, measured with a debug hook on `super_lookup_call`).
+  The by-name `super` lookup needs the class's superclass as a String and either a
+  `&blk` parameter or the whole-program "no caller passes a block" fact. The core job has neither:
+  `build_registry` keeps the *last* `class File` it walks, and mruby-io's
+  `file_constants.rb` reopens it without a superclass (`:none`), over `file.rb`'s
+  `class File < IO`; and the call facts are off in that job. Fixing the first changes
+  every class reopened without a superclass, so the fork defines it natively
+  instead (`mrb_file_init` in `file.c`: the path kept in `@path`, `IO.sysopen`, then
+  `IO#initialize` looked up from `File`'s superclass and called with the block it got).
+- **`Class#new`** was a hand-written static irep in the fork's `src/class.c`
+  (`allocate`, then `initialize(*args, **kw, &blk)` by self-send), so every `new` the
+  compiler did not inline ran in the VM. It is now `class_new_instance`, a cfunc in
+  the Class ROM table that allocates and sends `initialize` with `mrb_funcall_send`
+  (private methods callable, `method_missing` applies, keywords and block forwarded,
+  the callee's argument count checked). `initialize` therefore runs under a C frame,
+  as it already did under `mrb_instance_new`; a `Fiber.yield` inside it now raises
+  `FiberError` instead of suspending, which is the model the yield analysis already had
+  ([yield C boundary](bc2cpp-yield-c-boundary.md)). `EnumeratorModel` reads the two
+  names `Class#new` sends from the function's text instead of the irep's presyms.
+  The table's bytecode entries are then `File#initialize` and `Enumerator::Yielder#<<`
+  (`File#initialize` goes with the next change, `Yielder#<<` with the Enumerator-free list).
 - **`Hash#to_proc`** was mruby-hash-ext's `->x{self[x]}`, a lambda returned to
   its caller, so it stayed bytecode (the last method of the Symbol#to_proc kind).
   `src/hash_ext.c` now makes a strict cfunc proc with the Hash in its env that reads
