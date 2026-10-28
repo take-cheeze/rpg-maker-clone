@@ -205,9 +205,30 @@ The engine proof reads core Ruby only for the sends that may reach an engine
 object. A core method is also reached through core receivers, so this rule is
 receiver-blind and coarser. A name stays when any of these spells it:
 
-- a symbol any irep of the program uses: engine, core, external or foreign
-  mrblib, and a def or a constant as well as a send;
-- an identifier-shaped pool string;
+- a symbol an instruction of the program may look up: a send, a `LOADSYM`,
+  an alias, an undef or a key. The operand of a `DEF`, `TDEF` or `SDEF`
+  defines its name, so a name only a def names does not count. An irep with an
+  `ALIAS` keeps all its symbols, because the disassembly shows the alias's old
+  name, the one it looks up, as the new one;
+- an operator opcode's operator (`ADD` sends `+`) and, under `SUPER`, the name
+  of the method the body belongs to;
+- an identifier-shaped pool string.
+
+Every engine irep counts. A core, external or foreign mrblib method body
+counts only while its own name stays reachable (`LIVE_CORE`), solved as a
+fixpoint. Nothing runs a Ruby-defined core method but a lookup of its name or a
+direct `_impl` call from compiled code. A `<Owner>_<name>_impl` token in the
+generated code counts as that name's lookup. Root and class bodies, and the
+blocks made in them, always count. Pool fragments are read from every body,
+live or not.
+
+The rule stays receiver-blind on purpose. A measured variant attributed each
+owner-call site (`BC2CPP_OWNERS`) and each typed compiled send to its receiver's
+owners only. It freed at most four more entries, because the same names stay
+reachable through core mrblib and native lookups whose receivers are unknown.
+
+Names also count from:
+
 - a lookup in the native sources (string literals, presym macros, naming
   macros). The name operand of a table entry or registration call defines the
   name, so it does not count;
