@@ -59,7 +59,16 @@ any of these could look it up:
     A C local or field spelled like a method name looks nothing up, and
     neither does the name argument of a registration call
     (`mrb_define_method(M, c, "name", ...)` and the other defining calls): it
-    defines the name. An alias's two names still count;
+    defines the name. An alias's two names still count. Comments are left
+    out: `/* "count" is "width" */` names nothing. A file the comment scan
+    can't read (an unterminated quote, a raw string) is scanned whole;
+  - only sources the closed binary contains are read. A core `mruby-*` gem
+    outside the closed build's gem closure (mruby-socket, mruby-enum-lazy,
+    mruby-complex, ...), an external gem it leaves out (mruby-onig-regexp),
+    an engine mrblib file its rake swaps out (`scene/map_tts.rb`) and the
+    device apps under `app/` are skipped. HAL gems stay: a rake adds them in
+    its own Ruby, which the closure doesn't follow. The closed host,
+    `scripts/bc2cpp/trace_host.cxx`, is read instead of `app/`;
   - the workflows under `.github/` are skipped: their inline Ruby runs in
     the desktop binary, and the closed library is linked only into
     `trace_host.cxx`, which runs no script;
@@ -72,7 +81,10 @@ any of these could look it up:
     Kernel, Class or Module method, and any unknown value, still count.
     Symbols, identifier-shaped strings and implicit operators always count.
     A file with a reflective send (`__send__`, `instance_exec`,
-    `define_method`, ...) or a `method_missing` keeps the text rule;
+    `define_method`, ...) or a `method_missing` loses the receiver rule: every
+    symbol of its bytecode counts. Its comments and local variable names
+    don't, since they never become a symbol, and a name it sends that comes
+    from its caller is counted where the caller spells it;
   - a setter, predicate or bang name (`x=`, `x?`, `x!`) stays registered
     because of its base name `x` only when `x` was read as text: a text
     scan reads `obj.x = 1` as `x`, and a naming macro may append the suffix
