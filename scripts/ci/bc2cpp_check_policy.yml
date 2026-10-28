@@ -841,6 +841,10 @@ checks:
     capabilities:
     - mrbc
     fixture_capabilities: []
+  scripts/bc2cpp/compiled_gems_config_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
   scripts/bc2cpp/mrblib_stubs_check.rb:
     tier: fast
     capabilities:

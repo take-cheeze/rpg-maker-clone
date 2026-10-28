@@ -100,7 +100,8 @@ function(rpg2k_add_mruby)
   # any future one) look verified without ever actually being exercised.
   # `tools/bc2cpp/mrb_files.rb` doesn't exist -- there's no third file this tool
   # reads at build time beyond these two.
-  file(GLOB bc2cpp_files CONFIGURE_DEPENDS ${ARG_REPO_ROOT}/tools/bc2cpp/*.rb)
+  # compiled_gems.yml is the compiled gems' table (owners source, OUT_SYMBOL), read by compiled_gems.rb.
+  file(GLOB bc2cpp_files CONFIGURE_DEPENDS ${ARG_REPO_ROOT}/tools/bc2cpp/*.rb ${ARG_REPO_ROOT}/tools/bc2cpp/compiled_gems.yml)
   list(APPEND mrb_files ${bc2cpp_files})
 
   set(mrb_opts
