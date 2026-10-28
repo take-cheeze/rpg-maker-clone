@@ -59,8 +59,18 @@ exceptions; it does not cover the RISC-V cross-compile, which the `maix` job bui
 bc2cpp. It needs no PlatformIO or cross toolchain.
 The desktop `host` build loads Ruby at runtime and never carries the compiled gems.
 
-The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` (skipped on purpose for
-a docs-only change). Require `bc2cpp`.
+`bc2cpp-sweep`, alongside `bc2cpp-build`, builds the same closed world and plays it headlessly through
+`scripts/bc2cpp/host_sweep.bash`: Nepheshel's New Game, a battle, the menu, saving and loading, and
+every map for 150 frames. It then builds the closed world again with `BC2CPP_UNREGISTERED_VERIFY=1`,
+which replaces every registration the closed list leaves out with a stub that fails loudly when
+reached, and plays that build the same way. A run that exits non-zero, or that prints a verify stub,
+a violated proof, a run stubbed mrblib body or a `NoMethodError`, fails the job. The host is built
+once per build and called directly afterwards, and maps run in parallel: one play takes about a
+minute, and the whole job (two closed builds of about three minutes each) stays shorter than
+`bc2cpp-build`.
+
+The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` and `bc2cpp-sweep` (both
+skipped on purpose for a docs-only change). Require `bc2cpp`.
 
 ### bc2cpp job setup and check scheduling
 
