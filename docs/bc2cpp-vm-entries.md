@@ -20,7 +20,7 @@ body's starts minus 50 times its boot starts.
 
 | Entry | Before | After | Removed by |
 |---|---|---|---|
-| `Array#sort` alias (`_rgss_native_sort`) | 8236 | 8236 | the `array_sort.rb` change, separately |
+| `Array#sort` alias (`_rgss_native_sort`) | 8236 | 8236 | #2970 (merged; these counts were taken before it, so the alias no longer enters the VM) |
 | `Symbol#to_proc` (method and its lambda) | 720 | 720 | not yet |
 | `Enumerable#inject` (method and its `each` block) | 720 | 720 | not yet (see below) |
 | `Proc#call` | 563 | 554 | the `default:` lambdas below; the rest call `inject` blocks and the `elements:` lambdas |
