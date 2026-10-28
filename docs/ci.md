@@ -78,7 +78,9 @@ two scans, about 5 minutes on a 4-core host (passes: 159 s and 140 s measured) (
 second job to run on one key finds the file already there. `bc2cpp-lists` (pushes, not pull requests) computes the
 same file in a nix shell and uploads it for `maix` and `psp`. `bc2cpp-sweep` also prints
 `dynamic_names_report.rb`'s summary (why method-table entries stay), and `host_sweep.bash` fails when the
-host's method-table entry count exceeds `scripts/bc2cpp/method_table_threshold.txt`.
+host's method-table entry count exceeds `scripts/bc2cpp/method_table_threshold.txt`. `host_sweep.bash` also lists the method names still registered
+(`BC2CPP_HOST_MT_DUMP=1` on the host, written to `LOG_DIR/method-table.txt`): a per-owner summary in the log and
+the full `Owner#name kind` list in a collapsed group, so the remaining entries can be read off a CI run.
 
 The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` and `bc2cpp-sweep` (both
 skipped on purpose for a docs-only change). Require `bc2cpp`.
