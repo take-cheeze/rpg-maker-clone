@@ -167,23 +167,46 @@ visibility, and the rule refuses `undef`, so "the receiver is a kind of an
 owner of the entry" is the whole answer. Natives look methods up only by
 names they spell, which the outside scan already counts.
 
-## The two lists
+## The lists
 
-- `static_dispatch_unregistered.rb`: names safe in every build.
-- `static_dispatch_unregistered_closed.rb`: further names that are safe once
-  the closed world's direct calls replace by-name sends. Builds with
-  `BC2CPP_BUILD_NAME=closed` (`scripts/bc2cpp/closed_build.bash`) apply
-  both lists.
+The proof's output is four sets, kept in one JSON file the build computes from the sources, not in the repository:
 
-Regenerate them with:
+- `open`: names safe in every build.
+- `closed`: further names that are safe once the closed world's direct calls replace by-name sends. Builds with
+  `BC2CPP_BUILD_NAME=closed` (`scripts/bc2cpp/closed_build.bash`) apply this set, which holds the open one.
+- `core_excluded` and `core_left_out`: the core ROM entries and core run-time registrations the closed build leaves
+  out (below).
+
+Compute them with:
 
 ```sh
-MRBC=<host mrbc> ruby tools/bc2cpp/static_dispatch_registrations.rb --write
-MRBC=<host mrbc> ruby tools/bc2cpp/static_dispatch_registrations.rb --closed-only --write
+export BC2CPP_STATIC_DISPATCH_LISTS="$(scripts/bc2cpp/static_dispatch_lists.bash [BUILD_DIR])"
 ```
 
-Repeat the `--closed-only --write` step until the list stops growing:
-each dropped registration removes generated code that mentioned other names.
+`closed_build.bash` does this itself, after its presym phase and before it compiles any core C or generates a
+registration. The script builds a host mrbc if `MRBC` is not set, then runs
+`tools/bc2cpp/static_dispatch_registrations.rb --emit DIR`.
+
+The probe generates its C++ with the lists it is given, so what one pass proves holds only for that generation. `--emit`
+starts from empty lists and feeds each pass's output into the next until a pass proves exactly what it generated with.
+That fixed point is the only thing written: a proof that has not reached it stops with an error (`no fixed point after
+8 passes`), never with a partial list. Each pass drops registrations, and those mentioned other names in the generated
+code, which is why it repeats.
+
+The file records a digest of every source the proof reads (both scans' Ruby and native files, the closed world's mrblib,
+the gem rakes and `build_config.rb` the closed gem closure comes from, and `tools/bc2cpp`). A file whose digest matches
+the tree is reused, so an unchanged tree costs the digest (about a second) and no host mrbc. `build_config.rb` refuses a
+file computed from other sources (`StaticDispatchLists.verify_current!`), and a real compiled-gem generation without
+`BC2CPP_STATIC_DISPATCH_LISTS` stops in `bc2cpp.rb` with the command above. Fixtures and probes, which are not one of
+the compiled gems' `OUT_SYMBOL`s, use `BC2CPP_STATIC_DISPATCH_LISTS=none`, empty lists, by default.
+
+`ruby tools/bc2cpp/static_dispatch_registrations.rb --check DIR` exits 0 if `DIR` holds the lists for this tree, and
+`--digest` prints the digest (CI's cache key).
+
+The method table can no longer be audited in a diff, so `scripts/bc2cpp/host_sweep.bash` counts the closed host's
+method-table entries (`BC2CPP_HOST_MT_COUNT=1` in `scripts/bc2cpp/trace_host.cxx`) and fails above
+`scripts/bc2cpp/method_table_threshold.txt`. A growth is a deliberate edit of that file; a smaller table asks for it to
+be lowered. CI also prints each list's size and the `dynamic_names_report.rb` summary.
 
 ### Generated registration only
 
@@ -228,9 +251,8 @@ RAM. They are listed separately (below).
 ### Core ROM entries
 
 The closed build leaves core ROM entries out of their tables at compile time.
-The proof's `--closed-only --write` also writes
-`tools/bc2cpp/static_dispatch_core_excluded.rb` (`CoreNativeCandidates`,
-`tools/bc2cpp/core_native_candidates.rb`). `build_config.rb` turns that list
+The proof's `--emit` also computes the `core_excluded` set (`CoreNativeCandidates`,
+`tools/bc2cpp/core_native_candidates.rb`). `build_config.rb` turns that set
 into the header that `MRB_MT_EXCLUDE_HEADER` names
 (`3rd/mruby/include/mruby/class.h`). Each listed entry then has no table slot,
 and its function goes too once nothing else calls it.
@@ -317,6 +339,21 @@ nothing.
 On maix the firmware link's `--gc-sections` then drops each excluded entry's C
 function. `app/psp` links without section GC, so on psp only the table rows go.
 
+**Where the device builds get the file.** psp and maix cannot run the proof
+themselves: it needs Prism (the digest reads the sources through it) and a host
+`mrbc`, and the maix runner's apt Ruby and the psp Alpine image have neither
+guaranteed. CI computes the lists once in the `bc2cpp-lists` job (nix shell, so
+Prism is there) and uploads `static_dispatch_lists.json` as an artifact;
+`maix` and `psp` `need` that job and set `BC2CPP_STATIC_DISPATCH_LISTS` to the
+downloaded file. They load it without recomputing the digest
+(`bc2cpp_core_mt_exclude(conf, verify: false)`), so a device build trusts the
+job that made the file; the closed build, which can verify, always does.
+Locally, `export BC2CPP_STATIC_DISPATCH_LISTS="$(scripts/bc2cpp/static_dispatch_lists.bash)"`
+before a maix or psp build; `scripts/maix/mruby_build.bash` stops with that
+command if the variable is unset. The `UNREGISTERED_VERIFY` build is not run on
+the devices: the sweep proves it on the closed build, which is the build the
+file is computed for.
+
 These builds do not take the list:
 
 - **psp or maix with `RPGMAKER_BC2CPP=1`.** Their generated code is not the
@@ -330,17 +367,17 @@ These builds do not take the list:
 
 The probe generates its C++ with `BC2CPP_BUILD_NAME=closed`, so the names
 on either list are missing from its registrations. Every run therefore
-counts both lists as already unregistered. If it did not, a rerun would drop
-those names from the candidate set and write a shorter list than the one
-checked in.
+counts both lists as already unregistered. If it did not, the next pass would
+drop those names from the candidate set and prove a shorter list than the one
+it generated with.
 
 `BC2CPP_UNREGISTERED_EXTRA="Owner#name,..."` adds more names for a single
-generation. It is meant for check fixtures, which have no place in the
-committed lists.
+generation. It is meant for check fixtures, which have no engine names to
+list.
 
 ## Why an entry stays
 
-`scripts/bc2cpp/dynamic_names_report.rb` runs the closed-only proof and prints,
+`scripts/bc2cpp/dynamic_names_report.rb` runs the closed-only proof against the build's lists and prints,
 for each entry it keeps, the first source that made the name dynamic: a C
 string literal in a gem's generated code, `ALWAYS_DYNAMIC`, a Symbol literal
 (`SYMBOL_USES`), a file whose text names it, a send in code that may run as

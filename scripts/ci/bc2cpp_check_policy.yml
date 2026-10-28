@@ -766,6 +766,11 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/static_dispatch_lists_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
   scripts/bc2cpp/gc_root_check.rb:
     tier: runtime
     capabilities:

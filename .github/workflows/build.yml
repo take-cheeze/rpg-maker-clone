@@ -671,14 +671,31 @@ jobs:
           path: ${{ runner.temp }}/bc2cpp-full
           key: bc2cpp-full-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.*') }}-${{ steps.full-core-key.outputs.mruby }}-${{ steps.full-core-key.outputs.stringio }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'scripts/bc2cpp/*.bash', 'patches/mruby*.patch') }}
 
+      # STATIC_DISPATCH_LISTS: the method-table lists are computed from the sources (closed_build.bash), so a tree
+      # with the same sources reuses the file. The key is the digest of every input the proof reads.
+      - name: Key for the static dispatch lists
+        id: lists-key
+        run: echo "digest=$(ruby tools/bc2cpp/static_dispatch_registrations.rb --digest)" >> "$GITHUB_OUTPUT"
+      - name: Cache the static dispatch lists
+        uses: actions/cache@v6
+        with:
+          path: build/bc2cpp-lists
+          key: bc2cpp-lists-${{ steps.lists-key.outputs.digest }}
+
       - name: Build the closed-world mruby with bc2cpp
         timeout-minutes: 45
         # `-m` lets rake run every prerequisite concurrently.
         env:
           RAKEOPT: -m -j4
+          BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
         # The devshell exports LD=ld, which would link mrbc without libc. quiet_run prints the build's
         # output only when it fails (docs/ci.md, "Quiet output").
         run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
+
+      - name: Print the static dispatch lists
+        run: |
+          ruby -rjson -e 'JSON.parse(File.read(ARGV[0])).each { |key, value| puts "#{key}: #{value.is_a?(Array) ? value.size : value}" }' \
+            build/bc2cpp-lists/static_dispatch_lists.json
 
       - name: Check the compiled gems are in the closed-world build
         run: |
@@ -746,6 +763,7 @@ jobs:
           ruby scripts/bc2cpp/zsuper_optional_check.rb
           ruby scripts/bc2cpp/super_lookup_check.rb
           ruby scripts/bc2cpp/owner_call_direct_check.rb
+          ruby scripts/bc2cpp/static_dispatch_lists_check.rb
           ruby scripts/bc2cpp/gc_root_check.rb
           ruby scripts/bc2cpp/zsuper_lookup_check.rb
           ruby scripts/bc2cpp/const_bindings_check.rb
@@ -945,10 +963,23 @@ jobs:
       - name: Download Nepheshel
         run: ./scripts/download/nepheshel.bash
 
+      # STATIC_DISPATCH_LISTS: the method-table lists are computed from the sources (closed_build.bash), so a tree
+      # with the same sources reuses the file. The key is the digest of every input the proof reads.
+      - name: Key for the static dispatch lists
+        id: lists-key
+        run: echo "digest=$(ruby tools/bc2cpp/static_dispatch_registrations.rb --digest)" >> "$GITHUB_OUTPUT"
+      - name: Cache the static dispatch lists
+        uses: actions/cache@v6
+        with:
+          path: build/bc2cpp-lists
+          key: bc2cpp-lists-${{ steps.lists-key.outputs.digest }}
+
+      # Both builds below share one lists directory, so the verify build finds the plain build's lists current.
       - name: Build the closed-world mruby
         timeout-minutes: 45
         env:
           RAKEOPT: -m -j4
+          BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
         run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-sweep"
 
       - name: Play the closed build's scenarios and every map
@@ -960,11 +991,92 @@ jobs:
         env:
           RAKEOPT: -m -j4
           BC2CPP_UNREGISTERED_VERIFY: '1'
+          BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
         run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-verify"
 
       - name: Play the verify build's scenarios and every map
         timeout-minutes: 15
+        # The verify build registers a stub under every name the lists drop, so its method table is not the plain
+        # build's: only the plain build is held to scripts/bc2cpp/method_table_threshold.txt.
+        env:
+          METHOD_TABLE: skip
         run: env -u LD scripts/bc2cpp/host_sweep.bash "$GITHUB_WORKSPACE/build-closed-verify"
+
+      # Informational: why the entries the lists keep stay in the table (the lists are no longer in a diff).
+      - name: Report why method-table entries stay
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          MRBC: ${{ github.workspace }}/build-closed-sweep/host/mrbc/bin/mrbc
+          BC2CPP_STATIC_DISPATCH_LISTS: ${{ github.workspace }}/build/bc2cpp-lists/static_dispatch_lists.json
+        run: |
+          ruby -rjson -e 'JSON.parse(File.read(ENV.fetch("BC2CPP_STATIC_DISPATCH_LISTS"))).each { |key, value| puts "#{key}: #{value.is_a?(Array) ? value.size : value}" }'
+          ruby scripts/bc2cpp/dynamic_names_report.rb
+
+  # STATIC_DISPATCH_LISTS for the device builds. The interpreted maix and psp builds leave the core ROM entries the
+  # closed-list proof lists out of their method tables (build_config.rb, bc2cpp_core_mt_exclude), so they need the
+  # proof's output. It needs the nix `bc2cpp` shell (Ruby with Prism, a host mrbc), which neither device job has, so
+  # this job computes the lists and the device jobs download them. Not on a pull request, like the device jobs.
+  bc2cpp-lists:
+    if: ${{ github.event_name != 'issue_comment' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: >-
+            3rd/effekseer 3rd/gflags 3rd/ng-log
+            3rd/inicpp 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
+
+      - uses: nixbuild/nix-quick-install-action@v35
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-bc2cpp-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-bc2cpp-${{ runner.os }}-
+
+      - name: Set up development environment
+        run: ./scripts/nix/develop-export-env.bash .#bc2cpp
+
+      - name: Cache bc2cpp scan cache
+        uses: actions/cache@v6
+        with:
+          path: build/bc2cpp-cache
+          key: bc2cpp-scan-cache-${{ hashFiles('tools/bc2cpp/*.rb') }}
+          restore-keys: bc2cpp-scan-cache-
+
+      # STATIC_DISPATCH_LISTS: the method-table lists are computed from the sources (closed_build.bash), so a tree
+      # with the same sources reuses the file. The key is the digest of every input the proof reads.
+      - name: Key for the static dispatch lists
+        id: lists-key
+        run: echo "digest=$(ruby tools/bc2cpp/static_dispatch_registrations.rb --digest)" >> "$GITHUB_OUTPUT"
+      - name: Cache the static dispatch lists
+        uses: actions/cache@v6
+        with:
+          path: build/bc2cpp-lists
+          key: bc2cpp-lists-${{ steps.lists-key.outputs.digest }}
+
+      - name: Compute the static dispatch lists
+        timeout-minutes: 30
+        env:
+          BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
+        run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/static_dispatch_lists.bash "$GITHUB_WORKSPACE/build-lists-mrbc"
+
+      - name: Upload the static dispatch lists
+        uses: actions/upload-artifact@v7
+        with:
+          name: bc2cpp-lists
+          path: build/bc2cpp-lists/static_dispatch_lists.json
+          if-no-files-found: error
 
   # Aggregate `bc2cpp` status check. Keeps the name of the old one-job `bc2cpp`,
   # so a required check on it needs no settings change.
@@ -1461,7 +1573,7 @@ jobs:
   maix:
     # Not on a pull request (docs/ci.md, "Device jobs"): the merge queue and the push to master build it.
     if: ${{ github.event_name != 'issue_comment' && github.event_name != 'pull_request' }}
-    needs: changes
+    needs: [changes, bc2cpp-lists]
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
@@ -1480,6 +1592,15 @@ jobs:
             3rd/effekseer 3rd/gflags 3rd/ng-log
             3rd/inicpp 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
+
+      - name: Download the static dispatch lists
+        # The cross build leaves the core ROM entries the lists name out of its method tables (build_config.rb).
+        uses: actions/download-artifact@v8
+        with:
+          name: bc2cpp-lists
+          path: build-lists
+      - name: Use the static dispatch lists
+        run: echo "BC2CPP_STATIC_DISPATCH_LISTS=$GITHUB_WORKSPACE/build-lists/static_dispatch_lists.json" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v7
         with:
@@ -2041,7 +2162,7 @@ jobs:
   # compiles: no emulator runs here, so `psp-smoke` boots the EBOOT under PPSSPP.
   # Gated on `changes`, so it runs only when app/psp changed or on a manual run.
   psp:
-    needs: changes
+    needs: [changes, bc2cpp-lists]
     if: >-
       ${{ github.event_name != 'issue_comment' && github.event_name != 'pull_request' &&
           (github.event_name == 'workflow_dispatch' || needs.changes.outputs.psp == 'true') }}
@@ -2064,6 +2185,13 @@ jobs:
             3rd/gflags 3rd/ng-log
             3rd/effekseer 3rd/inicpp 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
+
+      - name: Download the static dispatch lists
+        # The cross build leaves the core ROM entries the lists name out of its method tables (build_config.rb).
+        uses: actions/download-artifact@v8
+        with:
+          name: bc2cpp-lists
+          path: build-lists
 
       - name: Copy vendored Unicode mapping tables
         # mruby-lcf and mruby-rgss rake-time generators read $cp932_table and
@@ -2108,6 +2236,7 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src \
             -e cp932_table=/src/.native-build-tables/bestfit932.txt \
             -e jis0208_table=/src/.native-build-tables/JIS0208.TXT \
+            -e BC2CPP_STATIC_DISPATCH_LISTS=/src/build-lists/static_dispatch_lists.json \
             pspdev/pspdev:latest sh -euc '
             apk add --no-cache ruby ruby-rake build-base git gperf bison
             bash scripts/build/psp_fixup_imports.bash

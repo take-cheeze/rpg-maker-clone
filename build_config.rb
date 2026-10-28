@@ -1001,11 +1001,13 @@ end
 #   - not wio (nor m5stack, which links the wio libmruby): its mrblib is rewritten (wio_strip_*) and swaps in a
 #     generated schema_blob.rb, neither of which the proof reads;
 #   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
-def bc2cpp_core_mt_exclude(conf)
+def bc2cpp_core_mt_exclude(conf, verify: true)
   require_relative 'tools/bc2cpp/core_native_candidates'
   require_relative 'tools/bc2cpp/static_dispatch_lists'
   lists = StaticDispatchLists.current(required: true)
-  StaticDispatchLists.verify_current!(lists, __dir__)
+  # verify: false for the device builds, whose Ruby (the apt or Alpine one) may lack the Prism the digest needs. They
+  # take the file CI's `bc2cpp-lists` job computed from the same commit (docs/bc2cpp-unregistered-methods.md).
+  StaticDispatchLists.verify_current!(lists, __dir__) if verify
   mruby = File.expand_path('3rd/mruby', __dir__)
   sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
   text = CoreNativeCandidates.header(lists.core_excluded.to_a, CoreNativeCandidates.entries(sources.sort))
@@ -1156,7 +1158,7 @@ if maix
     conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
     # The firmware link's --gc-sections (above) then drops a left-out entry's C function too.
-    bc2cpp_core_mt_exclude(conf) unless ENV['RPGMAKER_BC2CPP']
+    bc2cpp_core_mt_exclude(conf, verify: false) unless ENV['RPGMAKER_BC2CPP']
     rpg_maker_gems(conf)
   end
 end
@@ -1285,7 +1287,7 @@ if psp
     conf.linker.flags += cpu_flags
 
     # Only the table rows go: app/psp links without --gc-sections, so a left-out entry's C function stays.
-    bc2cpp_core_mt_exclude(conf) unless ENV['RPGMAKER_BC2CPP']
+    bc2cpp_core_mt_exclude(conf, verify: false) unless ENV['RPGMAKER_BC2CPP']
     rpg_maker_gems(conf, include_mvjs: false)
   end
 end
