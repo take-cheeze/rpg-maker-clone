@@ -2490,24 +2490,6 @@ module Game::CommonEvent
   def self.load: (untyped) -> untyped
 end
 
-# bc2cpp-native: base_rpg2k
-class Game::CommonEvent::CommonEventRecord
-  def id: () -> untyped
-  def id=: (untyped) -> untyped
-  def trigger: () -> untyped
-  def trigger=: (untyped) -> untyped
-  def need_flag: () -> untyped
-  def need_flag=: (untyped) -> untyped
-  def switch_id: () -> untyped
-  def switch_id=: (untyped) -> untyped
-  def chunk: () -> untyped
-  def chunk=: (untyped) -> untyped
-  def commands: () -> untyped
-  def commands=: (untyped) -> untyped
-  def guarded: () -> untyped
-  def guarded=: (untyped) -> untyped
-  def initialize: () -> untyped
-end
 
 # bc2cpp-native: base_rpg2k
 class Game::Enemy
@@ -3100,32 +3082,6 @@ class Game::MoveCommand
   def initialize: (untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> untyped
 end
 
-# bc2cpp-native: base_rpg2k
-class Game::MoveRoute
-  def index: () -> untyped
-  def commands: () -> untyped
-  def advance_cursor: () -> untyped
-  def away_hero: (untyped, untyped) -> untyped
-  def do_diagonal: (untyped, untyped, untyped) -> untyped
-  def do_diagonal_dir: (untyped, untyped, untyped, untyped) -> untyped
-  def do_jump: (untyped, untyped) -> untyped
-  def do_move: (untyped, untyped, untyped) -> untyped
-  def done?: () -> untyped
-  def empty?: () -> untyped
-  def execute: (untyped, untyped, untyped) -> untyped
-  def initialize: (untyped, ?repeat: untyped, ?skippable: untyped) -> untyped
-  def jump_delta: (untyped, untyped) -> untyped
-  def jump_face_direction: (untyped, untyped, untyped, untyped) -> untyped
-  def jump_move_direction: (untyped, untyped, untyped, untyped) -> untyped
-  def land_jump: (untyped, untyped, untyped, untyped, untyped) -> untyped
-  def repeat?: () -> untyped
-  def resume_at: (untyped) -> untyped
-  def skippable?: () -> untyped
-  def step: (untyped, untyped) -> untyped
-  def toward_hero: (untyped, untyped) -> untyped
-  def self.from_page: (untyped) -> untyped
-  def self.same_route?: (untyped, untyped) -> untyped
-end
 
 # bc2cpp-native: base_rpg2k
 module Game::MoveType
@@ -8336,6 +8292,54 @@ end
 # bc2cpp-native: base_rgss
 class NoMethodError < NameError
   def initialize: (?untyped, ?untyped, ?untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_rpg
+class Game::CommonEvent::CommonEventRecord
+  def id: () -> untyped
+  def id=: (untyped) -> untyped
+  def trigger: () -> untyped
+  def trigger=: (untyped) -> untyped
+  def need_flag: () -> untyped
+  def need_flag=: (untyped) -> untyped
+  def switch_id: () -> untyped
+  def switch_id=: (untyped) -> untyped
+  def lcf_chunk: () -> untyped
+  def lcf_chunk=: (untyped) -> untyped
+  def commands: () -> untyped
+  def commands=: (untyped) -> untyped
+  def guarded: () -> untyped
+  def guarded=: (untyped) -> untyped
+  def initialize: () -> untyped
+end
+# bc2cpp-native: base_rpg
+class Game::MoveRoute
+  def index: () -> untyped
+  def commands: () -> untyped
+  def advance: (untyped, untyped) -> untyped
+  def advance_cursor: () -> untyped
+  def away_hero: (untyped, untyped) -> untyped
+  def cursor: () -> untyped
+  def do_diagonal: (untyped, untyped, untyped) -> untyped
+  def do_diagonal_dir: (untyped, untyped, untyped, untyped) -> untyped
+  def do_jump: (untyped, untyped) -> untyped
+  def do_move: (untyped, untyped, untyped) -> untyped
+  def done?: () -> untyped
+  def empty?: () -> untyped
+  def execute: (untyped, untyped, untyped) -> untyped
+  def initialize: (untyped, ?repeat: untyped, ?skippable: untyped) -> untyped
+  def jump_delta: (untyped, untyped) -> untyped
+  def jump_face_direction: (untyped, untyped, untyped, untyped) -> untyped
+  def jump_move_direction: (untyped, untyped, untyped, untyped) -> untyped
+  def land_jump: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def repeat?: () -> untyped
+  def resume_at: (untyped) -> untyped
+  def skippable?: () -> untyped
+  def step: (untyped, untyped) -> untyped
+  def toward_hero: (untyped, untyped) -> untyped
+  def self.from_page: (untyped) -> untyped
+  def self.same_route?: (untyped, untyped) -> untyped
 end
 
 # ---- block_types.rbs
