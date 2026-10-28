@@ -65,6 +65,6 @@ rewrite.
 
 ## Class bodies
 
-With `BC2CPP_LOAD_COMPILE` (default `defs`) the keys of the manifest are removed from the residual mrblib altogether
-instead of being emptied, and `all` also compiles the class bodies around them:
+With `BC2CPP_LOAD_COMPILE` (default `all`) the keys of the manifest are removed from the residual mrblib altogether
+instead of being emptied, and the class bodies around them are compiled too:
 [Class bodies as generated C++](bc2cpp-class-bodies.md).

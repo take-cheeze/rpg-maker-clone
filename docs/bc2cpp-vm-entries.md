@@ -21,9 +21,10 @@ body's starts minus 50 times its boot starts.
 | Entry | Before | After | Removed by |
 |---|---|---|---|
 | `Array#sort` alias (`_rgss_native_sort`) | 8236 | 8236 | #2970 (merged; these counts were taken before it, so the alias no longer enters the VM) |
-| `Symbol#to_proc` (method and its lambda) | 720 | 720 | not yet |
+| `Symbol#to_proc` (method and its lambda) | 720 | 0 | the fork's native `Symbol#to_proc` (`claude/symbol-to-proc-native`; expected, see below) |
 | `Enumerable#inject` (method and its `each` block) | 720 | 720 | the fork's `inject` without the lambda (see below) |
-| `Proc#call` | 563 | 554 | the `default:` lambdas below; the rest call `inject` blocks and the `elements:` lambdas |
+| `Proc#call` (and `Proc#[]`) | 563 | 554 | the `default:` lambdas below took 9; the fork's `proc_call` cfunc takes the rest (the method was an `OP_CALL` bytecode body; the procs it calls are counted on their own rows) |
+| `BasicObject#!=` | not counted | not counted | the fork's `bob_neq` cfunc (it was an `OP_EQ` bytecode body); not run by the sweep, so no count |
 | `LCF::Schema` `elements:` lambdas | 78 | 78 | not yet |
 | `LCF::Schema` `default:` lambdas | 9 | 0 | Symbol defaults (`LCF.edition_default`) |
 | `Class#new`, `File#initialize` | 14 | 14 | not yet (mruby-io's `File.open`) |
@@ -60,15 +61,25 @@ is about 305 bodies.
   against about 50 KB of bytecode. The way out is to fold them to data at build
   time and decode them with one compiled routine, which is what
   `mruby-lcf/gen_schema_blob.rb` already does for wio.
-- **`Symbol#to_proc` (240 conversions, 480 element calls).** All of it is in the
-  battle scenario: a Symbol passed as a block to a method the compiler did not
-  inline. The sites are `reject(&:dead?)`, `select(&:defending)` and the like on
-  `@ui[:allies]` and `@ui[:foes]`, Hash values the compiler cannot prove are
-  Arrays (`scene/battle.rb`, `battle_rpg2k3.rb`). `Symbol#to_proc` returns a
-  lambda to its caller, the case the Fiber rule exists for, so it stays
-  bytecode. Writing those blocks out would remove it, or a native
-  `Symbol#to_proc`; `&:sym` sends through `__send__`, which ignores visibility,
-  so each method's visibility has to be checked first.
+- **`Symbol#to_proc` (240 conversions, 480 element calls)** was removed by a
+  native implementation in the fork (take-cheeze/mruby
+  `claude/symbol-to-proc-native`). All of it was in the battle scenario: a
+  Symbol passed as a block to a method the compiler did not inline
+  (`reject(&:dead?)`, `select(&:defending)` and the like on `@ui[:allies]` and
+  `@ui[:foes]`, Hash values the compiler cannot prove are Arrays:
+  `scene/battle.rb`, `battle_rpg2k3.rb`). The Ruby method returned a lambda to
+  its caller, the case the Fiber rule exists for, so it stayed bytecode. Now
+  `src/symbol.c` makes a cfunc proc (`mrb_proc_new_cfunc_with_env`, the Symbol
+  in its env, flagged strict so `lambda?` holds) that sends the Symbol to its
+  first argument through `mrb_funcall_send`, a `__send__`-equivalent funcall
+  (visibility is ignored, `method_missing` applies, keywords and the block are
+  forwarded, the callee's argument count is checked), so neither the conversion
+  nor a call enters the VM. `block_self_world.rb` holds `symbol.c` to the proof
+  `symbol.rb`'s send had (no Symbol passed as a block is a rebinder). The Symbol is still a literal at every call site
+  (`static_dispatch_symbol_uses.rb`), so the closed name proof is unchanged.
+  Differences from the Ruby lambda: `arity` is -1 (was -2) and `parameters` is
+  empty, because a cfunc proc has no aspec; the argument-count message is
+  "expected 1+" (was "expected 1").
 - **`Enumerable#inject` / `reduce` (720 starts).** mruby's method builds a lambda
   for a Symbol argument, and a core method that builds a lambda stays bytecode
   (`CoreDefs.builds_lambda?`), so every engine `reduce(0) { ... }` runs the method,
@@ -85,4 +96,9 @@ is about 305 bodies.
 - **Class bodies and gem roots at boot.** The boot set is about 305 bodies,
   mostly the 264 class and module bodies and 14 gem roots that run once per
   process. Compiling the load phase is what removes them, and the static irep
-  data with them.
+  data with them. `BC2CPP_LOAD_COMPILE=all` (the default) does that for the
+  engine gems: 420 starts to 385
+  ([measured](bc2cpp-class-bodies.md)). The rest of the engine's bodies keep a
+  def that a visibility or alias statement names, which needs a second compiled
+  phase after the registration; mruby's own mrblib (about 40 bodies) is not
+  part of the load world.
