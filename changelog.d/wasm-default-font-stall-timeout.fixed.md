@@ -1,0 +1,1 @@
+- The default UI font download in the WebAssembly CI job is now bounded by a transfer-speed limit, so a stalled connection fails and retries instead of hanging the job until its step timeout.
