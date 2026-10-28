@@ -255,6 +255,12 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/native_args_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
   scripts/bc2cpp/operator_sends_check.rb:
     tier: fast
     capabilities: []
@@ -737,6 +743,14 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/zsuper_optional_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/super_lookup_check.rb:
     tier: runtime
     capabilities:
     - mrbc
