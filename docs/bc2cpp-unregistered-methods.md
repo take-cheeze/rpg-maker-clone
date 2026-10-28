@@ -71,6 +71,13 @@ any of these could look it up:
     any base, and the old rule (every dynamic base) comes back. The full
     list keeps the old rule;
 
+The proof also takes the `attr_*` accessors of every owner a compiled gem
+lists, when no compiled entry has the same key. An accessor is a native
+`mrb_iv_get`/`mrb_iv_set` on its ivar. Compiled callers read the ivar
+directly, so a name nothing looks up needs no table entry either. The gem
+that lists the owner removes a listed accessor the same way as a compiled
+entry (`left_out_accessors`).
+
 Only RPG2000/2003 internal owners qualify (`Game`, `RPG2k`, `RPG2k3`,
 `LCF`). RGSS classes are the scripting API an RPGXP/VX game's own scripts
 call, so the open list leaves them registered. The closed list also takes

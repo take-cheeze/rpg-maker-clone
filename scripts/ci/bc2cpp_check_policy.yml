@@ -757,6 +757,11 @@ checks:
     capabilities:
     - mrbc
     fixture_capabilities: []
+  scripts/bc2cpp/left_out_accessors_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    fixture_capabilities: []
   scripts/bc2cpp/module_function_scope_check.rb:
     tier: fast
     capabilities:
