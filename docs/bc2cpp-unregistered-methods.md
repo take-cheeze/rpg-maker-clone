@@ -334,7 +334,7 @@ times, none of them `Kernel#puts`. A private method is reached only by
 - a lookup by name that skips the check: a Symbol (`send(:puts)`, `method`,
   `&:puts`), an alias or undef, `super`, a name a native spells or a generated
   literal holds, or one built at run time. The scan counts these like the
-  receiver-blind one does.
+  receiver-blind one does, except for the generated spellings below.
 
 A name that another definition of the owner shares (core `kernel.rb`'s public
 backtick stub that mruby-io's replaces) is listed only when the receiver-blind
@@ -343,9 +343,124 @@ scan finds it unused as well. A few native spellings are no lookup
 for `puts` and acts only when it finds `io_puts_method` itself; a presym
 scanning tag; cdump's operator table; the `"p"` of `MRUBY_PATCHLEVEL_STR`).
 
+The generated C++ spells `puts`, `print` and `open` as the name of the sends it
+makes from the engine's own `x.puts(...)`, which the engine's bytecode already
+shows as explicit-receiver sends. `CorePrivateRuby.strip_generated` reads the
+generated source for this scan as follows:
+
+- the code generator writes the receiver of a self send as `self` and any other
+  as a register (`r3`), so a call of `bc2cpp_io_puts`, `bc2cpp_funcall_argv`,
+  `bc2cpp_send` or `bc2cpp_owner_call` on a register is the C++ of an `OP_SEND`.
+  A symbol-table name whose every use is one is blanked (by index: the table
+  has a row per kind of use). A `self` receiver, a symbol value, a computed
+  `mrb_funcall` or any other call keeps the name;
+- a comment (a `POLY_DIAG` line quotes the name it decided on), the name a
+  registration defines (`mrb_define_method(M, Tee, "print", ...)`) and the
+  `$stderr.puts` of the failure reports (a `respond_to?` and a call on `$stderr`,
+  which is an `IO` or the `RGSS::ErrorReport::Tee`, both defining `puts`) look
+  nothing up.
+
+The generated call does not check visibility where the VM would (an unchecked
+`mrb_funcall`), so a receiver without a public `puts` reached the private one.
+With the method gone it raises `NoMethodError` as `OP_SEND` does, which is the
+interpreter's behaviour and the premise of the explicit-receiver rule above.
+
+A compiled core body is called directly through `<Owner>_<name>_impl`
+(`Kernel_print_impl`). The ROM scan reads that as a use of the name, so
+`RGSS__ErrorReport__Tee_print_impl` kept `Kernel#print`, `IO_singleton_open_impl`
+kept `Kernel#open` and `Enumerable_each_with_object_impl` kept
+`Enumerator#with_object` (the suffix `_with_object_impl`). The private-name scan
+(`exact_impls`) matches the owner: a direct call makes the body of the owner it
+names live, and is no lookup of the name. The ROM scan is unchanged.
+
+With both, `Kernel#print`, `puts` and `open`, `IO.popen` (reached only from
+`Kernel#open`'s and the backtick's bodies) and `Enumerator#with_object` leave the
+closed build's list (86 to 91 run-time removals; the ROM list stays 152).
+`scripts/bc2cpp/explicit_receiver_literals_check.rb` checks the rules in both
+directions.
+
 The sealed host refuses `--script` (`scripts/bc2cpp/sealed_host_check.rb`), so
 no Ruby outside the world the proof read runs in the closed binary.
 `scripts/bc2cpp/core_private_ruby_check.rb` checks the rule.
+
+#### The Enumerator machinery (mruby-enumerator)
+
+mruby-enumerator's methods stay bytecode because they build Fibers or Enumerators
+(`CoreMethods`: "mruby-enumerator (Fiber machinery)"): `Enumerator#each`,
+`#each_with_index`, `#with_index`, `#initialize`, `#initialize_copy`,
+`#next_values`, `#__enumerator_block_call`, the Generator and Yielder methods
+(`#each`, `#initialize`, `#yield`), `Kernel#to_enum` and `#enum_for`, and
+`Enumerable#zip` and `#chunk`. Their names are everywhere (`each`, `zip`,
+`initialize`), so the name scan never drops them. They can only run once an
+Enumerator exists, and `tools/bc2cpp/core_enumerator_free.rb` proves, from the
+bytecode, that none is ever made. `StaticDispatchRegistrations#enumerator_free_keys`
+lists the group in `STATIC_DISPATCH_CORE_LEFT_OUT` only when the proof holds
+(`Yielder#<<` too: the proof is no name scan, so an operator is released as an identifier is). The proof reads:
+
+- **Creators.** A Ruby body that sends `to_enum`/`enum_for` or names an Enumerator
+  constant, an alias of one, and a native that calls `to_enum` (array.c's
+  `Array#index` and `#rindex`, read from the C text, and only without argument
+  and block). Most guard it (`return to_enum(:each) unless block_given?`, `unless
+  blk`, `args.size == 1 && !blk`); a path-sensitive walk over the block state and
+  the register truths (`BlockRegions`) finds the creating instruction reachable
+  only without a block. Those are `:blockless` creators. `Enumerable#chunk`,
+  `#zip`, `#chunk_while`, `Enumerator.produce` and `to_enum` make one whatever
+  the call passes (`:always`). A method that hands its own block to a creator name
+  where none may be given is a `:blockless` creator itself, to a fixpoint
+  (`Array#reverse_each(&block)`, an engine `def each(&block)`). The methods of
+  Enumerator, Generator and Yielder are no creators: they run on an instance.
+- **Sites.** Every send of a creator name in the Ruby the binary loads (engine and
+  core) is settled by its block (a literal, `&:sym`, or the caller's own block
+  where one is given), by an argument to a no-argument native, or by its
+  receiver: `tools/bc2cpp/core_enumerator_types.rb` computes the classes the
+  receiver may have and the lookup of the name on each must find another
+  definition first (`route.index` on an engine class with an `index` accessor), or
+  none. The analysis is a class-set flow over literals, `new` of an engine
+  class, instance variables (by class family), parameters (union of the callers'
+  arguments, by name and argument count), results (by name, and TOP when a core
+  or native method has the name), self, captured variables and rescued
+  exceptions. A call with a literal block to a method whose every definition is
+  a checked `{ ... } -> T` declaration of `sig/bc2cpp` (BlockReturns:
+  `RGSS::Profiler.section`, `then`) has the class of the block's value. Anything
+  else (an element, a block parameter, a native result, any other call that
+  yields, a refused reaching-definitions query) is TOP and is never proven.
+- **Other ways in.** An engine `to_enum` or Enumerator constant; a Symbol that
+  names a creator and reaches a lookup (`map(&:each)`, `send(:select)`); any
+  lookup that takes a computed name; a native that spells a creator name
+  (`CoreEnumeratorFree::NOT_CALLS` lists the two spellings that are no call); a
+  native `include`/`prepend` the owner map cannot resolve; a `method_missing`; an
+  engine class that inherits Enumerator.
+
+`scripts/bc2cpp/core_enumerator_free_report.rb` prints the result for the closed
+world, `--sites` every checked site. `scripts/bc2cpp/core_enumerator_free_check.rb`
+holds the rule to fixtures in both directions.
+
+On the engine the proof holds, so the group is in `STATIC_DISPATCH_CORE_LEFT_OUT`:
+`Enumerable#chunk` and `#zip`, `Kernel#to_enum` and `#enum_for`, `Enumerator#each`,
+`#each_with_index`, `#with_index`, `#initialize`, `#initialize_copy`, `#next_values`,
+`#__enumerator_block_call`, `Enumerator::Generator#each` and `#initialize`, and
+`Enumerator::Yielder#initialize`, `#yield` and `#<<`. It checks 630 engine and 110 core
+sites: 682 are settled by a block or an argument and 58 by the receiver's class
+(the `step`, `index`, `select` and `map` sites of engine classes that define the
+name themselves: `Picture#step`, `@shop.index`, `Game::EventPage.select`,
+`@state.map`, ...). Two places had a receiver the model cannot type and were
+written so it can:
+
+- `Scene::Map#run_route_step` received `@vehicle_routes[type]`, an element of a Hash,
+  so `route.index` and `route.step` could not be told from `Array#index` and
+  `Numeric#step`. The engine reads the cursor and steps through `MoveRoute#cursor`
+  and `#advance`, names no core class shares.
+- `Scene::EventResolver#common_event_commands` read `entry.chunk` of `@common[id]`;
+  `Enumerable#chunk` makes an Enumerator even with a block, so every `chunk` site
+  needs its receiver. The accessor is `lcf_chunk` now.
+
+`STATIC_DISPATCH_CORE_LEFT_OUT` grows by those 15 and `Enumerator#with_object`, which the name
+scan kept; the closed host's method table (`BC2CPP_HOST_MT_COUNT`, `host_sweep.bash`) goes from
+1290 to 1272 entries.
+
+A blockless `index`, `step`, `map`, `chunk` or any other iterator name on a receiver
+the model cannot type fails the proof from here on and puts the whole group back in
+the tables; `scripts/bc2cpp/core_enumerator_free_report.rb` names the site.
 
 #### Device builds
 

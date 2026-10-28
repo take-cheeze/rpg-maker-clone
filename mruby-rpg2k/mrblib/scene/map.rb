@@ -1766,7 +1766,7 @@ class RPG2k
             pos = [ch.x, ch.y, ch.direction]
             @state.map_event_positions[id] = pos
           end
-          @state.map_event_route_index[id] = e.route.index if e.route
+          @state.map_event_route_index[id] = e.route.cursor if e.route
           # Also keeps @event_last_position current for #event_id_at's hidden-
           # event fallback -- see #build_events' seeding comment.
           @event_last_position[id] = pos
@@ -3714,10 +3714,10 @@ class RPG2k
       # #EVENT_MOVE_DELAY's pace through commands RPG_RT spends no time on
       # at all.
       def run_route_step(route, character, world)
-        start = route.index
-        status = route.step(character, world)
-        while status == :effect && !route.done? && route.index != start
-          status = route.step(character, world)
+        start = route.cursor
+        status = route.advance(character, world)
+        while status == :effect && !route.done? && route.cursor != start
+          status = route.advance(character, world)
         end
         status
       end
@@ -5133,7 +5133,7 @@ class RPG2k
       def sync_player_route_to_state
         @state.player_route = if @player_route
                                 { commands: @player_route.commands, repeat: @player_route.repeat?,
-                                  skippable: @player_route.skippable?, index: @player_route.index,
+                                  skippable: @player_route.skippable?, index: @player_route.cursor,
                                   frequency: @player_char && @player_char.move_frequency }
                               end
       end

@@ -21,12 +21,15 @@ body's starts minus 50 times its boot starts.
 | Entry | Before | After | Removed by |
 |---|---|---|---|
 | `Array#sort` alias (`_rgss_native_sort`) | 8236 | 8236 | #2970 (merged; these counts were taken before it, so the alias no longer enters the VM) |
-| `Symbol#to_proc` (method and its lambda) | 720 | 720 | not yet |
+| `Symbol#to_proc` (method and its lambda) | 720 | 0 | the fork's native `Symbol#to_proc` (`claude/symbol-to-proc-native`; expected, see below) |
 | `Enumerable#inject` (method and its `each` block) | 720 | 720 | the fork's `inject` without the lambda (see below) |
-| `Proc#call` | 563 | 554 | the `default:` lambdas and the `elements:` lambdas below; the rest call `inject` blocks |
+| `Proc#call` (and `Proc#[]`) | 563 | 554 | the `default:` lambdas below took 9; the fork's `proc_call` cfunc takes the rest (the method was an `OP_CALL` bytecode body; the procs it calls are counted on their own rows) |
+| `BasicObject#!=` | not counted | not counted | the fork's `bob_neq` cfunc (it was an `OP_EQ` bytecode body); not run by the sweep, so no count |
+| `Hash#to_proc` (method and its lambda) | not counted | not counted | the fork's native `Hash#to_proc` (`claude/hash-to-proc-native`); no scenario converts a Hash, so no count |
 | `LCF::Schema` `elements:` lambdas | 78 | 0 | folded to byte tables (below) |
 | `LCF::Schema` `default:` lambdas | 9 | 0 | Symbol defaults (`LCF.edition_default`) |
-| `Class#new`, `File#initialize` | 14 | 14 | not yet (mruby-io's `File.open`) |
+| `Class#new` (with `File#initialize`) | 14 | not recounted | the fork's native `Class#new` (`claude/class-new-cfunc`) |
+| `File#initialize` | in the 14 | not recounted | the fork's native `File#initialize` (`claude/file-initialize-cfunc`) |
 
 Without the sort alias that is 2104 starts before and 2086 after. The boot set
 is about 305 bodies.
@@ -80,15 +83,60 @@ is about 305 bodies.
 
 ## What stays, and why
 
-- **`Symbol#to_proc` (240 conversions, 480 element calls).** All of it is in the
-  battle scenario: a Symbol passed as a block to a method the compiler did not
-  inline. The sites are `reject(&:dead?)`, `select(&:defending)` and the like on
-  `@ui[:allies]` and `@ui[:foes]`, Hash values the compiler cannot prove are
-  Arrays (`scene/battle.rb`, `battle_rpg2k3.rb`). `Symbol#to_proc` returns a
-  lambda to its caller, the case the Fiber rule exists for, so it stays
-  bytecode. Writing those blocks out would remove it, or a native
-  `Symbol#to_proc`; `&:sym` sends through `__send__`, which ignores visibility,
-  so each method's visibility has to be checked first.
+- **`Symbol#to_proc` (240 conversions, 480 element calls)** was removed by a
+  native implementation in the fork (take-cheeze/mruby
+  `claude/symbol-to-proc-native`). All of it was in the battle scenario: a
+  Symbol passed as a block to a method the compiler did not inline
+  (`reject(&:dead?)`, `select(&:defending)` and the like on `@ui[:allies]` and
+  `@ui[:foes]`, Hash values the compiler cannot prove are Arrays:
+  `scene/battle.rb`, `battle_rpg2k3.rb`). The Ruby method returned a lambda to
+  its caller, the case the Fiber rule exists for, so it stayed bytecode. Now
+  `src/symbol.c` makes a cfunc proc (`mrb_proc_new_cfunc_with_env`, the Symbol
+  in its env, flagged strict so `lambda?` holds) that sends the Symbol to its
+  first argument through `mrb_funcall_send`, a `__send__`-equivalent funcall
+  (visibility is ignored, `method_missing` applies, keywords and the block are
+  forwarded, the callee's argument count is checked), so neither the conversion
+  nor a call enters the VM. `block_self_world.rb` holds `symbol.c` to the proof
+  `symbol.rb`'s send had (no Symbol passed as a block is a rebinder). The Symbol is still a literal at every call site
+  (`static_dispatch_symbol_uses.rb`), so the closed name proof is unchanged.
+  Differences from the Ruby lambda: `arity` is -1 (was -2) and `parameters` is
+  empty, because a cfunc proc has no aspec; the argument-count message is
+  "expected 1+" (was "expected 1").
+- **`File#initialize`** (mruby-io's `File.open`, through `IO.open`'s `self.new`) was a Ruby
+  method of `mrblib/file.rb` whose explicit-argument `super(fd, mode)` the core compile
+  refused (`unhandled opcode SUPER`, measured with a debug hook on `super_lookup_call`).
+  The by-name `super` lookup needs the class's superclass as a String and either a
+  `&blk` parameter or the whole-program "no caller passes a block" fact. The core job has neither:
+  `build_registry` keeps the *last* `class File` it walks, and mruby-io's
+  `file_constants.rb` reopens it without a superclass (`:none`), over `file.rb`'s
+  `class File < IO`; and the call facts are off in that job. Fixing the first changes
+  every class reopened without a superclass, so the fork defines it natively
+  instead (`mrb_file_init` in `file.c`: the path kept in `@path`, `IO.sysopen`, then
+  `IO#initialize` looked up from `File`'s superclass and called with the block it got).
+- **`Class#new`** was a hand-written static irep in the fork's `src/class.c`
+  (`allocate`, then `initialize(*args, **kw, &blk)` by self-send), so every `new` the
+  compiler did not inline ran in the VM. It is now `class_new_instance`, a cfunc in
+  the Class ROM table that allocates and sends `initialize` with `mrb_funcall_send`
+  (private methods callable, `method_missing` applies, keywords and block forwarded,
+  the callee's argument count checked). `initialize` therefore runs under a C frame,
+  as it already did under `mrb_instance_new`; a `Fiber.yield` inside it now raises
+  `FiberError` instead of suspending, which is the model the yield analysis already had
+  ([yield C boundary](bc2cpp-yield-c-boundary.md)). `EnumeratorModel` reads the two
+  names `Class#new` sends from the function's text instead of the irep's presyms.
+  The table's bytecode entries are then `File#initialize` and `Enumerator::Yielder#<<`
+  (`File#initialize` goes with the next change, `Yielder#<<` with the Enumerator-free list).
+- **`Hash#to_proc`** was mruby-hash-ext's `->x{self[x]}`, a lambda returned to
+  its caller, so it stayed bytecode (the last method of the Symbol#to_proc kind).
+  `src/hash_ext.c` now makes a strict cfunc proc with the Hash in its env that reads
+  it with `[]` (a subclass's `[]`, the default value and the default proc apply)
+  and takes exactly one argument, as the lambda did (`mrb_get_args "o"`). Same
+  difference as `Symbol#to_proc`: `arity` is -1 (was 1) and `parameters` is empty.
+  `block_self_world.rb` cuts the one registration line that spells `to_proc` from
+  `hash_ext.c` before its blanket native scan (the file sends a fixed `[]`, no
+  computed name and no block).
+  The method table keeps its entry (it is a ROM entry now); the bytecode entries
+  of the table go from 4 to 3 (`Class#new`, `File#initialize`,
+  `Enumerator::Yielder#<<`).
 - **`Enumerable#inject` / `reduce` (720 starts).** mruby's method builds a lambda
   for a Symbol argument, and a core method that builds a lambda stays bytecode
   (`CoreDefs.builds_lambda?`), so every engine `reduce(0) { ... }` runs the method,
@@ -105,4 +153,10 @@ is about 305 bodies.
 - **Class bodies and gem roots at boot.** The boot set is about 305 bodies,
   mostly the 264 class and module bodies and 14 gem roots that run once per
   process. Compiling the load phase is what removes them, and the static irep
-  data with them.
+  data with them. `BC2CPP_LOAD_COMPILE=all` (the default) does that for the
+  engine gems: 420 starts to 385
+  ([measured](bc2cpp-class-bodies.md)); the statements run from a byte program and one decoder, which changes the load's
+  text and not its VM starts. The rest of the engine's bodies keep a
+  def that a visibility or alias statement names, which needs a second compiled
+  phase after the registration; mruby's own mrblib (about 40 bodies) is not
+  part of the load world.
