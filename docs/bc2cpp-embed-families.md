@@ -21,9 +21,9 @@ A family is folded only when all of these hold:
   subclass code runs before the storage exists;
 - no member is a native-data owner;
 - the world is self-registering (`BC2CPP_SELF_REGISTERING=1`, as in the
-  optcarrot probe and the fixtures). The engine's wired worlds
-  (`BC2CPP_WIRED_EMBEDDINGS`) keep one layout per chain for now, because their
-  registrations wire each owner separately.
+  optcarrot probe and the fixtures). The engine's gem builds
+  (`CodeGen.engine_registrations`) keep one layout per chain for now, because
+  their registrations wire each owner separately.
 
 When the root does not embed after all (for example, all of its ivars are
 natively exposed), the members return to `iv_tbl`. Set

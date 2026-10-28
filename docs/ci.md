@@ -59,8 +59,18 @@ exceptions; it does not cover the RISC-V cross-compile, which the `maix` job bui
 bc2cpp. It needs no PlatformIO or cross toolchain.
 The desktop `host` build loads Ruby at runtime and never carries the compiled gems.
 
-The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` (skipped on purpose for
-a docs-only change). Require `bc2cpp`.
+`bc2cpp-sweep`, alongside `bc2cpp-build`, builds the same closed world and plays it headlessly through
+`scripts/bc2cpp/host_sweep.bash`: Nepheshel's New Game, a battle, the menu, saving and loading, and
+every map for 150 frames. It then builds the closed world again with `BC2CPP_UNREGISTERED_VERIFY=1`,
+which replaces every registration the closed list leaves out with a stub that fails loudly when
+reached, and plays that build the same way. A run that exits non-zero, or that prints a verify stub,
+a violated proof, a run stubbed mrblib body or a `NoMethodError`, fails the job. The host is built
+once per build and called directly afterwards, and maps run in parallel: one play takes about a
+minute, and the whole job (two closed builds of about three minutes each) stays shorter than
+`bc2cpp-build`.
+
+The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` and `bc2cpp-sweep` (both
+skipped on purpose for a docs-only change). Require `bc2cpp`.
 
 ### bc2cpp job setup and check scheduling
 
@@ -229,26 +239,20 @@ all instruction/register states matched the earlier oracle. Backward-query
 cost and the optional whole-tree check's total duration are separate costs.
 
 
-### Device jobs run on a pull request only for their own files
+### Device jobs
 
-`android` (with `android-smoke`), `maix` (with `maix-smoke`) and `nano7-qemu` build or emulate one
-device target each. On a `pull_request` run they are skipped unless the `changes` job's filter for
-that device matched; a push to `master`, a merge-queue run and a manual dispatch always run them.
-The smoke jobs need their build job, so they are skipped with it. `wasm` is not gated and still runs
-on every pull request, and `psp` keeps its own filter (it runs only when `app/psp/**` or the workflow
-changed, and not on other pushes).
+`android` (with `android-smoke`), `maix` (with `maix-smoke`) and `psp` do not run on a
+`pull_request`: a push to `master`, a merge-queue run and a manual dispatch run them (`psp` there
+still only when `app/psp/**` or the workflow changed, as before). Their builds take long and a pull
+request rarely touches a device, so a device regression shows up in the merge queue or on `master`.
+To check a branch earlier, use `workflow_dispatch` on it. The smoke jobs need their build job, so
+they are skipped with it. `wasm` still runs on every pull request.
+
+`nano7-qemu` keeps its filter: on a pull request it runs only when its own files changed.
 
 | Filter | Files that count as related |
 | --- | --- |
-| `android` | `app/android/**`, `scripts/android_smoke_check.bash`, `CMakeLists.txt`, `cmake/**`, `build_config.rb`, the workflow |
-| `maix` | `app/maix/**`, `app/shared/**`, `scripts/maix/**`, `scripts/gen/maix-hello-game.rb`, `build_config.rb`, the workflow |
 | `nano7` | `app/nano7/**`, `app/shared/**`, `scripts/nano7/**`, `scripts/export_nano7_map*.rb`, `scripts/stage_nano7_walk_app.bash`, `scripts/download/nepheshel.bash`, the workflow |
-
-`build_config.rb` holds each device's cross-build definition, so a change to it runs the Android and
-Maix jobs. Shared engine code (`src/`, the `mruby-*` gems) is not in any list: a pull request that
-changes only that skips these jobs, and the push to `master` after the merge runs them. A device
-regression from shared code therefore shows up on `master`, not on the pull request. To check a branch
-earlier, use `workflow_dispatch` on it, or add the path to the filter.
 
 ### Compiler caching and shared mruby builds
 

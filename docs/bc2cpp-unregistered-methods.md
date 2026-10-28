@@ -180,7 +180,56 @@ undef names it there, or when the owner has a registration with a computed
 name.
 
 mruby's own natives mostly sit in ROM method tables (`MRB_MT_ENTRY`), which
-are not candidates: removing one at run time adds a tombstone entry in RAM.
+are not candidates here: removing one at run time adds a tombstone entry in
+RAM. They are listed separately (below).
+
+### Core ROM entries
+
+The closed build leaves core ROM entries out of their tables at compile time.
+The proof's `--closed-only --write` also writes
+`tools/bc2cpp/static_dispatch_core_excluded.rb` (`CoreNativeCandidates`,
+`tools/bc2cpp/core_native_candidates.rb`). `build_config.rb` turns that list
+into the header that `MRB_MT_EXCLUDE_HEADER` names
+(`3rd/mruby/include/mruby/class.h`). Each listed entry then has no table slot,
+and its function goes too once nothing else calls it.
+
+The engine proof reads core Ruby only for the sends that may reach an engine
+object. A core method is also reached through core receivers, so this rule is
+receiver-blind and coarser. A name stays when any of these spells it:
+
+- a symbol any irep of the program uses: engine, core, external or foreign
+  mrblib, and a def or a constant as well as a send;
+- an identifier-shaped pool string;
+- a lookup in the native sources (string literals, presym macros, naming
+  macros). The name operand of a table entry or registration call defines the
+  name, so it does not count;
+- a string literal of the generated code;
+- `ALWAYS_DYNAMIC`, or a name a pool fragment may build.
+
+The VM's implicit calls are presym uses in `src/`, so the scan reads them like
+any other lookup. Operator names are never listed, because the VM sends them
+from opcodes.
+
+An exclusion macro names (`MRB_MT_CLASS`, name), and that pair covers every
+table of the class, its singleton's included. So a pair is listed only when
+each of its entries sits in a table installed into `MRB_MT_CLASS` itself, and
+only into it.
+
+A verify build (`BC2CPP_UNREGISTERED_VERIFY`) also registers the aborting stub
+under each listed name, from mruby-core-compiled's core half.
+
+Core natives registered at run time (`mrb_define_method` and the other
+defining calls) go by the same rule, listed in
+`STATIC_DISPATCH_CORE_LEFT_OUT`. mruby-core-compiled's core half removes each
+one like a left-out native. A class the build does not define is skipped.
+Some keys stay whatever their name:
+
+- a key a ROM entry of the same class shares, because the removal would take
+  the ROM entry and leave a tombstone;
+- a key that a native alias or undef names;
+- a key on an owner with a computed-name registration.
+
+`scripts/bc2cpp/core_native_candidates_check.rb` checks the rule.
 
 The probe generates its C++ with `BC2CPP_BUILD_NAME=closed`, so the names
 on either list are missing from its registrations. Every run therefore
@@ -191,6 +240,17 @@ checked in.
 `BC2CPP_UNREGISTERED_EXTRA="Owner#name,..."` adds more names for a single
 generation. It is meant for check fixtures, which have no place in the
 committed lists.
+
+## Why an entry stays
+
+`scripts/bc2cpp/dynamic_names_report.rb` runs the closed-only proof and prints,
+for each entry it keeps, the first source that made the name dynamic: a C
+string literal in a gem's generated code, `ALWAYS_DYNAMIC`, a Symbol literal
+(`SYMBOL_USES`), a file whose text names it, a send in code that may run as
+bytecode, a string fragment that may build it, or the base name of a suffixed
+one. The default output is a summary by source; `--entries` lists every kept
+entry with its reason. Only the first reason is shown, so removing one source
+can reveal the next.
 
 ## Verify mode
 
