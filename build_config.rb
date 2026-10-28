@@ -1149,6 +1149,11 @@ if closed
     # The C++ exception mode the generated code assumes (load_gems.rb would also turn it on for the
     # gems' .cxx sources; this says so outright).
     enable_cxx_exception
+    # GC_SECTIONS: one section per function and object, so a host that links with -Wl,--gc-sections
+    # (scripts/bc2cpp/trace_host.bash, as the wio and maix builds already do) drops what nothing
+    # references: a C function whose method-table entry the closed build leaves out, a compiled
+    # entry no registration names.
+    [conf.cc, conf.cxx].each { |t| t.flags << '-ffunction-sections' << '-fdata-sections' }
 
     rpg_maker_gems(conf)
   end
