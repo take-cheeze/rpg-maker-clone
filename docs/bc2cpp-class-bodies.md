@@ -86,6 +86,51 @@ called by an `FN` op in its place, so nothing is all-or-nothing:
   engine defines none, so nothing is C++ per statement today;
 - a send of more than 64 names, a call of more than 8 arguments.
 
+## Computed constants, evaluated at build time
+
+A constant built by a block (`X = (0..11).each_with_object({}) { |slot, h| h[slot] = 91 + slot }.freeze`) cannot be a
+blob, but its value can: `tools/bc2cpp/pure_eval.rb` (`PureEval.fold`) runs it once under CRuby while the plan is made,
+and the program spells the result. It folds a constant only when nothing in it can differ between the build machine and
+the device:
+
+- it reads literals, the core classes, and earlier constants of the *same body* that are themselves pure, replayed
+  first in source order, with nothing but defs, declarations and constants between them and it, and the container each
+  of them holds frozen (a read that could change before the statement ran is not folded);
+- it calls only the methods on `PureEval::METHODS` (arithmetic, the Array/Hash/String/Symbol/Range/Integer methods an
+  mruby build has and that read neither the environment, the clock, a random source nor a file), always on a receiver,
+  so no engine method, no global and no `Foo.new` of an engine class is reachable; `new` is for Array, Hash and String;
+- the value is data (`PureEval.value_ok?`): nil, true, false, an Integer inside 32 bits, a Float a float32 holds exactly
+  (a 32-bit-float target decodes the same number), a Symbol, a UTF-8 String, and Arrays, Hashes (insertion order kept)
+  and Integer Ranges of those; exact classes, no default proc, no ivar, and no unfrozen container or String reached
+  twice, since the copy would split it. A frozen container is its bytes under `FREEZE`, a String carries its own
+  frozen state.
+
+Anything else stays the statement it was, in the residual. Fidelity is checked against the runtime, not assumed:
+`class_body_check.rb` computes each folded constant's statement (with the constants it read) in a booted mruby and
+compares it with CRuby's value through one canonical description written to run under both (class, frozen state, order,
+content, a Float by its parts because `Float#to_s` differs), on the fixture and on the engine's own mrblib; the
+interpreted-against-compiled equivalence covers the rest. `RGSS::Audio::EXT_SPELLINGS` (and `EXTS`, which it read) and
+`Game::State::SYSTEM_SFX_SAVE_FIELD` are folded this way. `DATABASE` and `MAP_UNIT` are not: they hold lambdas, which
+are code (`PureEval` refuses a `LambdaNode`), and `LCF::INT32_*` are Integers a 32-bit `mrb_int` target holds as
+bignums.
+
+Finding while writing the canonical form: this fork's compiler miscompiles `(x ? "A" : "a") + "b"` when `x` is true (the
+value is `"A"`, the `+ "b"` is lost; `x = true; ((x ? "A" : "a") + "b")` in the closed build's own VM). The canonical
+form builds its strings with `join` to stay clear of it.
+
+## Visibility statements on methods the build leaves out
+
+A def used to stay in the mrblib when `private :x` named it, because the statement runs before the compiled gem has
+installed anything. Of the 184 defs the residual of the three engine gems keeps, 133 are kept by the stub proof for its
+own reasons (alias source, module_function copy, guard, loaded copy) and 51 by a statement alone. All 51 are left out of
+the method tables (`unregistered`: statically dispatched only): the registration removes them right after the load
+(`bc2cpp_left_out`). A statement that changes the visibility of something removed before anyone can look it up is dead,
+so `LoadCompile.mark_dead!` does not run it (its text is blanked, nothing is emitted) and its defs are free to leave
+the mrblib. It applies to `private`, `public`, `protected` (and `private_class_method`, `public_class_method` on the
+singleton) whose every name is such a def, with exactly one def of that name in that owner. `module_function :x` and
+`alias_method` leave a copy behind and are not dead; a send that names one registered def is still run, and pins every
+def it names, as before. No second compiled phase after the registration was needed.
+
 ## What stays bytecode
 
 The residual mrblib of the engine gems keeps exactly these statements; `class_body_check.rb` fails when the list
@@ -95,8 +140,6 @@ changes, so a new one is a decision:
 | --- | --- |
 | `LCF::Schema::DATABASE`, `MAP_UNIT` | hashes that hold the `elements:` lambdas (a lambda is bytecode) |
 | `LCF::Schema::COMMON_EVENT` | read by `DATABASE`, so it moves with it (promotion) |
-| `RGSS::Audio::EXT_SPELLINGS` (and `EXTS`, which it reads) | built by an `each` block |
-| `Game::State::SYSTEM_SFX_SAVE_FIELD` | built by an `each_with_object` block |
 | `LCF::INT32_MASK`, `INT32_SIGN_BIT`, `INT32_WRAP` | Integers outside 32 bits: a bignum on a target whose `mrb_int` is 32 bits, which an irep literal is and C++ is not |
 | `Array.alias_method :_rgss_native_sort!, :sort!`, `RGSS::Window.alias_method :_rgss1_initialize, :initialize` | source order (above) |
 
@@ -116,7 +159,7 @@ Moving a statement behind residual ones is sound only if they cannot observe it,
   the last constant segment, pessimistically);
 - a class header the residual needs (a superclass, an outer scope) stays;
 - a `def` that a compiled statement names (`private :x`, `alias_method`) stays, because that statement runs before the
-  compiled gem has installed anything (pinning).
+  compiled gem has installed anything (pinning); not when the statement is dead (below).
 
 `scripts/bc2cpp/class_body_check.rb` loads fixtures three ways (interpreted; residual + compiled load + the dropped defs
 added back; ungated) and compares classes, superclasses, ancestors, constants and their values and frozenness, class
@@ -206,6 +249,29 @@ The whole closed `libmruby.a` (clang 18, `-O0`, the same tree before and after):
 The VM starts do not move: the statements ran as C++ already, the program runs the same calls in the same order. The
 win is code size.
 
+## Measured: computed constants and dead visibility statements (same closed build, clang 18, `-O0`; the class program is the base)
+
+| | class program | + folded constants, dead visibility statements |
+| --- | --- | --- |
+| compiled load, standalone at `-Os` (lcf + rgss + rpg2k) | 59,757 B | 60,027 B (+270: the two values are data now) |
+| `libmruby.a` text | 24,594,753 B | 24,588,777 B (-5,976) |
+| `libmruby.a` data | 1,052,573 B | 1,045,165 B (-7,408) |
+| `mruby-rpg2k` `gem_init.o` (irep and init) text / data | 35,383 / 34,588 B | 31,384 / 27,548 B (-3,999 / -7,040) |
+| `mruby-rgss` `gem_init.o` text / data | 5,013 / 5,896 B | 4,815 / 5,528 B (-198 / -368) |
+| defs left in the residual `mruby-rpg2k` mrblib | 124 | 73 (the 51 `private :x` ones) |
+| boot VM starts (`mrb_vm_exec` from C / `OP_EXEC` / `OP_SEND` / `OP_CALL`, `OP_BLKCALL`) | 56 / 182 / 23 / 69 = 330 | 56 / 178 / 20 / 62 = 316 |
+| method table | 1,285 entries | 1,285 entries |
+| host sweep (7 scenarios, 543 maps) | passes | passes |
+
+The three engine gems' `mrblib` ireps sit in `gem_init.o`; `mruby-lcf`'s did not change (its plan has nothing to fold or
+drop). A probe of the built host reads `EXT_SPELLINGS`, `EXTS` and `SYSTEM_SFX_SAVE_FIELD` (value, frozen state, order)
+identically in the build before and after.
+
+When `claude/bc2cpp-elements-lambdas-data` (the `elements:` lambdas as byte tables, `gen_schema_tables.rb`) lands, its
+`schema_folded.rb` makes `DATABASE`, `MAP_UNIT` and `COMMON_EVENT` plain data (the planner reads them as `const_pure` and
+`const_literal`), so they fold into the program with no change here and the list above is down to the five statements
+that cannot be data (`INT32_*`, the two ordering aliases).
+
 Boot VM starts, counted as `docs/bc2cpp-vm-entries.md` describes (a 1-frame run and a 150-frame run give the same
 numbers: nothing enters the VM after boot on a plain map):
 
@@ -220,5 +286,6 @@ numbers: nothing enters the VM after boot on a plain map):
 The C entries grow by the 29 constants the load builds with `Foo.new(...)` (`Class#new` is bytecode in the fork; the
 VM ran them as sends before). What remains are the bodies that keep a def: the compiled load runs before the compiled
 gem installs its methods, so a def named by `private :x`, `module_function :x` or `alias_method` has to stay as
-bytecode for that statement to find it (78 of the 161 kept defs). Running those statements after the registration, in
-a second compiled phase, would let those defs go too.
+bytecode for that statement to find it (78 of the 161 kept defs then; 51 of 184 on a later tree). Running those
+statements after the registration, in a second compiled phase, would have let those defs go; they did not need it, since
+all of them are left out of the method tables and the statement on them is dead (above).
