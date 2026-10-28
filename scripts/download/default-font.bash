@@ -60,7 +60,11 @@ fetch() {
     local name="$1" want="$2" out="$dest/$1"
 
     echo "default font: downloading $base/$name"
-    curl -fsSL --retry 3 --retry-delay 2 -o "$out.part" "$(proxied_url "$base/$name")"
+    # A stalled connection never fails on its own, so --retry alone would hang
+    # until the CI step's timeout. Abort when the transfer drops below 1 KiB/s
+    # for 30s, so the retry actually runs.
+    curl -fsSL --connect-timeout 15 --speed-limit 1024 --speed-time 30 \
+        --retry 3 --retry-delay 2 -o "$out.part" "$(proxied_url "$base/$name")"
 
     if ! echo "$want  $out.part" | sha256sum -c --status; then
         echo "default font: checksum mismatch for $name" >&2
