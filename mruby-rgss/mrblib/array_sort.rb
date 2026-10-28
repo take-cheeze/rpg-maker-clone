@@ -31,13 +31,17 @@
 #
 # Engine-wide rather than RGSS-only: this is mruby's arithmetic, and the
 # RPG2000 runtime sorts with difference blocks too.
+#
+# #sort is mruby's own `dup.sort!` spelled against the C sort directly. An alias
+# of mruby's #sort would keep a bytecode body that the compiled closed build
+# enters through the VM on every sort, and that body's `sort!` would dispatch
+# back into the override below and wrap the block a second time.
 class Array
-  alias_method :_rgss_native_sort, :sort
   alias_method :_rgss_native_sort!, :sort!
 
   def sort(&block)
-    return _rgss_native_sort if block.nil?
-    _rgss_native_sort { |a, b| RGSS._comparison_sign(block.call(a, b)) }
+    return dup._rgss_native_sort! if block.nil?
+    dup._rgss_native_sort! { |a, b| RGSS._comparison_sign(block.call(a, b)) }
   end
 
   def sort!(&block)

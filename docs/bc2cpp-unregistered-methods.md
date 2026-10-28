@@ -36,9 +36,17 @@ any of these could look it up:
   constants holding them. It stops being a fragment when every use only
   compares it (`==`, `when`, `start_with?`), looks it up as a native hash
   key, tests a constant list for it (`LIST.include?(x)`), or puts it into a
-  string that also gets a character no name has (a space, a colon). Any
-  other use keeps it a fragment: a store, a concatenation, an argument of a
-  method the trace doesn't know, or a use the flow query refuses;
+  string that also gets a character no name has (a space, a colon). A
+  concatenation is followed too: the built string's own uses decide, so a
+  string only printed or compared isn't one. Any other use keeps it a
+  fragment: a store, an interned Symbol (`:"#{type}_name"`), an argument of
+  a method the trace doesn't know, or a use the flow query refuses. Engine
+  code that needs per-kind field names spells them in a table
+  (`Game::Vehicle::SYSTEM_NAME_FIELD`) rather than building them. The closed
+  list asks the same of an identifier-shaped literal itself (IDENT_USES),
+  once SYMBOL_USES has proven every lookup in the closed bytecode takes a
+  literal name: otherwise a compared literal could be what a computed
+  `send(x)` looks up;
 - a token in core, external or other-maker mrblib, tests, `scripts/`,
   `.github/`, `tools/` or native sources;
 - for the closed list only, a narrower outside scan:
@@ -51,7 +59,16 @@ any of these could look it up:
     A C local or field spelled like a method name looks nothing up, and
     neither does the name argument of a registration call
     (`mrb_define_method(M, c, "name", ...)` and the other defining calls): it
-    defines the name. An alias's two names still count;
+    defines the name. An alias's two names still count. Comments are left
+    out: `/* "count" is "width" */` names nothing. A file the comment scan
+    can't read (an unterminated quote, a raw string) is scanned whole;
+  - only sources the closed binary contains are read. A core `mruby-*` gem
+    outside the closed build's gem closure (mruby-socket, mruby-enum-lazy,
+    mruby-complex, ...), an external gem it leaves out (mruby-onig-regexp),
+    an engine mrblib file its rake swaps out (`scene/map_tts.rb`) and the
+    device apps under `app/` are skipped. HAL gems stay: a rake adds them in
+    its own Ruby, which the closure doesn't follow. The closed host,
+    `scripts/bc2cpp/trace_host.cxx`, is read instead of `app/`;
   - the workflows under `.github/` are skipped: their inline Ruby runs in
     the desktop binary, and the closed library is linked only into
     `trace_host.cxx`, which runs no script;
@@ -64,7 +81,10 @@ any of these could look it up:
     Kernel, Class or Module method, and any unknown value, still count.
     Symbols, identifier-shaped strings and implicit operators always count.
     A file with a reflective send (`__send__`, `instance_exec`,
-    `define_method`, ...) or a `method_missing` keeps the text rule;
+    `define_method`, ...) or a `method_missing` loses the receiver rule: every
+    symbol of its bytecode counts. Its comments and local variable names
+    don't, since they never become a symbol, and a name it sends that comes
+    from its caller is counted where the caller spells it;
   - a setter, predicate or bang name (`x=`, `x?`, `x!`) stays registered
     because of its base name `x` only when `x` was read as text: a text
     scan reads `obj.x = 1` as `x`, and a naming macro may append the suffix
@@ -197,9 +217,30 @@ The engine proof reads core Ruby only for the sends that may reach an engine
 object. A core method is also reached through core receivers, so this rule is
 receiver-blind and coarser. A name stays when any of these spells it:
 
-- a symbol any irep of the program uses: engine, core, external or foreign
-  mrblib, and a def or a constant as well as a send;
-- an identifier-shaped pool string;
+- a symbol an instruction of the program may look up: a send, a `LOADSYM`,
+  an alias, an undef or a key. The operand of a `DEF`, `TDEF` or `SDEF`
+  defines its name, so a name only a def names does not count. An irep with an
+  `ALIAS` keeps all its symbols, because the disassembly shows the alias's old
+  name, the one it looks up, as the new one;
+- an operator opcode's operator (`ADD` sends `+`) and, under `SUPER`, the name
+  of the method the body belongs to;
+- an identifier-shaped pool string.
+
+Every engine irep counts. A core, external or foreign mrblib method body
+counts only while its own name stays reachable (`LIVE_CORE`), solved as a
+fixpoint. Nothing runs a Ruby-defined core method but a lookup of its name or a
+direct `_impl` call from compiled code. A `<Owner>_<name>_impl` token in the
+generated code counts as that name's lookup. Root and class bodies, and the
+blocks made in them, always count. Pool fragments are read from every body,
+live or not.
+
+The rule stays receiver-blind on purpose. A measured variant attributed each
+owner-call site (`BC2CPP_OWNERS`) and each typed compiled send to its receiver's
+owners only. It freed at most four more entries, because the same names stay
+reachable through core mrblib and native lookups whose receivers are unknown.
+
+Names also count from:
+
 - a lookup in the native sources (string literals, presym macros, naming
   macros). The name operand of a table entry or registration call defines the
   name, so it does not count;

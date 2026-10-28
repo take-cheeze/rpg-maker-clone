@@ -766,6 +766,22 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/gc_root_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/zsuper_lookup_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/const_bindings_check.rb:
     tier: runtime
     capabilities:
@@ -786,7 +802,8 @@ checks:
     fixture_capabilities: []
   scripts/bc2cpp/core_native_candidates_check.rb:
     tier: fast
-    capabilities: []
+    capabilities:
+    - mrbc
     fixture_capabilities: []
   scripts/bc2cpp/module_function_scope_check.rb:
     tier: fast
