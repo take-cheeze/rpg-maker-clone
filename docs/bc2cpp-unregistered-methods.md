@@ -383,8 +383,11 @@ lists the group in `STATIC_DISPATCH_CORE_LEFT_OUT` only when the proof holds
   class, instance variables (by class family), parameters (union of the callers'
   arguments, by name and argument count), results (by name, and TOP when a core
   or native method has the name), self, captured variables and rescued
-  exceptions. Anything else (an element, a block parameter, a native result, a
-  refused reaching-definitions query) is TOP and is never proven.
+  exceptions. A call with a literal block to a method whose every definition is
+  a checked `{ ... } -> T` declaration of `sig/bc2cpp` (BlockReturns:
+  `RGSS::Profiler.section`, `then`) has the class of the block's value. Anything
+  else (an element, a block parameter, a native result, any other call that
+  yields, a refused reaching-definitions query) is TOP and is never proven.
 - **Other ways in.** An engine `to_enum` or Enumerator constant; a Symbol that
   names a creator and reaches a lookup (`map(&:each)`, `send(:select)`); any
   lookup that takes a computed name; a native that spells a creator name
@@ -404,13 +407,9 @@ On the engine the proof holds, so the group is in `STATIC_DISPATCH_CORE_LEFT_OUT
 sites: 682 are settled by a block or an argument and 58 by the receiver's class
 (the `step`, `index`, `select` and `map` sites of engine classes that define the
 name themselves: `Picture#step`, `@shop.index`, `Game::EventPage.select`,
-`@state.map`, ...). Three places had a receiver the model cannot type and were
+`@state.map`, ...). Two places had a receiver the model cannot type and were
 written so it can:
 
-- `RPG2k#start_new_game` took `state` from `RGSS::Profiler.section { ... }`, a native
-  that yields; it assigns a local inside the block now (`state = nil; section {
-  state = ... }`), which types the Scene's `@state` and its `state.map` reads
-  (`Game::State#map` is a name `Enumerable#map` also has).
 - `Scene::Map#run_route_step` received `@vehicle_routes[type]`, an element of a Hash,
   so `route.index` and `route.step` could not be told from `Array#index` and
   `Numeric#step`. The engine reads the cursor and steps through `MoveRoute#cursor`
