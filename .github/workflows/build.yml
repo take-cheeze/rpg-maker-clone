@@ -800,6 +800,7 @@ jobs:
           ruby scripts/bc2cpp/unregistered_verify_check.rb
           ruby scripts/bc2cpp/registration_split_check.rb
           ruby scripts/bc2cpp/shard_output_check.rb
+          ruby scripts/bc2cpp/left_out_accessors_check.rb
           ruby scripts/bc2cpp/yield_c_boundary_check.rb
           ruby scripts/bc2cpp/module_function_scope_check.rb
           ruby scripts/bc2cpp/compiled_owners_check.rb
