@@ -532,9 +532,13 @@ module LCF
   # schema descriptor itself. A schema whose `elements:` was already a plain
   # Hash (every record type outside DATABASE, plus DATABASE entries that
   # reference an existing shared constant like `elements: COMMON_EVENT`) is
-  # returned as-is; `respond_to?(:call)` is what tells the two apart.
+  # returned as-is.
   def elements_of schema
     e = schema[:elements]
+    return e if e.is_a?(Hash)
+    # A bc2cpp build folds each lambda into a byte table (gen_schema_tables.rb): `elements:` is the table's number
+    # and the native LCF.schema_table builds the Hash, so no bytecode runs for it.
+    return schema[:elements] = LCF.schema_table(e) if e.is_a?(Integer)
     return e unless e.respond_to?(:call)
     schema[:elements] = e.call
   end

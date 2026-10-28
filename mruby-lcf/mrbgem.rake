@@ -179,5 +179,27 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   # bytes total, before this gem's own wio_strip_debug_rbfiles pass runs.
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
+
+  # SCHEMA_TABLES: in a build with compiled gems (not wio, which has the blob above) the 18 `elements:` lambdas of
+  # schema.rb become byte tables in .rodata and one native decoder (gen_schema_tables.rb, src/schema_tables.hxx).
+  # As bytecode schema.rb is 38 KB of ireps, the lambdas running through the VM on first use of each record type; compiled to C++
+  # they would be ~245 KB of text. The tables stay lazy: LCF.elements_of builds a type's Hash on its first read.
+  # schema.rb itself is untouched; the build's copy replaces it in place (load order unchanged).
+  if spec.build.name != 'wio' && spec.build.gems.any? { |g| g.name.end_with?('-compiled') }
+    schema = "#{dir}/mrblib/schema.rb"
+    folded = "#{build_dir}/schema_folded.rb"
+    gen = "#{dir}/gen_schema_tables.rb"
+    [folded, "#{build_dir}/schema_tables.cc"].each do |out|
+      file out => [gen, schema, "#{dir}/mrblib/lcf.rb"] do
+        FileUtils.mkdir_p build_dir, verbose: true
+        ruby gen, schema, "#{dir}/mrblib/lcf.rb", build_dir
+      end
+    end
+    file "#{dir}/src/lcf.cxx" => "#{dir}/src/schema_tables.hxx"
+    spec.rbfiles = spec.rbfiles.map { |f| f == schema ? folded : f }
+    objs << objfile("#{build_dir}/schema_tables")
+    cxx.defines << 'LCF_SCHEMA_TABLES'
+  end
+
   bc2cpp_stub_mrblib(spec)
 end

@@ -777,6 +777,13 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/lcf_schema_tables_check.rb:
+    tier: runtime
+    capabilities:
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/owner_call_direct_check.rb:
     tier: runtime
     capabilities:

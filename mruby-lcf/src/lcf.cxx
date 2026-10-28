@@ -6,6 +6,10 @@
 
 #include <uni_algo/conv.h>
 
+#ifdef LCF_SCHEMA_TABLES
+#include "schema_tables.hxx"
+#endif
+
 namespace {
 
 mrb_value cp932_to_utf8(mrb_state* M, mrb_value self) {
@@ -87,6 +91,16 @@ mrb_value utf8_to_cp932(mrb_state* M, mrb_value self) {
   return mrb_str_new(M, ret.data(), ret.size());
 }
 
+#ifdef LCF_SCHEMA_TABLES
+// LCF.schema_table(n): the n-th folded `elements:` table
+// (mruby-lcf/gen_schema_tables.rb), as a new Hash.
+mrb_value schema_table(mrb_state* M, mrb_value) {
+  mrb_int i;
+  mrb_get_args(M, "i", &i);
+  return lcf_schema::table(M, i);
+}
+#endif
+
 }  // namespace
 
 extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
@@ -95,6 +109,10 @@ extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
                              MRB_ARGS_REQ(1));
   mrb_define_module_function(M, mod, "utf8_to_cp932", utf8_to_cp932,
                              MRB_ARGS_REQ(1));
+#ifdef LCF_SCHEMA_TABLES
+  mrb_define_module_function(M, mod, "schema_table", schema_table,
+                             MRB_ARGS_REQ(1));
+#endif
 }
 
 extern "C" void mrb_mruby_lcf_gem_final(mrb_state* M) {}
