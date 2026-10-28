@@ -1,1 +1,1 @@
-bc2cpp: the host sweep prints the method names still registered in the method table (per-owner summary plus the full list in a collapsed log group), so the remaining entries are visible in CI.
+bc2cpp: the CI report of method-table entries also prints the registered method names, each with the reason it stays, in a collapsed log group.

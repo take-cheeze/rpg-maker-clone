@@ -1003,7 +1003,7 @@ jobs:
           METHOD_TABLE: skip
         run: env -u LD scripts/bc2cpp/host_sweep.bash "$GITHUB_WORKSPACE/build-closed-verify"
 
-      # Informational: why the entries the lists keep stay in the table (the lists are no longer in a diff).
+      # Informational: why the entries the lists keep stay in the table, and which they are (the lists are no longer in a diff).
       - name: Report why method-table entries stay
         continue-on-error: true
         timeout-minutes: 15
@@ -1013,6 +1013,10 @@ jobs:
         run: |
           ruby -rjson -e 'JSON.parse(File.read(ENV.fetch("BC2CPP_STATIC_DISPATCH_LISTS"))).each { |key, value| puts "#{key}: #{value.is_a?(Array) ? value.size : value}" }'
           ruby scripts/bc2cpp/dynamic_names_report.rb
+          # The registered names themselves (owner, name, why), for reading off what is left.
+          echo "::group::Registered method names (owner, name, reason)"
+          ruby scripts/bc2cpp/dynamic_names_report.rb --entries
+          echo "::endgroup::"
 
   # STATIC_DISPATCH_LISTS for the device builds. The interpreted maix and psp builds leave the core ROM entries the
   # closed-list proof lists out of their method tables (build_config.rb, bc2cpp_core_mt_exclude), so they need the
