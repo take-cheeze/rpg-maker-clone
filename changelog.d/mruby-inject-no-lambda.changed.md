@@ -1,0 +1,1 @@
+mruby: the fork pin moves to take-cheeze/mruby claude/enum-inject-no-lambda: `Enumerable#inject(:sym)` sends the symbol inline instead of building a lambda, so bc2cpp can compile `inject`/`reduce` and they leave the method table as bytecode entries.
