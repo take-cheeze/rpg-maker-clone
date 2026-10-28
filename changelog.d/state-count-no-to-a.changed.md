@@ -1,0 +1,1 @@
+Save writing no longer runs a bytecode block per state row. `Game::Actor#total_state_count` counted the situation table with `to_a`, and `Enumerable#to_a` runs its block as bytecode: 25 VM starts per actor on every save. It now counts with `each`, which compiles, and returns the same number.

@@ -1926,7 +1926,11 @@ module Game
     # a plain `1` for "afflicted" rather than a real duration.
     def total_state_count
       table = LCF.field?(@db, :situation) ? @db[:situation] : nil
-      table ? table.to_a.size : 0
+      n = 0
+      # Counted with each, not to_a: Enumerable#to_a runs its block as bytecode
+      # (one VM start per row, on every save), while this block is compiled.
+      table.each { |_i, _v| n += 1 } if table
+      n
     end
 
     # The actor's FaceSet graphic (顔グラフィック), shown on the save-select
