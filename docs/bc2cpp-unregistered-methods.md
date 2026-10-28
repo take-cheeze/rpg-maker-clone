@@ -231,6 +231,40 @@ Some keys stay whatever their name:
 
 `scripts/bc2cpp/core_native_candidates_check.rb` checks the rule.
 
+#### Device builds
+
+The ROM exclusion also applies to the interpreted `psp` and `maix` builds.
+Only ROM entries are covered; the run-time list needs mruby-core-compiled, which
+these builds do not link. A build may take the list only when everything it can
+run lies inside the world the proof read. That world is:
+
+- the RPG2000/2003 engine's mrblib;
+- every core and external gem's mrblib;
+- every native source under `src/`, `app/`, `include/`, the engine gems and
+  `3rd/mruby`;
+- the closed build's generated code.
+
+psp and maix are single-format builds, so they have no game Ruby and no other
+maker gem. Their engine mrblib is the closed one, less a few files (psp drops
+the debug tools), and the proof already reads their native sources. Fewer
+sources only remove references, so the closed list stays sound for both. The
+maix firmware's `mrb_load_string` probe evaluates a string literal and sends
+nothing.
+
+On maix the firmware link's `--gc-sections` then drops each excluded entry's C
+function. `app/psp` links without section GC, so on psp only the table rows go.
+
+These builds do not take the list:
+
+- **psp or maix with `RPGMAKER_BC2CPP=1`.** Their generated code is not the
+  closed build's, and a by-name fallback it emits may name a core method the
+  closed generation never did.
+- **wio, and m5stack, which links the wio library.** `wio_strip_*` rewrites its
+  mrblib, and it swaps in a generated `schema_blob.rb`. The proof reads
+  neither.
+- **desktop, wasm and android.** They run a game's own Ruby (RGSS scripts,
+  `eval`), which may name any method.
+
 The probe generates its C++ with `BC2CPP_BUILD_NAME=closed`, so the names
 on either list are missing from its registrations. Every run therefore
 counts both lists as already unregistered. If it did not, a rerun would drop
