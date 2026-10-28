@@ -982,6 +982,33 @@ if wio
   end
 end
 
+# CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (static_dispatch_core_excluded.rb) are
+# left out of a build's tables at compile time, through the header MRB_MT_EXCLUDE_HEADER names
+# (3rd/mruby/include/mruby/class.h). Written only when it changes, so an unchanged list rebuilds nothing. Both
+# compilers get the define: enable_cxx_exception compiles mruby's C as C++.
+#
+# The list is proven for the closed world: the RPG2000/2003 engine's mrblib, every core and external gem's mrblib,
+# every native source under src/, app/, include/, the engine gems and 3rd/mruby, and the closed build's generated
+# code. A build may take it only when everything it can run is inside that world, so:
+#   - closed, and the interpreted psp and maix builds: single format (no game Ruby, no other maker gem), the same
+#     engine mrblib less some files (psp's debug tools), and native sources the proof already reads;
+#   - not psp/maix with RPGMAKER_BC2CPP=1: their generated code is not the closed build's, and a by-name fallback it
+#     emits may name a core method the closed generation never did;
+#   - not wio (nor m5stack, which links the wio libmruby): its mrblib is rewritten (wio_strip_*) and swaps in a
+#     generated schema_blob.rb, neither of which the proof reads;
+#   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
+def bc2cpp_core_mt_exclude(conf)
+  require_relative 'tools/bc2cpp/core_native_candidates'
+  require_relative 'tools/bc2cpp/static_dispatch_core_excluded'
+  mruby = File.expand_path('3rd/mruby', __dir__)
+  sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
+  text = CoreNativeCandidates.header(STATIC_DISPATCH_CORE_EXCLUDED.to_a, CoreNativeCandidates.entries(sources.sort))
+  path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, text) unless File.exist?(path) && File.read(path) == text
+  [conf.cc, conf.cxx].each { |tool| tool.defines << %(MRB_MT_EXCLUDE_HEADER='"#{path}"') }
+end
+
 if maix
   # Cross build for the Sipeed Maix Amigo (Kendryte K210, RV64IMACFD).
   # Produces a libmruby.a that the PlatformIO firmware (app/maix,
@@ -1122,24 +1149,10 @@ if maix
     # "no HAL specified" auto-selection never fires here.
     conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
+    # The firmware link's --gc-sections (above) then drops a left-out entry's C function too.
+    bc2cpp_core_mt_exclude(conf) unless ENV['RPGMAKER_BC2CPP']
     rpg_maker_gems(conf)
   end
-end
-
-# CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (static_dispatch_core_excluded.rb) are
-# left out of the closed build's tables at compile time, through the header MRB_MT_EXCLUDE_HEADER names
-# (3rd/mruby/include/mruby/class.h). Written only when it changes, so an unchanged list rebuilds nothing. Both
-# compilers get the define: enable_cxx_exception compiles mruby's C as C++.
-def bc2cpp_core_mt_exclude(conf)
-  require_relative 'tools/bc2cpp/core_native_candidates'
-  require_relative 'tools/bc2cpp/static_dispatch_core_excluded'
-  mruby = File.expand_path('3rd/mruby', __dir__)
-  sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
-  text = CoreNativeCandidates.header(STATIC_DISPATCH_CORE_EXCLUDED.to_a, CoreNativeCandidates.entries(sources.sort))
-  path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
-  FileUtils.mkdir_p(File.dirname(path))
-  File.write(path, text) unless File.exist?(path) && File.read(path) == text
-  [conf.cc, conf.cxx].each { |tool| tool.defines << %(MRB_MT_EXCLUDE_HEADER='"#{path}"') }
 end
 
 if closed
@@ -1265,6 +1278,8 @@ if psp
     end
     conf.linker.flags += cpu_flags
 
+    # Only the table rows go: app/psp links without --gc-sections, so a left-out entry's C function stays.
+    bc2cpp_core_mt_exclude(conf) unless ENV['RPGMAKER_BC2CPP']
     rpg_maker_gems(conf, include_mvjs: false)
   end
 end
