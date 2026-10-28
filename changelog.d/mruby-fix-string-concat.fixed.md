@@ -1,0 +1,1 @@
+mruby: `(c ? "A" : "a") + "b"` kept its `+ "b"` on every path. The compiler merged the two string literals across the ternary's join point, so the then branch printed `A`. The fork fix (take-cheeze/mruby `claude/fix-string-concat-peephole`) keeps the add when a label falls between the literals.

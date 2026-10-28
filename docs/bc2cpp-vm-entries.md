@@ -135,7 +135,8 @@ is about 305 bodies.
   process. Compiling the load phase is what removes them, and the static irep
   data with them. `BC2CPP_LOAD_COMPILE=all` (the default) does that for the
   engine gems: 420 starts to 385
-  ([measured](bc2cpp-class-bodies.md)). The rest of the engine's bodies keep a
+  ([measured](bc2cpp-class-bodies.md)); the statements run from a byte program and one decoder, which changes the load's
+  text and not its VM starts. The rest of the engine's bodies keep a
   def that a visibility or alias statement names, which needs a second compiled
   phase after the registration; mruby's own mrblib (about 40 bodies) is not
   part of the load world.

@@ -395,7 +395,7 @@ mruby-enumerator's methods stay bytecode because they build Fibers or Enumerator
 Enumerator exists, and `tools/bc2cpp/core_enumerator_free.rb` proves, from the
 bytecode, that none is ever made. `StaticDispatchRegistrations#enumerator_free_keys`
 lists the group in `STATIC_DISPATCH_CORE_LEFT_OUT` only when the proof holds
-(`Yielder#<<` is an operator and stays). The proof reads:
+(`Yielder#<<` too: the proof is no name scan, so an operator is released as an identifier is). The proof reads:
 
 - **Creators.** A Ruby body that sends `to_enum`/`enum_for` or names an Enumerator
   constant, an alias of one, and a native that calls `to_enum` (array.c's
@@ -439,7 +439,7 @@ On the engine the proof holds, so the group is in `STATIC_DISPATCH_CORE_LEFT_OUT
 `Enumerable#chunk` and `#zip`, `Kernel#to_enum` and `#enum_for`, `Enumerator#each`,
 `#each_with_index`, `#with_index`, `#initialize`, `#initialize_copy`, `#next_values`,
 `#__enumerator_block_call`, `Enumerator::Generator#each` and `#initialize`, and
-`Enumerator::Yielder#initialize` and `#yield`. It checks 630 engine and 110 core
+`Enumerator::Yielder#initialize`, `#yield` and `#<<`. It checks 630 engine and 110 core
 sites: 682 are settled by a block or an argument and 58 by the receiver's class
 (the `step`, `index`, `select` and `map` sites of engine classes that define the
 name themselves: `Picture#step`, `@shop.index`, `Game::EventPage.select`,
