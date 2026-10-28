@@ -22,7 +22,7 @@ body's starts minus 50 times its boot starts.
 |---|---|---|---|
 | `Array#sort` alias (`_rgss_native_sort`) | 8236 | 8236 | #2970 (merged; these counts were taken before it, so the alias no longer enters the VM) |
 | `Symbol#to_proc` (method and its lambda) | 720 | 720 | not yet |
-| `Enumerable#inject` (method and its `each` block) | 720 | 720 | not yet (see below) |
+| `Enumerable#inject` (method and its `each` block) | 720 | 720 | the fork's `inject` without the lambda (see below) |
 | `Proc#call` | 563 | 554 | the `default:` lambdas below; the rest call `inject` blocks and the `elements:` lambdas |
 | `LCF::Schema` `elements:` lambdas | 78 | 78 | not yet |
 | `LCF::Schema` `default:` lambdas | 9 | 0 | Symbol defaults (`LCF.edition_default`) |
@@ -77,9 +77,10 @@ is about 305 bodies.
   starts per 50 runs), but it costs the closed proof about 940 of 3262 names:
   delegating the Symbol form to core `inject` through an `Enumerable` view
   forwards `*args` into core's computed `__send__`, which the proof cannot
-  follow. The way out is in the fork's `mrblib/enum.rb`: initialise `sym = nil`
-  before the `if Symbol === args[-1]` guard, drop the `block = ->(x, y) {...}`
-  line and call `result = sym ? result.__send__(sym, val) : block.call(result, val)`.
+  follow. The fork's `mrblib/enum.rb` now does this (take-cheeze/mruby
+  `claude/enum-inject-no-lambda`): `sym = nil` before the `if Symbol === args[-1]`
+  guard, no `block = ->(x, y) {...}` line, and
+  `result = sym ? result.__send__(sym, val) : block.call(result, val)`.
   `Enumerable#inject` then builds no lambda and compiles like any core method.
 - **Class bodies and gem roots at boot.** The boot set is about 305 bodies,
   mostly the 264 class and module bodies and 14 gem roots that run once per
