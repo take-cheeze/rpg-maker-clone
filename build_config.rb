@@ -1126,6 +1126,22 @@ if maix
   end
 end
 
+# CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (static_dispatch_core_excluded.rb) are
+# left out of the closed build's tables at compile time, through the header MRB_MT_EXCLUDE_HEADER names
+# (3rd/mruby/include/mruby/class.h). Written only when it changes, so an unchanged list rebuilds nothing. Both
+# compilers get the define: enable_cxx_exception compiles mruby's C as C++.
+def bc2cpp_core_mt_exclude(conf)
+  require_relative 'tools/bc2cpp/core_native_candidates'
+  require_relative 'tools/bc2cpp/static_dispatch_core_excluded'
+  mruby = File.expand_path('3rd/mruby', __dir__)
+  sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
+  text = CoreNativeCandidates.header(STATIC_DISPATCH_CORE_EXCLUDED.to_a, CoreNativeCandidates.entries(sources.sort))
+  path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
+  FileUtils.mkdir_p(File.dirname(path))
+  File.write(path, text) unless File.exist?(path) && File.read(path) == text
+  [conf.cc, conf.cxx].each { |tool| tool.defines << %(MRB_MT_EXCLUDE_HEADER='"#{path}"') }
+end
+
 if closed
   # `closed`: the sealed RPG2000/2003 desktop host, built natively for CI's `bc2cpp-build` job and for
   # local profiling (scripts/bc2cpp/closed_build.bash, docs/ci.md). bc2cpp compiles closed-world builds
@@ -1155,6 +1171,7 @@ if closed
     # entry no registration names.
     [conf.cc, conf.cxx].each { |t| t.flags << '-ffunction-sections' << '-fdata-sections' }
 
+    bc2cpp_core_mt_exclude(conf)
     rpg_maker_gems(conf)
   end
 end
