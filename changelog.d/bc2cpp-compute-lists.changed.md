@@ -1,0 +1,1 @@
+bc2cpp: the static dispatch lists (open, closed, core ROM exclusions) are no longer committed; the closed build computes them with `scripts/bc2cpp/static_dispatch_registrations.rb --emit`, caches them by a digest of the proof's inputs, and fails loudly when they are missing or stale. A host-sweep check bounds the method-table entry count.

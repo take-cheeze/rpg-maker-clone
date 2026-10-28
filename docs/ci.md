@@ -69,6 +69,18 @@ once per build and called directly afterwards, and maps run in parallel: one pla
 minute, and the whole job (two closed builds of about three minutes each) stays shorter than
 `bc2cpp-build`.
 
+The method-table lists the closed-list proof leaves out are no longer committed. `bc2cpp-build` and
+`bc2cpp-sweep` compute them in the closed build (`scripts/bc2cpp/static_dispatch_lists.bash`, phase 1.5 of
+`closed_build.bash`) and print the counts in the job log. The lists are cached under `build/bc2cpp-lists`,
+keyed by `static_dispatch_registrations.rb --digest` (a hash of every file the proof reads); a hit costs the
+digest, about a second. A miss runs the proof to a fixed point: two generations of the whole library plus
+two scans, about 5 minutes on a 4-core host (passes: 159 s and 140 s measured) (the scan cache, `build/bc2cpp-cache`, is shared). The
+second job to run on one key finds the file already there. `bc2cpp-lists` (pushes, not pull requests) computes the
+same file in a nix shell and uploads it for `maix` and `psp`. `bc2cpp-sweep` also prints
+`dynamic_names_report.rb`'s summary (why method-table entries stay), and `host_sweep.bash` fails when the
+host's method-table entry count exceeds `scripts/bc2cpp/method_table_threshold.txt`. The `dynamic_names_report.rb` step also prints the
+registered names with their reasons (`--entries`) in a collapsed log group, so the remaining entries can be read off a CI run.
+
 The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` and `bc2cpp-sweep` (both
 skipped on purpose for a docs-only change). Require `bc2cpp`.
 

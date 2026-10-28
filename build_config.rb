@@ -168,7 +168,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # Opt-in: a dead bc2cpp_nomethod site aborts
   # without dispatching. Off unless BC2CPP_NOMETHOD_VERIFY=1, so no shipped build changes.
   conf.cxx.defines << 'BC2CPP_NOMETHOD_VERIFY' if ENV['BC2CPP_NOMETHOD_VERIFY'] == '1'
-  # UNREGISTERED_VERIFY: every registration static_dispatch_unregistered*.rb drops is a stub that aborts when
+  # UNREGISTERED_VERIFY: every registration the static dispatch lists drop is a stub that aborts when
   # looked up by name (codegen_emit.rb). Off unless BC2CPP_UNREGISTERED_VERIFY=1.
   conf.cxx.defines << 'BC2CPP_UNREGISTERED_VERIFY' if ENV['BC2CPP_UNREGISTERED_VERIFY'] == '1'
   # Opt-in: the strict-hint survey mode, each distinct violation logged once and dispatched.
@@ -986,10 +986,14 @@ if wio
   end
 end
 
-# CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (static_dispatch_core_excluded.rb) are
+# CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (StaticDispatchLists#core_excluded) are
 # left out of a build's tables at compile time, through the header MRB_MT_EXCLUDE_HEADER names
 # (3rd/mruby/include/mruby/class.h). Written only when it changes, so an unchanged list rebuilds nothing. Both
 # compilers get the define: enable_cxx_exception compiles mruby's C as C++.
+#
+# The lists come from BC2CPP_STATIC_DISPATCH_LISTS (scripts/bc2cpp/static_dispatch_lists.bash writes them); a build
+# started without them stops here, and so does one whose lists were computed from other sources. 'none' (the
+# presym phase of closed_build.bash, which compiles no core C) leaves nothing out.
 #
 # The list is proven for the closed world: the RPG2000/2003 engine's mrblib, every core and external gem's mrblib,
 # every native source under src/, app/, include/, the engine gems and 3rd/mruby, and the closed build's generated
@@ -1001,12 +1005,16 @@ end
 #   - not wio (nor m5stack, which links the wio libmruby): its mrblib is rewritten (wio_strip_*) and swaps in a
 #     generated schema_blob.rb, neither of which the proof reads;
 #   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
-def bc2cpp_core_mt_exclude(conf)
+def bc2cpp_core_mt_exclude(conf, verify: true)
   require_relative 'tools/bc2cpp/core_native_candidates'
-  require_relative 'tools/bc2cpp/static_dispatch_core_excluded'
+  require_relative 'tools/bc2cpp/static_dispatch_lists'
+  lists = StaticDispatchLists.current(required: true)
+  # verify: false for the device builds, whose Ruby (the apt or Alpine one) may lack the Prism the digest needs. They
+  # take the file CI's `bc2cpp-lists` job computed from the same commit (docs/bc2cpp-unregistered-methods.md).
+  StaticDispatchLists.verify_current!(lists, __dir__) if verify
   mruby = File.expand_path('3rd/mruby', __dir__)
   sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
-  text = CoreNativeCandidates.header(STATIC_DISPATCH_CORE_EXCLUDED.to_a, CoreNativeCandidates.entries(sources.sort))
+  text = CoreNativeCandidates.header(lists.core_excluded.to_a, CoreNativeCandidates.entries(sources.sort))
   path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, text) unless File.exist?(path) && File.read(path) == text
@@ -1154,7 +1162,7 @@ if maix
     conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
     # The firmware link's --gc-sections (above) then drops a left-out entry's C function too.
-    bc2cpp_core_mt_exclude(conf) unless ENV['RPGMAKER_BC2CPP']
+    bc2cpp_core_mt_exclude(conf, verify: false) unless ENV['RPGMAKER_BC2CPP']
     rpg_maker_gems(conf)
   end
 end
@@ -1283,7 +1291,7 @@ if psp
     conf.linker.flags += cpu_flags
 
     # Only the table rows go: app/psp links without --gc-sections, so a left-out entry's C function stays.
-    bc2cpp_core_mt_exclude(conf) unless ENV['RPGMAKER_BC2CPP']
+    bc2cpp_core_mt_exclude(conf, verify: false) unless ENV['RPGMAKER_BC2CPP']
     rpg_maker_gems(conf, include_mvjs: false)
   end
 end
