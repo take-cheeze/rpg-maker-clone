@@ -805,6 +805,11 @@ checks:
     capabilities:
     - mrbc
     fixture_capabilities: []
+  scripts/bc2cpp/core_private_ruby_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    fixture_capabilities: []
   scripts/bc2cpp/module_function_scope_check.rb:
     tier: fast
     capabilities:

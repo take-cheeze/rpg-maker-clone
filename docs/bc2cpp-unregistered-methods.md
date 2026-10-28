@@ -294,6 +294,37 @@ Some keys stay whatever their name:
 
 `scripts/bc2cpp/core_native_candidates_check.rb` checks the rule.
 
+#### Private Ruby methods of mruby's own mrblib
+
+A core method that Ruby defines as `private def` (mruby-io's `kernel.rb`: `p`,
+`print`, `printf`, `putc`, `puts`, `gets`, `readline`, `readlines`, `open` and
+the backtick) is listed in `STATIC_DISPATCH_CORE_LEFT_OUT` too when
+`tools/bc2cpp/core_private_ruby.rb` proves that no lookup reaches it. The
+receiver-blind rule above cannot: `$stdout.puts` spells `puts` two hundred
+times, none of them `Kernel#puts`. A private method is reached only by
+
+- an implicit-self send (`SSEND`; `self.gets` compiles to one). The VM checks
+  visibility for `OP_SEND` and not for `OP_SSEND`, so a send with an explicit
+  receiver stops at the method and raises. A self send from a method whose own
+  class, or a superclass below `Object`, defines the name finds that definition
+  first (`IO#each_line`'s `self.gets`, `File.foreach`'s `self.open`) and is no
+  use of the Kernel one;
+- a lookup by name that skips the check: a Symbol (`send(:puts)`, `method`,
+  `&:puts`), an alias or undef, `super`, a name a native spells or a generated
+  literal holds, or one built at run time. The scan counts these like the
+  receiver-blind one does.
+
+A name that another definition of the owner shares (core `kernel.rb`'s public
+backtick stub that mruby-io's replaces) is listed only when the receiver-blind
+scan finds it unused as well. A few native spellings are no lookup
+(`CorePrivateRuby::NOT_LOOKUPS`: `mrb_io_puts_direct` searches an IO's class
+for `puts` and acts only when it finds `io_puts_method` itself; a presym
+scanning tag; cdump's operator table; the `"p"` of `MRUBY_PATCHLEVEL_STR`).
+
+The sealed host refuses `--script` (`scripts/bc2cpp/sealed_host_check.rb`), so
+no Ruby outside the world the proof read runs in the closed binary.
+`scripts/bc2cpp/core_private_ruby_check.rb` checks the rule.
+
 #### Device builds
 
 The ROM exclusion also applies to the interpreted `psp` and `maix` builds.
