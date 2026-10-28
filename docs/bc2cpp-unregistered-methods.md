@@ -36,9 +36,13 @@ any of these could look it up:
   constants holding them. It stops being a fragment when every use only
   compares it (`==`, `when`, `start_with?`), looks it up as a native hash
   key, tests a constant list for it (`LIST.include?(x)`), or puts it into a
-  string that also gets a character no name has (a space, a colon). Any
-  other use keeps it a fragment: a store, a concatenation, an argument of a
-  method the trace doesn't know, or a use the flow query refuses;
+  string that also gets a character no name has (a space, a colon). A
+  concatenation is followed too: the built string's own uses decide, so a
+  string only printed or compared isn't one. Any other use keeps it a
+  fragment: a store, an interned Symbol (`:"#{type}_name"`), an argument of
+  a method the trace doesn't know, or a use the flow query refuses. Engine
+  code that needs per-kind field names spells them in a table
+  (`Game::Vehicle::SYSTEM_NAME_FIELD`) rather than building them;
 - a token in core, external or other-maker mrblib, tests, `scripts/`,
   `.github/`, `tools/` or native sources;
 - for the closed list only, a narrower outside scan:
