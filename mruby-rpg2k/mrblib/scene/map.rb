@@ -3520,8 +3520,8 @@ class RPG2k
           return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100,
                     fadein: ov[:fadein] || 0, balance: ov[:balance] || 50 }
         end
-        field = :"#{type}_music"
-        return nil unless LCF.field?(@db[:system], field)
+        field = Game::Vehicle::SYSTEM_MUSIC_FIELD[type]
+        return nil unless field && LCF.field?(@db[:system], field)
         bgm = @db[:system][field]
         name = music_name(bgm)
         return nil if name.nil? || name.empty?
@@ -5358,7 +5358,9 @@ class RPG2k
       # `#vehicle_passable?`/`#airship_landable?` for the ridden vehicle's own
       # steering colliding with a *different* parked one.
       def vehicle_blocks?(x, y, block_airship:)
-        types = block_airship ? Game::Vehicle::TYPES : %i[boat ship]
+        # `[:boat, :ship]`, not `%i[...]`: %i keeps its words as pool strings, which FRAGMENT_USES reads as pieces of
+        # a run-time-built method name.
+        types = block_airship ? Game::Vehicle::TYPES : [:boat, :ship]
         types.any? do |type|
           v = @state.vehicle(type)
           v && v.placed? && v.map_id == @state.map_id && v.x == x && v.y == y
@@ -11077,7 +11079,7 @@ class RPG2k
         return event_charset(mirror.graphic_name) if mirror && mirror.graphic_name
         name = v.charset_name
         if (name.nil? || name.empty?)
-          field = :"#{v.type}_name"
+          field = Game::Vehicle::SYSTEM_NAME_FIELD[v.type]
           name = @db[:system][field] if LCF.field?(@db[:system], field)
         end
         event_charset(name)
@@ -11102,7 +11104,7 @@ class RPG2k
         mirror = @vehicle_chars[v.type]
         return mirror.graphic_index if mirror && mirror.graphic_name
         if v.charset_name.nil? || v.charset_name.empty?
-          field = :"#{v.type}_index"
+          field = Game::Vehicle::SYSTEM_INDEX_FIELD[v.type]
           return @db[:system][field] if LCF.field?(@db[:system], field)
         end
         v.charset_index

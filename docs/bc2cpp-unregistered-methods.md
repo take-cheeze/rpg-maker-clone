@@ -58,9 +58,17 @@ any of these could look it up:
   constants holding them. It stops being a fragment when every use only
   compares it (`==`, `when`, `start_with?`), looks it up as a native hash
   key, tests a constant list for it (`LIST.include?(x)`), or puts it into a
-  string that also gets a character no name has (a space, a colon). Any
-  other use keeps it a fragment: a store, a concatenation, an argument of a
-  method the trace doesn't know, or a use the flow query refuses;
+  string that also gets a character no name has (a space, a colon). A
+  concatenation is followed too: the built string's own uses decide, so a
+  string only printed or compared isn't one. Any other use keeps it a
+  fragment: a store, an interned Symbol (`:"#{type}_name"`), an argument of
+  a method the trace doesn't know, or a use the flow query refuses. Engine
+  code that needs per-kind field names spells them in a table
+  (`Game::Vehicle::SYSTEM_NAME_FIELD`) rather than building them. The closed
+  list asks the same of an identifier-shaped literal itself (IDENT_USES),
+  once SYMBOL_USES has proven every lookup in the closed bytecode takes a
+  literal name: otherwise a compared literal could be what a computed
+  `send(x)` looks up;
 - a token in core, external or other-maker mrblib, tests, `scripts/`,
   `.github/`, `tools/` or native sources;
 - for the closed list only, a narrower outside scan:
@@ -219,9 +227,30 @@ The engine proof reads core Ruby only for the sends that may reach an engine
 object. A core method is also reached through core receivers, so this rule is
 receiver-blind and coarser. A name stays when any of these spells it:
 
-- a symbol any irep of the program uses: engine, core, external or foreign
-  mrblib, and a def or a constant as well as a send;
-- an identifier-shaped pool string;
+- a symbol an instruction of the program may look up: a send, a `LOADSYM`,
+  an alias, an undef or a key. The operand of a `DEF`, `TDEF` or `SDEF`
+  defines its name, so a name only a def names does not count. An irep with an
+  `ALIAS` keeps all its symbols, because the disassembly shows the alias's old
+  name, the one it looks up, as the new one;
+- an operator opcode's operator (`ADD` sends `+`) and, under `SUPER`, the name
+  of the method the body belongs to;
+- an identifier-shaped pool string.
+
+Every engine irep counts. A core, external or foreign mrblib method body
+counts only while its own name stays reachable (`LIVE_CORE`), solved as a
+fixpoint. Nothing runs a Ruby-defined core method but a lookup of its name or a
+direct `_impl` call from compiled code. A `<Owner>_<name>_impl` token in the
+generated code counts as that name's lookup. Root and class bodies, and the
+blocks made in them, always count. Pool fragments are read from every body,
+live or not.
+
+The rule stays receiver-blind on purpose. A measured variant attributed each
+owner-call site (`BC2CPP_OWNERS`) and each typed compiled send to its receiver's
+owners only. It freed at most four more entries, because the same names stay
+reachable through core mrblib and native lookups whose receivers are unknown.
+
+Names also count from:
+
 - a lookup in the native sources (string literals, presym macros, naming
   macros). The name operand of a table entry or registration call defines the
   name, so it does not count;
@@ -252,6 +281,40 @@ Some keys stay whatever their name:
 - a key on an owner with a computed-name registration.
 
 `scripts/bc2cpp/core_native_candidates_check.rb` checks the rule.
+
+#### Device builds
+
+The ROM exclusion also applies to the interpreted `psp` and `maix` builds.
+Only ROM entries are covered; the run-time list needs mruby-core-compiled, which
+these builds do not link. A build may take the list only when everything it can
+run lies inside the world the proof read. That world is:
+
+- the RPG2000/2003 engine's mrblib;
+- every core and external gem's mrblib;
+- every native source under `src/`, `app/`, `include/`, the engine gems and
+  `3rd/mruby`;
+- the closed build's generated code.
+
+psp and maix are single-format builds, so they have no game Ruby and no other
+maker gem. Their engine mrblib is the closed one, less a few files (psp drops
+the debug tools), and the proof already reads their native sources. Fewer
+sources only remove references, so the closed list stays sound for both. The
+maix firmware's `mrb_load_string` probe evaluates a string literal and sends
+nothing.
+
+On maix the firmware link's `--gc-sections` then drops each excluded entry's C
+function. `app/psp` links without section GC, so on psp only the table rows go.
+
+These builds do not take the list:
+
+- **psp or maix with `RPGMAKER_BC2CPP=1`.** Their generated code is not the
+  closed build's, and a by-name fallback it emits may name a core method the
+  closed generation never did.
+- **wio, and m5stack, which links the wio library.** `wio_strip_*` rewrites its
+  mrblib, and it swaps in a generated `schema_blob.rb`. The proof reads
+  neither.
+- **desktop, wasm and android.** They run a game's own Ruby (RGSS scripts,
+  `eval`), which may name any method.
 
 The probe generates its C++ with `BC2CPP_BUILD_NAME=closed`, so the names
 on either list are missing from its registrations. Every run therefore
