@@ -23,7 +23,8 @@ body's starts minus 50 times its boot starts.
 | `Array#sort` alias (`_rgss_native_sort`) | 8236 | 8236 | #2970 (merged; these counts were taken before it, so the alias no longer enters the VM) |
 | `Symbol#to_proc` (method and its lambda) | 720 | 720 | not yet |
 | `Enumerable#inject` (method and its `each` block) | 720 | 720 | the fork's `inject` without the lambda (see below) |
-| `Proc#call` | 563 | 554 | the `default:` lambdas below; the rest call `inject` blocks and the `elements:` lambdas |
+| `Proc#call` (and `Proc#[]`) | 563 | 554 | the `default:` lambdas below took 9; the fork's `proc_call` cfunc takes the rest (the method was an `OP_CALL` bytecode body; the procs it calls are counted on their own rows) |
+| `BasicObject#!=` | not counted | not counted | the fork's `bob_neq` cfunc (it was an `OP_EQ` bytecode body); not run by the sweep, so no count |
 | `LCF::Schema` `elements:` lambdas | 78 | 78 | not yet |
 | `LCF::Schema` `default:` lambdas | 9 | 0 | Symbol defaults (`LCF.edition_default`) |
 | `Class#new`, `File#initialize` | 14 | 14 | not yet (mruby-io's `File.open`) |
