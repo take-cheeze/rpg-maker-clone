@@ -316,6 +316,73 @@ Some keys stay whatever their name:
 
 `scripts/bc2cpp/core_native_candidates_check.rb` checks the rule.
 
+#### Private Ruby methods of mruby's own mrblib
+
+A core method that Ruby defines as `private def` (mruby-io's `kernel.rb`: `p`,
+`print`, `printf`, `putc`, `puts`, `gets`, `readline`, `readlines`, `open` and
+the backtick) is listed in `STATIC_DISPATCH_CORE_LEFT_OUT` too when
+`tools/bc2cpp/core_private_ruby.rb` proves that no lookup reaches it. The
+receiver-blind rule above cannot: `$stdout.puts` spells `puts` two hundred
+times, none of them `Kernel#puts`. A private method is reached only by
+
+- an implicit-self send (`SSEND`; `self.gets` compiles to one). The VM checks
+  visibility for `OP_SEND` and not for `OP_SSEND`, so a send with an explicit
+  receiver stops at the method and raises. A self send from a method whose own
+  class, or a superclass below `Object`, defines the name finds that definition
+  first (`IO#each_line`'s `self.gets`, `File.foreach`'s `self.open`) and is no
+  use of the Kernel one;
+- a lookup by name that skips the check: a Symbol (`send(:puts)`, `method`,
+  `&:puts`), an alias or undef, `super`, a name a native spells or a generated
+  literal holds, or one built at run time. The scan counts these like the
+  receiver-blind one does, except for the generated spellings below.
+
+A name that another definition of the owner shares (core `kernel.rb`'s public
+backtick stub that mruby-io's replaces) is listed only when the receiver-blind
+scan finds it unused as well. A few native spellings are no lookup
+(`CorePrivateRuby::NOT_LOOKUPS`: `mrb_io_puts_direct` searches an IO's class
+for `puts` and acts only when it finds `io_puts_method` itself; a presym
+scanning tag; cdump's operator table; the `"p"` of `MRUBY_PATCHLEVEL_STR`).
+
+The generated C++ spells `puts`, `print` and `open` as the name of the sends it
+makes from the engine's own `x.puts(...)`, which the engine's bytecode already
+shows as explicit-receiver sends. `CorePrivateRuby.strip_generated` reads the
+generated source for this scan as follows:
+
+- the code generator writes the receiver of a self send as `self` and any other
+  as a register (`r3`), so a call of `bc2cpp_io_puts`, `bc2cpp_funcall_argv`,
+  `bc2cpp_send` or `bc2cpp_owner_call` on a register is the C++ of an `OP_SEND`.
+  A symbol-table name whose every use is one is blanked (by index: the table
+  has a row per kind of use). A `self` receiver, a symbol value, a computed
+  `mrb_funcall` or any other call keeps the name;
+- a comment (a `POLY_DIAG` line quotes the name it decided on), the name a
+  registration defines (`mrb_define_method(M, Tee, "print", ...)`) and the
+  `$stderr.puts` of the failure reports (a `respond_to?` and a call on `$stderr`,
+  which is an `IO` or the `RGSS::ErrorReport::Tee`, both defining `puts`) look
+  nothing up.
+
+The generated call does not check visibility where the VM would (an unchecked
+`mrb_funcall`), so a receiver without a public `puts` reached the private one.
+With the method gone it raises `NoMethodError` as `OP_SEND` does, which is the
+interpreter's behaviour and the premise of the explicit-receiver rule above.
+
+A compiled core body is called directly through `<Owner>_<name>_impl`
+(`Kernel_print_impl`). The ROM scan reads that as a use of the name, so
+`RGSS__ErrorReport__Tee_print_impl` kept `Kernel#print`, `IO_singleton_open_impl`
+kept `Kernel#open` and `Enumerable_each_with_object_impl` kept
+`Enumerator#with_object` (the suffix `_with_object_impl`). The private-name scan
+(`exact_impls`) matches the owner: a direct call makes the body of the owner it
+names live, and is no lookup of the name. The ROM scan is unchanged.
+
+With both, `Kernel#print`, `puts` and `open`, `IO.popen` (reached only from
+`Kernel#open`'s and the backtick's bodies) and `Enumerator#with_object` leave the
+closed build's list (86 to 91 run-time removals; the ROM list stays 152).
+`scripts/bc2cpp/explicit_receiver_literals_check.rb` checks the rules in both
+directions.
+
+The sealed host refuses `--script` (`scripts/bc2cpp/sealed_host_check.rb`), so
+no Ruby outside the world the proof read runs in the closed binary.
+`scripts/bc2cpp/core_private_ruby_check.rb` checks the rule.
+
 #### Device builds
 
 The ROM exclusion also applies to the interpreted `psp` and `maix` builds.

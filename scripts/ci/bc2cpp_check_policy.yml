@@ -826,6 +826,16 @@ checks:
     capabilities:
     - mrbc
     fixture_capabilities: []
+  scripts/bc2cpp/core_private_ruby_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    fixture_capabilities: []
+  scripts/bc2cpp/explicit_receiver_literals_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    fixture_capabilities: []
   scripts/bc2cpp/module_function_scope_check.rb:
     tier: fast
     capabilities:
@@ -835,6 +845,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+    fixture_capabilities: []
+  scripts/bc2cpp/compiled_gems_config_check.rb:
+    tier: fast
+    capabilities: []
     fixture_capabilities: []
   scripts/bc2cpp/mrblib_stubs_check.rb:
     tier: fast
