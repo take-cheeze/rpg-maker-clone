@@ -192,6 +192,17 @@ checked in.
 generation. It is meant for check fixtures, which have no place in the
 committed lists.
 
+## Why an entry stays
+
+`scripts/bc2cpp/dynamic_names_report.rb` runs the closed-only proof and prints,
+for each entry it keeps, the first source that made the name dynamic: a C
+string literal in a gem's generated code, `ALWAYS_DYNAMIC`, a Symbol literal
+(`SYMBOL_USES`), a file whose text names it, a send in code that may run as
+bytecode, a string fragment that may build it, or the base name of a suffixed
+one. The default output is a summary by source; `--entries` lists every kept
+entry with its reason. Only the first reason is shown, so removing one source
+can reveal the next.
+
 ## Verify mode
 
 `BC2CPP_UNREGISTERED_VERIFY=1` (`build_config.rb`) defines
