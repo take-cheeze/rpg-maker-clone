@@ -745,6 +745,7 @@ jobs:
           ruby scripts/bc2cpp/const_lexical_order_check.rb
           ruby scripts/bc2cpp/zsuper_optional_check.rb
           ruby scripts/bc2cpp/super_lookup_check.rb
+          ruby scripts/bc2cpp/gc_root_check.rb
           ruby scripts/bc2cpp/const_bindings_check.rb
           ruby scripts/bc2cpp/explicit_block_arg_direct_check.rb
           ruby scripts/bc2cpp/stack_block_check.rb

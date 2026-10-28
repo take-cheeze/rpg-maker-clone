@@ -1287,6 +1287,8 @@
   [tagged word](docs/bc2cpp-tagged-fixnum.md) under word boxing (`-DBC2CPP_TAGGED_FIXNUM=0` compares).
   A `freeze` of a core iterator's result on a literal keeps embedded ivar stores free of the
   [frozen test](docs/bc2cpp-fresh-freeze.md) (`BC2CPP_FRESH_FREEZE=0` compares).
+  A store over an existing slot [roots the value it replaces](docs/bc2cpp-gc-roots.md), as the interpreter's
+  register would (`BC2CPP_GC_KEEP_OVERWRITTEN=0` compares).
   A guarded `send(*table[i])` [remembers each row's arm](docs/bc2cpp-splat-row-memo.md) while the row
   stays bit-identical (`BC2CPP_SPLAT_ROW_MEMO=0` compares).
   A devirtualized call to an embedded ivar's `attr_reader` [reads the field in place](docs/bc2cpp-attr-reader-inline.md)
