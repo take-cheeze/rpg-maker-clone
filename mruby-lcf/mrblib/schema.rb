@@ -12,6 +12,13 @@
 # An :int16_array field may carry `format:`, the String#unpack template its
 # elements are read with (default 's<*', signed little-endian; 'S<*' for
 # unsigned). The schema is the one source for it: LCF.int16_format reads it.
+#
+# A `default:` that is a Symbol (`:level_max`, `:exp_default`) names a value that depends on the edition
+# (LCF::MODE); LCF.to_rb resolves it through LCF.edition_default when an absent field is read. It is a Symbol, not
+# a `-> { LCF.level_max }` lambda, because a lambda made by this file's class bodies is bytecode: every read entered
+# the VM twice (Proc#call, then the lambda). It is not an object either: the registration proof
+# (static_dispatch_registrations.rb, load_phase) treats a class body's blocks as load-time code and gives up as soon as
+# such code instantiates an engine class.
 module LCF
   module Schema
     # Every table is a plain Hash literal, defined before any table that
@@ -95,7 +102,7 @@ module LCF
             4 => { name: :charset_index, type: :int, default: 0 },
             5 => { name: :semi_transparent, type: :bool, default: false },
             7 => { name: :initial_level, type: :int, default: 1 },
-            8 => { name: :max_level, type: :int, default: -> { LCF.level_max } },
+            8 => { name: :max_level, type: :int, default: :level_max },
             9 => { name: :has_critical_rate, type: :bool, default: true },
             10 => { name: :critical_rate, type: :int, default: 30 },
 
@@ -114,9 +121,9 @@ module LCF
             # confirmed against a genuine RPG_RT.exe, not row-major.
             31 => { name: :status, type: :int16_array, order: [:max_hp, :max_mp, :atk, :def, :int, :agi] },
 
-            41 => { name: :exp_basic, type: :int, default: -> { LCF.exp_default } },
-            42 => { name: :exp_increase, type: :int, default: -> { LCF.exp_default } },
-            43 => { name: :exp_correction, type: :int, default: -> { LCF.exp_default } },
+            41 => { name: :exp_basic, type: :int, default: :exp_default },
+            42 => { name: :exp_increase, type: :int, default: :exp_default },
+            43 => { name: :exp_correction, type: :int, default: :exp_default },
 
             51 => { name: :initial_equipment, type: :int16_array, order: [:weapon, :shield, :armor, :helmet, :accessory] },
 
@@ -885,8 +892,8 @@ module LCF
             # field 31 above (Game::Actor#base_stats/#curve_row), confirmed
             # against a genuine RPG_RT.exe.
             31 => { name: :parameters, type: :int16_array },
-            41 => { name: :exp_basic, type: :int, default: -> { LCF.exp_default } },
-            42 => { name: :exp_increase, type: :int, default: -> { LCF.exp_default } },
+            41 => { name: :exp_basic, type: :int, default: :exp_default },
+            42 => { name: :exp_increase, type: :int, default: :exp_default },
             43 => { name: :exp_correction, type: :int, default: 0 },
             62 => { name: :battler_animation, type: :int, default: 1 },      # id into chunk 32's battleranimations
             63 => { name: :skills, type: :Array2D, elements: LEARNING },
