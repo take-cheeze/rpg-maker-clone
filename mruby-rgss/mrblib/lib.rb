@@ -391,7 +391,7 @@ module RGSS
       ['bottom-left', frame_mean(1, h - b + 1, c, c), [255, 255, 255]],
       ['bottom-right', frame_mean(w - b + 1, h - b + 1, c, c), [255, 255, 0]],
       ['top edge', frame_mean(w / 2, 1, 32, c), [255, 0, 255]],
-      ['background', frame_mean(w / 2, h / 2, 32, 32), [0, 255, 0]],
+      ['background tile', frame_mean(w / 2, h / 2, 32, 32), [0, 255, 0]],
     ]
     ok = true
     want.each do |name, got, exp|

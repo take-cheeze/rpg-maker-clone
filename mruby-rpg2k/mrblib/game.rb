@@ -9544,6 +9544,17 @@ module Game
     # loop uses it as a straight constant.
     DEFAULT_MOVE_SPEED = { boat: 4, ship: 4, airship: 5 }.freeze
 
+    # The database and map-tree field names of each vehicle, spelled out rather than built (`:"#{type}_name"`): a
+    # name built at run time from a fragment like "_name" may be any method ending in it, so the closed build had to
+    # keep every such method in its tables (FRAGMENT_USES, static_dispatch_fragment_uses.rb).
+    SYSTEM_NAME_FIELD = { boat: :boat_name, ship: :ship_name, airship: :airship_name }.freeze
+    SYSTEM_INDEX_FIELD = { boat: :boat_index, ship: :ship_index, airship: :airship_index }.freeze
+    SYSTEM_MUSIC_FIELD = { boat: :boat_music, ship: :ship_music, airship: :airship_music }.freeze
+    INITIAL_FIELDS = {
+      boat: %i[boat_map_id boat_x boat_y], ship: %i[ship_map_id ship_x ship_y],
+      airship: %i[airship_map_id airship_x airship_y]
+    }.freeze
+
     attr_accessor :map_id, :x, :y, :direction, :charset_name, :charset_index
     attr_reader :type
 
@@ -10389,11 +10400,12 @@ module Game
       init = map_tree && LCF.field?(map_tree, :initial) ? map_tree[:initial] : nil
       return unless init
       Vehicle::TYPES.each do |type|
-        next unless LCF.field?(init, :"#{type}_map_id")
+        map_id_field, x_field, y_field = Vehicle::INITIAL_FIELDS[type]
+        next unless LCF.field?(init, map_id_field)
         v = @vehicles[type]
-        v.map_id = init[:"#{type}_map_id"] || 0
-        v.x = init[:"#{type}_x"] || 0
-        v.y = init[:"#{type}_y"] || 0
+        v.map_id = init[map_id_field] || 0
+        v.x = init[x_field] || 0
+        v.y = init[y_field] || 0
       end
     rescue StandardError => e
       # A tree without the fields is not fatal — every vehicle then stays
