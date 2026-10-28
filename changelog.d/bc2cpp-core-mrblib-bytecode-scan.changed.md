@@ -1,0 +1,1 @@
+bc2cpp: the closed-list proof reads a reflective core mrblib file's bytecode symbols instead of its text, skips sources the closed binary doesn't contain (unlinked core gems, `app/`, the swapped-out `map_tts.rb`), reads the closed host `trace_host.cxx`, and ignores C comments, so names only those spell leave the closed build's method tables.
