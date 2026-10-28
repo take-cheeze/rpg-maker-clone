@@ -6772,6 +6772,16 @@ module Game
 
     attr_reader :index, :commands
 
+    # The engine reads the cursor and steps through these two names (the closed-build proof that no Enumerator is made,
+    # tools/bc2cpp/core_enumerator_free.rb, cannot tell a route's `index` or `step` from Array#index or Numeric#step).
+    def cursor
+      @index
+    end
+
+    def advance(character, world)
+      step(character, world)
+    end
+
     def done?; @done; end
     def empty?; @commands.empty?; end
     def repeat?; @repeat; end
@@ -7475,14 +7485,14 @@ module Game
     # event auto-start gate), so it stays nil. #load sets every other field
     # right after `.new`; `id` is the only one typed up front.
     class CommonEventRecord
-      attr_accessor :id, :trigger, :need_flag, :switch_id, :chunk, :commands, :guarded
+      attr_accessor :id, :trigger, :need_flag, :switch_id, :lcf_chunk, :commands, :guarded
 
       def initialize
         @id = 0
         @trigger = nil
         @need_flag = nil
         @switch_id = nil
-        @chunk = nil
+        @lcf_chunk = nil
         @commands = nil
         @guarded = nil
       end
@@ -7513,7 +7523,7 @@ module Game
         rec.trigger = trigger
         rec.need_flag = c[:need_flag]
         rec.switch_id = c[:switch_id]
-        rec.chunk = c
+        rec.lcf_chunk = c
         rec.commands = eager ? c[:event] : nil
         list.push(rec)
       end

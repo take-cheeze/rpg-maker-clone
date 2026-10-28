@@ -399,24 +399,32 @@ lists the group in `STATIC_DISPATCH_CORE_LEFT_OUT` only when the proof holds
 world, `--sites` every checked site. `scripts/bc2cpp/core_enumerator_free_check.rb`
 holds the rule to fixtures in both directions.
 
-On the engine as it stands the proof does not hold, so the group stays in the
-tables. Of the 637 engine and 110 core sites it checks, 682 are settled by a block
-or an argument and 59 by the receiver's class (the `step`, `index`, `select` and
-`map` sites of engine classes that define the name themselves: `Picture#step`,
-`@shop.index`, `Game::EventPage.select`, `@state.map`, ...). 6 sites are not,
-from two places whose receiver the model cannot type:
+On the engine the proof holds, so the group is in `STATIC_DISPATCH_CORE_LEFT_OUT`:
+`Enumerable#chunk` and `#zip`, `Kernel#to_enum` and `#enum_for`, `Enumerator#each`,
+`#each_with_index`, `#with_index`, `#initialize`, `#initialize_copy`, `#next_values`,
+`#__enumerator_block_call`, `Enumerator::Generator#each` and `#initialize`, and
+`Enumerator::Yielder#initialize` and `#yield`. It checks 630 engine and 110 core
+sites: 682 are settled by a block or an argument and 58 by the receiver's class
+(the `step`, `index`, `select` and `map` sites of engine classes that define the
+name themselves: `Picture#step`, `@shop.index`, `Game::EventPage.select`,
+`@state.map`, ...). Two places had a receiver the model cannot type and were
+written so it can:
 
-- `Scene::Map#run_route_step` receives `@vehicle_routes[type]`, an element of a
-  Hash: `route.index` and `route.step` (4 sites) cannot be told from
-  `Array#index` and `Numeric#step`. Reading the cursor and stepping through
-  `MoveRoute#cursor` and `#advance` removes the sites (the closed world never
-  calls `MoveRoute#index` or `#step` by those names again).
-- `Scene::EventResolver#common_event_commands` reads `entry.chunk` of
-  `@common[id]` (2 sites): `Enumerable#chunk` makes an Enumerator even with a
-  block, so every `chunk` site needs its receiver. Naming the accessor
-  `lcf_chunk` removes them.
+- `Scene::Map#run_route_step` received `@vehicle_routes[type]`, an element of a Hash,
+  so `route.index` and `route.step` could not be told from `Array#index` and
+  `Numeric#step`. The engine reads the cursor and steps through `MoveRoute#cursor`
+  and `#advance`, names no core class shares.
+- `Scene::EventResolver#common_event_commands` read `entry.chunk` of `@common[id]`;
+  `Enumerable#chunk` makes an Enumerator even with a block, so every `chunk` site
+  needs its receiver. The accessor is `lcf_chunk` now.
 
-With those two edits the proof holds and the 15 entries leave the table.
+`STATIC_DISPATCH_CORE_LEFT_OUT` grows by those 15 and `Enumerator#with_object`, which the name
+scan kept; the closed host's method table (`BC2CPP_HOST_MT_COUNT`, `host_sweep.bash`) goes from
+1290 to 1272 entries.
+
+A blockless `index`, `step`, `map`, `chunk` or any other iterator name on a receiver
+the model cannot type fails the proof from here on and puts the whole group back in
+the tables; `scripts/bc2cpp/core_enumerator_free_report.rb` names the site.
 
 #### Device builds
 
