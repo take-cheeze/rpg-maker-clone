@@ -261,8 +261,8 @@ assert "LCF absent-field defaults: a lambda default is evaluated, not returned r
 end
 
 assert "LCF edition-dependent helpers are callable as module methods (used by lazy defaults)" do
-  # The real schema uses `-> { LCF.level_max }` / `-> { LCF.exp_default }` etc.
-  # as lazy defaults, so these must be reachable as `LCF.<name>` -- otherwise
+  # The real schema uses the Symbols `:level_max` / `:exp_default` as lazy
+  # defaults (LCF.edition_default), so these must be reachable as `LCF.<name>` -- otherwise
   # evaluating an absent field's default raises NoMethodError for module LCF.
   assert_equal LCF::MODE == 2003 ? 99 : 50, LCF.level_max
   assert_equal LCF::MODE == 2003 ? 300 : 30, LCF.exp_default
@@ -270,6 +270,16 @@ assert "LCF edition-dependent helpers are callable as module methods (used by la
   assert_equal LCF::MODE == 2003 ? -9_999_999 : -999_999, LCF.var_min
   assert_equal LCF::MODE == 2003 ? 9999 : 999, LCF.pc_hp_max
   assert_equal LCF::MODE == 2003 ? 99_999 : 9999, LCF.npc_hp_max
+end
+
+assert "LCF.edition_default resolves a schema Symbol default to the edition's value" do
+  assert_equal LCF.level_max, LCF.edition_default(:level_max)
+  assert_equal LCF.exp_default, LCF.edition_default(:exp_default)
+  assert_raise(ArgumentError) { LCF.edition_default(:nope) }
+  # An absent field of the real schema yields the edition's value through the reader.
+  player = LCF.elements_of(LCF::Schema::DATABASE[:elements][11])
+  assert_equal LCF.level_max, LCF.to_rb(nil, player[8])
+  assert_equal LCF.exp_default, LCF.to_rb(nil, player[41])
 end
 
 assert "LCF::Database#maker detects RPG2003 by the Classes section (chunk 30)" do

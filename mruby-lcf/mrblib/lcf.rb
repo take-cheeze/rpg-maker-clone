@@ -301,11 +301,13 @@ module LCF
   end
 
   def to_rb d, s
-    # An absent field yields its schema default. A callable (`-> { ... }`)
-    # default is lazy -- evaluate it -- so edition-dependent defaults such as
-    # max level and the exp curve resolve to their value, not the Proc itself.
+    # An absent field yields its schema default. A Symbol default names an
+    # edition-dependent value (max level, the exp curve) -- see
+    # edition_default -- and a callable (`-> { ... }`) default is lazy:
+    # evaluate it, so the value resolves, not the Proc itself.
     unless d
       dv = s[:default]
+      return edition_default(dv) if dv.is_a?(Symbol)
       return dv.respond_to?(:call) ? dv.call : dv
     end
     raise TypeError, "LCF field bytes are #{d.class}, not String" unless d.is_a?(String)
@@ -574,11 +576,21 @@ module LCF
 
   def exp_default; MODE == 2003 ? 300 : 30 end
 
+  # The value of a schema `default:` Symbol (schema.rb): the edition helper it names.
+  def edition_default kind
+    case kind
+    when :level_max then level_max
+    when :exp_default then exp_default
+    else raise ArgumentError, "unknown edition default: #{kind}"
+    end
+  end
+
   # Edition-dependent helpers are referenced as `LCF.<name>` from lazy schema
-  # defaults (`-> { LCF.level_max }` etc.), so they must be module functions --
-  # otherwise calling the default raises NoMethodError for module LCF.
+  # defaults (edition_default, or a `-> { LCF.level_max }` lambda), so they
+  # must be module functions -- otherwise calling the default raises
+  # NoMethodError for module LCF.
   module_function :var_max, :var_min, :level_max, :pc_hp_max, :npc_hp_max,
-                  :exp_default
+                  :exp_default, :edition_default
 
   class Array1D
     def initialize s, schema
