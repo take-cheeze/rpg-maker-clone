@@ -129,19 +129,23 @@ def bc2cpp_stub_mrblib(spec)
   return unless names.any? { |name| name.end_with?('-compiled') }
 
   require_relative 'tools/bc2cpp/compiled_gems'
+  require_relative 'tools/bc2cpp/load_compile'
   compiled = BC2CPP_COMPILED_GEMS.select { |name, _| names.include?(name) }
   dirs = compiled.map { |name, g| ["#{spec.build.build_dir}/mrbgems/#{name}", g[:out_symbol]] }
   manifests = dirs.map { |dir, symbol| MrblibStubs.manifest_path(dir, symbol) }
   generated = dirs.map { |dir, symbol| "#{dir}/#{symbol}_gen.cpp" }
   stubs_rb = File.expand_path('tools/bc2cpp/mrblib_stubs.rb', __dir__)
   out_dir = "#{spec.build_dir}/mrblib_stubs"
+  # LOAD_COMPILE: the files this gem's mrblib is made of, before the rewrite below -- the sources the load plans name.
+  spec.instance_variable_set(:@bc2cpp_mrblib_sources, spec.rbfiles.dup)
+  plans = dirs.map { |dir, symbol| LoadCompile.plan_path(dir, symbol) }
   spec.rbfiles = spec.rbfiles.map do |src|
     rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
     out = "#{out_dir}/#{rel}"
     # The generation that writes a gem's code writes its manifest too.
     file out => [src, stubs_rb, *generated] do
       FileUtils.mkdir_p File.dirname(out), verbose: true
-      MrblibStubs.write_stubbed(src, out, manifests)
+      MrblibStubs.write_stubbed(src, out, manifests, LoadCompile.read_plans(plans))
     end
     out
   end
