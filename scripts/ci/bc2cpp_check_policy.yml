@@ -79,6 +79,9 @@ checks:
   scripts/bc2cpp/sealed_host_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/schema_blob_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/core_ruby_query_check.rb:
     tier: fast
     capabilities: []

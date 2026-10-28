@@ -1,0 +1,1 @@
+The wio build's schema blob (a compact replacement for mrblib/schema.rb) dropped the `format:` and `enums:` keys. Two unsigned int16 fields (`skills`, `states`) read as signed on wio, and the enum names of `start_term` were lost. The blob now encodes both, and keeps each section's source order. `scripts/bc2cpp/schema_blob_check.rb` checks the blob against schema.rb.

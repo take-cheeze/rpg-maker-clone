@@ -29,10 +29,12 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   # Hash-literal-construction bytecode sequence, measured at 45,293 bytes
   # (real `mrbc -g`) -- the single largest file in this gem. Replaced here
   # with a compact packed binary blob plus a small, constant-size decoder
-  # (gen_schema_blob.rb), verified byte-for-byte behaviorally identical
-  # (every constant, every nested/lazy field, every default, the two
-  # object-identity-sharing cases) against schema.rb by the
-  # comparison script -- 23,878 bytes, a real 47% cut. Measured only
+  # (gen_schema_blob.rb), checked against schema.rb by
+  # scripts/bc2cpp/schema_blob_check.rb (every constant, every key of every
+  # field including `format:` and `enums:`, section order, every nested/lazy
+  # field, every default). That check found the generator had been dropping
+  # `format:` and `enums:`, which made two unsigned int16 fields read as
+  # signed; both are encoded now. 23,878 bytes, a real 47% cut. Measured only
   # against wio's own flash budget (15,624 bytes recovered on
   # a real `env:wio_rgss_boot` relink); no other target is flash-constrained
   # enough to need it.
@@ -70,7 +72,7 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   # this failure mode. Every other target (host/desktop, wasm, psp,
   # android) goes back to `schema.rb`'s plain Hash literals -- the same
   # form the CRuby `scripts/**/*_check.rb` scripts already trust, and the one
-  # the comparison script verified against byte-for-byte.
+  # schema_blob_check.rb verifies the blob against.
   #
   # schema.rb itself is untouched and stays the single source of truth
   # (every scripts/**/*_check.rb script `load`s it directly under CRuby, with

@@ -47,8 +47,14 @@
 #                    u16 name_idx, u8 type_tag, u8 flags, u8 default_tag,
 #                    [i16 default_value if default_tag == DEFAULT_INT],
 #                    [u8 order_count, order_count * u16 name_idx if flags&1],
+#                    [u16 format_idx if flags&8],
+#                    [u8 enum_count, enum_count * (i16 key, u16 name_idx) if flags&16],
 #                    [u16 nested_section_idx if flags&2]
-#                  flags: bit0 has_order, bit1 has_nested, bit2 nested_lazy
+#                  flags: bit0 has_order, bit1 has_nested, bit2 nested_lazy,
+#                  bit3 has_format (a String, e.g. 'S<*'), bit4 has_enums
+#                  (Integer => Symbol; the table strings are the Symbol names).
+#                  A section keeps schema.rb's own key order, so the decoded
+#                  Hash iterates exactly as the source Hash does.
 #
 # Usage: ruby gen_schema_blob.rb <path-to-mrblib/schema.rb> <output.rb>
 
@@ -172,7 +178,10 @@ class Generator
     nested = field[:elements]
     has_nested = !nested.nil?
     nested_lazy = has_nested && nested.respond_to?(:call)
-    flags = (has_order ? 1 : 0) | (has_nested ? 2 : 0) | (nested_lazy ? 4 : 0)
+    has_format = field.key?(:format)
+    has_enums = field.key?(:enums)
+    flags = (has_order ? 1 : 0) | (has_nested ? 2 : 0) | (nested_lazy ? 4 : 0) |
+            (has_format ? 8 : 0) | (has_enums ? 16 : 0)
     dtag, dval = default_tag_and_value(field[:default])
 
     w.u16(name_idx).u8(type_tag).u8(flags).u8(dtag)
@@ -181,6 +190,21 @@ class Generator
       names = field[:order]
       w.u8(names.size)
       names.each { |n| w.u16(string_index(n)) }
+    end
+    if has_format
+      format = field[:format]
+      raise "format must be a String: #{format.inspect}" unless format.is_a?(String)
+
+      w.u16(string_index(format))
+    end
+    if has_enums
+      enums = field[:enums]
+      w.u8(enums.size)
+      enums.each do |key, name|
+        raise "enum name must be a Symbol: #{name.inspect}" unless name.is_a?(Symbol)
+
+        w.i16(key).u16(string_index(name))
+      end
     end
     return unless has_nested
 
@@ -204,7 +228,7 @@ class Generator
     @section_idx_by_object_id[key] = idx
 
     w = BlobWriter.new
-    entries = hash.sort_by { |id, _| id }
+    entries = hash.to_a
     w.u16(entries.size)
     entries.each do |id, field|
       raise "section entry id out of range: #{id}" unless id.is_a?(Integer) && id >= 0 && id <= 0xffff
@@ -390,6 +414,16 @@ DECODER = <<~'RUBY'
             count = r.u8
             h[:order] = Array.new(count) { @symbols[r.u16] }
           end
+          h[:format] = @strings[r.u16] if (flags & 8) != 0
+          if (flags & 16) != 0
+            enums = {}
+            count = r.u8
+            count.times do
+              key = r.i16
+              enums[key] = @symbols[r.u16]
+            end
+            h[:enums] = enums
+          end
           if (flags & 2) != 0
             idx = r.u16
             h[:elements] = (flags & 4) != 0 ? -> { section(idx) } : section(idx)
@@ -403,7 +437,8 @@ DECODER = <<~'RUBY'
 
           r = Reader.new(BLOB)
           str_count = r.u16
-          @symbols = Array.new(str_count) { r.bytes(r.u8).to_sym }
+          @strings = Array.new(str_count) { r.bytes(r.u8) }
+          @symbols = @strings.map(&:to_sym)
 
           sec_count = r.u16
           @section_offsets = Array.new(sec_count) { r.u16 }
