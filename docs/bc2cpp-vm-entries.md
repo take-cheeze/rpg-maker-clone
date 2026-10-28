@@ -85,4 +85,9 @@ is about 305 bodies.
 - **Class bodies and gem roots at boot.** The boot set is about 305 bodies,
   mostly the 264 class and module bodies and 14 gem roots that run once per
   process. Compiling the load phase is what removes them, and the static irep
-  data with them.
+  data with them. `BC2CPP_LOAD_COMPILE=all` (the default) does that for the
+  engine gems: 420 starts to 385
+  ([measured](bc2cpp-class-bodies.md)). The rest of the engine's bodies keep a
+  def that a visibility or alias statement names, which needs a second compiled
+  phase after the registration; mruby's own mrblib (about 40 bodies) is not
+  part of the load world.
