@@ -41,7 +41,7 @@ unchanged; it was not re-run. The After column is this refresh, on `origin/maste
 | `Proc#call` (and `Proc#[]`) | 563 | 0 | the fork's `proc_call` cfunc; no `OP_CALL` body started in any run |
 | `BasicObject#!=` | not counted | 0 | the fork's `bob_neq` cfunc (it was an `OP_EQ` bytecode body) |
 | `Hash#to_proc` (method and its lambda) | not counted | 0 | the fork's native `Hash#to_proc`; no scenario converts a Hash, so this zero does not exercise the native path |
-| `LCF::Schema` `elements:` lambdas | 78 | 81 | not yet; 13 distinct bodies (by instruction and register count) started, 6 of the 393 starts are at boot |
+| `LCF::Schema` `elements:` lambdas | 78 | 81 | folded to byte tables by #2991 (merged after this measurement, so the 81 is pre-fold; re-measure on current master); 13 distinct bodies started, 6 of the 393 starts are at boot |
 | `LCF::Schema` `default:` lambdas | 9 | 0 | Symbol defaults (`LCF.edition_default`); no `default: ->` lambda is left in `mruby-lcf/mrblib/schema.rb`, and none started |
 | `Class#new` | 14 (with `File#initialize`) | 0 | the fork's native `Class#new` (`class_new_instance`) |
 | `File#initialize` | in the 14 | 0 | the fork's native `File#initialize` (`mrb_file_init`); no run started it |
@@ -82,18 +82,37 @@ is replaced by this one.
   5 of 1094 names provable. Whatever replaces the load phase has to keep that
   in mind.
 
+- **`elements:` lambdas.** Each of the 18 builds one record type's field table
+  (DATABASE's player, skill, item, ...; MAP_UNIT's map fields) once per process
+  (`LCF.elements_of` caches the Hash back onto the schema entry). They are lazy
+  on purpose: building all of them at load raised a NoMemoryError on the Wio's
+  192 KB SRAM. As bytecode they entered the VM twice on first use (`Proc#call`,
+  then the lambda); compiled to C++ they would cost about 245 KB of text at
+  `-Os` (265 bytes a field, some 930 fields). In a build with compiled gems
+  (not wio, which has `gen_schema_blob.rb`) `mruby-lcf/gen_schema_tables.rb`
+  now loads `schema.rb` under CRuby, calls each lambda once and writes
+  `schema_tables.cc`, 18 byte tables and a string pool in `.rodata`, and a copy
+  of `schema.rb` in which each lambda is its table number (same lines).
+  `LCF.elements_of` hands an Integer to `LCF.schema_table`, a native routine
+  (`src/schema_tables.hxx`) that builds the Hash on that first read, and
+  caches it as before; nothing is built at load. A table names the schema's own
+  shared constants (`elements: SE`) as references, so the object sharing is
+  kept, and keeps the keys' order. `schema.rb` stays the one source, plain Ruby
+  that CRuby loads. `scripts/bc2cpp/lcf_schema_tables_check.rb` decodes every
+  table with a real mruby, with a full collection before every value, and
+  compares the whole of `LCF::Schema` (lambdas called under CRuby, tables
+  decoded under mruby) as text. Measured (closed build, clang 18): the schema
+  is 38,136 B of irep without debug info and 14,418 B folded; the tables and
+  strings are 13.4 KB and the decoder 2.2 KB at `-Os`, so 8 KB less; the New
+  Game run (3000 frames) starts 14 fewer bodies and the battle scenario 24.
+  The string pool is the larger part of the data (520 names); a compact
+  encoding of it is the next saving. The registration proof reads native
+  sources for method names, and every C string literal counts as one: the
+  decoder spells no field key (`type` among them) and takes them from the pool,
+  or four classes' `type` left the closed list.
+
 ## What stays, and why
 
-- **`elements:` lambdas (18 in the source).** Each builds one record type's field
-  table, once per process (`LCF.elements_of` caches the Hash back onto the schema
-  entry). They are lazy on purpose: building all of them at load raised a
-  NoMemoryError on the Wio's 192 KB SRAM. In this refresh 13 distinct bodies
-  started, 81 times after boot in 52 runs. Compiling them is a size loss while
-  the VM is linked. A 100-field nested table compiles to about 26 KB more text
-  at `-Os` (265 bytes a field), so the roughly 930 fields cost about 245 KB,
-  against about 50 KB of bytecode. The way out is to fold them to data at build
-  time and decode them with one compiled routine, which is what
-  `mruby-lcf/gen_schema_blob.rb` already does for wio.
 - **`Symbol#to_proc` (240 conversions, 480 element calls)** was removed by a
   native implementation in the fork (take-cheeze/mruby
   `claude/symbol-to-proc-native`). All of it was in the battle scenario: a
@@ -175,3 +194,6 @@ is replaced by this one.
   bodies keep a def that a visibility or alias statement names, which needs a second
   compiled phase after the registration; mruby's own mrblib (about 40 bodies) is not
   part of the load world.
+ Folding the two computed constants to data and dropping the visibility statements on defs the build
+  leaves out takes the boot set from 330 to 316 starts (measured on the class-structure branch, before this
+  refresh's base).
