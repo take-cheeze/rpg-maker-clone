@@ -9,30 +9,60 @@ removes each entry. This page is that list.
 ## How it was measured
 
 A counter in a local, uncommitted patch of `3rd/mruby/src/vm.c` counts every
-bytecode body the VM starts: from C (`mrb_vm_exec`) and inside the VM
-(`OP_SEND`, `OP_CALL`, `OP_BLKCALL`). The closed host
-(`scripts/bc2cpp/trace_host.bash`) ran the five `scripts/bc2cpp/host_sweep.bash`
-scenarios (New Game, a battle, the menu, a save, a load) and every twelfth map
-for 150 frames: 50 runs. A 1-frame run gives the boot set; "after boot" is a
-body's starts minus 50 times its boot starts.
+bytecode body the VM starts, at five sites: from C (`mrb_vm_exec`, "C_entry"),
+`OP_EXEC` (class and module bodies), `OP_SEND`, `OP_CALL` and `OP_BLKCALL`. Each
+start is keyed by the method name, the owning class, the kind (method, lambda or
+block) and the body's instruction and register counts. The patch writes its tally
+to the file named by `BC2CPP_VMCNT_OUT` at exit and does nothing without that
+variable. It is never committed.
 
-## After boot, 50 runs
+The closed host (`scripts/bc2cpp/trace_host.bash`, against the closed `libmruby.a`)
+ran the scenarios of `scripts/bc2cpp/host_sweep.bash`: New Game, a battle (troop 1,
+played to the end), the menu, saves at three menu depths, and a load. That is
+seven processes. It also ran every twelfth map of the sorted `Map*.lmu` list
+(positions 12, 24, ..., 540: 45 maps) for 150 frames. That is 52 runs in all. A
+1-frame New Game run gives the boot set; "after boot" is a body's starts across the
+52 runs minus 52 times its boot starts.
+
+The earlier table divided by 50. `host_sweep.bash` runs seven scenario processes,
+so the sweep is 52 runs, and the divisor is now the number of runs actually made.
+
+The Before column is the earlier measurement, on the code before the change, copied
+unchanged; it was not re-run. The After column is this refresh, on `origin/master`
+`f89b525` with the fork pinned at `95f8c40`.
+
+## After boot, 52 runs
 
 | Entry | Before | After | Removed by |
 |---|---|---|---|
-| `Array#sort` alias (`_rgss_native_sort`) | 8236 | 8236 | #2970 (merged; these counts were taken before it, so the alias no longer enters the VM) |
-| `Symbol#to_proc` (method and its lambda) | 720 | 0 | the fork's native `Symbol#to_proc` (`claude/symbol-to-proc-native`; expected, see below) |
-| `Enumerable#inject` (method and its `each` block) | 720 | 720 | the fork's `inject` without the lambda (see below) |
-| `Proc#call` (and `Proc#[]`) | 563 | 554 | the `default:` lambdas below took 9; the fork's `proc_call` cfunc takes the rest (the method was an `OP_CALL` bytecode body; the procs it calls are counted on their own rows) |
-| `BasicObject#!=` | not counted | not counted | the fork's `bob_neq` cfunc (it was an `OP_EQ` bytecode body); not run by the sweep, so no count |
-| `Hash#to_proc` (method and its lambda) | not counted | not counted | the fork's native `Hash#to_proc` (`claude/hash-to-proc-native`); no scenario converts a Hash, so no count |
-| `LCF::Schema` `elements:` lambdas | 78 | 0 | folded to byte tables (below) |
-| `LCF::Schema` `default:` lambdas | 9 | 0 | Symbol defaults (`LCF.edition_default`) |
-| `Class#new` (with `File#initialize`) | 14 | not recounted | the fork's native `Class#new` (`claude/class-new-cfunc`) |
-| `File#initialize` | in the 14 | not recounted | the fork's native `File#initialize` (`claude/file-initialize-cfunc`) |
+| `Array#sort` alias (`_rgss_native_sort`) | 8236 | 0 | #2970 (merged); this refresh measured 0 starts |
+| `Symbol#to_proc` (method and its lambda) | 720 | 0 | the fork's native `Symbol#to_proc` (`claude/symbol-to-proc-native`); the battle run is included, so the zero covers the path that made the 720 |
+| `Enumerable#inject` (method and its `each` block) | 720 | 0 | the fork's `inject` without the lambda (see below) |
+| `Proc#call` (and `Proc#[]`) | 563 | 0 | the fork's `proc_call` cfunc; no `OP_CALL` body started in any run |
+| `BasicObject#!=` | not counted | 0 | the fork's `bob_neq` cfunc (it was an `OP_EQ` bytecode body) |
+| `Hash#to_proc` (method and its lambda) | not counted | 0 | the fork's native `Hash#to_proc`; no scenario converts a Hash, so this zero does not exercise the native path |
+| `LCF::Schema` `elements:` lambdas | 78 | 81 | folded to byte tables by #2991 (merged after this measurement, so the 81 is pre-fold; re-measure on current master); 13 distinct bodies started, 6 of the 393 starts are at boot |
+| `LCF::Schema` `default:` lambdas | 9 | 0 | Symbol defaults (`LCF.edition_default`); no `default: ->` lambda is left in `mruby-lcf/mrblib/schema.rb`, and none started |
+| `Class#new` | 14 (with `File#initialize`) | 0 | the fork's native `Class#new` (`class_new_instance`) |
+| `File#initialize` | in the 14 | 0 | the fork's native `File#initialize` (`mrb_file_init`); no run started it |
 
-Without the sort alias that is 2104 starts before and 2086 after. The boot set
-is about 305 bodies.
+Every After value above was measured in this refresh. The Before values are the
+earlier measurement, carried over. `BasicObject#!=` and `Hash#to_proc` were never
+counted before, so they have no Before number.
+
+Without the sort alias, the earlier after-boot total was 2086 starts (2104 before).
+In this refresh the VM starts 185 bodies after boot in all, and only three bodies
+account for them: the `elements:` lambdas (81), blocks named `to_a` whose owning
+class is anonymous, entered from C (100), and `Enumerable#to_a` (4). Nothing else
+starts in any of the 52 runs. Those two `to_a` groups are not in the table above;
+the census does not say which class the anonymous one belongs to.
+
+## Boot set
+
+The 1-frame New Game run starts 293 bodies (177 distinct bodies): 182 `OP_EXEC`
+(class and module bodies), 69 `OP_BLKCALL` (blocks), 27 entered from C, and 15
+`OP_SEND`. The earlier figure, about 305 bodies, came from the earlier counter and
+is replaced by this one.
 
 ## What was removed
 
@@ -125,6 +155,7 @@ is about 305 bodies.
   names `Class#new` sends from the function's text instead of the irep's presyms.
   The table's bytecode entries are then `File#initialize` and `Enumerator::Yielder#<<`
   (`File#initialize` goes with the next change, `Yielder#<<` with the Enumerator-free list).
+  In this refresh both have 0 starts, and `Enumerator::Yielder#<<` appears in no row.
 - **`Hash#to_proc`** was mruby-hash-ext's `->x{self[x]}`, a lambda returned to
   its caller, so it stayed bytecode (the last method of the Symbol#to_proc kind).
   `src/hash_ext.c` now makes a strict cfunc proc with the Hash in its env that reads
@@ -137,7 +168,7 @@ is about 305 bodies.
   The method table keeps its entry (it is a ROM entry now); the bytecode entries
   of the table go from 4 to 3 (`Class#new`, `File#initialize`,
   `Enumerator::Yielder#<<`).
-- **`Enumerable#inject` / `reduce` (720 starts).** mruby's method builds a lambda
+- **`Enumerable#inject` / `reduce` (720 starts per 50 runs before).** mruby's method builds a lambda
   for a Symbol argument, and a core method that builds a lambda stays bytecode
   (`CoreDefs.builds_lambda?`), so every engine `reduce(0) { ... }` runs the method,
   its `each` block per element and a `Proc#call` per element in the VM. An
@@ -150,14 +181,19 @@ is about 305 bodies.
   guard, no `block = ->(x, y) {...}` line, and
   `result = sym ? result.__send__(sym, val) : block.call(result, val)`.
   `Enumerable#inject` then builds no lambda and compiles like any core method.
-- **Class bodies and gem roots at boot.** The boot set is about 305 bodies,
-  mostly the 264 class and module bodies and 14 gem roots that run once per
-  process. Compiling the load phase is what removes them, and the static irep
-  data with them. `BC2CPP_LOAD_COMPILE=all` (the default) does that for the
-  engine gems: 420 starts to 385
-  ([measured](bc2cpp-class-bodies.md)); the statements run from a byte program and one decoder, which changes the load's
-  text and not its VM starts. Folding the two computed constants to data and dropping the visibility statements on
-  defs the build leaves out takes the boot set from 330 to 316 starts. The rest of the engine's bodies keep a
-  def for the stub proof's own reasons (an alias source, a `module_function`
-  copy, a guard, a loaded copy: 133 defs); mruby's own mrblib (about 40 bodies)
-  is not part of the load world.
+  In this refresh it has 0 starts.
+- **Class bodies and gem roots at boot.** The boot set is 293 starts in this refresh
+  (see Boot set above), 182 of them class and module bodies. Compiling the load
+  phase is what removes them, and the static irep data with them.
+  `BC2CPP_LOAD_COMPILE=all` (the default) does that for the engine gems: the
+  [class-bodies measurement](bc2cpp-class-bodies.md) gives 420 boot starts before and
+  385 after. That figure is not reproduced here: this refresh's full boot set is 293
+  starts under the same compiled load, so the two counts differ in method or build
+  and need reconciling. The statements run from a byte program and one decoder,
+  which changes the load's text and not its VM starts. The rest of the engine's
+  bodies keep a def that a visibility or alias statement names, which needs a second
+  compiled phase after the registration; mruby's own mrblib (about 40 bodies) is not
+  part of the load world.
+ Folding the two computed constants to data and dropping the visibility statements on defs the build
+  leaves out takes the boot set from 330 to 316 starts (measured on the class-structure branch, before this
+  refresh's base).
