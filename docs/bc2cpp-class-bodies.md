@@ -159,8 +159,8 @@ numbers: nothing enters the VM after boot on a plain map):
 | `OP_CALL`, `OP_BLKCALL` | 99 | 99 |
 | total | 420 | 385 |
 
-The C entries grow by the 29 constants the load builds with `Foo.new(...)` (`Class#new` is bytecode in the fork; the
-VM ran them as sends before). What remains are the bodies that keep a def: the compiled load runs before the compiled
+The C entries grow by the 29 constants the load builds with `Foo.new(...)` (`Class#new` was bytecode in the fork when
+this was measured, now a native; the VM ran them as sends before). What remains are the bodies that keep a def: the compiled load runs before the compiled
 gem installs its methods, so a def named by `private :x`, `module_function :x` or `alias_method` has to stay as
 bytecode for that statement to find it (78 of the 161 kept defs). Running those statements after the registration, in
 a second compiled phase, would let those defs go too.
