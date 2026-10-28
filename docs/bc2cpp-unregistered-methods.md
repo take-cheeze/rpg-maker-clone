@@ -5,7 +5,8 @@ by name at runtime. When every caller reaches it through a direct `_impl` call
 in generated C++, bc2cpp leaves it out of the table: no `mrb_define_method`
 call, and no `mrb_get_args` wrapper kept alive for it. The gem's mrblib has
 already defined the method as bytecode (or as an `attr_*` accessor) by then,
-so the generated registration removes that definition too.
+so the generated registration removes that definition too, and the build ships
+its body empty ([Stubbed mrblib bodies](bc2cpp-mrblib-stubs.md)).
 
 ## What decides it
 

@@ -372,4 +372,5 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   wio_strip_rgss_probes(spec)
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
+  bc2cpp_stub_mrblib(spec)
 end
