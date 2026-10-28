@@ -21,13 +21,35 @@ any of these could look it up:
   proc (`mrb_proc_new`, `mrb_closure_new`), every such block counts as
   runnable again;
 - a C string literal in the generated C++, outside the name's own
-  registration. Two kinds of use don't count, because neither looks up a
-  compiled method: the by-name fallback of a `MONO_EMBED_GUARD` on an owner
-  nothing subclasses, and the proof-failure helpers (`bc2cpp_nomethod`,
-  `bc2cpp_nomethod_raise`, `bc2cpp_guard_violation`,
-  `bc2cpp_hint_violation`, `bc2cpp_nil_receiver`). The nomethod helpers only
-  dispatch on a receiver proven not to answer the name. The violation helpers
-  raise without dispatching. The nil helper dispatches on `nil`;
+  registration. Three kinds of use don't count, because none looks up a
+  compiled method:
+  - the by-name fallback of a `MONO_EMBED_GUARD` on an owner nothing
+    subclasses;
+  - the proof-failure helpers (`bc2cpp_nomethod`, `bc2cpp_nomethod_raise`,
+    `bc2cpp_guard_violation`, `bc2cpp_hint_violation`,
+    `bc2cpp_nil_receiver`). The nomethod helpers only dispatch on a receiver
+    proven not to answer the name. The violation helpers raise without
+    dispatching. The nil helper dispatches on `nil`;
+  - an owner call (`bc2cpp_owner_call`) that covers every engine owner it
+    lists (`OWNER_CALL_GUARDED`). The call runs only a method found on a
+    listed owner and raises a closed-world violation for any other, so it
+    needs no registration but its listed owners'. A listed owner is covered
+    when the call is the final else of an exact-class guard chain
+    (`bc2cpp_class_is`) that tests it and nothing subclasses it, or when the
+    call carries its compiled entry (`OWNER_CALL_DIRECT`,
+    `tools/bc2cpp/owner_call_direct.rb`). With direct entries the call walks
+    the receiver's ancestors in lookup order and answers with the entry where
+    the lookup would have found it, so it behaves the same whether the entry
+    is registered or not. The emitter adds entries only to a call they
+    complete, because each entry costs a row of read-only data.
+
+  "Nothing subclasses" is a scan for written superclasses (`< Foo`,
+  `Class.new(Foo)`, a native define call's superclass argument). Full-line
+  Ruby comments don't count. A native file adds all its capitalized string
+  literals only when one of its define calls passes a superclass that isn't a
+  builtin (`M->object_class`, `E_STANDARD_ERROR`, ...). For the closed list the
+  scan reads only the closed binary's sources: the check scripts'
+  `Class.new(klass)` fixtures made every class count as subclassed;
 - `super`;
 - a string-pool literal or a `"#{x}_suffix"`-style fragment. For the closed
   list, a literal counts as a fragment only when a load of it may reach a
