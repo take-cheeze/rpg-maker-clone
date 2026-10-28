@@ -836,8 +836,9 @@ class RPG2k
     map = RGSS::Profiler.section("map.transition.load") { load_map map_id }
     x, y = preview_map_id ? [map.width / 2, map.height / 2]
                            : [init[:initial_x], init[:initial_y]]
-    state = RGSS::Profiler.section("map.transition.party") do
-      Game::State.new Game::Party.new(@db), map_id, x, y
+    state = nil
+    RGSS::Profiler.section("map.transition.party") do
+      state = Game::State.new Game::Party.new(@db), map_id, x, y
     end
     RGSS::Profiler.section("map.transition.seed") do
       # The database's System tab configures the six screen transitions a
