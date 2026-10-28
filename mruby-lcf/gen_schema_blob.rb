@@ -55,8 +55,8 @@
 SCHEMA_PATH = ARGV.fetch(0)
 OUT_PATH = ARGV.fetch(1)
 
-# Loading schema.rb needs the LCF.level_max / LCF.exp_default helpers a few
-# defaults call (real module_functions in lcf.rb, alongside schema.rb).
+# lcf.rb is loaded first, as every consumer of schema.rb does: its
+# LCF.edition_default resolves the Symbol defaults schema.rb names.
 load ::File.join(::File.dirname(SCHEMA_PATH), 'lcf.rb')
 load SCHEMA_PATH
 
@@ -149,23 +149,17 @@ class Generator
       when 100.0 then [DEFAULT_FLOAT_100, nil]
       else raise "unsupported float default: #{d.inspect}"
       end
-    else
-      raise "unsupported default kind: #{d.inspect}" unless d.respond_to?(:call)
-
-      # Only two callable defaults exist anywhere in schema.rb (grep
-      # confirms: `default: ->` appears six times total, one LCF.level_max
-      # and five LCF.exp_default) -- identify by source text so a future
-      # third callable raises loudly here instead of being silently
-      # mis-tagged.
-      loc = d.source_location
-      src = loc && ::File.readlines(loc.first)[loc.last - 1]
-      if src&.include?('LCF.level_max')
-        [DEFAULT_PROC_LEVEL_MAX, nil]
-      elsif src&.include?('LCF.exp_default')
-        [DEFAULT_PROC_EXP_DEFAULT, nil]
-      else
-        raise "unrecognized callable default (add a DEFAULT_PROC_* case): #{src.inspect}"
+    when Symbol
+      # Only two Symbol defaults exist anywhere in schema.rb (the edition-dependent ones LCF.edition_default
+      # resolves) -- tag them by name so a future third one raises loudly here instead of being silently
+      # mis-tagged. The decoder below hands the reader a lambda for each, which LCF.to_rb calls the same way.
+      case d
+      when :level_max then [DEFAULT_PROC_LEVEL_MAX, nil]
+      when :exp_default then [DEFAULT_PROC_EXP_DEFAULT, nil]
+      else raise "unrecognized Symbol default (add a DEFAULT_PROC_* case): #{d.inspect}"
       end
+    else
+      raise "unsupported default kind: #{d.inspect}"
     end
   end
 

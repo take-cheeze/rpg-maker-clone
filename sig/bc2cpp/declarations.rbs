@@ -8285,9 +8285,24 @@ module Comparable
   def clamp: (untyped, ?untyped) -> untyped
 end
 
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_sprintf
+class String
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_rgss
+class RGSS::HashArchive
+  def initialize: (untyped) -> untyped
+  def read: (untyped) -> untyped
+end
+
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_lcf
 module LCF
   def binstr: (untyped) -> untyped
+  def edition_default: (untyped) -> untyped
   def elements_of: (untyped) -> untyped
   def encode: (untyped, untyped) -> untyped
   def encode_event_commands: (untyped) -> untyped
@@ -8311,18 +8326,6 @@ module LCF
   def var_max: () -> untyped
   def var_min: () -> untyped
   def write_ber: (untyped) -> untyped
-end
-
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_sprintf
-class String
-end
-
-# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_rgss
-class RGSS::HashArchive
-  def initialize: (untyped) -> untyped
-  def read: (untyped) -> untyped
 end
 
 # ---- block_types.rbs
