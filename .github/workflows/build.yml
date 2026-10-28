@@ -908,21 +908,91 @@ jobs:
           source "$RUNNER_TEMP/bc2cpp-checks.sh"
 
 
+  # HOST_SWEEP: the closed build played as the game it ships, in both forms, off bc2cpp-build's critical path.
+  # scripts/bc2cpp/host_sweep.bash plays Nepheshel's scripted scenarios and every map on the plain closed build,
+  # then on one built with BC2CPP_UNREGISTERED_VERIFY=1, where every registration the closed list leaves out
+  # is a stub that fails loudly when reached (docs/bc2cpp-unregistered-methods.md). A lookup the registration
+  # proof missed, or a stubbed mrblib body that runs, fails the job.
+  bc2cpp-sweep:
+    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
+    needs: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: >-
+            3rd/effekseer 3rd/gflags 3rd/ng-log
+            3rd/inicpp 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
+
+      - uses: nixbuild/nix-quick-install-action@v35
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-bc2cpp-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-bc2cpp-${{ runner.os }}-
+
+      - name: Set up development environment
+        run: ./scripts/nix/develop-export-env.bash .#bc2cpp
+
+      - name: Cache bc2cpp scan cache
+        uses: actions/cache@v6
+        with:
+          path: build/bc2cpp-cache
+          key: bc2cpp-scan-cache-${{ hashFiles('tools/bc2cpp/*.rb') }}
+          restore-keys: bc2cpp-scan-cache-
+
+      - name: Download Nepheshel
+        run: ./scripts/download/nepheshel.bash
+
+      - name: Build the closed-world mruby
+        timeout-minutes: 45
+        env:
+          RAKEOPT: -m -j4
+        run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-sweep"
+
+      - name: Play the closed build's scenarios and every map
+        timeout-minutes: 15
+        run: env -u LD scripts/bc2cpp/host_sweep.bash "$GITHUB_WORKSPACE/build-closed-sweep"
+
+      - name: Build the closed-world mruby in verify mode
+        timeout-minutes: 45
+        env:
+          RAKEOPT: -m -j4
+          BC2CPP_UNREGISTERED_VERIFY: '1'
+        run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-verify"
+
+      - name: Play the verify build's scenarios and every map
+        timeout-minutes: 15
+        run: env -u LD scripts/bc2cpp/host_sweep.bash "$GITHUB_WORKSPACE/build-closed-verify"
+
   # Aggregate `bc2cpp` status check. Keeps the name of the old one-job `bc2cpp`,
   # so a required check on it needs no settings change.
   bc2cpp:
     if: ${{ always() && github.event_name != 'issue_comment' }}
-    needs: [changes, bc2cpp-build]
+    needs: [changes, bc2cpp-build, bc2cpp-sweep]
     runs-on: ubuntu-24.04
     steps:
-      - name: Require the bc2cpp build to succeed
+      - name: Require the bc2cpp build and sweep to succeed
         env:
           CODE: ${{ needs.changes.outputs.code }}
           BUILD: ${{ needs.bc2cpp-build.result }}
+          SWEEP: ${{ needs.bc2cpp-sweep.result }}
         run: |
-          echo "code: $CODE, bc2cpp-build: $BUILD"
-          # A skipped build is fine only when no code changed.
-          [ "$BUILD" = success ] || { [ "$CODE" != true ] && [ "$BUILD" = skipped ]; }
+          echo "code: $CODE, bc2cpp-build: $BUILD, bc2cpp-sweep: $SWEEP"
+          # A skipped job is fine only when no code changed.
+          for result in "$BUILD" "$SWEEP"; do
+            [ "$result" = success ] || { [ "$CODE" != true ] && [ "$result" = skipped ]; } || exit 1
+          done
 
   # Ruby-only checks. They load the mruby-*/mrblib sources under CRuby, so
   # they never need the C++ toolchain or the engine binary and run alongside
