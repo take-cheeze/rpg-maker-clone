@@ -44,18 +44,39 @@ module MrblibStubs
     copy_sites = copy_sites(ireps, parent)
     defs_of = Hash.new { |h, k| h[k] = [] }
     registry.each { |name, defs| defs.each { |d| defs_of["#{d.owner}##{name}"] << d } }
-    compiled.reject { |m| m[:guard] }.filter_map do |m|
+    reasons = {}
+    stubbed = compiled.filter_map do |m|
       key = "#{m[:owner]}##{m[:name]}"
-      defs = defs_of[key]
-      next unless defs.size == 1
-
-      d = defs.first
-      next if d.irep.nil? || d.kind || d.installer || d.copy_irep
-      next if load_bodies.include?(d.irep) || copied.include?(d.irep)
-      next if copied_names.include?(m[:name]) && copy_source?(d.owner, m[:name], copy_sites[m[:name]], world)
-
-      key
+      reason = keep_reason(m, defs_of[key], load_bodies, copied, copied_names, copy_sites, world)
+      reasons[key] = reason || 'stubbable'
+      key unless reason
     end.to_set
+    dump_keep_reasons(reasons) if ENV['BC2CPP_STUB_KEEP_DUMP']
+    stubbed
+  end
+
+  # Why a compiled method's body keeps its bytecode, or nil when it can be stubbed. Checked in the order the
+  # proof states them: a guard, the def count, then the def's own shape, then the load phase and copies.
+  def keep_reason(m, defs, load_bodies, copied, copied_names, copy_sites, world)
+    return 'guard' if m[:guard]
+    return "defs=#{defs.size}" unless defs.size == 1
+
+    d = defs.first
+    return 'no_irep' if d.irep.nil?
+    return 'kind' if d.kind
+    return 'installer' if d.installer
+    return 'copy_irep' if d.copy_irep
+    return 'load_phase' if load_bodies.include?(d.irep)
+    return 'copied' if copied.include?(d.irep)
+    return 'copied_name' if copied_names.include?(m[:name]) && copy_source?(d.owner, m[:name], copy_sites[m[:name]], world)
+
+    nil
+  end
+
+  # BC2CPP_STUB_KEEP_DUMP=FILE: append one "Owner#name<TAB>reason" row per compiled method (reason 'stubbable' when it
+  # is stubbed). A debug aid for the stub proof; it does not change the result.
+  def dump_keep_reasons(reasons)
+    File.open(ENV['BC2CPP_STUB_KEEP_DUMP'], 'a') { |f| reasons.each { |key, reason| f.puts "#{key}\t#{reason}" } }
   end
 
   # COPY SITES. A copy by name takes its source from the receiver's method lookup. A site in a class body whose
