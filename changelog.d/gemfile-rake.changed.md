@@ -1,0 +1,1 @@
+- Build tooling: `Gemfile` pins `rake` 13.4.2 next to `prism` and `rbs`, so `bundle exec` scripts (the bc2cpp closed build) can load rake under the pinned Prism.
