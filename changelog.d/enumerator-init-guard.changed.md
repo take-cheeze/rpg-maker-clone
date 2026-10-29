@@ -1,1 +1,1 @@
-bc2cpp: the mruby-enumerator initializers that take a block (Enumerator, Generator, Yielder #initialize) compile behind the block guard.
+bc2cpp: the mruby-enumerator initializers that take a block (Enumerator, Generator, Yielder #initialize) compile behind the block guard. The closed host's method table measures 1272 entries, so `scripts/bc2cpp/method_table_threshold.txt` goes from 1269 to 1272.
