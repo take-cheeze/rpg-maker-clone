@@ -76,6 +76,9 @@ checks:
     capabilities: []
     fixture_capabilities:
     - mrbc
+  scripts/bc2cpp/class_world_gate_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/sealed_host_check.rb:
     tier: fast
     capabilities: []
