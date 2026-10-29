@@ -8,3 +8,4 @@ source 'https://rubygems.org'
 
 gem 'prism', '1.9.0'
 gem 'rbs', '4.0.0'
+gem 'rake', '13.4.2'
