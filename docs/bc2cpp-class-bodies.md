@@ -173,8 +173,24 @@ prepends, the ancestors, the singleton class's chain, whether it is final (no su
 included), whether more than one body opens it, and which of its bodies the load can evaluate statically and which keep
 bytecode and why. `class_body_report.rb --world=FILE` writes it as JSON with a summary. A class is `exact` when every
 body that opens it, and every ancestor's, contains only modeled statements; otherwise it is unknown with the reason
-named, and unknown spreads to its subclasses. Nothing in code generation reads it. The check compares every exact
-fixture class with the interpreted graph.
+named, and unknown spreads to its subclasses. The check compares every exact fixture class with the interpreted graph.
+
+`tools/bc2cpp/class_world_gate.rb` (`ClassWorldGate`) derives the same graph from the closed build's sources (the roots
+`class_body_report.rb` reports on) and is the one thing code generation reads from it: `exact_receiver?(klass)` is true only
+when the class and every ancestor are exact, and an unknown name is refused. `CodeGen#class_world_exact_target` (codegen_send.rb)
+uses it for a receiver whose class the flow names: when the existing closed-world lookup finds no compiled body, the one
+public Ruby definition the ancestor chain reaches is called directly behind the TYPED runtime class guard (`CLASS_WORLD_TYPED`).
+It refuses any definition on a native, unknown or module owner, a prepend, an unknown mixin, or a name installed at run
+time, so such a receiver keeps the owner call. `BC2CPP_CLASS_WORLD_DIRECT=0` turns it off.
+
+Measured on the closed build (shipped C++ from `coverage_report.rb` with `BC2CPP_COVERAGE_KEEP_DIR`; that script's
+summary step fails on a stale heading, so the counts come from the kept `shipped.cxx`): 1,896 owner-call sites and
+`CLASS_WORLD_TYPED` 0 before and after, the output is byte-identical. The gate is consulted 4,184 times (4,180 for an
+exact class, mostly Array, Hash, Range and RGSS classes). Most are refused by the native-definer rule, and the owner-call
+sites carry no receiver class from the flow, so the graph alone does not turn any owner-call site into a direct call.
+The owner-call direct rows that wait on an exact graph need a receiver-class source for those sites first.
+`scripts/bc2cpp/class_world_gate_check.rb` proves the gate on a fixture graph (exact, non-exact, unknown, native definer,
+kill switch) and on the closed build's graph.
 
 ## Symbol names after a def leaves the mrblib
 
