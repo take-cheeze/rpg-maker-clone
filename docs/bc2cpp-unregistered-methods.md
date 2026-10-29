@@ -427,7 +427,11 @@ lists the group in `STATIC_DISPATCH_CORE_LEFT_OUT` only when the proof holds
 - **Other ways in.** An engine `to_enum` or Enumerator constant; a Symbol that
   names a creator and reaches a lookup (`map(&:each)`, `send(:select)`); any
   lookup that takes a computed name; a native that spells a creator name
-  (`CoreEnumeratorFree::NOT_CALLS` lists the two spellings that are no call); a
+  (`CoreEnumeratorFree::NOT_CALLS` lists the two spellings that are no call; a
+  native send `mrb_funcall_with_block(mrb, self, MRB_SYM(each), ..., mrb_obj_value(blk))`
+  whose `blk` the native assigns once from `mrb_proc_new_cfunc_with_env` in the
+  same block before the send is settled as a send with a literal block, by
+  `CoreEnumeratorFree.native_own_block_sends`); a
   native `include`/`prepend` the owner map cannot resolve; a `method_missing`; an
   engine class that inherits Enumerator.
 
