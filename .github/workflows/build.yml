@@ -823,6 +823,7 @@ jobs:
           ruby scripts/bc2cpp/compiled_owners_check.rb
           ruby scripts/bc2cpp/compiled_gems_config_check.rb
           ruby scripts/bc2cpp/mrblib_stubs_check.rb
+          ruby scripts/bc2cpp/mrblib_copy_sites_check.rb
           ruby scripts/bc2cpp/escape_receiver_flow_check.rb
           ruby scripts/bc2cpp/skipped_direct_call_check.rb
           ruby scripts/bc2cpp/array_literal_block_check.rb
