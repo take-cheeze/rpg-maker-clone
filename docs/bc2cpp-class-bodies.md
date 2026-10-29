@@ -192,6 +192,25 @@ The owner-call direct rows that wait on an exact graph need a receiver-class sou
 `scripts/bc2cpp/class_world_gate_check.rb` proves the gate on a fixture graph (exact, non-exact, unknown, native definer,
 kill switch) and on the closed build's graph.
 
+### Receiver sources measured (closed build, kept `shipped.cxx`)
+
+The 1,896 owner-call sites, by the text of their receiver (a textual measurement of the nearest assignment, not the IR):
+`self` 409 (implicit-self sends), a method or call result about 624, a copy of another register about 170, an ivar read
+about 75, a fresh allocation about 38, a constant about 14; the rest are nested expressions.
+
+`CodeGen#class_world_self_target` proves the `self` source: an implicit-self send in an instance method of owner C is an
+instance of C when C is exact and final (`ClassWorldGate.self_exact?`), the body belongs to C alone, and the ancestor walk
+of ClassWorld from C reaches one public Ruby definition. It runs last, after every existing path has declined. On the
+closed build it gains no site: the 409 `self` owner calls sit on native holders (Array, Hash, String, StringIO, Kernel,
+Enumerable), on a module, or on a non-final superclass (`LCF::SaveTyped::Record`, 17 subclasses). A native holder cannot be
+placed by the registry alone, and placing it by `name_owner_set` is memoized per name over the compile context, so calling it
+from a new site changed unrelated output (one `CLOSED_WORLD_SELF` site became `MONO`); the finder therefore reads the
+registry only. Output is byte-identical to the baseline (`cmp` of the kept `shipped.cxx`).
+
+The other sources (method or call results, ivars, copies of registers) are not proven by a class-graph fact yet: their
+receiver class is a value's class, which needs the return-class or ivar-writer flow (RETURN_CLASS_TABLE, ivar writers) per
+site. Those stay on the owner call.
+
 ## Symbol names after a def leaves the mrblib
 
 A registration interns its method name by string. While the mrblib had the `def`, the name was a presym (a binary
