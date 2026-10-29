@@ -769,6 +769,9 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/path_form_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/class_body_check.rb:
     tier: runtime
     capabilities:
