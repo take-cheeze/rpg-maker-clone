@@ -1,0 +1,1 @@
+- The closed-build Enumerator proof accepts a native `each` send that passes a block the native builds itself (such as the fork's `Enumerable#entries` and `#inject`), so the mruby-enumerator methods stay released instead of kept. Sends of `each` without such a block are still refused.
