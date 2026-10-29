@@ -1,0 +1,1 @@
+mruby: `Enumerable#to_a` (and `entries`) is native now. It used to run its block as bytecode, one VM start per element, and the fork implements it as a cfunc. Behavior is unchanged, except that `Method#arity` on `to_a` and `entries` reports -1 (it was 0): a cfunc has no arity, and mruby does not record one for it yet.
