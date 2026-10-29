@@ -765,6 +765,7 @@ jobs:
           ruby scripts/bc2cpp/edition_default_check.rb
           ruby scripts/bc2cpp/schema_blob_check.rb
           ruby scripts/bc2cpp/class_body_check.rb
+          ruby scripts/bc2cpp/path_form_check.rb
           ruby scripts/bc2cpp/class_world_check.rb
           ruby scripts/bc2cpp/lcf_schema_tables_check.rb
           ruby scripts/bc2cpp/owner_call_direct_check.rb
