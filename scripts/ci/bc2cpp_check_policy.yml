@@ -76,6 +76,9 @@ checks:
     capabilities: []
     fixture_capabilities:
     - mrbc
+  scripts/bc2cpp/class_world_gate_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/sealed_host_check.rb:
     tier: fast
     capabilities: []
@@ -769,6 +772,9 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/path_form_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/class_body_check.rb:
     tier: runtime
     capabilities:
@@ -1186,6 +1192,9 @@ checks:
     tier: fast
     capabilities: []
   scripts/bc2cpp/class_hierarchy_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/class_world_check.rb:
     tier: fast
     capabilities: []
   scripts/bc2cpp/conversion_returns_check.rb:

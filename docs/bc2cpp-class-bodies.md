@@ -173,8 +173,48 @@ prepends, the ancestors, the singleton class's chain, whether it is final (no su
 included), whether more than one body opens it, and which of its bodies the load can evaluate statically and which keep
 bytecode and why. `class_body_report.rb --world=FILE` writes it as JSON with a summary. A class is `exact` when every
 body that opens it, and every ancestor's, contains only modeled statements; otherwise it is unknown with the reason
-named, and unknown spreads to its subclasses. Nothing in code generation reads it. The check compares every exact
-fixture class with the interpreted graph.
+named, and unknown spreads to its subclasses. A computed constant that `PureEval` folds (the same decision as
+`LoadCompile`'s) is static, so a class whose only blocker is a folded constant is exact; a constant that holds code
+(a lambda) or an Integer outside 32 bits is not folded and keeps its class unknown. A superclass that is a C-defined
+core class (`ClassWorld::NATIVE`, such as `RuntimeError`) is known. The check
+compares every exact fixture class with the interpreted graph; `scripts/bc2cpp/class_world_check.rb` is the fast check
+of these rules.
+
+`tools/bc2cpp/class_world_gate.rb` (`ClassWorldGate`) derives the same graph from the closed build's sources (the roots
+`class_body_report.rb` reports on) and is the one thing code generation reads from it: `exact_receiver?(klass)` is true only
+when the class and every ancestor are exact, and an unknown name is refused. `CodeGen#class_world_exact_target` (codegen_send.rb)
+uses it for a receiver whose class the flow names: when the existing closed-world lookup finds no compiled body, the one
+public Ruby definition the ancestor chain reaches is called directly behind the TYPED runtime class guard (`CLASS_WORLD_TYPED`).
+It refuses any definition on a native, unknown or module owner, a prepend, an unknown mixin, or a name installed at run
+time, so such a receiver keeps the owner call. `BC2CPP_CLASS_WORLD_DIRECT=0` turns it off.
+
+Measured on the closed build (shipped C++ from `coverage_report.rb` with `BC2CPP_COVERAGE_KEEP_DIR`; that script's
+summary step fails on a stale heading, so the counts come from the kept `shipped.cxx`): 1,896 owner-call sites and
+`CLASS_WORLD_TYPED` 0 before and after, the output is byte-identical. The gate is consulted 4,184 times (4,180 for an
+exact class, mostly Array, Hash, Range and RGSS classes). Most are refused by the native-definer rule, and the owner-call
+sites carry no receiver class from the flow, so the graph alone does not turn any owner-call site into a direct call.
+The owner-call direct rows that wait on an exact graph need a receiver-class source for those sites first.
+`scripts/bc2cpp/class_world_gate_check.rb` proves the gate on a fixture graph (exact, non-exact, unknown, native definer,
+kill switch) and on the closed build's graph.
+
+### Receiver sources measured (closed build, kept `shipped.cxx`)
+
+The 1,896 owner-call sites, by the text of their receiver (a textual measurement of the nearest assignment, not the IR):
+`self` 409 (implicit-self sends), a method or call result about 624, a copy of another register about 170, an ivar read
+about 75, a fresh allocation about 38, a constant about 14; the rest are nested expressions.
+
+`CodeGen#class_world_self_target` proves the `self` source: an implicit-self send in an instance method of owner C is an
+instance of C when C is exact and final (`ClassWorldGate.self_exact?`), the body belongs to C alone, and the ancestor walk
+of ClassWorld from C reaches one public Ruby definition. It runs last, after every existing path has declined. On the
+closed build it gains no site: the 409 `self` owner calls sit on native holders (Array, Hash, String, StringIO, Kernel,
+Enumerable), on a module, or on a non-final superclass (`LCF::SaveTyped::Record`, 17 subclasses). A native holder cannot be
+placed by the registry alone, and placing it by `name_owner_set` is memoized per name over the compile context, so calling it
+from a new site changed unrelated output (one `CLOSED_WORLD_SELF` site became `MONO`); the finder therefore reads the
+registry only. Output is byte-identical to the baseline (`cmp` of the kept `shipped.cxx`).
+
+The other sources (method or call results, ivars, copies of registers) are not proven by a class-graph fact yet: their
+receiver class is a value's class, which needs the return-class or ivar-writer flow (RETURN_CLASS_TABLE, ivar writers) per
+site. Those stay on the owner call.
 
 ## Symbol names after a def leaves the mrblib
 
