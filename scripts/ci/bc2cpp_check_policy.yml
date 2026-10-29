@@ -870,6 +870,10 @@ checks:
     capabilities:
     - mrbc
     fixture_capabilities: []
+  scripts/bc2cpp/mrblib_copy_sites_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
   scripts/bc2cpp/escape_receiver_flow_check.rb:
     tier: runtime
     capabilities:
