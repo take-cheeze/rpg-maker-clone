@@ -173,8 +173,12 @@ prepends, the ancestors, the singleton class's chain, whether it is final (no su
 included), whether more than one body opens it, and which of its bodies the load can evaluate statically and which keep
 bytecode and why. `class_body_report.rb --world=FILE` writes it as JSON with a summary. A class is `exact` when every
 body that opens it, and every ancestor's, contains only modeled statements; otherwise it is unknown with the reason
-named, and unknown spreads to its subclasses. Nothing in code generation reads it. The check compares every exact
-fixture class with the interpreted graph.
+named, and unknown spreads to its subclasses. A computed constant that `PureEval` folds (the same decision as
+`LoadCompile`'s) is static, so a class whose only blocker is a folded constant is exact; a constant that holds code
+(a lambda) or an Integer outside 32 bits is not folded and keeps its class unknown. A superclass that is a C-defined
+core class (`ClassWorld::NATIVE`, such as `RuntimeError`) is known. Nothing in code generation reads it. The check
+compares every exact fixture class with the interpreted graph; `scripts/bc2cpp/class_world_check.rb` is the fast check
+of these rules.
 
 ## Symbol names after a def leaves the mrblib
 
