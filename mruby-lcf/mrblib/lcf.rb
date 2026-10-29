@@ -59,7 +59,7 @@ module LCF
   INT32_SIGN_BIT = 0x8000_0000
   INT32_WRAP = 0x1_0000_0000
 
-  def read_ber(s)
+  def self.read_ber(s)
     ret = 0
     loop do
       b = s.getbyte
@@ -93,7 +93,7 @@ module LCF
   # signed) -- e.g. -1 becomes the five bytes 8f ff ff ff 7f, exactly as RPG_RT
   # writes it. Non-negative numbers use the shortest encoding (RPG_RT's own),
   # so a value read from a real file re-encodes to the identical bytes.
-  def write_ber(n)
+  def self.write_ber(n)
     n &= INT32_MASK
     groups = [n & 0x7f]
     while n > 0x7f
@@ -137,7 +137,7 @@ module LCF
   # pages, common events and move routes). Each command is: code, indent, string
   # (length-prefixed, cp932), then a count-prefixed list of integer parameters.
   # The list runs to the end of the blob.
-  def parse_event_commands d
+  def self.parse_event_commands d
     s = StringIO.new d
     cmds = []
     until s.eof?
@@ -180,7 +180,7 @@ module LCF
   # Hashes -- what a text-authored event page decodes to) back to the packed
   # blob #parse_event_commands reads. Its exact inverse: a list parsed then
   # re-encoded without edits reproduces the original bytes.
-  def encode_event_commands(cmds)
+  def self.encode_event_commands(cmds)
     out = String.new
     cmds.each do |c|
       code = c.respond_to?(:code) ? c.code : c[:code]
@@ -199,7 +199,7 @@ module LCF
   # is a bare command id optionally followed by a length-prefixed cp932 string
   # and/or a few BER integer parameters, selected by the id. The list runs to
   # the end of the blob (its length is also stored separately as `command_size`).
-  def parse_move_commands d
+  def self.parse_move_commands d
     s = StringIO.new d
     cmds = []
     until s.eof?
@@ -230,7 +230,7 @@ module LCF
   # #parse_move_commands reads -- its exact inverse. Only the fields the
   # command's own id actually carries get written, mirroring the reader's own
   # `case id` dispatch (a bare command carries nothing past its id).
-  def encode_move_commands(cmds)
+  def self.encode_move_commands(cmds)
     out = String.new
     cmds.each do |c|
       id = c.respond_to?(:command_id) ? c.command_id : c[:command_id]
@@ -287,7 +287,7 @@ module LCF
   end
 
   # Read one section of a file sequentially from the stream +io+.
-  def read_section io, s
+  def self.read_section io, s
     case s[:type]
     when :Array2D ; Array2D.new io, s
     when :Array1D ; Array1D.new io, s
@@ -300,7 +300,7 @@ module LCF
     end
   end
 
-  def to_rb d, s
+  def self.to_rb d, s
     # An absent field yields its schema default. A Symbol default names an
     # edition-dependent value (max level, the exp curve) -- see
     # edition_default -- and a callable (`-> { ... }`) default is lazy:
@@ -350,7 +350,7 @@ module LCF
   # Self-called bare at #to_rb's own `:int32_array` arm, `unpack_int32(d)`
   # (mruby-lcf/mrblib/lcf.rb) -- the loop always returns `out`, a freshly
   # built Array, never nil.
-  def unpack_int32 d
+  def self.unpack_int32 d
     bytes = d.bytes
     out = []
     (0...(bytes.size / 4)).each do |i|
@@ -365,7 +365,7 @@ module LCF
   # Decode a little-endian IEEE-754 64bit double (used by the save file's
   # timestamp field). Assembled from raw bytes -- like unpack_int32 -- so it does
   # not depend on the optional 'E' pack directive. Returns nil for a short blob.
-  def unpack_double d
+  def self.unpack_double d
     return nil if d.nil? || d.bytesize < 8
     b = d.bytes
     bits = 0
@@ -389,14 +389,14 @@ module LCF
   # appending cp932 bytes to a binary buffer does not raise on encoding
   # mismatch; under mruby (no Encoding class) strings are already raw bytes and
   # #force_encoding is absent, so it is a no-op.
-  def binstr s
+  def self.binstr s
     s = s.to_s
     s.respond_to?(:force_encoding) ? s.dup.force_encoding('BINARY') : s
   end
 
   # Encode an array of signed 32bit integers as packed little-endian bytes --
   # the inverse of unpack_int32 (used for the save file's variable table).
-  def pack_int32 a
+  def self.pack_int32 a
     out = []
     a.each do |v|
       v &= INT32_MASK
@@ -408,7 +408,7 @@ module LCF
   # The unpack template of an :int16_array field: the schema's `format:` (a full
   # String#unpack template, e.g. 'S<*' for unsigned), else signed little-endian.
   # The schema is the source; every reader of these fields goes through here.
-  def int16_format s
+  def self.int16_format s
     (s && s[:format]) || 's<*'
   end
 
@@ -418,7 +418,7 @@ module LCF
   # Built byte-wise rather than via `pack('s<*')` so it does not depend on
   # mruby-pack's endian-suffix pack support (the readers only rely on unpack).
   # Used for the save's item-id, equipment and skill tables.
-  def pack_int16 a
+  def self.pack_int16 a
     out = []
     a.each do |v|
       v &= 0xffff
@@ -436,7 +436,7 @@ module LCF
   # NaN are handled; a timestamp is always finite and non-negative, which is also
   # the domain unpack_double reproduces exactly (its 63bit assembly cannot hold a
   # bit pattern with the sign or a very large exponent set).
-  def pack_double v
+  def self.pack_double v
     v = v.to_f
     sign = 0
     if v != v                       # NaN
@@ -501,7 +501,7 @@ module LCF
   # stand-in), mirroring cp932_to_utf8 on read. :Tree is not handled here: it
   # is a whole-file section type (LCF::MapTree's multi-section root), never a
   # field type an Array1D chunk carries, so it never reaches #[]=.
-  def encode value, type
+  def self.encode value, type
     case type
     when :int ; write_ber value
     when :bool ; [value ? 1 : 0].pack('C')
@@ -533,7 +533,7 @@ module LCF
   # Hash (every record type outside DATABASE, plus DATABASE entries that
   # reference an existing shared constant like `elements: COMMON_EVENT`) is
   # returned as-is.
-  def elements_of schema
+  def self.elements_of schema
     e = schema[:elements]
     return e if e.is_a?(Hash)
     # A bc2cpp build folds each lambda into a byte table (gen_schema_tables.rb): `elements:` is the table's number
@@ -555,7 +555,7 @@ module LCF
   # every receiver, an LCF record included, now that a record no longer
   # responds to its field names. Callers read the field itself with
   # `obj[:name]`.
-  def field? obj, name
+  def self.field? obj, name
     if obj.is_a?(Array1D) || obj.is_a?(Sections) || obj.is_a?(LCF::File)
       obj.field?(name)
     else
@@ -563,25 +563,20 @@ module LCF
     end
   end
 
-  module_function :read_ber, :write_ber, :to_rb, :read_section,
-                  :parse_event_commands, :encode_event_commands,
-                  :parse_move_commands, :encode_move_commands,
-                  :unpack_int32, :unpack_double, :pack_int32, :pack_int16,
-                  :pack_double, :encode, :binstr, :elements_of, :field?, :int16_format
 
   MODE = 2000 # 2003
 
-  def var_max; MODE == 2003 ?  9_999_999 :  999_999 end
-  def var_min; MODE == 2003 ? -9_999_999 : -999_999 end
+  def self.var_max; MODE == 2003 ?  9_999_999 :  999_999 end
+  def self.var_min; MODE == 2003 ? -9_999_999 : -999_999 end
 
-  def level_max; MODE == 2003 ? 99 : 50 end
-  def pc_hp_max; MODE == 2003 ? 9999 : 999 end
-  def npc_hp_max; MODE == 2003 ? 99_999 : 9999 end
+  def self.level_max; MODE == 2003 ? 99 : 50 end
+  def self.pc_hp_max; MODE == 2003 ? 9999 : 999 end
+  def self.npc_hp_max; MODE == 2003 ? 99_999 : 9999 end
 
-  def exp_default; MODE == 2003 ? 300 : 30 end
+  def self.exp_default; MODE == 2003 ? 300 : 30 end
 
   # The value of a schema `default:` Symbol (schema.rb): the edition helper it names.
-  def edition_default kind
+  def self.edition_default kind
     case kind
     when :level_max then level_max
     when :exp_default then exp_default
@@ -593,8 +588,6 @@ module LCF
   # defaults (edition_default, or a `-> { LCF.level_max }` lambda), so they
   # must be module functions -- otherwise calling the default raises
   # NoMethodError for module LCF.
-  module_function :var_max, :var_min, :level_max, :pc_hp_max, :npc_hp_max,
-                  :exp_default, :edition_default
 
   class Array1D
     def initialize s, schema
