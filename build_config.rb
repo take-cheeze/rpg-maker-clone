@@ -208,6 +208,8 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # VM-start counter (measurement only, scripts/bc2cpp/vm_start_counter.patch). Compiled into the VM when
   # BC2CPP_VM_START_COUNTER=1; off otherwise, so no shipped build changes.
   conf.cc.defines << 'BC2CPP_VM_START_COUNTER' if ENV['BC2CPP_VM_START_COUNTER'] == '1'
+  # The closed target compiles mruby's vm.c as C++ (vm-cxx.cxx), so the same define goes there too.
+  conf.cxx.defines << 'BC2CPP_VM_START_COUNTER' if ENV['BC2CPP_VM_START_COUNTER'] == '1'
   conf.gem core: 'mruby-numeric-ext'
   # Range#cover? lives here, not in core Range. Five call sites in mruby-rpg2k
   # (Game::Shop#equip?, the special-item checks in game.rb / item_menu.rb)
