@@ -343,6 +343,38 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/setconst_emit_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/class_body_emit_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/class_body_method_register_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/class_body_unit_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/class_body_fold_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/class_body_left_ops_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/class_body_lambda_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/optional_rest_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/arm_prune_block_check.rb:
     tier: fast
     capabilities:
