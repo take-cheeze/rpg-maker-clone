@@ -244,6 +244,14 @@ its owner (the removal would take the Ruby method), when a native alias or
 undef names it there, or when the owner has a registration with a computed
 name.
 
+The callable does not need to be a named C function. A lambda, template
+specialization or expression returning a function pointer still installs the
+same fixed owner/name key. Candidate discovery uses that key; the existing
+name-reachability proof still determines whether it can be removed. Lookups
+inside the callable remain visible to the native-source scan. The unified
+inventory and the first 20-entry reduction are recorded in
+[method-table inventory](bc2cpp-method-table-inventory.md).
+
 mruby's own natives mostly sit in ROM method tables (`MRB_MT_ENTRY`), which
 are not candidates here: removing one at run time adds a tombstone entry in
 RAM. They are listed separately (below).
