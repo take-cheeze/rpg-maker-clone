@@ -1,0 +1,1 @@
+- The closed `bc2cpp` build ships the core and external gems' mrblib with the bodies of the compiled core methods emptied, as the engine gems' already are. Those bodies no longer take space in the binary.

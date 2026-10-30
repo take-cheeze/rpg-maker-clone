@@ -63,6 +63,17 @@ any other uncaught exception.
 `scripts/bc2cpp/mrblib_stubs_check.rb` checks which entries are listed and the
 rewrite.
 
+## Core gems
+
+`mruby-core-compiled` lists its own entries the same way, in
+`core_compiled_stubs.txt`. The core gems and external gems whose mrblib it reads
+(`BC2CPP_CORE_MRBLIB_GEMS`, `BC2CPP_EXTERNAL_MRBLIB_GEMS`) get the same copies:
+`bc2cpp_stub_core_mrblib` (`build_config.rb`) sets each one's
+`build_config_initializer`, which runs after the gem's rbfiles are globbed and
+before its gem_init rule is defined. mruby's top-level `mrblib/*.rb` is built by
+a rule in mruby's own `tasks/mrblib.rake`, not by a gem, so the entries defined
+there keep their bytecode.
+
 ## Class bodies
 
 With `BC2CPP_LOAD_COMPILE` (default `all`) the keys of the manifest are removed from the residual mrblib altogether

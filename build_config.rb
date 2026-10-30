@@ -151,6 +151,42 @@ def bc2cpp_stub_mrblib(spec)
   end
 end
 
+# MRBLIB_STUBS for mruby's core gems and the external gems whose mrblib the core-compiled generation reads
+# (BC2CPP_CORE_MRBLIB_GEMS, BC2CPP_EXTERNAL_MRBLIB_GEMS): the bodies mruby-core-compiled's manifest lists ship empty
+# too, as the engine gems' do. The gem's rbfiles are globbed in its setup, after its mrbgem.rake, and the rules that
+# read them are defined after its build_config_initializer, so that block is where the copies are made. mruby's
+# top-level mrblib/*.rb is no gem and stays as it is. Called last in the closed target's stanza, once every gem is
+# declared.
+def bc2cpp_stub_core_mrblib(conf)
+  return unless conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
+
+  require_relative 'tools/bc2cpp/compiled_gems'
+  require_relative 'tools/bc2cpp/mrblib_stubs'
+  symbol = BC2CPP_COMPILED_GEMS.fetch('mruby-core-compiled')[:out_symbol]
+  core_dir = "#{conf.build_dir}/mrbgems/mruby-core-compiled"
+  manifest = MrblibStubs.manifest_path(core_dir, symbol)
+  generated = "#{core_dir}/#{symbol}_gen.cpp"
+  stubs_rb = File.expand_path('tools/bc2cpp/mrblib_stubs.rb', __dir__)
+  stubbed = BC2CPP_CORE_MRBLIB_GEMS + BC2CPP_EXTERNAL_MRBLIB_GEMS
+  conf.gems.each do |spec|
+    next unless stubbed.include?(spec.name)
+    raise "bc2cpp_stub_core_mrblib: #{spec.name} already has a build_config_initializer" if spec.build_config_initializer
+
+    spec.build_config_initializer = proc do
+      out_dir = "#{build_dir}/mrblib_stubs"
+      self.rbfiles = rbfiles.map do |src|
+        out = "#{out_dir}/#{src.delete_prefix("#{dir}/")}"
+        # The generation that writes the core manifest writes it with the code, so the copies follow both.
+        file out => [src, stubs_rb, generated] do
+          FileUtils.mkdir_p File.dirname(out), verbose: true
+          MrblibStubs.write_stubbed(src, out, [manifest])
+        end
+        out
+      end
+    end
+  end
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
@@ -1203,6 +1239,7 @@ if closed
 
     bc2cpp_core_mt_exclude(conf)
     rpg_maker_gems(conf)
+    bc2cpp_stub_core_mrblib(conf)
   end
 end
 
