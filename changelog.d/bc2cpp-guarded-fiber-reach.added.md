@@ -1,0 +1,1 @@
+- **bc2cpp** reports which `CORE_BLOCK_GUARD` core methods a Fiber can reach in the closed world, and which call sites can start a Fiber, with `scripts/bc2cpp/guarded_fiber_reach_report.rb`. The design note is `docs/bc2cpp-resumable-guarded-design.md`.
