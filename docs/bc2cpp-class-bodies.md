@@ -329,3 +329,24 @@ gem installs its methods, so a def named by `private :x`, `module_function :x` o
 bytecode for that statement to find it (78 of the 161 kept defs then; 51 of 184 on a later tree). Running those
 statements after the registration, in a second compiled phase, would have let those defs go; they did not need it, since
 all of them are left out of the method tables and the statement on them is dead (above).
+
+## Source parsing for unit constant folds
+
+Class-body unit constant folding uses `RubyParseCache` for its source lookup.
+Repeated candidates and different owners in one file share a Prism tree, while
+owner lookup and statement wrappers remain local to each query. Each lookup
+still checks the current file bytes: rewritten sources replace the cached tree,
+missing files yield no statements, and reopened owners remain ambiguous.
+
+A Ruby 4.0.5 probe made 100 `source_statements` queries for `LCF::Schema` in
+`mruby-lcf/mrblib/schema.rb`, starting with an empty cache in each run. Three
+alternating uncached/cached runs took 0.244/0.0064, 0.222/0.0056 and
+0.219/0.0053 seconds. Allocations fell from about 1,962,763 to 24,947 per
+100 queries; the statement source lists matched. This measures source lookup,
+including the owner walk and disk reads, rather than total compiler or game
+runtime performance.
+
+`scripts/bc2cpp/ruby_parse_cache_check.rb` checks parse reuse across candidates
+and owners, absent owners, source rewrites, reopened owners and removed files.
+`scripts/bc2cpp/class_body_fold_check.rb` checks emitted folded C++ and refusal
+of constants that cannot fold.
