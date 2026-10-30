@@ -1,0 +1,1 @@
+- **bc2cpp** compiles more `super` calls as direct calls: to a method with optional arguments, to a superclass whose method sits in a mutual call, and to `Exception#initialize` (the message is written directly). A superclass written as a bare constant inside a namespace now resolves as Ruby does.
