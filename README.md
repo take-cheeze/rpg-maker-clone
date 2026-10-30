@@ -1645,6 +1645,8 @@
   ([`docs/bc2cpp-ir-block-operands.md`](docs/bc2cpp-ir-block-operands.md)).
   Class-body unit constant folds share content-checked source parses across candidates and owners;
   rewritten files are parsed again. See [class-body source parsing](docs/bc2cpp-class-bodies.md#source-parsing-for-unit-constant-folds).
+  Numeric flow shares unchanged ivar-read and rescue-result states while preserving slot provenance,
+  alias invalidation and write summaries; see [numeric read copies](docs/bc2cpp-numeric-read-copies.md).
   A class-body `define_method(:name) { |a| ... }` with a `def`-like block is registered as an ordinary
   definition, so calls to it are devirtualized; any other way of installing a method by name keeps poisoning
   that name. See [`docs/adr/0288-bc2cpp-define-method-sites.md`](docs/adr/0288-bc2cpp-define-method-sites.md).
