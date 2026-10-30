@@ -1,0 +1,1 @@
+- **bc2cpp** compiles class and module bodies of the engine's Ruby to C++ units that `gem_init` runs in place of the VM for each body that compiles. A body that does not compile still runs in the VM.
