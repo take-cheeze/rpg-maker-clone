@@ -371,6 +371,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/optional_rest_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/arm_prune_block_check.rb:
     tier: fast
     capabilities:
