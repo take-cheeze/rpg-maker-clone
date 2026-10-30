@@ -36,7 +36,7 @@ module MrblibStubs
     if copied_names.include?(m[:name]) && copy_source?(d.owner, m[:name], copy_sites[m[:name]], world)
       sites = copy_sites[m[:name]]
       exact = world.nil? ? 'nil' : sites.map { |s| world.facts[s]&.fetch('exact', 'missing').to_s }.uniq.join('|')
-      return "copy by name (sites=#{sites.uniq.join('|')} world=#{world.nil? ? 'nil' : world.facts.size} exact=#{exact} owner=#{d.owner})"
+      return "copy by name (sites=#{sites.uniq.join('|')} world=#{world.nil? ? 'nil' : world.facts.size} exact=#{exact} owner=#{d.owner} env_has_world=#{ENV.key?('BC2CPP_LOAD_WORLD')} out=#{ENV['OUT_SYMBOL']} pid=#{Process.pid})"
     end
 
     nil
