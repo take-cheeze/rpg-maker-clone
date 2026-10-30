@@ -33,7 +33,11 @@ module MrblibStubs
     return 'copied source' if d.copy_irep
     return 'runs at load' if load_bodies.include?(d.irep)
     return 'loaded copy' if copied.include?(d.irep)
-    return 'copy by name' if copied_names.include?(m[:name]) && copy_source?(d.owner, m[:name], copy_sites[m[:name]], world)
+    if copied_names.include?(m[:name]) && copy_source?(d.owner, m[:name], copy_sites[m[:name]], world)
+      sites = copy_sites[m[:name]]
+      exact = world.nil? ? 'nil' : sites.map { |s| world.facts[s]&.fetch('exact', 'missing').to_s }.uniq.join('|')
+      return "copy by name (sites=#{sites.uniq.join('|')} world=#{world.nil? ? 'nil' : world.facts.size} exact=#{exact} owner=#{d.owner})"
+    end
 
     nil
   end
