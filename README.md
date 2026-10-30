@@ -1643,6 +1643,8 @@
   That analysis, the block-self world scan and the block-return check read block operands, receivers and
   captured registers through the bytecode IR's reaching definitions
   ([`docs/bc2cpp-ir-block-operands.md`](docs/bc2cpp-ir-block-operands.md)).
+  Embedding eligibility probes skip GC-root liveness and final text cleanup when those passes cannot
+  change their clean/refused result; final emission retains them. See [probe text cleanup](docs/bc2cpp-probe-text-cleanup.md).
   A class-body `define_method(:name) { |a| ... }` with a `def`-like block is registered as an ordinary
   definition, so calls to it are devirtualized; any other way of installing a method by name keeps poisoning
   that name. See [`docs/adr/0288-bc2cpp-define-method-sites.md`](docs/adr/0288-bc2cpp-define-method-sites.md).
