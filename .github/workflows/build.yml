@@ -903,6 +903,9 @@ jobs:
           ruby scripts/bc2cpp/class_body_left_ops_check.rb
           ruby scripts/bc2cpp/class_body_lambda_check.rb
           ruby scripts/bc2cpp/optional_rest_check.rb
+          ruby scripts/bc2cpp/super_optional_check.rb
+          ruby scripts/bc2cpp/exception_init_check.rb
+          ruby scripts/bc2cpp/superclass_namespace_check.rb
           ruby scripts/bc2cpp/plain_yielder_check.rb
           ruby scripts/bc2cpp/struct_receiver_check.rb
           ruby scripts/bc2cpp/receiver_origin_join_check.rb

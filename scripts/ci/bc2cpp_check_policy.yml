@@ -375,6 +375,18 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/super_optional_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/exception_init_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/superclass_namespace_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/arm_prune_block_check.rb:
     tier: fast
     capabilities:
