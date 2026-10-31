@@ -395,6 +395,18 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/enum_step_array_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/enum_step_range_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/enum_step_range_generic_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/owner_native_chain_check.rb:
     tier: fast
     capabilities:
