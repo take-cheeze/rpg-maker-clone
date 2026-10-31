@@ -810,6 +810,7 @@ jobs:
           ruby scripts/bc2cpp/anonymous_params_check.rb
           ruby scripts/bc2cpp/class_method_block_check.rb
           ruby scripts/bc2cpp/entry_header_check.rb
+          ruby scripts/bc2cpp/method_lookup_report_check.rb
           ruby scripts/bc2cpp/method_lookup_hook_check.rb
           ruby scripts/bc2cpp/unregistered_verify_check.rb
           ruby scripts/bc2cpp/registration_split_check.rb

@@ -55,3 +55,51 @@ variants: disabled, enabled with caching, and enabled without caching. It tests
 native calls, bytecode sends, inherited owner resolution, cache hits, probes,
 undefined entries, misses and independent states. `MRUBY_LOOKUP_SOURCE` can
 point at an isolated checkout of the fork without changing local submodules.
+
+## Startup and gameplay survey
+
+`mrb_open_with_method_lookup_hook(observer)` installs the observer before core
+and gem initialization. It is available only with the hook enabled. The
+aggregate host survey uses this entry point and records core startup, gem
+startup and gameplay separately. It snapshots every installed table entry
+when initialization finishes, with observation disabled during the snapshot.
+A lookup counts against an installed owner/name slot even if its implementation
+was replaced during startup; the observation does not prove the final wrapper
+was executed then. Included-module lookups are matched by their shared method
+table, rather than the temporary ICLASS proxy's address.
+
+```sh
+BC2CPP_METHOD_LOOKUP_HOOK=1 BC2CPP_VM_START_COUNTER=1 \
+  scripts/bc2cpp/closed_build.bash BUILD_DIR
+LOOKUP_SURVEY=1 BC2CPP_METHOD_LOOKUP_HOOK=1 JOBS=8 \
+  scripts/bc2cpp/host_sweep.bash BUILD_DIR GAME_DIR LOG_DIR
+BC2CPP_HOST_MT_COUNT=1 BC2CPP_HOST_LOOKUP_SURVEY=LOG_DIR/baseline.lookups.tsv \
+  BC2CPP_VMCNT_OUT=LOG_DIR/baseline.vm.tsv \
+  BUILD_DIR/trace-host/trace_host GAME_DIR 1
+python3 scripts/bc2cpp/method_lookup_report.py LOG_DIR \
+  BUILD_DIR/trace-host/trace_host REPORT_DIR
+```
+
+The sweep writes a separate aggregate file, stack sample file and VM counter
+file per process. Its scenario and map runs are included in the report;
+`baseline.*` is reserved for the initialization-only run. Use a fresh log
+directory because the VM counter appends to its output. Hook-enabled hosts
+link without PIE so sampled executable addresses can be resolved consistently
+with `addr2line`. The reporter rejects inconsistent installed inventories or
+addresses across processes and missing VM counter files.
+
+`entries.tsv` includes observed and unobserved installed entries and their
+native/compiled/undefined classification. Missing lookups and startup methods
+absent from the final table are reported separately in `summary.json`.
+`sampled-callers.tsv` resolves example stacks from the first lookup and every
+4,096th lookup of each table/name/phase. These samples locate callers; they
+are not unbiased per-site hit estimates or timing measurements. Native-only
+storage avoids allocating mruby objects in the observer. Raw logging and the
+aggregate survey cannot be enabled together.
+
+The VM summary subtracts the initialization-only baseline once per game
+process. This distinguishes repeated startup bytecode from additional VM
+starts during the scripted workload; it does not prove untested paths cannot
+enter the VM. Lookup probes are still included, and direct compiled calls
+remain outside this measurement. Unobserved method-table entries require
+static proof before omission.
