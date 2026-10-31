@@ -1160,10 +1160,15 @@ module RGSS
     # ("Audio: no BGM found for ..." on a file that is right there).
     EXT_SPELLINGS = begin
       list = []
-      EXTS.each do |e|
+      # A while loop, not each: this runs while mrblib loads, and a load-time `each` would keep the body of every
+      # `each` in the closed build (static_dispatch_registrations.rb load_phase works by name).
+      i = 0
+      while i < EXTS.size
+        e = EXTS[i]
         list << e
         up = e.upcase
         list << up unless up == e
+        i += 1
       end
       list.freeze
     end
