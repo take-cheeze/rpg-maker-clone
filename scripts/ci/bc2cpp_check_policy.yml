@@ -415,6 +415,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/enum_step_hash_iterators_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/owner_native_chain_check.rb:
     tier: fast
     capabilities:
