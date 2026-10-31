@@ -912,6 +912,7 @@ jobs:
           ruby scripts/bc2cpp/enum_step_array_check.rb
           ruby scripts/bc2cpp/enum_step_range_check.rb
           ruby scripts/bc2cpp/enum_step_range_generic_check.rb
+          ruby scripts/bc2cpp/enum_step_string_upto_check.rb
           ruby scripts/bc2cpp/owner_native_chain_check.rb
           ruby scripts/bc2cpp/guard_fiber_free_check.rb
           ruby scripts/bc2cpp/exception_init_check.rb
