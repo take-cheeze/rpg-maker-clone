@@ -1,8 +1,8 @@
 # Owner-aware native names in CHA_SELF
 
-`BC2CPP_OWNER_NATIVE_READ=1` lets CHA_SELF (`cha_self_plan`, `tools/bc2cpp/codegen_ivar_poly.rb`) prove a
+The owner proof is on by default; `BC2CPP_OWNER_NATIVE_READ=0` turns it off. It lets CHA_SELF (`cha_self_plan`, `tools/bc2cpp/codegen_ivar_poly.rb`) prove a
 `self`-send's name when the name has outside definers, provided none of them sits on the receiver's lookup path.
-Off by default. With the flag off the output is the one the name-level gate gives.
+On by default. With `BC2CPP_OWNER_NATIVE_READ=0` the output is the one the name-level gate gives.
 
 ## Why
 
