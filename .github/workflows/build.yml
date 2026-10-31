@@ -801,6 +801,7 @@ jobs:
           ruby scripts/bc2cpp/numeric_jmpuw_check.rb
           ruby scripts/bc2cpp/nil_native_answers_check.rb
           ruby scripts/bc2cpp/ensure_nested_rescue_check.rb
+          ruby scripts/bc2cpp/sort_array_cmp_check.rb
           ruby scripts/bc2cpp/array_new_block_check.rb
           ruby scripts/bc2cpp/attr_reader_inline_check.rb
           ruby scripts/bc2cpp/class_read_inline_check.rb
@@ -810,6 +811,8 @@ jobs:
           ruby scripts/bc2cpp/anonymous_params_check.rb
           ruby scripts/bc2cpp/class_method_block_check.rb
           ruby scripts/bc2cpp/entry_header_check.rb
+          ruby scripts/bc2cpp/method_lookup_report_check.rb
+          ruby scripts/bc2cpp/method_lookup_hook_check.rb
           ruby scripts/bc2cpp/unregistered_verify_check.rb
           ruby scripts/bc2cpp/registration_split_check.rb
           ruby scripts/bc2cpp/shard_output_check.rb

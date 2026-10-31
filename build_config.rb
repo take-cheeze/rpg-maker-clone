@@ -208,6 +208,10 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # UNREGISTERED_VERIFY: every registration the static dispatch lists drop is a stub that aborts when
   # looked up by name (codegen_emit.rb). Off unless BC2CPP_UNREGISTERED_VERIFY=1.
   conf.cxx.defines << 'BC2CPP_UNREGISTERED_VERIFY' if ENV['BC2CPP_UNREGISTERED_VERIFY'] == '1'
+  if ENV['BC2CPP_METHOD_LOOKUP_HOOK'] == '1'
+    conf.cc.defines << 'MRB_USE_METHOD_LOOKUP_HOOK'
+    conf.cxx.defines << 'MRB_USE_METHOD_LOOKUP_HOOK'
+  end
   # Opt-in: the strict-hint survey mode, each distinct violation logged once and dispatched.
   conf.cxx.defines << 'BC2CPP_HINT_VIOLATION_LOG' if ENV['BC2CPP_HINT_VIOLATION_LOG'] == '1'
 
