@@ -159,6 +159,15 @@ dynamic, as before. Core ROM entries (`Array#[]`, ...) need the same
 verdict, plus an operator name mapping the entries scan otherwise withholds;
 class-side `Array[...]` leaves through the RAM list.
 
+A proven operator must also survive load time. The compiled loader runs
+class-body constant initializers (`ALL_DIRS = (DIR_BIT[2] | ...)`) by name
+(`bc2cpp_ld_decode` case 16, the legacy C++ statements), and a by-name `[]`
+would raise `NoMethodError` at gem-init load — aborting the init before the
+instance-type setup runs. So the loader keeps proven operators out of its
+data (`LoadCompile`'s `call?`, threaded from the plan's unregistered set),
+and every loader send of one — decoder, legacy expression, legacy class
+send — goes through the shared index helpers instead of the tables.
+
 ## Symbols
 
 By default every `:name` literal counts as a lookup of `name`, since a
