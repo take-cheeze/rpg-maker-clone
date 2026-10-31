@@ -1026,6 +1026,7 @@
 
 - Symbol and factory value walks reuse immutable instruction read-register lists; see [symbol flow](docs/bc2cpp-ir-symbol-flow.md).
 - Closed-build method pruning includes fixed-owner, fixed-name native registrations backed by lambdas and templates; see the [unified method-table inventory](docs/bc2cpp-method-table-inventory.md).
+- Core method pruning also removes unreachable native aliases after initialization while preserving their source methods; see the [reachability rules](docs/bc2cpp-unregistered-methods.md#core-rom-entries).
 - Further compiler Array-allocation candidates, sequencing and validation gates are documented in the [optimization plan](docs/bc2cpp-array-allocation-plan.md). These changes are proposed.
 
 - LCF schema-kind membership checks use bit positions to avoid temporary large Integer intersections; see [LCF masks](docs/bc2cpp-lcf-mask-performance.md).
