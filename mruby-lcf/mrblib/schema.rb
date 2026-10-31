@@ -1492,21 +1492,22 @@ module LCF
 
     # Hero-only fields overlap vehicle and map-event ids; keep their types
     # out of the shared movable layout.
-    SAVE_PARTY_LOCATION = SAVE_MOVABLE.merge({
-      101 => { name: :boarding, type: :bool, default: false },
-      102 => { name: :aboard, type: :bool, default: false },
-      103 => { name: :vehicle, type: :int, default: 0 },
-      104 => { name: :unboarding, type: :bool, default: false },
-      105 => { name: :preboard_move_speed, type: :int, default: 4 },
-      108 => { name: :menu_calling, type: :bool, default: false },
-      111 => { name: :pan_state, type: :int, default: 1 },
-      112 => { name: :pan_current_x, type: :int, default: 2304 },
-      113 => { name: :pan_current_y, type: :int, default: 1792 },
-      114 => { name: :pan_finish_x, type: :int, default: 2304 },
-      115 => { name: :pan_finish_y, type: :int, default: 1792 },
-      121 => { name: :pan_speed, type: :int, default: 16 },
-      124 => { name: :total_encounter_rate, type: :int, default: 0 },
-    })
+    # dup and []= rather than merge: Hash#merge walks its argument with each_key,
+    # a load-time send the closed build cannot narrow to Hash.
+    SAVE_PARTY_LOCATION = SAVE_MOVABLE.dup
+    SAVE_PARTY_LOCATION[101] = { name: :boarding, type: :bool, default: false }
+    SAVE_PARTY_LOCATION[102] = { name: :aboard, type: :bool, default: false }
+    SAVE_PARTY_LOCATION[103] = { name: :vehicle, type: :int, default: 0 }
+    SAVE_PARTY_LOCATION[104] = { name: :unboarding, type: :bool, default: false }
+    SAVE_PARTY_LOCATION[105] = { name: :preboard_move_speed, type: :int, default: 4 }
+    SAVE_PARTY_LOCATION[108] = { name: :menu_calling, type: :bool, default: false }
+    SAVE_PARTY_LOCATION[111] = { name: :pan_state, type: :int, default: 1 }
+    SAVE_PARTY_LOCATION[112] = { name: :pan_current_x, type: :int, default: 2304 }
+    SAVE_PARTY_LOCATION[113] = { name: :pan_current_y, type: :int, default: 1792 }
+    SAVE_PARTY_LOCATION[114] = { name: :pan_finish_x, type: :int, default: 2304 }
+    SAVE_PARTY_LOCATION[115] = { name: :pan_finish_y, type: :int, default: 1792 }
+    SAVE_PARTY_LOCATION[121] = { name: :pan_speed, type: :int, default: 16 }
+    SAVE_PARTY_LOCATION[124] = { name: :total_encounter_rate, type: :int, default: 0 }
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)
     # carries a lot more of liblcf's full `SaveMapEventBase` struct
