@@ -215,7 +215,7 @@ Fiber and GC scenarios still run in both interpreted and compiled VMs.
 
 ### Host Ruby uses YJIT for bc2cpp
 
-`bc2cpp-build` sets `RUBY_YJIT_ENABLE=1` for the
+`bc2cpp-build`, `bc2cpp-sweep` and `bc2cpp-lists` set `RUBY_YJIT_ENABLE=1` for the
 Nix-provided CRuby. Rake, the check harnesses and their Ruby code-generation
 subprocesses inherit it, including mutant generators. A step after the Nix
 environment export verifies `RubyVM::YJIT.enabled?` and logs `RUBY_DESCRIPTION`,
@@ -308,6 +308,26 @@ in the cache dir aborts with "re-run without --facts" rather than checking
 against a partial cache. Staleness is handled by the key: any input change
 misses and re-extracts. Inputs the key cannot see (system libclang headers via
 `-isystem`) are pinned by `flake.*` through the same Nix toolchain.
+
+### Reusing the static dispatch proof
+
+The three bc2cpp jobs cache `build/bc2cpp-lists` under the exact proof-input
+digest. If it misses, the `bc2cpp-lists-` restore prefix supplies the latest
+available lists as a seed. `static_dispatch_lists.bash` still rejects a stale
+digest as a current result and runs the proof. `StaticDispatchRegistrations.emit`
+accepts the seed only after a pass proves exactly the keys it generated with;
+changed or unsafe omissions can disappear, and only the converged result is
+published with the fresh digest. This preserves validation while an unchanged
+key set can settle in one pass instead of starting from empty lists and needing
+two. No available seed still uses the normal empty start.
+
+The sweep's informational retention report also performs the expensive
+analysis once. `dynamic_names_report.rb --entries-out PATH` writes the sorted
+TSV entry rows alongside the usual stdout summary, and CI prints that file in
+the existing log group. Default summary output and `--entries` TSV output stay
+the same. An unwritable output path fails visibly rather than dropping the
+entry report. The report remains informational and all build, scenario and
+verification checks still run.
 
 ### Scan cache (ADRs 0415, 0462)
 
