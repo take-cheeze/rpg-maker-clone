@@ -307,6 +307,7 @@
   `# frozen_string_literal: true` gets CRuby's frozen string literals, on the
   interpreter and in bc2cpp-compiled code alike; see
   [`docs/frozen-string-literals.md`](docs/frozen-string-literals.md)
+- [Direct Array sort-key comparisons](docs/bc2cpp-direct-array-sort-comparison.md) avoid by-name dispatch for proven builtin keys.
 - Optional [method-lookup tracing](docs/bc2cpp-method-lookup-hook.md) observes by-name dispatch in the mruby fork, including startup and gameplay surveys.
 - XP stores its whole database as Ruby `Marshal` dumps, which load straight
   through the bundled marshal reader into a typed `RPG::*` schema

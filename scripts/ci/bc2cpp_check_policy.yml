@@ -61,6 +61,13 @@ deferred:
     - cxx
     reason: Requires a full-core library and compiled-vs-interpreted fixture binaries.
 checks:
+  scripts/bc2cpp/sort_array_cmp_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/method_lookup_report_check.rb:
     tier: runtime
     capabilities:
