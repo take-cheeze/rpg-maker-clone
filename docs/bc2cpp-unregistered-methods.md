@@ -139,6 +139,26 @@ case this proof cannot see. So is a name taken back out of a built string
 (`"#{a}: #{b}".split(': ')`), which the closed fragment rule treats as
 never being a name. Verify mode below exists to catch both.
 
+## Operators
+
+Operator names (`[]`, `[]=`, `+`, ...) fail the `IDENT` gate in
+`dynamic_name?`, so they are dynamic by default: no text scan could spell
+them, and the proof refuses to guess. Two index operators escape through
+the INDEX_CLOSED planner verdict (`tools/bc2cpp/index_closed_planner.rb`,
+ADR 0365) instead. The planner enumerates every class that can answer `[]`
+or `[]=` — native owners need a verified code-generation arm (Array, Hash,
+String, Struct, Table, Proc), Ruby owners join the direct-call chain, and
+anything else (a foreign definer, a module, a singleton, an unbounded
+member set) refuses the plan. A proven name is admitted to the unregistered
+lists and, crucially, its method bodies run in *both* the open and the
+closed fixpoint: unregistered bodies stop being load-only, and the open
+analysis would otherwise never run an operator-named body (no text scan
+spells `[]=`, so nothing bootstraps it there), breaking the open-superset
+invariant the proof checks. `BC2CPP_INDEX_ELIMINATE=0` keeps every operator
+dynamic, as before. Core ROM entries (`Array#[]`, ...) need the same
+verdict, plus an operator name mapping the entries scan otherwise withholds;
+class-side `Array[...]` leaves through the RAM list.
+
 ## Symbols
 
 By default every `:name` literal counts as a lookup of `name`, since a
