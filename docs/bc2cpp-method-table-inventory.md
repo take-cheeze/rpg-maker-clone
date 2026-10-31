@@ -105,25 +105,33 @@ Core runtime removals grow from 185 to 202; core ROM exclusions (175), open
 (1,143) and closed (3,584) engine lists stay unchanged. The table falls from
 **1,128 to 1,111 entries**.
 
-## Combined inventory after all five reductions
+## Unused dependency reduction
+
+RPG2k-only targets omit Marshal, Struct, Random and Kernel extensions. Full
+multi-format builds retain them; see [dependency selection](rpg2k-dependencies.md).
+Their absence removes 34 entries and lets the reachability proof eliminate six
+more: `Kernel#instance_variables`, four engine `random` accessors and
+`Game::Troop#members`. Runtime enumeration confirms 40 removals and no additions,
+taking the table from **1,111 to 1,071 entries**.
+
+## Combined inventory after all six reductions
 
 | Category | Native | Compiled C++ | Undefined | Total |
 | --- | ---: | ---: | ---: | ---: |
-| Collections, strings and enumeration | 171 | 109 | 0 | 280 |
+| Collections, strings and enumeration | 156 | 106 | 0 | 262 |
 | RGSS | 113 | 51 | 0 | 164 |
-| Game | 0 | 147 | 0 | 147 |
-| Numeric, math and random | 73 | 13 | 2 | 88 |
+| Game | 0 | 144 | 0 | 144 |
+| Numeric, math and random | 68 | 13 | 2 | 83 |
 | IO, files and StringIO | 75 | 23 | 0 | 98 |
-| Object model and top-level protocols | 92 | 4 | 1 | 97 |
-| RPG2k | 2 | 95 | 0 | 97 |
+| Object model and top-level protocols | 86 | 4 | 1 | 91 |
+| RPG2k | 2 | 93 | 0 | 95 |
 | LCF | 6 | 30 | 0 | 36 |
 | Symbols, booleans and nil | 26 | 2 | 4 | 32 |
 | Time | 22 | 0 | 0 | 22 |
 | Fiber, Proc and GC | 16 | 0 | 0 | 16 |
 | RPG2k3 | 0 | 15 | 0 | 15 |
 | Exceptions | 11 | 2 | 0 | 13 |
-| Marshal | 6 | 0 | 0 | 6 |
-| **All entries** | **613** | **491** | **7** | **1,111** |
+| **All entries** | **581** | **483** | **7** | **1,071** |
 
 No method-table entry points to Ruby bytecode. This does not count standalone blocks or startup bytecode. The seven undefined markers preserve method undefinitions: singleton `new` on Integer, Float, Symbol, TrueClass, FalseClass and NilClass, plus `Class#module_function`.
 
@@ -177,3 +185,10 @@ the 17 listed native entries removed, with no additions, and the plain sweep
 confirmed 1,111 entries. All 17 forced lookups hit the expected verify traps.
 Both builds retained `Math.sin(0) == 0` and the exact `Math::DomainError` message
 from `Math.log(-1)`.
+
+The unused-dependency reduction passed New Game, battle, menu, save/load and all
+543 maps in fresh plain and verify builds. Both confirmed the omitted constants
+and Kernel factories are absent. Color, Tone, Rect and Table byte callbacks
+round-trip without Marshal in both builds; `instance_variable_get` remains
+available for the RGSS probe. The plain table contains 581 native entries,
+483 compiled entries and seven undefined markers.
