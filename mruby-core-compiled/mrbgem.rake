@@ -16,7 +16,7 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   # Every gem whose bytecode this registers over must have run its init first,
   # or its mrblib would replace the compiled body: the engine gems (which
   # reopen Array and StringIO), and each core gem BC2CPP_CORE_MRBLIB_GEMS names.
-  # mruby-dir and the Onigmo gem are not in every build, so they only count
+  # Struct, Dir and the Onigmo gem are not in every build, so they only count
   # where build_config.rb added them.
   #
   # The dependency on mruby-rpg2k is deliberate: build_config.rb's gem dispatch
@@ -29,7 +29,7 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
   # can still call them directly.
   %w[mruby-lcf mruby-rgss mruby-rpg2k].each { |gem_name| add_dependency gem_name }
   (BC2CPP_CORE_MRBLIB_GEMS + BC2CPP_EXTERNAL_MRBLIB_GEMS).each do |gem_name|
-    next if %w[mruby-dir mruby-onig-regexp].include?(gem_name) && spec.build.gems.none? { |g| g.name == gem_name }
+    next if %w[mruby-dir mruby-onig-regexp mruby-struct].include?(gem_name) && spec.build.gems.none? { |g| g.name == gem_name }
 
     add_dependency gem_name
   end

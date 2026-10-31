@@ -5,8 +5,10 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   spec.author = 'take-cheeze'
   spec.summary = 'RGSS implementation in mruby'
 
-  # Color, Tone and Table provide RGSS-compatible Marshal (_dump/_load) support.
-  add_dependency 'mruby-marshal'
+  # The native _dump/_load callbacks use byte strings; only the round-trip tests call Marshal.
+  add_test_dependency 'mruby-marshal'
+  # The tilemap allocation probe reads its native companion object through Ruby reflection.
+  add_dependency 'mruby-metaprog'
   # RGSS::Audio.decrypt_mv_asset (mrblib/lib.rb) reverses RPG Maker MV/MZ's
   # loose-asset encryption with String#unpack("C*")/Array#pack("C*"); a real
   # dependency (not test-only), same as mruby-lcf/mruby-rpgxp declaring it for
