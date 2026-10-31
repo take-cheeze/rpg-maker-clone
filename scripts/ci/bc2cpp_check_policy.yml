@@ -47,6 +47,11 @@ deferred:
     - core_library
     - cxx
     reason: Generated-code and core-library runtime audit; separate from scripts/impossible_as_error_check.rb.
+  scripts/bc2cpp/load_phase_receiver_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    reason: Fails until the receiver-aware load phase is implemented (docs/bc2cpp-load-phase-receiver.md); the implementation moves it to checks and bc2cpp-build.
   scripts/bc2cpp/module_super_range_check.rb:
     tier: runtime
     capabilities:
