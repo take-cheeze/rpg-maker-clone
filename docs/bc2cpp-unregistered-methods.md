@@ -300,6 +300,16 @@ Names also count from:
 - a string literal of the generated code;
 - `ALWAYS_DYNAMIC`, or a name a pool fragment may build.
 
+When `StaticDispatchSymbolUses` proves that looked-up names are literals, the
+core scan can ignore labels passed to mruby-math's `domain_error` helper. It
+first verifies the helper's signature and complete body: the label is used
+only as the `%s` argument of `mrb_raisef`. Every reference must be a direct
+literal call; changed bodies, escaping references, macros that shadow the
+helper/APIs and scoped calls disable the exemption. The exemption is limited
+to `mruby-math/src/math.c`. Actual Ruby/native lookups and generated literals
+still retain the method, and without the literal-lookup proof every diagnostic
+label stays. The helper and its diagnostic messages are not modified.
+
 The VM's implicit calls are presym uses in `src/`, so the scan reads them like
 any other lookup. Operator names are never listed, because the VM sends them
 from opcodes.

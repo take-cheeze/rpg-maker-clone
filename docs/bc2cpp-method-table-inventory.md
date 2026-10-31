@@ -90,14 +90,29 @@ Generated C++ implementations can remain until the linker discards unused
 sections. Other builds retain the registrations. These are entry-count
 measurements; table capacity and generator speed are not measured here.
 
-## Combined inventory after all four reductions
+## Math diagnostic-label reduction
+
+With the closed-world literal-lookup proof, names used only as labels in the
+verified mruby-math `domain_error` helper no longer count as method lookups.
+The helper signature and body must match the formatting-only implementation;
+all references must be direct literal calls. Unknown bodies, macro shadowing,
+scoped calls or escaping references keep the labels conservatively. Actual
+lookups elsewhere still retain a name, and the helper's runtime code is unchanged.
+
+This removes 17 native entries: instance and singleton `acos`, `acosh`, `asin`,
+`atanh`, `log10`, `log1p`, `log2` and `sqrt` on Math, plus `Integer.sqrt`.
+Core runtime removals grow from 185 to 202; core ROM exclusions (175), open
+(1,143) and closed (3,584) engine lists stay unchanged. The table falls from
+**1,128 to 1,111 entries**.
+
+## Combined inventory after all five reductions
 
 | Category | Native | Compiled C++ | Undefined | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Collections, strings and enumeration | 171 | 109 | 0 | 280 |
 | RGSS | 113 | 51 | 0 | 164 |
 | Game | 0 | 147 | 0 | 147 |
-| Numeric, math and random | 90 | 13 | 2 | 105 |
+| Numeric, math and random | 73 | 13 | 2 | 88 |
 | IO, files and StringIO | 75 | 23 | 0 | 98 |
 | Object model and top-level protocols | 92 | 4 | 1 | 97 |
 | RPG2k | 2 | 95 | 0 | 97 |
@@ -108,7 +123,7 @@ measurements; table capacity and generator speed are not measured here.
 | RPG2k3 | 0 | 15 | 0 | 15 |
 | Exceptions | 11 | 2 | 0 | 13 |
 | Marshal | 6 | 0 | 0 | 6 |
-| **All entries** | **630** | **491** | **7** | **1,128** |
+| **All entries** | **613** | **491** | **7** | **1,111** |
 
 No method-table entry points to Ruby bytecode. This does not count standalone blocks or startup bytecode. The seven undefined markers preserve method undefinitions: singleton `new` on Integer, Float, Symbol, TrueClass, FalseClass and NilClass, plus `Class#module_function`.
 
@@ -127,6 +142,9 @@ It also checks unused public and singleton core definitions, direct compiled
 calls, public sends, Symbol lookups, fragments, ROM sharing and ambiguous
 owners. `scripts/bc2cpp/static_dispatch_lists_check.rb` checks that core removals
 apply only to closed builds.
+Diagnostic-label checks verify the literal-lookup gate, the helper body, actual
+Ruby/native/generated lookups, both module-function registrations, path scope,
+macro shadowing and escaping or scoped references.
 
 Build with `scripts/bc2cpp/closed_build.bash BUILD_DIR`, then run `scripts/bc2cpp/host_sweep.bash BUILD_DIR GAME_DIR`. Repeat with `BC2CPP_UNREGISTERED_VERIFY=1` and `METHOD_TABLE=skip`: the verify build registers traps under removed names, so its table count is intentionally different. The plain host count is available through `BC2CPP_HOST_MT_COUNT=1 BUILD_DIR/trace-host/trace_host GAME_DIR 1`.
 
@@ -152,3 +170,10 @@ builds passed the same scenarios and all 543 maps. Runtime enumeration found
 exactly the 75 listed compiled entries removed and no additions; the plain
 sweep confirmed 1,128 entries at the new threshold. Forced lookups of all 75
 removed entries aborted with their expected method names under verify mode.
+
+The Math diagnostic-label reduction was checked on `ec25ff829`. Plain and verify
+builds passed the same scenarios and all 543 maps. Enumeration found exactly
+the 17 listed native entries removed, with no additions, and the plain sweep
+confirmed 1,111 entries. All 17 forced lookups hit the expected verify traps.
+Both builds retained `Math.sin(0) == 0` and the exact `Math::DomainError` message
+from `Math.log(-1)`.
