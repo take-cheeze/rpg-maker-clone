@@ -29,25 +29,51 @@ The table now contains **1,229 entries**, down from 1,232 after the first batch.
 This measures entries, without claiming a reduction in allocated table capacity
 or a generator speedup.
 
-## Combined inventory after both reductions
+## Ruby alias operand reduction
+
+The core scan now reads both `ALIAS` operands from the RITE binary instead of
+retaining every symbol in a class body containing an alias. The source and
+destination names still count, including operator names; unrelated definitions
+do not become live just because they share that body. An unresolved source
+operand retains every symbol conservatively.
+
+The proof adds 23 core ROM exclusions and three runtime removals, with the open
+and closed engine lists unchanged. The additional entries are:
+
+| Owner | Removed names |
+| --- | --- |
+| Array | `__combination_init`, `__combination_next`, `__fill_exec`, `__fill_parse_arg`, `__product_generate`, `__product_next`, `flatten`, `flatten!` |
+| String | `capitalize`, `capitalize!`, `casecmp`, `casecmp?`, `downcase`, `downcase!`, `partition` |
+| IO | `readchar`, `sync`, `sync=`, `sysread` |
+| File | `truncate` |
+| Integer, Float | `truncate` on each |
+| Exception | `exception` |
+| Kernel | instance and singleton `sprintf` |
+| StringIO | `rewind` |
+
+The table falls from **1,229 to 1,203 entries**. The threshold records this new
+count. These remain entry counts; allocated table capacity and generator speed
+are not measured here.
+
+## Combined inventory after all three reductions
 
 | Category | Native | Compiled C++ | Undefined | Total |
 | --- | ---: | ---: | ---: | ---: |
-| Collections, strings and enumeration | 186 | 162 | 0 | 348 |
+| Collections, strings and enumeration | 171 | 162 | 0 | 333 |
 | RGSS | 113 | 51 | 0 | 164 |
 | Game | 0 | 147 | 0 | 147 |
-| Numeric, math and random | 92 | 20 | 2 | 114 |
-| IO, files and StringIO | 81 | 34 | 0 | 115 |
-| Object model and top-level protocols | 94 | 4 | 1 | 99 |
+| Numeric, math and random | 90 | 20 | 2 | 112 |
+| IO, files and StringIO | 75 | 34 | 0 | 109 |
+| Object model and top-level protocols | 92 | 4 | 1 | 97 |
 | RPG2k | 2 | 95 | 0 | 97 |
 | LCF | 6 | 30 | 0 | 36 |
 | Symbols, booleans and nil | 26 | 6 | 4 | 36 |
 | Time | 22 | 0 | 0 | 22 |
 | Fiber, Proc and GC | 16 | 0 | 0 | 16 |
 | RPG2k3 | 0 | 15 | 0 | 15 |
-| Exceptions | 12 | 2 | 0 | 14 |
+| Exceptions | 11 | 2 | 0 | 13 |
 | Marshal | 6 | 0 | 0 | 6 |
-| **All entries** | **656** | **566** | **7** | **1,229** |
+| **All entries** | **630** | **566** | **7** | **1,203** |
 
 No method-table entry points to Ruby bytecode. This does not count standalone blocks or startup bytecode. The seven undefined markers preserve method undefinitions: singleton `new` on Integer, Float, Symbol, TrueClass, FalseClass and NilClass, plus `Class#module_function`.
 
@@ -59,6 +85,9 @@ No method-table entry points to Ruby bytecode. This does not count standalone bl
 destinations, chains, source lookups, computed owners and ROM-sharing exclusions.
 The runtime verify fixture removes a native alias, confirms its source still
 answers, and deliberately calls the removed alias to check the aborting trap.
+The same core candidate check covers decoded Ruby alias sources (including an
+operator), unrelated definitions beside an alias, source-body liveness and the
+conservative unresolved-operand fallback.
 
 Build with `scripts/bc2cpp/closed_build.bash BUILD_DIR`, then run `scripts/bc2cpp/host_sweep.bash BUILD_DIR GAME_DIR`. Repeat with `BC2CPP_UNREGISTERED_VERIFY=1` and `METHOD_TABLE=skip`: the verify build registers traps under removed names, so its table count is intentionally different. The plain host count is available through `BC2CPP_HOST_MT_COUNT=1 BUILD_DIR/trace-host/trace_host GAME_DIR 1`.
 
@@ -72,3 +101,9 @@ verify builds. Deliberate calls of each of the three removed aliases aborted
 with its expected `UNREGISTERED_VERIFY` diagnostic. Independent count-only and
 per-entry dumps both reported 1,229 entries; the dumps also confirmed that all
 three alias sources remain installed.
+
+The Ruby alias operand reduction was rechecked on `a62699052`. Plain and verify
+builds passed the same scenarios and all 543 maps. Runtime enumeration found
+exactly the 26 listed removals and no additions; the plain sweep confirmed
+1,203 entries at the new threshold. Deliberately calling each removed entry
+under verify mode aborted with its expected method name.

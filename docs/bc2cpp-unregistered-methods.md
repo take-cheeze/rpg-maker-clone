@@ -271,9 +271,10 @@ receiver-blind and coarser. A name stays when any of these spells it:
 
 - a symbol an instruction of the program may look up: a send, a `LOADSYM`,
   an alias, an undef or a key. The operand of a `DEF`, `TDEF` or `SDEF`
-  defines its name, so a name only a def names does not count. An irep with an
-  `ALIAS` keeps all its symbols, because the disassembly shows the alias's old
-  name, the one it looks up, as the new one;
+  defines its name, so a name only a def names does not count. Both operands of
+  `ALIAS` count: the destination and the source decoded from the RITE binary.
+  An alias does not make unrelated definitions in the same class body live.
+  If the source operand is unresolved, every symbol of that body stays;
 - an operator opcode's operator (`ADD` sends `+`) and, under `SUPER`, the name
   of the method the body belongs to;
 - an identifier-shaped pool string.
