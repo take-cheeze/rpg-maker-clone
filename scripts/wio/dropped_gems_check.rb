@@ -34,7 +34,11 @@
 
 require 'ripper'
 
+# --rpg2k checks omitted APIs across the single-format targets without Wio's Math restriction.
+
 ROOT = File.expand_path('../..', __dir__)
+CHECK_MATH = !ARGV.delete('--rpg2k')
+abort "usage: #{$PROGRAM_NAME} [--rpg2k]" unless ARGV.empty?
 
 RUBY_DIRS = %w[
   mruby-rpg2k/mrblib
@@ -43,22 +47,21 @@ RUBY_DIRS = %w[
   3rd/mruby-stringio/mrblib
 ].freeze
 
-NATIVE_DIRS = %w[
+NATIVE_DIRS = (%w[
   mruby-rpg2k/src
   mruby-lcf/src
   mruby-rgss/src
-  3rd/mruby-marshal/src
   3rd/mruby-stringio/src
   app/wio/src
   app/wio/hal-wio-io
-].freeze
+] + (CHECK_MATH ? [] : %w[app/psp app/maix])).freeze
 
 # Kernel methods whose name is a constant: only a call (`Integer(x)`) counts,
 # never a plain constant reference (`Integer === x`, `class Integer`).
 CONST_CALLS = %w[Integer Float String Array Hash].freeze
 METHOD_CALLS = %w[fail caller __method__ __callee__
                   rand srand shuffle shuffle! sample].freeze
-CONST_REFS = %w[Random].freeze
+CONST_REFS = %w[Random Marshal Struct].freeze
 # Must match what app/wio/mruby-math-wio/src/math.c defines.
 MATH_PROVIDED = %w[PI E DomainError sin].freeze
 
@@ -86,12 +89,12 @@ def each_hit(node, &blk)
   return unless node.is_a?(Array)
 
   # Math.x(...) / Math::x(...) and Math::X
-  if %i[call command_call].include?(node[0]) && math_const?(node[1])
+  if CHECK_MATH && %i[call command_call].include?(node[0]) && math_const?(node[1])
     tok = node.reverse.find { |c| c.is_a?(Array) && %i[@ident @const].include?(c[0]) }
     yield "Math.#{tok[1]}", tok[2][0] if tok && !MATH_PROVIDED.include?(tok[1])
-  elsif node[0] == :const_path_ref && math_const?(node[1]) && !MATH_PROVIDED.include?(node[2][1])
+  elsif CHECK_MATH && node[0] == :const_path_ref && math_const?(node[1]) && !MATH_PROVIDED.include?(node[2][1])
     yield "Math::#{node[2][1]}", node[2][2][0]
-  elsif (mixin = mixin_ident(node)) && contains_math?(node)
+  elsif CHECK_MATH && (mixin = mixin_ident(node)) && contains_math?(node)
     yield "#{mixin[1]} Math", mixin[2][0]
   end
 
@@ -142,6 +145,8 @@ positive = <<~RUBY
   caller
   __method__
   Random.new
+  Marshal.load(data)
+  Struct.new(:field)
   Kernel.rand
   Math.cos(1)
   Math.sqrt 2
@@ -164,8 +169,9 @@ negative = <<~RUBY
 RUBY
 pos = hits_in_source(positive).map(&:first)
 expected = ['rand', 'srand', 'shuffle', 'shuffle!', 'sample', 'Integer()', 'Float()', 'fail', 'caller',
-            '__method__', 'Random', 'rand', 'Math.cos', 'Math.sqrt', 'Math::E2', 'include Math',
+            '__method__', 'Random', 'Marshal', 'Struct', 'rand', 'Math.cos', 'Math.sqrt', 'Math::E2', 'include Math',
             'extend Math']
+expected = expected.reject { |name| name.include?('Math') } unless CHECK_MATH
 unless (expected - pos).empty?
   failures << "self-test: missed #{(expected - pos).inspect} (got #{pos.inspect})"
 end
@@ -189,7 +195,7 @@ end
 # CONST_CALLS stay out of the native scan: "Integer"/"String"/... as C
 # strings are overwhelmingly class-name lookups (mrb_class_get), not calls to
 # Kernel#Integer(), which no C code reaches for.
-native_names = (METHOD_CALLS + CONST_REFS + ['Math']).map { |n| Regexp.escape(n) }.join('|')
+native_names = (METHOD_CALLS + CONST_REFS + (CHECK_MATH ? ['Math'] : [])).map { |n| Regexp.escape(n) }.join('|')
 native_re = /"(?:#{native_names})"|MRB_SYM(?:_B)?\((?:#{native_names.delete('!')})\)/
 NATIVE_DIRS.each do |dir|
   Dir.glob(File.join(ROOT, dir, '**', '*.{c,cc,cpp,cxx,h,hxx}')).sort.each do |path|
@@ -202,11 +208,11 @@ NATIVE_DIRS.each do |dir|
 end
 
 if failures.empty?
-  puts "wio dropped-gems check: PASS (#{scanned} files: nothing calls into mruby-kernel-ext/" \
-       "mruby-random, Math use stays within #{MATH_PROVIDED.join('/')})"
+  target = CHECK_MATH ? 'wio' : 'rpg2k'
+  math = CHECK_MATH ? ", Math use stays within #{MATH_PROVIDED.join('/')}" : ''
+  puts "#{target} dropped-gems check: PASS (#{scanned} files: no Kernel extension, Random, Marshal or Struct use#{math})"
 else
-  warn 'wio dropped-gems check: FAIL -- a gem wio links uses a method from a gem ' \
-       'build_config.rb drops or trims for wio (docs/adr/0202, 0204):'
+  warn "#{CHECK_MATH ? 'wio' : 'rpg2k'} dropped-gems check: FAIL -- a runtime source uses an omitted API:"
   failures.each { |f| warn "  #{f}" }
   exit 1
 end
