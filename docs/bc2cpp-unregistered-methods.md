@@ -271,9 +271,10 @@ receiver-blind and coarser. A name stays when any of these spells it:
 
 - a symbol an instruction of the program may look up: a send, a `LOADSYM`,
   an alias, an undef or a key. The operand of a `DEF`, `TDEF` or `SDEF`
-  defines its name, so a name only a def names does not count. An irep with an
-  `ALIAS` keeps all its symbols, because the disassembly shows the alias's old
-  name, the one it looks up, as the new one;
+  defines its name, so a name only a def names does not count. Both operands of
+  `ALIAS` count: the destination and the source decoded from the RITE binary.
+  An alias does not make unrelated definitions in the same class body live.
+  If the source operand is unresolved, every symbol of that body stays;
 - an operator opcode's operator (`ADD` sends `+`) and, under `SUPER`, the name
   of the method the body belongs to;
 - an identifier-shaped pool string.
@@ -299,6 +300,16 @@ Names also count from:
 - a string literal of the generated code;
 - `ALWAYS_DYNAMIC`, or a name a pool fragment may build.
 
+When `StaticDispatchSymbolUses` proves that looked-up names are literals, the
+core scan can ignore labels passed to mruby-math's `domain_error` helper. It
+first verifies the helper's signature and complete body: the label is used
+only as the `%s` argument of `mrb_raisef`. Every reference must be a direct
+literal call; changed bodies, escaping references, macros that shadow the
+helper/APIs and scoped calls disable the exemption. The exemption is limited
+to `mruby-math/src/math.c`. Actual Ruby/native lookups and generated literals
+still retain the method, and without the literal-lookup proof every diagnostic
+label stays. The helper and its diagnostic messages are not modified.
+
 The VM's implicit calls are presym uses in `src/`, so the scan reads them like
 any other lookup. Operator names are never listed, because the VM sends them
 from opcodes.
@@ -323,6 +334,29 @@ Some keys stay whatever their name:
 - a key on an owner with a computed-name registration.
 
 `scripts/bc2cpp/core_native_candidates_check.rb` checks the rule.
+
+Ruby-defined core methods also participate in the general receiver-blind scan,
+whether they are compiled to C++ or kept interpreted. An identifier-shaped name
+can be removed only when the scan finds no lookup, fragment-built name or direct
+compiled call of it. Only fixed class/module paths are eligible; ambiguous
+repeated owners from per-file registries are skipped. Keys shared with a ROM
+entry stay protected, so omitting a Ruby override cannot introduce a RAM
+tombstone for the readonly entry. These keys join `STATIC_DISPATCH_CORE_LEFT_OUT`;
+the closed build omits their registrations and load-time Ruby definitions.
+C++ implementations can still be emitted; unused function sections can be
+discarded by the linker. Other builds retain the registrations.
+
+This general rule keeps explicit public sends as lookups. It does not use the
+private-method proof's exemption for sends with explicit receivers.
+
+Native aliases are considered separately. `mrb_define_alias` and
+`mrb_define_alias_id` define their new names and look their source names up.
+The source name stays in the reachability scan, including when it is another
+alias. After native initialization has copied the entry, an unreachable new
+alias can be removed without removing its source. Alias candidates still
+require a fixed owner and name, exclude owners with computed registrations,
+and retain any key shared with a ROM entry. Ordinary lookups and fragments
+that can build the alias name keep it.
 
 #### Private Ruby methods of mruby's own mrblib
 
