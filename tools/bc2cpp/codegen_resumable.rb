@@ -167,7 +167,11 @@ class CodeGen
     # OPTIONAL_ARGS: only the shape optional_arg_table recognises (a jump table of JMPs after ENTER, no block). With a
     # rest argument the table is optional_rest_arg_table's (REST_ARGS).
     if fields[1].positive?
-      table = fields[2].positive? ? optional_rest_arg_table(irep) : optional_arg_table(irep)
+      # CORE_BLOCK_OPT: optionals with a block (`def count(item = nil, &block)`) have their own jump table.
+      table = if fields[2].positive? then optional_rest_arg_table(irep)
+              elsif fields[6].positive? then optional_block_arg_table(irep)
+              else optional_arg_table(irep)
+              end
       return 'takes optional arguments in a shape the step cannot enter' unless table && table[1]
     end
     # REST_ARGS: a rest argument the wrapper builds into an Array (rest_only_arity? is the shape it recognises).

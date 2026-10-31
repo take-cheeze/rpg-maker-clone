@@ -249,6 +249,7 @@ class CodeGen
       # function, or its own body cannot suspend, in which
       # case it compiles behind a run-time hand-off.
       plan = @rsm_variant ? build_resumable_plan(label) : resumable_plan(label)
+      warn "RSM_PLAN #{d.owner}##{d.name}: #{plan}" if @rsm_variant && ENV['BC2CPP_RSM_DEBUG'] && plan.is_a?(String)
       if plan.is_a?(ResumablePlan)
         resumable = plan
       elsif fiber_body_guard?(label, d)
@@ -1072,7 +1073,7 @@ class CodeGen
   RESUMABLE_DUAL = %w[Array#each].freeze
 
   def rsm_dual?(label, d)
-    return false unless EnumStep.enabled? && d.core && RESUMABLE_DUAL.include?("#{d.owner}##{d.name}") &&
+    return false unless EnumStep.enabled? && d.core && rsm_candidates.include?("#{d.owner}##{d.name}") &&
                         self.class.core_guarded&.include?(label)
 
     # Only where the guard itself is emitted: a method no Fiber can cross keeps no guard, so it needs no variant.
@@ -1080,6 +1081,11 @@ class CodeGen
   end
 
   def rsm_impl_name(d) = "#{cpp_name(d.owner, d.name)}#{RSM_SUFFIX}_impl"
+
+  # BC2CPP_RESUMABLE_DUAL (probe only): a comma list of Owner#name that take the variant in place of RESUMABLE_DUAL.
+  def rsm_candidates
+    ENV.fetch('BC2CPP_RESUMABLE_DUAL', '').split(',').map(&:strip).reject(&:empty?).then { |list| list.empty? ? RESUMABLE_DUAL : list }
+  end
 
   # The variant's code (its step, its entry and the helpers it uses), or '' when the method cannot take the resumable
   # form. The variant's registered wrapper is cut off, as entry specialization cuts its own.
@@ -1099,7 +1105,13 @@ class CodeGen
     ensure
       @rsm_variant, @entry_spec_suffix, @core_program_world = saved
     end
-    return '' if result[:unsupported] || result[:code].include?('#error') || !result[:resumable]
+    if result[:unsupported] || result[:code].include?('#error') || !result[:resumable]
+      if ENV['BC2CPP_RSM_DEBUG']
+        reason = result[:code][/^\s*#error (.*)$/, 1] || 'not resumable'
+        warn "RSM_REFUSED #{d.owner}##{d.name}: #{reason[0, 200]}"
+      end
+      return ''
+    end
 
     entry = "static mrb_value #{cpp_name(d.owner, d.name)}(mrb_state* M, mrb_value self) {\n"
     cut = result[:code].rindex(entry)
