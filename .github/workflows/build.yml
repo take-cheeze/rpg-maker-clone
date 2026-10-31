@@ -681,6 +681,8 @@ jobs:
         with:
           path: build/bc2cpp-lists
           key: bc2cpp-lists-${{ steps.lists-key.outputs.digest }}
+          # A prefix hit seeds a fresh fixed-point proof; its stale digest is never trusted.
+          restore-keys: bc2cpp-lists-
 
       - name: Build the closed-world mruby with bc2cpp
         timeout-minutes: 45
@@ -963,6 +965,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
+    env:
+      RUBY_YJIT_ENABLE: "1"
+
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
@@ -988,6 +993,9 @@ jobs:
       - name: Set up development environment
         run: ./scripts/nix/develop-export-env.bash .#bc2cpp
 
+      - name: Verify host Ruby JIT
+        run: ruby -e 'abort "YJIT is unavailable or disabled" unless RubyVM::YJIT.enabled?; puts RUBY_DESCRIPTION'
+
       - name: Cache bc2cpp scan cache
         uses: actions/cache@v6
         with:
@@ -1008,6 +1016,8 @@ jobs:
         with:
           path: build/bc2cpp-lists
           key: bc2cpp-lists-${{ steps.lists-key.outputs.digest }}
+          # A prefix hit seeds a fresh fixed-point proof; its stale digest is never trusted.
+          restore-keys: bc2cpp-lists-
 
       # Both builds below share one lists directory, so the verify build finds the plain build's lists current.
       - name: Build the closed-world mruby
@@ -1046,10 +1056,10 @@ jobs:
           BC2CPP_STATIC_DISPATCH_LISTS: ${{ github.workspace }}/build/bc2cpp-lists/static_dispatch_lists.json
         run: |
           ruby -rjson -e 'JSON.parse(File.read(ENV.fetch("BC2CPP_STATIC_DISPATCH_LISTS"))).each { |key, value| puts "#{key}: #{value.is_a?(Array) ? value.size : value}" }'
-          ruby scripts/bc2cpp/dynamic_names_report.rb
+          ruby scripts/bc2cpp/dynamic_names_report.rb --entries-out "$RUNNER_TEMP/bc2cpp-retained-entries.tsv"
           # The registered names themselves (owner, name, why), for reading off what is left.
           echo "::group::Registered method names (owner, name, reason)"
-          ruby scripts/bc2cpp/dynamic_names_report.rb --entries
+          cat "$RUNNER_TEMP/bc2cpp-retained-entries.tsv"
           echo "::endgroup::"
 
   # STATIC_DISPATCH_LISTS for the device builds. The interpreted maix and psp builds leave the core ROM entries the
@@ -1060,6 +1070,9 @@ jobs:
     if: ${{ github.event_name != 'issue_comment' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+
+    env:
+      RUBY_YJIT_ENABLE: "1"
 
     steps:
       - run: git config --global submodule.fetchJobs 4
@@ -1086,6 +1099,9 @@ jobs:
       - name: Set up development environment
         run: ./scripts/nix/develop-export-env.bash .#bc2cpp
 
+      - name: Verify host Ruby JIT
+        run: ruby -e 'abort "YJIT is unavailable or disabled" unless RubyVM::YJIT.enabled?; puts RUBY_DESCRIPTION'
+
       - name: Cache bc2cpp scan cache
         uses: actions/cache@v6
         with:
@@ -1103,6 +1119,8 @@ jobs:
         with:
           path: build/bc2cpp-lists
           key: bc2cpp-lists-${{ steps.lists-key.outputs.digest }}
+          # A prefix hit seeds a fresh fixed-point proof; its stale digest is never trusted.
+          restore-keys: bc2cpp-lists-
 
       - name: Compute the static dispatch lists
         timeout-minutes: 30
