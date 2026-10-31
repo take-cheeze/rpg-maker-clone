@@ -137,6 +137,7 @@ CHECKS = [
   { name: 'bc2cpp-irep-tree', command: %w[scripts/bc2cpp/irep_tree_check.rb] },
   # CI helpers (compiler launcher, mutant pool, timing wrapper): no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'ci-helpers', command: %w[scripts/ci/helpers_check.rb] },
+  { name: 'ci-dynamic-names-report', command: %w[scripts/ci/dynamic_names_report_check.rb] },
   # The maix-smoke boot-marker matcher's self-test: no mrblib lines, listed to mirror `ruby-checks`.
   { name: 'maix-boot-marker', command: %w[scripts/maix/boot_marker_check.rb] },
   # The generator's scan cache: no mrblib lines, listed to mirror `ruby-checks`.
