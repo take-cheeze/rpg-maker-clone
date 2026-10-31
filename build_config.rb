@@ -187,6 +187,44 @@ def bc2cpp_stub_core_mrblib(conf)
   end
 end
 
+# ENUM_STEP (tools/bc2cpp/codegen_enum_step.rb): under BC2CPP_ENUM_STEP=1 the step form of Range#each covers every case
+# the saved body covers, so the body can leave the binary. That body is in mruby's top-level mrblib (range.rb), which
+# bc2cpp_stub_core_mrblib leaves alone: mrblib.rake compiles the directory's files itself. So the closed build compiles a
+# copy of range.rb with only Range#each emptied, and the mrbc command that reads the directory reads the copy. The copy
+# follows the core manifest (MrblibStubs). Flag unset: nothing here runs.
+def bc2cpp_stub_top_mrblib(conf)
+  require_relative 'tools/bc2cpp/codegen_enum_step'
+  return unless EnumStep.enabled? && conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
+
+  require 'delegate'
+  require_relative 'tools/bc2cpp/compiled_gems'
+  require_relative 'tools/bc2cpp/mrblib_stubs'
+  symbol = BC2CPP_COMPILED_GEMS.fetch('mruby-core-compiled')[:out_symbol]
+  core_dir = "#{conf.build_dir}/mrbgems/mruby-core-compiled"
+  manifest = MrblibStubs.manifest_path(core_dir, symbol)
+  generated = "#{core_dir}/#{symbol}_gen.cpp"
+  stubs_rb = File.expand_path('tools/bc2cpp/mrblib_stubs.rb', __dir__)
+  src = "#{MRUBY_ROOT}/mrblib/range.rb"
+  copy = "#{conf.build_dir}/mrblib_stubs/top/range.rb"
+  file copy => [src, stubs_rb, generated] do
+    keys = MrblibStubs.read_manifests([manifest]) & ['Range#each']
+    # The stub generation (closed_build.bash phase 1) writes an empty manifest; a real build must find the body stubbable.
+    raise 'bc2cpp_stub_top_mrblib: Range#each is not in the core manifest' if keys.empty? && ENV['BC2CPP_STUB_GENERATION'] != '1'
+
+    FileUtils.mkdir_p File.dirname(copy)
+    out, = MrblibStubs.rewrite(File.binread(src), keys)
+    File.binwrite(copy, out)
+  end
+  # mrblib.rake's rule reads every file of mrblib/ through the build's mrbc command: the copy stands for range.rb there.
+  # The command's own run is wrapped (a delegate would not survive reset_commands' clone of the command).
+  mrbc = conf.mrbc
+  original_run = mrbc.method(:run)
+  mrbc.define_singleton_method(:run) do |out, infiles, *rest, **opts|
+    original_run.call(out, [infiles].flatten.map { |f| f == src ? copy : f }, *rest, **opts)
+  end
+  file "#{conf.build_dir}/mrblib/mrblib.c" => [copy]
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
@@ -1240,6 +1278,7 @@ if closed
     bc2cpp_core_mt_exclude(conf)
     rpg_maker_gems(conf)
     bc2cpp_stub_core_mrblib(conf)
+    bc2cpp_stub_top_mrblib(conf)
   end
 end
 

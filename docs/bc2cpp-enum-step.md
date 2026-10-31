@@ -3,7 +3,8 @@
 Stage B of the external-iteration plan: the step form of `Array#each`, then the same mechanism for
 `Range#each`, behind `BC2CPP_ENUM_STEP=1`. Off by default. Code: `tools/bc2cpp/codegen_enum_step.rb`
 (one form per owner), with two hooks in `tools/bc2cpp/codegen_emit.rb`. Fixtures:
-`scripts/bc2cpp/enum_step_array_check.rb` and `scripts/bc2cpp/enum_step_range_check.rb`.
+`scripts/bc2cpp/enum_step_array_check.rb`, `scripts/bc2cpp/enum_step_range_check.rb` and
+`scripts/bc2cpp/enum_step_range_generic_check.rb` (every Range case, the generic path included).
 
 ## Why
 
@@ -72,82 +73,139 @@ to the output (see Measured).
   return bc2cpp_core_interpreted(M, self, N);`. The guard still runs the proc in its slot through
   `mrb_exec_irep`.
 - Under the flag, the slot of an owner's `each` holds that owner's **driver** proc, not its own
-  body. For Range the driver runs the saved body for the cases the step does not cover (below).
+  body. For Range the driver makes the String#upto call or steps; no range runs the saved body (below).
 - Root-context calls and yield-free blocks still run the compiled entry. A blockless `each` under a
   fiber takes the guard (a nil block is not yield-free) and the driver returns `to_enum`.
 - Every other guarded core method keeps its saved bytecode.
 
 ## Range#each
 
-The body it mirrors is `3rd/mruby/mrblib/range.rb`. That body reads `self.begin`, `self.end` and
-`exclude_end?` once, and yields with `block.call`. The open reads the same three through dispatch,
-once per call; the driver calls `block.call` too.
+The body it mirrors is `3rd/mruby/mrblib/range.rb`'s `each`. Under the flag no range falls back to it: the step covers every
+case, and the driver keeps no alias of the body (`__bc2cpp_each_plain` is gone). The open makes the body's own dispatch in
+the body's order, and the step makes the loop's. The behaviour list and how each item is matched are in "Range generic".
 
-**Covered by the step** (the open returns the state):
+**Covered by the step** (the open returns the state; the step is the loop):
 
-- Integer begin, Integer end, exclusive: the values from begin up to end.
-- Integer begin, Integer end, inclusive with end below `MRB_INT_MAX`: the stop is `end + 1`, boxed
-  with `mrb_int_value` (word boxing has a smaller Fixnum range than `mrb_int`).
-- Integer begin, nil end (endless): no stop. Past `MRB_INT_MAX` the cursor goes on through
-  `Integer#+` (a bignum), as mrblib's `i += 1` does.
-- Empty and reversed ranges: the first step is done, so the driver returns `self` without a yield.
+- Integer begin, nil end (endless): the cursor goes on through `Integer#+` past `MRB_INT_MAX`.
+- Integer begin, Integer end: `lim` is `end`, or `end + 1` for an inclusive range (through `Integer#+`, so a Bignum at
+  `MRB_INT_MAX`); the cursor runs while `i < lim`.
+- Any other begin with `succ` (String without `upto`, a user class, a Bignum begin, an Integer begin with a Float or other
+  end): the generic loop, with `succ` and `<=>` called from C.
+- A begin without `succ` (nil, Float, a beginless range): `TypeError: can't iterate`, raised by the open before any `<=>`.
 
-**Fallback** (the open returns nil; the driver calls `__bc2cpp_each_plain`):
+**Delegated to a Ruby call** (the driver makes it; no C frame): a String begin with a String end, when String responds to
+`upto`, calls `begin.upto(end, exclude_end?, &block)`; a String begin with a nil end, when String responds to
+`__upto_endless`, calls that. Both are mruby's own String methods (Ruby code in mruby-string-ext), so the block's
+`Fiber.yield` has VM frames only.
 
-- A non-Integer begin: String, Float, a `succ`-based object, or nil (a beginless range, which the body
-  rejects with `TypeError: can't iterate`).
-- An Integer begin with a non-Integer end, e.g. `1..2.5`, which mrblib runs with `succ` and `<=>`.
-- A bignum begin or end.
-- An inclusive end equal to `MRB_INT_MAX`: mrblib's `end + 1` is a bignum there. The call-site
-  loop inline (`RANGE_EACH_INT_MAX` in `codegen_loop_inline.rb`) refuses the same case.
-- A blockless `each`: the driver returns `to_enum` before the open, as mrblib does.
+**Block frames.** The open and the step never run the block. The driver calls `block.call(v)`. Between `resume` and the
+block's `Fiber.yield` there are only the driver's VM frames, because the step has returned before the block runs.
 
-`__bc2cpp_each_plain` is an alias of Range#each's mrblib body, made by the driver's source while
-`each` is still that body. It is the same proc, so the fallback adds no second copy of the body.
+**User succ and <=> that suspend a Fiber.** The step calls them through `mrb_funcall` from C, so their frame is on a C
+frame. A `Fiber.yield` inside them raises `FiberError: can't cross C function boundary` (`fiber_check_cfunc`,
+`3rd/mruby/mrbgems/mruby-fiber/src/fiber.c`), at the `Fiber.yield`, and the error propagates out of `next` or `resume`.
+The body lets that yield through, and the element sequence is then corrupted (`e.next` returns the yielded array as an
+element). So the change turns silent misbehaviour into an explicit error. The fixture checks both methods (`succ yields`,
+`cmp yields`). The compiled entry already calls `succ` and `<=>` from C for a yield-free block, so it raises the same error
+today (by reading the code; not run). Blocks that are not yield-free take the driver, where the step now does the same.
 
-**Result values.** For Integer ranges `StopIteration#result` is the range (`self`). For a String range
-mruby's body returns the receiver of `String#upto`, so `('a'..'c').each` ends with `"a"`; the fallback
-keeps that value, and MRI returns the range. A Range subclass that overrides `end` (to add one, say)
-changes what mruby's body yields, because the body dispatches `end`; the open dispatches the same way,
-so the step matches mruby and yields 1, 2, 3. MRI reads the bounds without a call and yields 1 and 2.
-The fixture expects mruby's values for both.
+**Result values.** The step returns `self`, so `StopIteration#result` is the range for every stepped case. For the
+String delegation it is the value `upto` returns, `"a"` for `('a'..'c')`, which the body also returns. MRI returns the range
+for both; the fixture expects mruby's values.
 
-**Bytecode size** (measured with the host `mrbc`, no debug info, the mrblib def wrapped in
-`class Range ... end` for the body): Range#each's mrblib body is 813 bytes, the Range driver 408
-bytes. The Array driver is 309 bytes. The fallback alias keeps the body resident, so under the
-flag the driver is added on top of the body rather than replacing it. The guard's saved slot
-shrinks; the mrblib bytecode in `libmruby.a` does not. A real reduction for Range#each needs the step
-to cover the generic `succ`/`<=>` path too, so the body can go (see Next).
+**Subclass caveat.** The open and the step dispatch `begin`, `end` and `exclude_end?` as the body does (`self.begin` is a
+call), so a Range subclass that overrides `end` to add one yields 1, 2, 3 for `(1..2)`. MRI reads the bounds without a call
+and yields 1, 2. The body's behaviour is matched, not corrected.
+
+**Bytecode.** Under the flag the closed build drops the body. The stub rule admits Range#each (`Form#stubs_body`,
+`MrblibStubs.stub_keep_reason`), and `bc2cpp_stub_top_mrblib` (build_config.rb) compiles a copy of
+`3rd/mruby/mrblib/range.rb` with only `Range#each` emptied, through a wrapper of the build's mrbc. The wrapper is needed
+because mruby's `tasks/mrblib.rake` takes its file list from the submodule, which is not edited. Flag unset, neither applies.
+
+## Range generic
+
+Designed from the source (`3rd/mruby/mrblib/range.rb`, `3rd/mruby/src/range.c`, `3rd/mruby/src/numeric.c`,
+`3rd/mruby/mrbgems/mruby-string-ext/mrblib/string.rb`). The reference values are the body's, and the fixture runs each case
+against the body (interpreted) and the step (compiled); see Measured.
+
+The body, in order. `D(x)` is a dispatch of `x`.
+
+1. Blockless: `to_enum(:each)`. The driver checks this before the open.
+2. `val = D(self.begin)`, then `last = D(self.end)`. Both are dispatched, every call.
+3. `D(val.kind_of?(Integer)) && D(last.nil?)`: an endless loop, `block.call(i); i += 1`. It never returns normally; `break`
+   and a raise leave it. No `<=>`, no `succ`.
+4. `D(val.kind_of?(String)) && D(last.nil?)`: `val.__upto_endless(&block)` when `D(val.respond_to?(:__upto_endless))`;
+   otherwise the generic loop with the size break.
+5. `D(val.kind_of?(Integer)) && D(last.kind_of?(Integer))`: `lim = last`; `lim += 1 unless D(exclude_end?)`; `while i < lim`
+   yields; return self. `exclude_end?` is dispatched once; `lim + 1` is `Integer#+` (a Bignum at `MRB_INT_MAX`).
+6. `D(val.kind_of?(String)) && D(last.kind_of?(String))`: `val.upto(last, D(exclude_end?), &block)` when
+   `D(val.respond_to?(:upto))`, and the call's value is returned; otherwise the generic loop with the size break.
+7. `raise TypeError, "can't iterate" unless D(val.respond_to?(:succ))`. No `<=>` has run yet.
+8. `return self if D(D(val <=> last) > 0)`. `>` is dispatched on whatever `<=>` returned, so a nil result raises
+   `NoMethodError` (`undefined method '>' for NilClass`).
+9. `while D(D(val <=> last) < 0)`: `block.call(val)`; `val = D(val.succ)`; for a String range without `upto`,
+   `break if D(D(val.size) > D(last.size))`.
+10. `block.call(val) if !D(exclude_end?) && D(D(val <=> last) == 0)`; return self. `exclude_end?` is read before `<=>`, so an
+    exclusive range makes no final `<=>` call.
+
+**Observable behaviour, and how the step matches it:**
+
+- Return value: `self` for every generic, Integer and endless-String-generic case; the `upto` value for String delegation.
+  The step returns `self`; the driver returns the delegated call's value. Endless Integer never returns normally.
+- `StopIteration#result`: the each's return value (above). A `break` value replaces it, as for any block.
+- `begin` and `end`: dispatched twice, first, before any type check. The step's open does the same, in that order.
+- `exclude_end?`: once for an Integer range, once as the `upto` argument, once for generic at step 10, never for endless.
+- `succ`: called after the block returns, never before (a raising block sees no further `succ`). The step's advance runs at the
+  next step call, which is after the driver's `block.call`.
+- `<=>`: once at step 8, once per loop test (step 9), and once at step 10 when the range is not exclusive. The step makes the
+  same calls. For `(v1...v3)` with user methods the body's log is: `<=>`, `<=>`, `<=>`, yield 1, `succ`, `<=>`, yield 2, `succ`,
+  `<=>`, `exclude_end?`. The fixture compares this log for both runs.
+- Results of `<=>`: `<` and `>` and `==` are dispatched on the result, so a nil result raises `NoMethodError` naming the operator
+  (`undefined method '<' for NilClass`, `'>'`). Integer results are compared natively, as the VM compares Fixnums.
+- Nil or incomparable end: a nil end with a generic begin is endless, so step 8 runs `<=>` with nil and raises the NoMethodError
+  above. An Integer begin with a String end (`1..'a'`) cannot be constructed: `Range.new` raises `ArgumentError: bad value for
+  range`, because `Range.new` calls `<=>` once (`r_check`, `3rd/mruby/src/range.c`). Nothing in `each` changes that.
+- Errors and classes: `TypeError` ("can't iterate") for a begin without `succ`; `NoMethodError` for a nil comparison result;
+  any exception from a user `succ`, `<=>`, `size` or the block propagates unchanged. A user `succ` or `<=>` that calls
+  `Fiber.yield` raises `FiberError` under the step (above).
+- Beginless range (nil begin): `TypeError: can't iterate` (step 7).
+- Float begin (`1.0..3.0`): `TypeError: can't iterate`, because Float has no `succ` in mruby (step 7). Integer begin with a Float
+  end (`1..2.5`): the generic loop, yielding 1, 2 (step 5 does not apply, since `last` is not an Integer).
+- Bignum: `kind_of?(Integer)` is true for a Bignum begin or end, so steps 3 and 5 apply, with `<` and `+` dispatched on the
+  Bignum (the step does not use the native path for those). `(9223372036854775806..9223372036854775808)` yields three values.
+- Empty and reversed ranges: no yield; step 8 (generic) or the Integer loop finds nothing to do.
+- `String#upto` and `__upto_endless` run in mruby-string-ext's Ruby, so `succ` and `<=>` inside them are Ruby calls. Their
+  results come back through the driver.
 
 ## Designed, not run
 
-- Performance. The step adds one C call and one heap array per element of a fiber's `each`. Not
-  measured.
+- Performance. The step adds one C call and one heap array per element of a fiber's `each`, and the open makes about six
+  dispatches per call (begin, end, the kind checks, exclude_end?). Not measured.
 - Game behaviour. The closed builds were compiled and linked; only the fixtures ran.
-- Break out of the block: the Range fixture has a `break` in a root block and under a fiber
-  (both 20, as in Ruby). Other cases are not covered.
-- A Range subclass whose `begin` or `end` raises, or calls `Fiber.yield`. The open dispatches
-  `begin`, `end` and `exclude_end?` from C, so a user method that yields there hits the same C-frame
-  check as a dispatched `length` in Array's step.
+- Break out of the block: the fixtures have a `break` in a root block and under a fiber (both 20, as in Ruby). Other cases
+  are not covered.
+- A Range subclass whose `begin` or `end` calls `Fiber.yield`: the open dispatches them from C, so this is the same
+  `FiberError` as for `succ` and `<=>`. Designed, not run.
 - Stage B2 (the next iterator) and any other method.
 
 ## Known limits
 
-- The driver is Ruby compiled with `mrb_load_string`, so the flag needs `mruby-compiler` in the
-  build (the closed build has it; the `wio` and `maix` builds may not). Not tested.
-- `__bc2cpp_each_driver`, `__bc2cpp_each_step`, and on Range `__bc2cpp_each_open` and
-  `__bc2cpp_each_plain`, are private methods, visible to `private_instance_methods`.
+- The driver is Ruby compiled with `mrb_load_string`, so the flag needs `mruby-compiler` in the build (the closed build has
+  it; the `wio` and `maix` builds may not). Not tested.
+- `__bc2cpp_each_driver`, `__bc2cpp_each_step`, and on Range `__bc2cpp_each_open`, are private methods, visible to
+  `private_instance_methods`.
 - A non-Integer `length` on an Array subclass raises TypeError (`mrb_as_int`). mrblib compares it with `<`.
 - The driver is parsed once per VM at registration. Its cost was not measured.
 - Range#each's step form is registered only while `each` is still bytecode, as Array's is.
+- The generic `String` loop (`str_each`) runs only where `String#upto` is undefined. The fixture undefines it last; the closed
+  build has mruby-string-ext, so the closed build never reaches it.
 
 ## Next
 
-The recommendation is to take the generic Range path (`succ` and `<=>`, the `(val <=> last) > 0`
-checks, and the `str_each` size break) into the step and drop the alias. That would make the driver
-the only saved bytecode for Range#each. It moves user `succ` and `<=>` calls into C frames, the
-same hazard as an Array subclass's `[]`, so it needs its own fixture. String ranges through
-`String#upto` need a separate look.
+- Array#each: the same stub would drop its saved body, since its driver has no alias. Not done here (the change is for Range).
+- The two yield cases are a behaviour change, not a regression of the step: a user `succ` or `<=>` that suspends a fiber now
+  fails with `FiberError`. Whether the Range step should keep the body for such ranges is a design question; the answer
+  here is no, because the body cannot be kept (it is dropped under the flag).
 
 ## Measured
 
