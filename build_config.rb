@@ -191,7 +191,7 @@ end
 # the saved body covers, so the body can leave the binary. That body is in mruby's top-level mrblib (range.rb), which
 # bc2cpp_stub_core_mrblib leaves alone: mrblib.rake compiles the directory's files itself. So the closed build compiles a
 # copy of range.rb with only Range#each emptied, and the mrbc command that reads the directory reads the copy. The copy
-# follows the core manifest (MrblibStubs). Flag unset: nothing here runs.
+# follows the core manifest (MrblibStubs). Flag at 0: nothing here runs.
 def bc2cpp_stub_top_mrblib(conf)
   require_relative 'tools/bc2cpp/codegen_enum_step'
   return unless EnumStep.enabled? && conf.gems.any? { |g| g.name == 'mruby-core-compiled' }

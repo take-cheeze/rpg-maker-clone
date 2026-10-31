@@ -1,10 +1,11 @@
 # bc2cpp: the step form of Array#each and Range#each (ENUM_STEP)
 
 Stage B of the external-iteration plan: the step form of `Array#each`, then the same mechanism for
-`Range#each`, behind `BC2CPP_ENUM_STEP=1`. Off by default. Code: `tools/bc2cpp/codegen_enum_step.rb`
+`Range#each`. On by default; `BC2CPP_ENUM_STEP=0` turns it off. Code: `tools/bc2cpp/codegen_enum_step.rb`
 (one form per owner), with two hooks in `tools/bc2cpp/codegen_emit.rb`. Fixtures:
 `scripts/bc2cpp/enum_step_array_check.rb`, `scripts/bc2cpp/enum_step_range_check.rb` and
-`scripts/bc2cpp/enum_step_range_generic_check.rb` (every Range case, the generic path included).
+`scripts/bc2cpp/enum_step_range_generic_check.rb` (every Range case, the generic path included). The fixtures that
+compare with the flag off set it to `0`; the rest of the doc's "flag unset" means `BC2CPP_ENUM_STEP=0`.
 
 ## Why
 
