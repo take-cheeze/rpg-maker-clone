@@ -324,6 +324,15 @@ Some keys stay whatever their name:
 
 `scripts/bc2cpp/core_native_candidates_check.rb` checks the rule.
 
+Native aliases are considered separately. `mrb_define_alias` and
+`mrb_define_alias_id` define their new names and look their source names up.
+The source name stays in the reachability scan, including when it is another
+alias. After native initialization has copied the entry, an unreachable new
+alias can be removed without removing its source. Alias candidates still
+require a fixed owner and name, exclude owners with computed registrations,
+and retain any key shared with a ROM entry. Ordinary lookups and fragments
+that can build the alias name keep it.
+
 #### Private Ruby methods of mruby's own mrblib
 
 A core method that Ruby defines as `private def` (mruby-io's `kernel.rb`: `p`,
