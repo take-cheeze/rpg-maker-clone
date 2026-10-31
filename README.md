@@ -307,6 +307,7 @@
   `# frozen_string_literal: true` gets CRuby's frozen string literals, on the
   interpreter and in bc2cpp-compiled code alike; see
   [`docs/frozen-string-literals.md`](docs/frozen-string-literals.md)
+- Optional [method-lookup tracing](docs/bc2cpp-method-lookup-hook.md) observes by-name dispatch in the mruby fork.
 - XP stores its whole database as Ruby `Marshal` dumps, which load straight
   through the bundled marshal reader into a typed `RPG::*` schema
   (`mruby-rpgxp`); the RGSS value types (`Table`, `Color`, `Tone`, `Rect`) are
