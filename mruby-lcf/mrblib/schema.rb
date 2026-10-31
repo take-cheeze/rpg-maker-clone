@@ -1492,22 +1492,176 @@ module LCF
 
     # Hero-only fields overlap vehicle and map-event ids; keep their types
     # out of the shared movable layout.
-    # dup and []= rather than merge: Hash#merge walks its argument with each_key,
-    # a load-time send the closed build cannot narrow to Hash.
-    SAVE_PARTY_LOCATION = SAVE_MOVABLE.dup
-    SAVE_PARTY_LOCATION[101] = { name: :boarding, type: :bool, default: false }
-    SAVE_PARTY_LOCATION[102] = { name: :aboard, type: :bool, default: false }
-    SAVE_PARTY_LOCATION[103] = { name: :vehicle, type: :int, default: 0 }
-    SAVE_PARTY_LOCATION[104] = { name: :unboarding, type: :bool, default: false }
-    SAVE_PARTY_LOCATION[105] = { name: :preboard_move_speed, type: :int, default: 4 }
-    SAVE_PARTY_LOCATION[108] = { name: :menu_calling, type: :bool, default: false }
-    SAVE_PARTY_LOCATION[111] = { name: :pan_state, type: :int, default: 1 }
-    SAVE_PARTY_LOCATION[112] = { name: :pan_current_x, type: :int, default: 2304 }
-    SAVE_PARTY_LOCATION[113] = { name: :pan_current_y, type: :int, default: 1792 }
-    SAVE_PARTY_LOCATION[114] = { name: :pan_finish_x, type: :int, default: 2304 }
-    SAVE_PARTY_LOCATION[115] = { name: :pan_finish_y, type: :int, default: 1792 }
-    SAVE_PARTY_LOCATION[121] = { name: :pan_speed, type: :int, default: 16 }
-    SAVE_PARTY_LOCATION[124] = { name: :total_encounter_rate, type: :int, default: 0 }
+    # The hero's table: SAVE_MOVABLE with the hero-only fields. Written out, not merged: Hash#merge walks its
+    # argument with each_key, a load-time send that keeps the body of every core `each` in the closed build.
+    SAVE_PARTY_LOCATION = {
+      11 => { name: :map_id, type: :int },
+      12 => { name: :x, type: :int },
+      13 => { name: :y, type: :int },
+      # liblcf's `SaveMapEventBase.facing` (generator/csv/fields.csv, 0x16 ==
+      # 22) -- *not* this runtime's numpad convention (2/4/6/8) the database-
+      # side event-page facing field (MAP_EVENT_PAGE field 23) uses directly.
+      # The 0=up/1=right/2=down/3=left enum order this codebase assumes
+      # (`Game::CharSet::DIR_ROW` doubles as the encoder, `EventGraphic.
+      # numpad_direction` as the decoder) is NOT independently confirmed
+      # against genuine RPG_RT under wine -- cycle #174 tried and could not
+      # reach a verdict either way: varying this field across all four raw
+      # values (0/1/2/3) on a genuine Nepheshel `Save01.lsd` produced a
+      # byte-identical (`compare -metric AE` == 0) rendered hero across every
+      # value, on four independent wine boots, so no directional difference
+      # was observable to check the mapping against at all. The same probe
+      # also found this field's sibling `x`/`y` (11-13 above) silently
+      # ignored the same way -- writing 2,2 vs 14,11 vs 14,9 on the same
+      # save/map all rendered identically too -- so the null result likely
+      # traces to this specific save's own leader (database actor 15,
+      # "デモ用", a demo/placeholder actor from Nepheshel's scripted opening;
+      # see `scripts/gen/rpg2k-save.rb`'s own header) rather than to this
+      # field's meaning being wrong. Left open: repeat this probe against a
+      # save whose leader is an ordinary, non-placeholder actor.
+      22 => { name: :direction, type: :int },
+      # liblcf's own generator/csv/fields.csv names field 0x15/21 `direction`
+      # ("Sprite direction") and field 0x16/22 (just above) `facing` -- the
+      # reverse of the names already established here, kept as-is rather
+      # than risk an invasive rename of the widely-referenced field 22.
+      # Confirmed present on a genuine kk1.12 save under wine, holding the
+      # exact same raw value as field 22 in that capture (both "\x02",
+      # facing down) -- consistent with 21 simply mirroring 22 whenever the
+      # hero is not itself mid-turn-animation (the one case liblcf's own
+      # naming implies the two could differ), which this codebase has no
+      # separate concept of. Not otherwise investigated -- left as a
+      # write-only mirror, the same shape as chunk 104's own 73/74
+      # (`charset_name`/`charset_index`) sprite mirror.
+      21 => { name: :sprite_direction, type: :int },
+      # liblcf's own `layer` (generator/csv/fields.csv, 0x21 == 33): confirmed
+      # present as the constant 1 ("same as characters") on a genuine kk1.12
+      # save under wine, on the hero's own record and every vehicle's alike
+      # (chunks 104-107) -- RPG2000/2003 has no "Change Hero/Vehicle Layer"
+      # command (only a map *event* page can be pinned below/above
+      # characters), so this codebase's own `#to_lsd` writes it as a true
+      # constant rather than tracking any live state for it.
+      33 => { name: :layer, type: :int },
+      # liblcf's `SaveMapEventBase.transparency` (generator/csv/fields.csv,
+      # 0x18 == 24): "0 or 3 - Transparency level of the current event page".
+      # On the *hero's* own record (chunk 104) this is Set Transparent Flag's
+      # (Player Visibility, 11310) runtime override -- Game::State
+      # #player_transparent. It used to be smuggled into SAVE_SYSTEM's own
+      # field 55 instead, which liblcf actually names `event_message_active`
+      # (a flag ShowMessage/ShowChoices/ShowNumberInput set, unrelated to
+      # transparency at all) -- an earlier entry declared it `:transparent` with no
+      # citation for the claim. Confirmed against the repo's own real save
+      # fixture: `event_message_active` (55) decodes true on Nepheshel
+      # Save01.lsd, which would have made Continue permanently hide the hero
+      # on any save taken with a message on screen -- a real, severe
+      # regression a genuine RPG_RT save can trigger, not merely a naming
+      # slip. The vehicle chunks (105-107) never used field 55 for anything,
+      # so this field is otherwise new to them too -- vehicles have no
+      # runtime "hidden" state to persist, so their own #load_movable simply
+      # never reads it.
+      24 => { name: :transparency, type: :int, default: 0 },
+      # liblcf's own generator/csv/fields.csv (0x20 == 32, default 2): the
+      # move-frequency a forced move route (Set Move Route) runs its target
+      # at -- see Game::State#player_route's own citation in game.rb for why
+      # this lives on the hero's own record specifically (Scene::Map's
+      # transient @player_char mirror, not tracked anywhere else). Not
+      # independently confirmed against genuine RPG_RT under wine.
+      32 => { name: :move_frequency, type: :int, default: 2 },
+      35 => { name: :animation_type, type: :int },
+      37 => { name: :move_speed, type: :int },
+      # liblcf's own `SaveMapEventBase.move_route` (generator/csv/fields.csv,
+      # 0x29 == 41), the same `MOVE_ROUTE` struct (11/12 move_commands,
+      # 21 repeat, 22 skippable) MAP_EVENT_PAGE's own field 41 already uses
+      # for a database-configured custom route -- `LCF.parse_move_commands`/
+      # `.encode_move_commands`'s exact byte format is exercised across the
+      # full test-bed corpus of real editor-authored maps (116076 real move
+      # commands parsed with every `command_id` landing in its valid 0..41
+      # range, `scripts/lcf/testbed_check.rb`). On the
+      # hero's own record this is a live Set Move Route (11330) targeting
+      # the player, not a database page property -- see Game::State
+      # #player_route's own citation in game.rb. Confirmed present with
+      # real command data on a genuine kk1.12 save under wine (the hero had
+      # a live custom route recorded in that capture).
+      41 => { name: :move_route, type: :Array1D, elements: MOVE_ROUTE },
+      # SaveMapEventBase's own move-route cursor: how far into a page's
+      # move_type CUSTOM route this event had gotten (Game::MoveRoute#index),
+      # ported from a reference implementation's schema field layout, not
+      # independently confirmed against genuine RPG_RT under wine (0x2B ==
+      # 43). liblcf also has a SaveMapEvent.original_move_route_index (0x66/102),
+      # tracking the route in force *before* a Set Move Route override --
+      # left undecoded, since this codebase's own Game::State
+      # #map_event_route_index has no separate "original vs current route"
+      # concept to source it from, only the single live cursor field 43
+      # already covers. No `default:` (matching e.g. SAVE_INVENTORY's
+      # turns/steps counters), so an absent field reads back as nil rather
+      # than 0 -- Game::State.from_lsd tells "no saved cursor, restart the
+      # route from the top" from "explicitly at command 0" the same way.
+      43 => { name: :move_route_index, type: :int },
+      # liblcf's own `through` (generator/csv/fields.csv, 0x33 == 51,
+      # default false): "Walk Everywhere On/Off" (36/37), a Set Move Route
+      # command that ignores map collision for its target until turned back
+      # off or the route ends. On the hero's own record this is Scene::Map's
+      # own transient @player_through mirror -- see Game::State
+      # #player_route's own citation in game.rb. Not independently confirmed
+      # against genuine RPG_RT under wine.
+      51 => { name: :through, type: :bool, default: false },
+      # liblcf's `SaveMapEventBase` (generator/csv/fields.csv): `sprite_name`
+      # 0x49 == 73, `sprite_id` 0x4A == 74. Field 75 (0x4B) is `processed`, an
+      # unrelated per-frame flag ("has this event already taken its movement
+      # step this frame") -- an earlier entry originally mapped charset_index to 75,
+      # citing "liblcf's RPG::SaveSystem", but SaveSystem's own fields 73-75
+      # are battle_end_music/inn_music/current_music, nothing to do with a
+      # character graphic; SaveMapEventBase (the struct chunk 104/105-107
+      # actually use, already correctly named two fields up for
+      # move_route_index) is the right one. Confirmed against a real save
+      # (Nepheshel Save01's hero record): field 75 is present (`\x01`, a
+      # plausible `processed` value) while 73/74 are both absent -- exactly
+      # what "no sprite override, mid-frame" looks like, not what a genuine
+      # sprite_id co-occurring without its paired sprite_name ever would.
+      73 => { name: :charset_name, type: :string },
+      74 => { name: :charset_index, type: :int },
+      # liblcf's own generator/csv/fields.csv (0x51-0x55 == 81-85): an
+      # in-flight Flash Sprite (11320), or a map-triggered battle-animation
+      # flash reusing the same mechanism (see Game::State#player_flash's own
+      # citation in game.rb). `flash_current_level` is declared a `Double`
+      # (not an Int32 like its siblings) -- liblcf tracks the *current*,
+      # already-decayed strength directly rather than recomputing it from
+      # `flash_power`/`flash_time_left` each frame, so `#to_lsd` derives an
+      # equivalent value from this codebase's own `power * frames / total`
+      # decay math (`Scene::Map#flash_tone`'s own formula). Confirmed against
+      # a genuine kk1.12 save under wine, for the *not flashing* case only:
+      # flash_red/_green/_blue present as an explicit 0 (not the schema's own
+      # -1 generator default, and not absent either) while
+      # flash_current_level/_time_left stayed absent -- so RPG_RT always
+      # writes the RGB triple, defaulting to 0 rather than -1, and only adds
+      # the level/time_left pair while a flash is actually in progress. The
+      # active-flash wire values are confirmed by the RPG_RT capture; that capture
+      # does not establish the entire decay curve.
+      81 => { name: :flash_red, type: :int },
+      82 => { name: :flash_green, type: :int },
+      83 => { name: :flash_blue, type: :int },
+      84 => { name: :flash_current_level, type: :double },
+      85 => { name: :flash_time_left, type: :int },
+      # liblcf's own `SaveVehicleLocation` struct (generator/csv/fields.csv,
+      # 0x65 == 101, name `vehicle`) -- a boat/ship/airship-only field this
+      # shared layout is overridden for the hero by SAVE_PARTY_LOCATION,
+      # where field 101 means boarding instead. Confirmed present on a
+      # genuine kk1.12 save under wine as the vehicle's own 1/2/3 ordinal
+      # (boat/ship/airship), on all three vehicle chunks, none of which had
+      # ever been boarded that session -- see SAVE_DATA's own 105-107
+      # comment for the larger discovery this field was found alongside.
+      101 => { name: :boarding, type: :bool, default: false },
+      102 => { name: :aboard, type: :bool, default: false },
+      103 => { name: :vehicle, type: :int, default: 0 },
+      104 => { name: :unboarding, type: :bool, default: false },
+      105 => { name: :preboard_move_speed, type: :int, default: 4 },
+      108 => { name: :menu_calling, type: :bool, default: false },
+      111 => { name: :pan_state, type: :int, default: 1 },
+      112 => { name: :pan_current_x, type: :int, default: 2304 },
+      113 => { name: :pan_current_y, type: :int, default: 1792 },
+      114 => { name: :pan_finish_x, type: :int, default: 2304 },
+      115 => { name: :pan_finish_y, type: :int, default: 1792 },
+      121 => { name: :pan_speed, type: :int, default: 16 },
+      124 => { name: :total_encounter_rate, type: :int, default: 0 },
+    }
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)
     # carries a lot more of liblcf's full `SaveMapEventBase` struct
