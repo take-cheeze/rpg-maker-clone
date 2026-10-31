@@ -111,3 +111,5 @@
 
 # Closed-world bc2cpp build output (scripts/bc2cpp/closed_build.bash default BUILD_DIR).
 /build-closed-bc2cpp
+# Closed builds into other directories (scripts/bc2cpp/closed_build.bash takes the directory as an argument).
+/build-closed-bc2cpp-*
