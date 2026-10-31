@@ -4,6 +4,7 @@ MRuby::Gem::Specification.new('mruby-rpgxp') do |spec|
   spec.summary = 'RPG Maker XP (RGSS) runtime'
 
   add_dependency 'mruby-rgss'
+  add_dependency 'mruby-marshal'
   add_dependency 'mruby-io'
   # RGSSAD archive decoding assembles decrypted bytes with Array#pack("C*").
   add_dependency 'mruby-pack'

@@ -1031,6 +1031,7 @@
 - Core reachability reads both Ruby alias operands from the RITE binary, so an alias no longer retains unrelated method definitions in the same class body.
 - Closed builds also prune unreachable compiled core Ruby methods, while retaining explicit public calls, direct compiled calls and keys shared with ROM tables.
 - Verified Math domain-error labels no longer retain otherwise-unused methods in closed builds; changed or ambiguous helper implementations keep the conservative scan.
+- RPG2k-only builds omit unused Marshal, Struct, Kernel-extension and random gems; multi-format builds retain their game-script dependencies. See the [dependency matrix and checks](docs/rpg2k-dependencies.md).
 - Further compiler Array-allocation candidates, sequencing and validation gates are documented in the [optimization plan](docs/bc2cpp-array-allocation-plan.md). These changes are proposed.
 
 - LCF schema-kind membership checks use bit positions to avoid temporary large Integer intersections; see [LCF masks](docs/bc2cpp-lcf-mask-performance.md).
