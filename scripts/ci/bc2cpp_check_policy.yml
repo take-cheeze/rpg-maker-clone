@@ -61,6 +61,10 @@ deferred:
     - cxx
     reason: Requires a full-core library and compiled-vs-interpreted fixture binaries.
 checks:
+  scripts/bc2cpp/method_lookup_report_check.rb:
+    tier: runtime
+    capabilities:
+    - cxx
   scripts/bc2cpp/method_lookup_hook_check.rb:
     tier: runtime
     capabilities:
