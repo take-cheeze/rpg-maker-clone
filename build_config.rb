@@ -1276,6 +1276,11 @@ if closed
 
     bc2cpp_core_mt_exclude(conf)
     rpg_maker_gems(conf)
+    # mruby-enumerator arrives only as a dependency (mruby-set, mruby-enum-chain, mruby-enum-lazy), which mruby resolves
+    # after this stanza runs, so bc2cpp_stub_core_mrblib would not see it in conf.gems. Declared here, it is a core
+    # mrblib gem like the others, and its bodies in the core manifest are emptied (BC2CPP_CORE_MRBLIB_GEMS). Mruby
+    # keeps one entry per gem name, so the gem set is the same.
+    conf.gem core: 'mruby-enumerator'
     bc2cpp_stub_core_mrblib(conf)
     bc2cpp_stub_top_mrblib(conf)
   end
