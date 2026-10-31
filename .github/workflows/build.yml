@@ -904,6 +904,7 @@ jobs:
           ruby scripts/bc2cpp/class_body_lambda_check.rb
           ruby scripts/bc2cpp/optional_rest_check.rb
           ruby scripts/bc2cpp/super_optional_check.rb
+          ruby scripts/bc2cpp/owner_native_chain_check.rb
           ruby scripts/bc2cpp/guard_fiber_free_check.rb
           ruby scripts/bc2cpp/exception_init_check.rb
           ruby scripts/bc2cpp/superclass_namespace_check.rb

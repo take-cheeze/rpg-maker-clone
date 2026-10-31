@@ -379,6 +379,10 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/owner_native_chain_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/guard_fiber_free_check.rb:
     tier: fast
     capabilities:
