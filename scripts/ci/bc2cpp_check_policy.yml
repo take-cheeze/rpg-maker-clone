@@ -705,6 +705,14 @@ checks:
     tier: runtime
     capabilities:
     - mrbc
+  scripts/bc2cpp/resumable_args_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/resumable_block_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
     - native_sources
     - full_library
     - cxx
