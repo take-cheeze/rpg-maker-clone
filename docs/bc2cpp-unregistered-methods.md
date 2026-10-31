@@ -325,6 +325,20 @@ Some keys stay whatever their name:
 
 `scripts/bc2cpp/core_native_candidates_check.rb` checks the rule.
 
+Ruby-defined core methods also participate in the general receiver-blind scan,
+whether they are compiled to C++ or kept interpreted. An identifier-shaped name
+can be removed only when the scan finds no lookup, fragment-built name or direct
+compiled call of it. Only fixed class/module paths are eligible; ambiguous
+repeated owners from per-file registries are skipped. Keys shared with a ROM
+entry stay protected, so omitting a Ruby override cannot introduce a RAM
+tombstone for the readonly entry. These keys join `STATIC_DISPATCH_CORE_LEFT_OUT`;
+the closed build omits their registrations and load-time Ruby definitions.
+C++ implementations can still be emitted; unused function sections can be
+discarded by the linker. Other builds retain the registrations.
+
+This general rule keeps explicit public sends as lookups. It does not use the
+private-method proof's exemption for sends with explicit receivers.
+
 Native aliases are considered separately. `mrb_define_alias` and
 `mrb_define_alias_id` define their new names and look their source names up.
 The source name stays in the reachability scan, including when it is another
