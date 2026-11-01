@@ -5309,7 +5309,12 @@ class RPG2k
         ch = e.char
         e.move_timer -= 1
         return if e.move_timer > 0
-        e.move_timer = EVENT_MOVE_DELAY[e.forced_freq || ch.move_frequency] || 40
+        # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left the
+        # method tables, so only helper-shaped sends still dispatch -- an
+        # `||` index compiles to OP_SEND, a local to OP_GETIDX through the
+        # same native path.
+        freq = e.forced_freq || ch.move_frequency
+        e.move_timer = EVENT_MOVE_DELAY[freq] || 40
         ox = ch.x
         oy = ch.y
         run_route_step(e.forced_route, ch, @world) unless e.forced_route.done?

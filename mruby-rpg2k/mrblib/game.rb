@@ -208,7 +208,12 @@ module Game
               # gating design was ported from a reference implementation and
               # is NOT independently confirmed against genuine RPG_RT under
               # wine.
-              s = (names[got_number ? val : -1] || '').to_s
+              # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]`
+              # left the method tables, so only helper-shaped sends still
+              # dispatch -- a `?:` index compiles to OP_SEND, a local to
+              # OP_GETIDX through the same native path.
+              got = got_number ? val : -1
+              s = (names[got] || '').to_s
               cur << s
               count += s.length
             end
