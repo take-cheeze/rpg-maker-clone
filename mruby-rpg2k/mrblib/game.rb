@@ -208,7 +208,12 @@ module Game
               # gating design was ported from a reference implementation and
               # is NOT independently confirmed against genuine RPG_RT under
               # wine.
-              s = (names[got_number ? val : -1] || '').to_s
+              # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]`
+              # left the method tables, so only helper-shaped sends still
+              # dispatch -- a `?:` index compiles to OP_SEND, a local to
+              # OP_GETIDX through the same native path.
+              got = got_number ? val : -1
+              s = (names[got] || '').to_s
               cur << s
               count += s.length
             end
@@ -344,7 +349,11 @@ module Game
             # Bare `.new` plus setters, same SCAN_STRUCT_CONSTRUCTION reason
             # as #scan's own Segment sites above.
             truncated = Segment.new
-            truncated.text = t[0, remaining]
+            # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left
+            # the method tables, so only the 1-argument shape still
+            # dispatches; 0 < remaining < t.length here, and a Range goes
+            # through the same mrb_str_aref path as (start, length).
+            truncated.text = t[0...remaining]
             truncated.color = seg.color
             out << truncated
             remaining = 0
@@ -608,7 +617,10 @@ module Game
           remaining -= line.length
           line
         else
-          shown = line[0, remaining] || ''
+          # INDEX_CLOSED: see visible_segments above -- remaining is still
+          # non-negative here (it only shrinks past a line it covers), and a
+          # Range goes through the same mrb_str_aref path as (start, length).
+          shown = line[0...remaining] || ''
           remaining = 0
           shown
         end
@@ -2747,7 +2759,11 @@ module Game
     def strike_count
       weapons = equipped_weapons
       return weapon_attack_multiplier(weapons.first) unless weapons.size >= 2
-      weapons[0, 2].reduce(0) do |s, it|
+      # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left the
+      # method tables, so only the 1-argument shape still dispatches; weapons
+      # holds at least 2 here, and a Range goes through the same
+      # mrb_ary_aget1_impl path as (start, length).
+      weapons[0...2].reduce(0) do |s, it|
         s + (LCF.field?(it, :dual_attack) && it[:dual_attack] ? 2 : 1) * weapon_attack_multiplier(it)
       end
     end
@@ -2799,7 +2815,8 @@ module Game
       return nil unless rpg2003?
       weapons = equipped_weapons
       return nil unless weapons.size >= 2
-      w1, w2 = weapons[0, 2]
+      # INDEX_CLOSED: see strike_count -- weapons holds at least 2 here.
+      w1, w2 = weapons[0...2]
       w1_hits = (LCF.field?(w1, :dual_attack) && w1[:dual_attack] ? 2 : 1) * weapon_attack_multiplier(w1)
       weapon_roll_data(i < w1_hits ? w1 : w2)
     end

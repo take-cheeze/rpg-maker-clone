@@ -1097,7 +1097,10 @@ def bc2cpp_core_mt_exclude(conf, verify: true)
   StaticDispatchLists.verify_current!(lists, __dir__) if verify
   mruby = File.expand_path('3rd/mruby', __dir__)
   sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
-  text = CoreNativeCandidates.header(lists.core_excluded.to_a, CoreNativeCandidates.entries(sources.sort))
+  # Operator names are keyed by the proof's verdict (INDEX_CLOSED admission):
+  # only listed ones are excluded, so naming them here maps keys to entries.
+  text = CoreNativeCandidates.header(lists.core_excluded.to_a,
+                                     CoreNativeCandidates.entries(sources.sort, operator_names: true))
   path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, text) unless File.exist?(path) && File.read(path) == text

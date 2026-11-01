@@ -3930,11 +3930,16 @@ module Game
           a = params[i] || 0; i += 1
         when MoveCmd::CHANGE_GRAPHIC
           len = params[i] || 0; i += 1
-          str = string[soff, len] || ''; soff += len
+          # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left
+          # the method tables, so only the 1-argument shape still dispatches;
+          # len is a data length (never negative in a well-formed route), and
+          # a Range goes through the same mrb_str_aref path as (start, length).
+          str = string[soff...(soff + len)] || ''; soff += len
           a = params[i] || 0; i += 1
         when MoveCmd::PLAY_SOUND
           len = params[i] || 0; i += 1
-          str = string[soff, len] || ''; soff += len
+          # INDEX_CLOSED: see above.
+          str = string[soff...(soff + len)] || ''; soff += len
           a = params[i] || 0; i += 1
           b = params[i] || 0; i += 1
           c = params[i] || 0; i += 1

@@ -1692,7 +1692,12 @@ module Game
       def self.skill_failure(terms, skill_row, target_name)
         i = skill_row && LCF.field?(skill_row, :failure_message) ?
               skill_row[:failure_message] : nil
-        f = FAILURE_TERMS[i || 0]
+        # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left the
+        # method tables, so only helper-shaped sends still dispatch -- an
+        # `||` index compiles to OP_SEND, a local to OP_GETIDX through the
+        # same native path.
+        key = i || 0
+        f = FAILURE_TERMS[key]
         f && action(terms, target_name, f)
       end
 

@@ -139,6 +139,56 @@ case this proof cannot see. So is a name taken back out of a built string
 (`"#{a}: #{b}".split(': ')`), which the closed fragment rule treats as
 never being a name. Verify mode below exists to catch both.
 
+## Operators
+
+Operator names (`[]`, `[]=`, `+`, ...) fail the `IDENT` gate in
+`dynamic_name?`, so they are dynamic by default: no text scan could spell
+them, and the proof refuses to guess. Two index operators escape through
+the INDEX_CLOSED planner verdict (`tools/bc2cpp/index_closed_planner.rb`,
+ADR 0365) instead. The planner enumerates every class that can answer `[]`
+or `[]=` — native owners need a verified code-generation arm (Array, Hash,
+String, Struct, Table, Proc), Ruby owners join the direct-call chain, and
+anything else (a foreign definer, a module, a singleton, an unbounded
+member set) refuses the plan. A proven name is admitted to the unregistered
+lists and, crucially, its method bodies run in *both* the open and the
+closed fixpoint: unregistered bodies stop being load-only, and the open
+analysis would otherwise never run an operator-named body (no text scan
+spells `[]=`, so nothing bootstraps it there), breaking the open-superset
+invariant the proof checks. `BC2CPP_INDEX_ELIMINATE=0` keeps every operator
+dynamic, as before. Core ROM entries (`Array#[]`, ...) need the same
+verdict, plus an operator name mapping the entries scan otherwise withholds;
+class-side `Array[...]` leaves through the RAM list.
+
+A proven operator must also survive load time. The compiled loader runs
+class-body constant initializers (`ALL_DIRS = (DIR_BIT[2] | ...)`) by name
+(`bc2cpp_ld_decode` case 16, the legacy C++ statements), and a by-name `[]`
+would raise `NoMethodError` at gem-init load — aborting the init before the
+instance-type setup runs. So the loader keeps proven operators out of its
+data (`LoadCompile`'s `call?`, threaded from the plan's unregistered set),
+and every loader send of one — decoder, legacy expression, legacy class
+send — goes through the shared index helpers instead of the tables.
+`bc2cpp.rb` computes the load plan before emitting the helpers and forces
+on the ones only the load names, then defines
+`BC2CPP_INDEX_HELPERS_DEFINED` ahead of the load code: the loader links the
+same strong definitions instead of its own weak declarations, so the call
+has one candidate and nothing is ambiguous.
+
+The verdict covers only helper-shaped sends. The generator devirtualizes
+`[]` with one argument (the GETIDX/GETIDX0 opcodes) and `[]=` with two
+(`a[i] = v`, OP_SETIDX); a generic OP_SEND of the name — two indices, a
+splat, a block, an explicit `.[]` — has no devirtualization, so with the
+name out of the tables its by-name fallback raises `NoMethodError` (a
+2-argument `String#[]` in a game-title reader broke 42 sweep maps this
+way). `index_send_shaped?` (`tools/bc2cpp/static_dispatch_registrations.rb`)
+refuses the name while the closed world's bytecode holds such a send, so a
+regression fails safe with the tables intact. Engine sources therefore
+spell every multi-index slice as a 1-argument Range (`s[0...e]` goes through
+the same `mrb_str_aref` / `mrb_ary_aget1_impl` path as `(start, length)`).
+Core mrblib is outside the verdict's scope: its one such send
+(`Proc#curry`'s splat) never runs in the closed world, and the verify-mode
+sweep would abort loudly if one ever did. A `super` inside a future `[]`
+def is the same shape of gap — none exists today.
+
 ## Symbols
 
 By default every `:name` literal counts as a lookup of `name`, since a

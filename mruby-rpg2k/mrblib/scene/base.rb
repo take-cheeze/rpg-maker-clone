@@ -224,7 +224,11 @@ class RPG2k
         while i < str.length
           b = str.getbyte(i)
           n = b < 0x80 ? 1 : b < 0xE0 ? 2 : b < 0xF0 ? 3 : 4
-          out << str[i, n]
+          # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left
+          # the method tables, so only the 1-argument shape still dispatches;
+          # n is 1..4 here, and a Range goes through the same mrb_str_aref
+          # path as (start, length).
+          out << str[i...(i + n)]
           i += n
         end
         out
