@@ -13,7 +13,9 @@
 #include <lvgl.h>
 #include <mruby.h>
 #include <mruby/array.h>
+#ifndef RPG2K_SEALED_HOST
 #include <mruby/compile.h>
+#endif
 #include <mruby/error.h>
 #include <mruby/object.h>
 #include <mruby/string.h>
@@ -1974,9 +1976,8 @@ int main(int argc, char** argv) {
   // Record the detected maker for the crash report before the runtime is built
   // (see the same dispatch in rpg_start_game above).
 #ifdef RPG2K_SEALED_HOST
-  // A sealed host runs no Ruby but the game's own bytecode, so the
-  // arbitrary-Ruby loader below is compiled out (bc2cpp's closed-world guard
-  // honours this macro).
+  // Sealed hosts initialize their fixed native program without runtime Ruby
+  // compilation.
   CHECK(FLAGS_script.empty())
       << "--script loads arbitrary Ruby; this build is sealed";
 #else

@@ -28,11 +28,14 @@ no longer live in `patches/`.
 Status key: **applied** (commit on a tracking branch), **in pin** (already in
 the pinned commit, no commit needed), **not applied** (see the note).
 
-### take-cheeze/mruby (pin `1c6fa5ce0`, branch `claude/fork-format-paddlefish`)
+### take-cheeze/mruby (pin `93f276a8f`, branch `claude/native-only-frame-machine-4f26ab`)
 
-The current pin includes native continuation metadata and dispatch support from
-`b2abfc69b` on top of `0c0f6cf1e`, plus formatting fixes for the manual CI hooks. Closed bc2cpp builds use it to remove instruction storage from every
-retained Fiber body and support program while preserving VM frame semantics.
+The current pin adds `MRB_NATIVE_ONLY` to the native continuation support in
+`1c6fa5ce0`. This mode omits instruction decoding and binary load/dump APIs,
+rejects bytecode in root and Fiber contexts, and keeps host mrbc flags separate
+from its target. Closed bc2cpp builds retain VM frame semantics without an
+interpreter decoder. The earlier native continuation metadata and dispatch
+support came from `b2abfc69b` on top of `0c0f6cf1e`.
 See [native Fiber continuations](bc2cpp-native-fibers.md) for the API, build path,
 and runtime audit. The earlier patch history follows.
 

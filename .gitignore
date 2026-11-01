@@ -1,6 +1,7 @@
 /build
 /build-bc2cpp
 /build-native-fiber
+/build-vm-bytecode-free
 /build-psp
 /build-psp-docker
 /build-maix-mruby

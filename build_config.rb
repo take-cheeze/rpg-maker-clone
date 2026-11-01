@@ -367,14 +367,8 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # raise "integer overflow" on load.
   conf.gem core: 'mruby-bigint'
 
-  # maix-only: the rgss_boot smoke firmware evaluates a probe string at
-  # runtime (mrb_load_string), which needs the compiler linked in. Production
-  # game loading uses precompiled bytecode (the mrbc this same build already
-  # produces), so nothing a shipped game runs needs this -- it can go again
-  # once the smoke grows past string eval, same as everything else this
-  # slice carries only for the link proof. `closed` loads it too, for the
-  # bc2cpp source-loader check (tools/bc2cpp/compiled_gems.rb).
-  conf.gem core: 'mruby-compiler' if %w[maix closed].include?(conf.name)
+  # Only the maix smoke evaluates Ruby source at runtime. Closed RPG2k hosts initialize through native APIs.
+  conf.gem core: 'mruby-compiler' if conf.name == 'maix'
 
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
   # RPG2000/2003 saves use LCF; the other makers load Marshal game data/scripts.
