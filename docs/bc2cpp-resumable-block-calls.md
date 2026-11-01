@@ -1,5 +1,9 @@
 # Resumable block calls: replacing the enum-step drivers
 
+Closed bc2cpp builds now compile all retained bodies and support drivers through the
+[native continuation backend](bc2cpp-native-fibers.md). The remaining driver references below
+describe frame protocols; their executable representation is native code in these builds.
+
 Status: direct block calls are implemented for the 17 methods in `CodeGen::RESUMABLE_DUAL`.
 These methods keep their fast compiled body and use a resumable variant when the Fiber guard fires;
 they need no per-method bytecode driver. Other guarded methods retain their enum-step drivers.

@@ -446,6 +446,11 @@ def rpg_maker_gems(conf, include_mvjs: true)
     conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs" if include_mvjs
   end
 
+  if bc2cpp
+    require_relative 'tools/bc2cpp/native_vm_build'
+    NativeVM.configure(conf)
+  end
+
   rpg_maker_gem_dispatch(conf, include_mvjs: include_mvjs, single_format_only: single_format_only)
 end
 

@@ -1633,10 +1633,14 @@
   `Fiber.yield` (through `while` loops, those inlined loops and tiny yielding helpers expanded at
   their call sites) is compiled as a resumable step function over a GC-marked heap frame
   with numeric receiver tracing through inlined helper register offsets and slots only for actual register identifiers (diagnostic and literal text cannot inflate
-  the frame), driven by a few lines of bytecode so `Fiber.yield` never has a compiled frame
-  beneath it; a root that does not qualify stays interpreted and bc2cpp logs why. See
+  the frame), driven by a shared native continuation so `Fiber.yield` never has a compiled frame
+  beneath it. A root that does not qualify for that optimized step uses the native frame backend,
+  and bc2cpp logs why the step was refused. See
   [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md)
   and [`docs/adr/0414-bc2cpp-compact-resumable-registers.md`](docs/adr/0414-bc2cpp-compact-resumable-registers.md).
+  Closed bc2cpp builds use [native Fiber continuations](docs/bc2cpp-native-fibers.md) for every
+  retained body and support driver, including nested iterators and Enumerator. No instruction-byte
+  arrays are retained for those paths, and the runtime rejects any bytecode execution inside a Fiber.
   Seventeen core iterators also have [resumable variants](docs/bc2cpp-resumable-block-calls.md),
   replacing their per-method bytecode drivers. Optional arguments with `&block` are supported for
   `Array#fetch`, `Hash#fetch` and `String#upto`, including omitted defaults and exclusive string ends.
