@@ -96,4 +96,6 @@ It switches mixed/native-only modes in one build directory to verify object
 invalidation and rejects a configuration that adds the source compiler. A separate source audit
 rejects retained generated instruction arrays and runtime source/bytecode loads
 in generated Fiber support. The closed build and host sweep exercise the same
-native-only runtime against the engine and every game map.
+native-only runtime against the engine and every game map. The sweep rejects
+native-only execution errors from both root and Fiber contexts, including
+errors logged by recovery handlers.
