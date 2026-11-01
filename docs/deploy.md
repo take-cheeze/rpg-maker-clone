@@ -39,7 +39,10 @@ publish.
 
 That's all — `deploy-pages` uses `actions/deploy-pages`, which needs no branch
 and no `gh-pages` branch. The workflow already grants the job the required
-`pages: write` and `id-token: write` permissions.
+`pages: write` and `id-token: write` permissions. The job carries a 10-minute
+timeout: both publish jobs need seconds, and a job that stalls before its first
+step (its concurrency slot or its environment deployment) would otherwise queue
+every later publish behind it indefinitely.
 
 ### Cloudflare Pages previews
 

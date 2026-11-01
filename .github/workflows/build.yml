@@ -2715,6 +2715,12 @@ jobs:
           && github.event_name == 'push'
           && github.ref == 'refs/heads/master' }}
     runs-on: ubuntu-latest
+    # A publish that never starts (its `github-pages` concurrency slot or its
+    # environment deployment stalls GitHub-side) would queue every later
+    # deploy behind it indefinitely: that happened on 2026-10-05 and silenced
+    # publishing for a month until the stuck job was cancelled by hand. The
+    # job needs seconds, so ten minutes is a stall, not a slow deploy.
+    timeout-minutes: 10
     permissions:
       contents: read
       pages: write
@@ -2763,6 +2769,11 @@ jobs:
     # preview-gate succeeds only on a /preview comment, which keeps this job out of normal runs.
     needs: [ preview-gate, wasm ]
     runs-on: ubuntu-latest
+    # The same stall class as deploy-pages: a publish that never starts would
+    # queue every later /preview behind it. The upload itself takes seconds,
+    # so ten minutes is a stall; a timeout-cancelled upload leaves a preview
+    # the next /preview replaces.
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: write
