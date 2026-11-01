@@ -209,16 +209,8 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # `private :brightness_sprite` -- confirmed directly by reading the
   # source around it -- so deleting its own `def...end` (this mechanism's
   # own strip behaviour: the whole method, header included, not just its
-  # body) leaves nothing referencing it by name and raises nothing. Every
-  # `alias_method`/explicit-name `private`/`public` statement found
-  # anywhere in the gem (`array_sort.rb`'s own `alias_method
-  # :_rgss_native_sort, :sort`/`:_rgss_native_sort!, :sort!` and `lib.rb`'s
-  # own `alias_method :_rgss1_initialize, :initialize`; the effect probe's
-  # former `:_probe_update` pair is now a hook) references a name (`sort`/
-  # `sort!`/`initialize` on RGSS::Sprite, an existing, already-
-  # regression-checked owner) that is not one of this round's own 34
-  # registered names, so none of them are a hazard for this round's new
-  # owners either.
+  # body) leaves nothing referencing it by name and raises nothing.
+  # The sort and window-initializer delegates are captured by native init.
   #
   # `Array`'s own reopening (this round's own required check): `Array#
   # include?` is a real, checked-in `class Array; def include?; ...; end;

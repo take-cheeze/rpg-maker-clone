@@ -5,6 +5,7 @@
 #include <mruby.h>
 #include <mruby/array.h>
 #include <mruby/class.h>
+#include <mruby/proc.h>
 #include <mruby/string.h>
 
 #include "rgss_construct.hxx"
@@ -59,6 +60,14 @@ mrb_value probe_call(mrb_state* M, mrb_value) {
   return e->call(M, self, args);
 }
 
+mrb_value probe_native_method(mrb_state* M, mrb_value) {
+  mrb_value klass;
+  mrb_sym name;
+  mrb_get_args(M, "on", &klass, &name);
+  return mrb_bool_value(
+      MRB_METHOD_CFUNC_P(mrb_method_search(M, mrb_class_ptr(klass), name)));
+}
+
 // RGSS::DirectProbe.names
 mrb_value probe_names(mrb_state* M, mrb_value) {
   mrb_value out = mrb_ary_new(M);
@@ -75,4 +84,6 @@ extern "C" void mrb_mruby_rgss_gem_test(mrb_state* M) {
   mrb_define_module_function(M, probe, "call", probe_call,
                              MRB_ARGS_REQ(2) | MRB_ARGS_REST());
   mrb_define_module_function(M, probe, "names", probe_names, MRB_ARGS_NONE());
+  mrb_define_module_function(M, probe, "native_method?", probe_native_method,
+                             MRB_ARGS_REQ(2));
 }

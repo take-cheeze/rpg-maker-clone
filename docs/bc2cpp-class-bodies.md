@@ -37,12 +37,10 @@ only difference between the compiled load and the interpreted one that the engin
 The residual runs first, then the compiled load, then the compiled gem installs the methods the residual dropped. A
 compiled statement therefore sees every residual def, whatever the source order was. Two shapes depend on the order:
 
-- `alias_method :_rgss_native_sort!, :sort!` above `def sort!` (`mruby-rgss/mrblib/array_sort.rb`): the alias must
-  hold the method that existed when it ran. With the def already in place it held the override, which calls the alias:
-  an endless recursion on the first sort. The same shape is `alias_method :_rgss1_initialize, :initialize` in
-  `RGSS::Window`. A send or alias that takes a name (`taken_names`: `attr_writer :a` takes `a=`) which a def of the
+- `alias_method :old, :run` above `def run`: the alias must hold the method that existed when it ran.
+  A send or alias that takes a name (`taken_names`: `attr_writer :a` takes `a=`) which a def of the
   same owner defines *later in the source* stays residual, in its place among the residual defs
-  (`LoadCompile.order!`).
+  (`LoadCompile.order!`). RGSS's native delegates are captured in native initialization instead.
 - `def a` above `attr_reader :a`: the attr must win. A def that comes before a statement defining the same name is
   kept (`order_pins`), or the compiled gem would install it over the attr.
 
@@ -140,8 +138,11 @@ changes, so a new one is a decision:
 | --- | --- |
 | `LCF::Schema::DATABASE`, `MAP_UNIT` | hashes that hold the `elements:` lambdas (a lambda is bytecode) |
 | `LCF::Schema::COMMON_EVENT` | read by `DATABASE`, so it moves with it (promotion) |
-| `LCF::INT32_MASK`, `INT32_SIGN_BIT`, `INT32_WRAP` | Integers outside 32 bits: a bignum on a target whose `mrb_int` is 32 bits, which an irep literal is and C++ is not |
-| `Array.alias_method :_rgss_native_sort!, :sort!`, `RGSS::Window.alias_method :_rgss1_initialize, :initialize` | source order (above) |
+
+The RGSS compatibility aliases `Array#_rgss_native_sort!` and
+`RGSS::Window#_rgss1_initialize` are captured by native gem initialization,
+before mrblib installs their Ruby wrappers. They require no residual alias
+statements and keep the original native entries in interpreted and compiled builds.
 
 The core gems are not part of the load world: `mruby-io`'s six runtime globals (`STDIN`, `STDOUT`, `STDERR`, `$stdin`,
 `$stdout`, `$stderr`) and the `if` in `numeric.rb` are mruby's own bytecode and stay as it is.
@@ -307,10 +308,8 @@ The three engine gems' `mrblib` ireps sit in `gem_init.o`; `mruby-lcf`'s did not
 drop). A probe of the built host reads `EXT_SPELLINGS`, `EXTS` and `SYSTEM_SFX_SAVE_FIELD` (value, frozen state, order)
 identically in the build before and after.
 
-When `claude/bc2cpp-elements-lambdas-data` (the `elements:` lambdas as byte tables, `gen_schema_tables.rb`) lands, its
-`schema_folded.rb` makes `DATABASE`, `MAP_UNIT` and `COMMON_EVENT` plain data (the planner reads them as `const_pure` and
-`const_literal`), so they fold into the program with no change here and the list above is down to the five statements
-that cannot be data (`INT32_*`, the two ordering aliases).
+Replacing the remaining schema `elements:` lambdas with plain data would let
+`DATABASE`, `MAP_UNIT` and `COMMON_EVENT` leave the residual mrblib too.
 
 Boot VM starts, counted as `docs/bc2cpp-vm-entries.md` describes (a 1-frame run and a 150-frame run give the same
 numbers: nothing enters the VM after boot on a plain map):

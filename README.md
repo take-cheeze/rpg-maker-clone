@@ -1659,6 +1659,9 @@
   ([`docs/bc2cpp-ir-block-operands.md`](docs/bc2cpp-ir-block-operands.md)).
   Embedding eligibility probes skip GC-root liveness and final text cleanup when those passes cannot
   change their clean/refused result; final emission retains them. See [probe text cleanup](docs/bc2cpp-probe-text-cleanup.md).
+  RGSS captures its native sort and window-initializer delegates during native
+  initialization, removing their residual Ruby alias statements. See
+  [class-body bytecode remainder](docs/bc2cpp-class-bodies.md#what-stays-bytecode).
   Class-body unit constant folds share content-checked source parses across candidates and owners;
   rewritten files are parsed again. See [class-body source parsing](docs/bc2cpp-class-bodies.md#source-parsing-for-unit-constant-folds).
   A class-body `define_method(:name) { |a| ... }` with a `def`-like block is registered as an ordinary
