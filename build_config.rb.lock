@@ -2,4 +2,4 @@
 mruby:
   version: 4.0.0
   release_no: 40000
-  git_commit: 1c6fa5ce06ad8872f2279ec6b6c99bf0649cb6bd
+  git_commit: 93f276a8f7455af6b750d9a26e757396326d004e

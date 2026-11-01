@@ -51,10 +51,31 @@ cannot be exported as bytecode by the dump API. Debug/source metadata and Proc
 argument introspection remain available. Code-fetch hooks must inspect
 `irep->native` and use the PC helpers rather than dereferencing a native PC.
 
-`MRB_NATIVE_VM_REQUIRE` rejects any attempted bytecode execution inside a Fiber.
-It is enabled in closed builds so a missed fallback fails visibly instead of
-silently weakening the guarantee. Existing C-boundary restrictions still apply:
-a C function that keeps its own stack frame cannot suddenly suspend safely.
+## Native-only closed runtime
+
+The `closed` RPG2k target enables `MRB_NATIVE_ONLY`. Its runtime contains no
+bytecode fetch, operand decoder, extended-opcode dispatch, source compiler,
+or binary load/dump APIs. A bytecode Proc supplied through C raises
+`RuntimeError: bytecode execution in a native-only runtime` in the root
+context as well as in a Fiber. Native Procs still initialize through
+`mrb_load_proc`; frame, closure, exception, debug metadata, and Fiber support
+remain available.
+
+The RPG2k desktop and trace hosts already create the game and call its native
+entry points directly. The sealed desktop host excludes `--script` and its
+compiler header. The bootstrap mrbc remains an ordinary compiler/interpreter
+build and does not inherit native-only flags.
+
+`NativeVM.configure(build, native_only: true)` enables the same mode for
+fixtures. Compiler/eval gems are rejected in that runtime. Native-only
+archives are recreated from their active object lists so an incremental build
+cannot retain removed compiler or bytecode objects.
+
+`BC2CPP_NATIVE_ONLY=0` keeps the closed target's mixed native/bytecode dispatch
+for diagnostic builds; it does not add the source compiler back. Other
+bc2cpp targets retain `MRB_NATIVE_VM_REQUIRE`, which rejects bytecode inside
+Fibers. Existing C-boundary restrictions still apply: a C function that keeps
+its own stack frame cannot suspend safely.
 
 ## Validation
 
@@ -66,8 +87,13 @@ custom nested `each`, keyword/rest arguments, exceptions after suspension,
 `ensure`, nonlocal returns, `catch`/`throw`, escaping closures, lazy Enumerator,
 Fiber resume/transfer, and extended operands. GC runs between resumes.
 
-A code-fetch audit counts native and bytecode steps inside Fibers and requires
-positive native execution with zero bytecode execution. A separate source audit
+A code-fetch audit counts native and bytecode steps in all contexts and requires
+positive native execution with zero bytecode execution. The fixture uses a native
+C++ main, deliberately injects bytecode in root and Fiber contexts and checks
+both rejections, audits the preprocessed VM for removed decoding paths, and
+checks that compiler and binary load/dump symbols are absent from the archive.
+It switches mixed/native-only modes in one build directory to verify object
+invalidation and rejects a configuration that adds the source compiler. A separate source audit
 rejects retained generated instruction arrays and runtime source/bytecode loads
 in generated Fiber support. The closed build and host sweep exercise the same
 native-only runtime against the engine and every game map.

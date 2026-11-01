@@ -1669,6 +1669,10 @@
   RGSS captures its native sort and window-initializer delegates during native
   initialization, removing their residual Ruby alias statements. See
   [class-body bytecode remainder](docs/bc2cpp-class-bodies.md#what-stays-bytecode).
+  The closed RPG2k runtime omits bytecode decoding, the source compiler and
+  binary loaders/dumpers; native continuations retain frames, exceptions and
+  Fibers. Injected bytecode is rejected in every context. See
+  [native-only closed runtime](docs/bc2cpp-native-fibers.md#native-only-closed-runtime).
   Class-body initializers can also hold zero-argument lambdas returning literal
   data: native decoding keeps allocation lazy and resolves captured lexical
   constants when called. The engine class-body planner now leaves no residual

@@ -164,7 +164,7 @@ before mrblib installs their Ruby wrappers. They require no residual alias
 statements and keep the original native entries in interpreted and compiled builds.
 
 The core gems are not part of the load world: `mruby-io`'s six runtime globals (`STDIN`, `STDOUT`, `STDERR`, `$stdin`,
-`$stdout`, `$stderr`) and the `if` in `numeric.rb` are mruby's own bytecode and stay as it is.
+`$stdout`, `$stderr`) and the `if` in `numeric.rb` run through native continuations instead of the class program.
 
 ## What the compiled load keeps equal
 
