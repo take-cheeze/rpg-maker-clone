@@ -81,11 +81,14 @@ its own stack frame cannot suspend safely.
 
 Run `ruby scripts/bc2cpp/native_fiber_check.rb` with the host mrbc and a full-core
 reference build available as for the other bc2cpp fixtures. The check builds a
-native runtime and compares its output with interpreted mruby, both with and
+native runtime, explicitly generates its library compiler flags for the external
+C++ main, and compares its output with interpreted mruby, both with and
 without optimized core wrappers. It covers the iterator variant scenarios,
 custom nested `each`, keyword/rest arguments, exceptions after suspension,
 `ensure`, nonlocal returns, `catch`/`throw`, escaping closures, lazy Enumerator,
 Fiber resume/transfer, and extended operands. GC runs between resumes.
+The bytecode-free wrapper uses a separate build directory so CI can run both
+checks concurrently.
 
 A code-fetch audit counts native and bytecode steps in all contexts and requires
 positive native execution with zero bytecode execution. The fixture uses a native
