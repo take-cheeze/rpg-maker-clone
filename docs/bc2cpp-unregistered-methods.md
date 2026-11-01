@@ -167,6 +167,11 @@ instance-type setup runs. So the loader keeps proven operators out of its
 data (`LoadCompile`'s `call?`, threaded from the plan's unregistered set),
 and every loader send of one — decoder, legacy expression, legacy class
 send — goes through the shared index helpers instead of the tables.
+`bc2cpp.rb` computes the load plan before emitting the helpers and forces
+on the ones only the load names, then defines
+`BC2CPP_INDEX_HELPERS_DEFINED` ahead of the load code: the loader links the
+same strong definitions instead of its own weak declarations, so the call
+has one candidate and nothing is ambiguous.
 
 ## Symbols
 
