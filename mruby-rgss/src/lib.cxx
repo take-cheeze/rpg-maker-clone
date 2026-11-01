@@ -8854,6 +8854,9 @@ mrb_value zlib_inflate_direct(mrb_state* M,
 // END native-binding-split
 
 extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
+  // Capture the core sort before mrblib installs the comparator-normalizing
+  // wrapper.
+  mrb_define_alias(M, M->array_class, "_rgss_native_sort!", "sort!");
   RClass* m = mrb_define_module(M, "RGSS");
   mrb_define_module_function(M, m, "to_nfd", to_nfd, MRB_ARGS_REQ(1));
   mrb_define_module_function(M, m, "default_font_path", default_font_path_m,
@@ -8990,6 +8993,9 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   MRB_SET_INSTANCE_TT(window, MRB_TT_DATA);
   g_native_window_class = window;
   mrb_define_method(M, window, "initialize", window_init, MRB_ARGS_OPT(1));
+  // The Ruby initializer delegates the RGSS1 viewport form to this native
+  // entry.
+  mrb_define_alias(M, window, "_rgss1_initialize", "initialize");
   mrb_define_method(M, window, "contents=", window_set_contents,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "x=", obj_set_x, MRB_ARGS_REQ(1));

@@ -2,5 +2,3 @@
 # Regenerate with --regenerate-baseline; entries may only disappear.
 1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	vx.instance_variable_get(:@_tm_above_obj)
 1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	xp.instance_variable_get(:@_tm_above_obj)
-1	Dynamic/MethodDefinition	mruby-rgss/mrblib/array_sort.rb	alias_method :_rgss_native_sort!, :sort!
-1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :_rgss1_initialize, :initialize

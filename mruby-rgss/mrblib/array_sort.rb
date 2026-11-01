@@ -37,8 +37,6 @@
 # enters through the VM on every sort, and that body's `sort!` would dispatch
 # back into the override below and wrap the block a second time.
 class Array
-  alias_method :_rgss_native_sort!, :sort!
-
   def sort(&block)
     return dup._rgss_native_sort! if block.nil?
     dup._rgss_native_sort! { |a, b| RGSS._comparison_sign(block.call(a, b)) }

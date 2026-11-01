@@ -2502,9 +2502,7 @@ assert "RGSS::Window RGSS2/RGSS3 API surface" do
   # Window.new needs a live display (see the Tilemap note below), so assert the
   # VX/VX Ace surface is defined; what these accessors actually *draw* is
   # measured on a real display by RGSS.window_probe (the render_probe ctest).
-  # The dual-form constructor (RGSS1's optional viewport / RGSS2's x, y, width,
-  # height) needs no assertion here: it aliases the native initialize at load, so
-  # a broken alias would fail the whole gem, not one test.
+  # native_direct.rb checks that the dual-form constructor retains its native delegate.
   %i[openness openness= open? close? padding padding= padding_bottom
      padding_bottom= arrows_visible arrows_visible= tone tone=].each do |m|
     assert_true RGSS::Window.method_defined?(m), "Window##{m} missing"

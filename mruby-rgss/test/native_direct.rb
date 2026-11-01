@@ -116,3 +116,14 @@ assert 'Audio primitives without a backend: binding and direct entry point agree
   assert_equal audio._can_play_mem?, probe.call('can_play_mem_direct', audio)
   assert_equal RGSS::Tts.available?, probe.call('tts_available_direct', RGSS::Tts)
 end
+
+assert 'compatibility aliases keep native entries after mrblib installs Ruby wrappers' do
+  probe = RGSS::DirectProbe
+  assert_true probe.native_method?(Array, :_rgss_native_sort!)
+  assert_false probe.native_method?(Array, :sort!)
+  assert_true probe.native_method?(RGSS::Window, :_rgss1_initialize)
+  assert_false probe.native_method?(RGSS::Window, :initialize)
+  values = [3, 1, 2]
+  assert_true values.equal?(values._rgss_native_sort!)
+  assert_equal [1, 2, 3], values
+end

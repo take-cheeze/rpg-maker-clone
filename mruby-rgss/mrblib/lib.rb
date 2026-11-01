@@ -1103,8 +1103,6 @@ module RGSS
     # (`Window_Base#initialize` calls `super(x, y, width, height)`), so accept
     # both forms: four numbers are the VX shape, anything else goes to the
     # native initializer unchanged.
-    alias_method :_rgss1_initialize, :initialize
-
     def initialize(x = nil, y = nil, width = nil, height = nil)
       if x.is_a?(Integer) && y.is_a?(Integer)
         _rgss1_initialize
