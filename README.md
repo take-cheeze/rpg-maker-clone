@@ -1669,6 +1669,10 @@
   RGSS captures its native sort and window-initializer delegates during native
   initialization, removing their residual Ruby alias statements. See
   [class-body bytecode remainder](docs/bc2cpp-class-bodies.md#what-stays-bytecode).
+  Class-body initializers can also hold zero-argument lambdas returning literal
+  data: native decoding keeps allocation lazy and resolves captured lexical
+  constants when called. The engine class-body planner now leaves no residual
+  statements. See [lazy literal data](docs/bc2cpp-class-bodies.md#lazy-literal-data).
   Class-body unit constant folds share content-checked source parses across candidates and owners;
   rewritten files are parsed again. See [class-body source parsing](docs/bc2cpp-class-bodies.md#source-parsing-for-unit-constant-folds).
   A class-body `define_method(:name) { |a| ... }` with a `def`-like block is registered as an ordinary
