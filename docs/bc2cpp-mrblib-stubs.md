@@ -79,3 +79,10 @@ there keep their bytecode.
 With `BC2CPP_LOAD_COMPILE` (default `all`) the keys of the manifest are removed from the residual mrblib altogether
 instead of being emptied, and the class bodies around them are compiled too:
 [Class bodies as generated C++](bc2cpp-class-bodies.md).
+
+With load compilation enabled, a method kept only because a named copy takes
+it can also leave the residual mrblib. The load program installs its compiled
+entry before each copying statement. Every site must belong to the defining class body in this generation
+and compile as a class-body statement; a foreign, unlocated or residual site
+keeps the original body. The planner checks every site and repeats planning
+when retaining a body prevents another required registration.
