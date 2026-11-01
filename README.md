@@ -1385,6 +1385,9 @@
   `begin`/`rescue` loop no longer hides its constant from that proof. The audio
   and tts bindings are split too. See
   [`docs/adr/0281-bc2cpp-constant-singleton-and-native-exact-direct.md`](docs/adr/0281-bc2cpp-constant-singleton-and-native-exact-direct.md).
+  Load compilation can install compiled methods before class-body statements
+  copy them by name, removing their residual bytecode when every copy site is
+  covered. See [Stubbed mrblib bodies](docs/bc2cpp-mrblib-stubs.md).
   mruby's own Ruby (core mrblib, the core gems' mrblib, mruby-stringio and
   mruby-onig-regexp) is compiled too, by `mruby-core-compiled`: every method that
   neither names the Fiber class, builds a lambda, nor comes from an unaudited mruby-enumerator body is
