@@ -154,7 +154,10 @@ module RGSS
     # section rather than an empty fence.
     def self.log_tail(limit = MAX_LINES)
       tail = @lines
-      tail = tail[-limit, limit] if limit && tail.size > limit
+      # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left the
+      # method tables, so only the 1-argument shape still dispatches; a Range
+      # goes through the same mrb_ary_ref path as the (start, length) form.
+      tail = tail[-limit..-1] if limit && tail.size > limit
       tail = tail + [@partial] unless @partial.empty?
       return "" if tail.empty?
       tail.join("\n") + "\n"
@@ -170,7 +173,9 @@ module RGSS
     end
 
     def self.push(line)
-      line = line[0, MAX_LINE_CHARS] + "..." if line.size > MAX_LINE_CHARS
+      # INDEX_CLOSED: see log_tail -- the 1-argument Range shape dispatches
+      # where the (start, length) shape no longer does.
+      line = line[0...MAX_LINE_CHARS] + "..." if line.size > MAX_LINE_CHARS
       @lines << line
       @lines.shift while @lines.size > MAX_LINES
       if RGSS.respond_to?(:__log_bridge_write)

@@ -6498,7 +6498,11 @@ class RPG2k
         # each screenshotted highlighted in turn showed the identical blank
         # window). The actual choice list renders merged into the bottom
         # prompt window instead -- see #draw_shop_command_prompt.
-        visible = @shop.screen == :command ? [] : (lines[@shop.scroll, SHOP_LIST_ROWS] || [])
+        # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left the
+        # method tables, so only the 1-argument shape still dispatches; scroll
+        # is a non-negative list offset here, and a Range goes through the
+        # same mrb_ary_aget1_impl path as (start, length).
+        visible = @shop.screen == :command ? [] : (lines[@shop.scroll...(@shop.scroll + SHOP_LIST_ROWS)] || [])
         # Docks flush to the screen's left edge, not inset 10px -- the same
         # stale anti-pattern already diagnosed and fixed for the
         # message window ("300px wide, inset 10px" -> "fixed 320x80 at
@@ -9676,7 +9680,9 @@ class RPG2k
         lines = @message.seg_lines
         page = @message.page || 0
         start = page * MSG_LINES_PER_PAGE
-        slice = lines[start, MSG_LINES_PER_PAGE] || []
+        # INDEX_CLOSED: see the shop list above -- start is a non-negative
+        # page offset here.
+        slice = lines[start...(start + MSG_LINES_PER_PAGE)] || []
         rel = @message.reveal.revealed - message_line_offset(start)
         rel = 0 if rel < 0
         vis = Game::Message.visible_segments(slice, rel)

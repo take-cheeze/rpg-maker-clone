@@ -405,7 +405,11 @@ class RPG2k
         @ui[:banner_shown] += 1
         @ui[:banner_timer] = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
         @ui[:action_win].dispose if @ui[:action_win]
-        @ui[:action_win] = battle_panel_window(pending[0, @ui[:banner_shown]], 340)
+        # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left the
+        # method tables, so only the 1-argument shape still dispatches;
+        # banner_shown counts up from 1 here, and a Range goes through the
+        # same mrb_ary_aget1_impl path as (start, length).
+        @ui[:action_win] = battle_panel_window(pending[0...@ui[:banner_shown]], 340)
         true
       end
 
@@ -4469,7 +4473,9 @@ class RPG2k
           @ui[:banner_pending] = lines
           @ui[:banner_shown] = 1
           @ui[:banner_timer] = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
-          lines = lines[0, 1]
+          # INDEX_CLOSED: see the banner driver above -- the 1-argument Range
+          # shape dispatches where (start, length) no longer does.
+          lines = lines[0...1]
         else
           @ui[:banner_pending] = nil
         end

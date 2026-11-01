@@ -173,6 +173,22 @@ on the ones only the load names, then defines
 same strong definitions instead of its own weak declarations, so the call
 has one candidate and nothing is ambiguous.
 
+The verdict covers only helper-shaped sends. The generator devirtualizes
+`[]` with one argument (the GETIDX/GETIDX0 opcodes) and `[]=` with two
+(`a[i] = v`, OP_SETIDX); a generic OP_SEND of the name — two indices, a
+splat, a block, an explicit `.[]` — has no devirtualization, so with the
+name out of the tables its by-name fallback raises `NoMethodError` (a
+2-argument `String#[]` in a game-title reader broke 42 sweep maps this
+way). `index_send_shaped?` (`tools/bc2cpp/static_dispatch_registrations.rb`)
+refuses the name while the closed world's bytecode holds such a send, so a
+regression fails safe with the tables intact. Engine sources therefore
+spell every multi-index slice as a 1-argument Range (`s[0...e]` goes through
+the same `mrb_str_aref` / `mrb_ary_aget1_impl` path as `(start, length)`).
+Core mrblib is outside the verdict's scope: its one such send
+(`Proc#curry`'s splat) never runs in the closed world, and the verify-mode
+sweep would abort loudly if one ever did. A `super` inside a future `[]`
+def is the same shape of gap — none exists today.
+
 ## Symbols
 
 By default every `:name` literal counts as a lookup of `name`, since a

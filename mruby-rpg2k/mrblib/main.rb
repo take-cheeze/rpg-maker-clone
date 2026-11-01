@@ -701,9 +701,12 @@ class RPG2k
     return default_title unless File.exist? path
     File.open(path, 'r') do |f|
       f.each_line do |line|
+        # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left the
+        # method tables, so only the 1-argument shape still dispatches; a
+        # Range goes through the same mrb_str_aref path as (start, length).
         next unless line.size >= INI_TITLE_KEY.size &&
-                    line[0, INI_TITLE_KEY.size] == INI_TITLE_KEY
-        value = trim_ini_value line[INI_TITLE_KEY.size, line.size]
+                    line[0...INI_TITLE_KEY.size] == INI_TITLE_KEY
+        value = trim_ini_value line[INI_TITLE_KEY.size..-1]
         return LCF.cp932_to_utf8(value) unless value.empty?
       end
     end
@@ -722,7 +725,9 @@ class RPG2k
       break unless c == "\r" || c == "\n" || c == ' ' || c == "\t"
       e -= 1
     end
-    s[0, e]
+    # INDEX_CLOSED: see read_ini_title -- e stays non-negative, so the Range
+    # matches the (start, length) form exactly.
+    s[0...e]
   end
   private :trim_ini_value
 

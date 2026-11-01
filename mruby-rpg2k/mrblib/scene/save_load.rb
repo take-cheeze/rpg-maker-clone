@@ -528,7 +528,11 @@ class RPG2k
       # genuine RPG_RT under wine.
       def fixed_width_term(name)
         s = term(name)
-        s.length > 2 ? s[0, 2] : s.ljust(2)
+        # INDEX_CLOSED (docs/bc2cpp-unregistered-methods.md): `[]` left the
+        # method tables, so only the 1-argument shape still dispatches; s is
+        # longer than 2 here, and a Range goes through the same mrb_str_aref
+        # path as (start, length).
+        s.length > 2 ? s[0...2] : s.ljust(2)
       end
 
       # Up to `MAX_SLOT_FACES` party face thumbnails, right-anchored within
