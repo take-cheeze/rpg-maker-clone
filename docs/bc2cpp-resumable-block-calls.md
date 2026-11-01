@@ -1,7 +1,23 @@
 # Resumable block calls: replacing the enum-step drivers
 
-Status: design, not implemented. Scope: the 89 guarded core methods that get a generated driver under the enum
-step (`tools/bc2cpp/codegen_enum_step.rb`, `docs/bc2cpp-enum-step.md`).
+Status: direct block calls are implemented for the 17 methods in `CodeGen::RESUMABLE_DUAL`.
+These methods keep their fast compiled body and use a resumable variant when the Fiber guard fires;
+they need no per-method bytecode driver. Other guarded methods retain their enum-step drivers.
+`BC2CPP_ENUM_STEP=0` restores the saved-bytecode path.
+
+Optional positional arguments with an explicit `&block` use `optional_block_arg_table`, the same
+jump table the method compiler uses. This lets `Array#fetch`, `Hash#fetch` and `String#upto` take
+the variant with omitted or supplied defaults. The entry saves the supplied-argument count in the
+initial frame state; resuming a block call continues after that call without rerunning defaults.
+`block.call` on the entry block suspends the step just like `yield`; other receivers dispatch normally.
+
+The runtime checks are `scripts/bc2cpp/resumable_variants_check.rb` and
+`scripts/bc2cpp/enum_step_string_upto_check.rb`. They cover missing fetch keys and indices, explicit
+defaults, numeric and successor string ranges, exclusive ends, exceptions, blockless calls,
+`Enumerator#next`, and Fiber suspension. No new C integer conversion is introduced: the argument
+count is bounded by the method's optional arity on both 32-bit and 64-bit targets.
+
+The remaining sections record the original design and the limitations of nested block calls.
 
 ## Why the drivers exist
 

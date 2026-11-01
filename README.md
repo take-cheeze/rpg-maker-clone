@@ -1637,6 +1637,9 @@
   beneath it; a root that does not qualify stays interpreted and bc2cpp logs why. See
   [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md)
   and [`docs/adr/0414-bc2cpp-compact-resumable-registers.md`](docs/adr/0414-bc2cpp-compact-resumable-registers.md).
+  Seventeen core iterators also have [resumable variants](docs/bc2cpp-resumable-block-calls.md),
+  replacing their per-method bytecode drivers. Optional arguments with `&block` are supported for
+  `Array#fetch`, `Hash#fetch` and `String#upto`, including omitted defaults and exclusive string ends.
   Every explicit-receiver `puts` (`$stderr.puts`, `io.puts`) is one call to a shared helper that
   runs mruby-io's `IO#puts` body while the receiver still resolves to it and dispatches by name
   otherwise, so a redirected `$stdout`/`$stderr` or an `IO#puts` override behaves as in the
