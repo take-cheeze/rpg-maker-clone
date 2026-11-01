@@ -1633,10 +1633,14 @@
   `Fiber.yield` (through `while` loops, those inlined loops and tiny yielding helpers expanded at
   their call sites) is compiled as a resumable step function over a GC-marked heap frame
   with numeric receiver tracing through inlined helper register offsets and slots only for actual register identifiers (diagnostic and literal text cannot inflate
-  the frame), driven by a few lines of bytecode so `Fiber.yield` never has a compiled frame
-  beneath it; a root that does not qualify stays interpreted and bc2cpp logs why. See
+  the frame), driven by a shared native continuation so `Fiber.yield` never has a compiled frame
+  beneath it. A root that does not qualify for that optimized step uses the native frame backend,
+  and bc2cpp logs why the step was refused. See
   [`docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md`](docs/adr/0273-bc2cpp-step-loops-and-resumable-fiber-roots.md)
   and [`docs/adr/0414-bc2cpp-compact-resumable-registers.md`](docs/adr/0414-bc2cpp-compact-resumable-registers.md).
+  Closed bc2cpp builds use [native Fiber continuations](docs/bc2cpp-native-fibers.md) for every
+  retained body and support driver, including nested iterators and Enumerator. No instruction-byte
+  arrays are retained for those paths, and the runtime rejects any bytecode execution inside a Fiber.
   Seventeen core iterators also have [resumable variants](docs/bc2cpp-resumable-block-calls.md),
   replacing their per-method bytecode drivers. Optional arguments with `&block` are supported for
   `Array#fetch`, `Hash#fetch` and `String#upto`, including omitted defaults and exclusive string ends.
@@ -1650,7 +1654,7 @@
   its env, the guarded core iterators stay compiled under a Fiber while they run it, and its
   BLOCK_CORE_DIRECT arms drop the root-context test; the build prints how many methods, blocks and arm sites
   it proved. Every method a `Fiber.new` body can reach through any call (explicit receivers, other classes,
-  blocks) that may yield beneath it stays interpreted.
+  blocks) that may yield beneath it uses the native frame backend unless it qualifies for an optimized resumable step.
   Literal Proc calls follow their own block when its creation dominates the call; unknown Proc values
   still follow all escaped blocks. See
   [`docs/adr/0283-bc2cpp-yield-free-blocks.md`](docs/adr/0283-bc2cpp-yield-free-blocks.md).

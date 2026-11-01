@@ -1,5 +1,11 @@
 # Compiled Enumerator wrappers
 
+In closed bc2cpp builds, the saved bodies described below now use
+[native continuations](bc2cpp-native-fibers.md), including the Enumerator methods
+outside the optimized wrapper set. They retain VM frame semantics without
+instruction-byte storage.
+
+
 Closed-world core compilation admits seven Enumerator methods: `inspect`,
 `size`, `rewind`, `feed`, `next`, `peek` and `peek_values`.
 

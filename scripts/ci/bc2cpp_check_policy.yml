@@ -738,6 +738,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/native_fiber_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/numeric_jmpuw_check.rb:
     tier: runtime
     capabilities:

@@ -28,7 +28,13 @@ no longer live in `patches/`.
 Status key: **applied** (commit on a tracking branch), **in pin** (already in
 the pinned commit, no commit needed), **not applied** (see the note).
 
-### take-cheeze/mruby (pin `9153127`, branch `claude/numeric-exact-compare-r5t2`)
+### take-cheeze/mruby (pin `1c6fa5ce0`, branch `claude/fork-format-paddlefish`)
+
+The current pin includes native continuation metadata and dispatch support from
+`b2abfc69b` on top of `0c0f6cf1e`, plus formatting fixes for the manual CI hooks. Closed bc2cpp builds use it to remove instruction storage from every
+retained Fiber body and support program while preserving VM frame semantics.
+See [native Fiber continuations](bc2cpp-native-fibers.md) for the API, build path,
+and runtime audit. The earlier patch history follows.
 
 Applied on the pin, in build order: `mruby-colon3-assign-setmcnst`,
 `mruby-dollar-bang-scoped`, `mruby-defined-keyword`, `mruby-module-function-scope`,
@@ -46,8 +52,8 @@ Applied on the pin, in build order: `mruby-colon3-assign-setmcnst`,
   not satisfy `git apply`). The build no longer applies patches.
 
 The pin has since moved forward on `claude/*` branches of the fork, each
-starting at the previous pin. The latest, `claude/numeric-exact-compare-r5t2`,
-adds three commits on top of `905ee07`:
+starting at the previous pin. The earlier `claude/numeric-exact-compare-r5t2`
+added three commits on top of `905ee07`:
 
 - `mruby-int-equal-bigint`: **applied**. `Integer#==` read a bigint receiver
   with `mrb_integer()`, so `(1 << 64) == 0` was true; a bigint receiver now

@@ -460,3 +460,13 @@ numeric-class, return-site and origin-transfer host checks in one process.
 Each case loads in a private namespace; their assertions and failure behavior
 remain separate. The coverage runner invokes the suite once, without MRBC or
 native source prerequisites.
+
+### Native Fiber execution audit
+
+The bc2cpp build job runs `scripts/bc2cpp/native_fiber_check.rb`. It compares an
+ordinary mruby reference with a native continuation runtime, then repeats with
+optimized core wrappers installed. It audits every instruction executed inside
+Fibers, requires zero bytecode steps, and checks that generated Fiber support
+contains neither instruction arrays nor runtime source/bytecode loads. The host
+sweep also rejects native-continuation failures, even when the game recovers
+from an exception. See [native Fiber continuations](bc2cpp-native-fibers.md).

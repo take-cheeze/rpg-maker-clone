@@ -7,6 +7,10 @@ Stage B of the external-iteration plan: the step form of `Array#each`, then the 
 `scripts/bc2cpp/enum_step_range_generic_check.rb` (every Range case, the generic path included). The fixtures that
 compare with the flag off set it to `0`; the rest of the doc's "flag unset" means `BC2CPP_ENUM_STEP=0`.
 
+Closed builds compile the remaining drivers into [native continuations](bc2cpp-native-fibers.md)
+at build time. Their VM frame semantics remain, but their instruction-byte arrays and registration-time
+Ruby compilation are gone.
+
 ## Resumable variants
 
 The 17 methods in `CodeGen::RESUMABLE_DUAL` now use compiled resumable variants instead of
