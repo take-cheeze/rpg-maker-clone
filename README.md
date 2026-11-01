@@ -1654,7 +1654,7 @@
   its env, the guarded core iterators stay compiled under a Fiber while they run it, and its
   BLOCK_CORE_DIRECT arms drop the root-context test; the build prints how many methods, blocks and arm sites
   it proved. Every method a `Fiber.new` body can reach through any call (explicit receivers, other classes,
-  blocks) that may yield beneath it stays interpreted.
+  blocks) that may yield beneath it uses the native frame backend unless it qualifies for an optimized resumable step.
   Literal Proc calls follow their own block when its creation dominates the call; unknown Proc values
   still follow all escaped blocks. See
   [`docs/adr/0283-bc2cpp-yield-free-blocks.md`](docs/adr/0283-bc2cpp-yield-free-blocks.md).
