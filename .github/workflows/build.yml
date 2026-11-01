@@ -800,9 +800,15 @@ jobs:
           ruby scripts/bc2cpp/fresh_freeze_check.rb
           ruby scripts/bc2cpp/splat_row_memo_check.rb
           ruby scripts/bc2cpp/resumable_locals_check.rb
+          ruby scripts/bc2cpp/resumable_args_check.rb
+          ruby scripts/bc2cpp/resumable_block_check.rb
+          ruby scripts/bc2cpp/resumable_receiver_check.rb
+          ruby scripts/bc2cpp/resumable_optional_check.rb
+          ruby scripts/bc2cpp/resumable_rest_check.rb
           ruby scripts/bc2cpp/numeric_jmpuw_check.rb
           ruby scripts/bc2cpp/nil_native_answers_check.rb
           ruby scripts/bc2cpp/ensure_nested_rescue_check.rb
+          ruby scripts/bc2cpp/sort_array_cmp_check.rb
           ruby scripts/bc2cpp/array_new_block_check.rb
           ruby scripts/bc2cpp/attr_reader_inline_check.rb
           ruby scripts/bc2cpp/class_read_inline_check.rb
@@ -812,6 +818,8 @@ jobs:
           ruby scripts/bc2cpp/anonymous_params_check.rb
           ruby scripts/bc2cpp/class_method_block_check.rb
           ruby scripts/bc2cpp/entry_header_check.rb
+          ruby scripts/bc2cpp/method_lookup_report_check.rb
+          ruby scripts/bc2cpp/method_lookup_hook_check.rb
           ruby scripts/bc2cpp/unregistered_verify_check.rb
           ruby scripts/bc2cpp/registration_split_check.rb
           ruby scripts/bc2cpp/shard_output_check.rb
@@ -906,6 +914,13 @@ jobs:
           ruby scripts/bc2cpp/class_body_lambda_check.rb
           ruby scripts/bc2cpp/optional_rest_check.rb
           ruby scripts/bc2cpp/super_optional_check.rb
+          ruby scripts/bc2cpp/enum_step_array_check.rb
+          ruby scripts/bc2cpp/enum_step_range_check.rb
+          ruby scripts/bc2cpp/enum_step_range_generic_check.rb
+          ruby scripts/bc2cpp/enum_step_string_upto_check.rb
+          ruby scripts/bc2cpp/enum_step_integer_loops_check.rb
+          ruby scripts/bc2cpp/enum_step_hash_iterators_check.rb
+          ruby scripts/bc2cpp/enum_step_default_drivers_check.rb
           ruby scripts/bc2cpp/owner_native_chain_check.rb
           ruby scripts/bc2cpp/guard_fiber_free_check.rb
           ruby scripts/bc2cpp/exception_init_check.rb

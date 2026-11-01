@@ -1152,21 +1152,15 @@ module RGSS
     SOUND_DIRS = ["", "Sound", "Audio/SE"].freeze
     # Tried in order after the name as-is; the data usually omits the extension.
     EXTS = ["", ".ogg", ".wav", ".mid", ".midi", ".mp3", ".flac"].freeze
-    # Every spelling of those to actually try: each one, then its upper-case
-    # form. RPG Maker games were authored on Windows, whose filesystem does not
-    # distinguish the two, so a released game mixes them freely inside a single
-    # folder -- Pray for You's Audio/BGM holds ten `.MID` beside eight `.mid`,
-    # and on a case-sensitive filesystem the upper-case ten resolved to nothing
-    # ("Audio: no BGM found for ..." on a file that is right there).
-    EXT_SPELLINGS = begin
-      list = []
-      EXTS.each do |e|
-        list << e
-        up = e.upcase
-        list << up unless up == e
-      end
-      list.freeze
-    end
+    # Every spelling of those to actually try: each one, then its upper-case form. RPG Maker games were authored on
+    # Windows, whose filesystem does not distinguish the two, so a released game mixes them freely inside a single
+    # folder -- Pray for You's Audio/BGM holds ten `.MID` beside eight `.mid`, and on a case-sensitive filesystem the
+    # upper-case ten resolved to nothing ("Audio: no BGM found for ..." on a file that is right there). Written out,
+    # not computed: a load-time `each` would keep the body of every `each` in the closed build
+    # (static_dispatch_registrations.rb load_phase works by name). It is EXTS with each entry's upper-case form after it
+    # where that differs.
+    EXT_SPELLINGS = ["", ".ogg", ".OGG", ".wav", ".WAV", ".mid", ".MID", ".midi", ".MIDI", ".mp3", ".MP3",
+                     ".flac", ".FLAC"].freeze
 
     # The archive sub-folders each kind of audio lives in, for a packed release.
     # Unlike the disk search these are exact: an archive entry name is whatever

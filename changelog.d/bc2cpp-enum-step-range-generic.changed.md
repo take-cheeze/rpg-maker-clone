@@ -1,0 +1,1 @@
+- **bc2cpp** `BC2CPP_ENUM_STEP=1` steps every `Range#each` case (generic `succ` and `<=>`, String, bignum), so the driver no longer runs mruby's body; the closed build drops that body under the flag. A user `succ` or `<=>` that calls `Fiber.yield` inside such an `each` now raises `FiberError` instead of corrupting the sequence. See `docs/bc2cpp-enum-step.md`.

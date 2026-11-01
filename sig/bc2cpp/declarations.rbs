@@ -8342,6 +8342,48 @@ class File < IO
   def self.foreach: (untyped) -> untyped
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_enumerator
+module Enumerable
+  def chunk: () -> untyped
+  def chunk_while: () -> untyped
+  def zip: (*untyped) -> untyped
+end
+# bc2cpp-native: base_enumerator
+class Enumerator
+  def __enumerator_block_call: () -> untyped
+  def each: (*untyped) -> untyped
+  def each_with_index: () -> untyped
+  def feed: (untyped) -> untyped
+  def initialize: (?untyped, ?untyped, *untyped, **untyped) -> untyped
+  def initialize_copy: (untyped) -> untyped
+  def inspect: () -> untyped
+  def next: () -> untyped
+  def next_values: () -> untyped
+  def peek: () -> untyped
+  def peek_values: () -> untyped
+  def rewind: () -> untyped
+  def size: () -> untyped
+  def with_index: (?untyped) -> untyped
+  def with_object: (untyped) -> untyped
+  def self.produce: (?untyped) -> untyped
+end
+# bc2cpp-native: base_enumerator
+class Enumerator::Generator
+  def each: (*untyped) -> untyped
+  def initialize: () -> untyped
+end
+# bc2cpp-native: base_enumerator
+class Enumerator::Yielder
+  def <<: (*untyped) -> untyped
+  def initialize: () -> untyped
+  def yield: (*untyped) -> untyped
+end
+# bc2cpp-native: base_enumerator
+module Kernel
+  def to_enum: (?untyped, *untyped, **untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain

@@ -1140,7 +1140,10 @@ module Game
     # run keeps the exact same order as Scene::Base::DB_SE_FIELD's slots 0..11
     # (cursor, decision, cancel, buzzer, battle/escape, the six per-hit
     # sounds), just renamed and renumbered for the save chunk.
-    SYSTEM_SFX_SAVE_FIELD = (0..11).each_with_object({}) { |slot, h| h[slot] = 91 + slot }.freeze
+    SYSTEM_SFX_SAVE_FIELD = {
+      0 => 91, 1 => 92, 2 => 93, 3 => 94, 4 => 95, 5 => 96,
+      6 => 97, 7 => 98, 8 => 99, 9 => 100, 10 => 101, 11 => 102
+    }.freeze
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
     # by an actual editor, or by this engine. The modelled fields
