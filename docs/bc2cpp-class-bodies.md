@@ -108,9 +108,9 @@ Anything else stays the statement it was, in the residual. Fidelity is checked a
 compares it with CRuby's value through one canonical description written to run under both (class, frozen state, order,
 content, a Float by its parts because `Float#to_s` differs), on the fixture and on the engine's own mrblib; the
 interpreted-against-compiled equivalence covers the rest. `RGSS::Audio::EXT_SPELLINGS` (and `EXTS`, which it read) and
-`Game::State::SYSTEM_SFX_SAVE_FIELD` are folded this way. `DATABASE` and `MAP_UNIT` are not: they hold lambdas, which
-are code (`PureEval` refuses a `LambdaNode`), and `LCF::INT32_*` are Integers a 32-bit `mrb_int` target holds as
-bignums.
+`Game::State::SYSTEM_SFX_SAVE_FIELD` are folded this way. `DATABASE` and `MAP_UNIT`
+use the native lazy-data representation instead of eager `PureEval` evaluation.
+`LCF::INT32_*` are encoded as decimal data when they exceed a 32-bit `mrb_int`.
 
 Finding while writing the canonical form: this fork's compiler miscompiles `(x ? "A" : "a") + "b"` when `x` is true (the
 value is `"A"`, the `+ "b"` is lost; `x = true; ((x ? "A" : "a") + "b")` in the closed build's own VM). The canonical
@@ -131,13 +131,32 @@ def it names, as before. No second compiled phase after the registration was nee
 
 ## What stays bytecode
 
-The residual mrblib of the engine gems keeps exactly these statements; `class_body_check.rb` fails when the list
-changes, so a new one is a decision:
+The engine gems now have no residual class-body statements in the planner's
+all-definitions-droppable check. `class_body_check.rb` verifies that list stays
+empty. Method bodies that fail the compilation or stub proof still retain
+bytecode; this is a statement-coverage result, not a claim that the entire
+engine has no bytecode.
 
-| statement | why |
-| --- | --- |
-| `LCF::Schema::DATABASE`, `MAP_UNIT` | hashes that hold the `elements:` lambdas (a lambda is bytecode) |
-| `LCF::Schema::COMMON_EVENT` | read by `DATABASE`, so it moves with it (promotion) |
+### Lazy literal data
+
+An initializer can contain zero-argument `-> { ... }` lambdas that return
+literal data: numbers, symbols, strings, arrays, hashes, ranges, constant
+references, and `.freeze` on those values. The class program stores the body
+as data and creates a native Proc without evaluating it. Each call decodes a
+fresh result and resolves constants through the captured lexical class/module
+objects. Those objects are rooted in the Proc's environment, so they survive
+the load frame and garbage collection. Each source lambda has its own native
+entry so mruby keeps distinct Procs unequal. Nonzero argument counts are rejected.
+
+Lambdas requiring parameters, locals, `self`, nested closures, arbitrary calls or assignments
+stay bytecode. Frozen string literals also stay bytecode because repeated
+calls must share the VM's literal object. As with other compiled native Procs,
+mruby reports `Proc#arity` as -1; call-time argument checking remains strict.
+
+This lets the raw LCF `DATABASE` and `MAP_UNIT` initializers compile without
+forcing their field tables to allocate eagerly. `COMMON_EVENT` no longer has
+a residual consumer that pins it. Builds using `gen_schema_tables.rb` retain
+their specialized compact table representation.
 
 The RGSS compatibility aliases `Array#_rgss_native_sort!` and
 `RGSS::Window#_rgss1_initialize` are captured by native gem initialization,
@@ -175,8 +194,9 @@ included), whether more than one body opens it, and which of its bodies the load
 bytecode and why. `class_body_report.rb --world=FILE` writes it as JSON with a summary. A class is `exact` when every
 body that opens it, and every ancestor's, contains only modeled statements; otherwise it is unknown with the reason
 named, and unknown spreads to its subclasses. A computed constant that `PureEval` folds (the same decision as
-`LoadCompile`'s) is static, so a class whose only blocker is a folded constant is exact; a constant that holds code
-(a lambda) or an Integer outside 32 bits is not folded and keeps its class unknown. A superclass that is a C-defined
+`LoadCompile`'s) is static, so a class whose only blocker is a folded constant is exact.
+Literal-data lambdas are native factories and wide integers are decimal data;
+unsupported computed constants remain blockers. A superclass that is a C-defined
 core class (`ClassWorld::NATIVE`, such as `RuntimeError`) is known. The check
 compares every exact fixture class with the interpreted graph; `scripts/bc2cpp/class_world_check.rb` is the fast check
 of these rules.
@@ -308,8 +328,8 @@ The three engine gems' `mrblib` ireps sit in `gem_init.o`; `mruby-lcf`'s did not
 drop). A probe of the built host reads `EXT_SPELLINGS`, `EXTS` and `SYSTEM_SFX_SAVE_FIELD` (value, frozen state, order)
 identically in the build before and after.
 
-Replacing the remaining schema `elements:` lambdas with plain data would let
-`DATABASE`, `MAP_UNIT` and `COMMON_EVENT` leave the residual mrblib too.
+Lazy literal lambdas can now be represented by the class program too, so the
+raw schema initializers no longer require residual statements.
 
 Boot VM starts, counted as `docs/bc2cpp-vm-entries.md` describes (a 1-frame run and a 150-frame run give the same
 numbers: nothing enters the VM after boot on a plain map):
