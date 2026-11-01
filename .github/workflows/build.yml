@@ -805,6 +805,7 @@ jobs:
           ruby scripts/bc2cpp/resumable_receiver_check.rb
           ruby scripts/bc2cpp/resumable_optional_check.rb
           ruby scripts/bc2cpp/resumable_rest_check.rb
+          ruby scripts/bc2cpp/resumable_variants_check.rb
           ruby scripts/bc2cpp/numeric_jmpuw_check.rb
           ruby scripts/bc2cpp/nil_native_answers_check.rb
           ruby scripts/bc2cpp/ensure_nested_rescue_check.rb
