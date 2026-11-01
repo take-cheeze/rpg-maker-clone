@@ -7,6 +7,14 @@ Stage B of the external-iteration plan: the step form of `Array#each`, then the 
 `scripts/bc2cpp/enum_step_range_generic_check.rb` (every Range case, the generic path included). The fixtures that
 compare with the flag off set it to `0`; the rest of the doc's "flag unset" means `BC2CPP_ENUM_STEP=0`.
 
+## Resumable variants
+
+The 17 methods in `CodeGen::RESUMABLE_DUAL` now use compiled resumable variants instead of
+per-method drivers, including `Array#each`, `Array#fetch`, `Hash#fetch` and `String#upto`.
+Optional arguments with an explicit block use the method compiler's optional-block jump table.
+The driver protocol below still applies to methods outside that list, including `Range#each`.
+See [resumable block calls](bc2cpp-resumable-block-calls.md) for the current status and checks.
+
 ## Why
 
 mruby refuses `Fiber.yield` while a C function frame is on the fiber's stack
