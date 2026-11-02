@@ -1,0 +1,104 @@
+# Code generation rooted at the native host
+
+`BC2CPP_MAIN_AST` enables an optional emission pass rooted at the selected
+native program's `main`. It does not replace the method-table omission proof:
+methods that remain callable by name are additional conservative roots. Only
+methods already proven name-invisible may be omitted by this pass. With empty
+omission lists, no method bodies are removed.
+
+The ordinary build is unchanged unless this option is set. This is an
+experimental build profile; it is not enabled by default for Wio or CI game
+builds, and it does not by itself make the Wio image fit.
+
+## Export the host roots
+
+Use Clang with the preprocessing flags, target and include paths of the host
+being built. The native host is `src/main.cxx` on desktop. For Arduino, export
+the framework translation unit containing `main` and include the application
+translation unit with `--unit`; `setup` alone is not the program root.
+
+```sh
+ruby scripts/bc2cpp/main_ast.rb src/main.cxx build/main-roots.json \
+  --unit mruby-rgss/src/lib.cxx \
+  --unit mruby-rgss/src/input_bridge.cxx \
+  --unit mruby-rgss/src/terminal.cxx \
+  -- <the target's compiler flags>
+export BC2CPP_MAIN_AST="$PWD/build/main-roots.json"
+```
+
+`CLANG` selects the Clang executable. When the target is built with GCC, set
+`BC2CPP_HOST_CXX` to that target compiler: it preprocesses each input first,
+and Clang reads the resulting C++ with the target triple from `-dumpmachine`.
+This preserves GCC's selected preprocessor branches rather than substituting
+Clang's compiler macros. Unsupported PCH/module inputs and parse failures stop
+extraction. GCC-specific preprocessed types must also be understood by the
+selected Clang; for example, a GCC/glibc `_Float32` declaration can prevent
+extraction. Do not substitute a manifest from a different compiler configuration.
+`--unit` can be repeated for linked native
+sources whose lookups need analysis. These units conservatively retain their
+function bodies as native callback roots; they are not assumed dead merely
+because a direct call from `main` was not found. Unanalyzed native files still
+contribute their literal lookup names. An unresolved lookup in a non-core
+native file retains every method body until that file has an adequate AST
+analysis. The pinned VM's implicit protocol calls remain roots.
+
+The exporter follows function and callback references, static initialization,
+and explicitly retained startup/export functions. Overloads are joined by
+name. Constructors and indirect function calls conservatively retain possible
+function definitions. It resolves literal names, finite conditional choices,
+read-only local initializers, presym constants, and static helper parameters
+whose direct callers supply finite names. Mutation, address escape, arbitrary
+input names and unsupported reflection refuse pruning.
+
+The result is a compact summary, not a saved copy of the entire Clang AST.
+Its cache key includes the command, compiler, source files, included headers
+and exporter code. Repeating an unchanged export skips Clang and preserves
+the output timestamp. Volatile date/time macros are rejected. Changed inputs
+invalidate the manifest; consuming a stale manifest fails with instructions
+to regenerate it. Export again after bootstrap or presym generation changes
+one of the host's headers.
+
+## Prune before emission
+
+The pass starts with the host roots, gem/class initialization, copied method
+bodies, constructors, and every method still reachable through the existing
+named-call interface. It follows method names to a fixed point, preserving all
+owners that could answer each name and all blocks inside a retained body.
+An unused method does not contribute calls that would retain its callees.
+Direct native `_impl` references are roots even without a Ruby lookup.
+
+The resulting instruction-sequence set filters `CodeGen.compile_all` before
+method compilation and emission. Shared generation computes this set once
+before forking the per-gem emitters. The full registry and type analyses remain
+available, and report-only type checking still checks the full program.
+
+Unreachable methods use the existing mrblib stub planner, including its
+load-time and method-copy safety checks. Eligible residual bodies are replaced
+by `raise ScriptError`, reducing their native continuation input too; an
+unexpected invocation fails visibly. This does not delete arbitrary native
+irep metadata or change method-table exclusions. Core dynamic dispatch retains
+the already-protected named roots rather than inventing a narrower name set.
+An unresolved project-level dynamic lookup conservatively retains all bodies.
+
+For this profile, native dispatch also uses the active preprocessed inputs from
+mruby's presym task. A driver descriptor left by an older generation does not
+retain continuation branches when its C++ metadata is no longer present. Missing
+descriptors for active metadata fail the build; this does not guess which parts
+of a retained mrblib program can run.
+
+The generated diagnostics report retained instruction sequences, reasons for
+conservative retention, and omitted `Owner#method` keys. The static omission
+proof always generates the complete program with this emission profile off,
+so its lists remain independent of the selected host. Changing or disabling
+the profile invalidates generated C++ in incremental rake builds.
+
+## Validation
+
+```sh
+MRBC=/path/to/mrbc BC2CPP_MRUBY_FULL=/path/to/full/host \
+  ruby scripts/bc2cpp/main_roots_check.rb
+```
+
+This checks callbacks, startup, direct native entries, transitive Ruby calls,
+named roots, omitted callers/callees, compiled-versus-interpreted results,
+finite native helper arguments, stale headers and unresolved dynamic calls.

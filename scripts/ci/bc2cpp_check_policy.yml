@@ -844,6 +844,14 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/main_roots_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+    - clang
   scripts/bc2cpp/unregistered_verify_check.rb:
     tier: runtime
     capabilities:
