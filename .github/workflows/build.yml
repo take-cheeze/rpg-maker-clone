@@ -720,6 +720,9 @@ jobs:
       - name: Check bc2cpp registrations
         run: ruby scripts/ci/check_registry.rb
 
+      - name: Check host-rooted code generation
+        run: ruby scripts/bc2cpp/main_roots_check.rb
+
       # Facts for the binding-split check: libclang extraction of every RGSS
       # native binding, cached across runs. Entries are keyed on everything the
       # extractor reads (Nix pin, mruby headers, RGSS sources and repo headers,
