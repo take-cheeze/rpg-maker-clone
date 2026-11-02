@@ -747,14 +747,102 @@ jobs:
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c python3 scripts/native/binding_facts.py --config host --out "$RUNNER_TEMP/binding-facts/facts_host.json"
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c python3 scripts/native/binding_facts.py --config closed --out "$RUNNER_TEMP/binding-facts/facts_closed.json"
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host nix develop .#clang -c python3 scripts/native/binding_facts.py --config emscripten --out "$RUNNER_TEMP/binding-facts/facts_emscripten.json"
-      # Four workers fill the 4-vCPU runner. Longer checks start first so a
-      # large fixture does not land on the last worker. timed_checks prints
-      # each log and propagates failures.
+      - name: Run closed-build checks
+        timeout-minutes: 15
+        run: |
+          unset LD
+          ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/bc2cpp-closed-checks.sh" <<'CHECKS'
+          # ci:parallel begin 4
+          BC2CPP_STATIC_DISPATCH_LISTS="$GITHUB_WORKSPACE/build/bc2cpp-lists/static_dispatch_lists.json" ruby scripts/bc2cpp/class_body_left_ops_check.rb
+          ruby scripts/bc2cpp/vm_bytecode_free_check.rb
+          ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs --jobs 4 build-closed-bc2cpp/closed
+          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host ruby scripts/native/binding_split.rb check --facts "$RUNNER_TEMP/binding-facts"
+          # ci:parallel end
+          CHECKS
+          source "$RUNNER_TEMP/bc2cpp-closed-checks.sh"
+
+  # Fixture checks need the cached full-core library, not the closed engine archive.
+  bc2cpp-checks:
+    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
+    needs: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+
+    env:
+      RUBY_YJIT_ENABLE: "1"
+
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # Same submodule set as the `maix` job.
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: >-
+            3rd/effekseer 3rd/gflags 3rd/ng-log
+            3rd/inicpp 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
+
+      - uses: nixbuild/nix-quick-install-action@v35
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-bc2cpp-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-bc2cpp-${{ runner.os }}-
+
+      - name: Set up development environment
+        # The bc2cpp shell skips the game, graphics and Wine closures.
+        run: ./scripts/nix/develop-export-env.bash .#bc2cpp
+
+      - name: Verify host Ruby JIT
+        run: ruby -e 'abort "YJIT is unavailable or disabled" unless RubyVM::YJIT.enabled?; puts RUBY_DESCRIPTION'
+
+      # Persisted across runs. Entries are keyed on content digests, so a stale
+      # restore is recomputed rather than trusted (docs/ci.md, "Scan cache").
+      - name: Cache bc2cpp scan cache
+        uses: actions/cache@v6
+        with:
+          path: build/bc2cpp-cache
+          key: bc2cpp-scan-cache-${{ hashFiles('tools/bc2cpp/*.rb') }}
+          restore-keys: bc2cpp-scan-cache-
+
+      # Full-core libmruby used by the behavioural checks. Takes about two
+      # minutes, and depends only on the mruby pins and the build scripts.
+      - name: Key for the full-core libmruby cache
+        id: full-core-key
+        run: |
+          echo "mruby=$(git rev-parse HEAD:3rd/mruby)" >> "$GITHUB_OUTPUT"
+          echo "stringio=$(git rev-parse HEAD:3rd/mruby-stringio)" >> "$GITHUB_OUTPUT"
+      - name: Cache the full-core libmruby build
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/bc2cpp-full
+          key: bc2cpp-full-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.*') }}-${{ steps.full-core-key.outputs.mruby }}-${{ steps.full-core-key.outputs.stringio }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'scripts/bc2cpp/*.bash', 'patches/mruby*.patch') }}
+
+      - name: Prepare shared check libraries
+        run: |
+          env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "full-core mruby unavailable" unless Bc2cppFixtureRuntime.full_or_build'
+          echo "MRBC=$RUNNER_TEMP/bc2cpp-full/host/bin/mrbc" >> "$GITHUB_ENV"
+          echo "BC2CPP_MRUBY_FULL=$RUNNER_TEMP/bc2cpp-full/host" >> "$GITHUB_ENV"
+          echo "BC2CPP_BUILD_INCLUDE=$RUNNER_TEMP/bc2cpp-full/host/include" >> "$GITHUB_ENV"
+
+      - name: Check bc2cpp registrations
+        run: ruby scripts/ci/check_registry.rb
+
+      # Each shard keeps four workers; round-robin selection partitions the single command list.
       - name: Run bc2cpp checks
         timeout-minutes: 30
         run: |
           unset LD
-          ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/bc2cpp-checks.sh" <<'CHECKS'
+          ruby scripts/ci/timed_checks.rb --shard ${{ matrix.shard }}/3 > "$RUNNER_TEMP/bc2cpp-checks.sh" <<'CHECKS'
           # ci:parallel begin 4
           ruby scripts/bc2cpp/type_check.rb --no-sends
           ruby scripts/bc2cpp/sealed_host_check.rb
@@ -807,7 +895,6 @@ jobs:
           ruby scripts/bc2cpp/resumable_rest_check.rb
           ruby scripts/bc2cpp/resumable_variants_check.rb
           ruby scripts/bc2cpp/native_fiber_check.rb
-          ruby scripts/bc2cpp/vm_bytecode_free_check.rb
           ruby scripts/bc2cpp/numeric_jmpuw_check.rb
           ruby scripts/bc2cpp/nil_native_answers_check.rb
           ruby scripts/bc2cpp/ensure_nested_rescue_check.rb
@@ -842,8 +929,6 @@ jobs:
           ruby scripts/bc2cpp/array_literal_block_check.rb
           ruby scripts/bc2cpp/send_arg_facts_check.rb
           ruby scripts/bc2cpp/constant_typing_check.rb
-          ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs --jobs 4 build-closed-bc2cpp/closed
-          RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host ruby scripts/native/binding_split.rb check --facts "$RUNNER_TEMP/binding-facts"
           ruby scripts/bc2cpp/stack_tuples_check.rb
           ruby scripts/bc2cpp/block_self_world_check.rb
           ruby scripts/bc2cpp/outside_owner_call_check.rb
@@ -913,7 +998,6 @@ jobs:
           ruby scripts/bc2cpp/class_body_method_register_check.rb
           ruby scripts/bc2cpp/class_body_unit_check.rb
           ruby scripts/bc2cpp/class_body_fold_check.rb
-          ruby scripts/bc2cpp/class_body_left_ops_check.rb
           ruby scripts/bc2cpp/class_body_lambda_check.rb
           ruby scripts/bc2cpp/optional_rest_check.rb
           ruby scripts/bc2cpp/super_optional_check.rb
@@ -1143,22 +1227,23 @@ jobs:
           path: build/bc2cpp-lists/static_dispatch_lists.json
           if-no-files-found: error
 
-  # Aggregate `bc2cpp` status check. Keeps the name of the old one-job `bc2cpp`,
+  # Aggregate the closed build, fixture shards and sweep under the stable `bc2cpp` check,
   # so a required check on it needs no settings change.
   bc2cpp:
     if: ${{ always() && github.event_name != 'issue_comment' }}
-    needs: [changes, bc2cpp-build, bc2cpp-sweep]
+    needs: [changes, bc2cpp-build, bc2cpp-checks, bc2cpp-sweep]
     runs-on: ubuntu-24.04
     steps:
-      - name: Require the bc2cpp build and sweep to succeed
+      - name: Require the bc2cpp build, check shards and sweep to succeed
         env:
           CODE: ${{ needs.changes.outputs.code }}
           BUILD: ${{ needs.bc2cpp-build.result }}
+          CHECKS: ${{ needs.bc2cpp-checks.result }}
           SWEEP: ${{ needs.bc2cpp-sweep.result }}
         run: |
-          echo "code: $CODE, bc2cpp-build: $BUILD, bc2cpp-sweep: $SWEEP"
+          echo "code: $CODE, bc2cpp-build: $BUILD, bc2cpp-checks: $CHECKS, bc2cpp-sweep: $SWEEP"
           # A skipped job is fine only when no code changed.
-          for result in "$BUILD" "$SWEEP"; do
+          for result in "$BUILD" "$CHECKS" "$SWEEP"; do
             [ "$result" = success ] || { [ "$CODE" != true ] && [ "$result" = skipped ]; } || exit 1
           done
 

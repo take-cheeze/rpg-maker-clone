@@ -305,3 +305,35 @@ StackProf (wall, 1 ms, through `RUBYOPT=-r`, so the generator child is included)
 `UniqueClassNames.native_module_binding`, `NativeOwnerMap.build` and `outside_world_tokens`. The
 instruction decoder's name-keyed `case` (string dispatch) is under 1% of the call, so converting it to symbols
 could save at most that much. It is not worth changing on this evidence.
+
+## 8. Independent fixture shards (2026-11-02)
+
+The successful [master run 41362057723](https://github.com/take-cheeze/rpg-maker-clone/actions/runs/41362057723)
+spent 2,265 seconds in `bc2cpp-build`: 570 seconds building the closed library and 1,573 seconds
+in the 201-command check step. The timing rows sum to 6,282.5 seconds. Four workers replay those
+rows in 1,570.7 seconds, close to the measured step and its aggregate-work lower bound. More
+reordering inside that runner cannot remove the CPU work.
+
+Four commands remain with the closed build: `vm_bytecode_free_check.rb` (including its native
+Fiber fixture and optional closed inventory), `base_section_check.rb`, the native binding
+classifier, and `class_body_left_ops_check.rb`. The class-body proof receives the actual static
+dispatch lists explicitly, so it cannot skip for a missing proof-file environment variable.
+The other 197 commands run independently in three matrix jobs, with 66, 66 and 65 per shard.
+The commands, arguments and four-worker concurrency per runner are unchanged. Each job uses
+its cached full-core library and generated headers, so none waits for or recompiles the closed
+engine. The check registry records each job's prerequisites, and the required aggregate includes
+the matrix result.
+
+Replaying the original command durations with the new round-robin assignment:
+
+| Fixture shard | Commands | Check-phase replay (seconds) |
+| --- | ---: | ---: |
+| 0 | 66 | 541.0 |
+| 1 | 66 | 433.7 |
+| 2 | 65 | 551.8 |
+
+These are scheduling estimates using the earlier run's timings, not measured Actions results.
+They exclude setup and runner queueing. The sweep job took 1,301 seconds in the baseline and
+is unchanged; it can become the overall critical path after this split. More runners may wait
+for account concurrency, and each shard pays its own setup and cache restore. Compare actual
+job and end-to-end times after the first run before claiming a workflow-wide speedup.
