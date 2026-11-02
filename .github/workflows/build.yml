@@ -2760,7 +2760,10 @@ jobs:
   # Flake build with every submodule walked. It is the only job that needs
   # nested submodules on disk.
   flake:
-    if: ${{ github.event_name != 'issue_comment' }}
+    # A docs-only change cannot change the flake's build (`code` covers flake.nix and flake.lock), so it skips the
+    # full cold engine build the way psp and android do.
+    needs: changes
+    if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
 
     steps:
