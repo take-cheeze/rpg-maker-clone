@@ -187,8 +187,9 @@ Ranked by what they would save on the critical path. The first item is partly do
 3. **Single-command shards** (`hot-only`, `hot-proven-miss`, `block-arm-reach`, `core-exact-direct`,
    `core-mutants`). Each waits on one script, so only parallelism inside that script (its own mutant or
    fixture loop) would shorten them.
-4. **`bc2cpp-build`** (PR gate, 10.3 min). The 8 minutes are one `rake -m -j4` of the core, so only the sccache hit
-   rate on pull requests or the compile flags would move it. Not changed here.
+4. **`bc2cpp-build`** (PR gate, 10.3 min). The 8 minutes are one `rake -m -j4` of the core, so only a compiler
+   cache or the compile flags would move it. The bc2cpp jobs configure no compiler cache (section 9 has the
+   measured breakdown); an earlier note here about an sccache hit rate on pull requests was wrong. Not changed here.
 
 ## 5. The check phase of `bc2cpp-build` (2026-10-21)
 
