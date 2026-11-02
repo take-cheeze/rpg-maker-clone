@@ -11,6 +11,14 @@ Closed builds compile the remaining drivers into [native continuations](bc2cpp-n
 at build time. Their VM frame semantics remain, but their instruction-byte arrays and registration-time
 Ruby compilation are gone.
 
+Each driver is installed under a temporary private method name while registration captures its Proc.
+The saved-body array roots the Proc before that method-table entry is removed. Subsequent registrations
+reuse the saved Proc; Fiber calls execute it directly without looking up the temporary name.
+The shared resumable driver uses the same lifetime rule: its Proc is rooted on `Bc2cppResumable`,
+and calls read that saved Proc instead of looking up `drive`. Neither kind of driver needs a
+method-table entry after registration. GC between registration, re-registration and Fiber resumes
+is covered by `scripts/bc2cpp/native_fiber_check.rb`.
+
 ## Resumable variants
 
 The 17 methods in `CodeGen::RESUMABLE_DUAL` now use compiled resumable variants instead of
