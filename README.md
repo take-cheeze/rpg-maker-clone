@@ -1648,6 +1648,8 @@
   arrays are retained for those paths, and the runtime rejects any bytecode execution inside a Fiber.
   An optional [host-rooted emission profile](docs/bc2cpp-main-roots.md) follows the target's native
   `main` and omits unreachable method bodies already proven invisible to named calls before C++ generation.
+  Its [headless validation](docs/bc2cpp-profile-validation.md) covers Nepheshel's 543 maps;
+  the host honors `CXX`, and game sweeps retain successful map logs for inspection.
   Iterator support drivers retain rooted Procs instead of permanent method-table entries;
   the shared resumable driver also executes its saved Proc without a method-name lookup.
   Seventeen core iterators also have [resumable variants](docs/bc2cpp-resumable-block-calls.md),
