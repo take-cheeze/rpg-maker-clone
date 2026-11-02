@@ -11,6 +11,12 @@ runners:
   - cxx
   - closed_build
   - clang
+  bc2cpp-checks:
+  - mrbc
+  - native_sources
+  - core_library
+  - full_library
+  - cxx
 deferred:
   scripts/bc2cpp/class_pools_check.rb:
     tier: runtime
@@ -380,9 +386,11 @@ checks:
     capabilities:
     - mrbc
   scripts/bc2cpp/class_body_left_ops_check.rb:
-    tier: fast
+    tier: runtime
     capabilities:
     - mrbc
+    - native_sources
+    - closed_build
   scripts/bc2cpp/class_body_lambda_check.rb:
     tier: fast
     capabilities:

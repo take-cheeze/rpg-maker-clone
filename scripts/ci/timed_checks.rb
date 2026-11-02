@@ -23,6 +23,21 @@
 # Comment lines and blank lines are dropped; a `\` continuation is joined. Lines that only set shell
 # variables (`width=...`, `export A=b`) are passed through untimed, since later commands rely on them.
 require 'shellwords'
+require 'optparse'
+
+shard = nil
+OptionParser.new do |options|
+  options.on('--shard INDEX/COUNT', 'Partition parallel-group commands across zero-based shards') { |value| shard = value }
+end.parse!
+abort 'timed_checks: unexpected arguments' unless ARGV.empty?
+shard_index = 0
+shard_count = 1
+if shard
+  parts = shard.match(/\A(\d+)\/([1-9]\d*)\z/)
+  abort 'timed_checks: shard must be INDEX/COUNT with 0 <= INDEX < COUNT' unless parts && parts[1].to_i < parts[2].to_i
+
+  shard_index, shard_count = parts.captures.map(&:to_i)
+end
 
 PRELUDE = <<~'BASH'
   __ci_rows="$(mktemp)"
@@ -169,11 +184,14 @@ end
 puts PRELUDE
 skip_mutants = ENV['CI_SKIP_MUTANTS'] == '1'
 in_group = false
+parallel_index = 0
+group_seen = false
 commands($stdin.read).each do |line|
   if (begin_marker = PARALLEL_BEGIN.match(line))
     abort 'timed_checks: nested "ci:parallel begin"' if in_group
 
     in_group = true
+    group_seen = true
     puts "__ci_par_begin#{begin_marker[1] ? " #{begin_marker[1]}" : ''}"
     next
   elsif PARALLEL_END.match?(line)
@@ -195,10 +213,14 @@ commands($stdin.read).each do |line|
 
     puts line
   elsif in_group
-    puts "__ci_par_run #{Shellwords.escape(label(line))} #{Shellwords.escape(line)}"
+    # Only independent group commands are partitioned; serial setup stays in every shard's shell.
+    selected = parallel_index % shard_count == shard_index
+    parallel_index += 1
+    puts "__ci_par_run #{Shellwords.escape(label(line))} #{Shellwords.escape(line)}" if selected
   else
     # A brace group, not a subshell: the command still runs in the step's own shell.
     puts "__ci_begin #{Shellwords.escape(label(line))}", "{ #{line}", '} >&4 2>&1', '__ci_end'
   end
 end
 abort 'timed_checks: "ci:parallel begin" without an end' if in_group
+abort 'timed_checks: --shard requires a parallel group' if shard && !group_seen
