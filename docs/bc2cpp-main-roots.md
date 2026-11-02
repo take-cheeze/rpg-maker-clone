@@ -10,6 +10,9 @@ The ordinary build is unchanged unless this option is set. This is an
 experimental build profile; it is not enabled by default for Wio or CI game
 builds, and it does not by itself make the Wio image fit.
 
+Closed builds can separately remove proven constructor registrations; see
+[tableless initializers](bc2cpp-initializer-tables.md).
+
 ## Export the host roots
 
 Use Clang with the preprocessing flags, target and include paths of the host
@@ -61,6 +64,60 @@ invalidate the manifest; consuming a stale manifest fails with instructions
 to regenerate it. Export again after bootstrap or presym generation changes
 one of the host's headers.
 
+`--lookup-names-only` restricts host name roots to resolved lookup arguments,
+instead of retaining every string literal in a reached C++ body. It still
+follows callbacks and direct implementation references, and an unresolved
+lookup retains all bodies. Include all linked Ruby-calling host helpers;
+opaque declarations do not reveal their bodies.
+
+## Use the target's preprocessed native inventory
+
+The native VM rake integration provides `bc2cpp:native-inventory:<build-name>`.
+After the ordinary bootstrap build, invoke it using the same build directory
+and configuration. For example, from `3rd/mruby`:
+
+```sh
+MRUBY_CONFIG=/absolute/path/to/config.rb MRUBY_BUILD_DIR=/absolute/path/to/build \
+  rake bc2cpp:native-inventory:closed
+```
+
+This exports `<build-dir>/closed/bc2cpp_native_inventory.json` from the actual
+presym task's selected `.pi` inputs. Generated Ruby/codegen units are modeled
+by their Ruby IR; native exception wrappers map to their original C sources.
+Other generated native units remain included. The exporter invokes stale
+preprocessing tasks, reads their dependency files and hashes their inputs.
+It never needs Clang to parse the GCC runtime's expanded C/C++.
+
+Set `BC2CPP_NATIVE_INVENTORY` to that file along with `BC2CPP_MAIN_AST` for the
+next generation. Native reachability roots then come from selected expanded
+inputs. Unlinked files, disabled VM/compiler branches and unused macro
+definitions contribute no roots. Presym scanning tags preserve lookup names;
+ordinary ROM rows and registration destinations define names rather than
+look them up. Unfamiliar executable table initializers remain conservative.
+
+This changes the reachability name inventory; type/registration analyses
+retain their broader source model. VM protocol names and named entries not
+covered by an omission proof remain protected. The shared omission proof
+clears the target inventory and host profile so its lists remain independent
+of one target's preprocessing flags.
+
+Changed sources, headers, preprocessing outputs or analysis code invalidate
+the inventory. Re-export after bootstrap, presym or generated-header changes;
+stale inputs fail instead of falling back silently to a raw-source scan.
+Changing the inventory regenerates compiled gems. These profiles remain
+opt-in; export a separate inventory for each target/configuration.
+
+For tooling that already has an exact unit list, the standalone exporter is:
+
+```sh
+ruby scripts/bc2cpp/native_inventory.rb units.json native-inventory.json
+```
+
+`units.json` is an array of objects with absolute `source`, `preprocessed` and
+`depfile` paths. It must list the selected native units, not an arbitrary
+subset of the target. Prefer the rake exporter, which reads the actual build
+inventory.
+
 ## Prune before emission
 
 The pass starts with the host roots, gem/class initialization, copied method
@@ -111,7 +168,8 @@ ruby scripts/bc2cpp/dynamic_names_report.rb \
 
 The summary counts each remaining slot once, choosing its first available
 reason in this order: VM protocol, host AST, direct native implementation,
-native source token, literal lookup, Ruby instruction, and copied body.
+preprocessed native token, raw native source token, literal lookup, Ruby
+instruction, and copied body.
 The JSON keeps all reasons and their source locations. Native tokens and host
 strings are conservative evidence, not necessarily executed calls. The report
 does not seed every registered method as an entry point, and core aliases

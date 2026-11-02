@@ -1045,6 +1045,7 @@
 
 - Compiler opcode dispatch uses a shared Symbol vocabulary; name operands and reports keep their String format. See [opcode representation](docs/bc2cpp-opcode-symbols.md).
 - Host-rooted generation can write per-registration retention reasons with `BC2CPP_MAIN_REPORT`; see [named registration reports](docs/bc2cpp-main-roots.md#explain-named-registrations).
+- Closed builds can [prove initializer slots unnecessary](docs/bc2cpp-initializer-tables.md); host reachability also accepts [target-preprocessed native inputs](docs/bc2cpp-main-roots.md#use-the-targets-preprocessed-native-inventory).
 - Compiler argument counts stay numeric through analysis and dispatch, with explicit keyword/splat flags; see [typed call counts](docs/bc2cpp-typed-argc.md). Argument-register span queries use primitive Integer readers to avoid temporary shape objects.
 
 - Pooled and interpolated Symbols retain their register types, and keyword presence tracks both boolean classes; see [Symbol class proofs](docs/bc2cpp-symbol-class.md).
