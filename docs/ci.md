@@ -413,7 +413,7 @@ The bc2cpp gate uses four workers. The generic helper defaults to
 `CI_PARALLEL_JOBS`, then three, when a marker omits the number. Each command
 runs in a subshell and inherits the step's variables; assignments made inside
 that subshell cannot configure later commands. Output is saved per command and
-reported in input order (only for a failed command; see "Quiet output"). A
+reported in input order with their full output (see "Full output"). A
 failed command keeps its status, all commands in the group are reported, and
 subsequent commands do not run after a failed group.
 The timing table sums command durations, which can exceed elapsed group time.
@@ -423,24 +423,19 @@ library first, and keep source-mutating checks isolated. Summary writers need
 separate `GITHUB_STEP_SUMMARY` files followed by ordered concatenation after
 the group; otherwise parallel writers share one output file.
 
-### Quiet output
+### Full output
 
-`bc2cpp-build` prints the output of a failed command only:
+Closed-world builds and list generation run directly in CI, so compiler progress, warnings,
+generator diagnostics and failures appear as they are produced. These build steps enable
+`BC2CPP_PROFILE_TIMINGS=1` to report generator phase durations. The flake build also prints
+its complete fetch and build output without the Git-noise filter.
 
-- `scripts/ci/timed_checks.rb` keeps a passing check's output in a log and
-  prints just its row of the timing table. A failed check is printed in full
-  under `== FAILED (exit N, Ns): COMMAND`, before the table.
-- `scripts/ci/quiet_run.bash COMMAND...` does the same for one long step, the
-  closed-world build. On success it prints one line with the time, the number
-  of output lines and the number of `: warning:` lines. On failure it prints
-  the whole log in a collapsed group, then the last 200 lines
-  (`QUIET_RUN_TAIL`) and the status.
-
-Both still print the `::error`, `::warning` and `::notice` workflow lines a
-passing command writes, so its annotations reach the run page. Set
-`CI_VERBOSE=1` on a step (or rerun the job with it in the environment) to print
-every command's output again. A serial check runs in a brace group with its
-output on a duplicated descriptor, so it still runs in the step's own shell.
+`timed_checks.rb` prints all successful and failed check output by default. Parallel checks keep
+separate logs and replay them in input order under per-command groups; serial checks write directly
+to the step's output. Timing tables and original failure statuses are retained. `CI_VERBOSE=0`
+remains an explicit local opt-in to annotation-only successful logs; CI does not enable it.
+The standalone `quiet_run.bash` and fetch-noise filter remain available for deliberate local use,
+but the workflow does not route builds through them.
 
 ## Cross-PR interaction (merge queue)
 
