@@ -2628,7 +2628,25 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      # ${{ env.* }} cannot see the runner's ANDROID_HOME, so resolve it in the
+      # shell and hand it to the cache path below as a step output.
+      - name: Locate Android SDK
+        id: android-sdk
+        run: echo "path=$ANDROID_HOME" >> "$GITHUB_OUTPUT"
+
+      # The NDK and CMake are pinned, so their directories are cached as-is.
+      # The sdkmanager step below runs only on a miss (exact key match).
+      - name: Cache Android NDK and CMake
+        uses: actions/cache@v6
+        id: android-ndk-cache
+        with:
+          path: |
+            ${{ steps.android-sdk.outputs.path }}/ndk/27.2.12479018
+            ${{ steps.android-sdk.outputs.path }}/cmake/3.22.1
+          key: android-ndk-${{ runner.os }}-27.2.12479018-cmake-3.22.1
+
       - name: Install NDK
+        if: steps.android-ndk-cache.outputs.cache-hit != 'true'
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             --install "ndk;27.2.12479018" "cmake;3.22.1" \
