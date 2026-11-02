@@ -21,8 +21,10 @@ any of these could look it up:
   proc (`mrb_proc_new`, `mrb_closure_new`), every such block counts as
   runnable again;
 - a C string literal in the generated C++, outside the name's own
-  registration. Three kinds of use don't count, because none looks up a
-  compiled method:
+  registration. A pool string's value (`bc2cpp_pool_str`) is no literal when
+  its bytecode uses are pure (the pool verdict above), since the value is the
+  same string; a folded constant's value (`mrb_str_new_cstr`) still counts.
+  Three kinds of use don't count, because none looks up a compiled method:
   - the by-name fallback of a `MONO_EMBED_GUARD` on an owner nothing
     subclasses;
   - the proof-failure helpers (`bc2cpp_nomethod`, `bc2cpp_nomethod_raise`,
