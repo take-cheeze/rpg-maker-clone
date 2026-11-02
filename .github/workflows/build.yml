@@ -1054,11 +1054,17 @@ jobs:
   # then on one built with BC2CPP_UNREGISTERED_VERIFY=1, where every registration the closed list leaves out
   # is a stub that fails loudly when reached (docs/bc2cpp-unregistered-methods.md). A lookup the registration
   # proof missed, or a stubbed mrblib body that runs, fails the job.
+  # The two closed builds are independent, so each runs in its own leg on its own runner; the job's wall time
+  # is the longer leg, not the sum. The method-table report stays on the plain leg, which it describes.
   bc2cpp-sweep:
     if: ${{ github.event_name != 'issue_comment' && needs.changes.outputs.code == 'true' }}
     needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: [plain, verify]
 
     env:
       RUBY_YJIT_ENABLE: "1"
@@ -1114,8 +1120,10 @@ jobs:
           # A prefix hit seeds a fresh fixed-point proof; its stale digest is never trusted.
           restore-keys: bc2cpp-lists-
 
-      # Both builds below share one lists directory, so the verify build finds the plain build's lists current.
+      # Each leg computes or restores its own lists (the cache step above) in its own build directory, so the legs share
+      # nothing but the cache entries. The verify leg's lists are the same file the plain leg produces for this tree.
       - name: Build the closed-world mruby
+        if: matrix.leg == 'plain'
         timeout-minutes: 45
         env:
           BC2CPP_PROFILE_TIMINGS: '1'
@@ -1124,10 +1132,12 @@ jobs:
         run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-sweep"
 
       - name: Play the closed build's scenarios and every map
+        if: matrix.leg == 'plain'
         timeout-minutes: 15
         run: env -u LD scripts/bc2cpp/host_sweep.bash "$GITHUB_WORKSPACE/build-closed-sweep"
 
       - name: Build the closed-world mruby in verify mode
+        if: matrix.leg == 'verify'
         timeout-minutes: 45
         env:
           BC2CPP_PROFILE_TIMINGS: '1'
@@ -1137,6 +1147,7 @@ jobs:
         run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-verify"
 
       - name: Play the verify build's scenarios and every map
+        if: matrix.leg == 'verify'
         timeout-minutes: 15
         # The verify build registers a stub under every name the lists drop, so its method table is not the plain
         # build's: only the plain build is held to scripts/bc2cpp/method_table_threshold.txt.
@@ -1146,6 +1157,7 @@ jobs:
 
       # Informational: why the entries the lists keep stay in the table, and which they are (the lists are no longer in a diff).
       - name: Report why method-table entries stay
+        if: matrix.leg == 'plain'
         continue-on-error: true
         timeout-minutes: 15
         env:

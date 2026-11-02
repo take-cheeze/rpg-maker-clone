@@ -61,13 +61,15 @@ The desktop `host` build loads Ruby at runtime and never carries the compiled ge
 
 `bc2cpp-sweep`, alongside `bc2cpp-build`, builds the same closed world and plays it headlessly through
 `scripts/bc2cpp/host_sweep.bash`: Nepheshel's New Game, a battle, the menu, saving and loading, and
-every map for 150 frames. It then builds the closed world again with `BC2CPP_UNREGISTERED_VERIFY=1`,
-which replaces every registration the closed list leaves out with a stub that fails loudly when
-reached, and plays that build the same way. A run that exits non-zero, or that prints a verify stub,
+every map for 150 frames. The job has two matrix legs, `plain` and `verify`, on separate runners. The
+`verify` leg builds the closed world with `BC2CPP_UNREGISTERED_VERIFY=1`, which replaces every
+registration the closed list leaves out with a stub that fails loudly when reached, and plays that build
+the same way. The legs share no build directory, so the job takes as long as its longer leg rather than
+the two added together. A run that exits non-zero, or that prints a verify stub,
 a violated proof, a run stubbed mrblib body or a `NoMethodError`, fails the job. The host is built
 once per build and called directly afterwards, and maps run in parallel: one play takes about a
-minute, and the whole job (two closed builds of about three minutes each) stays shorter than
-`bc2cpp-build`.
+minute. Each leg pays its own setup and cache restore, and a cold lists cache makes both legs run the
+proof, so the two legs' compute is not shared (see the lists paragraph below).
 
 The method-table lists the closed-list proof leaves out are no longer committed. `bc2cpp-build` and
 `bc2cpp-sweep` compute them in the closed build (`scripts/bc2cpp/static_dispatch_lists.bash`, phase 1.5 of
@@ -75,7 +77,8 @@ The method-table lists the closed-list proof leaves out are no longer committed.
 keyed by `static_dispatch_registrations.rb --digest` (a hash of every file the proof reads); a hit costs the
 digest, about a second. A miss runs the proof to a fixed point: two generations of the whole library plus
 two scans, about 5 minutes on a 4-core host (passes: 159 s and 140 s measured) (the scan cache, `build/bc2cpp-cache`, is shared). The
-second job to run on one key finds the file already there. `bc2cpp-lists` (pushes, not pull requests) computes the
+second job to run on one key, if it starts after the first has saved, finds the file already there; the two
+`bc2cpp-sweep` legs start together, so on a miss each computes its own (the proof is cheap next to a build). `bc2cpp-lists` (pushes, not pull requests) computes the
 same file in a nix shell and uploads it for `maix` and `psp`. `bc2cpp-sweep` also prints
 `dynamic_names_report.rb`'s summary (why method-table entries stay), and `host_sweep.bash` fails when the
 host's method-table entry count exceeds `scripts/bc2cpp/method_table_threshold.txt`. The `dynamic_names_report.rb` step also prints the

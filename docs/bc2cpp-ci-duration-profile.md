@@ -337,3 +337,33 @@ They exclude setup and runner queueing. The sweep job took 1,301 seconds in the 
 is unchanged; it can become the overall critical path after this split. More runners may wait
 for account concurrency, and each shard pays its own setup and cache restore. Compare actual
 job and end-to-end times after the first run before claiming a workflow-wide speedup.
+
+## 9. The sweep is the critical path (2026-11-02)
+
+Master run [41362057723](https://github.com/take-cheeze/rpg-maker-clone/actions/runs/41362057723) predates the
+fixture-shard split of section 8, so its `bc2cpp-checks` jobs do not appear. Its `bc2cpp-sweep` job took
+21.7 minutes, and its `bc2cpp-build` job 37.8 minutes (including the 201-command check step, which section 8
+has since moved out). With the shards in place, the sweep is the longest job of the bc2cpp gate. Its steps
+(seconds):
+
+| Step | s |
+| --- | ---: |
+| setup (checkout, Nix restore, dev shell, Nepheshel, lists cache) | ~50 |
+| Build the closed-world mruby (plain) | 564 |
+| Play the closed build's scenarios and every map | 132 |
+| Build the closed-world mruby in verify mode | 294 |
+| Play the verify build's scenarios and every map | 130 |
+| Report why method-table entries stay (`continue-on-error`) | 124 |
+
+The two builds and their plays ran in sequence on one runner. The report is informational, yet it sat on the
+critical path. The verify build is faster here than the plain build; the cause was not measured. The likely
+share is the plain build's first-time work (the host `mrbc`, the scan cache writes), which the verify build
+reuses in the same job, so its speed may not carry over to a separate runner.
+
+The sweep now has two matrix legs, `plain` (build, play, report) and `verify` (build, play), on separate
+runners with `fail-fast: false`. Predicted job wall time, from the same durations and before the setup cost
+of a second runner: the plain leg, 564 + 132 + 124 = 820 s, against 1,301 s in sequence. If the verify build
+ran cold on its own runner (564 s, not 294 s), its leg would be 564 + 130 = 694 s, still under the plain leg.
+These are estimates from one run, not Actions results. Compare the sweep's job time on the first run after
+this change before claiming a speedup. The cost is a second setup and, on a cold lists cache, a second proof
+run (about 5 minutes of CPU, not wall time, since the legs run together).
