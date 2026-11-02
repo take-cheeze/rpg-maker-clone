@@ -25,6 +25,8 @@ label="$*"
 grep -E '^::(error|warning|notice)( |::)' "$log"
 if [ "$status" = 0 ]; then
   [ "${CI_VERBOSE:-0}" = 1 ] && cat "$log"
+  # bc2cpp phase timings (BC2CPP_PROFILE_TIMINGS=1) are the one part of a passing build worth reading in the log.
+  grep -E '^BC2CPP_TIME ' "$log" || true
   printf 'ok (%ss, %s line(s) of output, %s compiler warning(s)): %s\n' "$secs" "$lines" "$warnings" "$label"
   exit 0
 fi
