@@ -213,3 +213,17 @@ or binary-size measurements.
 New Game, battle, menu, three save scenarios, Continue and all 543 maps pass in both plain
 and registration-verify builds. The native Fiber check also confirms absence of temporary
 driver names, saved-Proc identity after re-registration, and behavior across full GC and suspension.
+
+## Pool string values
+
+A bytecode pool string's generated value (`bc2cpp_pool_str`, not a folded
+constant's `mrb_str_new_cstr`) no longer counts as a generated-code literal when
+the pool verdict proves its uses pure. Such a value is the same string the pool
+analysis already checked, so the name stays out of the table. The closed-list proof
+grows from 3,633 to 3,639 safe keys, the dynamic-names report keeps 403 entries
+instead of 409, and the closed host's table falls from **1,061 to 992 entries**.
+
+The plain closed build and host sweep pass (New Game, battle, menu, three save
+scenarios, Continue and all 543 maps). The verify build repeats the sweep with
+`BC2CPP_UNREGISTERED_VERIFY=1` and `METHOD_TABLE=skip`. Its traps must abort on
+any lookup of a removed name.
