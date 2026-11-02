@@ -35,7 +35,10 @@ extraction. GCC-specific preprocessed types must also be understood by the
 selected Clang; for example, a GCC/glibc `_Float32` declaration can prevent
 extraction. Do not substitute a manifest from a different compiler configuration.
 `--unit` can be repeated for linked native
-sources whose lookups need analysis. These units conservatively retain their
+sources whose lookups need analysis. Include every linked host helper that can
+call Ruby, such as desktop `src/error_dump.cxx`, as well as the gem bridges.
+A declaration in `main` does not expose a helper's separately compiled body.
+These units conservatively retain their
 function bodies as native callback roots; they are not assumed dead merely
 because a direct call from `main` was not found. Unanalyzed native files still
 contribute their literal lookup names. An unresolved lookup in a non-core
@@ -91,6 +94,38 @@ conservative retention, and omitted `Owner#method` keys. The static omission
 proof always generates the complete program with this emission profile off,
 so its lists remain independent of the selected host. Changing or disabling
 the profile invalidates generated C++ in incremental rake builds.
+
+## Explain named registrations
+
+Set `BC2CPP_MAIN_REPORT=/path/to/reports` when invoking the generator with a
+host manifest. It writes `<OUT_SYMBOL>_named_reachability.json`, including each
+generated registration name (aliases separately), its implementation, proof
+exclusion status, and independent bounded-name reachability evidence.
+
+```sh
+ruby scripts/bc2cpp/dynamic_names_report.rb \
+  --main-report reports/engine_named_reachability.json
+ruby scripts/bc2cpp/dynamic_names_report.rb \
+  --main-report reports/engine_named_reachability.json --entries
+```
+
+The summary counts each remaining slot once, choosing its first available
+reason in this order: VM protocol, host AST, direct native implementation,
+native source token, literal lookup, Ruby instruction, and copied body.
+The JSON keeps all reasons and their source locations. Native tokens and host
+strings are conservative evidence, not necessarily executed calls. The report
+does not seed every registered method as an entry point, and core aliases
+reach their original bodies and transitive callees. Block-form eval and
+`to_enum(:name, other_arguments)` are distinguished from unbounded names.
+
+Unreached report entries remain registered unless the separate omission proof
+authorizes removal. Unresolved forwarding sites are listed explicitly; a low
+candidate count is not a proof that computed dispatch cannot reach them.
+Removing an alias registration preserves the original implementation and other
+aliases. The core omission proof treats registrations and alias destinations
+as definitions, and direct implementation references as body roots rather
+than named lookup roots. ROM exclusions also apply to generated replacements,
+so installing compiled methods cannot put an excluded slot back.
 
 ## Validation
 
