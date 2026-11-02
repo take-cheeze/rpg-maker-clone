@@ -1644,6 +1644,8 @@
   Closed bc2cpp builds use [native Fiber continuations](docs/bc2cpp-native-fibers.md) for every
   retained body and support driver, including nested iterators and Enumerator. No instruction-byte
   arrays are retained for those paths, and the runtime rejects any bytecode execution inside a Fiber.
+  Iterator support drivers retain rooted Procs instead of permanent method-table entries;
+  the shared resumable driver also executes its saved Proc without a method-name lookup.
   Seventeen core iterators also have [resumable variants](docs/bc2cpp-resumable-block-calls.md),
   replacing their per-method bytecode drivers. Optional arguments with `&block` are supported for
   `Array#fetch`, `Hash#fetch` and `String#upto`, including omitted defaults and exclusive string ends.

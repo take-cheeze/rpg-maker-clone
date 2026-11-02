@@ -192,3 +192,24 @@ and Kernel factories are absent. Color, Tone, Rect and Table byte callbacks
 round-trip without Marshal in both builds; `instance_variable_get` remains
 available for the RGSS probe. The plain table contains 581 native entries,
 483 compiled entries and seven undefined markers.
+
+## Temporary support driver entries
+
+Against the native-only baseline at `21e93f701`, capturing iterator driver Procs and then
+removing their temporary names reduces the installed table from **1,102 to 1,061 entries**.
+The exact removal set is 40 `__bc2cpp_*_driver` methods and `Bc2cppResumable#drive`, with
+no additional entries installed. The resulting inventory has 562 native C callables,
+491 generated C++ callables, one native continuation (`Kernel#p`) and seven undefined markers.
+The omission proof is unchanged: 1,154 open keys (included in 3,584 closed keys), 186
+core ROM exclusions and 200 core runtime removals.
+
+The iterator saved-body array and the resumable module's hidden Proc slot retain these
+implementations across GC. Re-registration reuses the saved iterator Procs, and resumable
+calls read their saved Proc instead of looking up `drive`. See
+[the driver lifetime rule](bc2cpp-enum-step.md) and `scripts/bc2cpp/native_fiber_check.rb`.
+The method-table threshold records 1,061; these are entry counts, not backing-table capacity
+or binary-size measurements.
+
+New Game, battle, menu, three save scenarios, Continue and all 543 maps pass in both plain
+and registration-verify builds. The native Fiber check also confirms absence of temporary
+driver names, saved-Proc identity after re-registration, and behavior across full GC and suspension.
