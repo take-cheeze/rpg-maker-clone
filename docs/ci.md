@@ -74,8 +74,12 @@ The method-table lists the closed-list proof leaves out are no longer committed.
 `closed_build.bash`) and print the counts in the job log. The lists are cached under `build/bc2cpp-lists`,
 keyed by `static_dispatch_registrations.rb --digest` (a hash of every file the proof reads); a hit costs the
 digest, about a second. A miss runs the proof to a fixed point: two generations of the whole library plus
-two scans, about 5 minutes on a 4-core host (passes: 159 s and 140 s measured) (the scan cache, `build/bc2cpp-cache`, is shared). The
-second job to run on one key finds the file already there. `bc2cpp-lists` (pushes, not pull requests) computes the
+two scans, about 5 minutes on a 4-core host (the scan cache, `build/bc2cpp-cache`, is shared). Passes measured
+159 s and 140 s on the CI profile in `bc2cpp-ci-duration-profile.md`, and 119 s and 116 s on a local 4-core
+box with the pinned Prism 1.9.0 and RBS 4.0.0 (different machines, so both are kept). A job that starts after
+another has saved the key finds the file already there; jobs that start together (the two `bc2cpp-sweep`
+legs) each compute it on a miss. A miss restores the previous run's lists as a seed (`restore-keys`), and a
+seed that is still a fixed point costs one pass instead of two. `bc2cpp-lists` (pushes, not pull requests) computes the
 same file in a nix shell and uploads it for `maix` and `psp`. `bc2cpp-sweep` also prints
 `dynamic_names_report.rb`'s summary (why method-table entries stay), and `host_sweep.bash` fails when the
 host's method-table entry count exceeds `scripts/bc2cpp/method_table_threshold.txt`. The `dynamic_names_report.rb` step also prints the
