@@ -688,11 +688,11 @@ jobs:
         timeout-minutes: 45
         # `-m` lets rake run every prerequisite concurrently.
         env:
+          BC2CPP_PROFILE_TIMINGS: '1'
           RAKEOPT: -m -j4
           BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
-        # The devshell exports LD=ld, which would link mrbc without libc. quiet_run prints the build's
-        # output only when it fails (docs/ci.md, "Quiet output").
-        run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
+        # The devshell exports LD=ld, which would link mrbc without libc.
+        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
 
       - name: Print the static dispatch lists
         run: |
@@ -1115,9 +1115,10 @@ jobs:
       - name: Build the closed-world mruby
         timeout-minutes: 45
         env:
+          BC2CPP_PROFILE_TIMINGS: '1'
           RAKEOPT: -m -j4
           BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
-        run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-sweep"
+        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-sweep"
 
       - name: Play the closed build's scenarios and every map
         timeout-minutes: 15
@@ -1126,10 +1127,11 @@ jobs:
       - name: Build the closed-world mruby in verify mode
         timeout-minutes: 45
         env:
+          BC2CPP_PROFILE_TIMINGS: '1'
           RAKEOPT: -m -j4
           BC2CPP_UNREGISTERED_VERIFY: '1'
           BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
-        run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-verify"
+        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-verify"
 
       - name: Play the verify build's scenarios and every map
         timeout-minutes: 15
@@ -1217,8 +1219,9 @@ jobs:
       - name: Compute the static dispatch lists
         timeout-minutes: 30
         env:
+          BC2CPP_PROFILE_TIMINGS: '1'
           BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
-        run: env -u LD scripts/ci/quiet_run.bash scripts/bc2cpp/static_dispatch_lists.bash "$GITHUB_WORKSPACE/build-lists-mrbc"
+        run: env -u LD scripts/bc2cpp/static_dispatch_lists.bash "$GITHUB_WORKSPACE/build-lists-mrbc"
 
       - name: Upload the static dispatch lists
         uses: actions/upload-artifact@v7
@@ -2779,13 +2782,10 @@ jobs:
       # `?submodules=1` puts the submodule sources in the flake's store copy. Only
       # this job asks for it, so the other jobs skip the walk.
       #
-      # The fetch prints a `* [new ref]` line per ref, which the filter drops.
-      # `set -o pipefail` is needed because bash -e does not set it, and without it
-      # a failed build would pass on the filter's status.
       - name: Build flake
         run: |
           set -o pipefail
-          nix build -L '.?submodules=1#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
+          nix build -L '.?submodules=1#build'
 
   # Publishes the WebAssembly page to GitHub Pages on master. No pthreads means
   # no COOP/COEP headers are needed. Requires Settings → Pages → Source =
