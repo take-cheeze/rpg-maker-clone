@@ -2086,6 +2086,9 @@
   [ADR 0409](docs/adr/0409-bc2cpp-dataflow-query-cache.md).
   Its independent test oracle shares immutable definition sets and avoids duplicate
   queued instructions; see [the CI guide](docs/ci.md).
+- The bc2cpp CI gate runs 197 fixture checks in three independent shards alongside the
+  closed-engine build and game sweep. All shards remain required through the `bc2cpp`
+  status check; see [CI scheduling](docs/ci.md#bc2cpp-job-setup-and-check-scheduling).
 - CI preserves full build, fetch and successful check output, including compiler warnings and
   generator diagnostics, alongside timing tables. See [CI output](docs/ci.md#full-output).
 - CI also runs the width-sensitive bc2cpp checks on a 32-bit-`mrb_int` and a

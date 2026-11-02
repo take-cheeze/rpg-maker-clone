@@ -213,8 +213,8 @@ end
 
 # -- parallel groups --------------------------------------------------------------------------------
 puts '-- parallel groups'
-run_checks = lambda do |dir, text, env = {}|
-  generated, gen_status = Open3.capture2(env, RbConfig.ruby, File.join(__dir__, 'timed_checks.rb'), stdin_data: text)
+run_checks = lambda do |dir, text, env = {}, args = []|
+  generated, gen_status = Open3.capture2(env, RbConfig.ruby, File.join(__dir__, 'timed_checks.rb'), *args, stdin_data: text)
   script = File.join(dir, "g#{rand(1_000_000)}.sh")
   File.write(script, generated)
   out, status = Open3.capture2e(env, 'bash', '-eo', 'pipefail', '-c', ". #{script}")
@@ -283,6 +283,48 @@ Dir.mktmpdir do |dir|
     check.call("#{what} is refused when the script is generated", !gen_status.success?)
   end
 end
+
+# -- check shards ----------------------------------------------------------------------------------
+puts '-- check shards'
+Dir.mktmpdir do |dir|
+  trace = File.join(dir, 'shards')
+  setup = File.join(dir, 'setup')
+  text = "who=shared\necho setup >> #{setup}\n# ci:parallel begin 2\n" +
+         (0...5).map { |i| "echo \"$who #{i}\" >> #{trace}\n" }.join +
+         "# ci:parallel end\n# ci:parallel begin 2\n" +
+         (5...8).map { |i| "echo \"$who #{i}\" >> #{trace}\n" }.join + "# ci:parallel end\n"
+  statuses = (0...3).map do |index|
+    _out, status, generated = run_checks.call(dir, text, {}, ['--shard', "#{index}/3"])
+    status.success? && generated.success?
+  end
+  check.call('shards execute every parallel command exactly once across multiple groups',
+             statuses.all? && File.readlines(trace, chomp: true).sort == (0...8).map { |i| "shared #{i}" })
+  check.call('each shard keeps serial setup and its shell variables', File.readlines(setup).size == 3)
+  failing = "# ci:parallel begin 2\necho before\nruby -e 'exit 7'\necho after\n# ci:parallel end\n"
+  results = (0...3).map do |index|
+    _out, status, = run_checks.call(dir, failing, {}, ['--shard', "#{index}/3"])
+    status.exitstatus
+  end
+  check.call('a selected failure fails its shard with the original status', results == [0, 7, 0])
+  (['-1/3', '3/3', '0/0', '0/a', '1'].map { |value| ['--shard', value] } + [['extra']]).each do |args|
+    _out, status = Open3.capture2e(RbConfig.ruby, File.join(__dir__, 'timed_checks.rb'), *args, stdin_data: text)
+    check.call("invalid shard arguments fail closed: #{args.join(' ')}", !status.success?)
+  end
+  _out, status = Open3.capture2e(RbConfig.ruby, File.join(__dir__, 'timed_checks.rb'), '--shard', '0/3', stdin_data: "echo serial\n")
+  check.call('sharding refuses a command list without a parallel group', !status.success?)
+end
+
+shard_job = workflow.fetch('jobs').fetch('bc2cpp-checks')
+check.call('all three independent check shards run even when another fails',
+           shard_job['needs'] == 'changes' && shard_job.dig('strategy', 'matrix', 'shard') == [0, 1, 2] &&
+             shard_job.dig('strategy', 'fail-fast') == false)
+shard_command = shard_job.fetch('steps').find { |step| step['name'] == 'Run bc2cpp checks' }.fetch('run')
+check.call('the workflow uses the same shard count as its matrix', shard_command.include?('--shard ${{ matrix.shard }}/3'))
+aggregate = workflow.fetch('jobs').fetch('bc2cpp')
+check.call('the required aggregate waits for and checks the matrix result',
+           aggregate['needs'].include?('bc2cpp-checks') &&
+             aggregate.fetch('steps').any? { |step| step.dig('env', 'CHECKS') == '${{ needs.bc2cpp-checks.result }}' &&
+               step.fetch('run', '').include?('for result in "$BUILD" "$CHECKS" "$SWEEP"') })
 
 # -- quiet_run.bash ---------------------------------------------------------------------------------
 puts '-- quiet run'

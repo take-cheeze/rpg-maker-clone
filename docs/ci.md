@@ -81,8 +81,8 @@ same file in a nix shell and uploads it for `maix` and `psp`. `bc2cpp-sweep` als
 host's method-table entry count exceeds `scripts/bc2cpp/method_table_threshold.txt`. The `dynamic_names_report.rb` step also prints the
 registered names with their reasons (`--entries`) in a collapsed log group, so the remaining entries can be read off a CI run.
 
-The status check `bc2cpp` in `build.yml` reports `bc2cpp-build` and `bc2cpp-sweep` (both
-skipped on purpose for a docs-only change). Require `bc2cpp`.
+The status check `bc2cpp` in `build.yml` requires `bc2cpp-build`, every `bc2cpp-checks` matrix
+shard and `bc2cpp-sweep`. All three jobs deliberately skip docs-only changes. Require `bc2cpp`.
 
 ### bc2cpp job setup and check scheduling
 
@@ -91,15 +91,27 @@ shell's Wine, Emscripten or graphics dependencies. Its Nix store cache has a
 separate `nix-bc2cpp-` prefix. The environment export helper accepts this
 installable as its optional first argument; other jobs keep the default shell.
 
-After compiling and verifying the closed-world archive, the job prepares the
-full-core fixture library once. Its exact cache key includes the pinned Nix
-toolchain, mruby and stringio revisions, build helpers and mruby patches.
-`BC2CPP_MRUBY_FULL` makes subsequent fixtures read the prepared library.
-The existing timed-check wrapper runs every check with at most four commands
-at once, retaining command logs, failure status and a timing table in the job
-summary. The bc2cpp group starts longer checks first using recent CI timings,
-leaving short checks to fill the final worker slots. Revisit the order after
-large timing changes; see the [duration profile](bc2cpp-ci-duration-profile.md#6-pr-check-queue-order).
+The closed archive and its base-section, native-binding, class-body proof and VM/bytecode-free checks stay in
+`bc2cpp-build`. The other 197 fixture commands run in three independent `bc2cpp-checks` jobs,
+which start after path filtering rather than waiting for the engine build. Each job restores or
+builds its own full-core fixture library from the same exact cache key: the pinned Nix toolchain,
+mruby and stringio revisions, build helpers and mruby patches. `MRBC`, `BC2CPP_MRUBY_FULL` and
+`BC2CPP_BUILD_INCLUDE` point to that library's compiler, archive and generated headers. The
+closed-build VM check keeps its optional closed-artifact audit.
+
+The workflow retains one fixture-command list. `timed_checks.rb --shard INDEX/COUNT` assigns
+parallel-group commands round-robin across zero-based shard indices, continuing the index across
+groups. Serial setup runs in every shard, and mutation filtering happens before assignment.
+Invalid indices and command lists without a parallel group fail when generated. The matrix uses
+three shards with four workers each and `fail-fast: false`; no check is removed, and a failed or
+cancelled shard fails the required aggregate. Each shard retains its command logs, original failure
+statuses and timing table. Shards use separate runners and build directories; the content-addressed
+scan cache and full-core cache can be restored by each. This spends more runner capacity to reduce
+elapsed time without rebuilding the closed engine per shard.
+
+The [duration profile](bc2cpp-ci-duration-profile.md#8-independent-fixture-shards-2026-11-02)
+records the baseline and the scheduling estimate. Actual wall time also depends on queueing,
+cache state and contention; the estimate is not a measured Actions speedup.
 Base-section verification also writes the freshly generated base RBS
 under `build-closed-bc2cpp/base_rbs`, replacing a second generation pass.
 `base_section_check.rb --output DIR CLOSED_BUILD_DIR` requires an absent or
