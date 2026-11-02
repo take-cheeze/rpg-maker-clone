@@ -18,7 +18,7 @@
 #   # rpg2k-lint:allow Cop/Name -- reason
 # comment; the reason is required.
 
-require 'prism'
+require_relative '../../tools/bc2cpp/ruby_parse_cache'
 require 'set'
 
 ROOT = File.expand_path('../..', __dir__) unless defined?(ROOT)
@@ -140,7 +140,7 @@ ALLOW = /#\s*rpg2k-lint:allow\s+(\S+)\s+--\s+\S/
 
 def lint_file(path, source: nil, root: ROOT)
   rel = path.delete_prefix("#{root}/")
-  result = source ? Prism.parse(source) : Prism.parse_file(path)
+  result = source ? RubyParseCache.parse(source, path) : RubyParseCache.parse_file(path)
   raise "#{rel}: #{result.errors.map(&:message).join('; ')}" unless result.errors.empty?
 
   # An allow comment covers its own line and, when alone on its line, the next.
