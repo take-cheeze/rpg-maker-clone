@@ -359,6 +359,30 @@ run with a `ScanCache::Error`; it is never recomputed past. `scripts/bc2cpp/scan
 covers it; a check that needs its own directory sets `ScanCache.directory_override` from Ruby. The entries are
 Marshal dumps, so the checkout must be a directory only you write.
 
+### Source parsing and source-only facts
+
+`RubyParseCache` shares unchanged Prism syntax within each generator process across class-body
+and class-graph scans, owner discovery, dispatch-target discovery, iterator-driver generation,
+closed-world lint and foreign-Ruby scans. The key is the file path and exact source bytes;
+rewritten text replaces its entry. Consumers derive their own facts and must not modify the
+shared syntax tree. Prism's lazy location memoization remains supported.
+
+Gem-owner lists and closed-world lint reports also use the disk scan cache across processes.
+Their keys include the parser version, scanner/tool sources and source-file content digests.
+The lint report additionally includes the lint script, baseline and current source-file set, so
+source, baseline, scanner and added/removed-file changes invalidate it. The lint/analysis
+agreement check still runs for each compiled world against that world's method-missing facts.
+Cache errors remain fatal. No generated method bodies or context-sensitive optimizer answers
+are reused by these caches.
+
+A representative fresh core-fixture generator process went from 366 Prism parse calls to 81,
+and from 5,551,763 measured allocations to 4,186,366. Five warm-cache fixture generation commands
+averaged 4.141 seconds before and 3.786 seconds after (about 8.6% less wall time). These are local
+Ruby 4.0.5/YJIT measurements, not CI timings. The first cache population is separate and is not
+included in the warm-cache speedup. Whole-engine output comparison preserved 23,726,682 bytes
+of C++ and 2,882,455 bytes of diagnostics after normalizing checkout and scratch-directory paths.
+The change reduces repeated syntax work; it still performs each world's compilation and proofs.
+
 ### Mutant pool
 
 `scripts/bc2cpp/mutant_pool.rb` runs independent mutant subprocesses with up to

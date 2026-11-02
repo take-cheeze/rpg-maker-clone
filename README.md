@@ -2089,6 +2089,9 @@
 - The bc2cpp CI gate runs 197 fixture checks in three independent shards alongside the
   closed-engine build and game sweep. All shards remain required through the `bc2cpp`
   status check; see [CI scheduling](docs/ci.md#bc2cpp-job-setup-and-check-scheduling).
+- Fresh bc2cpp processes reuse source-only gem-owner and lint facts, and source readers share
+  unchanged Prism syntax within each process. Content and parser-version keys keep source
+  edits visible; see [source parsing](docs/ci.md#source-parsing-and-source-only-facts).
 - CI also runs the width-sensitive bc2cpp checks on a 32-bit-`mrb_int` and a
   no-bigint mruby (the Emscripten/Wio/PSP widths) and listens for merge-queue
   runs; [`docs/ci.md`](docs/ci.md) lists the repository settings the owner has
