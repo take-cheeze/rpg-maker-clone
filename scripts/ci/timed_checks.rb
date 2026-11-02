@@ -14,8 +14,8 @@
 # aborts the step under `set -e` with its own status. An EXIT trap prints the table on success and on
 # failure alike (the command that failed is listed as FAILED with the time it ran).
 #
-# Only a failed command's output is printed (docs/ci.md, "Quiet output"): a passing one keeps just its
-# timing row and any `::error`/`::warning`/`::notice` workflow lines it wrote. CI_VERBOSE=1 prints all.
+# Full output is printed by default, grouped per parallel command. CI_VERBOSE=0 is an explicit
+# local opt-in to annotation-only successful logs; failures always retain their full output.
 #
 # Commands between `# ci:parallel begin [N]` and `# ci:parallel end` run at the same time, at most N at a time
 # (docs/ci.md, "Parallel groups"); everything else runs in order as before.
@@ -28,7 +28,7 @@ PRELUDE = <<~'BASH'
   __ci_rows="$(mktemp)"
   __ci_label=
   __ci_start=
-  __ci_verbose="${CI_VERBOSE:-0}"
+  __ci_verbose="${CI_VERBOSE:-1}"
   # A serial command writes to fd 4: its own log, or the step's stdout (saved as fd 3) under CI_VERBOSE=1.
   # A duplicated descriptor, not /dev/fd/3, which reopens (and truncates) a stdout redirected to a file.
   exec 3>&1

@@ -2086,6 +2086,8 @@
   [ADR 0409](docs/adr/0409-bc2cpp-dataflow-query-cache.md).
   Its independent test oracle shares immutable definition sets and avoids duplicate
   queued instructions; see [the CI guide](docs/ci.md).
+- CI preserves full build, fetch and successful check output, including compiler warnings and
+  generator diagnostics, alongside timing tables. See [CI output](docs/ci.md#full-output).
 - CI also runs the width-sensitive bc2cpp checks on a 32-bit-`mrb_int` and a
   no-bigint mruby (the Emscripten/Wio/PSP widths) and listens for merge-queue
   runs; [`docs/ci.md`](docs/ci.md) lists the repository settings the owner has

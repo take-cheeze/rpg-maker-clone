@@ -179,13 +179,15 @@ Dir.mktmpdir do |dir|
   ok_script = File.join(dir, 'ok.sh')
   File.write(ok_script, Open3.capture2(RbConfig.ruby, File.join(__dir__, 'timed_checks.rb'), stdin_data: "echo one\necho two\n").first)
   out_ok, status_ok = Open3.capture2e('bash', '-eo', 'pipefail', '-c', ". #{ok_script}")
-  check.call('a passing block exits 0 and still prints the table', status_ok.success? && out_ok.include?('== check timings') && out_ok.include?('total'))
+  check.call('default output includes passing command logs and the timing table',
+             status_ok.success? && out_ok.lines.map(&:chomp).include?('one') && out_ok.lines.map(&:chomp).include?('two') &&
+               out_ok.include?('== check timings') && out_ok.include?('total'))
 
-  # Quiet (the default): a passing command keeps only its annotations; the failing one is printed in full.
+  # Quiet is an explicit local opt-in: a passing command keeps only its annotations; the failing one is printed in full.
   quiet_checks = "export GREETING=hi\necho \"ran $GREETING\"\necho '::warning::kept'\n" \
                  "ruby -e 'puts \"fail-#{'$'}stdout\"; warn ENV[\"GREETING\"]; exit 3'\necho never\n"
   File.write(script, Open3.capture2(RbConfig.ruby, File.join(__dir__, 'timed_checks.rb'), stdin_data: quiet_checks).first)
-  quiet, quiet_status = Open3.capture2e('bash', '-eo', 'pipefail', '-c', ". #{script}")
+  quiet, quiet_status = Open3.capture2e({ 'CI_VERBOSE' => '0' }, 'bash', '-eo', 'pipefail', '-c', ". #{script}")
   check.call('quiet: a passing command prints nothing but its annotations', !quiet.include?('ran hi') && quiet.include?('::warning::kept'))
   check.call('quiet: the failing command is printed with its output and status, after the variables it relied on',
              quiet.include?('== FAILED (exit 3') && quiet.include?('fail-$stdout') && quiet.lines.map(&:chomp).include?('hi'))
@@ -253,11 +255,11 @@ Dir.mktmpdir do |dir|
 
   group = "# ci:parallel begin\necho ok-one\nruby -e 'warn \"boom\"; exit 7'\necho ok-two\necho '::notice::seen'\n" \
           "# ci:parallel end\necho never\n"
-  quiet, = run_checks.call(dir, group)
+  quiet, = run_checks.call(dir, group, { 'CI_VERBOSE' => '0' })
   check.call('quiet: a group prints the failing command and the passing ones\' annotations only',
              quiet.include?('boom') && quiet.include?('FAILED (exit 7') && quiet.include?('::notice::seen') &&
                !quiet.lines.map(&:chomp).include?('ok-one') && !quiet.include?('::group::'))
-  out, status, = run_checks.call(dir, group, { 'CI_VERBOSE' => '1' })
+  out, status, = run_checks.call(dir, group)
   check.call('a failing command in a group fails the step with its own status', status.exitstatus == 7)
   check.call('the other commands of the group are still reported, and the failure output is shown',
              out.include?('ok-one') && out.include?('ok-two') && out.include?('boom') && out.include?('FAILED (exit 7'))
@@ -298,8 +300,10 @@ check.call('quiet_run: a failing command keeps its status and prints its whole l
 build_step = workflow.fetch('jobs').fetch('bc2cpp-build').fetch('steps').find do |step|
   step['name'] == 'Build the closed-world mruby with bc2cpp'
 end
-check.call('the bc2cpp-build build step runs through quiet_run.bash',
-           build_step && build_step['run'].to_s.include?('scripts/ci/quiet_run.bash scripts/bc2cpp/closed_build.bash'))
+check.call('closed builds print their live output without the quiet wrapper',
+           build_step && build_step.dig('env', 'BC2CPP_PROFILE_TIMINGS') == '1' &&
+             build_step['run'].to_s.include?('env -u LD scripts/bc2cpp/closed_build.bash') &&
+             workflow.fetch('jobs').values.flat_map { |job| job.fetch('steps', []) }.none? { |step| step.fetch('run', '').include?('scripts/ci/quiet_run.bash') })
 
 # -- drop-git-fetch-noise.bash ---------------------------------------------------------------------
 puts '-- nix output filter'
@@ -322,8 +326,9 @@ check.call('without pipefail the same pipeline passes (why the workflow sets it)
 
 flake_steps = workflow.fetch('jobs').fetch('flake').fetch('steps')
 build_flake = flake_steps.find { |step| step['name'] == 'Build flake' }
-check.call('the flake job sets pipefail in its nix build step, not the runner default',
-           build_flake && build_flake['run'].to_s.include?('set -o pipefail') && build_flake['run'].to_s.include?('drop-git-fetch-noise.bash'))
+check.call('the flake build prints its complete output without the fetch-noise filter',
+           build_flake && build_flake['run'].to_s.include?("nix build -L '.?submodules=1#build'") &&
+             !build_flake['run'].to_s.include?('drop-git-fetch-noise.bash'))
 flake_init = flake_steps.find { |step| step['name'] == 'Init submodules' }
 check.call('the flake job initialises nested submodules too (the ?submodules=1 walk reads them)',
            flake_init && flake_init.dig('env', 'RECURSIVE').to_s == '1')
