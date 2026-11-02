@@ -82,8 +82,9 @@ MRUBY_CONFIG=/absolute/path/to/config.rb MRUBY_BUILD_DIR=/absolute/path/to/build
 ```
 
 This exports `<build-dir>/closed/bc2cpp_native_inventory.json` from the actual
-presym task's selected `.pi` inputs. Generated Ruby/codegen units are modeled
-by their Ruby IR; native exception wrappers map to their original C sources.
+presym task's selected `.pi` inputs. Generated Ruby/codegen units, including
+compiled registration wrappers and shards, are modeled by their Ruby IR;
+native exception wrappers map to their original C sources.
 Other generated native units remain included. The exporter invokes stale
 preprocessing tasks, reads their dependency files and hashes their inputs.
 It never needs Clang to parse the GCC runtime's expanded C/C++.
@@ -106,6 +107,21 @@ the inventory. Re-export after bootstrap, presym or generated-header changes;
 stale inputs fail instead of falling back silently to a raw-source scan.
 Changing the inventory regenerates compiled gems. These profiles remain
 opt-in; export a separate inventory for each target/configuration.
+
+Rake depends on the two manifest files, rather than adding each recorded native
+input to the generation graph. Registration sources can already depend on the
+generated gems, so adding reverse edges would create a cycle. Both manifests
+still validate every recorded input hash when the configuration and generator
+read them; export again if either reports stale inputs.
+
+For headless RPG2k validation, use `scripts/bc2cpp/trace_host.cxx` as the host
+entry point and include the linked RGSS bridges in its AST export. The sweep
+host accepts `CXX` (a compiler executable, default `c++`), so it can use the same
+compiler as the manifest. Run `scripts/bc2cpp/host_sweep.bash` against the
+profiled closed archive; successful map logs are retained alongside failures.
+The sweep copies the game before testing saves.
+See the [full RPG2k validation results](bc2cpp-profile-validation.md) for the
+Clang build, 543-map sweep, generated sizes and retained-name counts.
 
 For tooling that already has an exact unit list, the standalone exporter is:
 
