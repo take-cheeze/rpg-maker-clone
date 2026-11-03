@@ -48,7 +48,7 @@ module ConstantArgumentSites
   ARITH_NAMES = Set.new(%w[+ - * / % < > <= >=]).freeze
   # Opcodes with no side effect of their own and no way to raise. GETCONST/GETMCNST may run const_missing or raise NameError,
   # so they are may_raise (see RAISING_OPS), not here.
-  PURE_OPS = Set.new(BytecodeIR::Ops::PURE_LOAD.to_a + BytecodeIR::CONDITIONAL_BRANCHES +
+  PURE_OPS = Set.new(BytecodeIR::Ops::PURE_LOAD.to_a + BytecodeIR::CONDITIONAL_BRANCHES.to_a +
                      %i[NOP STRING ENTER RETURN JMP GETIV GETUPVAR SEND SEND0 SEND1 SENDV]).freeze
   # Arithmetic and ordering ops: gated (condition 3) and may raise on a non-numeric operand (condition 4).
   ARITH_OPS = Set.new(%i[ADD SUB MUL DIV ADDI SUBI LT LE GT GE]).freeze

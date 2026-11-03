@@ -405,7 +405,7 @@ module BytecodeIR
 
     # Ops that observe the frame's locals without naming the register: a closure captures them, ARGARY packs the
     # rest array for a zero-argument super, and binding/eval reach any local by name.
-    REST_ARRAY_OBSERVERS = %i[LAMBDA BLOCK ARGARY].freeze
+    REST_ARRAY_OBSERVERS = Set[:LAMBDA, :BLOCK, :ARGARY].freeze
 
     # Every register holding the rest array (MOVE copies, flow-insensitive) may be read only as the receiver of an
     # element read (GETIDX, GETIDX0). Any other read can store a non-join element, so the join is withheld.

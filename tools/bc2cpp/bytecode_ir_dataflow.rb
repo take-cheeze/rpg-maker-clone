@@ -321,6 +321,7 @@ module BytecodeIR
 
     # Ops that can hand `self` to code that reads its ivars.
     SELF_EXPOSING_OPS = Set[:LOADSELF, :SSEND, :SSEND0, :SSENDB, :SUPER, :BLOCK, :LAMBDA, :METHOD, :EXEC, :SCLASS].freeze
+    IVAR_ACCESS_OPS = Set[:GETIV, :SETIV].freeze
 
     # INIT_ASSIGNED: on every path, is `@ivar` assigned before it is
     # read, before the frame exits and before `self` can reach other code? A
@@ -352,7 +353,7 @@ module BytecodeIR
         assigned = reached.empty? || reached.all?
         observes = BytecodeIR::Ops::FRAME_EXIT.include?(insn.op) || SELF_EXPOSING_OPS.include?(insn.op) ||
                    (insn.op == :GETIV && insn.ivar == ivar) ||
-                   (!%i[GETIV SETIV].include?(insn.op) && insn.regs.include?(0))
+                   (!IVAR_ACCESS_OPS.include?(insn.op) && insn.regs.include?(0))
         assigned || !observes
       end
     end

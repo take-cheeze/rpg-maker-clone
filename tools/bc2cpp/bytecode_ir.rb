@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'set'
+
 # A conservative normal-flow view of an mruby IREP. The original disassembly
 # remains the source of opcode semantics; this layer gives analyses stable
 # instruction identities and explicit basic-block edges. Instruction#successors,
@@ -27,12 +29,13 @@ module BytecodeIR
   # Ops after which control never reaches the next instruction. RAISE and
   # RAISEIF are deliberately absent: a missing predecessor makes a proof wrong
   # while an extra one only costs a proof, so they conservatively fall through.
-  NO_FALLTHROUGH = %i[JMP JMPUW RETURN RETURN_BLK RETSELF RETNIL RETTRUE RETFALSE BREAK STOP].freeze
-  CONDITIONAL_BRANCHES = %i[JMPIF JMPNOT JMPNIL].freeze
-  TERMINATORS = (NO_FALLTHROUGH + CONDITIONAL_BRANCHES).freeze
+  # These op lists are Sets: they are tested per instruction, and a Set answers in constant time.
+  NO_FALLTHROUGH = Set[:JMP, :JMPUW, :RETURN, :RETURN_BLK, :RETSELF, :RETNIL, :RETTRUE, :RETFALSE, :BREAK, :STOP].freeze
+  CONDITIONAL_BRANCHES = Set[:JMPIF, :JMPNOT, :JMPNIL].freeze
+  TERMINATORS = (NO_FALLTHROUGH | CONDITIONAL_BRANCHES).freeze
   # Predecessor id of the method-entry edge into instruction 0.
   ENTRY = -1
-  BRANCH_OPS = %i[JMP JMPUW JMPIF JMPNOT JMPNIL].freeze
+  BRANCH_OPS = Set[:JMP, :JMPUW, :JMPIF, :JMPNOT, :JMPNIL].freeze
   # Conditional-branch kinds (Decoded#cond): which test of R(a) sends control to the branch target.
   COND_IF = 1 # JMPIF: R(a) truthy
   COND_NOT = 2 # JMPNOT: R(a) falsy
@@ -137,10 +140,11 @@ module BytecodeIR
     # A JMPUW named in +ops+ is an edge too (branch_target): jump_target would
     # be nil for it and read as an unresolved jump.
     def jump_edges_before(limit, ops)
+      wanted = Set.new(ops)
       edges = []
       @instructions.each do |instruction|
         break if instruction.index >= limit
-        next unless ops.include?(instruction.op)
+        next unless wanted.include?(instruction.op)
 
         target = @address_to_index[instruction.source.branch_target]
         return nil unless target

@@ -27,7 +27,7 @@ module BytecodeIR
     FIXNUM_MIN = -1_073_741_824
     FIXNUM_MAX = 1_073_741_823
     # The operators an interval may combine. The bit operators are exact-value only (as IntegerConstantRanges).
-    INTERVAL_OPS = %i[ADD SUB MUL DIV ADDI SUBI].freeze
+    INTERVAL_OPS = Set[:ADD, :SUB, :MUL, :DIV, :ADDI, :SUBI].freeze
     ARITH_OPS = %i[ADD SUB MUL DIV ADDI SUBI].freeze
     # `a | b` is `SEND R(a) :| n=1` (mruby 4 has no opcode for it).
     BIT_OPS = { '|' => 'BIT_OR', '&' => 'BIT_AND', '^' => 'BIT_XOR' }.freeze
@@ -307,7 +307,7 @@ module BytecodeIR
     def arith_node(irep, index, insn, policy, depth)
       op = insn.op
       left = alternatives(irep, index, insn.reg, policy, depth: depth + 1)
-      right = if %i[ADDI SUBI].include?(op)
+      right = if BytecodeIR::Ops::IMM_ARITH.include?(op)
                 imm = insn.imm_operand
                 imm && [int_node(imm)].freeze
               else

@@ -1,0 +1,1 @@
+- **bc2cpp** The bytecode IR tests opcode membership against Sets (`NO_FALLTHROUGH`, `CONDITIONAL_BRANCHES`, `TERMINATORS`, `BRANCH_OPS` and the per-instruction op lists) instead of linear `Array#include?` scans. Analysis results are unchanged.
