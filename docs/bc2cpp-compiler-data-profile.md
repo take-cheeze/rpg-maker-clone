@@ -90,3 +90,31 @@ analysis, emission and mrbc waiting, excluding world preparation.
 This consistently removes about 226,000 allocations per compilation (1.97%).
 Timing and peak RSS vary; these runs do **not** establish a compiler speedup
 or lower peak memory. The allocation reduction is the demonstrated result.
+
+## Native code text
+
+`ClosedWorld.native_code_text` strips comments and whitespace-bearing string
+literals from each native C/C++ file before its identifiers are scanned. It
+walked the text one character at a time, and every `text[i]` allocated a
+String: an object-mode profile of the sealed Optcarrot compilation attributed
+19.6% of allocation samples to it. It is now one `gsub` over the same token
+grammar (line comment, block comment, `"`/`'` literal with escapes), where an
+unterminated literal or comment still runs to the end of the text. Both
+versions produce the same text for every C/C++ source under `3rd/mruby`,
+`src`, `mruby-*` and the vendored mruby gems, raw and after the
+comment-stripping `gsub` in `native_file_facts`, plus hand-written edge cases.
+
+Three alternating unsampled `--optcarrot` runs per version on Ruby 4.0.5,
+baseline `21e93f701`; generated C++ differed only in the per-run temporary
+world path:
+
+| Run | Allocations before | Allocations after | Seconds before | Seconds after |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 15,292,839 | 12,299,984 | 7.741 | 7.552 |
+| 2 | 15,292,942 | 12,299,982 | 7.786 | 7.470 |
+| 3 | 15,292,832 | 12,300,041 | 7.727 | 7.451 |
+
+This removes about 2.99 million allocations per compilation (19.6%). Each
+`--optcarrot` run uses a fresh temporary world, so native file facts are
+recomputed rather than read from the scan cache; a warm build with a
+persistent scan cache saves this only when native facts are recomputed.
