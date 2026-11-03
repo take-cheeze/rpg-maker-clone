@@ -39,3 +39,11 @@ Array proofs, unknown-value refusals and multiple reaching writers prevent a
 vacuous comparison. This checks those shared queries; it does not claim that
 every compiler pass or generated program has been proved equivalent.
 The check runs in the Ruby CI job and is registered with the coverage reporter.
+
+Exception target caches aggregate instruction indices directly into frozen arrays.
+Rescue-only targets use one integer mask per target (rescue = 1, ensure = 2),
+then expose the same frozen Set API. This avoids grouping HandlerEdge objects
+and building temporary per-kind Sets. Only resolved edges covering an instruction
+contribute; duplicate targets preserve their first occurrence, and ensure takes
+precedence when both kinds share a target. The shared-facts cases in
+`scripts/bc2cpp/numeric_flow_speed_check.rb` cover these invariants.
