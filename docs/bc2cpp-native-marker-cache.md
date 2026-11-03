@@ -43,3 +43,24 @@ focused measurements, not whole-compiler timing or peak-memory claims.
 A native allocation-event counter attributed the removed allocations primarily
 to Strings, MatchData and VM internal objects; Array creation in table
 selection is unchanged.
+
+## Whole-compiler allocation counts
+
+A matched-path, warm sealed Optcarrot compilation on Ruby 4.0.5 compared
+`db3ef7aef` with only this marker-cache change. A native `NEWOBJ` event counter
+recorded every allocation while leaving GC enabled, including objects later
+collected. Compiler loading, analysis and C++ emission were measured; preparing
+the sealed workload was outside the measured region. Both versions used the
+same pinned mrbc and source paths, and generated C++ was byte-for-byte identical.
+
+| Allocation type | Before | After |
+| --- | ---: | ---: |
+| All objects | 11,267,812 | 10,932,271 |
+| String | 3,728,728 | 3,561,307 |
+| Array | 4,267,197 | 4,267,198 |
+
+The measured whole-compiler reduction is 335,541 allocation events (2.98%),
+including 167,421 fewer Strings. Array allocations are effectively unchanged.
+These are object counts, not allocated bytes, retained memory or a demonstrated
+compiler speedup. The larger percentage in the focused benchmark above applies
+only to repeated native table selection.
