@@ -1245,6 +1245,7 @@
   [Compiler profiling](docs/bc2cpp-compiler-data-profile.md) reports host allocations,
   GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
   [Text emission](docs/bc2cpp-text-allocations.md) skips per-line and captured temporary Strings (4.5% fewer allocations).
+  [Collection intermediates](docs/bc2cpp-collection-allocations.md) are no longer built only to be iterated or tested.
   [Native-source scans](docs/bc2cpp-devirt-scan-allocations.md) read C text by byte, without per-character Strings.
   Receiver-trace walks run [without per-call closures](docs/bc2cpp-trace-walk-allocations.md).
   [Owner-call formatting](docs/bc2cpp-owner-call-formatting.md) reuses immutable owner lists
