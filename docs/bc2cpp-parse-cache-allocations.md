@@ -48,7 +48,8 @@ Caching only the first reader moves the parse to the next one. Most of the
 cost is in `mruby-rpg2k`, which `dispatch_targets.rb` parses first. That file
 is outside this change, so these Prism parses still run. A cache for one of
 these files must cover `ClassBodyScan`, `ClassWorld` and the dispatch-target
-scan together.
+scan together. [Prism readers in the scan cache](bc2cpp-prism-reader-cache.md)
+does that.
 
 **Prism's serialized form does not help.** `Prism.load` of a `Prism.dump`
 allocates as many objects as `Prism.parse` (Prism 1.8.1):
