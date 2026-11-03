@@ -1242,6 +1242,8 @@
   the replacement strategy and measured performance limitations.
   [Compiler profiling](docs/bc2cpp-compiler-data-profile.md) reports host allocations,
   GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
+  [Owner-call formatting](docs/bc2cpp-owner-call-formatting.md) reuses immutable owner lists
+  within a bounded generator-local cache and appends arguments without temporary mapping arrays.
   Generated C++ is [compact](docs/bc2cpp-compact-output.md) by default: its
   `//` proof comments are stripped; `bc2cpp.rb --annotated` keeps them.
   It is [split into translation units](docs/bc2cpp-shards.md) that compile in
