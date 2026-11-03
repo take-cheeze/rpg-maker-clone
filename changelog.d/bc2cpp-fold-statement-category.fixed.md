@@ -1,0 +1,1 @@
+- **bc2cpp**: a class-body constant fold that has a statement between the constants it reads and the folded one no longer crashes the generator with `NoMethodError` (`category`). Each direct statement now carries the category ClassBodyScan records for it, so PureEval decides the fold. Internal: generator only.
