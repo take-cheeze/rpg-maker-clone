@@ -1074,6 +1074,9 @@
   IR-to-RBS class-name lookups reuse the Symbol's frozen spelling instead of
   allocating temporary Strings; see [class-name boundaries](docs/bc2cpp-class-name-boundaries.md).
 
+- [Native signature markers](docs/bc2cpp-native-marker-cache.md) reuse parsed comment
+  contents in a bounded cache while preserving member overrides and mutable fixture inputs.
+
 - Context typing reuses evaluations while callee states and return masks remain
   unchanged within one root graph, retaining the original solver budgets.
 
