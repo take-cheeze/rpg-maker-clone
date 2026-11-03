@@ -1,0 +1,1 @@
+- **bc2cpp**: an explicit `super` with a splat argument (`super(key, *args)`, `super(*args)`, `super(key, *args, &blk)`) now compiles to a call of the superclass method with the packed arguments, instead of leaving an `#error`. Internal: generator coverage only.

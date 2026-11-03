@@ -1244,6 +1244,7 @@
   the replacement strategy and measured performance limitations.
   [Compiler profiling](docs/bc2cpp-compiler-data-profile.md) reports host allocations,
   GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
+  [Parse caching](docs/bc2cpp-parse-cache-allocations.md) keeps foreign-Ruby tokens and native RBS table texts in the scan cache (4.9% fewer warm allocations).
   [Small allocation fixes](docs/bc2cpp-small-allocations.md) stat sources once per compile and name registers from a frozen table.
   [Text emission](docs/bc2cpp-text-allocations.md) skips per-line and captured temporary Strings (4.5% fewer allocations).
   [Collection intermediates](docs/bc2cpp-collection-allocations.md) are no longer built only to be iterated or tested.
@@ -1253,6 +1254,7 @@
   [Checked-send emission](docs/bc2cpp-send-emission-allocations.md) rewrites call heads without per-site Regexps.
   [Owner-call formatting](docs/bc2cpp-owner-call-formatting.md) reuses immutable owner lists
   within a bounded generator-local cache and appends arguments without temporary mapping arrays.
+  [Native token scans](docs/bc2cpp-native-token-allocations.md) cache each file's identifiers, so a new file rescans only itself (5.1% fewer allocations).
   Generated C++ is [compact](docs/bc2cpp-compact-output.md) by default: its
   `//` proof comments are stripped; `bc2cpp.rb --annotated` keeps them.
   It is [split into translation units](docs/bc2cpp-shards.md) that compile in
