@@ -233,6 +233,14 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/hash_build_ops_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/block_rest_mixed_check.rb:
     tier: runtime
     capabilities:

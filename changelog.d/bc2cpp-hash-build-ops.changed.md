@@ -1,0 +1,1 @@
+- **bc2cpp**: the literal Hash builds `{**h, k: v}` (HASHCAT and HASHADD) now compile instead of leaving an `#error`. Each emits the same two steps as vm.c: check that the target is a Hash, then merge or store the pairs in order. Internal: generator coverage only.
