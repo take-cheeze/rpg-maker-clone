@@ -1246,11 +1246,13 @@
   GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
   [Per-file devirt scans](docs/bc2cpp-devirt-cache-allocations.md) cache `NativeExpressionDevirt`'s native-source scans per file and test LOADI ops without a Regexp (3.5% fewer allocations in a warm temp-world compile).
   [Prism reader caching](docs/bc2cpp-prism-reader-cache.md) keeps the class-world, initializer and rgss-constructor facts in the scan cache, so a warm compile does not parse `mruby-rpg2k` (8.5% fewer warm allocations).
+  [Emitter allocations](docs/bc2cpp-emitter-allocations.md) pass `compile_send`'s options through its layers as one Hash and drop per-instruction temporaries (8.5% fewer allocations).
   [Parse caching](docs/bc2cpp-parse-cache-allocations.md) keeps foreign-Ruby tokens and native RBS table texts in the scan cache (4.9% fewer warm allocations).
   [Small allocation fixes](docs/bc2cpp-small-allocations.md) stat sources once per compile and name registers from a frozen table.
   [Text emission](docs/bc2cpp-text-allocations.md) skips per-line and captured temporary Strings (4.5% fewer allocations).
   [Collection intermediates](docs/bc2cpp-collection-allocations.md) are no longer built only to be iterated or tested.
   [IR query allocations](docs/bc2cpp-ir-query-allocations.md) trims per-call Hashes, keys and copies in the bytecode IR and decoder.
+  [Trace and loader allocations](docs/bc2cpp-trace-loader-allocations.md) drop splat forwarding and lexical-name rebuilding from the receiver trace and memoize operand parsing (5.9% fewer allocations).
   [Native-source scans](docs/bc2cpp-devirt-scan-allocations.md) read C text by byte, without per-character Strings.
   Receiver-trace walks run [without per-call closures](docs/bc2cpp-trace-walk-allocations.md).
   [Checked-send emission](docs/bc2cpp-send-emission-allocations.md) rewrites call heads without per-site Regexps.
