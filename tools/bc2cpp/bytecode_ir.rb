@@ -8,13 +8,11 @@
 # `include_handlers:`, so a consumer proving something about exception flow
 # must ask for them explicitly.
 module BytecodeIR
-  Instruction = Struct.new(:index, :source, :successors, keyword_init: true) do
+  # +op+ is a copy of source.op taken at Program#initialize. Nothing reassigns the op of a Program's source insns
+  # (Insn#op= is only applied to dup'ed copies), so the copy stays equal to source.op.
+  Instruction = Struct.new(:index, :source, :successors, :op, keyword_init: true) do
     def addr
       source.addr
-    end
-
-    def op
-      source.op
     end
   end
 
@@ -64,7 +62,7 @@ module BytecodeIR
       @nlocals = irep.nlocals&.to_i
       @catch_handlers = Array(irep.catch_handlers).freeze
       @instructions = Array(irep.instructions).each_with_index.map do |source, index|
-        Instruction.new(index: index, source: source, successors: [])
+        Instruction.new(index: index, source: source, successors: [], op: source.op)
       end
       @address_to_index = @instructions.to_h { |instruction| [instruction.addr, instruction.index] }
       build_edges
