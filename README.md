@@ -1252,6 +1252,7 @@
   [Checked-send emission](docs/bc2cpp-send-emission-allocations.md) rewrites call heads without per-site Regexps.
   [Owner-call formatting](docs/bc2cpp-owner-call-formatting.md) reuses immutable owner lists
   within a bounded generator-local cache and appends arguments without temporary mapping arrays.
+  [Native token scans](docs/bc2cpp-native-token-allocations.md) cache each file's identifiers, so a new file rescans only itself (5.1% fewer allocations).
   Generated C++ is [compact](docs/bc2cpp-compact-output.md) by default: its
   `//` proof comments are stripped; `bc2cpp.rb --annotated` keeps them.
   It is [split into translation units](docs/bc2cpp-shards.md) that compile in
