@@ -1237,6 +1237,8 @@
   The benchmark always runs on the validated sealed host (bc2cpp is closed-world only, ADR 0466).
   See [generic IR optimization](docs/bc2cpp-generic-ir-optimization.md) for
   the replacement strategy and measured performance limitations.
+  [Compiler profiling](docs/bc2cpp-compiler-data-profile.md) reports host allocations,
+  GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
   Generated C++ is [compact](docs/bc2cpp-compact-output.md) by default: its
   `//` proof comments are stripped; `bc2cpp.rb --annotated` keeps them.
   It is [split into translation units](docs/bc2cpp-shards.md) that compile in
