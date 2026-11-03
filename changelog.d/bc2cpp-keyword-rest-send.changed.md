@@ -1,0 +1,1 @@
+- **bc2cpp**: a method whose only keyword parameter is `**opts` now compiles, and a keyword call to it (`f(x, bias: 5)`) passes the literal pairs as one Hash. Before, both the definition and the call left an `#error`. Internal: generator coverage only.
