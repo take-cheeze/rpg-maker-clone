@@ -225,6 +225,14 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/optional_yield_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/keyword_send_check.rb:
     tier: runtime
     capabilities:
@@ -234,6 +242,14 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/hash_build_ops_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/keyword_receiver_target_check.rb:
     tier: runtime
     capabilities:
     - mrbc

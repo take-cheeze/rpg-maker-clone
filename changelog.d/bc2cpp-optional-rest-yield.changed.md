@@ -1,0 +1,1 @@
+- **bc2cpp**: a method with optional or rest parameters that `yield`s without declaring `&blk` now compiles, with the block passed to its body. Previously such a method kept an `#error`. Internal: generator coverage only.
