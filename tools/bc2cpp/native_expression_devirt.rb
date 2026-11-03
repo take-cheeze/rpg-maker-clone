@@ -847,6 +847,7 @@ module NativeExpressionDevirt
     expression.strip
   end
 
+  # ascii_view keeps character and byte offsets equal, so bytes are compared and no 1-character String is built.
   def brace_body(source, opening)
     depth = 0
     quote = nil
@@ -855,36 +856,37 @@ module NativeExpressionDevirt
     block_comment = false
     index = opening
     scanned = ascii_view(source)
+    length = scanned.bytesize
 
-    while index < scanned.length
-      char = scanned[index]
-      following = scanned[index + 1]
+    while index < length
+      byte = scanned.getbyte(index)
+      following = scanned.getbyte(index + 1)
       if line_comment
-        line_comment = false if char == "\n"
+        line_comment = false if byte == 0x0a # \n
       elsif block_comment
-        if char == '*' && following == '/'
+        if byte == 0x2a && following == 0x2f # */
           block_comment = false
           index += 1
         end
       elsif quote
         if escaped
           escaped = false
-        elsif char == '\\'
+        elsif byte == 0x5c # \\
           escaped = true
-        elsif char == quote
+        elsif byte == quote
           quote = nil
         end
-      elsif char == '/' && following == '/'
+      elsif byte == 0x2f && following == 0x2f # //
         line_comment = true
         index += 1
-      elsif char == '/' && following == '*'
+      elsif byte == 0x2f && following == 0x2a # /*
         block_comment = true
         index += 1
-      elsif char == '"' || char == "'"
-        quote = char
-      elsif char == '{'
+      elsif byte == 0x22 || byte == 0x27 # " '
+        quote = byte
+      elsif byte == 0x7b # {
         depth += 1
-      elsif char == '}'
+      elsif byte == 0x7d # }
         depth -= 1
         return [source[(opening + 1)...index], index] if depth.zero?
       end

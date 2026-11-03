@@ -90,3 +90,27 @@ analysis, emission and mrbc waiting, excluding world preparation.
 This consistently removes about 226,000 allocations per compilation (1.97%).
 Timing and peak RSS vary; these runs do **not** establish a compiler speedup
 or lower peak memory. The allocation reduction is the demonstrated result.
+
+## Native brace bodies
+
+`NativeExpressionDevirt.brace_body` finds the closing brace of a native C/C++
+block, skipping comments and literals. It compared one-character Strings from
+`scanned[index]`, and an object-mode profile of the sealed Optcarrot
+compilation attributed 5.2% of allocation samples to it. `ascii_view` already
+maps the source to an ASCII-only string whose character and byte offsets agree,
+so the walk now compares bytes from `getbyte` and allocates nothing per
+character. Old and new returned the same body and closing index for up to 200
+opening braces of every C/C++ source under `3rd/mruby`, `src`, `mruby-*` and the
+vendored mruby gems (read both as UTF-8 and as binary), plus edge cases.
+
+Three alternating unsampled `--optcarrot` runs per version, baseline
+`21e93f701`; generated C++ differed only in the per-run temporary world path:
+
+| Run | Allocations before | Allocations after | Seconds before | Seconds after |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 15,292,845 | 14,541,259 | 7.818 | 7.784 |
+| 2 | 15,292,936 | 14,540,803 | 7.780 | 7.837 |
+| 3 | 15,292,779 | 14,541,342 | 7.765 | 8.094 |
+
+This removes about 751,000 allocations per compilation (4.9%). Timing does not
+show a speedup.
