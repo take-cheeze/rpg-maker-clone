@@ -55,3 +55,16 @@ objects later collected by GC. Cache misses retain additional keys and results;
 this hit-only measurement establishes neither a whole-compiler speedup nor a
 peak-memory reduction. See [compiler profiling](bc2cpp-compiler-data-profile.md)
 for complete-compilation measurement practices.
+
+A matched warm sealed Optcarrot compiler run with only this change measured:
+
+| Object type | Baseline | Derived-name reuse |
+| --- | ---: | ---: |
+| All types | 11,267,812 | 11,166,185 |
+| String | 3,728,728 | 3,630,364 |
+| Array | 4,267,197 | 4,265,365 |
+
+Generated C++ was byte-for-byte identical. The run removed 101,627 allocations
+(0.902%), including 98,364 Strings and 1,832 Arrays. This measures compiler
+loading, analysis and emission with warm source-scan caches. It is an allocation
+comparison and does not establish lower compilation time or peak RSS.
