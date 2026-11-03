@@ -705,8 +705,8 @@ jobs:
         # The devshell exports LD=ld, which would link mrbc without libc. CC and CXX put sccache in
         # front of the devshell's compiler; mruby's gcc toolchain reads both.
         run: |
-          env -u LD CC="$SCCACHE_PATH ${CC:-gcc}" CXX="$SCCACHE_PATH ${CXX:-g++}" \
-            scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
+          export CC="$SCCACHE_PATH ${CC:-gcc}" CXX="$SCCACHE_PATH ${CXX:-g++}"
+          env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
 
       - name: sccache stats
         if: always()
