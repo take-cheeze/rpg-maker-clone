@@ -664,3 +664,27 @@ Saving writes into the game directory, so trace a copy.
 registrations, and checks both modes' runtime behaviour on a small host.
 `scripts/bc2cpp/static_dispatch_scan_check.rb` checks the scan rules on
 fixture text.
+
+### Covered block sites
+
+A block-literal Symbol (`each(&:dispose)`) still names its method at the call site, so
+its name stays unless that site is generated without a by-name call. An inlined `&:sym`
+loop (codegen_loop_inline.rb, emit_sym_inline) writes a marker just before its `for`:
+
+    // SYM_SITE <irep content digest> <send address>
+
+A loop is covered when its body has no by-name call (`mrb_funcall`, `bc2cpp_send`, ...)
+and every owner call in it is covered (guarded_owner_calls). The proof gives each block
+send the same key, `(Irep#content_digest, send address)`. The digest is a hash of the irep's
+own code, so one method keys the same in the proof's compile of all gems and the
+generator's compile of one gem. (Labels are counters per compile and do not match.)
+
+A name whose block sites are all covered is dropped from SYMBOL_USES only when, for each
+key, the covered loops carrying it are as many as the block sites with it (count for count).
+A generic site, or a name also used as a LOOKUP_SENDS argument, keeps its name.
+`static_dispatch_scan_check.rb` covers the count rule.
+
+The owner call of the six native RGSS `dispose` registrations reaches the exported
+wrappers `rgss_obj_dispose_direct` and `rgss_tilemap_dispose_direct` (lib.cxx), named in
+OwnerCallDirect::NATIVE_DISPOSE. `owner_call_direct_native_check.rb` holds the table to the
+registrations.

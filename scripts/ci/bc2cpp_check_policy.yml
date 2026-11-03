@@ -954,6 +954,10 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/owner_call_direct_native_check.rb:
+    tier: fast
+    capabilities:
+    - native_sources
   scripts/bc2cpp/static_dispatch_lists_check.rb:
     tier: fast
     capabilities: []
