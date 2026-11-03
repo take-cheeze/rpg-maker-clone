@@ -1073,6 +1073,8 @@
   simple names and Ruby owner sets to reduce allocation pressure.
   IR-to-RBS class-name lookups reuse the Symbol's frozen spelling instead of
   allocating temporary Strings; see [class-name boundaries](docs/bc2cpp-class-name-boundaries.md).
+  [Derived identifier caches](docs/bc2cpp-derived-name-reuse.md) also reuse C++ method,
+  field and storage names and lexical scope paths while preserving probe rollback and embedding context.
 
 - [Native signature markers](docs/bc2cpp-native-marker-cache.md) reuse parsed comment
   contents in a bounded cache while preserving member overrides and mutable fixture inputs.
