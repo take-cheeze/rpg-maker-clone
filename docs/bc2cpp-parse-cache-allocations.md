@@ -133,3 +133,7 @@ After the change, the warm object profile shows `RBS::Parser._parse_signature`
 at 42 samples (was 1,882), and `Prism.lex` no longer appears. Timing varied
 by more than the differences between versions, so these runs do **not** show
 a speedup. The demonstrated result is the reduction in allocations.
+
+After merging master `9c9ce0727`, one warm pair on the same fixed world gave
+7,646,544 allocations before and 7,232,555 after (-413,989). The generated
+C++ was byte-for-byte identical.
