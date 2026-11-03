@@ -1,7 +1,8 @@
 # Per-file devirt scan entries and the LOADI dispatch test
 
 Two allocation sources in the sealed Optcarrot compile, measured on master
-`8b208c5cc` (before #3103 and #3105 merged):
+`8b208c5cc` (before #3103 and #3105 merged; see the end of Measurements for
+the merged master):
 
 - `NativeExpressionDevirt` rescanned the native C sources on every compile
   of a temporary world (`compiler_profile.rb --optcarrot`), even when the
@@ -166,8 +167,21 @@ so the whole-list entries hit:
 | 3 | 5,837,146 | 5,780,300 | 6.999 | 6.712 |
 
 That is 56,700 fewer (1.0%), all from the LOADI test: the per-file entries
-are not read on this path. Timings were taken on a shared machine. They do
-not establish a speedup.
+are not read on this path.
+
+**After #3103 and #3105.** The branch was merged with master `82b93ceff` and
+measured again with `--optcarrot`, warm:
+
+| Run | Allocations before | Allocations after | Seconds before | Seconds after |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 5,241,383 | 5,061,396 | 7.159 | 6.904 |
+| 2 | 5,241,317 | 5,061,514 | 7.804 | 6.282 |
+| 3 | 5,241,309 | 5,061,399 | 6.762 | 6.839 |
+
+That is 179,900 fewer (3.4%). The cold warm-up runs were 6,779,105 before
+and 6,705,915 after (1.1% fewer).
+
+Timings were taken on a shared machine. They do not establish a speedup.
 
 ## Not changed
 
