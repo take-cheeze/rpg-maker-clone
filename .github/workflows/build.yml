@@ -877,6 +877,7 @@ jobs:
           ruby scripts/bc2cpp/ir_context_results_check.rb
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
           ruby scripts/bc2cpp/block_bsearch_check.rb
+          ruby scripts/bc2cpp/fold_statement_category_check.rb
           ruby scripts/bc2cpp/native_owner_block_check.rb
           ruby scripts/bc2cpp/super_splat_check.rb
           ruby scripts/bc2cpp/keyword_send_check.rb
