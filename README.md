@@ -1244,6 +1244,7 @@
   the replacement strategy and measured performance limitations.
   [Compiler profiling](docs/bc2cpp-compiler-data-profile.md) reports host allocations,
   GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
+  [IR query allocations](docs/bc2cpp-ir-query-allocations.md) trims per-call Hashes, keys and copies in the bytecode IR and decoder.
   [Native-source scans](docs/bc2cpp-devirt-scan-allocations.md) read C text by byte, without per-character Strings.
   [Owner-call formatting](docs/bc2cpp-owner-call-formatting.md) reuses immutable owner lists
   within a bounded generator-local cache and appends arguments without temporary mapping arrays.
