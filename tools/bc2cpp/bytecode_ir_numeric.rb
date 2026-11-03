@@ -31,7 +31,7 @@ module BytecodeIR
   class Program
     # Every instruction's Operands, frozen and index-aligned.
     def operands
-      @operands ||= @instructions.map { |instruction| BytecodeIR.operands(instruction.source).freeze }.freeze
+      memo(:operands) { @instructions.map { |instruction| BytecodeIR.operands(instruction.source).freeze }.freeze }
     end
 
     # True when every instruction in (+first+, +last+] is entered only from the one before it: no jump or method

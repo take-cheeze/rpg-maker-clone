@@ -626,9 +626,9 @@ module BytecodeIR
 
     # instruction_predecessors as frozen Arrays in the same order (the walk only iterates them).
     def predecessor_lists(include_handlers)
-      @predecessor_lists ||= {}
-      @predecessor_lists[include_handlers] ||= instruction_predecessors(include_handlers: include_handlers)
-                                                .map { |set| set.to_a.freeze }.freeze
+      memo([:predecessor_lists, include_handlers]) do
+        instruction_predecessors(include_handlers: include_handlers).map { |set| set.to_a.freeze }.freeze
+      end
     end
 
     # dataflow_handler_addrs as a flag per instruction index.

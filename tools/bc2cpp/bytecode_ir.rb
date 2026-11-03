@@ -59,6 +59,8 @@ module BytecodeIR
 
     def initialize(irep)
       @irep = irep
+      # Memo caches derived from this Program's bytecode, keyed by name; see #memo.
+      @facts = {}
       @source_list = irep.instructions
       @source_size = Array(@source_list).length
       @nlocals = irep.nlocals&.to_i
@@ -85,20 +87,28 @@ module BytecodeIR
     # normal flow, which already carries OP_ENTER's edges into its optional-argument JMP table (#build_edges).
     # Analyses that walk the graph share this one Array instead of rebuilding it.
     def successor_lists
-      @successor_lists ||= @instructions.map(&:successors).freeze
+      memo(:successor_lists) { @instructions.map(&:successors).freeze }
     end
 
     # BYTECODE_IR_FACTS: every instruction decoded once (see BytecodeIR.decode), frozen and index-aligned.
     def decoded
-      @decoded ||= @instructions.map do |instruction|
-        BytecodeIR.decode(instruction.source, @address_to_index).freeze
-      end.freeze
+      memo(:decoded) do
+        @instructions.map do |instruction|
+          BytecodeIR.decode(instruction.source, @address_to_index).freeze
+        end.freeze
+      end
     end
 
-    # The one slot an analysis may use to keep a table it derives from this Program's facts: NumericFlow's
+    # The one analysis slot an analysis may use to keep a table it derives from this Program's facts: NumericFlow's
     # per-instruction Step table. Nothing else is cached here, and nothing an oracle
     # answers ever is.
-    attr_accessor :numeric_flow_table
+    def numeric_flow_table
+      @facts[:numeric_flow_table]
+    end
+
+    def numeric_flow_table=(table)
+      @facts[:numeric_flow_table] = table
+    end
 
     # The decoded Insn at +addr+, or nil when no instruction starts there.
     def insn_at_addr(addr)
@@ -120,8 +130,7 @@ module BytecodeIR
       return nil unless @resolved
       return nil if include_handlers && !handlers_resolved?
 
-      @instruction_predecessors ||= {}
-      @instruction_predecessors[include_handlers] ||= begin
+      memo([:instruction_predecessors, include_handlers]) do
         preds = Array.new(@instructions.length) { Set.new }
         preds[0] << ENTRY unless preds.empty?
         @instructions.each do |instruction|
@@ -206,6 +215,12 @@ module BytecodeIR
     end
 
     private
+
+    # The single memo point for Program's caches: the first value built under +key+ is kept, and a nil or false
+    # result is rebuilt on the next call, as a plain `@x ||=` would.
+    def memo(key)
+      @facts[key] || (@facts[key] = yield)
+    end
 
     def build_edges
       @resolved = true
