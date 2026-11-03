@@ -1073,6 +1073,8 @@
   simple names and Ruby owner sets to reduce allocation pressure.
   IR-to-RBS class-name lookups reuse the Symbol's frozen spelling instead of
   allocating temporary Strings; see [class-name boundaries](docs/bc2cpp-class-name-boundaries.md).
+  [Derived identifier caches](docs/bc2cpp-derived-name-reuse.md) also reuse C++ method,
+  field and storage names and lexical scope paths while preserving probe rollback and embedding context.
 
 - Context typing reuses evaluations while callee states and return masks remain
   unchanged within one root graph, retaining the original solver budgets.
