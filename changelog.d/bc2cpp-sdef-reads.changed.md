@@ -1,0 +1,1 @@
+- **bc2cpp**: an `SDEF` now reads only its receiver register, so a `def self.x` after a 15-or-more-name `attr_*` call no longer blocks that call's name list. That block had turned off call facts for the whole build, which left `super` in the `Hash` subclasses unproven. Internal: generator analysis only, no change to the game's runtime behaviour.
