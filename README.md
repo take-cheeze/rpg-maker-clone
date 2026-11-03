@@ -1073,6 +1073,11 @@
   simple names and Ruby owner sets to reduce allocation pressure.
   IR-to-RBS class-name lookups reuse the Symbol's frozen spelling instead of
   allocating temporary Strings; see [class-name boundaries](docs/bc2cpp-class-name-boundaries.md).
+  [Derived identifier caches](docs/bc2cpp-derived-name-reuse.md) also reuse C++ method,
+  field and storage names and lexical scope paths while preserving probe rollback and embedding context.
+
+- [Native signature markers](docs/bc2cpp-native-marker-cache.md) reuse parsed comment
+  contents in a bounded cache while preserving member overrides and mutable fixture inputs.
 
 - Context typing reuses evaluations while callee states and return masks remain
   unchanged within one root graph, retaining the original solver budgets.
@@ -1239,6 +1244,8 @@
   the replacement strategy and measured performance limitations.
   [Compiler profiling](docs/bc2cpp-compiler-data-profile.md) reports host allocations,
   GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
+  [Owner-call formatting](docs/bc2cpp-owner-call-formatting.md) reuses immutable owner lists
+  within a bounded generator-local cache and appends arguments without temporary mapping arrays.
   Generated C++ is [compact](docs/bc2cpp-compact-output.md) by default: its
   `//` proof comments are stripped; `bc2cpp.rb --annotated` keeps them.
   It is [split into translation units](docs/bc2cpp-shards.md) that compile in
@@ -1247,6 +1254,8 @@
   temporary analysis allocations (see [IR checks](docs/bc2cpp-ir-instruction-checks.md)).
   [Instruction disassembly](docs/bc2cpp-lazy-disassembly.md) is rendered on demand;
   typed IR queries avoid constructing diagnostic operand strings.
+  Reaching-definition queries use [bounded integer cache keys](docs/bc2cpp-query-key-layout.md)
+  to avoid temporary Arrays on common cache lookups.
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
