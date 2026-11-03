@@ -907,6 +907,8 @@ module NumericFlow
         return copy_reg_write(state, a, slot ? state[slot] : OTHER, c, provenance)
       elsif kind == K_RESCUE
         return step.b < nregs ? copy_reg_write(state, step.b, OTHER, c) : state
+      elsif kind == K_MOVE
+        return state if move_unchanged_write(state, a, step.b, c)
       end
     end
 
@@ -1032,10 +1034,10 @@ module NumericFlow
     out
   end
 
-  def unchanged_reg_write?(state, r, value, c, provenance = 0)
+  def unchanged_reg_write?(state, r, value, c, provenance = 0, tb_value = 0)
     return false unless state[r].eql?(value) && state[c.pb + r].eql?(provenance)
     return false if c.elem_base && !state[c.elem_base + r].eql?(ELEM_UNKNOWN)
-    return false if c.tb && !state[c.tb + r].eql?(0)
+    return false if c.tb && !state[c.tb + r].eql?(tb_value)
 
     code = c.nslots + 1 + r
     if c.load_readers
@@ -1062,6 +1064,26 @@ module NumericFlow
         q += 1
       end
     end
+    true
+  end
+
+  # MOVE R[a] <- R[src] that changes nothing: R[a] already holds what the copy would write (value, provenance,
+  # class test) and no register mirrors its old value, so the state is returned as it is (the checks of
+  # unchanged_reg_write?, mirroring the writes of set_reg, copy_class_test and clear_class_tests).
+  def move_unchanged_write(state, a, src, c)
+    opq = c.opq[a]
+    mirrored = src < c.nregs && src != a && !opq && !c.opq[src]
+    value = (opq || src >= c.nregs) ? OTHER : state[src]
+    tb_value = 0
+    if mirrored && c.tb
+      id = state[c.tb + src].to_i
+      # copy_class_test copies nothing for a zero id or a test aimed at R[a].
+      tb_value = id unless id.zero? || c.tests.fetch(id - 1)[0].include?(c.nslots + 1 + a)
+    end
+    return false unless unchanged_reg_write?(state, a, value, c, mirrored ? c.nslots + 1 + src : 0, tb_value)
+
+    writes = c.writes
+    writes[a] = (writes[a] || 0) | value if writes
     true
   end
 
