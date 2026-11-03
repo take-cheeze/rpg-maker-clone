@@ -35,3 +35,18 @@ about 1.9% of warm sealed Optcarrot allocation samples to
 `outside_owner_call_line` and its callees; see
 [compiler profiling](bc2cpp-compiler-data-profile.md) for the workload and
 measurement constraints.
+
+A matched warm sealed Optcarrot compilation measured the complete compiler
+loading, analysis and emission scope with the same native object-type counter.
+Only this formatting change differed, and generated C++ was byte-for-byte
+identical:
+
+| Object type | Baseline | Owner formatting |
+| --- | ---: | ---: |
+| All types | 11,267,812 | 11,110,129 |
+| Array | 4,267,197 | 4,245,558 |
+| String | 3,728,728 | 3,592,680 |
+
+That run removed 157,683 allocations (1.40%), including 21,639 Arrays and
+136,048 Strings. It is one matched allocation comparison; timing and peak RSS
+were not established by this measurement.
