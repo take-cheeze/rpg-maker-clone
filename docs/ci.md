@@ -291,8 +291,10 @@ for fixture-library builds. It can use `BC2CPP_SCCACHE`, the CMake launcher or
 Without a launcher, the compiler arguments pass through unchanged.
 
 The native game job configures the action-provided sccache with writes limited
-to master pushes. The dedicated bc2cpp shell does not require that service.
-Instead, `bc2cpp-build` caches its full-core fixture library with an exact key
+to master pushes. The dedicated bc2cpp shell ships no compiler cache, so
+`bc2cpp-build` sets the same action's sccache for its closed-build compiles,
+with the same master-only writes. It also caches its full-core fixture library
+with an exact key
 covering the Nix pin, contributing submodules, build helpers and patches.
 `full_or_build` trusts an existing library, so callers reusing a build directory
 must invalidate it when those inputs change. CI prepares it once before the

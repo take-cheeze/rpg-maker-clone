@@ -618,6 +618,12 @@ jobs:
 
     env:
       RUBY_YJIT_ENABLE: "1"
+      # The same GHA-backed sccache as the `build` job. Only a master push writes it.
+      ACTIONS_CACHE_SERVICE_V2: "on"
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_RW_MODE: >-
+        ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master')
+            && 'READ_WRITE' || 'READ_ONLY' }}
 
     steps:
       - run: git config --global submodule.fetchJobs 4
@@ -684,6 +690,11 @@ jobs:
           # A prefix hit seeds a fresh fixed-point proof; its stale digest is never trusted.
           restore-keys: bc2cpp-lists-
 
+      # Caches the closed build's C and C++ compiles. sccache keys on the preprocessed input and the
+      # compiler, so an unchanged unit hits and a toolchain change misses.
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
       - name: Build the closed-world mruby with bc2cpp
         timeout-minutes: 45
         # `-m` lets rake run every prerequisite concurrently.
@@ -691,8 +702,22 @@ jobs:
           BC2CPP_PROFILE_TIMINGS: '1'
           RAKEOPT: -m -j4
           BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
-        # The devshell exports LD=ld, which would link mrbc without libc.
-        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
+        # The devshell exports LD=ld, which would link mrbc without libc. CC and CXX put sccache in
+        # front of the devshell's compiler; mruby's gcc toolchain reads both.
+        run: |
+          export CC="$SCCACHE_PATH ${CC:-gcc}" CXX="$SCCACHE_PATH ${CXX:-g++}"
+          env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-bc2cpp"
+
+      - name: sccache stats
+        if: always()
+        run: |
+          {
+            echo "## sccache stats — bc2cpp closed build"
+            echo ""
+            echo '```'
+            "$SCCACHE_PATH" --show-stats
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Print the static dispatch lists
         run: |
