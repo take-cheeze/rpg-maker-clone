@@ -1246,6 +1246,7 @@
   GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
   [Text emission](docs/bc2cpp-text-allocations.md) skips per-line and captured temporary Strings (4.5% fewer allocations).
   [Native-source scans](docs/bc2cpp-devirt-scan-allocations.md) read C text by byte, without per-character Strings.
+  Receiver-trace walks run [without per-call closures](docs/bc2cpp-trace-walk-allocations.md).
   [Owner-call formatting](docs/bc2cpp-owner-call-formatting.md) reuses immutable owner lists
   within a bounded generator-local cache and appends arguments without temporary mapping arrays.
   Generated C++ is [compact](docs/bc2cpp-compact-output.md) by default: its
