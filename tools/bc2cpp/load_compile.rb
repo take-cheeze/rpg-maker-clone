@@ -84,10 +84,12 @@ module LoadCompile
         role = :const unless why
       end
       # INIT_EXPR: a computed constant, or a global write, whose value the compiled load can emit (Expr) is set when
-      # the load runs, as OP_SETCONST and OP_SETGV set it. A value it cannot emit stays residual.
-      if role == :residual && %i[const_computed runtime].include?(stmt.category) && stmt.node.is_a?(Prism::ConstantWriteNode) && init_emittable?(stmt.node.value)
+      # the load runs, as OP_SETCONST and OP_SETGV set it. A value it cannot emit stays residual. A `runtime` statement
+      # (it reads the environment, e.g. mruby-io's STDIN = IO.open(0, "r")) stays bytecode: the compiled load runs after
+      # the gem's own Ruby reads those names, so the statement must run where it is written, after the gem's native init.
+      if role == :residual && stmt.category == :const_computed && stmt.node.is_a?(Prism::ConstantWriteNode) && init_emittable?(stmt.node.value)
         role = :const
-      elsif role == :residual && stmt.node.is_a?(Prism::GlobalVariableWriteNode) && !stmt.node.name.to_s.start_with?(MARKER_PREFIX) && init_emittable?(stmt.node.value)
+      elsif role == :residual && stmt.category != :runtime && stmt.node.is_a?(Prism::GlobalVariableWriteNode) && !stmt.node.name.to_s.start_with?(MARKER_PREFIX) && init_emittable?(stmt.node.value)
         role = :gvar
       end
       # A header whose class cannot be named (`class foo::Bar`) cannot be reopened by the compiled load: it and
