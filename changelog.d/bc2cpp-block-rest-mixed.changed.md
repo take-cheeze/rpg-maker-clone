@@ -1,0 +1,1 @@
+- **bc2cpp**: a literal block with mandatory parameters and a rest parameter (`{ |x, *r| }`) that captures a local now compiles as a block fallback instead of leaving an `#error`. The body receives `x` and the rest Array, bound as vm.c binds them. Internal: generator coverage only.

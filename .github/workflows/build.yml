@@ -878,6 +878,7 @@ jobs:
           ruby scripts/bc2cpp/block_iterator_direct_check.rb
           ruby scripts/bc2cpp/block_bsearch_check.rb
           ruby scripts/bc2cpp/super_splat_check.rb
+          ruby scripts/bc2cpp/block_rest_mixed_check.rb
           ruby scripts/bc2cpp/kernel_loop_check.rb
           ruby scripts/bc2cpp/const_lexical_order_check.rb
           ruby scripts/bc2cpp/zsuper_optional_check.rb
