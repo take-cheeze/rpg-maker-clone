@@ -206,6 +206,12 @@ checks:
     capabilities: []
     fixture_capabilities:
     - mrbc
+  scripts/bc2cpp/native_owner_block_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
   scripts/bc2cpp/super_splat_check.rb:
     tier: runtime
     capabilities:
