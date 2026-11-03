@@ -1244,6 +1244,7 @@
   the replacement strategy and measured performance limitations.
   [Compiler profiling](docs/bc2cpp-compiler-data-profile.md) reports host allocations,
   GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
+  [Native-source scans](docs/bc2cpp-devirt-scan-allocations.md) read C text by byte, without per-character Strings.
   Receiver-trace walks run [without per-call closures](docs/bc2cpp-trace-walk-allocations.md).
   [Owner-call formatting](docs/bc2cpp-owner-call-formatting.md) reuses immutable owner lists
   within a bounded generator-local cache and appends arguments without temporary mapping arrays.
@@ -1253,6 +1254,8 @@
   parallel (`BC2CPP_SHARDS`, 4 for the compiled gems and the probe).
   Exception target caches use direct integer lists and small kind masks to reduce
   temporary analysis allocations (see [IR checks](docs/bc2cpp-ir-instruction-checks.md)).
+  [Instruction disassembly](docs/bc2cpp-lazy-disassembly.md) is rendered on demand;
+  typed IR queries avoid constructing diagnostic operand strings.
   Reaching-definition queries use [bounded integer cache keys](docs/bc2cpp-query-key-layout.md)
   to avoid temporary Arrays on common cache lookups.
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
