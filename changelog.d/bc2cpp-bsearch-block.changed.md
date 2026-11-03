@@ -1,0 +1,1 @@
+- **bc2cpp**: `bsearch { }` and `bsearch_index { }` with a captured local now compile as block fallbacks instead of leaving an `#error`. Both are on the synchronous allowlist (mruby-array-ext calls the block only while it runs). Internal: generator coverage only.
