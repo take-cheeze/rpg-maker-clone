@@ -1245,6 +1245,7 @@
   [Compiler profiling](docs/bc2cpp-compiler-data-profile.md) reports host allocations,
   GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
   [Cheap allocations](docs/bc2cpp-cheap-allocations.md) index ENTER fields in place, skip native files that never spell `BasicObject`, and hoist Set-splatted op lists (2.4% fewer allocations).
+  [NumericFlow state deltas](docs/bc2cpp-numeric-flow-state.md) keep straight-line states as logged entry changes over two scratch buffers instead of one Array per instruction (2.5% fewer allocations, 12 MB lower peak RSS, same C++).
   [Per-file devirt scans](docs/bc2cpp-devirt-cache-allocations.md) cache `NativeExpressionDevirt`'s native-source scans per file and test LOADI ops without a Regexp (3.4% fewer allocations in a warm temp-world compile).
   [Line passes](docs/bc2cpp-line-pass-allocations.md) drop dead statements and rewrite owner calls by byte offset, without a String per line (4.4% fewer allocations).
   [Cache-load allocations](docs/bc2cpp-cache-load-allocations.md): the outside-token Set is read from the scan cache once per compile, not three times (0.58% fewer warm allocations); the page also explains why NumericFlow's state copies stay `dup`.
