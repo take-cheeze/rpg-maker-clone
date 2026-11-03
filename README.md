@@ -1244,6 +1244,7 @@
   the replacement strategy and measured performance limitations.
   [Compiler profiling](docs/bc2cpp-compiler-data-profile.md) reports host allocations,
   GC, timing and peak RSS; NumericFlow uses integer DFS markers to reduce traversal allocations.
+  [Per-file devirt scans](docs/bc2cpp-devirt-cache-allocations.md) cache `NativeExpressionDevirt`'s native-source scans per file and test LOADI ops without a Regexp (3.4% fewer allocations in a warm temp-world compile).
   [Prism reader caching](docs/bc2cpp-prism-reader-cache.md) keeps the class-world, initializer and rgss-constructor facts in the scan cache, so a warm compile does not parse `mruby-rpg2k` (8.5% fewer warm allocations).
   [Emitter allocations](docs/bc2cpp-emitter-allocations.md) pass `compile_send`'s options through its layers as one Hash and drop per-instruction temporaries (8.5% fewer allocations).
   [Parse caching](docs/bc2cpp-parse-cache-allocations.md) keeps foreign-Ruby tokens and native RBS table texts in the scan cache (4.9% fewer warm allocations).
