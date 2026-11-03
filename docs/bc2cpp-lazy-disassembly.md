@@ -13,6 +13,13 @@ Assigning either text field materializes the other first; freezing an instructio
 also materializes its text before making the object immutable. Synthetic
 instructions keep their existing eager strings.
 
+The supported diagnostic interface is the named `args`/`raw` accessors.
+The underlying Struct slots are lazy caches, so direct Struct field enumeration,
+comparison and hashing are not substitutes for those accessors. Compiler maps
+keyed by instruction use object identity. As required by `Program#built_from?`,
+loaded binary instructions and their source metadata stay immutable during
+analysis; synthesized fixtures may still use the ordinary named setters.
+
 Typed decoding and diagnostic rendering are separate opcode cases. Changes to
 an opcode must keep both consistent. Pool-slot validation still runs during
 decoding; ERR's free-form text is a typed operand and is decoded immediately.
