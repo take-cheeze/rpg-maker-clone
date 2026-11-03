@@ -162,10 +162,13 @@ def bc2cpp_stub_core_mrblib(conf)
 
   require_relative 'tools/bc2cpp/compiled_gems'
   require_relative 'tools/bc2cpp/mrblib_stubs'
+  require_relative 'tools/bc2cpp/load_compile'
   symbol = BC2CPP_COMPILED_GEMS.fetch('mruby-core-compiled')[:out_symbol]
   core_dir = "#{conf.build_dir}/mrbgems/mruby-core-compiled"
   manifest = MrblibStubs.manifest_path(core_dir, symbol)
   generated = "#{core_dir}/#{symbol}_gen.cpp"
+  # LOAD_COMPILE: the core's load plan, which names the statements the compiled load runs; the copies leave those out.
+  plan = LoadCompile.plan_path(core_dir, symbol)
   stubs_rb = File.expand_path('tools/bc2cpp/mrblib_stubs.rb', __dir__)
   stubbed = BC2CPP_CORE_MRBLIB_GEMS + BC2CPP_EXTERNAL_MRBLIB_GEMS
   conf.gems.each do |spec|
@@ -174,12 +177,14 @@ def bc2cpp_stub_core_mrblib(conf)
 
     spec.build_config_initializer = proc do
       out_dir = "#{build_dir}/mrblib_stubs"
+      # LOAD_COMPILE: the files the core's mrblib is made of, before the rewrite (bc2cpp_load_world reads them).
+      @bc2cpp_mrblib_sources = rbfiles.dup
       self.rbfiles = rbfiles.map do |src|
         out = "#{out_dir}/#{src.delete_prefix("#{dir}/")}"
         # The generation that writes the core manifest writes it with the code, so the copies follow both.
         file out => [src, stubs_rb, generated] do
           FileUtils.mkdir_p File.dirname(out), verbose: true
-          MrblibStubs.write_stubbed(src, out, [manifest])
+          MrblibStubs.write_stubbed(src, out, [manifest], LoadCompile.read_plans([plan]))
         end
         out
       end
