@@ -1,0 +1,1 @@
+- **bc2cpp**: a keyword send to a stable class or module constant (`Mod.reach(a, x: 2)`) now resolves to the singleton definition that constant's class object reaches, even when the same name also has an instance definer. It becomes a direct call instead of an `#error`. Sends on receivers nothing proves stay refused. Internal: generator coverage only.
