@@ -1241,6 +1241,8 @@
   `//` proof comments are stripped; `bc2cpp.rb --annotated` keeps them.
   It is [split into translation units](docs/bc2cpp-shards.md) that compile in
   parallel (`BC2CPP_SHARDS`, 4 for the compiled gems and the probe).
+  Exception target caches use direct integer lists and small kind masks to reduce
+  temporary analysis allocations (see [IR checks](docs/bc2cpp-ir-instruction-checks.md)).
   bc2cpp compiles from a typed bytecode IR: instructions are decoded from the
   RITE binary into schema-typed operands, and control flow and register
   definitions are answered by shared `BytecodeIR`/`Irep` queries instead of
