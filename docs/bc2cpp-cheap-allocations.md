@@ -15,8 +15,9 @@ frame `:edges` named the caller of each allocating leaf. One sample stands for
   `enter_fields[1..]` / `[2..]` for every call-site query, a new Array each
   time (430 `Array#[]` samples). `enter_fields_zero_from?` now walks the frozen
   field list by index. For every field list where the old slice exists it gives
-  the same answer; the old `[2..]` on a list shorter than two raised instead
-  (`nil.all?`), which no compiled world reaches.
+  the same answer. A list shorter than the start index (a truncated decode,
+  which no compiled world produces) still raises, now an `ArgumentError`
+  instead of the old `nil.all?` `NoMethodError`, rather than answering true.
 - **Native BasicObject scan** (codegen_native_core_direct.rb).
   `native_basic_object_registration_only?` read every native source with
   `File.foreach`, one String per line, to look at the lines that spell
