@@ -48,3 +48,60 @@ MRubyRequire.provide('zlib') { defined?(Zlib) }
 MRubyRequire.provide('prism') { defined?(Prism) }
 MRubyRequire.provide('rbs') { defined?(RBS) }
 MRubyRequire.provide('open3') { defined?(Open3) }
+
+# RbConfig.ruby: the interpreter bc2cpp starts its tools with. Under mruby it is the wrapper tools/bc2cpp/mruby-ruby,
+# which runs a tool through the mruby binary and its baked source; the build or the run sets BC2CPP_RUBY to it.
+module RbConfig
+  def self.ruby
+    interpreter = ENV['BC2CPP_RUBY']
+    raise LoadError, 'RbConfig.ruby: BC2CPP_RUBY is not set' unless interpreter
+
+    interpreter
+  end
+end
+MRubyRequire.provide('rbconfig') { defined?(RbConfig) }
+
+# Enumerable#to_set, as CRuby's set library defines it. mruby-set leaves it out (its README lists it as unimplemented).
+module Enumerable
+  def to_set(klass = Set, *args, &block)
+    klass.new(self, *args, &block)
+  end
+end
+
+# RUBY_PLATFORM, which mruby does not define. bc2cpp keys its caches on it; "mruby" names the runtime that wrote them.
+RUBY_PLATFORM = 'mruby' unless defined?(RUBY_PLATFORM)
+
+# File.stat, reduced to what bc2cpp reads from it: the modification time and the size, taken from the open file (mruby-io
+# has no stat). Any other field is absent, and a missing file raises as File.open does.
+class File
+  Stat = Struct.new(:mtime, :size) unless defined?(File::Stat)
+
+  def self.stat(path)
+    File.open(path, 'rb') { |io| File::Stat.new(io.mtime, io.size) }
+  end
+end
+
+# File.readlines: the lines of a file. Options such as encoding: are accepted and not needed (text is read as bytes).
+class File
+  def self.readlines(path, *_options)
+    File.read(path).lines
+  end
+end
+
+# SystemCallError: mruby has no Errno, and its failed file operations raise RuntimeError, so the name stands for that class.
+SystemCallError = RuntimeError unless defined?(SystemCallError)
+
+# File.write, File.binwrite and File.binread, as CRuby defines them (mruby-io has the IO methods, not these).
+class File
+  def self.write(path, data)
+    File.open(path, 'w') { |io| io.write(data) }
+  end
+
+  def self.binwrite(path, data)
+    File.open(path, 'wb') { |io| io.write(data) }
+  end
+
+  def self.binread(path)
+    File.open(path, 'rb') { |io| io.read }
+  end
+end
