@@ -105,3 +105,65 @@ class File
     File.open(path, 'rb') { |io| io.read }
   end
 end
+
+# Module#private_constant. mruby has no constant visibility, so the named constants stay public: a correct program
+# behaves the same, and only code that would have raised NameError on a private constant can tell the difference.
+class Module
+  def private_constant(*_names)
+    nil
+  end
+end
+
+# File.read with the encoding: option. mruby-io's read takes no options; the bytes it reads are the file's, so the option
+# only chooses the result's encoding, BINARY (the bytes as they are) or not (the text as read).
+class File
+  class << self
+    alias __core_read read
+  end
+
+  def self.read(path, *args, **options)
+    text = args.empty? ? __core_read(path) : __core_read(path, *args)
+    options[:encoding].to_s.upcase == 'BINARY' ? text.b : text
+  end
+end
+
+# Mutex, for the single thread mruby runs: no other thread can hold it, so a lock is only ever taken by the one caller.
+# Locking it again while held raises ThreadError, as CRuby does for a recursive lock.
+class ThreadError < StandardError; end unless defined?(ThreadError)
+
+class Mutex
+  def initialize
+    @locked = false
+  end
+
+  def lock
+    raise ThreadError, 'deadlock; recursive locking' if @locked
+
+    @locked = true
+    self
+  end
+
+  def unlock
+    raise ThreadError, 'Attempt to unlock a mutex which is not locked' unless @locked
+
+    @locked = false
+    self
+  end
+
+  def try_lock
+    return false if @locked
+
+    @locked = true
+  end
+
+  def locked? = @locked
+
+  def synchronize
+    lock
+    begin
+      yield
+    ensure
+      unlock
+    end
+  end
+end unless defined?(Mutex)
