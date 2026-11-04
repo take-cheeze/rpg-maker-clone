@@ -718,6 +718,8 @@ MRuby::Build.new do |conf|
 
     conf.gem core: 'mruby-bin-mrbc'
     rpg_maker_gems(conf)
+    # mruby-rbs: the RBS parser (3rd/rbs fork) for host tooling. The embedded and cross targets do not link it.
+    conf.gem File.expand_path('mruby-rbs', __dir__)
     # MRUBY_FORCE_NO_CXX_EXCEPTION (set by scripts/maix/mruby_build.bash for
     # the maix cross target) also stops load_gems.rb from enabling C++
     # exceptions in THIS host build -- which then compiles the same .cxx gem
