@@ -25,6 +25,7 @@ MRuby::Gem::Specification.new('mruby-prism') do |spec|
   spec.authors = 'Shopify Inc. (prism); take-cheeze (mruby glue)'
   spec.summary = 'Prism Ruby parser for mruby'
   spec.add_dependency 'mruby-stringio'
+  spec.add_dependency 'mruby-encoding'
 
   gen_root = "#{build_dir}/prism-gen"
 
