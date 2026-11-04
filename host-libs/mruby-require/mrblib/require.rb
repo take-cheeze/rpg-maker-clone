@@ -23,3 +23,4 @@ end
 
 MRubyRequire.provide('set') { defined?(Set) }
 MRubyRequire.provide('stringio') { defined?(StringIO) }
+MRubyRequire.provide('open3') { defined?(Open3) }
