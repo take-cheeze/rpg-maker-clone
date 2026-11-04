@@ -230,7 +230,16 @@ module Rake
         (File.exist?(name) && RakeShim.node_for(name, :file)) || raise("no task #{name}")
     end
     def self.task_defined?(name) = RakeShim.nodes.key?(RakeShim.qualify(name))
+
+    # Rake::Task.define_task(name, *deps, &block): a task, as the top-level `task` makes one.
+    def self.define_task(*args, &block) = RakeShim.declare(:task, args, block)
   end
+
+  class FileTask < Task
+    def self.define_task(*args, &block) = RakeShim.declare(:file, args, block)
+  end
+
+  class FileCreationTask < FileTask; end
 end
 
 class << RakeShim
