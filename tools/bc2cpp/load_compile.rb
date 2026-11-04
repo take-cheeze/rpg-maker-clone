@@ -671,9 +671,17 @@ module LoadCompile
         else out << range end
       when :def then out << range if item.dropped
       when :send, :alias, :const, :ivar, :dead then out << range
+      # TRAILING_MODE: a bare `private` with nothing after it that still needs it (only dropped defs, whose compiled
+      # registration carries their visibility) changes no definition, so it goes with the compiled code.
+      when :mode then out << range if trailing_mode?(ub, item)
       end
     end
     out
+  end
+
+  def trailing_mode?(ub, item)
+    later = ub.items.drop_while { |i| !i.equal?(item) }.drop(1)
+    later.all? { |i| i.role == :mode || (i.role == :def && i.dropped) }
   end
 
   # `text` with the byte `ranges` blanked, newlines kept, so every kept line number is unchanged. A range with a third
