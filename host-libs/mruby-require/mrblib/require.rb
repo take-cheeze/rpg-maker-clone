@@ -167,3 +167,87 @@ class Mutex
     end
   end
 end unless defined?(Mutex)
+
+# ObjectSpace::WeakMap, identity-keyed. mruby has no weak references, so entries are held for the life of the map: a
+# caller that rebuilds a missing entry gets the same results, and only the memory is not released early.
+module ObjectSpace
+  class WeakMap
+    def initialize
+      @entries = {}
+    end
+
+    def []=(key, value)
+      entry = @entries[key.object_id]
+      if entry
+        entry[1] = value
+      else
+        @entries[key.object_id] = [key, value]
+      end
+      value
+    end
+
+    def [](key)
+      entry = @entries[key.object_id]
+      entry ? entry[1] : nil
+    end
+
+    def key?(key) = @entries.key?(key.object_id)
+    alias include? key?
+    alias member? key?
+
+    def delete(key)
+      entry = @entries.delete(key.object_id)
+      entry ? entry[1] : nil
+    end
+
+    def size = @entries.size
+    alias length size
+
+    def each_pair
+      @entries.values.each { |key, value| yield key, value }
+      self
+    end
+  end
+end unless defined?(ObjectSpace::WeakMap)
+
+# Hash#to_h with a block: each [key, value] pair is yielded as one argument, and the block's result must be a
+# two-element pair, which becomes the entry. mruby's Hash#to_h ignores the block and returns a copy of the hash.
+class Hash
+  alias __core_to_h to_h
+
+  def to_h(&block)
+    return __core_to_h unless block
+
+    result = {}
+    each_pair do |key, value|
+      pair = block.call([key, value])
+      raise TypeError, "wrong element type #{pair.class} (expected array)" unless pair.is_a?(Array)
+      raise ArgumentError, "element has wrong array length (expected 2, was #{pair.size})" unless pair.size == 2
+
+      result[pair[0]] = pair[1]
+    end
+    result
+  end
+end
+
+# Kernel#at_exit. mruby has no exit hook to run these from, so the blocks wait in a list until the program's own runner
+# calls ExitHandlers.run (tools/bc2cpp/mruby_tool.rb does, after the tool's main block); they then run in reverse order,
+# as CRuby runs them.
+module ExitHandlers
+  BLOCKS = []
+
+  def self.run
+    until BLOCKS.empty?
+      BLOCKS.pop.call
+    end
+  end
+end
+
+module Kernel
+  def at_exit(&block)
+    raise ArgumentError, 'called without a block' unless block
+
+    ExitHandlers::BLOCKS << block
+    block
+  end
+end
