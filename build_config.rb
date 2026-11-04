@@ -125,6 +125,8 @@ end
 # its generation emitted as units (the *_units.txt manifest). Those units run from gem_init, so the VM must not run them
 # again. Called last in the gem's stanza: the copies depend on the generation that writes the manifest.
 def bc2cpp_blank_units(spec)
+  return unless spec.build.name == 'closed'
+
   compiled = BC2CPP_COMPILED_GEMS["#{spec.name}-compiled"]
   return unless compiled
 
