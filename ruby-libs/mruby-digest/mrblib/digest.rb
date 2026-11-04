@@ -36,6 +36,12 @@ module Digest
       @buffer << data.to_s.b
       self
     end
+    alias << update
+
+    # The 32-byte binary digest, as CRuby's Digest::Base#digest returns it.
+    def digest
+      [hexdigest].pack("H*")
+    end
 
     def hexdigest
       words = INITIAL.dup
