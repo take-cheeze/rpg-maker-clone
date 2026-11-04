@@ -13,6 +13,8 @@ MRuby::Gem::Specification.new('mruby-rbs') do |spec|
   spec.license = 'BSD-2-Clause'
   spec.authors = 'Soutaro Matsumoto'
   spec.summary = 'RBS signature parser (C core and Ruby library from the rbs fork) for mruby'
+  # Its Ruby half names Regexp at load time; mruby-onig-regexp defines it, and must load first.
+  spec.add_dependency 'mruby-onig-regexp'
 
   # Written as "#{dir}/..." like the other repo gems, so the base-section scan (scripts/bc2cpp/base_rbs_all.rb) finds the headers.
   spec.cc.include_paths << "#{dir}/../../3rd/rbs/include" << "#{dir}/../../3rd/rbs/src"
