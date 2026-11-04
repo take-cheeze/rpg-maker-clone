@@ -26,6 +26,7 @@ MRuby::Gem::Specification.new('mruby-prism') do |spec|
   spec.summary = 'Prism Ruby parser for mruby'
   spec.add_dependency 'mruby-stringio'
   spec.add_dependency 'mruby-encoding'
+  spec.add_dependency 'mruby-onig-regexp'
 
   gen_root = "#{build_dir}/prism-gen"
 
