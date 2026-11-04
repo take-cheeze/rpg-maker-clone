@@ -16,6 +16,8 @@ module RakeShim
   # The environment a build config and its planning read; a gemtask run gets the same (see Emitter#emit).
   PLAN_ENV = %w[MRUBY_BUILD_DIR MRUBY_CONFIG MRUBY_TARGET MRUBY_CC MRUBY_LD RPGMAKER_BC2CPP NFCXX_ROOT CC CXX AR
                 CFLAGS LDFLAGS].freeze
+  # Every variable a build config reads under these prefixes is passed on too (closed_build.bash sets BC2CPP_* by phase).
+  PLAN_ENV_PREFIX = /\A(BC2CPP_|MRUBY_|RPGMAKER_|NFCXX_|RGSS_|OPTCARROT_)/.freeze
 
   Node = Struct.new(:name, :kind, :prereqs, :actions, :desc) do
     # Rake::Task's view of a node.
@@ -198,9 +200,11 @@ module RakeShim
     def multitask(*args, &block) = task(*args, &block)
     def verbose(*) = false
 
+    # sh([env,] command, ..., [options]): options may hold chdir:, as Rake's sh takes them.
     def sh(*cmd, &_block)
-      words = cmd.reject { |c| c.is_a?(Hash) }
-      RakeShim.sh_command(words.join(' '), cmd.first.is_a?(Hash) ? cmd.first : {})
+      env = cmd.first.is_a?(Hash) ? cmd.shift : {}
+      opts = cmd.last.is_a?(Hash) ? cmd.pop : {}
+      RakeShim.sh_command(cmd.join(' '), env, opts)
     end
 
     def mkdir_p(dir, **) = RakeShim.op(:mkdir, dir)
@@ -208,7 +212,12 @@ module RakeShim
     def rm_f(*paths, **) = rm_rf(*paths)
     def cp(src, dest, **) = RakeShim.op(:cp, src, dest)
     def touch(*paths, **) = paths.flatten.each { |p| RakeShim.op(:touch, p) }
-    def ruby(*args) = RakeShim.sh_command(args.join(' '), {})
+    # ruby(args..., [env], [options]): Rake's ruby runs RbConfig.ruby with the arguments.
+    def ruby(*args)
+      env = args.first.is_a?(Hash) ? args.shift : {}
+      opts = args.last.is_a?(Hash) ? args.pop : {}
+      RakeShim.sh_command([RbConfig.ruby, *args].map { |a| Shellwords.escape(a.to_s) }.join(' '), env, opts)
+    end
   end
 end
 
@@ -257,11 +266,13 @@ class << RakeShim
     end
   end
 
-  def sh_command(command, env)
+  def sh_command(command, env, opts = {})
     if @mode == :plan
-      record([:sh, env, command])
+      record([:sh, env, command, opts[:chdir]])
     else
-      system(env, command, exception: true)
+      kw = { exception: true }
+      kw[:chdir] = opts[:chdir] if opts[:chdir]
+      system(env, command, **kw)
     end
     nil
   end
@@ -300,7 +311,8 @@ module RakeShim
       @lines << "  command = $cmd"
       @lines << "  description = $desc"
       # The planning environment (the build directory, the config) is the same in each gemtask run, so it is passed on.
-      buildenv = PLAN_ENV.select { |k| ENV[k] }.map { |k| "#{k}=#{Shellwords.escape(ENV[k])}" }
+      names = (PLAN_ENV + ENV.keys.grep(PLAN_ENV_PREFIX)).uniq
+      buildenv = names.select { |k| ENV[k] }.map { |k| "#{k}=#{Shellwords.escape(ENV[k])}" }
       @lines << "buildenv = #{ninja_value(buildenv.join(' '))}"
       @lines << "rule gemtask"
       @lines << "  command = $buildenv $ruby $gen gemtask $mruby_src $taskname"
@@ -336,6 +348,8 @@ module RakeShim
 
       ops, gemtask = RakeShim.plan_actions(node)
       deps = node.prereqs.map { |p| phony_ref(p) }
+      implicit = implicit_inputs(node)
+      deps = deps.empty? && implicit.empty? ? deps : deps + (implicit.empty? ? [] : ['|', *implicit])
       order = order_only(node)
       if gemtask
         target = node.kind == :file ? ninja_path(absolute(node.name)) : stamp_for(node.name)
@@ -363,9 +377,10 @@ module RakeShim
       kind, *args = op
       case kind
       when :sh
-        env, command = args
+        env, command, chdir = args
         prefix = env.map { |k, v| "#{k}=#{Shellwords.escape(v.to_s)}" }.join(' ')
-        [prefix, command].reject(&:empty?).join(' ')
+        run = [prefix, command].reject(&:empty?).join(' ')
+        chdir ? "(cd #{Shellwords.escape(chdir)} && #{run})" : run
       when :mkdir then "mkdir -p #{Shellwords.escape(args[0])}"
       when :rm then "rm -rf #{Shellwords.escape(args[0])}"
       when :cp then "cp #{Shellwords.escape(args[0])} #{Shellwords.escape(args[1])}"
@@ -388,6 +403,20 @@ module RakeShim
 
       dir = File.dirname(absolute(node.name))
       %w[id table].map { |h| File.join(dir, 'include', 'mruby', 'presym', "#{h}.h") }
+    end
+
+    # A prerequisite that exists in the tree but has prerequisites of its own (register.cxx includes a generated file that
+    # its declaration names) passes those on: rake rebuilds the node that needs the source, so the edge needs them too.
+    def implicit_inputs(node, seen = {})
+      node.prereqs.flat_map do |p|
+        next [] if seen[p]
+
+        seen[p] = true
+        child = RakeShim.nodes[p]
+        next [] unless child && child.actions.empty? && File.exist?(absolute(p)) && !child.prereqs.empty?
+
+        child.prereqs.flat_map { |q| [phony_ref(q)] + implicit_inputs(RakeShim.nodes[q] || Struct.new(:prereqs).new([]), seen) }
+      end.uniq
     end
 
     def order_only(node)
