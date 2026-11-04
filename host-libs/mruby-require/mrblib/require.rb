@@ -47,3 +47,4 @@ MRubyRequire.provide('tempfile') { defined?(Tempfile) }
 MRubyRequire.provide('zlib') { defined?(Zlib) }
 MRubyRequire.provide('prism') { defined?(Prism) }
 MRubyRequire.provide('rbs') { defined?(RBS) }
+MRubyRequire.provide('open3') { defined?(Open3) }
