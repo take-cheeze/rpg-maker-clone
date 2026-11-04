@@ -14,7 +14,8 @@ MRuby::Gem::Specification.new('mruby-rbs') do |spec|
   spec.authors = 'Soutaro Matsumoto'
   spec.summary = 'RBS signature parser (C core and Ruby library from the rbs fork) for mruby'
 
-  spec.cc.include_paths << "#{RBS_ROOT}/include" << "#{RBS_ROOT}/src"
+  # Written as "#{dir}/..." like the other repo gems, so the base-section scan (scripts/bc2cpp/base_rbs_all.rb) finds the headers.
+  spec.cc.include_paths << "#{dir}/../3rd/rbs/include" << "#{dir}/../3rd/rbs/src"
   spec.cc.flags << '-std=gnu99' << '-Wno-unused-result'
 
   core_sources = Dir["#{RBS_ROOT}/src/*.c"] + Dir["#{RBS_ROOT}/src/util/*.c"]
