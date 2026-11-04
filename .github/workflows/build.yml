@@ -884,6 +884,7 @@ jobs:
           ruby scripts/bc2cpp/optional_yield_check.rb
           ruby scripts/bc2cpp/keyword_receiver_target_check.rb
           ruby scripts/bc2cpp/block_rest_mixed_check.rb
+          ruby scripts/bc2cpp/hash_build_ops_check.rb
           ruby scripts/bc2cpp/kernel_loop_check.rb
           ruby scripts/bc2cpp/const_lexical_order_check.rb
           ruby scripts/bc2cpp/zsuper_optional_check.rb
