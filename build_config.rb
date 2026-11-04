@@ -137,15 +137,8 @@ def bc2cpp_blank_units(spec)
   generated = "#{dir}/#{compiled[:out_symbol]}_gen.cpp"
   blank_rb = File.expand_path('tools/bc2cpp/unit_blank.rb', __dir__)
   out_dir = "#{spec.build_dir}/mrblib_units"
-  spec.rbfiles = spec.rbfiles.map do |src|
-    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
-    out = "#{out_dir}/#{rel}"
-    file out => [src, blank_rb, generated] do
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      UnitBlank.write(src, out, manifest)
-    end
-    out
-  end
+  # VM-free: the gem's mrblib bytecode is not loaded at all; its class bodies run as the units the generation emitted.
+  spec.rbfiles = []
 end
 
 # UNIT_BLANK for mruby's core extension gems (BC2CPP_CORE_MRBLIB_GEMS, BC2CPP_EXTERNAL_MRBLIB_GEMS): their top-level class
@@ -168,15 +161,8 @@ def bc2cpp_blank_core_units(conf)
     raise "bc2cpp_blank_core_units: #{spec.name} already has a build_config_initializer" if spec.build_config_initializer
 
     spec.build_config_initializer = proc do
-      out_dir = "#{build_dir}/mrblib_units"
-      self.rbfiles = rbfiles.map do |src|
-        out = "#{out_dir}/#{src.delete_prefix("#{dir}/")}"
-        file out => [src, blank_rb, generated] do
-          FileUtils.mkdir_p File.dirname(out), verbose: true
-          UnitBlank.write(src, out, manifest)
-        end
-        out
-      end
+      # VM-free: the gem's mrblib bytecode is not loaded at all; its class bodies run as the units the generation emitted.
+      self.rbfiles = []
     end
   end
 end
