@@ -48,6 +48,30 @@ PRELUDE = <<~RUBY
   end
 RUBY
 
+# Appended after the library. RBS::Parser.parse_signature has CRuby rbs's shape ([buffer, directives,
+# declarations]) and is backed by the native parser, so the generator's signature loading keeps its calls.
+EPILOGUE = <<~RUBY
+  unless defined?(ScriptError)
+    class ScriptError < Exception
+    end
+  end
+
+  unless defined?(LoadError)
+    class LoadError < ScriptError
+    end
+  end
+
+  module RBS
+    class Parser
+      def self.parse_signature(buffer)
+        buf = buffer.is_a?(String) ? RBS::Buffer.new(name: "", content: buffer) : buffer
+        nodes = RBS::WASM::Deserializer.deserialize(RBS::Native.parse_signature(buf.content), buf)
+        [buf, nodes[0], nodes[1]]
+      end
+    end
+  end
+RUBY
+
 def transform(text)
   text = text.gsub(/^\s*require(?:_relative)?\s*["'(].*\n/, '')
   text = text.gsub('@intern_mutex = Mutex.new', '@intern_mutex = nil')
@@ -63,5 +87,6 @@ parts = [PRELUDE]
 files.each do |file|
   parts << "# ---- #{file}\n" + transform(File.read(File.join(lib_dir, file), encoding: "UTF-8"))
 end
+parts << "# ---- mruby-rbs epilogue\n" + EPILOGUE
 File.write(output, parts.join("\n"), encoding: "UTF-8")
 puts "wrote #{output} (#{files.size} files)"
