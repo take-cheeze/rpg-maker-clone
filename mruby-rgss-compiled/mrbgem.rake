@@ -88,8 +88,7 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   # bc2cpp.rb runs MRBC: without this edge `rake -m` can start codegen before
   # the bootstrap mrbc exists.
   file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, compiled_gems_yml, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
-                     *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
-                     BC2CPP_CORE_REFUSED_PATH] do |t|
+                     *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/..")] do |t|
     # SHARED_GENERATION: with every other compiled gem of this build that is out of date, in one
     # bc2cpp.rb analysis (tools/bc2cpp/compiled_gems.rb bc2cpp_compiled_gem_job holds this gem's environment).
     Bc2cppCompiledGemGeneration.generate(spec, "#{dir}/..")
