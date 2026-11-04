@@ -1715,8 +1715,7 @@
   [native-only closed runtime](docs/bc2cpp-native-fibers.md#native-only-closed-runtime).
   Class-body initializers can also hold zero-argument lambdas returning literal
   data: native decoding keeps allocation lazy and resolves captured lexical
-  constants when called. The engine class-body planner now leaves no residual
-  statements. See [lazy literal data](docs/bc2cpp-class-bodies.md#lazy-literal-data).
+  constants when called. Engine class bodies run in the VM as bytecode.
   Class-body unit constant folds share content-checked source parses across candidates and owners;
   rewritten files are parsed again. See [class-body source parsing](docs/bc2cpp-class-bodies.md#source-parsing-for-unit-constant-folds).
   A class-body `define_method(:name) { |a| ... }` with a `def`-like block is registered as an ordinary

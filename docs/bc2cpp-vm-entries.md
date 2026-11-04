@@ -185,7 +185,7 @@ is replaced by this one.
 - **Class bodies and gem roots at boot.** The boot set is 293 starts in this refresh
   (see Boot set above), 182 of them class and module bodies. Compiling the load
   phase is what removes them, and the static irep data with them.
-  `BC2CPP_LOAD_COMPILE=all` (the default) does that for the engine gems: the
+  The load planner that did that was removed; the
   [class-bodies measurement](bc2cpp-class-bodies.md) gives 420 boot starts before and
   385 after. That figure is not reproduced here: this refresh's full boot set is 293
   starts under the same compiled load, so the two counts differ in method or build

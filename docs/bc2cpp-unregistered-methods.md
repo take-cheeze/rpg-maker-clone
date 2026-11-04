@@ -166,7 +166,7 @@ class-body constant initializers (`ALL_DIRS = (DIR_BIT[2] | ...)`) by name
 (`bc2cpp_ld_decode` case 16, the legacy C++ statements), and a by-name `[]`
 would raise `NoMethodError` at gem-init load — aborting the init before the
 instance-type setup runs. So the loader keeps proven operators out of its
-data (`LoadCompile`'s `call?`, threaded from the plan's unregistered set),
+data (the removed load planner's `call?`, threaded from the plan's unregistered set),
 and every loader send of one — decoder, legacy expression, legacy class
 send — goes through the shared index helpers instead of the tables.
 `bc2cpp.rb` computes the load plan before emitting the helpers and forces

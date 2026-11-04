@@ -964,17 +964,6 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/path_form_check.rb:
-    tier: fast
-    capabilities: []
-  scripts/bc2cpp/class_body_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    fixture_capabilities:
-    - full_library
-    - cxx
   scripts/bc2cpp/lcf_schema_tables_check.rb:
     tier: runtime
     capabilities:
@@ -1064,15 +1053,6 @@ checks:
     - mrbc
     fixture_capabilities: []
   scripts/bc2cpp/compiled_gems_config_check.rb:
-    tier: fast
-    capabilities: []
-    fixture_capabilities: []
-  scripts/bc2cpp/mrblib_stubs_check.rb:
-    tier: fast
-    capabilities:
-    - mrbc
-    fixture_capabilities: []
-  scripts/bc2cpp/mrblib_copy_sites_check.rb:
     tier: fast
     capabilities: []
     fixture_capabilities: []
