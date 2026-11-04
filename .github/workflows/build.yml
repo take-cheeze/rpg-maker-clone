@@ -1164,7 +1164,6 @@ jobs:
         # The verify build registers a stub under every name the lists drop, so its method table is not the plain
         # build's: only the plain build is held to scripts/bc2cpp/method_table_threshold.txt.
         env:
-          METHOD_TABLE: skip
         run: env -u LD scripts/bc2cpp/host_sweep.bash "$GITHUB_WORKSPACE/build-closed-verify"
 
       # Informational: why the entries the lists keep stay in the table, and which they are (the lists are no longer in a diff).
