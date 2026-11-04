@@ -1428,9 +1428,10 @@
   registered over its bytecode for the RPG2000/2003 maker, and the ones whose name no
   native method shares (and that take no block) also become direct call targets.
   The block-taking ones (`Array#each`, `Integer#times`, `Kernel#loop`, `Hash#each`,
-  most of `Enumerable`, ...) sit behind a Fiber guard: while a Fiber runs (a game
-  script, `Enumerator#next`) the entry hands the call to the bytecode, since a
-  `Fiber.yield` inside a block cannot cross a compiled frame. Flash-limited builds
+  most of `Enumerable`, ...) are compiled bodies too. The closed build has no Fiber
+  guard any more and no bytecode fallback: a block call made under a non-root Fiber
+  (a game script, `Enumerator#next`) is the one runtime check still to be added (see
+  [`docs/bc2cpp-resumable-block-calls.md`](docs/bc2cpp-resumable-block-calls.md)). Flash-limited builds
   (wio, psp, maix) compile none of it. See
   [`docs/adr/0264-bc2cpp-compiled-core-mrblib.md`](docs/adr/0264-bc2cpp-compiled-core-mrblib.md)
   and

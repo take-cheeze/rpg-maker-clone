@@ -147,7 +147,7 @@ Operator names (`[]`, `[]=`, `+`, ...) fail the `IDENT` gate in
 `dynamic_name?`, so they are dynamic by default: no text scan could spell
 them, and the proof refuses to guess. Two index operators escape through
 the INDEX_CLOSED planner verdict (`tools/bc2cpp/index_closed_planner.rb`,
-ADR 0365) instead. The planner enumerates every class that can answer `[]`
+ADR 0365) instead. The load planner that once consumed the verdict was removed. The planner enumerates every class that can answer `[]`
 or `[]=` — native owners need a verified code-generation arm (Array, Hash,
 String, Struct, Table, Proc), Ruby owners join the direct-call chain, and
 anything else (a foreign definer, a module, a singleton, an unbounded

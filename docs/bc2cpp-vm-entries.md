@@ -1,5 +1,9 @@
 # Bytecode the closed build still runs
 
+> **Status.** The closed build (`MRB_VM_FREE`) no longer loads any mrblib as bytecode and `mrb_vm_exec` raises,
+> so the entries below are gone from the build by design. The list is kept as the record of what each entry was
+> and what replaced it. The current boot path is the compiled class-body units and top-level statements.
+
 The closed build compiles the engine's methods to C++, but mruby's VM is still
 linked and still runs some code: every gem's mrblib loads as bytecode at boot,
 and a few bodies stay bytecode for good. Dropping the VM (and the interpreter

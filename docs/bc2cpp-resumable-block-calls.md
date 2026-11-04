@@ -1,5 +1,9 @@
 # Resumable block calls: replacing the enum-step drivers
 
+> **Status.** The Fiber guard this page describes (the guard that fires and hands a call to the saved body) was
+> removed with the other guards. The resumable variants in `CodeGen::RESUMABLE_DUAL` stay. The next step is
+> the single runtime check for a block call under a non-root Fiber, which is not written yet.
+
 Closed bc2cpp builds now compile all retained bodies and support drivers through the
 [native continuation backend](bc2cpp-native-fibers.md). The remaining driver references below
 describe frame protocols; their executable representation is native code in these builds.
