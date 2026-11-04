@@ -140,7 +140,7 @@ def bc2cpp_blank_units(spec)
   spec.rbfiles = spec.rbfiles.map do |src|
     rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
     out = "#{out_dir}/#{rel}"
-    file out => [src, blank_rb, generated, manifest] do
+    file out => [src, blank_rb, generated] do
       FileUtils.mkdir_p File.dirname(out), verbose: true
       UnitBlank.write(src, out, manifest)
     end
