@@ -8384,6 +8384,12 @@ module Kernel
   def to_enum: (?untyped, *untyped, **untyped) -> untyped
 end
 
+# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
+# bc2cpp-native: base_kernel-ext
+class Kernel
+  def __dir__: () -> String?
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
