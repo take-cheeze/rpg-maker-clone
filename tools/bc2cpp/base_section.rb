@@ -31,7 +31,7 @@ module BaseSection
     'mruby-math-wio' => 'base_math-wio', 'mruby-mvjs' => 'base_mvjs', 'mruby-numeric-ext' => 'base_numeric',
     'mruby-compar-ext' => 'base_compar', 'mruby-random' => 'base_random', 'mruby-rgss' => 'base_rgss', 'mruby-rpg2k' => 'base_rpg',
     'mruby-sprintf' => 'base_sprintf', 'mruby-stringio' => 'base_stringio', 'mruby-symbol-ext' => 'base_symbol',
-    'mruby-time' => 'base_time',
+    'mruby-time' => 'base_time', 'mruby-bc2cpp-std' => 'base_bc2cpp-std',
     'mruby-wolf' => 'base_wolf'
   }.freeze
 
