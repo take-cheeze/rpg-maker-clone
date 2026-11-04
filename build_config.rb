@@ -245,6 +245,9 @@ def rpg_maker_gems(conf, include_mvjs: true)
   conf.cc.defines << 'BC2CPP_VM_START_COUNTER' if ENV['BC2CPP_VM_START_COUNTER'] == '1'
   # MRB_CORE_CLASS_UNITS (mruby tasks/mrblib.rake): the closed build runs the core's compiled class bodies, not the core mrblib.
   conf.cc.defines << 'MRB_CORE_CLASS_UNITS' if conf.name == 'closed'
+  # MRB_VM_FREE (vm.c): the closed build has no bytecode interpreter; mrb_vm_exec raises.
+  conf.cc.defines << 'MRB_VM_FREE' if conf.name == 'closed'
+  conf.cxx.defines << 'MRB_VM_FREE' if conf.name == 'closed'
   # The closed target compiles mruby's vm.c as C++ (vm-cxx.cxx), so the same define goes there too.
   conf.cxx.defines << 'BC2CPP_VM_START_COUNTER' if ENV['BC2CPP_VM_START_COUNTER'] == '1'
   conf.gem core: 'mruby-numeric-ext'
