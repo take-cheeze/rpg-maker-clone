@@ -157,6 +157,17 @@ end
 # read them are defined after its build_config_initializer, so that block is where the copies are made. mruby's
 # top-level mrblib/*.rb is no gem and stays as it is. Called last in the closed target's stanza, once every gem is
 # declared.
+# NATIVE_STD: mruby-io's standard streams (STDIN, STDOUT, STDERR and $stdin, $stdout, $stderr) become one call to
+# __bc2cpp_std_init (mruby-bc2cpp-std), which makes them natively. The statements read the environment, so the core
+# load plan never takes them; this replaces their block in the stubbed copy the closed build compiles.
+def bc2cpp_native_std_streams(path)
+  text = File.binread(path)
+  block = /^# Standard input stream.*?^\$stderr = STDERR\n/m
+  raise "bc2cpp_native_std_streams: the standard streams block is not in #{path}" unless text.match?(block)
+
+  File.binwrite(path, text.sub(block, "__bc2cpp_std_init # native: mruby-bc2cpp-std\n"))
+end
+
 def bc2cpp_stub_core_mrblib(conf)
   return unless conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
 
@@ -185,6 +196,7 @@ def bc2cpp_stub_core_mrblib(conf)
         file out => [src, stubs_rb, generated] do
           FileUtils.mkdir_p File.dirname(out), verbose: true
           MrblibStubs.write_stubbed(src, out, [manifest], LoadCompile.read_plans([plan]))
+          bc2cpp_native_std_streams(out) if src.end_with?('mruby-io/mrblib/io.rb')
         end
         out
       end
@@ -267,6 +279,9 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # engine (the RPG2000 battle turn-order and message-pacing code both use it),
   # while the CRuby host checks pass. See scripts/rpg2k/boot_check.bash.
   conf.gem core: 'mruby-enum-ext'
+  # The standard streams' native init (mruby-bc2cpp-std): declared before mruby-io, so its method exists when io.rb
+  # runs. Only the closed build's core stub step rewrites io.rb to call it (bc2cpp_native_std_streams).
+  conf.gem "#{MRUBY_ROOT}/../../mruby-bc2cpp-std" if conf.name == 'closed'
   conf.gem core: 'mruby-io'
   # Dir: mruby-io stopped shipping it in mruby 4.0 -- the class moved to this
   # dedicated core gem (with its own hal-posix-dir/hal-win-dir backend, chosen
