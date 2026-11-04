@@ -243,6 +243,8 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # VM-start counter (measurement only, scripts/bc2cpp/vm_start_counter.patch). Compiled into the VM when
   # BC2CPP_VM_START_COUNTER=1; off otherwise, so no shipped build changes.
   conf.cc.defines << 'BC2CPP_VM_START_COUNTER' if ENV['BC2CPP_VM_START_COUNTER'] == '1'
+  # MRB_CORE_CLASS_UNITS (mruby tasks/mrblib.rake): the closed build runs the core's compiled class bodies, not the core mrblib.
+  conf.cc.defines << 'MRB_CORE_CLASS_UNITS' if conf.name == 'closed'
   # The closed target compiles mruby's vm.c as C++ (vm-cxx.cxx), so the same define goes there too.
   conf.cxx.defines << 'BC2CPP_VM_START_COUNTER' if ENV['BC2CPP_VM_START_COUNTER'] == '1'
   conf.gem core: 'mruby-numeric-ext'
