@@ -87,6 +87,9 @@ parts = [PRELUDE]
 files.each do |file|
   parts << "# ---- #{file}\n" + transform(File.read(File.join(lib_dir, file), encoding: "UTF-8"))
 end
+# Each library file is a require feature (rbs/buffer), so require names resolve to the code in this mrblib.
+features = files.map { |file| "MRubyRequire.provide(#{file.sub(/\.rb\z/, "").inspect}) { true }" }
+parts << "# ---- mruby-rbs features\n" + features.join("\n") + "\nMRubyRequire.provide('rbs') { defined?(RBS::Parser) }"
 parts << "# ---- mruby-rbs epilogue\n" + EPILOGUE
 File.write(output, parts.join("\n"), encoding: "UTF-8")
 puts "wrote #{output} (#{files.size} files)"
