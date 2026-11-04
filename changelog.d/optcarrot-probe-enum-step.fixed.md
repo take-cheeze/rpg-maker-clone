@@ -1,0 +1,1 @@
+- The Optcarrot probe's sealed build turns off the enum-step driver (`BC2CPP_ENUM_STEP=0`). Its driver is compiled by `mrb_load_string`, which that build excludes with `mruby-compiler`, so the generated code did not link.
