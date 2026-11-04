@@ -90,8 +90,9 @@ module RakeShim
           created = implicit_node(p)
           queue << created if created
         end
-        # A file with no action and not on disk takes a matching rule's action (Rake's enhance_with_matching_rule).
-        queue << node if node.kind == :file && node.actions.empty? && !File.exist?(absolute_name(node.name)) && apply_rule(node)
+        # A file with no action of its own takes a matching rule's action, whether or not it is on disk: a stale object
+        # must still get its compile edge, or a changed source (gem_init.c) never reaches it. Ninja's mtime check decides.
+        queue << node if node.kind == :file && node.actions.empty? && apply_rule(node)
       end
     end
 
