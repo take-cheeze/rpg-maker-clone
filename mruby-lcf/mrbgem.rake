@@ -200,4 +200,6 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
     objs << objfile("#{build_dir}/schema_tables")
     cxx.defines << 'LCF_SCHEMA_TABLES'
   end
+
+  bc2cpp_blank_units(spec)
 end

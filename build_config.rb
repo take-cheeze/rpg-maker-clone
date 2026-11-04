@@ -121,6 +121,31 @@ def wio_strip_clock(spec)
   end
 end
 
+# UNIT_BLANK (tools/bc2cpp/unit_blank.rb): a compiled gem's mrblib copy without the top-level class and module statements
+# its generation emitted as units (the *_units.txt manifest). Those units run from gem_init, so the VM must not run them
+# again. Called last in the gem's stanza: the copies depend on the generation that writes the manifest.
+def bc2cpp_blank_units(spec)
+  compiled = BC2CPP_COMPILED_GEMS["#{spec.name}-compiled"]
+  return unless compiled
+
+  require_relative 'tools/bc2cpp/compiled_gems'
+  require_relative 'tools/bc2cpp/unit_blank'
+  dir = "#{spec.build.build_dir}/mrbgems/#{spec.name}-compiled"
+  manifest = "#{dir}/#{compiled[:out_symbol]}_units.txt"
+  generated = "#{dir}/#{compiled[:out_symbol]}_gen.cpp"
+  blank_rb = File.expand_path('tools/bc2cpp/unit_blank.rb', __dir__)
+  out_dir = "#{spec.build_dir}/mrblib_units"
+  spec.rbfiles = spec.rbfiles.map do |src|
+    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
+    out = "#{out_dir}/#{rel}"
+    file out => [src, blank_rb, generated, manifest] do
+      FileUtils.mkdir_p File.dirname(out), verbose: true
+      UnitBlank.write(src, out, manifest)
+    end
+    out
+  end
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
