@@ -46,3 +46,6 @@
 [submodule "3rd/rbs"]
 	path = 3rd/rbs
 	url = https://github.com/take-cheeze/rbs.git
+[submodule "3rd/prism"]
+	path = 3rd/prism
+	url = https://github.com/take-cheeze/prism
