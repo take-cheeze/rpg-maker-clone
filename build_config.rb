@@ -121,76 +121,6 @@ def wio_strip_clock(spec)
   end
 end
 
-# MRBLIB_STUBS (tools/bc2cpp/mrblib_stubs.rb): in a build with compiled gems, the engine gem's mrblib is a build-time
-# copy in which each compiled method that never runs as bytecode has an empty body. Call it last in the spec block:
-# it replaces every rbfiles entry. The compiled gems' generation writes the manifests it reads.
-def bc2cpp_stub_mrblib(spec)
-  names = spec.build.gems.map(&:name)
-  return unless names.any? { |name| name.end_with?('-compiled') }
-
-  require_relative 'tools/bc2cpp/compiled_gems'
-  require_relative 'tools/bc2cpp/load_compile'
-  compiled = BC2CPP_COMPILED_GEMS.select { |name, _| names.include?(name) }
-  dirs = compiled.map { |name, g| ["#{spec.build.build_dir}/mrbgems/#{name}", g[:out_symbol]] }
-  manifests = dirs.map { |dir, symbol| MrblibStubs.manifest_path(dir, symbol) }
-  generated = dirs.map { |dir, symbol| "#{dir}/#{symbol}_gen.cpp" }
-  stubs_rb = File.expand_path('tools/bc2cpp/mrblib_stubs.rb', __dir__)
-  out_dir = "#{spec.build_dir}/mrblib_stubs"
-  # LOAD_COMPILE: the files this gem's mrblib is made of, before the rewrite below -- the sources the load plans name.
-  spec.instance_variable_set(:@bc2cpp_mrblib_sources, spec.rbfiles.dup)
-  plans = dirs.map { |dir, symbol| LoadCompile.plan_path(dir, symbol) }
-  spec.rbfiles = spec.rbfiles.map do |src|
-    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
-    out = "#{out_dir}/#{rel}"
-    # The generation that writes a gem's code writes its manifest too.
-    file out => [src, stubs_rb, *generated] do
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      MrblibStubs.write_stubbed(src, out, manifests, LoadCompile.read_plans(plans))
-    end
-    out
-  end
-end
-
-# MRBLIB_STUBS for mruby's core gems and the external gems whose mrblib the core-compiled generation reads
-# (BC2CPP_CORE_MRBLIB_GEMS, BC2CPP_EXTERNAL_MRBLIB_GEMS): the bodies mruby-core-compiled's manifest lists ship empty
-# too, as the engine gems' do. The gem's rbfiles are globbed in its setup, after its mrbgem.rake, and the rules that
-# read them are defined after its build_config_initializer, so that block is where the copies are made. mruby's
-# top-level mrblib/*.rb is no gem and stays as it is. Called last in the closed target's stanza, once every gem is
-# declared.
-def bc2cpp_stub_core_mrblib(conf)
-  return unless conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
-
-  require_relative 'tools/bc2cpp/compiled_gems'
-  require_relative 'tools/bc2cpp/mrblib_stubs'
-  require_relative 'tools/bc2cpp/load_compile'
-  symbol = BC2CPP_COMPILED_GEMS.fetch('mruby-core-compiled')[:out_symbol]
-  core_dir = "#{conf.build_dir}/mrbgems/mruby-core-compiled"
-  manifest = MrblibStubs.manifest_path(core_dir, symbol)
-  plan = LoadCompile.plan_path(core_dir, symbol)
-  generated = "#{core_dir}/#{symbol}_gen.cpp"
-  stubs_rb = File.expand_path('tools/bc2cpp/mrblib_stubs.rb', __dir__)
-  stubbed = BC2CPP_CORE_MRBLIB_GEMS + BC2CPP_EXTERNAL_MRBLIB_GEMS
-  conf.gems.each do |spec|
-    next unless stubbed.include?(spec.name)
-    raise "bc2cpp_stub_core_mrblib: #{spec.name} already has a build_config_initializer" if spec.build_config_initializer
-
-    spec.build_config_initializer = proc do
-      out_dir = "#{build_dir}/mrblib_stubs"
-      # LOAD_COMPILE: the files the core's mrblib is made of, before the rewrite (bc2cpp_load_world reads them).
-      @bc2cpp_mrblib_sources = rbfiles.dup
-      self.rbfiles = rbfiles.map do |src|
-        out = "#{out_dir}/#{src.delete_prefix("#{dir}/")}"
-        # The generation that writes the core manifest writes it with the code, so the copies follow both.
-        file out => [src, stubs_rb, generated] do
-          FileUtils.mkdir_p File.dirname(out), verbose: true
-          MrblibStubs.write_stubbed(src, out, [manifest], LoadCompile.read_plans([plan]))
-        end
-        out
-      end
-    end
-  end
-end
-
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
@@ -1251,11 +1181,7 @@ if closed
     bc2cpp_core_mt_exclude(conf)
     rpg_maker_gems(conf)
     # mruby-enumerator arrives only as a dependency (mruby-set, mruby-enum-chain, mruby-enum-lazy), which mruby resolves
-    # after this stanza runs, so bc2cpp_stub_core_mrblib would not see it in conf.gems. Declared here, it is a core
-    # mrblib gem like the others, and its bodies in the core manifest are emptied (BC2CPP_CORE_MRBLIB_GEMS). Mruby
-    # keeps one entry per gem name, so the gem set is the same.
     conf.gem core: 'mruby-enumerator'
-    bc2cpp_stub_core_mrblib(conf)
   end
 end
 

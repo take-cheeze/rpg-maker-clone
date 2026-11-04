@@ -1490,5 +1490,4 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   wio_strip_inline_helpers(spec)
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
-  bc2cpp_stub_mrblib(spec)
 end
