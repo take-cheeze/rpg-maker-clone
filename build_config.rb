@@ -148,6 +148,39 @@ def bc2cpp_blank_units(spec)
   end
 end
 
+# UNIT_BLANK for mruby's core extension gems (BC2CPP_CORE_MRBLIB_GEMS, BC2CPP_EXTERNAL_MRBLIB_GEMS): their top-level class
+# and module statements that the core generation emitted as units are removed from the copies the VM loads, as
+# bc2cpp_blank_units does for the engine gems. mruby's own top-level mrblib/*.rb is no gem and is not rewritten here.
+# Called once the gem declarations are in place (closed build only).
+def bc2cpp_blank_core_units(conf)
+  return unless conf.name == 'closed' && conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
+
+  require_relative 'tools/bc2cpp/compiled_gems'
+  require_relative 'tools/bc2cpp/unit_blank'
+  symbol = BC2CPP_COMPILED_GEMS.fetch('mruby-core-compiled')[:out_symbol]
+  core_dir = "#{conf.build_dir}/mrbgems/mruby-core-compiled"
+  manifest = "#{core_dir}/#{symbol}_units.txt"
+  generated = "#{core_dir}/#{symbol}_gen.cpp"
+  blank_rb = File.expand_path('tools/bc2cpp/unit_blank.rb', __dir__)
+  stubbed = BC2CPP_CORE_MRBLIB_GEMS + BC2CPP_EXTERNAL_MRBLIB_GEMS
+  conf.gems.each do |spec|
+    next unless stubbed.include?(spec.name)
+    raise "bc2cpp_blank_core_units: #{spec.name} already has a build_config_initializer" if spec.build_config_initializer
+
+    spec.build_config_initializer = proc do
+      out_dir = "#{build_dir}/mrblib_units"
+      self.rbfiles = rbfiles.map do |src|
+        out = "#{out_dir}/#{src.delete_prefix("#{dir}/")}"
+        file out => [src, blank_rb, generated] do
+          FileUtils.mkdir_p File.dirname(out), verbose: true
+          UnitBlank.write(src, out, manifest)
+        end
+        out
+      end
+    end
+  end
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
@@ -1209,6 +1242,7 @@ if closed
     rpg_maker_gems(conf)
     # mruby-enumerator arrives only as a dependency (mruby-set, mruby-enum-chain, mruby-enum-lazy), which mruby resolves
     conf.gem core: 'mruby-enumerator'
+    bc2cpp_blank_core_units(conf)
   end
 end
 
