@@ -10,7 +10,7 @@
 # directory, so the submodule is never modified.
 PRISM_ROOT = File.expand_path('../../3rd/prism', __dir__)
 PRISM_TEMPLATES = File.join(PRISM_ROOT, 'templates')
-GEM_ROOT = __dir__
+PRISM_GEM_ROOT = __dir__
 
 require File.join(PRISM_TEMPLATES, 'template')
 
@@ -58,10 +58,10 @@ MRuby::Gem::Specification.new('mruby-prism') do |spec|
   # The Ruby half: rebuilt when the fork, the encoding model or the build script changes.
   mrblib_out = "#{build_dir}/prism_mrblib.rb"
   inputs = Dir["#{PRISM_ROOT}/lib/prism/**/*.rb"] + Dir["#{PRISM_ROOT}/templates/**/*"] +
-           ["#{GEM_ROOT}/ruby/encoding_light.rb", "#{GEM_ROOT}/tools/build_mrblib.rb"]
+           ["#{PRISM_GEM_ROOT}/ruby/encoding_light.rb", "#{PRISM_GEM_ROOT}/tools/build_mrblib.rb"]
   unless File.exist?(mrblib_out) && File.mtime(mrblib_out) >= inputs.map { |f| File.mtime(f) }.max
     FileUtils.mkdir_p(File.dirname(mrblib_out))
-    ok = system(RbConfig.ruby, "#{GEM_ROOT}/tools/build_mrblib.rb", PRISM_ROOT, "#{GEM_ROOT}/ruby/encoding_light.rb", mrblib_out)
+    ok = system(RbConfig.ruby, "#{PRISM_GEM_ROOT}/tools/build_mrblib.rb", PRISM_ROOT, "#{PRISM_GEM_ROOT}/ruby/encoding_light.rb", mrblib_out)
     raise 'mruby-prism: tools/build_mrblib.rb failed' unless ok
   end
   spec.rbfiles << mrblib_out
