@@ -71,10 +71,9 @@ fixtures. Compiler/eval gems are rejected in that runtime. Native-only
 archives are recreated from their active object lists so an incremental build
 cannot retain removed compiler or bytecode objects.
 
-`BC2CPP_NATIVE_ONLY=0` keeps the closed target's mixed native/bytecode dispatch
-for diagnostic builds; it does not add the source compiler back. Other
-bc2cpp targets retain `MRB_NATIVE_VM_REQUIRE`, which rejects bytecode inside
-Fibers. Existing C-boundary restrictions still apply: a C function that keeps
+The closed target has no mixed-mode override: bytecode is refused in its root
+context and in Fibers alike. Other bc2cpp targets retain `MRB_NATIVE_VM_REQUIRE`,
+which rejects bytecode inside Fibers. Existing C-boundary restrictions still apply: a C function that keeps
 its own stack frame cannot suspend safely.
 
 ## Validation
