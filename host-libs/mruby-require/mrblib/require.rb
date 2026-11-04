@@ -1,3 +1,14 @@
+# LoadError is part of require's contract, and this mruby does not define it.
+unless defined?(ScriptError)
+  class ScriptError < Exception
+  end
+end
+
+unless defined?(LoadError)
+  class LoadError < ScriptError
+  end
+end
+
 # Features provided by the build, as name => check. A check returns true when the code it names is present.
 module MRubyRequire
   FEATURES = {}
