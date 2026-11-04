@@ -167,6 +167,20 @@ def bc2cpp_blank_core_units(conf)
   end
 end
 
+# VM-free: every gem's mrblib bytecode is dropped in the closed build, not only the ones the generation blanks. A gem's
+# rbfiles are set when its setup runs and its build-config initializer runs after that, so the empty list is set last.
+def bc2cpp_drop_mrblib(conf)
+  return unless conf.name == 'closed'
+
+  conf.gems.each do |spec|
+    previous = spec.build_config_initializer
+    spec.build_config_initializer = proc do
+      instance_eval(&previous) if previous
+      self.rbfiles = []
+    end
+  end
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
@@ -1231,6 +1245,7 @@ if closed
     # mruby-enumerator arrives only as a dependency (mruby-set, mruby-enum-chain, mruby-enum-lazy), which mruby resolves
     conf.gem core: 'mruby-enumerator'
     bc2cpp_blank_core_units(conf)
+    bc2cpp_drop_mrblib(conf)
   end
 end
 
