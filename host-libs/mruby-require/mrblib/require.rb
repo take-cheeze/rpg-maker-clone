@@ -81,10 +81,12 @@ class File
   end
 end
 
-# File.readlines: the lines of a file. Options such as encoding: are accepted and not needed (text is read as bytes).
+# File.readlines: the lines of a file. chomp: removes each line's newline, as CRuby does; encoding: is accepted and not
+# needed (text is read as bytes).
 class File
-  def self.readlines(path, *_options)
-    File.read(path).lines
+  def self.readlines(path, *options)
+    lines = File.read(path).lines
+    options.last.is_a?(Hash) && options.last[:chomp] ? lines.map(&:chomp) : lines
   end
 end
 
@@ -297,19 +299,6 @@ module Kernel
     exit 1
   end
 end unless Kernel.method_defined?(:abort)
-
-# Regexp.last_match(n): the group n of the last match, as CRuby gives it. mruby-onig-regexp's last_match takes no index.
-# Regexp is OnigRegexp here, so the method is wrapped on that class.
-class OnigRegexp
-  class << self
-    alias __core_last_match last_match
-
-    def last_match(index = nil)
-      match = __core_last_match
-      index.nil? || match.nil? ? match : match[index]
-    end
-  end
-end
 
 # Kernel#warn: each message to $stderr, one per line, as CRuby writes plain messages. mruby has no warn.
 module Kernel
