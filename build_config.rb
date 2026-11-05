@@ -1247,6 +1247,9 @@ if closed
     rpg_maker_gems(conf)
     # mruby-enumerator arrives only as a dependency (mruby-set, mruby-enum-chain, mruby-enum-lazy), which mruby resolves
     conf.gem core: 'mruby-enumerator'
+    # mruby-string-ext arrives only as a dependency, which mruby resolves after this block; declared here so the
+    # mrblib drop below reaches it (its Ruby is compiled into core_compiled's class units).
+    conf.gem core: 'mruby-string-ext'
     bc2cpp_blank_core_units(conf)
     bc2cpp_drop_mrblib(conf)
   end
