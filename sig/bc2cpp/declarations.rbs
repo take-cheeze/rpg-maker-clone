@@ -8390,6 +8390,17 @@ class Kernel
   def __dir__: () -> String?
 end
 
+# Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
+# bc2cpp-native: base_string-ext
+class String
+  def __upto_endless: () -> untyped
+  def chars: () -> untyped
+  def codepoints: () -> untyped
+  def each_char: () -> untyped
+  def lines: () -> untyped
+  def upto: (untyped, ?untyped) -> untyped
+end
+
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
