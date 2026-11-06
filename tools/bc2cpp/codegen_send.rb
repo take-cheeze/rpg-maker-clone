@@ -66,9 +66,10 @@ class CodeGen
                                           name: name, d: d, owner_def: owner_def)
         return splat_result if splat_result
       end
-      # KEYWORD_SPLAT_EMPTY: `recv.m(a, **h)` with no literal keywords. The call is the plain n-positional send when
-      # h is empty; a non-empty h needs the keyword call convention, which is not implemented, so it raises at run time.
-      if insn.keyword_splat? && !insn.positional_splat? && !insn.argc.nil?
+      # KEYWORD_SPLAT_DYNAMIC: `recv.m(a, **h)`. An empty hash is the plain n-positional send; a non-empty one goes
+      # through bc2cpp_funcall_kw, which passes it as keyword arguments. Only SEND/SSEND: with a block, the block slot
+      # follows the keyword slot and the site stays `#error`.
+      if insn.keyword_splat? && !insn.positional_splat? && !insn.argc.nil? && %i[SEND SSEND].include?(insn.op)
         n = insn.argc
         plain = Insn.new(lineno: insn.lineno, addr: insn.addr, op: insn.op,
                          args: insn.args.sub(/n=#{n}\|nk=\*/, "n=#{n}"), raw: insn.raw,
@@ -79,9 +80,18 @@ class CodeGen
                                        call_arguments: call_arguments, trace_idx: trace_idx,
                                        trace_receiver_reg: trace_receiver_reg, trace_reg_offset: trace_reg_offset,
                                        typed_fallback: typed_fallback)
-        return "  if (!mrb_hash_p(r#{kw_reg}) || !mrb_hash_empty_p(M, r#{kw_reg})) " \
-               "mrb_raise(M, mrb_class_get(M, \"NotImplementedError\"), \"#{name}: keyword options are not supported\");\n" \
-               "#{plain_code}"
+        kw_recv = call_receiver || (self_implicit ? 'self' : "#{RegName[d]}")
+        kw_args = call_arguments || (1..n).map { |k| "#{RegName[d.to_i + k]}" }
+        return "  {\n" \
+               "    mrb_value bc2cpp_kw = bc2cpp_kwsplat_hash(M, #{RegName[kw_reg]});\n" \
+               "    if (mrb_hash_p(bc2cpp_kw) && !mrb_hash_empty_p(M, bc2cpp_kw)) {\n" \
+               "      mrb_value bc2cpp_kw_argv[#{[n, 1].max}] = {#{kw_args.join(', ')}};\n" \
+               "      #{RegName[d]} = bc2cpp_funcall_kw(M, #{kw_recv}, mrb_intern_cstr(M, \"#{name}\"), #{n}, " \
+               "bc2cpp_kw_argv, bc2cpp_kw);\n" \
+               "    } else {\n" \
+               "#{plain_code}" \
+               "    }\n" \
+               "  }\n"
       end
       return "  #error SEND/SSEND :#{name} has a splat and/or keyword argument list (#{insn.argc_text}) -- not in this prototype's supported subset\n"
     end

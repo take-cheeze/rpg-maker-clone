@@ -2039,6 +2039,14 @@ if $PROGRAM_NAME == __FILE__
       if (mrb_type(recv) == MRB_TT_PROC && bc2cpp_cfunc_proc_call_p(M, recv, mid)) return bc2cpp_yield_argv(M, recv, argc, argv);
       return mrb_funcall_argv(M, recv, mid, argc, argv);
     }
+    // KEYWORD_SPLAT_DYNAMIC: a `**v` value as a Hash. nil means no keywords; anything else converts with to_hash, as
+    // a Ruby call does, and a value that does not convert raises TypeError.
+    static inline mrb_value bc2cpp_kwsplat_hash(mrb_state* M, mrb_value v) {
+      if (mrb_nil_p(v) || mrb_hash_p(v)) return v;
+      mrb_value h = mrb_check_hash_type(M, v);
+      if (mrb_nil_p(h)) mrb_raise(M, mrb_class_get(M, "TypeError"), "no implicit conversion into Hash");
+      return h;
+    }
   CPP
   # IO_PUTS_MODEL: one shared body for every explicit-receiver `puts`, so the
   # by-name fallback exists once instead of once per site.
@@ -2204,6 +2212,14 @@ if $PROGRAM_NAME == __FILE__
   # class the method is defined on (its origin when prepended), then the call mrb_funcall would make once found.
   # No method there is NoMethodError through method_missing, as prepare_missing does.
   puts 'extern "C" mrb_value mrb_funcall_with_method(mrb_state*, mrb_value, mrb_sym, const mrb_method_t*, struct RClass*, mrb_int, const mrb_value*, mrb_value);'
+  # KEYWORD_SPLAT_DYNAMIC: vm.c's keyword-passing funcall, declared only in mruby/internal.h (see mrb_str_aref above).
+  puts 'extern "C" mrb_value mrb_funcall_send(mrb_state*, mrb_value, mrb_sym, mrb_int, const mrb_value*, mrb_value, mrb_value);'
+  # The keyword hash goes to mrb_funcall_send, which passes it as keyword arguments and drops it when empty.
+  puts <<~CPP
+    static inline mrb_value bc2cpp_funcall_kw(mrb_state* M, mrb_value recv, mrb_sym mid, mrb_int argc, const mrb_value* argv, mrb_value kdict) {
+      return mrb_funcall_send(M, recv, mid, argc, argv, kdict, mrb_nil_value());
+    }
+  CPP
   puts <<~CPP
     [[maybe_unused]] static mrb_value bc2cpp_super_call(mrb_state* M, mrb_value self, struct RClass* owner, mrb_sym mid,
                                                         mrb_int argc, const mrb_value* argv, mrb_value blk) {
