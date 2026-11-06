@@ -1,3 +1,7 @@
+# mruby's core defines no LoadError (the exception require raises for a missing feature). CRuby's ScriptError family.
+class ScriptError < StandardError; end unless defined?(ScriptError)
+class LoadError < ScriptError; end unless defined?(LoadError)
+
 # Features provided by the build, as name => check. A check returns true when the code it names is present.
 module MRubyRequire
   FEATURES = {}
@@ -81,7 +85,15 @@ RUBY_PLATFORM = 'mruby' unless defined?(RUBY_PLATFORM)
 # File.stat, reduced to what bc2cpp reads from it: the modification time and the size, taken from the open file (mruby-io
 # has no stat). Any other field is absent, and a missing file raises as File.open does.
 class File
-  Stat = Struct.new(:mtime, :size) unless defined?(File::Stat)
+  # A plain class, not Struct: this file loads before mruby-struct in a build that links both.
+  class Stat
+    attr_reader :mtime, :size
+
+    def initialize(mtime, size)
+      @mtime = mtime
+      @size = size
+    end
+  end unless defined?(File::Stat)
 
   def self.stat(path)
     File.open(path, 'rb') { |io| File::Stat.new(io.mtime, io.size) }
