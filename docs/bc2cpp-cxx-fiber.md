@@ -180,8 +180,25 @@ receiver and, when it is registered and the argument count fits, arms the method
 frame; the step CALLs that frame. Anything else runs as an ordinary call with the block and its value is the site's result
 at once. A root that sends by name also makes the methods its symbol literals name roots. `block_in_step_check` covers it.
 
-Limits: a block passed to a send whose name is not proven stays a possible rebinder (block_self_world), so it is not a step;
-keyword arguments are not passed.
+Keywords and splats: a `send`-family call, or a call with a forwarded block, may carry a splat, keywords and a block in any
+shape (`@obj.__send__ @meth, *@args, **@kwd, &block`): `dyn_call_shape` finds the operands, the name is the first element of
+a packed array for `send`, and the keyword Hash (or literal key/value pairs) goes to `bc2cpp_dyn_call`. A suspendable method
+takes no keywords, so an empty Hash dispatches to the registered step and a non-empty one runs as an ordinary send that carries
+them (`mrb_funcall_send`). A method with an explicit `&block` parameter is a CALL target. When some method a fiber reaches
+sends by name, the program's other yielding methods that a symbol literal names become roots (`dynamic_send_targets`).
+
+Limits: a block passed to a send whose name is not proven stays a possible rebinder (block_self_world), so it is not a step.
+
+## Enumerator#next
+
+`BC2CPP_ENUMERATOR_FIBER=1` (opt-in; off by default) lets mruby-enumerator's `next_values`, `each` and
+`__enumerator_block_call` compile instead of staying bytecode (`CoreMethods.enumerator_fiber_step?`). `next_values` then
+builds its Fiber from two block steps (the body and the `each do |*args| Fiber.yield args ... end` block), `Enumerator#each` is a
+registered step, `__enumerator_block_call` forwards through a keyword-carrying dynamic call, and `obj.instance_eval { @args }` /
+`{ @args = args }` compile as an ivar read/write (`INSTANCE_EVAL_IVAR`). `Enumerator#next` over `Array#each`, a user `each` reached
+through `to_enum` with an argument, `each_with_index`, `Hash#each` and `Integer#times` runs on the C++ Fiber
+(`enumerator_next_check`). Iterators that are not registered steps (for example `Enumerable#each_slice`) still reach
+mruby-fiber's `Fiber.yield`.
 
 ## Inner blocks that yield
 
