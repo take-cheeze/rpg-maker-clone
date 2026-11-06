@@ -119,6 +119,19 @@ the receiver it is calling on (`bc2cpp_prologue_set_recv`); an entry takes the h
 entry (no inlined core arm), and a dual iterator's wrapper takes its variant when a Fiber body is armed
 (`bc2cpp_prologue.expect`) as well as under an mruby Fiber. `resumable_receiver_check` passes.
 
+## Block steps
+
+A literal block whose `Fiber.yield` is not its last act (`{ |x| got = Fiber.yield x; got.to_i + 1 }`) is compiled a
+second time as a resumable step (`block_step_candidate?`, `compile_block_step`): its irep is compiled as a synthetic
+method of the enclosing owner, so its registers live in a frame and its `Fiber.yield` is a YIELD. The block's proc
+carries a frame maker in its env (the slot before the entry; flag bit 2). At a block-call suspension the fiber's
+adapter asks the maker for the block's frame and returns `CALL`: the block runs as a frame of the fiber, its yields
+reach the resumer, and its result becomes the suspended method's resume value. Steps are compiled ahead of the owner
+(`compile_block_steps`, including blocks nested in a Fiber body) so nothing is mid-flight.
+
+Limits: no captured locals, no nested block, no `break`/`return`/`yield` to the method's block, and mandatory or
+rest-only parameters; a block outside them keeps its tail yield or the call from C. `block_step_check` passes.
+
 Still failing:
 
 - `resumable_variants_check`: 12 of its 140 scenarios (the direct iterators `Array#fetch`, `Hash#fetch`, `String#upto`,
