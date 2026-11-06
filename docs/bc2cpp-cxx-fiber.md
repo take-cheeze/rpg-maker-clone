@@ -100,8 +100,19 @@ block's env so the GC keeps it). That is sound only when nothing can change the 
 with no SETUPVAR; any other capture keeps the old form. The prologue may use GETIV, GETUPVAR, MOVE, the literal loads
 and STRING; its only call is the tail call.
 
-Still failing, each for a reason this slice does not cover:
+A tail call may pass a literal block (`Fiber.new { each_mark { |x| Fiber.yield x * 10 } }`). The method's entry copies
+that block to the heap when it parks its frame (the block may be a frame-local stack block), and the block's own
+`Fiber.yield` is handled as a tail yield:
 
-- `resumable_block_check`: the body passes a block to the suspendable method (`each_mark { |x| Fiber.yield ... }`).
+- A block whose last act is `Fiber.yield v` (`tail_yield_block?`) has nothing left to resume after the yield. When the
+  adapter calls such a block from a block-call suspension, it arms the block's env (`bc2cpp_tail_yield`); the block's
+  direct entry (`Bc2cppTailYieldScope`) sees the match, and the tail yield stores `v` and returns instead of calling
+  `Fiber.yield`. The adapter yields `v`, and the next resume value is the block's result, which the method's step
+  takes as its resume value. Anywhere else the same block yields the ordinary way.
+
+`resumable_block_check` passes with it. Still failing, each for a reason this slice does not cover:
+
 - `resumable_receiver_check`, `resumable_variants_check`: the body calls a core iterator on another receiver
-  (`arr.each_index { Fiber.yield i }`), which needs block steps.
+  (`arr.each_index { Fiber.yield i }`), whose entry is a dual variant, not a fiber root with an id to arm.
+- A block whose `Fiber.yield` is not its last act (the `Enumerator#next_values` body, nested Enumerable methods) still
+  needs a real block step.
