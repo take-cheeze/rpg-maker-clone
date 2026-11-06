@@ -51,6 +51,13 @@ MRubyRequire.provide('open3') { defined?(Open3) }
 
 # RbConfig.ruby: the interpreter bc2cpp starts its tools with. Under mruby it is the wrapper tools/bc2cpp/mruby-ruby,
 # which runs a tool through the mruby binary and its baked source; the build or the run sets BC2CPP_RUBY to it.
+module Kernel
+  # Call-site locations are not available in this VM: callers that only report a location get none.
+  def caller_locations(*_args)
+    []
+  end unless method_defined?(:caller_locations)
+end
+
 module RbConfig
   def self.ruby
     interpreter = ENV['BC2CPP_RUBY']
@@ -131,6 +138,47 @@ end
 
 # Mutex, for the single thread mruby runs: no other thread can hold it, so a lock is only ever taken by the one caller.
 # Locking it again while held raises ThreadError, as CRuby does for a recursive lock.
+# String#scrub (CRuby 2.1+): each invalid UTF-8 byte sequence becomes the replacement (U+FFFD by default).
+class String
+  unless method_defined?(:scrub)
+    def scrub(repl = "\uFFFD")
+      out = "".b
+      bytes = self.bytes
+      i = 0
+      n = bytes.size
+      while i < n
+        b = bytes[i]
+        len = if b < 0x80 then 1
+              elsif b >= 0xC2 && b <= 0xDF then 2
+              elsif b >= 0xE0 && b <= 0xEF then 3
+              elsif b >= 0xF0 && b <= 0xF4 then 4
+              else 0
+              end
+        valid = len > 0 && i + len <= n
+        k = 1
+        while valid && k < len
+          c = bytes[i + k]
+          valid = (c & 0xC0) == 0x80
+          k += 1
+        end
+        if valid
+          out << bytes[i, len].pack("C*")
+          i += len
+        else
+          # One replacement for the whole maximal prefix of an invalid sequence (a lead byte and its continuation bytes).
+          j = 1
+          while len > 0 && j < len && i + j < n && (bytes[i + j] & 0xC0) == 0x80
+            j += 1
+          end
+          out << repl.to_s.b
+          i += j
+        end
+      end
+      out
+    end
+  end
+end
+
 class ThreadError < StandardError; end unless defined?(ThreadError)
 
 class Mutex
