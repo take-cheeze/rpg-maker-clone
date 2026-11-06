@@ -45,14 +45,23 @@ module Digest
 
     def hexdigest
       words = INITIAL.dup
-      message = @buffer.bytes
-      bit_length = message.size * 8
-      message << 0x80
-      message << 0 while message.size % 64 != 56
-      8.times { |i| message << ((bit_length >> (56 - 8 * i)) & 0xff) }
+      buf = @buffer
+      n = buf.bytesize
+      bit_length = n * 8
+      full = n - (n % 64)
       offset = 0
-      while offset < message.size
-        compress(words, message, offset)
+      while offset < full
+        compress(words, buf, offset)
+        offset += 64
+      end
+      # Padding for the final partial block (a single 0x80, zeros, then the 64-bit length), in one short string:
+      # the message is never copied into an array of bytes.
+      tail = buf.byteslice(full, n - full) + 0x80.chr
+      tail << 0.chr * ((56 - tail.bytesize) % 64)
+      8.times { |i| tail << ((bit_length >> (56 - 8 * i)) & 0xff).chr }
+      offset = 0
+      while offset < tail.bytesize
+        compress(words, tail, offset)
         offset += 64
       end
       words.map { |word| format("%08x", word) }.join
@@ -68,7 +77,7 @@ module Digest
       w = Array.new(64, 0)
       16.times do |t|
         base = offset + 4 * t
-        w[t] = (message[base] << 24) | (message[base + 1] << 16) | (message[base + 2] << 8) | message[base + 3]
+        w[t] = (message.getbyte(base) << 24) | (message.getbyte(base + 1) << 16) | (message.getbyte(base + 2) << 8) | message.getbyte(base + 3)
       end
       (16...64).each do |t|
         s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >> 3)

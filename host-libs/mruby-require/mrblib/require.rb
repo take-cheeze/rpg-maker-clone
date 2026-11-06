@@ -51,6 +51,13 @@ MRubyRequire.provide('open3') { defined?(Open3) }
 
 # RbConfig.ruby: the interpreter bc2cpp starts its tools with. Under mruby it is the wrapper tools/bc2cpp/mruby-ruby,
 # which runs a tool through the mruby binary and its baked source; the build or the run sets BC2CPP_RUBY to it.
+module Kernel
+  # Call-site locations are not available in this VM: callers that only report a location get none.
+  def caller_locations(*_args)
+    []
+  end unless method_defined?(:caller_locations)
+end
+
 module RbConfig
   def self.ruby
     interpreter = ENV['BC2CPP_RUBY']
@@ -81,10 +88,12 @@ class File
   end
 end
 
-# File.readlines: the lines of a file. Options such as encoding: are accepted and not needed (text is read as bytes).
+# File.readlines: the lines of a file. chomp: removes each line's newline, as CRuby does; encoding: is accepted and not
+# needed (text is read as bytes).
 class File
-  def self.readlines(path, *_options)
-    File.read(path).lines
+  def self.readlines(path, *options)
+    lines = File.read(path).lines
+    options.last.is_a?(Hash) && options.last[:chomp] ? lines.map(&:chomp) : lines
   end
 end
 
@@ -129,6 +138,47 @@ end
 
 # Mutex, for the single thread mruby runs: no other thread can hold it, so a lock is only ever taken by the one caller.
 # Locking it again while held raises ThreadError, as CRuby does for a recursive lock.
+# String#scrub (CRuby 2.1+): each invalid UTF-8 byte sequence becomes the replacement (U+FFFD by default).
+class String
+  unless method_defined?(:scrub)
+    def scrub(repl = "\uFFFD")
+      out = "".b
+      bytes = self.bytes
+      i = 0
+      n = bytes.size
+      while i < n
+        b = bytes[i]
+        len = if b < 0x80 then 1
+              elsif b >= 0xC2 && b <= 0xDF then 2
+              elsif b >= 0xE0 && b <= 0xEF then 3
+              elsif b >= 0xF0 && b <= 0xF4 then 4
+              else 0
+              end
+        valid = len > 0 && i + len <= n
+        k = 1
+        while valid && k < len
+          c = bytes[i + k]
+          valid = (c & 0xC0) == 0x80
+          k += 1
+        end
+        if valid
+          out << bytes[i, len].pack("C*")
+          i += len
+        else
+          # One replacement for the whole maximal prefix of an invalid sequence (a lead byte and its continuation bytes).
+          j = 1
+          while len > 0 && j < len && i + j < n && (bytes[i + j] & 0xC0) == 0x80
+            j += 1
+          end
+          out << repl.to_s.b
+          i += j
+        end
+      end
+      out
+    end
+  end
+end
+
 class ThreadError < StandardError; end unless defined?(ThreadError)
 
 class Mutex
@@ -250,4 +300,64 @@ module Kernel
     ExitHandlers::BLOCKS << block
     block
   end
+end
+
+# Process.clock_gettime and Process::CLOCK_MONOTONIC, for the timers bc2cpp reads. The mruby process gem has neither. The
+# fallback reads the wall clock (Time.now), so it is not monotonic; it only times runs.
+module Process
+  CLOCK_MONOTONIC = 1 unless defined?(Process::CLOCK_MONOTONIC)
+
+  unless respond_to?(:clock_gettime)
+    def self.clock_gettime(_clock = CLOCK_MONOTONIC, unit = :float_second)
+      seconds = Time.now.to_f
+      case unit
+      when :float_second then seconds
+      when :float_millisecond then seconds * 1_000.0
+      when :float_microsecond then seconds * 1_000_000.0
+      when :second then seconds.to_i
+      when :millisecond then (seconds * 1_000).to_i
+      when :microsecond then (seconds * 1_000_000).to_i
+      when :nanosecond then (seconds * 1_000_000_000).to_i
+      else raise ArgumentError, "unexpected unit: #{unit}"
+      end
+    end
+  end
+end
+
+# Kernel#system with all of its arguments. The mruby process gem runs only the first one, so a list of arguments is quoted
+# and joined into one shell command here. A single string is the shell command itself, as in CRuby, and goes unchanged.
+# exception: true raises when the command fails, as CRuby does.
+module Kernel
+  if method_defined?(:system)
+    alias __core_system system
+
+    def system(*args, exception: false)
+      command = args.size == 1 ? args[0] : args.map { |arg| "'" + arg.to_s.split("'", -1).join("'\\''") + "'" }.join(' ')
+      ok = __core_system(command)
+      raise RuntimeError, "Command failed with #{command}" if exception && !ok
+      ok
+    end
+  end
+end
+
+# Kernel#abort: print the message to $stderr and exit with status 1, as CRuby does. mruby has no abort.
+module Kernel
+  def abort(message = nil)
+    $stderr.puts message if message
+    exit 1
+  end
+end unless Kernel.method_defined?(:abort)
+
+# Kernel#warn: each message to $stderr, one per line, as CRuby writes plain messages. mruby has no warn.
+module Kernel
+  def warn(*messages, **_options)
+    messages.each { |message| $stderr.puts message }
+    nil
+  end
+end unless Kernel.method_defined?(:warn)
+
+# Module#name: the constant path of a named module or class, as a String. mruby has no name, and to_s gives the same path
+# for a named module.
+class Module
+  def name = to_s unless method_defined?(:name)
 end
