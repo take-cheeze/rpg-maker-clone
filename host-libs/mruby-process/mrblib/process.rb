@@ -32,8 +32,26 @@ module Process
     BC2CPPProcess.monotonic
   end
 
-  def self.wait2(*)
-    raise NotImplementedError, 'Process.wait2: no child processes are tracked (Open3 waits for its own)'
+  # fork: the child gets nil (CRuby's result without a block); with a block it runs the block and exits.
+  def self.fork
+    pid = BC2CPPProcess.fork
+    if pid == 0
+      return nil unless block_given?
+
+      yield
+      exit(0)
+    end
+    pid
+  end
+
+  # wait2(pid): [pid, Process::Status] of a child, waiting for it.
+  def self.wait2(pid = -1, _flags = 0)
+    got, code = BC2CPPProcess.wait(pid)
+    [got, Status.new(code)]
+  end
+
+  def self.wait(pid = -1, _flags = 0)
+    BC2CPPProcess.wait(pid)[0]
   end
 end
 
@@ -85,5 +103,27 @@ module Kernel
     raise RuntimeError, "Command failed with exit #{status.exitstatus}: #{args.join(' ')}" if opts[:exception] && !status.success?
 
     status.success?
+  end
+end
+
+module Kernel
+  def fork(&block)
+    Process.fork(&block)
+  end
+end
+
+class IO
+  # reopen(other, mode): this IO's descriptor now refers to +other+ (an IO, whose descriptor is copied) or to the file
+  # +other+ opened with +mode+ ('r', 'w' or 'a'). Output already written is flushed first, so it goes where it was sent.
+  def reopen(other, mode = 'r')
+    flush if respond_to?(:flush)
+    if other.respond_to?(:fileno)
+      BC2CPPProcess.dup2(other.fileno, fileno)
+    else
+      fd = BC2CPPProcess.open_file(other.to_s, mode)
+      BC2CPPProcess.dup2(fd, fileno)
+      BC2CPPProcess.close(fd)
+    end
+    self
   end
 end

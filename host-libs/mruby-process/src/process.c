@@ -7,6 +7,7 @@
 #include <mruby/string.h>
 #include <mruby/value.h>
 #include <errno.h>
+#include <mruby/error.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -148,12 +149,82 @@ static mrb_value proc_monotonic(mrb_state *mrb, mrb_value self)
   return mrb_float_value(mrb, (mrb_float)ts.tv_sec + (mrb_float)ts.tv_nsec / 1e9);
 }
 
+
+/* fork(): the child gets 0, the parent the child's pid. mruby keeps no threads, so the copy is the whole process. */
+static mrb_value proc_fork(mrb_state *mrb, mrb_value self)
+{
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid < 0) mrb_raise(mrb, E_RUNTIME_ERROR, "fork failed");
+  return mrb_fixnum_value((mrb_int)pid);
+}
+
+/* wait(pid): [pid, exit code] of a child, waiting for it. */
+static mrb_value proc_wait(mrb_state *mrb, mrb_value self)
+{
+  mrb_int pid;
+  mrb_get_args(mrb, "i", &pid);
+  int status = 0;
+  pid_t got;
+  while ((got = waitpid((pid_t)pid, &status, 0)) < 0 && errno == EINTR) {}
+  if (got < 0) mrb_raise(mrb, E_RUNTIME_ERROR, "wait failed");
+  int code = WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 1);
+  mrb_value out = mrb_ary_new_capa(mrb, 2);
+  mrb_ary_push(mrb, out, mrb_fixnum_value((mrb_int)got));
+  mrb_ary_push(mrb, out, mrb_fixnum_value(code));
+  return out;
+}
+
+static mrb_value proc_dup(mrb_state *mrb, mrb_value self)
+{
+  mrb_int fd;
+  mrb_get_args(mrb, "i", &fd);
+  int out = dup((int)fd);
+  if (out < 0) mrb_raise(mrb, E_RUNTIME_ERROR, "dup failed");
+  return mrb_fixnum_value((mrb_int)out);
+}
+
+static mrb_value proc_dup2(mrb_state *mrb, mrb_value self)
+{
+  mrb_int src, dst;
+  mrb_get_args(mrb, "ii", &src, &dst);
+  if (dup2((int)src, (int)dst) < 0) mrb_raise(mrb, E_RUNTIME_ERROR, "dup2 failed");
+  return mrb_nil_value();
+}
+
+/* open_file(path, mode): a descriptor for 'r' (read), 'w' (create, truncate) or 'a' (append). */
+static mrb_value proc_open_file(mrb_state *mrb, mrb_value self)
+{
+  const char *path, *mode;
+  mrb_get_args(mrb, "zz", &path, &mode);
+  int flags = O_RDONLY;
+  if (mode[0] == 'w') flags = O_WRONLY | O_CREAT | O_TRUNC;
+  else if (mode[0] == 'a') flags = O_WRONLY | O_CREAT | O_APPEND;
+  int fd = open(path, flags, 0644);
+  if (fd < 0) mrb_raise(mrb, E_RUNTIME_ERROR, "open failed");
+  return mrb_fixnum_value((mrb_int)fd);
+}
+
+static mrb_value proc_close(mrb_state *mrb, mrb_value self)
+{
+  mrb_int fd;
+  mrb_get_args(mrb, "i", &fd);
+  close((int)fd);
+  return mrb_nil_value();
+}
+
 void mrb_mruby_process_gem_init(mrb_state *mrb)
 {
   struct RClass *prim = mrb_define_module(mrb, "BC2CPPProcess");
   mrb_define_module_function(mrb, prim, "run", proc_run, MRB_ARGS_REQ(3));
   mrb_define_module_function(mrb, prim, "pid", proc_pid, MRB_ARGS_NONE());
   mrb_define_module_function(mrb, prim, "monotonic", proc_monotonic, MRB_ARGS_NONE());
+  mrb_define_module_function(mrb, prim, "fork", proc_fork, MRB_ARGS_NONE());
+  mrb_define_module_function(mrb, prim, "wait", proc_wait, MRB_ARGS_REQ(1));
+  mrb_define_module_function(mrb, prim, "dup", proc_dup, MRB_ARGS_REQ(1));
+  mrb_define_module_function(mrb, prim, "dup2", proc_dup2, MRB_ARGS_REQ(2));
+  mrb_define_module_function(mrb, prim, "open_file", proc_open_file, MRB_ARGS_REQ(2));
+  mrb_define_module_function(mrb, prim, "close", proc_close, MRB_ARGS_REQ(1));
 }
 
 void mrb_mruby_process_gem_final(mrb_state *mrb)
