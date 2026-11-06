@@ -169,6 +169,20 @@ parameters; the callee has mandatory parameters, one definition in the same owne
 at the top level of the step, not in an inlined loop. Two callees with the same name are not CALL targets. Dynamic
 dispatch (`Enumerator#each`, `send`) is not covered.
 
+## Dynamic calls
+
+A send whose method is chosen at run time (`send`, `__send__`, `public_send`) in a step goes through
+`bc2cpp_dyn_call` (`DYN_CALL`, `RESUMABLE_DYN_CALL` in the generated step). Each suspendable method with mandatory
+parameters emits a dispatcher (`<impl>_dyn`) and registers it under its registered C function; the call resolves the
+method on the receiver and, when its C function is registered and the argument count fits, arms the method's id and
+runs its entry, which parks the frame; the step CALLs that frame. Any other target runs as an ordinary send and its
+value is the site's result at once. A root that sends by name also makes the methods its symbol literals name roots.
+`block_in_step_check` covers it.
+
+Limits: fixed arguments only (no splat, no keywords), so `Enumerator#each`'s `@obj.__send__ @meth, *@args, **@kwd, &block`
+is not covered yet; a block passed to a send whose name is not proven stays a possible rebinder (block_self_world), so it
+is not a step; `_rsm` variants of the core iterators are not registered yet.
+
 ## General Fiber bodies
 
 A `Fiber.new` body that is not a single tail call (several calls to suspendable methods, a `Fiber.yield` of its own, a
@@ -182,4 +196,4 @@ Still failing:
 
 - `resumable_variants_check`: 12 of its 140 scenarios (the direct iterators `Array#fetch`, `Hash#fetch`, `String#upto`,
   `each`, `each_index`, `delete_if`) still raise `FiberError`.
-- The `Enumerator#next_values` body and the nested Enumerable methods still need dispatch through `Enumerator#each`.
+- The `Enumerator#next_values` body needs the splat/keyword send of `Enumerator#each` and registered `_rsm` variants.
