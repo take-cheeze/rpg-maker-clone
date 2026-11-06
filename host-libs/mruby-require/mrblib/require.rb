@@ -1,6 +1,8 @@
 # mruby's core defines no LoadError (the exception require raises for a missing feature). CRuby's ScriptError family.
 class ScriptError < StandardError; end unless defined?(ScriptError)
 class LoadError < ScriptError; end unless defined?(LoadError)
+# EncodingError (CRuby's Encoding family); no mruby gem defines it.
+class EncodingError < StandardError; end unless defined?(EncodingError)
 
 # Features provided by the build, as name => check. A check returns true when the code it names is present.
 module MRubyRequire
