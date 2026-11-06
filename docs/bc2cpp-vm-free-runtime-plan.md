@@ -16,7 +16,7 @@ Measured in the generated closed-build sources (`build-closed-bc2cpp/closed/mrbg
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall` (dynamic dispatch by name) | 683 | direct dispatch tables per receiver class |
+| `mrb_funcall` text matches | 683 | see the breakdown below |
 | `bc2cpp_owner_call` (owner-listed dispatch) | 1746 | already direct; becomes a plain switch |
 | `mrb_proc_new_cfunc_with_env` (block procs) | 391 | C++ block objects with captured env |
 | `mrb_protect` (exception boundaries) | 167 | C++ `try`/`catch` on a typed exception |
@@ -28,6 +28,16 @@ Measured in the generated closed-build sources (`build-closed-bc2cpp/closed/mrbg
 | `mruby-fiber` context switch | Fiber bodies, `Enumerator#next` | C++ coroutine steps |
 
 `vm.c` is 3919 lines, `fiber.c` 574, `gc.c` 1755 (kept, minus the VM roots).
+
+Breakdown of the 683 `mrb_funcall` matches (generated closed-build sources, including comments):
+
+- ~351: the bigint `==` arm of every `!=` site (`codegen_native_send.rb`, under `MRB_USE_BIGINT`). Compiled into each
+  site, taken only for bigint receivers. Replace with a direct bigint equality call.
+- ~170: self-sends by name in class bodies (`bc2cpp_ssend_args`, `codegen_class_body.rb`), taken when the callee is not
+  proven statically. Replace with per-class dispatch tables (Phase 1).
+- ~28: error reporting (`puts` on stderr, `bc2cpp.rb` error handler). Outside the hot path; keep or use a C++ print.
+- ~26: generic dispatch helpers (`mrb_funcall_argv(recv, mid, ...)`, `mrb_funcall_with_block`). Phase 1.
+- The rest are comment text (the `MONO ... no mrb_funcall` notes).
 
 ## Phases
 
