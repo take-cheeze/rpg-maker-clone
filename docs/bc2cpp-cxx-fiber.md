@@ -90,11 +90,18 @@ enclosing owner (`fiber_body_target_id`, `codegen_resumable.rb`):
 - The fiber keeps the values its frames hold alive through a hidden Array rebuilt after every step: mruby has no mark
   callback for a data object.
 
-`resumable_args_check` and `resumable_locals_check` pass with it (interpreted and compiled runs print the same, two
-fibers, `GC.start` between resumes). Still failing, each for a reason this slice does not cover:
+`resumable_args_check`, `resumable_locals_check`, `resumable_rest_check` and `resumable_optional_check` pass with it
+(interpreted and compiled runs print the same, two fibers, `GC.start` between resumes).
 
-- `resumable_optional_check`, `resumable_rest_check`: the body captures a local of the enclosing method (`base`), and
-  a Fiber body outlives that frame, so the capture has to be by value.
+A body may capture locals of the enclosing method (`Fiber.new { run(base) }`): a Fiber outlives that frame, so the
+site copies the locals into a heap Array (the block reads them through pointers into it; the Array rides in the
+block's env so the GC keeps it). That is sound only when nothing can change the local afterwards, so
+`fiber_body_by_value?` accepts a mandatory parameter that no instruction in the enclosing method writes, in a body
+with no SETUPVAR; any other capture keeps the old form. The prologue may use GETIV, GETUPVAR, MOVE, the literal loads
+and STRING; its only call is the tail call.
+
+Still failing, each for a reason this slice does not cover:
+
 - `resumable_block_check`: the body passes a block to the suspendable method (`each_mark { |x| Fiber.yield ... }`).
 - `resumable_receiver_check`, `resumable_variants_check`: the body calls a core iterator on another receiver
   (`arr.each_index { Fiber.yield i }`), which needs block steps.
