@@ -245,6 +245,11 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/cxx_fiber_check.rb:
+    tier: runtime
+    capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/keyword_send_check.rb:
     tier: runtime
     capabilities:

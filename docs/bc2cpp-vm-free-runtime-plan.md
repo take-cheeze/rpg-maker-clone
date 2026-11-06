@@ -80,6 +80,9 @@ Status: done. `scripts/bc2cpp/vm_free_inventory_check.rb <generated-closed-build
 
 ### Phase 4: Fibers as C++ coroutines
 
+Status: runtime started. `tools/bc2cpp/runtime/bc2cpp_fiber.hxx` implements the step stack and the host check
+`scripts/bc2cpp/cxx_fiber_check.rb` passes; see `docs/bc2cpp-cxx-fiber.md` for what is not wired yet.
+
 - Every method or block that can yield compiles to a resumable step (the existing `_rsm` form,
   generalised). A call from one step into another is a call-frame push, not a C call. This is option (a)
   in `docs/bc2cpp-resumable-block-calls.md`, now required.
