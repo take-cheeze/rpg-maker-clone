@@ -39,6 +39,14 @@ code still dispatches by name: the other arms and the by-name else take
   captured locals, created at the site and still in the GC arena while the call
   runs. A block that yields to the frame's own block (`needs_blk`) is left out:
   that forwarded value is one the heap env existed to root.
+- **A heap env never holds it.** A nested block that captures the method's block
+  (`needs_blk`) builds a heap env, and the arena keeps that heap RProc, and so
+  its env, after the frame has returned. The GC would then mark the dead frame.
+  The env therefore stores `bc2cpp_env_block(M, bc2cpp_blk)`, which copies a red
+  (frame-local) block into a heap RProc with the same entry and env values, and
+  returns a heap block as it is. `stack_block_check.rb` (`use_repeat`) asserts the
+  copy and the behaviour; the RPG2k New Game under ASan reproduced the dangling
+  mark (`LCF::Array2D#each`'s env, `stack[1]`) before the copy.
 
 ## Coverage
 
