@@ -18,7 +18,9 @@ module MRubyRequire
   end
 end
 
-module Kernel
+# require is defined on Object, not in module Kernel: the baked source it evaluates runs with the lexical scope of this
+# method, so a module the source defines at top level (module NativeOwnerMap) would be Kernel::NativeOwnerMap under Kernel.
+class Object
   def require(name)
     feature = name.to_s
     return false if MRubyRequire::LOADED[feature]
