@@ -16,12 +16,12 @@ Measured in the generated closed-build sources (`build-closed-bc2cpp/closed/mrbg
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall` text matches | 683 | see the breakdown below |
+| `mrb_funcall` text matches | 724 | see the breakdown below |
 | `bc2cpp_owner_call` (owner-listed dispatch) | 1746 | already direct; becomes a plain switch |
 | `mrb_proc_new_cfunc_with_env` (block procs) | 391 | C++ block objects with captured env |
-| `mrb_protect` (exception boundaries) | 167 | C++ `try`/`catch` on a typed exception |
-| `mrb_gc_protect` (arena roots) | 142 | scoped C++ roots |
-| `mrb_yield` / `mrb_funcall_with_block` | 24 | direct block invocation |
+| `mrb_protect` (exception boundaries) | 193 | C++ `try`/`catch` on a typed exception |
+| `mrb_gc_protect` (arena roots) | 170 | scoped C++ roots |
+| `mrb_yield` | 22 | direct block invocation |
 | `mrb_method_search_vm` | 37 | static method tables |
 | `bc2cpp_resumable_exec` (VM driver entry) | 19 | C++ resume loop (already a step function) |
 | `mrb_exec_irep` | 2 | removed with the frame machine |
@@ -29,7 +29,7 @@ Measured in the generated closed-build sources (`build-closed-bc2cpp/closed/mrbg
 
 `vm.c` is 3919 lines, `fiber.c` 574, `gc.c` 1755 (kept, minus the VM roots).
 
-Breakdown of the 683 `mrb_funcall` matches (generated closed-build sources, including comments):
+Breakdown of the 724 `mrb_funcall` matches (generated closed-build sources, including comments):
 
 - ~351: the bigint `==` arm of every `!=` site (`codegen_native_send.rb`, under `MRB_USE_BIGINT`). Compiled into each
   site, taken only for bigint receivers. Replace with a direct bigint equality call.
@@ -45,6 +45,8 @@ Each phase lands behind a gate, is verified by the fixture checks, and must not 
 build. The host sweep and the verify build run at each phase's end.
 
 ### Phase 0: inventory and checks
+
+Status: done. `scripts/bc2cpp/vm_free_inventory_check.rb <generated-closed-build-dir>` counts the table's dependencies and fails above the baselines. The counts above are re-measured on the generated closed-build tree (`mrb_funcall`, `mrb_protect` and `mrb_gc_protect` count identifier prefixes, so suffixed names are included). The check is registered as deferred until `bc2cpp-build` publishes that tree to CI.
 
 - List every VM entry point the closed build reaches: the table above, plus `mrb_vm_run`,
   `mrb_run`, the call-info helpers, and what `mrblib` Ruby the closed build keeps.

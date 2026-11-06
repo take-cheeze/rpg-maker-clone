@@ -18,6 +18,10 @@ runners:
   - full_library
   - cxx
 deferred:
+  scripts/bc2cpp/vm_free_inventory_check.rb:
+    tier: fast
+    capabilities: []
+    reason: Counts the generated closed-build tree, which exists only after bc2cpp-build; wire it after that job publishes the tree.
   scripts/bc2cpp/class_pools_check.rb:
     tier: runtime
     capabilities:
