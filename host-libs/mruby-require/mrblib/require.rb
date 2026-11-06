@@ -193,35 +193,49 @@ end
 # String#scrub (CRuby 2.1+): each invalid UTF-8 byte sequence becomes the replacement (U+FFFD by default).
 class String
   unless method_defined?(:scrub)
+    # Works on the bytes in place (getbyte, byteslice), not on an Array of every byte: that Array is past mruby's array
+    # size limit for a large file.
     def scrub(repl = "\uFFFD")
       out = "".b
-      bytes = self.bytes
+      n = bytesize
       i = 0
-      n = bytes.size
       while i < n
-        b = bytes[i]
+        b = getbyte(i)
         len = if b < 0x80 then 1
               elsif b >= 0xC2 && b <= 0xDF then 2
               elsif b >= 0xE0 && b <= 0xEF then 3
               elsif b >= 0xF0 && b <= 0xF4 then 4
               else 0
               end
-        valid = len > 0 && i + len <= n
-        k = 1
-        while valid && k < len
-          c = bytes[i + k]
-          valid = (c & 0xC0) == 0x80
-          k += 1
+        # The byte after a lead byte has a narrower range for some leads (no overlongs, no surrogates, no code points
+        # past U+10FFFF), as CRuby's UTF-8 decoder has it. Later bytes are 80..BF.
+        j = 1
+        ok = len > 0
+        while ok && j < len
+          break unless i + j < n
+
+          c = getbyte(i + j)
+          lo, hi = if j == 1
+                     case b
+                     when 0xE0 then [0xA0, 0xBF]
+                     when 0xED then [0x80, 0x9F]
+                     when 0xF0 then [0x90, 0xBF]
+                     when 0xF4 then [0x80, 0x8F]
+                     else [0x80, 0xBF]
+                     end
+                   else
+                     [0x80, 0xBF]
+                   end
+          break unless c >= lo && c <= hi
+
+          j += 1
         end
-        if valid
-          out << bytes[i, len].pack("C*")
+        if len > 0 && j == len
+          out << byteslice(i, len)
           i += len
         else
-          # One replacement for the whole maximal prefix of an invalid sequence (a lead byte and its continuation bytes).
-          j = 1
-          while len > 0 && j < len && i + j < n && (bytes[i + j] & 0xC0) == 0x80
-            j += 1
-          end
+          # One replacement for the maximal subpart of an invalid sequence: the lead byte and the continuation bytes
+          # that are valid so far (at least the lead itself).
           out << repl.to_s.b
           i += j
         end
