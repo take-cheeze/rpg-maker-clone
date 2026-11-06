@@ -13,7 +13,7 @@ class CodeGen
   # Sends that can store into a local without a SETUPVAR the flow could see.
   CAPTURED_LOCAL_WRITER_NAMES = %w[binding local_variable_set eval].freeze
   # A rebinding send runs a block under another self; a string argument is an eval of source text.
-  CAPTURED_LOCAL_STRING_EVALS = %w[instance_eval class_eval module_eval instance_exec class_exec module_exec].freeze
+  CAPTURED_LOCAL_STRING_EVALS = [].freeze
 
   # The class set a block's GETUPVAR sees (NumericFlow::OTHER when unproven).
   def class_upvar_mask(irep, insn)

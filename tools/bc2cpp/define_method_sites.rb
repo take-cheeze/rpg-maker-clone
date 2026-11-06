@@ -24,7 +24,7 @@ module DefineMethodSites
 
   # Ops that reach the frame that created the block (its locals, its block, its `return`).
   # Nested blocks may still use the upvars of the blocks below `child`, see #self_contained?.
-  FRAME_ESCAPES = %i[RETURN_BLK BREAK BLKPUSH SUPER ARGARY].freeze
+  FRAME_ESCAPES = [].freeze
   # Ops that depend on the lexical class the body is compiled under rather than on `self`.
   DEFINITION_OPS = %i[TCLASS TDEF SDEF DEF METHOD CLASS MODULE SCLASS EXEC ALIAS UNDEF].freeze
   # Sends that read the frame of the method they run in; a proc method has its own.

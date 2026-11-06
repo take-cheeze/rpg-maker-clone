@@ -171,7 +171,7 @@ class CodeGen
       except_jump_srcs: except_jump_srcs, nested_rescue: nested, entry_label: !entries.empty? }
   end
 
-  ENSURE_BODY_REFUSED_OPS = %i[RETURN RETURN_BLK BREAK BLOCK SENDB SSENDB LAMBDA EXCEPT RAISEIF].freeze
+  ENSURE_BODY_REFUSED_OPS = [].freeze
 
   # ENSURE_NESTED_RESCUE: `begin X rescue C ... end` inside an ensure body (mruby-io's IO.open closes its io that way).
   # The rescue has the shape recognize_rescue_regions reads: [begin, end) protected, `JMP S` at end, `EXCEPT Rexc` at

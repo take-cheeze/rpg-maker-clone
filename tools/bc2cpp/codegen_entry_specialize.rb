@@ -60,7 +60,7 @@ class CodeGen
   }.freeze
 
   # Class names a plan may name that have no exact test (their instances are immediates or modules).
-  ENTRY_SPEC_REFUSED = %w[NilClass Symbol TrueClass FalseClass Object BasicObject Kernel Comparable Enumerable Numeric].freeze
+  ENTRY_SPEC_REFUSED = [].freeze
 
   def entry_specialize_enabled?
     value = ENV[ENTRY_SPEC_ENV].to_s

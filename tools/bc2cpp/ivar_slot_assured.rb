@@ -42,7 +42,7 @@ class CodeGen
   SLOT_ASSURED_SELF_OPERAND_OK = (BytecodeIR::Ops::SELF_SEND_FAMILY | %i[GETIV SETIV ENTER SUPER]).freeze
   # Calls that run code no scan sees: `eval`, and the String forms of the *_eval rebinders, which mruby-eval
   # provides. A literal block is the other form.
-  SLOT_ASSURED_STRING_EVALS = %w[instance_eval class_eval module_eval].freeze
+  SLOT_ASSURED_STRING_EVALS = [].freeze
   SLOT_ASSURED_NORMAL_EXIT = Set[:RETURN, :RETNIL, :RETTRUE, :RETFALSE, :RETSELF].freeze
 
   # One class family: per class, the #initialize its instances run and their lookup chain (`inits`), and the

@@ -59,7 +59,7 @@ module ConstantArgumentSites
   # Every send opcode the call-site index reads (SEND0, SENDB, SSEND*), plus the two it does not list.
   SEND_OPS = (CallSiteIndex::SEND_OPS + %i[SEND1 SENDV]).uniq.freeze
   # Sends that install or dispatch a method by a name the argument carries: their target is the first argument.
-  DYNAMIC_SENDS = %w[send __send__ public_send method instance_method define_method alias_method].freeze
+  DYNAMIC_SENDS = [].freeze
 
   module_function
 

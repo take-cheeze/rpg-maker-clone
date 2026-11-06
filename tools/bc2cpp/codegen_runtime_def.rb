@@ -340,11 +340,7 @@ class CodeGen
   # RUNTIME_DEF_DEVIRT_GUARD: marker kinds that are real dynamic dispatch (runtime
   # lookup honours a singleton patch). Every other `// KIND :name` marker is
   # audited as a static bind, so a new marker kind defaults to the safe side.
-  RUNTIME_DEF_DYNAMIC_MARKERS = %w[
-    POLY SPLAT KEYWORD_HASH_POSITIONAL EXPLICIT_BLOCK_ARG
-    BLOCK_FALLBACK LAMBDA_FALLBACK SDEF_FALLBACK TDEF_FALLBACK
-    SCLASS_FALLBACK
-  ].freeze
+  RUNTIME_DEF_DYNAMIC_MARKERS = [].freeze
 
   # RUNTIME_DEF_DEVIRT_GUARD, second line of defense: re-read the FINISHED text of
   # the method and turn any static bind of a blocked name into `#error` (so

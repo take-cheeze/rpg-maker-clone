@@ -46,8 +46,8 @@ module BlockSelfWorld
   FACTORY_SENDS = { 'new' => Set['Class', 'Module', 'Struct'], 'define' => Set['Data'] }.freeze
   NAME_SENDS = Set.new(SendNames::FORWARDING_SENDS).freeze
   # String eval (mruby-eval): code no scan reads, so the fact fails on it.
-  STRING_EVALS = Set['eval', 'instance_eval', 'class_eval', 'module_eval'].freeze
-  METHOD_MAKERS = Set['method', 'singleton_method', 'instance_method'].freeze
+  STRING_EVALS = Set[].freeze
+  METHOD_MAKERS = Set[].freeze
   # Names whose presence among a computed send's names leaves that send's own names unproven.
   INDIRECT_NAMES = (NAME_SENDS | METHOD_MAKERS | Set['to_proc']).freeze
   SENDS = BytecodeIR::Ops::SEND

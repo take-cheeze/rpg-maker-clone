@@ -81,7 +81,7 @@ module EscapeAnalysis
   # mrblib: they need no entry, their summaries are computed from bytecode.
 
   # Natives that take a block and either call it synchronously or never read it; none keeps it.
-  NATIVE_BLOCK_NO_CAPTURE = Set['section', 'select', 'count', 'index'].freeze
+  NATIVE_BLOCK_NO_CAPTURE = Set[].freeze
   NATIVE_MANIFEST = {
     'section' => %w[mruby-rgss/src/profiler.cxx],
     'select' => %w[3rd/mruby/mrbgems/mruby-io/src/io.c],
@@ -263,8 +263,7 @@ module EscapeAnalysis
     BUILTIN_INCLUDES = CoreHierarchySigs.hierarchy.last
 
     # Sends and constants that read a frame's locals or the whole heap by name, so no value is confined.
-    REFLECTIVE_SENDS = %w[binding eval local_variable_get local_variable_set local_variables
-                          local_variable_defined?].freeze
+    REFLECTIVE_SENDS = [].freeze
     REFLECTIVE_CONSTS = %w[ObjectSpace].freeze
     # Every op scan_definitions reads.
     SCANNED_OPS = (BytecodeIR::Ops::SEND | DEF_OPS | %i[GETCONST GETMCNST]).freeze

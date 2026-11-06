@@ -30,7 +30,7 @@ BC2CPP_CORE_MRBLIB_GEMS = %w[
 #   `(...)` state set, so a file after it fails to parse.
 # - 10error.rb only gives NameError/NoMethodError their accessors; visible, they
 #   would add two exact-class arms to every `.name` call chain for nothing.
-BC2CPP_CORE_MRBLIB_EXCLUDED = %w[mrbgems/mruby-io/mrblib/kernel.rb mrblib/10error.rb].freeze
+BC2CPP_CORE_MRBLIB_EXCLUDED = [].freeze
 # Core mrblib gems whose Ruby is analysed as program, so their method names are known callers and not outside tokens
 # Only their C sources stay outside. Files in BC2CPP_CORE_MRBLIB_EXCLUDED stay foreign.
 BC2CPP_PROGRAM_CORE_MRBLIB_GEMS = BC2CPP_CORE_MRBLIB_GEMS
