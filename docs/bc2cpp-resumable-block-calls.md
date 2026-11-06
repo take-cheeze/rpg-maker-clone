@@ -44,14 +44,6 @@ The 12 `Enumerable`/`Array` methods that call those iterators internally then re
 reverted. A yield-capable path needs the callers to be steps too: a block-taking step (phase 1 below) called through the
 step protocol rather than as a C call. A guard at the iterator alone cannot provide it.
 
-## Driver removed
-
-The `Bc2cppResumable` bytecode driver is gone: its Ruby source, its `mrbc` bytecode, the `drive` loop, the handoff
-and `exec` paths. A resumable entry now always steps from C. A Fiber yield that reaches such an entry raises
-`FiberError: can't cross C function boundary`, so the Fiber checks that relied on the driver fail until the call-frame
-protocol replaces it. Affected: `resumable_receiver_check`, `resumable_variants_check` (the direct iterators),
-`resumable_block_check`, `native_fiber_check`. Non-Fiber block checks are unchanged.
-
 ## Inline first: findings
 
 The first option was inlining the iterator and its literal block into the step. It cannot start from a Fiber body
