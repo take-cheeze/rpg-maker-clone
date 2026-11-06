@@ -25,6 +25,8 @@
 #                     save. Saving writes into GAME_DIR, so point it at a copy.
 #   BC2CPP_HOST_CONTINUE  1: pick Continue on the title instead of New Game.
 #   BC2CPP_HOST_PREVIEW_MAP  start New Game on this map id's centre tile.
+#   BC2CPP_HOST_BACKTRACE  1: run under gdb and print the C++ stack of the first missing-method raise
+#                     (written to BUILD_DIR/trace-host/backtrace.log). Needs gdb.
 #
 # Needs on PATH: c++ (g++), cc, ar, nproc, clock_gettime-capable libc (Linux).
 set -euo pipefail
@@ -106,6 +108,18 @@ traced=no
 if grep -a -q 'PARAM_TRACE_SYMBOL' "$mruby_lib"; then traced=yes; fi
 
 rm -f "$dump"
+if [ "${BC2CPP_HOST_BACKTRACE:-0}" = 1 ]; then
+  # The exception unwinds before report_exception sees it, so the stack is taken where the missing method is
+  # raised: the first mrb_no_method_error (or mrb_method_missing) stops the host and prints its C++ frames.
+  command -v gdb >/dev/null || { echo "error: BC2CPP_HOST_BACKTRACE=1 needs gdb" >&2; exit 1; }
+  BC2CPP_TRACE_TYPES_OUT="$dump" gdb -batch -q \
+    -ex 'set pagination off' \
+    -ex 'break mrb_no_method_error' \
+    -ex 'break mrb_method_missing' \
+    -ex run -ex 'bt 60' \
+    --args "$host_dir/trace_host" "$game_dir" "$frames" 2>&1 | tee "$host_dir/backtrace.log"
+  exit 0
+fi
 BC2CPP_TRACE_TYPES_OUT="$dump" "$host_dir/trace_host" "$game_dir" "$frames" \
   | tee "$host_dir/run.log"
 
