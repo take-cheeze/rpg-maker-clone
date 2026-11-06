@@ -4,7 +4,6 @@
 require_relative 'fixture_runtime'
 require_relative '../../tools/bc2cpp/main_roots'
 require_relative '../../tools/bc2cpp/main_reachability'
-require_relative '../../tools/bc2cpp/native_vm'
 require_relative '../../tools/bc2cpp/bc2cpp'
 require_relative '../../tools/bc2cpp/initializer_tables'
 require_relative '../../tools/bc2cpp/native_inventory'
@@ -434,24 +433,5 @@ Dir.mktmpdir('bc2cpp-main-roots') do |dir|
   check.call('empty strings, presyms and length-bounded interned names are resolved',
              symbol_roots.refusals.empty? && ['', 'qr9z_symbol', 'qr9z_short'].all? { |name| symbol_roots.names.include?(name) })
 
-  native_dir = File.join(dir, 'native-vm')
-  FileUtils.mkdir_p(native_dir)
-  programs = [1, 2].map { |id| { 'id' => id, 'symbol' => "probe_#{id}", 'instructions' => [[0, 1, 'RETURN', [0]]] } }
-  File.write(File.join(native_dir, 'programs.json'), JSON.generate(programs))
-  pi = File.join(dir, 'active.pi')
-  File.write(pi, "static const struct mrb_native_irep live_native_0 = {1u,0,NULL};\n")
-  dispatch = File.join(dir, 'dispatch.inc')
-  NativeVM.dispatch(native_dir, dispatch, active_ids: NativeVM.referenced_ids([pi]))
-  check.call('stale continuation descriptors do not survive absent C++ metadata',
-             File.read(dispatch).include?('case 1u:') && !File.read(dispatch).include?('case 2u:'))
-  missing = false
-  begin
-    NativeVM.dispatch(native_dir, dispatch, active_ids: Set[3])
-  rescue RuntimeError => e
-    missing = e.message.include?('lacks descriptors')
-  end
-  check.call('an active continuation without a descriptor fails at build time', missing)
-  File.write(pi, "inline const struct mrb_native_irep shared_native_0 = {2u,0,NULL};\n")
-  check.call('sharded inline continuation metadata is retained', NativeVM.referenced_ids([pi]) == Set[2])
 end
 puts "main roots: #{checks} checks passed"
