@@ -60,6 +60,35 @@ module Kernel
   def caller_locations(*_args)
     []
   end unless method_defined?(:caller_locations)
+
+  # Kernel#Array as CRuby has it: Array(nil) is [], not [nil]. mruby's core wraps nil in an Array.
+  def Array(value)
+    return [] if value.nil?
+    return value if value.is_a?(Array)
+    return value.to_ary if value.respond_to?(:to_ary)
+    return value.to_a if value.respond_to?(:to_a)
+
+    [value]
+  end
+
+  # Kernel#tap (CRuby 1.9+), which mruby does not define: yields self, returns self.
+  unless method_defined?(:tap)
+    def tap
+      raise LocalJumpError, 'no block given (yield)' unless block_given?
+
+      yield self
+      self
+    end
+  end
+
+  # Object#then (yield_self), which mruby does not define.
+  unless method_defined?(:then)
+    def then
+      return to_enum(:then) unless block_given?
+
+      yield self
+    end
+  end
 end
 
 module RbConfig

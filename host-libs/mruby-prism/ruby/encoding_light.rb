@@ -40,8 +40,10 @@ module Encoding
 end
 
 class String
+  # A loop over the bytes, not `bytes.all?`: the Array of every byte of a large source is past mruby's array size limit.
   def ascii_only?
-    bytes.all? { |byte| byte < 128 }
+    each_byte { |byte| return false if byte >= 128 }
+    true
   end
 
   unless method_defined?(:b)
