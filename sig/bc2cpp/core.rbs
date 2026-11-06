@@ -130,6 +130,10 @@ end
 class FalseClass < Object
 end
 
+# bc2cpp-native: core_hierarchy
+class Fiber < Object
+end
+
 class Numeric < Object
   def negative?: () -> untyped
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).

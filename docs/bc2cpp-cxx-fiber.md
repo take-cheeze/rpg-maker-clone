@@ -1,14 +1,14 @@
 # C++ Fiber for compiled code
 
-Status: the runtime (`tools/bc2cpp/runtime/bc2cpp_fiber.hxx`) and its host check
-(`scripts/bc2cpp/cxx_fiber_check.rb`) exist. The code generator does not use them yet.
+Status: the runtime (`tools/bc2cpp/runtime/bc2cpp_fiber.hxx`, `bc2cpp_fiber_methods.hxx`) and its host check
+(`scripts/bc2cpp/cxx_fiber_check.rb`) exist, and the code generator uses them for one shape (below).
 
 ## Protocol
 
 A body that can suspend is a step function over a heap frame:
 
 ```cpp
-void step(mrb_state* M, Bc2cppFrame* frame, mrb_value resume, Bc2cppStepOut* out);
+void step(mrb_state* M, Bc2cppFiberFrame* frame, mrb_value resume, Bc2cppStepOut* out);
 ```
 
 A step runs until it reports one of three things in `out`:
@@ -34,7 +34,7 @@ holds.
 ## Not done
 
 - The code generator still emits step functions for the old frame (`Bc2cppResumeFrame`) with no `CALL`. It has to
-  emit `Bc2cppFrame` structs, `CALL` for every call to a suspendable method or block, and `YIELD` for
+  emit `Bc2cppFiberFrame` structs, `CALL` for every call to a suspendable method or block, and `YIELD` for
   `Fiber.yield`.
 - Blocks that can reach `Fiber.yield` (the `Enumerator#next_values` body and its `each` block) have to compile
   as steps, so a `Fiber.new` body is a frame and not a bytecode proc.
@@ -55,8 +55,8 @@ state and calls a root method that reaches `Fiber.yield`. The chain from that bl
 kinds of link, and each has to be a step:
 
 1. **Method steps move to the new ABI** (`codegen_resumable.rb`: `resumable_entry_function`, `emit_resumable_helpers`).
-   The emitted step becomes `void step(M, Bc2cppFrame*, resume, Bc2cppStepOut*)` over a frame struct that embeds
-   `Bc2cppFrame` and holds the registers. `RESUMABLE_YIELD` sets `out->kind = YIELD`; the inlined helper calls
+   The emitted step becomes `void step(M, Bc2cppFiberFrame*, resume, Bc2cppStepOut*)` over a frame struct that embeds
+   `Bc2cppFiberFrame` and holds the registers. `RESUMABLE_YIELD` sets `out->kind = YIELD`; the inlined helper calls
    (`resumable_helper_call`) keep their flat inlining. `bc2cpp_resume_frame_p`, `Bc2cppResumable::Frame` and the
    `bc2cpp_resumable_*_from_c` helpers go; the entry called from outside a fiber uses `bc2cpp_run_to_completion`.
 2. **A block call that cannot reach `Fiber.yield` is a direct call.** `RESUMABLE_BLOCK_CALL` exists today only so
@@ -75,3 +75,26 @@ kinds of link, and each has to be a step:
 
 Order: 1 and 2 first (behaviour-neutral outside a Fiber, so `resumable_*` checks that do not suspend keep
 passing), then 3 and 4 together (the first point at which a fixture can pass), then 5.
+
+## What is wired (first slice)
+
+`Fiber.new { prologue; m(args) }` where the block's only call is a tail call on self to a suspendable method `m` of the
+enclosing owner (`fiber_body_target_id`, `codegen_resumable.rb`):
+
+- The site compiles to `bc2cpp_fiber_new_body`, a C++ Fiber whose root frame runs the compiled block with `m`'s id
+  armed (`bc2cpp_prologue`). `m`'s entry sees its id armed, parks a `Bc2cppMethodFrame` (the adapter around the
+  method's step) and returns at once; the fiber then calls that frame (`CALL`), and its `YIELD`s reach the resumer.
+- The C++ Fiber answers as `Fiber`: `resume` and `alive?` serve a Bc2cppFiber and hand any other receiver to
+  mruby-fiber's method, so the closed-world owner list (`Fiber`) needs no new entry. `Fiber` joins the core
+  hierarchy (`sig/bc2cpp/core.rbs`), which also stops the analysis from treating `Fiber.new` as a block rebinder.
+- The fiber keeps the values its frames hold alive through a hidden Array rebuilt after every step: mruby has no mark
+  callback for a data object.
+
+`resumable_args_check` and `resumable_locals_check` pass with it (interpreted and compiled runs print the same, two
+fibers, `GC.start` between resumes). Still failing, each for a reason this slice does not cover:
+
+- `resumable_optional_check`, `resumable_rest_check`: the body captures a local of the enclosing method (`base`), and
+  a Fiber body outlives that frame, so the capture has to be by value.
+- `resumable_block_check`: the body passes a block to the suspendable method (`each_mark { |x| Fiber.yield ... }`).
+- `resumable_receiver_check`, `resumable_variants_check`: the body calls a core iterator on another receiver
+  (`arr.each_index { Fiber.yield i }`), which needs block steps.
