@@ -66,32 +66,18 @@ class CodeGen
                                           name: name, d: d, owner_def: owner_def)
         return splat_result if splat_result
       end
-      # KEYWORD_SPLAT_DYNAMIC: `recv.m(a, **h)`. An empty hash is the plain n-positional send; a non-empty one goes
-      # through bc2cpp_funcall_kw, which passes it as keyword arguments. Only SEND/SSEND: with a block, the block slot
-      # follows the keyword slot and the site stays `#error`.
-      if insn.keyword_splat? && !insn.positional_splat? && !insn.argc.nil? && %i[SEND SSEND].include?(insn.op)
+      # KEYWORD_SPLAT_STATIC: `recv.m(a, **h)` resolves its callee at compile time, as a literal keyword call does
+      # (compile_keyword_call), and passes each keyword that callee declares, read from the hash at run time. Only
+      # SEND/SSEND: with a block, the block slot follows the keyword slot and the site stays `#error`.
+      if insn.keyword_splat? && !insn.positional_splat? && !insn.argc.nil? && %i[SEND SSEND].include?(insn.op) &&
+         irep && !idx.nil?
         n = insn.argc
-        plain = Insn.new(lineno: insn.lineno, addr: insn.addr, op: insn.op,
-                         args: insn.args.sub(/n=#{n}\|nk=\*/, "n=#{n}"), raw: insn.raw,
-                         frozen_literal: insn.frozen_literal)
-        kw_reg = insn.reg + 1 + n
-        plain_code = compile_send_site(plain, self_implicit: self_implicit, irep: irep, idx: idx,
-                                       owner_def: owner_def, call_receiver: call_receiver,
-                                       call_arguments: call_arguments, trace_idx: trace_idx,
-                                       trace_receiver_reg: trace_receiver_reg, trace_reg_offset: trace_reg_offset,
-                                       typed_fallback: typed_fallback)
-        kw_recv = call_receiver || (self_implicit ? 'self' : "#{RegName[d]}")
-        kw_args = call_arguments || (1..n).map { |k| "#{RegName[d.to_i + k]}" }
-        return "  {\n" \
-               "    mrb_value bc2cpp_kw = bc2cpp_kwsplat_hash(M, #{RegName[kw_reg]});\n" \
-               "    if (mrb_hash_p(bc2cpp_kw) && !mrb_hash_empty_p(M, bc2cpp_kw)) {\n" \
-               "      mrb_value bc2cpp_kw_argv[#{[n, 1].max}] = {#{kw_args.join(', ')}};\n" \
-               "      #{RegName[d]} = bc2cpp_funcall_kw(M, #{kw_recv}, mrb_intern_cstr(M, \"#{name}\"), #{n}, " \
-               "bc2cpp_kw_argv, bc2cpp_kw);\n" \
-               "    } else {\n" \
-               "#{plain_code}" \
-               "    }\n" \
-               "  }\n"
+        code = compile_keyword_call(name: name, d: d,
+                                    recv: call_receiver || (self_implicit ? 'self' : "#{RegName[d]}"),
+                                    n: n, argv: call_arguments || (1..n).map { |k| "#{RegName[d.to_i + k]}" },
+                                    kw_names: [], kw_val_exprs: [], self_implicit: self_implicit, owner_def: owner_def,
+                                    splat: RegName[insn.reg + 1 + n])
+        return code if code
       end
       return "  #error SEND/SSEND :#{name} has a splat and/or keyword argument list (#{insn.argc_text}) -- not in this prototype's supported subset\n"
     end
