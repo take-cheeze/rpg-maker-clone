@@ -6,6 +6,7 @@ require_relative 'bytecode_ir_ops'
 require_relative 'ir_block_operands'
 require_relative 'core_enumerator_types'
 require_relative 'native_owner_map'
+require_relative 'native_singletons'
 
 # CORE_ENUMERATOR_FREE (closed only): a proof that no Enumerator is ever created in the closed build, so the methods
 # of mruby-enumerator's Fiber machinery (Enumerator#each, #with_index, #initialize, Generator, Yielder, Kernel#to_enum,
@@ -770,11 +771,13 @@ module CoreEnumeratorFree
 
   # Classes the natives create: leaf name => superclass name (nil when the superclass expression is none of NATIVE_SUPERS),
   # from the `mrb_define_class*` calls in the C text. The leaf is a string literal or MRB_SYM(Name), the superclass the last
-  # argument.
+  # argument. A superclass held in a local variable resolves through that file's class bindings (mruby-io's
+  # `io = mrb_class_get_id(mrb, MRB_SYM(IO))` makes File < IO); a variable bound to no class stays unresolved.
   def native_class_supers(paths, strip:)
     out = {}
     paths.each do |path|
       text = strip.call(File.binread(path).force_encoding(Encoding::UTF_8).scrub)
+      bindings = NativeSingletons.class_variables(text)
       text.scan(/\bmrb_define_class\w*\s*\(/) do
         start = Regexp.last_match.end(0)
         depth = 1
@@ -787,7 +790,9 @@ module CoreEnumeratorFree
         args = text[start...(i - 1)].split(',').map(&:strip)
         leaf = args.filter_map { |a| a[/\A"(\w+)"\z/, 1] || a[/\AMRB_SYM\((\w+)\)\z/, 1] }.first
         next unless leaf
-        sup = NATIVE_SUPERS.find { |re, _| args.last.match?(re) }&.last
+        sup_arg = args.last
+        bound = sup_arg.match?(/\A\w+\z/) ? bindings[sup_arg] : nil
+        sup = bound || NATIVE_SUPERS.find { |re, _| sup_arg.match?(re) }&.last
         out[leaf] = sup if sup || !out.key?(leaf)
       end
     end

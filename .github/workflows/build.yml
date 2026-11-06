@@ -1051,6 +1051,7 @@ jobs:
           ruby scripts/bc2cpp/native_member_tables_check.rb
           ruby scripts/bc2cpp/native_callbacks_check.rb
           ruby scripts/bc2cpp/io_open_check.rb
+          ruby scripts/bc2cpp/native_class_supers_check.rb
           ruby scripts/bc2cpp/bytecode_ir_constants_check.rb
           ruby scripts/bc2cpp/ir_soundness_classes_check.rb
           ruby scripts/bc2cpp/numeric_roots_reaching_check.rb
