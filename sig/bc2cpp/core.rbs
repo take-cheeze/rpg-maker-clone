@@ -542,4 +542,3 @@ class Integer
   # bc2cpp-native: core_results
   def inspect: () -> String
 end
-
