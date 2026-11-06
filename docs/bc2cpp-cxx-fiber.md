@@ -221,8 +221,78 @@ Fiber over a compiled proc needs a frame to run. It suspends through a `Fiber.yi
 method, or a block that yields. `fiber_body_step_check` passes. A body of the
 prologue-and-tail-call shape keeps that form, which also captures parameters by value.
 
+## Fiber API
+
+What a compiled body can use on the C++ Fiber (`fiber_api_step_check`, and the hand-written steps in `cxx_fiber_check`):
+
+- `Fiber#resume(a, b)` hands the fiber `[a, b]` (one argument is itself, none is nil). `Fiber.yield a, b` hands the resumer
+  `[a, b]`; a step packs them (`RESUMABLE_YIELD`, `bc2cpp_block_args_from`).
+- Block parameters bind from the first resume's arguments: a `Fiber.new { |a, b| ... }` body is a step whose root frame
+  (`Bc2cppBodyStart`) makes the body's frame on the first resume, with the arguments `bc2cpp_fiber_m_resume` stored
+  (`bc2cpp_first_args`), and calls it. A body with parameters never takes the prologue-and-tail-call form.
+- `Fiber.current` is the C++ Fiber being resumed (`bc2cpp_current_fiber`, restored when a resume ends, also by an
+  exception) and mruby-fiber's root fiber outside.
+- A fiber whose step raised is dead (`alive?` is false) and the exception reaches the resumer.
+
+Not done: `Fiber#transfer`, `Fiber.yield` with a splat or keywords, and `Fiber.yield` from code the compiler did not
+compile.
+
+## Array#sort with a yielding block
+
+`Array#sort!` is C in mruby, so a `Fiber.yield` in its comparison block cannot cross it. A frame of the fiber
+(`bc2cpp_fiber_sort.hxx`, `Bc2cppSortFrame`) runs array.c's insertion sort (up to 16 elements) and heap sort step by step;
+each comparison is a block call (`bc2cpp_block_call`, the adapter's call factored out: a block step is CALLed, a tail-yield
+block is a YIELD, any other runs here) that may suspend. It is registered for dynamic calls under `Array#sort!`'s C function
+(`bc2cpp_dyn_builtins`) and declines (undef) when there is no block or fewer than two elements. `Array#sort` joins the
+resumable variants, so `[..].sort { Fiber.yield }`, `Enumerable#sort` and `sort!` suspend. `resumable_variants_check` holds
+these scenarios to a transcription of array.c's algorithm (the interpreted run cannot give their output).
+
+## Entered from C
+
+A resumable method entered as a frame of a C++ Fiber hands its CALLs to the fiber. Entered from C (an interpreted Fiber, the
+VM, a native iterator: core iterators take their variant whenever `M->c` is not the root context) it had no fiber to hand
+them to, and `bc2cpp_resumable_resume_from_c` took a CALL suspension for a `Fiber.yield nil`, so
+`Fiber.new { [3, 1, 2].sort { |a, b| a <=> b } }.resume` in interpreted code raised FiberError, as did `collect`, `inject`
+and `flat_map`. The frame a step CALLs now runs to its end there (`bc2cpp_run_callee_from_c`); a `Fiber.yield` in it goes to
+`Fiber.yield` and raises the FiberError of a yield across a C frame. `call_from_c_check` covers it. A yield through compiled
+iterators from an interpreted Fiber is a FiberError: it needs a compiled Fiber body.
+
+## What blocks removing mruby-fiber
+
+`native_fiber_check` (and `vm_bytecode_free_check`, which runs it and then reads the closed build's
+`bytecode-inventory.json`) builds a native-only mruby with the NativeVM backend, runs the scenario program in it and compares
+the output with interpreted mruby. It is not a check of the C++ Fiber: the scenario program is compiled by NativeVM, not by
+bc2cpp, and the Fiber is mruby-fiber's. Moving it to the C++ Fiber needs, in order:
+
+1. **No mruby-fiber in the build.** `stdlib.gembox` and `build_config.rb` (lines 272 and 460) list it; `mruby-enumerator`
+   depends on it (`add_dependency`); `mruby-rpgxp` and `mruby-wolf` depend on it and use `Fiber.new`/`Fiber.yield`
+   (`mruby-wolf/mrblib/interpreter.rb`, `mruby-rpgxp/mrblib/script_host.rb`). Without it `Fiber.new` does not exist:
+   only a `Fiber.new { ... }` site the compiler turns into `bc2cpp_fiber_new_body`/`_new_step` works, and
+   `bc2cpp_fiber_define` defines the class itself. A `Fiber.new(&blk)` or `Fiber.new` through `send` has no path.
+2. **The scenario program compiled by bc2cpp.** The check's fiber bodies are top-level blocks of `probe.rb`; they must be
+   compiled (the probe as a closed program) so `Fiber.new` sites become C++ fibers.
+3. **Behaviour the scenarios exercise that the C++ Fiber lacks:**
+   `Fiber#transfer` and `Fiber.current.transfer` (the 'fiber transfer' case); `ensure`/`rescue` around a `Fiber.yield`
+   ('nested ensure': `resumable_shape_problem` refuses a method with a handler); `catch`/`throw` after a yield (native
+   `catch` with a block, then `throw` through frames); a closure that outlives the frame that made it and is called after a
+   yield ('escaping closure': a block step reads its builder's locals by pointer, valid only while that frame is on the
+   fiber's stack; an escaping proc needs boxed variables); non-local `return` from a block that yielded
+   ('nonlocal return'); `Enumerator#next`/`peek` and `lazy` (they still use mruby-fiber's `Fiber` through
+   `Enumerator#next_values`; the `each` it calls needs the keyword/splat dynamic call, see above); 250 live registers
+   ('wide registers', untested on the step frame).
+4. **An expectation to change.** 'C boundary stays an error' runs `[2, 1].sort! { |a, b| Fiber.yield a; a <=> b }` and
+   expects the FiberError mruby raises; the C++ Fiber now suspends there. It needs another native-with-block example
+   (for instance `String#gsub` with a block) to keep checking that a real C boundary is an error.
+5. **Build-level checks that belong to NativeVM, not the Fiber.** The `NATIVE_ONLY` bytecode rejection, the archive audits
+   (no compiler, loader or instruction decoder) and the mode switching test the native-only VM configuration. They stay
+   with it, or move to the closed build's own audit, when the VM is removed.
+
+`vm_bytecode_free_check` additionally needs `build-closed-bc2cpp/closed/bytecode-inventory.json` to report
+`native_fiber_check_passed`, and no retained instruction arrays in the sources, the archive or the host: a closed-build
+property that does not depend on how fibers are implemented.
+
 Still failing:
 
-- `resumable_variants_check` known gaps (10 fiber scenarios): early return/break from a block inside a step, `super` in a
-  step (`Range#max`/`#min`), the native `Array#sort` with a yielding block.
+- `resumable_variants_check` known gaps (9 fiber scenarios): early return/break from a block inside a step, `super` in a
+  step (`Range#max`/`#min`).
 - Keyword arguments through a dynamic call, so `Enumerator#each`'s `@obj.__send__ @meth, *@args, **@kwd, &block` is not a CALL.

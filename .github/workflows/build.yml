@@ -883,6 +883,8 @@ jobs:
           ruby scripts/bc2cpp/keyword_splat_static_check.rb
           ruby scripts/bc2cpp/fiber_body_step_check.rb
           ruby scripts/bc2cpp/call_step_check.rb
+          ruby scripts/bc2cpp/fiber_api_step_check.rb
+          ruby scripts/bc2cpp/call_from_c_check.rb
           ruby scripts/bc2cpp/block_in_step_check.rb
           ruby scripts/bc2cpp/enumerator_next_check.rb
           ruby scripts/bc2cpp/block_step_check.rb
