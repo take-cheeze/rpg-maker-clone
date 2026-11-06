@@ -1,0 +1,1 @@
+- **bc2cpp**: a compiled call with a keyword splat (`recv.m(a, **h)`) passes a non-empty `h` as keyword arguments instead of raising `NotImplementedError`; a non-Hash `**` value converts with `to_hash` or raises `TypeError`.
