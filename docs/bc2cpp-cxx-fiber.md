@@ -110,9 +110,18 @@ that block to the heap when it parks its frame (the block may be a frame-local s
   `Fiber.yield`. The adapter yields `v`, and the next resume value is the block's result, which the method's step
   takes as its resume value. Anywhere else the same block yields the ordinary way.
 
-`resumable_block_check` passes with it. Still failing, each for a reason this slice does not cover:
+`resumable_block_check` passes with it.
 
-- `resumable_receiver_check`, `resumable_variants_check`: the body calls a core iterator on another receiver
-  (`arr.each_index { Fiber.yield i }`), whose entry is a dual variant, not a fiber root with an id to arm.
+A tail call on an explicit receiver (`Fiber.new { arr.each_index { |i| Fiber.yield i } }`) is a Fiber body too. The
+receiver's class is not proven, so the body arms "#each_index" (any owner's `each_index`) and its tail call stores
+the receiver it is calling on (`bc2cpp_prologue_set_recv`); an entry takes the handoff only when its own name and its
+`self` match, so a method that merely calls another `each_index` cannot. The prologue's tail call goes through the
+entry (no inlined core arm), and a dual iterator's wrapper takes its variant when a Fiber body is armed
+(`bc2cpp_prologue.expect`) as well as under an mruby Fiber. `resumable_receiver_check` passes.
+
+Still failing:
+
+- `resumable_variants_check`: 12 of its 140 scenarios (the direct iterators `Array#fetch`, `Hash#fetch`, `String#upto`,
+  `each`, `each_index`, `delete_if`) still raise `FiberError`.
 - A block whose `Fiber.yield` is not its last act (the `Enumerator#next_values` body, nested Enumerable methods) still
   needs a real block step.
