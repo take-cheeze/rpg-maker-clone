@@ -1,0 +1,1 @@
+- bc2cpp escape analysis no longer exempts the natives `section`, `select`, `count` and `index` from block capture by name. They are treated as capturing, so some block-related optimisations no longer apply.
