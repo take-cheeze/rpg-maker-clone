@@ -206,10 +206,31 @@ A block inside a step may call the block of the method that built it (`n.times {
 variable (`block.call(*val)` in `Enumerable#collect`): the block is a step, its env carries the building method's block after
 the upvars, the maker passes it as the step's block parameter, and the suspension records the proc it calls in the frame
 (`__block__`) for the adapter. An inline loop (`each`, `times`, ...) whose block may suspend is not inlined in a step, so it
-stays a block. Block steps are also built inside resumable variants. `resumable_variants_check` now builds every fiber body
-in a compiled probe class; the iterators whose blocks return or break early (`all?`, `any?`, `detect`, `find_index`,
-`none?`, scenarios with `break`) and those that go through `super` (`Range#max`, `#min`) or the native `Array#sort` are
-listed in the check as known gaps, and a gap that starts passing fails the check.
+stays a block. Block steps are also built inside resumable variants. `resumable_variants_check` builds every fiber body in a
+compiled probe class; the one scenario that still fails (`Enumerable#sort`, which ends in the native `Array#sort`) is
+listed in the check as a known gap, and a gap that starts passing fails the check.
+
+## Return, break and super in steps
+
+A block step may `return` from its method or `break` out of the call that took it (`BLOCK_STEP_UNWIND`). The step that
+builds the block puts two frame values in the block's env, just before the maker: the frame a `break` ends (the building
+step's own frame) and the frame a `return` ends (the building step's frame, or the target the building block step itself
+carries). A block that returns or breaks has no thunk (direct-entry) proc, so its plain body keeps reading its tokens from
+a cfunc frame; the step trailer on its env ends with a magic-tagged flag word (`BLOCK_STEP_MAGIC`) that the adapter
+checks, so an env that merely ends in a pointer is not taken for one. When the block's step reaches `BREAK` or
+`RETURN_BLK` it records the target in `Bc2cppResumeFrame::unwind_key` and returns its frame as a suspension; the adapter
+reports `BC2CPP_STEP_UNWIND`. The fiber drops the frames above the target (found by `Bc2cppFiberFrame::identity`, the heap
+frame of a method frame) and either resumes it with the value (break: the value is the call's result) or finishes it with
+the value (return). A block that runs from C instead (the callee is not a registered suspendable method) breaks and
+returns by exception: the dynamic call site owns a break frame and, in a method step, a return frame, and catches both.
+A `return` out of a block that cannot suspend takes the same site, so a step can contain such a block. Limits: a plain
+`return` from a block built by another block step has no return frame on the C stack, so it raises `LocalJumpError`
+when the callee runs it from C.
+
+`super` in a step is a dynamic call that starts above the method's own class (`bc2cpp_dyn_super`): a registered suspendable
+target parks and is CALLed (`Range#max` into `Enumerable#max`), any other target is called as `bc2cpp_super_call` calls it.
+An ordinary body takes a plain fixed-argument `super` with its block register through `bc2cpp_super_call` as well
+(`SUPER_BLOCK_REGISTER`).
 
 ## General Fiber bodies
 
@@ -293,6 +314,4 @@ property that does not depend on how fibers are implemented.
 
 Still failing:
 
-- `resumable_variants_check` known gaps (9 fiber scenarios): early return/break from a block inside a step, `super` in a
-  step (`Range#max`/`#min`).
-- Keyword arguments through a dynamic call, so `Enumerator#each`'s `@obj.__send__ @meth, *@args, **@kwd, &block` is not a CALL.
+- `resumable_variants_check` has no known gaps left.
