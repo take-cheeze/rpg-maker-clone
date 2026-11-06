@@ -115,3 +115,6 @@
 /build-closed-bc2cpp
 # Closed builds into other directories (scripts/bc2cpp/closed_build.bash takes the directory as an argument).
 /build-closed-bc2cpp-*
+
+# Written beside the runner build config by rake on each build.
+host-libs/mruby-bc2cpp-runner/build_config.rb.lock
