@@ -156,9 +156,18 @@ close over such callees (`BLOCKS_IN_STEPS`, `codegen_block_fallback.rb`), and th
 plain body of a block that has a step is compiled outside the enclosing step, so a `Fiber.yield` in it is an ordinary
 send that only runs when no fiber CALLs the step. `block_in_step_check` passes.
 
-Limits: the block takes the block-step limits (no captured locals, no nested block); the callee has mandatory
-parameters and yields to its block; the site is at the top level of the step, not in an inlined loop. Dynamic dispatch
-(`Enumerator#each`, `send`) is not covered.
+A block step may contain blocks of its own (the body of a Fiber body step, or of a block step, builds its blocks the same
+way), and may read and write locals of the step that builds it (`BLOCK_STEP_UPVARS`). The building step's registers are
+references into its heap frame whenever its body takes a register's address, so the site passes `&rN` pointers in the
+block's env; the maker copies them into the block frame's slots (`F->slots[i]`) and the step reads them as the
+`bc2cpp_upvar_*` pointers an ordinary block body gets (`GETUPVAR`/`SETUPVAR` are unchanged, writes go through
+`bc2cpp_upvar_root`). This holds because the call is a CALL: the building step's frame stays on the fiber's stack until
+the callee returns. A `Fiber.new` body never takes this form (it outlives the frame); it keeps the by-value capture.
+
+Limits: the block takes level-0 captures only, no break/return/yield to the method's block, mandatory or rest-only
+parameters; the callee has mandatory parameters, one definition in the same owner, and yields to its block; the site is
+at the top level of the step, not in an inlined loop. Two callees with the same name are not CALL targets. Dynamic
+dispatch (`Enumerator#each`, `send`) is not covered.
 
 ## General Fiber bodies
 
@@ -173,5 +182,4 @@ Still failing:
 
 - `resumable_variants_check`: 12 of its 140 scenarios (the direct iterators `Array#fetch`, `Hash#fetch`, `String#upto`,
   `each`, `each_index`, `delete_if`) still raise `FiberError`.
-- The `Enumerator#next_values` body and the nested Enumerable methods still need captured locals in block steps and
-  dispatch through `Enumerator#each`.
+- The `Enumerator#next_values` body and the nested Enumerable methods still need dispatch through `Enumerator#each`.
