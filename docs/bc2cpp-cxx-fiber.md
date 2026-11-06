@@ -171,29 +171,41 @@ dispatch (`Enumerator#each`, `send`) is not covered.
 
 ## Dynamic calls
 
-A send whose method is chosen at run time (`send`, `__send__`, `public_send`) in a step goes through
-`bc2cpp_dyn_call` (`DYN_CALL`, `RESUMABLE_DYN_CALL` in the generated step). Each suspendable method with mandatory
-parameters emits a dispatcher (`<impl>_dyn`) and registers it under its registered C function; the call resolves the
-method on the receiver and, when its C function is registered and the argument count fits, arms the method's id and
-runs its entry, which parks the frame; the step CALLs that frame. Any other target runs as an ordinary send and its
-value is the site's result at once. A root that sends by name also makes the methods its symbol literals name roots.
-`block_in_step_check` covers it.
+A call in a step whose callee is not a known suspendable method of the same owner goes through `bc2cpp_dyn_call`
+(`DYN_CALL`, `RESUMABLE_DYN_CALL` in the generated step): `send`/`__send__`/`public_send`, and a call with a literal or
+forwarded (`&blk`) block on any receiver (`[1, 2].each { Fiber.yield }`, `val.upto(last, ex, &block)`). Each suspendable
+method (and the resumable variant of a core iterator, under its fast body's registered function) emits a dispatcher
+(`<impl>_dyn`) and registers it; mandatory, optional and rest parameters are supported. The call resolves the method on the
+receiver and, when it is registered and the argument count fits, arms the method's id and runs its entry, which parks the
+frame; the step CALLs that frame. Anything else runs as an ordinary call with the block and its value is the site's result
+at once. A root that sends by name also makes the methods its symbol literals name roots. `block_in_step_check` covers it.
 
-Limits: fixed arguments only (no splat, no keywords), so `Enumerator#each`'s `@obj.__send__ @meth, *@args, **@kwd, &block`
-is not covered yet; a block passed to a send whose name is not proven stays a possible rebinder (block_self_world), so it
-is not a step; `_rsm` variants of the core iterators are not registered yet.
+Limits: a block passed to a send whose name is not proven stays a possible rebinder (block_self_world), so it is not a step;
+keyword arguments are not passed.
+
+## Inner blocks that yield
+
+A block inside a step may call the block of the method that built it (`n.times { |i| out << yield(i) }`) or a proc held in a
+variable (`block.call(*val)` in `Enumerable#collect`): the block is a step, its env carries the building method's block after
+the upvars, the maker passes it as the step's block parameter, and the suspension records the proc it calls in the frame
+(`__block__`) for the adapter. An inline loop (`each`, `times`, ...) whose block may suspend is not inlined in a step, so it
+stays a block. Block steps are also built inside resumable variants. `resumable_variants_check` now builds every fiber body
+in a compiled probe class; the iterators whose blocks return or break early (`all?`, `any?`, `detect`, `find_index`,
+`none?`, scenarios with `break`) and those that go through `super` (`Range#max`, `#min`) or the native `Array#sort` are
+listed in the check as known gaps, and a gap that starts passing fails the check.
 
 ## General Fiber bodies
 
 A `Fiber.new` body that is not a single tail call (several calls to suspendable methods, a `Fiber.yield` of its own, a
 result used after a call) is compiled as a block step, and the fiber's root frame is that step's frame
 (`emit_fiber_body_step_site`, `bc2cpp_fiber_new_step`). Its calls to suspendable methods are CALLs. A body qualifies
-under the block-step limits (no captured locals, no nested block, no parameters) and when it can suspend: a
-`Fiber.yield` of its own or a call to a suspendable method. `fiber_body_step_check` passes. A body of the
+under the block-step limits (no captured locals, no parameters), and it is a step whether or not it can suspend, since a
+Fiber over a compiled proc needs a frame to run. It suspends through a `Fiber.yield` of its own, a call to a suspendable
+method, or a block that yields. `fiber_body_step_check` passes. A body of the
 prologue-and-tail-call shape keeps that form, which also captures parameters by value.
 
 Still failing:
 
-- `resumable_variants_check`: 12 of its 140 scenarios (the direct iterators `Array#fetch`, `Hash#fetch`, `String#upto`,
-  `each`, `each_index`, `delete_if`) still raise `FiberError`.
-- The `Enumerator#next_values` body needs the splat/keyword send of `Enumerator#each` and registered `_rsm` variants.
+- `resumable_variants_check` known gaps (10 fiber scenarios): early return/break from a block inside a step, `super` in a
+  step (`Range#max`/`#min`), the native `Array#sort` with a yielding block.
+- Keyword arguments through a dynamic call, so `Enumerator#each`'s `@obj.__send__ @meth, *@args, **@kwd, &block` is not a CALL.

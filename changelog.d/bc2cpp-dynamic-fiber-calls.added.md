@@ -1,1 +1,1 @@
-bc2cpp: a resumable step reaches a suspendable method through `send`/`__send__`/`public_send` as a CALL, resolved at run time.
+bc2cpp: a resumable step calls a suspendable method through `send`, a block-taking call on any receiver, or a forwarded block as a CALL resolved at run time, and a block inside a step can yield to its method's block; most core iterators now suspend as C++ steps.
