@@ -44,6 +44,26 @@ The 12 `Enumerable`/`Array` methods that call those iterators internally then re
 reverted. A yield-capable path needs the callers to be steps too: a block-taking step (phase 1 below) called through the
 step protocol rather than as a C call. A guard at the iterator alone cannot provide it.
 
+## Inline first: findings
+
+The first option was inlining the iterator and its literal block into the step. It cannot start from a Fiber body
+as the code stands. A Fiber body is a block, and `codegen_block_fallback.rb` refuses `Fiber.new { }` as a block
+fallback (`FIBER_NEW_BLOCK_UNSAFE_SUPPORT`): mruby-fiber needs an irep-backed proc, not a cfunc proc. So a method
+that builds a Fiber body is refused as `unhandled opcode BLOCK` and stays interpreted. The Fiber body is therefore a
+native-VM frame, and the iterator it calls is reached through a C wrapper. The inlined loop never runs inside a step.
+
+A second try put the variant dispatch in the entry wrapper instead of the fast body: under `M->c != M->root_c`, call
+`X_rsm_impl` (the variant checks straight-VM entry itself). It made `resumable_receiver_check` pass. It also broke
+`plain Array#uniq`: after an earlier `uniq` Fiber raised `FiberError`, a later plain call raised
+`ArgumentError: wrong number of arguments (given 3, expected 0)`. The reduced run with only `Array#uniq` and `Array#each`
+passes, so the trigger is the earlier error. The likely cause is `bc2cpp_resumable_exec`, which rewrites `ci->n` and
+`stack[1]` of the wrapper's own callinfo and then runs the driver on that ci, so the VM's frame bookkeeping is left
+inconsistent. `fiber_check_cfunc` (`mruby-fiber/src/fiber.c`) raises whenever a frame in the context has `cci > 0`,
+which is how the cfunc frame shows up. This is a hypothesis, not yet proven. The change was reverted.
+
+Next step: stop reusing the wrapper's callinfo for the variant. Push a fresh callinfo for the driver, and confirm
+the `uniq` sequence passes. Only after that is call-frame support (option a) worth building.
+
 The remaining sections record the original design and the limitations of nested block calls.
 
 ## Why the drivers exist
