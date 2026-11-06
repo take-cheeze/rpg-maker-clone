@@ -61,8 +61,8 @@ passes, so the trigger is the earlier error. The likely cause is `bc2cpp_resumab
 inconsistent. `fiber_check_cfunc` (`mruby-fiber/src/fiber.c`) raises whenever a frame in the context has `cci > 0`,
 which is how the cfunc frame shows up. This is a hypothesis, not yet proven. The change was reverted.
 
-Next step: stop reusing the wrapper's callinfo for the variant. Push a fresh callinfo for the driver, and confirm
-the `uniq` sequence passes. Only after that is call-frame support (option a) worth building.
+The fresh-callinfo driver fix proposed here was rejected, so the entry dispatch stays unconditional with the `uniq`
+regression as recorded above.
 
 The remaining sections record the original design and the limitations of nested block calls.
 
