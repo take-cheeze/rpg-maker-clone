@@ -25,6 +25,25 @@ defaults, numeric and successor string ranges, exclusive ends, exceptions, block
 `Enumerator#next`, and Fiber suspension. No new C integer conversion is introduced: the argument
 count is bounded by the method's optional arity on both 32-bit and 64-bit targets.
 
+## Why a guard in the fast body is not enough
+
+Tried: a guard at the top of each `RESUMABLE_DUAL` fast body, `if (M->c != M->root_c) return X_rsm_impl(M, self, args)`.
+It fixes the six direct iterators in `resumable_variants_check` (`Array#each`, `each_index`, `delete_if`, `fetch`,
+`Hash#fetch`, `String#upto`) when they are called from the VM, but it does not work in general, for three reasons:
+
+1. **The variant's entry reads the VM frame.** `bc2cpp_resumable_exec_ok` and the variant's `bc2cpp_check_argc` read
+   `M->c->ci`. A direct C call from another compiled body runs in the caller's frame, so the check sees the caller's
+   argument count. `plain Array#uniq` then raised `ArgumentError: wrong number of arguments (given 3, expected 0)`.
+2. **`bc2cpp_resumable_exec` rewrites the current frame** (`stack[1]`, `n`, the driver frame). That is only safe when the
+   current frame is the method's own VM frame. mruby sets `ci->proc` only for bytecode-proc methods, so a registered C
+   function has no identity the guard can test.
+3. **A direct compiled-to-compiled call cannot yield.** A caller such as a Fiber body that calls `Array#each` directly has
+   a C frame between the fiber root and the block's `Fiber.yield`, whatever the callee does. The guard cannot remove it.
+
+The 12 `Enumerable`/`Array` methods that call those iterators internally then regressed, which is why the change was
+reverted. A yield-capable path needs the callers to be steps too: a block-taking step (phase 1 below) called through the
+step protocol rather than as a C call. A guard at the iterator alone cannot provide it.
+
 The remaining sections record the original design and the limitations of nested block calls.
 
 ## Why the drivers exist
