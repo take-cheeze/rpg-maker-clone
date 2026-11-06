@@ -145,6 +145,15 @@ count is not the callee's). `call_step_check` passes.
 
 Limits: calls on self to one definition in the same owner; no block argument, no explicit receiver.
 
+## General Fiber bodies
+
+A `Fiber.new` body that is not a single tail call (several calls to suspendable methods, a `Fiber.yield` of its own, a
+result used after a call) is compiled as a block step, and the fiber's root frame is that step's frame
+(`emit_fiber_body_step_site`, `bc2cpp_fiber_new_step`). Its calls to suspendable methods are CALLs. A body qualifies
+under the block-step limits (no captured locals, no nested block, no parameters) and when it can suspend: a
+`Fiber.yield` of its own or a call to a suspendable method. `fiber_body_step_check` passes. A body of the
+prologue-and-tail-call shape keeps that form, which also captures parameters by value.
+
 Still failing:
 
 - `resumable_variants_check`: 12 of its 140 scenarios (the direct iterators `Array#fetch`, `Hash#fetch`, `String#upto`,
