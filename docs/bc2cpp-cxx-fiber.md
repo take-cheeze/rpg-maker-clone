@@ -143,7 +143,22 @@ caller's resume value. A callee's `Fiber.yield` reaches the resumer. The entry's
 (the registered wrapper checks, and a CALL site reaches `_impl` straight from compiled code, where the caller's
 count is not the callee's). `call_step_check` passes.
 
-Limits: calls on self to one definition in the same owner; no block argument, no explicit receiver.
+Limits: calls on self to one definition in the same owner; no explicit receiver.
+
+## Blocks inside steps
+
+A step may build blocks. A block that cannot suspend runs as in any method: its callee is synchronous, so the
+address-of-local captures stay valid. A call on self to a suspendable method that takes a block, with a literal block
+whose body reaches `Fiber.yield`, is a CALL that carries the block (`resumable_block_call_glue`): the block's proc is
+built on the heap with its step maker (nothing in it points into the step's frame, since a block step has no captured
+locals), the callee's entry parks its frame with that block, and the callee's `yield` CALLs the block's step. The roots
+close over such callees (`BLOCKS_IN_STEPS`, `codegen_block_fallback.rb`), and their names count as yielding names. The
+plain body of a block that has a step is compiled outside the enclosing step, so a `Fiber.yield` in it is an ordinary
+send that only runs when no fiber CALLs the step. `block_in_step_check` passes.
+
+Limits: the block takes the block-step limits (no captured locals, no nested block); the callee has mandatory
+parameters and yields to its block; the site is at the top level of the step, not in an inlined loop. Dynamic dispatch
+(`Enumerator#each`, `send`) is not covered.
 
 ## General Fiber bodies
 
@@ -158,5 +173,5 @@ Still failing:
 
 - `resumable_variants_check`: 12 of its 140 scenarios (the direct iterators `Array#fetch`, `Hash#fetch`, `String#upto`,
   `each`, `each_index`, `delete_if`) still raise `FiberError`.
-- A block whose `Fiber.yield` is not its last act (the `Enumerator#next_values` body, nested Enumerable methods) still
-  needs a real block step.
+- The `Enumerator#next_values` body and the nested Enumerable methods still need captured locals in block steps and
+  dispatch through `Enumerator#each`.
