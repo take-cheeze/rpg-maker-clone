@@ -132,6 +132,19 @@ reach the resumer, and its result becomes the suspended method's resume value. S
 Limits: no captured locals, no nested block, no `break`/`return`/`yield` to the method's block, and mandatory or
 rest-only parameters; a block outside them keeps its tail yield or the call from C. `block_step_check` passes.
 
+## Step-to-step calls
+
+A suspendable method that calls another suspendable method on self with arguments (`a = ask(3)`) no longer needs
+the callee inlined. The roots close over the suspendable methods they call (`CALL_STEP`, `codegen_block_fallback.rb`).
+The caller's step makes the callee's frame at the call site (`resumable_call_site`): it arms the callee's id and
+calls the callee's `_impl`, whose entry parks its frame (`bc2cpp_prologue`); the step stores that frame in the
+suspension (`Bc2cppResumeFrame::callee`) and suspends, the adapter returns `CALL`, and the callee's result is the
+caller's resume value. A callee's `Fiber.yield` reaches the resumer. The entry's own argument-count check is gone
+(the registered wrapper checks, and a CALL site reaches `_impl` straight from compiled code, where the caller's
+count is not the callee's). `call_step_check` passes.
+
+Limits: calls on self to one definition in the same owner; no block argument, no explicit receiver.
+
 Still failing:
 
 - `resumable_variants_check`: 12 of its 140 scenarios (the direct iterators `Array#fetch`, `Hash#fetch`, `String#upto`,

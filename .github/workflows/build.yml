@@ -881,6 +881,7 @@ jobs:
           ruby scripts/bc2cpp/native_owner_block_check.rb
           ruby scripts/bc2cpp/super_splat_check.rb
           ruby scripts/bc2cpp/keyword_splat_static_check.rb
+          ruby scripts/bc2cpp/call_step_check.rb
           ruby scripts/bc2cpp/block_step_check.rb
           ruby scripts/bc2cpp/cxx_fiber_check.rb
           ruby scripts/bc2cpp/keyword_send_check.rb
