@@ -309,7 +309,23 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/block_step_layout_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/step_closures_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/ssend_helper_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -884,6 +900,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/gc_stress_roots_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/resumable_variants_check.rb:
     tier: runtime
     capabilities:
@@ -927,6 +950,13 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/ensure_nested_rescue_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/protect_cxx_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -1169,6 +1199,10 @@ checks:
     - mrbc
     fixture_capabilities: []
   scripts/bc2cpp/compiled_gems_config_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
+  scripts/bc2cpp/self_build_kind_check.rb:
     tier: fast
     capabilities: []
     fixture_capabilities: []

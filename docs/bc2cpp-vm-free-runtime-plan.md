@@ -1,123 +1,112 @@
 # bc2cpp: all compiled C++, no VM dependency
 
-Status: plan (not started). Scope chosen: option 2, the full runtime. Fibers and blocks follow the
-phases below. This page is the reference for each phase's exit criteria.
+Status: Phases 0 and 4 done, 3 mostly done; 1, 2, 5, 6 open. Scope: the full runtime. This page is the reference for each
+phase's exit criteria.
 
 ## Goal
 
-The closed RPG2k build runs every method, block, Fiber and exception as compiled C++. The mruby VM
-(`3rd/mruby/src/vm.c`, the `mruby-fiber` context switch, `exec_irep`, the call-info stack) is no longer
-on any execution path. The object model (`mrb_value`, RString, RArray, RHash, the GC) stays, since the
-closed build needs it for the game's data.
+The closed RPG2k build runs every method, block, Fiber and exception as compiled C++; the mruby VM (`vm.c`,
+`exec_irep`, the call-info stack) is on no execution path. The object model (`mrb_value`, RString, RArray, RHash, GC)
+stays.
+
+## Where the closed build is now
+
+- Loads no bytecode or Ruby source: `mrb_load_*`, `mrb_eval`, `mrb_vm_run` have no call sites; `mrblib` is dead code
+  under `MRB_CORE_CLASS_UNITS`.
+- `mruby-fiber` is not linked; Fiber and `Enumerator#next` run on the C++ Fiber (`docs/bc2cpp-cxx-fiber.md`).
+- The VM left is about 16 KB in `vm-cxx.o` (`mrb_funcall*`, `mrb_yield*`, `mrb_protect_error`, `mrb_vm_ci_*`).
 
 ## What depends on the VM today
 
-Measured in the generated closed-build sources (`build-closed-bc2cpp/closed/mrbgems/*/*.cpp`):
+Text matches in the generated closed-build tree (`build-closed-bc2cpp/closed`, comments included; identifier prefixes
+count, so suffixed names are included). These are the script's baselines.
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall` text matches | 724 | see the breakdown below |
-| `bc2cpp_owner_call` (owner-listed dispatch) | 1746 | already direct; becomes a plain switch |
-| `mrb_proc_new_cfunc_with_env` (block procs) | 391 | C++ block objects with captured env |
-| `mrb_protect` (exception boundaries) | 193 | C++ `try`/`catch` on a typed exception |
-| `mrb_gc_protect` (arena roots) | 170 | scoped C++ roots |
-| `mrb_yield` | 22 | direct block invocation |
-| `mrb_method_search_vm` | 37 | static method tables |
-| `bc2cpp_resumable_exec` (VM driver entry) | 19 | C++ resume loop (already a step function) |
-| `mrb_exec_irep` | 2 | removed with the frame machine |
-| `mruby-fiber` context switch | Fiber bodies, `Enumerator#next` | C++ coroutine steps |
+| `mrb_funcall*` | 480 | breakdown below |
+| `bc2cpp_owner_call*` (owner-listed dispatch) | 2208 | already direct; becomes a plain switch |
+| `mrb_proc_new_cfunc_with_env*` (block procs) | 471 | C++ block objects with captured env |
+| `mrb_protect*` (exception boundaries) | 18 | host entry boundary (`*_entry.h`), `gem_init.c`, mruby headers |
+| `mrb_gc_protect*` (arena roots) | 16 | one `bc2cpp_root` per unit, `*_entry.h`, mruby headers |
+| `mrb_yield*` | 33 | direct block invocation |
+| `mrb_method_search_vm*` | 57 | static method tables |
+| `mrb_exec_irep*` | 5 | removed with the frame machine |
+| `bc2cpp_resumable_exec*` | 0 | done |
 
-`vm.c` is 3919 lines, `fiber.c` 574, `gc.c` 1755 (kept, minus the VM roots).
-
-Breakdown of the 724 `mrb_funcall` matches (generated closed-build sources, including comments):
-
-- ~351: the bigint `==` arm of every `!=` site (`codegen_native_send.rb`, under `MRB_USE_BIGINT`). Compiled into each
-  site, taken only for bigint receivers. Replace with a direct bigint equality call.
-- ~170: self-sends by name in class bodies (`bc2cpp_ssend_args`, `codegen_class_body.rb`), taken when the callee is not
-  proven statically. Replace with per-class dispatch tables (Phase 1).
-- ~28: error reporting (`puts` on stderr, `bc2cpp.rb` error handler). Outside the hot path; keep or use a C++ print.
-- ~26: generic dispatch helpers (`mrb_funcall_argv(recv, mid, ...)`, `mrb_funcall_with_block`). Phase 1.
-- The rest are comment text (the `MONO ... no mrb_funcall` notes).
+`mrb_funcall` breakdown (the rest is in headers):
+- Done (354 sites): the bigint `==` arm of every `!=` site (`codegen_native_send.rb`, `MRB_USE_BIGINT`) calls the shared
+  `bc2cpp_bigint_eq` (`mrb_bint_cmp`), with no by-name send.
+- ~170: class-body self-sends (`include`, `attr_*`), run once at load. One `bc2cpp_ssend` helper call each; the callee is
+  mruby's own C `Module#attr_*`, which has no public entry, so the by-name send inside the helper stays.
+- ~70: core `x.call(*args)` now call `bc2cpp_proc_call_argv`: a plain Proc is yielded to, any other receiver is sent
+  `call` by name inside the helper.
+- 12: error-path `puts` (`bc2cpp.rb` error handler).
+- The rest: Fiber and `each` helpers.
 
 ## Phases
 
-Each phase lands behind a gate, is verified by the fixture checks, and must not regress the default
-build. The host sweep and the verify build run at each phase's end.
+Each phase must not regress the default build; the host sweep and the verify build run at its end. Order: 1 and 2
+together (they share call sites), then 3, then 5.
 
 ### Phase 0: inventory and checks
 
-Status: done. `scripts/bc2cpp/vm_free_inventory_check.rb <generated-closed-build-dir>` counts the table's dependencies and fails above the baselines. The counts above are re-measured on the generated closed-build tree (`mrb_funcall`, `mrb_protect` and `mrb_gc_protect` count identifier prefixes, so suffixed names are included). The check is registered as deferred until `bc2cpp-build` publishes that tree to CI.
-
-- List every VM entry point the closed build reaches: the table above, plus `mrb_vm_run`,
-  `mrb_run`, the call-info helpers, and what `mrblib` Ruby the closed build keeps.
-- Add one check, `vm_free_inventory_check.rb`, that counts each dependency in the generated
-  sources and fails when a count grows. The baseline is the table above.
-- Exit: the check passes on the current tree, and the table matches the generated sources.
+Status: done. `scripts/bc2cpp/vm_free_inventory_check.rb <closed-build-dir>` fails above the table's baselines.
+Remaining: register it in CI once `bc2cpp-build` publishes the tree.
 
 ### Phase 1: direct dispatch everywhere
 
-- Replace every `mrb_funcall` site with the owner-listed direct call, or with a per-class dispatch
-  switch when the receiver is not statically known. The switch covers every class with a method of
-  that name, and an unknown class raises `NoMethodError` in C++.
-- Exit: `mrb_funcall` count is zero in the closed build; the fixture checks and the host sweep pass.
+- Replace every `mrb_funcall` with the owner-listed direct call or a per-class dispatch switch (unknown class: C++
+  `NoMethodError`). Remaining: all of the breakdown above.
+- Exit: `mrb_funcall` count is zero; fixture checks and the host sweep pass.
 
 ### Phase 2: C++ blocks and procs
 
-- A block is a C++ object (a function pointer and a captured env struct), not an `RProc` with an
-  `REnv`. `Proc#call` and `yield` call it directly.
-- Escaping blocks (a `Fiber.new` body, a stored `&block`) keep an `RProc` wrapper that points at the
-  C++ object. The wrapper holds the object alive through the GC.
-- Exit: `mrb_proc_new_cfunc_with_env` count is zero in the closed build; `stack_block_check` and
-  `resumable_variants_check` pass under both layouts (`BC2CPP_STACK_BLOCK_STACK` included).
+Status: partly done. Block construction and the foreign-proc yield each have one site (`bc2cpp_heap_proc`,
+`bc2cpp_yield_foreign`; `docs/bc2cpp-stack-blocks.md`), and 394 sites pass a frame-local block with no allocation. The closed
+build's text counts: `mrb_proc_new_cfunc_with_env` 470 to 4, `mrb_yield` 27 to 8; the inventory check now also counts the
+two helpers (166 and 27). What remains is the ABI: a compiled callee takes its block as an `mrb_value` RProc, so the 297
+by-name else arms (`Bc2cppHeapBlock`) and about 130 sites that pass an escaping block (callee stores or forwards it, `break`
+or `return` in the body, `&blk` forwarding, `dyn_call`) still allocate. Next: a C++ block value (entry plus env) that the callee
+signatures take instead of `mrb_value`, with the RProc wrapper made only where the block is stored.
+
+- Exit: `mrb_proc_new_cfunc_with_env` is zero; `stack_block_check` and `resumable_variants_check` pass under both
+  layouts (`BC2CPP_STACK_BLOCK_STACK` included).
 
 ### Phase 3: exceptions in C++
 
-- `raise` throws a typed C++ exception carrying the Ruby exception object. `rescue` / `ensure` are C++
-  `try` / `catch` / a scope guard. `mrb_protect` is replaced in each use.
-- `break` and non-local `return` already use C++ throws (`bc2cpp_block_break`); they share the same
-  mechanism.
-- Exit: `mrb_protect` count is zero; `scripts/bc2cpp/` exception checks pass.
+Status: mostly done. The closed build uses `MRB_USE_CXX_EXCEPTION`, so mruby raises with `throw (mrb_jmpbuf*)`; a
+boundary is a typed `catch (mrb_jmpbuf*)`, not a new exception class (mruby's own raise is the thrown type).
+
+- Done: every rescue/ensure boundary in generated code (method and block rescue, the ensure guard and its nested
+  rescue, step handler loops, the Fiber loop) calls `bc2cpp_protect` / `bc2cpp_protect_call` (`bc2cpp.rb`), one
+  C++ `try`/`catch` that restores `M->jmp`, the call-info stack, the arena and `M->exc` as the VM's protect call did.
+  Arena roots go through `bc2cpp_root` / `bc2cpp_arena_keep`; the numeric slow paths no longer expand their own.
+  `break`/`return` through `ensure` still use the `bc2cpp_block_break` / `bc2cpp_method_return` throws.
+- The counts fall because the boundary no longer calls the VM and the roots share one helper per unit, not because
+  roots are gone. Not reducible: no rescue region is raise-free (all 144 try bodies contain a call that can raise), so none drops its
+  boundary. Roots on freshly allocated or unlinked values stay arena roots.
+- Remaining: the host entry boundary (`bc2cpp_entry_call`, `*_entry.h`) keeps the public protect API and root, since a
+  host may not build with C++ exceptions; `gem_init.c` and mruby's headers are not generated. The exception object is
+  still an `RObject` in `M->exc`, not a C++ value.
+- Exit: the generated sources have no VM protect call; `scripts/bc2cpp/` exception checks pass
+  (`protect_cxx_check.rb` runs the shapes interpreted and compiled, with GC stress).
 
 ### Phase 4: Fibers as C++ coroutines
 
-Status: runtime started. `tools/bc2cpp/runtime/bc2cpp_fiber.hxx` implements the step stack and the host check
-`scripts/bc2cpp/cxx_fiber_check.rb` passes; see `docs/bc2cpp-cxx-fiber.md` for what is not wired yet.
-
-- Every method or block that can yield compiles to a resumable step (the existing `_rsm` form,
-  generalised). A call from one step into another is a call-frame push, not a C call. This is option (a)
-  in `docs/bc2cpp-resumable-block-calls.md`, now required.
-- A Fiber is a C++ object holding its step stack. `Fiber#resume` runs the top step; `Fiber.yield`
-  returns to the resumer. `mruby-fiber` is no longer linked.
-- `Enumerator#next` uses the same coroutine.
-- Exit: `native_fiber_check`, `resumable_variants_check`, `resumable_receiver_check` and
-  `vm_bytecode_free_check` pass in the default build, with no `FiberError` from compiled code.
+Status: done. Fiber, `Enumerator#next` and `Fiber#transfer`/`#raise` run on the C++ Fiber; `mruby-fiber` is not linked.
 
 ### Phase 5: delete the VM
 
-- Remove `vm.c`, the `mruby-fiber` context code, `exec_irep`, the call-info stack and the bytecode
-  dispatch from the closed build. The native VM (`native_vm.rb`) is removed with them.
-- Exit: `nm` on the closed `libmruby.a` shows no `mrb_vm_run`, `mrb_exec_irep`, `mrb_fiber_*` or
-  `mrb_funcall` symbols; the closed build links without `vm.c`.
+- Remove `vm.c`, `exec_irep`, the call-info stack and the bytecode dispatch from the closed build, and `native_vm.rb`.
+- Remaining: the 16 KB in `vm-cxx.o` (goes with Phases 1 to 3), the 5 `mrb_exec_irep` declarations, 57
+  `mrb_method_search_vm`.
+- Exit: `nm` on the closed `libmruby.a` shows no `mrb_vm_run`, `mrb_exec_irep` or `mrb_funcall` symbols; it links
+  without `vm.c`.
 
 ### Phase 6: verify
 
-- Full closed build, host sweep (every map, scenarios, the verify build), ASan run of the trace host,
-  and the Fiber checks in CI.
-- Exit: CI green on the PR head with the VM objects removed from the link.
+Full closed build, host sweep, ASan trace host, Fiber checks in CI; green with the VM objects removed from the link.
 
-## Risks and open decisions
+## Risks
 
-- **mrblib Ruby in core.** Some core classes are Ruby (`mrblib/*.rb`). Each one that stays needs a C++
-  body or a compiled body in the closed build. Decide per class; the inventory check lists them.
-- **Object model and GC.** The plan keeps `mrb_value` and the GC. A roots-only GC without the VM stack
-  needs its roots rewritten (Phase 2 and 3 cover this); confirm the arena model still works.
-- **C API for other gems.** The closed build does not need mruby's C API for user code. Other build
-  targets keep `vm.c`; the removal applies to the closed target only.
-- **Estimated size.** Phases 1 to 3 are the bulk of the codegen work; Phase 4 is the largest single
-  change because it touches every resumable step. Phases 0 and 5 are small.
-
-## Order of work
-
-0 (inventory) first, since it fixes the baseline. Then 1 and 2 together, since blocks and dispatch
-share call sites. Phase 3, then Phase 4, then Phase 5. Each phase is one or more PRs, not one large
-change.
+GC roots need rewriting without the VM stack (Phases 2 and 3). Other build targets keep `vm.c`.

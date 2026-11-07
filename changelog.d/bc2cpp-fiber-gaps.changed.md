@@ -1,0 +1,1 @@
+- bc2cpp's C++ Fiber now suspends in `Kernel#tap`/`then`/`yield_self` blocks, `lambda { }.call`, `Enumerator.new`, `Enumerator.produce` and `chunk` driven by `next`, `Fiber.new(&proc)`, `Fiber.send(:new)`, and a `break` out of a block through several ensure regions or from a call whose callee suspends first.

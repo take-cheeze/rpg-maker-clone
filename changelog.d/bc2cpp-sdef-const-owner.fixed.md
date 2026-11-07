@@ -1,1 +1,1 @@
-bc2cpp: `def Const.name` in a class body registers on the constant its lexical lookup finds, so `def Enumerator.produce` no longer names `Enumerator::Enumerator` (a NameError at registration that left File.open and later registrations out).
+- bc2cpp: `def Const.name` in a class body registers on the constant its lexical lookup finds, so `def Enumerator.produce` no longer names `Enumerator::Enumerator` (a NameError at registration that left File.open and later registrations out).

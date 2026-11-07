@@ -76,6 +76,14 @@ The proof still refuses the callees that pass their block on to another method:
 `Range#each` (to `__upto_endless`), `Array#uniq` (to `uniq!`) and
 `Enumerable#sort_by`.
 
+## One construction site
+
+Every heap block a site builds goes through `bc2cpp_heap_proc` (the one `mrb_proc_new_cfunc_with_env` call in each
+generated file, `bc2cpp_env_block`'s copy included). The lazy heap block next to a frame-local one is a
+`Bc2cppHeapBlock` functor (`bc2cpp_blk_heap_N()`), not a lambda. Every VM yield of a proc that is not a compiled block goes
+through `bc2cpp_yield_foreign`. Both are the places Phase 2 replaces; the inventory check counts them
+(`bc2cpp_heap_proc`, `bc2cpp_yield_foreign`).
+
 ## Switch and check
 
 `BC2CPP_STACK_BLOCKS=0` builds every block on the heap again.
