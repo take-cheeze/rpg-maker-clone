@@ -1,0 +1,1 @@
+- **bc2cpp class-body `include` / `attr_*` call mruby's public C API**: `bc2cpp_mod_include` (`mrb_include_module`, then the `included` hook) and `bc2cpp_mod_attr` (the same ivar cfunc methods as `Module#attr_*`) replace the by-name self send; `bc2cpp_ssend` no longer names `mrb_funcall`. The ssend check now pins the hook count instead of de-duplicating it.
