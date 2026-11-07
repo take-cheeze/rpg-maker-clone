@@ -676,6 +676,14 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/direct_new_args_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/constructor_overloads_check.rb:
     tier: fast
     capabilities: []
