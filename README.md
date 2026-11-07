@@ -1428,9 +1428,10 @@
   registered over its bytecode for the RPG2000/2003 maker, and the ones whose name no
   native method shares (and that take no block) also become direct call targets.
   The block-taking ones (`Array#each`, `Integer#times`, `Kernel#loop`, `Hash#each`,
-  most of `Enumerable`, ...) sit behind a Fiber guard: while a Fiber runs (a game
-  script, `Enumerator#next`) the entry hands the call to the bytecode, since a
-  `Fiber.yield` inside a block cannot cross a compiled frame. Flash-limited builds
+  most of `Enumerable`, ...) are compiled bodies too. The closed build has no Fiber
+  guard any more and no bytecode fallback: a block call made under a non-root Fiber
+  (a game script, `Enumerator#next`) is the one runtime check still to be added (see
+  [`docs/bc2cpp-resumable-block-calls.md`](docs/bc2cpp-resumable-block-calls.md)). Flash-limited builds
   (wio, psp, maix) compile none of it. See
   [`docs/adr/0264-bc2cpp-compiled-core-mrblib.md`](docs/adr/0264-bc2cpp-compiled-core-mrblib.md)
   and
@@ -1715,8 +1716,7 @@
   [native-only closed runtime](docs/bc2cpp-native-fibers.md#native-only-closed-runtime).
   Class-body initializers can also hold zero-argument lambdas returning literal
   data: native decoding keeps allocation lazy and resolves captured lexical
-  constants when called. The engine class-body planner now leaves no residual
-  statements. See [lazy literal data](docs/bc2cpp-class-bodies.md#lazy-literal-data).
+  constants when called. Engine class bodies run in the VM as bytecode.
   Class-body unit constant folds share content-checked source parses across candidates and owners;
   rewritten files are parsed again. See [class-body source parsing](docs/bc2cpp-class-bodies.md#source-parsing-for-unit-constant-folds).
   A class-body `define_method(:name) { |a| ... }` with a `def`-like block is registered as an ordinary

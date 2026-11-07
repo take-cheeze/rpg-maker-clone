@@ -1,0 +1,1 @@
+- **bc2cpp**: the load planner (`tools/bc2cpp/load_compile.rb`) is removed, with the checks that tested it (`class_body_check`, `path_form_check`, `mrblib_copy_sites_check`, `mrblib_stubs_check`) and the `BC2CPP_LOAD_COMPILE` / `BC2CPP_LOAD_WORLD` settings. The engine class bodies run in the VM as bytecode, and no residual mrblib is rewritten.

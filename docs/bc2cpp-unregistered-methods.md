@@ -147,7 +147,7 @@ Operator names (`[]`, `[]=`, `+`, ...) fail the `IDENT` gate in
 `dynamic_name?`, so they are dynamic by default: no text scan could spell
 them, and the proof refuses to guess. Two index operators escape through
 the INDEX_CLOSED planner verdict (`tools/bc2cpp/index_closed_planner.rb`,
-ADR 0365) instead. The planner enumerates every class that can answer `[]`
+ADR 0365) instead. The load planner that once consumed the verdict was removed. The planner enumerates every class that can answer `[]`
 or `[]=` — native owners need a verified code-generation arm (Array, Hash,
 String, Struct, Table, Proc), Ruby owners join the direct-call chain, and
 anything else (a foreign definer, a module, a singleton, an unbounded
@@ -166,7 +166,7 @@ class-body constant initializers (`ALL_DIRS = (DIR_BIT[2] | ...)`) by name
 (`bc2cpp_ld_decode` case 16, the legacy C++ statements), and a by-name `[]`
 would raise `NoMethodError` at gem-init load — aborting the init before the
 instance-type setup runs. So the loader keeps proven operators out of its
-data (`LoadCompile`'s `call?`, threaded from the plan's unregistered set),
+data (the removed load planner's `call?`, threaded from the plan's unregistered set),
 and every loader send of one — decoder, legacy expression, legacy class
 send — goes through the shared index helpers instead of the tables.
 `bc2cpp.rb` computes the load plan before emitting the helpers and forces

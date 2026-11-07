@@ -1,0 +1,1 @@
+- **bc2cpp** checks a trusted RBS return or parameter class when the compiled method runs, unless the return proofs already prove it: a wrong declaration raises `BC2cppDeclarationViolation` naming the method and type instead of changing behaviour. `BC2CPP_DECLARATION_GUARD=0` turns the checks off.

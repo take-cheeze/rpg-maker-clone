@@ -741,6 +741,8 @@ jobs:
           echo "MRBC=$mrbc" >> "$GITHUB_ENV"
           env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "full-core mruby unavailable" unless Bc2cppFixtureRuntime.full_or_build'
           echo "BC2CPP_MRUBY_FULL=$RUNNER_TEMP/bc2cpp-full/host" >> "$GITHUB_ENV"
+          env -u LD BC2CPP_NOFIBER_BUILD_DIR="$RUNNER_TEMP/bc2cpp-nofiber" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "no-fiber mruby unavailable" unless Bc2cppFixtureRuntime.nofiber_or_build'
+          echo "BC2CPP_MRUBY_NOFIBER=$RUNNER_TEMP/bc2cpp-nofiber/host" >> "$GITHUB_ENV"
 
       - name: Check bc2cpp registrations
         run: ruby scripts/ci/check_registry.rb
@@ -854,12 +856,20 @@ jobs:
         with:
           path: ${{ runner.temp }}/bc2cpp-full
           key: bc2cpp-full-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.*') }}-${{ steps.full-core-key.outputs.mruby }}-${{ steps.full-core-key.outputs.stringio }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'scripts/bc2cpp/*.bash', 'patches/mruby*.patch') }}
+      # The same libmruby without mruby-fiber, for native_fiber_check (the C++ Fiber as the only Fiber).
+      - name: Cache the no-fiber libmruby build
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/bc2cpp-nofiber
+          key: bc2cpp-nofiber-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.*') }}-${{ steps.full-core-key.outputs.mruby }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'mruby-fiber-placeholder/**', 'scripts/bc2cpp/*.bash', 'patches/mruby*.patch') }}
 
       - name: Prepare shared check libraries
         run: |
           env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "full-core mruby unavailable" unless Bc2cppFixtureRuntime.full_or_build'
+          env -u LD BC2CPP_NOFIBER_BUILD_DIR="$RUNNER_TEMP/bc2cpp-nofiber" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "no-fiber mruby unavailable" unless Bc2cppFixtureRuntime.nofiber_or_build'
           echo "MRBC=$RUNNER_TEMP/bc2cpp-full/host/bin/mrbc" >> "$GITHUB_ENV"
           echo "BC2CPP_MRUBY_FULL=$RUNNER_TEMP/bc2cpp-full/host" >> "$GITHUB_ENV"
+          echo "BC2CPP_MRUBY_NOFIBER=$RUNNER_TEMP/bc2cpp-nofiber/host" >> "$GITHUB_ENV"
           echo "BC2CPP_BUILD_INCLUDE=$RUNNER_TEMP/bc2cpp-full/host/include" >> "$GITHUB_ENV"
 
       - name: Check bc2cpp registrations
@@ -880,6 +890,19 @@ jobs:
           ruby scripts/bc2cpp/fold_statement_category_check.rb
           ruby scripts/bc2cpp/native_owner_block_check.rb
           ruby scripts/bc2cpp/super_splat_check.rb
+          ruby scripts/bc2cpp/keyword_splat_static_check.rb
+          ruby scripts/bc2cpp/fiber_body_step_check.rb
+          ruby scripts/bc2cpp/call_step_check.rb
+          ruby scripts/bc2cpp/fiber_transfer_check.rb
+          ruby scripts/bc2cpp/fiber_api_step_check.rb
+          ruby scripts/bc2cpp/call_from_c_check.rb
+          ruby scripts/bc2cpp/step_exceptions_check.rb
+          ruby scripts/bc2cpp/step_keywords_check.rb
+          ruby scripts/bc2cpp/block_in_step_check.rb
+          ruby scripts/bc2cpp/step_closures_check.rb
+          ruby scripts/bc2cpp/enumerator_next_check.rb
+          ruby scripts/bc2cpp/block_step_check.rb
+          ruby scripts/bc2cpp/cxx_fiber_check.rb
           ruby scripts/bc2cpp/keyword_send_check.rb
           ruby scripts/bc2cpp/optional_yield_check.rb
           ruby scripts/bc2cpp/keyword_receiver_target_check.rb
@@ -891,9 +914,7 @@ jobs:
           ruby scripts/bc2cpp/super_lookup_check.rb
           ruby scripts/bc2cpp/edition_default_check.rb
           ruby scripts/bc2cpp/schema_blob_check.rb
-          ruby scripts/bc2cpp/class_body_check.rb
           ruby scripts/bc2cpp/class_world_gate_check.rb
-          ruby scripts/bc2cpp/path_form_check.rb
           ruby scripts/bc2cpp/class_world_check.rb
           ruby scripts/bc2cpp/lcf_schema_tables_check.rb
           ruby scripts/bc2cpp/owner_call_direct_check.rb
@@ -933,6 +954,7 @@ jobs:
           ruby scripts/bc2cpp/resumable_rest_check.rb
           ruby scripts/bc2cpp/resumable_variants_check.rb
           ruby scripts/bc2cpp/native_fiber_check.rb
+          ruby scripts/bc2cpp/fiber_limits_check.rb
           ruby scripts/bc2cpp/numeric_jmpuw_check.rb
           ruby scripts/bc2cpp/nil_native_answers_check.rb
           ruby scripts/bc2cpp/ensure_nested_rescue_check.rb
@@ -960,8 +982,6 @@ jobs:
           ruby scripts/bc2cpp/module_function_scope_check.rb
           ruby scripts/bc2cpp/compiled_owners_check.rb
           ruby scripts/bc2cpp/compiled_gems_config_check.rb
-          ruby scripts/bc2cpp/mrblib_stubs_check.rb
-          ruby scripts/bc2cpp/mrblib_copy_sites_check.rb
           ruby scripts/bc2cpp/escape_receiver_flow_check.rb
           ruby scripts/bc2cpp/skipped_direct_call_check.rb
           ruby scripts/bc2cpp/array_literal_block_check.rb
@@ -991,6 +1011,8 @@ jobs:
           ruby scripts/bc2cpp/module_includer_bound_check.rb
           ruby scripts/bc2cpp/lcf_join_array_check.rb
           ruby scripts/bc2cpp/alias_method_check.rb
+          ruby scripts/bc2cpp/singleton_const_owner_check.rb
+          ruby scripts/bc2cpp/enumerator_class_unit_check.rb
           ruby scripts/bc2cpp/frozen_hash_lookup_check.rb
           ruby scripts/bc2cpp/record_hash_update_check.rb
           ruby scripts/bc2cpp/record_nilable_read_check.rb
@@ -1014,6 +1036,7 @@ jobs:
           ruby scripts/bc2cpp/self_new_leaf_check.rb
           ruby scripts/bc2cpp/sealed_int16_local_check.rb
           ruby scripts/bc2cpp/freeze_fold_check.rb
+          ruby scripts/bc2cpp/direct_new_args_check.rb
           ruby scripts/bc2cpp/callee_return_fold_check.rb
           ruby scripts/bc2cpp/range_compare_fold_check.rb
           ruby scripts/bc2cpp/constant_proofs_check.rb
@@ -1040,7 +1063,6 @@ jobs:
           ruby scripts/bc2cpp/optional_rest_check.rb
           ruby scripts/bc2cpp/super_optional_check.rb
           ruby scripts/bc2cpp/owner_native_chain_check.rb
-          ruby scripts/bc2cpp/guard_fiber_free_check.rb
           ruby scripts/bc2cpp/exception_init_check.rb
           ruby scripts/bc2cpp/superclass_namespace_check.rb
           ruby scripts/bc2cpp/plain_yielder_check.rb
@@ -1166,10 +1188,6 @@ jobs:
 
       - name: Play the verify build's scenarios and every map
         timeout-minutes: 15
-        # The verify build registers a stub under every name the lists drop, so its method table is not the plain
-        # build's: only the plain build is held to scripts/bc2cpp/method_table_threshold.txt.
-        env:
-          METHOD_TABLE: skip
         run: env -u LD scripts/bc2cpp/host_sweep.bash "$GITHUB_WORKSPACE/build-closed-verify"
 
       # Informational: why the entries the lists keep stay in the table, and which they are (the lists are no longer in a diff).

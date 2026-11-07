@@ -12,7 +12,7 @@ The proof reached a fixed point after two passes: the closed list grew from 3,56
 - `RGSS::Tone`: `red`, `green`, `blue`, `gray`, and their setters (8).
 - `RGSS::Rect`: `set`, `y`, `y=`, `height=` (4).
 
-The installed table falls from **1,252 to 1,232 entries**. The threshold in `scripts/bc2cpp/method_table_threshold.txt` records the reduced count. These are entry counts, not measurements of backing-table capacity or binary size.
+The installed table falls from **1,252 to 1,232 entries**. The count guard that once read `scripts/bc2cpp/method_table_threshold.txt` has been removed, so this count is no longer enforced. These are entry counts, not measurements of backing-table capacity or binary size.
 
 ## Native alias reduction
 

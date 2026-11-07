@@ -1,5 +1,9 @@
 # Resumable block calls: replacing the enum-step drivers
 
+> **Status.** The Fiber guard this page describes (the guard that fires and hands a call to the saved body) was
+> removed with the other guards. The resumable variants in `CodeGen::RESUMABLE_DUAL` stay. The next step is
+> the single runtime check for a block call under a non-root Fiber, which is not written yet.
+
 Closed bc2cpp builds now compile all retained bodies and support drivers through the
 [native continuation backend](bc2cpp-native-fibers.md). The remaining driver references below
 describe frame protocols; their executable representation is native code in these builds.
@@ -20,6 +24,53 @@ driver code.) They cover missing fetch keys and indices, explicit
 defaults, numeric and successor string ranges, exclusive ends, exceptions, blockless calls,
 `Enumerator#next`, and Fiber suspension. No new C integer conversion is introduced: the argument
 count is bounded by the method's optional arity on both 32-bit and 64-bit targets.
+
+## Why a guard in the fast body is not enough
+
+Tried: a guard at the top of each `RESUMABLE_DUAL` fast body, `if (M->c != M->root_c) return X_rsm_impl(M, self, args)`.
+It fixes the six direct iterators in `resumable_variants_check` (`Array#each`, `each_index`, `delete_if`, `fetch`,
+`Hash#fetch`, `String#upto`) when they are called from the VM, but it does not work in general, for three reasons:
+
+1. **The variant's entry reads the VM frame.** `bc2cpp_resumable_exec_ok` and the variant's `bc2cpp_check_argc` read
+   `M->c->ci`. A direct C call from another compiled body runs in the caller's frame, so the check sees the caller's
+   argument count. `plain Array#uniq` then raised `ArgumentError: wrong number of arguments (given 3, expected 0)`.
+2. **`bc2cpp_resumable_exec` rewrites the current frame** (`stack[1]`, `n`, the driver frame). That is only safe when the
+   current frame is the method's own VM frame. mruby sets `ci->proc` only for bytecode-proc methods, so a registered C
+   function has no identity the guard can test.
+3. **A direct compiled-to-compiled call cannot yield.** A caller such as a Fiber body that calls `Array#each` directly has
+   a C frame between the fiber root and the block's `Fiber.yield`, whatever the callee does. The guard cannot remove it.
+
+The 12 `Enumerable`/`Array` methods that call those iterators internally then regressed, which is why the change was
+reverted. A yield-capable path needs the callers to be steps too: a block-taking step (phase 1 below) called through the
+step protocol rather than as a C call. A guard at the iterator alone cannot provide it.
+
+## Driver removed
+
+The `Bc2cppResumable` bytecode driver is gone: its Ruby source, its `mrbc` bytecode, the `drive` loop, the handoff
+and `exec` paths. A resumable entry now always steps from C. A Fiber yield that reaches such an entry raises
+`FiberError: can't cross C function boundary`, so the Fiber checks that relied on the driver fail until the call-frame
+protocol replaces it. Affected: `resumable_receiver_check`, `resumable_variants_check` (the direct iterators),
+`resumable_block_check`, `native_fiber_check`. Non-Fiber block checks are unchanged.
+
+## Inline first: findings
+
+The first option was inlining the iterator and its literal block into the step. It cannot start from a Fiber body
+as the code stands. A Fiber body is a block, and `codegen_block_fallback.rb` refuses `Fiber.new { }` as a block
+fallback (`FIBER_NEW_BLOCK_UNSAFE_SUPPORT`): mruby-fiber needs an irep-backed proc, not a cfunc proc. So a method
+that builds a Fiber body is refused as `unhandled opcode BLOCK` and stays interpreted. The Fiber body is therefore a
+native-VM frame, and the iterator it calls is reached through a C wrapper. The inlined loop never runs inside a step.
+
+A second try put the variant dispatch in the entry wrapper instead of the fast body: under `M->c != M->root_c`, call
+`X_rsm_impl` (the variant checks straight-VM entry itself). It made `resumable_receiver_check` pass. It also broke
+`plain Array#uniq`: after an earlier `uniq` Fiber raised `FiberError`, a later plain call raised
+`ArgumentError: wrong number of arguments (given 3, expected 0)`. The reduced run with only `Array#uniq` and `Array#each`
+passes, so the trigger is the earlier error. The likely cause is `bc2cpp_resumable_exec`, which rewrites `ci->n` and
+`stack[1]` of the wrapper's own callinfo and then runs the driver on that ci, so the VM's frame bookkeeping is left
+inconsistent. `fiber_check_cfunc` (`mruby-fiber/src/fiber.c`) raises whenever a frame in the context has `cci > 0`,
+which is how the cfunc frame shows up. This is a hypothesis, not yet proven. The change was reverted.
+
+The fresh-callinfo driver fix proposed here was rejected, so the entry dispatch stays unconditional with the `uniq`
+regression as recorded above.
 
 The remaining sections record the original design and the limitations of nested block calls.
 

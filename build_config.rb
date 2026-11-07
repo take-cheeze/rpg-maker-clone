@@ -121,68 +121,62 @@ def wio_strip_clock(spec)
   end
 end
 
-# MRBLIB_STUBS (tools/bc2cpp/mrblib_stubs.rb): in a build with compiled gems, the engine gem's mrblib is a build-time
-# copy in which each compiled method that never runs as bytecode has an empty body. Call it last in the spec block:
-# it replaces every rbfiles entry. The compiled gems' generation writes the manifests it reads.
-def bc2cpp_stub_mrblib(spec)
-  names = spec.build.gems.map(&:name)
-  return unless names.any? { |name| name.end_with?('-compiled') }
+# UNIT_BLANK (tools/bc2cpp/unit_blank.rb): a compiled gem's mrblib copy without the top-level class and module statements
+# its generation emitted as units (the *_units.txt manifest). Those units run from gem_init, so the VM must not run them
+# again. Called last in the gem's stanza: the copies depend on the generation that writes the manifest.
+def bc2cpp_blank_units(spec)
+  return unless spec.build.name == 'closed'
+
+  compiled = BC2CPP_COMPILED_GEMS["#{spec.name}-compiled"]
+  return unless compiled
 
   require_relative 'tools/bc2cpp/compiled_gems'
-  require_relative 'tools/bc2cpp/load_compile'
-  compiled = BC2CPP_COMPILED_GEMS.select { |name, _| names.include?(name) }
-  dirs = compiled.map { |name, g| ["#{spec.build.build_dir}/mrbgems/#{name}", g[:out_symbol]] }
-  manifests = dirs.map { |dir, symbol| MrblibStubs.manifest_path(dir, symbol) }
-  generated = dirs.map { |dir, symbol| "#{dir}/#{symbol}_gen.cpp" }
-  stubs_rb = File.expand_path('tools/bc2cpp/mrblib_stubs.rb', __dir__)
-  out_dir = "#{spec.build_dir}/mrblib_stubs"
-  # LOAD_COMPILE: the files this gem's mrblib is made of, before the rewrite below -- the sources the load plans name.
-  spec.instance_variable_set(:@bc2cpp_mrblib_sources, spec.rbfiles.dup)
-  plans = dirs.map { |dir, symbol| LoadCompile.plan_path(dir, symbol) }
-  spec.rbfiles = spec.rbfiles.map do |src|
-    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
-    out = "#{out_dir}/#{rel}"
-    # The generation that writes a gem's code writes its manifest too.
-    file out => [src, stubs_rb, *generated] do
-      FileUtils.mkdir_p File.dirname(out), verbose: true
-      MrblibStubs.write_stubbed(src, out, manifests, LoadCompile.read_plans(plans))
-    end
-    out
-  end
+  require_relative 'tools/bc2cpp/unit_blank'
+  dir = "#{spec.build.build_dir}/mrbgems/#{spec.name}-compiled"
+  manifest = "#{dir}/#{compiled[:out_symbol]}_units.txt"
+  generated = "#{dir}/#{compiled[:out_symbol]}_gen.cpp"
+  blank_rb = File.expand_path('tools/bc2cpp/unit_blank.rb', __dir__)
+  out_dir = "#{spec.build_dir}/mrblib_units"
+  # VM-free: the gem's mrblib bytecode is not loaded at all; its class bodies run as the units the generation emitted.
+  spec.rbfiles = []
 end
 
-# MRBLIB_STUBS for mruby's core gems and the external gems whose mrblib the core-compiled generation reads
-# (BC2CPP_CORE_MRBLIB_GEMS, BC2CPP_EXTERNAL_MRBLIB_GEMS): the bodies mruby-core-compiled's manifest lists ship empty
-# too, as the engine gems' do. The gem's rbfiles are globbed in its setup, after its mrbgem.rake, and the rules that
-# read them are defined after its build_config_initializer, so that block is where the copies are made. mruby's
-# top-level mrblib/*.rb is no gem and stays as it is. Called last in the closed target's stanza, once every gem is
-# declared.
-def bc2cpp_stub_core_mrblib(conf)
-  return unless conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
+# UNIT_BLANK for mruby's core extension gems (BC2CPP_CORE_MRBLIB_GEMS, BC2CPP_EXTERNAL_MRBLIB_GEMS): their top-level class
+# and module statements that the core generation emitted as units are removed from the copies the VM loads, as
+# bc2cpp_blank_units does for the engine gems. mruby's own top-level mrblib/*.rb is no gem and is not rewritten here.
+# Called once the gem declarations are in place (closed build only).
+def bc2cpp_blank_core_units(conf)
+  return unless conf.name == 'closed' && conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
 
   require_relative 'tools/bc2cpp/compiled_gems'
-  require_relative 'tools/bc2cpp/mrblib_stubs'
+  require_relative 'tools/bc2cpp/unit_blank'
   symbol = BC2CPP_COMPILED_GEMS.fetch('mruby-core-compiled')[:out_symbol]
   core_dir = "#{conf.build_dir}/mrbgems/mruby-core-compiled"
-  manifest = MrblibStubs.manifest_path(core_dir, symbol)
+  manifest = "#{core_dir}/#{symbol}_units.txt"
   generated = "#{core_dir}/#{symbol}_gen.cpp"
-  stubs_rb = File.expand_path('tools/bc2cpp/mrblib_stubs.rb', __dir__)
+  blank_rb = File.expand_path('tools/bc2cpp/unit_blank.rb', __dir__)
   stubbed = BC2CPP_CORE_MRBLIB_GEMS + BC2CPP_EXTERNAL_MRBLIB_GEMS
   conf.gems.each do |spec|
     next unless stubbed.include?(spec.name)
-    raise "bc2cpp_stub_core_mrblib: #{spec.name} already has a build_config_initializer" if spec.build_config_initializer
+    raise "bc2cpp_blank_core_units: #{spec.name} already has a build_config_initializer" if spec.build_config_initializer
 
     spec.build_config_initializer = proc do
-      out_dir = "#{build_dir}/mrblib_stubs"
-      self.rbfiles = rbfiles.map do |src|
-        out = "#{out_dir}/#{src.delete_prefix("#{dir}/")}"
-        # The generation that writes the core manifest writes it with the code, so the copies follow both.
-        file out => [src, stubs_rb, generated] do
-          FileUtils.mkdir_p File.dirname(out), verbose: true
-          MrblibStubs.write_stubbed(src, out, [manifest])
-        end
-        out
-      end
+      # VM-free: the gem's mrblib bytecode is not loaded at all; its class bodies run as the units the generation emitted.
+      self.rbfiles = []
+    end
+  end
+end
+
+# VM-free: every gem's mrblib bytecode is dropped in the closed build, not only the ones the generation blanks. A gem's
+# rbfiles are set when its setup runs and its build-config initializer runs after that, so the empty list is set last.
+def bc2cpp_drop_mrblib(conf)
+  return unless conf.name == 'closed'
+
+  conf.gems.each do |spec|
+    previous = spec.build_config_initializer
+    spec.build_config_initializer = proc do
+      instance_eval(&previous) if previous
+      self.rbfiles = []
     end
   end
 end
@@ -249,6 +243,11 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # VM-start counter (measurement only, scripts/bc2cpp/vm_start_counter.patch). Compiled into the VM when
   # BC2CPP_VM_START_COUNTER=1; off otherwise, so no shipped build changes.
   conf.cc.defines << 'BC2CPP_VM_START_COUNTER' if ENV['BC2CPP_VM_START_COUNTER'] == '1'
+  # MRB_CORE_CLASS_UNITS (mruby tasks/mrblib.rake): the closed build runs the core's compiled class bodies, not the core mrblib.
+  conf.cc.defines << 'MRB_CORE_CLASS_UNITS' if conf.name == 'closed'
+  # MRB_VM_FREE (vm.c): the closed build has no bytecode interpreter; mrb_vm_exec raises.
+  conf.cc.defines << 'MRB_VM_FREE' if conf.name == 'closed'
+  conf.cxx.defines << 'MRB_VM_FREE' if conf.name == 'closed'
   # The closed target compiles mruby's vm.c as C++ (vm-cxx.cxx), so the same define goes there too.
   conf.cxx.defines << 'BC2CPP_VM_START_COUNTER' if ENV['BC2CPP_VM_START_COUNTER'] == '1'
   conf.gem core: 'mruby-numeric-ext'
@@ -270,7 +269,13 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # (`$scene.main while $scene`) one frame at a time through a Fiber so the web
   # build's per-frame emscripten callback keeps control each frame. Not in the
   # default gem set.
-  conf.gem core: 'mruby-fiber'
+  # The closed build has no mruby-fiber: the C++ Fiber is its Fiber, and a source-less gem of that name satisfies
+  # mruby-enumerator's add_dependency.
+  if conf.name == 'closed'
+    conf.gem "#{MRUBY_ROOT}/../../mruby-fiber-placeholder"
+  else
+    conf.gem core: 'mruby-fiber'
+  end
   # Kernel#exit / SystemExit: the stock RMXP Interpreter calls `exit` to abort on
   # runaway common-event recursion; the script host provides it so that raises a
   # catchable SystemExit the driver ends the game on, rather than a NoMethodError.
@@ -1247,11 +1252,12 @@ if closed
     bc2cpp_core_mt_exclude(conf)
     rpg_maker_gems(conf)
     # mruby-enumerator arrives only as a dependency (mruby-set, mruby-enum-chain, mruby-enum-lazy), which mruby resolves
-    # after this stanza runs, so bc2cpp_stub_core_mrblib would not see it in conf.gems. Declared here, it is a core
-    # mrblib gem like the others, and its bodies in the core manifest are emptied (BC2CPP_CORE_MRBLIB_GEMS). Mruby
-    # keeps one entry per gem name, so the gem set is the same.
     conf.gem core: 'mruby-enumerator'
-    bc2cpp_stub_core_mrblib(conf)
+    # mruby-string-ext arrives only as a dependency, which mruby resolves after this block; declared here so the
+    # mrblib drop below reaches it (its Ruby is compiled into core_compiled's class units).
+    conf.gem core: 'mruby-string-ext'
+    bc2cpp_blank_core_units(conf)
+    bc2cpp_drop_mrblib(conf)
   end
 end
 

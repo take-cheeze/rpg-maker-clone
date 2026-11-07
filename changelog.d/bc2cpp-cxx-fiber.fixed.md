@@ -1,0 +1,1 @@
+- **bc2cpp**: `Fiber.yield` from a block run by a C iterator raises mruby-fiber's "can't cross C function boundary", a bare `return` through `ensure` in a step works, and the GC keeps handler state of suspended steps alive.

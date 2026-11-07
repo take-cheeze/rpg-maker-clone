@@ -46,8 +46,8 @@ frame `:edges` named the caller of each allocating leaf. One sample stands for
   is `r<digits>`" are the same test (263 `scan`+`gsub` samples became 160).
 - **`ClassWorld.frozen_magic?`** (class_world.rb) read the first five lines
   through `File.foreach(file).first(5)`. It now `gets` at most five lines and
-  stops at the first match; `LoadCompile#magic?` calls it instead of keeping
-  its own copy of the expression. This was not measurable in the Optcarrot
+  stops at the first match; the load planner called it instead of keeping
+  its own copy of the expression; that planner was removed. This was not measurable in the Optcarrot
   profile (the `IO.foreach` samples were all the native scan above).
 
 ## Equivalence evidence

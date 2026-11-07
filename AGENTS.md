@@ -2,8 +2,8 @@
 
 ## Documentation Requirements
 
--   Update relevant documentation in /docs when modifying features
--   Keep README.md in sync with new capabilities
+-   Document only what a reader cannot get from the code: user-facing behaviour
+    and hard limits. Keep it short; no design narratives or per-change history.
 -   Record changelog entries as fragment files in `changelog.d/`, **not** by
     editing the `## [Unreleased]` section of `CHANGELOG.md` directly. Add one
     `changelog.d/<slug>.<category>.md` file per change so branches never
@@ -35,8 +35,8 @@ directly. Before opening one:
   really carries. `docs/labels.md` explains the taxonomy; the labels themselves
   are defined in `.github/labels.yml`, and adding one there is a normal part of
   a pull request.
-- **Update the docs for user-facing capabilities.** They get matching `/docs`
-  and `README.md` updates. Explain design choices in the commit message or PR
+- **Docs stay short.** Update `/docs` or `README.md` only for a user-facing
+  capability, in a few lines. Design choices go in the commit message or PR
   body; the git history is the record.
 - **Run the tests you touched.** Build and run the Google Test / CTest suite
   (`cmake --build build -t test`) and any relevant `scripts/**/*_check.rb`
@@ -142,8 +142,8 @@ in place with `# rpg2k-lint:allow Cop/Name -- reason`.
 - A comment says **why** the code is the way it is: the invariant it relies on,
   the soundness condition, the non-obvious constraint, the trap it avoids.
   Don't restate what the code does.
-- Keep it short — usually one to three lines. If the rationale needs more,
-  put it in the feature's `/docs` page and link that page from the code.
+- Keep it short — one to three lines. If it needs more, the code is probably
+  the thing to simplify; leave the rest to the commit message.
 - No narratives: how a bug was found, what was measured, which run confirmed
   it, dates, or "caught for real" stories go in the commit message or PR body — not in the source.
 - State a soundness condition once, where it is enforced; elsewhere refer to

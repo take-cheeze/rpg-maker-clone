@@ -130,6 +130,10 @@ end
 class FalseClass < Object
 end
 
+# bc2cpp-native: core_hierarchy
+class Fiber < Object
+end
+
 class Numeric < Object
   def negative?: () -> untyped
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
@@ -178,7 +182,7 @@ class Array[unchecked out Elem] < Object
   def sort: () -> untyped
   def uniq: () -> untyped
 # Unified return types (trace candidates, scripts/bc2cpp/trace_types.rb candidates --hierarchy). Each is a
-# runtime-checked hint (%a{bc2cpp:hint}); a body that returns another class raises BC2cppHintViolation.
+# runtime-checked hint (%a{bc2cpp:hint}); a body that returns another class raises BC2cppDeclarationViolation.
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def include?: (untyped) -> bool
 # ---- native: core_block_params

@@ -1,0 +1,1 @@
+- `scripts/bc2cpp/fiber_limits_check.rb` pins each known C++ Fiber limitation with an expected-to-differ scenario that fails once the gap closes.

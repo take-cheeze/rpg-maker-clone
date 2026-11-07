@@ -18,6 +18,10 @@ runners:
   - full_library
   - cxx
 deferred:
+  scripts/bc2cpp/vm_free_inventory_check.rb:
+    tier: fast
+    capabilities: []
+    reason: Counts the generated closed-build tree, which exists only after bc2cpp-build; wire it after that job publishes the tree.
   scripts/bc2cpp/class_pools_check.rb:
     tier: runtime
     capabilities:
@@ -217,6 +221,14 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/keyword_splat_static_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/super_splat_check.rb:
     tier: runtime
     capabilities:
@@ -231,6 +243,99 @@ checks:
     - mrbc
     - native_sources
     fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/fiber_body_step_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/call_step_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/fiber_transfer_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/fiber_api_step_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/call_from_c_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/step_exceptions_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/step_keywords_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/block_in_step_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/step_closures_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/enumerator_next_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/block_step_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    fixture_capabilities:
+    - full_library
+    - cxx
+  scripts/bc2cpp/cxx_fiber_check.rb:
+    tier: runtime
+    capabilities:
     - full_library
     - cxx
   scripts/bc2cpp/keyword_send_check.rb:
@@ -471,10 +576,6 @@ checks:
     tier: fast
     capabilities:
     - mrbc
-  scripts/bc2cpp/guard_fiber_free_check.rb:
-    tier: fast
-    capabilities:
-    - mrbc
   scripts/bc2cpp/exception_init_check.rb:
     tier: fast
     capabilities:
@@ -575,6 +676,14 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/direct_new_args_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/constructor_overloads_check.rb:
     tier: fast
     capabilities: []
@@ -789,6 +898,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/fiber_limits_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/vm_bytecode_free_check.rb:
     tier: runtime
     capabilities:
@@ -964,17 +1080,6 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
-  scripts/bc2cpp/path_form_check.rb:
-    tier: fast
-    capabilities: []
-  scripts/bc2cpp/class_body_check.rb:
-    tier: runtime
-    capabilities:
-    - mrbc
-    - native_sources
-    fixture_capabilities:
-    - full_library
-    - cxx
   scripts/bc2cpp/lcf_schema_tables_check.rb:
     tier: runtime
     capabilities:
@@ -1067,15 +1172,6 @@ checks:
     tier: fast
     capabilities: []
     fixture_capabilities: []
-  scripts/bc2cpp/mrblib_stubs_check.rb:
-    tier: fast
-    capabilities:
-    - mrbc
-    fixture_capabilities: []
-  scripts/bc2cpp/mrblib_copy_sites_check.rb:
-    tier: fast
-    capabilities: []
-    fixture_capabilities: []
   scripts/bc2cpp/escape_receiver_flow_check.rb:
     tier: runtime
     capabilities:
@@ -1124,6 +1220,14 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/enumerator_class_unit_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/singleton_const_owner_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/alias_method_check.rb:
     tier: runtime
     capabilities:
