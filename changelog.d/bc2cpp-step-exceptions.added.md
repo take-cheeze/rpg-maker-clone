@@ -1,0 +1,1 @@
+bc2cpp: resumable steps may now have `rescue`/`ensure` handlers, and exceptions, `break`/`throw` unwinds cross suspensions in the C++ Fiber (nested ensure around `Fiber.yield`, `catch`/`throw` after a yield, exceptions propagating through CALL frames and out of `Fiber#resume`).

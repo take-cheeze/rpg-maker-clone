@@ -278,6 +278,30 @@ and `flat_map`. The frame a step CALLs now runs to its end there (`bc2cpp_run_ca
 `Fiber.yield` and raises the FiberError of a yield across a C frame. `call_from_c_check` covers it. A yield through compiled
 iterators from an interpreted Fiber is a FiberError: it needs a compiled Fiber body.
 
+## Handlers, exceptions and unwinding in steps (STEP_HANDLERS)
+
+A step may have `rescue` and `ensure` handlers (`resumable_handler_problem` still refuses a `return`, `break` or leaving
+`JMPUW` inside an ensure range, and `retry` is not handled).
+
+- **Handler regions are states.** The step body is a lambda run under `mrb_protect_error`; every instruction stores
+  `F->pc`. On an exception the loop finds the last catch handler (mruby's rule: last to first, `begin <= pc < end`) covering
+  `F->pc`, sets `M->exc`, and re-enters the body at state `RESUMABLE_HANDLER_STATE + k`, which jumps to the handler target
+  (`EXCEPT`/`RESCUE`/`RAISEIF` compile as in the VM). No covering handler: the step's `has_handlers` is cleared and the
+  exception leaves the step.
+- **Across frames.** An exception that leaves a step in `bc2cpp_fiber_resume` is caught by `bc2cpp_fiber_unwind`, which pops
+  frames until one with `has_handlers` takes it (`unwind_into` sets `raise_pending`; the step re-raises at its checkpoint
+  `F->pc`, so a handler in a parent step sees the exception after CALL frames above it died). With none left the fiber is
+  finished and the exception leaves `Fiber#resume` (`alive?` is false).
+- **Unwinds.** A `break`/`return`/`throw` UNWIND whose path crosses frames with handlers is converted to a `Bc2cppUnwind`
+  exception, so ensure bodies run on the way; `RESCUE` never matches it.
+- **catch/throw.** `bc2cpp_fiber_catch.hxx` replaces `Kernel#catch` (a bytecode method) and `Kernel#throw` (searches the VM
+  ci stack) with native frames: `Bc2cppCatchFrame` calls the block, and `throw` UNWINDs to the frame with the tag.
+  `catch` takes this path only when its block has a step; otherwise mruby's catch runs. `throw` finds only catch frames of
+  the current fiber.
+
+`step_exceptions_check` compares interpreted and compiled runs of a compiled probe class (nested ensure, exception through
+CALL frames and out of `Fiber#resume`, local rescue, wrong rescue class, catch/throw, `break` through an ensure).
+
 ## Without mruby-fiber
 
 `native_fiber_check` runs compiled Fiber programs on an mruby that has no mruby-fiber, with the C++ Fiber as the whole
@@ -306,12 +330,11 @@ and then reads the closed build's `bytecode-inventory.json`.
 2. **Enumerator.** `Enumerator#next`/`peek`/`lazy` need `mruby-enumerator`. Its `next_values` body is compiled to a C++
    Fiber behind `BC2CPP_ENUMERATOR_FIBER`, but the gem itself requires mruby-fiber; a no-fiber build has no Enumerator
    class, so `to_enum` without a block, `lazy` and `Enumerator::Lazy` are absent (the 'enumerator lazy nested' gap).
-3. **Behaviour the scenarios exercise that the C++ Fiber lacks** (the `KNOWN_GAPS`): `ensure`/`rescue` around a
-   `Fiber.yield` ('nested ensure': `resumable_shape_problem` refuses a method with a handler); `catch`/`throw` across a
-   yield; a closure that outlives the frame that made it ('escaping closure': a block step reads its builder's locals by
-   pointer, valid only while that frame is on the fiber's stack; an escaping proc needs boxed variables); `Fiber#transfer`;
-   a `Fiber.new` inside a Fiber body (not a C++ Fiber: `resume` on it raises 'not a fiber'); a user `each` with keyword
-   parameters (a suspendable method takes none).
+3. **Behaviour the scenarios exercise that the C++ Fiber lacks** (the `KNOWN_GAPS`): a closure that outlives the frame
+   that made it ('escaping closure': a block step reads its builder's locals by pointer, valid only while that frame is on
+   the fiber's stack; an escaping proc needs boxed variables); `Fiber#transfer`; a `Fiber.new` inside a Fiber body (not a
+   C++ Fiber: `resume` on it raises 'not a fiber'); a user `each` with keyword parameters (a suspendable method takes
+   none). `ensure`/`rescue` around a yield and `catch`/`throw` after a yield are done (see STEP_HANDLERS above).
 4. **A `Fiber.new(&blk)` or a Fiber made through `send`** has no compiled path: only a literal-block `Fiber.new` site
    becomes a C++ Fiber.
 
