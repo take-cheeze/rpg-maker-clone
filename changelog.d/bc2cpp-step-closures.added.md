@@ -1,0 +1,1 @@
+bc2cpp: a block that may outlive its call (`proc`, `Hash.new`, `Fiber.new`, any callee not proven to leave it) shares the captured variables through heap cells, so closures survive their frame and the C++ Fiber; compiled blocks report their arity and parameters.

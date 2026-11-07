@@ -242,6 +242,30 @@ target parks and is CALLed (`Range#max` into `Enumerable#max`), any other target
 An ordinary body takes a plain fixed-argument `super` with its block register through `bc2cpp_super_call` as well
 (`SUPER_BLOCK_REGISTER`).
 
+## Closures that outlive a step
+
+A block that may be kept (the callee is not proven to leave it: `proc`, `Hash.new`, a stored block, a `Fiber.new` body that is
+not the prologue-and-tail-call shape) captures the registers of the function that makes it through heap cells
+(`STEP_CLOSURES`: `boxed` regions, `codegen_block_fallback.rb`). The function keeps those registers in one cells Array
+(`bc2cpp_cells_ary`); each captured register is a C++ reference to its cell, so the body's code is unchanged and the pointers the
+block's env already carries lead into the Array. The Array rides in the block's env, after the break/return tokens (the
+slots before it and the readers that index from the end keep their places), and the block step's maker also hangs it on the
+step's frame (`__cells__`), so neither the fiber's frame nor the C stack is needed to keep a variable alive. A step keeps the Array in one
+more frame slot, made on the first run from the values the entry put in the captured registers' slots. A guard
+(`Bc2cppCellsGuard`) re-grays the Array whenever the function exits, as nothing barriers the stores through raw pointers.
+The cheap pointer form stays where the block provably does not outlive the call, and an inline loop whose block builds a boxed
+region is not inlined (its registers would share the host's numbering).
+
+This lifts the Fiber-body capture limits: written locals, optional and rest parameters and outer upvars. Limits: only the
+registers of the function that makes the block (level 0) are boxed, so an escaping block nested in a block cannot capture the
+grandparent's locals; a `$__bc2cpp_upvar_roots` entry per written slot address is not released when its cells go.
+
+A compiled block's `Proc#arity` and `Proc#parameters` are answered from its registered `ENTER` word and local names
+(`PROC_SPEC`, `bc2cpp_proc_spec_register`): a stand-in irep proc holds them and mruby's own methods answer. A block with
+optional, rest-with-keywords or keyword parameters is not compiled (its method stays interpreted). `step_closures_check`
+covers escaping closures in Fiber bodies, steps and ordinary methods, with the fiber bodies compiled, and passes under a GC-stress
+mruby.
+
 ## General Fiber bodies
 
 A `Fiber.new` body that is not a single tail call (several calls to suspendable methods, a `Fiber.yield` of its own, a
