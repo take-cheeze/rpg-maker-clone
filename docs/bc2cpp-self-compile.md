@@ -20,7 +20,7 @@ rejects any gem list with a gem in `BC2CPP_OPEN_WORLD_GEMS`: `mruby-eval`, `mrub
 | Gem | Why the runner has it | Needed for a compiled executable? |
 | --- | --- | --- |
 | `mruby-eval`, `mruby-binding` | `mruby-require` evaluated baked sources with `eval`; now done (precompiled), the runner build has neither | No |
-| `mruby-bin-mruby` | `bin/mruby` runs the entry script | No: a C `main` boots the state and calls the entry |
+| `mruby-bin-mruby` | `bin/mruby` runs the entry script | No: done, a C `main` (host-libs/mruby-bc2cpp-runner/tools/mruby/main.c) boots the state and calls the entry; the runner build no longer has mruby-bin-mruby |
 | `mruby-bin-mrbc`, `mruby-compiler` | the build compiles its own mrblib | Build time only, not linked |
 
 bc2cpp's own sources never call `eval`: the only `eval` in the build is the baked-source loader.
@@ -30,8 +30,9 @@ bc2cpp's own sources never call `eval`: the only `eval` in the build is the bake
 1. **Precompile the baked sources.** Done: see above. (A first attempt ran the bytecode with `mrb_load_irep` from a C function of
    `MRubyRequire`; the source's constants and methods then landed on that module's singleton class. The proc's target class
    is set to Object instead.)
-2. **A C `main`.** It sets `ARGV` and `$PROGRAM_NAME`, boots the state, requires the entry, and runs the exit handlers, in place of
-   `bin/mruby` + `bc2cpp_main.rb`.
+2. **A C `main`.** Done: `tools/mruby/main.c` in the runner gem sets `ARGV`, boots the state and calls `BC2CPPRunner.run` (or
+   `run_tool` for `mruby_tool.rb`), prints an uncaught exception with `mrb_print_error` and exits non-zero. It is installed as
+   `bin/mruby` and skips a first argument `bc2cpp_main.rb` or `mruby_tool.rb`, so the callers are unchanged.
 3. **A build kind.** Add a build name (for example `bc2cpp-self`) to `BC2CPP_CLOSED_WORLD_BUILDS` with its own required gem list.
    The closed-world inputs are the C and Ruby sources of the gems in the executable (onig, prism, marshal, stringio, json, yaml,
    zlib, ...).
