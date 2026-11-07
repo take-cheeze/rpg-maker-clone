@@ -89,6 +89,25 @@ module Kernel
     end
   end
 
+  # String#string_scan: the String-pattern scan the onig gem falls back to (it aliases the core scan, which mruby lacks).
+  # Matches are the pattern's own occurrences, left to right without overlap, as CRuby's scan with a String.
+  class ::String
+    def string_scan(pattern, &block)
+      pattern = pattern.to_str
+      found = []
+      pos = 0
+      while (at = index(pattern, pos))
+        found << pattern.dup
+        pos = at + [pattern.size, 1].max
+        break if pos > size
+      end
+      return found unless block
+
+      found.each { |match| block.call(match) }
+      self
+    end
+  end
+
   # Symbol#start_with? and #end_with? (CRuby 2.7), which mruby does not define.
   class ::Symbol
     def start_with?(*prefixes)
