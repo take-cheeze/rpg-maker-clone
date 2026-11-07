@@ -75,6 +75,20 @@ module Kernel
     [value]
   end
 
+  # String.new(str = "", encoding: nil, capacity: nil), as CRuby takes it: mruby's takes only the string.
+  class ::String
+    class << self
+      alias __new_without_options new
+
+      def new(*args, **options)
+        str = __new_without_options(*args)
+        encoding = options[:encoding]
+        str.force_encoding(encoding) if encoding
+        str
+      end
+    end
+  end
+
   # Symbol#start_with? and #end_with? (CRuby 2.7), which mruby does not define.
   class ::Symbol
     def start_with?(*prefixes)
