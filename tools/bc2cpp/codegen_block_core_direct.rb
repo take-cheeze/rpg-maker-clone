@@ -249,6 +249,9 @@ module BlockCoreDirectFallback
     # Enumerable, which an Array also passes); the other owners follow.
     fixed = BLOCK_RECEIVERS.keys
     generic = (owners - fixed).sort
+    # A user Ruby definition of the name can override a kind_of receiver's core body: a subclass of Array with its
+    # own `map` passes the Enumerable guard and would run the core collect. Such a name gets no generic arm.
+    generic = [] if @registry.fetch(name, []).any? { |definition| definition.irep && !definition.core }
     (fixed + generic).to_h do |klass|
       spec = BLOCK_RECEIVERS[klass] || {
         guard: "mrb_obj_is_kind_of(M, %<r>s, #{owner_class_ptr_expr(klass)})",

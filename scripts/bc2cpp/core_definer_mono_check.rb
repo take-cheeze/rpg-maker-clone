@@ -83,8 +83,10 @@ dirs.each do |world, dir|
   check.call('no #error in the generated code', !code.include?('#error'))
   SUBCLASS_ONLY.each do |name, owner|
     check.call("no call site binds :#{name} MONO to #{owner}##{name}", !code.include?("MONO :#{name} -> #{owner}#"))
-    check.call(":#{name} is POLY in the registry (#{owner} and the core definer's <native> placeholder)",
-               err.match?(/^  POLY  :#{Regexp.escape(name)}  \(\d+ defs: [^)]*#{Regexp.escape(owner)}[^)]*<native>\)/))
+    # The core definer is a <native> placeholder, or the compiled core body (Array#sort_by since it became a
+    # compiled body); either way the name has the subclass's definition and a core one.
+    check.call(":#{name} is POLY in the registry (#{owner} and a core definer)",
+               err.match?(/^  POLY  :#{Regexp.escape(name)}  \(\d+ defs: (?=[^)]*#{Regexp.escape(owner)})(?=[^)]*(?:<native>|Array|Enumerable|Hash|CM_LIST|CmMod))[^)]*\)/))
   end
 end
 
