@@ -108,6 +108,16 @@ module Kernel
     end
   end
 
+  # Array#concat with any number of arrays (CRuby 2.4), as mruby's takes one.
+  class ::Array
+    alias_method :__concat_one, :concat
+
+    def concat(*others)
+      others.each { |other| __concat_one(other) }
+      self
+    end
+  end
+
   # Symbol#start_with? and #end_with? (CRuby 2.7), which mruby does not define.
   class ::Symbol
     def start_with?(*prefixes)
