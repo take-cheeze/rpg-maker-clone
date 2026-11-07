@@ -1,0 +1,1 @@
+- The bc2cpp method table no longer keeps an engine method only because its name appears as an MRB_MT_ENTRY name operand or a macro formal parameter.
