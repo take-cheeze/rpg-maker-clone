@@ -286,7 +286,8 @@ What a compiled body can use on the C++ Fiber (`fiber_api_step_check`, and the h
   (`Bc2cppBodyStart`) makes the body's frame on the first resume, with the arguments `bc2cpp_fiber_m_resume` stored
   (`bc2cpp_first_args`), and calls it. A body with parameters never takes the prologue-and-tail-call form.
 - `Fiber.current` is the C++ Fiber being resumed (`bc2cpp_current_fiber`, restored when a resume ends, also by an
-  exception) and mruby-fiber's root fiber outside.
+  exception) and, outside any C++ Fiber, mruby-fiber's root fiber, or the runtime's own root fiber without mruby-fiber
+  (see "The root fiber object").
 - A fiber whose step raised is dead (`alive?` is false) and the exception reaches the resumer.
 
 ### Transfer, nesting and the FiberError cases (`fiber_transfer_check`)
@@ -359,6 +360,24 @@ A step may have `rescue` and `ensure` handlers (`resumable_handler_problem` stil
 `step_exceptions_check` compares interpreted and compiled runs of a compiled probe class (nested ensure, exception through
 CALL frames and out of `Fiber#resume`, local rescue, wrong rescue class, catch/throw, `break` through an ensure).
 
+### The root fiber object
+
+Without mruby-fiber nothing answers `Fiber.current` at the root. `bc2cpp_root_fiber` makes one `Fiber` object for the
+main context (a `Bc2cppFiber` with `root` set and no frames, kept in the rooted global `$__bc2cpp_root_fiber`), and
+`Fiber.current` returns it whenever no C++ Fiber is running, so `Fiber.current.equal?(Fiber.current)` holds. With
+mruby-fiber the original `Fiber.current` still supplies the root, so the same compiled code runs on both.
+
+- `alive?` is true and `inspect` is the default `#<Fiber:0x...>`.
+- A compiled `main.transfer(x)` inside a fiber whose resumer is the root is a yield (`bc2cpp_transfer_is_yield` accepts the
+  root object when `Bc2cppFiber::caller` is nil); the fiber is then suspended by a transfer and `f.transfer(y)` continues it.
+- The cases that reach `bc2cpp_fiber_resume` with the root as receiver use mruby-fiber's messages: at the root, `resume`
+  raises `attempt to resume the current fiber` and `transfer` returns its argument; inside a C++ Fiber, `resume` raises
+  `double resume` and a `transfer` that is not a yield (the fiber was resumed by another fiber) raises
+  `attempt to transfer to a resuming fiber`.
+
+`native_fiber_check` covers it ('root fiber at the root', 'root fiber inside a fiber', 'root fiber transfer chain',
+'root fiber errors', and the former 'fiber transfer' gap) against mruby-fiber's output.
+
 ## Without mruby-fiber
 
 `native_fiber_check` runs compiled Fiber programs on an mruby that has no mruby-fiber, with the C++ Fiber as the whole
@@ -387,9 +406,21 @@ and then reads the closed build's `bytecode-inventory.json`.
 2. **Enumerator.** `Enumerator#next`/`peek`/`lazy` need `mruby-enumerator`. Its `next_values` body is compiled to a C++
    Fiber behind `BC2CPP_ENUMERATOR_FIBER`, but the gem itself requires mruby-fiber; a no-fiber build has no Enumerator
    class, so `to_enum` without a block, `lazy` and `Enumerator::Lazy` are absent (the 'enumerator lazy nested' gap).
+   What the gap needs: (a) the gems present, which is only a build-config matter. `mruby-enumerator` declares
+   `add_dependency 'mruby-fiber'` in the submodule (not editable), but mruby's resolver accepts any gem *named*
+   `mruby-fiber` that the build lists first, so a placeholder gem (an `mrbgem.rake` with no sources) added with
+   `conf.gem` in the no-fiber build config satisfies it and `mruby-enumerator`, `mruby-set`, `mruby-enum-chain` and
+   `mruby-enum-lazy` build without the real Fiber (tried: the libmruby builds and has no `mrb_fiber_*` symbols).
+   (b) The gem's own `Enumerator#next` bytecode calls `Fiber.new do ... end` interpreted, which has no C++ Fiber to build,
+   so the program must also compile the gem's mrblib (`BC2CPP_ENUMERATOR_FIBER` does, with the enumerator gems in the
+   closed world) so that `next_values` becomes a step. (c) The lazy scenario still failed there with
+   `closed-world proof violated: NativeFiberSource#lazy was proven undefined but dispatched`: the fixture's closed world
+   for the probe does not contain `Enumerable#lazy` from mruby-enum-lazy. Fixing that is a fixture/closed-world change,
+   not a runtime one, and is not done: the placeholder gem is therefore not added to the repository, so existing builds
+   and `NOFIBER_GEMS` are unchanged.
 3. **Behaviour the scenarios exercise that the C++ Fiber lacks** (the `KNOWN_GAPS`): a closure that outlives the frame
    that made it ('escaping closure': a block step reads its builder's locals by pointer, valid only while that frame is on
-   the fiber's stack; an escaping proc needs boxed variables); `Fiber#transfer`; a `Fiber.new` inside a Fiber body (not a
+   the fiber's stack; an escaping proc needs boxed variables); a `Fiber.new` inside a Fiber body (not a
    C++ Fiber: `resume` on it raises 'not a fiber'); a user `each` with keyword parameters (a suspendable method takes
    none). `ensure`/`rescue` around a yield and `catch`/`throw` after a yield are done (see STEP_HANDLERS above).
 4. **A `Fiber.new(&blk)` or a Fiber made through `send`** has no compiled path: only a literal-block `Fiber.new` site
