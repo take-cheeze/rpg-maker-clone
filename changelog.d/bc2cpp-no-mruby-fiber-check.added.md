@@ -1,1 +1,0 @@
-bc2cpp: compiled Fiber programs run on an mruby without mruby-fiber, with the C++ Fiber as the whole Fiber (it defines `Fiber`, `FiberError` and `Fiber.yield`); `native_fiber_check` now checks that instead of a NativeVM runtime, and a block step's text carries an include guard so a re-run compile cannot define it twice.

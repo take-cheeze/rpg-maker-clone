@@ -1,1 +1,0 @@
-bc2cpp: `Array#sort` with a yielding block, `Fiber.current`, multi-value `resume`/`Fiber.yield` and block parameters at the first resume work on the C++ Fiber; a resumable method entered from an interpreted Fiber runs the frames its step CALLs instead of raising FiberError.

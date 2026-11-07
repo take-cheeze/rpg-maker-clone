@@ -1,1 +1,0 @@
-bc2cpp: the no-fiber test build (`native_fiber_check`) lists a placeholder gem named `mruby-fiber`, so `mruby-enumerator`, `mruby-enum-lazy` and the gems on them build without the real Fiber; `Enumerator#next` over `Enumerator::Lazy` now runs on the C++ Fiber with the output of interpreted mruby-fiber, and the last known gap ('enumerator lazy nested') is closed.
