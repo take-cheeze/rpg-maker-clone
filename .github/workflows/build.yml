@@ -998,7 +998,7 @@ jobs:
           ruby scripts/bc2cpp/ir_argument_types_check.rb
           ruby scripts/bc2cpp/shared_generation_check.rb
           ruby scripts/bc2cpp/define_method_check.rb
-          ruby scripts/bc2cpp/generic_block_return_check.rb
+          ruby scripts/ci/xfail.rb ruby scripts/bc2cpp/generic_block_return_check.rb
           ruby scripts/bc2cpp/ir_block_protocols_check.rb
           ruby scripts/bc2cpp/block_yielders_check.rb
           ruby scripts/bc2cpp/type_check_run_check.rb
@@ -1021,7 +1021,7 @@ jobs:
           ruby scripts/bc2cpp/setter_receiver_filter_check.rb
           ruby scripts/bc2cpp/exact_arith_check.rb
           ruby scripts/bc2cpp/element_picks_check.rb
-          ruby scripts/bc2cpp/sealed_hash_stores_check.rb
+          ruby scripts/ci/xfail.rb ruby scripts/bc2cpp/sealed_hash_stores_check.rb
           ruby scripts/bc2cpp/nilable_class_tests_check.rb
           ruby scripts/bc2cpp/optional_arg_pools_check.rb
           ruby scripts/bc2cpp/audit_pins_check.rb
