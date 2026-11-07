@@ -191,14 +191,24 @@ Limits: a block passed to a send whose name is not proven stays a possible rebin
 
 ## Enumerator#next
 
-`BC2CPP_ENUMERATOR_FIBER=1` (opt-in; off by default) lets mruby-enumerator's `next_values`, `each` and
-`__enumerator_block_call` compile instead of staying bytecode (`CoreMethods.enumerator_fiber_step?`). `next_values` then
+On by default (`BC2CPP_ENUMERATOR_FIBER=0` keeps mruby-enumerator's bytecode and mruby-fiber): the methods of
+mruby-enumerator's `enumerator.rb` compile instead of staying bytecode (`CoreMethods.enumerator_fiber_step?`; methods that
+build a lambda stay bytecode). `next_values` then
 builds its Fiber from two block steps (the body and the `each do |*args| Fiber.yield args ... end` block), `Enumerator#each` is a
 registered step, `__enumerator_block_call` forwards through a keyword-carrying dynamic call, and `obj.instance_eval { @args }` /
-`{ @args = args }` compile as an ivar read/write (`INSTANCE_EVAL_IVAR`). `Enumerator#next` over `Array#each`, a user `each` reached
-through `to_enum` with an argument, `each_with_index`, `Hash#each` and `Integer#times` runs on the C++ Fiber
-(`enumerator_next_check`). Iterators that are not registered steps (for example `Enumerable#each_slice`) still reach
-mruby-fiber's `Fiber.yield`.
+`{ @args = args }` compile as an ivar read/write (`INSTANCE_EVAL_IVAR`). `Enumerator#next`, `peek`, `rewind` and `size` over
+`Array#each`, a user `each` reached through `to_enum` with an argument, `each_with_index`, `Hash#each`, `Integer#times`, and an
+Enumerable's own `each` (`to_enum`, `map`, `select`, `each_with_index`, `each_slice`, `each_cons`, `each_with_object`,
+`with_index`, two independent enumerators) run on the C++ Fiber (`enumerator_next_check`). `each_slice`, `each_cons`,
+`group_by`, `partition`, `min_by`, `max_by`, `take_while` and `drop_while` joined the dual list for this. An iterator that is
+not a registered step still reaches mruby-fiber's `Fiber.yield`, which raises inside a C++ Fiber, so external enumeration over it
+fails (the default is a trade: a closed build without mruby-fiber needs this; `BC2CPP_ENUMERATOR_FIBER=0` restores the old
+behaviour for a program that walks such iterators).
+
+Known gap (kept in `enumerator_next_check`, which fails when it starts passing): `Enumerator::Lazy#next`
+(`src.lazy.map { }.select { }.to_enum` then `next`). mruby-enum-lazy is not among the core gems bc2cpp compiles
+(`BC2CPP_CORE_MRBLIB_GEMS`), and its generator block wraps the iteration in `begin ... rescue StopIteration`, which a step cannot
+contain yet. `Lazy#first(n)` works (it does not use a Fiber).
 
 ## Inner blocks that yield
 
@@ -255,8 +265,31 @@ What a compiled body can use on the C++ Fiber (`fiber_api_step_check`, and the h
   exception) and mruby-fiber's root fiber outside.
 - A fiber whose step raised is dead (`alive?` is false) and the exception reaches the resumer.
 
-Not done: `Fiber#transfer`, `Fiber.yield` with a splat or keywords, and `Fiber.yield` from code the compiler did not
-compile.
+### Transfer, nesting and the FiberError cases (`fiber_transfer_check`)
+
+The fiber bodies of the check are compiled (a probe class per scenario; state a body reads lives in instance variables,
+since a Fiber body does not capture the locals of the method building it yet).
+
+- `Fiber#resume` / `Fiber#transfer` of a C++ Fiber run it nested on the C stack (`bc2cpp_fiber_resume(.., transfer)`) with
+  mruby-fiber's rules and messages: `attempt to resume the current fiber`, `double resume` (a fiber on the resume chain),
+  `resuming dead fiber`, `resuming transferred fiber` (a fiber suspended by a transfer away, or waiting on a fiber it
+  transferred to), `attempt to transfer to a resuming fiber`. A transfer to the current fiber returns its value; a transfer
+  to a yielded fiber continues it.
+- A `transfer` send in a step is a runtime-checked yield (`transfer_site?`, `bc2cpp_transfer_is_yield`): when the receiver is
+  the root or an mruby fiber that resumed the C++ Fiber, or the C++ Fiber whose resume/transfer runs it
+  (`Bc2cppFiber::caller`), the step suspends with the value (`transfer` of x back to the resumer is `Fiber.yield x`), and the
+  fiber is then marked as suspended by a transfer. Any other receiver takes the ordinary send, which for a C++ Fiber runs
+  it nested. A fiber entered by a transfer cannot `Fiber.yield` (`attempt to yield on a not resumed fiber`).
+- A fiber resumed from another fiber's step (nested resume), block parameters bound from `resume(3, 4)` ([3, 4]), and a
+  transfer between two C++ Fibers (`FtChain`) match mruby-fiber.
+- The fibers on the resume chain are rooted in a global Array (`bc2cpp_running_fibers`): `bc2cpp_current_fiber` and
+  `Bc2cppFiber::caller` are raw values the GC does not see, and the arena that protected a running fiber belongs to the C
+  function that started it. Under a GC that runs on every allocation (`MRB_GC_STRESS`) a fiber entered from C was freed while
+  `Fiber.current` still returned it.
+- Limit: a transfer ring of three or more fibers (A to B to C, then C back to A rather than to its caller B) is not
+  modelled: the nested runs make it a call chain, so only a transfer to the fiber that ran this one is a yield.
+
+Not done: `Fiber.yield` with a splat or keywords, and `Fiber.yield` from code the compiler did not compile.
 
 ## Array#sort with a yielding block
 
