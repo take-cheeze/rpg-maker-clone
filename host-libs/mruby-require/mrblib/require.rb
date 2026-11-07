@@ -1,3 +1,9 @@
+# mruby's core defines no LoadError (the exception require raises for a missing feature). CRuby's ScriptError family.
+class ScriptError < StandardError; end unless defined?(ScriptError)
+class LoadError < ScriptError; end unless defined?(LoadError)
+# EncodingError (CRuby's Encoding family); no mruby gem defines it.
+class EncodingError < StandardError; end unless defined?(EncodingError)
+
 # Features provided by the build, as name => check. A check returns true when the code it names is present.
 module MRubyRequire
   FEATURES = {}
@@ -14,7 +20,9 @@ module MRubyRequire
   end
 end
 
-module Kernel
+# require is defined on Object, not in module Kernel: the baked source it evaluates runs with the lexical scope of this
+# method, so a module the source defines at top level (module NativeOwnerMap) would be Kernel::NativeOwnerMap under Kernel.
+class Object
   def require(name)
     feature = name.to_s
     return false if MRubyRequire::LOADED[feature]
@@ -56,6 +64,100 @@ module Kernel
   def caller_locations(*_args)
     []
   end unless method_defined?(:caller_locations)
+
+  # Kernel#Array as CRuby has it: Array(nil) is [], not [nil]. mruby's core wraps nil in an Array.
+  def Array(value)
+    return [] if value.nil?
+    return value if value.is_a?(Array)
+    return value.to_ary if value.respond_to?(:to_ary)
+    return value.to_a if value.respond_to?(:to_a)
+
+    [value]
+  end
+
+  # String.new(str = "", encoding: nil, capacity: nil), as CRuby takes it: mruby's takes only the string.
+  class ::String
+    class << self
+      alias __new_without_options new
+
+      def new(*args, **options)
+        str = __new_without_options(*args)
+        encoding = options[:encoding]
+        str.force_encoding(encoding) if encoding
+        str
+      end
+    end
+  end
+
+  # String#string_scan: the String-pattern scan the onig gem falls back to (it aliases the core scan, which mruby lacks).
+  # Matches are the pattern's own occurrences, left to right without overlap, as CRuby's scan with a String.
+  class ::String
+    def string_scan(pattern, &block)
+      pattern = pattern.to_str
+      found = []
+      pos = 0
+      while (at = index(pattern, pos))
+        found << pattern.dup
+        pos = at + [pattern.size, 1].max
+        break if pos > size
+      end
+      return found unless block
+
+      found.each { |match| block.call(match) }
+      self
+    end
+  end
+
+  # Array#concat with any number of arrays (CRuby 2.4), as mruby's takes one.
+  class ::Array
+    alias_method :__concat_one, :concat
+
+    def concat(*others)
+      others.each { |other| __concat_one(other) }
+      self
+    end
+  end
+
+  # Symbol#start_with? and #end_with? (CRuby 2.7), which mruby does not define.
+  class ::Symbol
+    def start_with?(*prefixes)
+      to_s.start_with?(*prefixes)
+    end
+
+    def end_with?(*suffixes)
+      to_s.end_with?(*suffixes)
+    end
+  end
+
+  # NilClass#to_i and #to_f (CRuby: 0 and 0.0), which mruby does not define.
+  class ::NilClass
+    def to_i
+      0
+    end
+
+    def to_f
+      0.0
+    end
+  end unless nil.respond_to?(:to_i) && nil.respond_to?(:to_f)
+
+  # Kernel#tap (CRuby 1.9+), which mruby does not define: yields self, returns self.
+  unless method_defined?(:tap)
+    def tap
+      raise LocalJumpError, 'no block given (yield)' unless block_given?
+
+      yield self
+      self
+    end
+  end
+
+  # Object#then (yield_self), which mruby does not define.
+  unless method_defined?(:then)
+    def then
+      return to_enum(:then) unless block_given?
+
+      yield self
+    end
+  end
 end
 
 module RbConfig
@@ -81,7 +183,15 @@ RUBY_PLATFORM = 'mruby' unless defined?(RUBY_PLATFORM)
 # File.stat, reduced to what bc2cpp reads from it: the modification time and the size, taken from the open file (mruby-io
 # has no stat). Any other field is absent, and a missing file raises as File.open does.
 class File
-  Stat = Struct.new(:mtime, :size) unless defined?(File::Stat)
+  # A plain class, not Struct: this file loads before mruby-struct in a build that links both.
+  class Stat
+    attr_reader :mtime, :size
+
+    def initialize(mtime, size)
+      @mtime = mtime
+      @size = size
+    end
+  end unless defined?(File::Stat)
 
   def self.stat(path)
     File.open(path, 'rb') { |io| File::Stat.new(io.mtime, io.size) }
@@ -141,35 +251,49 @@ end
 # String#scrub (CRuby 2.1+): each invalid UTF-8 byte sequence becomes the replacement (U+FFFD by default).
 class String
   unless method_defined?(:scrub)
+    # Works on the bytes in place (getbyte, byteslice), not on an Array of every byte: that Array is past mruby's array
+    # size limit for a large file.
     def scrub(repl = "\uFFFD")
       out = "".b
-      bytes = self.bytes
+      n = bytesize
       i = 0
-      n = bytes.size
       while i < n
-        b = bytes[i]
+        b = getbyte(i)
         len = if b < 0x80 then 1
               elsif b >= 0xC2 && b <= 0xDF then 2
               elsif b >= 0xE0 && b <= 0xEF then 3
               elsif b >= 0xF0 && b <= 0xF4 then 4
               else 0
               end
-        valid = len > 0 && i + len <= n
-        k = 1
-        while valid && k < len
-          c = bytes[i + k]
-          valid = (c & 0xC0) == 0x80
-          k += 1
+        # The byte after a lead byte has a narrower range for some leads (no overlongs, no surrogates, no code points
+        # past U+10FFFF), as CRuby's UTF-8 decoder has it. Later bytes are 80..BF.
+        j = 1
+        ok = len > 0
+        while ok && j < len
+          break unless i + j < n
+
+          c = getbyte(i + j)
+          lo, hi = if j == 1
+                     case b
+                     when 0xE0 then [0xA0, 0xBF]
+                     when 0xED then [0x80, 0x9F]
+                     when 0xF0 then [0x90, 0xBF]
+                     when 0xF4 then [0x80, 0x8F]
+                     else [0x80, 0xBF]
+                     end
+                   else
+                     [0x80, 0xBF]
+                   end
+          break unless c >= lo && c <= hi
+
+          j += 1
         end
-        if valid
-          out << bytes[i, len].pack("C*")
+        if len > 0 && j == len
+          out << byteslice(i, len)
           i += len
         else
-          # One replacement for the whole maximal prefix of an invalid sequence (a lead byte and its continuation bytes).
-          j = 1
-          while len > 0 && j < len && i + j < n && (bytes[i + j] & 0xC0) == 0x80
-            j += 1
-          end
+          # One replacement for the maximal subpart of an invalid sequence: the lead byte and the continuation bytes
+          # that are valid so far (at least the lead itself).
           out << repl.to_s.b
           i += j
         end
