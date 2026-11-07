@@ -23,7 +23,7 @@ count, so suffixed names are included). These are the script's baselines.
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall*` | 480 | breakdown below |
+| `mrb_funcall*` | 247 | breakdown below |
 | `bc2cpp_owner_call*` (owner-listed dispatch) | 2208 | already direct; becomes a plain switch |
 | `mrb_proc_new_cfunc_with_env*` (block procs) | 471 | C++ block objects with captured env |
 | `mrb_protect*` (exception boundaries) | 18 | host entry boundary (`*_entry.h`), `gem_init.c`, mruby headers |
@@ -38,10 +38,13 @@ count, so suffixed names are included). These are the script's baselines.
   `bc2cpp_bigint_eq` (`mrb_bint_cmp`), with no by-name send.
 - ~170: class-body self-sends (`include`, `attr_*`), run once at load. One `bc2cpp_ssend` helper call each; the callee is
   mruby's own C `Module#attr_*`, which has no public entry, so the by-name send inside the helper stays.
-- ~70: core `x.call(*args)` now call `bc2cpp_proc_call_argv`: a plain Proc is yielded to, any other receiver is sent
-  `call` by name inside the helper.
-- 12: error-path `puts` (`bc2cpp.rb` error handler).
-- The rest: Fiber and `each` helpers.
+- Done: core `x.call(*args)` (`bc2cpp_proc_call_argv`) looks `call` up once and runs the found method (visibility as
+  OP_SEND, a missing method through method_missing); the 4 error-path `puts` are one `bc2cpp_stderr_report` (a direct IO
+  write when `$stderr#puts` is the gem's, else one by-name `puts`); `Fiber.yield` from C is one `bc2cpp_fiber_yield_c`.
+- Measured 247 (about 100 are comments): all that is left is the frame-pushing primitive (`mrb_funcall_with_method`,
+  shared by owner calls) and one by-name helper per unknown receiver (`bc2cpp_funcall_argv`, `bc2cpp_ssend`, the Proc
+  `arity`/`parameters` stand-in, `exc.result`, dynamic `send`), plus a few block-carrying `each`/`map` sends and 3 entry
+  stubs. Each needs the frame push or a receiver the world does not name.
 
 ## Phases
 
