@@ -445,7 +445,7 @@ and then reads the closed build's `bytecode-inventory.json`.
    `mruby-os-memsize`. The gem's own `Enumerator#next` bytecode would call `Fiber.new` interpreted, so the program compiles the
    gem's mrblib (`mruby-enumerator` is in the probe's core gems, and `BC2CPP_ENUMERATOR_FIBER`, on by default, turns
    `next_values` into a step). mruby-enum-lazy is not among the gems bc2cpp compiles for the real closed build, so the probe
-   passes its `lazy.rb` as extra program source: the closed world then defines `Enumerable#lazy` and `Enumerator::Lazy`
+   passes its `lazy.rb` as extra source under a `3rd/mruby/mrbgems/mruby-enum-lazy/mrblib/` path, so it counts as mruby's own Ruby (as a program definition, its `map`/`select`/`each`... would withdraw the kind_of block arms of those names, and the scenario then crossed a C function boundary: `FiberError`): the closed world then defines `Enumerable#lazy` and `Enumerator::Lazy`
    (without it the scenario raised `closed-world proof violated: NativeFiberSource#lazy was proven undefined but dispatched`).
    The 'enumerator lazy nested' scenario now prints what interpreted mruby-fiber prints and `KNOWN_GAPS` is empty.
    Not done: the real closed build (`build_config.rb`) still lists the real `mruby-fiber`; this is the fixture's build only.
