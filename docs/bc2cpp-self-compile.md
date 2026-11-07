@@ -53,8 +53,19 @@ bc2cpp's own sources never call `eval`: the only `eval` in the build is the bake
    closed unit, CRuby's RBS_CHECKED_PARAMS check passes, while the runner reports 94 unproven parameters. The narrowing state at one
    instruction differs (1 fact instead of 6). Decoding, control-flow edges and `Set` operations match; the difference is in the
    class-guard inputs or in the dataflow's use of them, and has not been located.
-5. **Coverage.** bc2cpp's code is Hash, Set, Struct, block and keyword-argument heavy. How much of it bc2cpp can compile is
-   unmeasured; unsupported methods stay interpreted, so the executable still works, but the speedup is unknown.
+5. **Coverage.** Measured once, with bc2cpp under CRuby over the 309 baked sources as the `bc2cpp-self` world (92 native and 31
+   Ruby sources outside it; the generated prism and rbs mrblibs included), about 154 s and 1.7 GB: 3,995 methods compile to
+   entry points and 846 stay interpreted (about 83% of the 4,841 attempted), in 26 MB of C++ over 4 shards (not yet compiled or
+   linked). The skipped methods, by reason:
+   - 383 sends with a splat or keyword-argument list, and 3 methods with optional, rest or keyword parameters of their own;
+   - 296 methods with a `BLOCK` opcode (a block that is not an inlined iterator);
+   - 88 `ARGARY`, 38 `LAMBDA`, 13 `EXCEPT` (rescue), 4 `BLKPUSH`, 2 `APOST`; 14 unlabelled.
+
+   The run needed these changes to bc2cpp's own code (all made): the predicate-returns gate off; `Irep`'s accessors spelled out;
+   `AncestorElementHint` a class; `StrictKeySet` defined once; `Psych` looked up by name; probe nesting capped (`BC2CPP_PROBE_DEPTH`);
+   and, for the kind only, the constants the gems' Ruby binds counted as known. The entry's main block also has about 250
+   top-level locals, more than one mruby irep holds when all files are compiled as one program: the scan ran it as a lambda in
+   a copy. That one is not made in the tree.
 
 ## Already fixed on the way
 
