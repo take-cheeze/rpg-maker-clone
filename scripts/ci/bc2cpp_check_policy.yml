@@ -731,6 +731,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/block_abi_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/embed_init_guard_check.rb:
     tier: fast
     capabilities: []
