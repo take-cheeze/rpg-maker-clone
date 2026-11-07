@@ -61,8 +61,14 @@ Remaining: register it in CI once `bc2cpp-build` publishes the tree.
 
 ### Phase 2: C++ blocks and procs
 
-- A block is a C++ object (function pointer plus captured env struct), not an `RProc` with an `REnv`; `Proc#call` and
-  `yield` call it directly. Remaining: everything (471 `mrb_proc_new_cfunc_with_env`, 33 `mrb_yield`).
+Status: partly done. Block construction and the foreign-proc yield each have one site (`bc2cpp_heap_proc`,
+`bc2cpp_yield_foreign`; `docs/bc2cpp-stack-blocks.md`), and 409 sites pass a frame-local block with no allocation. The closed
+build's text counts: `mrb_proc_new_cfunc_with_env` 470 to 4, `mrb_yield` 27 to 8; the inventory check now also counts the
+two helpers (166 and 27). What remains is the ABI: a compiled callee takes its block as an `mrb_value` RProc, so the 297
+by-name else arms (`Bc2cppHeapBlock`) and about 130 sites that pass an escaping block (callee stores or forwards it, `break`
+or `return` in the body, `&blk` forwarding, `dyn_call`) still allocate. Next: a C++ block value (entry plus env) that the callee
+signatures take instead of `mrb_value`, with the RProc wrapper made only where the block is stored.
+
 - Exit: `mrb_proc_new_cfunc_with_env` is zero; `stack_block_check` and `resumable_variants_check` pass under both
   layouts (`BC2CPP_STACK_BLOCK_STACK` included).
 
