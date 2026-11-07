@@ -24,17 +24,19 @@ compiled code never calls mruby-fiber. `Enumerator#next` runs on it too.
 ## Limits and known gaps
 
 - `Fiber.yield` from a block run by a C iterator raises `FiberError` "can't cross C function boundary", as mruby-fiber
-  does. Iterators that still differ from the interpreter: `Kernel#tap`/`then`/`yield_self`, `Proc#curry`,
-  `lambda { Fiber.yield }.call`, `Enumerator.new`/`produce`/`Yielder` generators, and `Enumerable#chunk`/`lazy`
-  (these raise that error when compiled).
-- `Fiber.new(&blk)` and a Fiber made through `send` have no compiled path; only a literal-block `Fiber.new` becomes a
-  C++ Fiber.
+  does. Iterators that still differ from the interpreter: `Proc#curry` (it builds lambdas, so it stays bytecode) and
+  `Enumerator::Lazy` blocks (the generator is a `super` block of `Lazy#initialize`); both raise that error when compiled.
+- `Kernel#tap`/`then`/`yield_self` (mruby-object-ext) suspend in a block only in a world that compiles the gem's Ruby;
+  the closed build does not load the gem.
+- `lambda { }.call` suspends like a block call when the lambda's body is a step without `return` or `break` and the
+  arity fits; a lambda that returns is still called from C. A keyword method with a bare `yield` (no `&blk`) stays
+  bytecode.
 - Upvar roots of blocks that do not use cells (non-cell roots) are not released.
 - `Fiber#raise` on a real mruby-fiber Fiber is a NoMethodError (mruby-fiber has none); it works on C++ Fibers.
 - `mruby-rpgxp` (`script_host.rb`) and `mruby-wolf` (`interpreter.rb`) still need the real mruby-fiber, so the desktop
   and web builds keep it.
-- `fiber_limits_check` pins each gap above (and break through several ensure regions, keyword calls that suspend) with a
-  scenario that must still differ from the interpreted run; one that starts matching fails the check.
+- `fiber_limits_check` pins each gap above with a scenario that must still differ from the interpreted run; one that
+  starts matching fails the check.
 
 ## Removing mruby-fiber
 

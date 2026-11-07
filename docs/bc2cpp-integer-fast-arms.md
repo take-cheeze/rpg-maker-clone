@@ -26,6 +26,11 @@ sends the reopened `==`, whose `super` reaches `Comparable#==`. There the
 pinned `Integer#<=>` compares the two non-fixnum Integers as doubles and
 answers 0, so the plain `!mrb_equal` form called them equal.
 
+A bigint receiver calls the shared `bc2cpp_bigint_eq`, once per file, not a
+by-name `==` send per site. It answers as `Integer#==` does (`mrb_bint_cmp`
+for Integer, bigint and Float arguments, false otherwise), or sends `==` once
+in the helper where the program reopens `Integer#==`.
+
 ## `%` by a constant power of two (MOD_POW2_CONSTANT, FIXNUM_BINARY in tools/bc2cpp/codegen_send.rb)
 
 Ruby's floor modulo by a positive `2**k` is `x & (2**k - 1)` for either sign
