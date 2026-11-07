@@ -148,8 +148,7 @@ method compilation and emission. Shared generation computes this set once
 before forking the per-gem emitters. The full registry and type analyses remain
 available, and report-only type checking still checks the full program.
 
-Unreachable methods use the existing mrblib stub planner, including its
-load-time and method-copy safety checks. Eligible residual bodies are replaced
+Unreachable methods are no longer stubbed: the mrblib stub rewrite was removed, so their bodies stay as bytecode. Eligible residual bodies are replaced
 by `raise ScriptError`, reducing their native continuation input too; an
 unexpected invocation fails visibly. This does not delete arbitrary native
 irep metadata or change method-table exclusions. Core dynamic dispatch retains

@@ -1,0 +1,1 @@
+- Generic `Klass.new` in the compiled build allocates directly and calls `initialize` through a closed-world owner call, instead of `mrb_obj_new`, so construction no longer goes through Class#new's by-name dispatch.

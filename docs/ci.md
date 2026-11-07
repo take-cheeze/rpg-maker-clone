@@ -81,8 +81,7 @@ another has saved the key finds the file already there; jobs that start together
 legs) each compute it on a miss. A miss restores the previous run's lists as a seed (`restore-keys`), and a
 seed that is still a fixed point costs one pass instead of two. `bc2cpp-lists` (pushes, not pull requests) computes the
 same file in a nix shell and uploads it for `maix` and `psp`. `bc2cpp-sweep` also prints
-`dynamic_names_report.rb`'s summary (why method-table entries stay), and `host_sweep.bash` fails when the
-host's method-table entry count exceeds `scripts/bc2cpp/method_table_threshold.txt`. The `dynamic_names_report.rb` step also prints the
+`dynamic_names_report.rb`'s summary (why method-table entries stay). `host_sweep.bash` fails when a run exits non-zero or prints a proof failure; the method-table count guard and its threshold file were removed. The `dynamic_names_report.rb` step also prints the
 registered names with their reasons (`--entries`) in a collapsed log group, so the remaining entries can be read off a CI run.
 
 The status check `bc2cpp` in `build.yml` requires `bc2cpp-build`, every `bc2cpp-checks` matrix

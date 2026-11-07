@@ -1,5 +1,9 @@
 # Native Fiber continuations
 
+> **Status.** The Fiber guards (`fiber_guarded`, `core_guarded`, `core_block_guard`) were removed from the
+> closed build; compiled bodies run directly. A block call under a non-root Fiber still needs its one runtime
+> check, which is not written yet. The rest of this page describes the continuation backend that remains.
+
 bc2cpp's closed builds compile every retained mrblib body and every Fiber support
 program into native continuation branches. Fiber execution retains no instruction
 byte arrays and does not compile Ruby source at registration time. This includes

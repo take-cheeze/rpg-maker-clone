@@ -1,0 +1,1 @@
+- The compiled build no longer aborts its core gem init on `alias enum_for to_enum`: an alias naming a method the build leaves out of its tables installs nothing, so `IO.open`, `IO.read` and `IO.pipe` are registered again and `File.open` resolves.

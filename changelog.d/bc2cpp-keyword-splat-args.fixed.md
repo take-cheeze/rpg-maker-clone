@@ -1,0 +1,1 @@
+- **bc2cpp**: a compiled call with a keyword splat (`recv.m(a, **h)`) to a callee resolved at compile time passes each keyword the callee declares by a direct call, reading it from `h`; an unknown or missing keyword raises `ArgumentError`, and a `**rest` callee stays interpreted.

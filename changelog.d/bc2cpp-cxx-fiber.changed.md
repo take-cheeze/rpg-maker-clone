@@ -1,0 +1,1 @@
+- **bc2cpp**: the closed build no longer links mruby-fiber (a source-less `mruby-fiber` gem satisfies the dependencies), guarded core block methods compile without the Fiber fallback, and calls with keywords and a literal block compile.
