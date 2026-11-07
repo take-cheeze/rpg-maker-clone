@@ -54,23 +54,29 @@ module CompareByIdentityHash
   end
 
   def each
-    __identity_store.values.each do |key, value|
-      block_given? ? (yield [key, value]) : nil
-    end
+    return to_enum(:each) unless block_given?
+
+    __identity_store.values.each { |key, value| yield [key, value] }
     self
   end
 
   def each_pair(&block)
+    return to_enum(:each_pair) unless block
+
     __identity_store.values.each { |key, value| block.arity == 1 ? block.call([key, value]) : block.call(key, value) }
     self
   end
 
   def each_key
+    return to_enum(:each_key) unless block_given?
+
     __identity_store.values.each { |key, _value| yield key }
     self
   end
 
   def each_value
+    return to_enum(:each_value) unless block_given?
+
     __identity_store.values.each { |_key, value| yield value }
     self
   end
