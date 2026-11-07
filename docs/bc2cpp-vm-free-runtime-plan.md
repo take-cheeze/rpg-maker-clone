@@ -24,12 +24,12 @@ count, so suffixed names are included). These are the script's baselines.
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
 | `mrb_funcall*` | 247 | breakdown below |
-| `bc2cpp_owner_call*` (owner-listed dispatch) | 2208 | already direct; becomes a plain switch |
-| `mrb_proc_new_cfunc_with_env*` (block procs) | 471 | C++ block objects with captured env |
+| `bc2cpp_owner_call*` (owner-listed dispatch) | 2231 | already direct; table-driven later, see Phase 1 |
+| `mrb_proc_new_cfunc_with_env*` (block procs) | 5 | C++ block objects with captured env |
 | `mrb_protect*` (exception boundaries) | 18 | host entry boundary (`*_entry.h`), `gem_init.c`, mruby headers |
 | `mrb_gc_protect*` (arena roots) | 16 | one `bc2cpp_root` per unit, `*_entry.h`, mruby headers |
-| `mrb_yield*` | 33 | direct block invocation |
-| `mrb_method_search_vm*` | 57 | static method tables |
+| `mrb_yield*` | 14 | direct block invocation |
+| `mrb_method_search_vm*` | 5 | one seam (`bc2cpp_find_method`); static tables go behind it |
 | `mrb_exec_irep*` | 5 | removed with the frame machine |
 | `bc2cpp_resumable_exec*` | 0 | done |
 
@@ -59,6 +59,19 @@ Remaining: register it in CI once `bc2cpp-build` publishes the tree.
 
 - Replace every `mrb_funcall` with the owner-listed direct call or a per-class dispatch switch (unknown class: C++
   `NoMethodError`). Remaining: all of the breakdown above.
+- Lookup seam (done): every method-table lookup in generated code and in the Fiber runtime calls `bc2cpp_find_method`
+  (the preamble, `bc2cpp.rb`); `mrb_method_search_vm` text sites 57 to 5 (one per unit, plus mruby's header). Lookup
+  semantics are unchanged (singleton, include/prepend order, `method_missing`, visibility, undef), so
+  `owner_lookup_shapes_check.rb` runs them interpreted and compiled.
+- Owner calls (2231 text matches, 2223 call sites): 168 carry `BC2CPP_OWNERS_D` rows (a compiled entry
+  called with no table search); the rest dispatch through the lookup and the per-site (class, argc) cache, which hits
+  without any lookup. A site's owner set shrank from 336 to 88 bytes (the 32-slot seen list is allocated on the first
+  miss): the closed build's generated `.data` is 458 KB, 396 KB less than before.
+- Remaining for owner calls: a class-id switch needs a table that mruby's mutable method tables (`define_method`,
+  `remove_method`, `include`) cannot invalidate, so it waits for the registration-time class table behind the seam, and
+  the 2055 other sites keep one lookup on a cache miss.
+- Known interpreter/compiled gaps found by the shapes check (also on master): `public_send` of a private method returns
+  instead of raising, and `super` through an included module from a direct `_impl` call raises NoMethodError.
 - Exit: `mrb_funcall` count is zero; fixture checks and the host sweep pass.
 
 ### Phase 2: C++ blocks and procs
