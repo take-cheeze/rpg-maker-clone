@@ -1,4 +1,4 @@
-# StringScanner: the methods bc2cpp uses (scan, check, skip, skip_until, match?, eos?, pos, matched, matched_size). Positions are byte offsets,
+# StringScanner: the methods bc2cpp uses (scan, check, skip, skip_until, match?, eos?, pos, matched, matched_size, []). Positions are byte offsets,
 # as in CRuby. Each match is anchored at the position by a cached \A(?:...) form of the pattern.
 class StringScanner
   attr_reader :string, :matched
@@ -8,6 +8,7 @@ class StringScanner
     @string = string
     @pos = 0
     @matched = nil
+    @match = nil
     @anchored = {}
   end
 
@@ -24,6 +25,7 @@ class StringScanner
     match = anchored(pattern).match(rest)
     return nil unless match
 
+    @match = match
     @matched = match[0]
     @pos += @matched.bytesize
     @matched
@@ -34,6 +36,7 @@ class StringScanner
     match = anchored(pattern).match(rest)
     return nil unless match
 
+    @match = match
     @matched = match[0]
   end
 
@@ -43,9 +46,15 @@ class StringScanner
     return nil unless match
 
     skipped = match.pre_match.bytesize + match[0].bytesize
+    @match = match
     @matched = match[0]
     @pos += skipped
     skipped
+  end
+
+  # A group of the last match, by index or name.
+  def [](group)
+    @match && @match[group]
   end
 
   # The byte length of the last match, or nil if there is none.
