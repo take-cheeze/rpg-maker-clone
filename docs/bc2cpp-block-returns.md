@@ -28,7 +28,7 @@ How a declaration is checked:
   `mrb_yield`/`mrb_yield_argv`, and every `return` must return a yield's value. A function the scan cannot read
   must be reviewed into `tools/bc2cpp/native_block_returns_reviewed.rb` with its file's SHA-256.
 
-A declaration that fails its check is a TC1010 error, and the build stops. The `== declared returns ... ==` listing
+A declaration that fails its check is a TC1010 error and is not trusted; the build goes on. The `== declared returns ... ==` listing
 shows each declaration as a `BLOCK_RET` line.
 
 At a call with a literal block, the call's result is the class of the block's returns, or of the receiver. The block
