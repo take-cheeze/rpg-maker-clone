@@ -378,6 +378,38 @@ mruby-fiber the original `Fiber.current` still supplies the root, so the same co
 `native_fiber_check` covers it ('root fiber at the root', 'root fiber inside a fiber', 'root fiber transfer chain',
 'root fiber errors', and the former 'fiber transfer' gap) against mruby-fiber's output.
 
+## Keywords, optionals and rest in steps (STEP_KEYWORDS)
+
+A method with keyword parameters is a step, alone or next to optional, rest and block parameters (`def each(start = 1,
+*rest, stop: 3, &block)`). `resumable_shape_problem` refuses only a post parameter, a keyword rest next to named keywords
+and the shapes `compile_method` itself cannot bind.
+
+- **The ordinary compile binds more shapes first.** `compile_method` takes keywords next to a rest and/or block
+  (`keyword_arg_table(rest_block: true)`, `optional_rest_arg_table` with `kw`, `optional_block_arg_table` with `kw`). The
+  registered wrapper (`keyword_rest_block_entry`) binds everything in one call, `mrb_get_args("|o*:&")`: `*` ends the
+  positional scan and `:` reads the keyword Hash. The impl takes the arguments, the rest Array, the block, the count of
+  optionals given, then each keyword value (and a given flag for an optional one). With keywords the incoming block sits one
+  register after the arguments (the keyword Hash slot is between). `bc2cpp_check_argc_kw` words an arity error as OP_ENTER does,
+  counting a lone keyword Hash as the one argument given.
+- **The step keeps the keywords in the frame.** The entry stores each keyword (and its given flag) in cells after the block
+  and cells slots (`ResumableCtx#kw_base`); the step reads them into the locals `KEY_P`/`KARG` use, so the body is the plain one.
+- **Dispatch.** A step with keywords registers `bc2cpp_dyn_register_kw`; its `_dyn` gets the call's keyword Hash and binds
+  with `bc2cpp_dyn_bind_keywords` (the Hash is not changed). A call that does not fit (a missing required keyword, an unknown
+  one) is declined, so the ordinary send runs the wrapper and raises the interpreter's ArgumentError. `bc2cpp_dyn_call` looks
+  the method up for a call with keywords too: a step without a keyword dispatcher still takes the ordinary send that carries
+  them. `_dyn` of a rest-with-optionals step is registered now (the given count is clamped to the optionals).
+- **Call sites.** A call on self to a suspendable method whose callee is not mandatory-only, or whose call has keywords or a
+  splat, is a dynamic call site (`resumable_call_site`) rather than a direct entry call; a `send`/`public_send`/`__send__`
+  with keywords on self (an SSEND) is one too.
+- **Nested block steps.** A block step nested in a Fiber body may read a local of the body's builder (a level-1 upvar): the
+  body holds that pointer, and the inner maker forwards it (`block_step_upvars_ok?`). This is what a `begin ... ensure` block
+  inside `Fiber.new` that records into the method's local needed.
+- Not done: a call that carries keywords *and* a literal block is not compiled at all (the block region recognizer refuses
+  `n=..|nk=..`, `mrb_funcall_with_block` cannot carry keywords), whatever the callee is.
+
+`step_keywords_check` compares interpreted and compiled runs of a compiled probe class: required and optional keywords,
+optionals, rest and block with keywords, keyword splat, `send`/`public_send`, and the ArgumentErrors.
+
 ## Without mruby-fiber
 
 `native_fiber_check` runs compiled Fiber programs on an mruby that has no mruby-fiber, with the C++ Fiber as the whole
@@ -421,8 +453,8 @@ and then reads the closed build's `bytecode-inventory.json`.
 3. **Behaviour the scenarios exercise that the C++ Fiber lacks** (the `KNOWN_GAPS`): a closure that outlives the frame
    that made it ('escaping closure': a block step reads its builder's locals by pointer, valid only while that frame is on
    the fiber's stack; an escaping proc needs boxed variables); a `Fiber.new` inside a Fiber body (not a
-   C++ Fiber: `resume` on it raises 'not a fiber'); a user `each` with keyword parameters (a suspendable method takes
-   none). `ensure`/`rescue` around a yield and `catch`/`throw` after a yield are done (see STEP_HANDLERS above).
+   C++ Fiber: `resume` on it raises 'not a fiber'). `ensure`/`rescue` around a yield, `catch`/`throw` after a yield and a
+   user `each` with optional, rest and keyword parameters are done (see STEP_HANDLERS and STEP_KEYWORDS).
 4. **A `Fiber.new(&blk)` or a Fiber made through `send`** has no compiled path: only a literal-block `Fiber.new` site
    becomes a C++ Fiber.
 
