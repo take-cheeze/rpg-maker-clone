@@ -36,15 +36,14 @@ count, so suffixed names are included). These are the script's baselines.
 `mrb_funcall` breakdown (the rest is in headers):
 - Done (354 sites): the bigint `==` arm of every `!=` site (`codegen_native_send.rb`, `MRB_USE_BIGINT`) calls the shared
   `bc2cpp_bigint_eq` (`mrb_bint_cmp`), with no by-name send.
-- ~170: class-body self-sends (`include`, `attr_*`), run once at load. One `bc2cpp_ssend` helper call each; the callee is
-  mruby's own C `Module#attr_*`, which has no public entry, so the by-name send inside the helper stays.
+- Done (172 sites): class-body `include` and `attr_*` call `bc2cpp_mod_include` (`mrb_include_module`) and `bc2cpp_mod_attr`
+  (mruby's own ivar cfuncs via `mrb_define_method_raw`), no by-name send. Only the `included` hook is still sent.
 - Done: core `x.call(*args)` (`bc2cpp_proc_call_argv`) looks `call` up once and runs the found method (visibility as
   OP_SEND, a missing method through method_missing); the 4 error-path `puts` are one `bc2cpp_stderr_report` (a direct IO
   write when `$stderr#puts` is the gem's, else one by-name `puts`); `Fiber.yield` from C is one `bc2cpp_fiber_yield_c`.
-- Measured 247 (about 100 are comments): all that is left is the frame-pushing primitive (`mrb_funcall_with_method`,
-  shared by owner calls) and one by-name helper per unknown receiver (`bc2cpp_funcall_argv`, `bc2cpp_ssend`, the Proc
-  `arity`/`parameters` stand-in, `exc.result`, dynamic `send`), plus a few block-carrying `each`/`map` sends and 3 entry
-  stubs. Each needs the frame push or a receiver the world does not name.
+- Measured about 247 (about 100 are comments): what is left is the frame-pushing primitive (`mrb_funcall_with_method`,
+  shared by owner calls), one by-name helper per unknown receiver (`bc2cpp_funcall_argv`, `bc2cpp_ssend`, the Proc
+  `arity`/`parameters` stand-in, `exc.result`, dynamic `send`), a few block-carrying `each`/`map` sends and 3 entry stubs.
 
 ## Phases
 
