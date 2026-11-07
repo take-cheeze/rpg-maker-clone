@@ -5,8 +5,9 @@ sources). This note lists what stands between that and an executable that bc2cpp
 
 ## What exists
 
-- `mruby-bc2cpp-sources` bakes the 311 files reachable from `tools/bc2cpp/bc2cpp.rb` into one mrblib; `mruby-require` evaluates
-  each by name with `eval`.
+- `mruby-bc2cpp-sources` bakes the files reachable from `tools/bc2cpp/bc2cpp.rb` (309) into bytecode: `bake_sources.rb --dir`
+  writes each under the build directory, `mrbc -g` compiles each to a C array, and `MRubyRequire.load_baked(name)` runs one
+  with `mrb_top_run` on Object. `mruby-require` no longer depends on `mruby-eval`, and the runner binary has no `eval`.
 - `mruby-bc2cpp-runner` names the entry (`BC2CPPRunner.run`); `bc2cpp_main.rb` is the script `bin/mruby` runs.
 - The closed build and the optcarrot probe can generate code through the executable (`BC2CPP_MRUBY_RUNNER`).
 
@@ -18,7 +19,7 @@ rejects any gem list with a gem in `BC2CPP_OPEN_WORLD_GEMS`: `mruby-eval`, `mrub
 
 | Gem | Why the runner has it | Needed for a compiled executable? |
 | --- | --- | --- |
-| `mruby-eval`, `mruby-binding` | `mruby-require` evaluates baked sources with `eval` (its dependency) | No, if the sources are precompiled |
+| `mruby-eval`, `mruby-binding` | `mruby-require` evaluated baked sources with `eval`; now done (precompiled), the runner build has neither | No |
 | `mruby-bin-mruby` | `bin/mruby` runs the entry script | No: a C `main` boots the state and calls the entry |
 | `mruby-bin-mrbc`, `mruby-compiler` | the build compiles its own mrblib | Build time only, not linked |
 
@@ -26,8 +27,9 @@ bc2cpp's own sources never call `eval`: the only `eval` in the build is the bake
 
 ## Steps
 
-1. **Precompile the baked sources.** `mruby-bc2cpp-sources` runs `mrbc` on each baked file at build time, embeds the bytecode, and
-   `require` loads it with `mrb_load_irep`. `mruby-require` then drops its `mruby-eval` dependency.
+1. **Precompile the baked sources.** Done: see above. (A first attempt ran the bytecode with `mrb_load_irep` from a C function of
+   `MRubyRequire`; the source's constants and methods then landed on that module's singleton class. The proc's target class
+   is set to Object instead.)
 2. **A C `main`.** It sets `ARGV` and `$PROGRAM_NAME`, boots the state, requires the entry, and runs the exit handlers, in place of
    `bin/mruby` + `bc2cpp_main.rb`.
 3. **A build kind.** Add a build name (for example `bc2cpp-self`) to `BC2CPP_CLOSED_WORLD_BUILDS` with its own required gem list.
