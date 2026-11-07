@@ -358,6 +358,11 @@ still describe that limitation. A union containing `untyped` stays unknown.
 [IR feedback](bc2cpp-ir-feedback.md) also checks inferred returns and ivar stores
 against these nominal bounds, distinguishing disjoint from partly overlapping sets.
 
+A declared return (`Integer`, `Array`, `C`, `C?`) or parameter class (`C`) is trusted as written, and the compiled method
+checks it at run time unless the return proofs already prove it: a wrong value raises `BC2cppDeclarationViolation`
+(a `StandardError`) naming the method and the type. `BC2CPP_DECLARATION_GUARD=0` drops those checks; `%a{bc2cpp:hint}`
+declarations keep theirs.
+
 Loop: write the signature, run `type_check.rb` (contradictions are reported at the signature's line), fix them, then
 enable the strict tier when it is available so a wrong signature fails loudly at run time instead of falling back.
 
