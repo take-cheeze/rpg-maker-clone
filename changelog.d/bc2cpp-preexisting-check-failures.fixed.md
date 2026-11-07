@@ -7,5 +7,4 @@
   now expects the MONO direct `Kernel#loop` call and the EXACT_TYPED String literal arm in place of the removed
   root-context test, and covers the Object#loop and BasicObject worlds; `transpose_direct_check.rb` defines its
   singleton `each` in the program (a singleton class made by evaluated code outside the closed world is an owner violation) and
-  adds a world for it; `sealed_hash_stores_check.rb` pins that a store breaking a `-> Thing?` declaration is trusted as written (RBS only,
-  0fb29edf3) instead of expecting the deleted proof to catch it.
+  adds a world for it.
