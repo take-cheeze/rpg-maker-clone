@@ -1035,6 +1035,7 @@ jobs:
           ruby scripts/bc2cpp/self_new_leaf_check.rb
           ruby scripts/bc2cpp/sealed_int16_local_check.rb
           ruby scripts/bc2cpp/freeze_fold_check.rb
+          ruby scripts/bc2cpp/direct_new_args_check.rb
           ruby scripts/bc2cpp/callee_return_fold_check.rb
           ruby scripts/bc2cpp/range_compare_fold_check.rb
           ruby scripts/bc2cpp/constant_proofs_check.rb
