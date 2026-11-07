@@ -256,15 +256,24 @@ more frame slot, made on the first run from the values the entry put in the capt
 The cheap pointer form stays where the block provably does not outlive the call, and an inline loop whose block builds a boxed
 region is not inlined (its registers would share the host's numbering).
 
-This lifts the Fiber-body capture limits: written locals, optional and rest parameters and outer upvars. Limits: only the
-registers of the function that makes the block (level 0) are boxed, so an escaping block nested in a block cannot capture the
-grandparent's locals; a `$__bc2cpp_upvar_roots` entry per written slot address is not released when its cells go.
+This lifts the Fiber-body capture limits: written locals, optional and rest parameters and outer upvars. A kept block
+nested in another block reads the frames above it too: the enclosing block is then boxed (even if it only runs during the
+call) and holds the cells of each upvar level (`bc2cpp_up_cells_<level>`, after the tokens in its env). A block over cells
+grays the Array on `SETUPVAR`; other blocks keep a `$__bc2cpp_upvar_roots` entry per written slot address, which is not
+released.
 
 A compiled block's `Proc#arity` and `Proc#parameters` are answered from its registered `ENTER` word and local names
 (`PROC_SPEC`, `bc2cpp_proc_spec_register`): a stand-in irep proc holds them and mruby's own methods answer. A block with
 optional, rest-with-keywords or keyword parameters is not compiled (its method stays interpreted). `step_closures_check`
 covers escaping closures in Fiber bodies, steps and ordinary methods, with the fiber bodies compiled, and passes under a GC-stress
 mruby.
+
+## Iterators without a step
+
+A block that runs under an iterator with no resumable variant cannot suspend: `Fiber.yield` there raises `FiberError`
+("can't cross C function boundary", as mruby-fiber does for a C iterator such as `Array#index`). The Ruby iterators
+that still differ from the interpreter are `Kernel#tap`/`then`, `Proc#curry` (mruby-object-ext and mruby-proc-ext are not
+compiled core gems), a called `lambda`, `Enumerator.new`/`produce` generators, `Enumerable#chunk` and `lazy`.
 
 ## General Fiber bodies
 
