@@ -1,0 +1,1 @@
+- The bc2cpp method table no longer keeps an engine method only because one of the generated string literals equals its name: block parameter names and methods defined on the running class are not lookups.
