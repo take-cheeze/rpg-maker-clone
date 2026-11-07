@@ -167,7 +167,20 @@ compare = lambda do |label, dir, err, build|
   compiled = sections['compiled']
   check.call("#{label}: the driver prints #{interpreted&.size} lines in both runs",
              interpreted && interpreted.last == 'end' && compiled&.last == 'end')
-  check.call("#{label}: interpreted and compiled runs print the same", interpreted == compiled)
+  # The singleton receiver's `each` is defined at run time by code outside the compiled world. Where the core
+  # transpose runs on it, the compiled owner call raises the closed-world violation the design names (as
+  # outside_owner_call_check does); every other line must match exactly.
+  singleton = 'singleton receiver: '
+  core_result = "#{singleton}[[9, 8], [9, 8]]"
+  violation = ->(line) { line.start_with?(singleton) && line.include?('BC2cppGuardViolation: closed-world owner violation') }
+  expects_violation = interpreted&.include?(core_result)
+  if expects_violation
+    check.call("#{label}: the outside singleton each is a closed-world owner violation in the compiled run",
+               compiled && compiled.count { |line| violation.call(line) } == 1)
+  end
+  same = interpreted && compiled && interpreted.size == compiled.size &&
+         interpreted.zip(compiled).all? { |a, b| a == b || (expects_violation && violation.call(b)) }
+  check.call("#{label}: interpreted and compiled runs print the same#{expects_violation ? ' (singleton receiver aside)' : ''}", same)
   if interpreted && compiled
     interpreted.zip(compiled).reject { |a, b| a == b }.first(10).each { |a, b| puts "    interpreted: #{a}\n    compiled:    #{b}" }
   end
