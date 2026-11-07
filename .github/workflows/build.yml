@@ -861,7 +861,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/bc2cpp-nofiber
-          key: bc2cpp-nofiber-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.*') }}-${{ steps.full-core-key.outputs.mruby }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'scripts/bc2cpp/*.bash', 'patches/mruby*.patch') }}
+          key: bc2cpp-nofiber-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.*') }}-${{ steps.full-core-key.outputs.mruby }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'mruby-fiber-placeholder/**', 'scripts/bc2cpp/*.bash', 'patches/mruby*.patch') }}
 
       - name: Prepare shared check libraries
         run: |
