@@ -76,10 +76,6 @@ The proof still refuses the callees that pass their block on to another method:
 `Range#each` (to `__upto_endless`), `Array#uniq` (to `uniq!`) and
 `Enumerable#sort_by`.
 
-A callee that yields inside a `rescue` clause is a plain yielder too: `RESCUE` and `RAISEIF` read only the
-exception and the rescued class, and the proof walks through them (`origin_transfers`, `raiseif_nil`). A callee with
-`ensure` is still refused (the walk reaches ENTER's temporary registers).
-
 ## One construction site
 
 Every heap block a site builds goes through `bc2cpp_heap_proc` (the one `mrb_proc_new_cfunc_with_env` call in each
