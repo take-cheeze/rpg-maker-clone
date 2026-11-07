@@ -1205,6 +1205,14 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/enumerator_class_unit_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+  scripts/bc2cpp/singleton_const_owner_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
   scripts/bc2cpp/alias_method_check.rb:
     tier: runtime
     capabilities:
