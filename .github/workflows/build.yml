@@ -954,6 +954,7 @@ jobs:
           ruby scripts/bc2cpp/resumable_optional_check.rb
           ruby scripts/bc2cpp/resumable_rest_check.rb
           ruby scripts/bc2cpp/resumable_variants_check.rb
+          ruby scripts/bc2cpp/gc_stress_roots_check.rb
           ruby scripts/bc2cpp/native_fiber_check.rb
           ruby scripts/bc2cpp/fiber_limits_check.rb
           ruby scripts/bc2cpp/numeric_jmpuw_check.rb
