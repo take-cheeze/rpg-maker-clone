@@ -415,9 +415,10 @@ optionals, rest and block with keywords, keyword splat, `send`/`public_send`, an
 `native_fiber_check` runs compiled Fiber programs on an mruby that has no mruby-fiber, with the C++ Fiber as the whole
 Fiber. The scenario program is a compiled probe class (every `Fiber.new` body in it is compiled); a few lines of
 interpreted Ruby only call `resume` and `alive?` on the C++ Fibers. The no-fiber mruby is the full-core build minus
-`mruby-fiber` and the gems that need it (`Bc2cppFixtureRuntime::NOFIBER_GEMS`: `mruby-enumerator`, and through it
-`mruby-set`, `mruby-enum-chain`, `mruby-enum-lazy` and the 3rd-party `mruby-stringio`; `nofiber_or_build`,
-`BC2CPP_MRUBY_NOFIBER`/`BC2CPP_NOFIBER_BUILD_DIR`). The program's output on it equals the interpreted run on the full-core
+`mruby-fiber`, which a placeholder gem named `mruby-fiber` (no sources) stands in for, so mruby-enumerator and the gems on it
+(`mruby-set`, `mruby-enum-chain`, `mruby-enum-lazy`, the 3rd-party `mruby-stringio`) build and run on the C++ Fiber
+(`Bc2cppFixtureRuntime::NOFIBER_CORE_CONFIG`, `nofiber_or_build`, `BC2CPP_MRUBY_NOFIBER`/`BC2CPP_NOFIBER_BUILD_DIR`; an older
+`BC2CPP_NOFIBER_BUILD_DIR` built before the placeholder has to be rebuilt). The program's output on it equals the interpreted run on the full-core
 mruby, scenario by scenario, except `KNOWN_GAPS` (a gap that starts passing fails the check). The Array#sort lines compare
 with the transcription of array.c's sort that `resumable_variants_check` uses, since the interpreter cannot yield there.
 
@@ -435,21 +436,19 @@ and then reads the closed build's `bytecode-inventory.json`.
    (`interpreter.rb`: `@fiber = Fiber.new { execute }`) depend on it and use `Fiber.new`/`Fiber.yield`; the RPGXP script
    host runs eval-free but interpreted Ruby, so its Fiber bodies are not compiled. No build-config change is safe before
    these are settled, so none is made.
-2. **Enumerator.** `Enumerator#next`/`peek`/`lazy` need `mruby-enumerator`. Its `next_values` body is compiled to a C++
-   Fiber behind `BC2CPP_ENUMERATOR_FIBER`, but the gem itself requires mruby-fiber; a no-fiber build has no Enumerator
-   class, so `to_enum` without a block, `lazy` and `Enumerator::Lazy` are absent (the 'enumerator lazy nested' gap).
-   What the gap needs: (a) the gems present, which is only a build-config matter. `mruby-enumerator` declares
-   `add_dependency 'mruby-fiber'` in the submodule (not editable), but mruby's resolver accepts any gem *named*
-   `mruby-fiber` that the build lists first, so a placeholder gem (an `mrbgem.rake` with no sources) added with
-   `conf.gem` in the no-fiber build config satisfies it and `mruby-enumerator`, `mruby-set`, `mruby-enum-chain` and
-   `mruby-enum-lazy` build without the real Fiber (tried: the libmruby builds and has no `mrb_fiber_*` symbols).
-   (b) The gem's own `Enumerator#next` bytecode calls `Fiber.new do ... end` interpreted, which has no C++ Fiber to build,
-   so the program must also compile the gem's mrblib (`BC2CPP_ENUMERATOR_FIBER` does, with the enumerator gems in the
-   closed world) so that `next_values` becomes a step. (c) The lazy scenario still failed there with
-   `closed-world proof violated: NativeFiberSource#lazy was proven undefined but dispatched`: the fixture's closed world
-   for the probe does not contain `Enumerable#lazy` from mruby-enum-lazy. Fixing that is a fixture/closed-world change,
-   not a runtime one, and is not done: the placeholder gem is therefore not added to the repository, so existing builds
-   and `NOFIBER_GEMS` are unchanged.
+2. **Enumerator** (done in the `native_fiber_check` no-fiber build). `Enumerator#next`/`peek`/`lazy` need `mruby-enumerator`,
+   which declares `add_dependency 'mruby-fiber'` in the submodule (not editable). mruby's resolver accepts any gem *named*
+   `mruby-fiber` that the build lists first, so `NOFIBER_CORE_CONFIG` lists a placeholder gem first
+   (`NOFIBER_PLACEHOLDER_GEM`, an `mrbgem.rake` with no sources, written into the build directory by `nofiber_or_build`).
+   `mruby-enumerator`, `mruby-set`, `mruby-enum-chain`, `mruby-enum-lazy` and `mruby-stringio` then build without the real
+   Fiber; the libmruby has no `mrb_fiber_*` symbols (the check asserts it) and `NOFIBER_GEMS` is only `mruby-fiber` and
+   `mruby-os-memsize`. The gem's own `Enumerator#next` bytecode would call `Fiber.new` interpreted, so the program compiles the
+   gem's mrblib (`mruby-enumerator` is in the probe's core gems, and `BC2CPP_ENUMERATOR_FIBER`, on by default, turns
+   `next_values` into a step). mruby-enum-lazy is not among the gems bc2cpp compiles for the real closed build, so the probe
+   passes its `lazy.rb` as extra program source: the closed world then defines `Enumerable#lazy` and `Enumerator::Lazy`
+   (without it the scenario raised `closed-world proof violated: NativeFiberSource#lazy was proven undefined but dispatched`).
+   The 'enumerator lazy nested' scenario now prints what interpreted mruby-fiber prints and `KNOWN_GAPS` is empty.
+   Not done: the real closed build (`build_config.rb`) still lists the real `mruby-fiber`; this is the fixture's build only.
 3. **Behaviour the scenarios exercise that the C++ Fiber lacks** (the `KNOWN_GAPS`): a closure that outlives the frame
    that made it ('escaping closure': a block step reads its builder's locals by pointer, valid only while that frame is on
    the fiber's stack; an escaping proc needs boxed variables); a `Fiber.new` inside a Fiber body (not a
