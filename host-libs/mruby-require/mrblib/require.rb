@@ -75,6 +75,17 @@ module Kernel
     [value]
   end
 
+  # Symbol#start_with? and #end_with? (CRuby 2.7), which mruby does not define.
+  class ::Symbol
+    def start_with?(*prefixes)
+      to_s.start_with?(*prefixes)
+    end
+
+    def end_with?(*suffixes)
+      to_s.end_with?(*suffixes)
+    end
+  end
+
   # NilClass#to_i and #to_f (CRuby: 0 and 0.0), which mruby does not define.
   class ::NilClass
     def to_i
