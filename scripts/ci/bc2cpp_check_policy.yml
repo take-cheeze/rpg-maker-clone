@@ -898,6 +898,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/fiber_limits_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/vm_bytecode_free_check.rb:
     tier: runtime
     capabilities:

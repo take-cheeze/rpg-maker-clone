@@ -33,6 +33,8 @@ compiled code never calls mruby-fiber. `Enumerator#next` runs on it too.
 - `Fiber#raise` on a real mruby-fiber Fiber is a NoMethodError (mruby-fiber has none); it works on C++ Fibers.
 - `mruby-rpgxp` (`script_host.rb`) and `mruby-wolf` (`interpreter.rb`) still need the real mruby-fiber, so the desktop
   and web builds keep it.
+- `fiber_limits_check` pins each gap above (and break through several ensure regions, keyword calls that suspend) with a
+  scenario that must still differ from the interpreted run; one that starts matching fails the check.
 
 ## Removing mruby-fiber
 
@@ -62,5 +64,5 @@ is a step. Checked by `step_keywords_check`.
 ## Checks
 
 `cxx_fiber_check` (runtime), `fiber_api_step_check`, `fiber_transfer_check`, `fiber_body_step_check`,
-`step_exceptions_check`, `step_keywords_check`, `native_fiber_check` and the `resumable_*_check` family, all under
-`scripts/bc2cpp/`.
+`step_exceptions_check`, `step_keywords_check`, `native_fiber_check`, `fiber_limits_check` and the `resumable_*_check`
+family, all under `scripts/bc2cpp/`.
