@@ -32,9 +32,22 @@ bc2cpp's own sources never call `eval`: the only `eval` in the build is the bake
    is set to Object instead.)
 2. **A C `main`.** It sets `ARGV` and `$PROGRAM_NAME`, boots the state, requires the entry, and runs the exit handlers, in place of
    `bin/mruby` + `bc2cpp_main.rb`.
-3. **A build kind.** Add a build name (for example `bc2cpp-self`) to `BC2CPP_CLOSED_WORLD_BUILDS` with its own required gem list.
-   The closed-world inputs are the C and Ruby sources of the gems in the executable (onig, prism, marshal, stringio, json, yaml,
-   zlib, ...).
+3. **A build kind.** Done: `bc2cpp-self` is in `BC2CPP_CLOSED_WORLD_BUILDS` (tools/bc2cpp/compiled_gems.rb), with its gem list in
+   `BC2CPP_SELF_GEMS`. `bc2cpp_closed_world_violations` requires every gem of the list, refuses the open-world gems
+   (`mruby-eval`, `mruby-binding`, `mruby-proc-binding`), `mruby-compiler` and every `mruby-bin-*`, and leaves the other kinds
+   as they were. `scripts/bc2cpp/self_build_kind_check.rb` (in CI) checks all of that, and that the list equals the runner's
+   build_config.rb minus its build-time gems (`mruby-bin-mruby`, `mruby-bin-mrbc`, `mruby-compiler`) plus `mruby-env`, which
+   `mruby-bc2cpp-sources` depends on. The C main of step 2 goes in `BC2CPP_SELF_OPTIONAL_GEMS` (marked TODO) once it has a name.
+   Not done: nothing builds this kind yet, so `bc2cpp_closed_world_outside_srcs` and the rest of the closed-world bookkeeping
+   are untouched.
+
+   The closed-world inputs are the sources outside bc2cpp's own program that share the executable's VM: the C and C++ sources
+   of mruby core (`3rd/mruby/src`) and of each gem (`src` and `core` of the gems in the list, including Onigmo bundled by
+   `mruby-onig-regexp`, `3rd/mruby-marshal`, `3rd/mruby-stringio`, `host-libs/mruby-prism` with Prism's C, `host-libs/mruby-process`
+   and `host-libs/mruby-env`), and the Ruby `mrblib` of the core and ruby-libs gems (shellwords, json, digest, fileutils,
+   tmpdir, tempfile, dir-glob, strscan, compare-by-identity, yaml, zlib, and the generated rbs and prism mrblibs). The program
+   itself is `tools/bc2cpp/**` and `scripts/rpg2k/closed_world_lint.rb`, baked as bytecode.
+
 4. **Analysis parity (a prerequisite).** The runner must reach the same analysis results as CRuby. It does not yet: on the RPG2000
    closed unit, CRuby's RBS_CHECKED_PARAMS check passes, while the runner reports 94 unproven parameters. The narrowing state at one
    instruction differs (1 fact instead of 6). Decoding, control-flow edges and `Set` operations match; the difference is in the

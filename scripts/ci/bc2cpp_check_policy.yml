@@ -1172,6 +1172,10 @@ checks:
     tier: fast
     capabilities: []
     fixture_capabilities: []
+  scripts/bc2cpp/self_build_kind_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
   scripts/bc2cpp/escape_receiver_flow_check.rb:
     tier: runtime
     capabilities:
