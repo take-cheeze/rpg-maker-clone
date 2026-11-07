@@ -386,9 +386,9 @@ CALL frames and out of `Fiber#resume`, local rescue, wrong rescue class, catch/t
   replaces the parked exit, as in Ruby. The object is never raised, so no `rescue` sees it. `resumable_handler_problem` no
   longer refuses these methods. The `RETNIL` family was never refused although it unwinds the same way, so a bare `return`
   or `next` in an ensure region skipped the ensure body.
-  Limit: a `break` or `return` out of a block that has an ensure region around it is not a step, because the block's plain
-  body is not compiled (the owning method stays interpreted); `next` is. The codegen for them is the same code and runs when
-  the plain body compiles.
+  A `break`, `return` or `next` out of a block with an ensure region compiles in the block's plain body too (the guard of
+  ENSURE_RAII_SUPPORT); an ensure body that raises replaces the exit. A block with two ensure regions, or an ensure and a
+  rescue, stays interpreted.
 
 ### Fiber#raise
 
@@ -466,8 +466,8 @@ and the shapes `compile_method` itself cannot bind.
 - **Nested block steps.** A block step nested in a Fiber body may read a local of the body's builder (a level-1 upvar): the
   body holds that pointer, and the inner maker forwards it (`block_step_upvars_ok?`). This is what a `begin ... ensure` block
   inside `Fiber.new` that records into the method's local needed.
-- Not done: a call that carries keywords *and* a literal block is not compiled at all (the block region recognizer refuses
-  `n=..|nk=..`, `mrb_funcall_with_block` cannot carry keywords), whatever the callee is.
+- A call that carries keywords and a literal block (or `&blk`) compiles (BLOCK_KEYWORD_CALL): in a step it goes through the
+  dynamic call, elsewhere through `bc2cpp_funcall_kw`. A plain `public_send` with keywords still stays interpreted.
 
 `step_keywords_check` compares interpreted and compiled runs of a compiled probe class: required and optional keywords,
 optionals, rest and block with keywords, keyword splat, `send`/`public_send`, and the ArgumentErrors.
