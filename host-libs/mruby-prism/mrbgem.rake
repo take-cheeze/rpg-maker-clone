@@ -41,6 +41,12 @@ MRuby::Gem::Specification.new('mruby-prism') do |spec|
       FileUtils.mkdir_p(File.dirname(t.name))
       Prism::Template.render(name, write_to: t.name)
     end
+    # Rendered now, not only as a rake task: the presym scan and the core's own preprocessing read these headers
+    # (prism/diagnostic.h from pm_strpbrk.h), and their tasks are not prerequisites of those steps.
+    unless File.exist?(out) && File.mtime(out) >= File.mtime("#{PRISM_TEMPLATES}/#{name}.erb")
+      FileUtils.mkdir_p(File.dirname(out))
+      Prism::Template.render(name, write_to: out)
+    end
   end
 
   sources = Dir["#{PRISM_ROOT}/src/*.c"] + Dir["#{PRISM_ROOT}/src/util/*.c"] +

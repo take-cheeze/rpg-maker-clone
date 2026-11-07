@@ -6,4 +6,6 @@ MRuby::Gem::Specification.new('mruby-compare-by-identity') do |spec|
   spec.license = 'MIT'
   spec.authors = 'take-cheeze'
   spec.summary = 'compare_by_identity for Hash and Set, for mruby'
+  # each, each_pair, each_key and each_value return an Enumerator without a block, as Hash's do.
+  spec.add_dependency 'mruby-enumerator', core: 'mruby-enumerator'
 end
