@@ -269,7 +269,13 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # (`$scene.main while $scene`) one frame at a time through a Fiber so the web
   # build's per-frame emscripten callback keeps control each frame. Not in the
   # default gem set.
-  conf.gem core: 'mruby-fiber'
+  # The closed build has no mruby-fiber: the C++ Fiber is its Fiber, and a source-less gem of that name satisfies
+  # mruby-enumerator's add_dependency.
+  if conf.name == 'closed'
+    conf.gem "#{MRUBY_ROOT}/../../mruby-fiber-placeholder"
+  else
+    conf.gem core: 'mruby-fiber'
+  end
   # Kernel#exit / SystemExit: the stock RMXP Interpreter calls `exit` to abort on
   # runaway common-event recursion; the script host provides it so that raises a
   # catchable SystemExit the driver ends the game on, rather than a NoMethodError.

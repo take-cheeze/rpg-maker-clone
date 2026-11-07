@@ -491,13 +491,10 @@ and then reads the closed build's `bytecode-inventory.json`.
 
 ## What blocks removing mruby-fiber from the closed build
 
-1. **The gems.** `build_config.rb` lists `mruby-fiber` unconditionally (line 272, and `explicit_shared_names`, line 460);
-   `mruby-stringio` is in the same shared list and depends on `mruby-enumerator`, which depends on `mruby-fiber`
-   (`mruby-set`, `mruby-enum-chain`, `mruby-enum-lazy` too), so the closed build cannot drop mruby-fiber without dropping
-   StringIO and Enumerator. `mruby-rpgxp` (`script_host.rb`: the driver Fiber of the bundled main loop) and `mruby-wolf`
-   (`interpreter.rb`: `@fiber = Fiber.new { execute }`) depend on it and use `Fiber.new`/`Fiber.yield`; the RPGXP script
-   host runs eval-free but interpreted Ruby, so its Fiber bodies are not compiled. No build-config change is safe before
-   these are settled, so none is made.
+1. **The gems.** The closed build lists a source-less `mruby-fiber` placeholder (`mruby-fiber-placeholder/`, `build_config.rb`)
+   instead of mruby's, so its libmruby has no `mrb_fiber_*` symbol (`vm_bytecode_free_check` asserts it). `mruby-rpgxp`
+   (`script_host.rb` driver Fiber), `mruby-wolf` (`interpreter.rb`) and the other builds still use the real gem, whose Fibers
+   are interpreted. `core_native_srcs` still scans `fiber.c` (conservative).
 2. **Enumerator** (done in the `native_fiber_check` no-fiber build). `Enumerator#next`/`peek`/`lazy` need `mruby-enumerator`,
    which declares `add_dependency 'mruby-fiber'` in the submodule (not editable). mruby's resolver accepts any gem *named*
    `mruby-fiber` that the build lists first, so `NOFIBER_CORE_CONFIG` lists a placeholder gem first
@@ -510,7 +507,6 @@ and then reads the closed build's `bytecode-inventory.json`.
    passes its `lazy.rb` as extra source under a `3rd/mruby/mrbgems/mruby-enum-lazy/mrblib/` path, so it counts as mruby's own Ruby (as a program definition, its `map`/`select`/`each`... would withdraw the kind_of block arms of those names, and the scenario then crossed a C function boundary: `FiberError`): the closed world then defines `Enumerable#lazy` and `Enumerator::Lazy`
    (without it the scenario raised `closed-world proof violated: NativeFiberSource#lazy was proven undefined but dispatched`).
    The 'enumerator lazy nested' scenario now prints what interpreted mruby-fiber prints and `KNOWN_GAPS` is empty.
-   Not done: the real closed build (`build_config.rb`) still lists the real `mruby-fiber`; this is the fixture's build only.
 3. **Behaviour the scenarios exercise that the C++ Fiber lacks** (the `KNOWN_GAPS`): a closure that outlives the frame
    that made it ('escaping closure': a block step reads its builder's locals by pointer, valid only while that frame is on
    the fiber's stack; an escaping proc needs boxed variables); a `Fiber.new` inside a Fiber body (not a
