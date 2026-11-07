@@ -338,8 +338,8 @@ iterators from an interpreted Fiber is a FiberError: it needs a compiled Fiber b
 
 ## Handlers, exceptions and unwinding in steps (STEP_HANDLERS)
 
-A step may have `rescue` and `ensure` handlers (`resumable_handler_problem` still refuses a `return`, `break` or leaving
-`JMPUW` inside an ensure range, and `retry` is not handled).
+A step may have `rescue` and `ensure` handlers, `retry` in a rescue clause, and `return`, `break` and `next` out of an
+`ensure` region.
 
 - **Handler regions are states.** The step body is a lambda run under `mrb_protect_error`; every instruction stores
   `F->pc`. On an exception the loop finds the last catch handler (mruby's rule: last to first, `begin <= pc < end`) covering
@@ -358,7 +358,69 @@ A step may have `rescue` and `ensure` handlers (`resumable_handler_problem` stil
   the current fiber.
 
 `step_exceptions_check` compares interpreted and compiled runs of a compiled probe class (nested ensure, exception through
-CALL frames and out of `Fiber#resume`, local rescue, wrong rescue class, catch/throw, `break` through an ensure).
+CALL frames and out of `Fiber#resume`, local rescue, wrong rescue class, catch/throw, `break` through an ensure, and the three items below).
+
+- **GC.** The handler loop is `mrb_protect_error` around the step body, which drops the arena entries of everything the run
+  made. A register that is a C++ local (RESUMABLE_LOCAL_REGISTERS) is not a root, so the objects it holds (a string made in
+  the protected region, the array a local points to) were free to go while the handler, or a `retry`, still used them, and
+  the next suspension stored the dangling pointer in the frame (`Assertion tt != MRB_TT_FREE` in `mrb_gc_mark` under
+  `MRB_GC_STRESS`). The loop spills the locals back into the frame, which is rooted, before the handler runs. Everything
+  the run allocated is still alive at that point, so no stale value is spilled.
+- **`retry`.** `retry` is a `JMPUW` back to the start of the protected region from the rescue clause; it leaves no ensure
+  region (the region it re-enters is the one the clause belongs to), so it is the plain `goto` it always was, and `F->pc`
+  puts the handler lookup back inside the region. What did not work was keeping the objects of the failed attempt alive (see
+  GC). Covered: a yield in the region, in the rescue clause, in a CALLed frame that raises (the retry runs the CALL again),
+  in a block step, and under an ensure that runs once at the end.
+- **`return`, `break` and `next` out of an ensure region (STEP_EXIT_JUMPS).** vm.c does this with a break object that stands
+  in for the exception: the ensure handler's `EXCEPT` captures it, the ensure body runs, and its `RAISEIF` continues the
+  jump. A step does the same. Every `RETURN`, `RETNIL`, `RETTRUE`, `RETFALSE`, `RETSELF`, `RETURN_BLK`, `BREAK` and
+  `JMPUW` at an address inside an ensure range that it leaves (a jump leaves a range its target is outside of, vm.c compares
+  `a < begin || a > end`; a return or break leaves every covering one) first parks itself in a `Bc2cppExit` object
+  (`bc2cpp_exit_new`: the instruction's address, the value it returns, the jump's target) in `M->exc` and goes to the
+  innermost covering ensure handler (the last entry of the table, as `catch_handler_find` searches). The handler's `EXCEPT`
+  puts the object in its register, the ensure body runs (it may suspend: the object is in the frame), and `RAISEIF`, which
+  is a plain `mrb_exc_raise` for anything else, hands it to the next enclosing ensure that the jump leaves, or continues
+  it: `Lbc2cpp_exit_dispatch` switches on the parked address, restores the returned value into the register the instruction
+  reads (the ensure body may have used it) and jumps to the label just before the instruction's own code, which is then the
+  return, the `goto`, or the break/return unwind site. An exception the ensure body raises, or a `return` of its own,
+  replaces the parked exit, as in Ruby. The object is never raised, so no `rescue` sees it. `resumable_handler_problem` no
+  longer refuses these methods. The `RETNIL` family was never refused although it unwinds the same way, so a bare `return`
+  or `next` in an ensure region skipped the ensure body.
+  Limit: a `break` or `return` out of a block that has an ensure region around it is not a step, because the block's plain
+  body is not compiled (the owning method stays interpreted); `next` is. The codegen for them is the same code and runs when
+  the plain body compiles.
+
+### Fiber#raise
+
+`Fiber#raise(...)` (Kernel#raise's arguments) is defined on the C++ Fiber (`bc2cpp_fiber_m_raise`); mruby-fiber has no
+Fiber#raise, so without this a `fiber.raise` reaches the private `Kernel#raise` and is a NoMethodError. A call on a receiver
+known to be a Fiber is a closed-world owner call, whose guard stopped the program (the world lists `raise` on Kernel only, and
+the guard names a definer the world does not list). The world is not told about the method: a second definer of `raise` would
+end the proofs that Kernel#raise is the only one (`KERNEL_DIRECT :raise`, `core_facts_rbs_check`, `native_core_direct_wired_check`)
+in every build, Fiber or not. Instead the guard accepts exactly the runtime's function as a definer
+(`bc2cpp_fiber_definer_p`, compiled in when the translation unit carries the fiber runtime, `BC2CPP_FIBER_RUNTIME`).
+
+The exception is raised where the fiber is suspended, as if the `Fiber.yield` that returned control had raised it:
+`bc2cpp_fiber_resume(.., raise_exc)` hands it to `bc2cpp_fiber_unwind` before running any step, so the frames from the top
+down take it the way they take an exception raised by a CALLed frame (the step with a handler covering `F->pc` is re-entered
+at the handler; frames without one are dropped). Rescue and ensure bodies of the steps run; an ensure body may yield again
+(`Fiber#raise` then returns that value and the exception continues on the next resume); a rescue that takes it lets the fiber
+run on, and `Fiber#raise` returns what it next yields or returns; otherwise the fiber is dead and the exception leaves
+`Fiber#raise`. Cases, with CRuby's behaviour and mruby's messages:
+
+- the current fiber, or the root fiber object: the exception is raised right there;
+- a fiber on the resume chain (waiting on one it resumed): the exception is raised in the fiber that is running, as CRuby
+  forwards it to the fiber that is resumed;
+- a fiber that has not run: `FiberError: cannot raise exception on unborn fiber` (it stays alive);
+- a dead fiber: the `FiberError` a `resume` gives (`resuming dead fiber`);
+- a fiber suspended by a transfer away: continued with a transfer, as CRuby does;
+- a Fiber of mruby-fiber (not a C++ Fiber): NoMethodError, as before (it cannot be unwound from here).
+
+`step_exceptions_check` has no interpreted counterpart for these: mruby-fiber would answer NoMethodError. The compiled run is
+held to what CRuby 3.3 prints for the same program (`raise rescued`, `raise through frames`, `raise uncaught`, `raise yield
+in ensure`, `raise retry`, `raise forms`, unborn, dead, self, resuming). `native_fiber_check` runs a compiled `fiber.raise` on
+the mruby without mruby-fiber (its expected line is CRuby's too, `OWN_EXPECTED`).
+
 
 ### The root fiber object
 
@@ -452,7 +514,7 @@ and then reads the closed build's `bytecode-inventory.json`.
 3. **Behaviour the scenarios exercise that the C++ Fiber lacks** (the `KNOWN_GAPS`): a closure that outlives the frame
    that made it ('escaping closure': a block step reads its builder's locals by pointer, valid only while that frame is on
    the fiber's stack; an escaping proc needs boxed variables); a `Fiber.new` inside a Fiber body (not a
-   C++ Fiber: `resume` on it raises 'not a fiber'). `ensure`/`rescue` around a yield, `catch`/`throw` after a yield and a
+   C++ Fiber: `resume` on it raises 'not a fiber'). `ensure`/`rescue` around a yield, `retry`, `return`/`break`/`next` out of an ensure region, `Fiber#raise`, `catch`/`throw` after a yield and a
    user `each` with optional, rest and keyword parameters are done (see STEP_HANDLERS and STEP_KEYWORDS).
 4. **A `Fiber.new(&blk)` or a Fiber made through `send`** has no compiled path: only a literal-block `Fiber.new` site
    becomes a C++ Fiber.
