@@ -2445,6 +2445,10 @@ if $PROGRAM_NAME == __FILE__
   print gen.emit_skipped_entry_macros(skipped_entries)
   # SYMBOL_CACHE: rewrite every function first, so the table is complete before
   # it is printed ahead of the code that uses it.
+  # PRESYM_SYMBOL (symbol_cache.rb): the names mruby's presym table has, as the build's id.h enum spells them.
+  if (presym_header = ENV['BC2CPP_PRESYM_HEADER']) && File.file?(presym_header)
+    SymbolCache.presym_names = File.read(presym_header).scan(/^\s*MRB_SYM__([A-Za-z_]\w*) = \d+,?$/).flatten.to_set
+  end
   symbol_table = SymbolCache::Table.new
   # OWNER_CALL_DIRECT (owner_call_direct.rb): an owner call its listed owners' entries complete carries them.
   owner_call_direct = OwnerCallDirect.entries(compiled + gen.module_function_copies(compiled), registration_owners)
