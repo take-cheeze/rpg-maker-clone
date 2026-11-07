@@ -27,6 +27,13 @@ class Object
     feature = name.to_s
     return false if MRubyRequire::LOADED[feature]
 
+    # A source compiled into the build (mruby-bc2cpp-sources) is run from its bytecode, with no eval.
+    if MRubyRequire.respond_to?(:baked?) && MRubyRequire.baked?(feature)
+      MRubyRequire::LOADED[feature] = true
+      MRubyRequire.load_baked(feature)
+      return true
+    end
+
     if (source = MRubyRequire::SOURCES[feature])
       MRubyRequire::LOADED[feature] = true
       eval(source, nil, feature)
@@ -55,6 +62,8 @@ MRubyRequire.provide('tempfile') { defined?(Tempfile) }
 MRubyRequire.provide('zlib') { defined?(Zlib) }
 MRubyRequire.provide('prism') { defined?(Prism) }
 MRubyRequire.provide('rbs') { defined?(RBS) }
+# The tools require 'pathname' before 'rbs' (CRuby's rbs needs Pathname); the mruby rbs port does not use it.
+MRubyRequire.provide('pathname') { true }
 MRubyRequire.provide('open3') { defined?(Open3) }
 
 # RbConfig.ruby: the interpreter bc2cpp starts its tools with. Under mruby it is the wrapper tools/bc2cpp/mruby-ruby,
