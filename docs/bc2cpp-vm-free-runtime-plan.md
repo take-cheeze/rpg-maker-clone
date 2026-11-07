@@ -23,7 +23,7 @@ count, so suffixed names are included). These are the script's baselines.
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall*` | 847 | breakdown below |
+| `mrb_funcall*` | 480 | breakdown below |
 | `bc2cpp_owner_call*` (owner-listed dispatch) | 2208 | already direct; becomes a plain switch |
 | `mrb_proc_new_cfunc_with_env*` (block procs) | 471 | C++ block objects with captured env |
 | `mrb_protect*` (exception boundaries) | 199 | C++ `try`/`catch` on a typed exception |
@@ -34,8 +34,8 @@ count, so suffixed names are included). These are the script's baselines.
 | `bc2cpp_resumable_exec*` | 0 | done |
 
 `mrb_funcall` breakdown (the rest is in headers):
-- 354: the bigint `==` arm of every `!=` site (`codegen_native_send.rb`, `MRB_USE_BIGINT`); taken only for bigint
-  receivers. Replace with a direct bigint equality call.
+- Done (354 sites): the bigint `==` arm of every `!=` site (`codegen_native_send.rb`, `MRB_USE_BIGINT`) calls the shared
+  `bc2cpp_bigint_eq` (`mrb_bint_cmp`), with no by-name send.
 - ~170: class-body self-sends (`include`, `attr_*`), run once at load. One `bc2cpp_ssend` helper call each; the callee is
   mruby's own C `Module#attr_*`, which has no public entry, so the by-name send inside the helper stays.
 - ~70: core `x.call(*args)` now call `bc2cpp_proc_call_argv`: a plain Proc is yielded to, any other receiver is sent
