@@ -900,6 +900,7 @@ jobs:
           ruby scripts/bc2cpp/step_keywords_check.rb
           ruby scripts/bc2cpp/block_in_step_check.rb
           ruby scripts/bc2cpp/step_closures_check.rb
+          ruby scripts/bc2cpp/ssend_helper_check.rb
           ruby scripts/bc2cpp/enumerator_next_check.rb
           ruby scripts/bc2cpp/block_step_check.rb
           ruby scripts/bc2cpp/cxx_fiber_check.rb

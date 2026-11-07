@@ -33,12 +33,13 @@ count, so suffixed names are included). These are the script's baselines.
 | `mrb_exec_irep*` | 5 | removed with the frame machine |
 | `bc2cpp_resumable_exec*` | 0 | done |
 
-`mrb_funcall` breakdown (about 834 in the mrbgems sources; the rest is in headers):
+`mrb_funcall` breakdown (the rest is in headers):
 - 354: the bigint `==` arm of every `!=` site (`codegen_native_send.rb`, `MRB_USE_BIGINT`); taken only for bigint
   receivers. Replace with a direct bigint equality call.
-- ~178: self-sends by name in class bodies (`bc2cpp_ssend_args`, `codegen_class_body.rb`) when the callee is not
-  proven statically.
-- 70: `Proc#call` by name.
+- ~170: class-body self-sends (`include`, `attr_*`), run once at load. One `bc2cpp_ssend` helper call each; the callee is
+  mruby's own C `Module#attr_*`, which has no public entry, so the by-name send inside the helper stays.
+- ~70: core `x.call(*args)` now call `bc2cpp_proc_call_argv`: a plain Proc is yielded to, any other receiver is sent
+  `call` by name inside the helper.
 - 12: error-path `puts` (`bc2cpp.rb` error handler).
 - The rest: Fiber and `each` helpers.
 
