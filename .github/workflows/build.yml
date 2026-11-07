@@ -741,6 +741,8 @@ jobs:
           echo "MRBC=$mrbc" >> "$GITHUB_ENV"
           env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "full-core mruby unavailable" unless Bc2cppFixtureRuntime.full_or_build'
           echo "BC2CPP_MRUBY_FULL=$RUNNER_TEMP/bc2cpp-full/host" >> "$GITHUB_ENV"
+          env -u LD BC2CPP_NOFIBER_BUILD_DIR="$RUNNER_TEMP/bc2cpp-nofiber" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "no-fiber mruby unavailable" unless Bc2cppFixtureRuntime.nofiber_or_build'
+          echo "BC2CPP_MRUBY_NOFIBER=$RUNNER_TEMP/bc2cpp-nofiber/host" >> "$GITHUB_ENV"
 
       - name: Check bc2cpp registrations
         run: ruby scripts/ci/check_registry.rb
@@ -854,12 +856,20 @@ jobs:
         with:
           path: ${{ runner.temp }}/bc2cpp-full
           key: bc2cpp-full-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.*') }}-${{ steps.full-core-key.outputs.mruby }}-${{ steps.full-core-key.outputs.stringio }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'scripts/bc2cpp/*.bash', 'patches/mruby*.patch') }}
+      # The same libmruby without mruby-fiber, for native_fiber_check (the C++ Fiber as the only Fiber).
+      - name: Cache the no-fiber libmruby build
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/bc2cpp-nofiber
+          key: bc2cpp-nofiber-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.*') }}-${{ steps.full-core-key.outputs.mruby }}-${{ hashFiles('scripts/bc2cpp/fixture_runtime.rb', 'scripts/mruby/**', 'scripts/bc2cpp/*.bash', 'patches/mruby*.patch') }}
 
       - name: Prepare shared check libraries
         run: |
           env -u LD BC2CPP_FULL_BUILD_DIR="$RUNNER_TEMP/bc2cpp-full" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "full-core mruby unavailable" unless Bc2cppFixtureRuntime.full_or_build'
+          env -u LD BC2CPP_NOFIBER_BUILD_DIR="$RUNNER_TEMP/bc2cpp-nofiber" ruby -r ./scripts/bc2cpp/fixture_runtime -e 'abort "no-fiber mruby unavailable" unless Bc2cppFixtureRuntime.nofiber_or_build'
           echo "MRBC=$RUNNER_TEMP/bc2cpp-full/host/bin/mrbc" >> "$GITHUB_ENV"
           echo "BC2CPP_MRUBY_FULL=$RUNNER_TEMP/bc2cpp-full/host" >> "$GITHUB_ENV"
+          echo "BC2CPP_MRUBY_NOFIBER=$RUNNER_TEMP/bc2cpp-nofiber/host" >> "$GITHUB_ENV"
           echo "BC2CPP_BUILD_INCLUDE=$RUNNER_TEMP/bc2cpp-full/host/include" >> "$GITHUB_ENV"
 
       - name: Check bc2cpp registrations

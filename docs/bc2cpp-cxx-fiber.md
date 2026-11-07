@@ -278,39 +278,42 @@ and `flat_map`. The frame a step CALLs now runs to its end there (`bc2cpp_run_ca
 `Fiber.yield` and raises the FiberError of a yield across a C frame. `call_from_c_check` covers it. A yield through compiled
 iterators from an interpreted Fiber is a FiberError: it needs a compiled Fiber body.
 
-## What blocks removing mruby-fiber
+## Without mruby-fiber
 
-`native_fiber_check` (and `vm_bytecode_free_check`, which runs it and then reads the closed build's
-`bytecode-inventory.json`) builds a native-only mruby with the NativeVM backend, runs the scenario program in it and compares
-the output with interpreted mruby. It is not a check of the C++ Fiber: the scenario program is compiled by NativeVM, not by
-bc2cpp, and the Fiber is mruby-fiber's. Moving it to the C++ Fiber needs, in order:
+`native_fiber_check` runs compiled Fiber programs on an mruby that has no mruby-fiber, with the C++ Fiber as the whole
+Fiber. The scenario program is a compiled probe class (every `Fiber.new` body in it is compiled); a few lines of
+interpreted Ruby only call `resume` and `alive?` on the C++ Fibers. The no-fiber mruby is the full-core build minus
+`mruby-fiber` and the gems that need it (`Bc2cppFixtureRuntime::NOFIBER_GEMS`: `mruby-enumerator`, and through it
+`mruby-set`, `mruby-enum-chain`, `mruby-enum-lazy` and the 3rd-party `mruby-stringio`; `nofiber_or_build`,
+`BC2CPP_MRUBY_NOFIBER`/`BC2CPP_NOFIBER_BUILD_DIR`). The program's output on it equals the interpreted run on the full-core
+mruby, scenario by scenario, except `KNOWN_GAPS` (a gap that starts passing fails the check). The Array#sort lines compare
+with the transcription of array.c's sort that `resumable_variants_check` uses, since the interpreter cannot yield there.
 
-1. **No mruby-fiber in the build.** `stdlib.gembox` and `build_config.rb` (lines 272 and 460) list it; `mruby-enumerator`
-   depends on it (`add_dependency`); `mruby-rpgxp` and `mruby-wolf` depend on it and use `Fiber.new`/`Fiber.yield`
-   (`mruby-wolf/mrblib/interpreter.rb`, `mruby-rpgxp/mrblib/script_host.rb`). Without it `Fiber.new` does not exist:
-   only a `Fiber.new { ... }` site the compiler turns into `bc2cpp_fiber_new_body`/`_new_step` works, and
-   `bc2cpp_fiber_define` defines the class itself. A `Fiber.new(&blk)` or `Fiber.new` through `send` has no path.
-2. **The scenario program compiled by bc2cpp.** The check's fiber bodies are top-level blocks of `probe.rb`; they must be
-   compiled (the probe as a closed program) so `Fiber.new` sites become C++ fibers.
-3. **Behaviour the scenarios exercise that the C++ Fiber lacks:**
-   `Fiber#transfer` and `Fiber.current.transfer` (the 'fiber transfer' case); `ensure`/`rescue` around a `Fiber.yield`
-   ('nested ensure': `resumable_shape_problem` refuses a method with a handler); `catch`/`throw` after a yield (native
-   `catch` with a block, then `throw` through frames); a closure that outlives the frame that made it and is called after a
-   yield ('escaping closure': a block step reads its builder's locals by pointer, valid only while that frame is on the
-   fiber's stack; an escaping proc needs boxed variables); non-local `return` from a block that yielded
-   ('nonlocal return'); `Enumerator#next`/`peek` and `lazy` (they still use mruby-fiber's `Fiber` through
-   `Enumerator#next_values`; the `each` it calls needs the keyword/splat dynamic call, see above); 250 live registers
-   ('wide registers', untested on the step frame).
-4. **An expectation to change.** 'C boundary stays an error' runs `[2, 1].sort! { |a, b| Fiber.yield a; a <=> b }` and
-   expects the FiberError mruby raises; the C++ Fiber now suspends there. It needs another native-with-block example
-   (for instance `String#gsub` with a block) to keep checking that a real C boundary is an error.
-5. **Build-level checks that belong to NativeVM, not the Fiber.** The `NATIVE_ONLY` bytecode rejection, the archive audits
-   (no compiler, loader or instruction decoder) and the mode switching test the native-only VM configuration. They stay
-   with it, or move to the closed build's own audit, when the VM is removed.
+The runtime provides what mruby-fiber would: `bc2cpp_fiber_define` (called from `bc2cpp_resumable_init` and every Fiber
+site) defines `Fiber`, `FiberError` and `Fiber.yield` (a yield across a C frame inside a fiber, or outside any fiber, raises
+`FiberError` as mruby-fiber's does), beside `Fiber.new`/`resume`/`alive?`/`current`. `vm_bytecode_free_check` runs the check
+and then reads the closed build's `bytecode-inventory.json`.
 
-`vm_bytecode_free_check` additionally needs `build-closed-bc2cpp/closed/bytecode-inventory.json` to report
-`native_fiber_check_passed`, and no retained instruction arrays in the sources, the archive or the host: a closed-build
-property that does not depend on how fibers are implemented.
+## What blocks removing mruby-fiber from the closed build
+
+1. **The gems.** `build_config.rb` lists `mruby-fiber` unconditionally (line 272, and `explicit_shared_names`, line 460);
+   `mruby-stringio` is in the same shared list and depends on `mruby-enumerator`, which depends on `mruby-fiber`
+   (`mruby-set`, `mruby-enum-chain`, `mruby-enum-lazy` too), so the closed build cannot drop mruby-fiber without dropping
+   StringIO and Enumerator. `mruby-rpgxp` (`script_host.rb`: the driver Fiber of the bundled main loop) and `mruby-wolf`
+   (`interpreter.rb`: `@fiber = Fiber.new { execute }`) depend on it and use `Fiber.new`/`Fiber.yield`; the RPGXP script
+   host runs eval-free but interpreted Ruby, so its Fiber bodies are not compiled. No build-config change is safe before
+   these are settled, so none is made.
+2. **Enumerator.** `Enumerator#next`/`peek`/`lazy` need `mruby-enumerator`. Its `next_values` body is compiled to a C++
+   Fiber behind `BC2CPP_ENUMERATOR_FIBER`, but the gem itself requires mruby-fiber; a no-fiber build has no Enumerator
+   class, so `to_enum` without a block, `lazy` and `Enumerator::Lazy` are absent (the 'enumerator lazy nested' gap).
+3. **Behaviour the scenarios exercise that the C++ Fiber lacks** (the `KNOWN_GAPS`): `ensure`/`rescue` around a
+   `Fiber.yield` ('nested ensure': `resumable_shape_problem` refuses a method with a handler); `catch`/`throw` across a
+   yield; a closure that outlives the frame that made it ('escaping closure': a block step reads its builder's locals by
+   pointer, valid only while that frame is on the fiber's stack; an escaping proc needs boxed variables); `Fiber#transfer`;
+   a `Fiber.new` inside a Fiber body (not a C++ Fiber: `resume` on it raises 'not a fiber'); a user `each` with keyword
+   parameters (a suspendable method takes none).
+4. **A `Fiber.new(&blk)` or a Fiber made through `send`** has no compiled path: only a literal-block `Fiber.new` site
+   becomes a C++ Fiber.
 
 Still failing:
 
