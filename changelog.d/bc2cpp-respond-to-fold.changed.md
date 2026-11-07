@@ -1,0 +1,1 @@
+- The compiled build answers `x.respond_to?(:name)` at compile time when the receiver's class is known and the closed world decides the answer, so the call is a constant rather than a runtime lookup.

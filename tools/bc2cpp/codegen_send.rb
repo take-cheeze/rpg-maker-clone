@@ -98,6 +98,8 @@ class CodeGen
     if !self_implicit && guard_proof_site && !@call_block_expr
       freeze_fold = freeze_fold_code(name, d, irep, guard_proof_site, insn, new_proof_reg, owner_def)
       return freeze_fold if freeze_fold
+      respond_to_fold = respond_to_fold_code(name, d, irep, guard_proof_site, insn, new_proof_reg, owner_def)
+      return respond_to_fold if respond_to_fold
     end
     drawing_proof_idx = idx || trace_idx
     drawing_proof_reg = unshift_proof_reg(trace_receiver_reg || d, trace_reg_offset)
@@ -1227,6 +1229,10 @@ class CodeGen
       end
       exact_core_typed = exact_class.nil? && !known_class.nil? &&
                          exact_core_arm_class(irep, proof_idx, proof_reg, self_implicit) == known_class
+      if exact_class && (answer = respond_to_fold_answer(irep, idx, insn, name, exact_class))
+        return "  // RESPOND_TO_FOLD :respond_to? (receiver exactly #{exact_class}; the closed world decides the answer)\n" \
+               "  #{RegName[d]} = mrb_bool_value(#{answer});\n"
+      end
       if exact_class
         exact_target = exact_via_lcf ? lcf_exact_target(name, exact_class) : closed_world_exact_target(name, exact_class)
         if direct_callable?(exact_target, n)
@@ -1876,6 +1882,56 @@ class CodeGen
   # Exact-instance counterpart to closed_world_inherited_target: the receiver
   # is a proven fresh instance, so its own class method may be selected too.
   # accessor: true also answers an attr_reader (no irep), which only the result-class flow reads.
+  # RESPOND_TO_FOLD: `x.respond_to?(:name)` on a receiver whose class the proof makes exact has the closed world's answer,
+  # so the call folds to true or false. Only a provable answer folds: nil when the name is left out of the tables (the
+  # phantom table answers true for it), installed dynamically, defined private or reached by a method_missing or an
+  # outside definer, or when the class is reopened or subclassed.
+  # The class set of the receiver (the flow mask, as FREEZE_FOLD reads it) names one class exactly, or nil.
+  def respond_to_fold_code(name, dest, irep, index, insn, reg, owner_def)
+    return nil unless irep && index && reg && owner_def && name == 'respond_to?' && insn.reg == reg
+    return nil unless ENV['BC2CPP_RESPOND_TO_FOLD'] != '0'
+
+    # The same exact-class trace the send codegen uses: a fresh `Klass.new` on every path to the receiver.
+    known = trace_new_target(irep, index, reg, owner: owner_def.owner, class_layout: @class_layout, registry: @registry,
+                             container_constants: @container_constants, element_annotations: @element_annotations,
+                             known_owners: @known_owners, capture_hints: @block_hash_capture_hints, guarded: true)
+    klass = known && exact_new_receiver_class(irep, index, reg, owner: owner_def.owner, expected_class: known)
+    return nil unless klass.is_a?(String)
+
+    answer = respond_to_fold_answer(irep, index, insn, name, klass)
+    return nil if answer.nil?
+
+    "  // RESPOND_TO_FOLD :respond_to? (receiver exactly #{klass}; the closed world decides the answer)\n" \
+      "  r#{dest} = #{answer ? 'mrb_true_value()' : 'mrb_false_value()'};\n"
+  end
+
+  def respond_to_fold_answer(irep, idx, insn, name, klass)
+    return nil unless ENV['BC2CPP_RESPOND_TO_FOLD'] != '0' && name == 'respond_to?' && insn.op == :SEND && insn.argc == 1
+    return nil unless irep && idx && call_facts_enabled? && respond_to_missing_absent?
+
+    sym = irep.walk_dominating_writers(idx - 1, insn.reg + 1, use: idx, follow_moves: true) do |writer|
+      writer.sym if writer.op == :LOADSYM
+    end
+    return nil unless sym.is_a?(String)
+
+    installed = symbol_installed_names
+    return nil if installed.nil? || installed.include?(sym)
+    return nil if unregistered_keys.any? { |key| key.end_with?("##{sym}") }
+
+    answers = call_facts_answers
+    return nil unless answers.user_instance?(klass)
+
+    # mruby's respond_to? ignores visibility, so a private Ruby definition answers true like a public one.
+    # resolves_in_ruby? also holds when nothing on the lookup path defines the name (a NoMethodError), so a
+    # true answer needs a Ruby definer; a false answer needs no definer of any kind.
+    defs = @registry.fetch(sym, [])
+    if !defs.empty? && answers.resolves_in_ruby?(klass, sym)
+      true
+    elsif defs.empty? && answers.native_free?(klass, sym)
+      false
+    end
+  end
+
   def closed_world_exact_target(name, receiver_class, accessor: false)
     return nil unless @closed_world&.stable_class_constant?(receiver_class)
     return nil unless call_facts_enabled? && call_facts_answers.resolves_in_ruby?(receiver_class, name)
