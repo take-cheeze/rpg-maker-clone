@@ -8855,17 +8855,12 @@ mrb_value zlib_inflate_direct(mrb_state* M,
 
 #ifdef MRB_VM_FREE
 // Closed (VM-free) build: Class.new has no engine caller. Warn on each call to
-// measure whether anything reaches it, then run the original (kept under
-// _rgss_class_new).
+// measure whether anything reaches it, then run the original.
+static mrb_func_t class_new_orig;
 static mrb_value class_new_warn(mrb_state* M, mrb_value self) {
-  const mrb_value* argv;
-  mrb_int argc;
-  mrb_value blk;
-  mrb_get_args(M, "*&", &argv, &argc, &blk);
   fprintf(stderr,
           "[RGSS] warning: Class.new called at runtime in the closed build\n");
-  return mrb_funcall_with_block(M, self, mrb_intern_lit(M, "_rgss_class_new"),
-                                argc, argv, blk);
+  return class_new_orig(M, self);
 }
 #endif
 
@@ -8874,11 +8869,16 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   // wrapper.
   mrb_define_alias(M, M->array_class, "_rgss_native_sort!", "sort!");
 #ifdef MRB_VM_FREE
-  RClass* class_singleton =
-      mrb_singleton_class_ptr(M, mrb_obj_value(M->class_class));
-  mrb_define_alias(M, class_singleton, "_rgss_class_new", "new");
-  mrb_define_class_method(M, M->class_class, "new", class_new_warn,
-                          MRB_ARGS_ANY());
+  // The metaclass of Class holds the core Class.new. A singleton-class call
+  // here would mark this file a singleton maker
+  // (ClosedWorld::NATIVE_SINGLETON).
+  mrb_method_t class_new =
+      mrb_method_search(M, M->class_class->c, mrb_intern_lit(M, "new"));
+  if (MRB_METHOD_FUNC_P(class_new)) {
+    class_new_orig = MRB_METHOD_FUNC(class_new);
+    mrb_define_class_method(M, M->class_class, "new", class_new_warn,
+                            MRB_ARGS_ANY());
+  }
 #endif
   RClass* m = mrb_define_module(M, "RGSS");
   mrb_define_module_function(M, m, "to_nfd", to_nfd, MRB_ARGS_REQ(1));
