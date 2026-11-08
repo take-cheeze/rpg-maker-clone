@@ -110,14 +110,17 @@ Registered in `bc2cpp-build`.
 
 ### Phase 2: C++ blocks and procs
 
-Status: stages 1 and 2 done. `Bc2cppBlock` (`docs/bc2cpp-stack-blocks.md`) is the block as a C++ value: allocation-free in the frame by default
+Status: stages 1 to 3 done. `Bc2cppBlock` (`docs/bc2cpp-stack-blocks.md`) is the block as a C++ value: allocation-free in the frame by default
 (it was 3 `calloc`s per execution; ASan and `BC2CPP_STACK_BLOCK_MALLOC` builds still malloc), also for a nested block that yields to the method's block and for a block that
 breaks or returns (a cfunc entry over the same env), with `proc()` as the one lazy
-RProc wrapper (the `Bc2cppHeapBlock` sites, 297, are gone). Stage 2 (fresh closed build): `bc2cpp_heap_proc` 98 (was 178),
-`bc2cpp_yield_foreign` 27, 483 frame-local sites (was 393): `BlockSelf` now proves `args[0]` windows and rescue/ensure yielders,
-and a break/return block takes the frame-local form (45 sites). A callee whose nested block outlives the call (`Enumerator.new`, `Hash.new`)
-now gets a heap block (a stage 1 use-after-free). Remaining: the callee ABI still takes an
-`mrb_value` (so `&blk` forwarding and stores keep the heap RProc), and `bc2cpp_owner_call` takes an RProc.
+RProc wrapper. Stage 2: `bc2cpp_heap_proc` 98 (was 178), `bc2cpp_yield_foreign` 27, 483 frame-local sites (was 393). Stage 3 (fresh closed build):
+a callee may forward its block with `&blk` (every forwarding glue passes `bc2cpp_env_block` of it, a direct arm that only calls the block takes it as is):
+`bc2cpp_heap_proc` 96, 485 frame-local sites.
+Remaining heap blocks (96): 16 in the preamble, 59 in step frames (a parked step outlives the C++ frame), 14 by-name sends
+(`new`, `permutation`, `sort`: the VM sees the block), 4 lambdas that escape into registers, and 3 direct calls to callees the
+proof refuses (`__send__` with keywords, `!block`, a boxed nested block). Not done: the callee ABI (`mrb_value` block parameter)
+and `bc2cpp_owner_call` taking a block value. Stores in callees would need `.proc()`, and `mrb_funcall_with_method` hands the
+block to a VM frame, so neither moves a count before the VM-free call path.
 
 - Exit: `mrb_proc_new_cfunc_with_env` is zero; `stack_block_check` and `resumable_variants_check` pass under both
   layouts (`BC2CPP_STACK_BLOCK_STACK` included).
