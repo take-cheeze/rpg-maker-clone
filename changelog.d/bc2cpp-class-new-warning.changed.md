@@ -1,0 +1,1 @@
+- The closed build writes `[RGSS] warning: Class.new called at runtime in the closed build` to stderr when `Class.new` is called, then runs it as before. No engine source calls it; the warning is for measuring whether anything does.

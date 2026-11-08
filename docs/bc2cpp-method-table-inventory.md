@@ -231,3 +231,9 @@ any lookup of a removed name.
 ## Message-macro names
 
 A native macro that stringifies a parameter only into an error message (`#val " too big"`) no longer makes that parameter a method name, because a method name has no blank. On the closed host (HEAD `9e55bd1`, 941 entries before) this removes `RGSS::Rect#width=`, `RGSS::Window#width=` and `RPG2k::Window#width=`, leaving **938 entries**. The `width` getters and the `x` entries stay: other sources keep them. The plain and verify builds both pass New Game, battle, menu, three saves, Continue and all 543 maps; the verify build traps no lookup of the removed names.
+
+## VM-free protocol names
+
+The closed (VM-free) proof no longer treats mruby's implicit protocol names as dynamic: `ALWAYS_DYNAMIC` (`tools/bc2cpp/static_dispatch_registrations.rb`) is the open build's backstop only. A closed-build name stays kept when the proof reads a by-name send, a presym, a literal in generated code, or a bytecode send, which is what the scans already cover. Against the list without this change, the closed proof removes 10 more entries (the four `_dump`/`_load` pairs on `RGSS::Color`, `Rect`, `Table` and `Tone`, plus `Game::Party#unequip_to_bag` and `RGSS::ErrorReport.singleton#puts_text`), the core ROM exclusion adds six (`Hash#to_hash`, `Integer#to_int`, `String#to_str`, `Kernel#clone`, `Kernel#send`, `Module#class_eval`) and the core left-out list adds `Hash#each_pair`.
+
+The closed host table is now **1,143 entries**. Measured against the Marshal-only variant of this change on the same base it is 1,150, and the proof lists predict 9 fewer entries, so 1,141 was expected; the 2-entry gap is not yet explained. The plain build and the UNREGISTERED_VERIFY build both pass New Game, battle, menu, three saves, Continue and all 543 maps.
