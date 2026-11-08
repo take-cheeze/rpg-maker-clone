@@ -23,11 +23,11 @@ count, so suffixed names are included). These are the script's baselines.
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall*` | 247 | breakdown below |
-| `bc2cpp_owner_call*` (owner-listed dispatch) | 2231 | already direct; table-driven later, see Phase 1 |
+| `mrb_funcall*` | 243 | breakdown below |
+| `bc2cpp_owner_call*` (owner-listed dispatch) | 2229 | already direct; table-driven later, see Phase 1 |
 | `mrb_proc_new_cfunc_with_env*` (block procs) | 5 | C++ block objects with captured env |
 | `mrb_protect*` (exception boundaries) | 18 | host entry boundary (`*_entry.h`), `gem_init.c`, mruby headers |
-| `mrb_gc_protect*` (arena roots) | 16 | one `bc2cpp_root` per unit, `*_entry.h`, mruby headers |
+| `mrb_gc_protect*` (arena roots) | 20 | one `bc2cpp_root` per unit, `*_entry.h`, mruby headers |
 | `mrb_yield*` | 14 | direct block invocation |
 | `mrb_method_search_vm*` | 5 | one seam (`bc2cpp_find_method`); static tables go behind it |
 | `mrb_exec_irep*` | 5 | removed with the frame machine |
@@ -41,7 +41,7 @@ count, so suffixed names are included). These are the script's baselines.
 - Done: core `x.call(*args)` (`bc2cpp_proc_call_argv`) looks `call` up once and runs the found method (visibility as
   OP_SEND, a missing method through method_missing); the 4 error-path `puts` are one `bc2cpp_stderr_report` (a direct IO
   write when `$stderr#puts` is the gem's, else one by-name `puts`); `Fiber.yield` from C is one `bc2cpp_fiber_yield_c`.
-- Measured about 247 (about 100 are comments): what is left is the frame-pushing primitive (`mrb_funcall_with_method`,
+- Measured about 243 (about 100 are comments): what is left is the frame-pushing primitive (`mrb_funcall_with_method`,
   shared by owner calls), one by-name helper per unknown receiver (`bc2cpp_funcall_argv`, `bc2cpp_ssend`, the Proc
   `arity`/`parameters` stand-in, `exc.result`, dynamic `send`), a few block-carrying `each`/`map` sends and 3 entry stubs.
 
@@ -63,7 +63,7 @@ Remaining: register it in CI once `bc2cpp-build` publishes the tree.
   (the preamble, `bc2cpp.rb`); `mrb_method_search_vm` text sites 57 to 5 (one per unit, plus mruby's header). Lookup
   semantics are unchanged (singleton, include/prepend order, `method_missing`, visibility, undef), so
   `owner_lookup_shapes_check.rb` runs them interpreted and compiled.
-- Owner calls (2231 text matches, 2223 call sites): 168 carry `BC2CPP_OWNERS_D` rows (a compiled entry
+- Owner calls (2229 text matches): 168 carry `BC2CPP_OWNERS_D` rows (a compiled entry
   called with no table search); the rest dispatch through the lookup and the per-site (class, argc) cache, which hits
   without any lookup. A site's owner set shrank from 336 to 88 bytes (the 32-slot seen list is allocated on the first
   miss): the closed build's generated `.data` is 458 KB, 396 KB less than before.
@@ -76,10 +76,10 @@ Remaining: register it in CI once `bc2cpp-build` publishes the tree.
 
 ### Phase 2: C++ blocks and procs
 
-Status: stage 1 done. `Bc2cppBlock` (`docs/bc2cpp-stack-blocks.md`) is the block as a C++ value: allocation-free in the frame
-(it was 3 `calloc`s per execution), also for a nested block that yields to the method's block, with `proc()` as the one lazy
-RProc wrapper (the `Bc2cppHeapBlock` sites, 297, are gone). Fresh closed build: frame-local sites 394 to 403, always-heap
-sites 171 to 162, `bc2cpp_heap_proc` 183 to 174, `bc2cpp_yield_foreign` 27. Remaining: the callee ABI still takes an
+Status: stage 1 done. `Bc2cppBlock` (`docs/bc2cpp-stack-blocks.md`) is the block as a C++ value: allocation-free in the frame by default
+(it was 3 `calloc`s per execution; ASan and `BC2CPP_STACK_BLOCK_MALLOC` builds still malloc), also for a nested block that yields to the method's block, with `proc()` as the one lazy
+RProc wrapper (the `Bc2cppHeapBlock` sites, 297, are gone). Fresh closed build: `bc2cpp_heap_proc` 178 (escaping
+sites), `bc2cpp_yield_foreign` 27. Remaining: the callee ABI still takes an
 `mrb_value` (so `&blk` forwarding, stores, `break`/`return` through the block, and about 38 yielders `BlockSelf` cannot prove
 for lack of a `GETIDX0` window and rescue reaching definitions keep the heap RProc), and `bc2cpp_owner_call` takes an RProc.
 
