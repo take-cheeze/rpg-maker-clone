@@ -113,7 +113,9 @@ Registered in `bc2cpp-build`.
 Status: stages 1 to 3 done. `Bc2cppBlock` (`docs/bc2cpp-stack-blocks.md`) is the block as a C++ value: allocation-free in the frame by default
 (it was 3 `calloc`s per execution; ASan and `BC2CPP_STACK_BLOCK_MALLOC` builds still malloc), also for a nested block that yields to the method's block and for a block that
 breaks or returns (a cfunc entry over the same env), with `proc()` as the one lazy
-RProc wrapper. Stage 2: `bc2cpp_heap_proc` 98 (was 178), `bc2cpp_yield_foreign` 27, 483 frame-local sites (was 393). Stage 3 (fresh closed build):
+RProc wrapper (the `Bc2cppHeapBlock` sites, 297, are gone). Stage 2: `bc2cpp_heap_proc` 98 (was 178), `bc2cpp_yield_foreign` 27, 483 frame-local sites (was 393):
+`BlockSelf` proves `args[0]` windows and rescue/ensure yielders, a break/return block takes the frame-local form (45 sites), and a callee whose nested block
+outlives the call (`Enumerator.new`, `Hash.new`) gets a heap block. Stage 3 (fresh closed build):
 a callee may forward its block with `&blk` (every forwarding glue passes `bc2cpp_env_block` of it, a direct arm that only calls the block takes it as is):
 `bc2cpp_heap_proc` 96, 485 frame-local sites.
 Remaining heap blocks (96): 16 in the preamble, 59 in step frames (a parked step outlives the C++ frame), 14 by-name sends
