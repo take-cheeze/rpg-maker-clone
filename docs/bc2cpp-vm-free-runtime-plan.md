@@ -57,7 +57,7 @@ together (they share call sites), then 3, then 5.
 ### Phase 0: inventory and checks
 
 Status: done. `scripts/bc2cpp/vm_free_inventory_check.rb <closed-build-dir>` fails above the table's baselines.
-Remaining: register it in CI once `bc2cpp-build` publishes the tree.
+Registered in `bc2cpp-build`.
 
 ### Phase 1: direct dispatch everywhere
 
@@ -135,15 +135,36 @@ Status: done. Fiber, `Enumerator#next` and `Fiber#transfer`/`#raise` run on the 
 
 ### Phase 5: delete the VM
 
-- Remove `vm.c`, `exec_irep`, the call-info stack and the bytecode dispatch from the closed build, and `native_vm.rb`.
-- Remaining: the 16 KB in `vm-cxx.o` (goes with Phases 1 to 3), the 5 `mrb_exec_irep` declarations, 57
-  `mrb_method_search_vm`.
-- Exit: `nm` on the closed `libmruby.a` shows no `mrb_vm_run`, `mrb_exec_irep` or `mrb_funcall` symbols; it links
-  without `vm.c`.
+Status: the interpreter loop is already out (`MRB_VM_FREE`: `mrb_vm_exec` is a 49-byte raise stub), pinned by
+`vm_unreachable_check.rb <build>/closed` (stub size, `vm-cxx.o` text <= 20 KB, who may reference `mrb_vm_run`/`mrb_exec_irep`).
+What is left in `vm-cxx.o` (17 KB) is the frame machine.
+
+Measured with counters in a scratch copy of vm.c (not committed), over 550 host processes (7 scenarios, 543 maps):
+- 0 hits: `mrb_vm_exec`, `mrb_vm_run`, funcall or yield into an irep proc. Nothing runs bytecode.
+- `mrb_exec_irep` 13,247, all `Proc#call` on cfunc procs (its irep branch is unreached). Its 5 text sites are 4 dead `extern`
+  lines in generated code plus the header; the one live caller is `proc.o`.
+- Frame pushes: by method found 142M (98% in `LCF` `read_ber`/`write_ber`/`slow_lshift`/`Array2D#read_row_bytes`), by name
+  2.51M, `yield_with_attr` 3.22M (71% `LCF::Array2D#each`), host `mrb_protect_error` 193K. Callee kind was not recorded.
+- By-name callers (mruby core C): `mrb_equal` 764K, `const_added` 679K and `method_removed` 350K (boot), `hash` 433K,
+  `initialize_copy` 98K; generated: `Array#sort` 11K. The stub raises, so `host_sweep.bash` now also fails on its message.
+
+Remaining, by cost (all frame machinery, no bytecode):
+1. The callinfo stack as the cfunc ABI (`funcall_with_block_m`, `cipush`/`cipop`; `mrb_get_args` reads `ci->stack`): a call
+   path for compiled entries that skips the push. Phase 1/2 owners. High risk.
+2. Boot hooks `const_added`/`method_removed` (1.0M): skip the send when the hook is the default no-op. mruby fork. Low.
+3. `==`/`hash`/`initialize_copy` sends in core C (1.3M): look up once, call the found cfunc. mruby fork. Medium.
+4. `mrb_exec_irep`: drop the 4 dead externs, give `Proc#call` a cfunc-only path. Low.
+
+optcarrot (`tools/optcarrot_probe/compiled_run.rb`) is a separate full-core build, not VM-free: 6 frames start 340 bodies
+(`Array#each` 256, `Hash#each` 38, gem mrblib roots 29, `Integer#step` blocks). On master it does not run (no CI job): the scan
+fails on `OptcarrotProbe` (CONST_RESOLVE), and with it predefined the binary dies "resuming dead fiber", also without counters.
+
+- Exit: `nm` on the closed `libmruby.a` shows no `mrb_vm_run`, `mrb_exec_irep` or `mrb_funcall` symbols; it links without `vm.c`.
 
 ### Phase 6: verify
 
 Full closed build, host sweep, ASan trace host, Fiber checks in CI; green with the VM objects removed from the link.
+Today's gate is the sweep plus `vm_unreachable_check`; linking without `vm.c` waits on item 1.
 
 ## Risks
 
