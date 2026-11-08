@@ -70,8 +70,6 @@ Remaining: register it in CI once `bc2cpp-build` publishes the tree.
 - Remaining for owner calls: a class-id switch needs a table that mruby's mutable method tables (`define_method`,
   `remove_method`, `include`) cannot invalidate, so it waits for the registration-time class table behind the seam, and
   the 2055 other sites keep one lookup on a cache miss.
-- Known interpreter/compiled gaps found by the shapes check (also on master): `public_send` of a private method returns
-  instead of raising, and `super` through an included module from a direct `_impl` call raises NoMethodError.
 - Exit: `mrb_funcall` count is zero; fixture checks and the host sweep pass.
 
 ### Phase 2: C++ blocks and procs
