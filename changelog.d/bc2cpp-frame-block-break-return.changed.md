@@ -1,0 +1,1 @@
+- bc2cpp: a block that breaks or returns (no direct entry) is built in the caller's frame as a `Bc2cppBlock` over its cfunc wrapper, like a plain block, when the callee only calls its block; the `RProc`, `REnv` and env copy are no longer allocated per execution.
