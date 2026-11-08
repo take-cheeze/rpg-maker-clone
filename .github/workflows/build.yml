@@ -785,6 +785,8 @@ jobs:
           # ci:parallel begin 4
           BC2CPP_STATIC_DISPATCH_LISTS="$GITHUB_WORKSPACE/build/bc2cpp-lists/static_dispatch_lists.json" ruby scripts/bc2cpp/class_body_left_ops_check.rb
           ruby scripts/bc2cpp/vm_bytecode_free_check.rb
+          ruby scripts/bc2cpp/vm_free_inventory_check.rb build-closed-bc2cpp/closed
+          ruby scripts/bc2cpp/vm_unreachable_check.rb build-closed-bc2cpp/closed
           ruby scripts/bc2cpp/base_section_check.rb --output build-closed-bc2cpp/base_rbs --jobs 4 build-closed-bc2cpp/closed
           RGSS_MRUBY_BUILD_DIR=build-closed-bc2cpp/host ruby scripts/native/binding_split.rb check --facts "$RUNNER_TEMP/binding-facts"
           # ci:parallel end
@@ -818,7 +820,7 @@ jobs:
         env:
           SKIP_SUBMODULES: >-
             3rd/effekseer 3rd/gflags 3rd/ng-log
-            3rd/inicpp 3rd/optcarrot
+            3rd/inicpp
         run: ./scripts/checkout-submodules.bash
 
       - uses: nixbuild/nix-quick-install-action@v35
@@ -899,6 +901,8 @@ jobs:
           ruby scripts/bc2cpp/step_exceptions_check.rb
           ruby scripts/bc2cpp/step_keywords_check.rb
           ruby scripts/bc2cpp/block_in_step_check.rb
+          ruby scripts/bc2cpp/fiber_iterator_root_check.rb
+          ruby scripts/bc2cpp/optcarrot_probe_scan_check.rb
           ruby scripts/bc2cpp/block_step_layout_check.rb
           ruby scripts/bc2cpp/step_closures_check.rb
           ruby scripts/bc2cpp/ssend_helper_check.rb
