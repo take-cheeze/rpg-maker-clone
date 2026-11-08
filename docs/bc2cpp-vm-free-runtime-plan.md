@@ -70,6 +70,28 @@ Remaining: register it in CI once `bc2cpp-build` publishes the tree.
 - Remaining for owner calls: a class-id switch needs a table that mruby's mutable method tables (`define_method`,
   `remove_method`, `include`) cannot invalidate, so it waits for the registration-time class table behind the seam, and
   the 2055 other sites keep one lookup on a cache miss.
+- Registration-time table, investigated (no code change): a table needs a signal for every method-table write, and
+  mruby 4 has none a build can observe without editing `3rd/mruby`. Writers are `mt_put`/`mt_del`/`include_module_at`
+  (all `static` in `class.c`, so `--wrap` cannot see calls from inside `class.c`: `define_method`, `alias_method`,
+  `undef_method`, `remove_method`, `include`/`prepend`/`extend`, `public`/`private`, `attr_*`, `module_function`);
+  `MRB_USE_METHOD_LOOKUP_HOOK` fires on reads only. Wrapping the Ruby-visible mutators after boot misses C gems that
+  call `mrb_define_method_raw` at run time (`Struct.new`, `Data.define`), so a global epoch would be unsound.
+- What is sound today: `mrb->cache` is the invalidation oracle. mruby clears it per name (define, visibility, remove),
+  wholesale (include, prepend) and per class (free), and the owner-call slot reuses its entry only while the cache holds
+  the same one (`OWNER_CALL_ICACHE`). `owner_lookup_shapes_check.rb` now writes tables after warm-up (`define_method`,
+  `remove_method`, `alias_method`, `undef_method`, include, prepend, extend, visibility, `method_missing`, singleton and
+  core redefinition) and requires compiled == interpreted. Cost: a hit saves about 75 instructions per call against
+  the full lookup and checks (callgrind, `Array#pack` loop, -O2: 2304 vs 2379 per iteration); a table of our own would
+  not beat that hit.
+- Closed world: the engine lint (`rpg2k-closed-world-lint.md`) forbids `define_method`, `alias`, `undef`,
+  `remove_method`, `method_missing`, `eval` and `extend` outside `self`, and the baseline holds none of them, so the
+  engine writes tables only in class bodies at load (`attr_*`, `include`, `public`/`private :x`). A method whose owners
+  are all compiled is a direct call and a runtime redefinition of it is outside the contract.
+  optcarrot `eval`s a generated CPU/PPU core only under its `opt_cpu`/`load_cpu` options (default off; not checked
+  against the probe's settings).
+- To make the table sound upstream: add `uint32_t mt_epoch` to `mrb_state` and increment it in `mc_clear_by_id`,
+  `mrb_method_cache_clear` and `mrb_mc_clear_by_class` (class.c: the three invalidation points already cover every
+  writer), so the seam compares one integer and drops the per-slot cache entry compare. Not applied.
 - Exit: `mrb_funcall` count is zero; fixture checks and the host sweep pass.
 
 ### Phase 2: C++ blocks and procs
