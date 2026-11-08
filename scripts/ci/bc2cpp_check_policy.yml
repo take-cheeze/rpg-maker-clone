@@ -961,6 +961,10 @@ checks:
     tier: fast
     capabilities:
     - closed_build
+  scripts/bc2cpp/frames_only_check.rb:
+    tier: fast
+    capabilities:
+    - closed_build
   scripts/bc2cpp/vm_bytecode_free_check.rb:
     tier: runtime
     capabilities:
