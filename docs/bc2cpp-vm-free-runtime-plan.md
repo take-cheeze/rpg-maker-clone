@@ -96,12 +96,14 @@ Remaining: register it in CI once `bc2cpp-build` publishes the tree.
 
 ### Phase 2: C++ blocks and procs
 
-Status: stage 1 done. `Bc2cppBlock` (`docs/bc2cpp-stack-blocks.md`) is the block as a C++ value: allocation-free in the frame by default
-(it was 3 `calloc`s per execution; ASan and `BC2CPP_STACK_BLOCK_MALLOC` builds still malloc), also for a nested block that yields to the method's block, with `proc()` as the one lazy
-RProc wrapper (the `Bc2cppHeapBlock` sites, 297, are gone). Fresh closed build: `bc2cpp_heap_proc` 178 (escaping
-sites), `bc2cpp_yield_foreign` 27. Remaining: the callee ABI still takes an
-`mrb_value` (so `&blk` forwarding, stores, `break`/`return` through the block, and about 38 yielders `BlockSelf` cannot prove
-for lack of a `GETIDX0` window and rescue reaching definitions keep the heap RProc), and `bc2cpp_owner_call` takes an RProc.
+Status: stages 1 and 2 done. `Bc2cppBlock` (`docs/bc2cpp-stack-blocks.md`) is the block as a C++ value: allocation-free in the frame by default
+(it was 3 `calloc`s per execution; ASan and `BC2CPP_STACK_BLOCK_MALLOC` builds still malloc), also for a nested block that yields to the method's block and for a block that
+breaks or returns (a cfunc entry over the same env), with `proc()` as the one lazy
+RProc wrapper (the `Bc2cppHeapBlock` sites, 297, are gone). Stage 2 (fresh closed build): `bc2cpp_heap_proc` 98 (was 178),
+`bc2cpp_yield_foreign` 27, 483 frame-local sites (was 393): `BlockSelf` now proves `args[0]` windows and rescue/ensure yielders,
+and a break/return block takes the frame-local form (45 sites). A callee whose nested block outlives the call (`Enumerator.new`, `Hash.new`)
+now gets a heap block (a stage 1 use-after-free). Remaining: the callee ABI still takes an
+`mrb_value` (so `&blk` forwarding and stores keep the heap RProc), and `bc2cpp_owner_call` takes an RProc.
 
 - Exit: `mrb_proc_new_cfunc_with_env` is zero; `stack_block_check` and `resumable_variants_check` pass under both
   layouts (`BC2CPP_STACK_BLOCK_STACK` included).
