@@ -180,6 +180,13 @@ end
 MRubyRequire.provide('rbconfig') { defined?(RbConfig) }
 
 # Enumerable#to_set, as CRuby's set library defines it. mruby-set leaves it out (its README lists it as unimplemented).
+# mruby has no Integer#[] (a bit read); bc2cpp's class masks use it. The same body as tools/optcarrot_probe/shim_integer_aref.rb.
+class Integer
+  def [](i)
+    (self >> i) & 1
+  end
+end unless Integer.method_defined?(:[])
+
 module Enumerable
   def to_set(klass = Set, *args, &block)
     klass.new(self, *args, &block)
