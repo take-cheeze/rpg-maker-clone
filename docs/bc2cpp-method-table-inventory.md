@@ -244,7 +244,7 @@ Names that only a non-lookup spelled no longer keep a compiled entry registered,
 
 - The Proc `arity` / `parameters` stand-in is matched in the shape `bc2cpp.rb` now emits, so its `mrb_proc_new` is no bytecode proc again (`PROC_SPEC_STAND_IN_CALL`; the fixture reads the emitter's own text).
 - Core Ruby: a Symbol only given to `attr_*`, or as the name of a `to_enum` on a core `self`, looks nothing up on an engine object; an `alias` / `undef` counts its own operands, not every symbol of the class body (`Integer#step` kept `Game::Battle#step` and its callees).
-- Native sources: `MRB_OPSYM(x)` is an operator and `MRB_IVSYM(x)` an `@ivar`, so a macro applying them to a parameter names no method; the format of `mrb_get_args`, the message of `mrb_sys_fail`, the key of `OPERATOR_SYMBOL` and a `strcmp` operand are not interned; the desktop application (`src/`) is not linked into the closed binary.
+- Native sources: `MRB_OPSYM(x)` is an operator and `MRB_IVSYM(x)` an `@ivar`, so a macro applying them to a parameter names no method; the format of `mrb_get_args`, the key of `OPERATOR_SYMBOL` and a `strcmp` operand are not interned; the desktop application (`src/`) is not linked into the closed binary.
 
 The plain and verify host sweeps (the latter with `BC2CPP_UNREGISTERED_VERIFY=1 METHOD_TABLE=skip`) pass all 543 maps and the scripted scenarios. The closed list grows from 3,465 to 3,726 keys (core ROM 189 to 199, core run-time 196 to 206; open list stays 14) and the closed host's table falls from **1,158 to 877 entries**.
 
