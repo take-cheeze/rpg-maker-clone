@@ -7,13 +7,13 @@ real `RProc` for it every time it ran: `mrb_proc_new_cfunc_with_env`, which
 allocates an `RProc`, an `REnv` and a `malloc`'d copy of the env array.
 
 `STACK_BLOCK` builds that `RProc` and `REnv` in the caller's frame instead
-(`Bc2cppStackBlock`, in the runtime preamble of `tools/bc2cpp/bc2cpp.rb`), over
+(`Bc2cppBlock`, in the runtime preamble of `tools/bc2cpp/bc2cpp.rb`), over
 the env array the site already has. A direct core arm
 (`BLOCK_CORE_DIRECT`, `codegen_block_core_direct.rb`) and a direct call to a
 compiled program method (`direct_call_block`, `codegen_arg_shapes.rb`) pass it
 when the callee only calls its block. The heap `RProc` is built only where the
 code still dispatches by name: the other arms and the by-name else take
-`bc2cpp_blk_heap_N()`, which allocates when that branch runs.
+`bc2cpp_blk_stack_N.proc()`, which allocates when that branch runs.
 
 ## Why the frame-local block is safe
 
@@ -39,14 +39,12 @@ code still dispatches by name: the other arms and the by-name else take
   captured locals, created at the site and still in the GC arena while the call
   runs. A block that yields to the frame's own block (`needs_blk`) is left out:
   that forwarded value is one the heap env existed to root.
-- **A heap env never holds it.** A nested block that captures the method's block
-  (`needs_blk`) builds a heap env, and the arena keeps that heap RProc, and so
-  its env, after the frame has returned. The GC would then mark the dead frame.
-  The env therefore stores `bc2cpp_env_block(M, bc2cpp_blk)`, which copies a red
-  (frame-local) block into a heap RProc with the same entry and env values, and
-  returns a heap block as it is. `stack_block_check.rb` (`use_repeat`) asserts the
-  copy and the behaviour; the RPG2k New Game under ASan reproduced the dangling
-  mark (`LCF::Array2D#each`'s env, `stack[1]`) before the copy.
+- **A heap env never holds it.** A nested block that yields to the method's block (`needs_blk`) is frame-local too when
+  its callee only calls it, and its env holds the method's block as it is. `Bc2cppBlock::proc()` makes the heap wrapper
+  for the arms that may keep the block and for the by-name else, and copies a frame-local block in the env slots
+  (`bc2cpp_env_block`) so the heap env never holds a dead frame. A block built on the heap (no stack form) stores
+  `bc2cpp_env_block(M, bc2cpp_blk)` as before. `stack_block_check.rb` (`use_repeat`) and `block_abi_check.rb` assert
+  both; the RPG2k New Game under ASan reproduced the dangling mark (`LCF::Array2D#each`'s env) before the copy.
 
 ## Coverage
 
@@ -76,13 +74,17 @@ The proof still refuses the callees that pass their block on to another method:
 `Range#each` (to `__upto_endless`), `Array#uniq` (to `uniq!`) and
 `Enumerable#sort_by`.
 
-## One construction site
+## The C++ block (Phase 2, stage 1)
 
-Every heap block a site builds goes through `bc2cpp_heap_proc` (the one `mrb_proc_new_cfunc_with_env` call in each
-generated file, `bc2cpp_env_block`'s copy included). The lazy heap block next to a frame-local one is a
-`Bc2cppHeapBlock` functor (`bc2cpp_blk_heap_N()`), not a lambda. Every VM yield of a proc that is not a compiled block goes
-through `bc2cpp_yield_foreign`. Both are the places Phase 2 replaces; the inventory check counts them
-(`bc2cpp_heap_proc`, `bc2cpp_yield_foreign`).
+`Bc2cppBlock` is the block as a C++ value: the entry and the captured values (the site's env array) in the caller's
+frame, as a red `RProc`/`REnv` pair laid out for `bc2cpp_block_thunk`, so it needs no allocation (it was three `calloc`s
+per execution; ASan builds and `BC2CPP_STACK_BLOCK_MALLOC` keep malloc'd storage so a dangling reference is reported
+with its free site). A callee that only calls its block takes `value()`; a direct-entry yield runs the entry with no VM
+frame. The wrapper is `proc()`: the one place a stack block becomes a heap `RProc`, made where the block may be kept or
+run by name (the by-name else, an arm whose callee passes its block on). Every escaping site still goes through
+`bc2cpp_heap_proc`, and every VM yield of a proc that is not a compiled block through `bc2cpp_yield_foreign`; the
+inventory check counts both. Not yet done: callee signatures still take the block as an `mrb_value` (the `value()` view
+or a heap `RProc`), so a callee that forwards the block by `&blk`, stores it, or breaks through it keeps the heap wrapper.
 
 ## Switch and check
 

@@ -1,0 +1,1 @@
+- The bc2cpp method table no longer keeps an engine method only because a class body defines it with a name string that a generated literal repeats: a definition looks nothing up.
