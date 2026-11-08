@@ -1,3 +1,3 @@
-- **Build:** an opt-in frames-only archive derived from the closed bc2cpp build replaces mruby's `vm.c` with
-  `tools/bc2cpp/runtime/vm_frames.cxx`: native-callee frames, funcall and yield, and no path into bytecode (the host
-  sweep passes with it). The default build is unchanged.
+- **Build:** the closed bc2cpp build no longer links mruby's `vm.c`; `tools/bc2cpp/runtime/vm_frames.cxx` provides
+  the native-callee frames, funcall and yield, with no bytecode interpreter entry (`mrb_vm_exec` and nine more
+  symbols have no definition). Other build targets keep `vm.c`.

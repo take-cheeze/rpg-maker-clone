@@ -781,12 +781,10 @@ jobs:
         timeout-minutes: 15
         run: |
           unset LD
-          # The frames-only archive (vm.c replaced, docs/bc2cpp-vm-free-runtime-plan.md Phase 5) is derived from the build above.
-          scripts/bc2cpp/frames_only_archive.bash build-closed-bc2cpp build-closed-frames
           ruby scripts/ci/timed_checks.rb > "$RUNNER_TEMP/bc2cpp-closed-checks.sh" <<'CHECKS'
           # ci:parallel begin 4
           BC2CPP_STATIC_DISPATCH_LISTS="$GITHUB_WORKSPACE/build/bc2cpp-lists/static_dispatch_lists.json" ruby scripts/bc2cpp/class_body_left_ops_check.rb
-          ruby scripts/bc2cpp/frames_only_check.rb build-closed-frames/closed build-closed-bc2cpp/closed
+          ruby scripts/bc2cpp/frames_only_check.rb build-closed-bc2cpp/closed
           ruby scripts/bc2cpp/vm_bytecode_free_check.rb
           ruby scripts/bc2cpp/vm_free_inventory_check.rb build-closed-bc2cpp/closed
           ruby scripts/bc2cpp/vm_unreachable_check.rb build-closed-bc2cpp/closed
@@ -1191,13 +1189,6 @@ jobs:
       - name: Play the closed build's scenarios and every map
         timeout-minutes: 15
         run: env -u LD scripts/bc2cpp/host_sweep.bash "$GITHUB_WORKSPACE/build-closed-sweep"
-
-      # The same sweep on the closed build with vm.c replaced by tools/bc2cpp/runtime/vm_frames.cxx (no path into bytecode).
-      - name: Play the frames-only runtime's scenarios and every map
-        timeout-minutes: 20
-        run: |
-          env -u LD scripts/bc2cpp/frames_only_archive.bash "$GITHUB_WORKSPACE/build-closed-sweep" "$GITHUB_WORKSPACE/build-closed-frames"
-          env -u LD scripts/bc2cpp/host_sweep.bash "$GITHUB_WORKSPACE/build-closed-frames"
 
       - name: Build the closed-world mruby in verify mode
         timeout-minutes: 45

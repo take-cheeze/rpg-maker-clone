@@ -152,12 +152,14 @@ Status: done. Fiber, `Enumerator#next` and `Fiber#transfer`/`#raise` run on the 
 
 ### Phase 5: delete the VM
 
-Status: the interpreter loop is out (`MRB_VM_FREE`: `mrb_vm_exec` is a raise stub; `vm_unreachable_check.rb`). `vm-cxx.o` (16.0 KB
-text) is the frame machine left. `tools/bc2cpp/runtime/vm_frames.cxx` replaces it in a derived archive (`frames_only_archive.bash`,
-`frames_only_check.rb`; opt-in, default build unchanged): vm.c's frames, funcall, yield, `mrb_protect_error` and ci accessors for
-native callees (11.5 KB; 12.9 hardened), plus a fast path in `mrb_funcall_with_method`. Every irep path raises "bytecode interpreter is not built
-in (frames-only runtime)", which `host_sweep` fails on. `mrb_vm_exec`/`run`/`top_run`/`load_proc`/`yield_cont`/`object_exec`/`stack_extend` and three ci setters have no definition (the
-link fails if something starts to use them); `mrb_exec_irep` stays for `proc.o`. Unsupported: irep procs, `send`/`eval` in a `CINFO_NONE` frame.
+Status: done for the link. The closed build no longer links vm.c: `NativeVM.configure` (`tools/bc2cpp/native_vm_build.rb`) drops
+`vm-cxx.o` from `libmruby_core_objs` and compiles `tools/bc2cpp/runtime/vm_frames.cxx` (11.5 KB text; was 16.0 KB) in its place.
+It is vm.c's frames, funcall, yield, `mrb_protect_error` and ci accessors for native callees, plus a fast path in
+`mrb_funcall_with_method`. `mrb_vm_exec`/`run`/`top_run`/`load_proc`/`yield_cont`/`object_exec`/`stack_extend` and three ci setters
+have no definition (nothing in the link used them; a new caller fails to link). `mrb_exec_irep` stays for `proc.o` and raises
+"bytecode interpreter is not built in (frames-only runtime)" for an irep proc, as do funcall/yield on one and `send`/`eval` in a
+`CINFO_NONE` frame; `host_sweep` fails on that message. Pinned by `frames_only_check.rb` and `vm_unreachable_check.rb`.
+Other targets (wasm, Maix, Android, wio, host, fixture libraries) keep vm.c.
 
 Measured with counters in a scratch vm.c (not committed), `4465dae`, 550 host processes (7 scenarios, 543 maps), callee by symbol:
 
@@ -173,24 +175,22 @@ Measured with counters in a scratch vm.c (not committed), `4465dae`, 550 host pr
 Irep procs, `method_missing` and `mrb_protect_error`: 0. Of `vm-cxx.o`'s 31 functions 21 are referenced by the link (core C,
 `gem_init.o`, generated code), 10 by nothing (`ld --cref`), now undefined; the 21 are cfunc-only reimplementable.
 
-Verdict: feasible. The sweep passes without vm.c (plain, and `-fstack-protector-all` on the replacement and host). The frame ABI
+The sweep passes without vm.c (plain, and `-fstack-protector-all` on the whole build). The frame ABI
 stays (`mrb_get_args` reads `ci->stack`, gc marks ci), so this removes code, not the push: a map run of 292K pushes costs 1592.0M
 instructions (callgrind), 1593.1M with the verbatim port, 1550.6M with the fast path (-2.6%, -142 per push). 94.6% of the 142M go
 to those eight natives, all from LCF's byte readers; calling them directly from compiled code removes the push.
 
 Remaining: (1) direct calls to the eight natives; (2) boot hooks `const_added`/`method_removed` (1.0M): skip the default no-op;
 (3) `==`/`hash`/`initialize_copy` in core C (1.3M): look up once; (4) `Proc#call` from interpreted mrblib on a non-thunk fallback block (1,100 `exec_irep`, `RPG2k#read_ini_title`).
-The port of vm.c must follow fork changes to `cipop`/`protect_error`; the sweep guards it. optcarrot
+The copy of vm.c's frame code must follow fork changes to `cipop`/`protect_error`; the sweep guards it. optcarrot
 (`tools/optcarrot_probe/compiled_run.rb`) is a separate full-core build, not VM-free, and does not run on master.
 
 - Exit: `nm` on the closed `libmruby.a` shows no `mrb_vm_run`, `mrb_exec_irep` or `mrb_funcall` symbols; it links without `vm.c`.
 
 ### Phase 6: verify
 
-Full closed build, host sweep, ASan trace host, Fiber checks in CI; green with the VM objects removed from the link. Today: the
-sweep plus `vm_unreachable_check`, and the frames-only archive (no vm.c) built, checked and swept in `bc2cpp-build`/`bc2cpp-sweep`.
-As the default: mruby has no exclusion knob, but `NativeVM.configure` (closed only) can drop `vm-cxx.o` from `libmruby_core_objs` and
-add a `build.cxx.run` task for `vm_frames.cxx` (~12 lines, not applied: unbuilt). Other targets keep vm.c; `vm_unreachable_check` then reads `vm_frames.o`.
+Full closed build, host sweep, ASan trace host, Fiber checks in CI; green with the VM objects removed from the link. Today every
+closed job runs without vm.c; the remaining exit is the direct calls above (the frame ABI itself stays).
 
 ## Risks
 
