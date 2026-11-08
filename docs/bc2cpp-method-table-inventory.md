@@ -237,3 +237,13 @@ A native macro that stringifies a parameter only into an error message (`#val " 
 The closed (VM-free) proof no longer treats mruby's implicit protocol names as dynamic: `ALWAYS_DYNAMIC` (`tools/bc2cpp/static_dispatch_registrations.rb`) is the open build's backstop only. A closed-build name stays kept when the proof reads a by-name send, a presym, a literal in generated code, or a bytecode send, which is what the scans already cover. Against the list without this change, the closed proof removes 10 more entries (the four `_dump`/`_load` pairs on `RGSS::Color`, `Rect`, `Table` and `Tone`, plus `Game::Party#unequip_to_bag` and `RGSS::ErrorReport.singleton#puts_text`), the core ROM exclusion adds six (`Hash#to_hash`, `Integer#to_int`, `String#to_str`, `Kernel#clone`, `Kernel#send`, `Module#class_eval`) and the core left-out list adds `Hash#each_pair`.
 
 The closed host table is now **1,143 entries**. Measured against the Marshal-only variant of this change on the same base it is 1,150, and the proof lists predict 9 fewer entries, so 1,141 was expected; the 2-entry gap is not yet explained. The plain build and the UNREGISTERED_VERIFY build both pass New Game, battle, menu, three saves, Continue and all 543 maps.
+
+## Non-lookup evidence
+
+Names that only a non-lookup spelled no longer keep a compiled entry registered, on the closed host (base `80dda2f`):
+
+- The Proc `arity` / `parameters` stand-in is matched in the shape `bc2cpp.rb` now emits, so its `mrb_proc_new` is no bytecode proc again (`PROC_SPEC_STAND_IN_CALL`; the fixture reads the emitter's own text).
+- Core Ruby: a Symbol only given to `attr_*`, or as the name of a `to_enum` on a core `self`, looks nothing up on an engine object; an `alias` / `undef` counts its own operands, not every symbol of the class body (`Integer#step` kept `Game::Battle#step` and its callees).
+- Native sources: `MRB_OPSYM(x)` is an operator and `MRB_IVSYM(x)` an `@ivar`, so a macro applying them to a parameter names no method; the format of `mrb_get_args`, the message of `mrb_sys_fail`, the key of `OPERATOR_SYMBOL` and a `strcmp` operand are not interned; the desktop application (`src/`) is not linked into the closed binary.
+
+The plain and verify host sweeps (the latter with `BC2CPP_UNREGISTERED_VERIFY=1 METHOD_TABLE=skip`) pass all 543 maps and the scripted scenarios. The closed list grows from 3,465 to 3,726 keys (core ROM 189 to 199, core run-time 196 to 206; open list stays 14) and the closed host's table falls from **1,158 to 877 entries**.
