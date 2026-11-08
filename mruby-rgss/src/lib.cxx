@@ -8853,10 +8853,22 @@ mrb_value zlib_inflate_direct(mrb_state* M,
 }  // namespace rgss
 // END native-binding-split
 
+#ifdef MRB_VM_FREE
+// Closed (VM-free) build: Class.new is absent. It raises NoMethodError, as an undefined method does.
+static mrb_value class_new_absent(mrb_state* M, mrb_value self) {
+  (void)self;
+  mrb_raise(M, E_NOMETHOD_ERROR, "undefined method 'new' for class Class");
+  return mrb_nil_value();
+}
+#endif
+
 extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   // Capture the core sort before mrblib installs the comparator-normalizing
   // wrapper.
   mrb_define_alias(M, M->array_class, "_rgss_native_sort!", "sort!");
+#ifdef MRB_VM_FREE
+  mrb_define_class_method(M, M->class_class, "new", class_new_absent, MRB_ARGS_ANY());
+#endif
   RClass* m = mrb_define_module(M, "RGSS");
   mrb_define_module_function(M, m, "to_nfd", to_nfd, MRB_ARGS_REQ(1));
   mrb_define_module_function(M, m, "default_font_path", default_font_path_m,
