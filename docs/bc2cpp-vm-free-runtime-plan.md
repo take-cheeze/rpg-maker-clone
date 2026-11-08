@@ -158,11 +158,12 @@ What is left in `vm-cxx.o` (17 KB) is the frame machine.
 
 Measured with counters in a scratch copy of vm.c (not committed), over 550 host processes (7 scenarios, 543 maps):
 - 0 hits: `mrb_vm_exec`, `mrb_vm_run`, funcall or yield into an irep proc. Nothing runs bytecode.
-- `mrb_exec_irep` 13,247, all `Proc#call` on cfunc procs (its irep branch is unreached); the one live caller is `proc.o`.
-  They are `bc2cpp_owner_call` sites for `block.call(...)` (`Enumerable#inject`, `each_with_index`, `Array#delete_if`) on a
-  `bc2cpp_block_thunk` proc: `bc2cpp_cfunc_proc_call_p` tests `!MRB_METHOD_CFUNC_P`, left over from when `Proc#call` was bytecode, so
-  it is false for the cfunc `proc_call` and the yield shortcut never fires there. Not changed: the fix needs the builtin's
-  identity (a Ruby-level override would pass the old test).
+- `mrb_exec_irep` 13,163 in the same sweep, all `Proc#call` on cfunc procs (its irep branch is unreached): 7,938 are
+  `block.call(...)` owner-call sites (`Enumerable#inject` (84% in a battle run), `each_with_index`, `each_with_object`, `find`, `sort_by`) on another
+  gem's `bc2cpp_block_thunk` proc. `bc2cpp_cfunc_proc_call_p` tested `!MRB_METHOD_CFUNC_P` (left over from bytecode `Proc#call`),
+  so the yield shortcut never fired, and a Ruby-level `Proc#call` override was bypassed when it did. It now compares the found
+  method with the `proc_call` cfunc captured at registration, over every gem's thunk (`bc2cpp_proc_call_slots`): 5,227 left, all
+  once per process (4,127 strict `class_lambda` procs, 1,100 a non-thunk fallback block in `IO#each`).
 - Frame pushes: by method found 142M (98% in `LCF` `read_ber`/`write_ber`/`slow_lshift`/`Array2D#read_row_bytes`), by name
   2.51M, `yield_with_attr` 3.22M (71% `LCF::Array2D#each`), host `mrb_protect_error` 193K (now a typed catch). Callee kind was not recorded.
 - By-name callers (mruby core C): `mrb_equal` 764K, `const_added` 679K and `method_removed` 350K (boot), `hash` 433K,
@@ -173,7 +174,7 @@ Remaining, by cost (all frame machinery, no bytecode):
    path for compiled entries that skips the push. Phase 1/2 owners. High risk.
 2. Boot hooks `const_added`/`method_removed` (1.0M): skip the send when the hook is the default no-op. mruby fork. Low.
 3. `==`/`hash`/`initialize_copy` sends in core C (1.3M): look up once, call the found cfunc. mruby fork. Medium.
-4. `Proc#call` on a plain Proc to the block entry: fix `bc2cpp_cfunc_proc_call_p`. Low.
+4. `Proc#call` on a strict (lambda) compiled block and on a non-thunk fallback block: the 5,227 above. Low.
 
 optcarrot (`tools/optcarrot_probe/compiled_run.rb`) is a separate full-core build, not VM-free: 6 frames start 340 bodies
 (`Array#each` 256, `Hash#each` 38, gem mrblib roots 29, `Integer#step` blocks). On master it does not run (no CI job): the scan
