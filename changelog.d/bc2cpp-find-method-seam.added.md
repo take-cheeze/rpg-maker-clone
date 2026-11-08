@@ -1,0 +1,1 @@
+- bc2cpp: every method-table lookup in generated code goes through one `bc2cpp_find_method` seam (57 `mrb_method_search_vm` text sites to 5), and an owner-call site no longer carries a 256-byte inline owner list (allocated on the first miss), which shrinks the closed build's data.

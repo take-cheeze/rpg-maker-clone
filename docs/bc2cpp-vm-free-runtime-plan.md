@@ -23,25 +23,27 @@ count, so suffixed names are included). These are the script's baselines.
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall*` | 480 | breakdown below |
-| `bc2cpp_owner_call*` (owner-listed dispatch) | 2208 | already direct; becomes a plain switch |
-| `mrb_proc_new_cfunc_with_env*` (block procs) | 471 | C++ block objects with captured env |
+| `mrb_funcall*` | 243 | breakdown below |
+| `bc2cpp_owner_call*` (owner-listed dispatch) | 2229 | already direct; table-driven later, see Phase 1 |
+| `mrb_proc_new_cfunc_with_env*` (block procs) | 5 | C++ block objects with captured env |
 | `mrb_protect*` (exception boundaries) | 18 | host entry boundary (`*_entry.h`), `gem_init.c`, mruby headers |
-| `mrb_gc_protect*` (arena roots) | 16 | one `bc2cpp_root` per unit, `*_entry.h`, mruby headers |
-| `mrb_yield*` | 33 | direct block invocation |
-| `mrb_method_search_vm*` | 57 | static method tables |
+| `mrb_gc_protect*` (arena roots) | 20 | one `bc2cpp_root` per unit, `*_entry.h`, mruby headers |
+| `mrb_yield*` | 14 | direct block invocation |
+| `mrb_method_search_vm*` | 5 | one seam (`bc2cpp_find_method`); static tables go behind it |
 | `mrb_exec_irep*` | 5 | removed with the frame machine |
 | `bc2cpp_resumable_exec*` | 0 | done |
 
 `mrb_funcall` breakdown (the rest is in headers):
 - Done (354 sites): the bigint `==` arm of every `!=` site (`codegen_native_send.rb`, `MRB_USE_BIGINT`) calls the shared
   `bc2cpp_bigint_eq` (`mrb_bint_cmp`), with no by-name send.
-- ~170: class-body self-sends (`include`, `attr_*`), run once at load. One `bc2cpp_ssend` helper call each; the callee is
-  mruby's own C `Module#attr_*`, which has no public entry, so the by-name send inside the helper stays.
-- ~70: core `x.call(*args)` now call `bc2cpp_proc_call_argv`: a plain Proc is yielded to, any other receiver is sent
-  `call` by name inside the helper.
-- 12: error-path `puts` (`bc2cpp.rb` error handler).
-- The rest: Fiber and `each` helpers.
+- Done (172 sites): class-body `include` and `attr_*` call `bc2cpp_mod_include` (`mrb_include_module`) and `bc2cpp_mod_attr`
+  (mruby's own ivar cfuncs via `mrb_define_method_raw`), no by-name send. Only the `included` hook is still sent.
+- Done: core `x.call(*args)` (`bc2cpp_proc_call_argv`) looks `call` up once and runs the found method (visibility as
+  OP_SEND, a missing method through method_missing); the 4 error-path `puts` are one `bc2cpp_stderr_report` (a direct IO
+  write when `$stderr#puts` is the gem's, else one by-name `puts`); `Fiber.yield` from C is one `bc2cpp_fiber_yield_c`.
+- Measured about 243 (about 100 are comments): what is left is the frame-pushing primitive (`mrb_funcall_with_method`,
+  shared by owner calls), one by-name helper per unknown receiver (`bc2cpp_funcall_argv`, `bc2cpp_ssend`, the Proc
+  `arity`/`parameters` stand-in, `exc.result`, dynamic `send`), a few block-carrying `each`/`map` sends and 3 entry stubs.
 
 ## Phases
 
@@ -57,17 +59,29 @@ Remaining: register it in CI once `bc2cpp-build` publishes the tree.
 
 - Replace every `mrb_funcall` with the owner-listed direct call or a per-class dispatch switch (unknown class: C++
   `NoMethodError`). Remaining: all of the breakdown above.
+- Lookup seam (done): every method-table lookup in generated code and in the Fiber runtime calls `bc2cpp_find_method`
+  (the preamble, `bc2cpp.rb`); `mrb_method_search_vm` text sites 57 to 5 (one per unit, plus mruby's header). Lookup
+  semantics are unchanged (singleton, include/prepend order, `method_missing`, visibility, undef), so
+  `owner_lookup_shapes_check.rb` runs them interpreted and compiled.
+- Owner calls (2229 text matches): 168 carry `BC2CPP_OWNERS_D` rows (a compiled entry
+  called with no table search); the rest dispatch through the lookup and the per-site (class, argc) cache, which hits
+  without any lookup. A site's owner set shrank from 336 to 88 bytes (the 32-slot seen list is allocated on the first
+  miss): the closed build's generated `.data` is 458 KB, 396 KB less than before.
+- Remaining for owner calls: a class-id switch needs a table that mruby's mutable method tables (`define_method`,
+  `remove_method`, `include`) cannot invalidate, so it waits for the registration-time class table behind the seam, and
+  the 2055 other sites keep one lookup on a cache miss.
+- Known interpreter/compiled gaps found by the shapes check (also on master): `public_send` of a private method returns
+  instead of raising, and `super` through an included module from a direct `_impl` call raises NoMethodError.
 - Exit: `mrb_funcall` count is zero; fixture checks and the host sweep pass.
 
 ### Phase 2: C++ blocks and procs
 
-Status: partly done. Block construction and the foreign-proc yield each have one site (`bc2cpp_heap_proc`,
-`bc2cpp_yield_foreign`; `docs/bc2cpp-stack-blocks.md`), and 394 sites pass a frame-local block with no allocation. The closed
-build's text counts: `mrb_proc_new_cfunc_with_env` 470 to 4, `mrb_yield` 27 to 8; the inventory check now also counts the
-two helpers (166 and 27). What remains is the ABI: a compiled callee takes its block as an `mrb_value` RProc, so the 297
-by-name else arms (`Bc2cppHeapBlock`) and about 130 sites that pass an escaping block (callee stores or forwards it, `break`
-or `return` in the body, `&blk` forwarding, `dyn_call`) still allocate. Next: a C++ block value (entry plus env) that the callee
-signatures take instead of `mrb_value`, with the RProc wrapper made only where the block is stored.
+Status: stage 1 done. `Bc2cppBlock` (`docs/bc2cpp-stack-blocks.md`) is the block as a C++ value: allocation-free in the frame by default
+(it was 3 `calloc`s per execution; ASan and `BC2CPP_STACK_BLOCK_MALLOC` builds still malloc), also for a nested block that yields to the method's block, with `proc()` as the one lazy
+RProc wrapper (the `Bc2cppHeapBlock` sites, 297, are gone). Fresh closed build: `bc2cpp_heap_proc` 178 (escaping
+sites), `bc2cpp_yield_foreign` 27. Remaining: the callee ABI still takes an
+`mrb_value` (so `&blk` forwarding, stores, `break`/`return` through the block, and about 38 yielders `BlockSelf` cannot prove
+for lack of a `GETIDX0` window and rescue reaching definitions keep the heap RProc), and `bc2cpp_owner_call` takes an RProc.
 
 - Exit: `mrb_proc_new_cfunc_with_env` is zero; `stack_block_check` and `resumable_variants_check` pass under both
   layouts (`BC2CPP_STACK_BLOCK_STACK` included).
