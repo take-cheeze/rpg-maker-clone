@@ -54,7 +54,12 @@ registers (`ARRAY`, `ARRAY2`, `ARYPUSH`, `HASH`, `HASHADD`, `ARYCAT`, `HASHCAT`,
 `STRCAT`, `ARYSPLAT`). A send reads its receiver, then one Array for a splat or
 its positional arguments, then its keywords (one Hash for `**`), then its block.
 `scripts/bc2cpp/plain_yielder_check.rb` holds the accepting and the refusing
-cases for each shape.
+cases for each shape. `GETIDX0` reads only its receiver (`args[0]`), and `RESCUE`
+and `RAISEIF` read the exception and class registers. A callee that yields inside
+a `rescue` or `ensure` is proven too: `reaching_definitions(handler_ops: true)`
+lets the walk cross a handler's `EXCEPT` and `RESCUE` as vm.c runs them, and a
+`RAISEIF` that falls through proves its register nil, so the handler edges into
+the `EXCEPT` that stored it (the exception) are not followed.
 
 Closed world (`scripts/bc2cpp/closed_build.bash`, all four compiled gems):
 
