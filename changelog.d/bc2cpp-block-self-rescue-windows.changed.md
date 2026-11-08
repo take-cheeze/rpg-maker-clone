@@ -1,0 +1,1 @@
+- bc2cpp: `BlockSelf` (the plain-yielder proof behind frame-local blocks) reads `args[0]` (`GETIDX0`), `RESCUE` and `RAISEIF` with their exact registers and crosses a callee's `rescue`/`ensure`, so `Enumerable#inject`, `IO.open` and the `page_field` style guards now take a frame-local block instead of a heap `RProc`.

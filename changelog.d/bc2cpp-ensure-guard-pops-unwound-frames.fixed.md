@@ -1,0 +1,1 @@
+- bc2cpp: an `ensure` guard pops the call frames a C++ unwind left before it runs its body, so a frame-local cfunc block (a block that breaks or returns) that a dead VM frame still named is never read; `Dir`/`IO.open` style ensure bodies raised `NoMemoryError` and stack-smashing aborts in hardened (nix) builds, and the host sweep failed 270 of 543 maps.

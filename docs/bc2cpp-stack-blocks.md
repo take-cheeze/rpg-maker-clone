@@ -21,10 +21,19 @@ code still dispatches by name: the other arms and the by-name else take
   (`tools/bc2cpp/block_self.rb`) proves that the callee, and the blocks nested in
   it, only test, copy, `call` or `yield` the block, and never pass it as an
   argument or a block, return it, store it, or forward it with `super`.
-- **The VM never sees it.** In a compiled body, core or program, `block.call`
-  and `yield` go to `bc2cpp_yield_argv`, which runs a non-strict
-  `bc2cpp_block_thunk` proc through its direct entry. A nested block of the
-  callee reaches it only through a captured slot, and calls it the same way.
+- **The VM sees it only through a cfunc block.** In a compiled body, core or
+  program, `block.call` and `yield` go to `bc2cpp_yield_argv`, which runs a
+  non-strict `bc2cpp_block_thunk` proc through its direct entry. A block that
+  breaks or returns has no direct entry: it is the same red `RProc` over its
+  cfunc wrapper (`Bc2cppBlock(M, fn, len, env)`), and `bc2cpp_yield_foreign`
+  runs it in a VM cfunc frame for the length of the call, as it does the heap
+  one. A nested block of the callee reaches the block only through a captured
+  slot, and calls it the same way.
+- **A kept nested block means a heap block.** `keeps_captured_block?`
+  (`codegen_block_core_direct.rb`): a callee with a nested block whose registers
+  are boxed into a heap cells Array (`Enumerator.new`, `Hash.new`) or copied for
+  a Fiber body gets the heap block, because the cells would hold the dead
+  frame-local one. `block_abi_check.rb` has `kept_enum` and `kept_hash`.
 - **The callee's nested blocks cannot keep it either.** A nested block that
   holds the method's block (a `yield` in it, or a captured `&b`) is compiled
   only when its own send is on the synchronous list or proven not to keep it
@@ -54,7 +63,12 @@ registers (`ARRAY`, `ARRAY2`, `ARYPUSH`, `HASH`, `HASHADD`, `ARYCAT`, `HASHCAT`,
 `STRCAT`, `ARYSPLAT`). A send reads its receiver, then one Array for a splat or
 its positional arguments, then its keywords (one Hash for `**`), then its block.
 `scripts/bc2cpp/plain_yielder_check.rb` holds the accepting and the refusing
-cases for each shape.
+cases for each shape. `GETIDX0` reads only its receiver (`args[0]`), and `RESCUE`
+and `RAISEIF` read the exception and class registers. A callee that yields inside
+a `rescue` or `ensure` is proven too: `reaching_definitions(handler_ops: true)`
+lets the walk cross a handler's `EXCEPT` and `RESCUE` as vm.c runs them, and a
+`RAISEIF` that falls through proves its register nil, so the handler edges into
+the `EXCEPT` that stored it (the exception) are not followed.
 
 Closed world (`scripts/bc2cpp/closed_build.bash`, all four compiled gems):
 
@@ -84,7 +98,7 @@ frame. The wrapper is `proc()`: the one place a stack block becomes a heap `RPro
 run by name (the by-name else, an arm whose callee passes its block on). Every escaping site still goes through
 `bc2cpp_heap_proc`, and every VM yield of a proc that is not a compiled block through `bc2cpp_yield_foreign`; the
 inventory check counts both. Not yet done: callee signatures still take the block as an `mrb_value` (the `value()` view
-or a heap `RProc`), so a callee that forwards the block by `&blk`, stores it, or breaks through it keeps the heap wrapper.
+or a heap `RProc`), so a callee that forwards the block by `&blk` or stores it keeps the heap wrapper.
 
 ## Switch and check
 
