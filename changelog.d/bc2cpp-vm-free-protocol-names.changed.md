@@ -1,0 +1,1 @@
+- The VM-free closed build no longer keeps mruby's implicit protocol method names (`initialize`, `inspect`, `to_s`, `send`, `clone`, `to_str`, the Marshal callbacks, and others) in its method table unless the program looks them up. The open build keeps the full list. Eleven more entries leave the closed table and six more core entries leave the core method definitions.

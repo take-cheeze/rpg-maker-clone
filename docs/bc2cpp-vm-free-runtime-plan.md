@@ -162,8 +162,10 @@ Measured with counters in a scratch copy of vm.c (not committed), over 550 host 
   `block.call(...)` owner-call sites (`Enumerable#inject` (84% in a battle run), `each_with_index`, `each_with_object`, `find`, `sort_by`) on another
   gem's `bc2cpp_block_thunk` proc. `bc2cpp_cfunc_proc_call_p` tested `!MRB_METHOD_CFUNC_P` (left over from bytecode `Proc#call`),
   so the yield shortcut never fired, and a Ruby-level `Proc#call` override was bypassed when it did. It now compares the found
-  method with the `proc_call` cfunc captured at registration, over every gem's thunk (`bc2cpp_proc_call_slots`): 5,227 left, all
-  once per process (4,127 strict `class_lambda` procs, 1,100 a non-thunk fallback block in `IO#each`).
+  method with the `proc_call` cfunc captured at registration, over every gem's thunk (`bc2cpp_proc_call_slots`): 5,239 left (4,139
+  strict class-body lambdas, 1,100 a non-thunk fallback block in `IO#each`). A class-body free lambda is now a thunk over a direct
+  entry that takes the strict flag, and `bc2cpp_yield_argv` passes it for any compiled block: 1,100 left, two per process, the
+  `RPG2k#read_ini_title` block, which returns and is called by the interpreted `IO#each_line`.
 - Frame pushes: by method found 142M (98% in `LCF` `read_ber`/`write_ber`/`slow_lshift`/`Array2D#read_row_bytes`), by name
   2.51M, `yield_with_attr` 3.22M (71% `LCF::Array2D#each`), host `mrb_protect_error` 193K (now a typed catch). Callee kind was not recorded.
 - By-name callers (mruby core C): `mrb_equal` 764K, `const_added` 679K and `method_removed` 350K (boot), `hash` 433K,
@@ -174,7 +176,7 @@ Remaining, by cost (all frame machinery, no bytecode):
    path for compiled entries that skips the push. Phase 1/2 owners. High risk.
 2. Boot hooks `const_added`/`method_removed` (1.0M): skip the send when the hook is the default no-op. mruby fork. Low.
 3. `==`/`hash`/`initialize_copy` sends in core C (1.3M): look up once, call the found cfunc. mruby fork. Medium.
-4. `Proc#call` on a strict (lambda) compiled block and on a non-thunk fallback block: the 5,227 above. Low.
+4. `Proc#call` from interpreted mrblib on a non-thunk fallback block (a block that returns or breaks): the 1,100 above. Needs the mrblib iterator compiled. Low.
 
 optcarrot (`tools/optcarrot_probe/compiled_run.rb`) is a separate full-core build, not VM-free: 6 frames start 340 bodies
 (`Array#each` 256, `Hash#each` 38, gem mrblib roots 29, `Integer#step` blocks). On master it does not run (no CI job): the scan
