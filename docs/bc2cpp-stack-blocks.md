@@ -84,9 +84,8 @@ By callee: `Array#each` 142, `Hash#each` 127, `Enumerable#collect` 118,
 `Enumerable#reject` 8, `all?` 8, `each_with_object` 5, `Hash#reject` 4,
 `Enumerable#uniq` 4, and a few more.
 
-The proof still refuses the callees that pass their block on to another method:
-`Range#each` (to `__upto_endless`), `Array#uniq` (to `uniq!`) and
-`Enumerable#sort_by`.
+The proof still refuses the callees that hand their block to anything but a `&blk` send, and those
+that read it as an argument, a receiver other than `call`, or through `super`.
 
 ## The C++ block (Phase 2, stage 1)
 
@@ -97,8 +96,18 @@ with its free site). A callee that only calls its block takes `value()`; a direc
 frame. The wrapper is `proc()`: the one place a stack block becomes a heap `RProc`, made where the block may be kept or
 run by name (the by-name else, an arm whose callee passes its block on). Every escaping site still goes through
 `bc2cpp_heap_proc`, and every VM yield of a proc that is not a compiled block through `bc2cpp_yield_foreign`; the
-inventory check counts both. Not yet done: callee signatures still take the block as an `mrb_value` (the `value()` view
-or a heap `RProc`), so a callee that forwards the block by `&blk` or stores it keeps the heap wrapper.
+inventory check counts both. Callee signatures still take the block as an `mrb_value` (the `value()` view or a heap `RProc`), so a callee that stores
+its block keeps the heap wrapper.
+
+## Forwarding with `&blk` (Phase 2, stage 3)
+
+A callee may pass its block on with `&blk`: `BlockSelf.plain_yielder_why(..., forwards:)` takes the send's block register
+when `explicit_block_forward?` vouches for it (`codegen_block_fallback.rb`). Every glue that reads `region[:blk_reg]`
+(direct, by-name, keyword, splat, resumable) hands the callee `bc2cpp_env_block(M, reg)`: a frame-local block is copied to
+the heap there, a heap one passes through. A direct arm whose callee only calls its block takes the register as it is.
+A forwarding send the glue does not recognize is an unclaimed SENDB (`#error`), so that callee is not compiled and no
+frame-local block reaches it. `block_abi_check.rb` runs the shapes interpreted and compiled, and asserts that no
+forwarding send hands the VM a bare block register; `plain_yielder_check.rb` holds the accepting and refusing reads.
 
 ## Switch and check
 
