@@ -1,0 +1,1 @@
+- The bc2cpp method table no longer keeps the blocks of compiled methods as runnable bytecode because of the Proc#arity stand-in.
