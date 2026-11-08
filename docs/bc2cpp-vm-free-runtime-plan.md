@@ -23,8 +23,9 @@ count, so suffixed names are included). These are the script's baselines.
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall*` | 101 | breakdown below |
-| `bc2cpp_owner_call*` (owner-listed dispatch) | 2253 | already direct; table-driven later, see Phase 1 |
+| `mrb_funcall*` | 99 | breakdown below |
+| `bc2cpp_funcall_argv`, `_ssend`, `_funcall_kw` (by-name helpers) | 60 | helper copies per unit; no keyword site exists |
+| `bc2cpp_owner_call*` (owner-listed dispatch) | 2277 | already direct; table-driven later, see Phase 1 |
 | `mrb_proc_new_cfunc_with_env*` (block procs) | 5 | C++ block objects with captured env |
 | `mrb_protect*` (exception boundaries) | 10 | `gem_init.c`, mruby headers (the host entry boundary is a typed catch) |
 | `mrb_gc_protect*` (arena roots) | 20 | one `bc2cpp_root` per unit, `*_entry.h`, mruby headers |
@@ -44,10 +45,19 @@ count, so suffixed names are included). These are the script's baselines.
 - Done: the Proc `arity`/`parameters` stand-in calls `mrb_proc_arity` and the original `parameters` cfunc directly, the
   inlined `loop` and the no-method path send through `bc2cpp_funcall_argv`, `mrb_funcall_with_method` is declared once, and
   generated per-site notes say "by-name send" (90 of the old 243 were those notes).
-- Measured 101 (243 before; 13 are in mruby's own headers): what is left is the
-  frame-pushing primitive (`mrb_funcall_with_method`, 40, shared by owner calls and dynamic `send`), the by-name helpers
-  (`bc2cpp_funcall_argv`, `mrb_funcall_with_block`/`_send` for block and keyword sends), the `$stderr#puts` fallback and
-  3 entry-stub fallbacks (a receiver that is not the exact owner needs the generic send).
+- Done: a run-time sized `recv.m(*list)` is the owner call over the Array's items (`splat_owner_call_line`) when the
+  closed world names every answerer, and `NativeOwnerMap` reads `M->array_class` like `mrb->array_class`, so mruby-rgss's
+  captured `_rgss_native_sort!` has an owner. By-name body sites with `bc2cpp_funcall_argv`: 22 to 2; with
+  `mrb_funcall_with_block`: 6 to 4.
+- Measured 99 (13 are in mruby's own headers). Host sweep (7 scenarios and 543 maps, `--wrap` counters on `mrb_funcall_*`
+  in a scratch link): by-name sends from generated code were 11.2k for `_rgss_native_sort!`, 8.8k for `IO.open`'s
+  `new(*args)` and 101 for `Hash#__merge`, now 0; the load-time `included` hook (8.3k) is left, against 142M
+  frame pushes (`mrb_funcall_with_method`). The larger by-name runtime counts are mruby's own hooks and `mrb_equal`
+  (`const_added`, `hash`, `method_removed`, `==`, `initialize_copy`: 0.1M to 0.7M each), not sites in this tree.
+- No keyword-carrying by-name site exists (`bc2cpp_funcall_kw` is an unused helper per unit). Left: the frame push (40),
+  the helper copies, error paths that dispatch the real call to verify a proof, the `$stderr#puts` fallback, 3 entry-stub
+  fallbacks (a receiver that is not the exact owner needs the generic send), 4 `_rsm` and fiber-park block sends, and 386
+  `bc2cpp_send` sites in the core unit (no program world there, so no owner set; none ran in the sweep).
 
 ## Phases
 

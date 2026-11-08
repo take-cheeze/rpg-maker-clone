@@ -1,0 +1,1 @@
+- bc2cpp turns run-time sized splat sends (`recv.m(*list)`) and the captured native `Array#sort!` alias into owner calls instead of by-name sends; the host sweep's by-name sends from generated code drop from about 20k to the load-time `included` hook (`scripts/bc2cpp/outside_owner_call_check.rb`, `scripts/bc2cpp/native_owner_map_check.rb`).
