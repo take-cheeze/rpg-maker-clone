@@ -240,23 +240,22 @@ The closed host table is now **1,143 entries**. Measured against the Marshal-onl
 
 ## Non-lookup evidence
 
-Names that only a non-lookup spelled no longer keep a compiled entry registered, on the closed host (base `80dda2f`):
+Names that only a non-lookup spelled no longer keep a compiled entry registered on the closed host:
 
 - The Proc `arity` / `parameters` stand-in is matched in the shape `bc2cpp.rb` now emits, so its `mrb_proc_new` is no bytecode proc again (`PROC_SPEC_STAND_IN_CALL`; the fixture reads the emitter's own text).
 - Core Ruby: a Symbol only given to `attr_*`, or as the name of a `to_enum` on a core `self`, looks nothing up on an engine object; an `alias` / `undef` counts its own operands, not every symbol of the class body (`Integer#step` kept `Game::Battle#step` and its callees).
 - Native sources: `MRB_OPSYM(x)` is an operator and `MRB_IVSYM(x)` an `@ivar`, so a macro applying them to a parameter names no method; the format of `mrb_get_args`, the key of `OPERATOR_SYMBOL` and a `strcmp` operand are not interned; the desktop application (`src/`) is not linked into the closed binary.
 
-The plain and verify host sweeps (the latter with `BC2CPP_UNREGISTERED_VERIFY=1 METHOD_TABLE=skip`) pass all 543 maps and the scripted scenarios. The closed list grows from 3,465 to 3,726 keys (core ROM 189 to 199, core run-time 196 to 206; open list stays 14) and the closed host's table falls from **1,158 to 877 entries**.
+Measured with the core exclusions below, on `3388613`: the proof lists were open 14, closed 3,473, core ROM 195 and core run-time 197 before, and are open 14, closed 3,738, core ROM 211 and core run-time 207 after. The closed host table is **852 entries**; its count on `3388613` before these two changes was not re-measured. The plain and verify host sweeps (the latter with `BC2CPP_UNREGISTERED_VERIFY=1 METHOD_TABLE=skip`) pass all 543 maps and the scripted scenarios.
 
 ## Core ROM exclusions beyond the name scan
 
-On a clean closed build at `80dda2f` the lists were open 14, closed 3,465, core ROM 189 and core run-time 196, and the host table held 1,158 entries. The core scan then stopped counting four spellings as lookups of an identifier: the `ALWAYS_DYNAMIC` seed, `MRB_OPSYM(div)` with cdump's operator rows, a literal handed straight to the verified formatters `mrb_int_overflow` and `mrb_sys_fail`, and the Symbol of `Array#index`/`#rindex`'s `to_enum` call while `CoreEnumeratorFree` holds. After it the lists are open 14, closed 3,465, core ROM 210 and core run-time 205, and the table holds **1,128 entries** (1,158 to 1,128, no additions).
+The core scan stopped counting three spellings as lookups of an identifier: `MRB_OPSYM(div)` with cdump's operator rows, a literal handed straight to the verified formatters `mrb_int_overflow` and `mrb_sys_fail` (the latter only while nothing makes `SystemCallError`, because `mrb_sys_fail` passes the message to `SystemCallError._sys_fail` when that class exists), and the Symbol of `Array#index`/`#rindex`'s `to_enum` call while `CoreEnumeratorFree` holds. These come on top of the `ALWAYS_DYNAMIC` drop above. The entries each rule freed, measured on a closed build at `80dda2f` (before that drop):
 
 | Rule | Core ROM | Core run-time |
 | --- | --- | --- |
 | `MRB_OPSYM`, cdump rows, `mrb_int_overflow` labels | `Float#div`, `Float#floor`, `Integer#div`, `Integer#floor`, `Integer#lcm`, `Integer#pow` | |
 | `Array#index`/`#rindex` `to_enum` Symbol | `Array#rindex`, `String#rindex` | |
-| `ALWAYS_DYNAMIC` seed | `Hash#to_hash`, `Integer#to_int`, `Kernel#clone`, `Kernel#send`, `Module#class_eval`, `String#to_str` | `Hash#each_pair` |
 | `mrb_sys_fail` labels | `File#_atime`, `File#_ctime`, `File#_mtime`, `File#flock`, `IO#sysseek`, `IO#syswrite`, `Time#ctime` | `File#atime`, `File#ctime`, `File#mtime`, `File.pipe?`, `FileTest.pipe?`, `IO.pipe`, `IO._pipe`, `StringIO#syswrite` |
 
-The plain closed build and host sweep pass (New Game, battle, menu, three saves, Continue and 543 of 543 maps). A second build with `BC2CPP_UNREGISTERED_VERIFY=1` passes the same sweep with `METHOD_TABLE=skip`, so no scenario looked a removed name up; a removed name no scenario reaches (for example `File#flock`) is not exercised by it. `scripts/bc2cpp/core_kept_report.rb` prints why each of the 329 core ROM keys still kept stays.
+A second build with `BC2CPP_UNREGISTERED_VERIFY=1` passes the same sweep, so no scenario looked a removed name up; a removed name no scenario reaches (for example `File#flock`) is not exercised by it. `scripts/bc2cpp/core_kept_report.rb` prints why each core ROM key still kept stays.
