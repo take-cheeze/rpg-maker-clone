@@ -1,0 +1,1 @@
+- The closed build's method table no longer keeps an engine method because its name is the argument of a stringified error message in a native macro (`#val " too big"`). It drops three setters from `RGSS::Rect`, `RGSS::Window` and `RPG2k::Window`.

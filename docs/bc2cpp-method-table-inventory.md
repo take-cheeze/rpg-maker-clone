@@ -227,3 +227,7 @@ The plain closed build and host sweep pass (New Game, battle, menu, three save
 scenarios, Continue and all 543 maps). The verify build repeats the sweep with
 `BC2CPP_UNREGISTERED_VERIFY=1` and `METHOD_TABLE=skip`. Its traps must abort on
 any lookup of a removed name.
+
+## Message-macro names
+
+A native macro that stringifies a parameter only into an error message (`#val " too big"`) no longer makes that parameter a method name, because a method name has no blank. On the closed host (HEAD `9e55bd1`, 941 entries before) this removes `RGSS::Rect#width=`, `RGSS::Window#width=` and `RPG2k::Window#width=`, leaving **938 entries**. The `width` getters and the `x` entries stay: other sources keep them. The plain and verify builds both pass New Game, battle, menu, three saves, Continue and all 543 maps; the verify build traps no lookup of the removed names.
