@@ -350,7 +350,27 @@ Names also count from:
   macros). The name operand of a table entry or registration call defines the
   name, so it does not count;
 - a string literal of the generated code;
-- `ALWAYS_DYNAMIC`, or a name a pool fragment may build.
+- a name a pool fragment may build.
+
+`ALWAYS_DYNAMIC` seeds nothing in this scan. The VM looks a method up by a
+presym or literal of `src/`, which the scan reads, or by an operator opcode;
+a name only that list held (`send`, `clone`, `to_hash`) is spelled nowhere a
+lookup could come from.
+
+Three more spellings are no lookup of an identifier:
+
+- `MRB_OPSYM(div)` and cdump's `OPERATOR_SYMBOL("/", "div")` row name the
+  operator `/`, not a method called `div`;
+- a literal passed straight to `mrb_int_overflow` or `mrb_sys_fail`, under the
+  same literal-lookup proof and the same rules as `domain_error`: the one
+  definition must be the formatting body in `numeric.c` / `error.c`, and no
+  macro may redefine the name. `mrb_sys_fail` also hands the message to
+  `SystemCallError._sys_fail` when that class exists, so it counts only while
+  no native, Ruby or generated source makes `SystemCallError` (a native may
+  look it up);
+- the Symbol of `mrb_funcall_id(mrb, self, MRB_SYM(to_enum), 1, ...)` in
+  `Array#index`/`#rindex`, while `CoreEnumeratorFree` proves no Enumerator is
+  made.
 
 When `StaticDispatchSymbolUses` proves that looked-up names are literals, the
 core scan can ignore labels passed to mruby-math's `domain_error` helper. It
@@ -629,6 +649,10 @@ bytecode, a string fragment that may build it, or the base name of a suffixed
 one. The default output is a summary by source; `--entries` lists every kept
 entry with its reason. Only the first reason is shown, so removing one source
 can reveal the next.
+
+`scripts/bc2cpp/core_kept_report.rb LISTS.json` does the same for the core ROM
+entries the build keeps, but lists the first six sources that spelled the
+name (`--summary` groups them).
 
 ## Verify mode
 
