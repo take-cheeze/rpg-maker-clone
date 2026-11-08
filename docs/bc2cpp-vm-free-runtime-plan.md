@@ -23,7 +23,7 @@ count, so suffixed names are included). These are the script's baselines.
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall*` | 243 | breakdown below |
+| `mrb_funcall*` | 101 | breakdown below |
 | `bc2cpp_owner_call*` (owner-listed dispatch) | 2229 | already direct; table-driven later, see Phase 1 |
 | `mrb_proc_new_cfunc_with_env*` (block procs) | 5 | C++ block objects with captured env |
 | `mrb_protect*` (exception boundaries) | 18 | host entry boundary (`*_entry.h`), `gem_init.c`, mruby headers |
@@ -41,9 +41,13 @@ count, so suffixed names are included). These are the script's baselines.
 - Done: core `x.call(*args)` (`bc2cpp_proc_call_argv`) looks `call` up once and runs the found method (visibility as
   OP_SEND, a missing method through method_missing); the 4 error-path `puts` are one `bc2cpp_stderr_report` (a direct IO
   write when `$stderr#puts` is the gem's, else one by-name `puts`); `Fiber.yield` from C is one `bc2cpp_fiber_yield_c`.
-- Measured about 243 (about 100 are comments): what is left is the frame-pushing primitive (`mrb_funcall_with_method`,
-  shared by owner calls), one by-name helper per unknown receiver (`bc2cpp_funcall_argv`, `bc2cpp_ssend`, the Proc
-  `arity`/`parameters` stand-in, `exc.result`, dynamic `send`), a few block-carrying `each`/`map` sends and 3 entry stubs.
+- Done: the Proc `arity`/`parameters` stand-in calls `mrb_proc_arity` and the original `parameters` cfunc directly, the
+  inlined `loop` and the no-method path send through `bc2cpp_funcall_argv`, `mrb_funcall_with_method` is declared once, and
+  generated per-site notes say "by-name send" (90 of the old 243 were those notes).
+- Measured 101 (243 before; 13 are in mruby's own headers): what is left is the
+  frame-pushing primitive (`mrb_funcall_with_method`, 40, shared by owner calls and dynamic `send`), the by-name helpers
+  (`bc2cpp_funcall_argv`, `mrb_funcall_with_block`/`_send` for block and keyword sends), the `$stderr#puts` fallback and
+  3 entry-stub fallbacks (a receiver that is not the exact owner needs the generic send).
 
 ## Phases
 
