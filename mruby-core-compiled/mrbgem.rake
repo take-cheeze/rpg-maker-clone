@@ -1,5 +1,6 @@
 require 'shellwords'
-require_relative '../tools/bc2cpp/compiled_gems'
+require_relative '../tools/bc2cpp_tree'
+require File.join(BC2CPP_TREE, 'tools/bc2cpp/compiled_gems')
 
 # Opt-in AOT-compiled C++ replacements for the methods of mruby's own Ruby that
 # tools/bc2cpp/core_methods.rb lets compile: the block-free
@@ -36,10 +37,10 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
 
   # Every tools/bc2cpp/*.rb, globbed: bc2cpp.rb require_relative's its siblings, and
   # a sibling edit must invalidate the generated file (see mruby-rgss-compiled).
-  bc2cpp_tool_srcs = Dir["#{dir}/../tools/bc2cpp/*.rb"]
-  compiled_gems_rb = "#{dir}/../tools/bc2cpp/compiled_gems.rb"
+  bc2cpp_tool_srcs = Dir["#{BC2CPP_TREE_ROOT}/tools/bc2cpp/*.rb"]
+  compiled_gems_rb = "#{BC2CPP_TREE_ROOT}/tools/bc2cpp/compiled_gems.rb"
   # The gem table itself (owners source, OUT_SYMBOL) is data in this file; editing it must regenerate too.
-  compiled_gems_yml = "#{dir}/../tools/bc2cpp/compiled_gems.yml"
+  compiled_gems_yml = "#{BC2CPP_TREE_ROOT}/tools/bc2cpp/compiled_gems.yml"
   # The same closed world every compiled gem reads: the core files first, then
   # mruby-rpg2k/lcf/rgss (compiled_gems.rb closed_world_mrblib_srcs).
   closed_world_prereqs = bc2cpp_closed_world_prerequisites("#{dir}/..")

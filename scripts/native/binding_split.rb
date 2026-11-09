@@ -19,7 +19,8 @@ require 'fileutils'
 require 'open3'
 require 'optparse'
 require 'tmpdir'
-require_relative '../../tools/bc2cpp/native_binding_split_rewrite'
+require_relative '../../tools/bc2cpp_tree'
+require File.join(BC2CPP_TREE, 'tools/bc2cpp/native_binding_split_rewrite')
 
 ROOT = File.expand_path('../..', __dir__)
 NBS = NativeBindingSplit

@@ -11,8 +11,9 @@ require 'open3'
 require 'rbconfig'
 require 'tmpdir'
 require 'yaml'
-require_relative '../bc2cpp/cxx'
-require_relative '../bc2cpp/mutant_pool'
+require_relative '../../tools/bc2cpp_tree'
+require File.join(BC2CPP_TREE, 'scripts/bc2cpp/cxx')
+require File.join(BC2CPP_TREE, 'scripts/bc2cpp/mutant_pool')
 
 failures = []
 check = lambda do |what, condition|

@@ -1,5 +1,8 @@
 require 'shellwords'
 
+# Where bc2cpp is, and the program it compiles (tools/bc2cpp_tree.rb).
+require_relative 'tools/bc2cpp_tree'
+
 # The uni-algo modules this project never calls, switched off so their Unicode
 # tables are never compiled in. This is the mirror of
 # cmake/uni-algo-trim.cmake's RPG2K_UNI_ALGO_TRIM_DEFINES -- that file applies
@@ -130,12 +133,12 @@ def bc2cpp_blank_units(spec)
   compiled = BC2CPP_COMPILED_GEMS["#{spec.name}-compiled"]
   return unless compiled
 
-  require_relative 'tools/bc2cpp/compiled_gems'
-  require_relative 'tools/bc2cpp/unit_blank'
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/compiled_gems')
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/unit_blank')
   dir = "#{spec.build.build_dir}/mrbgems/#{spec.name}-compiled"
   manifest = "#{dir}/#{compiled[:out_symbol]}_units.txt"
   generated = "#{dir}/#{compiled[:out_symbol]}_gen.cpp"
-  blank_rb = File.expand_path('tools/bc2cpp/unit_blank.rb', __dir__)
+  blank_rb = File.join(BC2CPP_TREE, 'tools/bc2cpp/unit_blank.rb')
   out_dir = "#{spec.build_dir}/mrblib_units"
   # VM-free: the gem's mrblib bytecode is not loaded at all; its class bodies run as the units the generation emitted.
   spec.rbfiles = []
@@ -148,13 +151,13 @@ end
 def bc2cpp_blank_core_units(conf)
   return unless conf.name == 'closed' && conf.gems.any? { |g| g.name == 'mruby-core-compiled' }
 
-  require_relative 'tools/bc2cpp/compiled_gems'
-  require_relative 'tools/bc2cpp/unit_blank'
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/compiled_gems')
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/unit_blank')
   symbol = BC2CPP_COMPILED_GEMS.fetch('mruby-core-compiled')[:out_symbol]
   core_dir = "#{conf.build_dir}/mrbgems/mruby-core-compiled"
   manifest = "#{core_dir}/#{symbol}_units.txt"
   generated = "#{core_dir}/#{symbol}_gen.cpp"
-  blank_rb = File.expand_path('tools/bc2cpp/unit_blank.rb', __dir__)
+  blank_rb = File.join(BC2CPP_TREE, 'tools/bc2cpp/unit_blank.rb')
   stubbed = BC2CPP_CORE_MRBLIB_GEMS + BC2CPP_EXTERNAL_MRBLIB_GEMS
   conf.gems.each do |spec|
     next unless stubbed.include?(spec.name)
@@ -408,7 +411,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   end
 
   if bc2cpp
-    require_relative 'tools/bc2cpp/native_vm_build'
+    require File.join(BC2CPP_TREE, 'tools/bc2cpp/native_vm_build')
     NativeVM.configure(conf)
   end
 
@@ -1054,8 +1057,8 @@ end
 #     generated schema_blob.rb, neither of which the proof reads;
 #   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
 def bc2cpp_core_mt_exclude(conf, verify: true)
-  require_relative 'tools/bc2cpp/core_native_candidates'
-  require_relative 'tools/bc2cpp/static_dispatch_lists'
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/core_native_candidates')
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/static_dispatch_lists')
   lists = StaticDispatchLists.current(required: true)
   # verify: false for the device builds, whose Ruby (the apt or Alpine one) may lack the Prism the digest needs. They
   # take the file CI's `bc2cpp-lists` job computed from the same commit (docs/bc2cpp-unregistered-methods.md).

@@ -34,7 +34,8 @@ require 'tmpdir'
 
 ROOT = File.expand_path('..', __dir__)
 require_relative '../tools/rgss_tts_config'
-require_relative '../tools/bc2cpp/compiled_gems'
+require_relative '../tools/bc2cpp_tree'
+require File.join(BC2CPP_TREE, 'tools/bc2cpp/compiled_gems')
 
 $failures = 0
 def check(name, ok, detail = nil)
@@ -224,7 +225,7 @@ check 'desktop speak_message really speaks', speak_run(sources: [tts_src], lines
 
 if ARGV.include?('--bc2cpp')
   mrbc = ENV.fetch('MRBC') { abort 'MRBC=path/to/mrbc is required for --bc2cpp' }
-  require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
+  require File.join(BC2CPP_TREE, 'tools/bc2cpp/nomethod_reviewed_probe')
   out, err, status = NomethodReviewedProbe.run('mruby-rpg2k-compiled', ROOT, mrbc)
   check 'bc2cpp (wio closed world, mruby-rpg2k-compiled) runs', status.success?, err[-500..]
   check 'bc2cpp output never names Tts', !out.match?(/Tts|tts_(available|speak|stop)/), out.lines.grep(/Tts|tts_/).first(3).join

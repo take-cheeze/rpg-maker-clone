@@ -19,8 +19,9 @@
 require 'json'
 require 'set'
 require 'tmpdir'
-require_relative '../../tools/bc2cpp/native_binding_split_rewrite'
-require_relative '../../tools/bc2cpp/native_direct'
+require_relative '../../tools/bc2cpp_tree'
+require File.join(BC2CPP_TREE, 'tools/bc2cpp/native_binding_split_rewrite')
+require File.join(BC2CPP_TREE, 'tools/bc2cpp/native_direct')
 
 NBS = NativeBindingSplit
 root = File.expand_path('../..', __dir__)

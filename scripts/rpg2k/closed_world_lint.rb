@@ -18,7 +18,8 @@
 #   # rpg2k-lint:allow Cop/Name -- reason
 # comment; the reason is required.
 
-require_relative '../../tools/bc2cpp/ruby_parse_cache'
+require_relative '../../tools/bc2cpp_tree'
+require File.join(BC2CPP_TREE, 'tools/bc2cpp/ruby_parse_cache')
 require 'set'
 
 ROOT = File.expand_path('../..', __dir__) unless defined?(ROOT)
