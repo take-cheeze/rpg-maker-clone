@@ -1230,6 +1230,11 @@ checks:
     capabilities:
     - mrbc
     fixture_capabilities: []
+  scripts/bc2cpp/inline_visibility_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    fixture_capabilities: []
   scripts/bc2cpp/compiled_owners_check.rb:
     tier: fast
     capabilities:

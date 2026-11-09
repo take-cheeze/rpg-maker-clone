@@ -991,6 +991,7 @@ jobs:
           ruby scripts/bc2cpp/explicit_receiver_literals_check.rb
           ruby scripts/bc2cpp/yield_c_boundary_check.rb
           ruby scripts/bc2cpp/module_function_scope_check.rb
+          ruby scripts/bc2cpp/inline_visibility_check.rb
           ruby scripts/bc2cpp/compiled_owners_check.rb
           ruby scripts/bc2cpp/compiled_gems_config_check.rb
           ruby scripts/bc2cpp/self_build_kind_check.rb
