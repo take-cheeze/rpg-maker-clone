@@ -315,17 +315,12 @@ Dir.mktmpdir do |dir|
   check.call('sharding refuses a command list without a parallel group', !status.success?)
 end
 
-shard_job = workflow.fetch('jobs').fetch('bc2cpp-checks')
-check.call('all three independent check shards run even when another fails',
-           shard_job['needs'] == 'changes' && shard_job.dig('strategy', 'matrix', 'shard') == [0, 1, 2] &&
-             shard_job.dig('strategy', 'fail-fast') == false)
-shard_command = shard_job.fetch('steps').find { |step| step['name'] == 'Run bc2cpp checks' }.fetch('run')
-check.call('the workflow uses the same shard count as its matrix', shard_command.include?('--shard ${{ matrix.shard }}/3'))
+# The fixture shards run in nfcxx (scripts/bc2cpp/checks.list); the aggregate here covers the build and the sweep.
 aggregate = workflow.fetch('jobs').fetch('bc2cpp')
-check.call('the required aggregate waits for and checks the matrix result',
-           aggregate['needs'].include?('bc2cpp-checks') &&
-             aggregate.fetch('steps').any? { |step| step.dig('env', 'CHECKS') == '${{ needs.bc2cpp-checks.result }}' &&
-               step.fetch('run', '').include?('for result in "$BUILD" "$CHECKS" "$SWEEP"') })
+check.call('the required aggregate waits for and checks the build and the sweep',
+           aggregate['needs'].include?('bc2cpp-build') && aggregate['needs'].include?('bc2cpp-sweep') &&
+             !workflow.fetch('jobs').key?('bc2cpp-checks') &&
+             aggregate.fetch('steps').any? { |step| step.fetch('run', '').include?('for result in "$BUILD" "$SWEEP"') })
 
 # -- quiet_run.bash ---------------------------------------------------------------------------------
 puts '-- quiet run'

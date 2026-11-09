@@ -84,8 +84,14 @@ same file in a nix shell and uploads it for `maix` and `psp`. `bc2cpp-sweep` als
 `dynamic_names_report.rb`'s summary (why method-table entries stay). `host_sweep.bash` fails when a run exits non-zero or prints a proof failure; the method-table count guard and its threshold file were removed. The `dynamic_names_report.rb` step also prints the
 registered names with their reasons (`--entries`) in a collapsed log group, so the remaining entries can be read off a CI run.
 
-The status check `bc2cpp` in `build.yml` requires `bc2cpp-build`, every `bc2cpp-checks` matrix
-shard and `bc2cpp-sweep`. All three jobs deliberately skip docs-only changes. Require `bc2cpp`.
+The status check `bc2cpp` in `build.yml` requires `bc2cpp-build` and `bc2cpp-sweep`. Both jobs deliberately skip
+docs-only changes. Require `bc2cpp`.
+
+The fixture checks moved to nfcxx along with bc2cpp (AGENTS.md, "bc2cpp lives in nfcxx"). Their commands are
+`scripts/bc2cpp/checks.list`, in bc2cpp's own tree. nfcxx's `.github/workflows/bc2cpp.yml` runs them in three shards
+against a pinned commit of this repository, with its `3rd/nfcxx` replaced by the nfcxx checkout under test.
+`scripts/ci/check_registry.rb` still reads that file as the `bc2cpp-checks` runner, so a check missing from every
+list fails here.
 
 ### bc2cpp job setup and check scheduling
 
@@ -95,7 +101,7 @@ separate `nix-bc2cpp-` prefix. The environment export helper accepts this
 installable as its optional first argument; other jobs keep the default shell.
 
 The closed archive and its base-section, native-binding, class-body proof and VM/bytecode-free checks stay in
-`bc2cpp-build`. The other 197 fixture commands run in three independent `bc2cpp-checks` jobs,
+`bc2cpp-build`. The other fixture commands (`scripts/bc2cpp/checks.list`) run in nfcxx's three `checks` shards,
 which start after path filtering rather than waiting for the engine build. Each job restores or
 builds its own full-core fixture library from the same exact cache key: the pinned Nix toolchain,
 mruby and stringio revisions, build helpers and mruby patches. `MRBC`, `BC2CPP_MRUBY_FULL` and
