@@ -195,6 +195,15 @@ The copy of vm.c's frame code must follow fork changes to `cipop`/`protect_error
 Full closed build, host sweep, ASan trace host, Fiber checks in CI; green with the VM objects removed from the link. Today every
 closed job runs without vm.c; the remaining exit is the direct calls above (the frame ABI itself stays).
 
+## Method tables
+
+The closed build registers every compiled method through const `mrb_mt_entry` tables (one per class and registration
+half, `MRB_MT_INIT_ROM` layers, `3rd/mruby/doc/guides/rom-method-table.md`), as do the C++ Fiber runtime and bc2cpp's own
+`Kernel#respond_to?` / `Proc#arity` overrides; installing a table drops the heap entries a class body put there for the
+same names. After boot, of 531 heap method-table entries 165 remain (20.1 KB of heap layers, from 41.7 KB): native gems'
+`mrb_define_method` calls and ten class-body `attr_*` procs. Every class still has its 32-byte mutable header, which
+mruby allocates at class creation. `rom_method_tables_check.rb` pins it.
+
 ## Risks
 
 GC roots need rewriting without the VM stack (Phases 2 and 3). Other build targets keep `vm.c`.
