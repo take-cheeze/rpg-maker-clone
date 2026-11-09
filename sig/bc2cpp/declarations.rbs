@@ -164,6 +164,13 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_io
 class File
+  def _atime: () -> untyped
+  def _ctime: () -> untyped
+  def _mtime: () -> untyped
+  def flock: (Numeric) -> untyped
+  def initialize: (*untyped) -> untyped
+  def size: () -> Integer
+  def truncate: (untyped) -> Integer
   def self.absolute_path: (String, ?String) -> String
   def self.absolute_path?: (untyped) -> bool
   def self.basename: (String, ?String) -> String
@@ -202,6 +209,41 @@ end
 
 # bc2cpp-native: base_io
 class IO
+  def close: () -> nil
+  def close_on_exec=: (untyped) -> bool
+  def close_on_exec?: () -> bool
+  def close_write: () -> nil
+  def closed?: () -> bool
+  def eof?: () -> bool
+  def fileno: () -> Integer
+  def flush: () -> untyped
+  def getbyte: () -> Integer?
+  def getc: () -> String?
+  def gets: (*untyped) -> untyped
+  def initialize: (Numeric, ?untyped, ?Hash) -> untyped
+  def initialize_copy: (untyped) -> untyped
+  def isatty: () -> bool
+  def pid: () -> Integer?
+  def pos: () -> Integer
+  def pread: (*untyped) -> untyped
+  def print: (*untyped) -> nil
+  def putc: (untyped) -> untyped
+  def puts: (*untyped) -> nil
+  def pwrite: (String, untyped) -> Integer
+  def read: (*untyped) -> untyped
+  def readbyte: () -> Integer?
+  def readchar: () -> String?
+  def readline: (?untyped, ?untyped) -> untyped
+  def readlines: (?untyped, ?untyped) -> Array
+  def seek: (untyped, ?untyped) -> Integer
+  def sync: () -> bool
+  def sync=: (untyped) -> bool
+  def sysread: (Numeric, ?String) -> untyped
+  def sysseek: (Numeric, ?Numeric) -> Integer
+  def syswrite: (String) -> Integer
+  def ungetbyte: (untyped) -> nil
+  def ungetc: (String) -> nil
+  def write: (*untyped) -> Integer
   def self._pipe: () -> Array
   def self._popen: (untyped, ?untyped, ?untyped) -> untyped
   def self._sysclose: (Numeric) -> Integer
@@ -1312,6 +1354,15 @@ end
 
 # bc2cpp-native: base_numeric
 class Integer
+  def bit_length: () -> Integer
+  def digits: (?Numeric) -> Array
+  def even?: () -> bool
+  def gcd: (untyped) -> Integer
+  def lcm: (untyped) -> Integer
+  def odd?: () -> bool
+  def pow: (untyped, untyped) -> untyped
+  def remainder: (untyped) -> untyped
+  def size: () -> Integer
   def self.sqrt: (untyped) -> Integer
 end
 
@@ -1331,6 +1382,10 @@ end
 
 # bc2cpp-native: base_random
 class Random
+  def bytes: (untyped) -> String
+  def initialize: (?Numeric) -> self
+  def rand: (?untyped) -> untyped
+  def srand: (?Numeric) -> Integer
   def self.bytes: (untyped) -> String
   def self.rand: (?untyped) -> untyped
   def self.srand: (?untyped) -> Integer
@@ -7374,6 +7429,49 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_time
 class Time
+  def asctime: () -> String
+  def ctime: () -> String
+  def day: () -> Integer
+  def dst?: () -> bool
+  def eql?: (untyped) -> bool
+  def friday?: () -> bool
+  def getgm: () -> untyped
+  def getlocal: () -> untyped
+  def getutc: () -> untyped
+  def gmt?: () -> bool
+  def gmt_offset: () -> Integer
+  def gmtime: () -> self
+  def gmtoff: () -> Integer
+  def hash: () -> Integer
+  def hour: () -> Integer
+  def initialize: (?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> self
+  def initialize_copy: (untyped) -> untyped
+  def inspect: () -> String
+  def localtime: () -> self
+  def mday: () -> Integer
+  def min: () -> Integer
+  def mon: () -> Integer
+  def monday?: () -> bool
+  def month: () -> Integer
+  def nsec: () -> Integer
+  def saturday?: () -> bool
+  def sec: () -> Integer
+  def sunday?: () -> bool
+  def thursday?: () -> bool
+  def to_f: () -> Float
+  def to_i: () -> Integer
+  def to_s: () -> String
+  def tuesday?: () -> bool
+  def tv_nsec: () -> Integer
+  def usec: () -> Integer
+  def utc: () -> self
+  def utc?: () -> bool
+  def utc_offset: () -> Integer
+  def wday: () -> Integer
+  def wednesday?: () -> bool
+  def yday: () -> Integer
+  def year: () -> Integer
+  def zone: () -> String
   def self.at: (untyped, ?untyped) -> untyped
   def self.gm: (Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> untyped
   def self.local: (Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> untyped
@@ -8075,6 +8173,13 @@ end
 
 # bc2cpp-native: base_mruby-core
 class Exception
+  def backtrace: (*untyped) -> untyped
+  def exception: (?untyped) -> untyped
+  def initialize: (?untyped) -> untyped
+  def inspect: () -> untyped
+  def message: () -> untyped
+  def set_backtrace: (untyped) -> untyped
+  def to_s: () -> untyped
   def self.exception: (*untyped) -> untyped
 end
 
@@ -8357,7 +8462,16 @@ end
 # Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
 # bc2cpp-native: base_kernel-ext
 class Kernel
+  def Array: (untyped) -> untyped
+  def Float: (untyped) -> untyped
+  def Hash: (untyped) -> untyped
+  def Integer: (untyped, ?Numeric) -> untyped
+  def String: (untyped) -> untyped
+  def __callee__: () -> Symbol?
   def __dir__: () -> String?
+  def __method__: () -> Symbol?
+  def caller: (?untyped, ?Numeric) -> Array?
+  def fail: (*untyped) -> untyped
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.

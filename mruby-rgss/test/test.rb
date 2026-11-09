@@ -1347,6 +1347,23 @@ assert "RGSS::Bitmap#draw_text honours every Font attribute without error" do
   assert_equal b, b.draw_text(0, 0, 80, 24, "Ok", 1)
 end
 
+# draw_text reads the Font through the method each reader resolves to, so a
+# subclass's override is what answers.
+class FontReadTracker < RGSS::Font
+  attr_reader :seen
+  %i[name size bold italic outline shadow color out_color].each do |m|
+    define_method(m) { (@seen ||= []) << m; instance_variable_get(:"@#{m}") }
+  end
+end
+
+assert "RGSS::Bitmap#draw_text reads overridden Font attributes" do
+  b = RGSS::Bitmap.new(80, 24)
+  b.font = FontReadTracker.new
+  b.draw_text(0, 0, 80, 24, "Ok", 1)
+  assert_equal %i[bold color italic name out_color outline shadow size],
+               b.font.seen.uniq.sort
+end
+
 assert "RGSS::Bitmap#text_size measures ASCII text" do
   b = RGSS::Bitmap.new(64, 24)
   r = b.text_size("Hello")

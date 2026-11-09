@@ -192,6 +192,8 @@ CHECKS = [
   # The RGSS native result facts against the native sources, and the ClosedWorld questions;
   # the generated-code section skips here.
   { name: 'bc2cpp-native-result-facts', command: %w[scripts/bc2cpp/native_result_facts_check.rb] },
+  # TouchScan's static-helper names and prototypes (pure host Ruby).
+  { name: 'bc2cpp-touch-scan-native-helper', command: %w[scripts/bc2cpp/touch_scan_native_helper_check.rb] },
   # The owner map's exact-class arms and their kill switch; the generated-code section skips without MRBC.
   { name: 'bc2cpp-native-owner-map', command: %w[scripts/bc2cpp/native_owner_map_check.rb] },
   # The AREF transfer and the tuple shape on hand-built bytecode; the fixture sections skip here.
