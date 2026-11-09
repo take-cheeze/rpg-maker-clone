@@ -23,9 +23,9 @@ count, so suffixed names are included). These are the script's baselines.
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall*` | 99 | breakdown below |
+| `mrb_funcall*` | 100 | breakdown below |
 | `bc2cpp_funcall_argv`, `_ssend`, `_funcall_kw` (by-name helpers) | 60 | helper copies per unit; no keyword site exists |
-| `bc2cpp_owner_call*` (owner-listed dispatch) | 2377 | already direct; table-driven later, see Phase 1 |
+| `bc2cpp_owner_call*` (owner-listed dispatch) | 2391 | already direct; table-driven later, see Phase 1 |
 | `mrb_proc_new_cfunc_with_env*` (block procs) | 5 | C++ block objects with captured env |
 | `mrb_protect*` (exception boundaries) | 10 | `gem_init.c`, mruby headers (the host entry boundary is a typed catch) |
 | `mrb_gc_protect*` (arena roots) | 20 | one `bc2cpp_root` per unit, `*_entry.h`, mruby headers |
@@ -49,11 +49,14 @@ count, so suffixed names are included). These are the script's baselines.
   closed world names every answerer, and `NativeOwnerMap` reads `M->array_class` like `mrb->array_class`, so mruby-rgss's
   captured `_rgss_native_sort!` has an owner. By-name body sites with `bc2cpp_funcall_argv`: 22 to 2; with
   `mrb_funcall_with_block`: 6 to 4.
-- Measured 99 (13 are in mruby's own headers). Host sweep (7 scenarios and 543 maps, `--wrap` counters on `mrb_funcall_*`
+- Measured 100 (14 are in mruby's own headers; the fork's `internal.h` declares `mrb_funcall_send_with_method`). Host sweep (7 scenarios and 543 maps, `--wrap` counters on `mrb_funcall_*`
   in a scratch link): by-name sends from generated code were 11.2k for `_rgss_native_sort!`, 8.8k for `IO.open`'s
   `new(*args)` and 101 for `Hash#__merge`, now 0; the load-time `included` hook (8.3k) is left, against 142M
   frame pushes (`mrb_funcall_with_method`). The larger by-name runtime counts are mruby's own hooks and `mrb_equal`
   (`const_added`, `hash`, `method_removed`, `==`, `initialize_copy`: 0.1M to 0.7M each), not sites in this tree.
+- Done: `read_font` (mruby-rgss) runs the Font reader it finds; the fork's `==`/`eql?`/`<=>`, `Class#new` and
+  `mrb_obj_new` run the method a memo found (`mrb_funcall_with_method`, `mrb_funcall_send_with_method`). Left by name in
+  the sweep: the `included` hook, `IO.sysopen`, `Symbol#to_proc` and `convert_type` (the name is data), the host's taps.
 - No keyword-carrying by-name site exists (`bc2cpp_funcall_kw` is an unused helper per unit). Left: the frame push (40),
   the helper copies, error paths that dispatch the real call to verify a proof, the `$stderr#puts` fallback, 3 entry-stub
   fallbacks (a receiver that is not the exact owner needs the generic send), 4 `_rsm` and fiber-park block sends, and 386
