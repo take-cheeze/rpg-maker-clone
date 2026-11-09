@@ -25,7 +25,7 @@ count, so suffixed names are included). These are the script's baselines.
 | --- | ---: | --- |
 | `mrb_funcall*` | 100 | breakdown below |
 | `bc2cpp_funcall_argv`, `_ssend`, `_funcall_kw` (by-name helpers) | 60 | helper copies per unit; no keyword site exists |
-| `bc2cpp_owner_call*` (owner-listed dispatch) | 2377 | already direct; table-driven later, see Phase 1 |
+| `bc2cpp_owner_call*` (owner-listed dispatch) | 2391 | already direct; table-driven later, see Phase 1 |
 | `mrb_proc_new_cfunc_with_env*` (block procs) | 5 | C++ block objects with captured env |
 | `mrb_protect*` (exception boundaries) | 10 | `gem_init.c`, mruby headers (the host entry boundary is a typed catch) |
 | `mrb_gc_protect*` (arena roots) | 20 | one `bc2cpp_root` per unit, `*_entry.h`, mruby headers |
