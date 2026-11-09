@@ -8399,6 +8399,7 @@ class OnigRegexp
   def self.last_match=: (untyped) -> untyped
   def self.preserving_last_match: () -> untyped
   def self.regexp_arg?: (untyped) -> untyped
+  def self.union: (*untyped) -> untyped
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
