@@ -54,6 +54,9 @@ count, so suffixed names are included). These are the script's baselines.
   `new(*args)` and 101 for `Hash#__merge`, now 0; the load-time `included` hook (8.3k) is left, against 142M
   frame pushes (`mrb_funcall_with_method`). The larger by-name runtime counts are mruby's own hooks and `mrb_equal`
   (`const_added`, `hash`, `method_removed`, `==`, `initialize_copy`: 0.1M to 0.7M each), not sites in this tree.
+- Done: `read_font` (mruby-rgss) runs the Font reader it finds; the fork's `==`/`eql?`/`<=>`, `Class#new` and
+  `mrb_obj_new` run the method a memo found (`mrb_funcall_with_method`, `mrb_funcall_send_with_method`). Left by name in
+  the sweep: the `included` hook, `IO.sysopen`, `Symbol#to_proc` and `convert_type` (the name is data), the host's taps.
 - No keyword-carrying by-name site exists (`bc2cpp_funcall_kw` is an unused helper per unit). Left: the frame push (40),
   the helper copies, error paths that dispatch the real call to verify a proof, the `$stderr#puts` fallback, 3 entry-stub
   fallbacks (a receiver that is not the exact owner needs the generic send), 4 `_rsm` and fiber-park block sends, and 386
