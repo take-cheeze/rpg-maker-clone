@@ -11,6 +11,8 @@ runners:
   - cxx
   - closed_build
   - clang
+  bc2cpp-sweep:
+  - closed_build
   bc2cpp-checks:
   - mrbc
   - native_sources
@@ -962,6 +964,10 @@ checks:
     capabilities:
     - closed_build
   scripts/bc2cpp/frames_only_check.rb:
+    tier: fast
+    capabilities:
+    - closed_build
+  scripts/bc2cpp/rom_method_tables_check.rb:
     tier: fast
     capabilities:
     - closed_build
