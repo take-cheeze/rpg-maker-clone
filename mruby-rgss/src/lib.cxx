@@ -2953,37 +2953,46 @@ std::string find_font_path(mrb_state* M, const std::string& name) {
 }
 #endif  // !defined(WIO_TERMINAL)
 
-// The attribute `reader` of `obj` without a call frame: when the
-// method `reader` answers on obj's class with the reader mruby's own
-// `attr_reader`/`attr_accessor` built for it -- a cfunc proc flagged
-// MRB_PROC_NOARG whose one env slot is the ivar's name, the reader's name
-// with an at-sign in front (class.c mod_attr_define; no other proc has that
-// shape) -- calling it is reading that ivar, so the ivar is read. Anything
-// else answering `reader` (a script's override, an alias, a compiled
-// accessor) gives undef and the caller makes the call. RGSS::Font's
-// attributes are such readers (mrblib/lib.rb). The ivar is taken from the
+MRB_BEGIN_DECL
+mrb_value mrb_funcall_with_method(mrb_state*,
+                                  mrb_value,
+                                  mrb_sym,
+                                  const mrb_method_t*,
+                                  struct RClass*,
+                                  mrb_int,
+                                  const mrb_value*,
+                                  mrb_value);
+MRB_END_DECL
+
+// `obj.reader` with one method search. mruby's own attr_reader (a NOARG
+// cfunc proc whose one env slot is the reader's ivar, class.c
+// mod_attr_define) is that ivar's read; any other method found (a compiled
+// accessor, an override) runs in the frame mrb_funcall would push, and none
+// found is mrb_funcall itself (method_missing). The ivar is taken from the
 // proc, so this file spells no ivar name of Font's (bc2cpp counts every ivar
 // name a native source spells as one native code may write).
-static V plain_attr_read(mrb_state* M, V obj, mrb_sym reader) {
+static V attr_read(mrb_state* M, V obj, mrb_sym reader) {
   struct RClass* c = mrb_class(M, obj);
   const mrb_method_t m = mrb_method_search_vm(M, &c, reader);
-  if (MRB_METHOD_UNDEF_P(m) || !MRB_METHOD_PROC_P(m))
-    return mrb_undef_value();
-  const struct RProc* p = MRB_METHOD_PROC(m);
-  if (!MRB_PROC_CFUNC_P(p) || !MRB_PROC_NOARG_P(p) || !MRB_PROC_ENV_P(p))
-    return mrb_undef_value();
-  const struct REnv* e = MRB_PROC_ENV(p);
-  if (MRB_ENV_LEN(e) != 1 || !mrb_symbol_p(e->stack[0]))
-    return mrb_undef_value();
-  const mrb_sym ivar = mrb_symbol(e->stack[0]);
-  mrb_int reader_len = 0, ivar_len = 0;
-  const char* reader_name = mrb_sym_name_len(M, reader, &reader_len);
-  const char* ivar_name = mrb_sym_name_len(M, ivar, &ivar_len);
-  if (!reader_name || !ivar_name || ivar_len != reader_len + 1 ||
-      ivar_name[0] != '@' ||
-      std::memcmp(ivar_name + 1, reader_name, reader_len) != 0)
-    return mrb_undef_value();
-  return mrb_iv_get(M, obj, ivar);
+  if (MRB_METHOD_UNDEF_P(m))
+    return mrb_funcall_argv(M, obj, reader, 0, nullptr);
+  const struct RProc* p = MRB_METHOD_PROC_P(m) ? MRB_METHOD_PROC(m) : nullptr;
+  if (p && MRB_PROC_CFUNC_P(p) && MRB_PROC_NOARG_P(p) && MRB_PROC_ENV_P(p)) {
+    const struct REnv* e = MRB_PROC_ENV(p);
+    mrb_int reader_len = 0, ivar_len = 0;
+    const char* reader_name = mrb_sym_name_len(M, reader, &reader_len);
+    const mrb_sym ivar = MRB_ENV_LEN(e) == 1 && mrb_symbol_p(e->stack[0])
+                             ? mrb_symbol(e->stack[0])
+                             : 0;
+    const char* ivar_name =
+        ivar ? mrb_sym_name_len(M, ivar, &ivar_len) : nullptr;
+    if (reader_name && ivar_name && ivar_len == reader_len + 1 &&
+        ivar_name[0] == '@' &&
+        std::memcmp(ivar_name + 1, reader_name, reader_len) == 0)
+      return mrb_iv_get(M, obj, ivar);
+  }
+  return mrb_funcall_with_method(M, obj, reader, &m, c, 0, nullptr,
+                                 mrb_nil_value());
 }
 
 // RGSS::Font.default_path, or "" when unset: the font to use for a project that
@@ -3003,9 +3012,7 @@ std::string font_default_path(mrb_state* M) {
     return std::string();
   const V font = mrb_const_get(M, rgss_mod, font_sym);
   // Font.default_path is a class-level attr_accessor (mrblib/lib.rb).
-  V v = plain_attr_read(M, font, mrb_intern_lit(M, "default_path"));
-  if (mrb_undef_p(v))
-    v = mrb_funcall(M, font, "default_path", 0);
+  V v = attr_read(M, font, mrb_intern_lit(M, "default_path"));
   if (!mrb_string_p(v))
     return std::string();
   return std::string(RSTRING_PTR(v), RSTRING_LEN(v));
@@ -3066,12 +3073,9 @@ FontAttr read_font(mrb_state* M, V self) {
 #endif
   const V fv = mrb_iv_get(M, self, mrb_intern_lit(M, "@font"));
   if (!mrb_nil_p(fv)) {
-    // Each attribute is read through plain_attr_read; only a Font whose
-    // reader was replaced is asked by name.
+    // Each attribute is read through attr_read (no by-name send).
 #if !defined(WIO_TERMINAL)
-    V nv = plain_attr_read(M, fv, mrb_intern_lit(M, "name"));
-    if (mrb_undef_p(nv))
-      nv = mrb_funcall(M, fv, "name", 0);
+    V nv = attr_read(M, fv, mrb_intern_lit(M, "name"));
     if (mrb_string_p(nv)) {
       name.assign(RSTRING_PTR(nv), RSTRING_LEN(nv));
     } else if (mrb_array_p(nv) && ary_size(nv) > 0 &&
@@ -3081,36 +3085,22 @@ FontAttr read_font(mrb_state* M, V self) {
       name.assign(RSTRING_PTR(n0), RSTRING_LEN(n0));
     }
 #endif
-    V sv = plain_attr_read(M, fv, mrb_intern_lit(M, "size"));
-    if (mrb_undef_p(sv))
-      sv = mrb_funcall(M, fv, "size", 0);
+    V sv = attr_read(M, fv, mrb_intern_lit(M, "size"));
     if (mrb_fixnum_p(sv))
       fa.size = static_cast<double>(mrb_fixnum(sv));
     else if (mrb_float_p(sv))
       fa.size = mrb_float(sv);
-    V bv = plain_attr_read(M, fv, mrb_intern_lit(M, "bold"));
-    if (mrb_undef_p(bv))
-      bv = mrb_funcall(M, fv, "bold", 0);
+    V bv = attr_read(M, fv, mrb_intern_lit(M, "bold"));
     fa.bold = mrb_bool(bv);
-    V iv = plain_attr_read(M, fv, mrb_intern_lit(M, "italic"));
-    if (mrb_undef_p(iv))
-      iv = mrb_funcall(M, fv, "italic", 0);
+    V iv = attr_read(M, fv, mrb_intern_lit(M, "italic"));
     fa.italic = mrb_bool(iv);
-    V ov = plain_attr_read(M, fv, mrb_intern_lit(M, "outline"));
-    if (mrb_undef_p(ov))
-      ov = mrb_funcall(M, fv, "outline", 0);
+    V ov = attr_read(M, fv, mrb_intern_lit(M, "outline"));
     fa.outline = mrb_bool(ov);
-    V shv = plain_attr_read(M, fv, mrb_intern_lit(M, "shadow"));
-    if (mrb_undef_p(shv))
-      shv = mrb_funcall(M, fv, "shadow", 0);
+    V shv = attr_read(M, fv, mrb_intern_lit(M, "shadow"));
     fa.shadow = mrb_bool(shv);
-    V cv = plain_attr_read(M, fv, mrb_intern_lit(M, "color"));
-    if (mrb_undef_p(cv))
-      cv = mrb_funcall(M, fv, "color", 0);
+    V cv = attr_read(M, fv, mrb_intern_lit(M, "color"));
     color_rgba(M, cv, fa.color);
-    V ocv = plain_attr_read(M, fv, mrb_intern_lit(M, "out_color"));
-    if (mrb_undef_p(ocv))
-      ocv = mrb_funcall(M, fv, "out_color", 0);
+    V ocv = attr_read(M, fv, mrb_intern_lit(M, "out_color"));
     color_rgba(M, ocv, fa.out_color);
   }
 #if defined(WIO_TERMINAL)

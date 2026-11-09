@@ -1568,7 +1568,16 @@ module RGSS
       s.each_codepoint { tw += adv }
       x += (w - tw) / 2 if align == 1
       x += w - tw if align == 2
-      col = font.color
+      # lib.cxx read_font reads every Font attribute through its reader (an override answers); only color is drawn here.
+      f = font
+      f.name
+      f.size
+      f.bold
+      f.italic
+      f.outline
+      f.shadow
+      col = f.color
+      f.out_color
       s.each_codepoint do |cp|
         glyph = GLYPHS[cp]
         unless glyph.nil?
