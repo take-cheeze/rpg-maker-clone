@@ -23,6 +23,18 @@ submodule is available for its `class.c` conversion audit.
 the owner map's exact-class arms: the proven site gets its arm, each unsound
 definition withdraws it, and `BC2CPP_NATIVE_OWNER_MAP=0` gives the by-name send.
 Its generated-code part needs `MRBC`; without it the check prints a skip.
+
+`touch_scan_native_helper_check.rb` (pure host Ruby) covers the class touch scan's
+reading of native sends (`tools/bc2cpp/touch_scan.rb`). A send whose method name
+the scan cannot enumerate makes every class the file names opaque, so their
+constructor and `new` identity proofs fall away. A name that is a parameter of a
+`static` helper is the set of names spelled at the helper's calls, the same rule
+as `NATIVE_HELPER` for includes. It holds only when every use of the helper is a
+direct call spelling the name and nothing in the file assigns the parameter or
+takes its address. A prototype or definition of a funcall function is not a send.
+The check also confirms that a computed name, a pointer to the helper, a
+non-static helper and an assigned parameter still give up.
+
 `native_result_facts_check.rb` keeps its real-source mutation audit independent
 of the declaration tables, and its MRBC-generated worlds remain separate.
 Its dead-fallback assertions match complete no-method markers, including the

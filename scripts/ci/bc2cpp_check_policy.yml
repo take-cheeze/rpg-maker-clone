@@ -537,6 +537,9 @@ checks:
   scripts/bc2cpp/audit_pins_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/touch_scan_native_helper_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/setter_name_closure_check.rb:
     tier: fast
     capabilities:
