@@ -130,6 +130,9 @@ module Bc2cppCheckRegistry
 
     coverage = stdout.scan(PATH_PATTERN)
     jobs = workflow_checks(YAML.load_file(File.join(root, '.github/workflows/build.yml')))
+    # The fixture shards run in nfcxx, where bc2cpp lives, from bc2cpp's own command list (scripts/bc2cpp/checks.list).
+    jobs['bc2cpp-checks'] = File.read(File.join(root, 'scripts/bc2cpp/checks.list')).lines
+                                .reject { |line| line.lstrip.start_with?('#') }.join.scan(PATH_PATTERN)
     discovered = Dir.chdir(root) { Dir['scripts/bc2cpp/*_check.rb'].to_set }
     policy = YAML.load_file(File.join(root, 'scripts/ci/bc2cpp_check_policy.yml'))
     [discovered, coverage, jobs, policy]

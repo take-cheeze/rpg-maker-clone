@@ -49,3 +49,7 @@
 [submodule "3rd/prism"]
 	path = 3rd/prism
 	url = https://github.com/take-cheeze/prism
+[submodule "3rd/nfcxx"]
+	path = 3rd/nfcxx
+	url = https://github.com/take-cheeze/nfcxx.git
+	shallow = true

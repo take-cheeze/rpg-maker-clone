@@ -60,6 +60,20 @@ directly. Before opening one:
   push. Only ask when a conflict is genuinely ambiguous — both sides changed the
   same logic and picking one silently drops behavior.
 
+## bc2cpp lives in nfcxx
+
+bc2cpp's code is in [take-cheeze/nfcxx](https://github.com/take-cheeze/nfcxx) under `bc2cpp/`, checked out here as the
+`3rd/nfcxx` submodule. `tools/bc2cpp`, `scripts/bc2cpp`, `tools/optcarrot_probe`, `scripts/optcarrot` and
+`host-libs/mruby-bc2cpp-{runner,sources}` are symlinks into it, so every path and command keeps working.
+
+- **Changing bc2cpp is an nfcxx PR**, followed by a PR here that bumps `3rd/nfcxx` (and moves any ceiling it changes),
+  the same flow as the mruby fork.
+- A commit here that edits files through those symlinks changes nothing in this repository. It only dirties the
+  submodule.
+- bc2cpp finds this repository as the program it compiles by itself (`tools/bc2cpp/world_root.rb`). See nfcxx's
+  `docs/notes/bc2cpp-migration.md`.
+- `scripts/checkout-submodules.bash` leaves nfcxx's own submodules (its EDG front end) out.
+
 ## Code Style & Patterns
 
 - Codes are formatted by precommit. Please run it after code edit finishes

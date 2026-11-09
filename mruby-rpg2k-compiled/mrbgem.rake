@@ -1,5 +1,6 @@
 require 'shellwords'
-require_relative '../tools/bc2cpp/compiled_gems'
+require_relative '../tools/bc2cpp_tree'
+require File.join(BC2CPP_TREE, 'tools/bc2cpp/compiled_gems')
 
 # Opt-in AOT-compiled C++ replacements for Game::Picture's own bytecode
 # methods -- 25 of its 26 real methods
@@ -30,7 +31,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   # by someone remembering to add it" reason cmake/build-mruby.cmake's own
   # `file(GLOB bc2cpp_files CONFIGURE_DEPENDS ...)` already globs this exact
   # directory for the outer CMake-level rebuild trigger.
-  bc2cpp_tool_srcs = Dir["#{dir}/../tools/bc2cpp/*.rb"]
+  bc2cpp_tool_srcs = Dir["#{BC2CPP_TREE_ROOT}/tools/bc2cpp/*.rb"]
   # BC2CPP_COMPILED_GEMS' own owners list (target_owners below) comes from
   # this file, required above -- it has to be a real prerequisite of the
   # `generated` rule too, or Rake has no way to know a changed owners list
@@ -41,9 +42,9 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   # missing the round's own new owner, and g++ failed on an undeclared
   # `_impl` symbol only because a hand-written register.cxx call site
   # (since replaced by the generated registration) still named it.
-  compiled_gems_rb = "#{dir}/../tools/bc2cpp/compiled_gems.rb"
+  compiled_gems_rb = "#{BC2CPP_TREE_ROOT}/tools/bc2cpp/compiled_gems.rb"
   # The gem table itself (owners source, OUT_SYMBOL) is data in this file; editing it must regenerate too.
-  compiled_gems_yml = "#{dir}/../tools/bc2cpp/compiled_gems.yml"
+  compiled_gems_yml = "#{BC2CPP_TREE_ROOT}/tools/bc2cpp/compiled_gems.yml"
   # Whole-program closed-world source set -- same reasoning as
   # mruby-lcf-compiled/mrbgem.rake's own comment: bc2cpp's MONO/POLY
   # devirtualization decisions need to see every gem that could define a

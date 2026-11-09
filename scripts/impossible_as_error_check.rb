@@ -18,8 +18,9 @@
 require 'stringio'
 require 'tmpdir'
 require 'set'
-require_relative '../tools/bc2cpp/source_text'
-require_relative '../tools/bc2cpp/integer_constants'
+require_relative '../tools/bc2cpp_tree'
+require File.join(BC2CPP_TREE, 'tools/bc2cpp/source_text')
+require File.join(BC2CPP_TREE, 'tools/bc2cpp/integer_constants')
 
 root = File.expand_path('..', __dir__)
 failures = []

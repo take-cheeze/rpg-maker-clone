@@ -46,6 +46,18 @@ echo "initializing: ${init[*]}"
 recursive=()
 if [ "${RECURSIVE:-}" = 1 ]; then
   recursive=(--recursive)
+  # 3rd/nfcxx is here for bc2cpp (its bc2cpp/ tree) only; its own submodules (the EDG front end, ~200 MB, QBE, cproc)
+  # are its compiler's. They are marked `update = none` in that checkout before the recursive pass, so it leaves them
+  # out the way it leaves out quickjs's test262 (scripts/skip-nfcxx-submodules.bash drops the entries for Nix).
+  for path in "${init[@]}"; do
+    if [ "${path}" = 3rd/nfcxx ]; then
+      git submodule update --init --depth 1 -- 3rd/nfcxx
+      for name in $(git -C 3rd/nfcxx config --file .gitmodules --get-regexp '\.path$' | awk '{print $1}' |
+                    sed -e 's/^submodule\.//' -e 's/\.path$//'); do
+        git -C 3rd/nfcxx config "submodule.${name}.update" none
+      done
+    fi
+  done
 fi
 
 git submodule update --init --depth 1 "${recursive[@]}" -- "${init[@]}"
