@@ -2851,6 +2851,10 @@ jobs:
         env:
           CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
 
+      # 3rd/nfcxx is here for bc2cpp only; its own submodules (EDG, QBE, cproc) were left out by the checkout.
+      - name: Skip 3rd/nfcxx's own submodules
+        run: ./scripts/skip-nfcxx-submodules.bash
+
       # With CLONE_TEST262=1 the submodule stays registered, so the walk needs it checked out.
       - name: Materialize quickjs test262 submodule for the flake build
         if: ${{ vars.CLONE_TEST262 == '1' }}
