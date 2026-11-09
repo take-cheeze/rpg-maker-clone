@@ -1027,7 +1027,7 @@ jobs:
       # Shallow, and only the gems the closed-world closure reads
       # (compiled_gems.rb bc2cpp_rake_dependencies).
       - name: Init mruby submodules
-        run: git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio 3rd/mruby-marshal 3rd/mruby-onig-regexp
+        run: git submodule update --init --depth 1 3rd/mruby 3rd/mruby-stringio 3rd/mruby-marshal 3rd/mruby-onig-regexp 3rd/nfcxx
 
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
@@ -2341,11 +2341,18 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # Android has no system SDL2, so it builds the vendored 3rd/SDL and
-          # 3rd/SDL_mixer, plus every submodule the desktop build needs.
-          submodules: recursive
+          submodules: false
           show-progress: false
           persist-credentials: false
+
+      # Android has no system SDL2, so it builds the vendored 3rd/SDL and
+      # 3rd/SDL_mixer, plus every submodule the desktop build needs, nested ones too.
+      # 3rd/nfcxx is bc2cpp's (and its own submodules are its compiler's), which this build does not use.
+      - name: Init submodules
+        env:
+          RECURSIVE: 1
+          SKIP_SUBMODULES: 3rd/nfcxx
+        run: ./scripts/checkout-submodules.bash
 
       - name: Copy vendored Unicode mapping tables
         # Same as the `psp` job's step of the same name.
