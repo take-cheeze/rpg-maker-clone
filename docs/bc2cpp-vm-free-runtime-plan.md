@@ -170,8 +170,8 @@ Measured with counters in a scratch vm.c (not committed), `4465dae`, 550 host pr
 |---|---|---|---|
 | `funcall_with_method` | native cfunc: `String#<<` 37.4M, `StringIO#getbyte` 33.6M, `Array#pack` 25.4M, `StringIO#eof?` 12.4M, `IO#getbyte` 9.3M, `StringIO#read` 8.1M, `IO#eof?`/`#read` 8.2M, rest 6.0M | generated `bc2cpp_owner_call` | 140.47M |
 | `funcall_with_method` | compiled `_impl` wrapper | generated | 1.70M |
-| by name, `funcall_send` | native cfunc (`mrb_equal`, boot hooks, `hash`, `initialize_copy`) | core C | 2.32M |
-| by name, `funcall_send` | compiled wrapper | gem C, host | 0.13M |
+| by name, `funcall_send` | native cfunc (`mrb_equal`, boot hooks, `hash`, `initialize_copy`) | core C | 2.32M at `4465dae`; 480 (`dead?`) at the fork pin `15f679a` |
+| by name, `funcall_send` | compiled wrapper | gem C, host | 0.13M at `4465dae`; 0 at `15f679a` |
 | `yield_with_attr` | cfunc proc, compiled block thunk | generated | 3.22M |
 | `exec_irep` | cfunc proc (`Proc#call`) | `proc.o` | 13K (1.1K on master since #3189) |
 
@@ -183,8 +183,7 @@ stays (`mrb_get_args` reads `ci->stack`, gc marks ci), so this removes code, not
 instructions (callgrind), 1593.1M with the verbatim port, 1550.6M with the fast path (-2.6%, -142 per push). 94.6% of the 142M go
 to those eight natives, all from LCF's byte readers; calling them directly from compiled code removes the push.
 
-Remaining: (1) direct calls to the eight natives; (2) boot hooks `const_added`/`method_removed` (1.0M): skip the default no-op;
-(3) `==`/`hash`/`initialize_copy` in core C (1.3M): look up once; (4) `Proc#call` from interpreted mrblib on a non-thunk fallback block (1,100 `exec_irep`, `RPG2k#read_ini_title`).
+Remaining: (1) direct calls to the eight natives; (2) the boot hooks and (3) `==`/`hash`/`initialize_copy` are done by the fork pin `15f679a`: `const_added` reads the memo, `method_removed` and `method_added` test `mrb_func_basic_p` for the default no-op, and `mrb_equal` runs the memo's method. The hooks now cost lookups only (353K `method_removed`, 113K `const_added`, 40K `singleton_method_removed` over the 550-process sweep, no send), and the sweep's by-name sends are 21.9K (`press`/`release` from the host loop 13.2K, the `included` hook 8.3K, `dead?` 480); (4) `Proc#call` from interpreted mrblib on a non-thunk fallback block (1,100 `exec_irep`, `RPG2k#read_ini_title`).
 The copy of vm.c's frame code must follow fork changes to `cipop`/`protect_error`; the sweep guards it. optcarrot
 (`tools/optcarrot_probe/compiled_run.rb`) is a separate full-core build, not VM-free, and does not run on master.
 
