@@ -271,3 +271,9 @@ The 293 compiled entries still kept, by first reason (`scripts/bc2cpp/dynamic_na
 A send on a value a class test has just passed (`x.is_a?(C) && x.m`, `raise ... unless x.is_a?(C)`) looks `m` up on C, its ancestors and its subclasses only, so the closed proof records that owner set for `m` (the `SUPER_REACH` map, nfcxx#847) instead of making `m` dynamic. It applies to an argument nothing rewrites, when every path to the send takes the true edge of the branch on the test, in an irep with no handler, and only while `is_a?`, `kind_of?` and `raise` have no definition but the core natives. `LCF::Array2D#[]=`'s `entry.schema` and `entry.to_lcf` no longer keep `LCF::File`, `Database`, `MapTree`, `MapUnit` and `SaveData`'s `schema`, `File#to_lcf` and `Array2D#to_lcf`: the closed list goes from 3,749 to 3,756 keys and the closed host table from 905 to **898 entries** (pin `70999605`, fork `15f679a`). The plain host sweep and the `BC2CPP_UNREGISTERED_VERIFY=1 METHOD_TABLE=skip` verify sweep pass all 543 maps and the scripted scenarios.
 
 286 compiled entries stay kept. From `LCF::Array2D#[]=` only `Array2D#same_schema?` remains, a send on `self`; narrowing a self-send to its class's relatives is a separate step.
+
+## Singleton ROM tables
+
+A native table under `X_singleton` that is installed into X's singleton is now a candidate for the core ROM exclusion list (nfcxx#850; `NativeRomOwners` spells that owner `X.singleton`, so it was never matched). A singleton table under a plain `X` token still shares that token and stays kept.
+
+The core ROM exclusions go from 237 to 304 keys, all `X_singleton` (`Math` 23, `File` 17, `GC` 8, `FileTest` 5, `Time` 4, `IO` 2, `Kernel` 2, one each of `Array`, `Exception`, `Hash`, `Integer`, `Module` and `Symbol`), and the closed host table from 898 to **833 entries**. The plain build and the `BC2CPP_UNREGISTERED_VERIFY=1 METHOD_TABLE=skip` build both pass all 543 maps and the scripted scenarios.
