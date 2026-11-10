@@ -9261,7 +9261,7 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
 // namespace above), so these wrappers keep the registrations' behaviour: the
 // same body under a name the generated code of another gem can declare.
 // OwnerCallDirect (tools/bc2cpp/owner_call_direct.rb) names them;
-// scripts/bc2cpp-rpg/owner_call_direct_native_check.rb holds them to the
+// scripts/bc2cpp/owner_call_direct_native_check.rb holds them to the
 // registrations.
 mrb_value rgss_obj_dispose_direct(mrb_state* M, mrb_value self) {
   return obj_dispose(M, self);
