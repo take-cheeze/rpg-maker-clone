@@ -321,7 +321,7 @@ class RPG2k
       # only caller that wants that, so the flag is set here rather than
       # keyed off a phase #start has not assigned yet.
       def battle_encounter_lines(troop, req)
-        lines = troop.members.reject(&:hidden).map do |enemy|
+        lines = troop.members.reject { |m| m.hidden }.map do |enemy|
           "#{enemy.name}#{term(:encounter)}"
         end
         lines << term(:special_combat) if req.first_strike
@@ -1276,7 +1276,7 @@ class RPG2k
         member.reseed_rewards(Game::Enemy.new(db, foe.enemy_id))
       end
 
-      def living_allies; @ui[:allies].reject(&:dead?); end
+      def living_allies; @ui[:allies].reject { |a| a.dead? }; end
 
       # Allies selectable as a manually-chosen Battle Item target right now.
       # Unlike a skill target (still `#living_allies` below -- a reference
@@ -2785,9 +2785,9 @@ class RPG2k
         # felled during the round just gone needs the same catch-up onto
         # the Dead pose -- `dead?` itself survives `#end_round` untouched,
         # so it is read after rather than snapshotted before.
-        defenders = @ui[:allies].select(&:defending)
+        defenders = @ui[:allies].select { |a| a.defending }
         battle.end_round
-        (defenders + @ui[:allies].select(&:dead?)).uniq { |a| a.object_id }
+        (defenders + @ui[:allies].select { |a| a.dead? }).uniq { |a| a.object_id }
           .each { |ally| reposition_actor_sprite(ally) }
         close_battle_action
         if battle.finished?
