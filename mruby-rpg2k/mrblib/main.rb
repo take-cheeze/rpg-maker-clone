@@ -1032,7 +1032,7 @@ class RPG2k
     model = battle.ui[:battle]
     enemies = model.enemies
     hp = enemies.reduce(0) { |s, e| s + e.hp }
-    alive = enemies.reject(&:dead?).size
+    alive = enemies.reject { |e| e.dead? }.size
 
     @btl_play_frame ||= 0
     if @btl_play_frame.zero?

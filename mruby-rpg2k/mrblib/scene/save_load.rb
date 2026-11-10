@@ -186,7 +186,7 @@ class RPG2k
         # scene never called it at all, the same gap Scene::Menu's own
         # #update had (see its own citation).
         @header_window.update if @header_window
-        @slot_windows.each(&:update)
+        @slot_windows.each { |w| w.update }
         tick_arrows
 
         if Input.trigger?(Input::B)

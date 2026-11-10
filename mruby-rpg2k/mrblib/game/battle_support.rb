@@ -1316,7 +1316,7 @@ module Game
     # Self-called bare at #total_exp/#total_gold/#drops' own `live_members`
     # (all just above, mruby-rpg2k/mrblib/game/battle_support.rb) --
     # `Array#reject` always returns a fresh Array, never nil.
-    def live_members; @members.reject(&:hidden) end
+    def live_members; @members.reject { |m| m.hidden } end
 
     def build_member(db, m)
       Enemy.new(db, m[:enemy_id], m[:x], m[:y], m[:invisible])

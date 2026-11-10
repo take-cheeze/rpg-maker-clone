@@ -247,9 +247,9 @@ module RPG2k3
         # who is showing the Defend pose before `end_round` clears the flag,
         # so their sprite can revert to Idle, and catch up anyone felled
         # this action onto the Dead pose.
-        defenders = @ui[:allies].select(&:defending)
+        defenders = @ui[:allies].select { |a| a.defending }
         battle.end_round
-        (defenders + @ui[:allies].select(&:dead?)).uniq { |a| a.object_id }
+        (defenders + @ui[:allies].select { |a| a.dead? }).uniq { |a| a.object_id }
           .each { |ally| reposition_actor_sprite(ally) }
         close_battle_action
         if battle.finished?

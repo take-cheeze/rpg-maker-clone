@@ -3140,7 +3140,7 @@ module Game
       when 1 # all enemies
         queue_auto_battle_group_skill(b, sk, sid, @enemies.reject(&:out_of_play?))
       when 4 # all allies
-        queue_auto_battle_group_skill(b, sk, sid, @allies.reject(&:dead?))
+        queue_auto_battle_group_skill(b, sk, sid, @allies.reject { |a| a.dead? })
       when 0 # single enemy
         best = auto_battle_best_target(@enemies) { |t| auto_battle_damage_rank(b, sk, t) }
         best ? queue_single_auto_battle_skill(b, sk, sid, best) : command_skip(b)
