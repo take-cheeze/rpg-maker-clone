@@ -38,7 +38,7 @@ count, so suffixed names are included). These are the script's baselines.
 - Done (354 sites): the bigint `==` arm of every `!=` site (`codegen_native_send.rb`, `MRB_USE_BIGINT`) calls the shared
   `bc2cpp_bigint_eq` (`mrb_bint_cmp`), with no by-name send.
 - Done (172 sites): class-body `include` and `attr_*` call `bc2cpp_mod_include` (`mrb_include_module`) and `bc2cpp_mod_attr`
-  (mruby's own ivar cfuncs via `mrb_define_method_raw`), no by-name send. Only the `included` hook is still sent.
+  (mruby's own ivar cfuncs via `mrb_define_method_raw`), no by-name send. The `included` hook is sent only when a module overrides it.
 - Done: core `x.call(*args)` (`bc2cpp_proc_call_argv`) looks `call` up once and runs the found method (visibility as
   OP_SEND, a missing method through method_missing); the 4 error-path `puts` are one `bc2cpp_stderr_report` (a direct IO
   write when `$stderr#puts` is the gem's, else one by-name `puts`); `Fiber.yield` from C is one `bc2cpp_fiber_yield_c`.
@@ -183,7 +183,7 @@ stays (`mrb_get_args` reads `ci->stack`, gc marks ci), so this removes code, not
 instructions (callgrind), 1593.1M with the verbatim port, 1550.6M with the fast path (-2.6%, -142 per push). 94.6% of the 142M go
 to those eight natives, all from LCF's byte readers; calling them directly from compiled code removes the push.
 
-Remaining: (1) direct calls to the eight natives; (2) the boot hooks and (3) `==`/`hash`/`initialize_copy` are done by the fork pin `15f679a`: `const_added` reads the memo, `method_removed` and `method_added` test `mrb_func_basic_p` for the default no-op, and `mrb_equal` runs the memo's method. The hooks now cost lookups only (353K `method_removed`, 113K `const_added`, 40K `singleton_method_removed` over the 550-process sweep, no send), and the sweep's by-name sends are 21.9K (`press`/`release` from the host loop 13.2K, the `included` hook 8.3K, `dead?` 480); (4) `Proc#call` from interpreted mrblib on a non-thunk fallback block (1,100 `exec_irep`, `RPG2k#read_ini_title`).
+Remaining: (1) direct calls to the eight natives; (2) the boot hooks and (3) `==`/`hash`/`initialize_copy` are done by the fork pin `15f679a`: `const_added` reads the memo, `method_removed` and `method_added` test `mrb_func_basic_p` for the default no-op, and `mrb_equal` runs the memo's method. The hooks now cost lookups only (353K `method_removed`, 113K `const_added`, 40K `singleton_method_removed` over the 550-process sweep, no send), and the sweep's by-name sends are 13.7K (`press`/`release` from the trace host's key taps 13.2K, `dead?` 480, one `nil?` per process that starts the root frame stack); the default `included` hook is no longer sent (nfcxx#840, was 8.3K); (4) `Proc#call` from interpreted mrblib on a non-thunk fallback block (1,100 `exec_irep`, `RPG2k#read_ini_title`).
 The copy of vm.c's frame code must follow fork changes to `cipop`/`protect_error`; the sweep guards it. optcarrot
 (`tools/optcarrot_probe/compiled_run.rb`) is a separate full-core build, not VM-free, and does not run on master.
 
