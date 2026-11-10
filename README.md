@@ -1520,7 +1520,7 @@
   registration lands on that class; core forwarders are trusted by default, `BC2CPP_NATIVE_OWNER_MAP=strict` refuses
   them and `BC2CPP_NATIVE_OWNER_MAP=0` turns the arms off. See
   [`docs/adr/0397-bc2cpp-native-owner-map.md`](docs/adr/0397-bc2cpp-native-owner-map.md) and
-  `scripts/bc2cpp/native_owner_map_check.rb`. The owner scope scan searches between
+  `scripts/bc2cpp-rpg/native_owner_map_check.rb`. The owner scope scan searches between
   braces to reduce temporary allocations; see
   [native-owner scan performance](docs/bc2cpp-native-owner-scan-performance.md).
   After `x.m` returned normally, `x` is an instance of a class that answers `m`: a later `x.n` on the same value
@@ -1740,7 +1740,7 @@
   chain; and a send whose receiver is proven to hold only instances (and `nil`) ignores a `def self.x` definer
   of the same name. See
   [`docs/adr/0302-bc2cpp-native-result-facts.md`](docs/adr/0302-bc2cpp-native-result-facts.md) and
-  `scripts/bc2cpp/native_result_facts_check.rb`.
+  `scripts/bc2cpp-rpg/native_result_facts_check.rb`.
   A record-like Hash held in an ivar (`Scene::Battle#@ui`: Symbol-literal keys, read and written
   only as `h[:key]`) gives each key a whole-program class: a key that only ever holds fresh
   instances of one class makes `@ui[:battle].step_action` an unguarded exact-class call, and a

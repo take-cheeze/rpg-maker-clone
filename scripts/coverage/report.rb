@@ -70,8 +70,8 @@ CHECKS = [
   { name: 'bc2cpp-ir-trace-evidence', command: %w[scripts/bc2cpp/ir_trace_evidence_check.rb] },
   { name: 'bc2cpp-rbs-suggestion-trace', command: %w[scripts/bc2cpp/rbs_suggestion_trace_check.rb] },
   { name: 'bc2cpp-core-ruby-query', command: %w[scripts/bc2cpp/core_ruby_query_check.rb] },
-  { name: 'bc2cpp-type-check-run', command: %w[scripts/bc2cpp/type_check_run_check.rb] },
-  { name: 'bc2cpp-block-yield-types', command: %w[scripts/bc2cpp/block_yield_types_check.rb] },
+  { name: 'bc2cpp-type-check-run', command: %w[scripts/bc2cpp-rpg/type_check_run_check.rb] },
+  { name: 'bc2cpp-block-yield-types', command: %w[scripts/bc2cpp-rpg/block_yield_types_check.rb] },
   { name: 'bc2cpp-type-check-provenance', command: %w[scripts/bc2cpp/type_check_provenance_check.rb] },
   { name: 'bc2cpp-ir-context-results', command: %w[scripts/bc2cpp/ir_context_results_check.rb] },
   { name: 'bc2cpp-ir-blocks', command: %w[scripts/bc2cpp/ir_blocks_check.rb] },
@@ -80,8 +80,8 @@ CHECKS = [
   { name: 'bc2cpp-name-strings', command: %w[scripts/bc2cpp/name_strings_check.rb] },
   { name: 'bc2cpp-typed-immediates', command: %w[scripts/bc2cpp/typed_immediates_check.rb] },
   { name: 'bc2cpp-ir-binary-operands', command: %w[scripts/bc2cpp/ir_binary_operands_check.rb] },
-  { name: 'bc2cpp-rbs-mixin-contracts', command: %w[scripts/bc2cpp/rbs_mixin_contracts_check.rb] },
-  { name: 'bc2cpp-self-call-override-contracts', command: %w[scripts/bc2cpp/self_call_override_contracts_check.rb] },
+  { name: 'bc2cpp-rbs-mixin-contracts', command: %w[scripts/bc2cpp-rpg/rbs_mixin_contracts_check.rb] },
+  { name: 'bc2cpp-self-call-override-contracts', command: %w[scripts/bc2cpp-rpg/self_call_override_contracts_check.rb] },
   { name: 'bc2cpp-explicit-receiver-override-contracts', command: %w[scripts/bc2cpp/explicit_receiver_override_contracts_check.rb] },
   { name: 'bc2cpp-module-includer-bound', command: %w[scripts/bc2cpp/module_includer_bound_check.rb] },
   { name: 'bc2cpp-numeric-roots-reaching', command: %w[scripts/bc2cpp/numeric_roots_reaching_check.rb] },
@@ -126,7 +126,7 @@ CHECKS = [
   { name: 'impossible-as-error', command: %w[scripts/impossible_as_error_check.rb] },
   # bc2cpp's hand-built-irep half only (no mrbc under the reporter): it reaches
   # no mrblib line, listed so the CHECKS list keeps mirroring `ruby-checks`.
-  { name: 'bc2cpp-fallback-bodies', command: %w[scripts/bc2cpp/fallback_bodies_check.rb] },
+  { name: 'bc2cpp-fallback-bodies', command: %w[scripts/bc2cpp-rpg/fallback_bodies_check.rb] },
   # Its hand-built-irep half (the compiled half needs mrbc, bc2cpp-build in build.yml): no mrblib lines.
   { name: 'bc2cpp-loop-element-writes', command: %w[scripts/bc2cpp/loop_element_writes_check.rb] },
   { name: 'bc2cpp-struct-receiver', command: %w[scripts/bc2cpp/struct_receiver_check.rb] },
@@ -151,7 +151,7 @@ CHECKS = [
   { name: 'bc2cpp-native-return-classes', command: %w[scripts/bc2cpp/native_return_classes_check.rb] },
   { name: 'bc2cpp-native-rom-owners', command: %w[scripts/bc2cpp/native_rom_owners_check.rb] },
   # The generator's Prism parse memo: no mrblib lines, listed to mirror `ruby-checks`.
-  { name: 'bc2cpp-ruby-parse-cache', command: %w[scripts/bc2cpp/ruby_parse_cache_check.rb] },
+  { name: 'bc2cpp-ruby-parse-cache', command: %w[scripts/bc2cpp-rpg/ruby_parse_cache_check.rb] },
   # No CRuby-side lines of mrblib, but every scripts/**/*_check.rb rides here.
   { name: 'native-binding-split', command: %w[scripts/native/binding_split_check.rb] },
   # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under CRuby
@@ -165,7 +165,7 @@ CHECKS = [
   # The host-only hand-built shapes of the register flow pass.
   { name: 'bc2cpp-enum-target-flow', command: %w[scripts/bc2cpp/enum_target_flow_check.rb] },
   { name: 'bc2cpp-def-value-flow', command: %w[scripts/bc2cpp/def_value_flow_check.rb] },
-  { name: 'bc2cpp-register-flow', command: %w[scripts/bc2cpp/register_flow_check.rb] },
+  { name: 'bc2cpp-register-flow', command: %w[scripts/bc2cpp-rpg/register_flow_check.rb] },
   # The computed-name send expansion; its generated fixture needs the host mrbc and skips without it.
   { name: 'bc2cpp-computed-send', command: %w[scripts/bc2cpp/computed_send_check.rb] },
   { name: 'bc2cpp-core-mixins',  command: %w[scripts/bc2cpp/core_mixins_check.rb] },
@@ -175,10 +175,10 @@ CHECKS = [
   { name: 'bc2cpp-constant-proofs', command: %w[scripts/bc2cpp/constant_proofs_check.rb] },
   { name: 'bc2cpp-typed-reflection', command: %w[scripts/bc2cpp/typed_reflection_check.rb] },
   # Reads every schema field through the real LCF reader.
-  { name: 'bc2cpp-lcf-schema-oracle', command: %w[scripts/bc2cpp/lcf_schema_oracle_check.rb] },
+  { name: 'bc2cpp-lcf-schema-oracle', command: %w[scripts/bc2cpp-rpg/lcf_schema_oracle_check.rb] },
   # The LCF row model against the real reader and the Array2D#[]= invariant; the compiled
   # fixtures skip here.
-  { name: 'bc2cpp-lcf-row-flow', command: %w[scripts/bc2cpp/lcf_row_flow_check.rb] },
+  { name: 'bc2cpp-lcf-row-flow', command: %w[scripts/bc2cpp-rpg/lcf_row_flow_check.rb] },
   # NumericFlow on hand-built bytecode; the fixture sections skip here.
   { name: 'bc2cpp-numeric-operand', command: %w[scripts/bc2cpp/numeric_operand_check.rb] },
   # The Integer bit-operator result class on hand-built bytecode; no mrblib lines.
@@ -191,11 +191,11 @@ CHECKS = [
   { name: 'bc2cpp-loadsym-class', command: %w[scripts/bc2cpp/loadsym_class_check.rb] },
   # The RGSS native result facts against the native sources, and the ClosedWorld questions;
   # the generated-code section skips here.
-  { name: 'bc2cpp-native-result-facts', command: %w[scripts/bc2cpp/native_result_facts_check.rb] },
+  { name: 'bc2cpp-native-result-facts', command: %w[scripts/bc2cpp-rpg/native_result_facts_check.rb] },
   # TouchScan's static-helper names and prototypes (pure host Ruby).
   { name: 'bc2cpp-touch-scan-native-helper', command: %w[scripts/bc2cpp/touch_scan_native_helper_check.rb] },
   # The owner map's exact-class arms and their kill switch; the generated-code section skips without MRBC.
-  { name: 'bc2cpp-native-owner-map', command: %w[scripts/bc2cpp/native_owner_map_check.rb] },
+  { name: 'bc2cpp-native-owner-map', command: %w[scripts/bc2cpp-rpg/native_owner_map_check.rb] },
   # The AREF transfer and the tuple shape on hand-built bytecode; the fixture sections skip here.
   { name: 'bc2cpp-tuple-return', command: %w[scripts/bc2cpp/tuple_return_check.rb] },
   # The class-object resolver on hand-built bytecode; the fixture section skips here.

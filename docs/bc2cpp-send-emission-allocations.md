@@ -35,7 +35,7 @@ The rewrite now:
   slices and replacements to one new String.
 
 A non-ASCII byte before a candidate falls back to the old `Regexp`, whose `\b`
-is Unicode-aware. The host section of `scripts/bc2cpp/outside_owner_call_check.rb`
+is Unicode-aware. The host section of `scripts/bc2cpp-rpg/outside_owner_call_check.rb`
 compares the new rewrite with the word-bounded `gsub` on 2,000 seeded random
 lines that mix matching heads, identifier and non-ASCII prefixes, near misses
 and a non-ASCII method name.

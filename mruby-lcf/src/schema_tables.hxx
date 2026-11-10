@@ -4,8 +4,8 @@
 // type is read and caches the Hash, so only the types a game touches are ever
 // built; the bytes stay in .rodata.
 //
-// Included by lcf.cxx and by scripts/bc2cpp/lcf_schema_tables_check.rb, which
-// decodes every table with a real mruby.
+// Included by lcf.cxx and by scripts/bc2cpp-rpg/lcf_schema_tables_check.rb,
+// which decodes every table with a real mruby.
 #pragma once
 
 #include <mruby.h>

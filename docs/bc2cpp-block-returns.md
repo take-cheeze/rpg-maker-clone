@@ -36,7 +36,7 @@ runs under the caller's self. This holds only when every method the call can rea
 shape. For a native singleton the receiver must be the constant itself. The block must not `break` or `return`.
 
 ```sh
-MRBC=/path/to/mrbc ruby scripts/bc2cpp/generic_block_return_check.rb
+MRBC=/path/to/mrbc ruby scripts/bc2cpp-rpg/generic_block_return_check.rb
 ```
 
 Without MRBC the check runs only its host half: the declaration shapes, the native scan and its profiler.cxx mutants,

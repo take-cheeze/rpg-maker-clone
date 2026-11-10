@@ -280,7 +280,7 @@ embeddings) and `bc2cpp_register_program_owner_methods` (every other owner).
 The core half looks up no program class, so a program that needs the compiled
 core methods before its own class bodies run can install it first. The
 optcarrot probe's `install_prelude!` does that, and its `install!` runs the
-program half later. `scripts/bc2cpp/registration_split_check.rb` checks the
+program half later. `scripts/bc2cpp-rpg/registration_split_check.rb` checks the
 split.
 
 ### Native methods
@@ -686,7 +686,7 @@ Saving writes into the game directory, so trace a copy.
 
 `scripts/bc2cpp/unregistered_verify_check.rb` checks the emitted
 registrations, and checks both modes' runtime behaviour on a small host.
-`scripts/bc2cpp/static_dispatch_scan_check.rb` checks the scan rules on
+`scripts/bc2cpp-rpg/static_dispatch_scan_check.rb` checks the scan rules on
 fixture text.
 
 ### Covered block sites

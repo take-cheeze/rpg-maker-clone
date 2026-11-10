@@ -33,7 +33,7 @@ lines and normalizing checkout paths. Ten generated-code fixtures also
 produced byte-identical output against the baseline. These are local generator
 measurements, not game runtime or complete build timings.
 
-`scripts/bc2cpp/native_result_facts_check.rb` exercises the native source
+`scripts/bc2cpp-rpg/native_result_facts_check.rb` exercises the native source
 audits, receiver snapshot behavior, randomized equivalence against the
 previous query algorithm and generated-code fixtures when `MRBC` is set.
 

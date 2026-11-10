@@ -102,7 +102,7 @@ is replaced by this one.
   caches it as before; nothing is built at load. A table names the schema's own
   shared constants (`elements: SE`) as references, so the object sharing is
   kept, and keeps the keys' order. `schema.rb` stays the one source, plain Ruby
-  that CRuby loads. `scripts/bc2cpp/lcf_schema_tables_check.rb` decodes every
+  that CRuby loads. `scripts/bc2cpp-rpg/lcf_schema_tables_check.rb` decodes every
   table with a real mruby, with a full collection before every value, and
   compares the whole of `LCF::Schema` (lambdas called under CRuby, tables
   decoded under mruby) as text. Measured (closed build, clang 18): the schema
