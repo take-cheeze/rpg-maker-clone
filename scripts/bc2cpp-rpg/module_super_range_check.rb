@@ -8,7 +8,7 @@
 #
 # What is checked here is the generated code -- the emitted super call, its
 # forwarded block, and that no unhandled-SUPER marker survives. The behavioural
-# half is scripts/bc2cpp-rpg/module_super_check.rb, which runs compiled code
+# half is scripts/bc2cpp/module_super_check.rb, which runs compiled code
 # against the interpreter; driving the real Range through a fixture would need
 # the whole closed gem set, so the two together cover code shape and semantics
 # without pretending the fixture is the shipped build.

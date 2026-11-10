@@ -13,7 +13,7 @@
 #    guard or fallback.
 # 3. With BC2CPP_MRUBY_FULL and g++: the fixtures run on real mruby, interpreted and compiled, and
 #    must answer alike, nil holes, absent chunks and foreign rows included. The run repeats on a
-#    32-bit-`mrb_int` build (BC2CPP_MRUBY_FULL32, BC2CPP_MRBC32; scripts/bc2cpp-rpg/width_build.rb int32).
+#    32-bit-`mrb_int` build (BC2CPP_MRUBY_FULL32, BC2CPP_MRBC32; scripts/bc2cpp/width_build.rb int32).
 #
 # Usage: MRBC=path/to/mrbc [BC2CPP_MRUBY_CORE=dir BC2CPP_MRUBY_FULL=dir BC2CPP_MRUBY_FULL32=dir
 #         BC2CPP_MRBC32=mrbc32] ruby scripts/bc2cpp-rpg/lcf_row_flow_check.rb

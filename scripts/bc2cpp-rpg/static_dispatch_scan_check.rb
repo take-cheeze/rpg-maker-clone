@@ -39,7 +39,7 @@
 #     or `@ivar` presym, name no method.
 #   CLOSED_LINKED_ONLY: the closed scan reads no core mruby-* gem outside the closed build's gem closure (HAL gems
 #     stay), no external gem it leaves out, no engine mrblib file its rake swaps out and no app/ source; it reads
-#     the closed host, scripts/bc2cpp-rpg/trace_host.cxx. The desktop application (the repository's src/) is no
+#     the closed host, scripts/bc2cpp/trace_host.cxx. The desktop application (the repository's src/) is no
 #     part of that binary either.
 #   NATIVE_COMMENTS: a literal in a C comment names nothing; text the comment scan cannot read is kept whole.
 #   FRAGMENT_USES (needs MRBC; skipped without it): a pool literal stays a fragment only when a load of it may reach
@@ -354,7 +354,7 @@ check('linked only: an unlinked gem\'s mrblib and a swapped-out engine file are 
       ruby.none? { |p| p.include?('/mruby-enum-lazy/') || p.end_with?('/scene/map_tts.rb') } &&
       open_ruby.any? { |p| p.end_with?('/scene/map_tts.rb') })
 check('linked only: the closed host is read, the device apps are not',
-      natives.include?("#{BC2CPP_TREE_ROOT}/scripts/bc2cpp-rpg/trace_host.cxx") && natives.none? { |p| p.start_with?("#{root}/app/", "#{root}/src/") })
+      natives.include?("#{BC2CPP_TREE_ROOT}/scripts/bc2cpp/trace_host.cxx") && natives.none? { |p| p.start_with?("#{root}/app/", "#{root}/src/") })
 
 # --- NATIVE_COMMENTS ---
 commented = %(int n = 1'000; /* "in_block" */ f("keep//this", '"'); // "in_line"\nmrb_funcall(M, v, "real", 0);\n)
