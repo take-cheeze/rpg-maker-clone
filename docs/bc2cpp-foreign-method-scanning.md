@@ -19,7 +19,7 @@ seconds; patched times were 0.024, 0.027 and 0.026 seconds. The marshalled
 query results had identical SHA-256 hashes. This measures the query path,
 not total generator or generated-game performance.
 
-`scripts/bc2cpp/ruby_parse_cache_check.rb` checks both query families against
+`scripts/bc2cpp-rpg/ruby_parse_cache_check.rb` checks both query families against
 uncached scans, including multiple definitions, accessor names, absent names,
 path ordering and duplicates. It counts file scans to catch repeated work
 and checks that a new world sees rewritten sources.

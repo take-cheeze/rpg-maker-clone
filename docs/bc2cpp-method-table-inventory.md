@@ -137,7 +137,7 @@ No method-table entry points to Ruby bytecode. This does not count standalone bl
 
 ## Rechecking
 
-`scripts/bc2cpp/static_dispatch_scan_check.rb` covers lambda/template/function-expression candidates, callable-body lookups, alias exclusions, computed names/owners, Ruby overrides and existing candidates. `scripts/bc2cpp/unregistered_verify_check.rb` exercises ordinary removal, preserved `respond_to?` answers and aborting verify stubs even when no named callable is available.
+`scripts/bc2cpp-rpg/static_dispatch_scan_check.rb` covers lambda/template/function-expression candidates, callable-body lookups, alias exclusions, computed names/owners, Ruby overrides and existing candidates. `scripts/bc2cpp/unregistered_verify_check.rb` exercises ordinary removal, preserved `respond_to?` answers and aborting verify stubs even when no named callable is available.
 
 `scripts/bc2cpp/core_native_candidates_check.rb` also checks native alias
 destinations, chains, source lookups, computed owners and ROM-sharing exclusions.

@@ -748,7 +748,30 @@ jobs:
         run: ruby scripts/ci/check_registry.rb
 
       - name: Check host-rooted code generation
-        run: ruby scripts/bc2cpp/main_roots_check.rb
+        run: ruby scripts/bc2cpp-rpg/main_roots_check.rb
+
+      # The engine-gem fixture checks (scripts/bc2cpp-rpg/): they read mruby-lcf, mruby-rgss and mruby-rpg2k, so they
+      # run here with the full-core fixture libraries prepared above, not in nfcxx's checks job.
+      - name: Engine-gem bc2cpp checks
+        run: |
+          ruby scripts/bc2cpp-rpg/block_self_world_check.rb
+          ruby scripts/bc2cpp-rpg/block_yield_types_check.rb
+          ruby scripts/bc2cpp-rpg/class_world_check.rb
+          ruby scripts/bc2cpp-rpg/compiled_gems_config_check.rb
+          ruby scripts/bc2cpp-rpg/constructor_overloads_check.rb
+          ruby scripts/bc2cpp-rpg/edition_default_check.rb
+          ruby scripts/bc2cpp-rpg/generic_block_return_check.rb
+          ruby scripts/bc2cpp-rpg/lcf_join_array_check.rb
+          ruby scripts/bc2cpp-rpg/lcf_schema_tables_check.rb
+          ruby scripts/bc2cpp-rpg/native_format_types_check.rb
+          ruby scripts/bc2cpp-rpg/outside_owner_call_check.rb
+          ruby scripts/bc2cpp-rpg/owner_call_direct_native_check.rb
+          ruby scripts/bc2cpp-rpg/rbs_mixin_contracts_check.rb
+          ruby scripts/bc2cpp-rpg/registration_split_check.rb
+          ruby scripts/bc2cpp-rpg/schema_blob_check.rb
+          ruby scripts/bc2cpp-rpg/self_call_override_contracts_check.rb
+          ruby scripts/bc2cpp-rpg/static_dispatch_scan_check.rb
+          ruby scripts/bc2cpp-rpg/type_check_run_check.rb
 
       # Facts for the binding-split check: libclang extraction of every RGSS
       # native binding, cached across runs. Entries are keyed on everything the
@@ -1072,7 +1095,7 @@ jobs:
             run: |
               ruby scripts/rpg2k/closed_world_lint_check.rb
               ruby scripts/rpg2k/closed_world_lint.rb
-              ruby scripts/bc2cpp/lint_crosscheck_check.rb
+              ruby scripts/bc2cpp-rpg/lint_crosscheck_check.rb
 
           # Whole-program fixed points run under a hard round limit.
           - name: bc2cpp fixpoint bounds

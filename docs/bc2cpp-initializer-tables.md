@@ -33,7 +33,7 @@ The source/class analysis runs once before shared generation forks. Per-unit
 work checks only that unit's final emitted methods. Existing `respond_to?`
 phantom handling preserves the closed build's supported name probes.
 
-Run `scripts/bc2cpp/main_roots_check.rb` with the full-core fixture runtime to
+Run `scripts/bc2cpp-rpg/main_roots_check.rb` with the full-core fixture runtime to
 check physical table removal, retained constructor results, inheritance,
 wrong-arity calls, reflection and missing proof inputs. Refresh and verify the
 static omission lists before building a real closed engine.

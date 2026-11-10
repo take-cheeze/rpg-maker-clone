@@ -82,7 +82,7 @@ caches hit, nothing asks for these files, so they are never read or parsed.
 
 ## Evidence
 
-`scripts/bc2cpp/ruby_parse_cache_check.rb` (section "Prism readers kept in the
+`scripts/bc2cpp-rpg/ruby_parse_cache_check.rb` (section "Prism readers kept in the
 scan cache") uses a private cache directory. It checks these things:
 
 - The three readers give the same answers from a cold cache, from a warm

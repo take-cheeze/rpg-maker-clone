@@ -35,6 +35,6 @@ and exposes the result as `BC2CPP_COMPILED_GEMS`, the table every consumer
 checks) already read. The `*-compiled` rake rules and the CMake build list the
 file as a prerequisite, so editing it regenerates the gems.
 
-`scripts/bc2cpp/compiled_gems_config_check.rb` holds a fixture for the good file
+`scripts/bc2cpp-rpg/compiled_gems_config_check.rb` holds a fixture for the good file
 and one per validation failure, and checks the repository's file against the gems
 on disk.

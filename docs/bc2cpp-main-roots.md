@@ -204,7 +204,7 @@ so installing compiled methods cannot put an excluded slot back.
 
 ```sh
 MRBC=/path/to/mrbc BC2CPP_MRUBY_FULL=/path/to/full/host \
-  ruby scripts/bc2cpp/main_roots_check.rb
+  ruby scripts/bc2cpp-rpg/main_roots_check.rb
 ```
 
 This checks callbacks, startup, direct native entries, transitive Ruby calls,

@@ -133,7 +133,7 @@ window mode on the same input gives 404,626 lines (-4,956 against off, -1.2%),
 19,876,990 bytes (-0.39%) and 16,680 copies. The optimizer already removes these
 stores: compiling the whole output with `g++ -O1 -c` gives the same `.text` (6,142,800
 bytes off, 6,142,782 on), so the gain is source size and parse time, not code size.
-`scripts/bc2cpp/register_flow_check.rb` holds hand-built soundness shapes and a
+`scripts/bc2cpp-rpg/register_flow_check.rb` holds hand-built soundness shapes and a
 compiled-versus-interpreted run with the pass on, off and in window mode.
 
 Register-read masks are accumulated directly while scanning each instruction's

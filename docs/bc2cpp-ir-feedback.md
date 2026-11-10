@@ -439,7 +439,7 @@ contract: CRuby keeps it at its first insertion, and that depends on load order
 the static links do not record. `class Child < Base; include M; end` with
 `Base` also including `M` therefore refuses the call instead of returning
 `M#m`, which CRuby dispatches to `Base#m`. Unknown mixins and cycles refuse
-the same way. The fixture is `scripts/bc2cpp/rbs_mixin_contracts_check.rb`.
+the same way. The fixture is `scripts/bc2cpp-rpg/rbs_mixin_contracts_check.rb`.
 
 **Unknown receivers.** A receiver whose class set is unknown does not use a
 return contract because its method name has one declaration in the program.
@@ -532,7 +532,7 @@ removed name gets no contract on any explicit receiver, with cause
 explicit-receiver resolver in `RbsSignatures.ir_types`, and in
 `CodeGen#bytecode_ir_call_result_classes`, `CodeGen#return_class_send_mask` and
 `IrContextResults#dispatch`. The fixtures are
-`scripts/bc2cpp/self_call_override_contracts_check.rb`, sections (g) (the
+`scripts/bc2cpp-rpg/self_call_override_contracts_check.rb`, sections (g) (the
 inferred call result) and (h) (the return-class oracle), and
 `scripts/bc2cpp/explicit_receiver_override_contracts_check.rb`, section (g).
 

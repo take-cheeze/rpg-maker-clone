@@ -30,7 +30,7 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   # (real `mrbc -g`) -- the single largest file in this gem. Replaced here
   # with a compact packed binary blob plus a small, constant-size decoder
   # (gen_schema_blob.rb), checked against schema.rb by
-  # scripts/bc2cpp/schema_blob_check.rb (every constant, every key of every
+  # scripts/bc2cpp-rpg/schema_blob_check.rb (every constant, every key of every
   # field including `format:` and `enums:`, section order, every nested/lazy
   # field, every default). That check found the generator had been dropping
   # `format:` and `enums:`, which made two unsigned int16 fields read as

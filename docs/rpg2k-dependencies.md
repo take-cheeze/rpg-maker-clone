@@ -30,7 +30,7 @@ omitted gem back in.
 
 ## Checks
 
-`ruby scripts/bc2cpp/compiled_gems_config_check.rb` checks the dependency matrix,
+`ruby scripts/bc2cpp-rpg/compiled_gems_config_check.rb` checks the dependency matrix,
 transitive closure, test/runtime declarations and optional compiled-core edge.
 `ruby scripts/wio/dropped_gems_check.rb --rpg2k` rejects runtime calls to omitted
 APIs across the shared Ruby and single-format native sources. The default mode

@@ -13,7 +13,7 @@ are formatted without caching. A cached string is itself frozen, so neither
 a caller nor another generator can change a later call's output. Dispatch
 proofs, owner ordering, argument limits, and generated C++ bytes are unchanged.
 
-The formatting cases in `scripts/bc2cpp/outside_owner_call_check.rb` compare
+The formatting cases in `scripts/bc2cpp-rpg/outside_owner_call_check.rb` compare
 ordinary calls, block calls, splats and helper rewrites with the prior output,
 including zero, one and sixteen arguments. They also exercise mutation,
 snapshot ownership, per-generator isolation and the cache cap. The existing
