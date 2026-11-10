@@ -7345,6 +7345,19 @@ void define_rect(mrb_state* M, RClass* m) {
   RClass* rect = mrb_define_class_under(M, m, "Rect", M->object_class);
   MRB_SET_INSTANCE_TT(rect, MRB_TT_DATA);
   g_native_rect_class = rect;
+#if !defined(WIO_TERMINAL)  // Rect#dup/#clone: unused on wio
+  static constexpr mrb_func_t rect_initialize_copy_tmpl = data_init_copy<Rect>;
+#endif  // !defined(WIO_TERMINAL)
+  static const mrb_mt_entry rect_methods[] = {
+#if !defined(WIO_TERMINAL)  // Rect#dup/#clone: unused on wio
+      MRB_MT_ENTRY(rect_initialize_copy_tmpl, MRB_SYM(initialize_copy),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+#endif                                                // !defined(WIO_TERMINAL)
+      MRB_MT_ENTRY(rect_empty_native_body, MRB_SYM(empty), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(rect_to_s_native_body, MRB_SYM(to_s), MRB_ARGS_NONE())    //
+      MRB_MT_ENTRY(rect_dump_native_body, MRB_SYM(_dump), MRB_ARGS_REQ(1))   //
+  };
+  MRB_MT_INIT_ROM(M, rect, rect_methods);
   mrb_define_method(
       M, rect, "initialize",
       [](mrb_state* M, V self) -> V {
@@ -7358,10 +7371,6 @@ void define_rect(mrb_state* M, RClass* m) {
         return self;
       },
       MRB_ARGS_OPT(4));
-#if !defined(WIO_TERMINAL)  // Rect#dup/#clone: unused on wio
-  mrb_define_method(M, rect, "initialize_copy", data_init_copy<Rect>,
-                    MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
   mrb_define_method(
       M, rect, "set",
       [](mrb_state* M, V self) {
@@ -7377,7 +7386,6 @@ void define_rect(mrb_state* M, RClass* m) {
         return self;
       },
       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
-  mrb_define_method(M, rect, "empty", rect_empty_native_body, MRB_ARGS_NONE());
   mrb_define_method(
       M, rect, "x",
       [](mrb_state* M, V self) { return rgss::rect_x_direct(M, self); },
@@ -7434,8 +7442,6 @@ void define_rect(mrb_state* M, RClass* m) {
         return rect_eq_native_body(M, self, o);
       },
       MRB_ARGS_REQ(1));
-  mrb_define_method(M, rect, "to_s", rect_to_s_native_body, MRB_ARGS_NONE());
-  mrb_define_method(M, rect, "_dump", rect_dump_native_body, MRB_ARGS_REQ(1));
   mrb_define_class_method(
       M, rect, "_load",
       [](mrb_state* M, V self) {
@@ -8871,23 +8877,49 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   }
 #endif
   RClass* m = mrb_define_module(M, "RGSS");
-  mrb_define_module_function(M, m, "to_nfd", to_nfd, MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, m, "default_font_path", default_font_path_m,
-                             MRB_ARGS_NONE());
-#if !defined(WIO_TERMINAL)  // unused on wio
-  mrb_define_module_function(M, m, "zlib_inflate", zlib_inflate,
-                             MRB_ARGS_REQ(1));
+  static const mrb_mt_entry m_module_functions[] = {
+      MRB_MT_ENTRY(to_nfd, MRB_SYM(to_nfd), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(default_font_path_m, MRB_SYM(default_font_path),
+                   MRB_ARGS_NONE())  //
+#if !defined(WIO_TERMINAL)           // unused on wio
+      MRB_MT_ENTRY(zlib_inflate, MRB_SYM(zlib_inflate), MRB_ARGS_REQ(1))  //
 #endif  // !defined(WIO_TERMINAL)
-  mrb_define_module_function(M, m, "mouse_x", mouse_x_m, MRB_ARGS_NONE());
-  mrb_define_module_function(M, m, "mouse_y", mouse_y_m, MRB_ARGS_NONE());
-  mrb_define_module_function(M, m, "mouse_pressed?", mouse_pressed_m,
-                             MRB_ARGS_NONE());
-  mrb_define_module_function(M, m, "__log_bridge_write", log_bridge_write_m,
-                             MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, m, "window_title=", window_title_set_m,
-                             MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, m, "window_title", window_title_get_m,
-                             MRB_ARGS_NONE());
+      MRB_MT_ENTRY(mouse_x_m, MRB_SYM(mouse_x), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(mouse_y_m, MRB_SYM(mouse_y), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(mouse_pressed_m, MRB_SYM_Q(mouse_pressed),
+                   MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(log_bridge_write_m, MRB_SYM(__log_bridge_write),
+                   MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(window_title_set_m, MRB_SYM_E(window_title),
+                   MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(window_title_get_m, MRB_SYM(window_title),
+                   MRB_ARGS_NONE())  //
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(m)),
+                  m_module_functions);
+  static const mrb_mt_entry m_module_functions_private[] = {
+      MRB_MT_ENTRY(to_nfd, MRB_SYM(to_nfd),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(default_font_path_m, MRB_SYM(default_font_path),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+#if !defined(WIO_TERMINAL)                            // unused on wio
+      MRB_MT_ENTRY(zlib_inflate, MRB_SYM(zlib_inflate),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+#endif                                                // !defined(WIO_TERMINAL)
+      MRB_MT_ENTRY(mouse_x_m, MRB_SYM(mouse_x),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(mouse_y_m, MRB_SYM(mouse_y),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(mouse_pressed_m, MRB_SYM_Q(mouse_pressed),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(log_bridge_write_m, MRB_SYM(__log_bridge_write),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(window_title_set_m, MRB_SYM_E(window_title),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(window_title_get_m, MRB_SYM(window_title),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+  };
+  MRB_MT_INIT_ROM(M, m, m_module_functions_private);
 
   mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_game_start"),
                 mrb_fixnum_value(lv_tick_get()));
@@ -8897,72 +8929,86 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* vp = mrb_define_class_under(M, m, "Viewport", M->object_class);
   MRB_SET_INSTANCE_TT(vp, MRB_TT_DATA);
   g_native_viewport_class = vp;
-  mrb_define_method(M, vp, "initialize", vp_init, MRB_ARGS_OPT(4));
-  mrb_define_method(M, vp, "rect", vp_rect, MRB_ARGS_NONE());
-  mrb_define_method(M, vp, "rect=", vp_set_rect, MRB_ARGS_REQ(1));
-  mrb_define_method(M, vp, "ox", vp_ox, MRB_ARGS_NONE());
-  mrb_define_method(M, vp, "oy", vp_oy, MRB_ARGS_NONE());
-  mrb_define_method(M, vp, "ox=", vp_set_ox, MRB_ARGS_REQ(1));
-  mrb_define_method(M, vp, "oy=", vp_set_oy, MRB_ARGS_REQ(1));
-  mrb_define_method(M, vp, "z=", obj_set_z, MRB_ARGS_REQ(1));
-  mrb_define_method(M, vp, "visible", obj_visible, MRB_ARGS_NONE());
-  mrb_define_method(M, vp, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
-  mrb_define_method(M, vp, "update", vp_update, MRB_ARGS_NONE());
-  // RGSS2/RGSS3 do every screen effect through the viewport: a flat colour over
-  // everything it draws, and a timed flash. See vp_refresh_overlay.
-  mrb_define_method(M, vp, "color", vp_color, MRB_ARGS_NONE());
-  mrb_define_method(M, vp, "color=", vp_set_color, MRB_ARGS_REQ(1));
-  mrb_define_method(M, vp, "tone", vp_tone, MRB_ARGS_NONE());
-  mrb_define_method(M, vp, "tone=", vp_set_tone, MRB_ARGS_REQ(1));
-  mrb_define_method(M, vp, "flash", vp_flash, MRB_ARGS_REQ(2));
-  mrb_define_method(M, vp, "dispose", obj_dispose, MRB_ARGS_NONE());
-  mrb_define_method(M, vp, "disposed?", obj_disposed, MRB_ARGS_NONE());
+  static const mrb_mt_entry vp_methods[] = {
+      MRB_MT_ENTRY(vp_init, MRB_SYM(initialize),
+                   MRB_ARGS_OPT(4) | MRB_MT_PRIVATE)                      //
+      MRB_MT_ENTRY(vp_rect, MRB_SYM(rect), MRB_ARGS_NONE())               //
+      MRB_MT_ENTRY(vp_set_rect, MRB_SYM_E(rect), MRB_ARGS_REQ(1))         //
+      MRB_MT_ENTRY(vp_ox, MRB_SYM(ox), MRB_ARGS_NONE())                   //
+      MRB_MT_ENTRY(vp_oy, MRB_SYM(oy), MRB_ARGS_NONE())                   //
+      MRB_MT_ENTRY(vp_set_ox, MRB_SYM_E(ox), MRB_ARGS_REQ(1))             //
+      MRB_MT_ENTRY(vp_set_oy, MRB_SYM_E(oy), MRB_ARGS_REQ(1))             //
+      MRB_MT_ENTRY(obj_set_z, MRB_SYM_E(z), MRB_ARGS_REQ(1))              //
+      MRB_MT_ENTRY(obj_visible, MRB_SYM(visible), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(obj_set_visible, MRB_SYM_E(visible), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(vp_update, MRB_SYM(update), MRB_ARGS_NONE())           //
+      // RGSS2/RGSS3 do every screen effect through the viewport: a flat colour
+      // over everything it draws, and a timed flash. See vp_refresh_overlay.
+      MRB_MT_ENTRY(vp_color, MRB_SYM(color), MRB_ARGS_NONE())           //
+      MRB_MT_ENTRY(vp_set_color, MRB_SYM_E(color), MRB_ARGS_REQ(1))     //
+      MRB_MT_ENTRY(vp_tone, MRB_SYM(tone), MRB_ARGS_NONE())             //
+      MRB_MT_ENTRY(vp_set_tone, MRB_SYM_E(tone), MRB_ARGS_REQ(1))       //
+      MRB_MT_ENTRY(vp_flash, MRB_SYM(flash), MRB_ARGS_REQ(2))           //
+      MRB_MT_ENTRY(obj_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())  //
+  };
+  MRB_MT_INIT_ROM(M, vp, vp_methods);
 
   RClass* spr = mrb_define_class_under(M, m, "Sprite", M->object_class);
   MRB_SET_INSTANCE_TT(spr, MRB_TT_DATA);
   g_native_sprite_class = spr;
-  mrb_define_method(M, spr, "initialize", spr_init, MRB_ARGS_OPT(1));
-  mrb_define_method(M, spr, "bitmap=", spr_set_bmp, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "dispose", obj_dispose, MRB_ARGS_NONE());
-  mrb_define_method(M, spr, "disposed?", obj_disposed, MRB_ARGS_NONE());
-  mrb_define_method(M, spr, "x=", obj_set_x, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "y=", obj_set_y, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "z=", obj_set_z, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "visible", obj_visible, MRB_ARGS_NONE());
-  mrb_define_method(M, spr, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "zoom_x=", spr_set_zoom_x, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "zoom_y=", spr_set_zoom_y, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "angle=", spr_set_angle, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "mirror=", spr_set_mirror, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "tone=", spr_set_tone, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "color=", spr_set_color, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "src_rect=", spr_set_src_rect, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "update", spr_update, MRB_ARGS_NONE());
-  mrb_define_method(M, spr, "blend_type=", spr_set_blend_type, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "bush_depth=", spr_set_bush_depth, MRB_ARGS_REQ(1));
-  mrb_define_method(M, spr, "flash", spr_flash, MRB_ARGS_REQ(2));
+  static const mrb_mt_entry spr_methods[] = {
+      MRB_MT_ENTRY(spr_init, MRB_SYM(initialize),
+                   MRB_ARGS_OPT(1) | MRB_MT_PRIVATE)                        //
+      MRB_MT_ENTRY(spr_set_bmp, MRB_SYM_E(bitmap), MRB_ARGS_REQ(1))         //
+      MRB_MT_ENTRY(obj_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())          //
+      MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(obj_set_x, MRB_SYM_E(x), MRB_ARGS_REQ(1))                //
+      MRB_MT_ENTRY(obj_set_y, MRB_SYM_E(y), MRB_ARGS_REQ(1))                //
+      MRB_MT_ENTRY(obj_set_z, MRB_SYM_E(z), MRB_ARGS_REQ(1))                //
+      MRB_MT_ENTRY(obj_visible, MRB_SYM(visible), MRB_ARGS_NONE())          //
+      MRB_MT_ENTRY(obj_set_visible, MRB_SYM_E(visible), MRB_ARGS_REQ(1))    //
+      MRB_MT_ENTRY(spr_set_opacity, MRB_SYM_E(opacity), MRB_ARGS_REQ(1))    //
+      MRB_MT_ENTRY(spr_set_zoom_x, MRB_SYM_E(zoom_x), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(spr_set_zoom_y, MRB_SYM_E(zoom_y), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(spr_set_angle, MRB_SYM_E(angle), MRB_ARGS_REQ(1))        //
+      MRB_MT_ENTRY(spr_set_mirror, MRB_SYM_E(mirror), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(spr_set_tone, MRB_SYM_E(tone), MRB_ARGS_REQ(1))          //
+      MRB_MT_ENTRY(spr_set_color, MRB_SYM_E(color), MRB_ARGS_REQ(1))        //
+      MRB_MT_ENTRY(spr_set_src_rect, MRB_SYM_E(src_rect), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(spr_update, MRB_SYM(update), MRB_ARGS_NONE())            //
+      MRB_MT_ENTRY(spr_set_blend_type, MRB_SYM_E(blend_type),
+                   MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(spr_set_bush_depth, MRB_SYM_E(bush_depth),
+                   MRB_ARGS_REQ(1))                             //
+      MRB_MT_ENTRY(spr_flash, MRB_SYM(flash), MRB_ARGS_REQ(2))  //
+  };
+  MRB_MT_INIT_ROM(M, spr, spr_methods);
 
 #if !defined(WIO_TERMINAL)  // Plane: never instantiated by wio's Ruby
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   g_native_plane_class = plane;
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
-  mrb_define_method(M, plane, "initialize", plane_init, MRB_ARGS_OPT(1));
-  mrb_define_method(M, plane, "bitmap=", plane_set_bmp, MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "ox=", plane_set_ox, MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "oy=", plane_set_oy, MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "opacity=", spr_set_opacity, MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "tone=", plane_set_tone, MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "color=", plane_set_color, MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "zoom_x=", plane_set_zoom_x, MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "zoom_y=", plane_set_zoom_y, MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "blend_type=", spr_set_blend_type,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "z=", obj_set_z, MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "visible", obj_visible, MRB_ARGS_NONE());
-  mrb_define_method(M, plane, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
-  mrb_define_method(M, plane, "dispose", obj_dispose, MRB_ARGS_NONE());
-  mrb_define_method(M, plane, "disposed?", obj_disposed, MRB_ARGS_NONE());
+  static const mrb_mt_entry plane_methods[] = {
+      MRB_MT_ENTRY(plane_init, MRB_SYM(initialize),
+                   MRB_ARGS_OPT(1) | MRB_MT_PRIVATE)                      //
+      MRB_MT_ENTRY(plane_set_bmp, MRB_SYM_E(bitmap), MRB_ARGS_REQ(1))     //
+      MRB_MT_ENTRY(plane_set_ox, MRB_SYM_E(ox), MRB_ARGS_REQ(1))          //
+      MRB_MT_ENTRY(plane_set_oy, MRB_SYM_E(oy), MRB_ARGS_REQ(1))          //
+      MRB_MT_ENTRY(spr_set_opacity, MRB_SYM_E(opacity), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(plane_set_tone, MRB_SYM_E(tone), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(plane_set_color, MRB_SYM_E(color), MRB_ARGS_REQ(1))    //
+      MRB_MT_ENTRY(plane_set_zoom_x, MRB_SYM_E(zoom_x), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(plane_set_zoom_y, MRB_SYM_E(zoom_y), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(spr_set_blend_type, MRB_SYM_E(blend_type),
+                   MRB_ARGS_REQ(1))                                       //
+      MRB_MT_ENTRY(obj_set_z, MRB_SYM_E(z), MRB_ARGS_REQ(1))              //
+      MRB_MT_ENTRY(obj_visible, MRB_SYM(visible), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(obj_set_visible, MRB_SYM_E(visible), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(obj_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())    //
+  };
+  MRB_MT_INIT_ROM(M, plane, plane_methods);
 #endif  // !defined(WIO_TERMINAL)
 
 #if defined(WIO_TERMINAL)  // Tilemap is not compiled on wio
@@ -8974,159 +9020,190 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* tilemap = mrb_define_class_under(M, m, "Tilemap", M->object_class);
   g_native_tilemap_class = tilemap;
   MRB_SET_INSTANCE_TT(tilemap, MRB_TT_DATA);
-  mrb_define_method(M, tilemap, "initialize", tilemap_init, MRB_ARGS_OPT(1));
-  mrb_define_method(M, tilemap, "tileset=", tilemap_set_tileset,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, tilemap, "map_data=", tilemap_set_map_data,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, tilemap, "priorities=", tilemap_set_priorities,
-                    MRB_ARGS_REQ(1));
-  // RGSS2 / RGSS3 (VX, VX Ace): nine sheets addressed by index plus the tileset
-  // flags table, in place of XP's single tileset + autotiles + priorities.
-  mrb_define_method(M, tilemap, "bitmaps", tilemap_bitmaps, MRB_ARGS_NONE());
-  mrb_define_method(M, tilemap, "flags=", tilemap_set_flags, MRB_ARGS_REQ(1));
+  static const mrb_mt_entry tilemap_methods[] = {
+      MRB_MT_ENTRY(tilemap_init, MRB_SYM(initialize),
+                   MRB_ARGS_OPT(1) | MRB_MT_PRIVATE)                          //
+      MRB_MT_ENTRY(tilemap_set_tileset, MRB_SYM_E(tileset), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(tilemap_set_map_data, MRB_SYM_E(map_data),
+                   MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(tilemap_set_priorities, MRB_SYM_E(priorities),
+                   MRB_ARGS_REQ(1))  //
+      // RGSS2 / RGSS3 (VX, VX Ace): nine sheets addressed by index plus the
+      // tileset flags table, in place of XP's single tileset + autotiles +
+      // priorities.
+      MRB_MT_ENTRY(tilemap_bitmaps, MRB_SYM(bitmaps), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(tilemap_set_flags, MRB_SYM_E(flags), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(tilemap_set_ox, MRB_SYM_E(ox), MRB_ARGS_REQ(1))            //
+      MRB_MT_ENTRY(tilemap_set_oy, MRB_SYM_E(oy), MRB_ARGS_REQ(1))            //
+      MRB_MT_ENTRY(tilemap_update, MRB_SYM(update), MRB_ARGS_NONE())          //
+      MRB_MT_ENTRY(tilemap_set_z, MRB_SYM_E(z), MRB_ARGS_REQ(1))              //
+      MRB_MT_ENTRY(obj_visible, MRB_SYM(visible), MRB_ARGS_NONE())            //
+      MRB_MT_ENTRY(tilemap_set_visible, MRB_SYM_E(visible), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(tilemap_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())        //
+  };
+  MRB_MT_INIT_ROM(M, tilemap, tilemap_methods);
+  static const mrb_mt_entry tilemap_class_methods[] = {
 #if !defined(WIO_TERMINAL)  // VX-only tilemap rendering; wio ships no
                             // mruby-rpgvx
-  mrb_define_class_method(M, tilemap, "vx_tile_quads", tilemap_vx_tile_quads,
-                          MRB_ARGS_ARG(1, 2));
-  mrb_define_class_method(M, tilemap, "vx_table_leg_quads",
-                          tilemap_vx_table_leg_quads, MRB_ARGS_REQ(1));
+      MRB_MT_ENTRY(tilemap_vx_tile_quads, MRB_SYM(vx_tile_quads),
+                   MRB_ARGS_ARG(1, 2))  //
+      MRB_MT_ENTRY(tilemap_vx_table_leg_quads, MRB_SYM(vx_table_leg_quads),
+                   MRB_ARGS_REQ(1))  //
 #endif                      // !defined(WIO_TERMINAL)
-  mrb_define_method(M, tilemap, "ox=", tilemap_set_ox, MRB_ARGS_REQ(1));
-  mrb_define_method(M, tilemap, "oy=", tilemap_set_oy, MRB_ARGS_REQ(1));
-  mrb_define_method(M, tilemap, "update", tilemap_update, MRB_ARGS_NONE());
-  mrb_define_method(M, tilemap, "z=", tilemap_set_z, MRB_ARGS_REQ(1));
-  mrb_define_method(M, tilemap, "visible", obj_visible, MRB_ARGS_NONE());
-  mrb_define_method(M, tilemap, "visible=", tilemap_set_visible,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, tilemap, "dispose", tilemap_dispose, MRB_ARGS_NONE());
-  mrb_define_method(M, tilemap, "disposed?", obj_disposed, MRB_ARGS_NONE());
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(tilemap)),
+                  tilemap_class_methods);
 
   RClass* window = mrb_define_class_under(M, m, "Window", M->object_class);
   MRB_SET_INSTANCE_TT(window, MRB_TT_DATA);
   g_native_window_class = window;
-  mrb_define_method(M, window, "initialize", window_init, MRB_ARGS_OPT(1));
+  static const mrb_mt_entry window_methods[] = {
+      MRB_MT_ENTRY(window_init, MRB_SYM(initialize),
+                   MRB_ARGS_OPT(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(window_set_contents, MRB_SYM_E(contents),
+                   MRB_ARGS_REQ(1))                                        //
+      MRB_MT_ENTRY(obj_set_x, MRB_SYM_E(x), MRB_ARGS_REQ(1))               //
+      MRB_MT_ENTRY(obj_set_y, MRB_SYM_E(y), MRB_ARGS_REQ(1))               //
+      MRB_MT_ENTRY(window_set_width, MRB_SYM_E(width), MRB_ARGS_REQ(1))    //
+      MRB_MT_ENTRY(window_set_height, MRB_SYM_E(height), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(window_set_ox, MRB_SYM_E(ox), MRB_ARGS_REQ(1))          //
+      MRB_MT_ENTRY(window_set_oy, MRB_SYM_E(oy), MRB_ARGS_REQ(1))          //
+      MRB_MT_ENTRY(window_set_contents_opacity, MRB_SYM_E(contents_opacity),
+                   MRB_ARGS_REQ(1))                                          //
+      MRB_MT_ENTRY(window_set_skin, MRB_SYM_E(windowskin), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(window_set_opacity, MRB_SYM_E(opacity), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(window_set_back_opacity, MRB_SYM_E(back_opacity),
+                   MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(window_set_cursor_rect, MRB_SYM_E(cursor_rect),
+                   MRB_ARGS_REQ(1))                                          //
+      MRB_MT_ENTRY(window_set_active, MRB_SYM_E(active), MRB_ARGS_REQ(1))    //
+      MRB_MT_ENTRY(window_set_pause, MRB_SYM_E(pause), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(window_set_stretch, MRB_SYM_E(stretch), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(window_set_viewport, MRB_SYM_E(viewport),
+                   MRB_ARGS_REQ(1))                                  //
+      MRB_MT_ENTRY(window_update, MRB_SYM(update), MRB_ARGS_NONE())  //
+      // RGSS2 / RGSS3 (VX, VX Ace): the open/close animation and the background
+      // tone. Native because both have to redraw -- and so they must NOT be
+      // redefined in mrblib, which loads after this and would shadow them.
+      MRB_MT_ENTRY(window_set_openness, MRB_SYM_E(openness),
+                   MRB_ARGS_REQ(1))                                       //
+      MRB_MT_ENTRY(window_tone, MRB_SYM(tone), MRB_ARGS_NONE())           //
+      MRB_MT_ENTRY(window_set_tone, MRB_SYM_E(tone), MRB_ARGS_REQ(1))     //
+      MRB_MT_ENTRY(obj_set_z, MRB_SYM_E(z), MRB_ARGS_REQ(1))              //
+      MRB_MT_ENTRY(obj_visible, MRB_SYM(visible), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(obj_set_visible, MRB_SYM_E(visible), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(obj_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())    //
+  };
+  MRB_MT_INIT_ROM(M, window, window_methods);
   // The Ruby initializer delegates the RGSS1 viewport form to this native
   // entry.
   mrb_define_alias(M, window, "_rgss1_initialize", "initialize");
-  mrb_define_method(M, window, "contents=", window_set_contents,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "x=", obj_set_x, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "y=", obj_set_y, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "width=", window_set_width, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "height=", window_set_height, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "ox=", window_set_ox, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "oy=", window_set_oy, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "contents_opacity=", window_set_contents_opacity,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "windowskin=", window_set_skin, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "opacity=", window_set_opacity, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "back_opacity=", window_set_back_opacity,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "cursor_rect=", window_set_cursor_rect,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "active=", window_set_active, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "pause=", window_set_pause, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "stretch=", window_set_stretch, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "viewport=", window_set_viewport,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "update", window_update, MRB_ARGS_NONE());
-  // RGSS2 / RGSS3 (VX, VX Ace): the open/close animation and the background
-  // tone. Native because both have to redraw -- and so they must NOT be
-  // redefined in mrblib, which loads after this and would shadow them.
-  mrb_define_method(M, window, "openness=", window_set_openness,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "tone", window_tone, MRB_ARGS_NONE());
-  mrb_define_method(M, window, "tone=", window_set_tone, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "z=", obj_set_z, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "visible", obj_visible, MRB_ARGS_NONE());
-  mrb_define_method(M, window, "visible=", obj_set_visible, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "dispose", obj_dispose, MRB_ARGS_NONE());
-  mrb_define_method(M, window, "disposed?", obj_disposed, MRB_ARGS_NONE());
 #endif                      // defined(WIO_TERMINAL)
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
   g_native_bitmap_class = bmp;
-  mrb_define_method(M, bmp, "_init_size", bmp_init_size, MRB_ARGS_REQ(2));
-  // Decode from bytes already in hand — how an asset packed into an encrypted
-  // RGSSAD archive is loaded (mrblib/lib.rb's Bitmap#initialize falls back to
-  // it when no loose file matches).
-  mrb_define_method(M, bmp, "_init_memory", bmp_init_memory,
-                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-  mrb_define_method(M, bmp, "_init_file", bmp_init_file,
-                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-  // #clone / #dup: a real pixel copy, which RPG::Cache's hue variants need --
-  // an XP-only consumer (mruby-rpgxp), not shipped on wio; unused there.
+  static const mrb_mt_entry bmp_methods[] = {
+      MRB_MT_ENTRY(bmp_init_size, MRB_SYM(_init_size), MRB_ARGS_REQ(2))  //
+      // Decode from bytes already in hand — how an asset packed into an
+      // encrypted RGSSAD archive is loaded (mrblib/lib.rb's Bitmap#initialize
+      // falls back to it when no loose file matches).
+      MRB_MT_ENTRY(bmp_init_memory, MRB_SYM(_init_memory),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1))  //
+      MRB_MT_ENTRY(bmp_init_file, MRB_SYM(_init_file),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1))  //
 #if !defined(WIO_TERMINAL)
-  mrb_define_method(M, bmp, "initialize_copy", bmp_init_copy, MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
-  // One frame of Graphics.transition's transition-graphic form; answers false
-  // when this bitmap cannot carry the dissolve, so the caller can plain-fade.
-  mrb_define_method(M, bmp, "_transition_alpha", bmp_transition_alpha,
-                    MRB_ARGS_REQ(3));
-  mrb_define_class_method(M, bmp, "_load_error", bmp_load_error,
-                          MRB_ARGS_NONE());
-  mrb_define_class_method(M, bmp, "_stbi_error", bmp_stbi_error,
-                          MRB_ARGS_NONE());
-  mrb_define_class_method(M, bmp, "_begin_load", bmp_begin_load,
-                          MRB_ARGS_NONE());
-  mrb_define_class_method(M, bmp, "_decoder_ran?", bmp_decoder_ran,
-                          MRB_ARGS_NONE());
-  mrb_define_method(M, bmp, "width", bmp_width, MRB_ARGS_NONE());
-  mrb_define_method(M, bmp, "height", bmp_height, MRB_ARGS_NONE());
-  mrb_define_method(M, bmp, "rect", bmp_rect, MRB_ARGS_NONE());
-  mrb_define_method(M, bmp, "clear", bmp_clear, MRB_ARGS_NONE());
-  mrb_define_method(M, bmp, "fill_rect", bmp_fill_rect,
-                    MRB_ARGS_REQ(2) | MRB_ARGS_OPT(3));
-  // gradient_fill_rect/hue_change/blur/radial_blur/set_pixel: RGSS2/RGSS3
-  // Bitmap effects the stock XP/VX scripts use (title background, animation
-  // effects, RPG::Cache hue variants) -- none of mruby-rpg2k's own Ruby calls
-  // them, and wio ships no XP/VX/Wolf gem that would. Unused on wio.
+      // #clone / #dup: a real pixel copy, which RPG::Cache's hue variants need
+      // -- an XP-only consumer (mruby-rpgxp), not shipped on wio; unused there.
+      MRB_MT_ENTRY(bmp_init_copy, MRB_SYM(initialize_copy),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+#endif                                                // !defined(WIO_TERMINAL)
+      // One frame of Graphics.transition's transition-graphic form; answers
+      // false when this bitmap cannot carry the dissolve, so the caller can
+      // plain-fade.
+      MRB_MT_ENTRY(bmp_transition_alpha, MRB_SYM(_transition_alpha),
+                   MRB_ARGS_REQ(3))                               //
+      MRB_MT_ENTRY(bmp_width, MRB_SYM(width), MRB_ARGS_NONE())    //
+      MRB_MT_ENTRY(bmp_height, MRB_SYM(height), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(bmp_rect, MRB_SYM(rect), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(bmp_clear, MRB_SYM(clear), MRB_ARGS_NONE())    //
+      MRB_MT_ENTRY(bmp_fill_rect, MRB_SYM(fill_rect),
+                   MRB_ARGS_REQ(2) | MRB_ARGS_OPT(3))  //
 #if !defined(WIO_TERMINAL)
-  mrb_define_method(M, bmp, "gradient_fill_rect", bmp_gradient_fill_rect,
-                    MRB_ARGS_REQ(3) | MRB_ARGS_OPT(4));
-  mrb_define_method(M, bmp, "hue_change", bmp_hue_change, MRB_ARGS_REQ(1));
+      // gradient_fill_rect/hue_change/blur/radial_blur/set_pixel: RGSS2/RGSS3
+      // Bitmap effects the stock XP/VX scripts use (title background, animation
+      // effects, RPG::Cache hue variants) -- none of mruby-rpg2k's own Ruby
+      // calls them, and wio ships no XP/VX/Wolf gem that would. Unused on wio.
+      MRB_MT_ENTRY(bmp_gradient_fill_rect, MRB_SYM(gradient_fill_rect),
+                   MRB_ARGS_REQ(3) | MRB_ARGS_OPT(4))                       //
+      MRB_MT_ENTRY(bmp_hue_change, MRB_SYM(hue_change), MRB_ARGS_REQ(1))    //
+      MRB_MT_ENTRY(bmp_blur, MRB_SYM(blur), MRB_ARGS_NONE())                //
+      MRB_MT_ENTRY(bmp_radial_blur, MRB_SYM(radial_blur), MRB_ARGS_REQ(2))  //
 #endif  // !defined(WIO_TERMINAL)
+      MRB_MT_ENTRY(bmp_get_pixel, MRB_SYM(get_pixel), MRB_ARGS_REQ(2))  //
 #if !defined(WIO_TERMINAL)
-  mrb_define_method(M, bmp, "blur", bmp_blur, MRB_ARGS_NONE());
-  mrb_define_method(M, bmp, "radial_blur", bmp_radial_blur, MRB_ARGS_REQ(2));
+      MRB_MT_ENTRY(bmp_set_pixel, MRB_SYM(set_pixel), MRB_ARGS_REQ(3))  //
 #endif  // !defined(WIO_TERMINAL)
-  mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
-#if !defined(WIO_TERMINAL)
-  mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
-#endif  // !defined(WIO_TERMINAL)
-  mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
-  mrb_define_method(M, bmp, "blt_quads", bmp_blt_quads, MRB_ARGS_REQ(4));
-  mrb_define_method(M, bmp, "copy_blt", bmp_copy_blt, MRB_ARGS_REQ(4));
-  mrb_define_method(M, bmp, "tone_blt", bmp_tone_blt, MRB_ARGS_REQ(2));
-  mrb_define_method(M, bmp, "stretch_blt", bmp_stretch_blt,
-                    MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
-  mrb_define_method(M, bmp, "mosaic_blt", bmp_mosaic_blt, MRB_ARGS_REQ(2));
-  mrb_define_method(M, bmp, "wave_blt", bmp_wave_blt, MRB_ARGS_REQ(3));
-  // Both RGSS forms: (x, y, width, height, str[, align]) and (rect, str[,
-  // align]).
-  mrb_define_method(M, bmp, "draw_text", bmp_draw_text,
-                    MRB_ARGS_REQ(2) | MRB_ARGS_OPT(4));
-  mrb_define_method(M, bmp, "blend_text", bmp_blend_text,
-                    MRB_ARGS_REQ(10) | MRB_ARGS_OPT(1));
-  mrb_define_method(M, bmp, "text_size", bmp_text_size, MRB_ARGS_REQ(1));
-  mrb_define_method(M, bmp, "dispose", obj_dispose, MRB_ARGS_NONE());
-  mrb_define_method(M, bmp, "disposed?", obj_disposed, MRB_ARGS_NONE());
+      MRB_MT_ENTRY(bmp_blt, MRB_SYM(blt), MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1))  //
+      MRB_MT_ENTRY(bmp_blt_quads, MRB_SYM(blt_quads), MRB_ARGS_REQ(4))        //
+      MRB_MT_ENTRY(bmp_copy_blt, MRB_SYM(copy_blt), MRB_ARGS_REQ(4))          //
+      MRB_MT_ENTRY(bmp_tone_blt, MRB_SYM(tone_blt), MRB_ARGS_REQ(2))          //
+      MRB_MT_ENTRY(bmp_stretch_blt, MRB_SYM(stretch_blt),
+                   MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1))                     //
+      MRB_MT_ENTRY(bmp_mosaic_blt, MRB_SYM(mosaic_blt), MRB_ARGS_REQ(2))  //
+      MRB_MT_ENTRY(bmp_wave_blt, MRB_SYM(wave_blt), MRB_ARGS_REQ(3))      //
+      // Both RGSS forms: (x, y, width, height, str[, align]) and (rect, str[,
+      // align]).
+      MRB_MT_ENTRY(bmp_draw_text, MRB_SYM(draw_text),
+                   MRB_ARGS_REQ(2) | MRB_ARGS_OPT(4))  //
+      MRB_MT_ENTRY(bmp_blend_text, MRB_SYM(blend_text),
+                   MRB_ARGS_REQ(10) | MRB_ARGS_OPT(1))                  //
+      MRB_MT_ENTRY(bmp_text_size, MRB_SYM(text_size), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(obj_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())  //
+  };
+  MRB_MT_INIT_ROM(M, bmp, bmp_methods);
+  static const mrb_mt_entry bmp_class_methods[] = {
+      MRB_MT_ENTRY(bmp_load_error, MRB_SYM(_load_error), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(bmp_stbi_error, MRB_SYM(_stbi_error), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(bmp_begin_load, MRB_SYM(_begin_load), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(bmp_decoder_ran, MRB_SYM_Q(_decoder_ran),
+                   MRB_ARGS_NONE())  //
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(bmp)),
+                  bmp_class_methods);
 
   RClass* color = mrb_define_class_under(M, m, "Color", M->object_class);
   MRB_SET_INSTANCE_TT(color, MRB_TT_DATA);
   g_native_color_class = color;
-  mrb_define_method(M, color, "initialize", color_init, MRB_ARGS_OPT(4));
-  // #clone / #dup, which a game's scripts use on these constantly -- checked
-  // against wio's own Ruby specifically: no real .dup/.clone target is ever
-  // a Color there, so unused on wio.
 #if !defined(WIO_TERMINAL)
-  mrb_define_method(M, color, "initialize_copy", data_init_copy<Color>,
-                    MRB_ARGS_REQ(1));
+  static constexpr mrb_func_t color_initialize_copy_tmpl =
+      data_init_copy<Color>;
 #endif  // !defined(WIO_TERMINAL)
-  mrb_define_method(M, color, "set", color_set,
-                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
+  static const mrb_mt_entry color_methods[] = {
+      MRB_MT_ENTRY(color_init, MRB_SYM(initialize),
+                   MRB_ARGS_OPT(4) | MRB_MT_PRIVATE)  //
+#if !defined(WIO_TERMINAL)
+      // #clone / #dup, which a game's scripts use on these constantly --
+      // checked against wio's own Ruby specifically: no real .dup/.clone target
+      // is ever a Color there, so unused on wio.
+      MRB_MT_ENTRY(color_initialize_copy_tmpl, MRB_SYM(initialize_copy),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+#endif                                                // !defined(WIO_TERMINAL)
+      MRB_MT_ENTRY(color_set, MRB_SYM(set),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3))            //
+      MRB_MT_ENTRY(color_eq, MRB_OPSYM(eq), MRB_ARGS_REQ(1))     //
+      MRB_MT_ENTRY(color_to_s, MRB_SYM(to_s), MRB_ARGS_NONE())   //
+      MRB_MT_ENTRY(color_dump, MRB_SYM(_dump), MRB_ARGS_REQ(1))  //
+  };
+  MRB_MT_INIT_ROM(M, color, color_methods);
+  static const mrb_mt_entry color_class_methods[] = {
+      MRB_MT_ENTRY(color_load, MRB_SYM(_load), MRB_ARGS_REQ(1))  //
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(color)),
+                  color_class_methods);
   mrb_define_method(M, color, "red", component_get<Color, &Color::red>,
                     MRB_ARGS_NONE());
   mrb_define_method(M, color, "green", component_get<Color, &Color::green>,
@@ -9146,21 +9223,32 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, color,
                     "alpha=", component_set<Color, &Color::alpha, 0, 255>,
                     MRB_ARGS_REQ(1));
-  mrb_define_method(M, color, "==", color_eq, MRB_ARGS_REQ(1));
-  mrb_define_method(M, color, "to_s", color_to_s, MRB_ARGS_NONE());
-  mrb_define_method(M, color, "_dump", color_dump, MRB_ARGS_REQ(1));
-  mrb_define_class_method(M, color, "_load", color_load, MRB_ARGS_REQ(1));
 
   RClass* tone = mrb_define_class_under(M, m, "Tone", M->object_class);
   MRB_SET_INSTANCE_TT(tone, MRB_TT_DATA);
   g_native_tone_class = tone;
-  mrb_define_method(M, tone, "initialize", tone_init, MRB_ARGS_OPT(4));
 #if !defined(WIO_TERMINAL)  // Tone#dup/#clone: unused on wio
-  mrb_define_method(M, tone, "initialize_copy", data_init_copy<Tone>,
-                    MRB_ARGS_REQ(1));
+  static constexpr mrb_func_t tone_initialize_copy_tmpl = data_init_copy<Tone>;
 #endif  // !defined(WIO_TERMINAL)
-  mrb_define_method(M, tone, "set", tone_set,
-                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
+  static const mrb_mt_entry tone_methods[] = {
+      MRB_MT_ENTRY(tone_init, MRB_SYM(initialize),
+                   MRB_ARGS_OPT(4) | MRB_MT_PRIVATE)  //
+#if !defined(WIO_TERMINAL)  // Tone#dup/#clone: unused on wio
+      MRB_MT_ENTRY(tone_initialize_copy_tmpl, MRB_SYM(initialize_copy),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+#endif                                                // !defined(WIO_TERMINAL)
+      MRB_MT_ENTRY(tone_set, MRB_SYM(set),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3))           //
+      MRB_MT_ENTRY(tone_eq, MRB_OPSYM(eq), MRB_ARGS_REQ(1))     //
+      MRB_MT_ENTRY(tone_to_s, MRB_SYM(to_s), MRB_ARGS_NONE())   //
+      MRB_MT_ENTRY(tone_dump, MRB_SYM(_dump), MRB_ARGS_REQ(1))  //
+  };
+  MRB_MT_INIT_ROM(M, tone, tone_methods);
+  static const mrb_mt_entry tone_class_methods[] = {
+      MRB_MT_ENTRY(tone_load, MRB_SYM(_load), MRB_ARGS_REQ(1))  //
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(tone)),
+                  tone_class_methods);
   mrb_define_method(M, tone, "red", component_get<Tone, &Tone::red>,
                     MRB_ARGS_NONE());
   mrb_define_method(M, tone, "green", component_get<Tone, &Tone::green>,
@@ -9181,53 +9269,82 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, tone, "gray=", component_set<Tone, &Tone::gray, 0, 255>,
                     MRB_ARGS_REQ(1));
 #endif  // !defined(WIO_TERMINAL)
-  mrb_define_method(M, tone, "==", tone_eq, MRB_ARGS_REQ(1));
-  mrb_define_method(M, tone, "to_s", tone_to_s, MRB_ARGS_NONE());
-  mrb_define_method(M, tone, "_dump", tone_dump, MRB_ARGS_REQ(1));
-  mrb_define_class_method(M, tone, "_load", tone_load, MRB_ARGS_REQ(1));
 
   RClass* table = mrb_define_class_under(M, m, "Table", M->object_class);
   MRB_SET_INSTANCE_TT(table, MRB_TT_DATA);
   g_native_table_class = table;
-  mrb_define_method(M, table, "initialize", table_init,
-                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
 #if !defined(WIO_TERMINAL)  // Table#dup/#clone: unused on wio
-  mrb_define_method(M, table, "initialize_copy", data_init_copy<Table>,
-                    MRB_ARGS_REQ(1));
+  static constexpr mrb_func_t table_initialize_copy_tmpl =
+      data_init_copy<Table>;
 #endif  // !defined(WIO_TERMINAL)
-  mrb_define_method(M, table, "[]", table_get,
-                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
-  mrb_define_method(M, table, "[]=", table_set,
-                    MRB_ARGS_REQ(2) | MRB_ARGS_OPT(2));
-  mrb_define_method(M, table, "resize", table_resize,
-                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
-  mrb_define_method(M, table, "xsize", table_xsize_native_body,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, table, "ysize", table_ysize_native_body,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, table, "zsize", table_zsize_native_body,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, table, "dim", table_dim_native_body, MRB_ARGS_NONE());
-  mrb_define_method(M, table, "_dump", table_dump, MRB_ARGS_REQ(1));
-  mrb_define_class_method(M, table, "_load", table_load, MRB_ARGS_REQ(1));
+  static const mrb_mt_entry table_methods[] = {
+      MRB_MT_ENTRY(table_init, MRB_SYM(initialize),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2) | MRB_MT_PRIVATE)  //
+#if !defined(WIO_TERMINAL)  // Table#dup/#clone: unused on wio
+      MRB_MT_ENTRY(table_initialize_copy_tmpl, MRB_SYM(initialize_copy),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+#endif                                                // !defined(WIO_TERMINAL)
+      MRB_MT_ENTRY(table_get, MRB_OPSYM(aref),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2))  //
+      MRB_MT_ENTRY(table_set, MRB_OPSYM(aset),
+                   MRB_ARGS_REQ(2) | MRB_ARGS_OPT(2))  //
+      MRB_MT_ENTRY(table_resize, MRB_SYM(resize),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2))                         //
+      MRB_MT_ENTRY(table_xsize_native_body, MRB_SYM(xsize), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(table_ysize_native_body, MRB_SYM(ysize), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(table_zsize_native_body, MRB_SYM(zsize), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(table_dim_native_body, MRB_SYM(dim), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(table_dump, MRB_SYM(_dump), MRB_ARGS_REQ(1))               //
+  };
+  MRB_MT_INIT_ROM(M, table, table_methods);
+  static const mrb_mt_entry table_class_methods[] = {
+      MRB_MT_ENTRY(table_load, MRB_SYM(_load), MRB_ARGS_REQ(1))  //
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(table)),
+                  table_class_methods);
 
   // RGSS::Input is otherwise pure Ruby (mrblib/lib.rb reopens this module); the
   // two native hooks are the backend drain Input.update calls and the test-side
   // push that stands in for a keyboard.
   RClass* input = mrb_define_module_under(M, m, "Input");
-  mrb_define_module_function(M, input, "_poll", input_poll, MRB_ARGS_NONE());
-  mrb_define_module_function(M, input, "_push", input_push, MRB_ARGS_REQ(2));
+  static const mrb_mt_entry input_module_functions[] = {
+      MRB_MT_ENTRY(input_poll, MRB_SYM(_poll), MRB_ARGS_NONE())  //
+      MRB_MT_ENTRY(input_push, MRB_SYM(_push), MRB_ARGS_REQ(2))  //
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(input)),
+                  input_module_functions);
+  static const mrb_mt_entry input_module_functions_private[] = {
+      MRB_MT_ENTRY(input_poll, MRB_SYM(_poll),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(input_push, MRB_SYM(_push),
+                   MRB_ARGS_REQ(2) | MRB_MT_PRIVATE)  //
+  };
+  MRB_MT_INIT_ROM(M, input, input_module_functions_private);
 
   RClass* gfx = mrb_define_module_under(M, m, "Graphics");
-  mrb_define_module_function(M, gfx, "update", gfx_update, MRB_ARGS_NONE());
-  // RGSS2+: the rendered screen as a Bitmap. Graphics.freeze/transition are
-  // built on it (mrblib/lib.rb), and RGSS.effect_probe measures with it.
-  mrb_define_module_function(M, gfx, "snap_to_bitmap", gfx_snap_to_bitmap,
-                             MRB_ARGS_NONE());
-#if !defined(WIO_TERMINAL)  // unused on wio
-  mrb_define_module_function(M, gfx, "frame_reset", gfx_frame_reset,
-                             MRB_ARGS_NONE());
+  static const mrb_mt_entry gfx_module_functions[] = {
+      MRB_MT_ENTRY(gfx_update, MRB_SYM(update), MRB_ARGS_NONE())  //
+      // RGSS2+: the rendered screen as a Bitmap. Graphics.freeze/transition are
+      // built on it (mrblib/lib.rb), and RGSS.effect_probe measures with it.
+      MRB_MT_ENTRY(gfx_snap_to_bitmap, MRB_SYM(snap_to_bitmap),
+                   MRB_ARGS_NONE())  //
+#if !defined(WIO_TERMINAL)           // unused on wio
+      MRB_MT_ENTRY(gfx_frame_reset, MRB_SYM(frame_reset), MRB_ARGS_NONE())  //
 #endif  // !defined(WIO_TERMINAL)
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(gfx)),
+                  gfx_module_functions);
+  static const mrb_mt_entry gfx_module_functions_private[] = {
+      MRB_MT_ENTRY(gfx_update, MRB_SYM(update),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(gfx_snap_to_bitmap, MRB_SYM(snap_to_bitmap),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+#if !defined(WIO_TERMINAL)                            // unused on wio
+      MRB_MT_ENTRY(gfx_frame_reset, MRB_SYM(frame_reset),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+#endif                                                // !defined(WIO_TERMINAL)
+  };
+  MRB_MT_INIT_ROM(M, gfx, gfx_module_functions_private);
 
   profiler_init(M);
 

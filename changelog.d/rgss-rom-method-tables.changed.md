@@ -1,0 +1,1 @@
+- The RGSS and LCF native methods are registered in const ROM method tables instead of heap `mrb_define_*` calls: 148 instance methods, 9 class methods and 54 module functions. The method tables on the heap after boot go from 117 entries (16,232 B) to 46 entries (10,448 B).

@@ -3,7 +3,9 @@
 
 For every mrb_define_method / mrb_define_class_method /
 mrb_define_module_function registration in a translation unit of
-mruby-rgss/src, print (JSON) where the bound function lives, its parameters,
+mruby-rgss/src (and every MRB_MT_ENTRY of a ROM method table that
+MRB_MT_INIT_ROM installs, read as the same registration: see rom_registrations),
+print (JSON) where the bound function lives, its parameters,
 its top-level statements, its mrb_get_args call and every reason its body can
 read the calling frame.  This script only reports what clang sees; deciding
 what is splittable, rewriting and generating the compiler table are the Ruby
@@ -40,6 +42,19 @@ REGISTRATION_APIS = {
     'mrb_define_class_method': 'class_method',
     'mrb_define_module_function': 'module_function',
 }
+
+# MRB_OPSYM(name) -> the operator it spells (lib/mruby/presym.rb OPERATORS).
+OPSYM_NAMES = {
+    'not': '!', 'mod': '%', 'and': '&', 'mul': '*', 'add': '+', 'sub': '-', 'div': '/', 'lt': '<', 'gt': '>',
+    'xor': '^', 'tick': '`', 'or': '|', 'neg': '~', 'neq': '!=', 'nmatch': '!~', 'pow': '**', 'plus': '+@',
+    'minus': '-@', 'lshift': '<<', 'le': '<=', 'eq': '==', 'match': '=~', 'ge': '>=', 'rshift': '>>', 'aref': '[]',
+    'cmp': '<=>', 'eqq': '===', 'aset': '[]=',
+}
+PRESYM_CONSTANT = re.compile(r'^MRB_(SYM_Q|SYM_B|SYM_E|SYM|OPSYM)__(\w+)$')
+PRESYM_SUFFIX = {'SYM': '', 'SYM_Q': '?', 'SYM_B': '!', 'SYM_E': '='}
+# mruby makes these private whichever API defines them (mrb_define_method_raw).
+IMPLICITLY_PRIVATE = ('initialize', 'initialize_copy', 'respond_to_missing?')
+MT_PRIVATE_BIT = 1 << 25
 
 # Calls that read the calling frame: the arguments (get_args/argc/argv/arg1),
 # the block, the method id, the C function's proc environment, super.
@@ -482,6 +497,8 @@ class Extractor:
     def registrations(self, tu, source):
         K = self.K
         out = []
+        tables = {}    # usr of a `mrb_mt_entry NAME[]` -> its entry cursors
+        installs = []  # (MRB_MT_INIT_ROM call, enclosing function)
         source = os.path.realpath(source)
 
         def visit(cur, fn):
@@ -489,18 +506,153 @@ class Extractor:
                 loc = kid.location
                 if loc.file is None:
                     continue
-                if kid.kind == K.CALL_EXPR and kid.spelling in REGISTRATION_APIS and os.path.realpath(str(loc.file)) == source:
+                in_source = os.path.realpath(str(loc.file)) == source
+                if kid.kind == K.CALL_EXPR and kid.spelling in REGISTRATION_APIS and in_source:
                     args = list(kid.get_arguments())
                     if len(args) == 5:
                         reg = self.registration(kid, args)
                         reg['enclosing'] = {'name': fn.spelling, 'extent': self.ext(fn)} if fn is not None else None
                         out.append(reg)
-                if os.path.realpath(str(loc.file)) == source or kid.kind == K.NAMESPACE:
+                elif kid.kind == K.CALL_EXPR and kid.spelling == 'mrb_mt_init_rom' and in_source:
+                    installs.append((kid, fn))
+                elif kid.kind == K.VAR_DECL and 'mrb_mt_entry' in kid.type.spelling and in_source:
+                    init = [c for c in kid.get_children() if c.kind == K.INIT_LIST_EXPR]
+                    if init:
+                        tables[kid.get_usr()] = list(init[0].get_children())
+                if in_source or kid.kind == K.NAMESPACE:
                     inner = kid if kid.kind == K.FUNCTION_DECL and kid.is_definition() else fn
                     visit(kid, inner)
 
         visit(tu.cursor, None)
+        out.extend(self.rom_registrations(tables, installs))
+        out.sort(key=lambda r: r['extent'][0])
         return out
+
+    def presym_name(self, entry):
+        """The method name an entry's MRB_SYM*(name) spells, from the presym constant clang resolved it to."""
+        K = self.K
+        kids = list(entry.get_children())
+        if len(kids) < 2:
+            return None
+        sym = kids[1]
+        while sym.kind in (K.PAREN_EXPR, K.UNEXPOSED_EXPR):
+            inner = list(sym.get_children())
+            if len(inner) != 1:
+                break
+            sym = inner[0]
+        m = PRESYM_CONSTANT.match(sym.spelling) if sym.kind == K.DECL_REF_EXPR else None
+        if not m:
+            return None
+        kind, name = m.groups()
+        return OPSYM_NAMES.get(name) if kind == 'OPSYM' else name + PRESYM_SUFFIX[kind]
+
+    def entry_function(self, entry):
+        """The function expression of an entry's `{ .func = (fn) }`: its DECL_REF_EXPR."""
+        K = self.K
+        kids = list(entry.get_children())
+        if not kids:
+            return None
+        found = []
+
+        def walk(cur):
+            if cur.kind == K.DECL_REF_EXPR and cur.referenced is not None and cur.referenced.kind in (K.FUNCTION_DECL, K.VAR_DECL, K.FUNCTION_TEMPLATE):
+                found.append(cur)
+                return
+            for c in cur.get_children():
+                if not found:
+                    walk(c)
+
+        walk(kids[0])
+        return found[0] if found else None
+
+    def entry_private(self, entry):
+        """Whether the entry's flags carry MRB_MT_PRIVATE. The entry is a macro expansion, so clang has no tokens
+        for it: read the source lines it spans."""
+        e = entry.extent
+        with open(str(e.start.file)) as f:
+            lines = f.read().splitlines()
+        return 'MRB_MT_PRIVATE' in ' '.join(lines[e.start.line - 1:e.end.line])
+
+    def install_target(self, call):
+        """(class variable, is_singleton) of an MRB_MT_INIT_ROM call's class argument."""
+        K = self.K
+        args = list(call.get_arguments())
+        if len(args) < 3:
+            return None, None
+        cls = self.strip(args[1])
+        if cls.kind == K.DECL_REF_EXPR:
+            return cls.spelling, False
+        if cls.kind == K.CALL_EXPR and cls.spelling == 'mrb_singleton_class_ptr':
+            inner = list(cls.get_arguments())[1:]
+            obj = self.strip(inner[0]) if inner else None
+            if obj is not None and obj.kind == K.CALL_EXPR and obj.spelling == 'mrb_obj_value':
+                wrapped = list(obj.get_arguments())
+                var = self.identifier(wrapped[0]) if wrapped else None
+                if var:
+                    return var, True
+        return None, None
+
+    def rom_registrations(self, tables, installs):
+        """MRB_MT_ENTRY rows of the tables MRB_MT_INIT_ROM installs, as the registrations they replace: an instance
+        table is mrb_define_method, a class-object table mrb_define_class_method, and a public singleton entry paired
+        with a private instance entry of the same name and function (mrb_define_module_function installs both) is one
+        mrb_define_module_function."""
+        K = self.K
+        rows = []  # (var, singleton, entry cursor, name, function-ref, private, enclosing fn)
+        for call, fn in installs:
+            args = list(call.get_arguments())
+            var, singleton = self.install_target(call)
+            table = self.strip(args[2]) if len(args) >= 3 else None
+            ref = table.referenced if table is not None and table.kind == K.DECL_REF_EXPR else None
+            if var is None or ref is None or ref.get_usr() not in tables:
+                continue
+            for entry in tables[ref.get_usr()]:
+                fnref = self.entry_function(entry)
+                name = self.presym_name(entry)
+                if fnref is None or name is None:
+                    continue
+                rows.append((var, singleton, entry, name, fnref, self.entry_private(entry), fn))
+        singles = {(v, n, self.fn_key(f)): e for v, s, e, n, f, _p, _fn in rows if s}
+        paired = set()
+        out = []
+        for var, singleton, entry, name, fnref, private, fn in rows:
+            key = (var, name, self.fn_key(fnref))
+            if singleton:
+                api, kind = 'mrb_define_class_method', 'class_method'
+            elif private and name not in IMPLICITLY_PRIVATE and key in singles:
+                paired.add(key)   # the instance half of a module function
+                continue
+            else:
+                api, kind = 'mrb_define_method', 'method'
+            out.append((api, kind, var, entry, name, fnref, fn, key))
+        regs = []
+        for api, kind, var, entry, name, fnref, fn, key in out:
+            if kind == 'class_method' and key in paired:
+                api, kind = 'mrb_define_module_function', 'module_function'
+            e = entry.extent
+            reg = {
+                'api': api, 'kind': kind, 'line': e.start.line, 'extent': self.ext(entry), 'name': name,
+                'class_expr': var, 'arg_extents': [], 'rom': True,
+                'target': self.target_facts(self.alias_target(fnref)),
+                'enclosing': {'name': fn.spelling, 'extent': self.ext(fn)} if fn is not None else None,
+            }
+            regs.append(reg)
+        return regs
+
+    def fn_key(self, ref):
+        r = ref.referenced
+        return r.get_usr() or r.spelling
+
+    def alias_target(self, ref):
+        """A `static constexpr mrb_func_t x = f<T>;` a table names (the scanners read identifiers only) stands for the
+        expression it is initialised with."""
+        K = self.K
+        r = ref.referenced
+        if r is not None and r.kind == K.VAR_DECL:
+            inits = [c for c in r.get_children() if c.kind not in (K.TYPE_REF, K.NAMESPACE_REF, K.TEMPLATE_REF)]
+            if inits:
+                return inits[-1]
+        return ref
 
     def named_functions(self, tu, source):
         """Every function the file itself defines, by name: the `*_native_body`
