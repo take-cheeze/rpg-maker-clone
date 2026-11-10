@@ -259,3 +259,9 @@ The core scan stopped counting three spellings as lookups of an identifier: `MRB
 | `mrb_sys_fail` labels | `File#_atime`, `File#_ctime`, `File#_mtime`, `File#flock`, `IO#sysseek`, `IO#syswrite`, `Time#ctime` | `File#atime`, `File#ctime`, `File#mtime`, `File.pipe?`, `FileTest.pipe?`, `IO.pipe`, `IO._pipe`, `StringIO#syswrite` |
 
 A second build with `BC2CPP_UNREGISTERED_VERIFY=1` passes the same sweep, so no scenario looked a removed name up; a removed name no scenario reaches (for example `File#flock`) is not exercised by it. `scripts/bc2cpp/core_kept_report.rb` prints why each core ROM key still kept stays.
+
+## `super` reach and reflective-file names
+
+A `super` in a class's method reaches that name only on the class's ancestors, so the closed proof bounds it to the ancestor chain (`SUPER_REACH`, nfcxx#836): the six `RPG2k3::Scene::Battle` overrides that call into `RPG2k::Scene::Battle` leave the table, **915 to 909 entries** on pin `70999605` (fork `15f679a`). A core Ruby file that sends a reflective name no longer counts the names only a variable, constant, class or definition operand holds (nfcxx#841): the closed list goes from 3,745 to 3,749 keys and the table to **905 entries** (`Game::Actors#all`, `RGSS::ErrorReport::Tee#flush`, `ShopQuantity#max`, `#max=`). The plain and `BC2CPP_UNREGISTERED_VERIFY=1 METHOD_TABLE=skip` host sweeps pass all 543 maps and the scripted scenarios.
+
+The 293 compiled entries still kept, by first reason (`scripts/bc2cpp/dynamic_names_report.rb`): `initialize` and `initialize_copy` named by mruby-enumerator and core C (45), Symbol literals such as `:update` and `&:dead?` (33), core Ruby sends to a receiver that may be an engine object (32), by-name sites in generated rgss, rpg2k and lcf code (60), `lib.cxx` attr lookups on Font and friends (26), sends from `LCF::Array2D#[]=` and similar that may run as bytecode (17). Each needs receiver or type reasoning, not another scanner rule.
