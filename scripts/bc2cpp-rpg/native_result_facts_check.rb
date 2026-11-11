@@ -22,6 +22,9 @@
 ENV['BC2CPP_SIG_DIRS'] = ''
 
 require_relative '../../tools/bc2cpp/world_root'
+# bc2cpp's closed-world core gems read the staged mruby-core-compiled/ (see compiled-gem-templates/stage.rb).
+require_relative '../../compiled-gem-templates/stage'
+CompiledGemTemplates.stage!
 require 'fileutils'
 require 'open3'
 require 'set'

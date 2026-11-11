@@ -292,7 +292,7 @@ Dir.mktmpdir('bc2cpp-main-roots') do |dir|
   build_dir = File.join(dir, 'closed')
   FileUtils.mkdir_p(build_dir)
   gem_name = BC2CPP_COMPILED_GEMS.keys.first
-  gem_dir = File.join(root, gem_name)
+  gem_dir = File.join(root, 'compiled-gem-templates', gem_name)
   registration = File.join(gem_dir, 'src/register.cxx')
   shard = File.join(build_dir, 'example_gen_shard1.cpp')
   File.write(shard, '// modeled Ruby')
