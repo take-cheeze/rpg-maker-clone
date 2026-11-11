@@ -23,14 +23,14 @@ count, so suffixed names are included). These are the script's baselines.
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall*` | 104 | breakdown below |
-| `bc2cpp_funcall_argv`, `_ssend`, `_funcall_kw` (by-name helpers) | 60 | helper copies per unit; no keyword site exists |
+| `mrb_funcall*` | 69 | breakdown below |
+| `bc2cpp_funcall_argv`, `_ssend`, `_funcall_kw` (by-name helpers) | 48 | one copy in the runtime header, the symbol-table helpers per unit; no keyword site exists |
 | `bc2cpp_owner_call*` (owner-listed dispatch) | 2391 | already direct; table-driven later, see Phase 1 |
-| `mrb_proc_new_cfunc_with_env*` (block procs) | 5 | C++ block objects with captured env |
+| `mrb_proc_new_cfunc_with_env*` (block procs) | 2 | C++ block objects with captured env |
 | `mrb_protect*` (exception boundaries) | 10 | `gem_init.c`, mruby headers (the host entry boundary is a typed catch) |
-| `mrb_gc_protect*` (arena roots) | 20 | one `bc2cpp_root` per unit, `*_entry.h`, mruby headers |
-| `mrb_yield*` | 14 | direct block invocation |
-| `mrb_method_search_vm*` | 5 | one seam (`bc2cpp_find_method`); static tables go behind it |
+| `mrb_gc_protect*` (arena roots) | 14 | one `bc2cpp_root` in the runtime header, `*_entry.h`, mruby headers |
+| `mrb_yield*` | 11 | direct block invocation |
+| `mrb_method_search_vm*` | 2 | one seam (`bc2cpp_find_method`); static tables go behind it |
 | `mrb_exec_irep*` | 1 | mruby header; removed with the frame machine |
 | `bc2cpp_resumable_exec*` | 0 | done |
 
@@ -61,7 +61,7 @@ count, so suffixed names are included). These are the script's baselines.
   through the argument readers (`tools/bc2cpp/native_frame_use.rb`); it gets the frame when it raises, sends or yields.
   Host sweep frame pushes: 104.7M to 1.8M; what is left is C++ engine natives the analysis does not read.
 - No keyword-carrying by-name site exists (`bc2cpp_funcall_kw` is an unused helper per unit). Left: the frame push (40),
-  the helper copies, error paths that dispatch the real call to verify a proof, the `$stderr#puts` fallback, 3 entry-stub
+  the helpers' one copy (RUNTIME_HEADER, `docs/bc2cpp-shards.md`), error paths that dispatch the real call to verify a proof, the `$stderr#puts` fallback, 3 entry-stub
   fallbacks (a receiver that is not the exact owner needs the generic send), 4 `_rsm` and fiber-park block sends, and 386
   `bc2cpp_send` sites in the core unit (no program world there, so no owner set; none ran in the sweep).
 
