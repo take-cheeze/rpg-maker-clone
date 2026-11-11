@@ -498,6 +498,10 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/ctor_rows_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
   scripts/bc2cpp/initializer_sites_check.rb:
     tier: fast
     capabilities: []
