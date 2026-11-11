@@ -656,7 +656,10 @@ MRuby::Build.new do |conf|
   #  * enable_debug above adds `-g` to mrbc's options: `-g -S` of several files is reproduced (file name symbol ids,
   #    file_syms.rb); MRBC_RB_PRESYM=bootstrap makes them the ones mruby's own bootstrap mrbc would write (only for byte equality).
   if ENV['MRUBY_MRBC_RB'] == '1'
-    conf.mrbcfile = File.expand_path('3rd/nfcxx/bc2cpp/tools/mrbc_rb/bin/mrbc_rb', __dir__)
+    # mruby_build.rb makes mruby's rake call the emitter in-process (one Prism load for the whole build, no process start per
+    # file) for a build whose mrbcfile is the wrapper below; MRBC_FALLBACK still serves what the emitter does not cover.
+    require File.expand_path('3rd/nfcxx/bc2cpp/tools/mrbc_rb/mruby_build', __dir__)
+    conf.mrbcfile = MrbcRb::MrubyBuild::WRAPPER
     ENV['MRBC_RB_PRESYM'] ||= 'bootstrap'
   end
 
