@@ -57,7 +57,7 @@ count, so suffixed names are included). These are the script's baselines.
 - Done: `read_font` (mruby-rgss) runs the Font reader it finds; the fork's `==`/`eql?`/`<=>`, `Class#new` and
   `mrb_obj_new` run the method a memo found (`mrb_funcall_with_method`, `mrb_funcall_send_with_method`). Left by name in
   the sweep: the `included` hook, `IO.sysopen`, `Symbol#to_proc` and `convert_type` (the name is data), the host's taps.
-- Done: a found native runs without a frame (`mrb_call_direct`, FRAME_FREE) when its C body reads the frame only
+- Done: a found native runs without a frame (`mrb_call_direct`, FRAME_FREE) when its C or C++ body reads the frame only
   through the argument readers (`tools/bc2cpp/native_frame_use.rb`); it gets the frame when it raises, sends or yields.
   `mrb_funcall_with_method` decides it for every caller, so calls from C (a construction's `initialize`) qualify too.
   Host sweep frame pushes: 104.7M to 1.8M; what is left is C++ engine natives the analysis does not read.
