@@ -644,24 +644,47 @@ if wio
   ENV['RGSS_SHINONOME_GOTHIC_SD_PATH'] ||= '/gothic.bin'
 end
 
+# MRUBY_MRBC_RB: on unless MRUBY_MRBC_RB=0. mruby's own gem build (every gem's mrblib, the core mrblib and mrbtest's test files,
+# each compiled to a C array by `mrbc -B<sym> -o- -S [-s] files`) runs nfcxx's Ruby mrbc emitter in-process (3rd/nfcxx/bc2cpp/
+# tools/mrbc_rb: one Prism load for the whole rake process, no process start per file) instead of the C mrbc, and the C mrbc is not
+# built unless something needs it (below). It is off by itself, with a one-line notice, when its prerequisites do not hold, so a
+# build never breaks for lack of them. MRUBY_MRBC_RB=1 skips those checks (a missing prerequisite then stops the build).
+mrbc_rb_dir = File.expand_path('3rd/nfcxx/bc2cpp/tools/mrbc_rb', __dir__)
+mrbc_rb_unmet = lambda do
+  # The bc2cpp closed-world builds keep the C mrbc: their checks read build/host/mrbc/bin/mrbc as the oracle.
+  return 'the bc2cpp closed-world build keeps the C mrbc' if closed || !ENV.fetch('RPGMAKER_BC2CPP', '').empty?
+  # scripts/mruby-ninja-rake.rb plans mruby's rake without running it; the emitter would run at planning time.
+  return 'rake is run by scripts/mruby-ninja-rake.rb' if defined?(RakeShim)
+  return '3rd/nfcxx is not checked out' unless File.exist?(File.join(mrbc_rb_dir, 'mruby_build.rb'))
+
+  begin
+    require 'prism'
+  rescue LoadError
+    return "Prism is not installed for Ruby #{RUBY_VERSION} (gem install prism, or bundle exec)"
+  end
+  return "Prism #{Prism::VERSION} is older than 1.0" if Gem::Version.new(Prism::VERSION) < Gem::Version.new('1.0')
+
+  nil
+end
+use_mrbc_rb =
+  case ENV['MRUBY_MRBC_RB']
+  when '0' then false
+  when '1' then true
+  when nil, ''
+    if Rake.application.top_level_tasks.include?('host_mrbc')
+      false # `rake host_mrbc` asks for the C mrbc itself (the bc2cpp checks, the fallback build below)
+    else
+      why_not = mrbc_rb_unmet.call
+      warn "build_config.rb: MRUBY_MRBC_RB is off (#{why_not}); building the C mrbc. MRUBY_MRBC_RB=0 silences this." if why_not
+      why_not.nil?
+    end
+  else raise "MRUBY_MRBC_RB must be 0 or 1, not #{ENV['MRUBY_MRBC_RB'].inspect}"
+  end
+
 MRuby::Build.new do |conf|
   toolchain :gcc
 
   enable_debug
-
-  # MRUBY_MRBC_RB=1: mruby's own gem build (every gem's mrblib, the core mrblib and mrbtest's test files, each compiled to a C
-  # array by `mrbc -B<sym> -o- -S [-s] files`) runs nfcxx's mrbc-compatible command instead of the C mrbc, so no mrbc has to be
-  # built first (`conf.mrbcfile=` makes mruby skip its own `mrbc` bootstrap build). What the emitter does not cover goes to the
-  # real mrbc named by MRBC_FALLBACK (mrbtest's test/t/*.rb has such files); without MRBC_FALLBACK the build stops and says which.
-  #  * enable_debug above adds `-g` to mrbc's options: `-g -S` of several files is reproduced (file name symbol ids,
-  #    file_syms.rb); MRBC_RB_PRESYM=bootstrap makes them the ones mruby's own bootstrap mrbc would write (only for byte equality).
-  if ENV['MRUBY_MRBC_RB'] == '1'
-    # mruby_build.rb makes mruby's rake call the emitter in-process (one Prism load for the whole build, no process start per
-    # file) for a build whose mrbcfile is the wrapper below; MRBC_FALLBACK still serves what the emitter does not cover.
-    require File.expand_path('3rd/nfcxx/bc2cpp/tools/mrbc_rb/mruby_build', __dir__)
-    conf.mrbcfile = MrbcRb::MrubyBuild::WRAPPER
-    ENV['MRBC_RB_PRESYM'] ||= 'bootstrap'
-  end
 
   if cross
     # Force native host compilers so `mrbc` runs on the build machine even when
@@ -727,6 +750,31 @@ MRuby::Build.new do |conf|
     end
 
     rpg_maker_gems(conf)
+  end
+
+  if use_mrbc_rb
+    require File.join(mrbc_rb_dir, 'mruby_build')
+    # What the emitter does not cover (mrbtest's test/t/*.rb under `rake test`; MRBC_FALLBACK names another mrbc instead) goes to
+    # the C mrbc, which is not part of this build any more: it is built when the first such file turns up, by a second rake
+    # (the `host_mrbc` task, MRUBY_MRBC_RB=0) in its own build dir, so it cannot disturb this one.
+    fallback_dir = File.join(File.dirname(conf.build_dir), 'mrbc-fallback')
+    MrbcRb::MrubyBuild.fallback_provider = lambda do
+      env = { 'MRUBY_MRBC_RB' => '0', 'MRUBY_BUILD_DIR' => fallback_dir, 'MRBC_FALLBACK' => nil }
+      warn "build_config.rb: the emitter does not cover a file; building the C mrbc in #{fallback_dir}"
+      unless system(env, RbConfig.ruby, '-S', 'rake', 'host_mrbc', chdir: MRUBY_ROOT, out: $stderr)
+        raise "building the fallback C mrbc failed (rake host_mrbc, MRUBY_BUILD_DIR=#{fallback_dir})"
+      end
+
+      conf.exefile(File.join(fallback_dir, 'host', 'mrbc', 'bin', 'mrbc'))
+    end
+    # `conf.mrbcfile =` makes mruby use the wrapper for every gem (and the cross builds take the host's) and skip its own bootstrap
+    # mrbc build; MRBC_FALLBACK still wins over the provider.
+    conf.mrbcfile = MrbcRb::MrubyBuild::WRAPPER
+    # enable_debug adds `-g` to mrbc's options: `-g -S` of several files is reproduced (file name symbol ids, file_syms.rb).
+    # The set is the presyms of this fork's bootstrap mrbc, so the output is byte for byte the C mrbc's (3rd/nfcxx's own
+    # bootstrap set is mruby's: two ids short). A stale file would only change the placeholder ids, which every gem_init.c
+    # overwrites at start-up.
+    ENV['MRBC_RB_PRESYM'] ||= File.expand_path('scripts/build/mrbc_rb_presym.txt', __dir__)
   end
 end
 
