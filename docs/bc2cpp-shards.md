@@ -48,6 +48,15 @@ stays file-local. A name defined in two shards, or a stateful prelude `static` t
 method declaration, stops the run with an error; a declaration missing from a shard fails its compile, and a second
 strong definition fails the link, so a generator change cannot silently duplicate state.
 
+## One runtime header for every gem
+
+The compiled engine gems set `BC2CPP_RUNTIME_HEADER_DIR` (`tools/bc2cpp/compiled_gems.rb`), and the fixed runtime
+part of the prelude (the helpers bc2cpp.rb prints for every unit alike) goes to `bc2cpp_runtime_<digest>.hxx` there,
+in `namespace bc2cpp_rt_<digest>`, `inline`, so the link holds one copy of each helper instead of one per gem
+(`tools/bc2cpp/runtime_header.rb`). An item holding `static` mutable state, and every item that names one, stays in
+each gem's text in place, so that state stays per gem. The gems of one link must compile the header with the same
+macros. The check is `ruby scripts/bc2cpp/runtime_header_check.rb`.
+
 ## Grouping
 
 Methods are grouped by owner class (an owner's methods call each other most, so most direct calls stay inside one
