@@ -234,7 +234,10 @@ Dir.mktmpdir('bc2cpp-main-roots') do |dir|
   check.call('an unbounded reflective call refuses initializer table omission', InitializerTables.proven([{ err: dynamic_err }]).empty?)
   super_source = ctor_source + "\nclass Game::CtorOverride < Game::CtorLeaf; def initialize(value); super(value); end; end\n"
   _super_code, super_err = Bc2cppFixtureRuntime.generate(super_source, File.join(dir, 'super-constructors'), core: true, drop_native: ['/mruby-rgss/src/'])
-  check.call('an unproven super route preserves its parent initializer', !InitializerTables.proven([{ err: super_err }]).include?('Game::CtorLeaf#initialize'))
+  check.call('a direct super call to the parent initializer proves it', InitializerTables.proven([{ err: super_err }]).include?('Game::CtorLeaf#initialize'))
+  splat_source = ctor_source + "\nclass Game::CtorOverride < Game::CtorLeaf; def initialize(*args); super(*args); end; end\n"
+  _splat_code, splat_err = Bc2cppFixtureRuntime.generate(splat_source, File.join(dir, 'splat-constructors'), core: true, drop_native: ['/mruby-rgss/src/'])
+  check.call('an unproven super route preserves its parent initializer', !InitializerTables.proven([{ err: splat_err }]).include?('Game::CtorLeaf#initialize'))
   _load_code, load_err = Bc2cppFixtureRuntime.generate(ctor_source + "\nGame::CtorFactory.make(1)\n", File.join(dir, 'load-constructors'), core: true, drop_native: ['/mruby-rgss/src/'])
   check.call('a constructor caller that runs during load preserves the initializer', !InitializerTables.proven([{ err: load_err }]).include?('Game::CtorLeaf#initialize'))
   _foreign_code, foreign_err = Bc2cppFixtureRuntime.generate(ctor_source, File.join(dir, 'foreign-constructors'), core: true,
