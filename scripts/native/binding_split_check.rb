@@ -238,7 +238,8 @@ bodies.each do |body|
   check.call("#{body} exists and reads nothing from the calling frame", text && !text.match?(FRAME))
   base = body.delete_suffix('_native_body')
   wrapped = lib.match?(/mrb_get_args\([^;]*\);\s*return #{Regexp.escape(body)}\(/) ||
-            lib.match?(/mrb_define_\w+\(\s*M,\s*\w+,\s*"[^"]+",\s*#{Regexp.escape(body)},/m)
+            lib.match?(/mrb_define_\w+\(\s*M,\s*\w+,\s*"[^"]+",\s*#{Regexp.escape(body)},/m) ||
+            lib.match?(/MRB_MT_ENTRY\(\s*#{Regexp.escape(body)},/)
   check.call("#{body} is called from a binding that unpacks mrb_get_args, or is registered as one", wrapped)
   check.call("#{base}_direct is declared for #{body}", declared.key?("#{NBS.direct_name(body)}"))
 end

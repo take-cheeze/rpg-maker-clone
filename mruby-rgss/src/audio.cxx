@@ -371,38 +371,80 @@ mrb_value se_stop_direct(mrb_state* M, mrb_value self) {
 // delegates to these underscore-prefixed primitives.
 void rgss_audio_define(mrb_state* M, RClass* rgss) {
   RClass* audio = mrb_define_module_under(M, rgss, "Audio");
-  mrb_define_module_function(M, audio, "_bgm_play", bgm_play,
-                             MRB_ARGS_ARG(1, 4));
-  mrb_define_module_function(M, audio, "_bgm_volume", bgm_volume,
-                             MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, audio, "_bgm_pan", bgm_pan, MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, audio, "_bgm_stop", bgm_stop, MRB_ARGS_NONE());
-  mrb_define_module_function(M, audio, "_bgm_fade", bgm_fade, MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, audio, "_bgm_pos", bgm_pos, MRB_ARGS_NONE());
-  mrb_define_module_function(M, audio, "_bgs_play", bgs_play,
-                             MRB_ARGS_ARG(1, 2));
-  mrb_define_module_function(M, audio, "_bgs_stop", bgs_stop, MRB_ARGS_NONE());
-  mrb_define_module_function(M, audio, "_bgs_fade", bgs_fade, MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, audio, "_bgs_pos", bgs_pos, MRB_ARGS_NONE());
-  mrb_define_module_function(M, audio, "_me_play", me_play, MRB_ARGS_ARG(1, 3));
-  mrb_define_module_function(M, audio, "_me_stop", me_stop, MRB_ARGS_NONE());
-  mrb_define_module_function(M, audio, "_me_fade", me_fade, MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, audio, "_se_play", se_play, MRB_ARGS_ARG(1, 3));
-  mrb_define_module_function(M, audio, "_se_stop", se_stop, MRB_ARGS_NONE());
-  mrb_define_module_function(M, audio, "_update", audio_update,
-                             MRB_ARGS_NONE());
-  // Play from encoded bytes: how a release that packs its Audio/ tree into an
-  // encrypted RGSSAD archive is heard at all (see RGSS.asset_archive).
-  mrb_define_module_function(M, audio, "_bgm_play_mem", bgm_play_mem,
-                             MRB_ARGS_ARG(2, 4));
-  mrb_define_module_function(M, audio, "_bgs_play_mem", bgs_play_mem,
-                             MRB_ARGS_ARG(2, 2));
-  mrb_define_module_function(M, audio, "_me_play_mem", me_play_mem,
-                             MRB_ARGS_ARG(2, 3));
-  mrb_define_module_function(M, audio, "_se_play_mem", se_play_mem,
-                             MRB_ARGS_ARG(2, 3));
-  mrb_define_module_function(M, audio, "_midi_available", midi_available,
-                             MRB_ARGS_NONE());
-  mrb_define_module_function(M, audio, "_can_play_mem?", can_play_mem,
-                             MRB_ARGS_NONE());
+  static const mrb_mt_entry audio_module_functions[] = {
+      MRB_MT_ENTRY(bgm_play, MRB_SYM(_bgm_play), MRB_ARGS_ARG(1, 4))   //
+      MRB_MT_ENTRY(bgm_volume, MRB_SYM(_bgm_volume), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(bgm_pan, MRB_SYM(_bgm_pan), MRB_ARGS_REQ(1))        //
+      MRB_MT_ENTRY(bgm_stop, MRB_SYM(_bgm_stop), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(bgm_fade, MRB_SYM(_bgm_fade), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(bgm_pos, MRB_SYM(_bgm_pos), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(bgs_play, MRB_SYM(_bgs_play), MRB_ARGS_ARG(1, 2))   //
+      MRB_MT_ENTRY(bgs_stop, MRB_SYM(_bgs_stop), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(bgs_fade, MRB_SYM(_bgs_fade), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(bgs_pos, MRB_SYM(_bgs_pos), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(me_play, MRB_SYM(_me_play), MRB_ARGS_ARG(1, 3))     //
+      MRB_MT_ENTRY(me_stop, MRB_SYM(_me_stop), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(me_fade, MRB_SYM(_me_fade), MRB_ARGS_REQ(1))        //
+      MRB_MT_ENTRY(se_play, MRB_SYM(_se_play), MRB_ARGS_ARG(1, 3))     //
+      MRB_MT_ENTRY(se_stop, MRB_SYM(_se_stop), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(audio_update, MRB_SYM(_update), MRB_ARGS_NONE())    //
+      // Play from encoded bytes: how a release that packs its Audio/ tree into
+      // an encrypted RGSSAD archive is heard at all (see RGSS.asset_archive).
+      MRB_MT_ENTRY(bgm_play_mem, MRB_SYM(_bgm_play_mem), MRB_ARGS_ARG(2, 4))  //
+      MRB_MT_ENTRY(bgs_play_mem, MRB_SYM(_bgs_play_mem), MRB_ARGS_ARG(2, 2))  //
+      MRB_MT_ENTRY(me_play_mem, MRB_SYM(_me_play_mem), MRB_ARGS_ARG(2, 3))    //
+      MRB_MT_ENTRY(se_play_mem, MRB_SYM(_se_play_mem), MRB_ARGS_ARG(2, 3))    //
+      MRB_MT_ENTRY(midi_available, MRB_SYM(_midi_available),
+                   MRB_ARGS_NONE())                                          //
+      MRB_MT_ENTRY(can_play_mem, MRB_SYM_Q(_can_play_mem), MRB_ARGS_NONE())  //
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(audio)),
+                  audio_module_functions);
+  static const mrb_mt_entry audio_module_functions_private[] = {
+      MRB_MT_ENTRY(bgm_play, MRB_SYM(_bgm_play),
+                   MRB_ARGS_ARG(1, 4) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgm_volume, MRB_SYM(_bgm_volume),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgm_pan, MRB_SYM(_bgm_pan),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgm_stop, MRB_SYM(_bgm_stop),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgm_fade, MRB_SYM(_bgm_fade),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgm_pos, MRB_SYM(_bgm_pos),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgs_play, MRB_SYM(_bgs_play),
+                   MRB_ARGS_ARG(1, 2) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgs_stop, MRB_SYM(_bgs_stop),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgs_fade, MRB_SYM(_bgs_fade),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgs_pos, MRB_SYM(_bgs_pos),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(me_play, MRB_SYM(_me_play),
+                   MRB_ARGS_ARG(1, 3) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(me_stop, MRB_SYM(_me_stop),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(me_fade, MRB_SYM(_me_fade),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(se_play, MRB_SYM(_se_play),
+                   MRB_ARGS_ARG(1, 3) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(se_stop, MRB_SYM(_se_stop),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(audio_update, MRB_SYM(_update),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgm_play_mem, MRB_SYM(_bgm_play_mem),
+                   MRB_ARGS_ARG(2, 4) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(bgs_play_mem, MRB_SYM(_bgs_play_mem),
+                   MRB_ARGS_ARG(2, 2) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(me_play_mem, MRB_SYM(_me_play_mem),
+                   MRB_ARGS_ARG(2, 3) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(se_play_mem, MRB_SYM(_se_play_mem),
+                   MRB_ARGS_ARG(2, 3) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(midi_available, MRB_SYM(_midi_available),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(can_play_mem, MRB_SYM_Q(_can_play_mem),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+  };
+  MRB_MT_INIT_ROM(M, audio, audio_module_functions_private);
 }

@@ -31,6 +31,7 @@ require_relative '../../tools/bc2cpp/compiled_gems'
 require_relative '../../tools/bc2cpp/nomethod_reviewed'
 require_relative '../../tools/bc2cpp/nomethod_reviewed_probe'
 require_relative '../../tools/bc2cpp/native_direct'
+require_relative '../../tools/bc2cpp/native_owner_map'
 require_relative '../../tools/bc2cpp/native_result_facts'
 require_relative '../../tools/bc2cpp/closed_world'
 require_relative '../../tools/bc2cpp/closed_world_env'
@@ -119,6 +120,10 @@ audit = lambda do |texts, facts|
       callee = callee_at.call(text, Regexp.last_match.end(0))
       registrations[[owners[var], name]] << squash.call(callee) if callee
     end
+    # An instance ROM entry is the registration mrb_define_method(M, var, "name", fn, ...) it replaced.
+    NativeOwnerMap.rom_bindings(text).each do |var, singleton, name, function|
+      registrations[[owners[var], name]] << function unless singleton
+    end
   end
   # The one body of `function` in the sources, brackets included.
   body_of = lambda do |function|
@@ -179,9 +184,9 @@ mutants = {
   'component_get returning nil' => ['return mrb_float_value(M, DataType<T>::get(M, self).*Field);', 'return mrb_nil_value();'],
   'Bitmap#rect building another class' => ['mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);',
                                            'mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);'],
-  'a second Bitmap#width registration' => ['mrb_define_method(M, bmp, "width", bmp_width, MRB_ARGS_NONE());',
-                                           'mrb_define_method(M, bmp, "width", bmp_width, MRB_ARGS_NONE()); ' \
-                                           'mrb_define_method(M, bmp, "width", bmp_height, MRB_ARGS_NONE());']
+  'a second Bitmap#width registration' => ['MRB_MT_ENTRY(bmp_width, MRB_SYM(width), MRB_ARGS_NONE())',
+                                           'MRB_MT_ENTRY(bmp_width, MRB_SYM(width), MRB_ARGS_NONE()), ' \
+                                           'MRB_MT_ENTRY(bmp_height, MRB_SYM(width), MRB_ARGS_NONE())']
 }
 mutants.each do |what, (from, to)|
   broken = audit.call(mutate.call(from, to), NativeResultFacts::FACTS).reject { |_label, holds| holds }

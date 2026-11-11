@@ -219,6 +219,10 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/native_owner_map_rom_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
   scripts/bc2cpp/keyword_splat_static_check.rb:
     tier: runtime
     capabilities:

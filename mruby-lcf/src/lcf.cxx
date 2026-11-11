@@ -1,4 +1,5 @@
 #include <mruby.h>
+#include <mruby/class.h>
 #include "cp932_lookup.hxx"
 
 #include <optional>
@@ -105,14 +106,26 @@ mrb_value schema_table(mrb_state* M, mrb_value) {
 
 extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
   RClass* mod = mrb_define_module(M, "LCF");
-  mrb_define_module_function(M, mod, "cp932_to_utf8", cp932_to_utf8,
-                             MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, mod, "utf8_to_cp932", utf8_to_cp932,
-                             MRB_ARGS_REQ(1));
+  static const mrb_mt_entry mod_module_functions[] = {
+      MRB_MT_ENTRY(cp932_to_utf8, MRB_SYM(cp932_to_utf8), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(utf8_to_cp932, MRB_SYM(utf8_to_cp932), MRB_ARGS_REQ(1))  //
 #ifdef LCF_SCHEMA_TABLES
-  mrb_define_module_function(M, mod, "schema_table", schema_table,
-                             MRB_ARGS_REQ(1));
+      MRB_MT_ENTRY(schema_table, MRB_SYM(schema_table), MRB_ARGS_REQ(1))  //
 #endif
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(mod)),
+                  mod_module_functions);
+  static const mrb_mt_entry mod_module_functions_private[] = {
+      MRB_MT_ENTRY(cp932_to_utf8, MRB_SYM(cp932_to_utf8),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(utf8_to_cp932, MRB_SYM(utf8_to_cp932),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+#ifdef LCF_SCHEMA_TABLES
+      MRB_MT_ENTRY(schema_table, MRB_SYM(schema_table),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+#endif
+  };
+  MRB_MT_INIT_ROM(M, mod, mod_module_functions_private);
 }
 
 extern "C" void mrb_mruby_lcf_gem_final(mrb_state* M) {}

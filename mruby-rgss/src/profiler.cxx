@@ -11,6 +11,7 @@
 // #else branch's own comment for why.
 #if !defined(WIO_TERMINAL) && !defined(MAIX_BUILD)
 #include <mruby.h>
+#include <mruby/class.h>
 #include <mruby/gc.h>
 #include <mruby/hash.h>
 #include <mruby/string.h>
@@ -731,27 +732,50 @@ void profiler_init(mrb_state* M) {
   g_mrb = M;
   RClass* rgss = mrb_module_get(M, "RGSS");
   RClass* prof = mrb_define_module_under(M, rgss, "Profiler");
-  mrb_define_module_function(M, prof, "enabled?", prof_enabled_p,
-                             MRB_ARGS_NONE());
-  mrb_define_module_function(M, prof, "enabled=", prof_set_enabled,
-                             MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, prof, "section", prof_section,
-                             MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK());
-  mrb_define_module_function(M, prof, "frame", prof_frame, MRB_ARGS_BLOCK());
-  mrb_define_module_function(M, prof, "stats", prof_stats, MRB_ARGS_NONE());
-  mrb_define_module_function(M, prof, "report", prof_report, MRB_ARGS_NONE());
-  mrb_define_module_function(M, prof, "reset", prof_reset, MRB_ARGS_NONE());
-  mrb_define_module_function(M, prof, "trace_start", prof_trace_start,
-                             MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, prof, "trace_stop", prof_trace_stop,
-                             MRB_ARGS_NONE());
-  mrb_define_module_function(M, prof, "tracing?", prof_tracing_p,
-                             MRB_ARGS_NONE());
+  static const mrb_mt_entry prof_module_functions[] = {
+      MRB_MT_ENTRY(prof_enabled_p, MRB_SYM_Q(enabled), MRB_ARGS_NONE())    //
+      MRB_MT_ENTRY(prof_set_enabled, MRB_SYM_E(enabled), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(prof_section, MRB_SYM(section),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK())                       //
+      MRB_MT_ENTRY(prof_frame, MRB_SYM(frame), MRB_ARGS_BLOCK())             //
+      MRB_MT_ENTRY(prof_stats, MRB_SYM(stats), MRB_ARGS_NONE())              //
+      MRB_MT_ENTRY(prof_report, MRB_SYM(report), MRB_ARGS_NONE())            //
+      MRB_MT_ENTRY(prof_reset, MRB_SYM(reset), MRB_ARGS_NONE())              //
+      MRB_MT_ENTRY(prof_trace_start, MRB_SYM(trace_start), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(prof_trace_stop, MRB_SYM(trace_stop), MRB_ARGS_NONE())    //
+      MRB_MT_ENTRY(prof_tracing_p, MRB_SYM_Q(tracing), MRB_ARGS_NONE())      //
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(prof)),
+                  prof_module_functions);
+  static const mrb_mt_entry prof_module_functions_private[] = {
+      MRB_MT_ENTRY(prof_enabled_p, MRB_SYM_Q(enabled),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(prof_set_enabled, MRB_SYM_E(enabled),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(prof_section, MRB_SYM(section),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(prof_frame, MRB_SYM(frame),
+                   MRB_ARGS_BLOCK() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(prof_stats, MRB_SYM(stats),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(prof_report, MRB_SYM(report),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(prof_reset, MRB_SYM(reset),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(prof_trace_start, MRB_SYM(trace_start),
+                   MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(prof_trace_stop, MRB_SYM(trace_stop),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(prof_tracing_p, MRB_SYM_Q(tracing),
+                   MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
+  };
+  MRB_MT_INIT_ROM(M, prof, prof_module_functions_private);
 }
 
 #else  // WIO_TERMINAL || MAIX_BUILD
 
 #include <mruby.h>
+#include <mruby/class.h>
 
 // The real profiler above is dev-only tooling (Chrome-trace JSON export,
 // memory/allocator stats, the RGSS::Profiler Ruby module) with no call site
@@ -848,10 +872,20 @@ mrb_value prof_stub_yield(mrb_state* M, mrb_value) {
 void profiler_init(mrb_state* M) {
   RClass* rgss = mrb_module_get(M, "RGSS");
   RClass* prof = mrb_define_module_under(M, rgss, "Profiler");
-  mrb_define_module_function(M, prof, "frame", prof_stub_yield,
-                             MRB_ARGS_BLOCK());
-  mrb_define_module_function(M, prof, "section", prof_stub_yield,
-                             MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK());
+  static const mrb_mt_entry prof_module_functions[] = {
+      MRB_MT_ENTRY(prof_stub_yield, MRB_SYM(frame), MRB_ARGS_BLOCK())  //
+      MRB_MT_ENTRY(prof_stub_yield, MRB_SYM(section),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK())  //
+  };
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(prof)),
+                  prof_module_functions);
+  static const mrb_mt_entry prof_module_functions_private[] = {
+      MRB_MT_ENTRY(prof_stub_yield, MRB_SYM(frame),
+                   MRB_ARGS_BLOCK() | MRB_MT_PRIVATE)  //
+      MRB_MT_ENTRY(prof_stub_yield, MRB_SYM(section),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK() | MRB_MT_PRIVATE)  //
+  };
+  MRB_MT_INIT_ROM(M, prof, prof_module_functions_private);
 }
 
 #endif  // WIO_TERMINAL || MAIX_BUILD
