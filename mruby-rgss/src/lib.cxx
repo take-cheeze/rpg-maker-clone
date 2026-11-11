@@ -9428,3 +9428,30 @@ mrb_value rgss_obj_dispose_direct(mrb_state* M, mrb_value self) {
 mrb_value rgss_tilemap_dispose_direct(mrb_state* M, mrb_value self) {
   return tilemap_dispose(M, self);
 }
+
+// OWNER_CALL_DIRECT rows of the other natives an owner call reaches by name
+// (NATIVE_ROWS in tools/bc2cpp/owner_call_direct.rb): the body of a ROM entry
+// under an exported name, with the entry's own arity and visibility held by
+// scripts/bc2cpp-rpg/owner_call_direct_native_check.rb.
+#define OWNER_ROW(wrapper, body)                    \
+  mrb_value wrapper(mrb_state* M, mrb_value self) { \
+    return body(M, self);                           \
+  }
+OWNER_ROW(rgss_row_sprite_opacity_set, spr_set_opacity)
+OWNER_ROW(rgss_row_bitmap_init_memory, bmp_init_memory)
+OWNER_ROW(rgss_row_bitmap_init_file, bmp_init_file)
+OWNER_ROW(rgss_row_bitmap_transition_alpha, bmp_transition_alpha)
+OWNER_ROW(rgss_row_bitmap_get_pixel, bmp_get_pixel)
+OWNER_ROW(rgss_row_bitmap_blt_quads, bmp_blt_quads)
+OWNER_ROW(rgss_row_bitmap_tone_blt, bmp_tone_blt)
+OWNER_ROW(rgss_row_bitmap_mosaic_blt, bmp_mosaic_blt)
+OWNER_ROW(rgss_row_bitmap_wave_blt, bmp_wave_blt)
+OWNER_ROW(rgss_row_bitmap_blend_text, bmp_blend_text)
+OWNER_ROW(rgss_row_input_s_poll, input_poll)
+OWNER_ROW(rgss_row_input_poll, input_poll)
+#if !defined(WIO_TERMINAL)
+OWNER_ROW(rgss_row_plane_opacity_set, spr_set_opacity)
+OWNER_ROW(rgss_row_window_opacity_set, window_set_opacity)
+OWNER_ROW(rgss_row_bitmap_hue_change, bmp_hue_change)
+#endif
+#undef OWNER_ROW
