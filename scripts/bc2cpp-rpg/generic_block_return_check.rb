@@ -19,6 +19,9 @@
 # Usage: MRBC=path/to/mrbc ruby scripts/bc2cpp-rpg/generic_block_return_check.rb   (without MRBC only the host half runs)
 
 require_relative '../../tools/bc2cpp/world_root'
+# bc2cpp's closed-world core gems read the staged mruby-core-compiled/ (see compiled-gem-templates/stage.rb).
+require_relative '../../compiled-gem-templates/stage'
+CompiledGemTemplates.stage!
 require 'digest'
 require 'fileutils'
 require 'open3'
