@@ -39,7 +39,9 @@ any of these could look it up:
     when the call is the final else of an exact-class guard chain
     (`bc2cpp_class_is`) that tests it and nothing subclasses it, or when the
     call carries its compiled entry (`OWNER_CALL_DIRECT`,
-    `tools/bc2cpp/owner_call_direct.rb`). With direct entries the call walks
+    `tools/bc2cpp/owner_call_direct.rb`) or, for an engine native, a row for
+    the exported wrapper of its ROM entry (`NATIVE_ROWS`; `OWNER_ROW` in the
+    native files). With direct entries the call walks
     the receiver's ancestors in lookup order and answers with the entry where
     the lookup would have found it, so it behaves the same whether the entry
     is registered or not. The emitter adds entries only to a call they

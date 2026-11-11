@@ -104,6 +104,18 @@ mrb_value schema_table(mrb_state* M, mrb_value) {
 
 }  // namespace
 
+// OWNER_CALL_DIRECT rows (NATIVE_ROWS in tools/bc2cpp/owner_call_direct.rb):
+// the body of a ROM entry under an exported name, for the generated code of
+// another gem; scripts/bc2cpp-rpg/owner_call_direct_native_check.rb holds them
+// to the entries.
+#define OWNER_ROW(wrapper, body)                    \
+  mrb_value wrapper(mrb_state* M, mrb_value self) { \
+    return body(M, self);                           \
+  }
+OWNER_ROW(lcf_row_s_utf8_to_cp932, utf8_to_cp932)
+OWNER_ROW(lcf_row_utf8_to_cp932, utf8_to_cp932)
+#undef OWNER_ROW
+
 extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
   RClass* mod = mrb_define_module(M, "LCF");
 #define MRB_MT_CLASS LCF_singleton
