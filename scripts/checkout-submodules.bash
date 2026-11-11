@@ -54,6 +54,8 @@ if [ "${RECURSIVE:-}" = 1 ]; then
       git submodule update --init --depth 1 -- 3rd/nfcxx
       for name in $(git -C 3rd/nfcxx config --file .gitmodules --get-regexp '\.path$' | awk '{print $1}' |
                     sed -e 's/^submodule\.//' -e 's/\.path$//'); do
+        # bc2cpp/3rd/* (the RBS and Prism forks of the bc2cpp runner) are kept; see the non-recursive pass below.
+        case "$(git -C 3rd/nfcxx config --file .gitmodules "submodule.${name}.path")" in bc2cpp/3rd/*) continue ;; esac
         git -C 3rd/nfcxx config "submodule.${name}.update" none
       done
     fi
@@ -61,3 +63,8 @@ if [ "${RECURSIVE:-}" = 1 ]; then
 fi
 
 git submodule update --init --depth 1 "${recursive[@]}" -- "${init[@]}"
+
+# The bc2cpp runner builds its RBS and Prism gems from bc2cpp/3rd in nfcxx, so a non-recursive checkout still needs them.
+if [ -e 3rd/nfcxx/.git ]; then
+  git -C 3rd/nfcxx submodule update --init --depth 1 -- bc2cpp/3rd/prism bc2cpp/3rd/rbs
+fi

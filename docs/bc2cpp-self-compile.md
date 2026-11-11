@@ -44,8 +44,8 @@ bc2cpp's own sources never call `eval`: the only `eval` in the build is the bake
 
    The closed-world inputs are the sources outside bc2cpp's own program that share the executable's VM: the C and C++ sources
    of mruby core (`3rd/mruby/src`) and of each gem (`src` and `core` of the gems in the list, including Onigmo bundled by
-   `mruby-onig-regexp`, `3rd/mruby-marshal`, `3rd/mruby-stringio`, `host-libs/mruby-prism` with Prism's C, `host-libs/mruby-process`
-   and `host-libs/mruby-env`), and the Ruby `mrblib` of the core and ruby-libs gems (shellwords, json, digest, fileutils,
+   `mruby-onig-regexp`, `3rd/mruby-marshal`, `3rd/mruby-stringio`, `3rd/nfcxx/bc2cpp/host-libs/mruby-prism` with Prism's C, `3rd/nfcxx/bc2cpp/host-libs/mruby-process`
+   and `3rd/nfcxx/bc2cpp/host-libs/mruby-env`), and the Ruby `mrblib` of the core and ruby-libs gems (`3rd/nfcxx/bc2cpp/ruby-libs`) (shellwords, json, digest, fileutils,
    tmpdir, tempfile, dir-glob, strscan, compare-by-identity, yaml, zlib, and the generated rbs and prism mrblibs). The program
    itself is `tools/bc2cpp/**` and `scripts/rpg2k/closed_world_lint.rb`, baked as bytecode.
 

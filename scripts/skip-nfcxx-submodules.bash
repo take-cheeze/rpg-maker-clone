@@ -23,6 +23,8 @@ fi
 for name in $(git -C "${nfcxx}" config --file .gitmodules --get-regexp '\.path$' 2>/dev/null | awk '{print $1}' |
               sed -e 's/^submodule\.//' -e 's/\.path$//'); do
   path=$(git -C "${nfcxx}" config --file .gitmodules "submodule.${name}.path")
+  # bc2cpp/3rd/prism and bc2cpp/3rd/rbs are the RBS and Prism forks the bc2cpp runner builds from, so they stay.
+  case "${path}" in bc2cpp/3rd/*) continue ;; esac
   git -C "${nfcxx}" config --file .gitmodules --remove-section "submodule.${name}"
   if git -C "${nfcxx}" ls-files --error-unmatch "${path}" >/dev/null 2>&1; then
     git -C "${nfcxx}" update-index --force-remove "${path}"
