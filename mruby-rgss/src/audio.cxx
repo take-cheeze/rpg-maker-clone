@@ -280,6 +280,32 @@ mrb_value can_play_mem(mrb_state* M, mrb_value self) {
 
 }  // namespace
 
+// OWNER_CALL_DIRECT rows (NATIVE_ROWS in tools/bc2cpp/owner_call_direct.rb):
+// the body of a ROM entry under an exported name, for the generated code of
+// another gem; scripts/bc2cpp-rpg/owner_call_direct_native_check.rb holds them
+// to the entries.
+#define OWNER_ROW(wrapper, body)                    \
+  mrb_value wrapper(mrb_state* M, mrb_value self) { \
+    return body(M, self);                           \
+  }
+OWNER_ROW(rgss_row_audio_s_bgm_play, bgm_play)
+OWNER_ROW(rgss_row_audio_bgm_play, bgm_play)
+OWNER_ROW(rgss_row_audio_s_bgs_play, bgs_play)
+OWNER_ROW(rgss_row_audio_bgs_play, bgs_play)
+OWNER_ROW(rgss_row_audio_s_me_play, me_play)
+OWNER_ROW(rgss_row_audio_me_play, me_play)
+OWNER_ROW(rgss_row_audio_s_se_play, se_play)
+OWNER_ROW(rgss_row_audio_se_play, se_play)
+OWNER_ROW(rgss_row_audio_s_bgm_play_mem, bgm_play_mem)
+OWNER_ROW(rgss_row_audio_bgm_play_mem, bgm_play_mem)
+OWNER_ROW(rgss_row_audio_s_bgs_play_mem, bgs_play_mem)
+OWNER_ROW(rgss_row_audio_bgs_play_mem, bgs_play_mem)
+OWNER_ROW(rgss_row_audio_s_me_play_mem, me_play_mem)
+OWNER_ROW(rgss_row_audio_me_play_mem, me_play_mem)
+OWNER_ROW(rgss_row_audio_s_se_play_mem, se_play_mem)
+OWNER_ROW(rgss_row_audio_se_play_mem, se_play_mem)
+#undef OWNER_ROW
+
 // Install (copy) the backend table, or clear it when passed null.
 extern "C" void rgss_audio_install_backend(const RgssAudioBackend* backend) {
   if (backend)
