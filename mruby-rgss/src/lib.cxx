@@ -7340,7 +7340,78 @@ static mrb_value rect_empty_native_body(mrb_state* M, mrb_value self) {
   return self;
 }
 
-// Register x/y/width/height accessors for the Rect class.
+static V rect_init(mrb_state* M, V self) {
+  if (mrb_get_argc(M) == 0) {
+    DataType<Rect>::alloc_obj(M, self);
+  } else {
+    mrb_int x, y, w, h;
+    mrb_get_args(M, "iiii", &x, &y, &w, &h);
+    DataType<Rect>::alloc_obj(M, self, x, y, w, h);
+  }
+  return self;
+}
+
+static V rect_set(mrb_state* M, V self) {
+  if (mrb_get_argc(M) == 1) {
+    V o;
+    mrb_get_args(M, "o", &o);
+    DataType<Rect>::get(M, self) = DataType<Rect>::get(M, o);
+  } else {
+    mrb_int x, y, w, h;
+    mrb_get_args(M, "iiii", &x, &y, &w, &h);
+    DataType<Rect>::get(M, self) = Rect{x, y, w, h};
+  }
+  return self;
+}
+
+static V rect_x(mrb_state* M, V self) {
+  return rgss::rect_x_direct(M, self);
+}
+static V rect_y(mrb_state* M, V self) {
+  return rgss::rect_y_direct(M, self);
+}
+static V rect_width(mrb_state* M, V self) {
+  return rgss::rect_width_direct(M, self);
+}
+static V rect_height(mrb_state* M, V self) {
+  return rgss::rect_height_direct(M, self);
+}
+
+static V rect_set_x(mrb_state* M, V self) {
+  mrb_int x;
+  mrb_get_args(M, "i", &x);
+  return rgss::rect_x_set_direct(M, self, x);
+}
+static V rect_set_y(mrb_state* M, V self) {
+  mrb_int x;
+  mrb_get_args(M, "i", &x);
+  return rgss::rect_y_set_direct(M, self, x);
+}
+static V rect_set_width(mrb_state* M, V self) {
+  mrb_int x;
+  mrb_get_args(M, "i", &x);
+  return rgss::rect_width_set_direct(M, self, x);
+}
+static V rect_set_height(mrb_state* M, V self) {
+  mrb_int x;
+  mrb_get_args(M, "i", &x);
+  return rgss::rect_height_set_direct(M, self, x);
+}
+
+static V rect_eq(mrb_state* M, V self) {
+  V o;
+  mrb_get_args(M, "o", &o);
+  return rect_eq_native_body(M, self, o);
+}
+
+static V rect_load(mrb_state* M, V self) {
+  const char* p;
+  mrb_int len;
+  mrb_get_args(M, "s", &p, &len);
+  return rect_s_load_native_body(M, self, p, len);
+}
+
+// Register the Rect class: accessors, comparison and Marshal hooks.
 void define_rect(mrb_state* M, RClass* m) {
   RClass* rect = mrb_define_class_under(M, m, "Rect", M->object_class);
   MRB_SET_INSTANCE_TT(rect, MRB_TT_DATA);
@@ -7350,109 +7421,36 @@ void define_rect(mrb_state* M, RClass* m) {
 #endif  // !defined(WIO_TERMINAL)
 #define MRB_MT_CLASS RGSS__Rect
   static const mrb_mt_entry rect_methods[] = {
+      MRB_MT_ENTRY(rect_init, MRB_SYM(initialize),
+                   MRB_ARGS_OPT(4) | MRB_MT_PRIVATE)  //
 #if !defined(WIO_TERMINAL)  // Rect#dup/#clone: unused on wio
       MRB_MT_ENTRY(rect_initialize_copy_tmpl, MRB_SYM(initialize_copy),
                    MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
 #endif                                                // !defined(WIO_TERMINAL)
+      MRB_MT_ENTRY(rect_set, MRB_SYM(set),
+                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3))                        //
+      MRB_MT_ENTRY(rect_x, MRB_SYM(x), MRB_ARGS_NONE())                      //
+      MRB_MT_ENTRY(rect_y, MRB_SYM(y), MRB_ARGS_NONE())                      //
+      MRB_MT_ENTRY(rect_width, MRB_SYM(width), MRB_ARGS_NONE())              //
+      MRB_MT_ENTRY(rect_height, MRB_SYM(height), MRB_ARGS_NONE())            //
+      MRB_MT_ENTRY(rect_set_x, MRB_SYM_E(x), MRB_ARGS_REQ(1))                //
+      MRB_MT_ENTRY(rect_set_y, MRB_SYM_E(y), MRB_ARGS_REQ(1))                //
+      MRB_MT_ENTRY(rect_set_width, MRB_SYM_E(width), MRB_ARGS_REQ(1))        //
+      MRB_MT_ENTRY(rect_set_height, MRB_SYM_E(height), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(rect_eq, MRB_OPSYM(eq), MRB_ARGS_REQ(1))                  //
       MRB_MT_ENTRY(rect_empty_native_body, MRB_SYM(empty), MRB_ARGS_NONE())  //
       MRB_MT_ENTRY(rect_to_s_native_body, MRB_SYM(to_s), MRB_ARGS_NONE())    //
       MRB_MT_ENTRY(rect_dump_native_body, MRB_SYM(_dump), MRB_ARGS_REQ(1))   //
   };
 #undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, rect, rect_methods);
-  mrb_define_method(
-      M, rect, "initialize",
-      [](mrb_state* M, V self) -> V {
-        if (mrb_get_argc(M) == 0) {
-          DataType<Rect>::alloc_obj(M, self);
-        } else {
-          mrb_int x, y, w, h;
-          mrb_get_args(M, "iiii", &x, &y, &w, &h);
-          DataType<Rect>::alloc_obj(M, self, x, y, w, h);
-        }
-        return self;
-      },
-      MRB_ARGS_OPT(4));
-  mrb_define_method(
-      M, rect, "set",
-      [](mrb_state* M, V self) {
-        if (mrb_get_argc(M) == 1) {
-          V o;
-          mrb_get_args(M, "o", &o);
-          DataType<Rect>::get(M, self) = DataType<Rect>::get(M, o);
-        } else {
-          mrb_int x, y, w, h;
-          mrb_get_args(M, "iiii", &x, &y, &w, &h);
-          DataType<Rect>::get(M, self) = Rect{x, y, w, h};
-        }
-        return self;
-      },
-      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
-  mrb_define_method(
-      M, rect, "x",
-      [](mrb_state* M, V self) { return rgss::rect_x_direct(M, self); },
-      MRB_ARGS_NONE());
-  mrb_define_method(
-      M, rect, "y",
-      [](mrb_state* M, V self) { return rgss::rect_y_direct(M, self); },
-      MRB_ARGS_NONE());
-  mrb_define_method(
-      M, rect, "width",
-      [](mrb_state* M, V self) { return rgss::rect_width_direct(M, self); },
-      MRB_ARGS_NONE());
-  mrb_define_method(
-      M, rect, "height",
-      [](mrb_state* M, V self) { return rgss::rect_height_direct(M, self); },
-      MRB_ARGS_NONE());
-  mrb_define_method(
-      M, rect, "x=",
-      [](mrb_state* M, V self) {
-        mrb_int x;
-        mrb_get_args(M, "i", &x);
-        return rgss::rect_x_set_direct(M, self, x);
-      },
-      MRB_ARGS_REQ(1));
-  mrb_define_method(
-      M, rect, "y=",
-      [](mrb_state* M, V self) {
-        mrb_int x;
-        mrb_get_args(M, "i", &x);
-        return rgss::rect_y_set_direct(M, self, x);
-      },
-      MRB_ARGS_REQ(1));
-  mrb_define_method(
-      M, rect, "width=",
-      [](mrb_state* M, V self) {
-        mrb_int x;
-        mrb_get_args(M, "i", &x);
-        return rgss::rect_width_set_direct(M, self, x);
-      },
-      MRB_ARGS_REQ(1));
-  mrb_define_method(
-      M, rect, "height=",
-      [](mrb_state* M, V self) {
-        mrb_int x;
-        mrb_get_args(M, "i", &x);
-        return rgss::rect_height_set_direct(M, self, x);
-      },
-      MRB_ARGS_REQ(1));
-  mrb_define_method(
-      M, rect, "==",
-      [](mrb_state* M, V self) {
-        V o;
-        mrb_get_args(M, "o", &o);
-        return rect_eq_native_body(M, self, o);
-      },
-      MRB_ARGS_REQ(1));
-  mrb_define_class_method(
-      M, rect, "_load",
-      [](mrb_state* M, V self) {
-        const char* p;
-        mrb_int len;
-        mrb_get_args(M, "s", &p, &len);
-        return rect_s_load_native_body(M, self, p, len);
-      },
-      MRB_ARGS_REQ(1));
+#define MRB_MT_CLASS RGSS__Rect_singleton
+  static const mrb_mt_entry rect_class_methods[] = {
+      MRB_MT_ENTRY(rect_load, MRB_SYM(_load), MRB_ARGS_REQ(1))  //
+  };
+#undef MRB_MT_CLASS
+  MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(rect)),
+                  rect_class_methods);
 }
 
 }  // namespace
@@ -9024,10 +9022,24 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 #endif  // !defined(WIO_TERMINAL)
 
 #if defined(WIO_TERMINAL)  // Tilemap is not compiled on wio
-  mrb_define_method(M, mrb_define_class_under(M, m, "Tilemap", M->object_class),
-                    "initialize", not_compiled_init, MRB_ARGS_ANY());
-  mrb_define_method(M, mrb_define_class_under(M, m, "Window", M->object_class),
-                    "initialize", not_compiled_init, MRB_ARGS_ANY());
+  {
+    RClass* tilemap = mrb_define_class_under(M, m, "Tilemap", M->object_class);
+#define MRB_MT_CLASS RGSS__Tilemap
+    static const mrb_mt_entry tilemap_methods[] = {
+        MRB_MT_ENTRY(not_compiled_init, MRB_SYM(initialize),
+                     MRB_ARGS_ANY() | MRB_MT_PRIVATE)  //
+    };
+#undef MRB_MT_CLASS
+    MRB_MT_INIT_ROM(M, tilemap, tilemap_methods);
+    RClass* window = mrb_define_class_under(M, m, "Window", M->object_class);
+#define MRB_MT_CLASS RGSS__Window
+    static const mrb_mt_entry window_methods[] = {
+        MRB_MT_ENTRY(not_compiled_init, MRB_SYM(initialize),
+                     MRB_ARGS_ANY() | MRB_MT_PRIVATE)  //
+    };
+#undef MRB_MT_CLASS
+    MRB_MT_INIT_ROM(M, window, window_methods);
+  }
 #else
   RClass* tilemap = mrb_define_class_under(M, m, "Tilemap", M->object_class);
   g_native_tilemap_class = tilemap;
@@ -9204,6 +9216,21 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   static constexpr mrb_func_t color_initialize_copy_tmpl =
       data_init_copy<Color>;
 #endif  // !defined(WIO_TERMINAL)
+  static constexpr mrb_func_t color_red_get = component_get<Color, &Color::red>;
+  static constexpr mrb_func_t color_red_set =
+      component_set<Color, &Color::red, 0, 255>;
+  static constexpr mrb_func_t color_green_get =
+      component_get<Color, &Color::green>;
+  static constexpr mrb_func_t color_green_set =
+      component_set<Color, &Color::green, 0, 255>;
+  static constexpr mrb_func_t color_blue_get =
+      component_get<Color, &Color::blue>;
+  static constexpr mrb_func_t color_blue_set =
+      component_set<Color, &Color::blue, 0, 255>;
+  static constexpr mrb_func_t color_alpha_get =
+      component_get<Color, &Color::alpha>;
+  static constexpr mrb_func_t color_alpha_set =
+      component_set<Color, &Color::alpha, 0, 255>;
 #define MRB_MT_CLASS RGSS__Color
   static const mrb_mt_entry color_methods[] = {
       MRB_MT_ENTRY(color_init, MRB_SYM(initialize),
@@ -9216,10 +9243,18 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                    MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
 #endif                                                // !defined(WIO_TERMINAL)
       MRB_MT_ENTRY(color_set, MRB_SYM(set),
-                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3))            //
-      MRB_MT_ENTRY(color_eq, MRB_OPSYM(eq), MRB_ARGS_REQ(1))     //
-      MRB_MT_ENTRY(color_to_s, MRB_SYM(to_s), MRB_ARGS_NONE())   //
-      MRB_MT_ENTRY(color_dump, MRB_SYM(_dump), MRB_ARGS_REQ(1))  //
+                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3))                   //
+      MRB_MT_ENTRY(color_eq, MRB_OPSYM(eq), MRB_ARGS_REQ(1))            //
+      MRB_MT_ENTRY(color_to_s, MRB_SYM(to_s), MRB_ARGS_NONE())          //
+      MRB_MT_ENTRY(color_dump, MRB_SYM(_dump), MRB_ARGS_REQ(1))         //
+      MRB_MT_ENTRY(color_red_get, MRB_SYM(red), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(color_green_get, MRB_SYM(green), MRB_ARGS_NONE())    //
+      MRB_MT_ENTRY(color_blue_get, MRB_SYM(blue), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(color_alpha_get, MRB_SYM(alpha), MRB_ARGS_NONE())    //
+      MRB_MT_ENTRY(color_red_set, MRB_SYM_E(red), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(color_green_set, MRB_SYM_E(green), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(color_blue_set, MRB_SYM_E(blue), MRB_ARGS_REQ(1))    //
+      MRB_MT_ENTRY(color_alpha_set, MRB_SYM_E(alpha), MRB_ARGS_REQ(1))  //
   };
 #undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, color, color_methods);
@@ -9230,31 +9265,27 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 #undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(color)),
                   color_class_methods);
-  mrb_define_method(M, color, "red", component_get<Color, &Color::red>,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, color, "green", component_get<Color, &Color::green>,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, color, "blue", component_get<Color, &Color::blue>,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, color, "alpha", component_get<Color, &Color::alpha>,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, color, "red=", component_set<Color, &Color::red, 0, 255>,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, color,
-                    "green=", component_set<Color, &Color::green, 0, 255>,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, color,
-                    "blue=", component_set<Color, &Color::blue, 0, 255>,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, color,
-                    "alpha=", component_set<Color, &Color::alpha, 0, 255>,
-                    MRB_ARGS_REQ(1));
 
   RClass* tone = mrb_define_class_under(M, m, "Tone", M->object_class);
   MRB_SET_INSTANCE_TT(tone, MRB_TT_DATA);
   g_native_tone_class = tone;
 #if !defined(WIO_TERMINAL)  // Tone#dup/#clone: unused on wio
   static constexpr mrb_func_t tone_initialize_copy_tmpl = data_init_copy<Tone>;
+#endif  // !defined(WIO_TERMINAL)
+  static constexpr mrb_func_t tone_red_get = component_get<Tone, &Tone::red>;
+  static constexpr mrb_func_t tone_red_set =
+      component_set<Tone, &Tone::red, -255, 255>;
+  static constexpr mrb_func_t tone_green_get =
+      component_get<Tone, &Tone::green>;
+  static constexpr mrb_func_t tone_green_set =
+      component_set<Tone, &Tone::green, -255, 255>;
+  static constexpr mrb_func_t tone_blue_get = component_get<Tone, &Tone::blue>;
+  static constexpr mrb_func_t tone_blue_set =
+      component_set<Tone, &Tone::blue, -255, 255>;
+  static constexpr mrb_func_t tone_gray_get = component_get<Tone, &Tone::gray>;
+#if !defined(WIO_TERMINAL)  // Tone#gray=: unused on wio
+  static constexpr mrb_func_t tone_gray_set =
+      component_set<Tone, &Tone::gray, 0, 255>;
 #endif  // !defined(WIO_TERMINAL)
 #define MRB_MT_CLASS RGSS__Tone
   static const mrb_mt_entry tone_methods[] = {
@@ -9265,10 +9296,20 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                    MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
 #endif                                                // !defined(WIO_TERMINAL)
       MRB_MT_ENTRY(tone_set, MRB_SYM(set),
-                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3))           //
-      MRB_MT_ENTRY(tone_eq, MRB_OPSYM(eq), MRB_ARGS_REQ(1))     //
-      MRB_MT_ENTRY(tone_to_s, MRB_SYM(to_s), MRB_ARGS_NONE())   //
-      MRB_MT_ENTRY(tone_dump, MRB_SYM(_dump), MRB_ARGS_REQ(1))  //
+                   MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3))                  //
+      MRB_MT_ENTRY(tone_eq, MRB_OPSYM(eq), MRB_ARGS_REQ(1))            //
+      MRB_MT_ENTRY(tone_to_s, MRB_SYM(to_s), MRB_ARGS_NONE())          //
+      MRB_MT_ENTRY(tone_dump, MRB_SYM(_dump), MRB_ARGS_REQ(1))         //
+      MRB_MT_ENTRY(tone_red_get, MRB_SYM(red), MRB_ARGS_NONE())        //
+      MRB_MT_ENTRY(tone_green_get, MRB_SYM(green), MRB_ARGS_NONE())    //
+      MRB_MT_ENTRY(tone_blue_get, MRB_SYM(blue), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(tone_gray_get, MRB_SYM(gray), MRB_ARGS_NONE())      //
+      MRB_MT_ENTRY(tone_red_set, MRB_SYM_E(red), MRB_ARGS_REQ(1))      //
+      MRB_MT_ENTRY(tone_green_set, MRB_SYM_E(green), MRB_ARGS_REQ(1))  //
+      MRB_MT_ENTRY(tone_blue_set, MRB_SYM_E(blue), MRB_ARGS_REQ(1))    //
+#if !defined(WIO_TERMINAL)  // Tone#gray=: unused on wio
+      MRB_MT_ENTRY(tone_gray_set, MRB_SYM_E(gray), MRB_ARGS_REQ(1))  //
+#endif  // !defined(WIO_TERMINAL)
   };
 #undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, tone, tone_methods);
@@ -9279,26 +9320,6 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 #undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(tone)),
                   tone_class_methods);
-  mrb_define_method(M, tone, "red", component_get<Tone, &Tone::red>,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, tone, "green", component_get<Tone, &Tone::green>,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, tone, "blue", component_get<Tone, &Tone::blue>,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, tone, "gray", component_get<Tone, &Tone::gray>,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, tone, "red=", component_set<Tone, &Tone::red, -255, 255>,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, tone,
-                    "green=", component_set<Tone, &Tone::green, -255, 255>,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, tone,
-                    "blue=", component_set<Tone, &Tone::blue, -255, 255>,
-                    MRB_ARGS_REQ(1));
-#if !defined(WIO_TERMINAL)  // Tone#gray=: unused on wio
-  mrb_define_method(M, tone, "gray=", component_set<Tone, &Tone::gray, 0, 255>,
-                    MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
 
   RClass* table = mrb_define_class_under(M, m, "Table", M->object_class);
   MRB_SET_INSTANCE_TT(table, MRB_TT_DATA);
