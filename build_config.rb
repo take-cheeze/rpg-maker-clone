@@ -205,6 +205,12 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # UNREGISTERED_VERIFY: every registration the static dispatch lists drop is a stub that aborts when
   # looked up by name (codegen_emit.rb). Off unless BC2CPP_UNREGISTERED_VERIFY=1.
   conf.cxx.defines << 'BC2CPP_UNREGISTERED_VERIFY' if ENV['BC2CPP_UNREGISTERED_VERIFY'] == '1'
+  # FRAMEFREE_VERIFY: a native the closed build calls without a frame aborts when it reaches a service that reads the
+  # frame (vm.c mrb_direct_frame_needed) instead of pushing it. Off unless BC2CPP_FRAMEFREE_VERIFY=1.
+  if ENV['BC2CPP_FRAMEFREE_VERIFY'] == '1'
+    conf.cc.defines << 'MRB_FRAMEFREE_VERIFY'
+    conf.cxx.defines << 'MRB_FRAMEFREE_VERIFY'
+  end
   if ENV['BC2CPP_METHOD_LOOKUP_HOOK'] == '1'
     conf.cc.defines << 'MRB_USE_METHOD_LOOKUP_HOOK'
     conf.cxx.defines << 'MRB_USE_METHOD_LOOKUP_HOOK'

@@ -223,6 +223,10 @@ checks:
     tier: fast
     capabilities: []
     fixture_capabilities: []
+  scripts/bc2cpp/native_frame_use_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
   scripts/bc2cpp/keyword_splat_static_check.rb:
     tier: runtime
     capabilities:
@@ -977,6 +981,10 @@ checks:
     capabilities:
     - closed_build
   scripts/bc2cpp/frames_only_check.rb:
+    tier: fast
+    capabilities:
+    - closed_build
+  scripts/bc2cpp/frame_free_raise_check.rb:
     tier: fast
     capabilities:
     - closed_build

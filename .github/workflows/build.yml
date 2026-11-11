@@ -808,6 +808,7 @@ jobs:
           # ci:parallel begin 4
           BC2CPP_STATIC_DISPATCH_LISTS="$GITHUB_WORKSPACE/build/bc2cpp-lists/static_dispatch_lists.json" ruby scripts/bc2cpp/class_body_left_ops_check.rb
           ruby scripts/bc2cpp/frames_only_check.rb build-closed-bc2cpp/closed
+          ruby scripts/bc2cpp/frame_free_raise_check.rb build-closed-bc2cpp/closed
           ruby scripts/bc2cpp/rom_method_tables_check.rb build-closed-bc2cpp/closed
           ruby scripts/bc2cpp/vm_bytecode_free_check.rb
           ruby scripts/bc2cpp/vm_free_inventory_check.rb build-closed-bc2cpp/closed
@@ -911,8 +912,10 @@ jobs:
           BC2CPP_PROFILE_TIMINGS: '1'
           RAKEOPT: -m -j4
           BC2CPP_UNREGISTERED_VERIFY: '1'
+          # A native called without its frame aborts when it reaches a service that reads the frame.
+          BC2CPP_FRAMEFREE_VERIFY: '1'
           BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
-        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-verify"
+        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-verify""
 
       - name: Play the verify build's scenarios and every map
         timeout-minutes: 15
