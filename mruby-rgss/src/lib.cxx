@@ -7340,7 +7340,7 @@ static mrb_value rect_empty_native_body(mrb_state* M, mrb_value self) {
   return self;
 }
 
-static V rect_init(mrb_state* M, V self) {
+static mrb_value rect_init(mrb_state* M, mrb_value self) {
   if (mrb_get_argc(M) == 0) {
     DataType<Rect>::alloc_obj(M, self);
   } else {
@@ -7351,7 +7351,7 @@ static V rect_init(mrb_state* M, V self) {
   return self;
 }
 
-static V rect_set(mrb_state* M, V self) {
+static mrb_value rect_set(mrb_state* M, mrb_value self) {
   if (mrb_get_argc(M) == 1) {
     V o;
     mrb_get_args(M, "o", &o);
@@ -7364,47 +7364,47 @@ static V rect_set(mrb_state* M, V self) {
   return self;
 }
 
-static V rect_x(mrb_state* M, V self) {
+static mrb_value rect_x(mrb_state* M, mrb_value self) {
   return rgss::rect_x_direct(M, self);
 }
-static V rect_y(mrb_state* M, V self) {
+static mrb_value rect_y(mrb_state* M, mrb_value self) {
   return rgss::rect_y_direct(M, self);
 }
-static V rect_width(mrb_state* M, V self) {
+static mrb_value rect_width(mrb_state* M, mrb_value self) {
   return rgss::rect_width_direct(M, self);
 }
-static V rect_height(mrb_state* M, V self) {
+static mrb_value rect_height(mrb_state* M, mrb_value self) {
   return rgss::rect_height_direct(M, self);
 }
 
-static V rect_set_x(mrb_state* M, V self) {
+static mrb_value rect_set_x(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
   return rgss::rect_x_set_direct(M, self, x);
 }
-static V rect_set_y(mrb_state* M, V self) {
+static mrb_value rect_set_y(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
   return rgss::rect_y_set_direct(M, self, x);
 }
-static V rect_set_width(mrb_state* M, V self) {
+static mrb_value rect_set_width(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
   return rgss::rect_width_set_direct(M, self, x);
 }
-static V rect_set_height(mrb_state* M, V self) {
+static mrb_value rect_set_height(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
   return rgss::rect_height_set_direct(M, self, x);
 }
 
-static V rect_eq(mrb_state* M, V self) {
+static mrb_value rect_eq(mrb_state* M, mrb_value self) {
   V o;
   mrb_get_args(M, "o", &o);
   return rect_eq_native_body(M, self, o);
 }
 
-static V rect_load(mrb_state* M, V self) {
+static mrb_value rect_load(mrb_state* M, mrb_value self) {
   const char* p;
   mrb_int len;
   mrb_get_args(M, "s", &p, &len);
