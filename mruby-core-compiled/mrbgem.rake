@@ -53,9 +53,11 @@ MRuby::Gem::Specification.new('mruby-core-compiled') do |spec|
 
   generated = "#{build_dir}/core_compiled_gen.cpp"
 
-  # bc2cpp.rb runs MRBC: without this edge `rake -m` can start codegen before
-  # the bootstrap mrbc exists.
-  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, compiled_gems_yml, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
+  # bc2cpp.rb compiles the Ruby sources with its own emitter (tools/mrbc_rb), so this task needs no mrbc binary and no
+  # `spec.build.mrbcfile` edge. (BC2CPP_USE_BUILD_MRBC=1 hands the build's mrbc to bc2cpp as a fallback for a source the
+  # emitter does not cover; then the edge is needed again, so it is added only in that mode.)
+  mrbc_edge = ENV['BC2CPP_USE_BUILD_MRBC'] == '1' ? [spec.build.mrbcfile] : []
+  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, compiled_gems_yml, *mrbc_edge, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/..")] do |t|
     # SHARED_GENERATION: with every other compiled gem of this build that is out of date, in one
     # bc2cpp.rb analysis (tools/bc2cpp/compiled_gems.rb bc2cpp_compiled_gem_job holds this gem's environment).

@@ -649,6 +649,17 @@ MRuby::Build.new do |conf|
 
   enable_debug
 
+  # MRUBY_MRBC_RB=1: mruby's own gem build (every gem's mrblib, the core mrblib and mrbtest's test files, each compiled to a C
+  # array by `mrbc -B<sym> -o- -S [-s] files`) runs nfcxx's mrbc-compatible command instead of the C mrbc, so no mrbc has to be
+  # built first (`conf.mrbcfile=` makes mruby skip its own `mrbc` bootstrap build). What the emitter does not cover goes to the
+  # real mrbc named by MRBC_FALLBACK (mrbtest's test/t/*.rb has such files); without MRBC_FALLBACK the build stops and says which.
+  #  * enable_debug above adds `-g` to mrbc's options: `-g -S` of several files is reproduced (file name symbol ids,
+  #    file_syms.rb); MRBC_RB_PRESYM=bootstrap makes them the ones mruby's own bootstrap mrbc would write (only for byte equality).
+  if ENV['MRUBY_MRBC_RB'] == '1'
+    conf.mrbcfile = File.expand_path('3rd/nfcxx/bc2cpp/tools/mrbc_rb/bin/mrbc_rb', __dir__)
+    ENV['MRBC_RB_PRESYM'] ||= 'bootstrap'
+  end
+
   if cross
     # Force native host compilers so `mrbc` runs on the build machine even when
     # CMake hands us a cross compiler via CC/CXX (emscripten's em++, or
