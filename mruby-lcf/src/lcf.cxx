@@ -106,6 +106,7 @@ mrb_value schema_table(mrb_state* M, mrb_value) {
 
 extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
   RClass* mod = mrb_define_module(M, "LCF");
+#define MRB_MT_CLASS LCF_singleton
   static const mrb_mt_entry mod_module_functions[] = {
       MRB_MT_ENTRY(cp932_to_utf8, MRB_SYM(cp932_to_utf8), MRB_ARGS_REQ(1))  //
       MRB_MT_ENTRY(utf8_to_cp932, MRB_SYM(utf8_to_cp932), MRB_ARGS_REQ(1))  //
@@ -113,8 +114,10 @@ extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(schema_table, MRB_SYM(schema_table), MRB_ARGS_REQ(1))  //
 #endif
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(mod)),
                   mod_module_functions);
+#define MRB_MT_CLASS LCF
   static const mrb_mt_entry mod_module_functions_private[] = {
       MRB_MT_ENTRY(cp932_to_utf8, MRB_SYM(cp932_to_utf8),
                    MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
@@ -125,6 +128,7 @@ extern "C" void mrb_mruby_lcf_gem_init(mrb_state* M) {
                    MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
 #endif
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mod, mod_module_functions_private);
 }
 

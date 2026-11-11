@@ -91,13 +91,16 @@ mrb_value tts_stop_direct(mrb_state* M, mrb_value self) {
 // lib.cxx.
 void rgss_tts_define(mrb_state* M, RClass* rgss) {
   RClass* tts = mrb_define_module_under(M, rgss, "Tts");
+#define MRB_MT_CLASS RGSS__Tts_singleton
   static const mrb_mt_entry tts_module_functions[] = {
       MRB_MT_ENTRY(tts_available, MRB_SYM_Q(available), MRB_ARGS_NONE())  //
       MRB_MT_ENTRY(tts_speak, MRB_SYM(speak), MRB_ARGS_REQ(1))            //
       MRB_MT_ENTRY(tts_stop, MRB_SYM(stop), MRB_ARGS_NONE())              //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(tts)),
                   tts_module_functions);
+#define MRB_MT_CLASS RGSS__Tts
   static const mrb_mt_entry tts_module_functions_private[] = {
       MRB_MT_ENTRY(tts_available, MRB_SYM_Q(available),
                    MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
@@ -106,5 +109,6 @@ void rgss_tts_define(mrb_state* M, RClass* rgss) {
       MRB_MT_ENTRY(tts_stop, MRB_SYM(stop),
                    MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, tts, tts_module_functions_private);
 }

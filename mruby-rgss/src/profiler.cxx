@@ -732,6 +732,7 @@ void profiler_init(mrb_state* M) {
   g_mrb = M;
   RClass* rgss = mrb_module_get(M, "RGSS");
   RClass* prof = mrb_define_module_under(M, rgss, "Profiler");
+#define MRB_MT_CLASS RGSS__Profiler_singleton
   static const mrb_mt_entry prof_module_functions[] = {
       MRB_MT_ENTRY(prof_enabled_p, MRB_SYM_Q(enabled), MRB_ARGS_NONE())    //
       MRB_MT_ENTRY(prof_set_enabled, MRB_SYM_E(enabled), MRB_ARGS_REQ(1))  //
@@ -745,8 +746,10 @@ void profiler_init(mrb_state* M) {
       MRB_MT_ENTRY(prof_trace_stop, MRB_SYM(trace_stop), MRB_ARGS_NONE())    //
       MRB_MT_ENTRY(prof_tracing_p, MRB_SYM_Q(tracing), MRB_ARGS_NONE())      //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(prof)),
                   prof_module_functions);
+#define MRB_MT_CLASS RGSS__Profiler
   static const mrb_mt_entry prof_module_functions_private[] = {
       MRB_MT_ENTRY(prof_enabled_p, MRB_SYM_Q(enabled),
                    MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
@@ -769,6 +772,7 @@ void profiler_init(mrb_state* M) {
       MRB_MT_ENTRY(prof_tracing_p, MRB_SYM_Q(tracing),
                    MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, prof, prof_module_functions_private);
 }
 
@@ -872,19 +876,23 @@ mrb_value prof_stub_yield(mrb_state* M, mrb_value) {
 void profiler_init(mrb_state* M) {
   RClass* rgss = mrb_module_get(M, "RGSS");
   RClass* prof = mrb_define_module_under(M, rgss, "Profiler");
+#define MRB_MT_CLASS RGSS__Profiler_singleton
   static const mrb_mt_entry prof_module_functions[] = {
       MRB_MT_ENTRY(prof_stub_yield, MRB_SYM(frame), MRB_ARGS_BLOCK())  //
       MRB_MT_ENTRY(prof_stub_yield, MRB_SYM(section),
                    MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK())  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(prof)),
                   prof_module_functions);
+#define MRB_MT_CLASS RGSS__Profiler
   static const mrb_mt_entry prof_module_functions_private[] = {
       MRB_MT_ENTRY(prof_stub_yield, MRB_SYM(frame),
                    MRB_ARGS_BLOCK() | MRB_MT_PRIVATE)  //
       MRB_MT_ENTRY(prof_stub_yield, MRB_SYM(section),
                    MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK() | MRB_MT_PRIVATE)  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, prof, prof_module_functions_private);
 }
 
