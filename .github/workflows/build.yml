@@ -915,7 +915,7 @@ jobs:
           # A native called without its frame aborts when it reaches a service that reads the frame.
           BC2CPP_FRAMEFREE_VERIFY: '1'
           BC2CPP_LISTS_DIR: ${{ github.workspace }}/build/bc2cpp-lists
-        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-verify""
+        run: env -u LD scripts/bc2cpp/closed_build.bash "$GITHUB_WORKSPACE/build-closed-verify"
 
       - name: Play the verify build's scenarios and every map
         timeout-minutes: 15
