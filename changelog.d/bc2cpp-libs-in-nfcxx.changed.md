@@ -1,0 +1,1 @@
+- The bc2cpp host libraries (`ruby-libs/`, and `host-libs/mruby-{env,process,prism,rbs,require}`) now live in `3rd/nfcxx/bc2cpp/`, with the RBS and Prism forks as nfcxx submodules.
