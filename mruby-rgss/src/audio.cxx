@@ -371,6 +371,7 @@ mrb_value se_stop_direct(mrb_state* M, mrb_value self) {
 // delegates to these underscore-prefixed primitives.
 void rgss_audio_define(mrb_state* M, RClass* rgss) {
   RClass* audio = mrb_define_module_under(M, rgss, "Audio");
+#define MRB_MT_CLASS RGSS__Audio_singleton
   static const mrb_mt_entry audio_module_functions[] = {
       MRB_MT_ENTRY(bgm_play, MRB_SYM(_bgm_play), MRB_ARGS_ARG(1, 4))   //
       MRB_MT_ENTRY(bgm_volume, MRB_SYM(_bgm_volume), MRB_ARGS_REQ(1))  //
@@ -398,8 +399,10 @@ void rgss_audio_define(mrb_state* M, RClass* rgss) {
                    MRB_ARGS_NONE())                                          //
       MRB_MT_ENTRY(can_play_mem, MRB_SYM_Q(_can_play_mem), MRB_ARGS_NONE())  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(audio)),
                   audio_module_functions);
+#define MRB_MT_CLASS RGSS__Audio
   static const mrb_mt_entry audio_module_functions_private[] = {
       MRB_MT_ENTRY(bgm_play, MRB_SYM(_bgm_play),
                    MRB_ARGS_ARG(1, 4) | MRB_MT_PRIVATE)  //
@@ -446,5 +449,6 @@ void rgss_audio_define(mrb_state* M, RClass* rgss) {
       MRB_MT_ENTRY(can_play_mem, MRB_SYM_Q(_can_play_mem),
                    MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, audio, audio_module_functions_private);
 }

@@ -277,3 +277,11 @@ A send on a value a class test has just passed (`x.is_a?(C) && x.m`, `raise ... 
 A native table under `X_singleton` that is installed into X's singleton is now a candidate for the core ROM exclusion list (nfcxx#850; `NativeRomOwners` spells that owner `X.singleton`, so it was never matched). A singleton table under a plain `X` token still shares that token and stays kept.
 
 The core ROM exclusions go from 237 to 304 keys, all `X_singleton` (`Math` 23, `File` 17, `GC` 8, `FileTest` 5, `Time` 4, `IO` 2, `Kernel` 2, one each of `Array`, `Exception`, `Hash`, `Integer`, `Module` and `Symbol`), and the closed host table from 898 to **833 entries**. The plain build and the `BC2CPP_UNREGISTERED_VERIFY=1 METHOD_TABLE=skip` build both pass all 543 maps and the scripted scenarios.
+
+## Engine ROM tables
+
+The engine gems' ROM tables (`mruby-rgss`, `mruby-lcf`) name their class like a core table: `#define MRB_MT_CLASS RGSS__Window` before the table, `#undef` after it, with `__` for a namespace and a trailing `_singleton` for a class object's table. The closed proof lists an entry of such a table whose name nothing looks up (`engine_rom` in the static dispatch lists, a subset of `closed`), and `build_config.rb` leaves it out of the table at compile time. Nothing is removed at run time, so no RAM tombstone. A key counts only when the token-named entries and the installed rows agree on every function of that name; a table installed into another class, or an entry without a token, keeps it. Operator entries (`Color#==`, `Table#[]`) are not candidates.
+
+Converting the engine natives to ROM tables (#3216) had put about 180 entries back that registrations left out before: the closed host table read **995 entries**. Leaving the proven-dead ones out takes it to **821** (182 keys in `engine_rom`); the ROM entry arrays shrink by 174 entries (16 bytes each) and `trace_host` text by 40 KB. The heap method tables are unchanged (41 entries, 224 layers, 10,576 bytes). The plain host sweep passes all 543 maps and the scripted scenarios.
+
+The core ROM entries still kept (363) are operators (72), names the engine's Ruby, a native or the generated code spells (242) and names a live core body or a direct call keeps (49); none is held by a shared table any more.

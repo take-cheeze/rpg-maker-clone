@@ -1065,10 +1065,14 @@ def bc2cpp_core_mt_exclude(conf, verify: true)
   StaticDispatchLists.verify_current!(lists, __dir__) if verify
   mruby = File.expand_path('3rd/mruby', __dir__)
   sources = Dir["#{mruby}/src/*.c"] + Dir["#{mruby}/mrbgems/*/{src,core}/**/*.c"]
+  # ENGINE_ROM: the engine gems' ROM tables name their class the same way (MRB_MT_CLASS), so their entries the proof lists
+  # (StaticDispatchLists#engine_rom) are left out at compile time too.
+  engine = CoreNativeCandidates.engine_entries(Dir["#{__dir__}/mruby-{rgss,lcf}/src/**/*.{c,cc,cpp,cxx}"].sort)
   # Operator names are keyed by the proof's verdict (INDEX_CLOSED admission):
   # only listed ones are excluded, so naming them here maps keys to entries.
   text = CoreNativeCandidates.header(lists.core_excluded.to_a,
-                                     CoreNativeCandidates.entries(sources.sort, operator_names: true))
+                                     CoreNativeCandidates.entries(sources.sort, operator_names: true),
+                                     lists.engine_rom.to_a, engine)
   path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, text) unless File.exist?(path) && File.read(path) == text

@@ -7348,6 +7348,7 @@ void define_rect(mrb_state* M, RClass* m) {
 #if !defined(WIO_TERMINAL)  // Rect#dup/#clone: unused on wio
   static constexpr mrb_func_t rect_initialize_copy_tmpl = data_init_copy<Rect>;
 #endif  // !defined(WIO_TERMINAL)
+#define MRB_MT_CLASS RGSS__Rect
   static const mrb_mt_entry rect_methods[] = {
 #if !defined(WIO_TERMINAL)  // Rect#dup/#clone: unused on wio
       MRB_MT_ENTRY(rect_initialize_copy_tmpl, MRB_SYM(initialize_copy),
@@ -7357,6 +7358,7 @@ void define_rect(mrb_state* M, RClass* m) {
       MRB_MT_ENTRY(rect_to_s_native_body, MRB_SYM(to_s), MRB_ARGS_NONE())    //
       MRB_MT_ENTRY(rect_dump_native_body, MRB_SYM(_dump), MRB_ARGS_REQ(1))   //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, rect, rect_methods);
   mrb_define_method(
       M, rect, "initialize",
@@ -8877,6 +8879,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   }
 #endif
   RClass* m = mrb_define_module(M, "RGSS");
+#define MRB_MT_CLASS RGSS_singleton
   static const mrb_mt_entry m_module_functions[] = {
       MRB_MT_ENTRY(to_nfd, MRB_SYM(to_nfd), MRB_ARGS_REQ(1))  //
       MRB_MT_ENTRY(default_font_path_m, MRB_SYM(default_font_path),
@@ -8895,8 +8898,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(window_title_get_m, MRB_SYM(window_title),
                    MRB_ARGS_NONE())  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(m)),
                   m_module_functions);
+#define MRB_MT_CLASS RGSS
   static const mrb_mt_entry m_module_functions_private[] = {
       MRB_MT_ENTRY(to_nfd, MRB_SYM(to_nfd),
                    MRB_ARGS_REQ(1) | MRB_MT_PRIVATE)  //
@@ -8919,6 +8924,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(window_title_get_m, MRB_SYM(window_title),
                    MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, m, m_module_functions_private);
 
   mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_game_start"),
@@ -8929,6 +8935,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* vp = mrb_define_class_under(M, m, "Viewport", M->object_class);
   MRB_SET_INSTANCE_TT(vp, MRB_TT_DATA);
   g_native_viewport_class = vp;
+#define MRB_MT_CLASS RGSS__Viewport
   static const mrb_mt_entry vp_methods[] = {
       MRB_MT_ENTRY(vp_init, MRB_SYM(initialize),
                    MRB_ARGS_OPT(4) | MRB_MT_PRIVATE)                      //
@@ -8952,11 +8959,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(obj_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())      //
       MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, vp, vp_methods);
 
   RClass* spr = mrb_define_class_under(M, m, "Sprite", M->object_class);
   MRB_SET_INSTANCE_TT(spr, MRB_TT_DATA);
   g_native_sprite_class = spr;
+#define MRB_MT_CLASS RGSS__Sprite
   static const mrb_mt_entry spr_methods[] = {
       MRB_MT_ENTRY(spr_init, MRB_SYM(initialize),
                    MRB_ARGS_OPT(1) | MRB_MT_PRIVATE)                        //
@@ -8983,12 +8992,14 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                    MRB_ARGS_REQ(1))                             //
       MRB_MT_ENTRY(spr_flash, MRB_SYM(flash), MRB_ARGS_REQ(2))  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, spr, spr_methods);
 
 #if !defined(WIO_TERMINAL)  // Plane: never instantiated by wio's Ruby
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   g_native_plane_class = plane;
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
+#define MRB_MT_CLASS RGSS__Plane
   static const mrb_mt_entry plane_methods[] = {
       MRB_MT_ENTRY(plane_init, MRB_SYM(initialize),
                    MRB_ARGS_OPT(1) | MRB_MT_PRIVATE)                      //
@@ -9008,6 +9019,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(obj_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())        //
       MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())    //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, plane, plane_methods);
 #endif  // !defined(WIO_TERMINAL)
 
@@ -9020,6 +9032,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* tilemap = mrb_define_class_under(M, m, "Tilemap", M->object_class);
   g_native_tilemap_class = tilemap;
   MRB_SET_INSTANCE_TT(tilemap, MRB_TT_DATA);
+#define MRB_MT_CLASS RGSS__Tilemap
   static const mrb_mt_entry tilemap_methods[] = {
       MRB_MT_ENTRY(tilemap_init, MRB_SYM(initialize),
                    MRB_ARGS_OPT(1) | MRB_MT_PRIVATE)                          //
@@ -9042,7 +9055,9 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(tilemap_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())        //
       MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())        //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, tilemap, tilemap_methods);
+#define MRB_MT_CLASS RGSS__Tilemap_singleton
   static const mrb_mt_entry tilemap_class_methods[] = {
 #if !defined(WIO_TERMINAL)  // VX-only tilemap rendering; wio ships no
                             // mruby-rpgvx
@@ -9052,12 +9067,14 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                    MRB_ARGS_REQ(1))  //
 #endif                      // !defined(WIO_TERMINAL)
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(tilemap)),
                   tilemap_class_methods);
 
   RClass* window = mrb_define_class_under(M, m, "Window", M->object_class);
   MRB_SET_INSTANCE_TT(window, MRB_TT_DATA);
   g_native_window_class = window;
+#define MRB_MT_CLASS RGSS__Window
   static const mrb_mt_entry window_methods[] = {
       MRB_MT_ENTRY(window_init, MRB_SYM(initialize),
                    MRB_ARGS_OPT(1) | MRB_MT_PRIVATE)  //
@@ -9096,15 +9113,17 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(obj_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())        //
       MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())    //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, window, window_methods);
   // The Ruby initializer delegates the RGSS1 viewport form to this native
   // entry.
   mrb_define_alias(M, window, "_rgss1_initialize", "initialize");
-#endif                      // defined(WIO_TERMINAL)
+#endif  // defined(WIO_TERMINAL)
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
   g_native_bitmap_class = bmp;
+#define MRB_MT_CLASS RGSS__Bitmap
   static const mrb_mt_entry bmp_methods[] = {
       MRB_MT_ENTRY(bmp_init_size, MRB_SYM(_init_size), MRB_ARGS_REQ(2))  //
       // Decode from bytes already in hand — how an asset packed into an
@@ -9164,7 +9183,9 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(obj_dispose, MRB_SYM(dispose), MRB_ARGS_NONE())      //
       MRB_MT_ENTRY(obj_disposed, MRB_SYM_Q(disposed), MRB_ARGS_NONE())  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, bmp, bmp_methods);
+#define MRB_MT_CLASS RGSS__Bitmap_singleton
   static const mrb_mt_entry bmp_class_methods[] = {
       MRB_MT_ENTRY(bmp_load_error, MRB_SYM(_load_error), MRB_ARGS_NONE())  //
       MRB_MT_ENTRY(bmp_stbi_error, MRB_SYM(_stbi_error), MRB_ARGS_NONE())  //
@@ -9172,6 +9193,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(bmp_decoder_ran, MRB_SYM_Q(_decoder_ran),
                    MRB_ARGS_NONE())  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(bmp)),
                   bmp_class_methods);
 
@@ -9182,6 +9204,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   static constexpr mrb_func_t color_initialize_copy_tmpl =
       data_init_copy<Color>;
 #endif  // !defined(WIO_TERMINAL)
+#define MRB_MT_CLASS RGSS__Color
   static const mrb_mt_entry color_methods[] = {
       MRB_MT_ENTRY(color_init, MRB_SYM(initialize),
                    MRB_ARGS_OPT(4) | MRB_MT_PRIVATE)  //
@@ -9198,10 +9221,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(color_to_s, MRB_SYM(to_s), MRB_ARGS_NONE())   //
       MRB_MT_ENTRY(color_dump, MRB_SYM(_dump), MRB_ARGS_REQ(1))  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, color, color_methods);
+#define MRB_MT_CLASS RGSS__Color_singleton
   static const mrb_mt_entry color_class_methods[] = {
       MRB_MT_ENTRY(color_load, MRB_SYM(_load), MRB_ARGS_REQ(1))  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(color)),
                   color_class_methods);
   mrb_define_method(M, color, "red", component_get<Color, &Color::red>,
@@ -9230,6 +9256,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 #if !defined(WIO_TERMINAL)  // Tone#dup/#clone: unused on wio
   static constexpr mrb_func_t tone_initialize_copy_tmpl = data_init_copy<Tone>;
 #endif  // !defined(WIO_TERMINAL)
+#define MRB_MT_CLASS RGSS__Tone
   static const mrb_mt_entry tone_methods[] = {
       MRB_MT_ENTRY(tone_init, MRB_SYM(initialize),
                    MRB_ARGS_OPT(4) | MRB_MT_PRIVATE)  //
@@ -9243,10 +9270,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(tone_to_s, MRB_SYM(to_s), MRB_ARGS_NONE())   //
       MRB_MT_ENTRY(tone_dump, MRB_SYM(_dump), MRB_ARGS_REQ(1))  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, tone, tone_methods);
+#define MRB_MT_CLASS RGSS__Tone_singleton
   static const mrb_mt_entry tone_class_methods[] = {
       MRB_MT_ENTRY(tone_load, MRB_SYM(_load), MRB_ARGS_REQ(1))  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(tone)),
                   tone_class_methods);
   mrb_define_method(M, tone, "red", component_get<Tone, &Tone::red>,
@@ -9277,6 +9307,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   static constexpr mrb_func_t table_initialize_copy_tmpl =
       data_init_copy<Table>;
 #endif  // !defined(WIO_TERMINAL)
+#define MRB_MT_CLASS RGSS__Table
   static const mrb_mt_entry table_methods[] = {
       MRB_MT_ENTRY(table_init, MRB_SYM(initialize),
                    MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2) | MRB_MT_PRIVATE)  //
@@ -9296,10 +9327,13 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(table_dim_native_body, MRB_SYM(dim), MRB_ARGS_NONE())      //
       MRB_MT_ENTRY(table_dump, MRB_SYM(_dump), MRB_ARGS_REQ(1))               //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, table, table_methods);
+#define MRB_MT_CLASS RGSS__Table_singleton
   static const mrb_mt_entry table_class_methods[] = {
       MRB_MT_ENTRY(table_load, MRB_SYM(_load), MRB_ARGS_REQ(1))  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(table)),
                   table_class_methods);
 
@@ -9307,21 +9341,26 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   // two native hooks are the backend drain Input.update calls and the test-side
   // push that stands in for a keyboard.
   RClass* input = mrb_define_module_under(M, m, "Input");
+#define MRB_MT_CLASS RGSS__Input_singleton
   static const mrb_mt_entry input_module_functions[] = {
       MRB_MT_ENTRY(input_poll, MRB_SYM(_poll), MRB_ARGS_NONE())  //
       MRB_MT_ENTRY(input_push, MRB_SYM(_push), MRB_ARGS_REQ(2))  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(input)),
                   input_module_functions);
+#define MRB_MT_CLASS RGSS__Input
   static const mrb_mt_entry input_module_functions_private[] = {
       MRB_MT_ENTRY(input_poll, MRB_SYM(_poll),
                    MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
       MRB_MT_ENTRY(input_push, MRB_SYM(_push),
                    MRB_ARGS_REQ(2) | MRB_MT_PRIVATE)  //
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, input, input_module_functions_private);
 
   RClass* gfx = mrb_define_module_under(M, m, "Graphics");
+#define MRB_MT_CLASS RGSS__Graphics_singleton
   static const mrb_mt_entry gfx_module_functions[] = {
       MRB_MT_ENTRY(gfx_update, MRB_SYM(update), MRB_ARGS_NONE())  //
       // RGSS2+: the rendered screen as a Bitmap. Graphics.freeze/transition are
@@ -9332,8 +9371,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
       MRB_MT_ENTRY(gfx_frame_reset, MRB_SYM(frame_reset), MRB_ARGS_NONE())  //
 #endif  // !defined(WIO_TERMINAL)
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, mrb_singleton_class_ptr(M, mrb_obj_value(gfx)),
                   gfx_module_functions);
+#define MRB_MT_CLASS RGSS__Graphics
   static const mrb_mt_entry gfx_module_functions_private[] = {
       MRB_MT_ENTRY(gfx_update, MRB_SYM(update),
                    MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
@@ -9344,6 +9385,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                    MRB_ARGS_NONE() | MRB_MT_PRIVATE)  //
 #endif                                                // !defined(WIO_TERMINAL)
   };
+#undef MRB_MT_CLASS
   MRB_MT_INIT_ROM(M, gfx, gfx_module_functions_private);
 
   profiler_init(M);
