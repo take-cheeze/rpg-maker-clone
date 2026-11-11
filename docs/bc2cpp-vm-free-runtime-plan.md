@@ -59,6 +59,7 @@ count, so suffixed names are included). These are the script's baselines.
   the sweep: the `included` hook, `IO.sysopen`, `Symbol#to_proc` and `convert_type` (the name is data), the host's taps.
 - Done: a found native runs without a frame (`mrb_call_direct`, FRAME_FREE) when its C body reads the frame only
   through the argument readers (`tools/bc2cpp/native_frame_use.rb`); it gets the frame when it raises, sends or yields.
+  `mrb_funcall_with_method` decides it for every caller, so calls from C (a construction's `initialize`) qualify too.
   Host sweep frame pushes: 104.7M to 1.8M; what is left is C++ engine natives the analysis does not read.
 - No keyword-carrying by-name site exists (`bc2cpp_funcall_kw` is an unused helper per unit). Left: the frame push (40),
   the helpers' one copy (RUNTIME_HEADER, `docs/bc2cpp-shards.md`), error paths that dispatch the real call to verify a proof, the `$stderr#puts` fallback, 3 entry-stub
