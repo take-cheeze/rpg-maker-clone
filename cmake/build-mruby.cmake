@@ -105,6 +105,18 @@ function(rpg2k_add_mruby)
        ${ARG_REPO_ROOT}/tools/bc2cpp/compiled_gems.yml)
   list(APPEND mrb_files ${bc2cpp_files})
 
+  # The bc2cpp gem trees (mruby-*-compiled, mruby-fiber-placeholder) are copies
+  # of compiled-gem-templates/, made by stage.rb. Stage them before the src/
+  # globs below, so a fresh configure already sees their register.cxx.
+  execute_process(COMMAND ruby ${ARG_REPO_ROOT}/compiled-gem-templates/stage.rb
+                  RESULT_VARIABLE stage_rc)
+  if(NOT stage_rc EQUAL 0)
+    message(FATAL_ERROR "compiled-gem-templates/stage.rb failed (${stage_rc})")
+  endif()
+  file(GLOB_RECURSE compiled_gem_templates CONFIGURE_DEPENDS
+       ${ARG_REPO_ROOT}/compiled-gem-templates/*)
+  list(APPEND mrb_files ${compiled_gem_templates})
+
   set(mrb_opts
       MRUBY_CONFIG=${ARG_REPO_ROOT}/build_config.rb
       MRUBY_BUILD_DIR=${mruby_build_dir}

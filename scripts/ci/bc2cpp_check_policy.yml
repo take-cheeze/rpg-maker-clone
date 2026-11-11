@@ -1129,6 +1129,12 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/runtime_header_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - cxx
+    host_phase: false
   scripts/bc2cpp/explicit_block_arg_direct_check.rb:
     tier: runtime
     capabilities:

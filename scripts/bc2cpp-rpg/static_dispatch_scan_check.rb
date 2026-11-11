@@ -568,7 +568,7 @@ end
 
 # --- GENERATED_REGISTRATION ---
 S::GEMS.each do |gem|
-  src = File.read(File.join(root, gem, 'src', 'register.cxx')).gsub(%r{//[^\n]*}, '')
+  src = File.read(File.join(root, 'compiled-gem-templates', gem, 'src', 'register.cxx')).gsub(%r{//[^\n]*}, '')
   check("#{gem}: src/register.cxx registers nothing by hand", !src.match?(/\bmrb_define_\w*method\s*\(/))
 end
 check('closed owners: RGSS is unregisterable only for the closed list',
