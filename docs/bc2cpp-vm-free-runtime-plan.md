@@ -23,7 +23,7 @@ count, so suffixed names are included). These are the script's baselines.
 
 | Dependency | Sites | Replacement |
 | --- | ---: | --- |
-| `mrb_funcall*` | 69 | breakdown below |
+| `mrb_funcall*` | 68 | breakdown below |
 | `bc2cpp_funcall_argv`, `_ssend`, `_funcall_kw` (by-name helpers) | 48 | one copy in the runtime header, the symbol-table helpers per unit; no keyword site exists |
 | `bc2cpp_owner_call*` (owner-listed dispatch) | 2391 | already direct; table-driven later, see Phase 1 |
 | `mrb_proc_new_cfunc_with_env*` (block procs) | 2 | C++ block objects with captured env |
