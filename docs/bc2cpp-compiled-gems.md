@@ -3,9 +3,9 @@
 Which gems bc2cpp generates code for, and what each one owns, is data in
 `tools/bc2cpp/compiled_gems.yml`, not Ruby code.
 
-The `mruby-*-compiled` trees themselves are not tracked. Their `mrbgem.rake` and `src/register.cxx` live in
-`compiled-gem-templates/`, and `compiled-gem-templates/stage.rb` copies them to the repository root (gitignored) whenever
-`build_config.rb` or the CMake configure needs them. The fiber placeholder is staged the same way. One entry per `mruby-*-compiled`
+The `mruby-*-compiled` trees are not tracked either. `tools/bc2cpp/compiled_gem_sources.rb` writes each one's `mrbgem.rake`
+and `src/register.cxx` from this table to the repository root (gitignored) whenever `build_config.rb` or the CMake configure
+needs them. The fiber placeholder is written the same way. One entry per `mruby-*-compiled`
 gem, in the order the tools iterate them:
 
 ```yaml

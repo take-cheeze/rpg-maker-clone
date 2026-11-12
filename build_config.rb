@@ -2,9 +2,9 @@ require 'shellwords'
 
 # Where bc2cpp is, and the program it compiles (tools/bc2cpp_tree.rb).
 require_relative 'tools/bc2cpp_tree'
-# The gem trees the closed build loads from the repository root (mruby-*-compiled, mruby-fiber-placeholder) are copied
-# there from compiled-gem-templates/ by stage!, which every such conf.gem line calls first.
-require_relative 'compiled-gem-templates/stage'
+# The gem trees the closed build loads from the repository root (mruby-*-compiled, mruby-fiber-placeholder) are written
+# there from compiled_gems.yml by CompiledGemSources.write!, which every such conf.gem line calls first.
+require_relative 'tools/bc2cpp/compiled_gem_sources'
 
 # The uni-algo modules this project never calls, switched off so their Unicode
 # tables are never compiled in. This is the mirror of
@@ -284,7 +284,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # The closed build has no mruby-fiber: the C++ Fiber is its Fiber, and a source-less gem of that name satisfies
   # mruby-enumerator's add_dependency.
   if conf.name == 'closed'
-    CompiledGemTemplates.stage!
+    CompiledGemSources.write!(__dir__, __dir__)
     conf.gem "#{MRUBY_ROOT}/../../mruby-fiber-placeholder"
   else
     conf.gem core: 'mruby-fiber'
@@ -393,7 +393,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # On single-format builds the closed world is all the Ruby
   # there is, so the compiled gems may replace a proven-dead by-name fallback
   # with a raise (tools/bc2cpp/compiled_gems.rb re-checks the real gem list).
-  CompiledGemTemplates.stage! if bc2cpp
+  CompiledGemSources.write!(__dir__, __dir__) if bc2cpp
   conf.gem "#{MRUBY_ROOT}/../../mruby-lcf-compiled" if bc2cpp
   # mruby-rgss owns the shared RGSS namespace (Bitmap, Sprite, Viewport, Window,
   # ...). Every maker gem below loads after it and *reopens* that namespace, so a

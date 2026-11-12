@@ -1,0 +1,1 @@
+- The bc2cpp gem trees (`mruby-*-compiled`, `mruby-fiber-placeholder`) are no longer tracked. They are generated from `tools/bc2cpp/compiled_gems.yml` at build-configure time.

@@ -119,7 +119,7 @@
 # Written beside the runner build config by rake on each build.
 host-libs/mruby-bc2cpp-runner/build_config.rb.lock
 
-# The bc2cpp gem trees (mruby-*-compiled, the fiber placeholder) are copied here from compiled-gem-templates/ by
-# compiled-gem-templates/stage.rb whenever build_config.rb needs them. Generated, so not tracked.
+# The bc2cpp gem trees (mruby-*-compiled, the fiber placeholder) are generated here by
+# tools/bc2cpp/compiled_gem_sources.rb at configure time. Generated, so not tracked.
 /mruby-*-compiled/
 /mruby-fiber-placeholder/

@@ -25,9 +25,9 @@
 # Usage: MRBC=path/to/mrbc [BC2CPP_MRUBY_FULL=dir | BC2CPP_FULL_BUILD_DIR=dir] ruby scripts/bc2cpp-rpg/block_self_world_check.rb
 
 require_relative '../../tools/bc2cpp/world_root'
-# bc2cpp's closed-world core gems read the staged mruby-core-compiled/ (see compiled-gem-templates/stage.rb).
-require_relative '../../compiled-gem-templates/stage'
-CompiledGemTemplates.stage!
+# bc2cpp's closed-world core gems read the generated mruby-*-compiled/ trees (tools/bc2cpp/compiled_gem_sources.rb).
+require_relative '../../tools/bc2cpp/compiled_gem_sources'
+CompiledGemSources.write!(File.expand_path('../..', __dir__), File.expand_path('../..', __dir__))
 require 'set'
 require 'tmpdir'
 require 'fileutils'
