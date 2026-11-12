@@ -123,9 +123,11 @@ audit = lambda do |texts, facts|
       callee = callee_at.call(text, Regexp.last_match.end(0))
       registrations[[owners[var], name]] << squash.call(callee) if callee
     end
-    # An instance ROM entry is the registration mrb_define_method(M, var, "name", fn, ...) it replaced.
+    # An instance ROM entry is the registration mrb_define_method(M, var, "name", fn, ...) it replaced. A ROM entry
+    # cannot hold a template-id, so it may name a `static constexpr mrb_func_t` alias; the callee is what that names.
+    aliases = text.scan(/\bstatic\s+constexpr\s+mrb_func_t\s+(\w+)\s*=\s*([^;]+);/).to_h { |a, expr| [a, squash.call(expr)] }
     NativeOwnerMap.rom_bindings(text).each do |var, singleton, name, function|
-      registrations[[owners[var], name]] << function unless singleton
+      registrations[[owners[var], name]] << aliases.fetch(function, function) unless singleton
     end
   end
   # The one body of `function` in the sources, brackets included.
@@ -183,7 +185,8 @@ mutants = {
   'Bitmap#width returning a Float' => [/return mrb_fixnum_value\(bmp_self\(M, self\)\.width\);/,
                                        'return mrb_float_value(M, bmp_self(M, self).width);'],
   'Rect#x delegating elsewhere' => ['return rgss::rect_x_direct(M, self);', 'return rgss::rect_y_direct(M, self);'],
-  'Color#red bound to another function' => ['"red", component_get<Color, &Color::red>', '"red", color_red_other'],
+  'Color#red bound to another function' => [/color_red_get =\s*component_get<Color, &Color::red>/,
+                                             'color_red_get = color_red_other'],
   'component_get returning nil' => ['return mrb_float_value(M, DataType<T>::get(M, self).*Field);', 'return mrb_nil_value();'],
   'Bitmap#rect building another class' => ['mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);',
                                            'mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);'],
