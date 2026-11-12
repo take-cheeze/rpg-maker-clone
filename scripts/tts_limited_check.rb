@@ -31,9 +31,9 @@ require 'open3'
 require 'ripper'
 require 'rbconfig'
 require 'tmpdir'
-# bc2cpp's closed-world core gems read the staged mruby-core-compiled/ (see compiled-gem-templates/stage.rb).
-require_relative '../compiled-gem-templates/stage'
-CompiledGemTemplates.stage!
+# bc2cpp's closed-world core gems read the generated mruby-*-compiled/ trees (tools/bc2cpp/compiled_gem_sources.rb).
+require_relative '../tools/bc2cpp/compiled_gem_sources'
+CompiledGemSources.write!(File.expand_path('..', __dir__), File.expand_path('..', __dir__))
 
 ROOT = File.expand_path('..', __dir__)
 require_relative '../tools/rgss_tts_config'

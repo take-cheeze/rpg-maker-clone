@@ -54,6 +54,7 @@
 require_relative '../../tools/bc2cpp/world_root'
 require 'set'
 require_relative '../../tools/bc2cpp/static_dispatch_registrations'
+require_relative '../../tools/bc2cpp/compiled_gem_sources'
 
 S = StaticDispatchRegistrations
 $failures = 0
@@ -568,7 +569,7 @@ end
 
 # --- GENERATED_REGISTRATION ---
 S::GEMS.each do |gem|
-  src = File.read(File.join(root, 'compiled-gem-templates', gem, 'src', 'register.cxx')).gsub(%r{//[^\n]*}, '')
+  src = CompiledGemSources.register_text(gem, root).gsub(%r{//[^\n]*}, '')
   check("#{gem}: src/register.cxx registers nothing by hand", !src.match?(/\bmrb_define_\w*method\s*\(/))
 end
 check('closed owners: RGSS is unregisterable only for the closed list',

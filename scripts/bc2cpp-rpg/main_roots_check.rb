@@ -9,6 +9,7 @@ require_relative '../../tools/bc2cpp/native_vm'
 require_relative '../../tools/bc2cpp/bc2cpp'
 require_relative '../../tools/bc2cpp/initializer_tables'
 require_relative '../../tools/bc2cpp/native_inventory'
+require_relative '../../tools/bc2cpp/compiled_gem_sources'
 require 'rake'
 
 # The fixture defines its own program rather than the engine's signature classes.
@@ -292,8 +293,8 @@ Dir.mktmpdir('bc2cpp-main-roots') do |dir|
   build_dir = File.join(dir, 'closed')
   FileUtils.mkdir_p(build_dir)
   gem_name = BC2CPP_COMPILED_GEMS.keys.first
-  gem_dir = File.join(root, 'compiled-gem-templates', gem_name)
-  registration = File.join(gem_dir, 'src/register.cxx')
+  registration = File.join(build_dir, 'register.cxx')
+  File.write(registration, CompiledGemSources.register_text(gem_name, root))
   shard = File.join(build_dir, 'example_gen_shard1.cpp')
   File.write(shard, '// modeled Ruby')
   selected_pi = File.join(build_dir, 'selected.pi')

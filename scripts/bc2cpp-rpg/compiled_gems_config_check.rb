@@ -9,15 +9,15 @@
 #       a duplicate out_symbol, a duplicate key (YAML would keep the last), an owners source that is neither
 #       `core` nor a base gem, a base gem with no directory, a malformed gem name, namespace list or version;
 #   repository file
-#     - names exactly the mruby-*-compiled gems that have a template in compiled-gem-templates/, and
+#     - names exactly the mruby-*-compiled gem trees the generator writes from the table, and
 #       BC2CPP_COMPILED_GEMS is that table with the owners derived from the named source.
 #
 # Usage: ruby scripts/bc2cpp-rpg/compiled_gems_config_check.rb
 
 require_relative '../../tools/bc2cpp/world_root'
-# bc2cpp's closed-world core gems read the staged mruby-core-compiled/ (see compiled-gem-templates/stage.rb).
-require_relative '../../compiled-gem-templates/stage'
-CompiledGemTemplates.stage!
+# bc2cpp's closed-world core gems read the generated mruby-*-compiled/ trees (tools/bc2cpp/compiled_gem_sources.rb).
+require_relative '../../tools/bc2cpp/compiled_gem_sources'
+CompiledGemSources.write!(File.expand_path('../..', __dir__), File.expand_path('../..', __dir__))
 require 'tmpdir'
 require_relative '../bc2cpp/check_support'
 require_relative '../../tools/bc2cpp/compiled_gems'
@@ -93,8 +93,8 @@ Dir.mktmpdir('gems_root') do |root|
 end
 
 repo = Config.load(gems_root: ROOT)
-on_disk = Dir[File.join(ROOT, 'compiled-gem-templates', 'mruby-*-compiled')].map { |dir| File.basename(dir) }.sort
-suite.check('the repository file names exactly the mruby-*-compiled gem templates', repo.map(&:name).sort == on_disk)
+on_disk = Dir[File.join(ROOT, 'mruby-*-compiled')].map { |dir| File.basename(dir) }.sort
+suite.check('the repository file names exactly the mruby-*-compiled gem trees', repo.map(&:name).sort == on_disk)
 suite.check('BC2CPP_COMPILED_GEMS keeps the file order', BC2CPP_COMPILED_GEMS.keys == repo.map(&:name))
 suite.check('BC2CPP_COMPILED_GEMS owners come from the named source', repo.all? do |entry|
   want = entry.owners_from == 'core' ? BC2CPP_CORE_OWNERS : bc2cpp_gem_owners(entry.owners_from)
