@@ -105,13 +105,16 @@ function(rpg2k_add_mruby)
        ${ARG_REPO_ROOT}/tools/bc2cpp/compiled_gems.yml)
   list(APPEND mrb_files ${bc2cpp_files})
 
-  # The bc2cpp gem trees (mruby-*-compiled, mruby-fiber-placeholder) are written to the
-  # repository root from compiled_gems.yml. Write them before the src/ globs below, so a
-  # fresh configure already sees their register.cxx.
-  execute_process(COMMAND ruby ${ARG_REPO_ROOT}/tools/bc2cpp/compiled_gem_sources.rb ${ARG_REPO_ROOT} ${ARG_REPO_ROOT}
-                  RESULT_VARIABLE gem_sources_rc)
+  # The bc2cpp gem trees (mruby-*-compiled, mruby-fiber-placeholder) are written
+  # to the repository root from compiled_gems.yml. Write them before the src/
+  # globs below, so a fresh configure already sees their register.cxx.
+  execute_process(
+    COMMAND ruby ${ARG_REPO_ROOT}/tools/bc2cpp/compiled_gem_sources.rb
+            ${ARG_REPO_ROOT} ${ARG_REPO_ROOT} RESULT_VARIABLE gem_sources_rc)
   if(NOT gem_sources_rc EQUAL 0)
-    message(FATAL_ERROR "tools/bc2cpp/compiled_gem_sources.rb failed (${gem_sources_rc})")
+    message(
+      FATAL_ERROR
+        "tools/bc2cpp/compiled_gem_sources.rb failed (${gem_sources_rc})")
   endif()
 
   set(mrb_opts
