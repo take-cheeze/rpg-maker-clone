@@ -1,259 +1,13 @@
 # ---- base stubs (scripts/bc2cpp/base_rbs*.rb, untyped shapes)
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_array
-class Array
-  def __repeated_combination: (untyped, untyped) -> untyped
-  def bsearch: () -> untyped
-  def bsearch_index: () -> untyped
-  def combination: (untyped) -> untyped
-  def delete_if: () -> untyped
-  def dig: (untyped, *untyped) -> untyped
-  def fetch: (untyped, ?untyped) -> untyped
-  def fetch_values: (*untyped) -> untyped
-  def fill: (?untyped, ?untyped, ?untyped) -> untyped
-  def find: (?untyped) -> untyped
-  def keep_if: () -> untyped
-  def permutation: (?untyped) -> untyped
-  def product: (*untyped) -> untyped
-  def reject!: () -> untyped
-  def repeated_combination: (untyped) -> untyped
-  def repeated_permutation: (untyped) -> untyped
-  def reverse_each: () -> untyped
-  def rfind: (?untyped) -> untyped
-  def select!: () -> untyped
-  def to_h: () -> untyped
-  def transpose: () -> untyped
-  def uniq: () -> untyped
-  def uniq!: () -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_dir
-class Dir
-  def chdir: (untyped) -> untyped
-  def each: () -> untyped
-  def each_child: () -> untyped
-  def foreach: (untyped) -> untyped
-  def open: (untyped) -> untyped
-end
-
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_dir
-class Dir
-  def close: () -> nil
-  def initialize: (String) -> self
-  def read: () -> String?
-  def rewind: () -> self?
-  def seek: (Numeric) -> self?
-  def tell: () -> Integer?
-  def self._chdir: (String) -> Integer
-  def self.children: (String) -> Array
-  def self.chroot: (String) -> Integer
-  def self.delete: (String) -> Integer
-  def self.empty?: (String) -> bool
-  def self.entries: (String) -> Array
-  def self.exist?: (String) -> bool
-  def self.getwd: () -> String
-  def self.mkdir: (String, ?Numeric) -> Integer
-end
-
-# bc2cpp-native: base_dir
-class IOError < StandardError
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_enum
-class Array
-  def sort_by: () -> untyped
-  def sort_by!: () -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_enum
-module Enumerable
-  def all?: (?untyped) -> untyped
-  def any?: (?untyped) -> untyped
-  def count: (?untyped) -> untyped
-  def cycle: (?untyped) -> untyped
-  def drop: (untyped) -> untyped
-  def drop_while: () -> untyped
-  def each_cons: (untyped) -> untyped
-  def each_entry: (*untyped) -> untyped
-  def each_slice: (untyped) -> untyped
-  def each_with_object: (untyped) -> untyped
-  def filter_map: () -> untyped
-  def find_index: (?untyped) -> untyped
-  def first: (*untyped) -> untyped
-  def flat_map: () -> untyped
-  def grep_v: (untyped) -> untyped
-  def group_by: () -> untyped
-  def max_by: () -> untyped
-  def min_by: () -> untyped
-  def minmax: () -> untyped
-  def minmax_by: () -> untyped
-  def none?: (?untyped) -> untyped
-  def one?: (?untyped) -> untyped
-  def reverse_each: () -> untyped
-  def sort_by: () -> untyped
-  def sum: (?untyped) -> untyped
-  def take: (untyped) -> untyped
-  def take_while: () -> untyped
-  def tally: () -> untyped
-  def to_h: () -> untyped
-  def uniq: () -> untyped
-  def zip: (*untyped) -> untyped
-end
-
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_exit
-class Kernel
-  def exit: (?untyped) -> nil
-  def exit!: (?untyped) -> nil
-end
-
-# bc2cpp-native: base_exit
-class SystemExit < Exception
-end
-
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_fiber
-class Fiber
-  def alive?: () -> bool
-  def initialize: (*untyped) -> untyped
-  def resume: (*untyped) -> untyped
-  def to_s: () -> String
-  def transfer: (*untyped) -> untyped
-  def self.current: () -> untyped
-  def self.yield: (*untyped) -> untyped
-end
-
-# bc2cpp-native: base_fiber
-class FiberError < StandardError
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_io
-class EOFError < IOError
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-
-# bc2cpp-native: base_io
-module File::Constants
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_io
-class IOError < StandardError
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_io
-module Kernel
-  def gets: () -> untyped
-  def open: (untyped, *untyped) -> untyped
-  def p: (*untyped) -> untyped
-  def print: () -> untyped
-  def printf: () -> untyped
-  def putc: (untyped) -> untyped
-  def puts: () -> untyped
-  def readline: () -> untyped
-  def readlines: () -> untyped
-end
-
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_io
-class File
-  def _atime: () -> untyped
-  def _ctime: () -> untyped
-  def _mtime: () -> untyped
-  def flock: (Numeric) -> untyped
-  def initialize: (*untyped) -> untyped
-  def size: () -> Integer
-  def truncate: (untyped) -> Integer
-  def self.absolute_path: (String, ?String) -> String
-  def self.absolute_path?: (untyped) -> bool
-  def self.basename: (String, ?String) -> String
-  def self.chmod: (Numeric, *untyped) -> Integer
-  def self.delete: (*untyped) -> Integer
-  def self.dirname: (String, ?Numeric) -> String
-  def self.expand_path: (String, ?String) -> String
-  def self.extname: (String) -> String
-  def self.join: (*untyped) -> untyped
-  def self.path: (String) -> untyped
-  def self.readlink: (String) -> String
-  def self.realpath: (String, ?String) -> String
-  def self.rename: (String, String) -> Integer
-  def self.symlink: (String, String) -> Integer
-  def self.umask: (?Numeric) -> Integer
-  def self.unlink: (*untyped) -> Integer
-end
-
-# bc2cpp-native: base_io
-module File::Constants
-end
-
-# bc2cpp-native: base_io
-module FileTest
-  def self.directory?: (untyped) -> bool
-  def self.exist?: (untyped) -> bool
-  def self.exists?: (untyped) -> bool
-  def self.file?: (untyped) -> bool
-  def self.pipe?: (untyped) -> bool
-  def self.size: (untyped) -> Integer
-  def self.size?: (untyped) -> Integer?
-  def self.socket?: (untyped) -> bool
-  def self.symlink?: (untyped) -> bool
-  def self.zero?: (untyped) -> bool
-end
-
-# bc2cpp-native: base_io
-class IO
-  def close: () -> nil
-  def close_on_exec=: (untyped) -> bool
-  def close_on_exec?: () -> bool
-  def close_write: () -> nil
-  def closed?: () -> bool
-  def eof?: () -> bool
-  def fileno: () -> Integer
-  def flush: () -> untyped
-  def getbyte: () -> Integer?
-  def getc: () -> String?
-  def gets: (*untyped) -> untyped
-  def initialize: (Numeric, ?untyped, ?Hash) -> untyped
-  def initialize_copy: (untyped) -> untyped
-  def isatty: () -> bool
-  def pid: () -> Integer?
-  def pos: () -> Integer
-  def pread: (*untyped) -> untyped
-  def print: (*untyped) -> nil
-  def putc: (untyped) -> untyped
-  def puts: (*untyped) -> nil
-  def pwrite: (String, untyped) -> Integer
-  def read: (*untyped) -> untyped
-  def readbyte: () -> Integer?
-  def readchar: () -> String?
-  def readline: (?untyped, ?untyped) -> untyped
-  def readlines: (?untyped, ?untyped) -> Array
-  def seek: (untyped, ?untyped) -> Integer
-  def sync: () -> bool
-  def sync=: (untyped) -> bool
-  def sysread: (Numeric, ?String) -> untyped
-  def sysseek: (Numeric, ?Numeric) -> Integer
-  def syswrite: (String) -> Integer
-  def ungetbyte: (untyped) -> nil
-  def ungetc: (String) -> nil
-  def write: (*untyped) -> Integer
-  def self._pipe: () -> Array
-  def self._popen: (untyped, ?untyped, ?untyped) -> untyped
-  def self._sysclose: (Numeric) -> Integer
-  def self.for_fd: (untyped, ?untyped, ?untyped) -> untyped
-  def self.select: (*untyped) -> Array?
-  def self.sysopen: (String, ?untyped, ?Numeric) -> Integer
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-
 # bc2cpp-native: base_lcf
 class LCF::Array1D
   def schema: () -> untyped
@@ -267,7 +21,6 @@ class LCF::Array1D
   def sym2idx: () -> untyped
   def to_lcf: (?untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::Array2D
   def []: (untyped) -> untyped
@@ -278,7 +31,6 @@ class LCF::Array2D
   def same_schema?: (untyped) -> untyped
   def to_lcf: () -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::Database < LCF::File
   def header: () -> untyped
@@ -286,7 +38,6 @@ class LCF::Database < LCF::File
   def rpg2003?: () -> untyped
   def schema: () -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::EventCommand
   def code: () -> untyped
@@ -296,7 +47,6 @@ class LCF::EventCommand
   def initialize: (untyped, untyped, untyped, untyped) -> untyped
   def param: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::File
   def []: (untyped) -> untyped
@@ -312,20 +62,17 @@ class LCF::File
   def terminate_root?: () -> untyped
   def to_lcf: () -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::MapTree < LCF::File
   def header: () -> untyped
   def schema: () -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::MapUnit < LCF::File
   def header: () -> untyped
   def schema: () -> untyped
   def terminate_root?: () -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::MoveCommand
   def command_id: () -> untyped
@@ -335,7 +82,6 @@ class LCF::MoveCommand
   def parameter_c: () -> untyped
   def initialize: (untyped, untyped, untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveData < LCF::File
   def header: () -> untyped
@@ -343,18 +89,15 @@ class LCF::SaveData < LCF::File
   def schema: () -> untyped
   def typed: () -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTypeError < StandardError
 end
-
 # bc2cpp-native: base_lcf
 module LCF::SaveTyped
   def self.fits?: (untyped, untyped) -> untyped
   def self.read: (untyped, untyped, untyped, untyped) -> untyped
   def self.save_writable?: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Bgm < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -369,14 +112,12 @@ class LCF::SaveTyped::Bgm < LCF::SaveTyped::Record
   def save_volume: () -> untyped
   def save_volume=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::CommonEvent < LCF::SaveTyped::Record
   def check!: () -> untyped
   def save_execution_state: () -> untyped
   def save_execution_state=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::EventExecFrame < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -396,7 +137,6 @@ class LCF::SaveTyped::EventExecFrame < LCF::SaveTyped::Record
   def save_triggered_by_decision_key: () -> untyped
   def save_triggered_by_decision_key=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::EventExecState < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -446,7 +186,6 @@ class LCF::SaveTyped::EventExecState < LCF::SaveTyped::Record
   def save_wait_time: () -> untyped
   def save_wait_time=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Inventory < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -493,7 +232,6 @@ class LCF::SaveTyped::Inventory < LCF::SaveTyped::Record
   def save_victories: () -> untyped
   def save_victories=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::MapEvent < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -524,7 +262,6 @@ class LCF::SaveTyped::MapEvent < LCF::SaveTyped::Record
   def save_scroll_y: () -> untyped
   def save_scroll_y=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Movable < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -573,7 +310,6 @@ class LCF::SaveTyped::Movable < LCF::SaveTyped::Record
   def save_y: () -> untyped
   def save_y=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::MoveRoute < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -586,7 +322,6 @@ class LCF::SaveTyped::MoveRoute < LCF::SaveTyped::Record
   def save_skippable: () -> untyped
   def save_skippable=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::PartyActor < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -647,7 +382,6 @@ class LCF::SaveTyped::PartyActor < LCF::SaveTyped::Record
   def save_two_weapon: () -> untyped
   def save_two_weapon=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::PartyLocation < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -718,7 +452,6 @@ class LCF::SaveTyped::PartyLocation < LCF::SaveTyped::Record
   def save_y: () -> untyped
   def save_y=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Picture < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -771,7 +504,6 @@ class LCF::SaveTyped::Picture < LCF::SaveTyped::Record
   def save_zoom: () -> untyped
   def save_zoom=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Record
   def rec: () -> untyped
@@ -783,7 +515,6 @@ class LCF::SaveTyped::Record
   def save_put: (untyped, untyped) -> untyped
   def table: (untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Save < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -818,7 +549,6 @@ class LCF::SaveTyped::Save < LCF::SaveTyped::Record
   def save_title: () -> untyped
   def save_title=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Screen < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -849,7 +579,6 @@ class LCF::SaveTyped::Screen < LCF::SaveTyped::Record
   def save_weather_strength: () -> untyped
   def save_weather_strength=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Se < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -862,7 +591,6 @@ class LCF::SaveTyped::Se < LCF::SaveTyped::Record
   def save_volume: () -> untyped
   def save_volume=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::System < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -979,7 +707,6 @@ class LCF::SaveTyped::System < LCF::SaveTyped::Record
   def save_wallpaper_type: () -> untyped
   def save_wallpaper_type=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Target < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -994,7 +721,6 @@ class LCF::SaveTyped::Target < LCF::SaveTyped::Record
   def save_y: () -> untyped
   def save_y=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Title < LCF::SaveTyped::Record
   def check!: () -> untyped
@@ -1023,11 +749,9 @@ class LCF::SaveTyped::Title < LCF::SaveTyped::Record
   def save_timestamp: () -> untyped
   def save_timestamp=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 module LCF::Schema
 end
-
 # bc2cpp-native: base_lcf
 class LCF::Sections
   def []: (untyped) -> untyped
@@ -1036,7 +760,6 @@ class LCF::Sections
   def initialize: () -> untyped
   def key?: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_lcf
 class LCF::Tree
   def selected_id: () -> untyped
@@ -1068,67 +791,6 @@ module Marshal
   def self.dump: (*untyped) -> untyped
   def self.load: (*untyped) -> untyped
   def self.restore: (*untyped) -> untyped
-end
-
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_math
-module Math
-  def acos: (Numeric) -> Float
-  def acosh: (Numeric) -> Float
-  def asin: (Numeric) -> Float
-  def asinh: (Numeric) -> Float
-  def atan: (Numeric) -> Float
-  def atan2: (Numeric, Numeric) -> Float
-  def atanh: (Numeric) -> Float
-  def cbrt: (Numeric) -> Float
-  def cos: (Numeric) -> Float
-  def cosh: (Numeric) -> Float
-  def erf: (Numeric) -> Float
-  def erfc: (Numeric) -> Float
-  def exp: (Numeric) -> Float
-  def expm1: (Numeric) -> Float
-  def frexp: (Numeric) -> Array
-  def hypot: (Numeric, Numeric) -> Float
-  def ldexp: (Numeric, Numeric) -> Float
-  def log: (Numeric, ?Numeric) -> Float
-  def log10: (Numeric) -> Float
-  def log1p: (Numeric) -> Float
-  def log2: (Numeric) -> Float
-  def sin: (Numeric) -> Float
-  def sinh: (Numeric) -> Float
-  def sqrt: (Numeric) -> Float
-  def tan: (Numeric) -> Float
-  def tanh: (Numeric) -> Float
-  def self.acos: (Numeric) -> Float
-  def self.acosh: (Numeric) -> Float
-  def self.asin: (Numeric) -> Float
-  def self.asinh: (Numeric) -> Float
-  def self.atan: (Numeric) -> Float
-  def self.atan2: (Numeric, Numeric) -> Float
-  def self.atanh: (Numeric) -> Float
-  def self.cbrt: (Numeric) -> Float
-  def self.cos: (Numeric) -> Float
-  def self.cosh: (Numeric) -> Float
-  def self.erf: (Numeric) -> Float
-  def self.erfc: (Numeric) -> Float
-  def self.exp: (Numeric) -> Float
-  def self.expm1: (Numeric) -> Float
-  def self.frexp: (Numeric) -> Array
-  def self.hypot: (Numeric, Numeric) -> Float
-  def self.ldexp: (Numeric, Numeric) -> Float
-  def self.log: (Numeric, ?Numeric) -> Float
-  def self.log10: (Numeric) -> Float
-  def self.log1p: (Numeric) -> Float
-  def self.log2: (Numeric) -> Float
-  def self.sin: (Numeric) -> Float
-  def self.sinh: (Numeric) -> Float
-  def self.sqrt: (Numeric) -> Float
-  def self.tan: (Numeric) -> Float
-  def self.tanh: (Numeric) -> Float
-end
-
-# bc2cpp-native: base_math
-class Math::DomainError < StandardError
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -1327,80 +989,8 @@ class MV::JS
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_numeric
-class Integer
-  def allbits?: (untyped) -> untyped
-  def anybits?: (untyped) -> untyped
-  def ceildiv: (untyped) -> untyped
-  def integer?: () -> untyped
-  def nobits?: (untyped) -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_numeric
-class Numeric
-  def integer?: () -> untyped
-  def negative?: () -> untyped
-  def nonzero?: () -> untyped
-  def positive?: () -> untyped
-  def zero?: () -> untyped
-end
-
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_numeric
-class Float
-  def remainder: (Numeric) -> Float
-end
-
-# bc2cpp-native: base_numeric
-class Integer
-  def bit_length: () -> Integer
-  def digits: (?Numeric) -> Array
-  def even?: () -> bool
-  def gcd: (untyped) -> Integer
-  def lcm: (untyped) -> Integer
-  def odd?: () -> bool
-  def pow: (untyped, untyped) -> untyped
-  def remainder: (untyped) -> untyped
-  def size: () -> Integer
-  def self.sqrt: (untyped) -> Integer
-end
-
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_random
-class Array
-  def sample: (*untyped) -> untyped
-  def shuffle: (?untyped) -> Array
-  def shuffle!: (*untyped) -> untyped
-end
-
-# bc2cpp-native: base_random
-class Kernel
-  def rand: (?untyped) -> untyped
-  def srand: (?untyped) -> Integer
-end
-
-# bc2cpp-native: base_random
-class Random
-  def bytes: (untyped) -> String
-  def initialize: (?Numeric) -> self
-  def rand: (?untyped) -> untyped
-  def srand: (?Numeric) -> Integer
-  def self.bytes: (untyped) -> String
-  def self.rand: (?untyped) -> untyped
-  def self.srand: (?untyped) -> Integer
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_range
-class Range
-  def first: (*untyped) -> untyped
-  def last: (*untyped) -> untyped
-  def max: () -> untyped
-  def min: () -> untyped
-  def overlap?: (untyped) -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_rgss
 class Array
@@ -1427,7 +1017,6 @@ module RGSS
   def self.window_probe: () -> untyped
   def self.windowskin_rect_probe: () -> untyped
 end
-
 # bc2cpp-native: base_rgss
 module RGSS::Audio
   def encryption_key: () -> untyped
@@ -1458,7 +1047,6 @@ module RGSS::Audio
   def setup_midi: () -> untyped
   def try_encrypted_ext: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::Bitmap
   def extensions=: (untyped) -> untyped
@@ -1469,14 +1057,12 @@ class RGSS::Bitmap
   def initialize: (untyped, ?untyped) -> untyped
   def self.failure_reason: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::Bitmap::LoadError < RuntimeError
   def path: () -> untyped
   def reason: () -> untyped
   def initialize: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rgss
 module RGSS::ErrorReport
   def lines: () -> untyped
@@ -1491,7 +1077,6 @@ module RGSS::ErrorReport
   def self.puts_text: (untyped) -> untyped
   def self.record: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::ErrorReport::Tee
   def io: () -> untyped
@@ -1502,7 +1087,6 @@ class RGSS::ErrorReport::Tee
   def puts: (*untyped) -> untyped
   def write: (*untyped) -> untyped
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::Font
   def default_name: () -> untyped
@@ -1542,7 +1126,6 @@ class RGSS::Font
   def exist?: (untyped) -> untyped
   def initialize: (?untyped, ?untyped) -> untyped
 end
-
 # bc2cpp-native: base_rgss
 module RGSS::Graphics
   def frame_count: () -> untyped
@@ -1564,7 +1147,6 @@ module RGSS::Graphics
   def transition: (?untyped, ?untyped, ?untyped) -> untyped
   def wait: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rgss
 module RGSS::Input
   def self.dir4: () -> untyped
@@ -1580,7 +1162,6 @@ module RGSS::Input
   def self.trigger?: (untyped) -> untyped
   def self.update: () -> untyped
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::Plane
   def bitmap: () -> untyped
@@ -1595,11 +1176,9 @@ class RGSS::Plane
   def zoom_x: () -> untyped
   def zoom_y: () -> untyped
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::RGSSError < StandardError
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::Sprite
   def bitmap: () -> untyped
@@ -1624,7 +1203,6 @@ class RGSS::Sprite
   def zoom_x: () -> untyped
   def zoom_y: () -> untyped
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::Tilemap
   def tileset: () -> untyped
@@ -1638,15 +1216,12 @@ class RGSS::Tilemap
   def flags: () -> untyped
   def autotiles: () -> untyped
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::Timeout < StandardError
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::Viewport
 end
-
 # bc2cpp-native: base_rgss
 class RGSS::Window
   def contents: () -> RGSS::Bitmap
@@ -1932,7 +1507,6 @@ module Game
   def self.stat_of: (untyped, untyped) -> untyped
   def self.trans_to_opacity: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Actor
   def id: () -> untyped
@@ -2085,7 +1659,6 @@ class Game::Actor
   def weapon_sp_cost: () -> untyped
   def weapon_states: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Actors
   def []: (untyped) -> untyped
@@ -2095,13 +1668,11 @@ class Game::Actors
   def initialize: (untyped) -> untyped
   def known_invalid?: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::Backdrop
   def self.int_field: (untyped, untyped) -> untyped
   def self.name_for: (untyped, untyped, ?untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Battle
   def allies: () -> untyped
@@ -2269,7 +1840,6 @@ class Game::Battle
   def self.state_ranks_of: (untyped) -> untyped
   def self.strike_count_of: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Battle::Combatant
   def name: () -> untyped
@@ -2387,7 +1957,6 @@ class Game::Battle::Combatant
   def strike_count: () -> untyped
   def turns_taken: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::BattlePage
   def self.active?: (untyped, untyped, untyped, untyped, ?untyped) -> untyped
@@ -2395,14 +1964,12 @@ module Game::BattlePage
   def self.hp_within?: (untyped, untyped, untyped) -> untyped
   def self.select_all: (untyped, untyped, untyped, untyped, ?untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::CharSet
   def self.bush_opacity: (?untyped) -> untyped
   def self.bush_pixels: (untyped, ?untyped) -> untyped
   def self.frame_rect: (untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Character
   def direction: () -> untyped
@@ -2450,7 +2017,6 @@ class Game::Character
   def y=: (untyped) -> untyped
   def self.step_tile: (untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::ChipSet
   def name: () -> untyped
@@ -2468,7 +2034,6 @@ class Game::ChipSet
   def upper_flags: (untyped) -> untyped
   def self.lower_index: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::ChipsetLayout
   def self.anim_ab: (untyped, untyped, untyped) -> untyped
@@ -2486,14 +2051,11 @@ module Game::ChipsetLayout
   def self.upper_quad: (untyped) -> untyped
   def self.water_quads: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::CommonEvent
   def self.eligible: (untyped, untyped) -> untyped
   def self.load: (untyped) -> untyped
 end
-
-
 # bc2cpp-native: base_rpg2k
 class Game::Enemy
   def id: () -> untyped
@@ -2531,7 +2093,6 @@ class Game::Enemy
   def initialize: (untyped, untyped, ?untyped, ?untyped, ?untyped) -> untyped
   def reseed_rewards: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::EnemyAction
   def kind: () -> untyped
@@ -2554,7 +2115,6 @@ class Game::EnemyAction
   def skill?: () -> untyped
   def transform?: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::EnemyAi
   def enemy: (untyped) -> untyped
@@ -2568,7 +2128,6 @@ class Game::EnemyAi
   def skill_ready?: (untyped, untyped) -> untyped
   def switch?: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::EventGraphic
   def self.animated?: (untyped) -> untyped
@@ -2581,14 +2140,12 @@ module Game::EventGraphic
   def self.pattern_column: (untyped) -> untyped
   def self.spin_direction: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::EventPage
   def self.active?: (untyped, untyped, untyped, untyped, ?untyped, ?untyped) -> untyped
   def self.compare: (untyped, untyped, untyped) -> untyped
   def self.select: (untyped, untyped, untyped, untyped, ?untyped, ?untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Interpreter
   def wait_kind: () -> untyped
@@ -2829,7 +2386,6 @@ class Game::Interpreter
   def vehicle_target: (untyped) -> untyped
   def waiting?: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Interpreter::BattleRequest
   def troop_id: () -> untyped
@@ -2850,11 +2406,9 @@ class Game::Interpreter::BattleRequest
   def headless=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::Interpreter::Cmd
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Interpreter::DiagnosticPosition
   def index: () -> untyped
@@ -2865,7 +2419,6 @@ class Game::Interpreter::DiagnosticPosition
   def call_depth=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Interpreter::InnRequest
   def type: () -> untyped
@@ -2878,7 +2431,6 @@ class Game::Interpreter::InnRequest
   def prompt=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Interpreter::KeyInputAccepted
   def decision: () -> untyped
@@ -2902,7 +2454,6 @@ class Game::Interpreter::KeyInputAccepted
   def accepts?: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Interpreter::KeyInputRequest
   def wait: () -> untyped
@@ -2911,11 +2462,9 @@ class Game::Interpreter::KeyInputRequest
   def accepted=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::Interpreter::MoveCmd
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Interpreter::NameInputRequest
   def actor_id: () -> untyped
@@ -2926,7 +2475,6 @@ class Game::Interpreter::NameInputRequest
   def seed=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Interpreter::ShopRequest
   def mode: () -> untyped
@@ -2941,7 +2489,6 @@ class Game::Interpreter::ShopRequest
   def goods=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::LegacyLsd
   def self.apply: (untyped, untyped) -> untyped
@@ -2950,7 +2497,6 @@ module Game::LegacyLsd
   def self.ext_records: (untyped) -> untyped
   def self.marked?: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Map
   def id: () -> untyped
@@ -2973,7 +2519,6 @@ class Game::Map
   def tile: (untyped, untyped, untyped, untyped) -> untyped
   def upper: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::MapAccess
   def self.allowed?: (untyped, untyped, untyped) -> untyped
@@ -2981,13 +2526,11 @@ module Game::MapAccess
   def self.save_allowed?: (untyped, untyped) -> untyped
   def self.teleport_allowed?: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::MapBgm
   def self.chunk_for: (untyped, untyped) -> untyped
   def self.int_field: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::Message
   def self.expand: (untyped, untyped, untyped) -> untyped
@@ -2996,7 +2539,6 @@ module Game::Message
   def self.scan: (untyped, untyped, untyped, ?untyped) -> untyped
   def self.visible_segments: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Message::PauseMarker
   def at: () -> untyped
@@ -3005,7 +2547,6 @@ class Game::Message::PauseMarker
   def kind=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Message::ScanResult
   def segments: () -> untyped
@@ -3026,7 +2567,6 @@ class Game::Message::ScanResult
   def end_color=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Message::Segment
   def text: () -> untyped
@@ -3035,7 +2575,6 @@ class Game::Message::Segment
   def color=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Message::SpeedMarker
   def at: () -> untyped
@@ -3044,7 +2583,6 @@ class Game::Message::SpeedMarker
   def speed=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::MessageConfig
   def transparent: () -> untyped
@@ -3067,14 +2605,12 @@ class Game::MessageConfig
   def face?: () -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::MessagePalette
   def self.cell_origin: (untyped) -> untyped
   def self.shadow_origin: () -> untyped
   def self.valid?: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::MoveCommand
   def command_id: () -> untyped
@@ -3084,8 +2620,6 @@ class Game::MoveCommand
   def parameter_c: () -> untyped
   def initialize: (untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> untyped
 end
-
-
 # bc2cpp-native: base_rpg2k
 module Game::MoveType
   def self.bounce: (untyped, untyped, untyped) -> untyped
@@ -3093,7 +2627,6 @@ module Game::MoveType
   def self.random_direction: (untyped, untyped) -> untyped
   def self.toward_away_direction: (untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::NumberInput
   def digits: () -> untyped
@@ -3106,14 +2639,12 @@ class Game::NumberInput
   def right: () -> untyped
   def value: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::Parallax
   def self.anchored_offset: (untyped, untyped, untyped, untyped) -> untyped
   def self.autoscroll_px: (untyped, untyped) -> untyped
   def self.axis_offset: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Party
   def actors: () -> untyped
@@ -3253,7 +2784,6 @@ class Game::Party
   def self.permission_set_active?: (untyped) -> untyped
   def self.usable_flag?: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Picture
   def id: () -> untyped
@@ -3290,7 +2820,6 @@ class Game::Picture
   def y: () -> untyped
   def zoom: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Rng
   def initialize: (?untyped) -> untyped
@@ -3298,7 +2827,6 @@ class Game::Rng
   def random: (untyped) -> untyped
   def scaled: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Screen
   def approach: (untyped, untyped, untyped) -> untyped
@@ -3345,7 +2873,6 @@ class Game::Screen
   def update_shake: () -> untyped
   def update_tint: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Shop
   def goods: () -> untyped
@@ -3365,7 +2892,6 @@ class Game::Shop
   def sellable?: (untyped) -> untyped
   def sellable_items: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::State
   def party: () -> untyped
@@ -3515,7 +3041,6 @@ class Game::State
   def self.tile_replacement_bytes: (untyped) -> untyped
   def self.tile_replacement_hash: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::States
   def self.affected_message: (untyped, untyped, untyped) -> untyped
@@ -3535,7 +3060,6 @@ module Game::States
   def self.row: (untyped, untyped) -> untyped
   def self.significant: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::States::BattleText
   def self.absorbed: (untyped, untyped, untyped, untyped, untyped) -> untyped
@@ -3552,7 +3076,6 @@ module Game::States::BattleText
   def self.term: (untyped, untyped) -> untyped
   def self.undamaged: (untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Switches
   def revision: () -> untyped
@@ -3565,7 +3088,6 @@ class Game::Switches
   def replace: (untyped) -> untyped
   def to_h: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::TextReveal
   def revealed: () -> untyped
@@ -3582,7 +3104,6 @@ class Game::TextReveal
   def through_instant: (untyped) -> untyped
   def visible_lines: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Timer
   def frames: () -> untyped
@@ -3602,7 +3123,6 @@ class Game::Timer
   def stop: () -> untyped
   def tick: (?untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Transition
   def style: () -> untyped
@@ -3653,7 +3173,6 @@ class Game::Transition
   def self.show_style: (untyped, untyped) -> untyped
   def self.style_for: (untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Troop
   def id: () -> untyped
@@ -3668,7 +3187,6 @@ class Game::Troop
   def total_exp: () -> untyped
   def total_gold: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Variables
   def revision: () -> untyped
@@ -3680,7 +3198,6 @@ class Game::Variables
   def replace: (untyped) -> untyped
   def to_h: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Vehicle
   def map_id: () -> untyped
@@ -3700,7 +3217,6 @@ class Game::Vehicle
   def load_movable: (untyped) -> untyped
   def placed?: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class Game::Weather
   def type: () -> untyped
@@ -3710,7 +3226,6 @@ class Game::Weather
   def set: (untyped, untyped) -> untyped
   def to_h: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module Game::WindowCursor
   def self.dest_rect: (untyped, untyped, untyped, untyped, untyped) -> untyped
@@ -3772,12 +3287,10 @@ class RPG2k
   def trim_ini_value: (untyped) -> untyped
   def self.db_path: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 module RPG2k::Scene
   def self.battle_scene_class: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Base
   def parent: () -> untyped
@@ -3813,7 +3326,6 @@ class RPG2k::Scene::Base
   def value_font_color: (untyped, untyped, untyped) -> untyped
   def wrap_text_to_width: (untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def ui: () -> untyped
@@ -3994,7 +3506,6 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def whole_side_anim_targets: (untyped) -> untyped
   def windowskin: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::ChipsetEditor < RPG2k::Scene::Base
   def cell_color: (untyped) -> untyped
@@ -4018,7 +3529,6 @@ class RPG2k::Scene::ChipsetEditor < RPG2k::Scene::Base
   def toggled_byte: (untyped) -> untyped
   def update: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::DebugMenu < RPG2k::Scene::Base
   def activate_row: () -> untyped
@@ -4061,7 +3571,6 @@ class RPG2k::Scene::DebugMenu < RPG2k::Scene::Base
   def update_row_focus: () -> untyped
   def update_switch_or_variable: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::EquipMenu < RPG2k::Scene::Base
   def actor: () -> untyped
@@ -4103,14 +3612,12 @@ class RPG2k::Scene::EquipMenu < RPG2k::Scene::Base
   def update_slots: () -> untyped
   def warn_missing_item: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::EventResolver
   def common_event_commands: (untyped) -> untyped
   def initialize: (untyped, untyped) -> untyped
   def map_event_commands: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::GameOver < RPG2k::Scene::Base
   def database_gameover_bgm: () -> untyped
@@ -4121,7 +3628,6 @@ class RPG2k::Scene::GameOver < RPG2k::Scene::Base
   def play_gameover_bgm: () -> untyped
   def update: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::ItemMenu < RPG2k::Scene::Base
   def apply_escape_item: (untyped) -> untyped
@@ -4172,7 +3678,6 @@ class RPG2k::Scene::ItemMenu < RPG2k::Scene::Base
   def update_target: () -> untyped
   def update_teleport_target: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Map < RPG2k::Scene::Base
   def state: () -> untyped
@@ -4598,7 +4103,6 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def weather_particle_count: (untyped) -> untyped
   def self.tone_channel: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Map::LRUBitmapCache
   def []: (untyped) -> untyped
@@ -4608,7 +4112,6 @@ class RPG2k::Scene::Map::LRUBitmapCache
   def initialize: (untyped) -> untyped
   def key?: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Map::MapEventState
   def id: () -> untyped
@@ -4669,7 +4172,6 @@ class RPG2k::Scene::Map::MapEventState
   def crossed_hero_this_frame=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Map::MessageState
   def window: () -> untyped
@@ -4720,7 +4222,6 @@ class RPG2k::Scene::Map::MessageState
   def pending_choice=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Map::ShopQuantity
   def id: () -> untyped
@@ -4733,7 +4234,6 @@ class RPG2k::Scene::Map::ShopQuantity
   def mode=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Map::ShopState
   def model: () -> untyped
@@ -4772,7 +4272,6 @@ class RPG2k::Scene::Map::ShopState
   def quantity=: (untyped) -> untyped
   def initialize: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::MapViewer < RPG2k::Scene::Base
   def build_chipset: () -> untyped
@@ -4818,7 +4317,6 @@ class RPG2k::Scene::MapViewer < RPG2k::Scene::Base
   def zoom_in: () -> untyped
   def zoom_out: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::MapWorld
   def can_land?: (untyped, untyped, untyped) -> untyped
@@ -4830,7 +4328,6 @@ class RPG2k::Scene::MapWorld
   def random: (untyped) -> untyped
   def set_switch: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Menu < RPG2k::Scene::Base
   def build_commands: () -> untyped
@@ -4869,7 +4366,6 @@ class RPG2k::Scene::Menu < RPG2k::Scene::Base
   def wait_label: () -> untyped
   def wait_term_for: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Order < RPG2k::Scene::Base
   def build_windows: () -> untyped
@@ -4889,7 +4385,6 @@ class RPG2k::Scene::Order < RPG2k::Scene::Base
   def update_confirm: () -> untyped
   def update_left: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::SaveLoad < RPG2k::Scene::Base
   def build_arrow_sprite: (untyped) -> untyped
@@ -4915,7 +4410,6 @@ class RPG2k::Scene::SaveLoad < RPG2k::Scene::Base
   def tick_arrows: () -> untyped
   def update: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::SkillMenu < RPG2k::Scene::Base
   def apply_escape_skill: (untyped) -> untyped
@@ -4965,7 +4459,6 @@ class RPG2k::Scene::SkillMenu < RPG2k::Scene::Base
   def update_target: () -> untyped
   def update_teleport_target: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::StatusMenu < RPG2k::Scene::Base
   def build_windows: () -> untyped
@@ -4990,7 +4483,6 @@ class RPG2k::Scene::StatusMenu < RPG2k::Scene::Base
   def warn_missing_item: (untyped) -> untyped
   def windows: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Title < RPG2k::Scene::Base
   def auto_continue?: () -> untyped
@@ -5014,7 +4506,6 @@ class RPG2k::Scene::Title < RPG2k::Scene::Base
   def refresh_cursor: () -> untyped
   def update: () -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::VehicleWorld
   def can_land?: (untyped, untyped, untyped) -> untyped
@@ -5025,7 +4516,6 @@ class RPG2k::Scene::VehicleWorld
   def random: (untyped) -> untyped
   def set_switch: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k::Window
   def x: () -> untyped
@@ -5079,11 +4569,9 @@ end
 # bc2cpp-native: base_rpg2k
 module RPG2k3
 end
-
 # bc2cpp-native: base_rpg2k
 module RPG2k3::Scene
 end
-
 # bc2cpp-native: base_rpg2k
 class RPG2k3::Scene::Battle < RPG2k::Scene::Battle
   def active_atb?: () -> untyped
@@ -5116,7 +4604,6 @@ end
 # bc2cpp-native: base_rpgvx
 module RPG
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Actor
   def class_id: () -> untyped
@@ -5166,7 +4653,6 @@ class RPG::Actor
   def equips: () -> untyped
   def equips=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Animation
   def id: () -> untyped
@@ -5190,7 +4676,6 @@ class RPG::Animation
   def timings: () -> untyped
   def timings=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Animation::Frame
   def cell_max: () -> untyped
@@ -5198,7 +4683,6 @@ class RPG::Animation::Frame
   def cell_data: () -> untyped
   def cell_data=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Animation::Timing
   def frame: () -> untyped
@@ -5212,7 +4696,6 @@ class RPG::Animation::Timing
   def flash_duration: () -> untyped
   def flash_duration=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Area
   def id: () -> untyped
@@ -5228,7 +4711,6 @@ class RPG::Area
   def order: () -> untyped
   def order=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Armor
   def kind: () -> untyped
@@ -5258,7 +4740,6 @@ class RPG::Armor
   def atype_id: () -> untyped
   def atype_id=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::AudioFile
   def name: () -> untyped
@@ -5268,7 +4749,6 @@ class RPG::AudioFile
   def pitch: () -> untyped
   def pitch=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 module RPG::AudioPlayback
   def fade: (untyped) -> untyped
@@ -5276,7 +4756,6 @@ module RPG::AudioPlayback
   def replay: () -> untyped
   def stop: () -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 module RPG::AudioPlayback::ClassMethods
   def fade: (untyped) -> untyped
@@ -5285,7 +4764,6 @@ module RPG::AudioPlayback::ClassMethods
   def new_empty: () -> untyped
   def stop: () -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::BGM < RPG::AudioFile
   def pos: () -> untyped
@@ -5296,7 +4774,6 @@ class RPG::BGM < RPG::AudioFile
   def self.play_audio: (untyped, untyped, untyped, ?untyped) -> untyped
   def self.stop_audio: () -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::BGS < RPG::AudioFile
   def pos: () -> untyped
@@ -5306,11 +4783,9 @@ class RPG::BGS < RPG::AudioFile
   def self.play_audio: (untyped, untyped, untyped) -> untyped
   def self.stop_audio: () -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::BaseItem
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::BaseItem::Feature
   def code: () -> untyped
@@ -5320,7 +4795,6 @@ class RPG::BaseItem::Feature
   def value: () -> untyped
   def value=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 module RPG::BaseItemFields
   def id: () -> untyped
@@ -5336,7 +4810,6 @@ module RPG::BaseItemFields
   def note: () -> untyped
   def note=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Class
   def learnings: () -> untyped
@@ -5360,7 +4833,6 @@ class RPG::Class
   def params: () -> untyped
   def params=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Class::Learning
   def level: () -> untyped
@@ -5370,7 +4842,6 @@ class RPG::Class::Learning
   def note: () -> untyped
   def note=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::CommonEvent
   def id: () -> untyped
@@ -5386,7 +4857,6 @@ class RPG::CommonEvent
   def autorun?: () -> untyped
   def parallel?: () -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Enemy
   def battler_name: () -> untyped
@@ -5432,7 +4902,6 @@ class RPG::Enemy
   def drop_items: () -> untyped
   def drop_items=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Enemy::Action
   def skill_id: () -> untyped
@@ -5450,7 +4919,6 @@ class RPG::Enemy::Action
   def basic: () -> untyped
   def basic=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Enemy::DropItem
   def kind: () -> untyped
@@ -5466,11 +4934,9 @@ class RPG::Enemy::DropItem
   def data_id: () -> untyped
   def data_id=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::EquipItem < RPG::BaseItem
 end
-
 # bc2cpp-native: base_rpgvx
 module RPG::EquipItemFields
   def price: () -> untyped
@@ -5480,7 +4946,6 @@ module RPG::EquipItemFields
   def params: () -> untyped
   def params=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Event
   def id: () -> untyped
@@ -5494,7 +4959,6 @@ class RPG::Event
   def pages: () -> untyped
   def pages=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Event::Page
   def condition: () -> untyped
@@ -5524,7 +4988,6 @@ class RPG::Event::Page
   def list: () -> untyped
   def list=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Event::Page::Condition
   def switch1_valid: () -> untyped
@@ -5554,7 +5017,6 @@ class RPG::Event::Page::Condition
   def actor_id: () -> untyped
   def actor_id=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Event::Page::Graphic
   def tile_id: () -> untyped
@@ -5568,7 +5030,6 @@ class RPG::Event::Page::Graphic
   def pattern: () -> untyped
   def pattern=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::EventCommand
   def code: () -> untyped
@@ -5579,7 +5040,6 @@ class RPG::EventCommand
   def parameters=: (untyped) -> untyped
   def initialize: (?untyped, ?untyped, ?untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Item
   def price: () -> untyped
@@ -5601,14 +5061,12 @@ class RPG::Item
   def itype_id: () -> untyped
   def itype_id=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::ME < RPG::AudioFile
   def self.fade_audio: (untyped) -> untyped
   def self.play_audio: (untyped, untyped, untyped) -> untyped
   def self.stop_audio: () -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Map
   def width: () -> untyped
@@ -5660,7 +5118,6 @@ class RPG::Map
   def note: () -> untyped
   def note=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Map::Encounter
   def troop_id: () -> untyped
@@ -5670,7 +5127,6 @@ class RPG::Map::Encounter
   def region_set: () -> untyped
   def region_set=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::MapInfo
   def name: () -> untyped
@@ -5686,7 +5142,6 @@ class RPG::MapInfo
   def scroll_y: () -> untyped
   def scroll_y=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::MoveCommand
   def code: () -> untyped
@@ -5694,7 +5149,6 @@ class RPG::MoveCommand
   def parameters: () -> untyped
   def parameters=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::MoveRoute
   def repeat: () -> untyped
@@ -5706,7 +5160,6 @@ class RPG::MoveRoute
   def list: () -> untyped
   def list=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::SE < RPG::AudioFile
   def play: (?untyped, ?untyped) -> untyped
@@ -5714,7 +5167,6 @@ class RPG::SE < RPG::AudioFile
   def self.play_audio: (untyped, untyped, untyped) -> untyped
   def self.stop_audio: () -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Skill
   def mp_cost: () -> untyped
@@ -5734,7 +5186,6 @@ class RPG::Skill
   def required_wtype_id2: () -> untyped
   def required_wtype_id2=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::State
   def restriction: () -> untyped
@@ -5796,7 +5247,6 @@ class RPG::State
   def steps_to_remove: () -> untyped
   def steps_to_remove=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::System
   def game_title: () -> untyped
@@ -5886,7 +5336,6 @@ class RPG::System
   def battleback2_name: () -> untyped
   def battleback2_name=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::System::Terms
   def level: () -> untyped
@@ -5964,7 +5413,6 @@ class RPG::System::Terms
   def commands: () -> untyped
   def commands=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::System::TestBattler
   def actor_id: () -> untyped
@@ -5984,7 +5432,6 @@ class RPG::System::TestBattler
   def equips: () -> untyped
   def equips=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::System::Vehicle
   def character_name: () -> untyped
@@ -6000,7 +5447,6 @@ class RPG::System::Vehicle
   def start_y: () -> untyped
   def start_y=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Tileset
   def id: () -> untyped
@@ -6016,7 +5462,6 @@ class RPG::Tileset
   def note: () -> untyped
   def note=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Troop
   def id: () -> untyped
@@ -6028,7 +5473,6 @@ class RPG::Troop
   def pages: () -> untyped
   def pages=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Troop::Member
   def enemy_id: () -> untyped
@@ -6042,7 +5486,6 @@ class RPG::Troop::Member
   def immortal: () -> untyped
   def immortal=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Troop::Page
   def condition: () -> untyped
@@ -6052,7 +5495,6 @@ class RPG::Troop::Page
   def list: () -> untyped
   def list=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Troop::Page::Condition
   def turn_ending: () -> untyped
@@ -6080,13 +5522,11 @@ class RPG::Troop::Page::Condition
   def switch_id: () -> untyped
   def switch_id=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::UsableItem < RPG::BaseItem
   def battle_ok?: () -> untyped
   def menu_ok?: () -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::UsableItem::Damage
   def type: () -> untyped
@@ -6100,7 +5540,6 @@ class RPG::UsableItem::Damage
   def critical: () -> untyped
   def critical=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::UsableItem::Effect
   def code: () -> untyped
@@ -6112,7 +5551,6 @@ class RPG::UsableItem::Effect
   def value2: () -> untyped
   def value2=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 module RPG::UsableItemFields
   def scope: () -> untyped
@@ -6160,7 +5598,6 @@ module RPG::UsableItemFields
   def effects: () -> untyped
   def effects=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPG::Weapon
   def animation_id: () -> untyped
@@ -6215,7 +5652,6 @@ class RPGVX
   def start: () -> untyped
   def warn_runtime_pending: () -> untyped
 end
-
 # bc2cpp-native: base_rpgvx
 class RPGVX::RGSSData
   def system: () -> untyped
@@ -6251,23 +5687,18 @@ end
 # bc2cpp-native: base_rpgxp
 module Errno
 end
-
 # bc2cpp-native: base_rpgxp
 class Errno::EACCES < SystemCallError
 end
-
 # bc2cpp-native: base_rpgxp
 class Errno::EEXIST < SystemCallError
 end
-
 # bc2cpp-native: base_rpgxp
 class Errno::EINVAL < SystemCallError
 end
-
 # bc2cpp-native: base_rpgxp
 class Errno::EISDIR < SystemCallError
 end
-
 # bc2cpp-native: base_rpgxp
 class Errno::ENOENT < SystemCallError
   def initialize: (?untyped) -> untyped
@@ -6296,7 +5727,6 @@ end
 # bc2cpp-native: base_rpgxp
 module RPG
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Actor < RPG::BaseItem
   def id: () -> untyped
@@ -6344,7 +5774,6 @@ class RPG::Actor < RPG::BaseItem
   def armor4_fix: () -> untyped
   def armor4_fix=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Animation
   def id: () -> untyped
@@ -6364,7 +5793,6 @@ class RPG::Animation
   def timings: () -> untyped
   def timings=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Animation::Frame
   def cell_max: () -> untyped
@@ -6372,7 +5800,6 @@ class RPG::Animation::Frame
   def cell_data: () -> untyped
   def cell_data=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Animation::Timing
   def frame: () -> untyped
@@ -6388,7 +5815,6 @@ class RPG::Animation::Timing
   def condition: () -> untyped
   def condition=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Armor < RPG::EquipItem
   def id: () -> untyped
@@ -6424,7 +5850,6 @@ class RPG::Armor < RPG::EquipItem
   def guard_state_set: () -> untyped
   def guard_state_set=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::AudioFile
   def name: () -> untyped
@@ -6434,11 +5859,9 @@ class RPG::AudioFile
   def pitch: () -> untyped
   def pitch=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::BaseItem
 end
-
 # bc2cpp-native: base_rpgxp
 module RPG::Cache
   def self.animation: (untyped, untyped) -> untyped
@@ -6461,7 +5884,6 @@ module RPG::Cache
   def self.title: (untyped) -> untyped
   def self.windowskin: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Class < RPG::BaseItem
   def id: () -> untyped
@@ -6481,7 +5903,6 @@ class RPG::Class < RPG::BaseItem
   def learnings: () -> untyped
   def learnings=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Class::Learning
   def level: () -> untyped
@@ -6489,7 +5910,6 @@ class RPG::Class::Learning
   def skill_id: () -> untyped
   def skill_id=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::CommonEvent
   def id: () -> untyped
@@ -6503,7 +5923,6 @@ class RPG::CommonEvent
   def list: () -> untyped
   def list=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Enemy < RPG::BaseItem
   def id: () -> untyped
@@ -6557,7 +5976,6 @@ class RPG::Enemy < RPG::BaseItem
   def treasure_prob: () -> untyped
   def treasure_prob=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Enemy::Action
   def kind: () -> untyped
@@ -6579,11 +5997,9 @@ class RPG::Enemy::Action
   def rating: () -> untyped
   def rating=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::EquipItem < RPG::BaseItem
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Event
   def id: () -> untyped
@@ -6597,7 +6013,6 @@ class RPG::Event
   def pages: () -> untyped
   def pages=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Event::Page
   def condition: () -> untyped
@@ -6627,7 +6042,6 @@ class RPG::Event::Page
   def list: () -> untyped
   def list=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Event::Page::Condition
   def switch1_valid: () -> untyped
@@ -6649,7 +6063,6 @@ class RPG::Event::Page::Condition
   def self_switch_ch: () -> untyped
   def self_switch_ch=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Event::Page::Graphic
   def tile_id: () -> untyped
@@ -6667,7 +6080,6 @@ class RPG::Event::Page::Graphic
   def blend_type: () -> untyped
   def blend_type=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::EventCommand
   def code: () -> untyped
@@ -6678,7 +6090,6 @@ class RPG::EventCommand
   def parameters=: (untyped) -> untyped
   def initialize: (?untyped, ?untyped, ?untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Item < RPG::UsableItem
   def id: () -> untyped
@@ -6732,7 +6143,6 @@ class RPG::Item < RPG::UsableItem
   def minus_state_set: () -> untyped
   def minus_state_set=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Map
   def tileset_id: () -> untyped
@@ -6758,7 +6168,6 @@ class RPG::Map
   def events: () -> untyped
   def events=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::MapInfo
   def name: () -> untyped
@@ -6774,7 +6183,6 @@ class RPG::MapInfo
   def scroll_y: () -> untyped
   def scroll_y=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::MoveCommand
   def code: () -> untyped
@@ -6782,7 +6190,6 @@ class RPG::MoveCommand
   def parameters: () -> untyped
   def parameters=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::MoveRoute
   def repeat: () -> untyped
@@ -6792,7 +6199,6 @@ class RPG::MoveRoute
   def list: () -> untyped
   def list=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Skill < RPG::UsableItem
   def id: () -> untyped
@@ -6846,7 +6252,6 @@ class RPG::Skill < RPG::UsableItem
   def minus_state_set: () -> untyped
   def minus_state_set=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Sprite < RGSS::Sprite
   def _rgss_release: (untyped) -> untyped
@@ -6878,7 +6283,6 @@ class RPG::Sprite < RGSS::Sprite
   def x=: (untyped) -> untyped
   def y=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::State < RPG::BaseItem
   def id: () -> untyped
@@ -6938,7 +6342,6 @@ class RPG::State < RPG::BaseItem
   def minus_state_set: () -> untyped
   def minus_state_set=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::System
   def magic_number: () -> untyped
@@ -7012,7 +6415,6 @@ class RPG::System
   def edit_map_id: () -> untyped
   def edit_map_id=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::System::TestBattler
   def actor_id: () -> untyped
@@ -7030,7 +6432,6 @@ class RPG::System::TestBattler
   def armor4_id: () -> untyped
   def armor4_id=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::System::Words
   def gold: () -> untyped
@@ -7074,7 +6475,6 @@ class RPG::System::Words
   def equip: () -> untyped
   def equip=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Tileset
   def id: () -> untyped
@@ -7112,7 +6512,6 @@ class RPG::Tileset
   def terrain_tags: () -> untyped
   def terrain_tags=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Troop
   def id: () -> untyped
@@ -7124,7 +6523,6 @@ class RPG::Troop
   def pages: () -> untyped
   def pages=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Troop::Member
   def enemy_id: () -> untyped
@@ -7138,7 +6536,6 @@ class RPG::Troop::Member
   def immortal: () -> untyped
   def immortal=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Troop::Page
   def condition: () -> untyped
@@ -7148,7 +6545,6 @@ class RPG::Troop::Page
   def list: () -> untyped
   def list=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Troop::Page::Condition
   def turn_valid: () -> untyped
@@ -7174,11 +6570,9 @@ class RPG::Troop::Page::Condition
   def switch_id: () -> untyped
   def switch_id=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::UsableItem < RPG::BaseItem
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Weapon < RPG::EquipItem
   def id: () -> untyped
@@ -7216,7 +6610,6 @@ class RPG::Weapon < RPG::EquipItem
   def minus_state_set: () -> untyped
   def minus_state_set=: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPG::Weather
   def type: () -> untyped
@@ -7249,7 +6642,6 @@ class RPGXP
   def start: () -> untyped
   def trim: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPGXP::RGSSAD
   def version: () -> untyped
@@ -7274,7 +6666,6 @@ class RPGXP::RGSSAD
   def self.pack_v1: (untyped) -> untyped
   def self.pack_v3: (untyped, ?untyped) -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 class RPGXP::RGSSData
   def system: () -> untyped
@@ -7292,7 +6683,6 @@ class RPGXP::RGSSData
   def scripts: () -> untyped
   def scripts?: () -> untyped
 end
-
 # bc2cpp-native: base_rpgxp
 module RPGXP::ScriptHost
   def self.auto_new_game?: () -> untyped
@@ -7360,15 +6750,6 @@ class Win32API
   def initialize: (untyped, untyped, ?untyped, ?untyped) -> untyped
 end
 
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_sprintf
-class Kernel
-  def format: (*untyped) -> String?
-  def sprintf: (*untyped) -> String?
-  def self.format: (*untyped) -> String?
-  def self.sprintf: (*untyped) -> String?
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_stringio
 class StringIO
@@ -7426,60 +6807,6 @@ class StringIO
   def write: (untyped) -> Integer
 end
 
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_time
-class Time
-  def asctime: () -> String
-  def ctime: () -> String
-  def day: () -> Integer
-  def dst?: () -> bool
-  def eql?: (untyped) -> bool
-  def friday?: () -> bool
-  def getgm: () -> untyped
-  def getlocal: () -> untyped
-  def getutc: () -> untyped
-  def gmt?: () -> bool
-  def gmt_offset: () -> Integer
-  def gmtime: () -> self
-  def gmtoff: () -> Integer
-  def hash: () -> Integer
-  def hour: () -> Integer
-  def initialize: (?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> self
-  def initialize_copy: (untyped) -> untyped
-  def inspect: () -> String
-  def localtime: () -> self
-  def mday: () -> Integer
-  def min: () -> Integer
-  def mon: () -> Integer
-  def monday?: () -> bool
-  def month: () -> Integer
-  def nsec: () -> Integer
-  def saturday?: () -> bool
-  def sec: () -> Integer
-  def sunday?: () -> bool
-  def thursday?: () -> bool
-  def to_f: () -> Float
-  def to_i: () -> Integer
-  def to_s: () -> String
-  def tuesday?: () -> bool
-  def tv_nsec: () -> Integer
-  def usec: () -> Integer
-  def utc: () -> self
-  def utc?: () -> bool
-  def utc_offset: () -> Integer
-  def wday: () -> Integer
-  def wednesday?: () -> bool
-  def yday: () -> Integer
-  def year: () -> Integer
-  def zone: () -> String
-  def self.at: (untyped, ?untyped) -> untyped
-  def self.gm: (Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> untyped
-  def self.local: (Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> untyped
-  def self.mktime: (Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> untyped
-  def self.now: () -> untyped
-  def self.utc: (Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric, ?Numeric) -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_wolf
 module Wolf
@@ -7491,13 +6818,11 @@ module Wolf
   def self.unpack_body: (untyped, untyped) -> untyped
   def self.utf8: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 module Wolf::ChipLayout
   def self.autotile_quads: (untyped, untyped, ?untyped) -> untyped
   def self.base_rect: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Command
   def code: () -> untyped
@@ -7516,7 +6841,6 @@ class Wolf::Command
   def string: (untyped) -> untyped
   def self.read: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::CommonEvent
   def index: () -> untyped
@@ -7543,7 +6867,6 @@ class Wolf::CommonEvent
   def initialize: (untyped, untyped, untyped) -> untyped
   def parallel?: () -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::CommonEvents
   def utf8: () -> untyped
@@ -7556,14 +6879,12 @@ class Wolf::CommonEvents
   def size: () -> untyped
   def self.parse: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 module Wolf::Crypt
   def self.protected?: (untyped) -> untyped
   def self.refuse_protected!: (untyped, untyped) -> untyped
   def self.v2: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::DBDatum
   def index: () -> untyped
@@ -7576,7 +6897,6 @@ class Wolf::DBDatum
   def []=: (untyped, untyped) -> untyped
   def initialize: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::DBField
   def index: () -> untyped
@@ -7595,7 +6915,6 @@ class Wolf::DBField
   def number?: () -> untyped
   def string?: () -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::DBType
   def index: () -> untyped
@@ -7612,7 +6931,6 @@ class Wolf::DBType
   def set_value: (untyped, untyped, untyped) -> untyped
   def value: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::DataWolf
   def key_string: () -> untyped
@@ -7654,7 +6972,6 @@ class Wolf::DataWolf
   def self.xor32: (untyped, untyped) -> untyped
   def self.xor_cycle: (untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Database
   def utf8: () -> untyped
@@ -7667,11 +6984,9 @@ class Wolf::Database
   def type_named: (untyped) -> untyped
   def self.parse: (untyped, untyped, ?untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Error < StandardError
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Event
   def id: () -> untyped
@@ -7681,7 +6996,6 @@ class Wolf::Event
   def pages: () -> untyped
   def initialize: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::GameDat
   def utf8: () -> untyped
@@ -7712,7 +7026,6 @@ class Wolf::GameDat
   def u8_setting: (untyped) -> untyped
   def self.parse: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Interpreter
   def var_store: () -> untyped
@@ -7813,14 +7126,12 @@ class Wolf::Interpreter
   def with_common_event_context: (untyped) -> untyped
   def with_map_event_context: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Interpreter::Rng
   def initialize: (?untyped) -> untyped
   def next_int: () -> untyped
   def random: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Interpreter::Run
   def done: () -> untyped
@@ -7842,11 +7153,9 @@ class Wolf::Interpreter::Run
   def skip_to: (untyped) -> untyped
   def step: () -> untyped
 end
-
 # bc2cpp-native: base_wolf
 module Wolf::LZ4
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Map
   def utf8: () -> untyped
@@ -7867,7 +7176,6 @@ class Wolf::Map
   def self.autotile_slot: (untyped) -> untyped
   def self.parse: (untyped, ?untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::MapTree
   def version: () -> untyped
@@ -7877,7 +7185,6 @@ class Wolf::MapTree
   def map_ids: () -> untyped
   def self.parse: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Page
   def index: () -> untyped
@@ -7911,7 +7218,6 @@ class Wolf::Page
   def parallel?: () -> untyped
   def slip_through?: () -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Project
   def dir: () -> untyped
@@ -7931,7 +7237,6 @@ class Wolf::Project
   def user_db: () -> untyped
   def self.project?: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Reader
   def pos: () -> untyped
@@ -7958,7 +7263,6 @@ class Wolf::Reader
   def u8: () -> untyped
   def uint: () -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::RouteCommand
   def id: () -> untyped
@@ -7966,7 +7270,6 @@ class Wolf::RouteCommand
   def initialize: (untyped, untyped) -> untyped
   def self.read: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 module Wolf::SaveData
   def self.path_for: (untyped, untyped, untyped) -> untyped
@@ -7974,7 +7277,6 @@ module Wolf::SaveData
   def self.safe_name?: (untyped) -> untyped
   def self.write: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::TileFlags
   def raw: () -> untyped
@@ -7992,7 +7294,6 @@ class Wolf::TileFlags
   def match_below?: () -> untyped
   def passable?: () -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::TileSetData
   def utf8: () -> untyped
@@ -8003,7 +7304,6 @@ class Wolf::TileSetData
   def size: () -> untyped
   def self.parse: (untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::Tileset
   def index: () -> untyped
@@ -8016,14 +7316,12 @@ class Wolf::Tileset
   def flags_for: (untyped) -> untyped
   def initialize: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 module Wolf::ValueRef
   def self.common_event_self_string?: (untyped) -> untyped
   def self.decode: (untyped) -> untyped
   def self.decode_db: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::VarStore
   def current_map_event_id: () -> untyped
@@ -8058,7 +7356,6 @@ class Wolf::VarStore
   def string_ref?: (untyped) -> untyped
   def warn_once: (untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class Wolf::VarStore::UnsupportedRef < StandardError
 end
@@ -8073,7 +7370,6 @@ class WolfRPG
   def start: () -> untyped
   def teleport_to: (untyped, untyped, untyped) -> untyped
 end
-
 # bc2cpp-native: base_wolf
 class WolfRPG::MapScene
   def x: () -> untyped
@@ -8166,91 +7462,6 @@ class String
   def slice!: (*untyped) -> untyped
 end
 
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_mruby-core
-class ArgumentError < StandardError
-end
-
-# bc2cpp-native: base_mruby-core
-class Exception
-  def backtrace: (*untyped) -> untyped
-  def exception: (?untyped) -> untyped
-  def initialize: (?untyped) -> untyped
-  def inspect: () -> untyped
-  def message: () -> untyped
-  def set_backtrace: (untyped) -> untyped
-  def to_s: () -> untyped
-  def self.exception: (*untyped) -> untyped
-end
-
-# bc2cpp-native: base_mruby-core
-class FloatDomainError < RangeError
-end
-
-# bc2cpp-native: base_mruby-core
-class FrozenError < RuntimeError
-end
-
-# bc2cpp-native: base_mruby-core
-class IndexError < StandardError
-end
-
-# bc2cpp-native: base_mruby-core
-class KeyError < IndexError
-end
-
-# bc2cpp-native: base_mruby-core
-class LocalJumpError < StandardError
-end
-
-# bc2cpp-native: base_mruby-core
-class NoMatchingPatternError < StandardError
-end
-
-# bc2cpp-native: base_mruby-core
-class NoMemoryError < Exception
-end
-
-# bc2cpp-native: base_mruby-core
-class NotImplementedError < ScriptError
-end
-
-# bc2cpp-native: base_mruby-core
-class RangeError < StandardError
-end
-
-# bc2cpp-native: base_mruby-core
-class RegexpError < StandardError
-end
-
-# bc2cpp-native: base_mruby-core
-class RuntimeError < StandardError
-end
-
-# bc2cpp-native: base_mruby-core
-class ScriptError < Exception
-end
-
-# bc2cpp-native: base_mruby-core
-class StandardError < Exception
-end
-
-# bc2cpp-native: base_mruby-core
-class SyntaxError < ScriptError
-end
-
-# bc2cpp-native: base_mruby-core
-class SystemStackError < Exception
-end
-
-# bc2cpp-native: base_mruby-core
-class TypeError < StandardError
-end
-
-# bc2cpp-native: base_mruby-core
-class ZeroDivisionError < StandardError
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 class NameError < StandardError
 end
@@ -8264,28 +7475,8 @@ class StopIteration < IndexError
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_symbol
-class Symbol
-  def capitalize: () -> untyped
-  def casecmp: (untyped) -> untyped
-  def casecmp?: (untyped) -> untyped
-  def downcase: () -> untyped
-  def empty?: () -> untyped
-  def upcase: () -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_compar
-module Comparable
-  def clamp: (untyped, ?untyped) -> untyped
-end
-
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_sprintf
-class String
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_rgss
 class RGSS::HashArchive
@@ -8382,125 +7573,10 @@ class Game::MoveRoute
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_hash
-class Hash
-  def <: (untyped) -> untyped
-  def <=: (untyped) -> untyped
-  def >: (untyped) -> untyped
-  def >=: (untyped) -> untyped
-  def compact: () -> untyped
-  def compact!: () -> untyped
-  def delete_if: () -> untyped
-  def dig: (untyped, *untyped) -> untyped
-  def fetch: (untyped, ?untyped) -> untyped
-  def fetch_values: (*untyped) -> untyped
-  def flatten: (?untyped) -> untyped
-  def invert: () -> untyped
-  def keep_if: () -> untyped
-  def merge!: (*untyped) -> untyped
-  def to_h: () -> untyped
-  def transform_keys: () -> untyped
-  def transform_keys!: () -> untyped
-  def transform_values: () -> untyped
-  def transform_values!: () -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_io
-class File < IO
-  def path: () -> untyped
-  def path=: (untyped) -> untyped
-  def atime: () -> untyped
-  def ctime: () -> untyped
-  def inspect: () -> untyped
-  def mtime: () -> untyped
-  def self.foreach: (untyped) -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_enumerator
-module Enumerable
-  def chunk: () -> untyped
-  def chunk_while: () -> untyped
-  def zip: (*untyped) -> untyped
-end
-# bc2cpp-native: base_enumerator
-class Enumerator
-  def __enumerator_block_call: () -> untyped
-  def each: (*untyped) -> untyped
-  def each_with_index: () -> untyped
-  def feed: (untyped) -> untyped
-  def initialize: (?untyped, ?untyped, *untyped, **untyped) -> untyped
-  def initialize_copy: (untyped) -> untyped
-  def inspect: () -> untyped
-  def next: () -> untyped
-  def next_values: () -> untyped
-  def peek: () -> untyped
-  def peek_values: () -> untyped
-  def rewind: () -> untyped
-  def size: () -> untyped
-  def with_index: (?untyped) -> untyped
-  def with_object: (untyped) -> untyped
-  def self.produce: (?untyped) -> untyped
-end
-# bc2cpp-native: base_enumerator
-class Enumerator::Generator
-  def each: (*untyped) -> untyped
-  def initialize: () -> untyped
-end
-# bc2cpp-native: base_enumerator
-class Enumerator::Yielder
-  def <<: (*untyped) -> untyped
-  def initialize: () -> untyped
-  def yield: (*untyped) -> untyped
-end
-# bc2cpp-native: base_enumerator
-module Kernel
-  def to_enum: (?untyped, *untyped, **untyped) -> untyped
-end
-
-# Native base RBS (scripts/bc2cpp/base_rbs_native.rb): mrb_define_* registrations, arity untyped.
-# bc2cpp-native: base_kernel-ext
-class Kernel
-  def Array: (untyped) -> untyped
-  def Float: (untyped) -> untyped
-  def Hash: (untyped) -> untyped
-  def Integer: (untyped, ?Numeric) -> untyped
-  def String: (untyped) -> untyped
-  def __callee__: () -> Symbol?
-  def __dir__: () -> String?
-  def __method__: () -> Symbol?
-  def caller: (?untyped, ?Numeric) -> Array?
-  def fail: (*untyped) -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_string-ext
-class String
-  def __upto_endless: () -> untyped
-  def chars: () -> untyped
-  def codepoints: () -> untyped
-  def each_char: () -> untyped
-  def lines: () -> untyped
-  def upto: (untyped, ?untyped) -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_io
-class IO
-  def each: () -> untyped
-  def each_byte: () -> untyped
-  def each_char: () -> untyped
-  def hash: () -> untyped
-  def pos=: (untyped) -> untyped
-  def printf: (*untyped) -> untyped
-  def rewind: () -> untyped
-  def self.open: (*untyped) -> IO | (*untyped) { (IO | File) -> untyped } -> untyped
-  def self.pipe: () -> untyped
-  def self.popen: (untyped, ?untyped, **untyped) -> untyped
-  def self.read: (untyped, ?untyped, ?untyped, ?mode: untyped) -> untyped
-end
-
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_onig-regexp
 class OnigRegexp
@@ -8517,11 +7593,6 @@ class OnigRegexp
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
-# bc2cpp-native: base_exit
-class SystemExit
-  def status: () -> untyped
-end
-
 # ---- block_types.rbs
 # Block parameter types of engine methods that yield (RBS_BLOCK_PARAM_HINT, read by
 # CodeGen#block_fallback_rbs_param_class). Each is declared only where the yielded values are certain
