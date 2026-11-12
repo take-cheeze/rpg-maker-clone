@@ -1123,13 +1123,15 @@ end
 # every native source under src/, app/, include/, the engine gems and 3rd/mruby, and the closed build's generated
 # code. A build may take it only when everything it can run is inside that world, so:
 #   - closed, and the interpreted psp and maix builds: single format (no game Ruby, no other maker gem), the same
-#     engine mrblib less some files (psp's debug tools), and native sources the proof already reads;
+#     engine mrblib less some files (psp's debug tools), and native sources the proof already reads. An interpreted
+#     build (interpreted: true) takes core_excluded only: engine_rom and core_rows count an engine send the closed
+#     build compiles to a direct call as no lookup, but the interpreter looks it up by name (RGSS.window_title=);
 #   - not psp/maix with RPGMAKER_BC2CPP=1: their generated code is not the closed build's, and a by-name fallback it
 #     emits may name a core method the closed generation never did;
 #   - not wio (nor m5stack, which links the wio libmruby): its mrblib is rewritten (wio_strip_*) and swaps in a
 #     generated schema_blob.rb, neither of which the proof reads;
 #   - not desktop, wasm or android: they run a game's own Ruby (RGSS scripts, eval), which may name anything.
-def bc2cpp_core_mt_exclude(conf, verify: true)
+def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false)
   require File.join(BC2CPP_TREE, 'tools/bc2cpp/core_native_candidates')
   require File.join(BC2CPP_TREE, 'tools/bc2cpp/static_dispatch_lists')
   lists = StaticDispatchLists.current(required: true)
@@ -1146,7 +1148,8 @@ def bc2cpp_core_mt_exclude(conf, verify: true)
   # CORE_ROWS: the core entries only proven-receiver calls look up stay as rows (StaticDispatchLists#core_rows).
   text = CoreNativeCandidates.header(lists.core_excluded.to_a,
                                      CoreNativeCandidates.entries(sources.sort, operator_names: true),
-                                     lists.engine_rom.to_a, engine, rows: lists.core_rows.to_a)
+                                     interpreted ? [] : lists.engine_rom.to_a, engine,
+                                     rows: interpreted ? [] : lists.core_rows.to_a)
   path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, text) unless File.exist?(path) && File.read(path) == text
@@ -1294,7 +1297,7 @@ if maix
     conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
     # The firmware link's --gc-sections (above) then drops a left-out entry's C function too.
-    bc2cpp_core_mt_exclude(conf, verify: false) unless ENV['RPGMAKER_BC2CPP']
+    bc2cpp_core_mt_exclude(conf, verify: false, interpreted: true) unless ENV['RPGMAKER_BC2CPP']
     rpg_maker_gems(conf)
   end
 end
@@ -1432,7 +1435,7 @@ if psp
     conf.linker.flags += cpu_flags
 
     # Only the table rows go: app/psp links without --gc-sections, so a left-out entry's C function stays.
-    bc2cpp_core_mt_exclude(conf, verify: false) unless ENV['RPGMAKER_BC2CPP']
+    bc2cpp_core_mt_exclude(conf, verify: false, interpreted: true) unless ENV['RPGMAKER_BC2CPP']
     rpg_maker_gems(conf, include_mvjs: false)
   end
 end
