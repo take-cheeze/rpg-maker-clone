@@ -304,6 +304,16 @@ A core ROM entry whose name the engine reaches only through owner calls and nati
 
 That run reads the engine's dynamic names of its own giving only: a name that only core Ruby, a native under `3rd/` or a generated-code literal makes dynamic is no engine lookup there, because the core run reads those sources itself by the core proof's rules. 11 more core entries become rows (`Array#last`, `Range#last`, `#to_f` and `#ceil` of the numeric classes, `String#upcase`, ...): the closed host table goes from 684 to **674 entries**.
 
+The rows run reads mruby's own Ruby as the closed build runs it: the core gem's generated code is one of its sources, and a core method body that code compiles no longer counts every symbol of its bytecode (nfcxx `CORE_ROWS_COMPILED`). The probe's annotation comments (`// POLY_DIAG ... name="x"`) no longer count as literals either. Core rows go from 49 to 80, and the closed host table from 671 to **642** entries. `scripts/bc2cpp/core_rows_compiled_check.rb` holds the rule.
+
 ## Settled core aliases
 
 A core class-body `alias new old` or `alias_method :new, :old` whose source is the owner's one core Ruby definition is registered under `new` from that definition (CORE_ALIASES), so the receiver-blind core scan no longer counts its source as a lookup (nfcxx `SETTLED_ALIASES`). The closed host table loses 14 entries (741 to **727**, measured before `SUPER_DIRECT`) (`Enumerable#inject`, `#entries`, `Integer#next`, `String#next`, `#next!`, `#codepoints`, `#__codepoints`, `Hash#merge!`, `Array#entries`, `Range#entries`, `Enumerator#next`, `#next_values`, `StringIO#eof`, `#tty?`). The plain and `BC2CPP_UNREGISTERED_VERIFY=1 METHOD_TABLE=skip` host sweeps pass all 543 maps and the scripted scenarios. `scripts/bc2cpp/core_kept_report.rb --runtime` prints why each core run-time registration still kept stays.
+
+## Undefined markers
+
+The closed build removes a core undefined marker after init when nothing but undef calls looks its name up (nfcxx
+`UNDEF_LEFT_OUT`, `core_undef_left_out` in the static dispatch lists). The inherited method then shows on that class,
+which nothing can observe: no lookup, listing or computed name reaches it. `Class#module_function` goes (671 to
+**670** entries). The six singleton `new` markers stay: `mrb_make_exception` sends `new` to whatever class is raised.
+Interpreted psp and maix builds keep every marker.
