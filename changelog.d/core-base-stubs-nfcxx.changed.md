@@ -1,0 +1,1 @@
+- bc2cpp: the base stubs of mruby's own core gems are in nfcxx (`bc2cpp/sig/base_core.rbs`) instead of `sig/bc2cpp/declarations.rbs`. The compiler reads both; the declarations it loads are unchanged.
