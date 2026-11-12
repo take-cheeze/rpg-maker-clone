@@ -2373,11 +2373,12 @@ jobs:
 
       # Android has no system SDL2, so it builds the vendored 3rd/SDL and
       # 3rd/SDL_mixer, plus every submodule the desktop build needs, nested ones too.
-      # 3rd/nfcxx is bc2cpp's (and its own submodules are its compiler's), which this build does not use.
+      # 3rd/nfcxx is not built here, but build_config.rb's host mruby build loads its bc2cpp/host-libs gems
+      # (mruby-require, mruby-rbs), so it must be checked out. Its own submodules (the compiler's) stay out,
+      # as checkout-submodules.bash does for RECURSIVE=1.
       - name: Init submodules
         env:
           RECURSIVE: 1
-          SKIP_SUBMODULES: 3rd/nfcxx
         run: ./scripts/checkout-submodules.bash
 
       - name: Copy vendored Unicode mapping tables
