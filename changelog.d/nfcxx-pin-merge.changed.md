@@ -1,0 +1,1 @@
+- The `3rd/nfcxx` submodule now points at the operator-rows merge commit on nfcxx `main` instead of the pull-request branch commit.
