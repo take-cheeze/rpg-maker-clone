@@ -1413,6 +1413,12 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/undef_left_out_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/owner_call_icache_check.rb:
     tier: runtime
     capabilities:
