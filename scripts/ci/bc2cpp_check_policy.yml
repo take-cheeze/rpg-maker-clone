@@ -506,6 +506,10 @@ checks:
     tier: fast
     capabilities: []
     fixture_capabilities: []
+  scripts/bc2cpp/core_rows_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
   scripts/bc2cpp/initializer_sites_check.rb:
     tier: fast
     capabilities: []
