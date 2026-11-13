@@ -1149,7 +1149,8 @@ def bc2cpp_core_mt_exclude(conf, verify: true, interpreted: false)
   text = CoreNativeCandidates.header(lists.core_excluded.to_a,
                                      CoreNativeCandidates.entries(sources.sort, operator_names: true),
                                      interpreted ? [] : lists.engine_rom.to_a, engine,
-                                     rows: interpreted ? [] : lists.core_rows.to_a)
+                                     rows: interpreted ? [] : lists.core_rows.to_a,
+                                     engine_rows: interpreted ? [] : lists.engine_rows.to_a)
   path = File.join(conf.build_dir, 'include', 'bc2cpp_mt_exclude.h')
   FileUtils.mkdir_p(File.dirname(path))
   File.write(path, text) unless File.exist?(path) && File.read(path) == text
