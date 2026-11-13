@@ -7646,15 +7646,15 @@ module Game
     def permanent_states: () -> Array
     def defensive_attribute_ids: () -> Array
     def weapon_attributes: () -> Array
-    def slot_cursed?: (Integer) -> untyped
+    def slot_cursed?: (Integer) -> (false | true)
     def exp_for_level: (Integer) -> untyped
     def gain_exp: (Integer) -> untyped
     def change_level_by: (Integer) -> untyped
     def weapon_crit_chance: (Integer) -> untyped
     def change_mp: (Integer) -> untyped
     def change_param: (Integer, Integer) -> untyped
-    def base_param_limit: (Integer) -> untyped
-    def change_class: (Integer, untyped, untyped, untyped) -> untyped
+    def base_param_limit: (Integer) -> (999 | 9999)
+    def change_class: (Integer, untyped, untyped, untyped) -> (false | true)
     def change_battle_commands: (untyped, Integer) -> untyped
     def battle_row=: (Integer) -> untyped
     # Runtime-checked: the `list.dup` arm is an Array only under its
@@ -7664,11 +7664,11 @@ module Game
     def set_class_id: (Integer) -> untyped
   end
   class Actors
-    def known_invalid?: (Integer) -> untyped
+    def known_invalid?: (Integer) -> (false | true)
   end
   class Map
     def in_bounds?: (Integer, Integer) -> bool
-    def substitute_tile: (Integer, untyped, untyped) -> untyped
+    def substitute_tile: (Integer, untyped, untyped) -> Integer
     def set_tile: (untyped, Integer, Integer, untyped) -> untyped
     def tile: (untyped, untyped, Integer, Integer) -> untyped
   end
@@ -7681,7 +7681,7 @@ module Game
   class Screen
     def restore_tint: (untyped, untyped, Integer) -> untyped
     def flash: (Integer, Integer, Integer, Integer, Integer) -> untyped
-    def pan: (Integer, Integer, Integer) -> untyped
+    def pan: (Integer, Integer, Integer) -> Float
     def approach: (untyped, Integer, untyped) -> untyped
   end
   class Timer
@@ -8160,7 +8160,7 @@ class Game::Interpreter
   def block_pending_screen_command: () -> untyped
   def block_pending_teleport_command: () -> untyped
   def check_game_over: () -> untyped
-  def choose: (untyped) -> untyped
+  def choose: (untyped) -> false
   %a{bc2cpp:hint}
   def consume: () -> Integer
   def do_change_actor_sprite: (untyped) -> untyped
@@ -8178,7 +8178,7 @@ class Game::Interpreter
   def resolve_call: (untyped) -> Array
   def resumable_index: () -> untyped
   def resume: () -> untyped
-  def return_from_call: () -> untyped
+  def return_from_call: () -> (false | true)
   def show_next_pending_message: () -> untyped
   %a{bc2cpp:hint}
   def switches: () -> Game::Switches
@@ -8229,9 +8229,9 @@ class Game::Transition
   def advance: () -> (Integer | nil)
   %a{bc2cpp:hint}
   def black_alpha: () -> Integer
-  def captured?: () -> untyped
-  def done?: () -> untyped
-  def random_blocks?: () -> untyped
+  def captured?: () -> (false | true)
+  def done?: () -> (false | true)
+  def random_blocks?: () -> (false | true)
   def uniform?: () -> untyped
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def mosaic?: () -> bool
@@ -8474,7 +8474,7 @@ class RPG2k::Scene::Map
   def map_properties: () -> LCF::Array2D
   %a{bc2cpp:hint}
   def message_line_offset: (untyped) -> Integer
-  def message_window_open?: () -> untyped
+  def message_window_open?: () -> (false | true)
   %a{bc2cpp:hint}
   def message_window_y: (untyped, Game::MessageConfig) -> Integer
   %a{bc2cpp:hint}
@@ -8670,7 +8670,7 @@ class RPG2k
       def move_battle_target_cursor: (untyped, Integer) -> untyped
       def move_battle_list_index: (Integer, Integer, Integer) -> untyped
       def battle_skill_unavailable?: (Integer, untyped) -> untyped
-      def enter_battle_result: (Symbol) -> untyped
+      def enter_battle_result: (Symbol) -> :result
       def finish_battle: (Symbol) -> untyped
       def battle_result_lines: (Symbol, untyped) -> untyped
       def battle_level_up_lines: (untyped, Integer, untyped) -> untyped
@@ -8715,7 +8715,7 @@ end
 # Hints moved from `# bc2cpp:` comments (same effect as the comments; see the PR body).
 class Game::Actor
   def initialize: (LCF::Database, Integer) -> untyped
-  def set_charset: (String, Integer) -> untyped
+  def set_charset: (String, Integer) -> true
   def set_level: (Integer, ?preserve_mod: untyped) -> untyped
   def add_state: (Integer, ?allow_battle_states: untyped) -> untyped
   def equip_item: (Integer, ?untyped) -> untyped
@@ -8734,14 +8734,14 @@ class Game::Actor
   def display_max_hp: () -> Integer
   %a{bc2cpp:hint}
   def display_max_mp: () -> Integer
-  def double_hand?: () -> untyped
+  def double_hand?: () -> (false | true)
   def equip: (untyped) -> untyped
   %a{bc2cpp:hint}
   def equip_bonus: (untyped) -> Integer
   def equipment_fixed?: () -> untyped
   %a{bc2cpp:hint}
   def exp_max: () -> Integer
-  def force_ai?: () -> untyped
+  def force_ai?: () -> (false | true)
   %a{bc2cpp:hint}
   def learn_level_skills: () -> Array
   %a{bc2cpp:hint}
@@ -8751,7 +8751,7 @@ class Game::Actor
   def recompute_stats: () -> untyped
   def sprite_changed?: () -> untyped
   def state_cursed?: () -> untyped
-  def strong_defence?: () -> untyped
+  def strong_defence?: () -> (false | true)
   def title_changed?: () -> untyped
   %a{bc2cpp:hint}
   def base_param_limit: (untyped) -> Integer
@@ -8874,13 +8874,13 @@ class Game::Party
   def field_skills: (untyped) -> Array
   %a{bc2cpp:hint}
   def gain_item: (untyped) -> Integer
-  def include_actor?: (untyped) -> untyped
+  def include_actor?: (untyped) -> (false | true)
   %a{bc2cpp:hint}
   def load_state: (untyped) -> Array
   %a{bc2cpp:hint}
   def modified_stat: (untyped, untyped, untyped) -> Integer
   def remove_actor: (untyped) -> untyped
-  def stat_mode: (untyped, untyped) -> untyped
+  def stat_mode: (untyped, untyped) -> (:double | :half | :normal)
   def take_leader_graphic_dirty: () -> untyped
   %a{bc2cpp:hint}
   def all_dead?: () -> bool
@@ -8944,7 +8944,7 @@ class Game::State
   def timer2_seconds: () -> Integer
   %a{bc2cpp:hint}
   def bgm_chunk: (untyped) -> LCF::Array1D
-  def clear_parallax: () -> untyped
+  def clear_parallax: () -> nil
   def erase_all_pictures: () -> untyped
   %a{bc2cpp:hint}
   def seed_screen_transitions: (LCF::Database) -> Array
@@ -9391,8 +9391,8 @@ class Game::Screen
   def fading?: () -> untyped
   def flashing?: () -> untyped
   def load_h: (untyped) -> untyped
-  def pan_clear: () -> untyped
-  def pan_locked?: () -> untyped
+  def pan_clear: () -> false
+  def pan_locked?: () -> (false | true)
   %a{bc2cpp:hint}
   def pan_save_data: () -> Array
   def panning?: () -> untyped
@@ -9402,7 +9402,7 @@ class Game::Screen
   %a{bc2cpp:hint}
   def tint_save_data: () -> Array
   def tinting?: () -> untyped
-  def update: () -> untyped
+  def update: () -> nil
   def update_flash: () -> untyped
   %a{bc2cpp:hint}
   def fade_to: (untyped, untyped, untyped, untyped) -> (Game::Transition | nil)
@@ -9435,14 +9435,14 @@ end
 class Game::Character
   %a{bc2cpp:hint}
   def face: (untyped) -> Integer
-  def move: (untyped) -> untyped
+  def move: (untyped) -> false
   %a{bc2cpp:hint}
   def set_graphic: (untyped, untyped) -> Integer
 end
 
 class Game::MessageConfig
-  def clear_face: () -> untyped
-  def face?: () -> untyped
+  def clear_face: () -> false
+  def face?: () -> (false | true)
 end
 
 class Game::MoveRoute
@@ -9454,7 +9454,7 @@ class Game::MoveRoute
   %a{bc2cpp:hint}
   def execute: (untyped, untyped, untyped) -> Array
   def initialize: (untyped) -> untyped
-  def step: (untyped, untyped) -> untyped
+  def step: (untyped, untyped) -> (:blocked | :done | :effect | :moved | :touched_hero | :turned | :waited)
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def self.same_route?: (untyped, untyped) -> bool
 end
@@ -9468,7 +9468,7 @@ end
 
 class Game::Switches
   def clear_dirty: () -> untyped
-  def replace: (untyped) -> untyped
+  def replace: (untyped) -> nil
   %a{bc2cpp:hint}
   def to_h: () -> Hash
 end
@@ -9496,7 +9496,7 @@ end
 
 class Game::Variables
   def clear_dirty: () -> untyped
-  def replace: (untyped) -> untyped
+  def replace: (untyped) -> nil
   %a{bc2cpp:hint}
   def to_h: () -> Hash
 end
@@ -9609,7 +9609,7 @@ class RGSS::Bitmap
 end
 
 class RPG2k
-  def any_save_exists?: () -> untyped
+  def any_save_exists?: () -> (false | true)
   def battle_play_requested?: () -> untyped
   %a{bc2cpp:hint}
   def boot_title_or_new_game: () -> Array
@@ -9619,10 +9619,10 @@ class RPG2k
   def initialize: (untyped) -> untyped
   %a{bc2cpp:hint}
   def load_map: (untyped) -> Game::Map
-  def lsd_path: () -> untyped
+  def lsd_path: () -> String
   def main_loop: () -> untyped
   def map_editor?: () -> untyped
-  def map_path: (untyped) -> untyped
+  def map_path: (untyped) -> String
   def maybe_battle_play_test: () -> untyped
   def pop: () -> untyped
   def preview_animation_id: () -> untyped
@@ -9630,9 +9630,9 @@ class RPG2k
   %a{bc2cpp:hint}
   def push_title_screen: () -> Array
   def read_ini_title: () -> untyped
-  def save_exists?: () -> untyped
-  def save_game: (untyped) -> untyped
-  def show_title?: () -> untyped
+  def save_exists?: () -> (false | true)
+  def save_game: (untyped) -> (false | true)
+  def show_title?: () -> (false | true)
   def start_new_game: () -> untyped
   def trim_ini_value: (untyped) -> untyped
 end
@@ -9645,7 +9645,7 @@ class RPG2k::Scene::Map::LRUBitmapCache
   %a{bc2cpp:hint}
   def bitmap_bytes: (untyped) -> Integer
   def evict_lru_until_within_budget: () -> untyped
-  def key?: (untyped) -> untyped
+  def key?: (untyped) -> (false | true)
 end
 
 class RPG2k::Window
