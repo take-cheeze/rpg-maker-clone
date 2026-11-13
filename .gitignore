@@ -123,3 +123,7 @@ host-libs/mruby-bc2cpp-runner/build_config.rb.lock
 # tools/bc2cpp/compiled_gem_sources.rb at configure time. Generated, so not tracked.
 /mruby-*-compiled/
 /mruby-fiber-placeholder/
+
+# pio-lock's build snapshot (written by its build hook on every PlatformIO build).
+# Machine-local, not part of the lock.
+/build_snapshot.json
