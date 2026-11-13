@@ -43,7 +43,7 @@ class LCF::EventCommand
   def code: () -> Integer
   def indent: () -> Integer
   def string: () -> String
-  def parameters: () -> Array
+  def parameters: () -> Array[Integer]
   def initialize: (untyped, untyped, untyped, untyped) -> untyped
   def param: (untyped) -> untyped
 end
