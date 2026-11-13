@@ -1873,3 +1873,9 @@ checks:
   scripts/bc2cpp/type_check_provenance_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/declared_callsite_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
