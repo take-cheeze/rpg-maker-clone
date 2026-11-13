@@ -7634,12 +7634,12 @@ module Game
   end
   class Actor
     def learn_table: () -> Array
-    def knows_skill?: (Integer) -> untyped
+    def knows_skill?: (Integer) -> bool
     def learn_skill: (Integer) -> untyped
-    def state?: (untyped) -> untyped
+    def state?: (untyped) -> bool
     def equipped?: (Integer) -> untyped
     def free_two_handed_slot: (Integer) -> untyped
-    def two_handed?: (Integer) -> untyped
+    def two_handed?: (Integer) -> bool
     def unequip: (Integer) -> untyped
     def base_stats: (Integer) -> Array
     def cursed_armor_state_ids: (Integer) -> Array
@@ -7650,8 +7650,8 @@ module Game
     def exp_for_level: (Integer) -> untyped
     def gain_exp: (Integer) -> untyped
     def change_level_by: (Integer) -> untyped
-    def weapon_crit_chance: (Integer) -> untyped
-    def change_mp: (Integer) -> untyped
+    def weapon_crit_chance: (Integer) -> Integer
+    def change_mp: (Integer) -> Integer
     def change_param: (Integer, Integer) -> untyped
     def base_param_limit: (Integer) -> untyped
     def change_class: (Integer, untyped, untyped, untyped) -> untyped
@@ -7664,7 +7664,7 @@ module Game
     def set_class_id: (Integer) -> untyped
   end
   class Actors
-    def known_invalid?: (Integer) -> untyped
+    def known_invalid?: (Integer) -> bool
   end
   class Map
     def in_bounds?: (Integer, Integer) -> bool
@@ -7675,8 +7675,8 @@ module Game
   class Transition
     def initialize: (Integer, Integer, Integer, Integer, untyped) -> untyped
     def half: (Integer) -> untyped
-    def block_count_through: (Integer) -> untyped
-    def block_shuffle_rank: (Integer, Integer) -> untyped
+    def block_count_through: (Integer) -> Integer
+    def block_shuffle_rank: (Integer, Integer) -> Integer
   end
   class Screen
     def restore_tint: (untyped, untyped, Integer) -> untyped
@@ -7718,7 +7718,7 @@ module Game
     def queue_level_up_messages: (untyped, Integer, Integer, untyped) -> untyped
     def simulated_attack_variance: (untyped, Integer) -> untyped
     def compare: (untyped, untyped, untyped) -> untyped
-    def teleport_facing: (Integer) -> untyped
+    def teleport_facing: (Integer) -> Integer
   end
 # ---- nilable_ivars.rbs
 # Ivars that #initialize stores from a parameter. The parameter types used to be the hints; they are now
@@ -7755,7 +7755,7 @@ module Game
     # The one construction site (Scene::Map#open_shop) passes `@state.party`, Game::State's attr_reader.
     @party: Game::Party?
     # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
-    def sellable?: (untyped) -> bool
+    def sellable?: (Integer) -> bool
   end
   class State
     # One writer (#initialize). Constructed by RPG2k#start_new_game with `Game::Party.new(@db)` and by
@@ -7930,7 +7930,7 @@ module Game
     def do_tint_screen: (LCF::EventCommand cmd) -> (TrueClass | nil)
     def picture_coord: (LCF::EventCommand cmd, untyped idx) -> untyped
     def do_show_choices: (LCF::EventCommand cmd) -> TrueClass
-    def trans_to_opacity: (Integer top_trans) -> untyped
+    def trans_to_opacity: (Integer top_trans) -> Integer
     def do_wait: (LCF::EventCommand cmd) -> TrueClass
     def do_change_face: (LCF::EventCommand cmd) -> (bool | nil)
     def picture_name: (LCF::EventCommand cmd) -> String
@@ -8751,7 +8751,7 @@ class Game::Actor
   def recompute_stats: () -> untyped
   def sprite_changed?: () -> untyped
   def state_cursed?: () -> untyped
-  def strong_defence?: () -> untyped
+  def strong_defence?: () -> bool
   def title_changed?: () -> untyped
   %a{bc2cpp:hint}
   def base_param_limit: (untyped) -> Integer
