@@ -8154,7 +8154,7 @@ class Game::Interpreter
 # Parameters stay untyped (a parameter type would make every caller owe a proof, TC1013).
   def take_battle_animation_request: () -> nil
   def take_movie_request: () -> nil
-  def take_tileset_request: () -> nil
+  def take_tileset_request: () -> Integer?
   def update: () -> nil
   def actor_condition: (untyped) -> bool
   def block_pending_screen_command: () -> untyped
@@ -8198,20 +8198,14 @@ class Game::Interpreter
   def do_conditional: (untyped) -> (Integer | nil)
   %a{bc2cpp:hint}
   def do_fadeout_bgm: (untyped) -> nil
-  %a{bc2cpp:hint}
   def do_proceed_with_movement: (untyped) -> bool
-  %a{bc2cpp:hint}
   def do_show_choices: (untyped) -> bool
-  %a{bc2cpp:hint}
   def do_show_message: (untyped) -> bool
-  %a{bc2cpp:hint}
   def do_wait: (untyped) -> bool
-  %a{bc2cpp:hint}
   def execute: (untyped) -> (Array | Integer | bool | nil)
   %a{bc2cpp:hint}
   def play_audio: (untyped, untyped) -> nil
   # An op outside 0..2 falls out of the `case` with nil.
-  %a{bc2cpp:hint}
   def set_switch: (untyped, untyped) -> (bool | nil)
   %a{bc2cpp:hint}
   def trunc_div: (untyped, untyped) -> Integer
@@ -8313,7 +8307,6 @@ class RPG2k::Scene::ItemMenu
   def item_col_w: () -> Integer
   %a{bc2cpp:hint}
   def items: () -> Array
-  %a{bc2cpp:hint}
   def refresh_arrows: () -> (bool | nil)
   def refresh_desc: () -> untyped
   def tick_arrows: () -> untyped
@@ -8566,13 +8559,9 @@ class RPG2k::Scene::Map
   def draw_event: (untyped, untyped, untyped) -> (RGSS::Bitmap | nil)
   %a{bc2cpp:hint}
   def draw_tile: (untyped, untyped, untyped, untyped, untyped, untyped) -> (RGSS::Bitmap | nil)
-  %a{bc2cpp:hint}
   def drive_message: () -> (bool | nil)
-  %a{bc2cpp:hint}
   def drive_text_message: () -> (bool | nil)
-  %a{bc2cpp:hint}
   def drive_wait: () -> (Integer | bool)
-  %a{bc2cpp:hint}
   def event_busy?: () -> (RPG2k::Scene::Map::MessageState | bool)
   %a{bc2cpp:hint}
   def load_charset: () -> (RGSS::Bitmap | nil)
@@ -8642,7 +8631,6 @@ class RPG2k::Scene::SkillMenu
   def update_skills: () -> untyped
   %a{bc2cpp:hint}
   def left_panel_w: () -> Integer
-  %a{bc2cpp:hint}
   def refresh_arrows: () -> (bool | nil)
 end
 
@@ -8755,13 +8743,10 @@ class Game::Actor
   def title_changed?: () -> untyped
   %a{bc2cpp:hint}
   def base_param_limit: (untyped) -> Integer
-  %a{bc2cpp:hint}
   def battle_commands_changed?: () -> bool
   %a{bc2cpp:hint}
   def cursed_armor_state_ids: (untyped) -> Array
-  %a{bc2cpp:hint}
   def dead?: () -> bool
-  %a{bc2cpp:hint}
   def equipped?: (untyped) -> bool
   %a{bc2cpp:hint}
   def exp_for_level: (untyped) -> Integer
@@ -8769,11 +8754,9 @@ class Game::Actor
   def faceset_name: () -> String
   %a{bc2cpp:hint}
   def learn_table: () -> Array
-  %a{bc2cpp:hint}
   def rpg2003?: () -> bool
   %a{bc2cpp:hint}
   def set_class_id: (untyped) -> Integer
-  %a{bc2cpp:hint}
   def slot_cursed?: (untyped) -> bool
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def equipment_flag?: (untyped, ?untyped) -> bool
@@ -8812,7 +8795,6 @@ class Game::Battle
   def effective_def: (untyped) -> Integer
 end
 class Game::Battle::Combatant
-  %a{bc2cpp:hint}
   def dead?: () -> bool
   # The same body as Game::Actor's; Battle.from_actor / .from_enemy fill hp, max_hp, mp and max_mp.
   %a{bc2cpp:hint}
@@ -8823,19 +8805,16 @@ end
 class Game::Enemy
   %a{bc2cpp:hint}
   def attack_hit_rate: () -> Integer
-  %a{bc2cpp:hint}
   def dead?: () -> bool
 end
 class Game::EnemyAi
   def initialize: (LCF::Database, Game::State?) -> untyped
   # nil when there is no switch table or the id is not positive.
-  %a{bc2cpp:hint}
   def set_switch: (untyped, untyped) -> (bool | nil)
 end
 class Game::Map
   def initialize: (Integer, LCF::MapUnit) -> untyped
   def substitution_snapshot: () -> Array
-  %a{bc2cpp:hint}
   def in_bounds?: (untyped, untyped) -> bool
   %a{bc2cpp:hint}
   def lower: (untyped, untyped) -> (Integer | nil)
@@ -8882,15 +8861,12 @@ class Game::Party
   def remove_actor: (untyped) -> untyped
   def stat_mode: (untyped, untyped) -> untyped
   def take_leader_graphic_dirty: () -> untyped
-  %a{bc2cpp:hint}
   def all_dead?: () -> bool
-  %a{bc2cpp:hint}
   def any_alive?: () -> bool
   %a{bc2cpp:hint}
   def gain_gold: (untyped) -> nil
   %a{bc2cpp:hint}
   def insert_item_in_bag: (untyped, untyped) -> Integer
-  %a{bc2cpp:hint}
   def rpg2003?: () -> bool
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def attribute_weapon_type?: (untyped) -> bool
@@ -8951,7 +8927,6 @@ class Game::State
   %a{bc2cpp:hint}
   def seed_vehicle_positions: (untyped) -> Array
   def update_pictures: () -> untyped
-  %a{bc2cpp:hint}
   def boarded?: () -> bool
   %a{bc2cpp:hint}
   def se_chunk: (untyped) -> LCF::Array1D
@@ -9014,7 +8989,6 @@ class RPG2k::Scene::EquipMenu
   %a{bc2cpp:hint}
   def stat_field_delta: (untyped, untyped) -> Integer
   def tick_arrows: () -> untyped
-  %a{bc2cpp:hint}
   def refresh_arrows: () -> (bool | nil)
   %a{bc2cpp:hint}
   def update_items: () -> (RGSS::Bitmap | nil)
@@ -9036,7 +9010,6 @@ class RPG2k::Scene::MapWorld
   def play_sound: (String, untyped, untyped, untyped) -> untyped
   def passable?: (untyped, untyped) -> untyped
   # Game::MoveRoute#execute passes a literal true or false.
-  %a{bc2cpp:hint}
   def set_switch: (untyped, untyped) -> (bool | nil)
 end
 class RPG2k::Scene::Menu
@@ -9058,7 +9031,6 @@ class RPG2k::Scene::Menu
   %a{bc2cpp:hint}
   def wait_term_for: (untyped, untyped) -> String
   # Always nil (#close_message ends in `@message = nil`); declared as Scene::Map's.
-  %a{bc2cpp:hint}
   def drive_message: () -> (bool | nil)
 end
 class RPG2k::Scene::Order
@@ -9088,7 +9060,6 @@ class RPG2k::Scene::SaveLoad
   def fixed_width_term: (untyped) -> untyped
   %a{bc2cpp:hint}
   def initial_index: () -> Integer
-  %a{bc2cpp:hint}
   def refresh_arrows: () -> (bool | nil)
   %a{bc2cpp:hint}
   def refresh_slot_windows: () -> Array
@@ -9152,7 +9123,6 @@ end
 class RPG2k::Scene::VehicleWorld
   def initialize: (RPG2k::Scene::Map, Game::Rng?, Symbol) -> untyped
   # As MapWorld#set_switch.
-  %a{bc2cpp:hint}
   def set_switch: (untyped, untyped) -> (bool | nil)
 end
 
@@ -9337,7 +9307,6 @@ class LCF::Array2D
   def to_lcf: () -> untyped
   %a{bc2cpp:hint}
   def each: () -> Integer
-  %a{bc2cpp:hint}
   def same_schema?: (untyped) -> bool
 end
 
@@ -9526,7 +9495,6 @@ end
 class LCF::Database
   def header: () -> untyped
   def schema: () -> untyped
-  %a{bc2cpp:hint}
   def rpg2003?: () -> bool
 end
 
@@ -9537,7 +9505,6 @@ class LCF::File
   def to_lcf: () -> untyped
   %a{bc2cpp:hint}
   def build_root: (untyped, untyped) -> LCF::Array1D
-  %a{bc2cpp:hint}
   def field?: (untyped) -> bool
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
   def key?: (untyped) -> bool
