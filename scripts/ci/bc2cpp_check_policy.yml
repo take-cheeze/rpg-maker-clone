@@ -1419,6 +1419,13 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/rsm_owner_call_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/static_owner_dispatch_check.rb:
     tier: runtime
     capabilities:
