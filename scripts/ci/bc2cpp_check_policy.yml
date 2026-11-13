@@ -510,6 +510,12 @@ checks:
     tier: fast
     capabilities: []
     fixture_capabilities: []
+  scripts/bc2cpp/engine_rows_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/core_rows_compiled_check.rb:
     tier: fast
     capabilities: []
