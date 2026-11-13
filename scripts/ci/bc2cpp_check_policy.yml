@@ -1898,3 +1898,8 @@ checks:
   scripts/bc2cpp/type_check_provenance_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/name_sinks_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    - native_sources
