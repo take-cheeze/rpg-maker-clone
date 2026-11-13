@@ -40,10 +40,10 @@ class LCF::Database < LCF::File
 end
 # bc2cpp-native: base_lcf
 class LCF::EventCommand
-  def code: () -> Integer
-  def indent: () -> Integer
-  def string: () -> String
-  def parameters: () -> Array[Integer]
+  def code: () -> untyped
+  def indent: () -> untyped
+  def string: () -> untyped
+  def parameters: () -> untyped
   def initialize: (untyped, untyped, untyped, untyped) -> untyped
   def param: (untyped) -> untyped
 end
@@ -1165,8 +1165,8 @@ end
 # bc2cpp-native: base_rgss
 class RGSS::Plane
   def bitmap: () -> untyped
-  def ox: () -> Integer
-  def oy: () -> Integer
+  def ox: () -> untyped
+  def oy: () -> untyped
   def z: () -> untyped
   def viewport: () -> untyped
   def blend_type: () -> untyped
@@ -1207,8 +1207,8 @@ end
 class RGSS::Tilemap
   def tileset: () -> untyped
   def map_data: () -> untyped
-  def ox: () -> Integer
-  def oy: () -> Integer
+  def ox: () -> untyped
+  def oy: () -> untyped
   def viewport: () -> untyped
   def priorities: () -> untyped
   def flash_data: () -> untyped
@@ -1224,14 +1224,14 @@ class RGSS::Viewport
 end
 # bc2cpp-native: base_rgss
 class RGSS::Window
-  def contents: () -> RGSS::Bitmap
+  def contents: () -> untyped
   def windowskin: () -> untyped
   def x: () -> untyped
   def y: () -> untyped
   def width: () -> untyped
   def height: () -> untyped
-  def ox: () -> Integer
-  def oy: () -> Integer
+  def ox: () -> untyped
+  def oy: () -> untyped
   def z: () -> untyped
   def viewport: () -> untyped
   def contents_opacity: () -> untyped
@@ -1451,13 +1451,13 @@ class RGSS::Viewport
   def disposed?: () -> bool
   def flash: (untyped, Numeric) -> nil
   def initialize: (*untyped) -> self
-  def ox: () -> Integer
+  def ox: () -> untyped
   def ox=: (Numeric) -> Integer
-  def oy: () -> Integer
+  def oy: () -> untyped
   def oy=: (Numeric) -> Integer
-  def rect: () -> RGSS::Rect
+  def rect: () -> untyped
   def rect=: (untyped) -> untyped
-  def tone: () -> RGSS::Tone
+  def tone: () -> untyped
   def tone=: (untyped) -> untyped
   def update: () -> nil
   def visible: () -> untyped
@@ -6799,7 +6799,7 @@ class StringIO
   def lineno=: (Numeric) -> Integer
   def pos: () -> Integer
   def pos=: (Numeric) -> Integer
-  def read: (?untyped, ?untyped) -> String?
+  def read: (?untyped, ?untyped) -> untyped
   def reopen: (*untyped) -> untyped
   def rewind: () -> Integer
   def seek: (Numeric, ?untyped) -> Integer
@@ -11324,4 +11324,54 @@ end
 # candidate: cand-emit-f4/RPG2k3/Scene/Battle.rbs
 class RPG2k3::Scene::Battle
   @state: nil | Game::State
+end
+
+# Typed returns for base stubs. The base-stub generator (scripts/bc2cpp/base_rbs.rb, base_rbs_native.rb) writes these
+# methods untyped, so these declarations are the only source of their types. Each class carries the marker of the base
+# table it came from, as the base section's declarations do: a native declaration with no program hint, so a method the
+# closed program does not define is accepted (TC1005) rather than refused (TC1003).
+# bc2cpp-native: base_rgss
+class RGSS::Plane
+  def ox: () -> Integer
+  def oy: () -> Integer
+end
+
+# bc2cpp-native: base_rgss
+class RGSS::Tilemap
+  def ox: () -> Integer
+  def oy: () -> Integer
+end
+
+# bc2cpp-native: base_rgss
+class RGSS::Window
+  def ox: () -> Integer
+  def oy: () -> Integer
+  def contents: () -> RGSS::Bitmap
+end
+
+# bc2cpp-native: base_rgss
+class RGSS::Viewport
+  def ox: () -> Integer
+  def oy: () -> Integer
+  def rect: () -> RGSS::Rect
+  def tone: () -> RGSS::Tone
+end
+
+# bc2cpp-native: base_stringio
+class StringIO
+  def read: (?untyped, ?untyped) -> String?
+  def getc: (*untyped) -> String?
+end
+
+# bc2cpp-native: base_lcf
+class LCF::EventCommand
+  def code: () -> Integer
+  def indent: () -> Integer
+  def string: () -> String
+  def parameters: () -> Array[Integer]
+end
+
+# bc2cpp-native: base_io
+class IO
+  def self.open: (*untyped) -> IO | (*untyped) { (IO | File) -> untyped } -> untyped
 end
