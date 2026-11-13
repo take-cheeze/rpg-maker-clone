@@ -1407,6 +1407,13 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/step_super_static_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/static_owner_dispatch_check.rb:
     tier: runtime
     capabilities:

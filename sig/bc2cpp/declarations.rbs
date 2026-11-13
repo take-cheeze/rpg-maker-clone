@@ -9351,7 +9351,7 @@ module LCF
 end
 module LCF
   class Array2D
-    def initialize: (String s, Hash schema) -> untyped
+    def initialize: ((String | File | StringIO) s, Hash schema) -> untyped
     # The body stores nil, bytes or an Array1D (lcf.rb `[]=`), so the entry is declared as that union.
     def []=: (Integer idx, (LCF::Array1D | String | nil) entry) -> (LCF::Array1D | String | nil)
     def same_schema?: (Hash other) -> bool
