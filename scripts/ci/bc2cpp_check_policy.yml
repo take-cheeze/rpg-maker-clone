@@ -1425,6 +1425,11 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/name_sinks_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    - native_sources
   scripts/bc2cpp/rsm_owner_call_check.rb:
     tier: runtime
     capabilities:
