@@ -8117,7 +8117,7 @@ end
 class Game::Interpreter
   @battle_background: (String | nil)
   @message_followup: (nil | Symbol)
-  def initialize: (Game::State) -> untyped
+  def initialize: (Game::State?) -> untyped
   # Runtime-checked: `party.actors` is an attr_reader read. The Array is checked;
   # the element class stays the guarded seed it was.
   %a{bc2cpp:hint}
@@ -8291,17 +8291,17 @@ end
 
 class RPG2k::Scene::ChipsetEditor
   @db: (nil | LCF::Database)
-  def initialize: (RPG2k, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State?) -> untyped
 end
 
 class RPG2k::Scene::DebugMenu
   @map_tree: (nil | LCF::MapTree)
-  def initialize: (RPG2k, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State?) -> untyped
 end
 
 class RPG2k::Scene::ItemMenu
   def enter_target_confirm: ((Symbol | nil)) -> untyped
-  def initialize: (RPG2k, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State?) -> untyped
   # Scene::Base#build_list_arrow_sprite's `Sprite.new`.
   %a{bc2cpp:hint}
   def build_arrow_sprite: (untyped, untyped) -> RGSS::Sprite
@@ -8612,7 +8612,7 @@ end
 
 class RPG2k::Scene::MapViewer
   @db: (nil | LCF::Database)
-  def initialize: (RPG2k, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State?) -> untyped
   # nil with no map and from the rescue arm.
   %a{bc2cpp:hint}
   def build_chipset: () -> Game::ChipSet?
@@ -8620,7 +8620,7 @@ end
 
 class RPG2k::Scene::SkillMenu
   def enter_target_confirm: ((nil | Symbol)) -> untyped
-  def initialize: (RPG2k, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State?) -> untyped
   # Scene::Base#build_list_arrow_sprite's `Sprite.new`.
   %a{bc2cpp:hint}
   def build_arrow_sprite: (untyped, untyped) -> RGSS::Sprite
@@ -8827,7 +8827,7 @@ class Game::Enemy
   def dead?: () -> bool
 end
 class Game::EnemyAi
-  def initialize: (LCF::Database, Game::State) -> untyped
+  def initialize: (LCF::Database, Game::State?) -> untyped
   # nil when there is no switch table or the id is not positive.
   %a{bc2cpp:hint}
   def set_switch: (untyped, untyped) -> (bool | nil)
@@ -8980,7 +8980,7 @@ class RPG2k
   def open_chipset_editor: (Game::State) -> untyped
 end
 class RPG2k::Scene::EquipMenu
-  def initialize: (RPG2k, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State?) -> untyped
   %a{bc2cpp:hint}
   def actor: () -> Game::Actor
   %a{bc2cpp:hint}
@@ -9032,7 +9032,7 @@ class RPG2k::Scene::GameOver
   def update: () -> untyped
 end
 class RPG2k::Scene::MapWorld
-  def initialize: (RPG2k::Scene::Map, Game::Rng) -> untyped
+  def initialize: (RPG2k::Scene::Map, Game::Rng?) -> untyped
   def play_sound: (String, untyped, untyped, untyped) -> untyped
   def passable?: (untyped, untyped) -> untyped
   # Game::MoveRoute#execute passes a literal true or false.
@@ -9040,7 +9040,7 @@ class RPG2k::Scene::MapWorld
   def set_switch: (untyped, untyped) -> (bool | nil)
 end
 class RPG2k::Scene::Menu
-  def initialize: (RPG2k, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State?) -> untyped
   def build_commands: () -> untyped
   def build_gold_window: () -> untyped
   def build_windows: () -> untyped
@@ -9062,7 +9062,7 @@ class RPG2k::Scene::Menu
   def drive_message: () -> (bool | nil)
 end
 class RPG2k::Scene::Order
-  def initialize: (RPG2k, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State?) -> untyped
   def build_windows: () -> untyped
   def enter_confirm: () -> untyped
   def pick_current: () -> untyped
@@ -9106,7 +9106,7 @@ class RPG2k::Scene::SaveLoad
   def slot_timestamp: (untyped) -> (Float | nil)
 end
 class RPG2k::Scene::StatusMenu
-  def initialize: (RPG2k, Game::State) -> untyped
+  def initialize: (RPG2k, Game::State?) -> untyped
   def slot_labels: (untyped) -> Array
   def build_windows: () -> untyped
   %a{bc2cpp:hint}
@@ -9150,7 +9150,7 @@ class RPG2k::Scene::Title
   def update: () -> untyped
 end
 class RPG2k::Scene::VehicleWorld
-  def initialize: (RPG2k::Scene::Map, Game::Rng, Symbol) -> untyped
+  def initialize: (RPG2k::Scene::Map, Game::Rng?, Symbol) -> untyped
   # As MapWorld#set_switch.
   %a{bc2cpp:hint}
   def set_switch: (untyped, untyped) -> (bool | nil)
