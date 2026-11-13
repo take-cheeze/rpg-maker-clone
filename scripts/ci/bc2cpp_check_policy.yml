@@ -510,6 +510,12 @@ checks:
     tier: fast
     capabilities: []
     fixture_capabilities: []
+  scripts/bc2cpp/engine_rows_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/core_rows_compiled_check.rb:
     tier: fast
     capabilities: []
@@ -1413,6 +1419,13 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/step_super_static_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/rsm_owner_call_check.rb:
     tier: runtime
     capabilities:
     - mrbc
