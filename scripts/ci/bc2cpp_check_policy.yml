@@ -20,16 +20,54 @@ runners:
   - full_library
   - cxx
 deferred:
+  scripts/bc2cpp/class_pools_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - full_library
+    - cxx
+    reason: Requires generated-world variants and compiled-vs-interpreted fixture binaries.
+  scripts/bc2cpp/class_pools_mutation_check.rb:
+    tier: mutation
+    capabilities:
+    - mrbc
+    - full_library
+    - cxx
+    reason: Expensive mutation audit over compiler copies; not enabled in the PR gate.
+  scripts/bc2cpp/comment_only_check.rb:
+    tier: review
+    capabilities:
+    - git_base
+    reason: Argument-driven review utility; requires a comment-only diff, not a general unit test.
+  scripts/bc2cpp/const_bitor_io_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    reason: Standalone type-check fixtures for IO bitwise constants; not enabled in the PR gate.
   scripts/bc2cpp-rpg/def_deletion_safety_check.rb:
     tier: review
     capabilities: []
     reason: Argument-driven deletion audit; requires the method names proposed for deletion.
+  scripts/bc2cpp/impossible_as_error_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - core_library
+    - cxx
+    reason: Generated-code and core-library runtime audit; separate from scripts/impossible_as_error_check.rb.
   scripts/bc2cpp-rpg/module_super_range_check.rb:
     tier: runtime
     capabilities:
     - mrbc
     - native_sources
     reason: Full-engine Range code-generation audit; no fixture library is linked.
+  scripts/bc2cpp/optional_block_frame_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - full_library
+    - cxx
+    reason: Requires a full-core library and compiled-vs-interpreted fixture binaries.
 checks:
   scripts/bc2cpp/sort_array_cmp_check.rb:
     tier: runtime
@@ -69,6 +107,12 @@ checks:
     tier: fast
     capabilities: []
   scripts/bc2cpp-rpg/schema_blob_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/core_ruby_query_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/ir_facts_check.rb:
     tier: fast
     capabilities: []
   scripts/bc2cpp/ir_binary_operands_check.rb:
@@ -604,6 +648,12 @@ checks:
     tier: fast
     capabilities:
     - mrbc
+  scripts/bc2cpp/class_body_left_ops_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - closed_build
   scripts/bc2cpp/class_body_lambda_check.rb:
     tier: fast
     capabilities:
@@ -670,6 +720,12 @@ checks:
     fixture_capabilities:
     - mrbc
     host_phase: false
+  scripts/bc2cpp/base_section_check.rb:
+    tier: runtime
+    capabilities:
+    - native_sources
+    - closed_build
+    - clang
   scripts/bc2cpp/promote_candidates_check.rb:
     tier: fast
     capabilities: []
@@ -951,6 +1007,33 @@ checks:
     - full_library
     - cxx
   scripts/bc2cpp/fiber_limits_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/vm_free_inventory_check.rb:
+    tier: fast
+    capabilities:
+    - closed_build
+  scripts/bc2cpp/vm_unreachable_check.rb:
+    tier: fast
+    capabilities:
+    - closed_build
+  scripts/bc2cpp/frames_only_check.rb:
+    tier: fast
+    capabilities:
+    - closed_build
+  scripts/bc2cpp/frame_free_raise_check.rb:
+    tier: fast
+    capabilities:
+    - closed_build
+  scripts/bc2cpp/rom_method_tables_check.rb:
+    tier: fast
+    capabilities:
+    - closed_build
+  scripts/bc2cpp/vm_bytecode_free_check.rb:
     tier: runtime
     capabilities:
     - mrbc
@@ -1494,6 +1577,60 @@ checks:
     fixture_gate: false
     reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
       ordinary CI.
+  scripts/bc2cpp/computed_send_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - core_library
+    - cxx
+    fixture_gate: false
+    reason: Coverage runs the host slice; the generated fixture needs the host mrbc and skips without it.
+  scripts/bc2cpp/typed_reflection_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - core_library
+    - cxx
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
+  scripts/bc2cpp/numeric_operand_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - core_library
+    - cxx
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
+  scripts/bc2cpp/join_dominance_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
+  scripts/bc2cpp/core_mixins_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
   scripts/bc2cpp-rpg/lcf_row_flow_check.rb:
     tier: runtime
     capabilities: []
@@ -1502,6 +1639,50 @@ checks:
     - native_sources
     - full_library
     - cxx
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
+  scripts/bc2cpp/tuple_return_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
+  scripts/bc2cpp/bitop_results_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
+  scripts/bc2cpp/enumerator_result_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
+    fixture_gate: false
+    reason: Host only. Drives CodeGen on a stubbed closed world and registry, so it needs no mrbc or native sources.
+  scripts/bc2cpp/symbol_class_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
+  scripts/bc2cpp/loadsym_class_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
     fixture_gate: false
     reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
       ordinary CI.
@@ -1522,7 +1703,65 @@ checks:
     - native_sources
     fixture_gate: false
     reason: Coverage runs the host slice; the generated-code part needs MRBC and is run by hand (see the check's header).
+  scripts/bc2cpp/class_object_args_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+    - cxx
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
+  scripts/bc2cpp/frozen_slot_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
+  scripts/bc2cpp/lexical_const_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    fixture_gate: false
+    reason: Coverage runs the host slice; generated/runtime validation remains optional and is not scheduled in
+      ordinary CI.
+    host_phase: false
+  scripts/bc2cpp/base_rbs_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - clang
+    fixture_gate: false
+    reason: The host scanner cases run without clang; native AST equivalence is an optional local section.
+  scripts/bc2cpp/class_arg_types_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/class_hierarchy_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp-rpg/class_world_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/conversion_returns_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/declared_return_guard_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/dispatch_ir_trace_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/fixpoint_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/foreign_definers_cache_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/native_api_lists_parity_check.rb:
     tier: fast
     capabilities: []
   scripts/bc2cpp-rpg/lcf_schema_oracle_check.rb:
@@ -1531,6 +1770,23 @@ checks:
   scripts/bc2cpp-rpg/lint_crosscheck_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/native_arity_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/native_return_classes_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/native_rom_owners_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/native_ast_returns_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - clang
+    fixture_gate: false
+    reason: This host registration skips without clang; its AST fixtures require an explicitly provisioned parser.
+    host_phase: false
   scripts/bc2cpp/native_member_tables_check.rb:
     tier: fast
     capabilities: []
@@ -1539,6 +1795,28 @@ checks:
     capabilities: []
     fixture_capabilities:
     - native_sources
+  scripts/bc2cpp/native_registration_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/native_results_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/numeric_flow_speed_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/element_type_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/outside_ruby_ivar_scopes_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - native_sources
+    fixture_gate: false
+    reason: The host scanner cases use temporary sources; the real enumerator-source case is optional.
+  scripts/bc2cpp/param_trace_return_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/param_trace_elements_check.rb:
     tier: runtime
     capabilities: []
@@ -1546,6 +1824,12 @@ checks:
     - mrbc
     - core_library
     - cxx
+  scripts/bc2cpp/predicate_returns_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/recv_trace_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp-rpg/ruby_parse_cache_check.rb:
     tier: fast
     capabilities: []
@@ -1553,6 +1837,19 @@ checks:
     - native_sources
     fixture_gate: false
     reason: Synthetic parser/cache cases run on the host; real foreign-source comparisons require submodules.
+  scripts/bc2cpp/scan_cache_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - native_sources
+    fixture_gate: false
+    reason: Synthetic disk-cache cases run on the host; real native-source checks require submodules.
+  scripts/bc2cpp/trace_types_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/rbs_suggestion_trace_check.rb:
+    tier: fast
+    capabilities: []
   scripts/bc2cpp/native_core_candidates_check.rb:
     tier: fast
     capabilities: []
@@ -1590,5 +1887,8 @@ checks:
     tier: fast
     capabilities: []
   scripts/bc2cpp/module_includer_bound_check.rb:
+    tier: fast
+    capabilities: []
+  scripts/bc2cpp/type_check_provenance_check.rb:
     tier: fast
     capabilities: []
