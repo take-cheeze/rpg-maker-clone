@@ -1430,6 +1430,10 @@ checks:
     fixture_capabilities:
     - full_library
     - cxx
+  scripts/bc2cpp/native_leaf_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities: []
   scripts/bc2cpp/respond_to_fold_check.rb:
     tier: runtime
     capabilities:
