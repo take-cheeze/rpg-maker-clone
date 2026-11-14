@@ -1,0 +1,1 @@
+- bc2cpp declarations: 36 hand-owned untyped returns typed from rigor sig-gen (rigortype 0.4.7), each checked by the type check: no new errors or warnings against master.

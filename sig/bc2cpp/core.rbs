@@ -179,6 +179,7 @@ class Array[unchecked out Elem] < Object
 # already declare. Candidates stay reviewable; the loader applies them as the other trace-derived sections do.
   def delete_if: () -> untyped
   def each: () -> untyped
+  # bc2cpp-vetted: fresh-array
   def sort: () -> untyped
   def uniq: () -> untyped
 # Unified return types (trace candidates, scripts/bc2cpp/trace_types.rb candidates --hierarchy). Each is a

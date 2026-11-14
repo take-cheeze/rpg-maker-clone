@@ -510,6 +510,12 @@ checks:
     tier: fast
     capabilities: []
     fixture_capabilities: []
+  scripts/bc2cpp/engine_rows_check.rb:
+    tier: runtime
+    capabilities: []
+    fixture_capabilities:
+    - full_library
+    - cxx
   scripts/bc2cpp/core_rows_compiled_check.rb:
     tier: fast
     capabilities: []
@@ -1419,6 +1425,25 @@ checks:
     - native_sources
     - full_library
     - cxx
+  scripts/bc2cpp/name_sinks_check.rb:
+    tier: fast
+    capabilities:
+    - mrbc
+    - native_sources
+  scripts/bc2cpp/rsm_owner_call_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
+  scripts/bc2cpp/rsm_getidx_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/static_owner_dispatch_check.rb:
     tier: runtime
     capabilities:
@@ -1860,3 +1885,21 @@ checks:
   scripts/bc2cpp/type_check_provenance_check.rb:
     tier: fast
     capabilities: []
+  scripts/bc2cpp/exact_declared_return_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+  scripts/bc2cpp/declared_callsite_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
+  scripts/bc2cpp/declared_ivar_guard_check.rb:
+    tier: fast
+    capabilities: []
+    fixture_capabilities:
+    - mrbc
+    - native_sources
