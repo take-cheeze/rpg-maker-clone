@@ -1,0 +1,1 @@
+- Launch-flag constants (`RENDER_FPS`, `RPG2K_MAP_EDITOR`, `RPG2K_CHIPSET_EDITOR`, `RPG2K_PREVIEW_ANIMATION`) now have closed-world defaults, so compiled engine code reads them without a fallback and never reaches `const_missing`.
