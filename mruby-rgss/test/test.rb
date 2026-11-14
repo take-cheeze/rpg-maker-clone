@@ -1348,7 +1348,8 @@ assert "RGSS::Bitmap#draw_text honours every Font attribute without error" do
 end
 
 # draw_text reads the Font through the method each reader resolves to, so a
-# subclass's override is what answers.
+# subclass's override is what answers. The name is the exception: it is read
+# from @name directly (read_font in mruby-rgss/src/lib.cxx), so #name is not called.
 class FontReadTracker < RGSS::Font
   attr_reader :seen
   %i[name size bold italic outline shadow color out_color].each do |m|
@@ -1356,11 +1357,11 @@ class FontReadTracker < RGSS::Font
   end
 end
 
-assert "RGSS::Bitmap#draw_text reads overridden Font attributes" do
+assert "RGSS::Bitmap#draw_text reads overridden Font attributes (name from its ivar)" do
   b = RGSS::Bitmap.new(80, 24)
   b.font = FontReadTracker.new
   b.draw_text(0, 0, 80, 24, "Ok", 1)
-  assert_equal %i[bold color italic name out_color outline shadow size],
+  assert_equal %i[bold color italic out_color outline shadow size],
                b.font.seen.uniq.sort
 end
 

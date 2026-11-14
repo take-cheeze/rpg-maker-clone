@@ -1568,9 +1568,9 @@ module RGSS
       s.each_codepoint { tw += adv }
       x += (w - tw) / 2 if align == 1
       x += w - tw if align == 2
-      # lib.cxx read_font reads every Font attribute through its reader (an override answers); only color is drawn here.
+      # lib.cxx read_font reads the name from @name and the others through their readers (an override answers); only color is drawn here.
       f = font
-      f.name
+      f.instance_variable_get(:@name)
       f.size
       f.bold
       f.italic
