@@ -134,6 +134,13 @@ end
 class Fiber < Object
 end
 
+# bc2cpp-native: native_singletons
+class Fiber
+  # The C function is bc2cpp_fiber_s_current (runtime/bc2cpp_fiber.hxx), registered on Fiber's singleton by
+  # bc2cpp_fiber_define. It answers the C++ fiber being resumed, else the root fiber.
+  def self.current: () -> Fiber
+end
+
 class Numeric < Object
   def negative?: () -> untyped
   # Every return is provably bool (predicate gate: tools/bc2cpp/predicate_returns.rb).
