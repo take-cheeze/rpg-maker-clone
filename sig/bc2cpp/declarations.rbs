@@ -90,8 +90,8 @@ end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::CommonEvent < LCF::SaveTyped::Record
   def check!: () -> self
-  def save_execution_state: () -> untyped
-  def save_execution_state=: (untyped) -> untyped
+  def save_execution_state: () -> LCF::SaveTyped::Record?
+  def save_execution_state=: (untyped) -> LCF::SaveTyped::Record?
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::EventExecFrame < LCF::SaveTyped::Record
@@ -264,14 +264,14 @@ class LCF::SaveTyped::Movable < LCF::SaveTyped::Record
   def save_map_id=: (untyped) -> untyped
   def save_move_frequency: () -> untyped
   def save_move_frequency=: (untyped) -> untyped
-  def save_move_route: () -> untyped
-  def save_move_route=: (untyped) -> untyped
+  def save_move_route: () -> LCF::SaveTyped::Record?
+  def save_move_route=: (untyped) -> LCF::SaveTyped::Record?
   def save_move_route_index: () -> untyped
   def save_move_route_index=: (untyped) -> untyped
   def save_move_speed: () -> untyped
   def save_move_speed=: (untyped) -> untyped
-  def save_parallel_event_execstate: () -> untyped
-  def save_parallel_event_execstate=: (untyped) -> untyped
+  def save_parallel_event_execstate: () -> LCF::SaveTyped::Record?
+  def save_parallel_event_execstate=: (untyped) -> LCF::SaveTyped::Record?
   def save_sprite_direction: () -> untyped
   def save_sprite_direction=: (untyped) -> untyped
   def save_through: () -> untyped
@@ -390,8 +390,8 @@ class LCF::SaveTyped::PartyLocation < LCF::SaveTyped::Record
   def save_menu_calling=: (untyped) -> untyped
   def save_move_frequency: () -> untyped
   def save_move_frequency=: (untyped) -> untyped
-  def save_move_route: () -> untyped
-  def save_move_route=: (untyped) -> untyped
+  def save_move_route: () -> LCF::SaveTyped::Record?
+  def save_move_route=: (untyped) -> LCF::SaveTyped::Record?
   def save_move_route_index: () -> untyped
   def save_move_route_index=: (untyped) -> untyped
   def save_move_speed: () -> untyped
@@ -495,34 +495,34 @@ class LCF::SaveTyped::Save < LCF::SaveTyped::Record
   def check!: () -> self
   def save_actors: () -> untyped
   def save_actors=: (untyped) -> untyped
-  def save_airship: () -> untyped
-  def save_airship=: (untyped) -> untyped
-  def save_boat: () -> untyped
-  def save_boat=: (untyped) -> untyped
+  def save_airship: () -> LCF::SaveTyped::Record?
+  def save_airship=: (untyped) -> LCF::SaveTyped::Record?
+  def save_boat: () -> LCF::SaveTyped::Record?
+  def save_boat=: (untyped) -> LCF::SaveTyped::Record?
   def save_common_events: () -> untyped
   def save_common_events=: (untyped) -> untyped
-  def save_foreground_event: () -> untyped
-  def save_foreground_event=: (untyped) -> untyped
-  def save_hero: () -> untyped
-  def save_hero=: (untyped) -> untyped
-  def save_inventory: () -> untyped
-  def save_inventory=: (untyped) -> untyped
+  def save_foreground_event: () -> LCF::SaveTyped::Record?
+  def save_foreground_event=: (untyped) -> LCF::SaveTyped::Record?
+  def save_hero: () -> LCF::SaveTyped::Record?
+  def save_hero=: (untyped) -> LCF::SaveTyped::Record?
+  def save_inventory: () -> LCF::SaveTyped::Record?
+  def save_inventory=: (untyped) -> LCF::SaveTyped::Record?
   def save_lsd_ext: () -> untyped
   def save_lsd_ext=: (untyped) -> untyped
-  def save_map_events: () -> untyped
-  def save_map_events=: (untyped) -> untyped
+  def save_map_events: () -> LCF::SaveTyped::Record?
+  def save_map_events=: (untyped) -> LCF::SaveTyped::Record?
   def save_pictures: () -> untyped
   def save_pictures=: (untyped) -> untyped
-  def save_screen: () -> untyped
-  def save_screen=: (untyped) -> untyped
-  def save_ship: () -> untyped
-  def save_ship=: (untyped) -> untyped
-  def save_system: () -> untyped
-  def save_system=: (untyped) -> untyped
+  def save_screen: () -> LCF::SaveTyped::Record?
+  def save_screen=: (untyped) -> LCF::SaveTyped::Record?
+  def save_ship: () -> LCF::SaveTyped::Record?
+  def save_ship=: (untyped) -> LCF::SaveTyped::Record?
+  def save_system: () -> LCF::SaveTyped::Record?
+  def save_system=: (untyped) -> LCF::SaveTyped::Record?
   def save_targets: () -> untyped
   def save_targets=: (untyped) -> untyped
-  def save_title: () -> untyped
-  def save_title=: (untyped) -> untyped
+  def save_title: () -> LCF::SaveTyped::Record?
+  def save_title=: (untyped) -> LCF::SaveTyped::Record?
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Screen < LCF::SaveTyped::Record
@@ -569,58 +569,58 @@ end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::System < LCF::SaveTyped::Record
   def check!: () -> self
-  def save_airship_bgm: () -> untyped
-  def save_airship_bgm=: (untyped) -> untyped
-  def save_ally_damaged_se: () -> untyped
-  def save_ally_damaged_se=: (untyped) -> untyped
+  def save_airship_bgm: () -> LCF::SaveTyped::Record?
+  def save_airship_bgm=: (untyped) -> LCF::SaveTyped::Record?
+  def save_ally_damaged_se: () -> LCF::SaveTyped::Record?
+  def save_ally_damaged_se=: (untyped) -> LCF::SaveTyped::Record?
   def save_atb_mode: () -> untyped
   def save_atb_mode=: (untyped) -> untyped
   def save_battle_background: () -> untyped
   def save_battle_background=: (untyped) -> untyped
-  def save_battle_bgm: () -> untyped
-  def save_battle_bgm=: (untyped) -> untyped
-  def save_battle_end_bgm: () -> untyped
-  def save_battle_end_bgm=: (untyped) -> untyped
+  def save_battle_bgm: () -> LCF::SaveTyped::Record?
+  def save_battle_bgm=: (untyped) -> LCF::SaveTyped::Record?
+  def save_battle_end_bgm: () -> LCF::SaveTyped::Record?
+  def save_battle_end_bgm=: (untyped) -> LCF::SaveTyped::Record?
   def save_battle_end_erase_transition: () -> untyped
   def save_battle_end_erase_transition=: (untyped) -> untyped
   def save_battle_end_show_transition: () -> untyped
   def save_battle_end_show_transition=: (untyped) -> untyped
   def save_battle_start_erase_transition: () -> untyped
   def save_battle_start_erase_transition=: (untyped) -> untyped
-  def save_battle_start_se: () -> untyped
-  def save_battle_start_se=: (untyped) -> untyped
+  def save_battle_start_se: () -> LCF::SaveTyped::Record?
+  def save_battle_start_se=: (untyped) -> LCF::SaveTyped::Record?
   def save_battle_start_show_transition: () -> untyped
   def save_battle_start_show_transition=: (untyped) -> untyped
-  def save_before_battle_music: () -> untyped
-  def save_before_battle_music=: (untyped) -> untyped
-  def save_before_vehicle_music: () -> untyped
-  def save_before_vehicle_music=: (untyped) -> untyped
+  def save_before_battle_music: () -> LCF::SaveTyped::Record?
+  def save_before_battle_music=: (untyped) -> LCF::SaveTyped::Record?
+  def save_before_vehicle_music: () -> LCF::SaveTyped::Record?
+  def save_before_vehicle_music=: (untyped) -> LCF::SaveTyped::Record?
   def save_bgm_stopping: () -> untyped
   def save_bgm_stopping=: (untyped) -> untyped
-  def save_boat_bgm: () -> untyped
-  def save_boat_bgm=: (untyped) -> untyped
-  def save_buzzer_se: () -> untyped
-  def save_buzzer_se=: (untyped) -> untyped
-  def save_cancel_se: () -> untyped
-  def save_cancel_se=: (untyped) -> untyped
-  def save_current_bgm: () -> untyped
-  def save_current_bgm=: (untyped) -> untyped
-  def save_cursor_se: () -> untyped
-  def save_cursor_se=: (untyped) -> untyped
-  def save_decision_se: () -> untyped
-  def save_decision_se=: (untyped) -> untyped
-  def save_enemy_attack_se: () -> untyped
-  def save_enemy_attack_se=: (untyped) -> untyped
-  def save_enemy_damaged_se: () -> untyped
-  def save_enemy_damaged_se=: (untyped) -> untyped
-  def save_enemy_death_se: () -> untyped
-  def save_enemy_death_se=: (untyped) -> untyped
+  def save_boat_bgm: () -> LCF::SaveTyped::Record?
+  def save_boat_bgm=: (untyped) -> LCF::SaveTyped::Record?
+  def save_buzzer_se: () -> LCF::SaveTyped::Record?
+  def save_buzzer_se=: (untyped) -> LCF::SaveTyped::Record?
+  def save_cancel_se: () -> LCF::SaveTyped::Record?
+  def save_cancel_se=: (untyped) -> LCF::SaveTyped::Record?
+  def save_current_bgm: () -> LCF::SaveTyped::Record?
+  def save_current_bgm=: (untyped) -> LCF::SaveTyped::Record?
+  def save_cursor_se: () -> LCF::SaveTyped::Record?
+  def save_cursor_se=: (untyped) -> LCF::SaveTyped::Record?
+  def save_decision_se: () -> LCF::SaveTyped::Record?
+  def save_decision_se=: (untyped) -> LCF::SaveTyped::Record?
+  def save_enemy_attack_se: () -> LCF::SaveTyped::Record?
+  def save_enemy_attack_se=: (untyped) -> LCF::SaveTyped::Record?
+  def save_enemy_damaged_se: () -> LCF::SaveTyped::Record?
+  def save_enemy_damaged_se=: (untyped) -> LCF::SaveTyped::Record?
+  def save_enemy_death_se: () -> LCF::SaveTyped::Record?
+  def save_enemy_death_se=: (untyped) -> LCF::SaveTyped::Record?
   def save_escape_allowed: () -> untyped
   def save_escape_allowed=: (untyped) -> untyped
-  def save_escape_se: () -> untyped
-  def save_escape_se=: (untyped) -> untyped
-  def save_evasion_se: () -> untyped
-  def save_evasion_se=: (untyped) -> untyped
+  def save_escape_se: () -> LCF::SaveTyped::Record?
+  def save_escape_se=: (untyped) -> LCF::SaveTyped::Record?
+  def save_evasion_se: () -> LCF::SaveTyped::Record?
+  def save_evasion_se=: (untyped) -> LCF::SaveTyped::Record?
   def save_face_flip: () -> untyped
   def save_face_flip=: (untyped) -> untyped
   def save_face_index: () -> untyped
@@ -633,12 +633,12 @@ class LCF::SaveTyped::System < LCF::SaveTyped::Record
   def save_font=: (untyped) -> untyped
   def save_frame_count: () -> untyped
   def save_frame_count=: (untyped) -> untyped
-  def save_gameover_bgm: () -> untyped
-  def save_gameover_bgm=: (untyped) -> untyped
-  def save_inn_bgm: () -> untyped
-  def save_inn_bgm=: (untyped) -> untyped
-  def save_item_se: () -> untyped
-  def save_item_se=: (untyped) -> untyped
+  def save_gameover_bgm: () -> LCF::SaveTyped::Record?
+  def save_gameover_bgm=: (untyped) -> LCF::SaveTyped::Record?
+  def save_inn_bgm: () -> LCF::SaveTyped::Record?
+  def save_inn_bgm=: (untyped) -> LCF::SaveTyped::Record?
+  def save_item_se: () -> LCF::SaveTyped::Record?
+  def save_item_se=: (untyped) -> LCF::SaveTyped::Record?
   def save_menu_allowed: () -> untyped
   def save_menu_allowed=: (untyped) -> untyped
   def save_message_continue_events: () -> untyped
@@ -657,10 +657,10 @@ class LCF::SaveTyped::System < LCF::SaveTyped::Record
   def save_save_slot=: (untyped) -> untyped
   def save_scene: () -> untyped
   def save_scene=: (untyped) -> untyped
-  def save_ship_bgm: () -> untyped
-  def save_ship_bgm=: (untyped) -> untyped
-  def save_stored_bgm: () -> untyped
-  def save_stored_bgm=: (untyped) -> untyped
+  def save_ship_bgm: () -> LCF::SaveTyped::Record?
+  def save_ship_bgm=: (untyped) -> LCF::SaveTyped::Record?
+  def save_stored_bgm: () -> LCF::SaveTyped::Record?
+  def save_stored_bgm=: (untyped) -> LCF::SaveTyped::Record?
   def save_switch_size: () -> untyped
   def save_switch_size=: (untyped) -> untyped
   def save_switches: () -> untyped
@@ -673,8 +673,8 @@ class LCF::SaveTyped::System < LCF::SaveTyped::Record
   def save_teleport_erase_transition=: (untyped) -> untyped
   def save_teleport_show_transition: () -> untyped
   def save_teleport_show_transition=: (untyped) -> untyped
-  def save_title_bgm: () -> untyped
-  def save_title_bgm=: (untyped) -> untyped
+  def save_title_bgm: () -> LCF::SaveTyped::Record?
+  def save_title_bgm=: (untyped) -> LCF::SaveTyped::Record?
   def save_variable_size: () -> untyped
   def save_variable_size=: (untyped) -> untyped
   def save_variables: () -> untyped
@@ -3123,7 +3123,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def settle_already_finished_battle: () -> bool
   def show_battle_action: (untyped) -> RPG2k::Window
   def show_battle_banner: (untyped) -> RPG2k::Window
-  def skill_command_label: () -> untyped
+  def skill_command_label: () -> String
   def skill_start_lines: (untyped, untyped, untyped) -> Array
   def skip_restricted_actors: () -> untyped
   def start: () -> untyped
@@ -3737,7 +3737,7 @@ class RPG2k::Scene::Menu < RPG2k::Scene::Base
   def suspend: () -> (bool | nil)
   def update_actor_selection: () -> untyped
   def update_end_game_confirm: () -> untyped
-  def wait_label: () -> untyped
+  def wait_label: () -> String
 end
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::Order < RPG2k::Scene::Base
@@ -3851,9 +3851,9 @@ class RPG2k3::Scene::Battle < RPG2k::Scene::Battle
   def active_atb?: () -> bool
   def advance_actor: () -> untyped
   def atb_accumulating?: () -> bool
-  def drive_battle_atb: () -> untyped
+  def drive_battle_atb: () -> (Integer | RPG2k::Window)?
   def drive_battle_command: () -> untyped
-  def enter_atb_phase: () -> untyped
+  def enter_atb_phase: () -> (Integer | RPG2k::Window)?
   def enter_command_phase: () -> untyped
   def finish_round_animation: () -> untyped
   def interrupting_ready_combatant: () -> untyped
