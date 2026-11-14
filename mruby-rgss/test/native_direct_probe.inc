@@ -350,21 +350,6 @@
    (void)a;
    return rgss::tone_to_s_direct(M, self);
  }},
-{"tts_available_direct", 0,
- [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
-   (void)a;
-   return rgss::tts_available_direct(M, self);
- }},
-{"tts_speak_direct", 1,
- [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
-   (void)a;
-   return rgss::tts_speak_direct(M, self, mrb_string_value_cstr(M, &a[0]));
- }},
-{"tts_stop_direct", 0,
- [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
-   (void)a;
-   return rgss::tts_stop_direct(M, self);
- }},
 {"vp_ox_direct", 0,
  [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
    (void)a;

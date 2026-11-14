@@ -104,9 +104,6 @@ mrb_value tone_load_direct(mrb_state* M,
                            const char* p,
                            mrb_int len);
 mrb_value tone_to_s_direct(mrb_state* M, mrb_value self);
-mrb_value tts_available_direct(mrb_state* M, mrb_value self);
-mrb_value tts_speak_direct(mrb_state* M, mrb_value self, const char* text);
-mrb_value tts_stop_direct(mrb_state* M, mrb_value self);
 mrb_value vp_ox_direct(mrb_state* M, mrb_value self);
 mrb_value vp_oy_direct(mrb_state* M, mrb_value self);
 mrb_value vp_set_ox_direct(mrb_state* M, mrb_value self, mrb_int v);

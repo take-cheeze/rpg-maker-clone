@@ -72,18 +72,6 @@ namespace rgss {
   return self;
 }
 
-mrb_value tts_available_direct(mrb_state* M, mrb_value self) {
-  return tts_available(M, self);
-}
-
-mrb_value tts_speak_direct(mrb_state* M, mrb_value self, const char* text) {
-  return tts_speak_native_body(M, self, text);
-}
-
-mrb_value tts_stop_direct(mrb_state* M, mrb_value self) {
-  return tts_stop(M, self);
-}
-
 }  // namespace rgss
 // END native-binding-split
 
