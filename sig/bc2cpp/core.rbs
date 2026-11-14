@@ -136,8 +136,9 @@ end
 
 # bc2cpp-native: native_singletons
 class Fiber
-  # The C function is bc2cpp_fiber_s_current (runtime/bc2cpp_fiber.hxx), registered on Fiber's singleton by
-  # bc2cpp_fiber_define. It answers the C++ fiber being resumed, else the root fiber.
+  # bc2cpp-c: bc2cpp_fiber_s_current
+  # Registered on Fiber's singleton by the fiber runtime (runtime/bc2cpp_fiber.hxx, bc2cpp_fiber_define).
+  # It answers the C++ fiber being resumed, else the root fiber.
   def self.current: () -> Fiber
 end
 
