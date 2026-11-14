@@ -20,7 +20,7 @@ end
 # bc2cpp-native: base_lcf
 class LCF::Array2D
   def []: (untyped) -> untyped
-  def []=: (untyped, untyped) -> untyped
+  def []=: (untyped, untyped) -> (LCF::Array1D | String)?
   def initialize: (untyped, untyped) -> untyped
   def same_schema?: (untyped) -> bool
 end
@@ -42,7 +42,7 @@ class LCF::File
   def []=: (untyped, untyped) -> untyped
   def delete: (untyped) -> untyped
   def header: () -> untyped
-  def initialize: (?untyped) -> untyped
+  def initialize: (?untyped) -> (LCF::Array1D | LCF::Sections | LCF::Array2D)?
   def schema: () -> untyped
 end
 # bc2cpp-native: base_lcf
@@ -1673,7 +1673,7 @@ class Game::Battle
   def first_strike?: () -> untyped
   def flee_all_enemies: () -> Array
   def flee_enemy: (untyped) -> bool
-  def force_flee?: () -> untyped
+  def force_flee?: () -> bool?
   def force_flee_party: () -> bool
   def hit_modifier: (untyped) -> untyped
   def hits?: (untyped, untyped) -> bool
@@ -2088,7 +2088,7 @@ class Game::Interpreter
   def do_change_hp: (untyped) -> untyped
   def do_change_items: (untyped) -> Integer?
   def do_change_level: (untyped) -> untyped
-  def do_change_monster_condition: (untyped) -> untyped
+  def do_change_monster_condition: (untyped) -> (Integer | bool)?
   def do_change_monster_hp: (untyped) -> untyped
   def do_change_monster_mp: (untyped) -> untyped
   def do_change_mp: (untyped) -> untyped
@@ -2107,10 +2107,10 @@ class Game::Interpreter
   def do_end_loop: (untyped) -> untyped
   def do_enemy_encounter: (untyped) -> untyped
   def do_erase_picture: (untyped) -> (bool | nil)
-  def do_erase_screen: (untyped) -> untyped
+  def do_erase_screen: (untyped) -> bool?
   def do_exit_game: (untyped) -> (bool | nil)
-  def do_flash_screen: (untyped) -> untyped
-  def do_flash_sprite: (untyped) -> untyped
+  def do_flash_screen: (untyped) -> (Integer | bool)?
+  def do_flash_sprite: (untyped) -> bool?
   def do_force_flee: (untyped) -> untyped
   def do_full_heal: (untyped) -> untyped
   def do_game_over: (untyped) -> bool
@@ -2119,16 +2119,16 @@ class Game::Interpreter
   def do_key_input: (untyped) -> (bool | nil)
   def do_memorize_bgm: (untyped) -> untyped
   def do_memorize_location: (untyped) -> untyped
-  def do_message_options: (untyped) -> untyped
+  def do_message_options: (untyped) -> bool?
   def do_move_event: (untyped) -> untyped
-  def do_move_picture: (untyped) -> untyped
+  def do_move_picture: (untyped) -> bool?
   def do_name_input: (untyped) -> (bool | nil)
   def do_open_load_menu: (untyped) -> (bool | nil)
   def do_open_main_menu: (untyped) -> bool
   def do_open_save_menu: (untyped) -> bool
   def do_open_shop: (untyped) -> bool
   def do_open_video_options: (untyped) -> untyped
-  def do_pan_screen: (untyped) -> untyped
+  def do_pan_screen: (untyped) -> bool?
   def do_play_memorized_bgm: (untyped) -> (bool | nil)
   def do_play_movie: (untyped) -> Hash
   def do_player_visibility: (untyped) -> untyped
@@ -2137,19 +2137,19 @@ class Game::Interpreter
   def do_set_escape_target: (untyped) -> Hash
   def do_set_teleport_target: (untyped) -> Hash?
   def do_set_vehicle_location: (untyped) -> untyped
-  def do_shake_screen: (untyped) -> untyped
+  def do_shake_screen: (untyped) -> (Integer | bool)?
   def do_show_battle_animation: (untyped) -> bool
   def do_show_battle_animation_b: (untyped) -> (bool | nil)
   def do_show_hidden_monster: (untyped) -> untyped
   def do_show_inn: (untyped) -> bool
-  def do_show_picture: (untyped) -> untyped
+  def do_show_picture: (untyped) -> Game::Picture?
   def do_simulated_attack: (untyped) -> untyped
   def do_store_event_id: (untyped) -> untyped
   def do_store_terrain_id: (untyped) -> untyped
   def do_terminate_battle: (untyped) -> untyped
   def do_tile_substitution: (untyped) -> (bool | nil)
   def do_timer: (untyped) -> untyped
-  def do_tint_screen: (untyped) -> untyped
+  def do_tint_screen: (untyped) -> bool?
   def do_toggle_atb_mode: (untyped) -> Integer?
   def do_toggle_fullscreen: (untyped) -> untyped
   def do_trade_event_locations: (untyped) -> untyped
@@ -2187,7 +2187,7 @@ class Game::Interpreter
   def skip_to: (untyped, untyped) -> untyped
   def start: (untyped) -> bool
   def start_at: (untyped, untyped) -> Integer?
-  def start_death_handler: () -> untyped
+  def start_death_handler: () -> bool?
   def start_random_battle: (untyped, ?first_strike: untyped, ?headless: untyped) -> (bool | nil)
   def stat_amount: (untyped) -> untyped
   def step_cost: (untyped) -> Integer
@@ -2738,7 +2738,7 @@ class Game::State
   def move_picture: (untyped, *untyped) -> Integer?
   def pictures_moving?: () -> bool
   def set_screen_transition: (untyped, untyped) -> Integer?
-  def show_picture: (untyped, untyped) -> untyped
+  def show_picture: (untyped, untyped) -> Game::Picture?
   def timer_display_text: () -> String
   def timer_frames: () -> untyped
   def timer_frames=: (untyped) -> untyped
@@ -3063,17 +3063,17 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def drive_battle_command: () -> untyped
   def drive_battle_encounter_message: () -> untyped
   def drive_battle_event: () -> untyped
-  def drive_battle_event_message: (untyped) -> untyped
+  def drive_battle_event_message: (untyped) -> (bool | RGSS::Bitmap)?
   def drive_battle_event_wait: (untyped) -> untyped
   def drive_battle_item: () -> untyped
   def drive_battle_options: () -> untyped
-  def drive_battle_result: () -> untyped
+  def drive_battle_result: () -> (Array | bool)?
   def drive_battle_skill: () -> untyped
   def drive_battle_target: () -> untyped
   def encounter_backdrop: () -> untyped
   def enter_battle_result: (untyped) -> Symbol
   def enter_command_phase: () -> untyped
-  def finish_battle: (untyped) -> untyped
+  def finish_battle: (untyped) -> (Array | bool)?
   def finish_round_animation: () -> untyped
   def finish_terminated_battle: () -> bool
   def fire_target_flash: (untyped, untyped) -> untyped
@@ -3109,7 +3109,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def rebuild_battler_sprite: (untyped, untyped) -> untyped
   def refresh_battle_list_arrows: (untyped, untyped, untyped) -> untyped
   def refresh_battle_sprites: () -> untyped
-  def refresh_battle_status: () -> untyped
+  def refresh_battle_status: () -> RPG2k::Window?
   def remove_battle_actor_sprite: (untyped) -> untyped
   def remove_fled_monster: (untyped) -> untyped
   def reposition_actor_sprite: (untyped) -> RGSS::Sprite?
@@ -3132,7 +3132,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def start_round_animation: () -> Integer
   def state_label: (untyped, untyped) -> untyped
   def sync_troop_member_rewards: (untyped, untyped) -> Integer?
-  def try_battle_escape: () -> untyped
+  def try_battle_escape: () -> (Integer | Symbol)
   def update_enemy_shakes: () -> untyped
   def whole_side_anim_targets: (untyped) -> Array
   def windowskin: () -> untyped
@@ -3212,7 +3212,7 @@ class RPG2k::Scene::EquipMenu < RPG2k::Scene::Base
   def rebuild_for_actor: () -> untyped
   def refresh_cand_cursor: () -> untyped
   def scroll_cand_list_to_cursor: () -> bool
-  def update: () -> untyped
+  def update: () -> RGSS::Bitmap?
   def warn_missing_item: (untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
@@ -3270,7 +3270,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def windowskin: () -> untyped
   def map_animation: () -> untyped
   def map_animation=: (untyped) -> untyped
-  def active_battle: () -> untyped
+  def active_battle: () -> (RPG2k::Scene::Battle | RPG2k3::Scene::Battle)?
   def actor_name: (untyped) -> untyped
   def anim_continuous_period: (untyped) -> Integer
   def anim_spin_period: (untyped) -> Integer
@@ -3315,7 +3315,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def close_name_input: () -> untyped
   def close_number_input: () -> untyped
   def close_shop: () -> untyped
-  def close_shop_quantity: () -> untyped
+  def close_shop_quantity: () -> (RGSS::Bitmap | RGSS::Rect)
   def commit_name_input: () -> (bool | nil)
   def common_gate_open?: (untyped) -> untyped
   def counter_tile?: (untyped, untyped) -> untyped
@@ -3330,17 +3330,17 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def draw_kana_grid: (untyped) -> RPG2k::Window
   def draw_kana_name_field: (untyped) -> RPG2k::Window
   def draw_kana_name_input: () -> RPG2k::Window
-  def draw_layers: (untyped, untyped) -> untyped
+  def draw_layers: (untyped, untyped) -> Array?
   def draw_message_more: () -> untyped
   def draw_name_input: () -> RPG2k::Window
   def draw_number_input: () -> untyped
   def draw_random_blocks_transition: (untyped) -> Integer
-  def draw_shop: () -> untyped
+  def draw_shop: () -> (RGSS::Bitmap | RGSS::Rect)
   def draw_shop_command_prompt: () -> RGSS::Rect
   def draw_shop_desc: (untyped) -> RGSS::Bitmap
   def draw_shop_gold: () -> RGSS::Bitmap?
-  def draw_shop_party: (untyped) -> untyped
-  def draw_shop_prompt: () -> untyped
+  def draw_shop_party: (untyped) -> (Game::Party | RPG2k::Window)?
+  def draw_shop_prompt: () -> (RGSS::Bitmap | RGSS::Rect)
   def draw_shop_status: (untyped) -> RGSS::Bitmap?
   def draw_timer_digits: (untyped, untyped) -> untyped
   def draw_vehicles: (untyped, untyped, untyped, untyped) -> untyped
@@ -3352,11 +3352,11 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def drive_name_input: (?untyped) -> untyped
   def drive_number_input: () -> untyped
   def drive_shop: (?untyped) -> untyped
-  def drive_shop_command: () -> untyped
-  def drive_shop_confirm: () -> untyped
+  def drive_shop_command: () -> (bool | RGSS::Bitmap | RGSS::Rect)
+  def drive_shop_confirm: () -> (RGSS::Bitmap | RGSS::Rect)
   def drive_shop_list: () -> untyped
   def drive_shop_quantity: () -> untyped
-  def drive_wait_key_enter: () -> untyped
+  def drive_wait_key_enter: () -> (bool | RGSS::Bitmap)?
   def erase_event: (untyped) -> untyped
   def event_at: (untyped, untyped) -> untyped
   def event_id_at: (untyped, untyped) -> untyped
@@ -3388,7 +3388,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def kana_cell_label: (untyped, untyped) -> untyped
   def kana_cell_rect: (untyped, untyped, untyped) -> Array
   def kana_confirm_sel: (untyped) -> untyped
-  def kana_name_input_confirm: () -> untyped
+  def kana_name_input_confirm: () -> (bool | RPG2k::Window)?
   def kana_snap_col: (untyped, untyped, untyped) -> untyped
   def kana_step_col: (untyped, untyped, untyped, untyped) -> untyped
   def key_input_hit?: (untyped, untyped) -> untyped
@@ -3400,7 +3400,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def message_page_layout: (untyped) -> Array
   def missing_animation_wait: (untyped) -> untyped
   def move_autonomous: (untyped, untyped, ?allow_trigger: untyped) -> untyped
-  def move_event_to: (untyped, untyped, untyped) -> untyped
+  def move_event_to: (untyped, untyped, untyped) -> bool?
   def move_player_to: (untyped, untyped) -> untyped
   def move_vehicle_to: (untyped, untyped, untyped) -> untyped
   def music_balance: (untyped) -> untyped
@@ -3409,14 +3409,14 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def music_tempo: (untyped) -> untyped
   def music_volume: (untyped) -> untyped
   def name_input_cancel: () -> untyped
-  def name_input_confirm: () -> untyped
+  def name_input_confirm: () -> (bool | RPG2k::Window)?
   def name_kana_rows: (untyped) -> Array
   def name_row_len: (untyped) -> untyped
   def note_party_step: () -> untyped
   def open_inn_window: (untyped) -> RGSS::Rect?
   def open_message: (untyped, untyped, ?interp: untyped) -> RGSS::Rect?
   def open_number_input: (untyped, ?interp: untyped) -> RGSS::Bitmap?
-  def open_shop: (untyped, ?untyped) -> untyped
+  def open_shop: (untyped, ?untyped) -> (RGSS::Bitmap | RGSS::Rect)
   def open_shop_quantity: (untyped) -> bool
   def page_field: (untyped, untyped) -> untyped
   def page_move_route: (untyped) -> untyped
@@ -3429,8 +3429,8 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def perform_event_menu: (?untyped) -> untyped
   def perform_event_save: (?untyped) -> untyped
   def perform_exit_game: (?untyped) -> untyped
-  def perform_game_over: (?untyped) -> untyped
-  def perform_return_to_title: (?untyped) -> untyped
+  def perform_game_over: (?untyped) -> (Array | bool)
+  def perform_return_to_title: (?untyped) -> (Array | bool)
   def picture_src: (untyped, untyped) -> untyped
   def play_battle_bgm: () -> untyped
   def play_bgm: (untyped) -> untyped
@@ -3465,7 +3465,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def shop_move_cursor: (untyped) -> bool
   def shop_quantity_move: (untyped) -> bool
   def shop_status_item_id: (untyped) -> untyped
-  def shop_switch: (untyped) -> untyped
+  def shop_switch: (untyped) -> (RGSS::Bitmap | RGSS::Rect)
   def shop_terms: (untyped) -> Hash
   def start_event: (untyped, ?untyped) -> untyped
   def start_inn_bgm_wait: (untyped) -> bool
@@ -3474,7 +3474,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def start_player_route: (untyped, untyped) -> Hash?
   def start_player_slide: () -> bool
   def step_animation_wait: () -> untyped
-  def step_event: (untyped, ?allow_trigger: untyped) -> untyped
+  def step_event: (untyped, ?allow_trigger: untyped) -> bool
   def step_events: (?allow_trigger: untyped) -> untyped
   def step_map_animation: () -> untyped
   def step_movement: () -> (bool | nil)
@@ -6820,9 +6820,9 @@ class Game::MoveRoute
   def jump_face_direction: (untyped, untyped, untyped, untyped) -> untyped
   def jump_move_direction: (untyped, untyped, untyped, untyped) -> untyped
   def land_jump: (untyped, untyped, untyped, untyped, untyped) -> Array
-  def repeat?: () -> untyped
+  def repeat?: () -> bool?
   def resume_at: (untyped) -> untyped
-  def skippable?: () -> untyped
+  def skippable?: () -> bool?
   def toward_hero: (untyped, untyped) -> Integer
   def self.from_page: (untyped) -> untyped
 end
