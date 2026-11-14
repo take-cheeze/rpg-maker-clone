@@ -1100,7 +1100,7 @@ module RGSS::Graphics
   def frame_rate=: (untyped) -> untyped
   def width: () -> untyped
   def height: () -> untyped
-  def brightness: () -> untyped
+  def brightness: () -> Integer?
   def transition_frame_hook=: (untyped) -> untyped
   def _transition_map: (untyped) -> untyped
   def brightness=: (untyped) -> untyped
