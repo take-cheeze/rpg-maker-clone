@@ -2044,7 +2044,7 @@ class Game::Interpreter
   def message_followup: () -> Symbol?
   def resolver: () -> nil
   def resolver=: (untyped) -> untyped
-  def triggered_by_decision_key: () -> untyped
+  def triggered_by_decision_key: () -> bool?
   def triggered_by_decision_key=: (untyped) -> untyped
   def battle: () -> nil
   def battle=: (untyped) -> untyped
@@ -2401,7 +2401,7 @@ class Game::MessageConfig
   def position_fixed=: (untyped) -> untyped
   def continue_events: () -> bool?
   def continue_events=: (untyped) -> untyped
-  def face_name: () -> untyped
+  def face_name: () -> String?
   def face_name=: (untyped) -> untyped
   def face_index: () -> Integer?
   def face_index=: (untyped) -> untyped
@@ -2679,7 +2679,7 @@ class Game::State
   def encounter_rate=: (untyped) -> untyped
   def encounter_total: () -> Integer?
   def encounter_total=: (untyped) -> untyped
-  def steps: () -> untyped
+  def steps: () -> Integer?
   def steps=: (untyped) -> untyped
   def last_battle_turns: () -> nil
   def last_battle_turns=: (untyped) -> untyped
