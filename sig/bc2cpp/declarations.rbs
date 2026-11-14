@@ -1031,7 +1031,7 @@ class RGSS::Bitmap::LoadError < RuntimeError
 end
 # bc2cpp-native: base_rgss
 module RGSS::ErrorReport
-  def lines: () -> untyped
+  def lines: () -> Array?
   def last_location: () -> untyped
   def self.clear: () -> untyped
   def self.install: () -> untyped
@@ -1055,17 +1055,17 @@ class RGSS::ErrorReport::Tee
 end
 # bc2cpp-native: base_rgss
 class RGSS::Font
-  def default_name: () -> untyped
+  def default_name: () -> String?
   def default_name=: (untyped) -> untyped
-  def default_size: () -> untyped
+  def default_size: () -> Integer?
   def default_size=: (untyped) -> untyped
-  def default_bold: () -> untyped
+  def default_bold: () -> bool?
   def default_bold=: (untyped) -> untyped
-  def default_italic: () -> untyped
+  def default_italic: () -> bool?
   def default_italic=: (untyped) -> untyped
-  def default_shadow: () -> untyped
+  def default_shadow: () -> bool?
   def default_shadow=: (untyped) -> untyped
-  def default_outline: () -> untyped
+  def default_outline: () -> bool?
   def default_outline=: (untyped) -> untyped
   def default_color: () -> untyped
   def default_color=: (untyped) -> untyped
@@ -1094,9 +1094,9 @@ class RGSS::Font
 end
 # bc2cpp-native: base_rgss
 module RGSS::Graphics
-  def frame_count: () -> untyped
+  def frame_count: () -> Integer?
   def frame_count=: (untyped) -> untyped
-  def frame_rate: () -> untyped
+  def frame_rate: () -> Integer?
   def frame_rate=: (untyped) -> untyped
   def width: () -> untyped
   def height: () -> untyped
@@ -5917,7 +5917,7 @@ end
 # bc2cpp-native: base_rpgxp
 class RPGXP::RGSSAD
   def version: () -> untyped
-  def entries: () -> untyped
+  def entries: () -> Hash?
   def advance: (untyped) -> untyped
   def decrypt_data: (untyped, untyped) -> untyped
   def decrypt_int: (untyped, untyped) -> untyped
@@ -6123,15 +6123,15 @@ class Wolf::CommonEvent
   def number_arg_count: () -> untyped
   def string_arg_count: () -> untyped
   def name: () -> untyped
-  def commands: () -> untyped
+  def commands: () -> Array?
   def memo: () -> untyped
   def arg_names: () -> untyped
   def arg_specials: () -> untyped
-  def arg_options: () -> untyped
-  def arg_option_values: () -> untyped
+  def arg_options: () -> Array?
+  def arg_option_values: () -> Array?
   def arg_defaults: () -> untyped
   def color: () -> untyped
-  def self_names: () -> untyped
+  def self_names: () -> Array?
   def return_name: () -> untyped
   def return_variable: () -> untyped
   def auto?: () -> bool
@@ -6142,8 +6142,8 @@ end
 class Wolf::CommonEvents
   def utf8: () -> untyped
   def version: () -> untyped
-  def events: () -> untyped
-  def v35: () -> untyped
+  def events: () -> Array?
+  def v35: () -> bool?
   def []: (untyped) -> untyped
   def initialize: (untyped) -> untyped
   def named: (untyped) -> untyped
@@ -6160,8 +6160,8 @@ end
 class Wolf::DBDatum
   def index: () -> untyped
   def name: () -> untyped
-  def numbers: () -> untyped
-  def strings: () -> untyped
+  def numbers: () -> Array?
+  def strings: () -> Array?
   def numbers=: (untyped) -> untyped
   def strings=: (untyped) -> untyped
   def []: (untyped) -> untyped
@@ -6172,10 +6172,10 @@ end
 class Wolf::DBField
   def index: () -> untyped
   def name: () -> untyped
-  def kind: () -> untyped
-  def special_strings: () -> untyped
-  def special_values: () -> untyped
-  def default: () -> untyped
+  def kind: () -> Integer?
+  def special_strings: () -> Array?
+  def special_values: () -> Array?
+  def default: () -> Integer?
   def kind=: (untyped) -> untyped
   def special_strings=: (untyped) -> untyped
   def special_values=: (untyped) -> untyped
@@ -6248,7 +6248,7 @@ class Wolf::Database
   def utf8: () -> untyped
   def encrypted: () -> untyped
   def version: () -> untyped
-  def types: () -> untyped
+  def types: () -> Array?
   def []: (untyped) -> untyped
   def initialize: (untyped, untyped, untyped) -> untyped
   def size: () -> untyped
@@ -6264,16 +6264,16 @@ class Wolf::Event
   def name: () -> untyped
   def x: () -> untyped
   def y: () -> untyped
-  def pages: () -> untyped
+  def pages: () -> Array?
   def initialize: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_wolf
 class Wolf::GameDat
-  def utf8: () -> untyped
+  def utf8: () -> bool?
   def encrypted: () -> untyped
   def u8_settings: () -> untyped
   def strings: () -> untyped
-  def u16_settings: () -> untyped
+  def u16_settings: () -> Array?
   def file_size: () -> untyped
   def tail: () -> untyped
   def animation_patterns: () -> untyped
@@ -6405,7 +6405,7 @@ class Wolf::Interpreter::Rng
 end
 # bc2cpp-native: base_wolf
 class Wolf::Interpreter::Run
-  def done: () -> untyped
+  def done: () -> bool?
   def continue_loop: (untyped, from_loop_end: untyped) -> untyped
   def dispatch: (untyped) -> untyped
   def enclosing_loop_start_index: () -> untyped
@@ -6435,8 +6435,8 @@ class Wolf::Map
   def width: () -> untyped
   def height: () -> untyped
   def layer_count: () -> untyped
-  def layers: () -> untyped
-  def events: () -> untyped
+  def layers: () -> Array?
+  def events: () -> Array?
   def v35: () -> untyped
   def name: () -> untyped
   def event: (untyped) -> untyped
@@ -6450,7 +6450,7 @@ end
 # bc2cpp-native: base_wolf
 class Wolf::MapTree
   def version: () -> untyped
-  def entries: () -> untyped
+  def entries: () -> Array?
   def children_of: (untyped) -> untyped
   def initialize: (untyped) -> untyped
   def map_ids: () -> untyped
@@ -6465,15 +6465,15 @@ class Wolf::Page
   def opacity: () -> untyped
   def blend: () -> untyped
   def trigger: () -> untyped
-  def conditions: () -> untyped
+  def conditions: () -> Array?
   def animation_speed: () -> untyped
   def move_speed: () -> untyped
   def move_frequency: () -> untyped
   def move_type: () -> untyped
   def options: () -> untyped
   def route_options: () -> untyped
-  def route: () -> untyped
-  def commands: () -> untyped
+  def route: () -> Array?
+  def commands: () -> Array?
   def features: () -> untyped
   def shadow: () -> untyped
   def range_x: () -> untyped
@@ -6495,7 +6495,7 @@ class Wolf::Project
   def game: () -> untyped
   def map_tree: () -> untyped
   def tilesets: () -> untyped
-  def databases: () -> untyped
+  def databases: () -> Hash?
   def common_events: () -> untyped
   def changeable_db: () -> untyped
   def hero_graphic: () -> untyped
@@ -6569,7 +6569,7 @@ end
 class Wolf::TileSetData
   def utf8: () -> untyped
   def version: () -> untyped
-  def tilesets: () -> untyped
+  def tilesets: () -> Array?
   def []: (untyped) -> untyped
   def initialize: (untyped) -> untyped
   def size: () -> untyped
@@ -6580,8 +6580,8 @@ class Wolf::Tileset
   def index: () -> untyped
   def name: () -> untyped
   def base_file: () -> untyped
-  def autotile_files: () -> untyped
-  def flags: () -> untyped
+  def autotile_files: () -> Array?
+  def flags: () -> Array?
   def autotile_count: () -> untyped
   def chip_count: () -> untyped
   def flags_for: (untyped) -> untyped
