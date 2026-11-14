@@ -1067,9 +1067,9 @@ class RGSS::Font
   def default_shadow=: (untyped) -> untyped
   def default_outline: () -> bool?
   def default_outline=: (untyped) -> untyped
-  def default_color: () -> untyped
+  def default_color: () -> RGSS::Color?
   def default_color=: (untyped) -> untyped
-  def default_out_color: () -> untyped
+  def default_out_color: () -> RGSS::Color?
   def default_out_color=: (untyped) -> untyped
   def default_path: () -> untyped
   def default_path=: (untyped) -> untyped
@@ -4903,7 +4903,7 @@ end
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_rpgvx
 class RPGVX
-  def db: () -> untyped
+  def db: () -> RPGVX::RGSSData?
   def edition: () -> untyped
   def title: () -> untyped
   def current_scene_name: () -> String
@@ -5901,7 +5901,7 @@ end
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_rpgxp
 class RPGXP
-  def db: () -> untyped
+  def db: () -> RPGXP::RGSSData?
   def title: () -> untyped
   def current_scene_name: () -> String
   def default_title: () -> untyped
