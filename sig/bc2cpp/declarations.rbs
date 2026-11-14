@@ -778,10 +778,10 @@ class MV
   def core_scripts: () -> untyped
   def create_screen: () -> untyped
   def current_scene: () -> untyped
-  def event_running?: () -> untyped
+  def event_running?: () -> bool
   def initialize: (untyped) -> untyped
   def input_map: () -> untyped
-  def js_available?: () -> untyped
+  def js_available?: () -> bool
   def log_scene_transition: () -> untyped
   def main_loop: () -> untyped
   def maybe_audio_test: () -> untyped
@@ -795,7 +795,7 @@ class MV
   def maybe_screenshot: () -> untyped
   def maybe_set_main_font: (untyped) -> untyped
   def menu_test_requested?: () -> untyped
-  def message_busy?: () -> untyped
+  def message_busy?: () -> bool
   def message_test_requested?: () -> untyped
   def move_probe_dir: (untyped) -> untyped
   def move_settle_max_frames: () -> untyped
@@ -809,7 +809,7 @@ class MV
   def pump_audio: () -> untyped
   def pump_frame: () -> untyped
   def runtime_available?: () -> untyped
-  def satisfied?: (untyped) -> untyped
+  def satisfied?: (untyped) -> bool
   def save_test_requested?: () -> untyped
   def start: () -> untyped
   def sync_input: () -> untyped
@@ -836,7 +836,7 @@ class MZ
   def battle_test_troop: () -> untyped
   def boot: () -> untyped
   def boot_error: () -> untyped
-  def boot_finished?: () -> untyped
+  def boot_finished?: () -> bool
   def boot_probe: () -> untyped
   def common_event_probe_js: (untyped, untyped) -> untyped
   def common_event_state_js: (untyped, untyped) -> untyped
@@ -902,7 +902,7 @@ class MZ
   def render_skip_enabled?: () -> untyped
   def runnable_scripts: () -> untyped
   def runtime_available?: () -> untyped
-  def satisfied?: (untyped) -> untyped
+  def satisfied?: (untyped) -> bool
   def save_probe_js: (untyped) -> untyped
   def save_result_js: () -> untyped
   def save_test_requested?: () -> untyped
