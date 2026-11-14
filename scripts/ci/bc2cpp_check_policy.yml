@@ -1897,6 +1897,13 @@ checks:
     fixture_capabilities:
     - mrbc
     - native_sources
+  scripts/bc2cpp/element_guard_check.rb:
+    tier: runtime
+    capabilities:
+    - mrbc
+    - native_sources
+    - full_library
+    - cxx
   scripts/bc2cpp/declared_ivar_guard_check.rb:
     tier: fast
     capabilities: []
