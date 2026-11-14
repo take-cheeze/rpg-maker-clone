@@ -1950,7 +1950,7 @@ end
 # bc2cpp-native: base_rpg2k
 class Game::Enemy
   def id: () -> untyped
-  def name: () -> untyped
+  def name: () -> String?
   def battler_name: () -> String
   def max_hp: () -> Integer?
   def max_sp: () -> Integer?
@@ -1971,7 +1971,7 @@ class Game::Enemy
   def hidden: () -> bool?
   def hidden=: (untyped) -> untyped
   def actions: () -> Array?
-  def crit_chance: () -> untyped
+  def crit_chance: () -> Integer?
   def attribute_ranks: () -> Hash?
   def state_ranks: () -> Hash?
   def levitate: () -> bool?
@@ -2869,7 +2869,7 @@ end
 # bc2cpp-native: base_rpg2k
 class Game::Troop
   def id: () -> untyped
-  def name: () -> untyped
+  def name: () -> String?
   def members: () -> Array?
   def pages: () -> LCF::Array2D?
   def apply_appear_randomly: (untyped, untyped) -> untyped
