@@ -1,0 +1,1 @@
+- `Enumerator` external iteration (`next`, `peek`) calls the runtime's `Fiber.current` directly instead of by method name. No change in behaviour.
