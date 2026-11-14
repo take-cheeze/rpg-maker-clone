@@ -2080,20 +2080,20 @@ class Game::Interpreter
   def do_change_battle_bg: (untyped) -> untyped
   def do_change_battle_commands: (untyped) -> untyped
   def do_change_class: (untyped) -> untyped
-  def do_change_condition: (untyped) -> untyped
-  def do_change_equipment: (untyped) -> untyped
+  def do_change_condition: (untyped) -> bool
+  def do_change_equipment: (untyped) -> bool
   def do_change_event_location: (untyped) -> untyped
   def do_change_exp: (untyped) -> untyped
   def do_change_face: (untyped) -> (bool | nil)
-  def do_change_hp: (untyped) -> untyped
+  def do_change_hp: (untyped) -> bool
   def do_change_items: (untyped) -> Integer?
   def do_change_level: (untyped) -> untyped
   def do_change_monster_condition: (untyped) -> (Integer | bool)?
   def do_change_monster_hp: (untyped) -> untyped
   def do_change_monster_mp: (untyped) -> untyped
-  def do_change_mp: (untyped) -> untyped
+  def do_change_mp: (untyped) -> bool
   def do_change_parallax: (untyped) -> bool
-  def do_change_params: (untyped) -> untyped
+  def do_change_params: (untyped) -> bool
   def do_change_skills: (untyped) -> untyped
   def do_change_system_bgm: (untyped) -> Hash
   def do_change_system_graphic: (untyped) -> bool
@@ -2112,7 +2112,7 @@ class Game::Interpreter
   def do_flash_screen: (untyped) -> (Integer | bool)?
   def do_flash_sprite: (untyped) -> bool?
   def do_force_flee: (untyped) -> untyped
-  def do_full_heal: (untyped) -> untyped
+  def do_full_heal: (untyped) -> bool
   def do_game_over: (untyped) -> bool
   def do_input_number: (untyped) -> bool
   def do_jump_label: (untyped) -> untyped
@@ -2143,7 +2143,7 @@ class Game::Interpreter
   def do_show_hidden_monster: (untyped) -> untyped
   def do_show_inn: (untyped) -> bool
   def do_show_picture: (untyped) -> Game::Picture?
-  def do_simulated_attack: (untyped) -> untyped
+  def do_simulated_attack: (untyped) -> bool
   def do_store_event_id: (untyped) -> untyped
   def do_store_terrain_id: (untyped) -> untyped
   def do_terminate_battle: (untyped) -> untyped
@@ -2487,8 +2487,8 @@ class Game::Party
   def each: () -> untyped
   def effective_spi: (untyped) -> untyped
   def equip_by_class?: () -> untyped
-  def equip_from_bag: (untyped, untyped, ?untyped) -> untyped
-  def equip_item_from_bag: (untyped, untyped) -> untyped
+  def equip_from_bag: (untyped, untyped, ?untyped) -> bool
+  def equip_item_from_bag: (untyped, untyped) -> bool
   def equip_slot_for: (untyped) -> Integer?
   def equipped_item_count: (untyped) -> untyped
   def escape_skill_available?: (untyped) -> untyped
@@ -3481,7 +3481,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def sync_player_route_to_state: () -> Hash?
   def table_entries: (untyped) -> Array
   def target_tile: (untyped, untyped, untyped) -> Array
-  def terrain_backdrop: (untyped, untyped) -> untyped
+  def terrain_backdrop: (untyped, untyped) -> String
   def terrain_id: (untyped, untyped) -> untyped
   def terrain_step_damage: (?untyped) -> Array
   def tile_color: (untyped) -> untyped
@@ -6479,7 +6479,7 @@ class Wolf::Page
   def range_x: () -> untyped
   def range_y: () -> untyped
   def transfer: () -> untyped
-  def above_hero?: () -> untyped
+  def above_hero?: () -> bool
   def auto?: () -> bool
   def compare_operator: () -> untyped
   def enabled?: () -> bool
@@ -6487,7 +6487,7 @@ class Wolf::Page
   def initialize: (untyped, untyped, untyped) -> untyped
   def option?: (untyped) -> bool
   def parallel?: () -> bool
-  def slip_through?: () -> untyped
+  def slip_through?: () -> bool
 end
 # bc2cpp-native: base_wolf
 class Wolf::Project
