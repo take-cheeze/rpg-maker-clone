@@ -15,7 +15,7 @@ class LCF::Array1D
   def []=: (untyped, untyped) -> untyped
   def delete: (untyped) -> untyped
   def field?: (untyped) -> untyped
-  def key?: (untyped) -> untyped
+  def key?: (untyped) -> bool
 end
 # bc2cpp-native: base_lcf
 class LCF::Array2D
@@ -770,7 +770,7 @@ class MV
   def game_dir: () -> untyped
   def apply_audio: (untyped) -> untyped
   def apply_audio_op: (untyped) -> untyped
-  def audio_test_requested?: () -> untyped
+  def audio_test_requested?: () -> bool
   def battle_test_troop: () -> untyped
   def boot: () -> untyped
   def boot_scripts: () -> untyped
@@ -794,27 +794,27 @@ class MV
   def maybe_save_test: () -> untyped
   def maybe_screenshot: () -> untyped
   def maybe_set_main_font: (untyped) -> untyped
-  def menu_test_requested?: () -> untyped
+  def menu_test_requested?: () -> bool
   def message_busy?: () -> bool
-  def message_test_requested?: () -> untyped
+  def message_test_requested?: () -> bool
   def move_probe_dir: (untyped) -> untyped
   def move_settle_max_frames: () -> untyped
-  def move_test_requested?: () -> untyped
+  def move_test_requested?: () -> bool
   def mv_gl_handle: () -> untyped
   def parse_audio_op: (untyped) -> untyped
   def player_tile: () -> untyped
   def present: () -> untyped
   def pressed_buttons: () -> untyped
-  def project?: (?untyped) -> untyped
+  def project?: (?untyped) -> bool
   def pump_audio: () -> untyped
   def pump_frame: () -> untyped
   def runtime_available?: () -> untyped
   def satisfied?: (untyped) -> bool
-  def save_test_requested?: () -> untyped
+  def save_test_requested?: () -> bool
   def start: () -> untyped
   def sync_input: () -> untyped
   def sync_touch: () -> untyped
-  def touch_bridge_js: (untyped, untyped, untyped) -> untyped
+  def touch_bridge_js: (untyped, untyped, untyped) -> String
   def warn_runtime_pending: () -> untyped
 end
 
@@ -823,40 +823,40 @@ end
 class MZ
   def game_dir: () -> untyped
   def boot_scene: () -> untyped
-  def animation_probe_js: (untyped) -> untyped
+  def animation_probe_js: (untyped) -> String
   def animation_shot_ready?: () -> untyped
-  def animation_state_js: (untyped) -> untyped
-  def animation_test_requested?: () -> untyped
-  def audio_bridge_js: () -> untyped
-  def audio_test_requested?: () -> untyped
-  def battle_play_requested?: () -> untyped
-  def battle_probe_js: (untyped) -> untyped
+  def animation_state_js: (untyped) -> String
+  def animation_test_requested?: () -> bool
+  def audio_bridge_js: () -> String
+  def audio_test_requested?: () -> bool
+  def battle_play_requested?: () -> bool
+  def battle_probe_js: (untyped) -> String
   def battle_shot_ready?: () -> untyped
-  def battle_state_js: () -> untyped
+  def battle_state_js: () -> String
   def battle_test_troop: () -> untyped
   def boot: () -> untyped
   def boot_error: () -> untyped
   def boot_finished?: () -> bool
   def boot_probe: () -> untyped
-  def common_event_probe_js: (untyped, untyped) -> untyped
-  def common_event_state_js: (untyped, untyped) -> untyped
-  def common_event_test_requested?: () -> untyped
+  def common_event_probe_js: (untyped, untyped) -> String
+  def common_event_state_js: (untyped, untyped) -> String
+  def common_event_test_requested?: () -> bool
   def core_scripts: () -> untyped
   def create_screen: () -> untyped
   def current_scene: () -> untyped
   def effekseer_shim_js: () -> untyped
   def encounter_shot_ready?: () -> untyped
-  def encounter_state_js: () -> untyped
-  def encounter_test_requested?: () -> untyped
-  def equip_setup_js: (untyped) -> untyped
+  def encounter_state_js: () -> String
+  def encounter_test_requested?: () -> bool
+  def equip_setup_js: (untyped) -> String
   def equip_shot_ready?: () -> untyped
-  def equip_state_js: (untyped) -> untyped
-  def equip_test_requested?: () -> untyped
+  def equip_state_js: (untyped) -> String
+  def equip_test_requested?: () -> bool
   def finish_when_probes_done: () -> untyped
   def force_render_before_capture: () -> untyped
   def host_globals_js: () -> untyped
   def initialize: (untyped) -> untyped
-  def js_string: (untyped) -> untyped
+  def js_string: (untyped) -> String
   def log_scene_transition: () -> untyped
   def main_loop: () -> untyped
   def maybe_animation_test: () -> untyped
@@ -877,25 +877,25 @@ class MZ
   def maybe_screenshot: () -> untyped
   def maybe_shop_test: () -> untyped
   def maybe_transfer_test: () -> untyped
-  def menu_play_requested?: () -> untyped
-  def menu_play_setup_js: (untyped, untyped, untyped) -> untyped
+  def menu_play_requested?: () -> bool
+  def menu_play_setup_js: (untyped, untyped, untyped) -> String
   def menu_play_shot_ready?: () -> untyped
-  def menu_play_state_js: (untyped) -> untyped
-  def menu_probe_js: () -> untyped
-  def menu_test_requested?: () -> untyped
-  def message_play_probe_js: (untyped, untyped, untyped, untyped) -> untyped
-  def message_play_requested?: () -> untyped
+  def menu_play_state_js: (untyped) -> String
+  def menu_probe_js: () -> String
+  def menu_test_requested?: () -> bool
+  def message_play_probe_js: (untyped, untyped, untyped, untyped) -> String
+  def message_play_requested?: () -> bool
   def message_play_shot_ready?: () -> untyped
-  def message_play_state_js: (untyped) -> untyped
-  def message_probe_js: (untyped) -> untyped
-  def message_state_js: () -> untyped
-  def message_test_requested?: () -> untyped
-  def move_test_requested?: () -> untyped
+  def message_play_state_js: (untyped) -> String
+  def message_probe_js: (untyped) -> String
+  def message_state_js: () -> String
+  def message_test_requested?: () -> bool
+  def move_test_requested?: () -> bool
   def mz_gl_handle: () -> untyped
-  def new_game_requested?: () -> untyped
+  def new_game_requested?: () -> bool
   def player_tile: () -> untyped
   def present: () -> untyped
-  def project?: (?untyped) -> untyped
+  def project?: (?untyped) -> bool
   def pump_audio: () -> untyped
   def pump_frame: () -> untyped
   def render_skip_bridge_js: () -> untyped
@@ -903,22 +903,22 @@ class MZ
   def runnable_scripts: () -> untyped
   def runtime_available?: () -> untyped
   def satisfied?: (untyped) -> bool
-  def save_probe_js: (untyped) -> untyped
-  def save_result_js: () -> untyped
-  def save_test_requested?: () -> untyped
+  def save_probe_js: (untyped) -> String
+  def save_result_js: () -> String
+  def save_test_requested?: () -> bool
   def scene_name: () -> untyped
-  def screenshot_requested?: () -> untyped
-  def shop_probe_js: (untyped, untyped) -> untyped
+  def screenshot_requested?: () -> bool
+  def shop_probe_js: (untyped, untyped) -> String
   def shop_shot_ready?: () -> untyped
-  def shop_state_js: (untyped) -> untyped
-  def shop_test_requested?: () -> untyped
+  def shop_state_js: (untyped) -> String
+  def shop_test_requested?: () -> bool
   def start: () -> untyped
   def state_field: (untyped, untyped) -> untyped
   def sync_input: () -> untyped
   def sync_touch: () -> untyped
-  def transfer_probe_js: (untyped, untyped, untyped) -> untyped
-  def transfer_state_js: () -> untyped
-  def transfer_test_requested?: () -> untyped
+  def transfer_probe_js: (untyped, untyped, untyped) -> String
+  def transfer_state_js: () -> String
+  def transfer_test_requested?: () -> bool
   def warn_runtime_pending: () -> untyped
 end
 
@@ -1089,7 +1089,7 @@ class RGSS::Font
   def color=: (untyped) -> untyped
   def out_color: () -> untyped
   def out_color=: (untyped) -> untyped
-  def exist?: (untyped) -> untyped
+  def exist?: (untyped) -> bool
   def initialize: (?untyped, ?untyped) -> untyped
 end
 # bc2cpp-native: base_rgss
@@ -1504,7 +1504,7 @@ class Game::Actor
   def class_id: () -> untyped
   def exp=: (untyped) -> untyped
   def battle_combo: () -> untyped
-  def alive?: () -> untyped
+  def alive?: () -> bool
   def atb_gauge: () -> untyped
   def atb_gauge=: (untyped) -> untyped
   def attack_all?: () -> untyped
@@ -1519,9 +1519,9 @@ class Game::Actor
   def battle_x: () -> untyped
   def battle_y: () -> untyped
   def battler_animation_id: () -> untyped
-  def can_act?: () -> untyped
+  def can_act?: () -> bool
   def change_battle_commands: (untyped, untyped) -> untyped
-  def change_class: (untyped, untyped, untyped, untyped) -> untyped
+  def change_class: (untyped, untyped, untyped, untyped) -> bool
   def change_level_by: (untyped) -> untyped
   def change_mp: (untyped) -> untyped
   def change_param: (untyped, untyped) -> untyped
@@ -1543,7 +1543,7 @@ class Game::Actor
   def half_sp_cost?: () -> untyped
   def ignores_evasion?: () -> untyped
   def knock_out!: () -> untyped
-  def knows_skill?: (untyped) -> untyped
+  def knows_skill?: (untyped) -> bool
   def learn_skill: (untyped) -> untyped
   def max_level: () -> untyped
   def permanent_states: () -> untyped
@@ -1560,7 +1560,7 @@ class Game::Actor
   def set_hp: (untyped) -> untyped
   def skill_command_name: () -> untyped
   def skills=: (untyped) -> untyped
-  def state?: (untyped) -> untyped
+  def state?: (untyped) -> bool
   def state_ranks: () -> untyped
   def state_resist_mul: (untyped) -> untyped
   def state_table: () -> untyped
@@ -1580,7 +1580,7 @@ class Game::Actor
 end
 # bc2cpp-native: base_rpg2k
 class Game::Actors
-  def known_invalid?: (untyped) -> untyped
+  def known_invalid?: (untyped) -> bool
 end
 # bc2cpp-native: base_rpg2k
 module Game::Backdrop
@@ -1604,7 +1604,7 @@ class Game::Battle
   def actor_turn: (untyped, ?untyped) -> untyped
   def adjust_stat: (untyped, untyped) -> untyped
   def advance_gauges: (?untyped) -> untyped
-  def alive?: (untyped) -> untyped
+  def alive?: (untyped) -> bool
   def all_combatants: () -> untyped
   def ally?: (untyped) -> untyped
   def ally_by_actor_id: (untyped) -> untyped
@@ -1646,19 +1646,19 @@ class Game::Battle
   def command_skill: (untyped, untyped, name: untyped, cost: untyped, ?hp: untyped, ?mp: untyped, ?inflict: untyped, ?chance: untyped, ?variance: untyped, ?attributes: untyped, ?skill_id: untyped, ?absorb: untyped, ?attr_shift: untyped, ?attr_ids: untyped, ?stat_mod_keys: untyped, ?stat_effect: untyped, ?cured: untyped, ?attack: untyped, ?physical_rate: untyped, ?item_id: untyped, ?switch_id: untyped) -> untyped
   def command_skill_all: (untyped, untyped, name: untyped, cost: untyped, ?inflict: untyped, ?chance: untyped, ?variance: untyped, ?attributes: untyped, ?skill_id: untyped, ?absorb: untyped, ?attr_shift: untyped, ?attr_ids: untyped, ?stat_mod_keys: untyped, ?stat_effect: untyped, ?cured: untyped, ?attack: untyped, ?physical_rate: untyped, ?item_id: untyped) -> untyped
   def command_skip: (untyped) -> untyped
-  def command_targets_dead_ok?: (untyped) -> untyped
+  def command_targets_dead_ok?: (untyped) -> bool
   def compute_escape_chance: () -> untyped
   def critical?: (untyped) -> untyped
   def cure_state: (untyped, untyped) -> untyped
   def damage_cap: () -> untyped
   def deal_attack: (untyped, untyped, ?untyped, ?charged: untyped) -> untyped
   def deal_attack_with_current_weapon: (untyped, untyped, ?charged: untyped) -> untyped
-  def do_nothing_restricted?: (untyped) -> untyped
+  def do_nothing_restricted?: (untyped) -> bool
   def effective_spi: (untyped) -> untyped
   def end_round: () -> untyped
   def enemy: (untyped) -> untyped
   def enemy_action_valid?: (untyped, untyped) -> untyped
-  def enemy_active?: (untyped) -> untyped
+  def enemy_active?: (untyped) -> bool
   def enemy_autodestruct: (untyped) -> untyped
   def enemy_basic_action: (untyped, untyped, untyped) -> untyped
   def enemy_fallback_attack: (untyped, untyped) -> untyped
@@ -1672,15 +1672,15 @@ class Game::Battle
   def finished?: () -> untyped
   def first_strike?: () -> untyped
   def flee_all_enemies: () -> untyped
-  def flee_enemy: (untyped) -> untyped
+  def flee_enemy: (untyped) -> bool
   def force_flee?: () -> untyped
   def force_flee_party: () -> untyped
   def hit_modifier: (untyped) -> untyped
   def hits?: (untyped, untyped) -> untyped
-  def incapacitated?: (untyped) -> untyped
+  def incapacitated?: (untyped) -> bool
   def inflict_state: (untyped, untyped) -> untyped
   def pay_weapon_sp_cost: (untyped) -> untyped
-  def pending_empty?: () -> untyped
+  def pending_empty?: () -> bool
   def perform_enemy_action: (untyped, untyped) -> untyped
   def pop_ready: () -> untyped
   def preemptive_boost?: (untyped) -> untyped
@@ -1707,10 +1707,10 @@ class Game::Battle
   def skill_command_hash: (untyped, untyped, untyped) -> untyped
   def skill_effect_hits?: (untyped) -> untyped
   def skill_name_of: (untyped) -> untyped
-  def skill_sealed?: (untyped, untyped) -> untyped
+  def skill_sealed?: (untyped, untyped) -> bool
   def slip_stat: (untyped, untyped, untyped, untyped, untyped) -> untyped
   def stat_mod_key?: (untyped) -> untyped
-  def stat_mode: (untyped, untyped) -> untyped
+  def stat_mode: (untyped, untyped) -> Symbol
   def state_def: (untyped) -> untyped
   def state_field: (untyped, untyped) -> untyped
   def state_flag: (untyped, untyped) -> untyped
@@ -1727,7 +1727,7 @@ class Game::Battle
   def terminate: () -> untyped
   def terminated?: () -> untyped
   def to_hit: (untyped, untyped) -> untyped
-  def toggle_row: (untyped) -> untyped
+  def toggle_row: (untyped) -> bool
   def turn: () -> untyped
   def turn_order: () -> untyped
   def turn_state_message: (untyped, untyped) -> untyped
@@ -1846,7 +1846,7 @@ class Game::Battle::Combatant
   def row=: (untyped) -> untyped
   def gauge=: (untyped) -> untyped
   def atk_states: () -> untyped
-  def back_row?: () -> untyped
+  def back_row?: () -> bool
   def gauge: () -> untyped
   def gauge_full?: () -> untyped
   def half_sp_cost?: () -> untyped
@@ -1856,7 +1856,7 @@ class Game::Battle::Combatant
   def next_battle_turn: () -> untyped
   def out_of_play?: () -> untyped
   def row: () -> untyped
-  def state?: (untyped) -> untyped
+  def state?: (untyped) -> bool
   def strike_count: () -> untyped
   def turns_taken: () -> untyped
 end
@@ -2058,15 +2058,15 @@ class Game::Interpreter
   def event_id=: (untyped) -> untyped
   def call_frame_event_id: () -> untyped
   def battle_actor_condition: (untyped) -> untyped
-  def battle_command_condition: (untyped) -> untyped
+  def battle_command_condition: (untyped) -> bool
   def battle_enemy_condition: (untyped) -> untyped
-  def battle_target_enemy_condition: (untyped) -> untyped
-  def block_pending_battle_command: () -> untyped
-  def block_pending_exp_level_command: (untyped) -> untyped
-  def block_pending_key_input_command: (untyped) -> untyped
-  def block_pending_message_config_command: () -> untyped
-  def block_pending_picture_command: () -> untyped
-  def cancel_choice: () -> untyped
+  def battle_target_enemy_condition: (untyped) -> bool
+  def block_pending_battle_command: () -> bool
+  def block_pending_exp_level_command: (untyped) -> bool
+  def block_pending_key_input_command: (untyped) -> bool
+  def block_pending_message_config_command: () -> bool
+  def block_pending_picture_command: () -> bool
+  def cancel_choice: () -> bool
   def character_facing: (untyped) -> untyped
   def common_event_commands: (untyped) -> untyped
   def compare: (untyped, untyped, untyped) -> untyped
@@ -2162,14 +2162,14 @@ class Game::Interpreter
   def find_inn_option: (untyped) -> untyped
   def find_shop_option: (untyped) -> untyped
   def item_operand: (untyped) -> untyped
-  def key_input_result: (untyped) -> untyped
-  def level_up_message: (untyped, untyped) -> untyped
+  def key_input_result: (untyped) -> Integer
+  def level_up_message: (untyped, untyped) -> String
   def map_event_call: (untyped, untyped) -> untyped
   def monster_change_amount: (untyped, untyped) -> untyped
   def other_operand: (untyped) -> untyped
   def party_term: (untyped) -> untyped
   def picture_coord: (untyped, untyped) -> untyped
-  def picture_name: (untyped) -> untyped
+  def picture_name: (untyped) -> String
   def query_position: (untyped) -> untyped
   def queue_level_up_messages: (untyped, untyped, untyped, untyped) -> untyped
   def range: (untyped) -> untyped
@@ -2182,7 +2182,7 @@ class Game::Interpreter
   def resume_shop: (untyped) -> untyped
   def screen_operand: (untyped, untyped) -> untyped
   def simulated_attack_variance: (untyped, untyped) -> untyped
-  def skill_learned_message: (untyped, untyped) -> untyped
+  def skill_learned_message: (untyped, untyped) -> String
   def skip_invalid_troop: (untyped) -> untyped
   def skip_to: (untyped, untyped) -> untyped
   def start: (untyped) -> untyped
@@ -2528,9 +2528,9 @@ class Game::Party
   def skill_variance: (untyped) -> untyped
   def state_hit_ratio: (untyped) -> untyped
   def state_table: () -> untyped
-  def swap_equipment_through_bag: (untyped, untyped, untyped) -> untyped
+  def swap_equipment_through_bag: (untyped, untyped, untyped) -> bool
   def teleport_skill_available?: (untyped) -> untyped
-  def term: (untyped) -> untyped
+  def term: (untyped) -> String
   def toggle_actor_row: (untyped) -> untyped
   def unequip_to_bag: (untyped, untyped) -> untyped
   def use_equip_skill_item: (untyped, untyped, untyped) -> untyped
@@ -2553,7 +2553,7 @@ class Game::Picture
   def use_transparent_color: () -> untyped
   def show_x: () -> untyped
   def show_y: () -> untyped
-  def blue: () -> untyped
+  def blue: () -> Integer
   def erase!: () -> untyped
   def finish_blue: () -> untyped
   def finish_green: () -> untyped
@@ -2565,21 +2565,21 @@ class Game::Picture
   def finish_y: () -> untyped
   def finish_zoom: () -> untyped
   def frames_left: () -> untyped
-  def green: () -> untyped
+  def green: () -> Integer
   def initialize: (untyped, ?untyped) -> untyped
   def move_to: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def moving?: () -> untyped
-  def opacity: () -> untyped
-  def red: () -> untyped
+  def opacity: () -> Integer
+  def red: () -> Integer
   def restore_legacy_lsd: (untyped, untyped, untyped) -> untyped
-  def saturation: () -> untyped
+  def saturation: () -> Integer
   def shown?: () -> untyped
   def step: (untyped, untyped) -> untyped
   def to_h: () -> untyped
   def update: () -> untyped
-  def x: () -> untyped
-  def y: () -> untyped
-  def zoom: () -> untyped
+  def x: () -> Integer
+  def y: () -> Integer
+  def zoom: () -> Integer
 end
 # bc2cpp-native: base_rpg2k
 class Game::Rng
@@ -2614,14 +2614,14 @@ class Game::Shop
   def did_transaction: () -> untyped
   def allow_buy?: () -> untyped
   def allow_sell?: () -> untyped
-  def buy: (untyped, ?untyped) -> untyped
+  def buy: (untyped, ?untyped) -> bool
   def description: (untyped) -> untyped
   def equip?: (untyped) -> untyped
   def max_buy: (untyped) -> untyped
   def max_sell: (untyped) -> untyped
   def name: (untyped) -> untyped
   def price: (untyped) -> untyped
-  def sell: (untyped, ?untyped) -> untyped
+  def sell: (untyped, ?untyped) -> bool
   def sell_price: (untyped) -> untyped
   def sellable?: (untyped) -> untyped
   def sellable_items: () -> untyped
@@ -2736,7 +2736,7 @@ class Game::State
   def erase_picture: (untyped) -> untyped
   def map_id=: (untyped) -> untyped
   def move_picture: (untyped, *untyped) -> untyped
-  def pictures_moving?: () -> untyped
+  def pictures_moving?: () -> bool
   def set_screen_transition: (untyped, untyped) -> untyped
   def show_picture: (untyped, untyped) -> untyped
   def timer_display_text: () -> untyped
@@ -2819,7 +2819,7 @@ class Game::Timer
   def visible=: (untyped) -> untyped
   def in_battle: () -> untyped
   def in_battle=: (untyped) -> untyped
-  def display_text: () -> untyped
+  def display_text: () -> String
   def initialize: () -> untyped
   def seconds: () -> untyped
   def set: (untyped) -> untyped
@@ -2927,7 +2927,7 @@ class RPG2k
   def map_tree: () -> untyped
   def test_play: () -> untyped
   def title: () -> untyped
-  def bug_report_interp_text: (untyped) -> untyped
+  def bug_report_interp_text: (untyped) -> String
   def bug_report_stamp: () -> untyped
   def bug_report_text: () -> untyped
   def continue_game: (?untyped) -> untyped
@@ -2965,7 +2965,7 @@ class RPG2k::Scene::Base
   def update: () -> untyped
   def utf8_chars: (untyped) -> untyped
   def utf8_chars_bytewise: (untyped) -> untyped
-  def value_font_color: (untyped, untyped, untyped) -> untyped
+  def value_font_color: (untyped, untyped, untyped) -> Integer
   def wrap_text_to_width: (untyped, untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
@@ -3003,15 +3003,15 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def battle_grid_position: (untyped, untyped) -> untyped
   def battle_item_body: (untyped) -> untyped
   def battle_level_up_lines: (untyped, untyped, untyped) -> untyped
-  def battle_level_up_message: (untyped, untyped) -> untyped
-  def battle_list_description: (untyped, untyped) -> untyped
+  def battle_level_up_message: (untyped, untyped) -> String
+  def battle_list_description: (untyped, untyped) -> String
   def battle_option_rows: () -> untyped
   def battle_panel_window: (untyped, untyped) -> untyped
   def battle_recovery_lines: (untyped, untyped) -> untyped
   def battle_result_line: (untyped, untyped) -> untyped
   def battle_result_lines: (untyped, untyped) -> untyped
   def battle_skill_body: (untyped) -> untyped
-  def battle_skill_learned_message: (untyped, untyped) -> untyped
+  def battle_skill_learned_message: (untyped, untyped) -> String
   def battle_skill_result: (untyped, untyped, untyped) -> untyped
   def battle_skill_unavailable?: (untyped, untyped) -> untyped
   def battle_start_field: (untyped) -> untyped
@@ -3075,7 +3075,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def enter_command_phase: () -> untyped
   def finish_battle: (untyped) -> untyped
   def finish_round_animation: () -> untyped
-  def finish_terminated_battle: () -> untyped
+  def finish_terminated_battle: () -> bool
   def fire_target_flash: (untyped, untyped) -> untyped
   def fire_target_shake: (untyped) -> untyped
   def flat_battle_back: () -> untyped
@@ -3114,13 +3114,13 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def remove_fled_monster: (untyped) -> untyped
   def reposition_actor_sprite: (untyped) -> untyped
   def reset_actor_battler_z: () -> untyped
-  def reveal_battle_banner_line: () -> untyped
+  def reveal_battle_banner_line: () -> bool
   def reveal_battle_monster: (untyped) -> untyped
   def row_command_available?: () -> untyped
   def run_battle_events: (?untyped, ?untyped) -> untyped
   def select_battle_command: () -> untyped
   def select_battle_option: () -> untyped
-  def settle_already_finished_battle: () -> untyped
+  def settle_already_finished_battle: () -> bool
   def show_battle_action: (untyped) -> untyped
   def show_battle_banner: (untyped) -> untyped
   def skill_command_label: () -> untyped
@@ -3189,7 +3189,7 @@ class RPG2k::Scene::DebugMenu < RPG2k::Scene::Base
   def refresh_map_page: () -> untyped
   def refresh_switch_or_variable: () -> untyped
   def row_name: (untyped) -> untyped
-  def row_value_text: (untyped) -> untyped
+  def row_value_text: (untyped) -> String
   def turn_page: (untyped) -> untyped
   def update: () -> untyped
   def update_animation: () -> untyped
@@ -3211,7 +3211,7 @@ class RPG2k::Scene::EquipMenu < RPG2k::Scene::Base
   def item_stat_sum: (untyped) -> untyped
   def rebuild_for_actor: () -> untyped
   def refresh_cand_cursor: () -> untyped
-  def scroll_cand_list_to_cursor: () -> untyped
+  def scroll_cand_list_to_cursor: () -> bool
   def update: () -> untyped
   def warn_missing_item: (untyped) -> untyped
 end
@@ -3251,7 +3251,7 @@ class RPG2k::Scene::ItemMenu < RPG2k::Scene::Base
   def refresh_item_cursor: () -> untyped
   def refresh_target_cursor: () -> untyped
   def refresh_teleport_cursor: () -> untyped
-  def scroll_item_list_to_cursor: () -> untyped
+  def scroll_item_list_to_cursor: () -> bool
   def teleport_col_w: () -> untyped
   def teleport_targets: () -> untyped
   def update_target: () -> untyped
@@ -3297,7 +3297,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def blit_animation_cell: (untyped, untyped, untyped, untyped) -> untyped
   def blockers_at: (untyped, untyped) -> untyped
   def board_as: (untyped) -> untyped
-  def board_vehicle: () -> untyped
+  def board_vehicle: () -> bool
   def build_animation: (untyped, untyped, ?untyped, ?position: untyped) -> untyped
   def build_events: (?restore_route_index: untyped) -> untyped
   def build_face_cell: (untyped, untyped, untyped) -> untyped
@@ -3417,7 +3417,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def open_message: (untyped, untyped, ?interp: untyped) -> untyped
   def open_number_input: (untyped, ?interp: untyped) -> untyped
   def open_shop: (untyped, ?untyped) -> untyped
-  def open_shop_quantity: (untyped) -> untyped
+  def open_shop_quantity: (untyped) -> bool
   def page_field: (untyped, untyped) -> untyped
   def page_move_route: (untyped) -> untyped
   def page_to_choice: () -> untyped
@@ -3458,12 +3458,12 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def set_inn_cursor: () -> untyped
   def ship_disembark_passable?: (untyped, untyped, untyped) -> untyped
   def shop_desc_item_id: (untyped) -> untyped
-  def shop_gold_term: () -> untyped
+  def shop_gold_term: () -> String
   def shop_header: () -> untyped
   def shop_lines: () -> untyped
   def shop_list_min_inner_h: () -> untyped
   def shop_move_cursor: (untyped) -> untyped
-  def shop_quantity_move: (untyped) -> untyped
+  def shop_quantity_move: (untyped) -> bool
   def shop_status_item_id: (untyped) -> untyped
   def shop_switch: (untyped) -> untyped
   def shop_terms: (untyped) -> untyped
@@ -3682,7 +3682,7 @@ class RPG2k::Scene::MapViewer < RPG2k::Scene::Base
   def draw_tile_row: (untyped, untyped) -> untyped
   def draw_tiles: () -> untyped
   def each_event_position: () -> untyped
-  def edit_header_text: () -> untyped
+  def edit_header_text: () -> String
   def ensure_cursor_visible: () -> untyped
   def enter_edit_mode: () -> untyped
   def enter_select_mode: () -> untyped
@@ -3694,12 +3694,12 @@ class RPG2k::Scene::MapViewer < RPG2k::Scene::Base
   def paint_cursor: () -> untyped
   def pan: () -> untyped
   def pick_brush: () -> untyped
-  def player_header_text: () -> untyped
+  def player_header_text: () -> String
   def recompute_view: () -> untyped
   def refresh: () -> untyped
   def save_to_disk: () -> untyped
   def scroll_to_fit: (untyped, untyped, untyped) -> untyped
-  def select_header_text: () -> untyped
+  def select_header_text: () -> String
   def set_zoom: (untyped) -> untyped
   def teleport_to_cursor: () -> untyped
   def tile_color: (untyped, untyped) -> untyped
@@ -4126,8 +4126,8 @@ class RPG::CommonEvent
   def switch_id=: (untyped) -> untyped
   def list: () -> untyped
   def list=: (untyped) -> untyped
-  def autorun?: () -> untyped
-  def parallel?: () -> untyped
+  def autorun?: () -> bool
+  def parallel?: () -> bool
 end
 # bc2cpp-native: base_rpgvx
 class RPG::Enemy
@@ -4916,10 +4916,10 @@ class RPGVX
   def initialize: (untyped) -> untyped
   def main_loop: () -> untyped
   def maker_name: () -> untyped
-  def project?: (?untyped) -> untyped
+  def project?: (?untyped) -> bool
   def read_title: () -> untyped
   def report_database: () -> untyped
-  def runtime_available?: () -> untyped
+  def runtime_available?: () -> bool
   def setup_script_host_driver: () -> untyped
   def start: () -> untyped
   def warn_runtime_pending: () -> untyped
@@ -4932,8 +4932,8 @@ class RPGVX::RGSSData
   def edition: () -> untyped
   def ext: () -> untyped
   def archive: () -> untyped
-  def archived?: () -> untyped
-  def data_path: (untyped) -> untyped
+  def archived?: () -> bool
+  def data_path: (untyped) -> String
   def initialize: (untyped, ?untyped) -> untyped
   def load_data: (untyped) -> untyped
   def load_map: (untyped) -> untyped
@@ -4944,7 +4944,7 @@ class RPGVX::RGSSData
   def scripts?: () -> untyped
   def summary: () -> untyped
   def table_byte_size: (untyped) -> untyped
-  def vxace?: () -> untyped
+  def vxace?: () -> bool
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -4982,10 +4982,10 @@ class Module
   def method_added: (untyped) -> untyped
   def module_function: (*untyped) -> untyped
   def private: (*untyped) -> untyped
-  def private_method_defined?: (untyped, ?untyped) -> untyped
-  def protected_method_defined?: (untyped, ?untyped) -> untyped
+  def private_method_defined?: (untyped, ?untyped) -> bool
+  def protected_method_defined?: (untyped, ?untyped) -> bool
   def public: (*untyped) -> untyped
-  def public_method_defined?: (untyped, ?untyped) -> untyped
+  def public_method_defined?: (untyped, ?untyped) -> bool
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -5922,8 +5922,8 @@ class RPGXP::RGSSAD
   def decrypt_data: (untyped, untyped) -> untyped
   def decrypt_int: (untyped, untyped) -> untyped
   def entry_size: (untyped) -> untyped
-  def header_ok?: (untyped) -> untyped
-  def include?: (untyped) -> untyped
+  def header_ok?: (untyped) -> bool
+  def include?: (untyped) -> bool
   def initialize: (untyped) -> untyped
   def key_byte: (untyped, untyped) -> untyped
   def names: () -> untyped
@@ -5944,8 +5944,8 @@ class RPGXP::RGSSData
   def map_infos: () -> untyped
   def game_dir: () -> untyped
   def archive: () -> untyped
-  def archived?: () -> untyped
-  def data_path: (untyped) -> untyped
+  def archived?: () -> bool
+  def data_path: (untyped) -> String
   def initialize: (untyped) -> untyped
   def load_data: (untyped) -> untyped
   def load_map: (untyped) -> untyped
@@ -6018,7 +6018,7 @@ end
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
 # bc2cpp-native: base_rpgxp
 class Win32API
-  def call: (*untyped) -> untyped
+  def call: (*untyped) -> Integer
   def initialize: (untyped, untyped, ?untyped, ?untyped) -> untyped
 end
 
@@ -6108,7 +6108,7 @@ class Wolf::Command
   def extra=: (untyped) -> untyped
   def arg: (untyped) -> untyped
   def initialize: (untyped, untyped, untyped, untyped) -> untyped
-  def route?: () -> untyped
+  def route?: () -> bool
   def string: (untyped) -> untyped
   def self.read: (untyped, untyped) -> untyped
 end
@@ -6134,7 +6134,7 @@ class Wolf::CommonEvent
   def self_names: () -> untyped
   def return_name: () -> untyped
   def return_variable: () -> untyped
-  def auto?: () -> untyped
+  def auto?: () -> bool
   def initialize: (untyped, untyped, untyped) -> untyped
   def parallel?: () -> untyped
 end
@@ -6183,7 +6183,7 @@ class Wolf::DBField
   def slot: () -> untyped
   def slot=: (untyped) -> untyped
   def initialize: (untyped, untyped) -> untyped
-  def number?: () -> untyped
+  def number?: () -> bool
   def string?: () -> untyped
 end
 # bc2cpp-native: base_wolf
@@ -6208,7 +6208,7 @@ class Wolf::DataWolf
   def decompress_table: (untyped) -> untyped
   def entry_size: (untyped) -> untyped
   def find_key: (untyped, untyped, untyped) -> untyped
-  def include?: (untyped) -> untyped
+  def include?: (untyped) -> bool
   def initialize: (untyped, ?key_string: untyped) -> untyped
   def names: () -> untyped
   def plausible?: (untyped) -> untyped
@@ -6278,12 +6278,12 @@ class Wolf::GameDat
   def tail: () -> untyped
   def animation_patterns: () -> untyped
   def character_directions: () -> untyped
-  def character_shadow?: () -> untyped
+  def character_shadow?: () -> bool
   def doubled?: () -> untyped
   def editor_version: () -> untyped
   def font: () -> untyped
   def fps: () -> untyped
-  def half_step?: () -> untyped
+  def half_step?: () -> bool
   def hero_graphic: () -> untyped
   def initialize: (untyped) -> untyped
   def move_directions: () -> untyped
@@ -6362,10 +6362,10 @@ class Wolf::Interpreter
   def hero_delta: (untyped) -> untyped
   def initialize: (untyped, untyped) -> untyped
   def input_key_candidates: (untyped) -> untyped
-  def map_event_running?: (untyped) -> untyped
+  def map_event_running?: (untyped) -> bool
   def move_pause_frames: (untyped) -> untyped
   def numeric_self_slots: (untyped) -> untyped
-  def page_conditions_met?: (untyped) -> untyped
+  def page_conditions_met?: (untyped) -> bool
   def parse_shape_tag: (untyped) -> untyped
   def party_advance: (untyped) -> untyped
   def party_graphics_arg: (untyped, untyped, untyped) -> untyped
@@ -6373,7 +6373,7 @@ class Wolf::Interpreter
   def party_position: (untyped) -> untyped
   def party_slot_index: (untyped) -> untyped
   def random_step_delta: () -> untyped
-  def repeating_route?: (untyped) -> untyped
+  def repeating_route?: (untyped) -> bool
   def resolve_character_pos: (untyped) -> untyped
   def resolve_position_ref: (untyped, untyped) -> untyped
   def resolve_route_target: (untyped) -> untyped
@@ -6387,8 +6387,8 @@ class Wolf::Interpreter
   def tick_ambient_move: (untyped, untyped) -> untyped
   def tick_repeating_route: (untyped, untyped) -> untyped
   def toward_hero_delta: (untyped) -> untyped
-  def trigger_confirm: (untyped) -> untyped
-  def trigger_touch: (untyped) -> untyped
+  def trigger_confirm: (untyped) -> bool
+  def trigger_touch: (untyped) -> bool
   def turn: (untyped, untyped) -> untyped
   def unimplemented: (untyped) -> untyped
   def update: () -> untyped
@@ -6422,7 +6422,7 @@ class Wolf::Interpreter::Run
   def label: () -> untyped
   def select_branch: (untyped) -> untyped
   def skip_to: (untyped) -> untyped
-  def step: () -> untyped
+  def step: () -> bool
 end
 # bc2cpp-native: base_wolf
 module Wolf::LZ4
@@ -6480,13 +6480,13 @@ class Wolf::Page
   def range_y: () -> untyped
   def transfer: () -> untyped
   def above_hero?: () -> untyped
-  def auto?: () -> untyped
+  def auto?: () -> bool
   def compare_operator: () -> untyped
-  def enabled?: () -> untyped
+  def enabled?: () -> bool
   def graphic_row: () -> untyped
   def initialize: (untyped, untyped, untyped) -> untyped
-  def option?: (untyped) -> untyped
-  def parallel?: () -> untyped
+  def option?: (untyped) -> bool
+  def parallel?: () -> bool
   def slip_through?: () -> untyped
 end
 # bc2cpp-native: base_wolf
@@ -6552,18 +6552,18 @@ end
 class Wolf::TileFlags
   def raw: () -> untyped
   def tag: () -> untyped
-  def above_characters?: () -> untyped
-  def blocked_down?: () -> untyped
-  def blocked_left?: () -> untyped
-  def blocked_right?: () -> untyped
-  def blocked_up?: () -> untyped
-  def conceal_behind?: () -> untyped
-  def counter?: () -> untyped
-  def half_translucent?: () -> untyped
-  def impassable?: () -> untyped
+  def above_characters?: () -> bool
+  def blocked_down?: () -> bool
+  def blocked_left?: () -> bool
+  def blocked_right?: () -> bool
+  def blocked_up?: () -> bool
+  def conceal_behind?: () -> bool
+  def counter?: () -> bool
+  def half_translucent?: () -> bool
+  def impassable?: () -> bool
   def initialize: (untyped, untyped) -> untyped
-  def match_below?: () -> untyped
-  def passable?: () -> untyped
+  def match_below?: () -> bool
+  def passable?: () -> bool
 end
 # bc2cpp-native: base_wolf
 class Wolf::TileSetData
@@ -6673,7 +6673,7 @@ class WolfRPG::MapScene
   def load_tileset_bitmap: (untyped) -> untyped
   def move_hero: () -> untyped
   def move_picture: (untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
-  def passable?: (untyped, untyped) -> untyped
+  def passable?: (untyped, untyped) -> bool
   def picture_origin: (untyped, untyped, untyped) -> untyped
   def place_picture: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def play_se: (untyped, untyped, untyped) -> untyped
@@ -6694,7 +6694,7 @@ class WolfRPG::MapScene
   def update_party: () -> untyped
   def update_picture_effects: () -> untyped
   def update_tone: () -> untyped
-  def wolf_lerp: (untyped, untyped, untyped) -> untyped
+  def wolf_lerp: (untyped, untyped, untyped) -> Integer
   def wolf_tone_component: (untyped) -> untyped
 end
 
