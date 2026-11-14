@@ -807,8 +807,8 @@ class MV
   def pressed_buttons: () -> untyped
   def project?: (?untyped) -> bool
   def pump_audio: () -> untyped
-  def pump_frame: () -> untyped
-  def runtime_available?: () -> untyped
+  def pump_frame: () -> nil
+  def runtime_available?: () -> bool
   def satisfied?: (untyped) -> bool
   def save_test_requested?: () -> bool
   def start: () -> untyped
@@ -901,7 +901,7 @@ class MZ
   def render_skip_bridge_js: () -> untyped
   def render_skip_enabled?: () -> untyped
   def runnable_scripts: () -> untyped
-  def runtime_available?: () -> untyped
+  def runtime_available?: () -> bool
   def satisfied?: (untyped) -> bool
   def save_probe_js: (untyped) -> String
   def save_result_js: () -> String
@@ -973,18 +973,18 @@ end
 module RGSS
   def asset_archive: () -> untyped
   def asset_archive=: (untyped) -> untyped
-  def self._comparison_sign: (untyped) -> untyped
-  def self.audio_probe: () -> untyped
-  def self.effect_probe: () -> untyped
-  def self.frame_mean: (?untyped, ?untyped, ?untyped, ?untyped) -> untyped
+  def self._comparison_sign: (untyped) -> Integer?
+  def self.audio_probe: () -> bool
+  def self.effect_probe: () -> bool
+  def self.frame_mean: (?untyped, ?untyped, ?untyped, ?untyped) -> Array?
   def self.probe_wav: (?untyped) -> untyped
-  def self.tilemap_above_layer_probe: () -> untyped
-  def self.transition_shape_probe: (untyped, untyped) -> untyped
+  def self.tilemap_above_layer_probe: () -> bool
+  def self.transition_shape_probe: (untyped, untyped) -> Array
   def self.wait_for_bgm_pos: (?untyped) -> untyped
   def self.warn_once: (untyped) -> untyped
   def self.warn_stub: (untyped) -> untyped
-  def self.window_probe: () -> untyped
-  def self.windowskin_rect_probe: () -> untyped
+  def self.window_probe: () -> bool
+  def self.windowskin_rect_probe: () -> bool
 end
 # bc2cpp-native: base_rgss
 module RGSS::Audio
@@ -1033,15 +1033,15 @@ end
 module RGSS::ErrorReport
   def lines: () -> Array?
   def last_location: () -> untyped
-  def self.clear: () -> untyped
-  def self.install: () -> untyped
+  def self.clear: () -> nil
+  def self.install: () -> bool
   def self.installed?: () -> untyped
   def self.log_tail: (?untyped) -> untyped
   def self.probe!: () -> untyped
   def self.probe_raise: () -> untyped
-  def self.push: (untyped) -> untyped
-  def self.puts_text: (untyped) -> untyped
-  def self.record: (untyped) -> untyped
+  def self.push: (untyped) -> nil
+  def self.puts_text: (untyped) -> String
+  def self.record: (untyped) -> nil
 end
 # bc2cpp-native: base_rgss
 class RGSS::ErrorReport::Tee
@@ -1115,12 +1115,12 @@ module RGSS::Graphics
 end
 # bc2cpp-native: base_rgss
 module RGSS::Input
-  def self.dir4: () -> untyped
+  def self.dir4: () -> Integer
   def self.dir8: () -> untyped
   def self.key_index: (untyped) -> untyped
-  def self.mouse_pressed?: () -> untyped
-  def self.mouse_x: () -> untyped
-  def self.mouse_y: () -> untyped
+  def self.mouse_pressed?: () -> bool
+  def self.mouse_x: () -> Integer
+  def self.mouse_y: () -> Integer
   def self.press: (untyped) -> untyped
   def self.press?: (untyped) -> untyped
   def self.release: (untyped) -> untyped
@@ -1584,8 +1584,8 @@ class Game::Actors
 end
 # bc2cpp-native: base_rpg2k
 module Game::Backdrop
-  def self.int_field: (untyped, untyped) -> untyped
-  def self.name_for: (untyped, untyped, ?untyped) -> untyped
+  def self.int_field: (untyped, untyped) -> Integer
+  def self.name_for: (untyped, untyped, ?untyped) -> String
 end
 # bc2cpp-native: base_rpg2k
 class Game::Battle
@@ -1740,7 +1740,7 @@ class Game::Battle
   def self.attack_damage: (untyped, untyped) -> untyped
   def self.attr_ranks_of: (untyped) -> untyped
   def self.crit_chance_of: (untyped) -> untyped
-  def self.flag_of: (untyped, untyped) -> untyped
+  def self.flag_of: (untyped, untyped) -> bool
   def self.hit_rate_of: (untyped) -> untyped
   def self.prevents_crit_of: (untyped) -> untyped
   def self.state_ranks_of: (untyped) -> untyped
@@ -1857,19 +1857,19 @@ class Game::Battle::Combatant
   def out_of_play?: () -> bool
   def row: () -> Integer
   def state?: (untyped) -> bool
-  def strike_count: () -> untyped
+  def strike_count: () -> Integer?
   def turns_taken: () -> Integer?
 end
 # bc2cpp-native: base_rpg2k
 module Game::BattlePage
   def self.check_turns: (untyped, untyped, untyped) -> untyped
-  def self.select_all: (untyped, untyped, untyped, untyped, ?untyped) -> untyped
+  def self.select_all: (untyped, untyped, untyped, untyped, ?untyped) -> Array
 end
 # bc2cpp-native: base_rpg2k
 module Game::CharSet
   def self.bush_opacity: (?untyped) -> untyped
   def self.bush_pixels: (untyped, ?untyped) -> untyped
-  def self.frame_rect: (untyped, untyped, untyped) -> untyped
+  def self.frame_rect: (untyped, untyped, untyped) -> Array
 end
 # bc2cpp-native: base_rpg2k
 class Game::Character
@@ -1913,7 +1913,7 @@ class Game::Character
   def turn_right: () -> untyped
   def x=: (untyped) -> bool
   def y=: (untyped) -> bool
-  def self.step_tile: (untyped, untyped, untyped) -> untyped
+  def self.step_tile: (untyped, untyped, untyped) -> Array
 end
 # bc2cpp-native: base_rpg2k
 class Game::ChipSet
@@ -1930,13 +1930,13 @@ end
 module Game::ChipsetLayout
   def self.anim_ab: (untyped, untyped, untyped) -> untyped
   def self.anim_c: (untyped) -> untyped
-  def self.anim_input: (untyped) -> untyped
-  def self.block: (untyped) -> untyped
-  def self.event_tile_rect: (untyped) -> untyped
-  def self.full: (untyped, untyped) -> untyped
+  def self.anim_input: (untyped) -> Symbol?
+  def self.block: (untyped) -> Symbol?
+  def self.event_tile_rect: (untyped) -> Array
+  def self.full: (untyped, untyped) -> Array
   def self.lower_quad: (untyped) -> untyped
   def self.quads: (untyped, ?untyped, ?untyped) -> untyped
-  def self.quads_from_quarters: (untyped) -> untyped
+  def self.quads_from_quarters: (untyped) -> Array
   def self.terrain_quads: (untyped) -> untyped
   def self.uncached_quads: (untyped, untyped, untyped, untyped) -> untyped
   def self.upper_quad: (untyped) -> untyped
@@ -1945,7 +1945,7 @@ end
 # bc2cpp-native: base_rpg2k
 module Game::CommonEvent
   def self.eligible: (untyped, untyped) -> untyped
-  def self.load: (untyped) -> untyped
+  def self.load: (untyped) -> Array
 end
 # bc2cpp-native: base_rpg2k
 class Game::Enemy
@@ -2014,7 +2014,7 @@ class Game::EnemyAi
 end
 # bc2cpp-native: base_rpg2k
 module Game::EventGraphic
-  def self.frame: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
+  def self.frame: (untyped, untyped, untyped, untyped, untyped, untyped) -> Array
   def self.frame_col: (untyped, untyped, untyped, untyped) -> untyped
   def self.frame_dir: (untyped, untyped, untyped) -> untyped
   def self.numpad_direction: (untyped) -> untyped
@@ -2024,7 +2024,7 @@ end
 # bc2cpp-native: base_rpg2k
 module Game::EventPage
   def self.compare: (untyped, untyped, untyped) -> untyped
-  def self.select: (untyped, untyped, untyped, untyped, ?untyped, ?untyped) -> untyped
+  def self.select: (untyped, untyped, untyped, untyped, ?untyped, ?untyped) -> Array?
 end
 # bc2cpp-native: base_rpg2k
 class Game::Interpreter
@@ -2310,8 +2310,8 @@ end
 module Game::LegacyLsd
   def self.apply: (untyped, untyped) -> untyped
   def self.ext_double_at: (untyped) -> untyped
-  def self.ext_ints: (untyped) -> untyped
-  def self.ext_records: (untyped) -> untyped
+  def self.ext_ints: (untyped) -> Array
+  def self.ext_records: (untyped) -> Array
 end
 # bc2cpp-native: base_rpg2k
 class Game::Map
@@ -2337,13 +2337,13 @@ end
 # bc2cpp-native: base_rpg2k
 module Game::MapBgm
   def self.chunk_for: (untyped, untyped) -> untyped
-  def self.int_field: (untyped, untyped) -> untyped
+  def self.int_field: (untyped, untyped) -> Integer
 end
 # bc2cpp-native: base_rpg2k
 module Game::Message
   def self.expand: (untyped, untyped, untyped) -> untyped
   def self.parse: (untyped, untyped, untyped) -> untyped
-  def self.parse_bracket_value: (untyped, untyped, untyped, ?untyped) -> untyped
+  def self.parse_bracket_value: (untyped, untyped, untyped, ?untyped) -> Array
   def self.scan: (untyped, untyped, untyped, ?untyped) -> untyped
   def self.visible_segments: (untyped, untyped) -> untyped
 end
@@ -2413,8 +2413,8 @@ class Game::MessageConfig
 end
 # bc2cpp-native: base_rpg2k
 module Game::MessagePalette
-  def self.cell_origin: (untyped) -> untyped
-  def self.shadow_origin: () -> untyped
+  def self.cell_origin: (untyped) -> Array
+  def self.shadow_origin: () -> Array
 end
 # bc2cpp-native: base_rpg2k
 class Game::MoveCommand
@@ -2468,7 +2468,7 @@ class Game::Party
   def battle_item_command: (untyped, untyped) -> Hash
   def battle_items: () -> Array
   def battle_occasion?: (untyped) -> bool
-  def battle_skill?: (untyped) -> untyped
+  def battle_skill?: (untyped) -> bool
   def battle_skill_command: (untyped, untyped, untyped, ?free: untyped) -> Hash
   def battle_skill_target: (untyped) -> Symbol
   def battle_usable?: (untyped) -> untyped
@@ -2505,8 +2505,8 @@ class Game::Party
   def item_field_occasion?: (untyped) -> bool
   def item_field_only?: (untyped) -> bool
   def item_recovery: (untyped, untyped) -> Array
-  def item_usable_by?: (untyped, untyped) -> untyped
-  def item_usable_by_class?: (untyped, untyped) -> untyped
+  def item_usable_by?: (untyped, untyped) -> bool
+  def item_usable_by_class?: (untyped, untyped) -> bool
   def item_uses: (untyped) -> Integer
   def lose_item: (untyped, ?untyped) -> Integer
   def map_step_damaged?: () -> bool
@@ -2742,22 +2742,22 @@ class Game::State
   def timer_display_text: () -> String
   def timer_frames: () -> untyped
   def timer_frames=: (untyped) -> untyped
-  def timer_running: () -> untyped
-  def timer_running=: (untyped) -> untyped
+  def timer_running: () -> bool?
+  def timer_running=: (untyped) -> bool?
   def timer_visible: () -> untyped
   def timer_visible=: (untyped) -> untyped
   def to_lsd: (?untyped, ?untyped, ?untyped, ?untyped, ?untyped) -> LCF::SaveData
   def walk_step: () -> untyped
-  def self.bgm_from_chunk: (untyped) -> untyped
+  def self.bgm_from_chunk: (untyped) -> Hash?
   def self.build_event_exec_state: (untyped) -> untyped
   def self.from_lsd: (untyped, untyped) -> untyped
   def self.ole_now: () -> untyped
-  def self.read_event_exec_frames: (untyped) -> untyped
+  def self.read_event_exec_frames: (untyped) -> Array?
   def self.read_foreground_frames: (untyped) -> untyped
   def self.restore_pictures: (untyped, untyped) -> untyped
-  def self.se_from_chunk: (untyped) -> untyped
+  def self.se_from_chunk: (untyped) -> Hash?
   def self.tile_replacement_bytes: (untyped) -> untyped
-  def self.tile_replacement_hash: (untyped) -> untyped
+  def self.tile_replacement_hash: (untyped) -> Hash
 end
 # bc2cpp-native: base_rpg2k
 module Game::States
@@ -2765,12 +2765,12 @@ module Game::States
   def self.already_message: (untyped, untyped, untyped) -> untyped
   def self.animation_pose: (untyped, untyped) -> untyped
   def self.color: (untyped, untyped) -> untyped
-  def self.compose_message: (untyped, untyped) -> untyped
+  def self.compose_message: (untyped, untyped) -> String?
   def self.drain: (untyped, untyped, untyped, untyped, untyped) -> untyped
   def self.field: (untyped, untyped, untyped) -> untyped
   def self.inflict_message: (untyped, untyped, untyped, untyped) -> untyped
   def self.int_field: (untyped, untyped) -> untyped
-  def self.map_step_drain: (untyped, untyped, untyped) -> untyped
+  def self.map_step_drain: (untyped, untyped, untyped) -> Array
   def self.name: (untyped, untyped) -> untyped
   def self.priority_of: (untyped, untyped) -> untyped
   def self.prune: (untyped, untyped, ?keep: untyped) -> untyped
@@ -2780,18 +2780,18 @@ module Game::States
 end
 # bc2cpp-native: base_rpg2k
 module Game::States::BattleText
-  def self.absorbed: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def self.absorbed: (untyped, untyped, untyped, untyped, untyped) -> String?
   def self.action: (untyped, untyped, untyped) -> untyped
-  def self.attribute_shift: (untyped, untyped, untyped, untyped) -> untyped
+  def self.attribute_shift: (untyped, untyped, untyped, untyped) -> String?
   def self.critical: (untyped, untyped) -> untyped
-  def self.damage: (untyped, untyped, untyped, untyped) -> untyped
+  def self.damage: (untyped, untyped, untyped, untyped) -> String?
   def self.dodge: (untyped, untyped) -> untyped
   def self.item_start: (untyped, untyped, untyped) -> untyped
-  def self.parameter_change: (untyped, untyped, untyped, untyped) -> untyped
-  def self.recovered: (untyped, untyped, untyped, untyped) -> untyped
+  def self.parameter_change: (untyped, untyped, untyped, untyped) -> String?
+  def self.recovered: (untyped, untyped, untyped, untyped) -> String?
   def self.skill_failure: (untyped, untyped, untyped) -> untyped
-  def self.skill_start: (untyped, untyped) -> untyped
-  def self.term: (untyped, untyped) -> untyped
+  def self.skill_start: (untyped, untyped) -> Array
+  def self.term: (untyped, untyped) -> String?
   def self.undamaged: (untyped, untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_rpg2k
@@ -2860,8 +2860,8 @@ class Game::Transition
   def visible_rects: () -> Array
   def wave_params: () -> Array
   def zoom_rect: () -> Array
-  def self.block_grid: (untyped, untyped) -> untyped
-  def self.default_frames: (untyped) -> untyped
+  def self.block_grid: (untyped, untyped) -> Array
+  def self.default_frames: (untyped) -> Integer
   def self.erase_style: (untyped, untyped) -> untyped
   def self.show_style: (untyped, untyped) -> untyped
   def self.style_for: (untyped, untyped, untyped) -> untyped
@@ -2912,7 +2912,7 @@ class Game::Weather
 end
 # bc2cpp-native: base_rpg2k
 module Game::WindowCursor
-  def self.dest_rect: (untyped, untyped, untyped, untyped, untyped) -> untyped
+  def self.dest_rect: (untyped, untyped, untyped, untyped, untyped) -> Array
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
@@ -2942,7 +2942,7 @@ class RPG2k
   def return_to_title: () -> Array
   def show_game_over: (?untyped) -> Array
   def start: () -> untyped
-  def self.db_path: () -> untyped
+  def self.db_path: () -> String
 end
 # bc2cpp-native: base_rpg2k
 module RPG2k::Scene
@@ -2979,7 +2979,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def add_battle_actor_sprite: (untyped) -> untyped
   def advance_actor: () -> untyped
   def apply_backdrop_tone: (untyped) -> RGSS::Tone?
-  def apply_battle_event_requests: (untyped) -> untyped
+  def apply_battle_event_requests: (untyped) -> RPG2k::Window?
   def apply_pending_item: (untyped) -> untyped
   def apply_pending_item_all: (untyped) -> untyped
   def apply_pending_skill: (untyped) -> untyped
@@ -3052,7 +3052,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def draw_battle_gauge_card: (untyped, untyped, untyped, untyped) -> untyped
   def draw_battle_gauge_face: (untyped, untyped, untyped) -> untyped
   def draw_battle_item: () -> RPG2k::Window
-  def draw_battle_options: () -> untyped
+  def draw_battle_options: () -> RPG2k::Window?
   def draw_battle_skill: () -> RPG2k::Window
   def draw_battle_stat_segment: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def draw_battle_target: () -> RPG2k::Window
@@ -3092,7 +3092,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def move_battle_target_cursor: (untyped, untyped) -> untyped
   def on_battle_party_changed: (untyped, untyped) -> untyped
   def open_battle_item: () -> RPG2k::Window?
-  def open_battle_options: () -> untyped
+  def open_battle_options: () -> RPG2k::Window?
   def open_battle_result: (untyped) -> bool
   def open_battle_skill: () -> RPG2k::Window?
   def open_next_command: () -> untyped
@@ -3202,14 +3202,14 @@ class RPG2k::Scene::DebugMenu < RPG2k::Scene::Base
 end
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::EquipMenu < RPG2k::Scene::Base
-  def apply_choice: () -> untyped
+  def apply_choice: () -> bool?
   def build_cand_window: () -> (bool | nil)
   def candidates: () -> Array
   def dispose: () -> untyped
   def draw_arrow_fallback: (untyped, untyped) -> untyped
   def equip_delta: (untyped) -> untyped
   def item_stat_sum: (untyped) -> untyped
-  def rebuild_for_actor: () -> untyped
+  def rebuild_for_actor: () -> bool?
   def refresh_cand_cursor: () -> untyped
   def scroll_cand_list_to_cursor: () -> bool
   def update: () -> RGSS::Bitmap?
@@ -3850,7 +3850,7 @@ end
 class RPG2k3::Scene::Battle < RPG2k::Scene::Battle
   def active_atb?: () -> bool
   def advance_actor: () -> untyped
-  def atb_accumulating?: () -> untyped
+  def atb_accumulating?: () -> bool
   def drive_battle_atb: () -> untyped
   def drive_battle_command: () -> untyped
   def enter_atb_phase: () -> untyped
@@ -5932,8 +5932,8 @@ class RPGXP::RGSSAD
   def parse_v3: () -> untyped
   def plain_int: (untyped) -> Integer
   def read: (untyped) -> untyped
-  def self.arch_name_bytes: (untyped) -> untyped
-  def self.find: (untyped) -> untyped
+  def self.arch_name_bytes: (untyped) -> Array
+  def self.find: (untyped) -> nil
   def self.open: (untyped) -> untyped
   def self.pack_v1: (untyped) -> untyped
   def self.pack_v3: (untyped, ?untyped) -> untyped
@@ -5960,7 +5960,7 @@ module RPGXP::ScriptHost
   def self.auto_new_game?: () -> untyped
   def self.battle_probe: () -> untyped
   def self.battle_test?: () -> untyped
-  def self.been_through?: (untyped) -> untyped
+  def self.been_through?: (untyped) -> bool
   def self.build_driver: (untyped) -> untyped
   def self.call_battle: () -> untyped
   def self.call_save: () -> untyped
@@ -5977,24 +5977,24 @@ module RPGXP::ScriptHost
   def self.flag_setting: () -> untyped
   def self.install_graphics_yield: () -> untyped
   def self.install_kernel: (untyped) -> untyped
-  def self.map_scene?: (untyped) -> untyped
+  def self.map_scene?: (untyped) -> bool
   def self.menu_probe: () -> untyped
   def self.menu_test?: () -> untyped
   def self.move_dirs: () -> untyped
   def self.move_probe: () -> untyped
   def self.move_test?: () -> untyped
-  def self.player_tile: () -> untyped
+  def self.player_tile: () -> Array?
   def self.probing_menu?: () -> untyped
   def self.probing_move?: () -> untyped
   def self.quiet_end?: (untyped) -> untyped
   def self.random_seed: () -> untyped
   def self.report_backtrace: (untyped) -> untyped
   def self.report_scene: () -> untyped
-  def self.run: (untyped) -> untyped
+  def self.run: (untyped) -> bool
   def self.save_probe: () -> untyped
   def self.save_test?: () -> untyped
   def self.seed_random: () -> untyped
-  def self.tile_s: (untyped) -> untyped
+  def self.tile_s: (untyped) -> String
   def self.watch_frame: () -> untyped
 end
 
@@ -6082,17 +6082,17 @@ end
 # bc2cpp-native: base_wolf
 module Wolf
   def self.bin: (untyped) -> untyped
-  def self.open_envelope: (untyped, untyped, untyped) -> untyped
-  def self.read_magic: (untyped, untyped, untyped, untyped) -> untyped
+  def self.open_envelope: (untyped, untyped, untyped) -> Array
+  def self.read_magic: (untyped, untyped, untyped, untyped) -> bool
   def self.s32_at: (untyped, untyped) -> untyped
-  def self.sjis_to_utf8: (untyped) -> untyped
+  def self.sjis_to_utf8: (untyped) -> String
   def self.unpack_body: (untyped, untyped) -> untyped
   def self.utf8: (untyped) -> untyped
 end
 # bc2cpp-native: base_wolf
 module Wolf::ChipLayout
-  def self.autotile_quads: (untyped, untyped, ?untyped) -> untyped
-  def self.base_rect: (untyped, untyped) -> untyped
+  def self.autotile_quads: (untyped, untyped, ?untyped) -> Array
+  def self.base_rect: (untyped, untyped) -> Array
 end
 # bc2cpp-native: base_wolf
 class Wolf::Command
@@ -6215,7 +6215,7 @@ class Wolf::DataWolf
   def read: (untyped) -> untyped
   def walk_directory: (untyped, untyped, untyped, untyped) -> untyped
   def self.ancestor_upper_names: (untyped) -> untyped
-  def self.bits_read: (untyped, untyped, untyped) -> untyped
+  def self.bits_read: (untyped, untyped, untyped) -> Array
   def self.build_crc32_table: () -> untyped
   def self.crc32: (untyped) -> untyped
   def self.darc_head_bytes: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
@@ -6223,24 +6223,24 @@ class Wolf::DataWolf
   def self.dxa_lz_decode: (untyped) -> untyped
   def self.encode_name_entry: (untyped) -> untyped
   def self.filehead_bytes: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
-  def self.find: (untyped) -> untyped
+  def self.find: (untyped) -> String?
   def self.huffman_decode: (untyped) -> untyped
   def self.huffman_decoded_size: (untyped) -> untyped
-  def self.key_create: (untyped) -> untyped
+  def self.key_create: (untyped) -> Array
   def self.open: (untyped) -> untyped
   def self.pack: (untyped, ?key_string: untyped, ?no_key: untyped) -> untyped
   def self.read_cstr: (untyped, untyped) -> untyped
-  def self.read_name_entry: (untyped, untyped) -> untyped
-  def self.split_path: (untyped) -> untyped
+  def self.read_name_entry: (untyped, untyped) -> Array
+  def self.split_path: (untyped) -> Array
   def self.truncate_key: (untyped) -> untyped
   def self.u16_at: (untyped, untyped) -> untyped
   def self.u16_bytes: (untyped) -> untyped
-  def self.u32_at: (untyped, untyped) -> untyped
+  def self.u32_at: (untyped, untyped) -> Integer
   def self.u32_bytes: (untyped) -> untyped
-  def self.u64_at: (untyped, untyped) -> untyped
+  def self.u64_at: (untyped, untyped) -> Integer
   def self.u64_bytes: (untyped) -> untyped
   def self.upper_name_bytes: (untyped) -> untyped
-  def self.xor32: (untyped, untyped) -> untyped
+  def self.xor32: (untyped, untyped) -> Integer
   def self.xor_cycle: (untyped, untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_wolf
@@ -6545,7 +6545,7 @@ end
 module Wolf::SaveData
   def self.path_for: (untyped, untyped, untyped) -> untyped
   def self.read: (untyped) -> untyped
-  def self.safe_name?: (untyped) -> untyped
+  def self.safe_name?: (untyped) -> bool
   def self.write: (untyped, untyped) -> untyped
 end
 # bc2cpp-native: base_wolf
@@ -6591,7 +6591,7 @@ end
 module Wolf::ValueRef
   def self.common_event_self_string?: (untyped) -> untyped
   def self.decode: (untyped) -> untyped
-  def self.decode_db: (untyped, untyped) -> untyped
+  def self.decode_db: (untyped, untyped) -> Array
 end
 # bc2cpp-native: base_wolf
 class Wolf::VarStore
@@ -6637,7 +6637,7 @@ class WolfRPG
   def build_start_scene: () -> untyped
   def initialize: (untyped) -> untyped
   def load_scene: (untyped, untyped, untyped) -> bool
-  def main_loop: () -> untyped
+  def main_loop: () -> nil
   def start: () -> untyped
   def teleport_to: (untyped, untyped, untyped) -> untyped
 end
@@ -6666,7 +6666,7 @@ class WolfRPG::MapScene
   def flash_picture: (untyped, untyped, untyped, untyped, untyped) -> untyped
   def hero_at?: (untyped, untyped) -> untyped
   def hero_pos: () -> Hash
-  def hero_pos=: (untyped) -> untyped
+  def hero_pos=: (untyped) -> Hash
   def initialize: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def input_key_pressed?: (untyped) -> untyped
   def load_picture_bitmap: (untyped) -> untyped
@@ -6761,20 +6761,20 @@ module LCF
   def self.edition_default: (untyped) -> untyped
   def self.encode: (untyped, untyped) -> untyped
   def self.encode_move_commands: (untyped) -> untyped
-  def self.exp_default: () -> untyped
+  def self.exp_default: () -> Integer
   def self.field?: (untyped, untyped) -> untyped
   def self.int16_format: (untyped) -> untyped
-  def self.level_max: () -> untyped
-  def self.npc_hp_max: () -> untyped
+  def self.level_max: () -> Integer
+  def self.npc_hp_max: () -> Integer
   def self.pack_double: (untyped) -> untyped
-  def self.parse_event_commands: (untyped) -> untyped
-  def self.parse_move_commands: (untyped) -> untyped
-  def self.pc_hp_max: () -> untyped
+  def self.parse_event_commands: (untyped) -> Array
+  def self.parse_move_commands: (untyped) -> Array
+  def self.pc_hp_max: () -> Integer
   def self.read_ber: (untyped) -> untyped
   def self.read_section: (untyped, untyped) -> untyped
   def self.to_rb: (untyped, untyped) -> untyped
-  def self.var_max: () -> untyped
-  def self.var_min: () -> untyped
+  def self.var_max: () -> Integer
+  def self.var_min: () -> Integer
 end
 
 # Base RBS (scripts/bc2cpp/base_rbs.rb): shapes from the AST, no types.
