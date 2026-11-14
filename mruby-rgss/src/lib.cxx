@@ -8328,6 +8328,13 @@ mrb_value bmp_stbi_error_direct(mrb_state* M, mrb_value self) {
   return bmp_stbi_error(M, self);
 }
 
+mrb_value bmp_text_size_direct(mrb_state* M,
+                               mrb_value self,
+                               const char* s,
+                               mrb_int len) {
+  return bmp_text_size_native_body(M, self, s, len);
+}
+
 mrb_value bmp_transition_alpha_direct(mrb_state* M,
                                       mrb_value self,
                                       mrb_value map_v,
