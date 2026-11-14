@@ -22,6 +22,7 @@ class LCF::Array2D
   def []: (untyped) -> untyped
   def []=: (untyped, untyped) -> untyped
   def initialize: (untyped, untyped) -> untyped
+  def same_schema?: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::Database < LCF::File
