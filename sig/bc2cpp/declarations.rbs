@@ -1698,7 +1698,7 @@ class Game::Battle
   def restricted_target: (untyped, untyped) -> untyped
   def roll_inflict: (untyped, untyped) -> Array
   def roll_weapon_states: (untyped, untyped) -> Array
-  def row_adjusted?: (untyped, untyped) -> untyped
+  def row_adjusted?: (untyped, untyped) -> bool
   def rpg2003?: () -> bool
   def run: () -> Symbol
   def run_round: () -> Array
@@ -2057,9 +2057,9 @@ class Game::Interpreter
   def event_id: () -> untyped
   def event_id=: (untyped) -> untyped
   def call_frame_event_id: () -> untyped
-  def battle_actor_condition: (untyped) -> untyped
+  def battle_actor_condition: (untyped) -> bool
   def battle_command_condition: (untyped) -> bool
-  def battle_enemy_condition: (untyped) -> untyped
+  def battle_enemy_condition: (untyped) -> bool
   def battle_target_enemy_condition: (untyped) -> bool
   def block_pending_battle_command: () -> bool
   def block_pending_exp_level_command: (untyped) -> bool
@@ -3488,7 +3488,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def toned_animation_cell_src: (untyped, untyped, untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
   def troop_ids: (untyped) -> untyped
   def try_action_trigger: () -> untyped
-  def try_board_vehicle: () -> untyped
+  def try_board_vehicle: () -> bool?
   def try_open_menu: () -> untyped
   def vehicle_bgm: (untyped) -> Hash?
   def vehicle_char_can_land?: (untyped, untyped, untyped, untyped) -> untyped
@@ -4796,8 +4796,8 @@ class RPG::Troop::Page::Condition
 end
 # bc2cpp-native: base_rpgvx
 class RPG::UsableItem < RPG::BaseItem
-  def battle_ok?: () -> untyped
-  def menu_ok?: () -> untyped
+  def battle_ok?: () -> bool
+  def menu_ok?: () -> bool
 end
 # bc2cpp-native: base_rpgvx
 class RPG::UsableItem::Damage
@@ -4941,7 +4941,7 @@ class RPGVX::RGSSData
   def read_object: (untyped) -> untyped
   def save_object: (untyped, untyped) -> untyped
   def scripts: () -> untyped
-  def scripts?: () -> untyped
+  def scripts?: () -> bool
   def summary: () -> untyped
   def table_byte_size: (untyped) -> untyped
   def vxace?: () -> bool
@@ -5953,7 +5953,7 @@ class RPGXP::RGSSData
   def read_object: (untyped) -> untyped
   def save_object: (untyped, untyped) -> untyped
   def scripts: () -> untyped
-  def scripts?: () -> untyped
+  def scripts?: () -> bool
 end
 # bc2cpp-native: base_rpgxp
 module RPGXP::ScriptHost
@@ -6136,7 +6136,7 @@ class Wolf::CommonEvent
   def return_variable: () -> untyped
   def auto?: () -> bool
   def initialize: (untyped, untyped, untyped) -> untyped
-  def parallel?: () -> untyped
+  def parallel?: () -> bool
 end
 # bc2cpp-native: base_wolf
 class Wolf::CommonEvents
@@ -6279,7 +6279,7 @@ class Wolf::GameDat
   def animation_patterns: () -> untyped
   def character_directions: () -> untyped
   def character_shadow?: () -> bool
-  def doubled?: () -> untyped
+  def doubled?: () -> bool
   def editor_version: () -> untyped
   def font: () -> untyped
   def fps: () -> untyped
@@ -6317,7 +6317,7 @@ class Wolf::Interpreter
   def apply_assign_op_string: (untyped, untyped, untyped) -> untyped
   def apply_initial_move_route: (untyped, untyped) -> untyped
   def away_from_hero_delta: (untyped) -> untyped
-  def blocking?: () -> untyped
+  def blocking?: () -> bool
   def call_common: (untyped, untyped, untyped, reserve: untyped) -> untyped
   def condition_met?: (untyped) -> untyped
   def current_map_id=: (untyped) -> untyped
@@ -6506,7 +6506,7 @@ class Wolf::Project
   def start_position: () -> untyped
   def system_db: () -> untyped
   def user_db: () -> untyped
-  def self.project?: (untyped) -> untyped
+  def self.project?: (untyped) -> bool
 end
 # bc2cpp-native: base_wolf
 class Wolf::Reader
@@ -6664,7 +6664,7 @@ class WolfRPG::MapScene
   def fallback_color: (untyped) -> untyped
   def flash_character: (untyped, untyped, untyped, untyped, untyped) -> untyped
   def flash_picture: (untyped, untyped, untyped, untyped, untyped) -> untyped
-  def hero_at?: (untyped, untyped) -> untyped
+  def hero_at?: (untyped, untyped) -> bool
   def hero_pos: () -> Hash
   def hero_pos=: (untyped) -> Hash
   def initialize: (untyped, untyped, untyped, untyped, untyped, untyped) -> untyped
