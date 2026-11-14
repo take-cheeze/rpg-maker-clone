@@ -2105,7 +2105,7 @@ class Game::Interpreter
   def do_control_vars_range_variable: (untyped, untyped, untyped, untyped) -> untyped
   def do_enable_combo: (untyped) -> Hash?
   def do_end_loop: (untyped) -> nil
-  def do_enemy_encounter: (untyped) -> bool
+  def do_enemy_encounter: (untyped) -> (bool | nil)
   def do_erase_picture: (untyped) -> (bool | nil)
   def do_erase_screen: (untyped) -> bool?
   def do_exit_game: (untyped) -> (bool | nil)
