@@ -1,0 +1,1 @@
+- **Font attributes** (`size`, `bold`, `italic`, `outline`, `shadow`, `color`, `out_color`, `name`) are read from the font's own ivars when text is drawn. A subclass that overrides one of those readers no longer changes how text is drawn.

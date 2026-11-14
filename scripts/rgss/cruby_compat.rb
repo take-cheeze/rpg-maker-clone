@@ -1568,16 +1568,11 @@ module RGSS
       s.each_codepoint { tw += adv }
       x += (w - tw) / 2 if align == 1
       x += w - tw if align == 2
-      # lib.cxx read_font reads the name from @name and the others through their readers (an override answers); only color is drawn here.
+      # lib.cxx read_font reads the Font's attributes from their ivars; only color is drawn here.
       f = font
-      f.instance_variable_get(:@name)
-      f.size
-      f.bold
-      f.italic
-      f.outline
-      f.shadow
-      col = f.color
-      f.out_color
+      %i[@name @size @bold @italic @outline @shadow].each { |iv| f.instance_variable_get(iv) }
+      col = f.instance_variable_get(:@color)
+      f.instance_variable_get(:@out_color)
       s.each_codepoint do |cp|
         glyph = GLYPHS[cp]
         unless glyph.nil?
