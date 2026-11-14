@@ -12729,3 +12729,539 @@ class Game::MoveRoute
   def skippable?: () -> bool?
   def toward_hero: (untyped, untyped) -> Integer
 end
+
+# ---- native: typed_returns_natives
+# Return classes proven from the native C bodies (native_fn_kinds.rb and NativeReturnClasses.admit), for the
+# registered names whose every registration agrees, and that the owner's Ruby definitions (if any) also return.
+# Every block is native: the type check verifies each against the program where it reaches the method.
+
+# bc2cpp-native: typed_returns_natives
+class StringIO
+  def ungetbyte: (untyped) -> nil
+  def fileno: () -> Integer
+  def print: (*untyped) -> nil
+  def puts: (*untyped) -> nil
+  def sync: () -> bool
+  def sync=: (untyped) -> bool
+  def ungetc: (untyped) -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RGSS::ErrorReport::Tee
+  def print: (*untyped) -> nil
+  def puts: (*untyped) -> nil
+  def write: (*untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+module RGSS::Graphics
+  def width: () -> Integer
+  def height: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RGSS::Sprite
+  def height: () -> Integer
+  def width: () -> Integer
+  def x: () -> Integer
+  def y: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RGSS::Window
+  def width: () -> Integer
+  def height: () -> Integer
+  def close?: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::Character
+  def x: () -> Integer
+  def y: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::Enemy
+  def x: () -> Integer
+  def y: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::Map
+  def width: () -> Integer
+  def height: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::Message::ScanResult
+  def length=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::NumberInput
+  def digits: () -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::State
+  def x=: (untyped) -> Integer
+  def y=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::Vehicle
+  def x: () -> Integer
+  def x=: (untyped) -> Integer
+  def y: () -> Integer
+  def y=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::ChipsetEditor
+  def close: () -> nil
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::DebugMenu
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::EquipMenu
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::GameOver
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Map
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Map::MapEventState
+  def flash=: (untyped) -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Map::MessageState
+  def count=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Map::ShopQuantity
+  def count=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::MapViewer
+  def close: () -> nil
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Menu
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Order
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Window
+  def x: () -> Integer
+  def y: () -> Integer
+  def width: () -> Integer
+  def height: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Actor
+  def parameters: () -> Array
+  def parameters=: (untyped) -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::BGM
+  def pos: () -> Integer
+  def pos=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::BGS
+  def pos: () -> Integer
+  def pos=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Event
+  def x: () -> Integer
+  def x=: (untyped) -> Integer
+  def y: () -> Integer
+  def y=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::EventCommand
+  def parameters: () -> Array
+  def parameters=: (untyped) -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Map
+  def width: () -> Integer
+  def width=: (untyped) -> Integer
+  def height: () -> Integer
+  def height=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::MoveCommand
+  def parameters: () -> Array
+  def parameters=: (untyped) -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Troop::Member
+  def x: () -> Integer
+  def x=: (untyped) -> Integer
+  def y: () -> Integer
+  def y=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Module
+  def method_added: (untyped) -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Sprite
+  def dispose: () -> nil
+  def x=: (untyped) -> Integer
+  def y=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Weather
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPGXP::RGSSAD
+  def names: () -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class Wolf::DataWolf
+  def names: () -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class Wolf::Event
+  def x: () -> Integer
+  def y: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Wolf::Map
+  def width: () -> Integer
+  def height: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Wolf::Page
+  def options: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Wolf::Reader
+  def pos: () -> Integer
+  def eof?: () -> bool
+  def pos=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class WolfRPG::MapScene
+  def x: () -> Integer
+  def y: () -> Integer
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class OnigMatchData
+  def names: () -> Array
+end
+
+# ---- native: typed_returns_natives
+# Return classes proven from the native C bodies (native_fn_kinds.rb and NativeReturnClasses.admit), for the
+# registered names whose every registration agrees, and that the owner's Ruby definitions (if any) also return.
+# Every block is native: the type check verifies each against the program where it reaches the method.
+
+# bc2cpp-native: typed_returns_natives
+class StringIO
+  def ungetbyte: (untyped) -> nil
+  def fileno: () -> Integer
+  def print: (*untyped) -> nil
+  def puts: (*untyped) -> nil
+  def sync: () -> bool
+  def sync=: (untyped) -> bool
+  def ungetc: (untyped) -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RGSS::ErrorReport::Tee
+  def print: (*untyped) -> nil
+  def puts: (*untyped) -> nil
+  def write: (*untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+module RGSS::Graphics
+  def width: () -> Integer
+  def height: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RGSS::Sprite
+  def height: () -> Integer
+  def width: () -> Integer
+  def x: () -> Integer
+  def y: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RGSS::Window
+  def width: () -> Integer
+  def height: () -> Integer
+  def close?: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::Character
+  def x: () -> Integer
+  def y: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::Enemy
+  def x: () -> Integer
+  def y: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::Map
+  def width: () -> Integer
+  def height: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::Message::ScanResult
+  def length=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::NumberInput
+  def digits: () -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::State
+  def x=: (untyped) -> Integer
+  def y=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Game::Vehicle
+  def x: () -> Integer
+  def x=: (untyped) -> Integer
+  def y: () -> Integer
+  def y=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::ChipsetEditor
+  def close: () -> nil
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::DebugMenu
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::EquipMenu
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::GameOver
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Map
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Map::MapEventState
+  def flash=: (untyped) -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Map::MessageState
+  def count=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Map::ShopQuantity
+  def count=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::MapViewer
+  def close: () -> nil
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Menu
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Scene::Order
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG2k::Window
+  def x: () -> Integer
+  def y: () -> Integer
+  def width: () -> Integer
+  def height: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Actor
+  def parameters: () -> Array
+  def parameters=: (untyped) -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::BGM
+  def pos: () -> Integer
+  def pos=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::BGS
+  def pos: () -> Integer
+  def pos=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Event
+  def x: () -> Integer
+  def x=: (untyped) -> Integer
+  def y: () -> Integer
+  def y=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::EventCommand
+  def parameters: () -> Array
+  def parameters=: (untyped) -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Map
+  def width: () -> Integer
+  def width=: (untyped) -> Integer
+  def height: () -> Integer
+  def height=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::MoveCommand
+  def parameters: () -> Array
+  def parameters=: (untyped) -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Troop::Member
+  def x: () -> Integer
+  def x=: (untyped) -> Integer
+  def y: () -> Integer
+  def y=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Module
+  def method_added: (untyped) -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Sprite
+  def dispose: () -> nil
+  def x=: (untyped) -> Integer
+  def y=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPG::Weather
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class RPGXP::RGSSAD
+  def names: () -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class Wolf::DataWolf
+  def names: () -> Array
+end
+
+# bc2cpp-native: typed_returns_natives
+class Wolf::Event
+  def x: () -> Integer
+  def y: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Wolf::Map
+  def width: () -> Integer
+  def height: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Wolf::Page
+  def options: () -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class Wolf::Reader
+  def pos: () -> Integer
+  def eof?: () -> bool
+  def pos=: (untyped) -> Integer
+end
+
+# bc2cpp-native: typed_returns_natives
+class WolfRPG::MapScene
+  def x: () -> Integer
+  def y: () -> Integer
+  def dispose: () -> nil
+end
+
+# bc2cpp-native: typed_returns_natives
+class OnigMatchData
+  def names: () -> Array
+end
