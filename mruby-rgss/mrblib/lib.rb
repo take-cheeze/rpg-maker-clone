@@ -1,3 +1,8 @@
+# Closed-world defaults for constants src/main.cxx sets from launch flags (it
+# overwrites them after gem init). A read therefore always resolves: no
+# const_missing at runtime, in the headless host too.
+RENDER_FPS = 60
+
 module RGSS
   class Timeout < StandardError; end
 
@@ -1573,8 +1578,6 @@ module RGSS
       # NO_RENDER_WAIT.
       def render_fps
         RENDER_FPS
-      rescue NameError
-        60
       end
 
       # Run `duration` frames. Real behaviour, not a stub: the scripts use it to

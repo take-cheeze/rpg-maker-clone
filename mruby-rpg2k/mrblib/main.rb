@@ -2,6 +2,12 @@ class Object
   include RGSS
 end
 
+# Closed-world defaults for launch-flag constants src/main.cxx sets after gem init
+# (--rpg2k_map_editor / --rpg2k_chipset_editor / --rpg2k_preview_animation).
+RPG2K_MAP_EDITOR = false
+RPG2K_CHIPSET_EDITOR = false
+RPG2K_PREVIEW_ANIMATION = 0
+
 class RPG2k
   # RPG Maker 2000 style window. The visual is assembled from a "windowskin"
   # System graphic laid out in the classic 160x80 arrangement:
@@ -1089,14 +1095,10 @@ class RPG2k
   # rescued to false.
   def map_editor?
     RPG2K_MAP_EDITOR
-  rescue NameError
-    false
   end
 
   def chipset_editor?
     RPG2K_CHIPSET_EDITOR
-  rescue NameError
-    false
   end
 
   # --rpg2k_preview_animation: the animation id to play back right after New
@@ -1104,8 +1106,6 @@ class RPG2k
   # ids start at 1). Guarded the same way as #preview_map_id.
   def preview_animation_id
     RPG2K_PREVIEW_ANIMATION.zero? ? nil : RPG2K_PREVIEW_ANIMATION
-  rescue NameError
-    nil
   end
 
   # Path of an editor save slot, e.g. Save01.lsd. mruby here bundles no sprintf,

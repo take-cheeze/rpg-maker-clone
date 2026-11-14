@@ -14831,11 +14831,11 @@ end
 check 'RPG2k#map_editor?/#chipset_editor? read their constants, false meaning unset' do
   read = lambda do |const, method, v|
     Object.send(:remove_const, const) if Object.const_defined?(const)
-    Object.const_set(const, v) unless v.nil?
+    Object.const_set(const, v.nil? ? false : v)
     RPG2k.allocate.send(method)
   end
   eq false, read.call(:RPG2K_MAP_EDITOR, :map_editor?, nil),
-     'undefined constant (the CRuby-only checks) -> false'
+     'closed-world default (false) -> false'
   eq false, read.call(:RPG2K_MAP_EDITOR, :map_editor?, false), 'false, the flag default'
   eq true, read.call(:RPG2K_MAP_EDITOR, :map_editor?, true)
   Object.send(:remove_const, :RPG2K_MAP_EDITOR) if Object.const_defined?(:RPG2K_MAP_EDITOR)
@@ -14850,10 +14850,10 @@ check 'RPG2k#preview_animation_id reads RPG2K_PREVIEW_ANIMATION, 0 meaning unset
     if Object.const_defined?(:RPG2K_PREVIEW_ANIMATION)
       Object.send(:remove_const, :RPG2K_PREVIEW_ANIMATION)
     end
-    Object.const_set(:RPG2K_PREVIEW_ANIMATION, v) unless v.nil?
+    Object.const_set(:RPG2K_PREVIEW_ANIMATION, v.nil? ? 0 : v)
     RPG2k.allocate.send(:preview_animation_id)
   end
-  eq nil, read.call(nil), 'undefined constant (the CRuby-only checks) -> nil'
+  eq nil, read.call(nil), 'closed-world default (0) -> nil'
   eq nil, read.call(0), '0, the flag default -> nil'
   eq 5, read.call(5)
   if Object.const_defined?(:RPG2K_PREVIEW_ANIMATION)
