@@ -1002,7 +1002,7 @@ module RGSS::Audio
   def bgs_stop: () -> untyped
   def decrypt_mv_asset: (untyped, untyped) -> untyped
   def exist_with_ext: (untyped) -> nil
-  def find_encrypted_loose: (untyped, untyped) -> untyped
+  def find_encrypted_loose: (untyped, untyped) -> nil
   def find_packed: (untyped, untyped, untyped) -> nil
   def me_fade: (untyped) -> untyped
   def me_play: (untyped, ?untyped, ?untyped, ?untyped) -> untyped
@@ -1012,7 +1012,7 @@ module RGSS::Audio
   def resolve: (untyped, untyped) -> untyped
   def se_play: (untyped, ?untyped, ?untyped, ?untyped) -> untyped
   def se_stop: () -> untyped
-  def search_for: (untyped, untyped) -> untyped
+  def search_for: (untyped, untyped) -> nil
   def setup_midi: () -> nil
   def try_encrypted_ext: (untyped, untyped) -> nil
 end
@@ -1616,7 +1616,7 @@ class Game::Battle
   def apply_knockout_reset: (untyped) -> (bool | nil)
   def apply_skill_hit: (untyped, untyped, untyped, untyped, untyped) -> Hash
   def apply_to_party: () -> untyped
-  def apply_turn_states: (untyped) -> untyped
+  def apply_turn_states: (untyped) -> bool
   def attack_target: (untyped) -> untyped
   def attempt_escape: (?untyped) -> bool
   def attr_rate: (untyped, untyped) -> untyped
@@ -1651,7 +1651,7 @@ class Game::Battle
   def critical?: (untyped) -> bool
   def cure_state: (untyped, untyped) -> Integer?
   def damage_cap: () -> Integer
-  def deal_attack: (untyped, untyped, ?untyped, ?charged: untyped) -> untyped
+  def deal_attack: (untyped, untyped, ?untyped, ?charged: untyped) -> Hash
   def deal_attack_with_current_weapon: (untyped, untyped, ?charged: untyped) -> Hash
   def do_nothing_restricted?: (untyped) -> bool
   def effective_spi: (untyped) -> untyped
@@ -1661,11 +1661,11 @@ class Game::Battle
   def enemy_active?: (untyped) -> bool
   def enemy_autodestruct: (untyped) -> untyped
   def enemy_basic_action: (untyped, untyped, untyped) -> untyped
-  def enemy_fallback_attack: (untyped, untyped) -> untyped
+  def enemy_fallback_attack: (untyped, untyped) -> Hash?
   def enemy_skill_action: (untyped, untyped, untyped) -> untyped
   def enemy_skill_ready?: (untyped, untyped) -> bool
   def enemy_skill_targets: (untyped, untyped) -> Array
-  def enemy_transform_action: (untyped, untyped, untyped) -> untyped
+  def enemy_transform_action: (untyped, untyped, untyped) -> Hash?
   def enemy_turn: (untyped, ?untyped) -> Integer?
   def escaped?: () -> bool
   def fatigue: () -> untyped
@@ -2800,7 +2800,7 @@ class Game::Switches
   def dirty: () -> Hash?
   def []: (untyped) -> bool
   def []=: (untyped, untyped) -> bool
-  def flip: (untyped) -> untyped
+  def flip: (untyped) -> bool
   def initialize: () -> Hash
 end
 # bc2cpp-native: base_rpg2k
@@ -2929,7 +2929,7 @@ class RPG2k
   def title: () -> untyped
   def bug_report_interp_text: (untyped) -> String
   def bug_report_stamp: () -> untyped
-  def bug_report_text: () -> untyped
+  def bug_report_text: () -> String
   def continue_game: (?untyped) -> untyped
   def current_scene_name: () -> String
   def db_path: () -> String
@@ -2988,7 +2988,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def automatic_battle_position: (untyped) -> Array?
   def battle_absorb_lines: (untyped, untyped) -> Array
   def battle_action_body: (untyped) -> Array
-  def battle_action_line: (untyped) -> untyped
+  def battle_action_line: (untyped) -> String
   def battle_action_lines: (untyped) -> Array
   def battle_ally_targets: () -> untyped
   def battle_animation_id: (untyped) -> untyped
@@ -3243,7 +3243,7 @@ class RPG2k::Scene::ItemMenu < RPG2k::Scene::Base
   def leave_target_mode: () -> untyped
   def leave_teleport_target: () -> untyped
   def load_face_bitmap: (untyped) -> RGSS::Bitmap?
-  def map_display_name: (untyped) -> untyped
+  def map_display_name: (untyped) -> String?
   def move_teleport_cursor: (untyped) -> untyped
   def play_item_use_se: (untyped) -> untyped
   def prompt_item_target: (untyped) -> untyped
@@ -3305,7 +3305,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def build_shop_gold_window: () -> RPG2k::Window
   def build_timer_sprite: () -> RGSS::Sprite
   def candidate_troops: () -> untyped
-  def char_can_land?: (untyped, untyped, untyped) -> untyped
+  def char_can_land?: (untyped, untyped, untyped) -> bool
   def char_location: (untyped, untyped) -> untyped
   def character_screen_position: (untyped) -> Hash?
   def check_random_encounter: () -> (bool | nil)
@@ -3456,7 +3456,7 @@ class RPG2k::Scene::Map < RPG2k::Scene::Base
   def roster_actor: (untyped) -> Game::Actor?
   def set_char_location: (untyped, untyped, untyped, untyped, ?untyped) -> untyped
   def set_inn_cursor: () -> RGSS::Rect?
-  def ship_disembark_passable?: (untyped, untyped, untyped) -> untyped
+  def ship_disembark_passable?: (untyped, untyped, untyped) -> bool
   def shop_desc_item_id: (untyped) -> untyped
   def shop_gold_term: () -> String
   def shop_header: () -> untyped
@@ -3686,7 +3686,7 @@ class RPG2k::Scene::MapViewer < RPG2k::Scene::Base
   def ensure_cursor_visible: () -> untyped
   def enter_edit_mode: () -> untyped
   def enter_select_mode: () -> untyped
-  def event_at: (untyped, untyped) -> untyped
+  def event_at: (untyped, untyped) -> Array?
   def mark: (untyped, untyped, untyped) -> untyped
   def max_ox: () -> untyped
   def max_oy: () -> untyped
@@ -3712,7 +3712,7 @@ class RPG2k::Scene::MapViewer < RPG2k::Scene::Base
 end
 # bc2cpp-native: base_rpg2k
 class RPG2k::Scene::MapWorld
-  def can_land?: (untyped, untyped, untyped) -> untyped
+  def can_land?: (untyped, untyped, untyped) -> bool
   def hero_position: () -> Array
   def in_sight?: (untyped) -> untyped
   def random: (untyped) -> untyped
@@ -3769,7 +3769,7 @@ class RPG2k::Scene::SkillMenu < RPG2k::Scene::Base
   def leave_target: () -> (bool | nil)
   def leave_teleport_target: () -> (bool | nil)
   def load_face_bitmap: (untyped) -> RGSS::Bitmap?
-  def map_display_name: (untyped) -> untyped
+  def map_display_name: (untyped) -> String?
   def move_teleport_cursor: (untyped) -> untyped
   def play_skill_sound_effect: (untyped) -> untyped
   def queue_teleport: (untyped) -> nil
@@ -5920,7 +5920,7 @@ class RPGXP::RGSSAD
   def entries: () -> Hash?
   def advance: (untyped) -> untyped
   def decrypt_data: (untyped, untyped) -> untyped
-  def decrypt_int: (untyped, untyped) -> untyped
+  def decrypt_int: (untyped, untyped) -> Integer
   def entry_size: (untyped) -> untyped
   def header_ok?: (untyped) -> bool
   def include?: (untyped) -> bool
@@ -5930,7 +5930,7 @@ class RPGXP::RGSSAD
   def normalize: (untyped) -> untyped
   def parse_v1: () -> untyped
   def parse_v3: () -> untyped
-  def plain_int: (untyped) -> untyped
+  def plain_int: (untyped) -> Integer
   def read: (untyped) -> untyped
   def self.arch_name_bytes: (untyped) -> untyped
   def self.find: (untyped) -> untyped
@@ -6364,7 +6364,7 @@ class Wolf::Interpreter
   def input_key_candidates: (untyped) -> untyped
   def map_event_running?: (untyped) -> bool
   def move_pause_frames: (untyped) -> untyped
-  def numeric_self_slots: (untyped) -> untyped
+  def numeric_self_slots: (untyped) -> Array
   def page_conditions_met?: (untyped) -> bool
   def parse_shape_tag: (untyped) -> Hash?
   def party_advance: (untyped) -> untyped
@@ -6382,7 +6382,7 @@ class Wolf::Interpreter
   def run_route_commands: (untyped, untyped) -> untyped
   def shape_color: (untyped, untyped, untyped) -> untyped
   def start_common_run: (untyped) -> untyped
-  def start_map_event_run: (untyped, untyped) -> untyped
+  def start_map_event_run: (untyped, untyped) -> Hash
   def step_event_pos: (untyped, untyped, untyped) -> untyped
   def tick_ambient_move: (untyped, untyped) -> untyped
   def tick_repeating_route: (untyped, untyped) -> untyped
@@ -6522,14 +6522,14 @@ class Wolf::Reader
   def expect_u8: (untyped, untyped) -> untyped
   def initialize: (untyped, ?untyped) -> untyped
   def int: () -> untyped
-  def int_array: () -> untyped
+  def int_array: () -> Array
   def peek_u8: () -> untyped
   def pos=: (untyped) -> untyped
   def remaining: () -> untyped
   def size: () -> untyped
   def skip: (untyped) -> untyped
   def str: () -> untyped
-  def str_array: () -> untyped
+  def str_array: () -> Array
   def u16: () -> untyped
   def u8: () -> untyped
   def uint: () -> untyped
