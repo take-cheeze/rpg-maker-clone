@@ -3073,9 +3073,10 @@ FontAttr read_font(mrb_state* M, V self) {
 #endif
   const V fv = mrb_iv_get(M, self, mrb_intern_lit(M, "@font"));
   if (!mrb_nil_p(fv)) {
-    // Each attribute is read through attr_read (no by-name send).
+    // The name is Font's @name ivar (attr_accessor :name), read directly: an
+    // override of #name is not consulted.
 #if !defined(WIO_TERMINAL)
-    V nv = attr_read(M, fv, mrb_intern_lit(M, "name"));
+    V nv = mrb_iv_get(M, fv, mrb_intern_lit(M, "@name"));
     if (mrb_string_p(nv)) {
       name.assign(RSTRING_PTR(nv), RSTRING_LEN(nv));
     } else if (mrb_array_p(nv) && ary_size(nv) > 0 &&
