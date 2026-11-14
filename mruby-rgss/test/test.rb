@@ -1360,7 +1360,7 @@ assert "RGSS::Bitmap#draw_text reads Font attributes from their ivars, not overr
   b = RGSS::Bitmap.new(80, 24)
   b.font = FontReadTracker.new
   b.draw_text(0, 0, 80, 24, "Ok", 1)
-  assert_equal [], b.font.seen.to_a
+  assert_equal nil, b.font.seen
 end
 
 assert "RGSS::Bitmap#text_size measures ASCII text" do
