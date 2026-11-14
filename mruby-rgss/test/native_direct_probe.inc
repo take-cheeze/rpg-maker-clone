@@ -75,6 +75,11 @@
    (void)a;
    return rgss::bmp_stbi_error_direct(M, self);
  }},
+{"bmp_text_size_direct", 1,
+ [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
+   (void)a;
+   return rgss::bmp_text_size_direct(M, self, probe_str_ptr(M, a[0]), probe_str_len(M, a[0]));
+ }},
 {"bmp_transition_alpha_direct", 3,
  [](mrb_state* M, mrb_value self, mrb_value* a) -> mrb_value {
    (void)a;
