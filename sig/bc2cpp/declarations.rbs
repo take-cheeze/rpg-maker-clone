@@ -486,9 +486,9 @@ class LCF::SaveTyped::Record
   def initialize: (untyped, untyped) -> untyped
   def read: (untyped, untyped, untyped) -> untyped
   def rows: (untyped, untyped, untyped) -> untyped
-  def save_link: (untyped, untyped) -> untyped
+  def save_link: (untyped, untyped) -> LCF::SaveTyped::Record
   def save_put: (untyped, untyped) -> untyped
-  def table: (untyped, untyped, untyped) -> untyped
+  def table: (untyped, untyped, untyped) -> LCF::SaveTyped::Record?
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Save < LCF::SaveTyped::Record
