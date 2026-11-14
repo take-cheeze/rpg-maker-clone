@@ -783,7 +783,7 @@ class MV
   def input_map: () -> Hash
   def js_available?: () -> bool
   def log_scene_transition: () -> untyped
-  def main_loop: () -> untyped
+  def main_loop: () -> nil
   def maybe_audio_test: () -> untyped
   def maybe_battle_test: () -> untyped
   def maybe_enable_audio_decryption: (untyped) -> untyped
@@ -803,7 +803,7 @@ class MV
   def mv_gl_handle: () -> untyped
   def parse_audio_op: (untyped) -> Array?
   def player_tile: () -> untyped
-  def present: () -> untyped
+  def present: () -> bool?
   def pressed_buttons: () -> untyped
   def project?: (?untyped) -> bool
   def pump_audio: () -> untyped
@@ -894,7 +894,7 @@ class MZ
   def mz_gl_handle: () -> untyped
   def new_game_requested?: () -> bool
   def player_tile: () -> untyped
-  def present: () -> untyped
+  def present: () -> bool?
   def project?: (?untyped) -> bool
   def pump_audio: () -> untyped
   def pump_frame: () -> untyped
@@ -2079,22 +2079,22 @@ class Game::Interpreter
   def do_change_actor_title: (untyped) -> untyped
   def do_change_battle_bg: (untyped) -> untyped
   def do_change_battle_commands: (untyped) -> untyped
-  def do_change_class: (untyped) -> untyped
+  def do_change_class: (untyped) -> bool?
   def do_change_condition: (untyped) -> bool
   def do_change_equipment: (untyped) -> bool
   def do_change_event_location: (untyped) -> untyped
-  def do_change_exp: (untyped) -> untyped
+  def do_change_exp: (untyped) -> bool?
   def do_change_face: (untyped) -> (bool | nil)
   def do_change_hp: (untyped) -> bool
   def do_change_items: (untyped) -> Integer?
-  def do_change_level: (untyped) -> untyped
+  def do_change_level: (untyped) -> bool?
   def do_change_monster_condition: (untyped) -> (Integer | bool)?
   def do_change_monster_hp: (untyped) -> untyped
   def do_change_monster_mp: (untyped) -> untyped
   def do_change_mp: (untyped) -> bool
   def do_change_parallax: (untyped) -> bool
   def do_change_params: (untyped) -> bool
-  def do_change_skills: (untyped) -> untyped
+  def do_change_skills: (untyped) -> bool?
   def do_change_system_bgm: (untyped) -> Hash
   def do_change_system_graphic: (untyped) -> bool
   def do_change_system_sfx: (untyped) -> Hash
@@ -2977,14 +2977,14 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def actor_placeholder_battler: () -> RGSS::Bitmap
   def actor_sprite_z: (untyped) -> Integer
   def add_battle_actor_sprite: (untyped) -> untyped
-  def advance_actor: () -> untyped
+  def advance_actor: () -> (Integer | RPG2k::Window)?
   def apply_backdrop_tone: (untyped) -> RGSS::Tone?
   def apply_battle_event_requests: (untyped) -> RPG2k::Window?
-  def apply_pending_item: (untyped) -> untyped
-  def apply_pending_item_all: (untyped) -> untyped
-  def apply_pending_skill: (untyped) -> untyped
-  def apply_pending_skill_all: (untyped) -> untyped
-  def apply_pending_switch_item: () -> untyped
+  def apply_pending_item: (untyped) -> (Integer | RPG2k::Window)?
+  def apply_pending_item_all: (untyped) -> (Integer | RPG2k::Window)?
+  def apply_pending_skill: (untyped) -> (Integer | RPG2k::Window)?
+  def apply_pending_skill_all: (untyped) -> (Integer | RPG2k::Window)?
+  def apply_pending_switch_item: () -> (Integer | RPG2k::Window)?
   def automatic_battle_position: (untyped) -> Array?
   def battle_absorb_lines: (untyped, untyped) -> Array
   def battle_action_body: (untyped) -> Array
@@ -3048,7 +3048,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def dispose: () -> (bool | nil)
   def dispose_battle_sprite: (untyped) -> untyped
   def draw_battle_ally_target: () -> untyped
-  def draw_battle_command: () -> untyped
+  def draw_battle_command: () -> RPG2k::Window?
   def draw_battle_gauge_card: (untyped, untyped, untyped, untyped) -> untyped
   def draw_battle_gauge_face: (untyped, untyped, untyped) -> untyped
   def draw_battle_item: () -> RPG2k::Window
@@ -3061,7 +3061,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def drive_battle_ally_target: () -> untyped
   def drive_battle_animate: () -> untyped
   def drive_battle_command: () -> untyped
-  def drive_battle_encounter_message: () -> untyped
+  def drive_battle_encounter_message: () -> (Integer | RPG2k::Window)?
   def drive_battle_event: () -> untyped
   def drive_battle_event_message: (untyped) -> (bool | RGSS::Bitmap)?
   def drive_battle_event_wait: (untyped) -> untyped
@@ -3072,9 +3072,9 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def drive_battle_target: () -> untyped
   def encounter_backdrop: () -> untyped
   def enter_battle_result: (untyped) -> Symbol
-  def enter_command_phase: () -> untyped
+  def enter_command_phase: () -> (Integer | RPG2k::Window)?
   def finish_battle: (untyped) -> (Array | bool)?
-  def finish_round_animation: () -> untyped
+  def finish_round_animation: () -> (Integer | RPG2k::Window | Symbol)?
   def finish_terminated_battle: () -> bool
   def fire_target_flash: (untyped, untyped) -> untyped
   def fire_target_shake: (untyped) -> Hash?
@@ -3090,12 +3090,12 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def move_battle_list_index: (untyped, untyped, untyped) -> Integer?
   def move_battle_skill_cursor: (untyped) -> untyped
   def move_battle_target_cursor: (untyped, untyped) -> untyped
-  def on_battle_party_changed: (untyped, untyped) -> untyped
+  def on_battle_party_changed: (untyped, untyped) -> RPG2k::Window?
   def open_battle_item: () -> RPG2k::Window?
   def open_battle_options: () -> RPG2k::Window?
   def open_battle_result: (untyped) -> bool
   def open_battle_skill: () -> RPG2k::Window?
-  def open_next_command: () -> untyped
+  def open_next_command: () -> (Integer | RPG2k::Window)?
   def pending_kind: () -> untyped
   def pending_skill?: () -> untyped
   def placeholder_battler: () -> RGSS::Bitmap
@@ -3103,7 +3103,7 @@ class RPG2k::Scene::Battle < RPG2k::Scene::Base
   def play_escape_se: () -> untyped
   def play_monster_kill_se: () -> untyped
   def prev_commandable_actor_index: () -> untyped
-  def queue_auto_battle_round: () -> untyped
+  def queue_auto_battle_round: () -> (Integer | RPG2k::Window)?
   def react_to_landed_hit: (untyped) -> untyped
   def rebuild_battle_back: (untyped) -> RGSS::Sprite
   def rebuild_battler_sprite: (untyped, untyped) -> untyped
@@ -5964,7 +5964,7 @@ module RPGXP::ScriptHost
   def self.build_driver: (untyped) -> untyped
   def self.call_battle: () -> untyped
   def self.call_save: () -> untyped
-  def self.confirm_tap: () -> untyped
+  def self.confirm_tap: () -> nil
   def self.current_scene: () -> untyped
   def self.db: () -> untyped
   def self.driving=: (untyped) -> untyped
@@ -5981,7 +5981,7 @@ module RPGXP::ScriptHost
   def self.menu_probe: () -> untyped
   def self.menu_test?: () -> untyped
   def self.move_dirs: () -> untyped
-  def self.move_probe: () -> untyped
+  def self.move_probe: () -> nil
   def self.move_test?: () -> untyped
   def self.player_tile: () -> Array?
   def self.probing_menu?: () -> untyped
