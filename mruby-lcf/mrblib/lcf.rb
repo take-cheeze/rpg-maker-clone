@@ -494,6 +494,82 @@ module LCF
     b.pack('C*')
   end
 
+  # The IEEE-754 double of the fixed-point value n / 2**shift, built with integer
+  # arithmetic only (no Float), so it works on the no-Float builds. The bytes are
+  # those pack_double writes for the same value. Requires |n| < 2**31 (every
+  # intermediate stays below 2**31, the 32bit mrb_int range); a fixed-point
+  # save value is far inside it. Zero is +0.0; a value whose exponent overflows
+  # is infinity, and one that underflows flushes to zero (as pack_double does).
+  def self.pack_fixed_double n, shift
+    return [0, 0, 0, 0, 0, 0, 0, 0].pack("C*") if n == 0
+    sign = n < 0 ? 1 : 0
+    m = sign == 1 ? -n : n
+    p = 0
+    t = m
+    while t > 1
+      t = t >> 1
+      p = p + 1
+    end
+    exp = p - shift + 1023
+    if exp >= 0x7ff
+      frac_high = 0
+      frac_low = 0
+      exp = 0x7ff
+    elsif exp <= 0
+      frac_high = 0
+      frac_low = 0
+      exp = 0
+    else
+      # fraction = (m - 2**p) * 2**(52 - p). Since p <= 30 it is g * 2**22 with
+      # g = (m - 2**p) * 2**(30 - p) < 2**30, so g is split into bytes directly.
+      g = (m - (1 << p)) << (30 - p)
+      frac_low = 0
+      frac_high = 0
+      k = 0
+      while k < 7
+        sh = 8 * k - 22
+        if sh >= 0
+          byte = (g >> sh) & 0xff
+        else
+          left = 0 - sh
+          byte = left >= 8 ? 0 : ((g & ((1 << (8 - left)) - 1)) << left)
+        end
+        frac_low = frac_low | (byte << (8 * k)) if k < 3
+        frac_high = frac_high | (byte << (8 * (k - 3))) if k >= 3
+        k = k + 1
+      end
+    end
+    b = [
+      frac_low & 0xff, (frac_low >> 8) & 0xff, (frac_low >> 16) & 0xff,
+      frac_high & 0xff, (frac_high >> 8) & 0xff, (frac_high >> 16) & 0xff,
+      ((exp & 0xf) << 4) | ((frac_high >> 24) & 0xf),
+      (sign << 7) | ((exp >> 4) & 0x7f)
+    ]
+    b.pack("C*")
+  end
+
+  # The fixed-point value n of the IEEE-754 double in bytes (little-endian),
+  # n = trunc(value * 2**shift), with integer arithmetic only. The inverse of
+  # pack_fixed_double for every value it produces. Returns nil for a short
+  # blob, for infinity or NaN, and for a magnitude that needs n >= 2**31.
+  def self.unpack_fixed_double d, shift
+    return nil if d.nil? || d.bytesize < 8
+    b = d.bytes
+    sign = (b[7] >> 7) & 1
+    exp = ((b[7] & 0x7f) << 4) | ((b[6] >> 4) & 0xf)
+    return nil if exp == 0x7ff
+    return 0 if exp == 0
+    # fraction bits 22..51 as g (g = fraction >> 22), split as high and low parts
+    low = b[0] | (b[1] << 8) | (b[2] << 16)
+    high = b[3] | (b[4] << 8) | (b[5] << 16) | ((b[6] & 0xf) << 24)
+    g = high * 4 + (low >> 22)
+    e = exp - 1023 + shift
+    return 0 if e < 0
+    return nil if e > 30
+    n = (1 << e) + (g >> (30 - e))
+    sign == 1 ? -n : n
+  end
+
   # Encode a Ruby value back to the raw chunk bytes for a schema field -- the
   # inverse of to_rb. A nested :Array1D / :Array2D value is serialised through
   # its own #to_lcf. Strings go back out as cp932 via LCF.utf8_to_cp932 (the
