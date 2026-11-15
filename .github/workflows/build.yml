@@ -1449,11 +1449,10 @@ jobs:
             wasm-build/timidity*.data
 
   # Wio Terminal (SAMD51) firmwares, built with PlatformIO. Disabled until the
-  # bc2cpp cross-build path is more stable; `wio-renode` is disabled with it.
+  # bc2cpp cross-build path is more stable.
   wio:
-    # Builds all three Wio firmwares: `wio` (bring-up, display and input HAL),
-    # `wio_walk` (the non-mruby map walk shared with nano 7G), and
-    # `wio_sd_upload` (serial-to-SD loader). See app/wio/README.md.
+    # Builds the Wio game firmware `wio` (closed world only) and the
+    # `wio_sd_upload` SD loader. See app/wio/README.md.
     if: false
     runs-on: ubuntu-24.04
     steps:
@@ -1491,7 +1490,6 @@ jobs:
       - name: Build firmware
         run: |
           pio run -e wio 2>&1 | tee wio-build.log
-          pio run -e wio_walk 2>&1 | tee -a wio-build.log
           pio run -e wio_sd_upload 2>&1 | tee -a wio-build.log
 
       # Summarises the flash and SRAM budget, which is tight on this board.
@@ -1779,121 +1777,6 @@ jobs:
           python3 scripts/maix/lcd_decode.py maix-spi-game.log maix-frame-game.ppm \
             --expect-color 1004 --min-fraction 0.30 --min-colors 4 --expect-size 480x320
 
-  # Boots the Wio firmwares under Renode, with the ILI9341 pixel regression
-  # and the SD tooling check. Disabled with `wio` above.
-  wio-renode:
-    # Covers the CPU running setup()/loop() and the ILI9341 model's pixels.
-    # Not covered: a firmware-driven map render. wio_walk's tile pushes go
-    # through Adafruit_ZeroDMA, which this platform does not model yet.
-    if: false
-    runs-on: ubuntu-24.04
-    steps:
-      - run: git config --global submodule.fetchJobs 4
-      - uses: actions/checkout@v7
-        with:
-          # Same PlatformIO envs as `wio`, so the same submodules go unused.
-          submodules: false
-          show-progress: false
-          persist-credentials: false
-
-      - name: Init submodules
-        env:
-          SKIP_SUBMODULES: 3rd/optcarrot
-        run: ./scripts/checkout-submodules.bash
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.x"
-      - uses: actions/setup-dotnet@v6
-        with:
-          # The portable Renode release bundles only the runtime, which cannot
-          # compile a new peripheral, so Renode is built from source below.
-          dotnet-version: "8.0.x"
-
-      - name: Cache PlatformIO
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.platformio
-            ~/.cache/pip
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
-          restore-keys: pio-${{ runner.os }}-
-
-      - name: Install PlatformIO
-        run: pip install -q --disable-pip-version-check --upgrade platformio
-
-      - name: Build firmware
-        run: |
-          pio run -e wio
-          pio run -e wio_walk
-          pio run -e wio_sd_upload
-
-      - name: Install mtools/dosfstools/ImageMagick
-        # mtools and dosfstools test renode_sdcard.bash. ImageMagick reads pixels
-        # from the ILI9341 model's PNG dump.
-        run: sudo apt-get update -q && sudo apt-get install -y -q mtools dosfstools imagemagick
-
-      - name: Cache the Renode build
-        id: renode-cache
-        uses: actions/cache@v6
-        with:
-          path: /tmp/wio-renode-build
-          # Keyed on the pinned commit and the peripheral sources it copies in.
-          key: wio-renode-${{ runner.os }}-${{ hashFiles('scripts/wio/renode_build.bash', 'app/wio/renode/peripherals/**') }}
-
-      - name: Build Renode with the Wio Terminal peripherals
-        if: steps.renode-cache.outputs.cache-hit != 'true'
-        run: scripts/wio/renode_build.bash /tmp/wio-renode-build
-
-      - name: Boot each firmware under Renode
-        env:
-          RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
-        run: |
-          "$RENODE_BIN" --version
-          for env in wio wio_walk wio_sd_upload; do
-            echo "::group::$env"
-            out="$(scripts/wio/renode_boot.bash ".pio/build/$env/firmware.elf" "00:00:00.300")"
-            echo "$out"
-            # Markers go through the matcher, since a Renode [WARNING] can land inside one.
-            echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED setup()" || { echo "::error::$env did not reach setup()"; exit 1; }
-            echo "$out" | ruby scripts/maix/boot_marker.rb - "REACHED loop()" || { echo "::error::$env did not reach loop()"; exit 1; }
-            echo "::endgroup::"
-          done
-
-      - name: ILI9341 display peripheral regression test
-        env:
-          RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
-        run: |
-          rm -f /tmp/wio_lcd_smoke_test.png
-          "$RENODE_BIN" --disable-gui --console --plain \
-            -e "include @app/wio/renode/lcd_smoke_test.resc" -e "quit" < /dev/null
-          # Ubuntu's `imagemagick` is IM6, which has no `magick` binary. IM7 has
-          # no `convert`. Accept either.
-          im_convert=convert
-          command -v magick >/dev/null 2>&1 && im_convert=magick
-          check() {
-            local got
-            got="$("$im_convert" /tmp/wio_lcd_smoke_test.png -format '%[pixel:p{'"$1"'}]' info:)"
-            [ "$got" = "$2" ] || { echo "::error::pixel {$1} was $got, expected $2"; exit 1; }
-          }
-          check "8,0" "srgb(255,0,0)"   # inside the CASET/PASET window, red row
-          check "8,1" "srgb(0,0,255)"   # inside the window, blue row
-          check "20,0" "srgb(0,0,0)"    # outside the window, untouched
-
-      - name: SD card image tooling smoke test
-        # Tests renode_sdcard.bash itself, not a firmware boot: it builds a FAT
-        # image and checks mtools can read back what it wrote.
-        run: |
-          mkdir -p /tmp/wio_renode_sdcard_check
-          echo hello > /tmp/wio_renode_sdcard_check_input.txt
-          scripts/wio/renode_sdcard.bash /tmp/wio_renode_sdcard_check \
-            /tmp/wio_renode_sdcard_check_input.txt:/RPG2kWalk/test.txt
-          mdir -i /tmp/wio_renode_sdcard_check/sdcard.img ::/RPG2kWalk | grep -q test
-
-  # M5Stack Core (ESP32) P1 HAL firmware. It is a standalone PlatformIO project
-  # under app/m5stack, not an environment in the root platformio.ini: Arduino
-  # as an ESP-IDF component takes over the project root, which the shared
-  # project cannot allow. Disabled, along with `m5stack-qemu`.
   m5stack:
     if: false
     runs-on: ubuntu-24.04
@@ -2044,7 +1927,7 @@ jobs:
           echo "$keys_line" | grep -qw "Start" || { echo "::error::Start not reported (Gamepad Face Select/Start not read)"; exit 1; }
 
   # Boots the nano 7G walk app under qemu-system-arm's Cortex-A8 model. The PL110
-  # is a stock QEMU display, unlike the peripherals wio-renode needed. Checks a
+  # is a stock QEMU display, unlike the peripherals the Renode Wio sim needed. Checks a
   # real rendered map and prints the PMU cycle count as a per-frame cost signal
   # (not asserted: it is a comparison, not a threshold).
   nano7-qemu:

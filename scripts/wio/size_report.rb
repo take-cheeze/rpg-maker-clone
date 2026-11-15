@@ -18,7 +18,7 @@
 # Usage: ruby scripts/wio/size_report.rb <build.log> [<build.log> ...]
 #
 # Multiple logs are accepted (and merged into one table) so a job that runs
-# `pio run -e wio`, `pio run -e wio_walk`, `pio run -e wio_sd_upload` as
+# `pio run -e wio`, `pio run -e wio_sd_upload` as
 # separate commands -- as CI's own wio job does -- can tee each to its own
 # file, or all to one, either way.
 #
@@ -50,7 +50,7 @@ unless missing.empty?
   exit 0
 end
 
-# "Checking size .pio/build/wio_walk/firmware.elf"
+# "Checking size .pio/build/wio/firmware.elf"
 ENV_LINE = %r{\ACheck(?:ing)? size \S*/build/([^/]+)/firmware\.elf\s*\z}
 # "RAM:   [=         ]   9.0% (used 17704 bytes from 196608 bytes)"
 # "Flash: [===       ]  33.6% (used 170608 bytes from 507904 bytes)"
