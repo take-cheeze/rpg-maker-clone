@@ -215,6 +215,45 @@
           "ref_type": "tag"
         }
       ]
+    },
+    "wio_sim": {
+      "platform": {
+        "spec": "atmelsam",
+        "platform_packages_spec": [
+          "platformio/toolchain-gccarmnoneeabi@1.140201.0"
+        ],
+        "name": "atmelsam",
+        "version": "9.0.0",
+        "src_url": null,
+        "packages": [
+          {
+            "name": "toolchain-gccarmnoneeabi",
+            "version": "1.140201.0",
+            "owner": "platformio",
+            "src_url": null
+          },
+          {
+            "name": "framework-arduino-samd-seeed",
+            "version": "1.8.5",
+            "owner": "platformio",
+            "src_url": null
+          },
+          {
+            "name": "framework-cmsis",
+            "version": "2.50400.181126",
+            "owner": "platformio",
+            "src_url": null
+          },
+          {
+            "name": "framework-cmsis-atmel",
+            "version": "1.2.2",
+            "owner": "platformio",
+            "src_url": null
+          }
+        ],
+        "owner": "platformio"
+      },
+      "libraries": []
     }
   }
 }

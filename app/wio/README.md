@@ -24,6 +24,12 @@ WIO_UNIALGO_LIB_DIR=<uni-algo lib dir> \
 `env:wio` is `app/wio/src/wio_rgss_boot_main.cxx`, which boots the compiled
 engine.
 
+## Renode: `wio_sim`
+
+`pio run -e wio_sim -t upload` builds `wio` and boots it under the project's Renode
+emulator instead of flashing a board. Renode is not a repo dependency: build it with
+`scripts/wio/renode_build.bash` and set `RENODE_BIN`. See `app/wio/renode/README.md`.
+
 ## `wio_sd_upload`: no SD card reader
 
 `pio run -e wio_sd_upload -t upload` flashes a throwaway loader that writes
