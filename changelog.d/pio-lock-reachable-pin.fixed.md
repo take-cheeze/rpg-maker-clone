@@ -1,0 +1,1 @@
+- Fix fresh PlatformIO builds by pinning pio-lock to the available v0.4.3 release commit.
