@@ -1,0 +1,1 @@
+- The dynamic-dispatch census page no longer records counts: they change with every tree, and `scripts/bc2cpp/dynamic_site_census.rb` regenerates them. The per-revision baseline and census pages are removed; history is in git.
