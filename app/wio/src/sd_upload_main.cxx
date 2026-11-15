@@ -3,7 +3,7 @@
 // flashing, for dev machines with no card reader to pull the card into.
 // Not part of the port's roadmap -- it plays no role in
 // running a game -- and not meant to stay flashed: run it, push the exported
-// map with scripts/wio/sd_upload.py, then reflash wio_walk or wio.
+// map with scripts/wio/sd_upload.py, then reflash wio.
 //
 // Line protocol over Serial, one request at a time:
 //   PING\n                 -> "PONG SD_OK\n" or "PONG SD_FAIL\n"

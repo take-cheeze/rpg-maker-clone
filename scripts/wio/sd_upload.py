@@ -6,12 +6,12 @@ Talks to the `wio_sd_upload` PlatformIO environment
 receive a file over Serial and write it to SD -- for a dev machine with a
 board but no card reader to pull the card into. Flash that environment first
 (`pio run -e wio_sd_upload -t upload`), run this, then reflash whichever real
-firmware (`wio` or `wio_walk`) you actually want running.
+firmware (`wio`) you actually want running.
 
 Usage:
     scripts/wio/sd_upload.py [--port /dev/ttyACM0] LOCAL:REMOTE [LOCAL:REMOTE ...]
 
-Example (the wio_walk map export):
+Example (a map export):
     scripts/wio/sd_upload.py \\
         /tmp/rpg2k_walk_out/map.bin:/RPG2kWalk/map.bin \\
         /tmp/rpg2k_walk_out/tiles.bin:/RPG2kWalk/tiles.bin

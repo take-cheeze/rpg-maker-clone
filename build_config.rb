@@ -644,6 +644,8 @@ android = ENV['MRUBY_TARGET'] == 'android'
 # Not a device: the sealed RPG2000/2003 closed world built natively for bc2cpp (its stanza below).
 closed = ENV['MRUBY_TARGET'] == 'closed'
 cross = emscripten || wio || maix || psp || android
+# The Wio target is closed-world only: its libmruby is always the bc2cpp build.
+abort 'MRUBY_TARGET=wio requires RPGMAKER_BC2CPP=1 (the Wio build is closed-world only)' if wio && ENV['RPGMAKER_BC2CPP'] != '1'
 
 # CORE_NATIVE_CANDIDATES: the core ROM method-table entries the proof lists (StaticDispatchLists#core_excluded) are
 # left out of a build's tables at compile time, through the header MRB_MT_EXCLUDE_HEADER names

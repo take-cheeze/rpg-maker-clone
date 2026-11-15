@@ -1449,11 +1449,10 @@ jobs:
             wasm-build/timidity*.data
 
   # Wio Terminal (SAMD51) firmwares, built with PlatformIO. Disabled until the
-  # bc2cpp cross-build path is more stable; `wio-renode` is disabled with it.
+  # bc2cpp cross-build path is more stable.
   wio:
-    # Builds all three Wio firmwares: `wio` (bring-up, display and input HAL),
-    # `wio_walk` (the non-mruby map walk shared with nano 7G), and
-    # `wio_sd_upload` (serial-to-SD loader). See app/wio/README.md.
+    # Builds the Wio game firmware `wio` (closed world only) and the
+    # `wio_sd_upload` SD loader. See app/wio/README.md.
     if: false
     runs-on: ubuntu-24.04
     steps:
@@ -1491,7 +1490,6 @@ jobs:
       - name: Build firmware
         run: |
           pio run -e wio 2>&1 | tee wio-build.log
-          pio run -e wio_walk 2>&1 | tee -a wio-build.log
           pio run -e wio_sd_upload 2>&1 | tee -a wio-build.log
 
       # Summarises the flash and SRAM budget, which is tight on this board.
@@ -1783,8 +1781,8 @@ jobs:
   # and the SD tooling check. Disabled with `wio` above.
   wio-renode:
     # Covers the CPU running setup()/loop() and the ILI9341 model's pixels.
-    # Not covered: a firmware-driven map render. wio_walk's tile pushes go
-    # through Adafruit_ZeroDMA, which this platform does not model yet.
+    # Not covered: a firmware-driven map render (the walk firmware's tile pushes go
+    # through Adafruit_ZeroDMA, which this platform does not model yet).
     if: false
     runs-on: ubuntu-24.04
     steps:
@@ -1825,7 +1823,6 @@ jobs:
       - name: Build firmware
         run: |
           pio run -e wio
-          pio run -e wio_walk
           pio run -e wio_sd_upload
 
       - name: Install mtools/dosfstools/ImageMagick
@@ -1850,7 +1847,7 @@ jobs:
           RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
         run: |
           "$RENODE_BIN" --version
-          for env in wio wio_walk wio_sd_upload; do
+          for env in wio wio_sd_upload; do
             echo "::group::$env"
             out="$(scripts/wio/renode_boot.bash ".pio/build/$env/firmware.elf" "00:00:00.300")"
             echo "$out"
@@ -2044,7 +2041,7 @@ jobs:
           echo "$keys_line" | grep -qw "Start" || { echo "::error::Start not reported (Gamepad Face Select/Start not read)"; exit 1; }
 
   # Boots the nano 7G walk app under qemu-system-arm's Cortex-A8 model. The PL110
-  # is a stock QEMU display, unlike the peripherals wio-renode needed. Checks a
+  # is a stock QEMU display, unlike the peripherals the Renode Wio sim needed. Checks a
   # real rendered map and prints the PMU cycle count as a per-frame cost signal
   # (not asserted: it is a comparison, not a threshold).
   nano7-qemu:
