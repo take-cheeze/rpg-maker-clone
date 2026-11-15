@@ -76,407 +76,228 @@ end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Bgm < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_balance: () -> untyped
   def save_balance=: (untyped) -> untyped
-  def save_fade_in: () -> untyped
   def save_fade_in=: (untyped) -> untyped
-  def save_file: () -> untyped
   def save_file=: (untyped) -> untyped
-  def save_pitch: () -> untyped
   def save_pitch=: (untyped) -> untyped
-  def save_volume: () -> untyped
   def save_volume=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::CommonEvent < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_execution_state: () -> untyped
   def save_execution_state=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::EventExecFrame < LCF::SaveTyped::Record
   def check!: () -> untyped
   def frame: () -> untyped
-  def save_command_size: () -> untyped
   def save_command_size=: (untyped) -> untyped
   def save_commands: () -> untyped
   def save_commands=: (untyped) -> untyped
-  def save_current_command: () -> untyped
   def save_current_command=: (untyped) -> untyped
-  def save_event_id: () -> untyped
   def save_event_id=: (untyped) -> untyped
-  def save_subcommand_path: () -> untyped
   def save_subcommand_path=: (untyped) -> untyped
-  def save_subcommand_path_size: () -> untyped
   def save_subcommand_path_size=: (untyped) -> untyped
-  def save_triggered_by_decision_key: () -> untyped
   def save_triggered_by_decision_key=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::EventExecState < LCF::SaveTyped::Record
   def check!: () -> untyped
   def frames: () -> untyped
-  def save_abort_on_escape: () -> untyped
   def save_abort_on_escape=: (untyped) -> untyped
-  def save_keyinput_2k3down: () -> untyped
   def save_keyinput_2k3down=: (untyped) -> untyped
-  def save_keyinput_2k3left: () -> untyped
   def save_keyinput_2k3left=: (untyped) -> untyped
-  def save_keyinput_2k3right: () -> untyped
   def save_keyinput_2k3right=: (untyped) -> untyped
-  def save_keyinput_2k3up: () -> untyped
   def save_keyinput_2k3up=: (untyped) -> untyped
-  def save_keyinput_2kdown_2k3operators: () -> untyped
   def save_keyinput_2kdown_2k3operators=: (untyped) -> untyped
-  def save_keyinput_2kleft_2k3shift: () -> untyped
   def save_keyinput_2kleft_2k3shift=: (untyped) -> untyped
-  def save_keyinput_2kright: () -> untyped
   def save_keyinput_2kright=: (untyped) -> untyped
-  def save_keyinput_2kshift_2k3numbers: () -> untyped
   def save_keyinput_2kshift_2k3numbers=: (untyped) -> untyped
-  def save_keyinput_2kup: () -> untyped
   def save_keyinput_2kup=: (untyped) -> untyped
-  def save_keyinput_all_directions: () -> untyped
   def save_keyinput_all_directions=: (untyped) -> untyped
-  def save_keyinput_cancel: () -> untyped
   def save_keyinput_cancel=: (untyped) -> untyped
-  def save_keyinput_decision: () -> untyped
   def save_keyinput_decision=: (untyped) -> untyped
-  def save_keyinput_time_variable: () -> untyped
   def save_keyinput_time_variable=: (untyped) -> untyped
-  def save_keyinput_timed: () -> untyped
   def save_keyinput_timed=: (untyped) -> untyped
-  def save_keyinput_variable: () -> untyped
   def save_keyinput_variable=: (untyped) -> untyped
-  def save_keyinput_wait: () -> untyped
   def save_keyinput_wait=: (untyped) -> untyped
-  def save_show_message: () -> untyped
   def save_show_message=: (untyped) -> untyped
-  def save_stack: () -> untyped
   def save_stack=: (untyped) -> untyped
-  def save_wait_key_enter: () -> untyped
   def save_wait_key_enter=: (untyped) -> untyped
-  def save_wait_movement: () -> untyped
   def save_wait_movement=: (untyped) -> untyped
-  def save_wait_time: () -> untyped
   def save_wait_time=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Inventory < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_battles: () -> untyped
   def save_battles=: (untyped) -> untyped
-  def save_defeats: () -> untyped
   def save_defeats=: (untyped) -> untyped
-  def save_escapes: () -> untyped
   def save_escapes=: (untyped) -> untyped
-  def save_gold: () -> untyped
   def save_gold=: (untyped) -> untyped
-  def save_item_count: () -> untyped
   def save_item_count=: (untyped) -> untyped
-  def save_item_counts: () -> untyped
   def save_item_counts=: (untyped) -> untyped
-  def save_item_ids: () -> untyped
   def save_item_ids=: (untyped) -> untyped
-  def save_item_usage: () -> untyped
   def save_item_usage=: (untyped) -> untyped
-  def save_party: () -> untyped
   def save_party=: (untyped) -> untyped
-  def save_party_count: () -> untyped
   def save_party_count=: (untyped) -> untyped
-  def save_steps: () -> untyped
   def save_steps=: (untyped) -> untyped
-  def save_timer1_active: () -> untyped
   def save_timer1_active=: (untyped) -> untyped
-  def save_timer1_battle: () -> untyped
   def save_timer1_battle=: (untyped) -> untyped
-  def save_timer1_frames: () -> untyped
   def save_timer1_frames=: (untyped) -> untyped
-  def save_timer1_visible: () -> untyped
   def save_timer1_visible=: (untyped) -> untyped
-  def save_timer2_active: () -> untyped
   def save_timer2_active=: (untyped) -> untyped
-  def save_timer2_battle: () -> untyped
   def save_timer2_battle=: (untyped) -> untyped
-  def save_timer2_frames: () -> untyped
   def save_timer2_frames=: (untyped) -> untyped
-  def save_timer2_visible: () -> untyped
   def save_timer2_visible=: (untyped) -> untyped
-  def save_turns: () -> untyped
   def save_turns=: (untyped) -> untyped
-  def save_victories: () -> untyped
   def save_victories=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::MapEvent < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_chip_replacement_lower: () -> untyped
   def save_chip_replacement_lower=: (untyped) -> untyped
-  def save_chip_replacement_upper: () -> untyped
   def save_chip_replacement_upper=: (untyped) -> untyped
-  def save_encounter_steps: () -> untyped
   def save_encounter_steps=: (untyped) -> untyped
-  def save_events: () -> untyped
   def save_events=: (untyped) -> untyped
-  def save_parallax_horz: () -> untyped
   def save_parallax_horz=: (untyped) -> untyped
-  def save_parallax_horz_auto: () -> untyped
   def save_parallax_horz_auto=: (untyped) -> untyped
-  def save_parallax_horz_speed: () -> untyped
   def save_parallax_horz_speed=: (untyped) -> untyped
-  def save_parallax_name: () -> untyped
   def save_parallax_name=: (untyped) -> untyped
-  def save_parallax_vert: () -> untyped
   def save_parallax_vert=: (untyped) -> untyped
-  def save_parallax_vert_auto: () -> untyped
   def save_parallax_vert_auto=: (untyped) -> untyped
-  def save_parallax_vert_speed: () -> untyped
   def save_parallax_vert_speed=: (untyped) -> untyped
-  def save_scroll_x: () -> untyped
   def save_scroll_x=: (untyped) -> untyped
-  def save_scroll_y: () -> untyped
   def save_scroll_y=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Movable < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_animation_type: () -> untyped
   def save_animation_type=: (untyped) -> untyped
-  def save_charset_index: () -> untyped
   def save_charset_index=: (untyped) -> untyped
-  def save_charset_name: () -> untyped
   def save_charset_name=: (untyped) -> untyped
-  def save_direction: () -> untyped
   def save_direction=: (untyped) -> untyped
-  def save_flash_blue: () -> untyped
   def save_flash_blue=: (untyped) -> untyped
-  def save_flash_current_level: () -> untyped
   def save_flash_current_level=: (untyped) -> untyped
-  def save_flash_green: () -> untyped
   def save_flash_green=: (untyped) -> untyped
-  def save_flash_red: () -> untyped
   def save_flash_red=: (untyped) -> untyped
-  def save_flash_time_left: () -> untyped
   def save_flash_time_left=: (untyped) -> untyped
-  def save_layer: () -> untyped
   def save_layer=: (untyped) -> untyped
-  def save_map_id: () -> untyped
   def save_map_id=: (untyped) -> untyped
-  def save_move_frequency: () -> untyped
   def save_move_frequency=: (untyped) -> untyped
-  def save_move_route: () -> untyped
   def save_move_route=: (untyped) -> untyped
-  def save_move_route_index: () -> untyped
   def save_move_route_index=: (untyped) -> untyped
-  def save_move_speed: () -> untyped
   def save_move_speed=: (untyped) -> untyped
-  def save_parallel_event_execstate: () -> untyped
   def save_parallel_event_execstate=: (untyped) -> untyped
-  def save_sprite_direction: () -> untyped
   def save_sprite_direction=: (untyped) -> untyped
-  def save_through: () -> untyped
   def save_through=: (untyped) -> untyped
-  def save_transparency: () -> untyped
   def save_transparency=: (untyped) -> untyped
-  def save_vehicle: () -> untyped
   def save_vehicle=: (untyped) -> untyped
-  def save_x: () -> untyped
   def save_x=: (untyped) -> untyped
-  def save_y: () -> untyped
   def save_y=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::MoveRoute < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_command_size: () -> untyped
   def save_command_size=: (untyped) -> untyped
-  def save_commands: () -> untyped
   def save_commands=: (untyped) -> untyped
-  def save_repeat: () -> untyped
   def save_repeat=: (untyped) -> untyped
-  def save_skippable: () -> untyped
   def save_skippable=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::PartyActor < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_actor_name: () -> untyped
   def save_actor_name=: (untyped) -> untyped
-  def save_agility_mod: () -> untyped
   def save_agility_mod=: (untyped) -> untyped
-  def save_attack_mod: () -> untyped
   def save_attack_mod=: (untyped) -> untyped
-  def save_auto_battle: () -> untyped
   def save_auto_battle=: (untyped) -> untyped
-  def save_battle_commands: () -> untyped
   def save_battle_commands=: (untyped) -> untyped
-  def save_changed_battle_commands: () -> untyped
   def save_changed_battle_commands=: (untyped) -> untyped
-  def save_class_id: () -> untyped
   def save_class_id=: (untyped) -> untyped
-  def save_defense_mod: () -> untyped
   def save_defense_mod=: (untyped) -> untyped
-  def save_equipment: () -> untyped
   def save_equipment=: (untyped) -> untyped
-  def save_exp: () -> untyped
   def save_exp=: (untyped) -> untyped
-  def save_hp: () -> untyped
   def save_hp=: (untyped) -> untyped
-  def save_hp_mod: () -> untyped
   def save_hp_mod=: (untyped) -> untyped
-  def save_level: () -> untyped
   def save_level=: (untyped) -> untyped
-  def save_lock_equipment: () -> untyped
   def save_lock_equipment=: (untyped) -> untyped
-  def save_mp: () -> untyped
   def save_mp=: (untyped) -> untyped
-  def save_row: () -> untyped
   def save_row=: (untyped) -> untyped
-  def save_skill_size: () -> untyped
   def save_skill_size=: (untyped) -> untyped
-  def save_skills: () -> untyped
   def save_skills=: (untyped) -> untyped
-  def save_sp_mod: () -> untyped
   def save_sp_mod=: (untyped) -> untyped
-  def save_spirit_mod: () -> untyped
   def save_spirit_mod=: (untyped) -> untyped
-  def save_sprite_id: () -> untyped
   def save_sprite_id=: (untyped) -> untyped
-  def save_sprite_name: () -> untyped
   def save_sprite_name=: (untyped) -> untyped
-  def save_sprite_transparent: () -> untyped
   def save_sprite_transparent=: (untyped) -> untyped
-  def save_state_size: () -> untyped
   def save_state_size=: (untyped) -> untyped
-  def save_states: () -> untyped
   def save_states=: (untyped) -> untyped
-  def save_super_guard: () -> untyped
   def save_super_guard=: (untyped) -> untyped
-  def save_title: () -> untyped
   def save_title=: (untyped) -> untyped
-  def save_two_weapon: () -> untyped
   def save_two_weapon=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::PartyLocation < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_aboard: () -> untyped
   def save_aboard=: (untyped) -> untyped
-  def save_animation_type: () -> untyped
   def save_animation_type=: (untyped) -> untyped
-  def save_boarding: () -> untyped
   def save_boarding=: (untyped) -> untyped
-  def save_charset_index: () -> untyped
   def save_charset_index=: (untyped) -> untyped
-  def save_charset_name: () -> untyped
   def save_charset_name=: (untyped) -> untyped
-  def save_direction: () -> untyped
   def save_direction=: (untyped) -> untyped
-  def save_flash_blue: () -> untyped
   def save_flash_blue=: (untyped) -> untyped
-  def save_flash_current_level: () -> untyped
   def save_flash_current_level=: (untyped) -> untyped
-  def save_flash_green: () -> untyped
   def save_flash_green=: (untyped) -> untyped
-  def save_flash_red: () -> untyped
   def save_flash_red=: (untyped) -> untyped
-  def save_flash_time_left: () -> untyped
   def save_flash_time_left=: (untyped) -> untyped
-  def save_layer: () -> untyped
   def save_layer=: (untyped) -> untyped
-  def save_map_id: () -> untyped
   def save_map_id=: (untyped) -> untyped
-  def save_menu_calling: () -> untyped
   def save_menu_calling=: (untyped) -> untyped
-  def save_move_frequency: () -> untyped
   def save_move_frequency=: (untyped) -> untyped
-  def save_move_route: () -> untyped
   def save_move_route=: (untyped) -> untyped
-  def save_move_route_index: () -> untyped
   def save_move_route_index=: (untyped) -> untyped
-  def save_move_speed: () -> untyped
   def save_move_speed=: (untyped) -> untyped
-  def save_pan_current_x: () -> untyped
   def save_pan_current_x=: (untyped) -> untyped
-  def save_pan_current_y: () -> untyped
   def save_pan_current_y=: (untyped) -> untyped
-  def save_pan_finish_x: () -> untyped
   def save_pan_finish_x=: (untyped) -> untyped
-  def save_pan_finish_y: () -> untyped
   def save_pan_finish_y=: (untyped) -> untyped
-  def save_pan_speed: () -> untyped
   def save_pan_speed=: (untyped) -> untyped
-  def save_pan_state: () -> untyped
   def save_pan_state=: (untyped) -> untyped
-  def save_preboard_move_speed: () -> untyped
   def save_preboard_move_speed=: (untyped) -> untyped
-  def save_sprite_direction: () -> untyped
   def save_sprite_direction=: (untyped) -> untyped
-  def save_through: () -> untyped
   def save_through=: (untyped) -> untyped
-  def save_total_encounter_rate: () -> untyped
   def save_total_encounter_rate=: (untyped) -> untyped
-  def save_transparency: () -> untyped
   def save_transparency=: (untyped) -> untyped
-  def save_unboarding: () -> untyped
   def save_unboarding=: (untyped) -> untyped
-  def save_vehicle: () -> untyped
   def save_vehicle=: (untyped) -> untyped
-  def save_x: () -> untyped
   def save_x=: (untyped) -> untyped
-  def save_y: () -> untyped
   def save_y=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Picture < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_bot_transparency: () -> untyped
   def save_bot_transparency=: (untyped) -> untyped
-  def save_current_bot_transparency: () -> untyped
   def save_current_bot_transparency=: (untyped) -> untyped
-  def save_current_tone_blue: () -> untyped
   def save_current_tone_blue=: (untyped) -> untyped
-  def save_current_tone_green: () -> untyped
   def save_current_tone_green=: (untyped) -> untyped
-  def save_current_tone_red: () -> untyped
   def save_current_tone_red=: (untyped) -> untyped
-  def save_current_tone_saturation: () -> untyped
   def save_current_tone_saturation=: (untyped) -> untyped
-  def save_current_transparency: () -> untyped
   def save_current_transparency=: (untyped) -> untyped
-  def save_current_x: () -> untyped
   def save_current_x=: (untyped) -> untyped
-  def save_current_y: () -> untyped
   def save_current_y=: (untyped) -> untyped
-  def save_current_zoom: () -> untyped
   def save_current_zoom=: (untyped) -> untyped
-  def save_finish_x: () -> untyped
   def save_finish_x=: (untyped) -> untyped
-  def save_finish_y: () -> untyped
   def save_finish_y=: (untyped) -> untyped
-  def save_fixed_to_map: () -> untyped
   def save_fixed_to_map=: (untyped) -> untyped
-  def save_name: () -> untyped
   def save_name=: (untyped) -> untyped
-  def save_show_x: () -> untyped
   def save_show_x=: (untyped) -> untyped
-  def save_show_y: () -> untyped
   def save_show_y=: (untyped) -> untyped
-  def save_time_left: () -> untyped
   def save_time_left=: (untyped) -> untyped
-  def save_tone_blue: () -> untyped
   def save_tone_blue=: (untyped) -> untyped
-  def save_tone_green: () -> untyped
   def save_tone_green=: (untyped) -> untyped
-  def save_tone_red: () -> untyped
   def save_tone_red=: (untyped) -> untyped
-  def save_tone_saturation: () -> untyped
   def save_tone_saturation=: (untyped) -> untyped
-  def save_transparency: () -> untyped
   def save_transparency=: (untyped) -> untyped
-  def save_use_transparent_color: () -> untyped
   def save_use_transparent_color=: (untyped) -> untyped
-  def save_zoom: () -> untyped
   def save_zoom=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
@@ -493,235 +314,130 @@ end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Save < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_actors: () -> untyped
   def save_actors=: (untyped) -> untyped
-  def save_airship: () -> untyped
   def save_airship=: (untyped) -> untyped
-  def save_boat: () -> untyped
   def save_boat=: (untyped) -> untyped
-  def save_common_events: () -> untyped
   def save_common_events=: (untyped) -> untyped
-  def save_foreground_event: () -> untyped
   def save_foreground_event=: (untyped) -> untyped
-  def save_hero: () -> untyped
   def save_hero=: (untyped) -> untyped
-  def save_inventory: () -> untyped
   def save_inventory=: (untyped) -> untyped
-  def save_lsd_ext: () -> untyped
   def save_lsd_ext=: (untyped) -> untyped
-  def save_map_events: () -> untyped
   def save_map_events=: (untyped) -> untyped
-  def save_pictures: () -> untyped
   def save_pictures=: (untyped) -> untyped
-  def save_screen: () -> untyped
   def save_screen=: (untyped) -> untyped
-  def save_ship: () -> untyped
   def save_ship=: (untyped) -> untyped
-  def save_system: () -> untyped
   def save_system=: (untyped) -> untyped
-  def save_targets: () -> untyped
   def save_targets=: (untyped) -> untyped
-  def save_title: () -> untyped
   def save_title=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Screen < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_pan_x: () -> untyped
   def save_pan_x=: (untyped) -> untyped
-  def save_pan_y: () -> untyped
   def save_pan_y=: (untyped) -> untyped
-  def save_tint_current_blue: () -> untyped
   def save_tint_current_blue=: (untyped) -> untyped
-  def save_tint_current_green: () -> untyped
   def save_tint_current_green=: (untyped) -> untyped
-  def save_tint_current_red: () -> untyped
   def save_tint_current_red=: (untyped) -> untyped
-  def save_tint_current_sat: () -> untyped
   def save_tint_current_sat=: (untyped) -> untyped
-  def save_tint_finish_blue: () -> untyped
   def save_tint_finish_blue=: (untyped) -> untyped
-  def save_tint_finish_green: () -> untyped
   def save_tint_finish_green=: (untyped) -> untyped
-  def save_tint_finish_red: () -> untyped
   def save_tint_finish_red=: (untyped) -> untyped
-  def save_tint_finish_sat: () -> untyped
   def save_tint_finish_sat=: (untyped) -> untyped
-  def save_tint_time_left: () -> untyped
   def save_tint_time_left=: (untyped) -> untyped
-  def save_weather: () -> untyped
   def save_weather=: (untyped) -> untyped
-  def save_weather_strength: () -> untyped
   def save_weather_strength=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Se < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_balance: () -> untyped
   def save_balance=: (untyped) -> untyped
-  def save_file: () -> untyped
   def save_file=: (untyped) -> untyped
-  def save_pitch: () -> untyped
   def save_pitch=: (untyped) -> untyped
-  def save_volume: () -> untyped
   def save_volume=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::System < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_airship_bgm: () -> untyped
   def save_airship_bgm=: (untyped) -> untyped
-  def save_ally_damaged_se: () -> untyped
   def save_ally_damaged_se=: (untyped) -> untyped
-  def save_atb_mode: () -> untyped
   def save_atb_mode=: (untyped) -> untyped
-  def save_battle_background: () -> untyped
   def save_battle_background=: (untyped) -> untyped
-  def save_battle_bgm: () -> untyped
   def save_battle_bgm=: (untyped) -> untyped
-  def save_battle_end_bgm: () -> untyped
   def save_battle_end_bgm=: (untyped) -> untyped
-  def save_battle_end_erase_transition: () -> untyped
   def save_battle_end_erase_transition=: (untyped) -> untyped
-  def save_battle_end_show_transition: () -> untyped
   def save_battle_end_show_transition=: (untyped) -> untyped
-  def save_battle_start_erase_transition: () -> untyped
   def save_battle_start_erase_transition=: (untyped) -> untyped
-  def save_battle_start_se: () -> untyped
   def save_battle_start_se=: (untyped) -> untyped
-  def save_battle_start_show_transition: () -> untyped
   def save_battle_start_show_transition=: (untyped) -> untyped
-  def save_before_battle_music: () -> untyped
   def save_before_battle_music=: (untyped) -> untyped
-  def save_before_vehicle_music: () -> untyped
   def save_before_vehicle_music=: (untyped) -> untyped
-  def save_bgm_stopping: () -> untyped
   def save_bgm_stopping=: (untyped) -> untyped
-  def save_boat_bgm: () -> untyped
   def save_boat_bgm=: (untyped) -> untyped
-  def save_buzzer_se: () -> untyped
   def save_buzzer_se=: (untyped) -> untyped
-  def save_cancel_se: () -> untyped
   def save_cancel_se=: (untyped) -> untyped
-  def save_current_bgm: () -> untyped
   def save_current_bgm=: (untyped) -> untyped
-  def save_cursor_se: () -> untyped
   def save_cursor_se=: (untyped) -> untyped
-  def save_decision_se: () -> untyped
   def save_decision_se=: (untyped) -> untyped
-  def save_enemy_attack_se: () -> untyped
   def save_enemy_attack_se=: (untyped) -> untyped
-  def save_enemy_damaged_se: () -> untyped
   def save_enemy_damaged_se=: (untyped) -> untyped
-  def save_enemy_death_se: () -> untyped
   def save_enemy_death_se=: (untyped) -> untyped
-  def save_escape_allowed: () -> untyped
   def save_escape_allowed=: (untyped) -> untyped
-  def save_escape_se: () -> untyped
   def save_escape_se=: (untyped) -> untyped
-  def save_evasion_se: () -> untyped
   def save_evasion_se=: (untyped) -> untyped
-  def save_face_flip: () -> untyped
   def save_face_flip=: (untyped) -> untyped
-  def save_face_index: () -> untyped
   def save_face_index=: (untyped) -> untyped
-  def save_face_name: () -> untyped
   def save_face_name=: (untyped) -> untyped
-  def save_face_right_position: () -> untyped
   def save_face_right_position=: (untyped) -> untyped
-  def save_font: () -> untyped
   def save_font=: (untyped) -> untyped
-  def save_frame_count: () -> untyped
   def save_frame_count=: (untyped) -> untyped
-  def save_gameover_bgm: () -> untyped
   def save_gameover_bgm=: (untyped) -> untyped
-  def save_inn_bgm: () -> untyped
   def save_inn_bgm=: (untyped) -> untyped
-  def save_item_se: () -> untyped
   def save_item_se=: (untyped) -> untyped
-  def save_menu_allowed: () -> untyped
   def save_menu_allowed=: (untyped) -> untyped
-  def save_message_continue_events: () -> untyped
   def save_message_continue_events=: (untyped) -> untyped
-  def save_message_position: () -> untyped
   def save_message_position=: (untyped) -> untyped
-  def save_message_prevent_overlap: () -> untyped
   def save_message_prevent_overlap=: (untyped) -> untyped
-  def save_message_transparent: () -> untyped
   def save_message_transparent=: (untyped) -> untyped
-  def save_save_allowed: () -> untyped
   def save_save_allowed=: (untyped) -> untyped
-  def save_save_count: () -> untyped
   def save_save_count=: (untyped) -> untyped
-  def save_save_slot: () -> untyped
   def save_save_slot=: (untyped) -> untyped
-  def save_scene: () -> untyped
   def save_scene=: (untyped) -> untyped
-  def save_ship_bgm: () -> untyped
   def save_ship_bgm=: (untyped) -> untyped
-  def save_stored_bgm: () -> untyped
   def save_stored_bgm=: (untyped) -> untyped
-  def save_switch_size: () -> untyped
   def save_switch_size=: (untyped) -> untyped
-  def save_switches: () -> untyped
   def save_switches=: (untyped) -> untyped
-  def save_system_graphic: () -> untyped
   def save_system_graphic=: (untyped) -> untyped
-  def save_teleport_allowed: () -> untyped
   def save_teleport_allowed=: (untyped) -> untyped
-  def save_teleport_erase_transition: () -> untyped
   def save_teleport_erase_transition=: (untyped) -> untyped
-  def save_teleport_show_transition: () -> untyped
   def save_teleport_show_transition=: (untyped) -> untyped
-  def save_title_bgm: () -> untyped
   def save_title_bgm=: (untyped) -> untyped
-  def save_variable_size: () -> untyped
   def save_variable_size=: (untyped) -> untyped
-  def save_variables: () -> untyped
   def save_variables=: (untyped) -> untyped
-  def save_wallpaper_type: () -> untyped
   def save_wallpaper_type=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Target < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_map_id: () -> untyped
   def save_map_id=: (untyped) -> untyped
-  def save_switch_id: () -> untyped
   def save_switch_id=: (untyped) -> untyped
-  def save_switch_on: () -> untyped
   def save_switch_on=: (untyped) -> untyped
-  def save_x: () -> untyped
   def save_x=: (untyped) -> untyped
-  def save_y: () -> untyped
   def save_y=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
 class LCF::SaveTyped::Title < LCF::SaveTyped::Record
   def check!: () -> untyped
-  def save_face1_index: () -> untyped
   def save_face1_index=: (untyped) -> untyped
-  def save_face1_name: () -> untyped
   def save_face1_name=: (untyped) -> untyped
-  def save_face2_index: () -> untyped
   def save_face2_index=: (untyped) -> untyped
-  def save_face2_name: () -> untyped
   def save_face2_name=: (untyped) -> untyped
-  def save_face3_index: () -> untyped
   def save_face3_index=: (untyped) -> untyped
-  def save_face3_name: () -> untyped
   def save_face3_name=: (untyped) -> untyped
-  def save_face4_index: () -> untyped
   def save_face4_index=: (untyped) -> untyped
-  def save_face4_name: () -> untyped
   def save_face4_name=: (untyped) -> untyped
-  def save_hero_hp: () -> untyped
   def save_hero_hp=: (untyped) -> untyped
-  def save_hero_level: () -> untyped
   def save_hero_level=: (untyped) -> untyped
-  def save_hero_name: () -> untyped
   def save_hero_name=: (untyped) -> untyped
-  def save_timestamp: () -> untyped
   def save_timestamp=: (untyped) -> untyped
 end
 # bc2cpp-native: base_lcf
@@ -13264,4 +12980,375 @@ end
 # bc2cpp-native: typed_returns_natives
 class OnigMatchData
   def names: () -> Array
+end
+
+# Typed save readers: a hinted return per field (mruby-lcf/mrblib/save_typed_accessors.rb). bool fields are not
+# declared (a bool return is refused: callers rely on truthiness).
+class LCF::SaveTyped::Save
+  %a{bc2cpp:hint} def save_title: () -> LCF::SaveTyped::Title?
+  %a{bc2cpp:hint} def save_system: () -> LCF::SaveTyped::System?
+  %a{bc2cpp:hint} def save_screen: () -> LCF::SaveTyped::Screen?
+  %a{bc2cpp:hint} def save_pictures: () -> Array?
+  %a{bc2cpp:hint} def save_hero: () -> LCF::SaveTyped::PartyLocation?
+  %a{bc2cpp:hint} def save_boat: () -> LCF::SaveTyped::Movable?
+  %a{bc2cpp:hint} def save_ship: () -> LCF::SaveTyped::Movable?
+  %a{bc2cpp:hint} def save_airship: () -> LCF::SaveTyped::Movable?
+  %a{bc2cpp:hint} def save_actors: () -> Array?
+  %a{bc2cpp:hint} def save_inventory: () -> LCF::SaveTyped::Inventory?
+  %a{bc2cpp:hint} def save_targets: () -> Array?
+  %a{bc2cpp:hint} def save_map_events: () -> LCF::SaveTyped::MapEvent?
+  %a{bc2cpp:hint} def save_foreground_event: () -> LCF::SaveTyped::EventExecState?
+  %a{bc2cpp:hint} def save_common_events: () -> Array?
+  %a{bc2cpp:hint} def save_lsd_ext: () -> Array?
+end
+
+class LCF::SaveTyped::Title
+  %a{bc2cpp:hint} def save_timestamp: () -> Float?
+  %a{bc2cpp:hint} def save_hero_name: () -> String?
+  %a{bc2cpp:hint} def save_hero_level: () -> Integer?
+  %a{bc2cpp:hint} def save_hero_hp: () -> Integer?
+  %a{bc2cpp:hint} def save_face1_name: () -> String?
+  %a{bc2cpp:hint} def save_face1_index: () -> Integer?
+  %a{bc2cpp:hint} def save_face2_name: () -> String?
+  %a{bc2cpp:hint} def save_face2_index: () -> Integer?
+  %a{bc2cpp:hint} def save_face3_name: () -> String?
+  %a{bc2cpp:hint} def save_face3_index: () -> Integer?
+  %a{bc2cpp:hint} def save_face4_name: () -> String?
+  %a{bc2cpp:hint} def save_face4_index: () -> Integer?
+end
+
+class LCF::SaveTyped::System
+  %a{bc2cpp:hint} def save_scene: () -> Integer?
+  %a{bc2cpp:hint} def save_frame_count: () -> Integer?
+  %a{bc2cpp:hint} def save_system_graphic: () -> String?
+  %a{bc2cpp:hint} def save_wallpaper_type: () -> Integer?
+  %a{bc2cpp:hint} def save_font: () -> Integer?
+  %a{bc2cpp:hint} def save_switch_size: () -> Integer?
+  %a{bc2cpp:hint} def save_switches: () -> Array?
+  %a{bc2cpp:hint} def save_variable_size: () -> Integer?
+  %a{bc2cpp:hint} def save_variables: () -> Array?
+  %a{bc2cpp:hint} def save_message_transparent: () -> Integer?
+  %a{bc2cpp:hint} def save_message_position: () -> Integer?
+  %a{bc2cpp:hint} def save_face_name: () -> String?
+  %a{bc2cpp:hint} def save_face_index: () -> Integer?
+  %a{bc2cpp:hint} def save_face_right_position: () -> Integer?
+  %a{bc2cpp:hint} def save_title_bgm: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_battle_bgm: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_battle_end_bgm: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_inn_bgm: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_current_bgm: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_before_vehicle_music: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_before_battle_music: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_stored_bgm: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_boat_bgm: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_ship_bgm: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_airship_bgm: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_gameover_bgm: () -> LCF::SaveTyped::Bgm?
+  %a{bc2cpp:hint} def save_cursor_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_decision_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_cancel_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_buzzer_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_battle_start_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_escape_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_enemy_attack_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_enemy_damaged_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_ally_damaged_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_evasion_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_enemy_death_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_item_se: () -> LCF::SaveTyped::Se?
+  %a{bc2cpp:hint} def save_teleport_erase_transition: () -> Integer?
+  %a{bc2cpp:hint} def save_teleport_show_transition: () -> Integer?
+  %a{bc2cpp:hint} def save_battle_start_erase_transition: () -> Integer?
+  %a{bc2cpp:hint} def save_battle_start_show_transition: () -> Integer?
+  %a{bc2cpp:hint} def save_battle_end_erase_transition: () -> Integer?
+  %a{bc2cpp:hint} def save_battle_end_show_transition: () -> Integer?
+  %a{bc2cpp:hint} def save_battle_background: () -> String?
+  %a{bc2cpp:hint} def save_save_count: () -> Integer?
+  %a{bc2cpp:hint} def save_save_slot: () -> Integer?
+  %a{bc2cpp:hint} def save_atb_mode: () -> Integer?
+end
+
+class LCF::SaveTyped::Screen
+  %a{bc2cpp:hint} def save_tint_finish_red: () -> Integer?
+  %a{bc2cpp:hint} def save_tint_finish_green: () -> Integer?
+  %a{bc2cpp:hint} def save_tint_finish_blue: () -> Integer?
+  %a{bc2cpp:hint} def save_tint_finish_sat: () -> Integer?
+  %a{bc2cpp:hint} def save_tint_current_red: () -> Float?
+  %a{bc2cpp:hint} def save_tint_current_green: () -> Float?
+  %a{bc2cpp:hint} def save_tint_current_blue: () -> Float?
+  %a{bc2cpp:hint} def save_tint_current_sat: () -> Float?
+  %a{bc2cpp:hint} def save_tint_time_left: () -> Integer?
+  %a{bc2cpp:hint} def save_pan_x: () -> Integer?
+  %a{bc2cpp:hint} def save_pan_y: () -> Integer?
+  %a{bc2cpp:hint} def save_weather: () -> Integer?
+  %a{bc2cpp:hint} def save_weather_strength: () -> Integer?
+end
+
+class LCF::SaveTyped::Picture
+  %a{bc2cpp:hint} def save_name: () -> String?
+  %a{bc2cpp:hint} def save_show_x: () -> Float?
+  %a{bc2cpp:hint} def save_show_y: () -> Float?
+  %a{bc2cpp:hint} def save_current_x: () -> Float?
+  %a{bc2cpp:hint} def save_current_y: () -> Float?
+  %a{bc2cpp:hint} def save_current_zoom: () -> Float?
+  %a{bc2cpp:hint} def save_current_transparency: () -> Float?
+  %a{bc2cpp:hint} def save_current_tone_red: () -> Float?
+  %a{bc2cpp:hint} def save_current_tone_green: () -> Float?
+  %a{bc2cpp:hint} def save_current_tone_blue: () -> Float?
+  %a{bc2cpp:hint} def save_current_tone_saturation: () -> Float?
+  %a{bc2cpp:hint} def save_current_bot_transparency: () -> Float?
+  %a{bc2cpp:hint} def save_finish_x: () -> Float?
+  %a{bc2cpp:hint} def save_finish_y: () -> Float?
+  %a{bc2cpp:hint} def save_zoom: () -> Integer?
+  %a{bc2cpp:hint} def save_transparency: () -> Integer?
+  %a{bc2cpp:hint} def save_bot_transparency: () -> Integer?
+  %a{bc2cpp:hint} def save_tone_red: () -> Integer?
+  %a{bc2cpp:hint} def save_tone_green: () -> Integer?
+  %a{bc2cpp:hint} def save_tone_blue: () -> Integer?
+  %a{bc2cpp:hint} def save_tone_saturation: () -> Integer?
+  %a{bc2cpp:hint} def save_time_left: () -> Integer?
+end
+
+class LCF::SaveTyped::PartyLocation
+  %a{bc2cpp:hint} def save_map_id: () -> Integer?
+  %a{bc2cpp:hint} def save_x: () -> Integer?
+  %a{bc2cpp:hint} def save_y: () -> Integer?
+  %a{bc2cpp:hint} def save_sprite_direction: () -> Integer?
+  %a{bc2cpp:hint} def save_direction: () -> Integer?
+  %a{bc2cpp:hint} def save_transparency: () -> Integer?
+  %a{bc2cpp:hint} def save_move_frequency: () -> Integer?
+  %a{bc2cpp:hint} def save_layer: () -> Integer?
+  %a{bc2cpp:hint} def save_animation_type: () -> Integer?
+  %a{bc2cpp:hint} def save_move_speed: () -> Integer?
+  %a{bc2cpp:hint} def save_move_route: () -> LCF::SaveTyped::MoveRoute?
+  %a{bc2cpp:hint} def save_move_route_index: () -> Integer?
+  %a{bc2cpp:hint} def save_charset_name: () -> String?
+  %a{bc2cpp:hint} def save_charset_index: () -> Integer?
+  %a{bc2cpp:hint} def save_flash_red: () -> Integer?
+  %a{bc2cpp:hint} def save_flash_green: () -> Integer?
+  %a{bc2cpp:hint} def save_flash_blue: () -> Integer?
+  %a{bc2cpp:hint} def save_flash_current_level: () -> Float?
+  %a{bc2cpp:hint} def save_flash_time_left: () -> Integer?
+  %a{bc2cpp:hint} def save_vehicle: () -> Integer?
+  %a{bc2cpp:hint} def save_preboard_move_speed: () -> Integer?
+  %a{bc2cpp:hint} def save_pan_state: () -> Integer?
+  %a{bc2cpp:hint} def save_pan_current_x: () -> Integer?
+  %a{bc2cpp:hint} def save_pan_current_y: () -> Integer?
+  %a{bc2cpp:hint} def save_pan_finish_x: () -> Integer?
+  %a{bc2cpp:hint} def save_pan_finish_y: () -> Integer?
+  %a{bc2cpp:hint} def save_pan_speed: () -> Integer?
+  %a{bc2cpp:hint} def save_total_encounter_rate: () -> Integer?
+end
+
+class LCF::SaveTyped::Movable
+  %a{bc2cpp:hint} def save_map_id: () -> Integer?
+  %a{bc2cpp:hint} def save_x: () -> Integer?
+  %a{bc2cpp:hint} def save_y: () -> Integer?
+  %a{bc2cpp:hint} def save_sprite_direction: () -> Integer?
+  %a{bc2cpp:hint} def save_direction: () -> Integer?
+  %a{bc2cpp:hint} def save_transparency: () -> Integer?
+  %a{bc2cpp:hint} def save_move_frequency: () -> Integer?
+  %a{bc2cpp:hint} def save_layer: () -> Integer?
+  %a{bc2cpp:hint} def save_animation_type: () -> Integer?
+  %a{bc2cpp:hint} def save_move_speed: () -> Integer?
+  %a{bc2cpp:hint} def save_move_route: () -> LCF::SaveTyped::MoveRoute?
+  %a{bc2cpp:hint} def save_move_route_index: () -> Integer?
+  %a{bc2cpp:hint} def save_charset_name: () -> String?
+  %a{bc2cpp:hint} def save_charset_index: () -> Integer?
+  %a{bc2cpp:hint} def save_flash_red: () -> Integer?
+  %a{bc2cpp:hint} def save_flash_green: () -> Integer?
+  %a{bc2cpp:hint} def save_flash_blue: () -> Integer?
+  %a{bc2cpp:hint} def save_flash_current_level: () -> Float?
+  %a{bc2cpp:hint} def save_flash_time_left: () -> Integer?
+  %a{bc2cpp:hint} def save_vehicle: () -> Integer?
+  %a{bc2cpp:hint} def save_parallel_event_execstate: () -> LCF::SaveTyped::EventExecState?
+end
+
+class LCF::SaveTyped::PartyActor
+  %a{bc2cpp:hint} def save_actor_name: () -> String?
+  %a{bc2cpp:hint} def save_title: () -> String?
+  %a{bc2cpp:hint} def save_sprite_name: () -> String?
+  %a{bc2cpp:hint} def save_sprite_id: () -> Integer?
+  %a{bc2cpp:hint} def save_sprite_transparent: () -> Integer?
+  %a{bc2cpp:hint} def save_level: () -> Integer?
+  %a{bc2cpp:hint} def save_exp: () -> Integer?
+  %a{bc2cpp:hint} def save_hp_mod: () -> Integer?
+  %a{bc2cpp:hint} def save_sp_mod: () -> Integer?
+  %a{bc2cpp:hint} def save_attack_mod: () -> Integer?
+  %a{bc2cpp:hint} def save_defense_mod: () -> Integer?
+  %a{bc2cpp:hint} def save_spirit_mod: () -> Integer?
+  %a{bc2cpp:hint} def save_agility_mod: () -> Integer?
+  %a{bc2cpp:hint} def save_skill_size: () -> Integer?
+  %a{bc2cpp:hint} def save_skills: () -> Array?
+  %a{bc2cpp:hint} def save_equipment: () -> Array?
+  %a{bc2cpp:hint} def save_hp: () -> Integer?
+  %a{bc2cpp:hint} def save_mp: () -> Integer?
+  %a{bc2cpp:hint} def save_battle_commands: () -> Array?
+  %a{bc2cpp:hint} def save_state_size: () -> Integer?
+  %a{bc2cpp:hint} def save_states: () -> Array?
+  %a{bc2cpp:hint} def save_class_id: () -> Integer?
+  %a{bc2cpp:hint} def save_row: () -> Integer?
+end
+
+class LCF::SaveTyped::Inventory
+  %a{bc2cpp:hint} def save_party_count: () -> Integer?
+  %a{bc2cpp:hint} def save_party: () -> Array?
+  %a{bc2cpp:hint} def save_item_count: () -> Integer?
+  %a{bc2cpp:hint} def save_item_ids: () -> Array?
+  %a{bc2cpp:hint} def save_item_counts: () -> Array?
+  %a{bc2cpp:hint} def save_item_usage: () -> Array?
+  %a{bc2cpp:hint} def save_gold: () -> Integer?
+  %a{bc2cpp:hint} def save_timer1_frames: () -> Integer?
+  %a{bc2cpp:hint} def save_timer2_frames: () -> Integer?
+  %a{bc2cpp:hint} def save_battles: () -> Integer?
+  %a{bc2cpp:hint} def save_defeats: () -> Integer?
+  %a{bc2cpp:hint} def save_escapes: () -> Integer?
+  %a{bc2cpp:hint} def save_victories: () -> Integer?
+  %a{bc2cpp:hint} def save_turns: () -> Integer?
+  %a{bc2cpp:hint} def save_steps: () -> Integer?
+end
+
+class LCF::SaveTyped::Target
+  %a{bc2cpp:hint} def save_map_id: () -> Integer?
+  %a{bc2cpp:hint} def save_x: () -> Integer?
+  %a{bc2cpp:hint} def save_y: () -> Integer?
+  %a{bc2cpp:hint} def save_switch_id: () -> Integer?
+end
+
+class LCF::SaveTyped::MapEvent
+  %a{bc2cpp:hint} def save_scroll_x: () -> Integer?
+  %a{bc2cpp:hint} def save_scroll_y: () -> Integer?
+  %a{bc2cpp:hint} def save_encounter_steps: () -> Integer?
+  %a{bc2cpp:hint} def save_events: () -> Array?
+  %a{bc2cpp:hint} def save_chip_replacement_lower: () -> Array?
+  %a{bc2cpp:hint} def save_chip_replacement_upper: () -> Array?
+  %a{bc2cpp:hint} def save_parallax_name: () -> String?
+  %a{bc2cpp:hint} def save_parallax_horz_speed: () -> Integer?
+  %a{bc2cpp:hint} def save_parallax_vert_speed: () -> Integer?
+end
+
+class LCF::SaveTyped::EventExecState
+  %a{bc2cpp:hint} def save_stack: () -> Array?
+  %a{bc2cpp:hint} def save_keyinput_variable: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_decision: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_cancel: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_2kshift_2k3numbers: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_2kdown_2k3operators: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_2kleft_2k3shift: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_2kright: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_2kup: () -> Integer?
+  %a{bc2cpp:hint} def save_wait_time: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_time_variable: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_2k3down: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_2k3left: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_2k3right: () -> Integer?
+  %a{bc2cpp:hint} def save_keyinput_2k3up: () -> Integer?
+end
+
+class LCF::SaveTyped::CommonEvent
+  %a{bc2cpp:hint} def save_execution_state: () -> LCF::SaveTyped::EventExecState?
+end
+
+class LCF::SaveTyped::Bgm
+  %a{bc2cpp:hint} def save_file: () -> String?
+  %a{bc2cpp:hint} def save_fade_in: () -> Integer?
+  %a{bc2cpp:hint} def save_volume: () -> Integer?
+  %a{bc2cpp:hint} def save_pitch: () -> Integer?
+  %a{bc2cpp:hint} def save_balance: () -> Integer?
+end
+
+class LCF::SaveTyped::Se
+  %a{bc2cpp:hint} def save_file: () -> String?
+  %a{bc2cpp:hint} def save_volume: () -> Integer?
+  %a{bc2cpp:hint} def save_pitch: () -> Integer?
+  %a{bc2cpp:hint} def save_balance: () -> Integer?
+end
+
+class LCF::SaveTyped::MoveRoute
+  %a{bc2cpp:hint} def save_command_size: () -> Integer?
+  %a{bc2cpp:hint} def save_commands: () -> Array?
+end
+
+class LCF::SaveTyped::EventExecFrame
+  %a{bc2cpp:hint} def save_command_size: () -> Integer?
+  %a{bc2cpp:hint} def save_current_command: () -> Integer?
+  %a{bc2cpp:hint} def save_event_id: () -> Integer?
+  %a{bc2cpp:hint} def save_subcommand_path_size: () -> Integer?
+  %a{bc2cpp:hint} def save_subcommand_path: () -> Array?
+end
+
+# Typed bool save readers (mruby-lcf/mrblib/save_typed_accessors.rb): true, false or nil when absent.
+class LCF::SaveTyped::System
+  %a{bc2cpp:hint} def save_message_prevent_overlap: () -> bool?
+  %a{bc2cpp:hint} def save_message_continue_events: () -> bool?
+  %a{bc2cpp:hint} def save_face_flip: () -> bool?
+  %a{bc2cpp:hint} def save_bgm_stopping: () -> bool?
+  %a{bc2cpp:hint} def save_teleport_allowed: () -> bool?
+  %a{bc2cpp:hint} def save_escape_allowed: () -> bool?
+  %a{bc2cpp:hint} def save_save_allowed: () -> bool?
+  %a{bc2cpp:hint} def save_menu_allowed: () -> bool?
+end
+
+class LCF::SaveTyped::Picture
+  %a{bc2cpp:hint} def save_fixed_to_map: () -> bool?
+  %a{bc2cpp:hint} def save_use_transparent_color: () -> bool?
+end
+
+class LCF::SaveTyped::PartyLocation
+  %a{bc2cpp:hint} def save_through: () -> bool?
+  %a{bc2cpp:hint} def save_boarding: () -> bool?
+  %a{bc2cpp:hint} def save_aboard: () -> bool?
+  %a{bc2cpp:hint} def save_unboarding: () -> bool?
+  %a{bc2cpp:hint} def save_menu_calling: () -> bool?
+end
+
+class LCF::SaveTyped::Movable
+  %a{bc2cpp:hint} def save_through: () -> bool?
+end
+
+class LCF::SaveTyped::PartyActor
+  %a{bc2cpp:hint} def save_changed_battle_commands: () -> bool?
+  %a{bc2cpp:hint} def save_two_weapon: () -> bool?
+  %a{bc2cpp:hint} def save_lock_equipment: () -> bool?
+  %a{bc2cpp:hint} def save_auto_battle: () -> bool?
+  %a{bc2cpp:hint} def save_super_guard: () -> bool?
+end
+
+class LCF::SaveTyped::Inventory
+  %a{bc2cpp:hint} def save_timer1_active: () -> bool?
+  %a{bc2cpp:hint} def save_timer1_visible: () -> bool?
+  %a{bc2cpp:hint} def save_timer1_battle: () -> bool?
+  %a{bc2cpp:hint} def save_timer2_active: () -> bool?
+  %a{bc2cpp:hint} def save_timer2_visible: () -> bool?
+  %a{bc2cpp:hint} def save_timer2_battle: () -> bool?
+end
+
+class LCF::SaveTyped::Target
+  %a{bc2cpp:hint} def save_switch_on: () -> bool?
+end
+
+class LCF::SaveTyped::MapEvent
+  %a{bc2cpp:hint} def save_parallax_horz: () -> bool?
+  %a{bc2cpp:hint} def save_parallax_vert: () -> bool?
+  %a{bc2cpp:hint} def save_parallax_horz_auto: () -> bool?
+  %a{bc2cpp:hint} def save_parallax_vert_auto: () -> bool?
+end
+
+class LCF::SaveTyped::EventExecState
+  %a{bc2cpp:hint} def save_show_message: () -> bool?
+  %a{bc2cpp:hint} def save_abort_on_escape: () -> bool?
+  %a{bc2cpp:hint} def save_wait_movement: () -> bool?
+  %a{bc2cpp:hint} def save_keyinput_wait: () -> bool?
+  %a{bc2cpp:hint} def save_keyinput_all_directions: () -> bool?
+  %a{bc2cpp:hint} def save_keyinput_timed: () -> bool?
+  %a{bc2cpp:hint} def save_wait_key_enter: () -> bool?
+end
+
+class LCF::SaveTyped::MoveRoute
+  %a{bc2cpp:hint} def save_repeat: () -> bool?
+  %a{bc2cpp:hint} def save_skippable: () -> bool?
+end
+
+class LCF::SaveTyped::EventExecFrame
+  %a{bc2cpp:hint} def save_triggered_by_decision_key: () -> bool?
 end
