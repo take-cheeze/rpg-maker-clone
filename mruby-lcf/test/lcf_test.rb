@@ -963,3 +963,19 @@ assert 'native RPG_RT encounter accumulator and common-event cursor (ADR 0400)' 
   assert_equal [11070, 11410, 0], frame[:commands].map { |cmd| cmd.code }
   assert_equal 599, execution[:wait_time]
 end
+
+assert 'LCF.pack_fixed_double matches pack_double of the same value' do
+  # Integer-only encoder: the same bytes pack_double writes for n / 2**shift.
+  [[3, 1], [1, 0], [-1, 0], [0, 0], [5, 4], [1000, 10], [123456, 16], [-99999, 8],
+   [2147483646, 0], [-2147483646, 20]].each do |n, shift|
+    assert_equal LCF.pack_double(n.to_f / (2.0 ** shift)), LCF.pack_fixed_double(n, shift), "n #{n} shift #{shift}"
+  end
+  assert_equal "\x00\x00\x00\x00\x00\x00\xf8\x3f", LCF.pack_fixed_double(3, 1)
+end
+
+assert 'LCF.unpack_fixed_double inverts pack_fixed_double' do
+  [[3, 1], [1, 0], [-1, 0], [0, 0], [5, 4], [1000, 10], [-99999, 8], [2147483646, 0]].each do |n, shift|
+    assert_equal n, LCF.unpack_fixed_double(LCF.pack_fixed_double(n, shift), shift), "n #{n} shift #{shift}"
+  end
+  assert_nil LCF.unpack_fixed_double("\x00\x00\x00\x00\x00\x00\xf0\x7f", 0)
+end
